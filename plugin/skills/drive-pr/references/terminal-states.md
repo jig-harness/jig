@@ -5,6 +5,20 @@ converged. This file is the contract it implements: what each state means, what
 evidence produced it, and — for the states that look identical from a thread
 count alone — which measured failure each guard exists to prevent.
 
+## Contents
+
+- [Exit codes](#exit-codes)
+- [Repair rounds](#repair-rounds)
+- [What convergence requires](#what-converged-requires)
+- [Reviewer identity](#the-reviewer-is-identified-by-app-slug-not-by-check-name)
+- [The stranded-check-run bypass](#the-stranded-check-run-bypass)
+- [False convergence and its guards](#the-false-convergence-modes-and-the-guard-for-each)
+- [State that outlives the session](#state-that-outlives-the-session)
+- [Picking up a stopped drive](#picking-up-a-stopped-drive)
+- [When the reviewer will not answer](#when-the-reviewer-will-not-answer-so-converged-is-unreachable)
+- [The context-economy dial](#the-context-economy-dial---handoff-at)
+- [The turn budget](#the-turn-budget-reached-maximum-number-of-turns-which-is-measured)
+
 ## Exit codes
 
 The thread-resolution helper has a separate refusal: `resolve-thread.ts`
@@ -881,10 +895,16 @@ which exits with its locks held), so picking it up is a **re-arm** from its
 durable state, admitted on mechanical states: after `QUOTA_PARKED` by a
 pass that bills a different account from the one the park recorded (or after
 the reset), and after `HITL_PARKED` once every parked item has an answer later
-than its park (a park records when it was made; an older park without that
-time is never read as answered). A conflicting PR may be re-armed for
+than its park, using its comment's last edit time when edited. Each person's
+latest answer counts. A disputed item stays parked. The
+[structured answer rules](../SKILL.md#picking-up-a-stopped-drive) define when
+choices and notes agree and when answers stay free. A park records when it
+was made; an older park without that time is never read as answered.
+A conflicting PR may be re-armed for
 conflict repair while unanswered items stay parked; the `wide` autonomy
-exception may also unpark unanswered `escalated` items. A comment the drive itself writes (one
+exception may also unpark `escalated` items nobody has answered. Any person's
+answer, including a disputed answer, prevents a provisional decision.
+A comment the drive itself writes (one
 opening with an outcome token, or carrying a hidden marker other than the
 record of an answer `jig send` wrote) is never an answer.
 

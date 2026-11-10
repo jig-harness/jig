@@ -32,13 +32,7 @@
  */
 import { fail, shellQuote } from "./../cli.ts";
 
-import {
-  ghCall,
-  ghRepoEnv,
-  helperTimeoutSeconds,
-  run,
-  tsArgv,
-} from "./../proc.ts";
+import { helperTimeoutSeconds, run, tsArgv } from "./../proc.ts";
 
 import {
   accountHash,
@@ -46,15 +40,10 @@ import {
   resolveAccountIdentity,
 } from "./../identity.ts";
 
-import {
-  type DriveState,
-  isUsableState,
-  type ParkedItem,
-} from "./../state/schema.ts";
+import { type DriveState, isUsableState } from "./../state/schema.ts";
 
 import {
   answersFile,
-  type PendingAnswer,
   type PendingVerdict,
   readPendingVerdicts,
   writePendingVerdicts,
@@ -64,11 +53,7 @@ import { resolveStateDir } from "./../state/store.ts";
 
 import { swallow } from "../../../../../shared/errors.ts";
 
-import { isRecord } from "../../../../../shared/guards.ts";
-
-import { TRUSTED_ASSOCIATIONS } from "../../summary-findings.ts";
-
-import { withoutAnswerRecord } from "./../answer-comment.ts";
+import { parkAnswers } from "./park-answers.ts";
 
 import { pinsEmptyPassArgs } from "./../pass-args.ts";
 
@@ -77,15 +62,8 @@ import { driveState, driveTs } from "./paths.ts";
 import { QUOTA_PARKED_EXIT } from "./settings.ts";
 
 import { provisionalDuties, provisionalNotice } from "./rearm-provisional.ts";
-
-/** The longest answer body in the notice; the url and the kept file carry the rest. */
-const ANSWER_BODY_MAX = 1500;
-
-/** The longest park reason in an item's entry. */
-const REASON_MAX = 300;
-
-/** The length the answer bodies are cut to fit, beside every item's entry. */
-export const NOTICE_MAX = 15_000;
+import { humanVerdictNotice } from "./human-answer-notice.ts";
+export { humanVerdictNotice, NOTICE_MAX } from "./human-answer-notice.ts";
 
 /**
  * The arm command, in the drive's own mode, for a person to copy: with the
@@ -146,10 +124,6 @@ export function parseJson(text: string, what: string): unknown {
   }
 }
 
-function text(v: unknown): string {
-  return typeof v === "string" ? v : "";
-}
-
 /**
  * Admit or refuse a re-arm of a quota-parked drive; `null` admits. See the
  * module header for the rule.
@@ -202,222 +176,20 @@ export function admitQuotaRearm(
   return QUOTA_PARKED_EXIT;
 }
 
-export interface CommentLike {
-  author: string;
-  association: string;
-  at: string;
-  url: string;
-  body: string;
-}
-
-/**
- * The lines of a comment outside every fenced block: a fenced block is an
- * example or a quote, never the answer itself.
- */
-export function linesOutsideFences(body: string): string[] {
-  // The open fence's marker run (```` ```` ````, `~~~`, …); `''` outside one.
-  let fence = "";
-  const out: string[] = [];
-  for (const raw of body.split("\n")) {
-    const line = raw.trim();
-    const marker = /^(`{3,}|~{3,})/.exec(line)?.[1] ?? "";
-    if (fence === "") {
-      if (marker !== "") fence = marker;
-      else out.push(raw);
-    } else if (closesFence(line, marker, fence)) fence = "";
-  }
-  return out;
-}
-
-/** A pull-request comment answers a parked key only with a line `answer <key>:`. */
-export function answersKey(body: string, key: string): boolean {
-  const prefix = `answer ${key}:`.toLowerCase();
-  return linesOutsideFences(body).some((raw) =>
-    isAnswerLine(raw, raw.trim(), prefix),
-  );
-}
-
-/**
- * Whether one line outside a fence is the answer: the prefix with a decision
- * after it, indented less than an indented code block (four spaces or a tab),
- * which is an example too.
- */
-export function isAnswerLine(
-  raw: string,
-  line: string,
-  prefix: string,
-): boolean {
-  return (
-    !/^( {4}|\t)/.test(raw.replace(/^ {0,3}(?=\t)/, "")) &&
-    line.toLowerCase().startsWith(prefix) &&
-    line.slice(prefix.length).trim() !== ""
-  );
-}
-
-/**
- * Whether `line` closes the fence `open` opened: a run of the same character
- * at least as long, with nothing after it (CommonMark's closing fence).
- */
-function closesFence(line: string, marker: string, open: string): boolean {
-  return (
-    marker !== "" &&
-    marker[0] === open[0] &&
-    marker.length >= open.length &&
-    line.slice(marker.length).trim() === ""
-  );
-}
-
-/**
- * A comment a person wrote after the park, not one the drive wrote: the one
- * hidden marker it may carry is the record of an answer `jig send` wrote.
- */
-export function isAnswer(c: CommentLike, after: number): boolean {
-  return (
-    TRUSTED_ASSOCIATIONS.has(c.association) &&
-    Date.parse(c.at) > after &&
-    !/^\*\*(accepted|rejected|wont-fix|deferred|moot)\*\*/.test(c.body) &&
-    !withoutAnswerRecord(c.body).includes("<!--")
-  );
-}
-
-const THREAD_QUERY =
-  "query($id:ID!){node(id:$id){... on PullRequestReviewThread{isResolved comments(first:100){pageInfo{hasNextPage} nodes{url author{login} authorAssociation createdAt body}}}}}";
-
-/**
- * One thread's comments, in order; `null` when they could not be read, or
- * when the thread holds more than one page of them: a partial history is
- * never read as the whole, since the comment it leaves out may be the one
- * the caller looks for.
- */
-export async function threadComments(
-  key: string,
-): Promise<CommentLike[] | null> {
-  const res = await ghCall(
-    ["api", "graphql", "-f", `query=${THREAD_QUERY}`, "-f", `id=${key}`],
-    { stderr: "pipe", env: ghRepoEnv() },
-  );
-  if (res.code !== 0) return null;
-  let comments: unknown = parseJson(res.stdout, "the thread query");
-  for (const key of ["data", "node", "comments"])
-    comments = isRecord(comments) ? comments[key] : undefined;
-  if (!isRecord(comments)) return null;
-  const page = comments.pageInfo;
-  if (!isRecord(page) || page.hasNextPage !== false) return null;
-  const at = comments.nodes;
-  if (!Array.isArray(at)) return null;
-  return at.filter(isRecord).map((n) => ({
-    author: isRecord(n.author) ? text(n.author.login) : "",
-    association: text(n.authorAssociation),
-    at: text(n.createdAt),
-    url: text(n.url),
-    body: text(n.body),
-  }));
-}
-
-export async function prComments(
-  pr: string,
-  repo = "{owner}/{repo}",
-): Promise<CommentLike[] | null> {
-  const res = await ghCall(
-    [
-      "api",
-      "--paginate",
-      "--slurp",
-      `repos/${repo}/issues/${pr}/comments?per_page=100`,
-    ],
-    { stderr: "pipe", env: ghRepoEnv() },
-  );
-  if (res.code !== 0) return null;
-  const pages = parseJson(res.stdout, "the pull request's comments");
-  if (!Array.isArray(pages)) return null;
-  return conversationOf(pages.flat());
-}
-
-/** A listing of the pull request's comments already read (the forge's issue-comment objects), as the answers are read from. */
-export function conversationOf(listing: readonly unknown[]): CommentLike[] {
-  return listing.filter(isRecord).map((c) => ({
-    author: isRecord(c.user) ? text(c.user.login) : "",
-    association: text(c.author_association),
-    at: text(c.created_at),
-    url: text(c.html_url),
-    body: text(c.body),
-  }));
-}
-
-/**
- * The answers to one parked item, and whether every place an answer could be
- * (its thread, and the pull request's conversation) was read; `null` when
- * none could be.
- */
-async function answersTo(
-  item: ParkedItem,
-  conversation: CommentLike[] | null,
-): Promise<{ answers: PendingAnswer[]; complete: boolean } | null> {
-  // No park time means no baseline to measure an answer against: nothing was
-  // read, so the item is waiting on evidence, not on a person.
-  if (item.at === undefined) return { answers: [], complete: false };
-  const after = Date.parse(item.at);
-  const thread = item.kind === "thread" ? await threadComments(item.key) : [];
-  if (thread === null && conversation === null) return null;
-  const candidates = [
-    ...(thread ?? []),
-    ...(conversation ?? []).filter((c) => answersKey(c.body, item.key)),
-  ];
-  return {
-    answers: candidates
-      .filter((c) => isAnswer(c, after))
-      .map(({ author, at, url, body }) => ({
-        author,
-        at,
-        url,
-        // The pass reads the person's words, not the record beside them.
-        body: withoutAnswerRecord(body),
-      })),
-    complete: thread !== null && conversation !== null,
-  };
-}
-
-/**
- * The answers to each parked item of pull request `pr`, the items still
- * waiting, and of those the ones not every place an answer could be was read
- * for (`unread`); `unreadable` names the item none of whose comments could be
- * read. `repo` (`owner/name`) names the repository; without it, the current
- * directory's. `listing` is the pull request's comments when the caller has
- * already read them (`conversationOf`); without it, they are read here.
- */
-export async function parkAnswers(
-  pr: number,
-  parked: readonly ParkedItem[],
-  repo?: string,
-  listing?: readonly unknown[],
-): Promise<
-  | { answered: PendingVerdict[]; waiting: ParkedItem[]; unread: ParkedItem[] }
-  | { unreadable: string }
-> {
-  const conversation =
-    listing === undefined
-      ? await prComments(String(pr), repo)
-      : conversationOf(listing);
-  const answered: PendingVerdict[] = [];
-  const waiting: ParkedItem[] = [];
-  const unread: ParkedItem[] = [];
-  for (const item of parked) {
-    const read = await answersTo(item, conversation);
-    if (read === null) return { unreadable: `${item.kind} ${item.key}` };
-    if (read.answers.length > 0)
-      answered.push({
-        kind: item.kind,
-        key: item.key,
-        reason: item.reason,
-        answers: read.answers,
-      });
-    else {
-      waiting.push(item);
-      if (!read.complete) unread.push(item);
-    }
-  }
-  return { answered, waiting, unread };
-}
+export {
+  type CommentLike,
+  answersKey,
+  isAnswer,
+  isAnswerLine,
+  linesOutsideFences,
+} from "../answer-forms.ts";
+export {
+  conversationOf,
+  parkAnswers,
+  prComments,
+  threadComments,
+  type ParkAnswersResult,
+} from "./park-answers.ts";
 
 /**
  * Every parked item with its answers once all of them are answered; `null`
@@ -433,14 +205,21 @@ async function answeredParks(
     );
     return null;
   }
-  const { answered, waiting, unread } = found;
-  if (waiting.length === 0) return answered;
+  const { answered, waiting, unread, responded } = found;
+  if (waiting.length === 0 && unread.length === 0) return answered;
   // At the wide level, the unanswered items a provisional decision may take:
   // only once every place a person's answer could be was read, since an
   // answer in an unread one must never be decided over.
   if (unread.length > 0) {
     console.error(
       `re-arm: could not read every place an answer to ${unread.map((p) => `${p.kind} ${p.key}`).join(", ")} could be; nothing is unparked, and nothing is decided provisionally.`,
+    );
+    return null;
+  }
+  // A dispute or any other answer remains a person's to settle, at every level.
+  if (waiting.some((p) => responded.some((a) => a.key === p.key))) {
+    console.error(
+      "re-arm: a parked item has answers that do not settle it; leaving every item parked for the people answering it.",
     );
     return null;
   }
@@ -639,76 +418,4 @@ export function unparkedAfterFailure(
 ): PendingVerdict[] | null {
   if (now === null) return null;
   return fresh.filter((v) => !now.parked.some((p) => p.key === v.key));
-}
-
-function clip(text: string, max: number, why: string): string {
-  return text.length > max ? `${text.slice(0, max)}… (cut; ${why})` : text;
-}
-
-/**
- * The notice for `verdicts`; `''` for none. Every item keeps a one-line
- * `[kind] key — url` entry whatever the count; only answer bodies are cut to
- * fit `NOTICE_MAX`, and `file` holds every answer in full.
- */
-export function humanVerdictNotice(
-  verdicts: readonly PendingVerdict[],
-  file: string,
-): string {
-  if (verdicts.length === 0) return "";
-  const head = [
-    "RE-ARMED WITH HUMAN ANSWERS: every parked item was answered by an owner, member or collaborator after it was parked, and is unparked.",
-    "Treat each answer as a person's verdict on its item: act on it this round, reply with the outcome it leads to, and resolve or hold as usual.",
-    `Every answer in full: ${file}`,
-  ];
-  const entries = verdicts.map((v) => ({
-    entry: `- [${v.kind}] ${v.key} — ${v.answers[0]?.url ?? "(no url)"} — parked: ${clip(v.reason, REASON_MAX, "see the thread")}`,
-    answers: v.answers.map((a) => ({
-      line: `  answered by ${a.author} at ${a.at} (${a.url}):`,
-      body: a.body,
-    })),
-  }));
-  // Each answer's body is at least the cut note; what is left is shared out
-  // in order.
-  const floor = indent(CUT).length + 1;
-  const skeleton = [
-    ...head,
-    ...entries.flatMap((e) => [e.entry, ...e.answers.map((a) => a.line)]),
-  ].join("\n").length;
-  let room = NOTICE_MAX - skeleton - floor * answerCount(entries);
-  const lines = [...head];
-  for (const e of entries) {
-    lines.push(e.entry);
-    for (const a of e.answers) {
-      const body = fitBody(a.body, floor + Math.max(0, room));
-      room -= body.length + 1 - floor;
-      lines.push(a.line, body);
-    }
-  }
-  return lines.join("\n");
-}
-
-const CUT = "… (cut; read the rest at the url or in the file named above)";
-
-function indent(body: string): string {
-  return body
-    .split("\n")
-    .map((line) => `    ${line}`)
-    .join("\n");
-}
-
-function answerCount(entries: ReadonlyArray<{ answers: unknown[] }>): number {
-  return entries.reduce((n, e) => n + e.answers.length, 0);
-}
-
-/** `body` indented, cut to at most `ANSWER_BODY_MAX` characters and `max` in all. */
-function fitBody(body: string, max: number): string {
-  if (body.length <= ANSWER_BODY_MAX && indent(body).length + 1 <= max)
-    return indent(body);
-  let n = Math.min(ANSWER_BODY_MAX, body.length);
-  let out = indent(`${body.slice(0, n)}${CUT}`);
-  while (n > 0 && out.length + 1 > max) {
-    n = Math.max(0, n - (out.length + 1 - max));
-    out = indent(`${body.slice(0, n)}${CUT}`);
-  }
-  return out;
 }
