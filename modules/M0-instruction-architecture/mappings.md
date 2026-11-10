@@ -403,7 +403,7 @@ is what each runtime offers. Checked against each runtime's documentation in
 |---------|-------------|-------|
 | List a skill only once a file it is tied to is read | `paths:` in `SKILL.md` frontmatter, globs as for path-scoped rules | none documented: a skill under `.agents/skills` is discovered from the working directory up to the repository root, not scoped to files |
 | Started only by the user | `disable-model-invocation: true`: the description leaves the listing, and `/<name>` still runs it | `policy.allow_implicit_invocation: false` in the skill's `agents/openai.yaml`: Codex does not pick it from a prompt, and `$<name>` still runs it. Whether its description leaves the listing is not documented |
-| Hidden from the user's menu | `user-invocable: false`: hidden from the `/` menu, while the description stays listed and the model can still invoke it, so it saves no discovery budget | none |
+| Hidden from the user's menu | `user-invocable: false`: hidden from the `/` menu, while the description stays listed and the model can still invoke it, so it saves no discovery budget. A `/<name>` prompt, typed or passed to `claude -p`, is refused, so a skill an unattended run starts by slash command must not set it | none |
 
 [Claude Code's skills reference](https://code.claude.com/docs/en/skills) and
 [Codex's skills guide](https://developers.openai.com/codex/skills) are the
