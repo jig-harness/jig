@@ -391,6 +391,20 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.189.1] - 2026-11-10
+
+### Fixed
+
+- Dispatcher ticks remove Electron's Node mode and crash reporter environment
+  before starting child programs, so an Electron host does not change how those
+  programs run.
+- Before opening a drive workspace, the dispatcher verifies the pull request's
+  head repository and commit, refusing mismatched remotes and stale checkouts
+  before repository setup hooks run. Merged follow-ups can still recreate a
+  deleted branch from the base.
+- Dispatcher-launched drives preserve the tick's configuration layers across
+  fresh terminal shells, including a custom or relative `JIG_HOME`.
+
 ## [0.189.0] - 2026-11-10
 
 ### Added
@@ -6586,7 +6600,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.189.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.189.1...HEAD
+[0.189.1]: https://github.com/jig-harness/jig/compare/v0.189.0...v0.189.1
 [0.189.0]: https://github.com/jig-harness/jig/compare/v0.188.0...v0.189.0
 [0.188.0]: https://github.com/jig-harness/jig/compare/v0.187.0...v0.188.0
 [0.187.0]: https://github.com/jig-harness/jig/compare/v0.186.0...v0.187.0
