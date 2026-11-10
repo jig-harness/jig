@@ -240,6 +240,19 @@ describe("whole-comment answer forms", () => {
     }
   });
 
+  it("keeps colon-bearing companion keys distinct", () => {
+    expect(
+      parse(
+        "answer PRRT_a: approve\nanswer scope:one:approve\nanswer scope:two:approve",
+      )?.choice?.option,
+    ).toBe("Keep");
+    expect(
+      parse(
+        "answer PRRT_a: approve\nanswer scope:one:approve\nnote scope:two:wait",
+      )?.choice,
+    ).toBeUndefined();
+  });
+
   it("matches only the public decision when stripping a notification quote", () => {
     const d = structuredClone(decision);
     const first = d.call.options[0];

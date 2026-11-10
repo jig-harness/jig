@@ -87,6 +87,44 @@ interface Line {
   key: string;
   text: string;
 }
+
+/** Every valid split of a companion line; a colon may belong to its key or text. */
+function companionLines(raw: string): Line[] {
+  if (indented(raw)) return [];
+  const m = /^(answer|note) (.+)$/i.exec(raw.trim());
+  if (m === null) return [];
+  const rest = m[2] ?? "";
+  const kind = m[1]?.toLowerCase() as Line["kind"];
+  const out: Line[] = [];
+  for (
+    let delimiter = rest.indexOf(":");
+    delimiter >= 0;
+    delimiter = rest.indexOf(":", delimiter + 1)
+  ) {
+    const key = rest.slice(0, delimiter);
+    const text = rest.slice(delimiter + 1).trimStart();
+    if (key !== "" && !/\s/.test(key) && /^\S/.test(text))
+      out.push({ kind, key: key.toLowerCase(), text });
+  }
+  return out;
+}
+
+/**
+ * A separator before whitespace unambiguously ends the key. Without one,
+ * preserve the fullest companion identity, so compact colon-bearing keys do
+ * not collapse to their shared prefix.
+ */
+function companionLine(raw: string): Line | null {
+  const choices = companionLines(raw);
+  if (choices.length === 0) return null;
+  const rest = raw.trim().replace(/^(answer|note) /i, "");
+  return (
+    choices.find((line) => /^:\s/.test(rest.slice(line.key.length))) ??
+    choices.at(-1) ??
+    null
+  );
+}
+
 function addressedLine(raw: string, knownKey?: string): Line | null {
   if (indented(raw)) return null;
   const m = /^(answer|note) (.+)$/i.exec(raw.trim());
@@ -158,11 +196,7 @@ function addressedAnswers(
       allowOtherKeys &&
       /^(answer|note) \S+:/i.test(raw.trim())
     ) {
-      const lower = raw.trim().toLowerCase();
-      const companionKey = [...companionAnswers].find((key) =>
-        lower.startsWith(`note ${key}:`),
-      );
-      const companion = addressedLine(raw, companionKey);
+      const companion = companionLine(raw);
       if (companion === null || answerTextFault(companion.text) !== null)
         return null;
       const companions =
