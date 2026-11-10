@@ -43,6 +43,31 @@ labels and flags alongside the fixed `pull_requests.labels`; implied areas
 add none. Labels must already exist in the repository. An unreadable history
 or configured catalog stops planning.
 
+A repository can also carry the issue's own signals onto the pull request:
+`pull_requests.labels_from_issue` maps an issue label (in any case) to a
+pull-request label, and `pull_requests.reviewers_from_issue` to the
+reviewers to request, logins or `org/team`, with or without `@`. A change
+area's `pr: { labels, reviewers }` does the same for every pull request that
+touches the area, for a need that follows the paths when the label lags
+behind them. A mapped label the repository does not have stops planning,
+naming it. Reviewers requested on a draft are notified only once it is
+marked Ready, which `pull_requests.mark_ready` decides
+([configuration](../../CONFIGURATION.md#reviewers-on-a-draft)).
+
+## Implementation guidance
+
+A repository that sorts its work by kind of change (a schema migration, an
+API contract change, a UI change) can give each kind its skills and notes,
+whichever agent implements it. `do_item.guidance` lists them in the shape of
+the review gates: an entry applies when the issue carries one of its labels
+or the change touches one of its paths. A change area adds the same with
+`implementation: { skills, notes }`, and its own `notes` come with it. The
+skill hands the union of what matches to the implementing agent under
+`## Implementation guidance`, in the order the entries are written. A skill
+name that resolves to nothing installed is named in the status message, and
+the audit refuses it. Guidance never replaces a review gate; guidance that
+every item needs belongs in the repository's own agent instructions.
+
 ## The item's spec
 
 Once it has the issue, it shows what the issue says must be built: the

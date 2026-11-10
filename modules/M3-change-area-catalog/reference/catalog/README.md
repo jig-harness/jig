@@ -29,6 +29,8 @@ Each area:
 | `deployTier` | required | which deploy lane applies (`none` for an area that does not deploy) |
 | `notes` | optional | load-bearing semantics kept next to the data |
 | `review` | optional | `{ skills: [..] (≥1), notes? }` — mandatory review skills for this area |
+| `implementation` | optional | `{ skills?: [..], notes? }`, at least one — the skills and notes the agent implementing a change here is given |
+| `pr` | optional | `{ labels?: [..], reviewers?: [..] }`, at least one — the labels and reviewers (logins or `org/team`, with or without `@`) a pull request that touches the area opens with |
 | `postDeploy` | optional | `[{ action, when, envs: [..] (≥1), notes? }]` — post-deploy operational steps |
 | `tracker` | optional | `{ labels?: [..], flags?: [..] }` — tracker labels and flags to derive, whichever tracker the repository uses; `linear` is its older spelling, and an area declares one of the two |
 | `labels` | optional | the area's own labels, a list of text, for tooling that reads them |
@@ -62,6 +64,8 @@ field at fault:
   non-empty text when the catalog declares none. The lists are the
   repository's; the schema fixes none.
 - `paths` ≥1 glob, each one that compiles; `review.skills` ≥1;
+  `implementation` gives skills or notes and `pr` labels or reviewers, each
+  reviewer a login or `org/team`;
   `postDeploy[]` each carry ≥1 `envs`; each profile lists `localChecks` and
   `verificationChecks`; each `generated[]` entry carries ≥1 `outputs`, each
   a literal repository-relative file path (no glob or shell character), ≥1
