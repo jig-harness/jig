@@ -189,6 +189,37 @@ describe("converged only at the head the drive verified", () => {
   });
 });
 
+describe("ownership asked after the label read", () => {
+  it("leaves the labels when the writer lost its claim during the read", async () => {
+    const { f, edits } = forge(["jig:driving"]);
+    const r = await writeOwnState({
+      config: ON,
+      pr: 7,
+      projected: { state: "parked" },
+      writer: "drive",
+      forge: f,
+      beforeEdit: async () =>
+        "its drive ledger no longer belongs to this driver",
+    });
+    expect(r.outcome).toBe("held");
+    expect(edits).toEqual([]);
+  });
+
+  it("writes while the writer still owns the pull request", async () => {
+    const { f, edits } = forge(["jig:driving"]);
+    const r = await writeOwnState({
+      config: ON,
+      pr: 7,
+      projected: { state: "parked" },
+      writer: "drive",
+      forge: f,
+      beforeEdit: async () => null,
+    });
+    expect(r.outcome).toBe("written");
+    expect(edits).toHaveLength(1);
+  });
+});
+
 describe("dispatch.labels", () => {
   it("reads the setting and its prefix, off by default", () => {
     expect(parseLabelConfig(undefined)).toEqual(ok(DEFAULT_LABELS));

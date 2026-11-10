@@ -61,9 +61,18 @@ jobs:
           # and the label name reaches jq as data. A label put on in the same
           # second as the push cannot be ordered against it, so it is not taken
           # as certifying it: only a strictly later one is left as it is.
-          labeled_at="$(gh api "repos/${REPO}/issues/${PR}/events" --paginate \
-            | jq -rs --arg label "$converged" \
-              'flatten | map(select(.event == "labeled" and .label.name == $label) | .created_at) | max // empty')"
+          # The history is fetched on its own so a failed page stops the step:
+          # a pipeline's status is its last command's, and a partial history
+          # would read as no newer label and remove a convergence.
+          history="$(gh api "repos/${REPO}/issues/${PR}/events" --paginate)" || {
+            echo "PR #${PR}: the label history did not read: ${converged} is left as it is."
+            exit 1
+          }
+          labeled_at="$(jq -rs --arg label "$converged" \
+            'flatten | map(select(.event == "labeled" and .label.name == $label) | .created_at) | max // empty' <<<"$history")" || {
+            echo "PR #${PR}: the label history did not parse: ${converged} is left as it is."
+            exit 1
+          }
           if [ -n "$labeled_at" ] && [[ "$labeled_at" > "$PUSHED_AT" ]]; then
             echo "PR #${PR}: ${converged} was set at ${labeled_at}, after this push (${PUSHED_AT}): left as it is."
             exit 0

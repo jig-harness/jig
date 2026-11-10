@@ -21,7 +21,7 @@ import { forgeReread, ledgerStillCurrent } from "./label-freshness.ts";
 import { manualOpsLabel } from "./owed-steps.ts";
 import { unobservedTarget } from "./notices.ts";
 import { bookOf, type TickContext } from "./tick-context.ts";
-import { pullRequestLabels } from "./forge.ts";
+import { pullRequestHead, pullRequestLabels } from "./forge.ts";
 import type { ForgeRead } from "./tick-forge.ts";
 import type { RepoObservation } from "./tick-observe.ts";
 import type { RepoReport } from "./types.ts";
@@ -63,6 +63,14 @@ function freshness(
         ),
       ),
       reread: (pr) => pullRequestLabels(slug, pr),
+    },
+    {
+      read: new Map(
+        forge.open.flatMap((p) =>
+          p.headRefOid === undefined ? [] : [[p.number, p.headRefOid] as const],
+        ),
+      ),
+      reread: (pr) => pullRequestHead(slug, pr),
     },
   );
 }

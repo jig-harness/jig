@@ -10,6 +10,12 @@
  * between that re-read and the tick's own write can still be undone, until
  * the next tick.
  *
+ * The tick also read the pull request's head when it classified the ledger:
+ * a ledger names the head it converged on, so a push after that read leaves
+ * the planned state obsolete though the ledger is unchanged. The head is
+ * read again with the ledger, and the write is skipped when it moved or does
+ * not read.
+ *
  * A ledger is the same when its generation, its driver's heartbeat (the time
  * of its last write), its driver's state and its exit are: every ledger write
  * moves the heartbeat.
@@ -72,6 +78,12 @@ export function forgeReread(slug: string, login: string | null): LedgerReread {
   };
 }
 
+/** The head commits of open pull requests as the tick read them, and how to read one's now. */
+export interface Heads {
+  read: ReadonlyMap<number, string>;
+  reread: (pr: number) => Promise<Outcome<string, "unreadable">>;
+}
+
 /** The labels of merged pull requests as the tick read them, and how to read one's now. */
 export interface MergedLabels {
   read: ReadonlyMap<number, readonly string[]>;
@@ -111,6 +123,7 @@ export function ledgerStillCurrent(
   drives: readonly DrivenPr[],
   reread: LedgerReread,
   merged?: MergedLabels,
+  heads?: Heads,
 ): (change: LabelChange) => Promise<string | null> {
   const byNumber = new Map(drives.map((d) => [d.number, d]));
   return async (change) => {
@@ -134,8 +147,15 @@ export function ledgerStillCurrent(
     }
     if (typeof now === "string")
       return `its drive ledger did not read again before the write (${now}), so a later tick projects it`;
-    return ledgerMark(now) === readMark(drive)
+    if (ledgerMark(now) !== readMark(drive))
+      return "its drive ledger changed since this tick read it, so a later tick projects it";
+    const was = heads?.read.get(change.pr);
+    if (heads === undefined || was === undefined) return null;
+    const head = await heads.reread(change.pr);
+    if (!head.ok)
+      return `its head did not read again before the write (${head.failure.reason}), so a later tick projects it`;
+    return head.value === was
       ? null
-      : "its drive ledger changed since this tick read it, so a later tick projects it";
+      : "its head moved since this tick read it, so a later tick projects it";
   };
 }

@@ -53,7 +53,7 @@ export type OwnWrite =
   | { outcome: "off" }
   /** Not a state this writer writes, or one it cannot tell: the labels are left as they are. */
   | { outcome: "kept"; detail: string }
-  /** The pull request carries `hold` or `held`: a drive leaves it as it is. */
+  /** The pull request carries `hold` or `held`, or the writer lost its claim before the edit: the labels are left as they are. */
   | { outcome: "held"; detail: string }
   /** The pull request's head is not the one the drive verified: a converged drive leaves its labels. */
   | { outcome: "moved"; detail: string }
@@ -71,6 +71,8 @@ export interface OwnWriteInput {
   forge: OwnForge;
   /** Write only while the pull request's head is this commit (a converged drive's verified head); otherwise leave the labels. */
   head?: string;
+  /** Asked after the labels are read, just before the edit: a reason to leave them (the writer no longer owns the pull request), or `null` to write. */
+  beforeEdit?: () => Promise<string | null>;
 }
 
 const describe = (add: readonly string[], remove: readonly string[]): string =>
@@ -103,6 +105,8 @@ export async function writeOwnState(input: OwnWriteInput): Promise<OwnWrite> {
     };
   const change = labelChange(config, pr, labels, projected, writer === "drive");
   if (change === null) return { outcome: "agrees" };
+  const left = (await input.beforeEdit?.()) ?? null;
+  if (left !== null) return { outcome: "held", detail: left };
   const edited = await forge.edit(pr, change.add, change.remove);
   return edited.ok
     ? { outcome: "written", detail: describe(change.add, change.remove) }

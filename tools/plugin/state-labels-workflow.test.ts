@@ -127,6 +127,8 @@ if (args[0] === "api") {
   const events = path.join(dir, "events.json");
   // One array per page, as \`gh api --paginate\` prints them.
   if (fs.existsSync(events)) for (const page of JSON.parse(fs.readFileSync(events, "utf8"))) process.stdout.write(JSON.stringify(page) + "\\n");
+  // A later page that fails leaves the earlier ones printed, as \`gh api --paginate\` does.
+  if (fs.existsSync(path.join(dir, "events-fail"))) { process.stderr.write("gh: HTTP 502\\n"); process.exit(1); }
   process.exit(0);
 }
 if (args[0] !== "pr" || args[2] !== "12" || args[3] !== "--repo") process.exit(2);
@@ -149,11 +151,13 @@ function push(
   prefix?: string,
   viewFails = false,
   labeledEvents: string[][] = [],
+  eventsFail = false,
 ) {
   const dir = mkdtempSync(join(scratch, "push-"));
   writeFakeProgram(join(dir, "gh"), FAKE_GH);
   writeFileSync(join(dir, "labels.json"), JSON.stringify(labels));
   if (viewFails) writeFileSync(join(dir, "view-fails"), "");
+  if (eventsFail) writeFileSync(join(dir, "events-fail"), "");
   const name = `${prefix ?? "jig:"}converged`;
   if (labeledEvents.length > 0)
     writeFileSync(
@@ -230,6 +234,18 @@ describe("on a push to a pull request", () => {
     expectSpawnExit(run.result, 0, "the step");
     expect(run.calls).toEqual([]);
     expect(run.after).toEqual(["jig:converged"]);
+  });
+
+  test("fails and leaves converged when a page of the history does not read", () => {
+    const first = push(["jig:converged"], undefined, false, [[before]], true);
+    expectSpawnExitNot(first.result, 0, "the step");
+    expect(first.calls).toEqual([]);
+    expect(first.after).toEqual(["jig:converged"]);
+    // A first page that fails prints nothing: no label history reads as none newer.
+    const none = push(["jig:converged"], undefined, false, [], true);
+    expectSpawnExitNot(none.result, 0, "the step");
+    expect(none.calls).toEqual([]);
+    expect(none.after).toEqual(["jig:converged"]);
   });
 
   test("takes a prefix with a quote or a backslash as data", () => {

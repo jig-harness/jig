@@ -469,6 +469,22 @@ export async function pullRequestLabels(
   return labelNames(field(out.value, "labels"), `PR #${pr}`);
 }
 
+/** The head commit of pull request `pr`, read now. */
+export async function pullRequestHead(
+  slug: string,
+  pr: number,
+): Promise<Outcome<string, "unreadable">> {
+  const out = await ghJson(
+    ["pr", "view", String(pr), "--repo", slug, "--json", "headRefOid"],
+    "the pull request view",
+  );
+  if (!out.ok) return out;
+  const head = field(out.value, "headRefOid");
+  return typeof head === "string" && head !== ""
+    ? ok(head)
+    : failed("unreadable", `PR #${pr}'s head did not read`);
+}
+
 /** Every pull request merged at or after `since` (ISO 8601). */
 export async function mergedSince(
   slug: string,

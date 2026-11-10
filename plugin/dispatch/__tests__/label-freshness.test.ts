@@ -14,10 +14,11 @@ import { planLabels, writeLabels } from "../lib/actions/labels.ts";
 import {
   type LedgerReread,
   ledgerStillCurrent,
+  type Heads,
 } from "../lib/label-freshness.ts";
 import type { LabelConfig } from "../lib/labels.ts";
 import type { DrivenPr, LedgerClass } from "../lib/types.ts";
-import { ok } from "../../shared/outcome.ts";
+import { failed, ok } from "../../shared/outcome.ts";
 
 const ON: LabelConfig = { enabled: true, prefix: "jig:", onlyLabeled: false };
 const RUNNING_AT = "2026-11-10T10:00:00.000Z";
@@ -66,6 +67,7 @@ async function tick(
   labels: string[],
   drives: DrivenPr[],
   now: Awaited<ReturnType<LedgerReread>>,
+  heads?: Heads["reread"],
 ) {
   const { changes } = planLabels({
     config: ON,
@@ -87,7 +89,15 @@ async function tick(
     {
       apply: true,
       late: () => null,
-      current: ledgerStillCurrent(new Set([7]), drives, async () => now),
+      current: ledgerStillCurrent(
+        new Set([7]),
+        drives,
+        async () => now,
+        undefined,
+        heads === undefined
+          ? undefined
+          : { read: new Map([[7, "aaa"]]), reread: heads },
+      ),
     },
     async (_slug, _pr, add, remove) => {
       edits.push({ add, remove });
@@ -171,5 +181,34 @@ describe("a merged pull request's labels are read again before its state write",
       reread: async () => ok(["jig:merged", "jig:followed-up"]),
     });
     expect(await both(change)).toContain("labels changed");
+  });
+});
+
+describe("a tick that classified a pull request at an earlier head", () => {
+  const same = ledger(3, RUNNING_AT, "running");
+
+  it("does not write when the head moved while the ledger did not", async () => {
+    const { edits, writes } = await tick(
+      [],
+      [driven(same, "driven")],
+      same,
+      async () => ok("pushed-later"),
+    );
+    expect(edits).toEqual([]);
+    expect(JSON.stringify(writes)).toContain("its head moved");
+  });
+
+  it("does not write when the head does not read again", async () => {
+    const { edits } = await tick([], [driven(same, "driven")], same, async () =>
+      failed("unreadable", "HTTP 502"),
+    );
+    expect(edits).toEqual([]);
+  });
+
+  it("writes while the head is the one the tick read", async () => {
+    const { edits } = await tick([], [driven(same, "driven")], same, async () =>
+      ok("aaa"),
+    );
+    expect(edits).toHaveLength(1);
   });
 });

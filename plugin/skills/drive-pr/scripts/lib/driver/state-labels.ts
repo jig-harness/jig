@@ -168,6 +168,11 @@ export async function labelDrive(
       writer: "drive",
       forge: source.forge(settings.value.slug),
       ...(converged ? { head: moment.verifiedSha } : {}),
+      // Asked again after the label read: a successor can claim the drive during that request.
+      beforeEdit: async () =>
+        (await stillOurs())
+          ? null
+          : "its drive ledger no longer belongs to this driver",
     });
     const line = ownWriteLine(Number(pr), written);
     if (line !== null) console.error(`labels: ${line}`);
