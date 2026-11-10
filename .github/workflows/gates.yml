@@ -36,6 +36,8 @@
 # Jobs are split no further than their work needs: the drive-pr suite has as
 # many shards as keep each under two minutes and no more, since each shard
 # repeats the checkout and install.
+# Every `bun run test`, including the gate set's test stage, writes a fresh
+# JUnit report and checks that the suite executed tests (scripts/test.ts).
 #
 # macOS and Windows run nothing here: the nightly workflow (nightly.yml) runs
 # the gate set and the drive-pr suite on them against main once a day, so a

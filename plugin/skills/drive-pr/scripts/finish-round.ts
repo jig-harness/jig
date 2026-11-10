@@ -1057,7 +1057,7 @@ async function checkUntriagedThreads(
       // `triage-thread.ts` — is just as broken for a truncated thread as plain
       // `triage-thread.ts` is. The one remedy that actually works is the
       // documented one.
-      return "this thread is comment-truncated (>100 comments) — triage-thread.ts refuses it unconditionally, so the only working remedy is drive-state.ts park [PR] --key <id> --kind thread --class human-thread with its decision record on stdin (SKILL.md § 4)";
+      return "this thread is comment-truncated (>100 comments) — triage-thread.ts refuses it unconditionally, so the only working remedy is drive-state.ts park [PR] --key <id> --kind thread --class human-thread with its ParkedDecision JSON on stdin (SKILL.md § 4)";
     }
     const key = t.threadId;
     const outcome = currentReplyOutcome(t);

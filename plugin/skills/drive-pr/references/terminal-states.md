@@ -484,7 +484,7 @@ Once the only unresolved threads await a human, the loop wakes, re-enumerates
 the same undeferrable threads, discovers nothing it may act on, and burns turns.
 
 **Guard**: `bun "<skill-dir>/scripts/drive-state.ts" park` records the item under
-one of the registry's decision classes (`--class`) with its decision record on
+one of the registry's decision classes (`--class`) with its checked `ParkedDecision` JSON on
 stdin, and refuses a park without them; parked items stop counting as live
 work, the drive works everything else to its end, and then reaches
 `HITL_PARKED` and prints each decision in full. `drive.ts` does not wake

@@ -9,7 +9,12 @@ import { checkRuns } from "./ci-hold-state.ts";
 import { ghCall } from "./proc.ts";
 import { rerunnableRuns } from "./driver/failed-runs.ts";
 import { openStore } from "./state/store.ts";
-import { renderRecord } from "./state/framed-park.ts";
+import {
+  parkAdmissionContext,
+  parkAdmissionProblem,
+} from "./state/park-admission.ts";
+import { fail } from "./cli.ts";
+import type { ParkedDecision } from "../../../../shared/decisions/park.ts";
 import { resolveParkPerson } from "./state/park-person.ts";
 import {
   assertRemoteMutationAllowed,
@@ -59,35 +64,62 @@ const live: RecoveryDeps = {
   async park(pr, reason) {
     const person = await resolveParkPerson(pr, "cancelled-ci", "finding", "");
     const question = "How should the cancelled workflow recovery continue?";
-    const record = renderRecord({
-      Question: question,
-      Options:
-        "- **Re-run safely** Changes: restarts the cancelled workflow after checking its event and permissions. Costs: another CI run and a manual check.\n- **Repair workflow first** Changes: fixes the concurrency or event configuration before another run. Costs: a workflow change and delayed merge.",
-      Recommended:
-        "**Re-run safely** after inspecting why automatic recovery could not finish; repair the workflow first if its event still carries the hold.",
-      Class: "human-decision",
-      "Steps for a person": `- ${reason}\n- Record the result in a pull-request comment and re-arm the drive.`,
-      "Already done":
+    const decision: ParkedDecision = {
+      schema: "parked-decision/v1",
+      class: "human-decision",
+      call: {
+        id: "a",
+        question,
+        options: [
+          {
+            id: "rerun",
+            name: "Re-run safely",
+            summary:
+              "Restart the cancelled workflow after checking its event and permissions.",
+            pay: ["Another CI run and a manual check."],
+          },
+          {
+            id: "repair",
+            name: "Repair workflow first",
+            summary:
+              "Fix the concurrency or event configuration before another run.",
+            pay: ["A workflow change and delayed merge."],
+          },
+        ],
+        recommended: "rerun",
+        why: "Inspect why automatic recovery could not finish; repair the workflow first if its event still carries the hold.",
+      },
+      steps: [
+        reason,
+        "Record the result in a pull-request comment and re-arm the drive.",
+      ],
+      alreadyDone:
         "The drive checked the exact head, workflow replacements and CI hold history, and bounded automatic recovery to one re-run per head. " +
         reason,
-    });
+    };
     const store = await openStore(pr);
-    await store.update((state) => ({
-      ...state,
-      parked: [
-        ...state.parked.filter((p) => p.key !== "cancelled-ci"),
-        {
-          key: "cancelled-ci",
-          kind: "finding",
-          reason: question,
-          class: "human-decision",
-          person,
-          record,
-          round: state.rounds,
-          at: new Date().toISOString(),
-        },
-      ],
-    }));
+    const capacity = await parkAdmissionContext(pr, store.stateDir);
+    await store.update((state) => {
+      const next = {
+        ...state,
+        parked: [
+          ...state.parked.filter((p) => p.key !== "cancelled-ci"),
+          {
+            key: "cancelled-ci",
+            kind: "finding" as const,
+            reason: question,
+            class: "human-decision",
+            person,
+            decision,
+            round: state.rounds,
+            at: new Date().toISOString(),
+          },
+        ],
+      };
+      const admission = parkAdmissionProblem(next, decision, capacity);
+      if (admission !== null) fail(2, `park: ${admission}`);
+      return next;
+    });
   },
 };
 

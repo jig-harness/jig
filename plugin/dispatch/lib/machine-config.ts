@@ -27,6 +27,10 @@
  * followup_concurrency: 2
  * receipts_days: 30
  * unclaimed_after: 15m
+ * failures:
+ *   backoff: 2m
+ *   backoff_max: 1h
+ *   notify_after: 3
  * dashboard:
  *   listen: 100.64.0.7:8765
  *   require_token: true     # false only with a loopback listen: a front authenticates
@@ -49,6 +53,7 @@ import { isMapping, jigHome } from "../../shared/config-layers.ts";
 import { OPEN_LIMIT_MS } from "../../shared/orca-workspace/limits.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { load } from "../../shared/yaml.ts";
+import { FAILURE_DEFAULTS, type FailureSettings } from "./failures.ts";
 import { isLoopback, type Listen, parseListen } from "./listen.ts";
 import { type LoadSettings, loadSettings } from "./load-config.ts";
 
@@ -114,6 +119,8 @@ export interface MachineConfig {
   receiptsDays: number;
   /** How long a launch the runtime answered as started may go unclaimed by its wrapper before it is stuck (`unclaimed_after`). */
   unclaimedAfterMs: number;
+  /** How the tick backs off an action that keeps failing, and when it tells a person (`failures`); the defaults when absent. */
+  failures?: FailureSettings;
   /** The address `jig dispatch dashboard` listens on (`dashboard.listen`); `null` when the file names none. */
   dashboardListen: Listen | null;
   /** Whether a request to the dashboard needs the token its command prints (`dashboard.require_token`); `true` unless the file says `false`, which only a loopback `listen` accepts. */
@@ -155,6 +162,7 @@ const TOP_KEYS = [
   "followup_concurrency",
   "receipts_days",
   "unclaimed_after",
+  "failures",
   "dashboard",
   "records",
   "send",
@@ -162,6 +170,7 @@ const TOP_KEYS = [
   "load",
 ];
 const DASHBOARD_KEYS = ["listen", "require_token", "allowed_hosts"];
+const FAILURES_KEYS = ["backoff", "backoff_max", "notify_after"];
 const RECORDS_KEYS = ["shared"];
 const REPOSITORY_KEYS = ["path", "stages", "followup_since", "owner"];
 const ACCOUNT_KEYS = [
@@ -606,6 +615,7 @@ function surfaces(
 ): Checked<
   Pick<
     MachineConfig,
+    | "failures"
     | "dashboardListen"
     | "dashboardRequireToken"
     | "dashboardAllowedHosts"
@@ -614,6 +624,8 @@ function surfaces(
     | "changeProbe"
   >
 > {
+  const failureSettings = failures(top.failures);
+  if (!failureSettings.ok) return failureSettings;
   const dashboardListen = dashboard(top.dashboard);
   if (!dashboardListen.ok) return dashboardListen;
   const requireToken = dashboardRequireToken(top.dashboard);
@@ -627,6 +639,7 @@ function surfaces(
   const changeProbe = flag(top.change_probe, "change_probe", true);
   if (!changeProbe.ok) return changeProbe;
   return ok({
+    failures: failureSettings.value,
     dashboardListen: dashboardListen.value,
     dashboardRequireToken: requireToken.value,
     dashboardAllowedHosts: allowedHosts.value,
@@ -649,6 +662,46 @@ function records(value: unknown): Checked<SharedMedium> {
       `records.shared must be one of ${SHARED_MEDIA.join(", ")}: ${String(shared)}`,
     );
   return ok(shared as SharedMedium);
+}
+
+/** The `failures` settings, each defaulted; a longest wait shorter than the first is refused. */
+function failures(value: unknown): Checked<FailureSettings> {
+  if (value === undefined || value === null) return ok({ ...FAILURE_DEFAULTS });
+  if (!isMapping(value)) return invalid("failures must be a mapping");
+  const known = only(value, FAILURES_KEYS, "failures");
+  if (!known.ok) return known;
+  const backoffMs = optionalDuration(
+    value.backoff,
+    "failures.backoff",
+    FAILURE_DEFAULTS.backoffMs,
+  );
+  if (!backoffMs.ok) return backoffMs;
+  const backoffMaxMs = optionalDuration(
+    value.backoff_max,
+    "failures.backoff_max",
+    FAILURE_DEFAULTS.backoffMaxMs,
+  );
+  if (!backoffMaxMs.ok) return backoffMaxMs;
+  const notifyAfter = count(
+    value.notify_after,
+    "failures.notify_after",
+    FAILURE_DEFAULTS.notifyAfter,
+  );
+  if (!notifyAfter.ok) return notifyAfter;
+  if (backoffMaxMs.value < backoffMs.value)
+    return invalid("failures.backoff_max must be at least failures.backoff");
+  return ok({
+    backoffMs: backoffMs.value,
+    backoffMaxMs: backoffMaxMs.value,
+    notifyAfter: notifyAfter.value,
+  });
+}
+
+/** The machine file's `failures` settings, the defaults where it has none. */
+export function failureSettings(
+  config: Pick<MachineConfig, "failures"> | null | undefined,
+): FailureSettings {
+  return config?.failures ?? { ...FAILURE_DEFAULTS };
 }
 
 /** The dashboard's address; `null` when the file names none. */

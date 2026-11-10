@@ -2319,6 +2319,14 @@ make, use the entry's term instead.
   except for a notification about the stop of a session it started, which
   its row for that session already covers. One dashboard filters
   it; it is never rendered into a report file.
+- **Failure ledger** — the *dispatcher*'s count of what failed in a row,
+  a table of its state database: one row per action it retries on its own
+  (a label write, a notification's delivery, a nudge, a claim end), per
+  repository whose turn failed and per scope of its ticks that exited 1,
+  with the count, since when and the last reason. It paces the retries of
+  an action that keeps failing and tells a person once the count passes a
+  threshold; it never says what to do, which each tick still derives, and
+  a row goes when its action succeeds or is no longer wanted.
 - **Recurring class** — a bad outcome class (any but converged, merged and
   parked for a person) of one stage on one repository in the *outcome log* on
   at least three of the last seven days of the host's clock, counting the rows

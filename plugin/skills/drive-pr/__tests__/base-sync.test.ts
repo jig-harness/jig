@@ -487,7 +487,10 @@ describe("unmerged-path detection distinguishes a hook block from a real conflic
   // real-git tests in this file: an executable-bit hook script is not how
   // Windows resolves an executable.
   function run(cwd: string, args: string[]): { code: number; stdout: string } {
-    const r = Bun.spawnSync(["git", ...args], { cwd });
+    const r = Bun.spawnSync(["git", ...args], {
+      cwd,
+      env: scrubbedGitEnv(),
+    });
     return { code: r.exitCode, stdout: r.stdout.toString() };
   }
 

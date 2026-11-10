@@ -362,6 +362,11 @@ the sheet it replaces. The source format, the layouts, the render and
 freshness check, the upload procedure and the regeneration after a ruling are
 in [`references/decision-sheet.md`](references/decision-sheet.md).
 
+When a drive parks a call from that sheet, use the reference's `park`
+conversion command. It fills the park's question, expands the sheet's
+references to words and keeps the sheet link for the wider context. A call
+without a recommendation cannot become a park.
+
 The record format — the fields a ruling must carry, and why each one — is
 [`references/decision-record.md`](references/decision-record.md). Read it
 before writing the outcome.
@@ -376,10 +381,10 @@ getting the human to a decision rather than for recording one already made.
 its decision-record comment is where a person reverses it, and the drive
 records it with that comment's link (drive-pr § 8). An `escalated`
 verdict under a drive is parked under the class `escalated`. The park takes
-its own record format (drive-pr § 4), not the decision record's: build it from
+its own `ParkedDecision` JSON format (drive-pr § 4): build it from
 the ruling (the question, the options with what each changes and costs, the
 recommendation and why) and link the escalation issue or comment from its
-`## Already done`.
+`alreadyDone` field.
 
 **Any text this skill writes to ask a human for a call** — an `escalated`
 record, an elaboration, an `hitl` issue body — follows the

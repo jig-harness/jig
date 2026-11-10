@@ -9,7 +9,6 @@
  */
 import type {
   LineAccount,
-  LineDecision,
   LineNeed,
   LineQueued,
   LineRepo,
@@ -21,11 +20,10 @@ import type {
 import type { LaunchAction, ReadRecord } from "./launches.ts";
 import { pullUrl } from "./forge.ts";
 import { actOfNeed } from "../../shared/acts.ts";
-import {
-  recordOptions,
-  recordSteps,
-} from "../../skills/drive-pr/scripts/lib/state/park-frame.ts";
+import { decisionOf } from "./line-decision.ts";
+export { decisionOf } from "./line-decision.ts";
 import { holds, targetOf } from "./launches.ts";
+import { isFailureCause } from "./failure-notices.ts";
 import { boardUnread, readyOf } from "./line-ready.ts";
 import { needWorkspace } from "./line-workspace.ts";
 import type { MachineConfig } from "./machine-config.ts";
@@ -108,63 +106,6 @@ function prNumber(target: string): number | null {
   return found === null ? null : Number(found[1]);
 }
 
-/** The heading the drive prints above a framed decision: its kind, key, class and round. */
-const FRAME_HEAD = /^\[[a-z]+\] \S+ · class (\S.*?) · parked at round \d+$/;
-
-/** The lines under a `## ` heading of a decision record, up to the next heading; `null` when it has none. */
-function sectionLines(lines: string[], heading: string): string[] | null {
-  const from = lines.indexOf(`## ${heading}`);
-  if (from < 0) return null;
-  const rest = lines.slice(from + 1);
-  const end = rest.findIndex((l) => l.startsWith("## "));
-  return end < 0 ? rest : rest.slice(0, end);
-}
-
-/** The text under a `## ` heading of a decision record, on one line. */
-function section(lines: string[], heading: string): string | null {
-  const body = (sectionLines(lines, heading) ?? [])
-    .join(" ")
-    .replace(/\s+/g, " ")
-    .trim();
-  return body === "" ? null : body;
-}
-
-/**
- * A parked decision from the lines the drive printed: the frame's heading goes
- * into the fields, and the record under it, which is Markdown indented two
- * spaces, loses the indent.
- */
-export function decisionOf(park: {
-  person?: string;
-  key: string;
-  kind: "thread" | "finding";
-  lines: string[];
-}): LineDecision {
-  const [head, ...record] = park.lines;
-  const framed = head === undefined ? null : FRAME_HEAD.exec(head);
-  const lines = (framed === null ? park.lines : record).map((l) =>
-    l.startsWith("  ") ? l.slice(2) : l,
-  );
-  const named = framed?.[1];
-  const recommendation = section(lines, "Recommended");
-  const steps = sectionLines(lines, "Steps for a person");
-  return {
-    key: park.key,
-    ...(park.person === undefined ? {} : { person: park.person }),
-    kind: park.kind,
-    lines,
-    question: section(lines, "Question"),
-    recommendation,
-    decisionClass:
-      named === undefined || named === "(none recorded)" ? null : named,
-    options: recordOptions(
-      (sectionLines(lines, "Options") ?? []).join("\n"),
-      recommendation,
-    ),
-    steps: steps === null ? [] : recordSteps(steps.join("\n")),
-  };
-}
-
 /** The stage a cause is about. */
 function needStage(cause: NeedCause): LineNeed["stage"] {
   if (cause === "followup-failed" || cause === "followup-stale")
@@ -201,7 +142,8 @@ function isNeed(action: Action): action is Action & { cause: NeedCause } {
     action.cause !== undefined &&
     action.cause !== "waiting" &&
     action.cause !== "drifting" &&
-    action.cause !== "ready"
+    action.cause !== "ready" &&
+    !isFailureCause(action.cause)
   );
 }
 

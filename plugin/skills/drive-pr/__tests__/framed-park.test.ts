@@ -14,7 +14,11 @@ import { parseDecisionRecord } from "../scripts/lib/state/framed-park.ts";
 import { framedDecisionLines } from "../scripts/lib/state/park-frame.ts";
 import { useDrivePrSuite } from "./drive-pr-harness.ts";
 import { createStateDurabilityFixtures } from "./drive-pr-state-durability-fixtures.ts";
-import { parkArgs, parkRecord } from "./park-record-fixture.ts";
+import {
+  parkArgs,
+  parkRecord,
+  legacyParkRecord,
+} from "./park-record-fixture.ts";
 
 useDrivePrSuite();
 
@@ -77,8 +81,7 @@ describe("park refuses what is not a framed decision", () => {
       "## Question\n\nShould it stay?\n",
     );
     expectSpawnExit(r, 2);
-    expect(r.stderr).toContain("no '## Options' section");
-    expect(r.stderr).toContain("no '## Already done' section");
+    expect(r.stderr).toContain("expected ParkedDecision JSON");
   });
 });
 
@@ -235,7 +238,7 @@ if (args[0] === "api" && args[1] === "graphql") {
         key: string;
         class: string;
         reason: string;
-        record: string;
+        decision: { steps: string[] };
         person: string;
       }>;
     };
@@ -243,10 +246,10 @@ if (args[0] === "api" && args[1] === "graphql") {
     expect(got.parked[0]?.class).toBe("human-decision");
     expect(got.parked[0]?.person).toBe("maintainer");
     expect(got.parked[0]?.reason).toBe(QUESTION);
-    expect(got.parked[0]?.record).toContain("## Steps for a person");
+    expect(got.parked[0]?.decision.steps).toEqual([]);
     const handoff = readFileSync(join(d, "handoff", "pr-drive-999.md"), "utf8");
     expect(handoff).toContain("## Recommended");
-    expect(handoff).toContain("**Keep it**, because");
+    expect(handoff).toContain("**Keep it** — because");
   });
 
   it("accepts a class the repository adds in autonomy.park_classes", async () => {
@@ -391,7 +394,7 @@ describe("the class is the arbiter's ruling", () => {
 });
 
 describe("the decision record's sections", () => {
-  const complete = parkRecord(QUESTION);
+  const complete = legacyParkRecord(QUESTION);
   const problems = (text: string, cls = "escalated") => {
     const parsed = parseDecisionRecord(text, cls);
     return "problems" in parsed ? parsed.problems : [];
@@ -513,7 +516,7 @@ describe("a parked decision printed in full", () => {
   });
 
   function complete(): string {
-    const parsed = parseDecisionRecord(parkRecord(QUESTION), "escalated");
+    const parsed = parseDecisionRecord(legacyParkRecord(QUESTION), "escalated");
     if ("problems" in parsed) throw new Error(parsed.problems.join("; "));
     return Object.entries(parsed.record)
       .map(([s, t]) => `## ${s}\n\n${t}`)

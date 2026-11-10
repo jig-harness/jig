@@ -1,10 +1,29 @@
+import {
+  isParkedDecision,
+  renderParkedDecision,
+} from "../../../../../shared/decisions/park.ts";
 /**
  * The framing a stored parked item carries (`framed-park.ts`), the decision
  * class and the decision record, and how a framed decision is printed. Kept
  * apart from `framed-park.ts` so the state schema and the handoff import no
  * command code.
  */
-import type { ParkedItem } from "./schema.ts";
+import type { ParkedDecision } from "../../../../../shared/decisions/park.ts";
+export interface ParkedItem {
+  /** The person this question routes to; absent only on older parks. */
+  person?: string;
+  key: string;
+  kind: "thread" | "finding";
+  /** The decision's question; a park from before framing holds its reason. */
+  reason: string;
+  round: number;
+  /** When it was parked; an answer must be later. Absent on an older park. */
+  at?: string;
+  /** The decision class and the decision record (`framed-park.ts`). */
+  class?: string;
+  record?: string;
+  decision?: ParkedDecision;
+}
 
 /** A forge login, excluding whitespace and mention syntax. */
 export function isPerson(value: unknown): value is string {
@@ -40,6 +59,7 @@ export function isOptionalFrame(e: Record<string, unknown>): boolean {
   return (
     (e.class === undefined ||
       (typeof e.class === "string" && /^[a-z][a-z0-9-]*$/.test(e.class))) &&
+    (e.decision === undefined || isParkedDecision(e.decision)) &&
     (e.record === undefined ||
       (typeof e.record === "string" && e.record.trim() !== ""))
   );
@@ -52,8 +72,10 @@ export function isOptionalFrame(e: Record<string, unknown>): boolean {
  */
 export function framedDecisionLines(p: ParkedItem): string[] {
   const head = `[${p.kind}] ${p.key} · class ${p.class ?? "(none recorded)"} · parked at round ${p.round}`;
-  if (p.record === undefined) return [head, `  ${p.reason}`];
-  return [head, ...p.record.split("\n").map((l) => (l === "" ? "" : `  ${l}`))];
+  const record =
+    p.decision === undefined ? p.record : renderParkedDecision(p.decision);
+  if (record === undefined) return [head, `  ${p.reason}`];
+  return [head, ...record.split("\n").map((l) => (l === "" ? "" : `  ${l}`))];
 }
 
 /** `- ` items of a record's section, each with its continuation lines joined. */
@@ -142,4 +164,14 @@ export function recordOptions(
 /** The steps of a record's `## Steps for a person` text; none for `None.`. */
 export function recordSteps(steps: string): string[] {
   return /^none\.?$/i.test(steps.trim()) ? [] : items(steps).items;
+}
+
+/** The cancelled-CI park's typed or legacy frame for fleet recovery. */
+export function cancelledRecoveryRecord(
+  parked: ParkedItem[],
+): string | undefined {
+  const park = parked.find((p) => p.key === "cancelled-ci");
+  return park?.decision === undefined
+    ? park?.record
+    : renderParkedDecision(park.decision);
 }

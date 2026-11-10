@@ -30,13 +30,23 @@ const OPTION_DETAILS = [
   { field: "keep", label: "Keep" },
   { field: "rightWhen", label: "Right when" },
   { field: "obligation", label: "Obligation" },
+  { field: "reversible", label: "Reversible" },
 ] as const;
 
-export function optionDetails(option: Option): OptionDetail[] {
+export function optionDetails(
+  option: Option & { reversible?: boolean },
+): OptionDetail[] {
   return OPTION_DETAILS.flatMap(({ field, label }) => {
     const value = option[field];
     if (value === undefined) return [];
-    const text = Array.isArray(value) ? value.join("\n") : value;
+    const text =
+      typeof value === "boolean"
+        ? value
+          ? "Yes"
+          : "No"
+        : Array.isArray(value)
+          ? value.join("\n")
+          : value;
     return text.length === 0 ? [] : [{ label, text }];
   });
 }

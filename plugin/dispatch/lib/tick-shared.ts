@@ -49,6 +49,7 @@ import {
   type TickComments,
 } from "./tick-comments.ts";
 import type { ForgeRead } from "./tick-forge.ts";
+import type { ActionBook } from "./failures.ts";
 import type { DrivenPr, MarkedPr, RepoReport, SharedReport } from "./types.ts";
 
 /** A repository's shared records for one tick. */
@@ -336,6 +337,8 @@ export async function endOwnClaims(
     records: readonly ReadRecord[];
     outcomes: ReadonlyMap<number, FollowupOutcome>;
     nowMs: number;
+    /** The failure ledger: an end that keeps failing backs off. */
+    book?: ActionBook | null;
   },
 ): Promise<void> {
   const scope = inputs.forge.scoped
@@ -355,6 +358,7 @@ export async function endOwnClaims(
       inputs.outcomes,
       new Date(inputs.nowMs).toISOString(),
       scope,
+      inputs.forge.ok ? (inputs.book ?? undefined) : undefined,
     )),
     ...(await releaseRoutineMarkers(
       ctx,
