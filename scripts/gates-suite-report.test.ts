@@ -5,15 +5,25 @@ import { load as loadYaml } from "../lib/vendor/js-yaml.mjs";
 
 const root = resolve(import.meta.dir, "..");
 
+// The effective shell depends on step, job and workflow defaults and on the
+// runner's platform (a Windows step with no shell runs PowerShell), so a step
+// that declares none is scanned under every escape character that could apply.
 function usesRawBunTest(command: string, shell?: string): boolean {
+  const escapes =
+    shell === undefined
+      ? ["\\", "`"]
+      : [shell === "pwsh" || shell === "powershell" ? "`" : "\\"];
+  return escapes.some((escapeChar) => scansRawBunTest(command, escapeChar));
+}
+
+function scansRawBunTest(command: string, escapeChar: string): boolean {
   const commands: string[][] = [];
   let words: string[] = [];
   let word = "";
   let quote: "'" | '"' | null = null;
   let comment = false;
-  // The escape character belongs to the shell: PowerShell escapes with a
-  // backtick and reads a backslash literally, everything else the reverse.
-  const escapeChar = shell === "pwsh" || shell === "powershell" ? "`" : "\\";
+  // PowerShell escapes with a backtick and reads a backslash literally,
+  // everything else the reverse.
   const finishWord = () => {
     if (word) words.push(word);
     word = "";
@@ -156,18 +166,23 @@ test("the suite-runner contract rejects raw Bun spellings", () => {
     'echo "documentation; bun test scripts/gates.test.ts"',
     'echo "documentation & bun test scripts/gates.test.ts"',
     "# documentation; bun test scripts/gates.test.ts",
-    'echo "quoted \\"; bun test ./website/"; echo ok',
   ])
     expect(usesRawBunTest(command)).toBeFalse();
-  for (const shell of ["pwsh", "powershell"]) {
+  // A backslash-escaped quote is only known to be one under a declared POSIX
+  // shell; an undeclared shell is also read as PowerShell and flags it.
+  const escapedQuote = 'echo "quoted \\"; bun test ./website/"; echo ok';
+  expect(usesRawBunTest(escapedQuote, "bash")).toBeFalse();
+  expect(usesRawBunTest(escapedQuote)).toBeTrue();
+  for (const shell of [undefined, "pwsh", "powershell"]) {
     expect(
       usesRawBunTest("bun `\ntest scripts/gates.test.ts", shell),
     ).toBeTrue();
     expect(
       usesRawBunTest('Write-Output "C:\\"\nbun test ./website/', shell),
     ).toBeTrue();
+    // Only a declared shell settles which escape character reads the quote.
     expect(
       usesRawBunTest('Write-Output "a`"; bun test ./website/"', shell),
-    ).toBeFalse();
+    ).toBe(shell === undefined);
   }
 });
