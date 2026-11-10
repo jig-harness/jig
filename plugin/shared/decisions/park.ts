@@ -106,10 +106,10 @@ function checkOptionName(c: Checker, p: string, name: string): void {
   if (/[\r\n]/.test(name)) c.fail(`${p}.name`, "must be one line");
   if (normalizeAnswerText(name) === "")
     c.fail(`${p}.name`, "must remain nonempty after answer normalization");
-  if ([...name].length + "choose ".length > ANSWER_TEXT_MAX)
+  if ([...name].length + "choose  [123456abcdef]".length > ANSWER_TEXT_MAX)
     c.fail(
       `${p}.name`,
-      `is too long to select: choose plus its name must fit the ${ANSWER_TEXT_MAX}-character answer limit`,
+      `is too long to select: choose plus its name and framing digest must fit the ${ANSWER_TEXT_MAX}-character answer limit`,
     );
   if (redact(name) !== name)
     c.fail(`${p}.name`, "must not contain a value the ledger redacts");
