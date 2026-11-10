@@ -5,7 +5,7 @@ import { load as loadYaml } from "../lib/vendor/js-yaml.mjs";
 
 const root = resolve(import.meta.dir, "..");
 
-function usesRawBunTest(command: string): boolean {
+function usesRawBunTest(command: string, shell?: string): boolean {
   const commands: string[][] = [];
   let words: string[] = [];
   let word = "";
@@ -31,6 +31,11 @@ function usesRawBunTest(command: string): boolean {
       }
       continue;
     }
+    if (quote) {
+      if (character === quote) quote = null;
+      else word += character;
+      continue;
+    }
     if (character === "\\") {
       if (next === "\n") {
         index++;
@@ -40,9 +45,8 @@ function usesRawBunTest(command: string): boolean {
       if (escaped) word += escaped;
       continue;
     }
-    if (quote) {
-      if (character === quote) quote = null;
-      else word += character;
+    if (character === "`" && shell === "pwsh" && next === "\n") {
+      index++;
       continue;
     }
     if (character === "'" || character === '"') {
@@ -68,15 +72,32 @@ function usesRawBunTest(command: string): boolean {
   finishCommand();
 
   return commands.some((tokens) => {
-    let next = 0;
-    while (/^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[next] ?? "")) next++;
-    if (tokens[next] !== "bun") return false;
-    next++;
-    while (tokens[next]?.startsWith("--")) {
-      if (tokens[next] === "--cwd") next++;
+    const starts = [
+      0,
+      ...tokens.flatMap((token, index) =>
+        ["then", "do", "else", "elif"].includes(token) ? [index + 1] : [],
+      ),
+    ];
+    return starts.some((start) => {
+      let next = start;
+      while (/^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[next] ?? "")) next++;
+      if (tokens[next] === "env") {
+        next++;
+        while (
+          tokens[next]?.startsWith("-") ||
+          /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[next] ?? "")
+        )
+          next++;
+      }
+      if (tokens[next] !== "bun") return false;
       next++;
-    }
-    return tokens[next] === "test";
+      const bunOptionsWithValue = new Set(["--cwd", "--preload", "-r"]);
+      while (tokens[next]?.startsWith("-")) {
+        if (bunOptionsWithValue.has(tokens[next] ?? "")) next++;
+        next++;
+      }
+      return tokens[next] === "test";
+    });
   });
 }
 
@@ -91,13 +112,13 @@ test("every CI suite uses the reporting runner and its executed-test check", () 
     const workflow = loadYaml(
       readFileSync(join(root, ".github/workflows", file), "utf8"),
     ) as {
-      jobs: Record<string, { steps?: { run?: string }[] }>;
+      jobs: Record<string, { steps?: { run?: string; shell?: string }[] }>;
     };
     // Direct Bun test commands bypass the fresh report and the tripwire. The
     // suite contracts in gates.test.ts pin selections and complete shard sets.
     for (const job of Object.values(workflow.jobs))
       for (const step of job.steps ?? [])
-        expect(usesRawBunTest(step.run ?? "")).toBeFalse();
+        expect(usesRawBunTest(step.run ?? "", step.shell)).toBeFalse();
   }
 });
 
@@ -107,6 +128,11 @@ test("the suite-runner contract rejects raw Bun spellings", () => {
     "bun  test scripts/gates.test.ts",
     "bun --no-env-file test scripts/gates.test.ts",
     "bun --cwd . test scripts/gates.test.ts",
+    "if true; then bun test scripts/gates.test.ts; fi",
+    "env CI=1 bun test scripts/gates.test.ts",
+    "bun --preload ./setup.ts test scripts/gates.test.ts",
+    "bun -r ./setup.ts test scripts/gates.test.ts",
+    "echo 'C:\\\\'\nbun test scripts/gates.test.ts",
     'bun --cwd "my repo" test scripts/gates.test.ts',
     "CI=1 bun test scripts/gates.test.ts",
     '"bun" test scripts/gates.test.ts',
@@ -125,4 +151,7 @@ test("the suite-runner contract rejects raw Bun spellings", () => {
     "# documentation; bun test scripts/gates.test.ts",
   ])
     expect(usesRawBunTest(command)).toBeFalse();
+  expect(
+    usesRawBunTest("bun `\ntest scripts/gates.test.ts", "pwsh"),
+  ).toBeTrue();
 });
