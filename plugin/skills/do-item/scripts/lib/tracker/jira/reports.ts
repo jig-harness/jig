@@ -227,6 +227,7 @@ export function reportOperations(
         url: issue.url,
         priority: model.priorityOf(issue.priority),
         createdAt: issue.createdAt,
+        updatedAt: issue.updatedAt,
         state: { ...state, id: issue.status.id },
         assignee:
           issue.assignee === null

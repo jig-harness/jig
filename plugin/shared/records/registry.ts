@@ -83,7 +83,7 @@ const STATE_DIR = "~/.local/state/jig/drive-pr/<clone>/";
 const DRIVE_DB_FILE = "~/.local/state/jig/drive-pr/state.sqlite";
 const DISPATCH_DIR = "~/.local/state/jig/dispatch/";
 /** The dispatcher's database schema version (`dispatch/lib/state.ts`'s `SCHEMA_VERSION`). */
-const DISPATCH_DB = 17;
+const DISPATCH_DB = 19;
 /** The drive's database schema version (`skills/drive-pr/scripts/lib/state/db.ts`'s `DRIVE_DB_VERSION`). */
 const DRIVE_DB = 5;
 const RRC = "skills/resolve-review-comments/scripts/";
@@ -271,10 +271,16 @@ const DISPATCHER: RecordKind[] = [
     "merge_reads",
   ),
   dispatchTable(
+    "dispatch-pickup-read",
+    "dispatch/lib/pickup-reads.ts",
+    "pickup_reads",
+  ),
+  dispatchTable(
     "dispatch-load-sample",
     "dispatch/lib/load-samples.ts",
     "load_samples",
   ),
+  dispatchTable("dispatch-failure", "dispatch/lib/failures.ts", "failures"),
   plain(
     "machine",
     "dispatch-receipt",
@@ -309,6 +315,27 @@ const DISPATCHER: RecordKind[] = [
     "dispatch/lib/change-probe.ts",
     `${DISPATCH_DIR}probe/state.json`,
     1,
+  ),
+  plain(
+    "machine",
+    "dispatch-dashboard-install",
+    "dispatch/dashboard-install.ts",
+    `${DISPATCH_DIR}dashboard/enabled`,
+    0,
+  ),
+  plain(
+    "machine",
+    "dispatch-dashboard-access",
+    "dispatch/dashboard-reader.ts",
+    `${DISPATCH_DIR}dashboard/access.json`,
+    0,
+  ),
+  plain(
+    "machine",
+    "dispatch-dashboard-reader-lock",
+    "shared/file-lock.ts",
+    `${DISPATCH_DIR}dashboard/reader.<digest>.lock`,
+    0,
   ),
   plain(
     "machine",

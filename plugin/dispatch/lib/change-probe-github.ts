@@ -39,6 +39,7 @@ import type {
   ProbeRead,
 } from "./change-probe.ts";
 import { repoTarget } from "./forge.ts";
+import { issueUpdates } from "./change-probe-issues.ts";
 
 /** Results per page, GitHub's largest. */
 const PAGE = 100;
@@ -372,4 +373,5 @@ export const githubProbeForge: ProbeForge = {
     }
   },
   search: searchForge,
+  issues: issueUpdates,
 };

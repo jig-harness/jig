@@ -68,7 +68,7 @@ async function address(stdout: ReadableStream<Uint8Array>): Promise<string> {
 
 // The server serves the built page, not dashboard/src: a stale bundle would
 // redraw every shot from the previous UI and report success.
-const built = spawnSync("bun", ["dashboard/build.ts", "--check"], {
+const built = spawnSync(process.execPath, ["dashboard/build.ts", "--check"], {
   cwd: repo,
   stdio: "inherit",
 });
@@ -79,7 +79,7 @@ if (built.status !== 0)
 
 const work = mkdtempSync(join(tmpdir(), "dashboard-shots-"));
 const server = Bun.spawn(
-  ["bun", "dashboard/serve-fixture.ts", "--scenario", "loud"],
+  [process.execPath, "dashboard/serve-fixture.ts", "--scenario", "loud"],
   {
     cwd: repo,
     env: { ...process.env, TZ: "UTC" },

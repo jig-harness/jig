@@ -73,6 +73,39 @@ function branchOf(path: string): string {
 }
 
 describe("jig dispatch --apply picks up assigned items", () => {
+  it("starts served work without a factory identity and preserves the claim context", async () => {
+    const w = fixture();
+    w.setConfig(`issue_tracker:
+  adapter: github
+  github:
+    repository: ${SLUG}
+`);
+    w.setIssues([assignedIssue(12, "maintainer", [])]);
+    machineFile(
+      w,
+      [account(w, "a", "a@example.com")],
+      {
+        serve: [
+          {
+            name: "Maintainer",
+            forge: ["maintainer"],
+            tracker: { github: "maintainer" },
+          },
+        ],
+      },
+      ["pickup"],
+    );
+    const receipt = await applyTick(w, false);
+    const [started] = launches(receipt);
+    expect(started?.outcome).toBe("launched");
+    const record = readRecord(String(started?.record), dispatchState(w));
+    expect(record?.servedPerson).toBe("maintainer");
+    expect(record?.item).toBe("#12");
+    await waitFor("served pass", () => claudeRuns(w).length === 1);
+    const runs = claudeRuns(w);
+    expect(JSON.stringify(runs)).toContain("--for");
+  });
+
   it("names the item's new workspace and its tab as dispatched, and keeps the mark on its record", async () => {
     const w = fixture();
     const id = String(launches(await applyTick(w, false))[0]?.record);

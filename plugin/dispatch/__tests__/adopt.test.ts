@@ -40,6 +40,21 @@ const NAMED = config(
 const NONE = config("  labels: { enabled: true }");
 
 const HOUR = 3_600_000;
+it("adds served authors while retaining the default forge login", () => {
+  expect(
+    adoptionOf(
+      {
+        adopt: {
+          enabled: true,
+          authors: null,
+          withinMs: HOUR,
+          servedAuthors: ["served"],
+        },
+      },
+      "factory",
+    )?.authors,
+  ).toEqual(["factory", "served"]);
+});
 const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
 
 /** An open pull request as the listing returns it, by `login` (a bot when `bot`), updated `updatedAt`. */

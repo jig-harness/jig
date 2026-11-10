@@ -33,6 +33,7 @@ import {
   winningIntervalArguments,
 } from "./cli.ts";
 import { dispatchJobSpec, installDispatch, probeJobSpec } from "./install.ts";
+import { dashboardJobSpec } from "./dashboard-install.ts";
 import { installLabels } from "./install-labels.ts";
 import {
   type MachineConfig,
@@ -150,7 +151,7 @@ export const dispatchComponent: Component<DispatchArguments> = {
       : null,
   job,
   // The change probe's job, which its install writes beside the tick's and upgrade keeps.
-  companionJobs: () => [probeJobSpec(readableMachine())],
+  companionJobs: () => [probeJobSpec(readableMachine()), dashboardJobSpec()],
   missingOptIn,
   install: async (request) => {
     const timer = await installDispatch(

@@ -21,6 +21,7 @@
  * | `reflection_findings` | finding the reflection route made of a recurring class | its id, derived from the repository, stage, class and week: the event as every append sends it, pending until the store reports it stored |
  * | `load_samples` | kind of launch and sample | the memory one running session of that kind used at one tick; only each kind's newest samples are kept (`load-samples.ts`) |
  * | `merge_reads` | repository and merged pull request in the follow-up window | the follow-up markers a tick last read on it, and the launch claims where an ended launch of this host's needed them, at its `updatedAt` then and as the forge login that read them; replaced by each read, removed by a write the tick makes on it |
+ * | `failures` | action, repository or tick scope that failed in a row | its failures in a row, the first and last failure's time, the last reason and the next try; removed by a success or once its action leaves the plan |
  *
  * The receipts, the account walls (which the drive's quota adapters write
  * from a pass, outside the tick), the tick's locks and the rotation cursor stay
@@ -303,6 +304,27 @@ const MIGRATIONS: readonly Migration[] = [
   );
   CREATE INDEX load_samples_kind ON load_samples (kind, seq);
   `,
+  },
+  {
+    additive: true,
+    sql: `
+  CREATE TABLE failures (
+    repo TEXT NOT NULL,
+    key TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    target TEXT NOT NULL,
+    count INTEGER NOT NULL,
+    first_at TEXT NOT NULL,
+    last_at TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    next_at_ms INTEGER NOT NULL,
+    PRIMARY KEY (repo, key)
+  );
+  `,
+  },
+  {
+    additive: true,
+    sql: `CREATE TABLE pickup_reads (key TEXT PRIMARY KEY, value TEXT NOT NULL);`,
   },
 ];
 

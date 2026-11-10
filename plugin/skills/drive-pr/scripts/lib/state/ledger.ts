@@ -205,6 +205,9 @@ export function ledgerFromState(
       ...p,
       reason: redact(p.reason),
       ...(p.record === undefined ? {} : { record: redact(p.record) }),
+      ...(p.decision === undefined
+        ? {}
+        : { decision: redactStrings(p.decision) }),
     })),
     held: s.held.map(ledgerHeld),
     quotaPark: withoutAccount(s.quotaPark),
@@ -243,6 +246,17 @@ const ACCOUNT_ID = /\b(?:acct-[0-9a-f]{16}|(?:token|api-key):[0-9a-f]{12})\b/g;
  * agent-authored, and a pull request comment is public to everyone who can
  * read the repository.
  */
+/** Redact string values without changing keys, booleans or array shape. */
+export function redactStrings<T>(value: T): T {
+  if (typeof value === "string") return redact(value) as T;
+  if (Array.isArray(value)) return value.map(redactStrings) as T;
+  if (value !== null && typeof value === "object")
+    return Object.fromEntries(
+      Object.entries(value).map(([key, field]) => [key, redactStrings(field)]),
+    ) as T;
+  return value;
+}
+
 export function redact(text: string): string {
   return text.replace(EMAIL, "<redacted>").replace(ACCOUNT_ID, "<redacted>");
 }
@@ -378,7 +392,7 @@ export function renderLedger(
   body = ledgerBody(l, false, writer);
   if (bytes(body) <= limit) return { body, ledger: l };
   return {
-    error: `the parked decisions alone exceed the forge's ${limit}-byte comment limit; the ledger was not written`,
+    error: `the parked decisions alone need ${bytes(body)} bytes, exceeding the forge's ${limit}-byte comment limit; the ledger was not written`,
   };
 }
 

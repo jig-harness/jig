@@ -10,6 +10,10 @@
  * never stored, so it cannot disagree with them.
  */
 
+import type {
+  Call as SharedCall,
+  Option as SharedOption,
+} from "../../../../shared/decisions/model.ts";
 import type { GlossaryEntry } from "../sheet-kit/inline.ts";
 import {
   ISSUE_ID,
@@ -51,22 +55,16 @@ export interface Scenario {
   detail: string;
 }
 
-export interface Outcome {
+export interface ScenarioOutcome {
   kind: OutcomeKind;
   text: string;
 }
 
-export interface Option {
-  id: string;
-  name: string;
-  tag?: string;
-  summary: string;
+export interface Option extends SharedOption {
   keep: string[];
-  pay: string[];
   rightWhen: string;
-  obligation?: string;
   /** One outcome per scenario of the call, keyed by scenario id. */
-  outcomes?: Record<string, Outcome>;
+  outcomes?: Record<string, ScenarioOutcome>;
 }
 
 export interface SubQuestion {
@@ -83,8 +81,7 @@ export interface Ruling {
   ruledAt: string;
 }
 
-export interface Call {
-  id: string;
+export interface Call extends SharedCall<Option> {
   /** Required when the source has two or more calls. */
   title?: string;
   owners?: StakeholderFacet[];
@@ -94,11 +91,8 @@ export interface Call {
   scenarios?: Scenario[];
   /** What each outcome kind means for this call, shown in the matrix legend. */
   outcomeMeaning?: Partial<Record<OutcomeKind, string>>;
-  options: Option[];
   subQuestions?: SubQuestion[];
   notes?: string[];
-  recommended?: string;
-  why?: string;
   openInput?: string;
   ruling?: Ruling;
 }

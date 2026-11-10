@@ -74,7 +74,16 @@ const ROUTE_RULES_LINE = "route: rules";
 
 /** The prompt an interactive pickup's session, which an earlier release started, began with. */
 function pickupPrompt(
-  record: Pick<LaunchRecord, "id" | "token" | "item" | "vendor">,
+  record: Pick<
+    LaunchRecord,
+    | "id"
+    | "token"
+    | "item"
+    | "vendor"
+    | "servedPerson"
+    | "ancestorEpic"
+    | "batchItems"
+  >,
 ): string {
   return [
     skillPrompt(record.vendor, `${PICKUP_SKILL} ${record.item}`),
@@ -98,11 +107,35 @@ function pickupResultLines(
 
 /** The prompt a pickup's headless pass starts with. */
 function pickupPassPrompt(
-  record: Pick<LaunchRecord, "id" | "token" | "item" | "vendor">,
+  record: Pick<
+    LaunchRecord,
+    | "id"
+    | "token"
+    | "item"
+    | "vendor"
+    | "servedPerson"
+    | "ancestorEpic"
+    | "batchItems"
+  >,
 ): string {
   return [
-    skillPrompt(record.vendor, `${PICKUP_SKILL} ${record.item}`),
+    skillPrompt(
+      record.vendor,
+      record.batchItems === undefined
+        ? `${PICKUP_SKILL} ${record.item}`
+        : `/jig:work-batch ${record.item}`,
+    ),
+    ...(record.batchItems === undefined
+      ? []
+      : [
+          `This is a fixed served batch; its maximum scope is this JSON list of keys, tracker identities and ancestor epics: ${JSON.stringify(record.batchItems)}. Use the first named key as the proposal anchor and every fixed key in --claimed. Pass each identity and ancestor as separately quoted arguments to --for and --ancestor on each tracker.ts claim. No member may be replaced or added; a refusal stops the batch.`,
+        ]),
     ROUTE_RULES_LINE,
+    ...(record.servedPerson === undefined
+      ? []
+      : [
+          `Claim this served assignment using tracker.ts claim ${shellQuote(record.item ?? "")} --for ${shellQuote(record.servedPerson)}${record.ancestorEpic === undefined ? "" : ` --ancestor ${shellQuote(record.ancestorEpic)}`}; preserve the person as the only assignee. A refusal stops the pickup.`,
+        ]),
     "",
     "jig dispatch started this headless pass for an item assigned to the factory identity; nobody is at the keyboard, and nobody can answer a question while it runs.",
     `Where a step needs a person's decision, do not guess: carry out what does not depend on it, then stop, and end your output with one line that starts "${QUESTION_PREFIX}" and states what the person must decide, with no secret or personal data in it. The dispatcher sends that line to a person.`,

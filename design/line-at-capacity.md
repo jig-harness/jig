@@ -8,10 +8,9 @@ every `bun run gates` queues on) and reports what a launch would cost, but
 it still admits work by account [slots](../GLOSSARY.md) alone, two per
 account by default, until a person sets `load.enforce`. A host with room to
 spare idles, and a host near its limit takes one more session and slows
-every drive on it. Pickups currently serve only a repository's
-[factory identity](../GLOSSARY.md). On Orca, account-bound headless passes
-start those pickups without an interactive session; serving people the host
-is configured to serve remains step 7 below. And the stops that reach a
+every drive on it. Pickups serve a repository's [factory identity](../GLOSSARY.md)
+and the people the host serves. On Orca, account-bound headless passes
+start those pickups without an interactive session; served assignments and epic descendants join a ranked queue. And the stops that reach a
 person mix real decisions with stops an agent could have recovered: a second
 stop at the same change, a spent
 [recovery budget](../GLOSSARY.md), an exit no rule re-drives. With this
@@ -25,8 +24,8 @@ person opens with the one act it asks of them.
 This is the design of [plan.md](plan.md) item 44. The dashboard groups needs
 by the person's act, shows the recommended option's changes and costs and
 filters by person; `jig ask` names the same act. Ready to merge, the
-keyboard-driven views, headless pickups, complexity tiers and the load
-factor, reporting only, are built.
+keyboard-driven views, headless pickups, served queues, complexity tiers and
+the load factor, reporting only, are built.
 The remaining work is in the build order below.
 It changes the following designs, each of which says in its own text what this one
 changes: [the dispatcher](dark-factory-dispatch.md) (item 33), whose tick
@@ -299,18 +298,6 @@ tier.
 One pull request per step, each shippable alone, filed under the item 44
 epic with its order recorded as blocking relations. The open steps retain
 their original numbers; each waits on the steps whose files it shares.
-
-```mermaid
-flowchart TD
-  T7[7 Served pickups] --> T8[8 Steward]
-```
-
-#### 7. Served pickups
-
-([#638](https://github.com/jig-harness/jig/issues/638)): `serve:`, the served
-reads, the ranking, `claim --for` and the Queue view. Done when an item a
-writer assigns to a served person starts within one interval when there is
-headroom, and the served person is still its only assignee after the claim.
 
 #### 8. The steward
 

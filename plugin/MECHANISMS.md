@@ -302,7 +302,8 @@ development and shipped as a version.
   stop (`QUOTA_PARKED`, exit 16); for a follow-up it starts the account's agent as a
   headless pass on the follow-up command, with the host's `drive.pass_args`
   and under the pass deadline; for a pickup it starts the account's agent
-  as an interactive session on `/jig:do-item <key>`. It records the exit
+  as a headless pass on `/jig:do-item <key>` (or `work-batch` for a served
+  batch), keeping its served-person claim context. It records the exit
   every way, with the last question of a follow-up pass that stopped short
   of done, and then writes a drive's or a follow-up's end onto the
   [shared claim](#shared-records-several-hosts-on-one-repository) the tick
@@ -376,6 +377,12 @@ development and shipped as a version.
   that note, read back, carries the message's key line. While its cause
   stands, it is sent again after `dispatch.renotify_after` unless it is
   still unread; `0s` sends each cause once (`dispatch/lib/notices.ts`).
+  What fails in a row (a label write, a notice's delivery, a nudge, a
+  claim end or marker answer, a repository's turn, the tick) is counted in
+  the failure ledger (`dispatch/lib/failures.ts`): an action backs off
+  from its second failure in a row, and a row at `failures.notify_after`
+  failures is notified once, then on the same cadence; a success or the
+  action leaving the plan removes it.
 - **Reasoned.** A dispatched interactive session records how it ended with
   `jig dispatch result <record> <token> done|failed` (`dispatch/result.ts`).
   That answer is the session's own judgement; the script refuses another
@@ -658,7 +665,15 @@ development and shipped as a version.
   assigned to someone else (exit 3) and, after writing, stands down when a
   re-read finds another assignee, no longer finds this identity assigned,
   or finds no issue or a state other than `in_progress` (exit 4). Two
-  concurrent claims by the same tracker identity can both return `claimed`.
+  concurrent claims on this host share a file mutex across worktrees.
+  `claim --for <identity>` preserves the served person's sole assignment
+  and checks writer provenance, holds, blockers and inherited ancestry live.
+  GitHub adds an inherited assignee without replacing another one and
+  reports a detected race; adapters without a safe non-replacing assignment
+  refuse inherited claims. The mutex is machine-local: two hosts claiming
+  for the same person can both succeed because the tracker supplies no
+  conditional state transition. The re-read detects conflicting assignees,
+  but cannot establish exclusive ownership between those same-person claims.
   `work-batch` claims each issue of its
   batch with the same command. `skills/do-item/scripts/determine_route.ts`
   derives the implementer's agent, complexity tier, model and effort from

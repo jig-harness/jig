@@ -390,6 +390,65 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.187.0] - 2026-11-10
+
+### Added
+
+- Hosts can serve named people through `serve:` in their dispatch machine file. Their trusted assignments and unassigned epic descendants join a ranked queue, with blocked work and human checkpoints shown with a reason; claims preserve the served person as assignee. Served forge logins also join pull-request adoption.
+- The dispatch dashboard can run through its own retry timer on Linux with systemd user lingering or cron, independently of the dispatcher and without Orca. Installation, status, explicit private URL access and uninstall commands keep one read-only reader available across failures, logout, reboot and installed-copy updates; service logs do not print its access token.
+
+### Fixed
+
+- The dispatcher record inventory now accurately describes pickup-read cache writes as independent upserts rather than one tick-wide transaction.
+
+## [0.186.0] - 2026-11-10
+
+### Added
+
+- `jig dispatch --apply` counts what fails in a row: each pull request's
+  dispatch label write, each notification's delivery, each nudge the
+  runtime refused, and this host's claim ends and follow-up marker answers;
+  each repository's turn (refused, stopped by a defect, or a record that did
+  not read); and this host's ticks of one scope that exited 1. An action
+  that failed twice in a row backs off, reported as waiting with its count
+  and next try, from 2 minutes doubling to an hour, instead of being tried
+  every tick. Once a row reaches 3 failures in a row a person is told, once
+  and then on `dispatch.renotify_after`, with what failed, how many times,
+  since when and the last reason (causes `action-failing`,
+  `repository-failing` and `ticks-failing`). A success, or the action
+  leaving the plan, clears the row and retires the notice. The machine
+  file's new `failures` settings (`backoff`, `backoff_max`, `notify_after`)
+  tune it, and each receipt lists the rows backing off and the rows at or past the
+  notify threshold under `failures`. Launches are not counted: their
+  launch records already count attempts.
+
+### Changed
+
+- **Breaking:** New drive parks accept checked `parked-decision/v1` JSON on stdin instead of Markdown. Update custom park writers to the JSON contract; existing parked Markdown decisions remain readable. Parks now retain structured options and their optional details across the ledger, dashboard and `jig ask`, support conversion from decision sheets, and refuse decisions above 8 KiB or beyond the ledger's comment budget.
+
+### Fixed
+
+- Test processes remove inherited Git hook repository variables before running,
+  and the drive's conflict fixture explicitly uses a clean environment, so
+  fixture Git commands cannot be redirected by those variables.
+
+## [0.185.3] - 2026-11-09
+
+### Changed
+
+- Decision sheets build on a shared option, call and source checker, with
+  one table for optional option details. Sheet validation and rendered output
+  stay the same.
+
+## [0.185.2] - 2026-11-09
+
+### Fixed
+
+- Ready to merge, the merge-ready announcement and `jig ask` use the latest
+  ordinary check run by start time, then completion time. Superseded cancelled,
+  failed or pending runs no longer hide a successful retry; a latest failed or
+  cancelled required check still blocks merging and names the check.
+
 ## [0.185.1] - 2026-11-09
 
 ### Fixed
@@ -6500,7 +6559,11 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.185.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.187.0...HEAD
+[0.187.0]: https://github.com/jig-harness/jig/compare/v0.186.0...v0.187.0
+[0.186.0]: https://github.com/jig-harness/jig/compare/v0.185.3...v0.186.0
+[0.185.3]: https://github.com/jig-harness/jig/compare/v0.185.2...v0.185.3
+[0.185.2]: https://github.com/jig-harness/jig/compare/v0.185.1...v0.185.2
 [0.185.1]: https://github.com/jig-harness/jig/compare/v0.185.0...v0.185.1
 [0.185.0]: https://github.com/jig-harness/jig/compare/v0.184.1...v0.185.0
 [0.184.1]: https://github.com/jig-harness/jig/compare/v0.184.0...v0.184.1

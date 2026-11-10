@@ -20,6 +20,14 @@ function optionalSeconds(value: unknown): boolean {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
+/** Whether a value is absent or an array whose members are strings. */
+function optionalStrings(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (Array.isArray(value) && value.every((v) => typeof v === "string"))
+  );
+}
+
 /** The fields a later version added, each absent or of its type. */
 export function optionalLaunchFields(value: Record<string, unknown>): boolean {
   return (
@@ -32,10 +40,14 @@ export function optionalLaunchFields(value: Record<string, unknown>): boolean {
       "mark",
       "rearmLabel",
       "noReplay",
+      "servedPerson",
+      "ancestorEpic",
     ].every((k) => optionalText(value[k])) &&
     [value.marker, value.round].every(
       (v) => v === undefined || v === null || typeof v === "number",
     ) &&
+    batchShape(value.batchItems) &&
+    optionalStrings(value.claimedItems) &&
     optionalSeconds(value.passTimeoutSec) &&
     (value.rearmConsumed === undefined ||
       typeof value.rearmConsumed === "boolean") &&
@@ -65,5 +77,19 @@ function isRedrive(value: unknown): boolean {
       (value.earlier === undefined ||
         (Array.isArray(value.earlier) &&
           value.earlier.every((c) => typeof c === "string"))))
+  );
+}
+
+function batchShape(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (Array.isArray(value) &&
+      value.every(
+        (i) =>
+          isMapping(i) &&
+          typeof i.key === "string" &&
+          typeof i.person === "string" &&
+          optionalText(i.ancestor),
+      ))
   );
 }

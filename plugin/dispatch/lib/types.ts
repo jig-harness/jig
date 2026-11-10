@@ -58,6 +58,8 @@ export interface DispatchSection {
 
 /** `dispatch.adopt`: which open pull requests with no drive ledger the tick drives as if labelled `drive`. */
 export interface AdoptRule {
+  /** Machine-only served logins, added after resolving the default author. */
+  servedAuthors?: string[];
   enabled: boolean;
   /** The authors it adopts; `null` for the login the dispatcher reads the forge as. */
   authors: string[] | null;
@@ -89,6 +91,10 @@ export interface WantedItem {
   state: string;
   assignee: string;
   assignedBy: string;
+  servedPerson?: string;
+  ancestorEpic?: string;
+  batchAllowed?: boolean;
+  queueIssue?: import("../../skills/do-item/scripts/lib/tracker/port.ts").PoolIssue;
 }
 
 /** How a drive ledger reads, per the design's ledger-to-class table. */
@@ -114,6 +120,7 @@ export type FollowupClass = "followup-done" | "followup-held";
 
 /** A parked decision still waiting on its answer, as the drive framed it. */
 export interface WaitingPark {
+  decision?: import("../../shared/decisions/park.ts").ParkedDecision;
   person?: string;
   key: string;
   kind: "thread" | "finding";
@@ -192,6 +199,8 @@ export interface DrivenPr {
   stale?: StaleCause;
   /** Its labels, read only where the repository turns dispatch labels on. */
   labels?: string[];
+  /** For an `unplaced` ledger: its comments or its ledger did not read, as against a state the forge leaves undecided. */
+  readFailed?: true;
 }
 
 /** One pull request merged since the follow-up stage's start. */
@@ -248,6 +257,8 @@ export interface Unplaced {
   reason: string;
   /** Set for an item assigned by someone who cannot write: only a person can settle it. */
   cause?: "assigner-cannot-write";
+  /** Set when reading the record failed (a comment listing, an unreadable ledger), as against a state the record legitimately leaves unplaced. */
+  readFailed?: true;
 }
 
 /** What a notification is about. */
@@ -263,7 +274,18 @@ export type NotifyCause =
   | "drifting"
   | "nudge-unanswered"
   | "pickup-question"
-  | "ready";
+  | "ready"
+  | FailureCause;
+
+/**
+ * The causes of the failure ledger (`failures.ts`): an action that failed
+ * `failures.notify_after` times in a row, a repository whose turn did, and
+ * this host's ticks of one scope that exited 1 as often.
+ */
+export type FailureCause =
+  | "action-failing"
+  | "repository-failing"
+  | "ticks-failing";
 
 /** A follow-up claim past `followup_stale_after` with no done mark and no session joined to it: the marker the tick releases, and whose claim it was. */
 export interface StaleClaim {

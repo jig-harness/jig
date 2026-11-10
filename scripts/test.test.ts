@@ -107,3 +107,35 @@ test("a run says who holds the lock, waits LOCK_TIMEOUT for a live holder and gi
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("the suite tripwire refuses an entirely skipped shard and preserves test failures", () => {
+  const root = mkdtempSync(join(tmpdir(), "jig-test-executed-"));
+  try {
+    for (const [body, status] of [
+      ['test.skip("skipped", () => {});', 1],
+      ['test("ran", () => expect(true).toBe(true));', 0],
+      ['test("failed", () => expect(true).toBe(false));', 1],
+    ] as const) {
+      writeFileSync(
+        join(root, "suite.test.ts"),
+        `import { test, expect } from "bun:test";\n${body}\n`,
+      );
+      const result = Bun.spawnSync(
+        [process.execPath, SCRIPT, "--shard=1/1", "./suite.test.ts"],
+        {
+          cwd: root,
+          env: { ...process.env, RESOURCE_LOCK_BYPASS: "1" },
+          stdout: "pipe",
+          stderr: "pipe",
+        },
+      );
+      expectSpawnExit(result, status, body);
+      if (body.includes("test.skip"))
+        expect(result.stderr.toString()).toContain(
+          "0 of 1 test case(s) executed",
+        );
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
