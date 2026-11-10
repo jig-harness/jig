@@ -397,7 +397,10 @@ to its implementer. Its prompt ends by asking the session to record
 how it ended, `jig dispatch result <record> <token> done|failed`, which
 refuses another record's token and a second answer. A completed pickup adds
 `--pr <number>` for the pull request it opened, or `--none "<reason>"` when
-no pull request was needed. A `done` without either is refused. Every ended
+no pull request was needed. A `done` without either is refused. A pickup
+whose claim the repository's start rules (`do_item.preflight_command`)
+refused records `failed --refused <updated-at> --reason <reason>`, and the dispatcher
+shows the item as held with that reason until the item changes. Every ended
 launch's outcome keeps its next owner: a station address, a person and their
 act, or nobody with a reason. `jig ask` shows this as `last.next`; older
 outcomes that did not keep it say it was not recorded. A converged drive

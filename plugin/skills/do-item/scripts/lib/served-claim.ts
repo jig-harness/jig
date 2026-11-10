@@ -1,6 +1,11 @@
 /** Served pickups preserve the person's assignment and revalidate inherited authority live. */
-import type { ClaimResult } from "./claim.ts";
-import type { Issue, Tracker, TrackerUser } from "./tracker/port.ts";
+import { type ClaimResult, claimFromRefusal } from "./claim.ts";
+import type {
+  CanonicalState,
+  Issue,
+  Tracker,
+  TrackerUser,
+} from "./tracker/port.ts";
 
 export interface ServedClaim {
   person: string;
@@ -8,6 +13,8 @@ export interface ServedClaim {
   epicLabel?: string;
   hitlLabel?: string;
   manualOpsLabel?: string;
+  /** `do_item.claim_from`; `null` or absent keeps the not-started states alone. */
+  claimFrom?: readonly CanonicalState[] | null;
 }
 const only = (holders: TrackerUser[], user: TrackerUser) =>
   holders.length === 1 && holders[0]?.id === user.id;
@@ -168,6 +175,17 @@ export async function claimServedIssue(
   });
   let problem = await validateAssignment(tracker, key, user, options);
   if (problem) return refused(problem);
+  // Before any write: a state outside claim_from leaves nothing behind.
+  const start = await tracker.getIssue(key);
+  if (start) {
+    const outside = claimFromRefusal(
+      tracker,
+      key,
+      start.state.name,
+      options.claimFrom ?? null,
+    );
+    if (outside !== null) return outside;
+  }
   const assignUnassigned = tracker.assignUnassigned;
   if (options.ancestor && !assignUnassigned)
     return refused(
@@ -190,6 +208,12 @@ export async function claimServedIssue(
   if (
     !before ||
     !waiting(before.state.type) ||
+    claimFromRefusal(
+      tracker,
+      key,
+      before.state.name,
+      options.claimFrom ?? null,
+    ) !== null ||
     hold(before.labels, options) ||
     !only(await tracker.assignees(key), user)
   )

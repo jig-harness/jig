@@ -197,6 +197,16 @@ const result = command(
         description: message`Why a completed pickup needs no pull request. Mutually exclusive with --pr.`,
       }),
     ),
+    refused: optional(
+      option("--refused", string({ metavar: "UPDATED-AT" }), {
+        description: message`A failed pickup whose claim the repository's start rules refused: the item's updatedAt the claim printed. Needs --reason.`,
+      }),
+    ),
+    reason: optional(
+      option("--reason", string({ metavar: "REASON" }), {
+        description: message`The reason the refused claim printed.`,
+      }),
+    ),
   }),
   { brief: message`Record how a dispatched interactive session ended.` },
 );
@@ -466,6 +476,22 @@ function sessionResultMain(
   if (args.pr !== undefined && args.none !== undefined) {
     console.error("jig dispatch result: pass either --pr or --none, not both");
     return 2;
+  }
+  if (args.refused !== undefined || args.reason !== undefined) {
+    if (args.pr !== undefined || args.none !== undefined) {
+      console.error(
+        "jig dispatch result: --refused is a failed pickup's; it takes no --pr or --none",
+      );
+      return 2;
+    }
+    return resultMain([
+      args.record,
+      args.token,
+      args.outcome,
+      "--refused",
+      ...(args.refused === undefined ? [] : [args.refused]),
+      ...(args.reason === undefined ? [] : [args.reason]),
+    ]);
   }
   return resultMain([
     args.record,

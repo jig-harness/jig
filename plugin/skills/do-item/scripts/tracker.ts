@@ -32,11 +32,16 @@
  * another claim landed first. The reason is printed on stderr and in the
  * JSON on stdout.
  *
- * Where the repository sets `do_item.preflight_command`, `claim` first runs
- * it, before the claim lock and any write, with the issue's `get_issue.ts`
- * JSON on standard input: exit 0 goes on; exit 3 refuses (exit 3 here, the
- * command's first line of output the reason, `"why": "preflight"` in the
- * JSON); any other exit, or a run past its deadline, refuses too.
+ * Where the repository's default branch sets `do_item.preflight_command`,
+ * `claim` first runs it, before the claim lock and any write, with the
+ * issue's `get_issue.ts` JSON on standard input: exit 0 goes on; exit 3
+ * refuses (exit 3 here, the command's first line of output the reason,
+ * `"why": "preflight"` and the item's `updatedAt` in the JSON); any other
+ * exit, or a run past its deadline, refuses too. Where the repository sets
+ * `do_item.claim_from`, an item in a state outside it, or in a status that
+ * maps to no canonical state, is refused (exit 3, `"why": "state"`). With
+ * `do_item.claim_marker`, a successful claim posts the claim marker
+ * (`lib/claim-marker.ts`); `"marker"` in the JSON says whether it was posted.
  *
  * Canonical states: backlog, todo, in_progress, in_review, done, canceled,
  * and where the consumer uses them triage, ops_pending, duplicate.
@@ -70,7 +75,17 @@ import { claimServedIssue } from "./lib/served-claim.ts";
 import { withClaimLock } from "./lib/claim-lock.ts";
 import { claimIssue } from "./lib/claim.ts";
 import { getIssue } from "./get_issue.ts";
-import { preflightClaim, preflightCommandOf } from "./lib/preflight.ts";
+import {
+  claimPreflightCommand,
+  preflightClaim,
+  unreadablePreflight,
+} from "./lib/preflight.ts";
+import { claimSettingsOf } from "./lib/claim-settings.ts";
+import {
+  claimBranch,
+  claimMarkerBody,
+  claimSession,
+} from "./lib/claim-marker.ts";
 import { consumerRoot, readOverlay } from "../../../shared/consumer.ts";
 import { runEntry } from "./lib/cli.ts";
 import { ownTrackerConfig } from "./lib/tracker/config.ts";
@@ -307,6 +322,31 @@ interface Operation {
   exitOf?: (out: unknown) => number;
 }
 
+/**
+ * Post the claim marker on a claimed item. A failed post leaves the claim
+ * standing: it is reported, with the reason, beside the claim.
+ */
+async function postClaimMarker(
+  tracker: ReturnType<typeof openTracker>,
+  claim: { issue: string; claimant: { name: string } },
+  root: string,
+): Promise<{ posted: true } | { posted: false; reason: string }> {
+  const body = claimMarkerBody({
+    session: claimSession(),
+    branch: await claimBranch(root),
+    claimant: claim.claimant.name,
+    at: new Date().toISOString(),
+  });
+  try {
+    await tracker.postComment(claim.issue, body);
+    return { posted: true };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    console.error(`the claim marker was not posted on ${claim.issue}: ${reason}`);
+    return { posted: false, reason };
+  }
+}
+
 /** `claim`'s exit codes: refused before any write, stood down after the re-read. */
 const CLAIM_EXIT = { claimed: 0, refused: 3, stood_down: 4 } as const;
 
@@ -382,29 +422,42 @@ const OPERATIONS: Record<string, Operation> = {
       const shape = issueKeysOf(config);
       const normalized = shape?.normalize(key as string) ?? (key as string);
       const tracker = openTracker();
+      const overlay = readOverlay();
+      const settings = claimSettingsOf(overlay);
+      const root = consumerRoot();
       // Before the lock and before any write: a refusal leaves nothing behind.
-      const command = preflightCommandOf(readOverlay());
+      const command = await claimPreflightCommand(root, overlay);
+      if (!command.ok)
+        return unreadablePreflight(normalized, command.failure.reason);
       const refusal =
-        command === null
+        command.value === null
           ? null
-          : await preflightClaim(consumerRoot(), command, normalized, () =>
+          : await preflightClaim(root, command.value, normalized, () =>
               getIssue(normalized, tracker, shape),
             );
       if (refusal !== null) return refusal;
-      return withClaimLock(claimLockKey(tracker, normalized), () => {
-        const ancestorKey = ancestor
-          ? (shape?.normalize(ancestor) ?? ancestor)
-          : undefined;
-        return person
-          ? claimServedIssue(tracker, normalized, {
-              person,
-              ...(ancestorKey ? { ancestor: ancestorKey } : {}),
-              epicLabel: config.labels.epic,
-              hitlLabel: config.labels.hitl,
-              manualOpsLabel: config.labels.manualOps,
-            })
-          : claimIssue(tracker, key as string);
-      });
+      const result = await withClaimLock(
+        claimLockKey(tracker, normalized),
+        () => {
+          const ancestorKey = ancestor
+            ? (shape?.normalize(ancestor) ?? ancestor)
+            : undefined;
+          return person
+            ? claimServedIssue(tracker, normalized, {
+                person,
+                ...(ancestorKey ? { ancestor: ancestorKey } : {}),
+                epicLabel: config.labels.epic,
+                hitlLabel: config.labels.hitl,
+                manualOpsLabel: config.labels.manualOps,
+                claimFrom: settings.claimFrom,
+              })
+            : claimIssue(tracker, key as string, {
+                claimFrom: settings.claimFrom,
+              });
+        },
+      );
+      if (result.outcome !== "claimed" || !settings.claimMarker) return result;
+      return { ...result, marker: await postClaimMarker(tracker, result, root) };
     },
     exitOf: (out) => {
       const result = out as Awaited<ReturnType<typeof claimIssue>>;

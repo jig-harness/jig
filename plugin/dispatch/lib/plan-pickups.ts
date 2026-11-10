@@ -151,7 +151,7 @@ export function planPickups(input: PickupInput): PickupPlan {
       plan.actions.push(doubleClaim(input.slug, item, count, evidence, who));
       continue;
     }
-    const hold = pickupHold(item.key, launches);
+    const hold = pickupHold(item.key, launches, item.updatedAt);
     if (hold.kind === "held") {
       plan.running.push({
         target: item.key,
@@ -176,6 +176,10 @@ export function planPickups(input: PickupInput): PickupPlan {
         reason: `a session is running for it: ${evidence}`,
         evidence: { workspaces: held.workspaces.map((w) => w.path).join(", ") },
       });
+      continue;
+    }
+    if (hold.kind === "refused") {
+      plan.quiet.push({ target: item.key, class: "pickup-refused", why: hold.why });
       continue;
     }
     if (hold.kind === "ended") {

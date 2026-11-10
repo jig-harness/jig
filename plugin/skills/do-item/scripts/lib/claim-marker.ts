@@ -1,0 +1,71 @@
+/**
+ * The claim marker (`do_item.claim_marker`): a comment a successful claim
+ * posts on the item, so another tool reading the tracker can tell which
+ * session holds it, and the dispatcher can join the claim to its session.
+ * It is a shared record (`shared/records/envelope.ts`), written in the
+ * records codec's marker form the dispatcher's launch claims use, so it can
+ * later serve as a claim token across hosts:
+ *
+ *   <!-- jig-claim -->
+ *   <!-- jig-claim-data
+ *   {"kind":"tracker-claim-marker","v":1,"key":"claim","writer":{…},"at":"…","session":"…","branch":"…","claimant":"…"}
+ *   -->
+ *   Claimed by <claimant> · session <id> · branch <branch>
+ *
+ * The writer's host is a digest, as on every record the tracker keeps.
+ */
+import { git } from "../../../../shared/proc.ts";
+import { encodeMarker } from "../../../../shared/records/envelope.ts";
+import { localWriter } from "../../../../shared/records/writer.ts";
+
+export const CLAIM_MARKER = "<!-- jig-claim -->";
+const CLAIM_DATA = "jig-claim-data";
+/** The marker's kind in the records registry. */
+export const CLAIM_MARKER_KIND = "tracker-claim-marker";
+export const CLAIM_MARKER_VERSION = 1;
+/** What a claim marker claims: the item it is on. */
+export const CLAIM_MARKER_KEY = "claim";
+
+export interface ClaimMarkerFacts {
+  /** The agent session that claimed: Claude Code's or Codex's id, `unknown` when neither is set. */
+  session: string;
+  /** The branch checked out where the claim ran; `HEAD` when detached. */
+  branch: string;
+  /** Who the item is now assigned to. */
+  claimant: string;
+  at: string;
+}
+
+/** The session the claim runs in, as the intent chain names it. */
+export function claimSession(
+  env: Record<string, string | undefined> = process.env,
+): string {
+  return env.CLAUDE_CODE_SESSION_ID || env.CODEX_THREAD_ID || "unknown";
+}
+
+/** The branch checked out at `root`; `HEAD` when detached or unreadable. */
+export async function claimBranch(root: string): Promise<string> {
+  const head = await git(["-C", root, "rev-parse", "--abbrev-ref", "HEAD"], {
+    stderr: "ignore",
+    timeoutSec: 10,
+  });
+  const name = head.stdout.trim();
+  return head.code === 0 && name !== "" ? name : "HEAD";
+}
+
+/** The comment a claim posts. */
+export function claimMarkerBody(facts: ClaimMarkerFacts): string {
+  const data = encodeMarker(
+    CLAIM_DATA,
+    {
+      kind: CLAIM_MARKER_KIND,
+      v: CLAIM_MARKER_VERSION,
+      key: CLAIM_MARKER_KEY,
+      writer: localWriter("tracker"),
+      at: facts.at,
+    },
+    { session: facts.session, branch: facts.branch, claimant: facts.claimant },
+  );
+  const line = `Claimed by ${facts.claimant} · session ${facts.session} · branch ${facts.branch}`;
+  return `${CLAIM_MARKER}\n${data}\n${line}\n`;
+}

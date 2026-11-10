@@ -200,16 +200,18 @@ the release in step 4 restores them. Then, for each:
    cannot safely continue after one of its members changes.
 
    The exception is a refusal by the repository's start rules, exit `3` with
-   `"why": "preflight"` in the JSON on standard output (the reason is on
-   stderr): nothing was written for that issue, so in an ordinary batch drop
+   `"why": "preflight"` (its `do_item.preflight_command`) or `"why": "state"`
+   (a state outside its `do_item.claim_from`) in the JSON on standard output
+   (the reason is on stderr): nothing was written for that issue, so in an ordinary batch drop
    it, name it and its reason in the report, and go on with the rest; when
    fewer than two issues remain, release the ones claimed (step 4's release)
    and stop. A fixed served batch still stops. A person's word to proceed
    does not clear it: the item or the command changes first.
 
-   (**judgment** — native, only where `do_item.preflight_command` is not
-   set; with it set, a native write never runs the repository's start rules,
-   so claim through the script above. Read the issue and stop on the same
+   (**judgment** — native, only where none of `do_item.preflight_command`,
+   `do_item.claim_from` and `do_item.claim_marker` is set; with one set, a
+   native write skips the repository's start rules, so claim through the
+   script above. Read the issue and stop on the same
    refusals, save its state and assignee through the harness's tracker tool (the
    mapped state name, assignee "me"), then read it again and stop the batch
    when it shows another assignee, or is gone or no longer in the mapped

@@ -126,8 +126,19 @@ a dispatched pickup all honour it without any of them remembering to call it.
 It reads the item's JSON on standard input. Exit 0 lets the claim go on. Exit
 3 refuses it: the claim exits 3, nothing is written, and the first line the
 command printed is the reason. Any other exit, or a run past 60 seconds,
-refuses too. Telling the agent to proceed does not clear a refusal: the item
-or the command changes. The setting is in the
+refuses too. The command is read from the default branch, so a branch cannot
+change the rules its own claim runs under, and it runs without the tracker
+and forge tokens. Telling the agent to proceed does not clear a refusal: the
+item or the command changes. A dispatched pickup the command refused shows
+in the dispatcher's queue as held, with the reason, until the item changes.
+
+Two more settings narrow a claim. `do_item.claim_from` names the states work
+may start from: an item in any other state, or in a status that maps to no
+canonical state, is refused with nothing written, so a side state a team
+uses as its record of why work stopped is never cleared by a claim.
+`do_item.claim_marker` posts a marker comment on each claimed item naming
+the session, the host and the branch, so other tools reading the tracker
+can tell which session holds it. The settings are in the
 [configuration](../../CONFIGURATION.md#do_item).
 
 ## Requirements and platforms

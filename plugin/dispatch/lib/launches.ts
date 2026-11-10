@@ -258,6 +258,30 @@ export interface ReadRecord {
   /** A pickup's session's or a follow-up pass's recorded answer; `null` when none. */
   result: SessionResult | null;
   next?: NextOwner | null;
+  /** A pickup the repository's start rules refused, recorded with its `failed` result; absent otherwise. */
+  refusal?: PickupRefusal | null;
+}
+
+/** Why the repository's start rules refused a pickup's claim, and the item's `updatedAt` they saw. */
+export interface PickupRefusal {
+  reason: string;
+  updatedAt: string;
+}
+
+/** A row's refusal; `null` when none, or when it does not read. */
+export function readRefusal(
+  value: string | null | undefined,
+): PickupRefusal | null {
+  if (value === null || value === undefined) return null;
+  const parsed = parseJson(value, "a pickup's refusal");
+  if (
+    !isMapping(parsed) ||
+    typeof parsed.reason !== "string" ||
+    typeof parsed.updatedAt !== "string" ||
+    !Number.isFinite(Date.parse(parsed.updatedAt))
+  )
+    return null;
+  return { reason: parsed.reason, updatedAt: parsed.updatedAt };
 }
 
 /** A launch record id: the time it was made, and a random suffix. */
@@ -454,6 +478,7 @@ export interface LaunchRow {
   exit: string | null;
   result: string | null;
   result_next?: string | null;
+  refusal?: string | null;
 }
 
 /** The tick's part of a row, with its samples and episodes; `null` when it does not read as a record. */
@@ -556,6 +581,7 @@ export function readEnded(id: string, root = stateRoot()): ReadRecord | null {
     state: stateOf(row, null, thisHost()),
     result: asResult(row.result),
     next: readNext(row.result_next),
+    refusal: readRefusal(row.refusal),
   };
 }
 
@@ -725,6 +751,7 @@ export async function readLaunches(
       state: stateOf(row, rows, here),
       result: asResult(row.result),
       next: readNext(row.result_next),
+      refusal: readRefusal(row.refusal),
     });
   }
   return { records, unreadable };

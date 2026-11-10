@@ -7,6 +7,7 @@
 import { describe, expect, it } from "bun:test";
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -127,6 +128,53 @@ describe("claimIssue", () => {
     });
   });
 
+  describe("with claim_from", () => {
+    const todoOnly = { claimFrom: ["todo"] as const };
+
+    it("claims an item in a listed state", async () => {
+      const { tracker } = memory("Todo", []);
+      expect((await claimIssue(tracker, "#5", { claimFrom: ["todo"] })).outcome).toBe(
+        "claimed",
+      );
+    });
+
+    it("refuses an item in backlog, naming the state and the allowed ones, writing nothing", async () => {
+      const { tracker, log } = memory("Backlog", []);
+      expect(await claimIssue(tracker, "#5", { claimFrom: [...todoOnly.claimFrom] })).toEqual({
+        outcome: "refused",
+        issue: "#5",
+        why: "state",
+        reason:
+          "#5 is in Backlog (backlog); do_item.claim_from lets work start only from todo (Todo)",
+      });
+      expect(log).toEqual([]);
+    });
+
+    it("refuses an item in a side state with a canonical name outside the list, writing nothing", async () => {
+      const { tracker, log } = memory("In Review", []);
+      const result = await claimIssue(tracker, "#5", { claimFrom: ["todo"] });
+      expect(result).toMatchObject({ outcome: "refused", why: "state" });
+      expect(log).toEqual([]);
+    });
+
+    it("refuses a status that maps to no canonical state, writing nothing", async () => {
+      const { tracker, log } = memory("Blocked", []);
+      const result = await claimIssue(tracker, "#5", { claimFrom: ["todo"] });
+      expect(result).toMatchObject({ outcome: "refused", why: "state" });
+      expect(result.outcome === "refused" && result.reason).toContain(
+        "maps to no canonical state",
+      );
+      expect(log).toEqual([]);
+    });
+
+    it("unset, claims from any state but in progress", async () => {
+      for (const state of ["Backlog", "Blocked"]) {
+        const { tracker } = memory(state, []);
+        expect((await claimIssue(tracker, "#5")).outcome).toBe("claimed");
+      }
+    });
+  });
+
   it("stands down when the re-read shows the issue moved out of progress", async () => {
     const { tracker } = memory("Todo", [ME], (held) => {
       held.state = "Backlog";
@@ -234,13 +282,45 @@ describe("GitHub adapter: claiming", () => {
 
 const FIXTURE = join(import.meta.dir, "support", "preflight-fixture.ts");
 
+/** Make `dir` a clone whose default branch (`origin/HEAD`) holds `config` as `.config/jig.yaml`. */
+function defaultBranch(dir: string, config: string): void {
+  const git = (...args: string[]) => {
+    const r = Bun.spawnSync(["git", ...args], {
+      cwd: dir,
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: "t",
+        GIT_AUTHOR_EMAIL: "t@example.com",
+        GIT_COMMITTER_NAME: "t",
+        GIT_COMMITTER_EMAIL: "t@example.com",
+      },
+      stderr: "pipe",
+    });
+    if (r.exitCode !== 0) throw new Error(r.stderr.toString());
+  };
+  git("init", "-q", "-b", "main");
+  mkdirSync(join(dir, ".config"));
+  writeFileSync(join(dir, ".config", "jig.yaml"), config);
+  git("add", ".config/jig.yaml");
+  git("commit", "-q", "-m", "base");
+  git("update-ref", "refs/remotes/origin/main", "HEAD");
+  git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main");
+}
+
 describe("tracker.ts claim", () => {
   /** Run `tracker.ts claim #5` against a GraphQL endpoint answering as `world` does. */
   async function cli(
     labels: string[],
     logins: string[],
     race?: string,
-    extra: { overlay?: string; env?: Record<string, string> } = {},
+    extra: {
+      overlay?: string;
+      env?: Record<string, string>;
+      /** The default branch's `.config/jig.yaml` additions; absent, the clone names no default branch. */
+      committed?: string;
+      /** Requests the fake tracker records, by operation. */
+      seen?: string[];
+    } = {},
   ) {
     let state = { labels, logins };
     const writeOps: string[] = [];
@@ -285,6 +365,11 @@ describe("tracker.ts claim", () => {
           };
         if (op === "TrackerAssign") writeOps.push(op);
         if (op === "TrackerAddLabels") writeOps.push(op);
+        if (op !== undefined) extra.seen?.push(op);
+        if (op === "TrackerComment") {
+          writeOps.push(`${op} ${String(variables.body)}`);
+          data = { addComment: { clientMutationId: null } };
+        }
         if (op === "TrackerAssign") {
           const input = variables.input as { assigneeIds: string[] };
           state = {
@@ -309,12 +394,11 @@ describe("tracker.ts claim", () => {
     });
     const dir = mkdtempSync(join(tmpdir(), "jig-claim-"));
     const overlay = join(dir, "overlay.yaml");
-    writeFileSync(
-      overlay,
-      // Both facets named, so no detection read precedes the claim's.
-      "issue_tracker:\n  adapter: github\n  github:\n    repository: acme/app\n  facets:\n    type: { store: label }\n    priority: { store: label }\n" +
-        (extra.overlay ?? ""),
-    );
+    // Both facets named, so no detection read precedes the claim's.
+    const base =
+      "issue_tracker:\n  adapter: github\n  github:\n    repository: acme/app\n  facets:\n    type: { store: label }\n    priority: { store: label }\n";
+    writeFileSync(overlay, base + (extra.overlay ?? ""));
+    if (extra.committed !== undefined) defaultBranch(dir, base + extra.committed);
     try {
       const child = Bun.spawn(
         [
@@ -366,9 +450,49 @@ describe("tracker.ts claim", () => {
     expect(stood.stderr).toContain("another claim landed first");
   });
 
+  it("refuses an item outside do_item.claim_from with exit 3, writing nothing", async () => {
+    const out = await cli([], [], undefined, {
+      overlay: "do_item:\n  claim_from: [in_review]\n",
+    });
+    expectSpawnExit(out, 3);
+    expect(JSON.parse(out.stdout)).toMatchObject({
+      outcome: "refused",
+      why: "state",
+    });
+    expect(out.writes).toEqual([]);
+  });
+
+  it("posts the claim marker after a claim with do_item.claim_marker", async () => {
+    const out = await cli([], [], undefined, {
+      overlay: "do_item:\n  claim_marker: true\n",
+      env: { CLAUDE_CODE_SESSION_ID: "session-1" },
+    });
+    expectSpawnExit(out, 0);
+    expect(JSON.parse(out.stdout)).toMatchObject({
+      outcome: "claimed",
+      marker: { posted: true },
+    });
+    const comment = out.writes.find((w) => w.startsWith("TrackerComment "));
+    expect(comment).toBeDefined();
+    expect(comment).toContain("<!-- jig-claim -->");
+    expect(comment).toContain('"kind":"tracker-claim-marker"');
+    expect(comment).toContain('"session":"session-1"');
+    expect(comment).toContain("Claimed by factory · session session-1");
+    // The comment follows the claim's own writes.
+    expect(out.writes.indexOf(comment as string)).toBe(out.writes.length - 1);
+  });
+
+  it("posts no marker without do_item.claim_marker", async () => {
+    const out = await cli([], []);
+    expectSpawnExit(out, 0);
+    expect(JSON.parse(out.stdout).marker).toBeUndefined();
+    expect(out.writes.some((w) => w.startsWith("TrackerComment"))).toBe(false);
+  });
+
   describe("the preflight command", () => {
-    const claimWith = (overlay: string, env: Record<string, string> = {}) =>
-      cli([], [], undefined, { overlay, env });
+    // The command is read from the default branch, never the working tree.
+    const claimWith = (committed: string, env: Record<string, string> = {}) =>
+      cli([], [], undefined, { committed, env });
     const preflight = (command: string) =>
       `do_item:\n  preflight_command: ${JSON.stringify(command)}\n`;
     // The tracker's mock answers the claim's own reads; these run the real script.
@@ -427,6 +551,30 @@ describe("tracker.ts claim", () => {
       const out = await claimWith("do_item:\n  preflight_command: 5\n");
       expectSpawnExit(out, 1);
       expect(out.stderr).toContain("do_item.preflight_command");
+      expect(out.writes).toEqual([]);
+    });
+
+    it("carries the item's updatedAt on a refusal, for the dispatcher's hold", async () => {
+      const out = await run("refuse");
+      expectSpawnExit(out, 3);
+      expect(JSON.parse(out.stdout).updatedAt).toBe("2026-01-02T00:00:00Z");
+    });
+
+    it("never runs a command only the working tree sets", async () => {
+      const out = await cli([], [], undefined, {
+        committed: "",
+        overlay: preflight(`bun ${FIXTURE} refuse`),
+      });
+      expectSpawnExit(out, 0);
+      expect(JSON.parse(out.stdout).outcome).toBe("claimed");
+    });
+
+    it("refuses, writing nothing, when the working tree sets a command and no default branch can be read", async () => {
+      const out = await cli([], [], undefined, {
+        overlay: preflight(`bun ${FIXTURE} ok`),
+      });
+      expectSpawnExit(out, 3);
+      expect(out.stderr).toContain("read from the default branch");
       expect(out.writes).toEqual([]);
     });
   });

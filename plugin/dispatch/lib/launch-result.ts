@@ -1,7 +1,7 @@
 /** A session owns its result and handoff; one conditional write settles both. */
 import { Defect } from "../../shared/errors.ts";
 import { stateRoot } from "../receipts.ts";
-import type { SessionResult } from "./launches.ts";
+import type { PickupRefusal, SessionResult } from "./launches.ts";
 import { isMapping } from "../../shared/config-layers.ts";
 import { derivedNext, type NextOwner } from "./next-owner.ts";
 import { sessionResultClass } from "./session-result-class.ts";
@@ -9,24 +9,27 @@ import { inTransaction, stateDb } from "./state.ts";
 
 /**
  * Record a session's or a follow-up pass's answer: true when this call wrote it,
- * false when the record already had one, which stands.
+ * false when the record already had one, which stands. A pickup the
+ * repository's start rules refused carries its `refusal`, written with it.
  */
 export function recordResult(
   id: string,
   result: SessionResult,
   root = stateRoot(),
   next: NextOwner | null = null,
+  refusal: PickupRefusal | null = null,
 ): boolean {
   const db = stateDb(root);
   return inTransaction(db, () => {
     const done = db
       .query(
-        "UPDATE launches SET result = ?, result_at = ?, result_next = ? WHERE id = ? AND result IS NULL",
+        "UPDATE launches SET result = ?, result_at = ?, result_next = ?, refusal = ? WHERE id = ? AND result IS NULL",
       )
       .run(
         result,
         new Date().toISOString(),
         next === null ? null : JSON.stringify(next),
+        refusal === null ? null : JSON.stringify(refusal),
         id,
       );
     if (done.changes !== 1) return false;
