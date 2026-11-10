@@ -359,7 +359,8 @@ function embeddedDigests(item: ParkedItem, text: string): string[] {
               normalized.startsWith(`choose ${name}`) &&
               (rest.length === 0 || /^\s/.test(rest));
             return matches &&
-              (matched === undefined || name.length > matched.name.length)
+              (matched === undefined ||
+                name.length > normalizeAnswerText(matched.name).length)
               ? candidate
               : matched;
           },

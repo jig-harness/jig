@@ -180,7 +180,24 @@ test("a framing suffix preserves option text and rejects extra identity claims",
       },
     },
   };
-  for (const park of [withDigestName, withOverlappingDigestNames]) {
+  const withNormalizedOverlappingDigestNames = {
+    ...withOverlappingDigestNames,
+    decision: {
+      ...withOverlappingDigestNames.decision,
+      call: {
+        ...withOverlappingDigestNames.decision.call,
+        options: [
+          { ...keep, name: "********Keep********" },
+          ...withOverlappingDigestNames.decision.call.options.slice(1),
+        ],
+      },
+    },
+  };
+  for (const park of [
+    withDigestName,
+    withOverlappingDigestNames,
+    withNormalizedOverlappingDigestNames,
+  ]) {
     const answer = parseAnswerComment(
       park,
       comment("answer K: choose Keep [aaaaaaaaaaaa] [123456abcdef] Thanks"),
