@@ -44,6 +44,60 @@ test("a park message cut to its bound keeps the answer instructions and the URL"
   expect(text.endsWith("https://example.test/pull/9")).toBe(true);
 });
 
+test("a later disputed park stays visible beside an overflowing earlier decision", () => {
+  const pr = parked([["x".repeat(8000)], ["Second question?"]]);
+  const second = pr.waiting?.[1];
+  if (second === undefined) throw new Error("missing park fixture");
+  second.disputed = [
+    {
+      author: "owner",
+      at: "2026-11-02T10:00:00Z",
+      url: "u",
+      body: "approve",
+      choice: { option: "Keep", recommended: true, form: "approve" },
+    },
+    {
+      author: "maintainer",
+      at: "2026-11-02T11:00:00Z",
+      url: "v",
+      body: "wait for the migration",
+    },
+  ];
+  const { text } = parkNotice("example/project", pr);
+  expect(text.length).toBeLessThanOrEqual(4000);
+  expect(text).toContain("Disputed");
+  expect(text).toContain("@owner");
+  expect(text).toContain("Keep");
+  expect(text).toContain("@maintainer");
+  expect(text).toContain("wait for the migration");
+  expect(text.indexOf("Disputed")).toBeLessThan(text.indexOf("x".repeat(20)));
+});
+
+test("many disputes keep the notice bounded and point to omitted answers", () => {
+  const pr = parked(Array.from({ length: 30 }, () => ["x".repeat(8000)]));
+  for (const park of pr.waiting ?? [])
+    park.disputed = [
+      {
+        author: "owner",
+        at: "2026-11-02T10:00:00Z",
+        url: "u",
+        body: "approve",
+      },
+      {
+        author: "maintainer",
+        at: "2026-11-02T11:00:00Z",
+        url: "v",
+        body: "wait",
+      },
+    ];
+  const { text } = parkNotice("example/project", pr);
+  expect(text.length).toBeLessThanOrEqual(4000);
+  expect(text).toContain("more disputed decisions");
+  expect(text).toContain("read their answers on the pull request");
+  expect(text).toContain("answer <key>");
+  expect(text.endsWith(pr.url)).toBe(true);
+});
+
 test("a notice key longer than its bound is cut and still tells two keys apart", () => {
   const ids = (n: number) =>
     Array.from({ length: n }, (_, i) => `ws-${i}`).join(", ");

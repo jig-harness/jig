@@ -99,7 +99,6 @@
  * read here.
  */
 import { stallThresholdMs } from "../../../skills/drive-pr/scripts/lib/doctor.ts";
-import { parkAnswers } from "../../../skills/drive-pr/scripts/lib/driver/rearm.ts";
 import type {
   Ledger,
   LedgerSnapshot,
@@ -120,7 +119,8 @@ import { branchHead } from "../forge.ts";
 import { hasCommand, type LabelConfig } from "../labels.ts";
 import type { Listing } from "../tick-comments.ts";
 import { failureText, minutesBetween } from "../text.ts";
-import { framedDecisionLines } from "../../../skills/drive-pr/scripts/lib/state/park-frame.ts";
+import { readPark, type ParkReading } from "./park-reading.ts";
+export type { ParkReading } from "./park-reading.ts";
 import type {
   DrivenPr,
   Evidence,
@@ -128,11 +128,6 @@ import type {
   StaleCause,
   WaitingPark,
 } from "../types.ts";
-
-/** What answers a park's items, when the ledger stopped `HITL_PARKED`. */
-export type ParkReading =
-  | { answered: number; waiting: string[]; parks?: WaitingPark[] }
-  | { unreadable: string };
 
 /** What the head of a pull request's base branch read as. */
 type BaseHead = { oid: string } | { unreadable: string };
@@ -471,7 +466,8 @@ function parkClass(park: ParkReading | undefined, forge: PrFacts): Classified {
       class: "re-armable",
       why: `stopped ${DRIVE_EXIT.HITL_PARKED} (parked), every parked item answered (${park.answered}): re-arm on any account`,
     };
-  const waiting = `waiting on ${park.waiting.join(", ")}`;
+  const disputes = park.disputed ?? [];
+  const waiting = `waiting on ${park.waiting.join(", ")}${disputes.length === 0 ? "" : `; disputed answers to ${disputes.join(", ")}`}`;
   return (
     parkConflictClass(waiting, forge) ?? {
       class: "parked",
@@ -665,33 +661,6 @@ function unreadable(snapshot: LedgerSnapshot): string | null {
     : `its drive ledger does not read: ${canonical.parsed.reason}`;
 }
 
-async function parkOf(
-  pr: number,
-  ledger: Ledger,
-  slug: string,
-  listing: readonly unknown[] | undefined,
-): Promise<ParkReading | undefined> {
-  if (
-    ledger.driver.state !== "stopped" ||
-    ledger.driver.exit !== DRIVE_EXIT.HITL_PARKED
-  )
-    return undefined;
-  const found = await parkAnswers(pr, ledger.parked, slug, listing);
-  return "unreadable" in found
-    ? found
-    : {
-        answered: found.answered.length,
-        waiting: found.waiting.map((p) => `${p.kind} ${p.key}`),
-        parks: found.waiting.map((p) => ({
-          ...(p.person === undefined ? {} : { person: p.person }),
-          key: p.key,
-          kind: p.kind,
-          lines: framedDecisionLines(p),
-          ...(p.decision === undefined ? {} : { decision: p.decision }),
-        })),
-      };
-}
-
 /**
  * A pull request with no ledger whose `drive` label asks for one, or which
  * the repository's adoption rule adopts: the plan arms it once per head
@@ -881,7 +850,7 @@ async function driveOf(pr: OpenPr, r: Reading): Promise<DrivenPr | null> {
       readFailed: true,
     };
   const ledger = snapshot.canonical.parsed.ledger;
-  const park = await parkOf(
+  const park = await readPark(
     pr.number,
     ledger,
     slug,

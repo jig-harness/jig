@@ -430,7 +430,7 @@ export function valueAt(
   return current;
 }
 
-function refuseRepositoryOnly(
+export function refuseRepositoryOnly(
   values: Record<string, unknown>,
   path: string,
 ): void {

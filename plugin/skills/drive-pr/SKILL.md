@@ -857,7 +857,8 @@ stops admit it on a mechanical state:
   passes it, never an agent, as with `clear-lease`.
 - **`HITL_PARKED` (exit `8`).** Once **every** parked item has an answer — a
   comment by an author GitHub reports as the repository's owner, member or
-  collaborator, later than the park, on the item's thread or in a
+  collaborator, last edited (or posted) later than the park, on the item's
+  thread or in a
   pull-request comment with a line `answer <key>: …` — the re-arm keeps the
   answers in the drive's state directory, unparks every item at once (or none),
   and hands the answers to every pass as human verdicts
@@ -865,6 +866,11 @@ stops admit it on a mechanical state:
   A comment the drive itself writes (one opening
   with an outcome token, or carrying a hidden marker other than the record
   of an answer `jig send` wrote) is never an answer.
+  Read [structured answers](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+  under the rules below. Each person's latest answer
+  replaces their earlier one. Different choices, different notes, or a
+  structured answer beside another person's free answer leave the item
+  disputed and parked. The dispatcher notifies the disputing answers.
   With any item unanswered nothing is unparked. If the PR conflicts with
   its base, the first gate reports `PR_CONFLICTING` before the park: the
   re-arm attempts conflict repair within its budget. Successful repair lets
@@ -872,10 +878,36 @@ stops admit it on a mechanical state:
   `9` (`PR_CONFLICTING`), including when repair fails, is disabled or has
   spent its budget, or the base cannot be read. Otherwise the drive stops `8` at its first gate
   again, naming what it still waits on; at the `wide`
-  autonomy level, except where every unanswered item has the class
+  autonomy level, except where every unanswered item has no person's answer
+  and the class
   `escalated`: the re-arm then unparks them with the answered ones and
   hands them to the first round to decide provisionally (§ Autonomy). One
   unanswered item of any other class stays parked, at every level.
+
+**Structured answers.** In a pull-request comment, write
+`answer <key>: approve` for the recommended option, or
+`answer <key>: choose <option name>` for another option. A thread reply may
+contain just `approve` or `choose <option name>`. A line
+`note <key>: <text>` may add a condition of at most 500 characters.
+The whole comment must contain only answers and their notes, apart from
+blank lines, the `jig send` record and identifiable notification quotes.
+Other prose, code, HTML, duplicate lines or unmatched quotes make the
+answer free. An unknown option or an approval without a recommendation is
+also free. A note alone answers nothing.
+
+Matching normalizes Unicode, case, phone quotes and dashes, bold marks,
+backticks and whitespace, and drops one final full stop or exclamation mark.
+Every person's latest structured answer must choose the same option with
+the same note. If all latest answers are free, the pass receives them all
+to interpret. `jig ask` labels answers structured, free or disputed.
+
+**Apply a structured verdict.** The pass notice and kept answers include
+the chosen option, its framed decision and any note. Apply that option as
+the decision states it. A note may narrow the option or add a condition;
+it cannot widen permission. If the note conflicts with the option or asks
+for more, park the item again and quote the note. Name the chosen option
+and its author in the outcome reply. Never decide provisionally over any
+item with a person's answer, including a disputed item.
 
 Replacing a driver that still holds its locks is a **takeover**:
 
@@ -1377,7 +1409,7 @@ base branch again. Never set `$DRIVE_PR_POLICY_BASE` or `$DRIVE_PR_POLICY_BOUND`
 | A technical choice `decide`'s last row would escalate: no sensitivity flag, no stakeholder category, no persisted-data or published-contract consequence | Escalate | Escalate | Decide it, marked provisional: record it as `decide-provisional` (§ 8) |
 | A bot-review thread the arbiter rules `escalate` with `class: escalated` and no recorded human decision behind it | Park under `escalated` (§ 4) | Same | Reply provisionally with a reply outcome, resolve and record it (below) |
 | A bot-review thread the arbiter rules `escalate` with any other class | Park under its `class:` (§ 4) | Same | Same |
-| Unpark unanswered items after `HITL_PARKED` (conflict repair leaves them parked) | Never | Never | The re-arm hands the unanswered `escalated` items to the first round to decide provisionally; one item of any other class stays parked |
+| Unpark unanswered items after `HITL_PARKED` (conflict repair leaves them parked) | Never | Never | The re-arm hands `escalated` items with no person's answer to the first round to decide provisionally; any dispute or item of another class stays parked |
 
 The registry's classes are on no row: no level decides them, and a park
 outside them is refused (§ 4). Every decision taken is recorded where a
@@ -2491,7 +2523,10 @@ Its schema is `parked-decision/v1`:
 ```
 
 Option ids are one to eight letters or digits and unique within the call;
-option names are unique single lines. Each option may also carry `tag`,
+option names are single lines, unique after answer normalization, and contain
+no email address or account identifier that ledger redaction changes.
+An Authorize decision includes refusal as an option, such as **Do not release**.
+Each option may also carry `tag`,
 `keep` (a string array), `rightWhen`, `obligation` and `reversible` (a boolean).
 Optional top-level `facts`, `interplay` and `sheet` carry sourced claims,
 relationships between calls and a decision-sheet link. Unknown fields are
