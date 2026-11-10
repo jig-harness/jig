@@ -39,6 +39,39 @@ const raw = yaml.load(
 raw.ceremony.weights.drive_rearms = 2;
 raw.ceremony.unmeasured = {};
 
+function depsFor(
+  prs: Awaited<ReturnType<RunDeps["listCandidates"]>>["prs"],
+  driveRearms: RunDeps["driveRearms"],
+): RunDeps {
+  return {
+    cfg: parseConfig(raw),
+    nowMs: () => window.untilMs,
+    budget: async () => ({ remaining: 5000, resetAt: at }),
+    listCandidates: async () => ({ prs, capped: false }),
+    reviewedHeads: async () => 0,
+    samplePr: async () => {
+      throw new Error("no expensive sample needed");
+    },
+    driveRearms,
+    prFiles: async () => [],
+    prBody: async () => "",
+    classifier: null,
+    classifierError: "no catalog",
+    tracker: null,
+    trackerError: "no tracker",
+    fetchIssues: async () => new Map(),
+    fetchWindowIssues: async () => ({
+      followups: [],
+      sdlcIssues: [],
+      completed: [],
+    }),
+    fetchEpicActivity: async () => [],
+    fetchAcceptedEpics: async () => new Set(),
+    fetchEpicComments: async () => ({ uuid: "epic", comments: [] }),
+    note: () => undefined,
+  };
+}
+
 test("re-arms contribute their configured weight only inside the window, without needing review rounds", () => {
   const cfg = parseConfig(raw);
   const pr: PrFact = {
@@ -160,50 +193,24 @@ test("older configurations receive the re-arm weight and drop only its obsolete 
 
 test("the collector reads a cheap PR's ledger and reports an unreadable history as a gap", async () => {
   const reads: number[] = [];
-  const deps: RunDeps = {
-    cfg: parseConfig(raw),
-    nowMs: () => window.untilMs,
-    budget: async () => ({ remaining: 5000, resetAt: at }),
-    listCandidates: async () => ({
-      prs: [
-        {
-          number: 1,
-          title: "work",
-          state: "OPEN",
-          body: "",
-          createdAt: at,
-          updatedAt: at,
-          mergedAt: null,
-          closedAt: null,
-        },
-      ],
-      capped: false,
-    }),
-    reviewedHeads: async () => 0,
-    samplePr: async () => {
-      throw new Error("no expensive sample needed");
-    },
-    driveRearms: async (pr) => {
+  const deps = depsFor(
+    [
+      {
+        number: 1,
+        title: "work",
+        state: "OPEN",
+        body: "",
+        createdAt: at,
+        updatedAt: at,
+        mergedAt: null,
+        closedAt: null,
+      },
+    ],
+    async (pr) => {
       reads.push(pr);
       return "comments unreadable: request timed out";
     },
-    prFiles: async () => [],
-    prBody: async () => "",
-    classifier: null,
-    classifierError: "no catalog",
-    tracker: null,
-    trackerError: "no tracker",
-    fetchIssues: async () => new Map(),
-    fetchWindowIssues: async () => ({
-      followups: [],
-      sdlcIssues: [],
-      completed: [],
-    }),
-    fetchEpicActivity: async () => [],
-    fetchAcceptedEpics: async () => new Set(),
-    fetchEpicComments: async () => ({ uuid: "epic", comments: [] }),
-    note: () => undefined,
-  };
+  );
   const result = await runFleetHealth(
     { until: "2026-09-15", days: 14, limit: 10, concurrency: 1 },
     deps,
@@ -237,50 +244,24 @@ test("the collector retains a historical PR when a drive re-arm falls in the win
   const reads: number[] = [];
   const result = await runFleetHealth(
     { until: "2026-09-15", days: 14, limit: 10, concurrency: 1 },
-    {
-      cfg: parseConfig(raw),
-      nowMs: () => window.untilMs,
-      budget: async () => ({ remaining: 5000, resetAt: at }),
-      listCandidates: async () => ({
-        prs: [
-          {
-            number: 2,
-            title: "historical work",
-            state: "CLOSED",
-            body: "",
-            createdAt: "2026-08-01T00:00:00Z",
-            updatedAt: "2026-09-20T00:00:00Z",
-            mergedAt: null,
-            closedAt: "2026-09-20T00:00:00Z",
-          },
-        ],
-        capped: false,
-      }),
-      reviewedHeads: async () => 0,
-      samplePr: async () => {
-        throw new Error("no expensive sample needed");
-      },
-      driveRearms: async (pr) => {
+    depsFor(
+      [
+        {
+          number: 2,
+          title: "historical work",
+          state: "CLOSED",
+          body: "",
+          createdAt: "2026-08-01T00:00:00Z",
+          updatedAt: "2026-09-20T00:00:00Z",
+          mergedAt: null,
+          closedAt: "2026-09-20T00:00:00Z",
+        },
+      ],
+      async (pr) => {
         reads.push(pr);
         return [at];
       },
-      prFiles: async () => [],
-      prBody: async () => "",
-      classifier: null,
-      classifierError: "no catalog",
-      tracker: null,
-      trackerError: "no tracker",
-      fetchIssues: async () => new Map(),
-      fetchWindowIssues: async () => ({
-        followups: [],
-        sdlcIssues: [],
-        completed: [],
-      }),
-      fetchEpicActivity: async () => [],
-      fetchAcceptedEpics: async () => new Set(),
-      fetchEpicComments: async () => ({ uuid: "epic", comments: [] }),
-      note: () => undefined,
-    },
+    ),
   );
   expect(reads).toEqual([2]);
   expect(result.report.counts.prs).toBe(1);
@@ -289,47 +270,21 @@ test("the collector retains a historical PR when a drive re-arm falls in the win
 test("the collector reports an unreadable re-arm ledger even when no fact is retained", async () => {
   const result = await runFleetHealth(
     { until: "2026-09-15", days: 14, limit: 10, concurrency: 1 },
-    {
-      cfg: parseConfig(raw),
-      nowMs: () => window.untilMs,
-      budget: async () => ({ remaining: 5000, resetAt: at }),
-      listCandidates: async () => ({
-        prs: [
-          {
-            number: 3,
-            title: "historical work",
-            state: "CLOSED",
-            body: "",
-            createdAt: "2026-08-01T00:00:00Z",
-            updatedAt: "2026-08-02T00:00:00Z",
-            mergedAt: null,
-            closedAt: "2026-08-02T00:00:00Z",
-          },
-        ],
-        capped: false,
-      }),
-      reviewedHeads: async () => 0,
-      samplePr: async () => {
-        throw new Error("no expensive sample needed");
-      },
-      driveRearms: async () => "comments unreadable: request timed out",
-      prFiles: async () => [],
-      prBody: async () => "",
-      classifier: null,
-      classifierError: "no catalog",
-      tracker: null,
-      trackerError: "no tracker",
-      fetchIssues: async () => new Map(),
-      fetchWindowIssues: async () => ({
-        followups: [],
-        sdlcIssues: [],
-        completed: [],
-      }),
-      fetchEpicActivity: async () => [],
-      fetchAcceptedEpics: async () => new Set(),
-      fetchEpicComments: async () => ({ uuid: "epic", comments: [] }),
-      note: () => undefined,
-    },
+    depsFor(
+      [
+        {
+          number: 3,
+          title: "historical work",
+          state: "CLOSED",
+          body: "",
+          createdAt: "2026-08-01T00:00:00Z",
+          updatedAt: "2026-08-02T00:00:00Z",
+          mergedAt: null,
+          closedAt: "2026-08-02T00:00:00Z",
+        },
+      ],
+      async () => "comments unreadable: request timed out",
+    ),
   );
   expect(result.report.counts.prs).toBe(0);
   expect(result.report.gaps).toContain(
