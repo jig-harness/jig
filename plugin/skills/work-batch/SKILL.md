@@ -234,7 +234,7 @@ Then write the batch form of the
 [intent chain](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), as `/jig:do-item`
 [Step 3.5](../do-item/SKILL.md#step-35-write-the-intent-chain-snapshot-refocus)
 describes, with `"mode":"batch"`, the anchor as `issue` (for an area or path
-anchor, the highest-ranked issue; when a preflight refusal dropped the
+anchor, the highest-ranked issue; when a start-rules refusal dropped the
 anchor, the highest-ranked issue still claimed), the anchor's parent as `epic` when it has
 one, and every claimed issue in `items`. Write that JSON to `batch-intent.json`
 with the file-writing tool:
