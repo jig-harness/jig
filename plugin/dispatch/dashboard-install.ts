@@ -29,6 +29,7 @@ import {
   keepDashboard,
   readerRoot,
   readerGeneration,
+  readGeneration,
   readAccess,
   readerSettings,
 } from "./dashboard-reader.ts";
@@ -167,7 +168,12 @@ async function writeDashboardJob(remove: boolean): Promise<number> {
   const root = readerRoot();
   mkdirSync(root, { recursive: true, mode: 0o700 });
   // The same generation survives repeated installs; no extra reader is started.
-  const previous = readerGeneration(root);
+  const marker = readGeneration(root);
+  if (!marker.ok) {
+    console.error(marker.failure.reason);
+    return 1;
+  }
+  const previous = marker.value;
   if (!remove && previous === null)
     writeFileSync(join(root, "enabled"), randomUUID(), {
       flag: "wx",
@@ -189,7 +195,7 @@ async function writeDashboardJob(remove: boolean): Promise<number> {
   return 0;
 }
 
-export async function dashboardStatus(): Promise<number> {
+export async function dashboardStatus(script: string): Promise<number> {
   const status = await scheduledStatus("dashboard", dashboardJobSpec(), null);
   console.log(formatStatus(status));
   const scheduler = detectScheduler();
@@ -204,6 +210,18 @@ export async function dashboardStatus(): Promise<number> {
     snapshot.value.active;
   const access = readAccess();
   const machine = readMachineConfig();
+  let installedCopy = false;
+  let installedCopyFailure: string | null = null;
+  try {
+    installedCopy =
+      access.ok &&
+      realpathSync(await installedEntry(pluginPrograms())) ===
+        realpathSync(script);
+  } catch (cause) {
+    // Do not print a registry command's raw output: it can contain credentials.
+    installedCopyFailure =
+      cause instanceof Error && cause.name ? cause.name : "lookup failed";
+  }
   const matches =
     access.ok &&
     machine.ok &&
@@ -234,14 +252,26 @@ export async function dashboardStatus(): Promise<number> {
   );
   const refused = await availability();
   if (refused !== null) console.log(`availability: ${refused}`);
-  console.log(
-    `logs: ${readerRoot()}/scheduler.log and scheduler-error.log (systemd: journalctl --user -u jig-dispatch-dashboard.service)`,
-  );
+  const schedulerLogs =
+    scheduler.ok && scheduler.value === "systemd"
+      ? "journalctl --user -u jig-dispatch-dashboard.service"
+      : scheduler.ok && scheduler.value === "launchd"
+        ? `${readerRoot()}/scheduler.log and scheduler-error.log`
+        : "the cron service output (or cron mail)";
+  console.log(`logs: ${schedulerLogs}`);
   if (!matches)
     console.log(
       "configuration: reader does not match the current readable dashboard settings; waiting for renewal",
     );
-  return healthy && viable && matches && refused === null ? 0 : 1;
+  if (!installedCopy)
+    console.log(
+      installedCopyFailure === null
+        ? "installed copy: reader is not running the currently installed plugin copy; waiting for renewal"
+        : `installed copy: lookup unavailable (${installedCopyFailure}); waiting for renewal`,
+    );
+  return healthy && viable && matches && installedCopy && refused === null
+    ? 0
+    : 1;
 }
 
 export function dashboardAccess(): number {
@@ -257,6 +287,13 @@ export function dashboardAccess(): number {
 /** Poll cheap config/generation every second; resolve the installed entry at most once a minute. */
 export async function scheduledDashboard(script: string): Promise<number> {
   const path = machineConfigPath();
+  let config: string;
+  try {
+    config = readFileSync(path, "utf8");
+  } catch {
+    console.error("Dashboard configuration cannot be read");
+    return 1;
+  }
   const machine = readMachineConfig(path);
   if (!machine.ok || machine.value?.dashboardListen == null) {
     console.error(
@@ -264,9 +301,14 @@ export async function scheduledDashboard(script: string): Promise<number> {
     );
     return 1;
   }
-  let config: string;
+  // The parsed settings and fingerprint must describe the same file snapshot.
   try {
-    config = readFileSync(path, "utf8");
+    if (readFileSync(path, "utf8") !== config) {
+      console.error(
+        "Dashboard configuration changed while it was read; retrying",
+      );
+      return 1;
+    }
   } catch {
     console.error("Dashboard configuration cannot be read");
     return 1;
@@ -294,18 +336,40 @@ export async function scheduledDashboard(script: string): Promise<number> {
       if (Date.now() < nextCheck) return true;
       nextCheck = Date.now() + 60_000;
       let entry: Outcome<string>;
+      let removalTimer: ReturnType<typeof setInterval> | undefined;
       try {
-        entry = ok(await installedEntry(programs));
+        const lookup = installedEntry(programs).then(
+          (value) => ok(value),
+          (cause) =>
+            failed(
+              "registry-unavailable",
+              "Dashboard installed-copy lookup unavailable",
+              cause,
+            ),
+        );
+        const removed = new Promise<null>((resolve) => {
+          removalTimer = setInterval(() => {
+            if (readerGeneration() === null) resolve(null);
+          }, 100);
+        });
+        const result = await Promise.race([lookup, removed]);
+        if (result === null) return false;
+        entry = result;
       } catch (cause) {
         entry = failed(
           "registry-unavailable",
           "Dashboard installed-copy lookup unavailable",
           cause,
         );
+      } finally {
+        clearInterval(removalTimer);
       }
       if (!entry.ok) {
+        const cause = entry.failure.cause;
+        const detail =
+          cause instanceof Error && cause.name ? ` (${cause.name})` : "";
         console.error(
-          "Dashboard installed-copy check unavailable; retrying within a minute",
+          `Dashboard installed-copy check unavailable${detail}; retrying within a minute`,
         );
         return true;
       }

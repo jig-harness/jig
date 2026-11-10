@@ -20,7 +20,7 @@ import {
   decodeIdentity,
   type ProcessIdentity,
 } from "../shared/liveness.ts";
-import { attempt, failed, ok, type Outcome } from "../shared/outcome.ts";
+import { failed, ok, type Outcome } from "../shared/outcome.ts";
 import { serveDashboard } from "./dashboard.ts";
 import { parseListen, type Listen } from "./lib/listen.ts";
 import { existingStateDb } from "./lib/state.ts";
@@ -29,12 +29,27 @@ import { stateRoot } from "./receipts.ts";
 export function readerRoot(): string {
   return join(stateRoot(), "dashboard");
 }
+/** Absence of the marker is `null`; any other read failure is a failure, never an absence. */
+export function readGeneration(
+  root = readerRoot(),
+): Outcome<string | null, "generation-unreadable"> {
+  try {
+    return ok(readFileSync(join(root, "enabled"), "utf8"));
+  } catch (cause) {
+    const code =
+      cause && typeof cause === "object" && "code" in cause
+        ? (cause as { code?: unknown }).code
+        : undefined;
+    if (code === "ENOENT") return ok(null);
+    return failed(
+      "generation-unreadable",
+      `dashboard installation marker cannot be read${typeof code === "string" ? ` (${code})` : ""}`,
+      cause,
+    );
+  }
+}
 export function readerGeneration(root = readerRoot()): string | null {
-  const read = attempt(
-    "generation-unreadable",
-    "dashboard installation marker cannot be read",
-    () => readFileSync(join(root, "enabled"), "utf8"),
-  );
+  const read = readGeneration(root);
   return read.ok ? read.value : null;
 }
 
@@ -101,10 +116,17 @@ export function readAccess(
         "dashboard reader is not confirmed running; inspect --status and scheduler logs",
       );
     return ok({ url: value.url, identity, configuration: value.configuration });
-  } catch {
+  } catch (cause) {
+    const code =
+      cause && typeof cause === "object" && "code" in cause
+        ? (cause as { code?: unknown }).code
+        : undefined;
     return failed(
       "unavailable",
-      "no readable live dashboard access record; inspect --status",
+      code === "ENOENT"
+        ? "no readable live dashboard access record; inspect --status"
+        : `dashboard access record is unreadable${typeof code === "string" ? ` (${code})` : ""}; inspect --status`,
+      cause,
     );
   } finally {
     if (fd !== undefined) closeSync(fd);
@@ -124,7 +146,12 @@ export async function keepDashboard(options: {
 }): Promise<number> {
   const root = options.root ?? readerRoot();
   mkdirSync(root, { recursive: true, mode: 0o700 });
-  const generation = readerGeneration(root);
+  const marker = readGeneration(root);
+  if (!marker.ok) {
+    console.error(marker.failure.reason);
+    return 1;
+  }
+  const generation = marker.value;
   if (generation === null) return 0;
   const result = await withFileLock(
     root,
@@ -154,7 +181,12 @@ export async function keepDashboard(options: {
         }
       })();
       if (!started.ok) {
-        console.error(started.failure.reason);
+        const cause = started.failure.cause;
+        const detail =
+          cause instanceof Error && cause.name ? ` (${cause.name})` : "";
+        // The error's text can include the private listen address; retain a
+        // safe classification without copying that text to scheduler output.
+        console.error(`${started.failure.reason}${detail}`);
         return 1;
       }
       const dashboard = started.value;
@@ -200,9 +232,14 @@ export async function keepDashboard(options: {
           await Bun.sleep(options.pollMs ?? 1000);
         return 0;
       } finally {
-        dashboard.stop();
-        rmSync(access, { force: true });
-        finished();
+        try {
+          dashboard.stop();
+          rmSync(access, { force: true });
+        } finally {
+          // Signal handlers await this promise; cleanup failures must never
+          // strand their acknowledgement.
+          finished();
+        }
       }
     },
     { root, name: "reader", waitMs: 100 },
