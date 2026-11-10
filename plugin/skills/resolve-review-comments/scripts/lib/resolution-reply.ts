@@ -100,7 +100,7 @@ function latestCommentTimes(
     const here = { at, position: latest.next++ };
     if (
       latest.reply.position >= 0 &&
-      at > latest.reply.at &&
+      isLater(here, latest.reply) &&
       transparent(comment)
     )
       continue;

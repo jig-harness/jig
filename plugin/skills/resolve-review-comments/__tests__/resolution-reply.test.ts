@@ -76,6 +76,29 @@ describe.skipIf(process.platform === "win32")(
       r = runScript("resolve-thread.ts", ["PRRT_x"], fix);
       expectSpawnExit({ ...r, exitCode: r.code }, 6);
     });
+    it("keeps a bot confirmation sharing the reply's timestamp transparent", () => {
+      const fix = writeFixture({});
+      const at = "2026-01-01T00:00:00Z";
+      const nodes = [
+        ["reviewer", "Finding"],
+        ["operator", "**accepted** — fixed guard"],
+        ["coderabbitai[bot]", confirmation],
+      ].map(([login, body]) => ({ author: { login }, body, createdAt: at }));
+      writeFileSync(
+        join(fix.dir, "reply-evidence.json"),
+        JSON.stringify({
+          data: {
+            viewer: { login: "operator" },
+            node: {
+              id: "PRRT_x",
+              comments: { nodes, pageInfo: { hasNextPage: false } },
+            },
+          },
+        }),
+      );
+      const r = runScript("resolve-thread.ts", ["PRRT_x"], fix);
+      expectSpawnExit({ ...r, exitCode: r.code }, 0);
+    });
     for (const brokenSibling of [false, true]) {
       it(`keeps standalone strict and refuses a broken sibling: ${brokenSibling}`, () => {
         const fix = writeFixture({});
