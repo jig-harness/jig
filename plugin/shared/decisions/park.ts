@@ -1,6 +1,10 @@
 /** The portable JSON contract for a decision waiting for a person. */
 import { type Call, type Option, optionDetails } from "./model.ts";
 import { Checker, type Json, type SourcedClaim } from "./source.ts";
+import { normalizeAnswerText } from "./answer-normalize.ts";
+import { redact } from "../redact.ts";
+import { ANSWER_TEXT_MAX } from "./answer-limits.ts";
+import { answerTextFault } from "./answer-text.ts";
 
 export interface ParkedOption extends Option {
   reversible?: boolean;
@@ -81,36 +85,67 @@ function checkCall(c: Checker, call: unknown): void {
     const ids = c.uniqueIds(call.options, "$.call.options");
     const names: string[] = [];
     call.options.forEach((option, i) => {
-      const p = `$.call.options[${i}]`;
-      if (
-        !c.object(
-          option,
-          p,
-          ["id", "name", "summary", "pay"],
-          ["tag", "keep", "rightWhen", "obligation", "reversible"],
-        )
-      )
-        return;
-      if (c.text(option.name, `${p}.name`)) {
-        names.push(option.name);
-        if (/[\r\n]/.test(option.name)) c.fail(`${p}.name`, "must be one line");
-      }
-      c.text(option.summary, `${p}.summary`);
-      c.texts(option.pay, `${p}.pay`, 1);
-      if ("keep" in option) c.texts(option.keep, `${p}.keep`, 0);
-      for (const key of ["tag", "rightWhen", "obligation"])
-        c.optionalText(option, key, p);
-      if ("reversible" in option && typeof option.reversible !== "boolean")
-        c.fail(`${p}.reversible`, "must be a boolean");
+      checkOption(c, option, i, names);
     });
     if (new Set(names).size !== names.length)
       c.fail("$.call.options", "two options share a name");
+    else if (new Set(names.map(normalizeAnswerText)).size !== names.length)
+      c.fail(
+        "$.call.options",
+        "two option names are the same after answer normalization",
+      );
     if (
       !c.text(call.recommended, "$.call.recommended") ||
       !ids.includes(call.recommended)
     )
       c.fail("$.call.recommended", "must name an option id");
   }
+}
+
+function checkOptionName(c: Checker, p: string, name: string): void {
+  if (/[\r\n]/.test(name)) c.fail(`${p}.name`, "must be one line");
+  if (normalizeAnswerText(name) === "")
+    c.fail(`${p}.name`, "must remain nonempty after answer normalization");
+  if ([...name].length + "choose ".length > ANSWER_TEXT_MAX)
+    c.fail(
+      `${p}.name`,
+      `is too long to select: choose plus its name must fit the ${ANSWER_TEXT_MAX}-character answer limit`,
+    );
+  if (redact(name) !== name)
+    c.fail(`${p}.name`, "must not contain a value the ledger redacts");
+  if (name.toLowerCase().includes("<redacted>"))
+    c.fail(`${p}.name`, "must not contain the reserved <redacted> placeholder");
+  if (answerTextFault(`choose ${name}`) !== null)
+    c.fail(`${p}.name`, "must fit the structured answer grammar");
+}
+
+function checkOption(
+  c: Checker,
+  option: unknown,
+  i: number,
+  names: string[],
+): void {
+  const p = `$.call.options[${i}]`;
+  if (
+    !c.object(
+      option,
+      p,
+      ["id", "name", "summary", "pay"],
+      ["tag", "keep", "rightWhen", "obligation", "reversible"],
+    )
+  )
+    return;
+  if (c.text(option.name, `${p}.name`)) {
+    names.push(option.name);
+    checkOptionName(c, p, option.name);
+  }
+  c.text(option.summary, `${p}.summary`);
+  c.texts(option.pay, `${p}.pay`, 1);
+  if ("keep" in option) c.texts(option.keep, `${p}.keep`, 0);
+  for (const key of ["tag", "rightWhen", "obligation"])
+    c.optionalText(option, key, p);
+  if ("reversible" in option && typeof option.reversible !== "boolean")
+    c.fail(`${p}.reversible`, "must be a boolean");
 }
 
 /** Known stored fields are checked without rejecting fields added later. */

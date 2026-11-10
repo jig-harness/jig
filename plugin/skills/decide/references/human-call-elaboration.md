@@ -85,6 +85,7 @@ The rules are the structural part of Simplified Technical English (the
   analysis of".
 - Use a list when 3 or more steps or conditions follow one another.
 - Define each domain term once, where it first appears.
+- For an Authorize decision, include refusal as an option, such as **Do not release**.
 - **Keep every hedge.** "May have failed" says how sure the source is, and
   that is content. Never remove or strengthen one to shorten a sentence.
 - **Add no fact the source does not state.** Rewriting for clarity changes the

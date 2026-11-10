@@ -52,7 +52,6 @@ import { driveClass, lastEnded } from "../../dispatch/lib/log.ts";
 import {
   type Classified,
   classifyLedger,
-  type ParkReading,
   type PrFacts,
   readsBaseHead,
 } from "../../dispatch/lib/sources/ledgers.ts";
@@ -69,7 +68,15 @@ import {
   type WaitsOn,
 } from "./answer.ts";
 import { renderParkedDecision } from "../../shared/decisions/park.ts";
-import { answered, lineParkOf, parkedWait } from "./park-wait.ts";
+import { lineParkOf, parkedWait } from "./park-wait.ts";
+import {
+  parkReading,
+  readParkAnswers,
+  parkAnswerEntries,
+  parkAnswerSummary,
+  type ParkAnswers,
+} from "./park-reading.ts";
+import { keptAnswerEntries } from "./kept-answers.ts";
 import {
   type CommentFields,
   commentFields,
@@ -104,6 +111,8 @@ import type { LogRow } from "../../dispatch/lib/log.ts";
 
 /** What the drive's reads found. */
 interface DriveReads {
+  keptAnswers: ThreadEntry[];
+  parks: ParkAnswers | null;
   pull: PullDoc;
   comments: CommentFields[] | null;
   snapshot: LedgerSnapshot | null;
@@ -125,20 +134,6 @@ function ledgerOf(snapshot: LedgerSnapshot | null): Ledger | string | null {
   return canonical.parsed.kind === "unknown-version"
     ? `its drive ledger is version ${String(canonical.parsed.version)}, which this reader does not know`
     : `its drive ledger does not read: ${canonical.parsed.reason}`;
-}
-
-/** The parks' answers the pull request's conversation holds; a reply on a parked thread is not read here. */
-function parkReading(
-  ledger: Ledger,
-  comments: readonly CommentFields[] | null,
-): ParkReading {
-  if (comments === null)
-    return { unreadable: "the pull request's comments, which did not read" };
-  const waiting = ledger.parked.filter((p) => !answered(p.key, p.at, comments));
-  return {
-    answered: ledger.parked.length - waiting.length,
-    waiting: waiting.map((p) => `${p.kind} ${p.key}`),
-  };
 }
 
 /** The state of a drive in its own words: `running`, the registry's name of its stop, or why neither. */
@@ -272,7 +267,7 @@ function waitsOnOf(
     ledger,
     Date.now(),
     stallThresholdMs(),
-    parkReading(ledger, r.comments),
+    parkReading(r.parks),
     {
       head: r.pull.head,
       mergeable: r.pull.mergeable,
@@ -326,7 +321,7 @@ function waitsOnOf(
     case "parked":
       return parkedWait(
         ledger.parked,
-        r.comments,
+        r.parks,
         r.pull.author,
         placed.why,
         lineParkOf(ctx, r.pull.number),
@@ -535,7 +530,22 @@ function recordEntries(
     ...claimEntries(r.claims, name, url, loggedRecords(r.rows)),
     ...localLaunchEntries(r.records, name, claimed, path),
     ...logEntries(r.rows, name, path),
-    ...answerEntries(comments, name, url),
+    ...answerEntries(comments, name, url).filter(
+      (e) =>
+        !ledger?.parked.some((p) =>
+          e.text.toLowerCase().startsWith(`answer ${p.key}:`.toLowerCase()),
+        ) &&
+        !r.keptAnswers.some((k) => {
+          const key = /^answer (\S+):/i.exec(e.text)?.[1];
+          return (
+            key !== undefined &&
+            k.record.url === e.record.url &&
+            k.text.toLowerCase().startsWith(`${key.toLowerCase()}:`)
+          );
+        }),
+    ),
+    ...r.keptAnswers,
+    ...parkAnswerEntries(r.parks, name),
     ...ledgerEntries(
       ledger,
       name,
@@ -631,33 +641,12 @@ async function commentsOf(
   };
 }
 
-/** One parked question of a drive, and whether a trusted comment after the park answers it. */
-export interface ParkedQuestion {
-  key: string;
-  kind: string;
-  /** The decision's question, as the drive framed it. */
-  reason: string;
-  answered: boolean;
-}
-
-/** The ledger's parked questions, each answered or not by the re-arm's rule for a pull-request comment; a reply on a parked thread is not read here. */
-export function parkedQuestions(
-  ledger: Ledger,
-  comments: readonly CommentFields[],
-): ParkedQuestion[] {
-  return ledger.parked.map((p) => ({
-    key: p.key,
-    kind: p.kind,
-    reason: p.reason,
-    answered: answered(p.key, p.at, comments),
-  }));
-}
-
 /**
  * What one reading of a drive found, beside its answer: for `jig send`,
  * which checks a request against the same records before it writes.
  */
 export interface DriveReading {
+  parks: ParkAnswers | null;
   answer: StationAnswer;
   /** The pull request; `null` when the key names none. */
   pull: { doc: PullDoc; read: boolean } | null;
@@ -682,6 +671,7 @@ export async function readDrive(ctx: AskContext): Promise<DriveReading> {
   if (pull.absent)
     return {
       answer: pull.answer,
+      parks: null,
       pull: null,
       comments: null,
       ledger: null,
@@ -697,6 +687,8 @@ export async function readDrive(ctx: AskContext): Promise<DriveReading> {
     `PR #${pr}`,
   );
   const reads: DriveReads = {
+    keptAnswers: [],
+    parks: null,
     pull: doc,
     comments,
     snapshot: comments === null ? null : snapshotFrom(comments, ctx.login),
@@ -715,6 +707,8 @@ export async function readDrive(ctx: AskContext): Promise<DriveReading> {
   };
   const ledger = ledgerOf(reads.snapshot);
   const read = typeof ledger === "string" ? null : ledger;
+  if (read !== null) reads.parks = await readParkAnswers(ctx, pr, read, raw);
+  reads.keptAnswers = await keptAnswerEntries(ctx, pr, read, raw);
   const { state, detail } = pull.read
     ? stateOf(ledger, doc, reads.row)
     : {
@@ -738,9 +732,11 @@ export async function readDrive(ctx: AskContext): Promise<DriveReading> {
       locallyStopped(reads.row, read, holder)
         ? "stopped"
         : state,
-    stateDetail: [detail, ...diagnosticDetail(reads.row, read, holder)].join(
-      "; ",
-    ),
+    stateDetail: [
+      detail,
+      ...diagnosticDetail(reads.row, read, holder),
+      ...parkAnswerSummary(reads.parks),
+    ].join("; "),
     waitsOn: driveWait(reads, read, ctx, holder, {
       read: pull.read,
       base,
@@ -752,6 +748,7 @@ export async function readDrive(ctx: AskContext): Promise<DriveReading> {
   };
   return {
     answer,
+    parks: reads.parks,
     pull: { doc, read: pull.read },
     comments,
     ledger,
@@ -860,7 +857,7 @@ function driveWait(
       reads.claims,
       ctx.host,
       ledger,
-      parkReading(ledger, reads.comments),
+      parkReading(reads.parks),
       facts.base,
     );
     return spent === null

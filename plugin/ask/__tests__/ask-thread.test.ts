@@ -164,7 +164,7 @@ describe("jig ask --thread", () => {
     });
     expect(entries[3]).toMatchObject({
       from: "maintainer",
-      text: "answer PRRT_thread1: keep it for one release",
+      text: "PRRT_thread1: free answer: answer PRRT_thread1: keep it for one release",
     });
     expect(JSON.stringify(entries)).not.toContain("passer-by");
     expect(answer.threadOmitted).toBe(0);
@@ -293,7 +293,7 @@ describe("jig ask on a park", () => {
   }
 
   it("names the act the newest tick's line names for the park, as the dashboard's card does", async () => {
-    // The line counts a reply on a parked thread as its answer, which this read does not: its act stands.
+    // A current line may supply the act of an open park.
     const waitsOn = await waitsOnWithLineNeed((need) => ({
       ...need,
       act: "Authorize" as const,

@@ -23,7 +23,6 @@ import type {
 } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { dispatchSection } from "../../dispatch/lib/section.ts";
 import { lastEnded } from "../../dispatch/lib/log.ts";
-import { readLine } from "../../dispatch/lib/line-store.ts";
 import type { LineNeed } from "../../dispatch/lib/dashboard-contract.ts";
 import { statePath } from "../../dispatch/lib/state.ts";
 import {
@@ -45,6 +44,7 @@ import {
 import { localLaunchEntries, logEntries } from "./thread.ts";
 import { personAct } from "./waiting.ts";
 import { actOfLineNeed } from "../../shared/acts.ts";
+import { lineNeeds } from "./line-needs.ts";
 
 /** A repository's tracker, from the configuration of its checkout at `root`. */
 export interface RepoTracker {
@@ -93,22 +93,7 @@ const DONE_TYPES = new Set(["completed", "canceled", "duplicate"]);
 
 /** The newest tick's needs about this item. */
 function needsOf(ctx: AskContext): LineNeed[] {
-  if (ctx.dispatcher === null) return [];
-  const line = readLine(ctx.dispatcher);
-  ctx.reading.note(
-    line.ok
-      ? { record: "dispatch-tick-line", read: true, local: true }
-      : {
-          record: "dispatch-tick-line",
-          read: false,
-          local: true,
-          detail: line.failure.reason,
-        },
-  );
-  if (!line.ok || line.value === null) return [];
-  return line.value.needs.filter(
-    (n) => n.repo === ctx.address.repo && n.item === ctx.address.key,
-  );
+  return lineNeeds(ctx).filter((n) => n.item === ctx.address.key);
 }
 
 /** The tick's needs that still hold of the item as the tracker reads it now: a closed item, or one the factory identity no longer holds or waits on, has none. */

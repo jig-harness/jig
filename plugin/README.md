@@ -382,6 +382,15 @@ open, not-started assignments need no dispatch state. Unassigned items
 under an epic assigned to them inherit that person, including nested
 epics. Only assignments made by a repository writer qualify.
 
+Served people's assignments are read from the tracker team, which several
+repositories may share, so each repository's tick sees the same list. A served
+item that carries another repository's label (one of `review.taxonomy.repos`
+other than this repository's `review.repo_label`) is left to that repository's
+checkout: it is not wanted here and not reported as held, and the launch-time
+recheck refuses it too. An item with no repository label, or one that also
+carries this repository's, stays startable here; without both settings nothing
+is left out.
+
 The Queue view names holds: an open blocker reads "waiting on #N";
 `hitl`, `hitl:*`, `manual-ops` and `jig:hold` read "needs a person to start".
 Eligible items are ranked by priority, the work they unblock, epic order,
