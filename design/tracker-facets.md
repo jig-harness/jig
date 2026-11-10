@@ -105,7 +105,9 @@ derivation and its depth table stay as [work types](work-types.md)
 describes them, its first step reading the type facet instead of labels.
 `Issue.nativeType` stays, read-only, as the tracker's own type name: the
 derivation's evidence line and the weekly sweep name it when it maps to no
-type, and no caller decides with it.
+type, and no caller decides with it, except that the adapter reads it once,
+with `epic_types`, to set `isEpic`; the filing check and the census read
+`isEpic`, never the native type.
 
 ### Stores
 
@@ -132,11 +134,13 @@ repository's own command is [later work](#later-the-command-store).
 ### Value maps
 
 A `native` or `field` store keeps values in the tracker's own vocabulary,
-so it maps each canonical value to one tracker value: an issue type's name,
-a field option's name, or a number. A `label` store maps each value to one
-label. Each map is one to one, ignoring case, so a value read back names
-exactly one canonical value, and a map that gives two canonical values one
-tracker value is refused when the configuration is read.
+so it maps each canonical value to tracker values: an issue type's name,
+a field option's name, or a number. A `label` store maps each value to
+labels. A map may list several names for one canonical value, matched
+ignoring case: every listed name is read as that value and the first is
+written. No name may stand for two canonical values, so a value read back
+names exactly one, and a map that gives two canonical values one tracker
+value is refused when the configuration is read.
 
 A canonical value the map leaves out takes the tracker value of its own
 name, matched ignoring case (`bug` is the issue type Bug, `small` the option
@@ -281,13 +285,18 @@ issue_tracker:
     size:     { store: field, field: customfield_10016, values: { xs: 1, small: 2, medium: 3, large: 5, xl: 8 } }
 ```
 
+A value may list several names, the first written and all read:
+`values: { bug: [Bug, Defect], feature: Story }`.
+
 | Field | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `issue_tracker.facets.<facet>.store` | `native`, `field` or `label` | the adapter's default above | Where the facet is kept |
-| `….values` | map from a canonical value to the tracker's value | each value by its own name | `native` and `field`: the issue type, option or number that holds each value |
+| `….values` | map from a canonical value to a tracker value, or to a list of them | each value by its own name | `native` and `field`: the issue type, option or number that holds each value; a list is read in any of its names and written as its first |
 | `….field` | a field's name or id | none; required by `field` | `field`: the custom field, a GitHub issue field by name, a Jira field by name or id (`customfield_10016`) |
-| `….labels` | map from a canonical value to a label | the value's own name; on GitHub, priority's `priority: <name>` | `label`: the label of each value |
+| `….labels` | map from a canonical value to a label, or to a list of labels | the value's own name; on GitHub, priority's `priority: <name>` | `label`: the label of each value; a list is read in any of its labels and written as its first |
 | `….prefix` | a label prefix | none | `label`: each value's label is the prefix followed by the value (`size:small`); refused beside `labels` |
+| `issue_tracker.facets.sweep` | `move` or `comment` | `move` | The weekly sweep's action on an incomplete issue: comment and move it to triage, or comment only (`check-fields.ts --comment-only` sets it for one run) |
+| `issue_tracker.labels.epic_types` | list of issue type names | none | An issue of one of these native types reads as an epic on every adapter with issue types, beside the epic label; it is exempt from the size requirement everywhere the epic label is |
 
 Outside GitHub, a priority kept in labels needs `labels` or a `prefix`,
 since a Jira label holds no whitespace and so cannot take GitHub's default.
@@ -324,7 +333,10 @@ file.
 
 - `Issue` gains `type: string | null`, `priority: number` and
   `size: string | null`. `PoolIssue` gains `type` and `size` beside the
-  `priority` it has. `LedgerIssue` keeps only `priority`, the one facet the
+  `priority` it has, and `isEpic: boolean`, set by the one recognition
+  below (the epic label, or a native type in `epic_types`), since the
+  canonical type cannot recover a native type that a label store or a
+  collapsing value map hides. `Issue` carries `isEpic` too. `LedgerIssue` keeps only `priority`, the one facet the
   ledgers read.
 - `NewIssue` gains `type?` and `size?` beside `priority?`. `IssuePatch`
   gains `type?` and `size?`, where `null` removes the value.
@@ -344,7 +356,10 @@ file.
   use up the read; the sweep lists them from a separate read of one page of
   100. It is the weekly sweep's read, and the one read of the interface that
   returns part of a population on purpose, so it says so in its name and its
-  cursor.
+  cursor. Its pages are ordered oldest first, an order no write changes, so
+  the cursor of one run can be kept and resumed by the next, which is how the
+  sweep's comment-only mode reaches issues past a capped read
+  ([the weekly sweep](#the-weekly-sweep)).
 - `Tracker` gains `facetStores()`: each facet's effective store and why
   (configured, kept in labels, detected), and on GitHub what detection saw
   (the field, its options, the credential that read them), so the check, the
@@ -446,7 +461,11 @@ seen on the next tick, not at the next sweep.
 
 One function, `facets/complete.ts`, checks a new issue: a type, a priority
 (`1` to `4`) and a size, for each facet that has a store, with no size
-required on an issue carrying the epic label (`issue_tracker.labels.epic`);
+required on an epic: an issue carrying the epic label (`issue_tracker.labels.epic`) or, on an
+adapter with issue types, one of a native type listed in `issue_tracker.labels.epic_types`. That one
+recognition also governs filing completeness, the sweep's eligibility and the
+incomplete-issue census's denominators, so a native-only epic is never sent
+back to triage for a missing size;
 and a label of every required group of the taxonomy, the size group's
 requirement being met by the size facet in whatever store it is kept. It
 reads the taxonomy through `file-issue`'s taxonomy reader and reuses its
@@ -512,15 +531,31 @@ counts the assigned items that lack one.
 `file-issue/scripts/check-fields.ts` sweeps the open issues through
 `incompleteIssues`, so it works on every adapter. It lists each issue that
 lacks a type, a priority or a size (no size on an epic), or carries a
-retired label (a facet's label where that facet is kept elsewhere), and
-moves each one not yet started back to the `triage` state with a comment
-naming the missing facets, so the move carries its reason in the tracker's
-history. The comment is posted first and carries a marker naming the issue's
+retired label (a facet's label where that facet is kept elsewhere), and, in
+its default mode, moves each one not yet started back to the `triage` state
+with a comment naming the missing facets, so the move carries its reason in
+the tracker's history. With `--comment-only`, or `issue_tracker.facets.sweep:
+comment` in the configuration (default `move`), it posts the comment and moves
+nothing, for a repository whose people triage in place. The comment is posted first and carries a marker naming the issue's
 missing facets; a run that stopped between the comment and the move finds the
 marker on the next run, moves the issue and posts nothing again. An issue
 already started is listed, not moved, since moving it would take it from the
 session working it. An issue already in triage is not read again, so each
-issue is moved and commented on once.
+issue is moved and commented on once. In comment-only mode the issue stays in the queried population, so the
+marker alone keeps the sweep to one comment per issue and set of missing
+facets: a run that finds the marker posts nothing, and posts again only when
+the missing facets change. A capped read would let the same first issues,
+already commented, take every run's pages, and no order that depends on the
+sweep's own writes can advance past them, since a run that finds the marker
+writes nothing. So in this mode the read keeps a position: pages are ordered
+oldest first, a creation order that no write changes, and the run records the
+key of the last issue it read in the state the sweep keeps between runs (on
+Jig's workflow, its cache). The next run resumes after that key, and a read
+that reaches the end of the population starts again from the first issue. An
+issue whose missing facets change after its comment is revisited when the
+position comes round to it, which is within as many runs as the population
+holds capped reads. A run with no recorded position starts from the first
+issue.
 
 Its bounds:
 
@@ -837,8 +872,6 @@ constraints:
   check when the deferral moves onto the interface (plan item 10).
 - **Records.** `reflect`'s issues are records, not work, carry no facets,
   and are never read by the sweep.
-- **An epic as a Jira issue type.** The epic stays a label on every
-  adapter, as it is today.
 - **A host timer for the sweep.** Jig's repository runs it as a workflow; a
   host job like the dispatcher's joins when a consumer without CI asks for
   one.

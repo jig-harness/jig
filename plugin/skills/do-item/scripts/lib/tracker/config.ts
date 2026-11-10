@@ -23,7 +23,9 @@
  *       subtask_type: Sub-task
  *       priorities: { urgent: Highest, high: High, medium: Medium, low: Low }
  *       resolutions: { done: Done, canceled: Won't Do, duplicate: Duplicate }
- *       link_types: { blocks: Blocks, related: Relates, duplicate: Duplicate }
+ *       link_types: { blocks: [Blocks, { name: Depends, inverted: true }], related: Relates }
+ *       field_labels: { Size: "size:" }
+ *       pool_issue_types: [Task, Bug]
  *
  * Every field is optional here; an operation that needs one it lacks fails
  * with a message naming the field.

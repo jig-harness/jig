@@ -47,6 +47,13 @@ if (args[0] === "api" && args[1] === "-i") {
   process.exit(0);
 }
 // The Ready predicate's board query: board.json's answer, failing when no test wrote one.
+if (args[0] === "api" && args[1] === "graphql" && args.some((a) => a.startsWith("id="))) {
+  const key = args.find((a) => a.startsWith("id=")).slice(3);
+  const file = F + "/thread-" + key + ".json";
+  const body = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : { data: { node: { comments: { pageInfo: { hasNextPage: false }, nodes: [] } } } };
+  process.stdout.write(JSON.stringify(body));
+  process.exit(0);
+}
 if (args[0] === "api" && args[1] === "graphql" && args.some((a) => a.includes("query DispatchBoard"))) {
   if (!fs.existsSync(F + "/board.json")) { process.stderr.write("gh: HTTP 502\\n"); process.exit(1); }
   process.stdout.write(fs.readFileSync(F + "/board.json", "utf8"));

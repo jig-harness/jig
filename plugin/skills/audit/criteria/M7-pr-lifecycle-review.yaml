@@ -201,6 +201,7 @@ criteria:
     observe:
       - "a HITL decision registry enumerates the human-only decisions with a trigger each"
       - "the registry has a row reserving parking (an autonomous run stopping for a person) to the registry's classes, each park carrying its class and a framed decision"
+      - "the registry requires a framed Authorize decision to offer refusal as an option"
       - "a hitl label is defined and revokes autonomous merge for the linked PR"
       - "the registry names who may mark Ready: humans, plus the review driver when the repository delegates to it"
       - "where the repository runs a post-merge stage or closes epics on a verdict, the registry also lists picking the next item and reopening on a rejecting verdict or waiving a missing acceptance review, the latter naming an approver other than whoever runs the post-merge pass or the epic-closing step"

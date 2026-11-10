@@ -9,25 +9,7 @@ import type { DispatchSection } from "../lib/types.ts";
 import { renderExecutionPlan } from "../../skills/do-item/scripts/lib/execution-plan.ts";
 import { rankQueue } from "../lib/queue-rank.ts";
 import type { PickupReads } from "../lib/pickup-reads.ts";
-const issue = (
-  key: string,
-  labels: string[] = [],
-  assignee: string | null = "alex",
-): PoolIssue => ({
-  identifier: key,
-  title: key,
-  url: null,
-  priority: 2,
-  type: "task",
-  size: "small",
-  createdAt: "2026-01-01",
-  updatedAt: "v1",
-  state: { id: "s", name: "Todo", type: "unstarted" },
-  assignee: assignee ? { id: assignee, name: assignee } : null,
-  labels,
-  hasOpenChildren: labels.includes("epic"),
-  truncated: [],
-});
+import { issue } from "./served-fixtures.ts";
 const people = [{ name: "Alex", forge: ["alex"], tracker: { github: "alex" } }];
 function fake() {
   const store = new Map<string, unknown>();
