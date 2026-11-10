@@ -449,3 +449,19 @@ test("a direct claim whose state leaves claim_from before any write keeps the st
   ).toMatchObject({ outcome: "refused", why: "state" });
   expect(w.writes).toEqual([]);
 });
+test("a direct claim whose final state is started but outside claim_from refuses, not stands down", async () => {
+  const w = world();
+  flipAfter(w, 3, {
+    identifier: "#1",
+    parent: { identifier: "#2" },
+    labels: ["epic"],
+    state: { name: "In Review", type: "started" },
+  });
+  expect(
+    await claimServedIssue(w.tracker, "#1", {
+      person: "dana",
+      claimFrom: ["todo"],
+    }),
+  ).toMatchObject({ outcome: "refused", why: "state" });
+  expect(w.writes).toEqual([]);
+});

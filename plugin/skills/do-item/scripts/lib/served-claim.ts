@@ -302,6 +302,12 @@ async function claimServed(
       reason: `${key}: assignment raced the claim; queue must refresh`,
     };
   const before = await tracker.getIssue(key);
+  // Before the waiting guard, so a readable state outside claim_from is a
+  // refusal for a direct claim whatever its type.
+  const outside = before
+    ? startStateRefusal(tracker, key, before.state.name, options)
+    : null;
+  if (outside) return outside;
   if (
     !before ||
     !waiting(before.state.type) ||
@@ -313,8 +319,6 @@ async function claimServed(
       issue: key,
       reason: `${key} changed before it could be started; queue must refresh`,
     };
-  const outside = startStateRefusal(tracker, key, before.state.name, options);
-  if (outside) return outside;
   await tracker.transition(key, "in_progress");
   const standDown = await startedStandDown(tracker, key, user, options);
   if (standDown) return standDown;
