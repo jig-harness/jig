@@ -318,6 +318,27 @@ const DISPATCHER: RecordKind[] = [
   ),
   plain(
     "machine",
+    "dispatch-dashboard-install",
+    "dispatch/dashboard-install.ts",
+    `${DISPATCH_DIR}dashboard/enabled`,
+    0,
+  ),
+  plain(
+    "machine",
+    "dispatch-dashboard-access",
+    "dispatch/dashboard-reader.ts",
+    `${DISPATCH_DIR}dashboard/access.json`,
+    0,
+  ),
+  plain(
+    "machine",
+    "dispatch-dashboard-reader-lock",
+    "shared/file-lock.ts",
+    `${DISPATCH_DIR}dashboard/reader.<digest>.lock`,
+    0,
+  ),
+  plain(
+    "machine",
     "dispatch-outcome-log",
     "dispatch/lib/log-export.ts",
     `${DISPATCH_DIR}log-<year>-<month>.jsonl`,

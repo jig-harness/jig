@@ -62,7 +62,7 @@ function launchdSchedule(schedule: JobSpec["schedule"]): string {
 function systemdSchedule(schedule: JobSpec["schedule"]): string {
   return "hour" in schedule
     ? `OnCalendar=*-*-* ${String(schedule.hour).padStart(2, "0")}:00:00\nPersistent=true`
-    : `OnActiveSec=1min\nOnUnitActiveSec=${schedule.everyMinutes}min`;
+    : `OnActiveSec=1min\n${schedule.afterExit ? "OnUnitInactiveSec" : "OnUnitActiveSec"}=${schedule.everyMinutes}min`;
 }
 function cronSchedule(schedule: JobSpec["schedule"]): string {
   if ("hour" in schedule) return `0 ${schedule.hour} * * *`;

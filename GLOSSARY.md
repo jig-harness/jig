@@ -1718,6 +1718,11 @@ make, use the entry's term instead.
 
 ## Runnable tooling
 
+- **Lingering** — a systemd setting that starts an account's service manager
+  at boot and keeps it running after the account logs out. A dashboard
+  installed as a user job needs it to remain available without a login
+  session. See [dashboard availability](plugin/README.md#the-dispatcher).
+
 - **Wake and waiter** — A wake asks a reader to run sooner after a command
   writes a request. The request record remains authoritative: losing the
   wake only delays reading it until the next scheduled run. A waiter is the

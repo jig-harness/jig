@@ -667,8 +667,13 @@ credential: it can remain in browser history, synced history and
 screenshots; restarting the dashboard invalidates it. It exposes every
 repository in that dashboard's state root, as
 [the board's reader boundary](dispatch-board.md#who-reads-it) describes.
-Closing the terminal stops availability today. This is the interim
-fallback, not completion of the phone requirement.
+The foreground command stops with its terminal. For availability across
+logout and reboot on Linux, install the dashboard's independent retry timer
+with `jig dispatch dashboard --install --yes` and inspect it with `--status`;
+`--access` explicitly prints its private URL. The
+[dashboard availability contract](../plugin/README.md#the-dispatcher) names
+the service-manager prerequisites and recovery checks. This private HTTP
+fallback does not complete the phone's secure-context requirement.
 
 **Recommended setup to build: private HTTPS.** A private-network front
 provides an HTTPS (HTTP with transport encryption) address and authenticates
@@ -676,14 +681,13 @@ the reader before the hub sees the request. Tailscale Serve is the first
 implementation; a reverse proxy with an identity provider is the browser
 path without Tailscale or Orca. Setup must:
 
-1. Complete Stage 1's resident-dashboard availability item before installing
-   the front: extend the existing dashboard job machinery to keep
-   `jig dispatch dashboard` running, restart it after failure and update,
-   and check that it returns after logout and host reboot. This item is a
-   prerequisite of phone availability and ships independently of Stage 2;
-   it does not introduce the hub's new `resident` job kind, install a second
-   reader, or change the dispatch timer. Stage 2's `jig install hub` later
-   takes over the same availability contract.
+1. Install the Stage 1 dashboard retry timer before installing the front,
+   using `jig dispatch dashboard --install --yes` on a supported Linux
+   service manager. Check `--status` after a failure, logout, host reboot
+   and installed-copy update. This uses the existing job machinery,
+   independent of Stage 2, and leaves the dispatch timer unchanged.
+   Stage 2's `jig install hub` later takes over the same availability
+   contract rather than installing a second reader.
 2. Establish the private route and certificate, then check from another
    device that authentication is required, the intended repositories alone
    are visible, and a forged identity header cannot widen that scope.
