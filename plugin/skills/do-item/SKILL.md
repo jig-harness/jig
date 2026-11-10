@@ -120,6 +120,7 @@ The skill reads them at run time from `.config/jig.yaml`:
 | `routing` | The model tier and effort the implementer runs on, as rules (see [Step 4a](#step-4a-standard-start-no-sub-issues)) | Routes are derived and printed, none applied |
 | `do_item.scouts` | Pre-flight [scouts](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) per agent, `{agent: [scouts]}` | No scouts |
 | `do_item.gates` | Mandatory review gates, `[{labels, paths, skill}]` | No gates |
+| `do_item.preflight_command` | The repository's own start rules: a command every claim runs first, with the item's JSON on standard input (exit 0 goes on, exit 3 refuses with its first output line as the reason, any other exit or a run past its deadline refuses too) | No check beyond the claim's own |
 | `do_item.execution_plan_block` | Name of the fenced block holding an epic's machine-readable execution plan | `execution-plan-v1` |
 | `specs.adapters`, `specs.body_section` | Which spec adapters the resolver runs, in order, and the heading of the body section that names the item's spec ([Step 1](#step-1-fetch-the-issue)) | Every adapter whose layout the repository holds, then `body`; the heading `Spec` |
 | `drive.change_areas_catalog` | Path to the repository's [change-area catalog](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (areas, their agents, validation plan and mandatory review skills) | No catalog: validate with the repository's gate command |
@@ -687,11 +688,16 @@ implementation. Skip this check for issues about the repository's own code.
    host; simultaneous same-person claims on separate hosts remain a race.
 
    Exit `0` is the claim. Exit `3` is a refusal, nothing written: the issue
-   is already `in_progress` or assigned to someone else. Exit `4` is a
+   is already `in_progress` or assigned to someone else, or the repository's
+   `do_item.preflight_command` refused it (`"why": "preflight"` in the JSON,
+   its reason on stderr: that command runs inside `claim`, before the lock,
+   so nothing here calls it). Exit `4` is a
    stand-down: the claim was written, and reading the issue back showed
    another claim landed first. On `3` or `4`, stop the pickup and report the
-   reason it printed; never start the item beside another session. A person
-   resuming their own interrupted pickup of an `in_progress` item tells you
+   reason it printed; never start the item beside another session. A
+   preflight refusal is not cleared by a person telling you to proceed: they
+   change the item, or the repository's command, and the item is picked up
+   again. A person resuming their own interrupted pickup of an `in_progress` item tells you
    so, and you go on from here without the claim.
 
    (**judgment** — native, Linear: read the issue and stop on the same two
@@ -1664,6 +1670,14 @@ record how it ended. In such a pass:
   person must decide, with no secret or personal data in it. The
   dispatcher keeps that line and notifies it as a need; it does not start
   the item again until the item leaves the dispatch states and comes back.
+- **A claim the repository's preflight command refused** (exit `3` with
+  `"why": "preflight"`) is not a failure of the pass. Nothing was written:
+  record `failed` with the command the prompt names, and end the output
+  with a `Question:` line that carries the reason, so the dispatcher keeps
+  it and shows it with the item, e.g. `Question: #12 was refused by the
+  repository's preflight check: <reason>; change the item or the check`.
+  The item is not launched again until it leaves the dispatch states and
+  comes back.
 - **Never pick on the person's behalf** to finish unattended: a question
   the pass cannot settle from the repository's rules is the person's.
 - **The pass has a deadline** (`dispatch.pickup_deadline`, 3 hours by

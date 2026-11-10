@@ -116,6 +116,20 @@ separate hosts: simultaneous claims for the same person can still both
 pass. A tracker state transition is not a cross-host lease; the dispatcher's
 double-claim watch remains necessary.
 
+### The repository's own start rules
+
+A team whose items carry their own start rules (the item names this
+repository, its driver is an agent, every blocker is finished) states them as
+one command, `do_item.preflight_command`. Every claim runs it first, before
+the claim lock and before anything is written, so `do-item`, `work-batch` and
+a dispatched pickup all honour it without any of them remembering to call it.
+It reads the item's JSON on standard input. Exit 0 lets the claim go on. Exit
+3 refuses it: the claim exits 3, nothing is written, and the first line the
+command printed is the reason. Any other exit, or a run past 60 seconds,
+refuses too. Telling the agent to proceed does not clear a refusal: the item
+or the command changes. The setting is in the
+[configuration](../../CONFIGURATION.md#do_item).
+
 ## Requirements and platforms
 
 Install the [plugin requirements](../../README.md#requirements), and name the

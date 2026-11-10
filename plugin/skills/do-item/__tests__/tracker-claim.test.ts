@@ -5,7 +5,13 @@
  * fake transports, and the reads and write each adapter adds for it.
  */
 import { describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
@@ -228,8 +234,14 @@ describe("GitHub adapter: claiming", () => {
 
 describe("tracker.ts claim", () => {
   /** Run `tracker.ts claim #5` against a GraphQL endpoint answering as `world` does. */
-  async function cli(labels: string[], logins: string[], race?: string) {
+  async function cli(
+    labels: string[],
+    logins: string[],
+    race?: string,
+    extra: { overlay?: string; env?: Record<string, string> } = {},
+  ) {
     let state = { labels, logins };
+    const writeOps: string[] = [];
     const user = (login: string) => ({ id: `U_${login}`, login });
     const server = Bun.serve({
       port: 0,
@@ -269,6 +281,8 @@ describe("tracker.ts claim", () => {
               labels: conn([{ id: "LA_ip", name: "In Progress" }]),
             },
           };
+        if (op === "TrackerAssign") writeOps.push(op);
+        if (op === "TrackerAddLabels") writeOps.push(op);
         if (op === "TrackerAssign") {
           const input = variables.input as { assigneeIds: string[] };
           state = {
@@ -296,7 +310,8 @@ describe("tracker.ts claim", () => {
     writeFileSync(
       overlay,
       // Both facets named, so no detection read precedes the claim's.
-      "issue_tracker:\n  adapter: github\n  github:\n    repository: acme/app\n  facets:\n    type: { store: label }\n    priority: { store: label }\n",
+      "issue_tracker:\n  adapter: github\n  github:\n    repository: acme/app\n  facets:\n    type: { store: label }\n    priority: { store: label }\n" +
+        (extra.overlay ?? ""),
     );
     try {
       const child = Bun.spawn(
@@ -314,6 +329,7 @@ describe("tracker.ts claim", () => {
             JIG_USER_LAYER: "off",
             JIG_GITHUB_GRAPHQL_URL: `http://127.0.0.1:${server.port}/graphql`,
             GH_TOKEN: "test-token",
+            ...extra.env,
           },
           stdout: "pipe",
           stderr: "pipe",
@@ -324,7 +340,10 @@ describe("tracker.ts claim", () => {
         new Response(child.stderr).text(),
         child.exited,
       ]);
-      return { exitCode, stdout, stderr };
+      const seen = existsSync(join(dir, "seen.json"))
+        ? readFileSync(join(dir, "seen.json"), "utf8")
+        : null;
+      return { exitCode, stdout, stderr, writes: writeOps, seen };
     } finally {
       server.stop(true);
       rmSync(dir, { recursive: true, force: true });
@@ -343,6 +362,71 @@ describe("tracker.ts claim", () => {
     const stood = await cli([], [], "dana");
     expectSpawnExit(stood, 4);
     expect(stood.stderr).toContain("another claim landed first");
+  });
+
+  describe("the preflight command", () => {
+    const claimWith = (overlay: string, env: Record<string, string> = {}) =>
+      cli([], [], undefined, { overlay, env });
+    const preflight = (command: string) =>
+      `do_item:\n  preflight_command: ${JSON.stringify(command)}\n`;
+    // The tracker's mock answers the claim's own reads; these run the real script.
+    const run = (command: string, env: Record<string, string> = {}) =>
+      claimWith(preflight(command), env);
+
+    it("runs it with the issue's JSON on stdin, and claims when it exits 0", async () => {
+      const out = await run("cat > seen.json");
+      expectSpawnExit(out, 0);
+      expect(JSON.parse(out.stdout).outcome).toBe("claimed");
+      expect(JSON.parse(out.seen as string)).toMatchObject({
+        found: true,
+        identifier: "#5",
+      });
+      expect(out.writes.length).toBeGreaterThan(0);
+    });
+
+    it("refuses on exit 3 with its first line as the reason, writing nothing", async () => {
+      const out = await run("echo 'names repo other'; echo second; exit 3");
+      expectSpawnExit(out, 3);
+      expect(JSON.parse(out.stdout)).toMatchObject({
+        outcome: "refused",
+        why: "preflight",
+      });
+      expect(out.stderr).toContain("names repo other");
+      expect(out.stderr).not.toContain("second");
+      expect(out.writes).toEqual([]);
+    });
+
+    it("refuses on any other exit, naming it, writing nothing", async () => {
+      const out = await run("echo oops >&2; exit 7");
+      expectSpawnExit(out, 3);
+      expect(out.stderr).toContain("failed (exit 7: oops)");
+      expect(out.writes).toEqual([]);
+    });
+
+    it("refuses a command still running past the deadline, writing nothing", async () => {
+      const out = await run("exec sleep 30", {
+        JIG_DO_ITEM_PREFLIGHT_TIMEOUT_SEC: "1",
+      });
+      expectSpawnExit(out, 3);
+      expect(out.stderr).toContain("still running after 1s");
+      expect(out.writes).toEqual([]);
+    });
+
+    it("refuses a malformed deadline instead of running unbounded", async () => {
+      const out = await run("exit 0", {
+        JIG_DO_ITEM_PREFLIGHT_TIMEOUT_SEC: "0",
+      });
+      expectSpawnExit(out, 3);
+      expect(out.stderr).toContain("JIG_DO_ITEM_PREFLIGHT_TIMEOUT_SEC");
+      expect(out.writes).toEqual([]);
+    });
+
+    it("fails the claim, writing nothing, when the setting is not a command", async () => {
+      const out = await claimWith("do_item:\n  preflight_command: 5\n");
+      expectSpawnExit(out, 1);
+      expect(out.stderr).toContain("do_item.preflight_command");
+      expect(out.writes).toEqual([]);
+    });
   });
 });
 

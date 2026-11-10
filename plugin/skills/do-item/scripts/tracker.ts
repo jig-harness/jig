@@ -32,6 +32,12 @@
  * another claim landed first. The reason is printed on stderr and in the
  * JSON on stdout.
  *
+ * Where the repository sets `do_item.preflight_command`, `claim` first runs
+ * it, before the claim lock and any write, with the issue's `get_issue.ts`
+ * JSON on standard input: exit 0 goes on; exit 3 refuses (exit 3 here, the
+ * command's first line of output the reason, `"why": "preflight"` in the
+ * JSON); any other exit, or a run past its deadline, refuses too.
+ *
  * Canonical states: backlog, todo, in_progress, in_review, done, canceled,
  * and where the consumer uses them triage, ops_pending, duplicate.
  *
@@ -63,6 +69,9 @@ import { readFile } from "node:fs/promises";
 import { claimServedIssue } from "./lib/served-claim.ts";
 import { withClaimLock } from "./lib/claim-lock.ts";
 import { claimIssue } from "./lib/claim.ts";
+import { getIssue } from "./get_issue.ts";
+import { preflightClaim, preflightCommandOf } from "./lib/preflight.ts";
+import { consumerRoot, readOverlay } from "../../../shared/consumer.ts";
 import { runEntry } from "./lib/cli.ts";
 import { ownTrackerConfig } from "./lib/tracker/config.ts";
 import { issueKeysOf, ANY_KEY_SOURCE } from "./lib/tracker/keys.ts";
@@ -349,7 +358,7 @@ const OPERATIONS: Record<string, Operation> = {
   claim: {
     arity: 1,
     takes: "one issue key",
-    run: ([key], flags) => {
+    run: async ([key], flags) => {
       const forFlags = [...flags].filter((f) => f.startsWith("--for"));
       const ancestorFlags = [...flags].filter((f) =>
         f.startsWith("--ancestor"),
@@ -373,6 +382,15 @@ const OPERATIONS: Record<string, Operation> = {
       const shape = issueKeysOf(config);
       const normalized = shape?.normalize(key as string) ?? (key as string);
       const tracker = openTracker();
+      // Before the lock and before any write: a refusal leaves nothing behind.
+      const command = preflightCommandOf(readOverlay());
+      const refusal =
+        command === null
+          ? null
+          : await preflightClaim(consumerRoot(), command, normalized, () =>
+              getIssue(normalized, tracker, shape),
+            );
+      if (refusal !== null) return refusal;
       return withClaimLock(claimLockKey(tracker, normalized), () => {
         const ancestorKey = ancestor
           ? (shape?.normalize(ancestor) ?? ancestor)

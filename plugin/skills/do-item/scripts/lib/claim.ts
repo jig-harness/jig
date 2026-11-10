@@ -31,10 +31,13 @@ export type ClaimResult =
       state: string;
     }
   | {
-      /** Nothing was written: someone already holds the issue. */
+      /**
+       * Nothing was written: someone already holds the issue, or the
+       * repository's `do_item.preflight_command` refused it.
+       */
       outcome: "refused";
       issue: string;
-      why: "in_progress" | "assigned";
+      why: "in_progress" | "assigned" | "preflight";
       reason: string;
     }
   | {

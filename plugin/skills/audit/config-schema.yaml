@@ -699,6 +699,12 @@ fields:
     values_type: { type: map, values_type: any }
     read_by: [do-item]
     since: 0.89.0
+  do_item.preflight_command:
+    type: command
+    nullable: true
+    read_by: [do-item, work-batch, dispatch]
+    repository_only: true
+    since: next
   do_item.arm_drive:
     type: enum
     values: [auto, tab, background, print]

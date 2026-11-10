@@ -130,6 +130,8 @@ export const REPOSITORY_ONLY_FIELDS: readonly string[] = [
   // Where a repository keeps its specs, and how its items name them.
   "specs.adapters",
   "specs.body_section",
+  // The start rules every claim of the repository's items runs.
+  "do_item.preflight_command",
 ];
 
 /**

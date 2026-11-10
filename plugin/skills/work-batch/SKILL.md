@@ -199,6 +199,14 @@ the release in step 4 restores them. Then, for each:
    first), stop the batch and report the refused claim. A fixed served batch
    cannot safely continue after one of its members changes.
 
+   The exception is a refusal by the repository's start rules, exit `3` with
+   `"why": "preflight"` in the JSON on standard output (the reason is on
+   stderr): nothing was written for that issue, so in an ordinary batch drop
+   it, name it and its reason in the report, and go on with the rest; when
+   fewer than two issues remain, release the ones claimed (step 4's release)
+   and stop. A fixed served batch still stops. A person's word to proceed
+   does not clear it: the item or the command changes first.
+
    (**judgment** — native: read the issue and stop on the same refusals,
    save its state and assignee through the harness's tracker tool (the
    mapped state name, assignee "me"), then read it again and stop the batch
