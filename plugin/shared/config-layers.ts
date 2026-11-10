@@ -123,8 +123,9 @@ export const REPOSITORY_ONLY_FIELDS: readonly string[] = [
   "code_stats.kinds",
   "code_stats.modules",
   "code_stats.classify_command",
-  // Where a repository keeps its docs tree and its schema.
+  // Where a repository keeps its docs tree, its schema and its index preamble.
   "docs.root",
+  "docs.index.preamble",
   "docs.schema",
   // Where a repository keeps its specs, and how its items name them.
   "specs.adapters",

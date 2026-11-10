@@ -25,9 +25,10 @@ export function batchPickups(
   actions: Action[],
   wanted: WantedItem[],
   values: Record<string, unknown>,
+  root: string,
 ): Action[] {
   const routing = parseAgentRouting(values);
-  const sizeOf = facetValueOf(facetsOf(parseTrackerConfig(values), null).size);
+  const sizeOf = facetValueOf(facetsOf(parseTrackerConfig(values), root).size);
   const labels = parseTrackerLabels(values);
   const policy = parseWorkBatchSection(
     values,
