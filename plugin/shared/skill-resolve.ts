@@ -34,6 +34,8 @@ export interface SkillSearch {
   pluginSkills: string;
   /** Where managed settings are read from; the platform's directory when unset. */
   managedDir?: string;
+  /** The platform whose settings locations apply; this process's when unset. */
+  platform?: NodeJS.Platform;
 }
 
 /** The search for `root`, from the environment and this plugin's own place. */
@@ -130,9 +132,9 @@ function mainCheckout(root: string): string {
 /** Where an organization's managed settings are read from, per platform. */
 function managedSettingsDir(search: SkillSearch): string {
   if (search.managedDir !== undefined) return search.managedDir;
-  if (process.platform === "darwin")
-    return "/Library/Application Support/ClaudeCode";
-  if (process.platform === "win32") return "C:\\Program Files\\ClaudeCode";
+  const platform = search.platform ?? process.platform;
+  if (platform === "darwin") return "/Library/Application Support/ClaudeCode";
+  if (platform === "win32") return "C:\\Program Files\\ClaudeCode";
   return "/etc/claude-code";
 }
 
@@ -146,7 +148,7 @@ function managedEnablement(
 ): boolean | undefined {
   const dir = managedSettingsDir(search);
   const dropIns = entries(join(dir, "managed-settings.d"))
-    .filter((f) => f.endsWith(".json"))
+    .filter((f) => !f.startsWith(".") && f.endsWith(".json"))
     .sort()
     .map((f) => join(dir, "managed-settings.d", f));
   let result: boolean | undefined;
@@ -166,8 +168,10 @@ function enablement(file: string, id: string): boolean | undefined {
 }
 
 /** Where `settings.local.json` lives: the main checkout, except on Windows, which keeps it in the worktree. */
-const localSettingsRoot = (root: string): string =>
-  process.platform === "win32" ? root : mainCheckout(root);
+const localSettingsRoot = (search: SkillSearch): string =>
+  (search.platform ?? process.platform) === "win32"
+    ? search.root
+    : mainCheckout(search.root);
 
 /**
  * Whether plugin `id` is turned off for `search.root`. Managed settings
@@ -183,7 +187,7 @@ function disabled(search: SkillSearch, id: string): boolean {
   for (const file of [
     join(search.claudeDir, "settings.json"),
     join(search.root, ".claude", "settings.json"),
-    join(localSettingsRoot(search.root), ".claude", "settings.local.json"),
+    join(localSettingsRoot(search), ".claude", "settings.local.json"),
   ]) {
     const setting = enablement(file, id);
     if (setting !== undefined) off = !setting;

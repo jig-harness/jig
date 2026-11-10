@@ -193,7 +193,23 @@ describe("resolveSkill against the install record", () => {
       join(main, ".claude", "settings.local.json"),
       JSON.stringify({ enabledPlugins: { "other@m": false } }),
     );
-    expect(resolveSkill("other:fmt", { ...rec, root: tree })).toBeNull();
+    expect(
+      resolveSkill("other:fmt", { ...rec, root: tree, platform: "linux" }),
+    ).toBeNull();
+    // Windows keeps settings.local.json in the worktree, so the main
+    // checkout's setting does not reach it...
+    expect(
+      resolveSkill("other:fmt", { ...rec, root: tree, platform: "win32" }),
+    ).not.toBeNull();
+    // ...and the worktree's own does.
+    mkdirSync(join(tree, ".claude"), { recursive: true });
+    writeFileSync(
+      join(tree, ".claude", "settings.local.json"),
+      JSON.stringify({ enabledPlugins: { "other@m": false } }),
+    );
+    expect(
+      resolveSkill("other:fmt", { ...rec, root: tree, platform: "win32" }),
+    ).toBeNull();
   });
 
   it("applies a managed install, and a project install to a sibling worktree", () => {
@@ -233,6 +249,19 @@ describe("resolveSkill against the install record", () => {
       JSON.stringify({ enabledPlugins: { "other@m": false } }),
     );
     expect(resolveSkill("other:fmt", { ...rec, managedDir })).toBeNull();
+  });
+
+  it("ignores hidden managed settings drop-ins", () => {
+    const { rec } = recorded((p: string) => ({
+      "other@m": [{ scope: "user", installPath: p }],
+    }));
+    const managedDir = join(dir, "managed-hidden");
+    mkdirSync(join(managedDir, "managed-settings.d"), { recursive: true });
+    writeFileSync(
+      join(managedDir, "managed-settings.d", ".disabled-policy.json"),
+      JSON.stringify({ enabledPlugins: { "other@m": false } }),
+    );
+    expect(resolveSkill("other:fmt", { ...rec, managedDir })).not.toBeNull();
   });
 
   it("reads enablement from the repository's settings over the user's", () => {
