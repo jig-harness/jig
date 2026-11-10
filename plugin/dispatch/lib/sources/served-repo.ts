@@ -34,7 +34,8 @@ export function repoScopeOf(
   values: Record<string, unknown>,
 ): RepoScope | undefined {
   const review = values.review as
-    { repo_label?: unknown; taxonomy?: { repos?: unknown } } | undefined;
+    | { repo_label?: unknown; taxonomy?: { repos?: unknown } }
+    | undefined;
   const own = review?.repo_label;
   if (own === undefined || own === null) return undefined;
   if (typeof own !== "string" || own.trim() === "")

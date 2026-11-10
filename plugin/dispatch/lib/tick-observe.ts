@@ -542,7 +542,8 @@ async function readTracker(
     const config = trackerConfigOf(values, repo.slug);
     tracked.keys = issueKeysOf(config);
     const item = values.do_item as
-      { execution_plan_block?: unknown } | undefined;
+      | { execution_plan_block?: unknown }
+      | undefined;
     const scope = scopeOf(values);
     tracked.servedPolicy = {
       hitl: config.labels.hitl,
