@@ -96,7 +96,7 @@ function addressedLine(raw: string, knownKey?: string): Line | null {
     knownKey !== undefined &&
     rest.toLowerCase().startsWith(`${knownKey}:`.toLowerCase())
       ? knownKey.length
-      : rest.lastIndexOf(":");
+      : rest.indexOf(":");
   const key = rest.slice(0, delimiter);
   const text = rest.slice(delimiter + 1).trimStart();
   return delimiter < 1 || /\s/.test(key) || !/^\S/.test(text)
@@ -165,9 +165,10 @@ function addressedAnswers(
       const companion = addressedLine(raw, companionKey);
       if (companion === null || answerTextFault(companion.text) !== null)
         return null;
-      (companion.kind === "answer" ? companionAnswers : companionNotes).add(
-        companion.key,
-      );
+      const companions =
+        companion.kind === "answer" ? companionAnswers : companionNotes;
+      if (companions.has(companion.key)) return null;
+      companions.add(companion.key);
       continue;
     }
     const line = addressedLine(raw, knownKey);

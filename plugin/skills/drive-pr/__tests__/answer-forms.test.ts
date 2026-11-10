@@ -219,6 +219,25 @@ describe("whole-comment answer forms", () => {
         "answer PRRT_a: approve\nanswer scope:release:approve\nnote scope:release: after migration",
       )?.choice?.option,
     ).toBe("Keep");
+    expect(
+      parse(
+        "answer PRRT_a: approve\nanswer other: choose Mode: safe\nnote other: use Mode: safe",
+      )?.choice?.option,
+    ).toBe("Keep");
+    expect(
+      parse(
+        "answer PRRT_a: approve\nnote other: use Mode: safe\nanswer other: choose Mode: safe",
+      )?.choice?.option,
+    ).toBe("Keep");
+  });
+
+  it("keeps duplicate companion answers and notes free for every keyed reader", () => {
+    for (const body of [
+      "answer PRRT_a: approve\nanswer other: approve\nanswer other: choose Keep",
+      "answer PRRT_a: approve\nanswer other: approve\nnote other: first\nnote other: second",
+    ]) {
+      expect(parse(body)?.choice).toBeUndefined();
+    }
   });
 
   it("matches only the public decision when stripping a notification quote", () => {
