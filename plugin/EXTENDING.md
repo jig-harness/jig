@@ -254,8 +254,8 @@ are named by canonical keys (`in_progress`, `in_review`, …) that
     types are ignored;
   - every candidate pool and population is limited to the issue types
     `issue_tracker.jira.pool_issue_types` names, matched to the project's
-    issue types when the site is first read; reads by key and an issue's
-    children are not;
+    issue types when the site is first read; reads by key, an issue's
+    children and reads a label defines are not;
   - a field a team relies on that Jig's interface has no place for (a size,
     a facet, an owning repository) reads as labels through
     `issue_tracker.jira.field_labels`: each value behind the field's
