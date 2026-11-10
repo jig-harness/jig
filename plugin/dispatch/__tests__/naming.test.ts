@@ -72,6 +72,13 @@ function rearmable(
   extra: Record<string, unknown> = {},
 ): { w: World; ws: string } {
   const w = base(["rearm", "notify"], extra);
+  for (const args of [
+    ["-C", w.repo, "branch", "feature/7-parked", "main"],
+    ["-C", w.repo, "push", "-q", "origin", "feature/7-parked"],
+  ]) {
+    const result = Bun.spawnSync(["git", ...args], { env: w.env });
+    expectSpawnExit(result, 0, `git ${args.join(" ")}`);
+  }
   w.setPrs("open", [openPr(7, "feature/7-parked")]);
   w.setComments(7, [ledgerComment(701, stoppedLedger(7, 16))]);
   const ws = join(w.root, "ws-7");
