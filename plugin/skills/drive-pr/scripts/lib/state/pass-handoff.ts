@@ -18,6 +18,18 @@ import { swallow } from "../../../../../shared/errors.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
 
 import { atomicWrite } from "./fsutil.ts";
+import {
+  isParkedDecision,
+  type ParkedDecision,
+} from "../../../../../shared/decisions/park.ts";
+
+/** A recognized option, with a note that may only narrow what it allows. */
+export interface AnswerChoice {
+  option: string;
+  recommended: boolean;
+  form: "approve" | "choose";
+  note?: string;
+}
 
 /** The most bytes `$DRIVE_PR_PASS_NOTICE` carries; a longer notice goes to a file. */
 export const PASS_NOTICE_ENV_MAX = 16_384;
@@ -28,6 +40,8 @@ export interface PendingAnswer {
   at: string;
   url: string;
   body: string;
+  bodyHash?: string;
+  choice?: AnswerChoice;
 }
 
 /**
@@ -41,6 +55,7 @@ export interface PendingVerdict {
   reason: string;
   answers: PendingAnswer[];
   provisional?: true;
+  decision?: ParkedDecision;
 }
 
 export function answersFile(stateDir: string, pr: string): string {
@@ -54,7 +69,22 @@ export function noticeFile(stateDir: string, pr: string): string {
 const str = (v: unknown): v is string => typeof v === "string";
 
 function isAnswer(v: unknown): v is PendingAnswer {
-  return isRecord(v) && [v.author, v.at, v.url, v.body].every(str);
+  return (
+    isRecord(v) &&
+    [v.author, v.at, v.url, v.body].every(str) &&
+    (v.bodyHash === undefined || str(v.bodyHash)) &&
+    (v.choice === undefined || isChoice(v.choice))
+  );
+}
+
+function isChoice(v: unknown): v is AnswerChoice {
+  return (
+    isRecord(v) &&
+    str(v.option) &&
+    typeof v.recommended === "boolean" &&
+    (v.form === "approve" || v.form === "choose") &&
+    (v.note === undefined || str(v.note))
+  );
 }
 
 function isVerdict(v: unknown): v is PendingVerdict {
@@ -65,6 +95,7 @@ function isVerdict(v: unknown): v is PendingVerdict {
     str(v.reason) &&
     Array.isArray(v.answers) &&
     v.answers.every(isAnswer) &&
+    (v.decision === undefined || isParkedDecision(v.decision)) &&
     (v.provisional === undefined || v.provisional === true)
   );
 }
