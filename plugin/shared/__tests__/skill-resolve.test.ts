@@ -109,6 +109,92 @@ describe("resolveSkill", () => {
   });
 });
 
+describe("resolveSkill against the install record", () => {
+  let n = 0;
+  function recorded(plugins: unknown, raw?: string) {
+    const base = join(dir, `recorded-${n++}`);
+    const inst = join(base, "plugins", "cache", "m", "other", "1.0.0");
+    mkdirSync(join(inst, "skills", "fmt"), { recursive: true });
+    writeFileSync(
+      join(inst, "skills", "fmt", "SKILL.md"),
+      "---\nname: x\n---\n",
+    );
+    mkdirSync(join(base, "plugins"), { recursive: true });
+    writeFileSync(
+      join(base, "plugins", "installed_plugins.json"),
+      raw ??
+        JSON.stringify({
+          plugins: plugins instanceof Function ? plugins(inst) : plugins,
+        }),
+    );
+    return { base, inst, rec: { ...search, claudeDir: base } };
+  }
+
+  it("ignores an install scoped to another project", () => {
+    const { inst, rec } = recorded((p: string) => ({
+      "other@m": [
+        {
+          scope: "project",
+          projectPath: join(dir, "elsewhere"),
+          installPath: p,
+        },
+      ],
+    }));
+    expect(inst).toBeTruthy();
+    expect(resolveSkill("other:fmt", rec)).toBeNull();
+  });
+
+  it("accepts an install scoped to this project", () => {
+    const { rec } = recorded((p: string) => ({
+      "other@m": [
+        { scope: "project", projectPath: search.root, installPath: p },
+      ],
+    }));
+    expect(resolveSkill("other:fmt", rec)).not.toBeNull();
+  });
+
+  it("reads enablement from the repository's settings over the user's", () => {
+    const { base, rec } = recorded((p: string) => ({
+      "other@m": [{ scope: "user", installPath: p }],
+    }));
+    mkdirSync(join(search.root, ".claude"), { recursive: true });
+    writeFileSync(
+      join(search.root, ".claude", "settings.json"),
+      JSON.stringify({ enabledPlugins: { "other@m": false } }),
+    );
+    expect(resolveSkill("other:fmt", rec)).toBeNull();
+    writeFileSync(
+      join(base, "settings.json"),
+      JSON.stringify({ enabledPlugins: { "other@m": false } }),
+    );
+    writeFileSync(
+      join(search.root, ".claude", "settings.json"),
+      JSON.stringify({ enabledPlugins: { "other@m": true } }),
+    );
+    expect(resolveSkill("other:fmt", rec)).not.toBeNull();
+    rmSync(join(search.root, ".claude", "settings.json"));
+  });
+
+  it("fails closed on a record that is not JSON, and scans only when it is absent", () => {
+    const { rec } = recorded(null, "{ truncated");
+    expect(resolveSkill("other:fmt", rec)).toBeNull();
+    const none = { ...search, claudeDir: join(dir, "no-record") };
+    const file = join(
+      none.claudeDir,
+      "plugins",
+      "cache",
+      "m",
+      "other",
+      "1.0.0",
+      "skills",
+      "fmt",
+    );
+    mkdirSync(file, { recursive: true });
+    writeFileSync(join(file, "SKILL.md"), "---\nname: x\n---\n");
+    expect(resolveSkill("other:fmt", none)).not.toBeNull();
+  });
+});
+
 describe("skillSearch", () => {
   it("reads the tools' homes from the environment", () => {
     const s = skillSearch("/r", { HOME: "/h", CLAUDE_CONFIG_DIR: "/c" });

@@ -2,7 +2,7 @@
  * Whether a skill name a repository's configuration gives resolves to a
  * skill installed where an agent would find it: the repository's own
  * project skills, the user's skills, this plugin's skills, and, for a name
- * `<plugin>:<skill>`, that enabled plugin install Claude Code records.
+ * `<plugin>:<skill>`, that enabled plugin install Claude Code records for the repository.
  *
  * A name is written as an agent invokes it: `migration-safety`,
  * `/migration-safety`, `jig:review` or `/jig:review`. A configured skill
@@ -11,7 +11,7 @@
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { swallow } from "./errors.ts";
 
 /** This plugin's name, the prefix its skills are invoked by. */
@@ -77,24 +77,70 @@ const entries = (dir: string): string[] => {
   }
 };
 
-/** The parsed JSON file at `path`, or `null` when it is missing or unreadable. */
-function readJson(path: string): Record<string, unknown> | null {
+/** A JSON object file's content, or why there is none: `absent` (no such file) or `invalid`. */
+type JsonRead =
+  | { status: "ok"; value: Record<string, unknown> }
+  | { status: "absent" }
+  | { status: "invalid" };
+
+function readJson(path: string): JsonRead {
+  let text: string;
   try {
-    const v: unknown = JSON.parse(readFileSync(path, "utf8"));
-    return typeof v === "object" && v !== null && !Array.isArray(v)
-      ? (v as Record<string, unknown>)
-      : null;
+    text = readFileSync(path, "utf8");
   } catch (e) {
-    swallow(e, `${path} is missing or not JSON, so it records nothing`);
-    return null;
+    swallow(e, `${path} cannot be read, so it records nothing`);
+    return { status: existsSync(path) ? "invalid" : "absent" };
+  }
+  try {
+    const v: unknown = JSON.parse(text);
+    return typeof v === "object" && v !== null && !Array.isArray(v)
+      ? { status: "ok", value: v as Record<string, unknown> }
+      : { status: "invalid" };
+  } catch (e) {
+    swallow(e, `${path} is not JSON, so it records nothing`);
+    return { status: "invalid" };
   }
 }
 
 /**
- * The install directories of the enabled installs of `plugin`, from Claude
- * Code's own record (`plugins/installed_plugins.json`, less the plugins
- * `settings.json` disables), or `null` when that record is absent: only then
- * is the cache scanned.
+ * Whether plugin `id` is turned off for `search.root`: the last of the user's
+ * `settings.json`, the repository's `.claude/settings.json` and its
+ * `.claude/settings.local.json` that names it decides. An unreadable layer
+ * counts as turning nothing off.
+ */
+function disabled(search: SkillSearch, id: string): boolean {
+  let off = false;
+  for (const file of [
+    join(search.claudeDir, "settings.json"),
+    join(search.root, ".claude", "settings.json"),
+    join(search.root, ".claude", "settings.local.json"),
+  ]) {
+    const read = readJson(file);
+    if (read.status !== "ok") continue;
+    const enabled = read.value.enabledPlugins;
+    if (typeof enabled !== "object" || enabled === null) continue;
+    const setting = (enabled as Record<string, unknown>)[id];
+    if (typeof setting === "boolean") off = !setting;
+  }
+  return off;
+}
+
+/** Whether an install record applies to `search.root`: user-wide, or scoped to a directory holding it. */
+function appliesHere(install: unknown, search: SkillSearch): boolean {
+  const i = install as { scope?: unknown; projectPath?: unknown } | null;
+  if (i === null || typeof i !== "object") return false;
+  if (i.scope !== "project" && i.scope !== "local") return true;
+  if (typeof i.projectPath !== "string") return false;
+  const rel = relative(resolve(i.projectPath), resolve(search.root));
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
+/**
+ * The install directories of the enabled installs of `plugin` that apply to
+ * `search.root`, from Claude Code's own record
+ * (`plugins/installed_plugins.json`), or `null` when that record is absent:
+ * only then is the cache scanned. A record that cannot be read or is not the
+ * expected shape answers nothing.
  */
 function installedPluginDirs(
   search: SkillSearch,
@@ -103,30 +149,21 @@ function installedPluginDirs(
   const record = readJson(
     join(search.claudeDir, "plugins", "installed_plugins.json"),
   );
-  const plugins = record?.plugins;
-  if (typeof plugins !== "object" || plugins === null) return null;
-  const enabled = readJson(
-    join(search.claudeDir, "settings.json"),
-  )?.enabledPlugins;
+  if (record.status === "absent") return null;
+  if (record.status === "invalid") return [];
+  const plugins = record.value.plugins;
+  if (typeof plugins !== "object" || plugins === null) return [];
   return Object.entries(plugins)
-    .filter(([id]) => id.split("@")[0] === plugin && !disabled(enabled, id))
-    .flatMap(([, installs]) => installPaths(installs));
+    .filter(([id]) => id.split("@")[0] === plugin && !disabled(search, id))
+    .flatMap(([, installs]) => installPaths(installs, search));
 }
 
-/** Whether `settings.json`'s `enabledPlugins` turns plugin `id` off. */
-function disabled(enabled: unknown, id: string): boolean {
-  return (
-    typeof enabled === "object" &&
-    enabled !== null &&
-    (enabled as Record<string, unknown>)[id] === false
-  );
-}
-
-/** The `installPath` of each install an install record lists. */
-function installPaths(installs: unknown): string[] {
+/** The `installPath` of each install an install record lists that applies here. */
+function installPaths(installs: unknown, search: SkillSearch): string[] {
   if (!Array.isArray(installs)) return [];
   return installs
-    .map((i: { installPath?: unknown } | null) => i?.installPath)
+    .filter((i) => appliesHere(i, search))
+    .map((i: { installPath?: unknown }) => i.installPath)
     .filter((p): p is string => typeof p === "string");
 }
 

@@ -277,9 +277,8 @@ export function resolveGuidance(
   const lower = new Set(labels.map((l) => l.toLowerCase()));
   const sources: GuidanceSource[] = [];
   const byPath: Guidance["byPath"] = [];
-  entries.forEach((entry, i) =>
-    matchEntry(entry, `do_item.guidance[${i}]`, lower, paths, sources, byPath),
-  );
+  for (const [i, entry] of entries.entries())
+    matchEntry(entry, `do_item.guidance[${i}]`, lower, paths, sources, byPath);
   for (const { key, by } of areas) {
     const g = areaGuidance(key, catalog);
     if (hasGuidance(g)) sources.push({ from: `area ${key}`, by, ...g });
