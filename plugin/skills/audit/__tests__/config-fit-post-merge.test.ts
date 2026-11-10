@@ -38,7 +38,7 @@ test("a post-merge state short of done with refs is accepted", () => {
 });
 
 test("a blank post-merge closer is refused", () => {
-  const found = findings("do_item:\n  post_merge_closer: \"  \"\n");
+  const found = findings('do_item:\n  post_merge_closer: "  "\n');
   expect(found.find((f) => f.id === REJECTED)?.message).toContain(
     "post_merge_closer",
   );
