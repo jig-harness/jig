@@ -12,7 +12,9 @@ import { oneLine, SCRUBBED_ENV, scrubbedEnv } from "../repo-command.ts";
 const FIXTURES = join(import.meta.dir, "fixtures", "repo-command");
 const RUNNER = join(FIXTURES, "runner.ts");
 const quoted = (path: string) =>
-  process.platform === "win32" ? `"${path}"` : `'${path.replaceAll("'", "'\\''")}'`;
+  process.platform === "win32"
+    ? `"${path}"`
+    : `'${path.replaceAll("'", "'\\''")}'`;
 const program = (mode: string) =>
   `bun ${quoted(join(FIXTURES, "program.ts"))} ${mode}`;
 const dirs: string[] = [];
