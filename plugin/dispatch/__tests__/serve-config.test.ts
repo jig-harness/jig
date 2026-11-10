@@ -80,8 +80,8 @@ describe("the host's default repository for unlabelled served items", () => {
 
   it("refuses a default that is not listed, a team written twice and a malformed entry", () => {
     for (const serve_defaults of [
-      { ENG: "/srv/other" },
-      { ENG: "/srv/api", eng: "/srv/web" },
+      { "linear:ENG": "/srv/other" },
+      { "linear:ENG": "/srv/api", "LINEAR:eng": "/srv/web" },
       { ENG: "srv/api" },
       { ENG: 3 },
       ["/srv/api"],
@@ -99,16 +99,17 @@ describe("the host's default repository for unlabelled served items", () => {
       "jira:site:ENG:extra",
       "jira:http://example.atlassian.net:ENG",
       "jira:https://example.atlassian.net:",
+      "jira:https://example.atlassian.net:8443:ENG",
     ])
       expect(
         read({ repositories, serve_defaults: { [namespace]: "/srv/api" } }).ok,
       ).toBe(false);
   });
 
-  it("accepts a Jira namespace whose site keeps its scheme and port", () => {
+  it("accepts a Jira namespace whose site keeps its scheme", () => {
     for (const namespace of [
       "jira:https://example.atlassian.net:eng",
-      "JIRA:https://Example.atlassian.net:8443:ENG",
+      "JIRA:https://Example.atlassian.net:ENG",
     ]) {
       const result = read({
         repositories,

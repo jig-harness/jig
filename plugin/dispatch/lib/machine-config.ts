@@ -495,7 +495,7 @@ function repositories(value: unknown): Checked<MachineRepository[]> {
   return distinct(read.value, (r) => r.path, "a repository");
 }
 
-/** `linear:<team>`, or `jira:<site>:<project>` where the site is the https URL, its own colons kept. */
+/** `linear:<team>`, or `jira:<site>:<project>` where the site is the https hostname the Jira settings accept (no port), its scheme colon kept. */
 function isTrackerNamespace(key: string): boolean {
   if (/\s/.test(key)) return false;
   if (key.startsWith("linear:")) {
@@ -508,7 +508,7 @@ function isTrackerNamespace(key: string): boolean {
   if (split < 0) return false;
   const site = rest.slice(0, split);
   const project = rest.slice(split + 1);
-  return /^https:\/\/[^/:]+(:\d+)?$/.test(site) && project !== "";
+  return /^https:\/\/[a-z0-9.-]+$/.test(site) && project !== "";
 }
 
 /**
