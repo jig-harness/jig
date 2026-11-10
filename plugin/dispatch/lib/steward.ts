@@ -60,6 +60,10 @@ export interface KeptStewardRecord {
   applied: boolean;
   effect: string | null;
 }
+export type SubmitStewardResult =
+  | "submitted"
+  | "already-submitted"
+  | "missing-run";
 
 /** A changed input, the cadence and a rolling hourly cap must all permit a run. */
 export function stewardDue(
@@ -271,16 +275,17 @@ export function submitStewardRecords(
   run: string,
   value: unknown,
   root = stateRoot(),
-): Outcome<void, "invalid" | "unreadable"> {
+): Outcome<SubmitStewardResult, "invalid" | "unreadable"> {
   const checked = checkedRecords(value);
   if (!checked.ok) return checked;
   return attempt("unreadable", "the steward records could not be kept", () => {
     const db = stateDb(root);
-    db.transaction(() => {
+    return db.transaction(() => {
       const row = db
         .query("SELECT submitted FROM steward_runs WHERE id = ?")
         .get(run) as { submitted: number } | null;
-      if (row === null || row.submitted) return;
+      if (row === null) return "missing-run" as const;
+      if (row.submitted) return "already-submitted" as const;
       for (const record of checked.value)
         db.query(
           "INSERT INTO steward_records (run, repo, value) SELECT id, repo, ? FROM steward_runs WHERE id = ?",
@@ -289,6 +294,7 @@ export function submitStewardRecords(
       db.query(
         "UPDATE launches SET result = 'done', result_at = ? WHERE id = ? AND result IS NULL",
       ).run(new Date().toISOString(), run);
+      return "submitted" as const;
     })();
   });
 }

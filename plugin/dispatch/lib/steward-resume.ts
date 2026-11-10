@@ -325,6 +325,12 @@ async function available(
   source: Source,
   pending?: LaunchRecord,
 ): Promise<boolean> {
+  if (!observation.opened.stages.has(source.record.action)) return false;
+  if (
+    source.record.action === "followup" &&
+    source.record.command !== observation.opened.section.followupCommand
+  )
+    return false;
   if (!(await markerAvailable(observation, source, pending))) return false;
   if ((await sessionsAvailable(state, observation, source, pending)) === null)
     return false;

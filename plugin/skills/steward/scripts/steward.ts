@@ -84,6 +84,12 @@ async function main(): Promise<number> {
     const value = readSubmission(file);
     const kept = submitStewardRecords(id, value);
     if (!kept.ok) stop(kept.failure.reason);
+    if (kept.value !== "submitted")
+      stop(
+        kept.value === "already-submitted"
+          ? "the steward submission was already accepted"
+          : "the steward launch no longer exists",
+      );
     console.log(JSON.stringify({ submitted: true }));
   }
 
