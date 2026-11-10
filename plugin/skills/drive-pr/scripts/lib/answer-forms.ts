@@ -96,7 +96,7 @@ function addressedLine(raw: string, knownKey?: string): Line | null {
     knownKey !== undefined &&
     rest.toLowerCase().startsWith(`${knownKey}:`.toLowerCase())
       ? knownKey.length
-      : rest.lastIndexOf(":");
+      : (/:\s/.exec(rest)?.index ?? rest.indexOf(":"));
   const key = rest.slice(0, delimiter);
   const text = rest.slice(delimiter + 1).trimStart();
   return delimiter < 1 || /\s/.test(key) || !/^\S/.test(text)
@@ -251,7 +251,8 @@ export function parseAnswerComment(
   const lines = answerLines(item, c.body);
   if (lines.length === 0) return null;
   // A note by itself is not an answer, including on a review thread.
-  if (lines.every((line) => addressedLine(line)?.kind === "note")) return null;
+  if (lines.every((line) => addressedLine(line, item.key)?.kind === "note"))
+    return null;
   if (
     place === "conversation" &&
     !answersKey(withoutAnswerRecord(c.body), item.key)
@@ -280,7 +281,7 @@ export function noteWithoutAnswer(
   if (item.at === undefined || !isAnswer(c, Date.parse(item.at))) return null;
   const lines = answerLines(item, c.body);
   if (lines.length !== 1) return null;
-  const line = addressedLine(lines[0] ?? "");
+  const line = addressedLine(lines[0] ?? "", item.key);
   return line?.kind === "note" &&
     line.key === item.key.toLowerCase() &&
     answerTextFault(line.text) === null

@@ -3,6 +3,7 @@ import type { ParkedDecision } from "../../../shared/decisions/park.ts";
 import type { ParkedItem } from "../scripts/lib/state/schema.ts";
 import {
   latestAnswers,
+  noteWithoutAnswer,
   parseAnswerComment,
   disputedAnswers,
 } from "../scripts/lib/answer-forms.ts";
@@ -202,6 +203,17 @@ describe("whole-comment answer forms", () => {
         "conversation",
       )?.choice,
     ).toBeUndefined();
+  });
+
+  it("keeps standalone notes and other keyed answers structured when their text has a colon", () => {
+    expect(noteWithoutAnswer(item, comment("note PRRT_a: after 10:00"))).toBe(
+      "after 10:00",
+    );
+    expect(
+      parse(
+        "answer PRRT_a: approve\nanswer other: approve\nnote other: after 10:00",
+      )?.choice?.option,
+    ).toBe("Keep");
   });
 
   it("matches only the public decision when stripping a notification quote", () => {
