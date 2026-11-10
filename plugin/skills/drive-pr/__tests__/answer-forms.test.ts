@@ -225,6 +225,11 @@ describe("whole-comment answer forms", () => {
     ).toBe("Keep");
     expect(
       parse(
+        "answer PRRT_a: approve\nanswer other:choose Mode: safe\nnote other:after 10:00",
+      )?.choice?.option,
+    ).toBe("Keep");
+    expect(
+      parse(
         "answer PRRT_a: approve\nnote other: use Mode: safe\nanswer other: choose Mode: safe",
       )?.choice?.option,
     ).toBe("Keep");

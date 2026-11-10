@@ -102,13 +102,24 @@ function companionLine(raw: string): Line | null {
   if (m === null) return null;
   const rest = m[2] ?? "";
   const kind = m[1]?.toLowerCase() as Line["kind"];
+  const compactDelimiter = rest.indexOf(":");
   const spacedDelimiter = rest.search(/:\s/);
-  const delimiter = spacedDelimiter >= 0 ? spacedDelimiter : rest.indexOf(":");
+  const delimiter =
+    spacedDelimiter >= 0 && !/\s/.test(rest.slice(0, spacedDelimiter))
+      ? spacedDelimiter
+      : compactDelimiter;
   if (delimiter < 1 || /\s/.test(rest.slice(0, delimiter))) return null;
   const textStart = delimiter + 1;
   if (textStart >= rest.length) return null;
 
-  if (spacedDelimiter < 0 && rest.indexOf(":", textStart) >= 0) return null;
+  const laterColon = rest.indexOf(":", textStart);
+  if (
+    laterColon >= 0 &&
+    spacedDelimiter < 0 &&
+    (!/\s\d+$/.test(rest.slice(0, laterColon)) ||
+      !/^:\d/.test(rest.slice(laterColon)))
+  )
+    return null;
 
   return {
     kind,
