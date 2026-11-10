@@ -1,9 +1,10 @@
 /** Served assignments, inherited through epics, with metadata kept at updatedAt. */
-import type {
-  Assigner,
-  IssueRelation,
-  PoolIssue,
-  Tracker,
+import {
+  type Assigner,
+  type IssueRelation,
+  type PoolIssue,
+  type Tracker,
+  workingStates,
 } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
 import { servedParentHold } from "./served-parents.ts";
 import { servedPlan } from "./served-plan.ts";
@@ -135,7 +136,10 @@ export async function readServedPickups(
       person.tracker[tracker.adapter as keyof ServedPerson["tracker"]];
     if (identity === undefined) continue;
     try {
-      const progress = await tracker.assignedIssues(identity, ["in_progress"]);
+      const progress = await tracker.assignedIssues(
+        identity,
+        workingStates(tracker),
+      );
       out.claimed.push(
         ...progress.map((i) => ({
           key: i.identifier,

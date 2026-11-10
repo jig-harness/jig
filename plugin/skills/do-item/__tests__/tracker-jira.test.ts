@@ -1,5 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { TrackerConfigError } from "../scripts/lib/tracker/config-error.ts";
+import { parseTrackerConfig } from "../scripts/lib/tracker/config.ts";
+import { jiraModel } from "../scripts/lib/tracker/jira/model.ts";
 import { TrackerRequestError } from "../scripts/lib/tracker/port.ts";
 import { adfToMarkdown } from "../scripts/lib/tracker/jira/adf.ts";
 import { JiraApiError } from "../scripts/lib/tracker/jira/transport.ts";
@@ -668,5 +670,40 @@ describe("Jira adapter: reach", () => {
     await expect(
       jira(routes({ "GET project/ENG": down })).t.reach(),
     ).rejects.toBe(down);
+  });
+});
+
+describe("Jira model: pr_open", () => {
+  const read = (states: Record<string, string>, status: string) => {
+    const config = parseTrackerConfig({
+      issue_tracker: {
+        adapter: "jira",
+        team: "ENG",
+        states,
+        jira: { site: "https://example.atlassian.net" },
+      },
+    });
+    return jiraModel(config.states, config.jira).read({
+      status: { id: "1", name: status, category: "indeterminate" },
+      resolution: null,
+    }).canonical;
+  };
+
+  it("reads a distinct pr_open status, and a status it shares with in_review, as pr_open", () => {
+    expect(read({ pr_open: "Awaiting Review" }, "Awaiting Review")).toBe(
+      "pr_open",
+    );
+    expect(read({ pr_open: "In Review" }, "In Review")).toBe("pr_open");
+    expect(
+      read(
+        { pr_open: "Review", in_review: "Review", ops_pending: "Review" },
+        "Review",
+      ),
+    ).toBe("pr_open");
+  });
+
+  it("reads in_review as before when pr_open is unset or named apart", () => {
+    expect(read({}, "In Review")).toBe("in_review");
+    expect(read({ pr_open: "Awaiting Review" }, "In Review")).toBe("in_review");
   });
 });

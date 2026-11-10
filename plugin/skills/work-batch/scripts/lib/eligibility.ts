@@ -91,6 +91,7 @@ const CANONICAL_STANDING: Record<CanonicalState, StateStanding> = {
   backlog: "open",
   todo: "open",
   in_progress: "started",
+  pr_open: "started",
   in_review: "started",
   ops_pending: "started",
   done: "closed",

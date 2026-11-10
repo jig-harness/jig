@@ -476,7 +476,13 @@ export function reportOperations(
         );
       if (signal?.aborted === true) throw abortedError(signal);
       const accountId = await client.accountId(identity, signal);
-      const names = [...new Set(states.map((s) => model.stateName(s)))];
+      const names = [
+        ...new Set(
+          states
+            .map((s) => model.stateName(s))
+            .filter((n): n is string => n !== null),
+        ),
+      ];
       const read = await client.search(
         inProject(
           project,

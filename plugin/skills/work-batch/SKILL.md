@@ -336,6 +336,13 @@ A row per issue is what closes each issue on merge: an issue named only in
 prose stays open. Add the `## Out-of-tree follow-ups` section `/jig:do-item`
 requires, for every issue.
 
+Once the pull request is open, and before the drive arms, move each issue
+to `pr_open` as `/jig:do-item`'s "Move the item to `pr_open`" (Step 4a)
+says: where `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" states`
+names `pr_open`, post the comment linking the pull request on the issue,
+then `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" transition "<KEY>" pr_open`.
+Where it maps `pr_open` to `null`, skip this.
+
 ### 6. Drive it once
 
 Capture the intent chain with the `pickupId` from step 3 (or step 4's
@@ -362,9 +369,15 @@ single issue gets after its pull request merges, not only the first.
 2. **For each row**:
    - **Status**: `/jig:do-item`'s post-merge status rule decides: `done`,
      or `ops_pending` when a manual, operational or legal step remains
-     (always so for an issue carrying the manual-operations label).
+     (always so for an issue carrying the manual-operations label), capped
+     at `do_item.post_merge_state` (`bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" post-merge`).
+     Move it with `--post-merge`:
+     `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" transition "<KEY>" <state> --post-merge`;
+     a refusal (exit 3) leaves the issue where it is, for a person.
    - **Closing comment**: the merge commit, and the pull request's
-     `## Out-of-tree follow-ups` items for that issue as unchecked boxes.
+     `## Out-of-tree follow-ups` items for that issue as unchecked boxes;
+     for an issue left short of `done`, the policy's `closing` sentence on
+     who closes it.
    - **Labels**: compare the issue's labels with the catalog's
      `tracker.labels` and `tracker.flags` for the areas the issue's commits
      touch. A flag the catalog derives that the issue lacks is a gap to

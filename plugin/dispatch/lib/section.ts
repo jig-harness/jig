@@ -122,6 +122,11 @@ function states(value: unknown): Checked<string[]> {
     return invalid(
       "dispatch.states cannot list in_progress, the state do-item's claim moves an item to",
     );
+  // An item there has a pull request open: it is claimed work, never a pickup.
+  if (value.includes("pr_open"))
+    return invalid(
+      "dispatch.states cannot list pr_open, the state of an item whose pull request is open",
+    );
   return ok(value as string[]);
 }
 

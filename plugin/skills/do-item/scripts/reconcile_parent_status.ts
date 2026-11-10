@@ -29,8 +29,10 @@ import {
   KNOWN_STATE_TYPES,
   stateNameEquals,
 } from "./get_issue.ts";
-import { defaultStateName, ownTrackerConfig } from "./lib/tracker/config.ts";
-import { CANONICAL_STATES, type CanonicalState } from "./lib/tracker/port.ts";
+import { defaultStateNames, ownTrackerConfig } from "./lib/tracker/config.ts";
+import type { StateNames } from "./lib/tracker/port.ts";
+import { parsePostMerge, type PostMergeState } from "./lib/post-merge.ts";
+import { readOverlay } from "../../../shared/consumer.ts";
 import {
   readJsonInput,
   INVALID_JSON_INPUT,
@@ -86,18 +88,21 @@ export interface ReconcileDecision {
   reason: string;
 }
 
-/** The tracker vocabulary the decision reads: label roles and state names. */
+/**
+ * The tracker vocabulary the decision reads: label roles, state names, and
+ * the state the post-merge rule stops at (`do_item.post_merge_state`).
+ */
 export interface ReconcileVocabulary {
   labels: TrackerLabels;
-  states: Record<CanonicalState, string>;
+  states: StateNames;
+  /** Absent: `done`. */
+  postMergeState?: PostMergeState;
 }
 
 /** Every role and state at its default. */
 export const DEFAULT_VOCABULARY: ReconcileVocabulary = {
   labels: DEFAULT_TRACKER_LABELS,
-  states: Object.fromEntries(
-    CANONICAL_STATES.map((s) => [s, defaultStateName(s)]),
-  ) as Record<CanonicalState, string>,
+  states: defaultStateNames(),
 };
 
 /**
@@ -120,6 +125,10 @@ export const DEFAULT_VOCABULARY: ReconcileVocabulary = {
  * — only the name can. "In Progress" is deliberately absent: a child still
  * there must keep the parent "In Progress" too (route to Step 4b), never let
  * it cap out at a later state.
+ *
+ * A child named like `pr_open` is active work, never parked, even where
+ * `pr_open` shares its name with `in_review`: its pull request may still be
+ * open, so it keeps the parent in progress like an `in_progress` child.
  *
  * This is deliberately NOT the full merged-or-parked set — Done/Canceled/
  * Duplicate are covered by `classifyChildState`'s bucket instead (see
@@ -166,6 +175,8 @@ export function reconcileParentStatus(
   vocabulary: ReconcileVocabulary = DEFAULT_VOCABULARY,
 ): ReconcileDecision {
   const { labels, states } = vocabulary;
+  const postMergeState = vocabulary.postMergeState ?? "done";
+  const prOpen = states.pr_open;
   const decide = (
     verdict: ReconcileVerdict,
     parentState: ParentState | null,
@@ -277,6 +288,7 @@ export function reconcileParentStatus(
     (c, i) =>
       buckets[i] !== "incomplete" ||
       (nameTrustworthyForParkedCheck(c.state) &&
+        !(prOpen !== null && stateNameEquals(c.state?.name, prOpen)) &&
         PARKED_ACTIVE_STATES.some((key) =>
           stateNameEquals(c.state?.name, states[key]),
         )),
@@ -291,13 +303,23 @@ export function reconcileParentStatus(
   }
 
   if (allDone) {
-    return decide(
-      "set_status",
-      parentHasManualOps ? "ops_pending" : "done",
-      parentHasManualOps
-        ? `All sub-issues are Done (or Canceled/Duplicate); the parent carries ${labels.manualOps}, so it is capped at "${states.ops_pending}" until the operator checklist is acknowledged.`
-        : "All sub-issues are Done (or Canceled/Duplicate).",
-    );
+    if (parentHasManualOps)
+      return decide(
+        "set_status",
+        "ops_pending",
+        `All sub-issues are Done (or Canceled/Duplicate); the parent carries ${labels.manualOps}, so it is capped at "${states.ops_pending}" until the operator checklist is acknowledged.`,
+      );
+    return postMergeState === "done"
+      ? decide(
+          "set_status",
+          "done",
+          "All sub-issues are Done (or Canceled/Duplicate).",
+        )
+      : decide(
+          "set_status",
+          postMergeState,
+          `All sub-issues are Done (or Canceled/Duplicate); do_item.post_merge_state caps the parent at "${states[postMergeState]}", where a person closes it.`,
+        );
   }
 
   // Reached only when every child is merged-or-parked AND not all are
@@ -552,7 +574,11 @@ async function main(): Promise<number> {
   let vocabulary: ReconcileVocabulary;
   try {
     const config = ownTrackerConfig();
-    vocabulary = { labels: config.labels, states: config.states };
+    vocabulary = {
+      labels: config.labels,
+      states: config.states,
+      postMergeState: parsePostMerge(readOverlay()).state,
+    };
   } catch (err) {
     console.error(`ERROR: ${err instanceof Error ? err.message : String(err)}`);
     return 1;

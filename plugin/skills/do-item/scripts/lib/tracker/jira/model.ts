@@ -19,7 +19,13 @@
  * `issue_tracker.jira.priorities`; any other name reads as 0 (none).
  */
 
-import type { CanonicalState, IssueState } from "../port.ts";
+import {
+  type CanonicalState,
+  type IssueState,
+  type StateNameOf,
+  type StateNames,
+  stateNameIn,
+} from "../port.ts";
 import { OPEN_STATES, STATE_TYPES } from "../github/model.ts";
 import {
   type JiraSettings,
@@ -71,7 +77,7 @@ const OPEN_CATEGORY: Record<string, string> = {
 };
 
 export interface JiraModel {
-  stateName(state: CanonicalState): string;
+  stateName: StateNameOf;
   /** The state an issue is in. */
   read(issue: StateInput): ReadState;
   /** The closed state of a done-category issue. */
@@ -89,7 +95,7 @@ export function isResolvedState(s: CanonicalState): s is ResolvedState {
 }
 
 export function jiraModel(
-  states: Record<CanonicalState, string>,
+  states: StateNames,
   settings: JiraSettings,
 ): JiraModel {
   function closedState(issue: StateInput): ResolvedState {
@@ -107,20 +113,27 @@ export function jiraModel(
 
   /**
    * The open state named like the status, furthest along among those whose
-   * type fits the status's category (else among all named like it).
+   * type fits the status's category (else among all named like it); a name
+   * `pr_open` shares with `in_review` reads as `pr_open`.
    */
   function openState(status: JiraStatus): CanonicalState | null {
-    const named = OPEN_STATES.filter((s) => same(states[s], status.name));
+    const named = OPEN_STATES.filter((s) => {
+      const name = states[s];
+      return name !== null && same(name, status.name);
+    });
     const category =
       status.category === "indeterminate" ? "indeterminate" : "new";
     const fitting = named.filter(
       (s) => OPEN_CATEGORY[STATE_TYPES[s]] === category,
     );
-    return (fitting.length > 0 ? fitting : named).at(-1) ?? null;
+    const candidates = fitting.length > 0 ? fitting : named;
+    return candidates.includes("pr_open")
+      ? "pr_open"
+      : (candidates.at(-1) ?? null);
   }
 
   return {
-    stateName: (s) => states[s],
+    stateName: stateNameIn(states),
     closedState,
     read(issue) {
       if (issue.status.category === "done") {
@@ -134,7 +147,7 @@ export function jiraModel(
       if (s !== null)
         return {
           canonical: s,
-          state: { name: states[s], type: STATE_TYPES[s] },
+          state: { name: states[s] ?? "", type: STATE_TYPES[s] },
         };
       return {
         canonical: null,

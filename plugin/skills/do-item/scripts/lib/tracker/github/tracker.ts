@@ -26,6 +26,7 @@ import type { CanonicalState, IssuePatch, Tracker } from "../port.ts";
 import { type CoreTracker, withFacets } from "../facets/tracker.ts";
 import type { IssueComment, IssueRelation, IssueSummary } from "../port.ts";
 import { TrackerRequestError } from "../port.ts";
+import { namedState } from "../config-error.ts";
 import {
   checkPatch,
   checkPriority,
@@ -305,7 +306,7 @@ export function gitHubTracker(client: Client): Tracker {
     signal?: AbortSignal,
   ): Promise<void> {
     const board = await client.board(signal);
-    const name = model.stateName(state);
+    const name = namedState(model.stateName(state), state);
     const options = board.options.filter((o) => same(o.name, name));
     // A closed state needs no option: closing the issue is the state, and
     // many boards have no option for a canceled or duplicate issue.
@@ -636,6 +637,7 @@ export function gitHubTracker(client: Client): Tracker {
     },
 
     async transition(key, state, signal) {
+      namedState(model.stateName(state), state);
       // On a board the state is the board's, whatever the repository; a
       // state label belongs to the home repository's labels.
       if (ctx.board === null) refuseForeign(key, "workflow state");

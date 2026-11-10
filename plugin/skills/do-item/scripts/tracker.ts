@@ -5,7 +5,8 @@
  *
  * Usage:
  *     bun tracker.ts children <issue-key>
- *     bun tracker.ts transition <issue-key> <canonical-state>
+ *     bun tracker.ts transition <issue-key> <canonical-state> [--post-merge]
+ *     bun tracker.ts post-merge                   # where the post-merge rule stops
  *     bun tracker.ts claim <issue-key>
  *     bun tracker.ts comment <issue-key> --body-file body.md
  *     bun tracker.ts states                       # canonical → tracker names
@@ -33,7 +34,15 @@
  * JSON on stdout.
  *
  * Canonical states: backlog, todo, in_progress, in_review, done, canceled,
- * and where the consumer uses them triage, ops_pending, duplicate.
+ * and where the consumer uses them triage, pr_open, ops_pending, duplicate.
+ * A transition to an optional state the consumer leaves unset (`pr_open`)
+ * writes nothing and prints `skipped` with the reason.
+ *
+ * `transition … --post-merge` marks the post-merge rule's move: a move to
+ * `done` is refused (exit 3, nothing written) when `do_item.post_merge_state`
+ * is not `done`. Without the flag, a person's direct move still works.
+ * `post-merge` prints that policy: `{ state, closer, closing }`, `closing`
+ * being the closing comment's sentence on who closes the item, or `null`.
  *
  * `create` reads `{ title, description?, labels?, type?, priority?, size?,
  * parent?, project? }`; `update` reads `{ title?, description?, type?,
@@ -56,7 +65,8 @@
  * Output: JSON on stdout. Exit codes: 0 done, 2 usage (input the operation
  * cannot take), 1 the operation failed (the reason on stderr), a label,
  * project or issue that does not resolve to exactly one included; for
- * `claim`, 3 refused and 4 stood down.
+ * `claim`, 3 refused and 4 stood down; for `transition --post-merge`, 3
+ * refused.
  */
 
 import { readFile } from "node:fs/promises";
@@ -65,6 +75,8 @@ import { withClaimLock } from "./lib/claim-lock.ts";
 import { claimIssue } from "./lib/claim.ts";
 import { runEntry } from "./lib/cli.ts";
 import { ownTrackerConfig } from "./lib/tracker/config.ts";
+import { closerSentence, parsePostMerge } from "./lib/post-merge.ts";
+import { readOverlay } from "../../../shared/consumer.ts";
 import { issueKeysOf, ANY_KEY_SOURCE } from "./lib/tracker/keys.ts";
 import {
   CANONICAL_STATES,
@@ -332,18 +344,41 @@ const OPERATIONS: Record<string, Operation> = {
   transition: {
     arity: 2,
     takes: "an issue key and a canonical state",
-    run: async ([key, state]) => {
+    flags: ["--post-merge"],
+    run: async ([key, state], flags) => {
       if (!(CANONICAL_STATES as readonly string[]).includes(state as string))
         throw new UsageError(
           `'${state}' is not a canonical state (${CANONICAL_STATES.join(", ")})`,
         );
+      if (flags.has("--post-merge")) {
+        const policy = parsePostMerge(readOverlay());
+        if (state === "done" && policy.state !== "done") {
+          const refused = `do_item.post_merge_state is ${policy.state}: the post-merge rule stops at ${policy.state} and a person closes ${key}`;
+          console.error(refused);
+          return { issue: key, state, refused };
+        }
+      }
       const tracker = openTracker();
+      const name = tracker.stateName(state as CanonicalState);
+      if (name === null)
+        return {
+          issue: key,
+          state,
+          name,
+          skipped: `issue_tracker.states.${state} is not set`,
+        };
       await tracker.transition(key as string, state as CanonicalState);
-      return {
-        issue: key,
-        state,
-        name: tracker.stateName(state as CanonicalState),
-      };
+      return { issue: key, state, name };
+    },
+    exitOf: (out) =>
+      typeof out === "object" && out !== null && "refused" in out ? 3 : 0,
+  },
+  "post-merge": {
+    arity: 0,
+    takes: "no argument",
+    run: async () => {
+      const policy = parsePostMerge(readOverlay());
+      return { ...policy, closing: closerSentence(policy) };
     },
   },
   claim: {
@@ -370,6 +405,8 @@ const OPERATIONS: Record<string, Operation> = {
       if (ancestor && !person)
         throw new UsageError("--ancestor requires --for");
       const config = ownTrackerConfig();
+      // A post-merge policy the issue link cannot honour is refused before the claim writes.
+      parsePostMerge(readOverlay());
       const shape = issueKeysOf(config);
       const normalized = shape?.normalize(key as string) ?? (key as string);
       const tracker = openTracker();
