@@ -33,7 +33,10 @@ function usesRawBunTest(command: string, shell?: string): boolean {
     }
     if (quote) {
       if (character === quote) quote = null;
-      else word += character;
+      else if (character === "\\" && quote === '"' && next !== undefined) {
+        word += next;
+        index++;
+      } else word += character;
       continue;
     }
     if (character === "\\") {
@@ -62,7 +65,13 @@ function usesRawBunTest(command: string, shell?: string): boolean {
       if (character === "\n") finishCommand();
       continue;
     }
-    if (character === ";" || character === "|" || character === "&") {
+    if (
+      character === ";" ||
+      character === "|" ||
+      character === "&" ||
+      character === "(" ||
+      character === ")"
+    ) {
       finishCommand();
       if (next === character) index++;
       continue;
@@ -71,34 +80,22 @@ function usesRawBunTest(command: string, shell?: string): boolean {
   }
   finishCommand();
 
-  return commands.some((tokens) => {
-    const starts = [
-      0,
-      ...tokens.flatMap((token, index) =>
-        ["then", "do", "else", "elif"].includes(token) ? [index + 1] : [],
-      ),
-    ];
-    return starts.some((start) => {
-      let next = start;
-      while (/^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[next] ?? "")) next++;
-      if (tokens[next] === "env") {
-        next++;
-        while (
-          tokens[next]?.startsWith("-") ||
-          /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[next] ?? "")
-        )
-          next++;
-      }
-      if (tokens[next] !== "bun") return false;
-      next++;
-      const bunOptionsWithValue = new Set(["--cwd", "--preload", "-r"]);
+  // Conservative on purpose: any `bun` word, wherever shell grammar puts it
+  // (after `then`, `env -u X`, `command`, `!`, a path), that reaches `test`
+  // through its options counts. A harmless printed example in a here-document
+  // is rewritten rather than taught to this scanner.
+  const bunOptionsWithValue = new Set(["--cwd", "--preload", "-r"]);
+  return commands.some((tokens) =>
+    tokens.some((token, start) => {
+      if (token.split("/").pop() !== "bun") return false;
+      let next = start + 1;
       while (tokens[next]?.startsWith("-")) {
         if (bunOptionsWithValue.has(tokens[next] ?? "")) next++;
         next++;
       }
       return tokens[next] === "test";
-    });
-  });
+    }),
+  );
 }
 
 test("every CI suite uses the reporting runner and its executed-test check", () => {
@@ -139,6 +136,13 @@ test("the suite-runner contract rejects raw Bun spellings", () => {
     ["bun", "test scripts/gates.test.ts"].join(" \\\n"),
     "bun run check\nbun test scripts/gates.test.ts",
     "bun run check | bun test scripts/gates.test.ts",
+    "while bun test ./website/; do break; done",
+    "! bun test ./website/",
+    "(bun test ./website/)",
+    "command bun test ./website/",
+    "/usr/local/bin/bun test ./website/",
+    "env -u CI bun test ./website/",
+    "env --unset CI bun test ./website/",
   ])
     expect(usesRawBunTest(command)).toBeTrue();
   for (const command of [
@@ -149,6 +153,7 @@ test("the suite-runner contract rejects raw Bun spellings", () => {
     'echo "documentation; bun test scripts/gates.test.ts"',
     'echo "documentation & bun test scripts/gates.test.ts"',
     "# documentation; bun test scripts/gates.test.ts",
+    'echo "quoted \\"; bun test ./website/"; echo ok',
   ])
     expect(usesRawBunTest(command)).toBeFalse();
   expect(
