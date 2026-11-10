@@ -91,8 +91,7 @@ function describeCategory(
   options: IndexOptions,
 ): string {
   const configured =
-    options.descriptions &&
-    Object.prototype.hasOwnProperty.call(options.descriptions, category)
+    options.descriptions && Object.hasOwn(options.descriptions, category)
       ? options.descriptions[category]
       : undefined;
   if (configured !== undefined) return configured;
@@ -122,10 +121,7 @@ function yamlScalar(value: string): string {
   )
     return value;
   if (!/["\\]/.test(value)) return `"${value}"`;
-  if (!value.includes("'")) return `'${value}'`;
-  throw new Error(
-    `cannot write a frontmatter value with both quotes: ${value}`,
-  );
+  return `'${value}'`;
 }
 
 /** The frontmatter block of the index, its date still today's. */
