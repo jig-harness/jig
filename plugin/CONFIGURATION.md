@@ -1735,6 +1735,16 @@ docs:
   schema: docs/.frontmatter-schema.yaml
   stale_after_days: 180
   promoted_statuses: [approved, active]
+  index:
+    preamble: docs/.index-preamble.md
+    descriptions:
+      guides: How-to pages for contributors
+    descriptions_from_readme: true
+    order: [guides, architecture]
+    frontmatter:
+      title: Documentation index
+      type: reference
+      tags: [navigation]
 promote_memory:
   lint_command: "<your memory lint> --dir {dir} --file {file}"
   target_dir: docs/retrospection

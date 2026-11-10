@@ -8,6 +8,7 @@
 import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { globMatchesUnder } from "../../../drive-pr/scripts/lib/change-areas-catalog.ts";
+import { Defect } from "../../../../shared/errors.ts";
 import type { Area, Catalog } from "./catalog.ts";
 import { defaultGitRunner, matchesGlob, matchSeedAreas } from "./resolve.ts";
 
@@ -259,7 +260,7 @@ export function checkCatalog(
 ): string[] {
   const unknown = unknownInvariants(overrides);
   if (unknown.length > 0)
-    throw new RangeError(
+    throw new Defect(
       `unknown invariant ${unknown.map((name) => `\`${name}\``).join(", ")} (known: ${Object.keys(INVARIANTS).join(", ")})`,
     );
   return (Object.keys(INVARIANTS) as InvariantName[]).flatMap((name) => {

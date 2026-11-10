@@ -345,7 +345,7 @@ const USAGE =
 /** The flag and the file named on a command line, or null when it is malformed. */
 export function parseArguments(
   args: string[],
-): { file: string; interpreter?: string } | null {
+): { file: string; interpreter: string | undefined } | null {
   let interpreter: string | undefined;
   const files: string[] = [];
   for (const arg of args)

@@ -238,6 +238,34 @@ function indexDescriptions(value: unknown): Record<string, string> {
   return value as Record<string, string>;
 }
 
+/** `docs.index.preamble`: an existing file inside the repository, as a canonical path. */
+function indexPreamble(value: unknown, repo: string): string | null {
+  if (value === undefined || value === null) return null;
+  if (!oneLine(value))
+    throw new SettingsError(
+      "docs.index.preamble must be a path (nonempty text)",
+    );
+  const path = join(repo, value);
+  if (!existsSync(path))
+    throw new SettingsError(
+      `docs.index.preamble names ${value}, which does not exist`,
+    );
+  if (!isFileOrLinkToFile(path))
+    throw new SettingsError(
+      `docs.index.preamble names ${value}, which is not a file`,
+    );
+  return confined(repo, "index.preamble", canonicalPath(value));
+}
+
+function indexFromReadme(value: unknown): boolean {
+  if (value === undefined || value === null) return false;
+  if (typeof value !== "boolean")
+    throw new SettingsError(
+      "docs.index.descriptions_from_readme must be true or false",
+    );
+  return value;
+}
+
 /** Check the `docs.index` section and fill in what it leaves out. */
 export function parseIndexSettings(
   section: unknown,
@@ -251,33 +279,10 @@ export function parseIndexSettings(
       throw new SettingsError(
         `docs.index has unknown field ${key} (known: ${INDEX_FIELDS.join(", ")})`,
       );
-  const readme = section.descriptions_from_readme;
-  if (readme !== undefined && readme !== null && typeof readme !== "boolean")
-    throw new SettingsError(
-      "docs.index.descriptions_from_readme must be true or false",
-    );
-  const preamble = section.preamble;
-  if (preamble !== undefined && preamble !== null && !oneLine(preamble))
-    throw new SettingsError(
-      "docs.index.preamble must be a path (nonempty text)",
-    );
-  if (oneLine(preamble)) {
-    const path = join(repo, preamble);
-    if (!existsSync(path))
-      throw new SettingsError(
-        `docs.index.preamble names ${preamble}, which does not exist`,
-      );
-    if (!isFileOrLinkToFile(path))
-      throw new SettingsError(
-        `docs.index.preamble names ${preamble}, which is not a file`,
-      );
-  }
   return {
-    preamble: oneLine(preamble)
-      ? confined(repo, "index.preamble", canonicalPath(preamble))
-      : null,
+    preamble: indexPreamble(section.preamble, repo),
     descriptions: indexDescriptions(section.descriptions),
-    descriptionsFromReadme: readme === true,
+    descriptionsFromReadme: indexFromReadme(section.descriptions_from_readme),
     order: indexOrder(section.order),
     frontmatter: indexFrontmatter(section.frontmatter),
   };

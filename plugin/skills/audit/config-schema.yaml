@@ -69,6 +69,7 @@ strict:
   - issue_tracker.jira.priorities
   - issue_tracker.jira.resolutions
   - issue_tracker.jira.link_types
+  - docs.index
   - resolve_conflicts
   - review.lenses
   - reflection
@@ -901,6 +902,31 @@ fields:
     read_by: [docs]
     default: [approved]
     since: 0.175.0
+  docs.index.preamble:
+    type: path
+    exists: required
+    read_by: [docs]
+    repository_only: true
+    since: next
+  docs.index.descriptions:
+    type: map
+    read_by: [docs]
+    since: next
+  docs.index.descriptions_from_readme:
+    type: boolean
+    default: false
+    read_by: [docs]
+    since: next
+  docs.index.order:
+    type: any
+    default: name
+    read_by: [docs]
+    since: next
+  docs.index.frontmatter:
+    type: map
+    values_type: any
+    read_by: [docs]
+    since: next
   promote_memory.lint_command:
     type: command
     read_by: [promote-memory]
