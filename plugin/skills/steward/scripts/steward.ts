@@ -70,29 +70,35 @@ function boundedText(file: string): string {
   }
 }
 
+function readCommand(id: string, flag: string | undefined): void {
+  if (flag !== undefined) stop("read takes no extra arguments");
+  const digest = readStewardDigest(id);
+  if (!digest.ok) stop(digest.failure.reason);
+  console.log(JSON.stringify(digest.value, null, 2));
+}
+
+function submitCommand(
+  id: string,
+  flag: string | undefined,
+  file: string | undefined,
+): void {
+  if (flag !== "--input" || !file) stop("submit requires --input <json-file>");
+  const kept = submitStewardRecords(id, readSubmission(file));
+  if (!kept.ok) stop(kept.failure.reason);
+  if (kept.value !== "submitted")
+    stop(
+      kept.value === "already-submitted"
+        ? "the steward submission was already accepted"
+        : "the steward launch no longer exists",
+    );
+  console.log(JSON.stringify({ submitted: true }));
+}
+
 async function main(): Promise<number> {
   const { command, id, token, flag, file } = argumentsOf();
   authorize(id, token);
-  if (command === "read") {
-    if (flag !== undefined) stop("read takes no extra arguments");
-    const digest = readStewardDigest(id);
-    if (!digest.ok) stop(digest.failure.reason);
-    console.log(JSON.stringify(digest.value, null, 2));
-  } else {
-    if (flag !== "--input" || !file)
-      stop("submit requires --input <json-file>");
-    const value = readSubmission(file);
-    const kept = submitStewardRecords(id, value);
-    if (!kept.ok) stop(kept.failure.reason);
-    if (kept.value !== "submitted")
-      stop(
-        kept.value === "already-submitted"
-          ? "the steward submission was already accepted"
-          : "the steward launch no longer exists",
-      );
-    console.log(JSON.stringify({ submitted: true }));
-  }
-
+  if (command === "read") readCommand(id, flag);
+  else submitCommand(id, flag, file);
   return 0;
 }
 runMain("jig-steward", main);
