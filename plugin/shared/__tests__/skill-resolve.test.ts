@@ -153,6 +153,49 @@ describe("resolveSkill against the install record", () => {
     expect(resolveSkill("other:fmt", rec)).not.toBeNull();
   });
 
+  it("applies no install whose scope is unrecognized or whose project path is empty", () => {
+    for (const extra of [
+      { scope: "projec", projectPath: join(dir, "elsewhere") },
+      { scope: "project", projectPath: "" },
+      { scope: "local" },
+    ]) {
+      const { rec } = recorded((p: string) => ({
+        "other@m": [{ ...extra, installPath: p }],
+      }));
+      expect(resolveSkill("other:fmt", rec)).toBeNull();
+    }
+  });
+
+  it("accepts a root whose directory name begins with two dots", () => {
+    const parent = join(dir, "dots");
+    const root = join(parent, "..worktree");
+    mkdirSync(root, { recursive: true });
+    const { rec } = recorded((p: string) => ({
+      "other@m": [{ scope: "project", projectPath: parent, installPath: p }],
+    }));
+    expect(resolveSkill("other:fmt", { ...rec, root })).not.toBeNull();
+  });
+
+  it("reads settings.local.json from the main checkout of a linked worktree", () => {
+    const { rec } = recorded((p: string) => ({
+      "other@m": [{ scope: "user", installPath: p }],
+    }));
+    const main = join(dir, "main-checkout");
+    const tree = join(dir, "linked-tree");
+    mkdirSync(join(main, ".git", "worktrees", "linked"), { recursive: true });
+    mkdirSync(join(main, ".claude"), { recursive: true });
+    mkdirSync(tree, { recursive: true });
+    writeFileSync(
+      join(tree, ".git"),
+      `gitdir: ${join(main, ".git", "worktrees", "linked")}\n`,
+    );
+    writeFileSync(
+      join(main, ".claude", "settings.local.json"),
+      JSON.stringify({ enabledPlugins: { "other@m": false } }),
+    );
+    expect(resolveSkill("other:fmt", { ...rec, root: tree })).toBeNull();
+  });
+
   it("reads enablement from the repository's settings over the user's", () => {
     const { base, rec } = recorded((p: string) => ({
       "other@m": [{ scope: "user", installPath: p }],

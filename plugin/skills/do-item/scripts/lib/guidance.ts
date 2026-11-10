@@ -71,7 +71,7 @@ export function parseGuidance(
       "guidance-invalid",
       "do_item.guidance must be a list of {labels, paths, skills, notes}",
     );
-  return raw.map(parseEntry);
+  return raw.map((entry, i) => parseEntry(entry, i));
 }
 
 /** One `do_item.guidance` entry, validated. */

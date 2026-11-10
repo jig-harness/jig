@@ -11,7 +11,7 @@
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { swallow } from "./errors.ts";
 
 /** This plugin's name, the prefix its skills are invoked by. */
@@ -103,36 +103,84 @@ function readJson(path: string): JsonRead {
 }
 
 /**
- * Whether plugin `id` is turned off for `search.root`: the last of the user's
- * `settings.json`, the repository's `.claude/settings.json` and its
- * `.claude/settings.local.json` that names it decides. An unreadable layer
- * counts as turning nothing off.
+ * The main checkout of the repository holding `root`: Claude Code keeps
+ * `settings.local.json` there, not in a linked worktree. `root` itself when it
+ * is no linked worktree or the link cannot be read.
+ */
+function mainCheckout(root: string): string {
+  const dotGit = join(root, ".git");
+  let text: string;
+  try {
+    text = readFileSync(dotGit, "utf8");
+  } catch (e) {
+    swallow(e, `${dotGit} is no worktree link, so ${root} is its own checkout`);
+    return root;
+  }
+  const gitdir = /^gitdir:\s*(.+)$/m.exec(text)?.[1]?.trim();
+  if (gitdir === undefined) return root;
+  const parts = resolve(root, gitdir).split(sep);
+  const at = parts.lastIndexOf("worktrees");
+  if (at < 2 || parts[at - 1] !== ".git") return root;
+  return parts.slice(0, at - 1).join(sep) || root;
+}
+
+/** Where an organization's managed settings are read from, per platform. */
+function managedSettingsFile(): string {
+  if (process.platform === "darwin")
+    return "/Library/Application Support/ClaudeCode/managed-settings.json";
+  if (process.platform === "win32")
+    return "C:\\Program Files\\ClaudeCode\\managed-settings.json";
+  return "/etc/claude-code/managed-settings.json";
+}
+
+/** `enabledPlugins[id]` in the settings file at `file`, or `undefined` when it says nothing. */
+function enablement(file: string, id: string): boolean | undefined {
+  const read = readJson(file);
+  if (read.status !== "ok") return undefined;
+  const enabled = read.value.enabledPlugins;
+  if (typeof enabled !== "object" || enabled === null) return undefined;
+  const setting = (enabled as Record<string, unknown>)[id];
+  return typeof setting === "boolean" ? setting : undefined;
+}
+
+/**
+ * Whether plugin `id` is turned off for `search.root`. Managed settings
+ * decide first; otherwise the last of the user's `settings.json`, the
+ * repository's `.claude/settings.json` and the `.claude/settings.local.json`
+ * of its main checkout that names it. An unreadable layer counts as turning
+ * nothing off.
  */
 function disabled(search: SkillSearch, id: string): boolean {
+  const managed = enablement(managedSettingsFile(), id);
+  if (managed !== undefined) return !managed;
   let off = false;
   for (const file of [
     join(search.claudeDir, "settings.json"),
     join(search.root, ".claude", "settings.json"),
-    join(search.root, ".claude", "settings.local.json"),
+    join(mainCheckout(search.root), ".claude", "settings.local.json"),
   ]) {
-    const read = readJson(file);
-    if (read.status !== "ok") continue;
-    const enabled = read.value.enabledPlugins;
-    if (typeof enabled !== "object" || enabled === null) continue;
-    const setting = (enabled as Record<string, unknown>)[id];
-    if (typeof setting === "boolean") off = !setting;
+    const setting = enablement(file, id);
+    if (setting !== undefined) off = !setting;
   }
   return off;
 }
 
-/** Whether an install record applies to `search.root`: user-wide, or scoped to a directory holding it. */
+/** Whether `rel`, a relative path, stays inside its origin. */
+const inside = (rel: string): boolean =>
+  rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
+
+/**
+ * Whether an install record applies to `search.root`: user-wide (`user`, or no
+ * scope), or scoped (`project`, `local`) to a directory holding it. Any other
+ * scope, or a scoped install without a project path, applies nowhere.
+ */
 function appliesHere(install: unknown, search: SkillSearch): boolean {
   const i = install as { scope?: unknown; projectPath?: unknown } | null;
   if (i === null || typeof i !== "object") return false;
-  if (i.scope !== "project" && i.scope !== "local") return true;
-  if (typeof i.projectPath !== "string") return false;
-  const rel = relative(resolve(i.projectPath), resolve(search.root));
-  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+  if (i.scope === undefined || i.scope === "user") return true;
+  if (i.scope !== "project" && i.scope !== "local") return false;
+  if (typeof i.projectPath !== "string" || i.projectPath === "") return false;
+  return inside(relative(resolve(i.projectPath), resolve(search.root)));
 }
 
 /**
