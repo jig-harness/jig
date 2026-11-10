@@ -117,8 +117,10 @@ describe("structured answers in station readers", () => {
       "keep it",
       "--dry-run",
     ]);
-    expectSpawnExit(sent, 1);
-    expect(sent.stderr).toContain("already answered");
+    expectSpawnExit(sent, 0);
+    expect(sent.stdout).toContain("earlier    your answer");
+    expect(sent.stdout).toContain("chose Keep (recommended)");
+    expect(sent.stdout).toContain("this one replaces it");
     expect(world.writes()).toEqual([]);
   });
   it("labels an unknown choice free and leaves a conflicting structured/free pair disputed", async () => {

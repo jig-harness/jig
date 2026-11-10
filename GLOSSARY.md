@@ -1341,7 +1341,11 @@ make, use the entry's term instead.
   ledger. An answer line may end with it, and
   every line Jig offers to copy does; a structured answer naming a digest
   that is no longer the park's is a **stale answer** and does not count, so
-  an approval of an earlier framing never settles the one that replaced it
+  an approval of an earlier framing never settles the one that replaced it.
+  `jig send … answer --all --approve` binds its approvals to a **decision
+  set token** instead: a hash of each item's key and digest as its dry run
+  listed them, so a park added or framed again since is never approved
+  unseen
   ([design](design/structured-answers.md#binding-an-answer-to-its-framing)).
 - **Resolution receipt** — the record a re-arm writes into the *drive
   ledger* when it unparks an item: the park's key and digest, the answer it

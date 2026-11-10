@@ -429,8 +429,13 @@ to read.
   version 1: a reader that does not know a payload field ignores it, while
   a newer version would make an older plugin refuse the comment as an
   answer. A person who already answered may answer again, which replaces
-  their earlier answer; the send shows the earlier one first. `--approve`
-  is refused on a park that names no recommendation. `--all
+  their earlier answer; the send shows the earlier one first. Another
+  person's answer does not refuse a send: the send names it and says that
+  differing answers leave the item disputed. `--approve`
+  is refused on a park that names no recommendation. A park from before
+  digests has none: its structured answer is written without one, bound
+  by time alone, and `--decision` is refused there rather than written as
+  a binding that is not one. `--all
   --approve` takes no single digest: its `--dry-run` lists each eligible
   item with its digest and prints one set token (the hash of the sorted
   key and digest pairs), and the real send names that token
@@ -442,7 +447,9 @@ to read.
   open item of the pull request whose class the shared acts table
   (`shared/acts.ts`) lists as Decide by name; a class the table does not
   list (a repository's own class, which reads Decide only as a fallback)
-  and a class whose act is Authorize are approved only by their own key.
+  and a class whose act is Authorize are approved only by their own key,
+  as are an item with no framed decision or no recommendation and a park
+  from before digests, which no set token can bind.
 - **The operator.** "approve 456's parked question" becomes that command,
   run with `--dry-run` first, as every send the operator makes is.
 - **The dashboard and the Orca panel** pick and commit as [Picking an

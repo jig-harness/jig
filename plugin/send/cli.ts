@@ -24,7 +24,10 @@
  * It exits `0` when it sent (or, with `--dry-run`, would send), `1` when it
  * refused or the write failed, and `2` on a usage error: a malformed
  * address, an unknown station or verb, a verb the station does not take,
- * or an answer's text that is not one line within its limit.
+ * an answer that names no option or two forms, or an answer's text or note
+ * that is not one line within its limit. The answer flags (`--approve`,
+ * `--choose`, `--note`, `--all`, `--decision`, `--decision-set`) are the
+ * `answer` verb's alone (`lib/answer-request.ts`).
  */
 import { ExitError } from "../shared/cli.ts";
 import { parseAddress } from "../shared/address.ts";
@@ -49,6 +52,7 @@ import { readLogin } from "../ask/lib/forge.ts";
 import { machineFile } from "../ask/lib/local.ts";
 import { reading } from "../ask/lib/reading.ts";
 import { planAnswer } from "./lib/answer.ts";
+import { planAnswerAll } from "./lib/answer-all.ts";
 import { planAssign } from "./lib/assign.ts";
 import { planLabel } from "./lib/labels.ts";
 import { planMailbox } from "./lib/mailbox.ts";
@@ -77,7 +81,33 @@ export const sendCommand = command(
   object({
     words: multiple(
       argument(string({ metavar: "WORD" }), {
-        description: message`The address (station@owner/name#key, or the address and its key as two words: drive@jig 456), then the verb and its arguments. The verbs: assign (pickup); drive, rearm, answer <key> <text>, pause, resume <hold-push|pause|stop>, stop, hold-push (drive); hold, release (drive, followup).`,
+        description: message`The address (station@owner/name#key, or the address and its key as two words: drive@jig 456), then the verb and its arguments. The verbs: assign (pickup); drive, rearm, answer <key> <text>, answer <key> --approve|--choose <option>, answer --all --approve, pause, resume <hold-push|pause|stop>, stop, hold-push (drive); hold, release (drive, followup).`,
+      }),
+    ),
+    approve: option("--approve", {
+      description: message`answer: choose the option the parked decision recommends.`,
+    }),
+    choose: optional(
+      option("--choose", string({ metavar: "OPTION" }), {
+        description: message`answer: choose the parked decision's option of this name.`,
+      }),
+    ),
+    note: optional(
+      option("--note", string({ metavar: "TEXT" }), {
+        description: message`answer: add one line beside --approve or --choose that narrows the option or sets a condition on it.`,
+      }),
+    ),
+    all: option("--all", {
+      description: message`answer: with --approve, approve every open item whose class the acts table lists as Decide, one comment per item.`,
+    }),
+    decision: optional(
+      option("--decision", string({ metavar: "DIGEST" }), {
+        description: message`answer: the digest of the framing you read, as the dry run printed it; the send refuses when the park's digest is another.`,
+      }),
+    ),
+    decisionSet: optional(
+      option("--decision-set", string({ metavar: "TOKEN" }), {
+        description: message`answer --all: the set token the dry run printed; the send refuses when the eligible items or their digests changed.`,
       }),
     ),
     dryRun: option("--dry-run", {
@@ -124,6 +154,7 @@ async function planFor(
   resolved: ResolvedAddress,
   request: Request,
   as: string | undefined,
+  dryRun: boolean,
 ): Promise<Planned> {
   const r = reading();
   if (request.verb === "assign") {
@@ -143,7 +174,9 @@ async function planFor(
     case "release":
       return planLabel(ctx, request.verb, writesAs);
     case "answer":
-      return planAnswer(ctx, request.key, request.text, login.value, writesAs);
+      return request.all
+        ? planAnswerAll(ctx, request.decisionSet, login.value, writesAs, dryRun)
+        : planAnswer(ctx, request, login.value, writesAs, dryRun);
     default:
       return planMailbox(ctx, request, login.value, writesAs);
   }
@@ -158,7 +191,14 @@ export async function sendMain(args: SendArguments): Promise<number> {
     text.includes("#") || isVerb(rest[0]) ? undefined : rest.shift();
   const written = parseAddress(text, second);
   if (!written.ok) usage(written.failure.reason);
-  const request = parseRequest(written.value.station, rest, usage);
+  const request = parseRequest(written.value.station, rest, usage, {
+    approve: args.approve,
+    choose: args.choose,
+    note: args.note,
+    all: args.all,
+    decision: args.decision,
+    decisionSet: args.decisionSet,
+  });
   const refusedHere = standing(request);
   if (refusedHere !== null) return refusal(refusedHere);
   const resolved = resolveAddress(
@@ -167,7 +207,7 @@ export async function sendMain(args: SendArguments): Promise<number> {
     usage,
     request.verb === "assign",
   );
-  const planned = await planFor(resolved, request, args.as);
+  const planned = await planFor(resolved, request, args.as, args.dryRun);
   if (!planned.ok) return refusal(planned.failure.reason);
   const plan = planned.value;
   console.log(renderPlan(plan, args.dryRun));

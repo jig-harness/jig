@@ -1,7 +1,9 @@
 /**
  * What a send would write, before it writes: the repository in full, the
- * login it writes as, the record and where it goes, the reader that acts on
- * it and how to take it back. `--dry-run` prints this and stops; a real send
+ * login it writes as, what the person already answered (for an answer), the
+ * record and where it goes, the reader that acts on it and how to take it
+ * back, then what the record decides in full (an answer's option and the
+ * framing's digest). `--dry-run` prints this and stops; a real send
  * prints it, writes, and ends with the link to (or the path of) what it
  * wrote and the reader again.
  */
@@ -41,6 +43,10 @@ export interface Plan {
   undo: string;
   /** What a person must know before it is written; `null` for nothing. */
   notice: string | null;
+  /** What was answered before, shown before the record: one entry per earlier answer. */
+  earlier?: string[];
+  /** Named lines that follow the plan's rows: what the record decides, in full. */
+  detail?: Array<[name: string, value: string]>;
   /** Write it: the link to or path of what was written, or why it was not. */
   write(): Promise<Outcome<string, "refused">>;
 }
@@ -78,11 +84,15 @@ export function renderPlan(plan: Plan, dryRun: boolean): string {
     `jig send ${plan.address} ${plan.verb}${dryRun ? " (dry run)" : ""}`,
     row("repository", plan.repo),
     row("writes as", plan.writesAs),
+    ...(plan.earlier ?? []).map((e) => row("earlier", e)),
     row("record", plan.record),
     row("where", plan.where),
     row("read by", plan.reader),
     row("undo", plan.undo),
     ...(plan.notice === null ? [] : [row("note", plan.notice)]),
+    ...(plan.detail ?? []).map(([name, value]) =>
+      row(name, value.replaceAll("\n", `\n${" ".repeat(13)}`)),
+    ),
     ...(dryRun ? ["dry run: nothing was written."] : []),
   ].join("\n");
 }
@@ -100,5 +110,8 @@ export function renderSent(
     woken === null || plan.tick === null
       ? plan.reader
       : plan.tick.reader(woken);
-  return [row("sent", wrote), row("next", reader)].join("\n");
+  return [
+    row("sent", wrote.replaceAll("\n", `\n${" ".repeat(13)}`)),
+    row("next", reader),
+  ].join("\n");
 }

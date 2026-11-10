@@ -236,7 +236,10 @@ are not proof that full CI passed.
 | release a merged pull request's follow-up | `jig send followup@<owner>/<name> <PR> release --dry-run` |
 | drive a pull request that has no drive yet | `jig send drive@<owner>/<name> <PR> drive --dry-run` |
 | re-arm a stopped drive in its existing tree | `jig send drive@<owner>/<name> <PR> rearm --dry-run` |
-| answer a parked question | `jig send drive@<owner>/<name> <PR> answer <key> '<their words>' --dry-run` |
+| answer a parked question in their own words | `jig send drive@<owner>/<name> <PR> answer <key> '<their words>' --dry-run` |
+| approve a parked question (take its recommendation) | `jig send drive@<owner>/<name> <PR> answer <key> --approve --dry-run` |
+| choose one option of a parked question | `jig send drive@<owner>/<name> <PR> answer <key> --choose '<option>' --dry-run` |
+| approve every parked question it may approve at once | `jig send drive@<owner>/<name> <PR> answer --all --approve --dry-run` |
 | pause a drive | `jig send drive@<owner>/<name> <PR> pause --dry-run` |
 | hold a drive's pushes | `jig send drive@<owner>/<name> <PR> hold-push --dry-run` |
 | withdraw a pause | `jig send drive@<owner>/<name> <PR> resume pause --dry-run` |
@@ -266,8 +269,9 @@ person's next attempt after inspecting the handoff.
    goes, the reader that acts on it, how to undo it, and any note.
 3. **Send only after the person says so.** Ask whether to send it, and wait
    for a yes to that dry run. Then run the same command without
-   `--dry-run`, changing nothing else. When the person changes anything,
-   run the dry run again.
+   `--dry-run`, changing nothing else, or, for a structured answer, the
+   command the dry run printed. When the person changes anything, run the
+   dry run again.
 4. **An answer is the person's own words.** Pass exactly what they said
    the answer is, as one argument in single quotes (a single quote inside
    is written as the shell needs it), not a summary, a rewording or a
@@ -276,17 +280,30 @@ person's next attempt after inspecting the handoff.
    request, and that once the re-arm has read it, it cannot be taken back.
    An answer is one line of at most 500 characters; when theirs is not,
    ask them to shorten it themselves.
-5. **The question's key** is in its framed decision, as `answer <key>: …`:
+5. **A structured answer is bound to what the person read.** "Approve
+   456's parked question" is `--approve`; "choose Keep" is `--choose
+   'Keep'`; a condition they add is `--note '<their words>'` beside it. The
+   dry run shows the option in full and the decision's digest, and prints
+   the command to send, which names the digest (`--decision <digest>`, or
+   `--decision-set <token>` for `--all`). Show the person the option (or,
+   for `--all`, each item it approves and each it leaves out), and on their
+   yes run exactly the command the dry run printed. Never copy a digest from
+   anywhere else. A refusal that the digest or the set changed means the
+   drive framed the question again: run the dry run again and show it.
+   When the dry run shows the person's own earlier answer, say the new one
+   replaces it; when it shows someone else's, say differing answers leave
+   the item disputed.
+6. **The question's key** is in its framed decision, as `answer <key>: …`:
    in the drive ledger comment a `question` entry of `--thread` links, and
    in the dispatcher's notification. `jig ask` does not print it; when the
    person did not give it, ask them for it. When the key they give is not
    a parked question, `send` refuses and names the ones that are; relay
    that and ask which they mean.
-6. **Relay a refusal as `send` gives it** (exit `1`, `jig send: refused:
+7. **Relay a refusal as `send` gives it** (exit `1`, `jig send: refused:
    …`), and do not work around it: not with `gh`, not with another verb,
    not by clearing `JIG_LAUNCH`, not by writing the record some other way.
    Say what the refusal leaves the person to do, where it says.
-7. **Not in a session the line started.** A dispatched launch and a
+8. **Not in a session the line started.** A dispatched launch and a
    drive's pass run with `JIG_LAUNCH` set; there no person is in the
    conversation, so send nothing. `send` refuses a person's verbs there
    itself, naming `JIG_LAUNCH`; when it does, stop sending.

@@ -11,7 +11,7 @@
  * | `drive` | `drive` | the `drive` command label |
  * | `rearm` | `drive` | the `rearm` command label for a stopped drive |
  * | `hold`, `release` | `drive`, `followup` | the `hold` command label, added or removed |
- * | `answer <key> <text>` | `drive` | a comment `answer <key>: <text>` |
+ * | `answer <key> <text>`, `answer <key> --approve\|--choose <option>`, `answer --all --approve` | `drive` | a comment `answer <key>: <text>` per item (`answer-request.ts`) |
  * | `pause`, `resume <directive>`, `stop`, `hold-push` | `drive` | a mailbox directive |
  *
  * A person's command (every verb but the mailbox's) is refused in a session
@@ -21,9 +21,12 @@
  */
 import type { Station } from "../../shared/address.ts";
 import {
-  answerKeyFault,
-  answerTextFault,
-} from "../../skills/drive-pr/scripts/lib/answer-comment.ts";
+  ANSWER_ARGS,
+  type AnswerFlags,
+  answerFlagsSet,
+  type AnswerRequest,
+  answerRequest,
+} from "./answer-request.ts";
 import {
   GATE_NAMES,
   type GateName,
@@ -62,7 +65,7 @@ const SPECS: Record<Verb, VerbSpec> = {
   rearm: { stations: ["drive"], person: true, args: "" },
   hold: { stations: ["drive", "followup"], person: true, args: "" },
   release: { stations: ["drive", "followup"], person: true, args: "" },
-  answer: { stations: ["drive"], person: true, args: "<key> <text>" },
+  answer: { stations: ["drive"], person: true, args: ANSWER_ARGS },
   pause: { stations: ["drive"], person: false, args: "" },
   resume: {
     stations: ["drive"],
@@ -77,7 +80,7 @@ const SPECS: Record<Verb, VerbSpec> = {
 export type Request =
   | { verb: "assign" }
   | { verb: LabelVerb }
-  | { verb: "answer"; key: string; text: string }
+  | AnswerRequest
   | { verb: Exclude<MailboxVerb, "resume"> }
   | { verb: "resume"; target: GateName };
 
@@ -97,15 +100,19 @@ function verbsOf(station: Station): string {
     .join(", ");
 }
 
+/** No answer flag set: what a verb other than `answer` is given. */
+const NO_ANSWER_FLAGS: AnswerFlags = { approve: false, all: false };
+
 /**
- * The request `words` (the verb and its arguments) make of `station`; every
- * refusal goes to `usage`. An answer's text may be one argument or several,
- * joined with a space.
+ * The request `words` (the verb and its arguments) and the answer `flags`
+ * make of `station`; every refusal goes to `usage`. An answer's text may be
+ * one argument or several, joined with a space.
  */
 export function parseRequest(
   station: Station,
   words: readonly string[],
   usage: (reason: string) => never,
+  flags: AnswerFlags = NO_ANSWER_FLAGS,
 ): Request {
   const [verb, ...args] = words;
   const takes = `${station} takes ${verbsOf(station)}`;
@@ -114,7 +121,10 @@ export function parseRequest(
     usage(`${JSON.stringify(verb)} is not a verb of jig send; ${takes}`);
   if (!SPECS[verb].stations.includes(station))
     usage(`a ${station} address does not take ${verb}; ${takes}`);
-  if (verb === "answer") return answerRequest(args, usage);
+  if (verb === "answer") return answerRequest(args, flags, usage);
+  const answerOnly = answerFlagsSet(flags);
+  if (answerOnly.length > 0)
+    usage(`only answer takes ${answerOnly.join(", ")}`);
   if (verb === "resume") {
     const target = args[0];
     if (
@@ -129,21 +139,4 @@ export function parseRequest(
   if (args.length > 0)
     usage(`${verb} takes no arguments (got ${args.join(" ")})`);
   return { verb } as Request;
-}
-
-function answerRequest(
-  args: readonly string[],
-  usage: (reason: string) => never,
-): Request {
-  const [key, ...words] = args;
-  if (key === undefined || words.length === 0)
-    usage(
-      `answer names the parked key and your answer: answer ${SPECS.answer.args}`,
-    );
-  const keyFault = answerKeyFault(key);
-  if (keyFault !== null) usage(keyFault);
-  const text = words.join(" ");
-  const fault = answerTextFault(text);
-  if (fault !== null) usage(fault);
-  return { verb: "answer", key, text: text.trim() };
 }
