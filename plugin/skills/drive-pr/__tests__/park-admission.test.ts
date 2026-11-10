@@ -147,4 +147,5 @@ test("admission projects the narrative and final stopped driver at the capacity 
     stderr: "pipe",
   });
   expectSpawnExit(result, 0, "park admission projection");
+  expect(result.success).toBe(true);
 });
