@@ -525,6 +525,48 @@ ships, the design must guarantee that:
   maturity criteria) changes in the same pull request, in the direction the
   decision picks.
 
+### 47. A repository's own rules for starting, reviewing and finishing work
+
+A team that runs agents on its tracker has rules for that work: work starts
+only from a validated ready state and only on an item for this repository,
+the item shows "in review" while its pull request waits, only a person or
+the release tooling closes it, and the board shows stopped work as blocked,
+with a reason. `do-item`, `work-batch` and the dispatcher claim, move and
+close items by one fixed rule, so a team whose rules differ keeps them in
+hooks and scripts outside Jig, where an agent can skip them. This item
+lets a repository state those rules as configuration that every skill which
+claims, moves or closes an item honours. Every setting is optional, and an
+unset one keeps today's behaviour. What it will build, one pull request per
+step:
+
+- **Start.** A precondition command (`do_item.preflight_command`) that the
+  claim script runs before it claims, for `do-item`, `work-batch` and the
+  dispatcher's pickups alike, sharing one call site with
+  `decide.store_command`; the dispatcher's tick never runs it, and shows a
+  refusal as a hold until the item changes. The states a claim may start
+  from (`do_item.claim_from`, by default `dispatch.states`), and a claim
+  marker naming the session, host and branch.
+- **Review.** An optional `pr_open` canonical state, entered once the
+  pull request opens and read as active work by the roll-up; it may share
+  a tracker name with `in_review` on a tracker with one review status. The
+  issue's labels carried onto the pull request, and reviewers requested, by
+  label or change area. Implementation guidance (skills and notes) chosen by
+  label, path and change area, in the shape of `do_item.gates`.
+- **Finish.** A post-merge state short of `done`
+  (`do_item.post_merge_state`), applied wherever the post-merge rule
+  applies today, refused unless the pull request links its item without
+  closing it.
+- **Stop.** An optional `blocked` canonical state that the shared
+  projection of the drive ledger writes, with the park class and reason,
+  when a drive stops on parked work, and clears when the park is answered.
+- **Pool pickup.** The dispatcher picks up unassigned items in a ready
+  pool as a served lane, trusting who made an item ready. It waits on an
+  inherited claim on Linear and Jira and on claims across hosts.
+
+Done when a repository on Jira with all of these set runs an item from its
+ready pool to a merged pull request without a hook or script of its own,
+and an item that fails a rule is refused before anything is written.
+
 ### 26. `init`: setting a repository up for Jig
 
 A repository adopts Jig by hand today: read the configuration reference,
@@ -668,6 +710,13 @@ steps of [the design's build order](tracker-facets.md#build-order).
 A store kept by the repository's own command waits until a repository names
 a facet that needs it.
 
+Three changes to the design follow from a Jira team's use. An issue of a
+listed native type (`issue_tracker.labels.epic_types`) reads as an epic on
+every adapter with issue types, replacing the non-goal that kept the epic a
+label. Every value map reads any of several names and writes the first, for
+priorities, types and Jira's resolutions. And the weekly sweep can comment
+on an incomplete issue without moving it back to triage.
+
 Done when a repository on each adapter files and reads all three in its
 configured store, and Jig's own repository keeps them in GitHub's fields
 with no type, priority or size labels.
@@ -715,6 +764,13 @@ launcher tracker for GitHub Issues and the key's file name (`issue-123`)
 where they name a cache file or a claim.
 [plugin/EXTENDING.md](../plugin/EXTENDING.md#issue-tracker) lists what
 still assumes Linear.
+
+The Jira adapter also gains what a large shared project needs: pools scoped
+to chosen issue types, several link types per relation (a planning app's
+dependency links beside "Blocks"), state names per issue type, Bearer tokens
+with the Atlassian API gateway and a token command for a credential broker,
+retries of rate-limited reads that honour `Retry-After` (shared with the
+GitHub transport), and a refused credential named as such.
 
 ### 27. Work types: depth by kind of work
 
@@ -775,6 +831,9 @@ What it will build, one pull request per step:
 - **`review` in plan mode, `file-issue`, `/followup` and the epic close.**
 - **The tracker source**, once the tracker interface has attachments
   (item 12).
+- **A verification section**: the commands a work item lists under
+  `Verification`, fenced blocks included, handed to the implementer and
+  recorded as evidence records the pull request's acceptance section cites.
 
 Done when a feature whose body links a spec in any supported layout
 reaches its pull request with every acceptance criterion accounted for,
