@@ -717,8 +717,10 @@ implementation. Skip this check for issues about the repository's own code.
    another claim landed first. On `3` or `4`, stop the pickup and report the
    reason it printed; never start the item beside another session. A
    refusal by the repository's start rules (`state` or `preflight`) is not
-   cleared by a person telling you to proceed: they change the item, or the
-   repository's rules, and the item is picked up again. With
+   cleared by a person telling you to proceed: the item changes, or the
+   repository's rules change and the pickup is retried by hand. The
+   dispatcher releases a held pickup only when the item's own timestamp
+   changes, so a rule change alone does not release it. With
    `do_item.claim_marker`, the claim posts the claim marker on the item
    itself; `"marker"` in the JSON says whether it was posted, and a marker
    that was not posted leaves the claim standing (report it). A person

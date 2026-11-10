@@ -151,13 +151,15 @@ a dispatched pickup all honour it without any of them remembering to call it.
 It reads the item's JSON on standard input. Exit 0 lets the claim go on. Exit
 3 refuses it: the claim exits 3, nothing is written, and the first line the
 command printed is the reason. Any other exit, or a run past 60 seconds,
-refuses too. The command is read from the default branch, so a branch cannot
-change the rules its own claim runs under, and it runs without the tracker
-and forge tokens. Telling the agent to proceed does not clear a refusal: the
+refuses too. The command text is read from the default branch, so a branch cannot
+change the command its own claim runs; the command runs in the current
+checkout, so a program it names inside the repository (`bun
+scripts/start-rules.ts`) is the branch's own copy, and the rules are only as
+trusted as that program. It runs without the tracker and forge tokens. Telling the agent to proceed does not clear a refusal: the
 item or the command changes. A dispatched pickup the command refused shows
 in the dispatcher's queue as held, with the reason, until the item changes.
 
-Two more settings narrow a claim. `do_item.claim_from` names the states work
+More settings narrow a claim. `do_item.claim_from` names the states work
 may start from: an item in any other state, or in a status that maps to no
 canonical state, is refused with nothing written, so a side state a team
 uses as its record of why work stopped is never cleared by a claim.
