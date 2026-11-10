@@ -39,6 +39,17 @@ function run(root: string, ...args: string[]) {
 const definition = (description: string, extra = "") =>
   `---\ndescription: ${JSON.stringify(description)}\n${extra}---\nBody.\n`;
 
+function expectShadowedCommandIsOmitted(target: string) {
+  const root = fixture({ "b.md": definition("D") });
+  symlinkSync(join(root, target), join(root, "a.md"));
+  const skills = fixture({ "a/SKILL.md": definition("D") });
+  const result = run(root, "--bare-skills", skills);
+  expectSpawnExit(result, 0);
+  expect(result.output).toContain("command b:");
+  expect(result.output).not.toContain("command a:");
+  return result;
+}
+
 test("commands and skills share the exact listing boundary, with command rows", () => {
   const root = fixture({
     "a.md": definition("123"),
@@ -116,13 +127,7 @@ test.skipIf(
 )(
   "shadowed command aliases do not consume an unshadowed file's measurement",
   () => {
-    const root = fixture({ "b.md": definition("D") });
-    symlinkSync(join(root, "b.md"), join(root, "a.md"));
-    const skills = fixture({ "a/SKILL.md": definition("D") });
-    const result = run(root, "--bare-skills", skills);
-    expectSpawnExit(result, 0);
-    expect(result.output).toContain("command b:");
-    expect(result.output).not.toContain("command a:");
+    expectShadowedCommandIsOmitted("b.md");
   },
 );
 
@@ -131,12 +136,7 @@ test.skipIf(
 )(
   "a shadowed dangling command is omitted before its definition is read",
   () => {
-    const root = fixture({ "b.md": definition("D") });
-    symlinkSync(join(root, "absent"), join(root, "a.md"));
-    const skills = fixture({ "a/SKILL.md": definition("D") });
-    const result = run(root, "--bare-skills", skills);
-    expectSpawnExit(result, 0);
-    expect(result.output).toContain("command b:");
+    const result = expectShadowedCommandIsOmitted("absent");
     expect(result.output).not.toContain("a.md: unreadable");
   },
 );
