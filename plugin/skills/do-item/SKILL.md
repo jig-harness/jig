@@ -1365,13 +1365,18 @@ snapshot mapping are **exact**.
       Ambiguous or unreadable evidence keeps the pair out; `ops_pending`,
       `todo` or the absence of a tracker blocker alone proves nothing.
       Re-run the selector with the verified pairs.
-   c. `eligible` lists incomplete, eligible issues in band order, each
+   c. A plan the tracker contradicts is an error too: the selector refuses
+      an issue the tracker's `blocks` makes wait for another that the plan
+      puts after it, and names both issues. Remove the wrong side (the
+      relation, or re-run the planner). A dependency edge the tracker lacks
+      is no contradiction; `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" sync-plan-blocks "<EPIC>"` writes it as a native `blocks`.
+   d. `eligible` lists incomplete, eligible issues in band order, each
       checked against its own plan predecessors and live blockers. Bands are
       precedence depth, never whole-group barriers. Honour human checkpoints
       from `gates` and live `hitl` labels before delegating.
-   d. If several issues are eligible, ask the user to choose. If none are,
+   e. If several issues are eligible, ask the user to choose. If none are,
       report the blockers and the missing evidence.
-   e. Only when no Execution Plan exists at all (`present: false`), fall
+   f. Only when no Execution Plan exists at all (`present: false`), fall
       back to `sub_issue_analysis.next_issue`.
 
    **Epic-level snapshot fallback.** Whenever this issue carries the `epic`

@@ -13,9 +13,11 @@ import { labelCodec } from "../facets/label.ts";
  * - priority: a label per level; a project: a milestone;
  * - parent and children: sub-issues; `blocks`: GitHub's issue dependencies;
  *   `duplicate`: closing as a duplicate of the other issue, which GitHub
- *   records on both; `related`: GitHub has no such link, so each issue gets a
- *   comment naming the other, carrying a marker the adapter reads back from
- *   comments by people who can write to the repository;
+ *   records on both; `related`: GitHub's own related link (`addRelatesTo`,
+ *   an issue's `relatesTo`). Earlier versions wrote a marked comment on each
+ *   issue instead; those comments, by people who can write to the
+ *   repository, are still read as related links until `migrateRelations`
+ *   has converted them;
  * - a trusted comment: one whose author owns the repository, belongs to its
  *   organization or is a collaborator.
  *
@@ -53,6 +55,11 @@ import { keyOf, repoOf, slug } from "./refs.ts";
 import { assignerOperations } from "./assigner.ts";
 import { claimOperations } from "./claim.ts";
 import { reportOperations } from "./reports.ts";
+import {
+  ADD_RELATES_TO,
+  legacyTargets,
+  migrateRelations,
+} from "./related-migration.ts";
 import { GitHubApiError, pageAll } from "./transport.ts";
 
 const SUB_ISSUES = (fields: string) => `
@@ -91,7 +98,10 @@ query TrackerSearch($q: String!, $after: String) {
 
 const REF = "number repository { nameWithOwner }";
 
+const RELATES_TO = `relatesTo(first: ${PAGE}) { pageInfo { hasNextPage } nodes { ${REF} } }`;
+
 const RELATIONS = `
+  ${RELATES_TO}
   blockedBy(first: ${PAGE}) { pageInfo { hasNextPage } nodes { ${REF} } }
   blocking(first: ${PAGE}) { pageInfo { hasNextPage } nodes { ${REF} } }
   duplicateOf { ${REF} }
@@ -133,6 +143,7 @@ export const M = {
   removeSubIssue: `mutation TrackerRemoveSubIssue($issueId: ID!, $subIssueId: ID!) {
     removeSubIssue(input: { issueId: $issueId, subIssueId: $subIssueId }) { issue { id } }
   }`,
+  addRelatesTo: ADD_RELATES_TO,
   addBlockedBy: `mutation TrackerAddBlockedBy($issueId: ID!, $blockingIssueId: ID!) {
     addBlockedBy(input: { issueId: $issueId, blockingIssueId: $blockingIssueId }) { issue { id } }
   }`,
@@ -149,10 +160,6 @@ export const M = {
 
 /** Authors whose comments are trusted: they can write to the repository. */
 const TRUSTED = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
-
-/** The marker of a `related` comment; the other issue is always qualified. */
-const RELATED_MARKER =
-  /<!-- jig:related ([A-Za-z0-9-]+\/[A-Za-z0-9._-]+#[1-9]\d*) -->/g;
 
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
@@ -432,14 +439,27 @@ export function gitHubTracker(client: Client): Tracker {
     return out;
   }
 
-  /** `related`, from the markers in trusted comments. */
-  function related(comments: CommentNode[]): IssueRelation[] {
+  /** `related`, from the issue's own related links. */
+  function nativeRelated(
+    raw: Record<string, unknown>,
+    key: string,
+  ): IssueRelation[] {
+    return onePage(raw.relatesTo, `${key}.relatesTo`).map(
+      (n): IssueRelation => ({
+        type: "related",
+        issue: refKey(n, `${key}.relatesTo`),
+      }),
+    );
+  }
+
+  /** The related links a trusted comment of an earlier version carries. */
+  function legacyRelated(comments: CommentNode[]): IssueRelation[] {
     return comments
       .filter((c) => c.trusted)
-      .flatMap((c) => [...c.body.matchAll(RELATED_MARKER)])
-      .map((m) => ({
+      .flatMap((c) => legacyTargets(c.body))
+      .map((target) => ({
         type: "related" as const,
-        issue: keyOf(client.ref(m[1] as string), home),
+        issue: keyOf(client.ref(target), home),
       }));
   }
 
@@ -453,7 +473,8 @@ export function gitHubTracker(client: Client): Tracker {
     const all = [
       ...dependencies(found.raw, key),
       ...duplicates(found.raw, found.issue),
-      ...related((await comments(key)).comments),
+      ...nativeRelated(found.raw, key),
+      ...legacyRelated((await comments(key)).comments),
     ];
     const ids = all.map((r) => `${r.type} ${r.issue}`);
     return all.filter((_, i) => ids.indexOf(ids[i] as string) === i);
@@ -803,6 +824,8 @@ export function gitHubTracker(client: Client): Tracker {
 
     listRelations: relations,
 
+    migrateRelations: (opts, signal) => migrateRelations(client, opts, signal),
+
     async relate(key, type, target) {
       checkRelation(key, type, target);
       const a = await client.mustIssue(key);
@@ -824,23 +847,13 @@ export function gitHubTracker(client: Client): Tracker {
         });
         return;
       }
-      // Each side's note is its own write, so each is checked on its own: a
-      // retry after one side failed writes only the missing note.
-      const note = (other: GhIssue) =>
-        `<!-- jig:related ${slug(other.ref)}#${other.ref.number} -->\nRelated to ${slug(other.ref)}#${other.ref.number}.`;
-      for (const [on, other] of [
-        [a, b],
-        [b, a],
-      ] as const)
-        if (
-          !(await relations(on.key)).some(
-            (r) => r.type === "related" && r.issue === other.key,
-          )
-        )
-          await client.mutate(M.comment, {
-            subjectId: on.id,
-            body: note(other),
-          });
+      const found = await client.issue(a.ref, RELATES_TO);
+      const own = found === null ? [] : nativeRelated(found.raw, a.key);
+      if (own.some((r) => r.issue === b.key)) return;
+      await client.mutate(M.addRelatesTo, {
+        issueId: a.id,
+        relatedIssueId: b.id,
+      });
     },
   };
   return withFacets(tracker, client.facetSlots, client.facets.own);

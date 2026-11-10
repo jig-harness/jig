@@ -525,13 +525,14 @@ describe("GitHub adapter: relations", () => {
     repository: { nameWithOwner: repo },
   });
 
-  it("reads blockers, duplicates in both directions and related markers by trusted authors", async () => {
+  it("reads blockers, duplicates in both directions, native related links and legacy related markers by trusted authors", async () => {
     const { t } = gitHub((c) => {
       if (c.op === "TrackerIssue")
         return oneIssue(
           issueNode({
             number: 5,
             extra: {
+              relatesTo: conn([ref(3)]),
               blockedBy: conn([ref(1)]),
               blocking: conn([ref(9, "other/lib")]),
               duplicateOf: ref(4),
@@ -576,6 +577,7 @@ describe("GitHub adapter: relations", () => {
       { type: "blocks", issue: "other/lib#9" },
       { type: "duplicate", issue: "#4" },
       { type: "duplicated_by", issue: "#6" },
+      { type: "related", issue: "#3" },
       { type: "related", issue: "#8" },
     ]);
   });
@@ -597,14 +599,19 @@ describe("GitHub adapter: relations", () => {
     });
   });
 
-  /** An adapter whose issues keep the comments written to them. */
-  function commenting(notes: Record<number, string[]>) {
+  /** An adapter whose issues keep their related links, and the comments of an earlier version. */
+  function relating(
+    links: Record<number, number[]>,
+    notes: Record<number, string[]> = {},
+  ) {
     return gitHub((c) => {
-      if (c.op === "TrackerIssue")
+      if (c.op === "TrackerIssue") {
+        const n = c.variables.number as number;
         return oneIssue(
           issueNode({
-            number: c.variables.number as number,
+            number: n,
             extra: {
+              relatesTo: conn((links[n] ?? []).map((m) => ref(m))),
               blockedBy: conn([]),
               blocking: conn([]),
               duplicateOf: null,
@@ -612,6 +619,7 @@ describe("GitHub adapter: relations", () => {
             },
           }),
         );
+      }
       if (c.op === "TrackerComments") {
         const n = c.variables.number as number;
         return {
@@ -630,35 +638,47 @@ describe("GitHub adapter: relations", () => {
           },
         };
       }
-      if (c.op === "TrackerComment") {
-        const n = Number(String(c.variables.subjectId).slice(2));
-        notes[n] = [...(notes[n] ?? []), String(c.variables.body)];
+      if (c.op === "TrackerAddRelatesTo") {
+        const a = Number(String(c.variables.issueId).slice(2));
+        const b = Number(String(c.variables.relatedIssueId).slice(2));
+        links[a] = [...(links[a] ?? []), b];
+        links[b] = [...(links[b] ?? []), a];
       }
       return {};
     });
   }
-  const commentedOn = (
-    calls: { op: string; variables: Record<string, unknown> }[],
-  ) =>
-    calls
-      .filter((c) => c.op === "TrackerComment")
-      .map((c) => c.variables.subjectId);
 
-  it("records related as a marked comment on each side, once", async () => {
-    const { t, calls } = commenting({});
+  it("records related as GitHub's own related link, with no comment, once", async () => {
+    const links: Record<number, number[]> = {};
+    const { t, calls } = relating(links);
     await t.relate("#1", "related", "#2");
-    expect(commentedOn(calls)).toEqual(["I_1", "I_2"]);
+    expect(writes(calls)).toEqual(["TrackerAddRelatesTo"]);
     expect(
-      calls.find((c) => c.op === "TrackerComment")?.variables.body,
-    ).toContain("<!-- jig:related acme/app#2 -->");
-    await t.relate("#1", "related", "#2");
-    expect(commentedOn(calls)).toEqual(["I_1", "I_2"]);
+      calls.find((c) => c.op === "TrackerAddRelatesTo")?.variables,
+    ).toEqual({ issueId: "I_1", relatedIssueId: "I_2" });
+    expect(await t.listRelations("#1")).toEqual([
+      { type: "related", issue: "#2" },
+    ]);
+    expect(await t.listRelations("#2")).toEqual([
+      { type: "related", issue: "#1" },
+    ]);
+    await t.relate("#2", "related", "#1");
+    expect(writes(calls)).toEqual(["TrackerAddRelatesTo"]);
   });
 
-  it("writes only the missing side of a half-written related link", async () => {
-    const { t, calls } = commenting({ 1: ["<!-- jig:related acme/app#2 -->"] });
+  it("writes the native link beside a legacy comment, and reads the pair once", async () => {
+    const { t, calls } = relating(
+      {},
+      { 1: ["<!-- jig:related acme/app#2 -->"] },
+    );
+    expect(await t.listRelations("#1")).toEqual([
+      { type: "related", issue: "#2" },
+    ]);
     await t.relate("#1", "related", "#2");
-    expect(commentedOn(calls)).toEqual(["I_2"]);
+    expect(writes(calls)).toEqual(["TrackerAddRelatesTo"]);
+    expect(await t.listRelations("#1")).toEqual([
+      { type: "related", issue: "#2" },
+    ]);
   });
 
   it("refuses an issue related to itself", async () => {
