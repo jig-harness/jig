@@ -17,7 +17,9 @@
  * - parent and children: the `parent` field, for sub-tasks and an Epic's
  *   issues alike;
  * - relations: issue links of the configured types
- *   (`issue_tracker.jira.link_types`); other link types are ignored;
+ *   (`issue_tracker.jira.link_types`), several per relation where it lists
+ *   them, an inverted type read the other way round; a new link takes the
+ *   first; other link types are ignored;
  * - descriptions and comments: Markdown converted to and from ADF (`adf.ts`);
  * - labels: Jira labels, free text shared across the site, written as given
  *   when well-formed, and the values of the fields `field_labels` names,
@@ -26,7 +28,8 @@
  * - a trusted comment: one whose author is a licensed, non-guest Atlassian
  *   account that can be assigned issues in the project.
  *
- * The reports and candidate pools are in `reports.ts`, `assignedBy` in
+ * The reports and candidate pools are in `reports.ts`, limited to
+ * `issue_tracker.jira.pool_issue_types` where it is set; `assignedBy` in
  * `assigner.ts`.
  */
 
@@ -52,13 +55,24 @@ import {
 import { markdownToAdf } from "./adf.ts";
 import { assignerOperations } from "./assigner.ts";
 import { claimOperations } from "./claim.ts";
-import type { Client, IssueTypeMeta } from "./client.ts";
+import type { Client, IssueTypeMeta, RelationLink } from "./client.ts";
 import { jiraFacetStores } from "./facets.ts";
 import { type JiraIssue, record, str } from "./read.ts";
 import { fieldOfLabel, inProject, OPEN, quote } from "./jql.ts";
 import { isResolvedState } from "./model.ts";
 import { reportOperations } from "./reports.ts";
+import { LINKED_RELATIONS, type LinkedRelation } from "./settings.ts";
 import { JiraApiError, offsetPages } from "./transport.ts";
+
+/** A relation's two sides: as the issue reads it outward, and inward. */
+const SIDES: Record<
+  LinkedRelation,
+  [IssueRelation["type"], IssueRelation["type"]]
+> = {
+  blocks: ["blocks", "blocked_by"],
+  duplicate: ["duplicate", "duplicated_by"],
+  related: ["related", "related"],
+};
 
 /** A label Jira accepts: no whitespace, at most 255 characters. */
 const LABEL = /^\S{1,255}$/;
@@ -172,21 +186,14 @@ export function jiraTracker(client: Client): Tracker {
     const issue = await client.mustIssue(key);
     const types = await client.linkTypes();
     const out: IssueRelation[] = [];
-    for (const link of issue.links) {
-      const outward = link.direction === "outward";
-      if (same(link.type, types.blocks.name))
-        out.push({
-          type: outward ? "blocks" : "blocked_by",
-          issue: link.issue,
-        });
-      else if (same(link.type, types.duplicate.name))
-        out.push({
-          type: outward ? "duplicate" : "duplicated_by",
-          issue: link.issue,
-        });
-      else if (same(link.type, types.related.name))
-        out.push({ type: "related", issue: link.issue });
-    }
+    for (const link of issue.links)
+      for (const relation of LINKED_RELATIONS) {
+        const entry = types[relation].find((t) => same(link.type, t.name));
+        if (entry === undefined) continue;
+        const forward = (link.direction === "outward") !== entry.inverted;
+        out.push({ type: SIDES[relation][forward ? 0 : 1], issue: link.issue });
+        break;
+      }
     const ids = out.map((r) => `${r.type} ${r.issue}`);
     return out.filter((_, i) => ids.indexOf(ids[i] as string) === i);
   }
@@ -285,13 +292,15 @@ export function jiraTracker(client: Client): Tracker {
     refuseSameIssue([from.id, to.id], key, target, from.key);
     const existing = await relations(from.key);
     if (existing.some((r) => r.type === type && r.issue === to.key)) return;
+    const first = types[type][0] as RelationLink;
+    const [inward, outward] = first.inverted ? [to, from] : [from, to];
     await transport({
       method: "POST",
       path: "issueLink",
       body: {
-        type: { name: types[type].name },
-        inwardIssue: { key: from.key },
-        outwardIssue: { key: to.key },
+        type: { name: first.name },
+        inwardIssue: { key: inward.key },
+        outwardIssue: { key: outward.key },
       },
     });
   }
@@ -312,6 +321,7 @@ export function jiraTracker(client: Client): Tracker {
           );
         throw err;
       }
+      await client.poolScope(signal);
     },
 
     async getIssue(key) {

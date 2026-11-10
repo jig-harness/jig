@@ -43,6 +43,11 @@ item asks of them before reading it. Jig's dashboard and `jig ask` know the
 acts of the classes below; a class of your own reads Decide there until Jig
 reads this column.
 
+A framed decision whose act is **Authorize** includes refusal as an option
+of its own, such as **Keep it off** or **Do not release**. A person can then
+name that option in a
+[structured answer](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md).
+
 | Class | Act | Decision class | Why it must stay human | Trigger / where it bites |
 |-------|-----|----------------|------------------------|--------------------------|
 | `ready` | Authorize | Mark a PR **Ready** for review | Signals "worth a human's time"; only the author can judge readiness. A repository may delegate it to an unattended review driver, which marks Ready after the review round, or at the convergence, the repository declares; record that choice here | Draft→Ready transition |

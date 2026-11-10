@@ -535,6 +535,11 @@ development and shipped as a version.
   fully triaged (`finish-round.ts` exit 7); a post from a pass whose lease
   was revoked (`skills/drive-pr/scripts/assert-post-allowed.ts`); a ledger
   version it cannot read (exit 1).
+- **Answers to parked decisions.** One parser reads whole-comment
+  `approve` and `choose <option>` answers and their notes for re-arm, the
+  dispatcher, `jig ask` and `jig send`. It uses each person's latest edit,
+  keeps other text as a free answer, and leaves conflicting choices or
+  notes disputed. Any person's answer prevents a provisional decision.
 - **Reasoned.** Each pass decides, for every finding, its outcome and its
   fix, at the repository's
   [autonomy level](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
@@ -830,6 +835,13 @@ and fixes its call. What the script settles, and what the model decides:
 Several parts of the right-hand column above are kept by the instructions
 every skill follows and by the forge's own trust rules, not by a check that
 stops a model. A team that runs passes unattended should know which:
+
+- **Applying a chosen option.** A
+  [structured answer](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) gives the pass the
+  chosen option, the framed decision and any note. The pass's instructions
+  require it to apply that option, permit a note only to narrow it, and
+  park again when the note conflicts or asks for more. No script checks
+  that the changes implement the option's prose.
 
 - **Comments a script trusts by their author.** A ledger and a takeover
   claim count when the drive's own login or an owner, member or

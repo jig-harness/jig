@@ -17,7 +17,7 @@
 import { uniqueLogins } from "../../shared/forge-logins.ts";
 import { createHash } from "node:crypto";
 import { shellQuote } from "../../shared/cli.ts";
-import type { DrivenPr, Notice, RepoReport } from "./types.ts";
+import type { DrivenPr, Notice, RepoReport, WaitingPark } from "./types.ts";
 
 const TAG = "[jig dispatch: ";
 
@@ -54,17 +54,56 @@ function unTagged(text: string): string {
   return text.replaceAll(TAG, "[jig dispatch - ");
 }
 
-/** A message: its key line, then its lines, cut to `MAX_TEXT`; the `tail` lines are never cut. */
-function notice(fullKey: string, lines: string[], tail: string[] = []): Notice {
+/** A message: its key, reserved priority lines, bounded detail, and its uncut tail. */
+function notice(
+  fullKey: string,
+  lines: string[],
+  tail: string[] = [],
+  priority: string[] = [],
+): Notice {
   const key = boundedKey(fullKey);
   const head = keyLine(key);
   const body = unTagged(lines.join("\n"));
+  const start =
+    priority.length === 0 ? "" : `\n${unTagged(priority.join("\n"))}`;
   const end = tail.length === 0 ? "" : `\n${unTagged(tail.join("\n"))}`;
-  const room = MAX_TEXT - head.length - 1 - end.length;
+  const room = MAX_TEXT - head.length - start.length - 1 - end.length;
   return {
     key,
-    text: `${head}\n${body.length > room ? `${body.slice(0, Math.max(0, room - 1))}…` : body}${end}`,
+    text: `${head}${start}\n${body.length > room ? `${body.slice(0, Math.max(0, room - 1))}…` : body}${end}`,
   };
+}
+
+function compact(text: string, max: number): string {
+  const line = text.replace(/\s+/g, " ").trim();
+  return line.length <= max ? line : `${line.slice(0, max - 1)}…`;
+}
+
+/** Disputes stay ahead of large decisions, within a fixed part of the message budget. */
+function disputeSummary(waiting: readonly WaitingPark[]): string[] {
+  const disputed = waiting.filter((p) => (p.disputed ?? []).length > 0);
+  if (disputed.length === 0) return [];
+  const lines = ["Disputed answers: these people must settle the decisions."];
+  let shown = 0;
+  for (const park of disputed) {
+    const answers = park.disputed ?? [];
+    const people = answers
+      .slice(0, 2)
+      .map(
+        (a) =>
+          `@${compact(a.author, 40)}: ${a.choice === undefined ? `free answer: ${compact(a.body, 60)}` : `chose ${compact(a.choice.option, 60)}${a.choice.note === undefined ? "" : `; note: ${compact(a.choice.note, 40)}`}`}`,
+      );
+    const line = `${compact(park.key, 80)} — ${people.join("; ")}${answers.length > 2 ? `; ${answers.length - 2} more answers on the pull request` : ""}`;
+    // Leave room for the count of omitted decisions and its link to the full record.
+    if (lines.join("\n").length + line.length + 1 > 900) break;
+    lines.push(line);
+    shown += 1;
+  }
+  if (shown < disputed.length)
+    lines.push(
+      `${disputed.length - shown} more disputed decisions; read their answers on the pull request.`,
+    );
+  return lines;
 }
 
 /** The ledger generation a drive's evidence carries. */
@@ -97,6 +136,18 @@ function recipientLines(pr: DrivenPr): string[] {
 export function parkNotice(slug: string, pr: DrivenPr): Notice {
   const waiting = pr.waiting ?? [];
   const keys = waiting.map((p) => `${p.kind} ${p.key}`).join(", ");
+  const disputes = waiting
+    .flatMap((p) =>
+      (p.disputed ?? []).map(
+        (a) =>
+          `${p.key}:${a.author}:${a.at}:${a.url}:${a.bodyHash ?? createHash("sha256").update(a.body).digest("hex")}`,
+      ),
+    )
+    .sort((a, b) => a.localeCompare(b));
+  const disputeKey =
+    disputes.length === 0
+      ? ""
+      : `, disputed ${createHash("sha256").update(disputes.join("\n")).digest("hex").slice(0, 16)}`;
   // A park is read beside its base only while its pull request conflicts.
   const conflict =
     pr.evidence.mergeable === "CONFLICTING"
@@ -106,13 +157,22 @@ export function parkNotice(slug: string, pr: DrivenPr): Notice {
         ]
       : [];
   return notice(
-    `${slug} PR #${pr.number} parked, ledger generation ${generation(pr)}: ${keys}${conflict.length === 0 ? "" : `, conflicting head ${pr.evidence.headSha ?? "unknown"}, base ${pr.evidence.baseSha ?? "unknown"}`}`,
+    `${slug} PR #${pr.number} parked, ledger generation ${generation(pr)}: ${keys}${disputeKey}${conflict.length === 0 ? "" : `, conflicting head ${pr.evidence.headSha ?? "unknown"}, base ${pr.evidence.baseSha ?? "unknown"}`}`,
     [
       `PR #${pr.number} (${pr.title}) is parked: ${waiting.length === 1 ? "one decision waits" : `${waiting.length} decisions wait`} for a person.`,
       "",
       ...conflict,
       ...waiting.flatMap((p) => [
         ...(p.person === undefined ? [] : [`Waiting on @${p.person}:`]),
+        ...((p.disputed ?? []).length === 0
+          ? []
+          : [
+              "Disputed: these people's latest answers disagree; they must settle the decision.",
+              ...(p.disputed ?? []).map(
+                (a) =>
+                  `@${a.author}: ${a.choice === undefined ? `free answer: ${a.body.slice(0, 500)}${a.body.length > 500 ? "…" : ""}` : `chose ${a.choice.option}`}${a.choice?.note === undefined ? "" : `; note: ${a.choice.note}`} — ${a.url}`,
+              ),
+            ]),
         ...p.lines,
         "",
       ]),
@@ -122,6 +182,7 @@ export function parkNotice(slug: string, pr: DrivenPr): Notice {
       "Answer each on the pull request, in a comment with a line `answer <key>: …` (or on its thread). Once every one is answered, the next tick re-arms the drive. A decision above that is cut off is framed in full in the drive's ledger comment on the pull request.",
       pr.url,
     ],
+    disputeSummary(waiting),
   );
 }
 

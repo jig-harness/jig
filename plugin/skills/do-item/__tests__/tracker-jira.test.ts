@@ -642,6 +642,114 @@ describe("Jira adapter: relations", () => {
     });
   });
 
+  const SEVERAL = {
+    issueLinkTypes: [
+      ...LINK_TYPES.issueLinkTypes,
+      { id: "5", name: "Precedes", inward: "follows", outward: "precedes" },
+      {
+        id: "6",
+        name: "Depends",
+        inward: "is needed by",
+        outward: "depends on",
+      },
+    ],
+  };
+  const several = {
+    issue_tracker: {
+      jira: {
+        link_types: {
+          blocks: ["Blocks", "Precedes", { name: "Depends", inverted: true }],
+        },
+      },
+    },
+  };
+
+  it("reads every link type a relation lists, an inverted one the other way, each edge once", async () => {
+    const { t } = jira(
+      routes({
+        "GET issueLinkType": SEVERAL,
+        "GET issue/ENG-1": issue({
+          key: "ENG-1",
+          links: [
+            { type: "Blocks", outward: "ENG-2" },
+            { type: "Precedes", outward: "ENG-2" },
+            { type: "Precedes", inward: "ENG-3" },
+            { type: "Depends", outward: "ENG-4" },
+            { type: "Depends", inward: "ENG-5" },
+            { type: "Depends", inward: "ENG-2" },
+            { type: "Cloners", outward: "ENG-7" },
+          ],
+        }),
+      }),
+      several,
+    );
+    expect(await t.listRelations("ENG-1")).toEqual([
+      { type: "blocks", issue: "ENG-2" },
+      { type: "blocked_by", issue: "ENG-3" },
+      { type: "blocked_by", issue: "ENG-4" },
+      { type: "blocks", issue: "ENG-5" },
+    ]);
+  });
+
+  it("refuses a listed link type the site does not have", async () => {
+    const { t } = jira(
+      routes({
+        "GET issueLinkType": LINK_TYPES,
+        "GET issue/ENG-1": issue({ key: "ENG-1" }),
+      }),
+      several,
+    );
+    const err = await t.listRelations("ENG-1").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(TrackerConfigError);
+    expect((err as TrackerConfigError).message).toContain("'Precedes'");
+  });
+
+  it("writes a new link with the first listed type, turned round when it is inverted", async () => {
+    const post = async (first: unknown) => {
+      const { t, calls } = jira(
+        routes({
+          "GET issueLinkType": SEVERAL,
+          "GET issue/ENG-1": issue({ key: "ENG-1" }),
+          "GET issue/ENG-2": issue({ key: "ENG-2" }),
+          "POST issueLink": null,
+        }),
+        {
+          issue_tracker: {
+            jira: { link_types: { blocks: [first, "Blocks"] } },
+          },
+        },
+      );
+      await t.relate("ENG-1", "blocks", "ENG-2");
+      return calls.find((c) => c.route === "POST issueLink")?.body;
+    };
+    expect(await post("Precedes")).toEqual({
+      type: { name: "Precedes" },
+      inwardIssue: { key: "ENG-1" },
+      outwardIssue: { key: "ENG-2" },
+    });
+    expect(await post({ name: "Depends", inverted: true })).toEqual({
+      type: { name: "Depends" },
+      inwardIssue: { key: "ENG-2" },
+      outwardIssue: { key: "ENG-1" },
+    });
+  });
+
+  it("writes no link when another listed type already carries the edge", async () => {
+    const { t, calls } = jira(
+      routes({
+        "GET issueLinkType": SEVERAL,
+        "GET issue/ENG-1": issue({
+          key: "ENG-1",
+          links: [{ type: "Precedes", outward: "ENG-2" }],
+        }),
+        "GET issue/ENG-2": issue({ key: "ENG-2" }),
+      }),
+      several,
+    );
+    await t.relate("ENG-1", "blocks", "ENG-2");
+    expect(writes(calls)).toEqual([]);
+  });
+
   it("refuses an issue related to itself", async () => {
     const { t } = jira(routes({}));
     await expect(t.relate("ENG-1", "related", "ENG-1")).rejects.toBeInstanceOf(
@@ -658,6 +766,32 @@ describe("Jira adapter: reach", () => {
       .catch((e: unknown) => e);
     expect(err).toBeInstanceOf(TrackerConfigError);
     expect((err as TrackerConfigError).field).toBe("issue_tracker.team");
+  });
+
+  it("refuses a pool issue type the project lacks, and reads no types when none is set", async () => {
+    const answer = routes({
+      "GET project/ENG": { key: "ENG" },
+      "GET issue/createmeta/ENG/issuetypes": ISSUE_TYPES(
+        ["Task", false, 0],
+        ["Epic", false, 1],
+      ),
+    });
+    const unset = jira(answer);
+    await unset.t.reach();
+    expect(unset.calls.map((c) => c.route)).toEqual(["GET project/ENG"]);
+    await jira(answer, {
+      issue_tracker: { jira: { pool_issue_types: ["task"] } },
+    }).t.reach();
+    const err = await jira(answer, {
+      issue_tracker: { jira: { pool_issue_types: ["Task", "Story"] } },
+    })
+      .t.reach()
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(TrackerConfigError);
+    expect((err as TrackerConfigError).field).toBe(
+      "issue_tracker.jira.pool_issue_types",
+    );
+    expect((err as TrackerConfigError).message).toContain("'Story'");
   });
 
   it("passes an unavailable Jira on as it is", async () => {

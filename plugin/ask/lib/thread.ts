@@ -24,10 +24,9 @@ import {
   type SharedClaim,
 } from "../../shared/records/shared.ts";
 import {
-  isAnswer,
-  isAnswerLine,
   linesOutsideFences,
-} from "../../skills/drive-pr/scripts/lib/driver/rearm.ts";
+  parseAnswerComment,
+} from "../../skills/drive-pr/scripts/lib/answer-forms.ts";
 import type { ThreadEntry } from "./answer.ts";
 import type { CommentFields, LabelEvent } from "./forge.ts";
 
@@ -64,20 +63,6 @@ export function commentUrl(prUrl: string, id: number): string {
   return `${prUrl}#issuecomment-${id}`;
 }
 
-/** Whether a comment made after `after` is a person's answer, by the re-arm's own rule for one. */
-export function countsAsAnswer(c: CommentFields, after: number): boolean {
-  return isAnswer(
-    {
-      author: c.login,
-      association: c.association,
-      at: c.createdAt,
-      url: "",
-      body: c.body,
-    },
-    after,
-  );
-}
-
 const ANSWER_LINE = /^\s{0,3}answer\s+(\S+?):\s*(\S.*)$/i;
 
 /**
@@ -92,20 +77,33 @@ export function answerEntries(
 ): ThreadEntry[] {
   const out: ThreadEntry[] = [];
   for (const c of comments) {
-    if (!countsAsAnswer(c, Number.NEGATIVE_INFINITY)) continue;
+    const keys = new Set<string>();
     for (const line of linesOutsideFences(c.body)) {
       const m = ANSWER_LINE.exec(line);
-      if (
-        m === null ||
-        !isAnswerLine(
-          line,
-          line.trim(),
-          `answer ${m[1] as string}:`.toLowerCase(),
-        )
-      )
-        continue;
+      const key = m?.[1];
+      if (key === undefined || keys.has(key.toLowerCase())) continue;
+      keys.add(key.toLowerCase());
+      const parsed = parseAnswerComment(
+        {
+          key,
+          kind: "finding",
+          round: 0,
+          reason: "",
+          at: "1970-01-01T00:00:00Z",
+        },
+        {
+          author: c.login,
+          association: c.association,
+          at: c.createdAt,
+          editedAt: c.updatedAt || null,
+          url: c.url,
+          body: c.body,
+        },
+        "conversation",
+      );
+      if (parsed === null) continue;
       out.push({
-        at: c.createdAt,
+        at: parsed.at,
         kind: "answer",
         from: c.login,
         to: address,
