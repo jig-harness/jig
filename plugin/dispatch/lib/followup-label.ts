@@ -29,7 +29,7 @@ import {
 } from "../../shared/pr-labels/write.ts";
 
 /** The forge of repository `slug`, through the dispatcher's own reads and writes. */
-export function followupForge(slug: string): OwnForge {
+function followupForge(slug: string): OwnForge {
   return {
     labels: (pr) => pullRequestLabels(slug, pr),
     edit: (pr, add, remove) => editLabels(slug, pr, add, remove),

@@ -22,8 +22,6 @@ import {
 import type { DrivenPr } from "./types.ts";
 
 export {
-  COMMANDS,
-  type CommandName,
   carriesSet,
   commandLabel,
   DEFAULT_LABELS,
@@ -33,15 +31,12 @@ export {
   labelChange,
   labelSet,
   type LabelSpec,
-  LONGEST_NAME,
   MAX_LABEL,
-  PROJECTED_STATES,
   type Projected,
-  type StateName,
 } from "../../shared/pr-labels/projection.ts";
 
 /** The exits a `done` ledger is read by, from the registry. */
-export const DONE_EXITS: DoneExits = {
+const DONE_EXITS: DoneExits = {
   converged: DRIVE_EXIT.CONVERGED,
   takenOver: DRIVE_EXIT.TAKEN_OVER,
 };

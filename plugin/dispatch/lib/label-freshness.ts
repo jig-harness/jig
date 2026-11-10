@@ -30,14 +30,14 @@ function mark(
 }
 
 /** The mark of the ledger the tick read for `drive`, from what its classification kept. */
-export function readMark(drive: DrivenPr | undefined): Mark {
+function readMark(drive: DrivenPr | undefined): Mark {
   if (drive === undefined || drive.class === "unarmed") return null;
   const e = drive.evidence;
   return mark(e.generation, e.heartbeat, e.driver, e.exit);
 }
 
 /** The mark of a ledger read now. */
-export function ledgerMark(ledger: Ledger | null): Mark {
+function ledgerMark(ledger: Ledger | null): Mark {
   if (ledger === null) return null;
   return mark(
     ledger.generation,

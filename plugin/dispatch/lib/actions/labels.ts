@@ -267,6 +267,19 @@ export const labelKey = (pr: number, part?: "markers"): string =>
 const describe = (c: LabelChange): string =>
   [...c.add.map((l) => `+${l}`), ...c.remove.map((l) => `-${l}`)].join(" ");
 
+/** Why a write waits for a later tick: the tick's time is spent, the write backs off, or its ledger changed since the tick read it; `null` to write it now. */
+async function waitsFor(
+  change: LabelChange,
+  key: string,
+  mode: WriteMode,
+): Promise<string | null> {
+  const late = mode.late();
+  if (late !== null) return late;
+  const backing = mode.book?.waits(key) ?? null;
+  if (backing !== null) return backing;
+  return (await mode.current?.(change)) ?? null;
+}
+
 /** Write each change in one call, in pull request order; each outcome goes into the receipt. */
 export async function writeLabels(
   slug: string,
@@ -285,20 +298,10 @@ export async function writeLabels(
       out.push({ ...base, outcome: "would", detail: describe(change) });
       continue;
     }
-    const late = mode.late();
-    if (late !== null) {
-      out.push({ ...base, outcome: "waits", detail: late });
-      continue;
-    }
     const key = labelKey(change.pr, change.part);
-    const backing = mode.book?.waits(key) ?? null;
-    if (backing !== null) {
-      out.push({ ...base, outcome: "waits", detail: backing });
-      continue;
-    }
-    const stale = (await mode.current?.(change)) ?? null;
-    if (stale !== null) {
-      out.push({ ...base, outcome: "waits", detail: stale });
+    const waits = await waitsFor(change, key, mode);
+    if (waits !== null) {
+      out.push({ ...base, outcome: "waits", detail: waits });
       continue;
     }
     const of = { key, kind: "label" as const, target: base.target };

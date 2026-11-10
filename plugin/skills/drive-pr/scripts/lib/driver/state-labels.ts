@@ -38,8 +38,8 @@ const DONE_EXITS: DoneExits = {
   takenOver: DRIVE_EXIT.TAKEN_OVER,
 };
 
-/** The ledger change a label follows: the arm's running ledger, or a stop with its exit. */
-export type DriveMoment = { armed: true } | { stopped: number };
+/** The ledger change a label follows: the arm's running ledger, or a stop with its exit (`null` when unknown). */
+export type DriveMoment = { armed: true } | { stopped: number | null };
 
 /** How the dispatcher will read the ledger this moment writes; `null` for a stop whose state only the tick can tell. */
 export function ledgerAt(moment: DriveMoment): LedgerReading | null {

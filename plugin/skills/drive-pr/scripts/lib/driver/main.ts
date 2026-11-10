@@ -57,7 +57,6 @@ import { dbPathFor, driveDb } from "./../state/db.ts";
 import { driveState, captureIntentChain, driveTs } from "./paths.ts";
 
 import { runDriverRounds } from "./rounds.ts";
-import { labelDrive } from "./state-labels.ts";
 
 import { attachForDrive } from "./../attach.ts";
 
@@ -497,9 +496,7 @@ async function drive(ctx: { pr: string; dryRun: boolean }): Promise<number> {
   // Ownership and the seeded state are durable before this driver publishes;
   // every later exit attempts its stopped ledger under the same ownership.
   await using settlement = ledgerSettlement(pr, held, dryRun);
-  // The running ledger is out: the pull request's state label follows it
-  // before the first round, best effort.
-  if (await publishStartup(pr)) await labelDrive(pr, { armed: true });
+  await publishStartup(pr);
   const afterStop = await stopPickup(pr, pickup);
   const firstPassNotice = [
     await pickUpDrive(pr, plan, pickup, {

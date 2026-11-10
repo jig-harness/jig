@@ -545,6 +545,23 @@ function dashboardAction(
   return dashboardCommand(args.port);
 }
 
+/** The subcommands that act on a repository's pull requests: the label setup and the follow-up marker. */
+function pullRequestAction(
+  args: Extract<Subcommand, { action: "labels" | "marker" }>,
+): Promise<number> {
+  if (args.action === "labels")
+    return installLabels(
+      args.repos.length === 0 ? [consumerRoot()] : args.repos,
+      args.confirm,
+    );
+  return markerMain({
+    verb: args.verb,
+    pr: args.pr,
+    comment: args.comment ?? null,
+    repo: args.repo ?? null,
+  });
+}
+
 /** A subcommand's run: everything but the tick. */
 function subcommandMain(
   args: Subcommand,
@@ -562,18 +579,8 @@ function subcommandMain(
   if (args.action === "probe")
     return probeMain({ apply: args.apply, json: args.json }, machineFile());
   if (args.action === "dashboard") return dashboardAction(args, script);
-  if (args.action === "labels")
-    return installLabels(
-      args.repos.length === 0 ? [consumerRoot()] : args.repos,
-      args.confirm,
-    );
-  if (args.action === "marker")
-    return markerMain({
-      verb: args.verb,
-      pr: args.pr,
-      comment: args.comment ?? null,
-      repo: args.repo ?? null,
-    });
+  if (args.action === "labels" || args.action === "marker")
+    return pullRequestAction(args);
   // `install`. A removal needs no machine file: a broken one must not keep the timer installed.
   return installDispatch(
     {

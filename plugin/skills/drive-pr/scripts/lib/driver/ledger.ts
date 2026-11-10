@@ -536,17 +536,20 @@ export function ledgerRenewal(pr: string): () => Promise<number | null> {
 
 /**
  * Publish before a long first status probe, so an operator can stop this
- * acquisition: whether a running ledger was published, which a drive with
- * no ledger never does.
+ * acquisition; once the running ledger is out, the pull request's state
+ * label follows it before the first round, best effort. A drive with no
+ * ledger publishes and labels nothing.
  */
-export async function publishStartup(pr: string): Promise<boolean> {
-  if (ledgerDriverFromEnv() === null) return false;
+export async function publishStartup(pr: string): Promise<void> {
+  if (ledgerDriverFromEnv() === null) return;
   const publication = await mirrorNow(pr);
-  if (publication !== 0)
-    console.error(
-      `ledger: initial running-ledger publication failed (exit ${publication}); stop requests remain refused until this acquisition publishes, and round-boundary writes retry it.`,
-    );
-  return publication === 0;
+  if (publication === 0) {
+    await labelDrive(pr, { armed: true });
+    return;
+  }
+  console.error(
+    `ledger: initial running-ledger publication failed (exit ${publication}); stop requests remain refused until this acquisition publishes, and round-boundary writes retry it.`,
+  );
 }
 
 /**
@@ -631,7 +634,7 @@ export function ledgerSettlement(
     if (res.code !== 0) return;
     await dropRecord();
     // The stopped ledger is written: its state label follows, best effort.
-    if (code !== null) await labelDrive(pr, { stopped: code });
+    await labelDrive(pr, { stopped: code });
   };
   return {
     async done(code: number): Promise<number> {

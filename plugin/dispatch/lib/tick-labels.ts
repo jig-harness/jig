@@ -45,6 +45,19 @@ export async function projectObserved(
   );
 }
 
+/** The check before each state write: the open pull requests read for a ledger, each ledger read again (`label-freshness.ts`). */
+function freshness(
+  slug: string,
+  forge: Pick<ForgeRead, "open" | "read" | "drives" | "login">,
+): ReturnType<typeof ledgerStillCurrent> {
+  const open = forge.open.map((p) => p.number).filter((n) => forge.read.has(n));
+  return ledgerStillCurrent(
+    new Set(open),
+    forge.drives,
+    forgeReread(slug, forge.login),
+  );
+}
+
 /**
  * The projection, last in a repository's tick: each managed pull request's
  * state label set from its ledger, written only with `--apply` for a
@@ -122,11 +135,7 @@ async function projectLabels(
     apply: writing,
     late: () => (apply === null ? null : outOfTime(apply)),
     book,
-    current: ledgerStillCurrent(
-      new Set(forge.open.map((p) => p.number).filter((n) => forge.read.has(n))),
-      forge.drives,
-      forgeReread(slug, forge.login),
-    ),
+    current: freshness(slug, forge),
   });
   report.labels = planned.report;
 }
