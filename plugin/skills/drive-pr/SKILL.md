@@ -752,6 +752,18 @@ outlives the session that spawned it, so its console is not where you look:
   Missing, foreign, surviving or uncertain evidence leaves the ledger running;
   dispatch notifies once and includes it in the waiting list. See
   [terminal states](references/terminal-states.md) for the recovery guards.
+- **The pull request's state label** — where `dispatch.labels.enabled` is
+  on in this checkout's configuration, `drive.ts` labels the pull request
+  through the shared projection (`shared/pr-labels/`,
+  `lib/driver/state-labels.ts`) when its ledger changes: `driving` once the
+  arm publishes the running ledger, before round one, removing the `drive`
+  command in the same write; `converged` on `CONVERGED`; `parked` on
+  `HITL_PARKED` and `REVIEW_SKIPPED`. It writes nothing on any other stop,
+  never `stale` or `held`, nothing on a pull request carrying `hold` or
+  `held`, and never creates a label. Best effort: two `gh` calls under
+  `ghCall`'s deadline, the edit only when the labels disagree; a refusal is
+  one `labels:` line on stderr and never changes the exit. A pass never
+  writes a state label.
 - **Relocating the state dir** — `$DRIVE_PR_STATE_DIR` relocates the state
   root: the database and one `<clone-key>/` directory per clone (the hash of
   its persisted [universally unique identifier](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (UUID); linked worktrees share it). The driver exports its resolved

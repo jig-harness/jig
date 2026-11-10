@@ -113,6 +113,7 @@ import {
 } from "./lib/launches.ts";
 import { probeWall } from "./lib/quota-probe.ts";
 import { settleAtExit } from "./lib/shared-launches.ts";
+import { followupEndOf, labelFollowupEnd } from "./lib/followup-label.ts";
 import {
   followupPassArgv,
   pickupPassArgv,
@@ -617,6 +618,7 @@ async function finishRun(
     ...saidOf(record, ran),
   });
   await endSharedClaim(id);
+  await labelFollowup(id);
   await closeTabIfDone(record, code);
   return code ?? 1;
 }
@@ -638,6 +640,28 @@ async function endSharedClaim(id: string): Promise<void> {
     console.error(
       `jig dispatch run: the launch's end is not on its claim (${why}); the next tick writes it`,
     );
+}
+
+/**
+ * A follow-up's end as its pull request's state label, now that its exit is
+ * recorded: best effort, one line here when it is not written, and the next
+ * tick corrects it; the wrapper's exit stays the stage's.
+ */
+async function labelFollowup(id: string): Promise<void> {
+  let line: string | null;
+  try {
+    const ended = readEnded(id);
+    const outcome = ended === null ? null : followupEndOf(ended);
+    if (ended === null || outcome === null || ended.record.pr === null) return;
+    line = await labelFollowupEnd({
+      slug: ended.record.repo,
+      pr: ended.record.pr,
+      outcome,
+    });
+  } catch (error) {
+    line = `the follow-up's state label could not be written (${failureText(error)}); the next tick corrects it`;
+  }
+  if (line !== null) console.error(`jig dispatch run: ${line}`);
 }
 
 /** Close the run's tab when the run left nothing for a person; a failure only says so. */

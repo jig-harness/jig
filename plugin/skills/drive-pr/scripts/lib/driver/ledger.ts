@@ -75,6 +75,7 @@ import { DRIVE_HELD_ELSEWHERE_EXIT } from "./../state/lease.ts";
 import type { DriveState } from "./../state/schema.ts";
 import type { DriveLock } from "./locks.ts";
 import { driveState } from "./paths.ts";
+import { labelDrive } from "./state-labels.ts";
 import { readDriveState, recordDriveEvent } from "./rearm.ts";
 import { driverRuntime } from "./runtime.ts";
 import { SINGLE_INSTANCE_LOCK_EXIT, TAKEN_OVER_EXIT } from "./settings.ts";
@@ -533,13 +534,19 @@ export function ledgerRenewal(pr: string): () => Promise<number | null> {
   };
 }
 
-/** Publish before a long first status probe, so an operator can stop this acquisition. */
-export async function publishStartup(pr: string): Promise<void> {
+/**
+ * Publish before a long first status probe, so an operator can stop this
+ * acquisition: whether a running ledger was published, which a drive with
+ * no ledger never does.
+ */
+export async function publishStartup(pr: string): Promise<boolean> {
+  if (ledgerDriverFromEnv() === null) return false;
   const publication = await mirrorNow(pr);
   if (publication !== 0)
     console.error(
       `ledger: initial running-ledger publication failed (exit ${publication}); stop requests remain refused until this acquisition publishes, and round-boundary writes retry it.`,
     );
+  return publication === 0;
 }
 
 /**
@@ -621,7 +628,10 @@ export function ledgerSettlement(
     });
     // Any other exit, `LEDGER_NOT_WRITTEN_EXIT` included, keeps the record:
     // it is the recovery's only evidence once the locks are released.
-    if (res.code === 0) await dropRecord();
+    if (res.code !== 0) return;
+    await dropRecord();
+    // The stopped ledger is written: its state label follows, best effort.
+    if (code !== null) await labelDrive(pr, { stopped: code });
   };
   return {
     async done(code: number): Promise<number> {

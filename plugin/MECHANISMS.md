@@ -333,12 +333,18 @@ development and shipped as a version.
   (`skills/drive-pr/scripts/lib/status/terminal-states.ts`'s `DRIVE_EXIT` and
   the sets beside it), never as a number of their own, and the registry's
   consistency test fails a dispatcher file that restates one. Where a repository turns
-  [dispatch labels](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+  [pull request state labels](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
   on, the tick reads the pull requests' labels with them, reads `drive`
   and `hold` as a person's commands, and last sets each managed pull
-  request's state label from its ledger (`dispatch/lib/labels.ts`,
-  `dispatch/lib/actions/labels.ts`); it never reads a state label to
-  decide what to start. Where a repository turns its
+  request's state label from its ledger, reading the ledger again just
+  before a write so it never puts back a state older than a drive's own
+  (`dispatch/lib/actions/labels.ts`, `dispatch/lib/label-freshness.ts`); it
+  never reads a state label to decide what to start. The mapping from a
+  ledger to its state label is one projection in shared code
+  (`shared/pr-labels/`), which the drive (`drive-pr`'s
+  `scripts/lib/driver/state-labels.ts`) and the follow-up
+  (`dispatch/lib/followup-label.ts`) write through too, each when what it
+  owns changes. Where a repository turns its
   [adoption rule](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
   on, the tick arms a pull request with no ledger that the rule's author
   and window match as it arms a labelled one (`dispatch/lib/adopt.ts`).

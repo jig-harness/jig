@@ -1,5 +1,5 @@
 /**
- * `jig dispatch marker claim|check|done <PR>`: how a follow-up command
+ * `jig dispatch marker claim|check|done|failed <PR>`: how a follow-up command
  * honours the follow-up marker, the follow-up stage's shared record
  * (`shared/records/shared.ts`, on the forge through `shared-forge.ts`),
  * whether a person ran it or the tick started it.
@@ -12,9 +12,18 @@
  *   writes outside the pull request: it exits 3 when a trusted marker
  *   earlier than `<id>` has appeared, and the run stops.
  * - `done --comment <id>` marks a manual run's marker done once its last
- *   act succeeded. A marker the tick posted is not marked: its session
- *   records its result through `jig dispatch result`, and the tick writes
- *   it onto the marker.
+ *   act succeeded, and sets the pull request's `followed-up` state label.
+ *   A marker the tick posted is not marked: its session records its result
+ *   through `jig dispatch result`, and the wrapper writes it onto the marker
+ *   and sets the label.
+ * - `failed --comment <id>` says a manual run failed and a person acts: it
+ *   sets the `followup-failed` state label and leaves the marker as it is,
+ *   so the run's claim holds until a person marks it done or deletes it.
+ *
+ * The state labels are written only where `dispatch.labels` turns them on,
+ * in the current checkout's configuration, best effort: a label that is not
+ * written is one line on stderr, the exit stays the marker's, and the
+ * dispatcher's next tick corrects it.
  *
  * `--repo owner/name` names the repository; without it, the current
  * checkout's.
@@ -32,11 +41,12 @@ import { forgeShared } from "../shared/records/shared-forge.ts";
 import { localWriter } from "../shared/records/writer.ts";
 import { ok, type Outcome } from "../shared/outcome.ts";
 import { resolveLogin } from "../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
+import { labelFollowupEnd } from "./lib/followup-label.ts";
 import { repoTarget } from "./lib/forge.ts";
 import { failureText } from "./lib/text.ts";
 
 export interface MarkerArguments {
-  verb: "claim" | "check" | "done";
+  verb: "claim" | "check" | "done" | "failed";
   pr: number;
   comment: number | null;
   repo: string | null;
@@ -161,15 +171,36 @@ async function checkOrDone(
       2,
       `comment ${args.comment} is the tick's marker: its session records its result through jig dispatch result`,
     );
+  if (args.verb === "failed") {
+    await label(target, "failed");
+    return 0;
+  }
   const ended = await shared.end(target, "followup", args.comment, {
     state: "ended",
     at: new Date().toISOString(),
     exit: null,
     outcome: "done",
   });
-  return ended.ok
-    ? 0
-    : stop(1, `the marker could not be marked done: ${ended.failure.reason}`);
+  if (!ended.ok)
+    return stop(
+      1,
+      `the marker could not be marked done: ${ended.failure.reason}`,
+    );
+  await label(target, "done");
+  return 0;
+}
+
+/** The follow-up's end as the pull request's state label, best effort. */
+async function label(
+  target: SharedTarget,
+  outcome: "done" | "failed",
+): Promise<void> {
+  const line = await labelFollowupEnd({
+    slug: target.repo,
+    pr: target.pr,
+    outcome,
+  });
+  if (line !== null) console.error(`jig dispatch marker: ${line}`);
 }
 
 export async function markerMain(args: MarkerArguments): Promise<number> {

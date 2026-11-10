@@ -17,6 +17,7 @@ import {
 } from "./actions/labels.ts";
 import { adoptionOf, ownAuthors } from "./adopt.ts";
 import type { LabelConfig } from "./labels.ts";
+import { forgeReread, ledgerStillCurrent } from "./label-freshness.ts";
 import { manualOpsLabel } from "./owed-steps.ts";
 import { unobservedTarget } from "./notices.ts";
 import { bookOf, type TickContext } from "./tick-context.ts";
@@ -121,6 +122,11 @@ async function projectLabels(
     apply: writing,
     late: () => (apply === null ? null : outOfTime(apply)),
     book,
+    current: ledgerStillCurrent(
+      new Set(forge.open.map((p) => p.number).filter((n) => forge.read.has(n))),
+      forge.drives,
+      forgeReread(slug, forge.login),
+    ),
   });
   report.labels = planned.report;
 }

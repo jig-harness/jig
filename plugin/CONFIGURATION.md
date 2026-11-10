@@ -1223,8 +1223,8 @@ repository. What a run may start is the machine's to say, in
 | `dispatch.notices_linger` | duration, or `0s` | `1h`: the repository's notices workspace, once read, is removed this long after the first tick that finds it read; `0s` removes it at that tick. An unread one is removed once every cause it carries is gone | dispatch |
 | `dispatch.notices_branch` | branch name, with no space | None: every notification for the repository goes to its notices workspace. A branch names the workspace a person watches instead: every notification goes to the workspace on that branch, never to the one joined to the pull request or item. The dispatcher never opens or removes it, and a notification waits, reported, while no workspace on it is open or its comment is a person's. Naming `jig-dispatch-notices`, the notices workspace's own branch, is the same as naming none | dispatch |
 | `dispatch.renotify_after` | duration, or `0s` | `24h`: a notification whose cause still stands this long after it was last sent is sent again, saying since when it has waited, until the cause goes. `0s` sends each one once | dispatch |
-| `dispatch.labels.enabled` | `true` or `false` | `false`: no label is read or written. `true` turns the [dispatch labels](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) on (below) | dispatch |
-| `dispatch.labels.prefix` | string of at most 35 characters, with no comma and no space at either end | `jig:`: put before every label name (`jig:driving`, `jig:hold`). A repository whose label taxonomy has a convention of its own picks one that fits it | dispatch |
+| `dispatch.labels.enabled` | `true` or `false` | `false`: no label is read or written. `true` turns the [pull request state labels](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) on (below), for every writer (the drive, the follow-up through `jig dispatch marker` and the dispatcher's wrapper, and the dispatcher's tick): a repository with no dispatcher turns them on here too | dispatch, drive-pr |
+| `dispatch.labels.prefix` | string of at most 35 characters, with no comma and no space at either end | `jig:`: put before every label name (`jig:driving`, `jig:hold`). A repository whose label taxonomy has a convention of its own picks one that fits it | dispatch, drive-pr |
 | `dispatch.labels.only_labeled` | `true` or `false` | `false`: every open pull request is read for a drive ledger. `true` limits the dispatcher to the pull requests that carry a label of the set: one that carries none is never read, re-armed or followed up. Refused unless `enabled` is `true` | dispatch |
 | `dispatch.adopt.enabled` | `true` or `false` | `false`: a pull request with no drive ledger is driven only when a person labels it `drive`. `true` turns the adoption rule on (below). Refused beside `labels.only_labeled: true` | dispatch |
 | `dispatch.adopt.authors` | nonempty list of forge logins (a GitHub App's as `<name>[bot]`) | The login the dispatcher reads the forge as, the one the host's sessions open pull requests under: the authors whose pull requests the rule adopts | dispatch |
@@ -1264,22 +1264,24 @@ finding where [`reflection`](#reflection) is on, and the change is a
 person's, through `review-reflections` (see
 [the plugin's README](README.md#the-dispatcher)).
 
-The dispatch labels (`dispatch.labels`) put the dispatcher's state on each
-pull request it manages, where a person sees it from any forge client, and
-take commands from a person. With the default prefix:
+The pull request state labels (`dispatch.labels`) show where each driven
+pull request stands, where a person sees it from any forge client, and take
+commands from a person. They are written by the drives, the follow-ups and
+the dispatcher, wherever each runs: a repository that drives pull requests
+with no dispatcher installed gets them too. With the default prefix:
 
 | Label | Who writes it | Meaning |
 |-------|---------------|---------|
-| `jig:driving` | the dispatcher | a drive runs, or stopped on a state the dispatcher re-arms (a usage limit, an answered park) |
-| `jig:converged` | the dispatcher | the drive converged at the pull request's head: a person merges |
-| `jig:parked` | the dispatcher | the drive stopped on something only a person settles |
-| `jig:stale` | the dispatcher | the drive's stop no longer settles the pull request: it converged, then conflicted with its base or its head moved, or it stopped on a conflict. The dispatcher re-drives it |
+| `jig:driving` | the drive when it arms (removing `jig:drive` in the same write), and the dispatcher | a drive runs, or stopped on a state the dispatcher re-arms (a usage limit, an answered park) |
+| `jig:converged` | the drive when it stops `CONVERGED`, and the dispatcher | the drive converged at the pull request's head: a person merges |
+| `jig:parked` | the drive when it parks or stops on something a person settles (`HITL_PARKED`, `REVIEW_SKIPPED`), and the dispatcher | the drive stopped on something only a person settles |
+| `jig:stale` | the dispatcher, and the optional workflow below on a push | the drive's stop no longer settles the pull request: it converged, then conflicted with its base or its head moved, or it stopped on a conflict. The dispatcher re-drives it |
 | `jig:held` | the dispatcher | the pull request waits its turn in a serialized change area (below): the dispatcher drives it once it leads |
-| `jig:followed-up` | the dispatcher | merged, and its follow-up is done |
-| `jig:followup-failed` | the dispatcher | merged, and its follow-up failed: a person acts. A later follow-up that is done replaces it with `jig:followed-up` |
+| `jig:followed-up` | the follow-up when it ends done, and the dispatcher | merged, and its follow-up is done |
+| `jig:followup-failed` | the follow-up when it fails, and the dispatcher | merged, and its follow-up failed: a person acts. A later follow-up that is done replaces it with `jig:followed-up` |
 | `jig:drive` | a person, by hand or with `jig send … drive` | adopt a pull request with no drive ledger: the dispatcher arms a drive on it (the machine file's `rearm` stage), once per head commit, and replaces the label with the state label once the ledger exists. The adoption rule (`dispatch.adopt`, below) does the same for a repository's own recent pull requests without the label |
 | `jig:rearm` | a person, by hand or with `jig send … rearm` | request another attempt for a stopped drive in its existing worktree, through the machine file's `rearm` stage and account admission. Running drives and a person's recorded stops are refused; an accepted launch consumes the label |
-| `jig:hold` | a person, by hand or with `jig send … hold` (and `release`) | stand the dispatcher down from this pull request: no stage runs on it while the label is there, and the dispatcher reports it and never removes it |
+| `jig:hold` | a person, by hand or with `jig send … hold` (and `release`) | stand the dispatcher down from this pull request: no stage runs on it while the label is there, and the dispatcher reports it and never removes it. A drive on it writes no state label either |
 
 Beside the set, the dispatcher keeps marker labels that carry no
 prefix, on every pull request it reads. None is a label of the set, so
@@ -1325,23 +1327,60 @@ A pull request whose files, threads or ledger do not read this run, or a
 catalog that does not read, leaves its group unplaced for the run, with no
 re-arm and no label written, and the next run reads it again.
 
-The ledger is the truth: each `--apply` run sets each managed pull
-request's state label from its ledger again (`jig:held` from the serialized
-areas, a merged pull request's from its follow-up's end) and each marker
-label from the pull request itself, one forge call per pull
-request whose state label disagrees and one whose marker labels do (so a
-marker label the repository lacks never holds a state back), so a state label a person changed comes
-back at the next run, and the dispatcher never reads a state label to
-decide what to start. A run without `--apply`, or for a repository the
-machine file does not list, writes nothing and reports what it would
-write. The labels must exist before a run writes them: `jig install
-dispatch --repo <path> --yes` creates the missing ones, the marker labels
-included, where the signed-in
-account may, and lists the rest for a person, as `pull_requests.labels`
-must exist before a pull request opens with them. A write the forge
-refuses is reported and tried again at the next run; it does not fail the
-run. With `only_labeled` off, a drive a person armed by hand on a pull
-request with no label is still found, and gets its label at the next run.
+The ledger is the truth, and one projection maps it to the state label,
+which every writer shares (`shared/pr-labels/`). A drive writes its own
+pull request's label when its ledger changes: `jig:driving` once it arms,
+before its first round, and `jig:converged` or `jig:parked` when it stops
+so; any other stop it leaves to the dispatcher, which reads what the drive
+cannot. A follow-up writes `jig:followed-up` or `jig:followup-failed` when
+it ends, whoever runs it: the dispatcher's wrapper once the pass's exit is
+recorded, and a person's run through `jig dispatch marker done` or
+`jig dispatch marker failed` (which leaves the run's marker claiming the
+follow-up). Each of these writes reads the setting from the configuration
+of the checkout it runs in, writes in one forge call only where the labels
+disagree, never writes `jig:stale` or `jig:held`, and is best effort (a
+drive also leaves a pull request carrying `jig:hold` or `jig:held` as it is):
+a refused write is one line on the drive's or the command's output, never
+changes its exit, and the next dispatcher run corrects it.
+
+Each `--apply` run of the dispatcher sets each managed pull request's state
+label from its ledger again (`jig:held` from the serialized areas, a merged
+pull request's from its follow-up's end) and each marker label from the
+pull request itself, one forge call per pull request whose state label
+disagrees and one whose marker labels do (so a marker label the repository
+lacks never holds a state back), so a state label a person changed comes
+back at the next run, and no writer ever reads a state label to decide what
+to start. Just before a state write the run reads the pull request's ledger
+again and leaves the pull request to a later run when the ledger changed
+since it read it, so it never puts back an older state over the label a
+drive just wrote. A run without `--apply`, or for a repository the machine
+file does not list, writes nothing and reports what it would write. A
+write the forge refuses is reported and tried again at the next run; it
+does not fail the run. With `only_labeled` off, a drive a person armed by
+hand on a pull request with no label gets its label from the drive itself.
+
+The labels must exist before anything writes them, and no writer creates
+one: setting them up is a one-time step,
+
+```sh
+jig dispatch labels [--repo <path>]... [--yes]
+```
+
+which installs no job and needs no machine file. For each repository whose
+`dispatch.labels` (read from its default branch) is on it lists the labels
+of the set it lacks, with the marker labels; with `--yes` it names each one
+it created and lists, each with the `gh label create` command, those the
+signed-in account may not create, for a person who may. `jig install
+dispatch --repo <path> --yes` does the same beside the dispatcher's timer.
+
+An optional workflow clears `jig:converged` when the head moves, without
+waiting for a run: copy drive-pr's
+[`templates/github/state-labels.yml`](skills/drive-pr/templates/github/state-labels.yml)
+to `.github/workflows/`, set its `PREFIX` to `dispatch.labels.prefix`, and
+on each push to a pull request carrying `jig:converged` it replaces the
+label with `jig:stale`; a pull request without `jig:converged` is left as it
+is. It runs on `pull_request_target` with a token that may write pull
+request labels, and checks out and runs nothing from the pull request.
 
 The adoption rule (`dispatch.adopt`) drives a repository's own recent pull
 requests without anyone labelling them. With it on, an open pull request

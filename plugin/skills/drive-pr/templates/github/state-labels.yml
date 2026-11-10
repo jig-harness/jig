@@ -1,0 +1,71 @@
+# Pull request state labels: `converged` leaves when the head moves —
+# GitHub Actions workflow, optional. Copy to
+# .github/workflows/state-labels.yml in a repository that turns the state
+# labels on (`dispatch.labels.enabled`).
+#
+# Replace before use:
+#   jig:   the repository's `dispatch.labels.prefix`, when it sets one
+#
+# What it does: a drive that converged labels its pull request `converged`,
+# which is how a person finds a pull request to merge. A commit pushed to the
+# pull request after that leaves the converged head behind, so this workflow
+# replaces `converged` with `stale` on that push, at once, without waiting for
+# the dispatcher's next tick, which then confirms or corrects it. A pull
+# request without `converged` is left as it is.
+#
+# Safety: it runs on `pull_request_target` so a pull request from a fork gets
+# a token that may write labels, and for that reason it checks nothing out and
+# runs nothing from the pull request. It reads only the event's label names,
+# through the environment, and writes two labels through the forge's API.
+
+name: state-labels
+
+on:
+  pull_request_target:
+    types: [synchronize]
+
+permissions: {}
+
+concurrency:
+  group: state-labels-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  stale:
+    name: Mark a converged pull request stale
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Replace converged with stale
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          PREFIX: "jig:"
+        run: |
+          converged="${PREFIX}converged"
+          stale="${PREFIX}stale"
+          if ! grep -qF "\"${converged}\"" <<<"$LABELS"; then
+            echo "PR #${PR} does not carry ${converged}: nothing to do."
+            exit 0
+          fi
+          # A label name in a URL path: every byte but the unreserved ones escaped.
+          uri() {
+            local s="$1" out="" c i
+            for ((i = 0; i < ${#s}; i++)); do
+              c="${s:i:1}"
+              case "$c" in
+                [A-Za-z0-9._~-]) out+="$c" ;;
+                *) printf -v c '%%%02X' "'$c"; out+="$c" ;;
+              esac
+            done
+            printf '%s' "$out"
+          }
+          gh api --method POST "repos/${REPO}/issues/${PR}/labels" \
+            -f "labels[]=${stale}" >/dev/null
+          gh api --method DELETE \
+            "repos/${REPO}/issues/${PR}/labels/$(uri "$converged")" >/dev/null
+          echo "PR #${PR}: ${converged} replaced with ${stale}."

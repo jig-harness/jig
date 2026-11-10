@@ -19,7 +19,11 @@
  * forge refuses (a label that does not exist, no permission) is a record of
  * the receipt, not a failed tick, and a later tick tries again: the failure
  * ledger (`failures.ts`) counts the failures in a row and backs the write
- * off, reported as waiting, until its next try.
+ * off, reported as waiting, until its next try. Just before a state write
+ * the open pull request's ledger is read again, and the write waits for a
+ * later tick when the ledger changed since this tick read it, so the tick
+ * never undoes the label a drive wrote for its newer ledger
+ * (`label-freshness.ts`).
  */
 import type { Contention } from "../contention.ts";
 import type { ActionBook } from "../failures.ts";
@@ -252,6 +256,8 @@ export interface WriteMode {
   late: () => string | null;
   /** The failure ledger: a write that keeps failing backs off, and each write's result is counted. */
   book?: ActionBook | null;
+  /** Just before a write, why it is skipped this tick (its pull request's ledger changed since the tick read it, `label-freshness.ts`); `null` to write it. */
+  current?: (change: LabelChange) => Promise<string | null>;
 }
 
 /** The failure ledger's key of a pull request's label write; its markers' write keeps a key of its own. */
@@ -288,6 +294,11 @@ export async function writeLabels(
     const backing = mode.book?.waits(key) ?? null;
     if (backing !== null) {
       out.push({ ...base, outcome: "waits", detail: backing });
+      continue;
+    }
+    const stale = (await mode.current?.(change)) ?? null;
+    if (stale !== null) {
+      out.push({ ...base, outcome: "waits", detail: stale });
       continue;
     }
     const of = { key, kind: "label" as const, target: base.target };

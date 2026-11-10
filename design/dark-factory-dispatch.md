@@ -208,7 +208,7 @@ when it fails. The phase names are the ones a receipt times.
 | `plan` | `tick-plan.ts` | everything above, the follow-up outcomes, the idle clock, the nudges | the idle clock, released pickups, settled nudges, the follow-up outcomes it settles | a write the database refuses is a defect: it stops this repository in phase `plan` |
 | `log` | `tick-settle.ts` | the ended launch records, the ledgers | one outcome row per ended record, with its end | reported; the record is kept until its row lands |
 | `apply` | `tick-apply.ts` | each target read again just before its launch, the failure ledger | the launch record, the forge claim or marker, the runtime's launch, nudges, notices, the failure ledger | per action: refused, reported, tried again next tick; a nudge, notice, claim end or marker answer that keeps failing backs off (see Failures) |
-| `labels` | `tick-labels.ts` | the ledgers, the failure ledger | the state labels on pull requests, the failure ledger | per write, reported; one that keeps failing backs off (see Failures) |
+| `labels` | `tick-labels.ts` | the ledgers, each written pull request's ledger read again just before its write, the failure ledger | the state labels on pull requests, the failure ledger | per write, reported; one whose ledger changed since the tick read it waits for a later tick; one that keeps failing backs off (see Failures) |
 | `shared` | `tick-shared.ts` | the shared records' reads and writes this turn | none | none |
 | Close (`close`) | `tick.ts`, `tick-settle.ts`, `tick-reads.ts`, `tick-line.ts` | the receipt, the launch records, the forge's rate limit as the tick started (put on every repository's report) | outcome rows for repositories not read and not held by another tick, the failure ledger's rows for each repository read and for the tick, the month files, the line (only by a tick that read every repository of the machine file), the receipt | a part that reports its failure is said on the receipt, which stays complete; exit status 1; a budget that does not read is reported as unreadable. A defect in a closing step marks the receipt not completed |
 
@@ -852,15 +852,42 @@ this machine no longer has is still found and reported. A merge
 the cap keeps from starting at once stays wanted until a later tick starts
 it; nothing about it depends on a time window between ticks.
 
-**Labels** (optional). A repository may turn on dispatch labels
-(`dispatch.labels`, off by default, every name under a prefix the
-repository picks, `jig:` by default), which put the tick's view of each
-pull request where a person sees it from any forge client and take a
+**Labels** (optional). A repository may turn on the pull request state
+labels (`dispatch.labels`, off by default, every name under a prefix the
+repository picks, `jig:` by default), which show where each driven pull
+request stands, where a person sees it from any forge client, and take a
 person's commands the same way. With them on, the open pull requests are
 listed with their labels in the same one listing, and the merged ones
 with theirs; with them off, no label is read or written.
 
-- **States**, written by the tick alone: `driving` (a driver runs, or the
+The tick is one of three writers of the states, all through one
+projection in the plugin's shared code (`shared/pr-labels/`): the label
+set, the prefix, the mapping from a ledger to its state and the diff that
+brings a pull request's labels to it. The drive writes its own pull
+request's label when its ledger changes (`driving` once it arms, before its
+first round, removing `drive` in the same write; `converged` when it stops
+`CONVERGED`; `parked` when it parks or stops `REVIEW_SKIPPED`), and the
+follow-up writes `followed-up` or `followup-failed` when it ends, from the
+dispatcher's wrapper or a person's `jig dispatch marker done` or
+`marker failed`. Each reads `dispatch.labels` from the configuration of the
+checkout it runs in, so a repository with no dispatcher turns the labels on
+the same way; each writes in one forge call only where the labels disagree,
+never writes `stale` or `held`, which depend on what only the tick reads,
+and is best effort: a refused write is one line on its output, never
+changes its exit, and the next tick corrects it. A drive leaves a pull
+request carrying `hold` or `held` as it is. There is one mapping, and the
+tick corrects every label at every tick: the drive and the follow-up are
+earlier triggers of the same projection, never a second mapping. No
+writer creates a label: a one-time setup does, `jig dispatch labels
+[--repo <path>] [--yes]`, with no job installed, or `jig install dispatch
+--repo <path> --yes` beside the timer, each naming the labels it created
+and listing, with the command, those a person must create. An optional
+workflow (drive-pr's `templates/github/state-labels.yml`) replaces
+`converged` with `stale` on a push to the pull request, which the next tick
+confirms or corrects.
+
+- **States**, written by the tick at every tick, and by the drive and the
+  follow-up as above: `driving` (a driver runs, or the
   drive stopped on a state the tick re-arms), `converged`, `parked` (a
   person settles it: a park, a stop only a person
   settles, a person's own stop), `stale`, `held` (an open pull request
@@ -875,9 +902,13 @@ with theirs; with them off, no label is read or written.
   only when it does. The ledger is the truth: after the
   plan, each managed pull request's state is derived from its ledger
   again and set as its one state label, in one forge call per pull
-  request whose labels disagree and none where they agree. A label a
-  person edited, or one a killed drive left behind, is corrected at the
-  next tick. A ledger the tick cannot read leaves the labels as they are.
+  request whose labels disagree and none where they agree. Just before
+  each state write on an open pull request the tick reads its ledger again
+  and leaves the pull request to a later tick when the ledger changed since
+  it read it (its generation, its driver's heartbeat, state or exit) or no
+  longer reads, so a tick never puts back an older state over the label a
+  drive wrote for its newer ledger. A label a person edited, or one a
+  killed drive left behind, is corrected at the next tick. A ledger the tick cannot read leaves the labels as they are.
   Only the states listed here are kept by this projection, so a state a
   later stage owns, which no ledger produces, is never touched by it.
 - **Commands**, written by a person and read by the tick: `drive` on an
@@ -906,7 +937,7 @@ with theirs; with them off, no label is read or written.
   launch's fresh read is the observation that launch acts on, so it checks
   the scope again there. With `only_labeled` off, every open pull request
   is still read, so a drive a person armed by hand on an unlabelled pull
-  request is found and gets its label.
+  request is found, and its label is the drive's own.
 - **Markers**, written by the tick on every pull request it reads, with no
   prefix and outside the set, so neither puts a pull request in scope. The
   repository's manual-operations label (`issue_tracker.labels.manual_ops`)
