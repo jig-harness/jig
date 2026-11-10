@@ -435,12 +435,12 @@ fields:
     read_by: [do-item]
   pull_requests.labels_from_issue:
     type: map
-    since: next
+    since: 0.194.0
     read_by: [do-item]
   pull_requests.reviewers_from_issue:
     type: map
     values_type: { type: list, items: string }
-    since: next
+    since: 0.194.0
     read_by: [do-item]
   pull_requests.title_format:
     type: enum
@@ -716,7 +716,7 @@ fields:
         skills: { type: list, items: string }
         notes: string
       optional: [labels, paths, skills, notes]
-    since: next
+    since: 0.194.0
     read_by: [do-item]
   do_item.execution_plan_block:
     type: string
