@@ -322,7 +322,8 @@ export const TERMINAL_STATES: Readonly<
   },
   // drive.ts's worktree-cleanliness checks (uncommitted state, an
   // unconcluded git operation, a local HEAD that does not match the reviewed
-  // head). `drive.ts` exports `WORKTREE_UNCLEAN_EXIT =
+  // head), or a successful pass leaving dirty work and current-round holds.
+  // `drive.ts` exports `WORKTREE_UNCLEAN_EXIT =
   // driverOnlyExitCode('WORKTREE_UNCLEAN')`, and every one of its several
   // `return` sites for this check uses that constant.
   WORKTREE_UNCLEAN: {

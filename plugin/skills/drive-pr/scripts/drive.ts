@@ -112,12 +112,11 @@
  *      verdict and, when it is WEDGED, the --take-over command; also a
  *      --take-over refused for the holder's verdict or a dead holder's
  *      leftovers
- *  12  the review converged, but this worktree still has uncommitted state.
- *      The convergence itself is real (it is a claim about the remote); the
- *      leftovers are edits no round shipped — scratch probes, regenerated
- *      artefacts, a fix from a round that ended another way — and exiting 0
- *      over them is how they silently die with the worktree. Commit or
- *      discard them, then re-run
+ *  12  a successful pass left uncommitted fixes held by this tree in the
+ *      current round, or review converged over an unclean worktree. The
+ *      diagnostic distinguishes the unfinished pass from remote convergence.
+ *      Validate, commit and push the held fixes, or settle the leftovers,
+ *      then re-run in this tree
  *  13  another live WORKING TREE is driving this PR, met at
  *      the round's own bump-attempt. The single-instance lock above does
  *      not cover it: that lock is only ever held by another drive.ts, so
