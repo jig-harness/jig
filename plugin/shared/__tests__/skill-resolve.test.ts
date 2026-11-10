@@ -196,6 +196,45 @@ describe("resolveSkill against the install record", () => {
     expect(resolveSkill("other:fmt", { ...rec, root: tree })).toBeNull();
   });
 
+  it("applies a managed install, and a project install to a sibling worktree", () => {
+    const main = join(dir, "sib-main");
+    const tree = join(dir, "sib-tree");
+    mkdirSync(join(main, ".git", "worktrees", "worktrees"), {
+      recursive: true,
+    });
+    mkdirSync(tree, { recursive: true });
+    writeFileSync(
+      join(tree, ".git"),
+      `gitdir: ${join(main, ".git", "worktrees", "worktrees")}\n`,
+    );
+    const { rec } = recorded((p: string) => ({
+      "other@m": [{ scope: "project", projectPath: main, installPath: p }],
+    }));
+    expect(resolveSkill("other:fmt", { ...rec, root: tree })).not.toBeNull();
+    const managed = recorded((p: string) => ({
+      "other@m": [{ scope: "managed", installPath: p }],
+    }));
+    expect(resolveSkill("other:fmt", managed.rec)).not.toBeNull();
+  });
+
+  it("reads managed settings drop-ins after managed-settings.json", () => {
+    const { rec } = recorded((p: string) => ({
+      "other@m": [{ scope: "user", installPath: p }],
+    }));
+    const managedDir = join(dir, "managed");
+    mkdirSync(join(managedDir, "managed-settings.d"), { recursive: true });
+    writeFileSync(
+      join(managedDir, "managed-settings.json"),
+      JSON.stringify({ enabledPlugins: { "other@m": true } }),
+    );
+    expect(resolveSkill("other:fmt", { ...rec, managedDir })).not.toBeNull();
+    writeFileSync(
+      join(managedDir, "managed-settings.d", "20-plugins.json"),
+      JSON.stringify({ enabledPlugins: { "other@m": false } }),
+    );
+    expect(resolveSkill("other:fmt", { ...rec, managedDir })).toBeNull();
+  });
+
   it("reads enablement from the repository's settings over the user's", () => {
     const { base, rec } = recorded((p: string) => ({
       "other@m": [{ scope: "user", installPath: p }],

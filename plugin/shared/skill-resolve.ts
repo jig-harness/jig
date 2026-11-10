@@ -32,6 +32,8 @@ export interface SkillSearch {
   home: string;
   /** This plugin's `skills/` directory. */
   pluginSkills: string;
+  /** Where managed settings are read from; the platform's directory when unset. */
+  managedDir?: string;
 }
 
 /** The search for `root`, from the environment and this plugin's own place. */
@@ -118,19 +120,39 @@ function mainCheckout(root: string): string {
   }
   const gitdir = /^gitdir:\s*(.+)$/m.exec(text)?.[1]?.trim();
   if (gitdir === undefined) return root;
+  // A linked worktree's gitdir is `<main>/.git/worktrees/<name>`: take the
+  // pair from the end, since `<name>` may itself be `worktrees`.
   const parts = resolve(root, gitdir).split(sep);
-  const at = parts.lastIndexOf("worktrees");
-  if (at < 2 || parts[at - 1] !== ".git") return root;
-  return parts.slice(0, at - 1).join(sep) || root;
+  if (parts.at(-2) !== "worktrees" || parts.at(-3) !== ".git") return root;
+  return parts.slice(0, -3).join(sep) || root;
 }
 
 /** Where an organization's managed settings are read from, per platform. */
-function managedSettingsFile(): string {
+function managedSettingsDir(search: SkillSearch): string {
+  if (search.managedDir !== undefined) return search.managedDir;
   if (process.platform === "darwin")
-    return "/Library/Application Support/ClaudeCode/managed-settings.json";
-  if (process.platform === "win32")
-    return "C:\\Program Files\\ClaudeCode\\managed-settings.json";
-  return "/etc/claude-code/managed-settings.json";
+    return "/Library/Application Support/ClaudeCode";
+  if (process.platform === "win32") return "C:\\Program Files\\ClaudeCode";
+  return "/etc/claude-code";
+}
+
+/**
+ * Managed enablement of `id`: `managed-settings.json`, then the files of
+ * `managed-settings.d` in alphabetical order, the last that names it winning.
+ */
+function managedEnablement(
+  search: SkillSearch,
+  id: string,
+): boolean | undefined {
+  const dir = managedSettingsDir(search);
+  const dropIns = entries(join(dir, "managed-settings.d"))
+    .filter((f) => f.endsWith(".json"))
+    .sort()
+    .map((f) => join(dir, "managed-settings.d", f));
+  let result: boolean | undefined;
+  for (const file of [join(dir, "managed-settings.json"), ...dropIns])
+    result = enablement(file, id) ?? result;
+  return result;
 }
 
 /** `enabledPlugins[id]` in the settings file at `file`, or `undefined` when it says nothing. */
@@ -143,6 +165,10 @@ function enablement(file: string, id: string): boolean | undefined {
   return typeof setting === "boolean" ? setting : undefined;
 }
 
+/** Where `settings.local.json` lives: the main checkout, except on Windows, which keeps it in the worktree. */
+const localSettingsRoot = (root: string): string =>
+  process.platform === "win32" ? root : mainCheckout(root);
+
 /**
  * Whether plugin `id` is turned off for `search.root`. Managed settings
  * decide first; otherwise the last of the user's `settings.json`, the
@@ -151,13 +177,13 @@ function enablement(file: string, id: string): boolean | undefined {
  * nothing off.
  */
 function disabled(search: SkillSearch, id: string): boolean {
-  const managed = enablement(managedSettingsFile(), id);
+  const managed = managedEnablement(search, id);
   if (managed !== undefined) return !managed;
   let off = false;
   for (const file of [
     join(search.claudeDir, "settings.json"),
     join(search.root, ".claude", "settings.json"),
-    join(mainCheckout(search.root), ".claude", "settings.local.json"),
+    join(localSettingsRoot(search.root), ".claude", "settings.local.json"),
   ]) {
     const setting = enablement(file, id);
     if (setting !== undefined) off = !setting;
@@ -172,16 +198,22 @@ const inside = (rel: string): boolean =>
 
 /**
  * Whether an install record applies to `search.root`: user-wide (`user`, or no
- * scope), or scoped (`project`, `local`) to a directory holding it. Any other
+ * scope) or `managed`, or scoped (`project`, `local`) to a directory holding
+ * it or its main checkout. Any other
  * scope, or a scoped install without a project path, applies nowhere.
  */
 function appliesHere(install: unknown, search: SkillSearch): boolean {
   const i = install as { scope?: unknown; projectPath?: unknown } | null;
   if (i === null || typeof i !== "object") return false;
-  if (i.scope === undefined || i.scope === "user") return true;
+  if (i.scope === undefined || i.scope === "user" || i.scope === "managed")
+    return true;
   if (i.scope !== "project" && i.scope !== "local") return false;
   if (typeof i.projectPath !== "string" || i.projectPath === "") return false;
-  return inside(relative(resolve(i.projectPath), resolve(search.root)));
+  const project = resolve(i.projectPath);
+  // A project install is shared with every worktree of its repository.
+  return [search.root, mainCheckout(search.root)].some((r) =>
+    inside(relative(project, resolve(r))),
+  );
 }
 
 /**
