@@ -55,7 +55,8 @@ export function claimSettingsOf(
   const section = doItemSection(overlay);
   if (section === undefined || section === null)
     return { claimFrom: null, claimMarker: false };
-  if (!isRecord(section)) throw new ClaimSettingsError("do_item must be a mapping");
+  if (!isRecord(section))
+    throw new ClaimSettingsError("do_item must be a mapping");
   const marker = section.claim_marker;
   if (marker !== undefined && marker !== null && typeof marker !== "boolean")
     throw new ClaimSettingsError("do_item.claim_marker must be true or false");

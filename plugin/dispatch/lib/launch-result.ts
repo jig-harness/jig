@@ -20,6 +20,7 @@ export function recordResult(
   refusal: PickupRefusal | null = null,
 ): boolean {
   const db = stateDb(root);
+  const refused = refusal === null ? null : JSON.stringify(refusal);
   return inTransaction(db, () => {
     const done = db
       .query(
@@ -29,7 +30,7 @@ export function recordResult(
         result,
         new Date().toISOString(),
         next === null ? null : JSON.stringify(next),
-        refusal === null ? null : JSON.stringify(refusal),
+        refused,
         id,
       );
     if (done.changes !== 1) return false;

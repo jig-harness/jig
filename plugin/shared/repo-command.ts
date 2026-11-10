@@ -35,7 +35,7 @@ export const SCRUBBED_ENV: readonly string[] = [
 ];
 
 /** The most standard output a command may write; more fails the run. */
-export const MAX_OUTPUT_BYTES = 64 * 1024;
+const MAX_OUTPUT_BYTES = 64 * 1024;
 /** How long the default branch's fetch may take before its last-fetched copy is read. */
 const FETCH_TIMEOUT_SEC = 30;
 /** How many characters of a reason or a failure's output a line keeps. */
@@ -119,72 +119,106 @@ async function defaultBranchRef(
   remote: string,
 ): Promise<string | null> {
   const head = await git(
-    ["-C", root, "symbolic-ref", "--quiet", "--short", `refs/remotes/${remote}/HEAD`],
-    { stderr: "ignore", timeoutSec: FETCH_TIMEOUT_SEC },
+    [
+      "-C",
+      root,
+      "symbolic-ref",
+      "--quiet",
+      "--short",
+      `refs/remotes/${remote}/HEAD`,
+    ],
+    { stderr: "pipe", timeoutSec: FETCH_TIMEOUT_SEC },
   );
   const name = head.stdout.trim();
   return head.code === 0 && name.startsWith(`${remote}/`) ? name : null;
 }
 
-/**
- * One field of `.config/jig.yaml` as the repository's default branch holds
- * it (`section.field`), `null` when that branch does not set it. The branch
- * is fetched first, within a deadline; when the fetch fails, the copy this
- * clone fetched last is read. A clone with no default branch to read
- * (`<remote>/HEAD` unset), or a file there that does not parse, is a
- * failure: the caller decides whether that refuses.
- */
-export async function defaultBranchSetting(
-  root: string,
-  section: string,
-  field: string,
-): Promise<Outcome<unknown, "unreadable">> {
-  let remote: string;
+/** The remote this clone fetches from, or why it cannot be named. */
+function remoteOf(root: string): Outcome<string, "unreadable"> {
   try {
-    remote = remoteName(root);
+    return ok(remoteName(root));
   } catch (error) {
     return failed(
       "unreadable",
       error instanceof Error ? error.message : String(error),
     );
   }
-  const ref = await defaultBranchRef(root, remote);
+}
+
+/**
+ * `.config/jig.yaml` as the default branch holds it, parsed; `null` when
+ * that branch has no such file. The branch is fetched first, within a
+ * deadline; when the fetch fails, the copy this clone fetched last is read.
+ */
+async function defaultBranchConfig(
+  root: string,
+): Promise<Outcome<{ ref: string; config: unknown }, "unreadable">> {
+  const remote = remoteOf(root);
+  if (!remote.ok) return remote;
+  const ref = await defaultBranchRef(root, remote.value);
   if (ref === null)
     return failed(
       "unreadable",
-      `this clone names no default branch (${remote}/HEAD is unset; git remote set-head ${remote} --auto sets it)`,
+      `this clone names no default branch (${remote.value}/HEAD is unset; git remote set-head ${remote.value} --auto sets it)`,
     );
-  const branch = ref.slice(remote.length + 1);
-  await git(["-C", root, "fetch", "--quiet", remote, branch], {
-    stderr: "ignore",
-    timeoutSec: FETCH_TIMEOUT_SEC,
-  });
+  await git(
+    [
+      "-C",
+      root,
+      "fetch",
+      "--quiet",
+      remote.value,
+      ref.slice(remote.value.length + 1),
+    ],
+    { stderr: "pipe", timeoutSec: FETCH_TIMEOUT_SEC },
+  );
   const show = await git(["-C", root, "show", `${ref}:${OVERLAY_RELPATH}`], {
     stderr: "pipe",
     timeoutSec: FETCH_TIMEOUT_SEC,
   });
-  if (show.code !== 0) {
-    // A default branch with no configuration file sets nothing.
-    if (/does not exist|exists on disk, but not in/.test(show.stderr))
-      return ok(null);
+  // A default branch with no configuration file sets nothing.
+  if (
+    show.code !== 0 &&
+    /does not exist|exists on disk, but not in/.test(show.stderr)
+  )
+    return ok({ ref, config: null });
+  if (show.code !== 0)
     return failed(
       "unreadable",
       `${OVERLAY_RELPATH} on ${ref} could not be read: ${oneLine(show.stderrTail || show.stderr)}`,
     );
-  }
-  let parsed: unknown;
   try {
-    parsed = load(show.stdout);
+    return ok({ ref, config: load(show.stdout) });
   } catch (error) {
     return failed(
       "unreadable",
       `${OVERLAY_RELPATH} on ${ref} does not parse: ${oneLine(error instanceof Error ? error.message : String(error))}`,
     );
   }
-  if (parsed === null || parsed === undefined) return ok(null);
-  if (!isMapping(parsed))
-    return failed("unreadable", `${OVERLAY_RELPATH} on ${ref} is not a mapping`);
-  const part = parsed[section];
+}
+
+/**
+ * One field of `.config/jig.yaml` as the repository's default branch holds
+ * it (`section.field`), `null` when that branch does not set it. A clone
+ * with no default branch to read (`<remote>/HEAD` unset), or a file there
+ * that does not parse, is a failure: the caller decides whether that
+ * refuses.
+ */
+export async function defaultBranchSetting(
+  root: string,
+  section: string,
+  field: string,
+): Promise<Outcome<unknown, "unreadable">> {
+  const read = await defaultBranchConfig(root);
+  if (!read.ok) return read;
+  const { ref, config } = read.value;
+  if (config === null || config === undefined) return ok(null);
+  if (!isMapping(config))
+    return failed(
+      "unreadable",
+      `${OVERLAY_RELPATH} on ${ref} is not a mapping`,
+    );
+  const part = config[section];
   if (part === undefined || part === null) return ok(null);
   if (!isMapping(part))
     return failed(

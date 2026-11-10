@@ -20,7 +20,13 @@ describe("claimSettingsOf", () => {
   });
 
   it("refuses a claim_from the claim cannot use", () => {
-    for (const value of [[], "todo", ["ready"], ["todo", "todo"], ["in_progress"]])
+    for (const value of [
+      [],
+      "todo",
+      ["ready"],
+      ["todo", "todo"],
+      ["in_progress"],
+    ])
       expect(() => claimSettingsOf({ do_item: { claim_from: value } })).toThrow(
         "do_item.claim_from",
       );

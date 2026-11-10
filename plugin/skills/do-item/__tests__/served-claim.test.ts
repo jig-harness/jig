@@ -325,7 +325,8 @@ test("claim_from refuses a state outside it before any write, inherited claims i
     in_progress: "In Progress",
   };
   const named = (w: ReturnType<typeof world>) => {
-    w.tracker.stateName = ((s: string) => names[s] ?? s) as Tracker["stateName"];
+    w.tracker.stateName = ((s: string) =>
+      names[s] ?? s) as Tracker["stateName"];
     return w;
   };
   const allowed = named(world());

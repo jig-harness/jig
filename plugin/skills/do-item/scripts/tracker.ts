@@ -323,6 +323,53 @@ interface Operation {
 }
 
 /**
+ * `claim`: the repository's start rules (its preflight command, before the
+ * lock and any write), then the claim itself, served or plain, then the
+ * claim marker where the repository asks for one.
+ */
+async function claim(
+  key: string,
+  person: string | undefined,
+  ancestor: string | undefined,
+): Promise<unknown> {
+  const config = ownTrackerConfig();
+  const shape = issueKeysOf(config);
+  const normalized = shape?.normalize(key) ?? key;
+  const tracker = openTracker();
+  const overlay = readOverlay();
+  const settings = claimSettingsOf(overlay);
+  const root = consumerRoot();
+  // Before the lock and before any write: a refusal leaves nothing behind.
+  const command = await claimPreflightCommand(root, overlay);
+  if (!command.ok)
+    return unreadablePreflight(normalized, command.failure.reason);
+  const refusal =
+    command.value === null
+      ? null
+      : await preflightClaim(root, command.value, normalized, () =>
+          getIssue(normalized, tracker, shape),
+        );
+  if (refusal !== null) return refusal;
+  const result = await withClaimLock(claimLockKey(tracker, normalized), () => {
+    const ancestorKey = ancestor
+      ? (shape?.normalize(ancestor) ?? ancestor)
+      : undefined;
+    return person
+      ? claimServedIssue(tracker, normalized, {
+          person,
+          ...(ancestorKey ? { ancestor: ancestorKey } : {}),
+          epicLabel: config.labels.epic,
+          hitlLabel: config.labels.hitl,
+          manualOpsLabel: config.labels.manualOps,
+          claimFrom: settings.claimFrom,
+        })
+      : claimIssue(tracker, key, { claimFrom: settings.claimFrom });
+  });
+  if (result.outcome !== "claimed" || !settings.claimMarker) return result;
+  return { ...result, marker: await postClaimMarker(tracker, result, root) };
+}
+
+/**
  * Post the claim marker on a claimed item. A failed post leaves the claim
  * standing: it is reported, with the reason, beside the claim.
  */
@@ -342,7 +389,9 @@ async function postClaimMarker(
     return { posted: true };
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
-    console.error(`the claim marker was not posted on ${claim.issue}: ${reason}`);
+    console.error(
+      `the claim marker was not posted on ${claim.issue}: ${reason}`,
+    );
     return { posted: false, reason };
   }
 }
@@ -418,46 +467,7 @@ const OPERATIONS: Record<string, Operation> = {
       const ancestor = ancestorFlags[0]?.slice(11);
       if (ancestor && !person)
         throw new UsageError("--ancestor requires --for");
-      const config = ownTrackerConfig();
-      const shape = issueKeysOf(config);
-      const normalized = shape?.normalize(key as string) ?? (key as string);
-      const tracker = openTracker();
-      const overlay = readOverlay();
-      const settings = claimSettingsOf(overlay);
-      const root = consumerRoot();
-      // Before the lock and before any write: a refusal leaves nothing behind.
-      const command = await claimPreflightCommand(root, overlay);
-      if (!command.ok)
-        return unreadablePreflight(normalized, command.failure.reason);
-      const refusal =
-        command.value === null
-          ? null
-          : await preflightClaim(root, command.value, normalized, () =>
-              getIssue(normalized, tracker, shape),
-            );
-      if (refusal !== null) return refusal;
-      const result = await withClaimLock(
-        claimLockKey(tracker, normalized),
-        () => {
-          const ancestorKey = ancestor
-            ? (shape?.normalize(ancestor) ?? ancestor)
-            : undefined;
-          return person
-            ? claimServedIssue(tracker, normalized, {
-                person,
-                ...(ancestorKey ? { ancestor: ancestorKey } : {}),
-                epicLabel: config.labels.epic,
-                hitlLabel: config.labels.hitl,
-                manualOpsLabel: config.labels.manualOps,
-                claimFrom: settings.claimFrom,
-              })
-            : claimIssue(tracker, key as string, {
-                claimFrom: settings.claimFrom,
-              });
-        },
-      );
-      if (result.outcome !== "claimed" || !settings.claimMarker) return result;
-      return { ...result, marker: await postClaimMarker(tracker, result, root) };
+      return claim(key as string, person, ancestor);
     },
     exitOf: (out) => {
       const result = out as Awaited<ReturnType<typeof claimIssue>>;

@@ -71,7 +71,8 @@ function refusedMain(argv: string[], root?: string): number {
   const refusal = refusalFor(record, result ?? "", updatedAt, reason);
   if (refusal === null) return 2;
   const next = derivedNext(record.action, "gates failed", "result failed");
-  if (!recordResult(id, "failed", root, next, refusal)) return already(id, root);
+  if (!recordResult(id, "failed", root, next, refusal))
+    return already(id, root);
   console.log(
     JSON.stringify({
       record: id,

@@ -81,7 +81,6 @@ import { parseTrackerConfig } from "../../do-item/scripts/lib/tracker/config.ts"
 import { openTracker } from "../../do-item/scripts/lib/tracker/index.ts";
 import { trackerProbeable } from "./lib/tracker-probe.ts";
 import { facetFindings, reachTracker } from "./lib/tracker-fit.ts";
-import { claimFromFindings } from "./lib/claim-fit.ts";
 import { swallow } from "../../../shared/errors.ts";
 import { ghCall } from "../../../shared/proc.ts";
 import { type AuditRecord, parseRecord, RECORD_RELPATH } from "./lib/record.ts";
@@ -573,7 +572,6 @@ function crossFieldRules(config: Config): Finding[] {
     });
   findings.push(...sizePointsFindings(config));
   findings.push(...workBatchSizesFindings(config));
-  findings.push(...claimFromFindings(config));
   return findings;
 }
 

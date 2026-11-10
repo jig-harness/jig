@@ -62,7 +62,12 @@ function clone(committed: string | null, working?: string): string {
   }
   git(dir, "commit", "-q", "--allow-empty", "-m", "base");
   git(dir, "update-ref", "refs/remotes/origin/main", "HEAD");
-  git(dir, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main");
+  git(
+    dir,
+    "symbolic-ref",
+    "refs/remotes/origin/HEAD",
+    "refs/remotes/origin/main",
+  );
   if (working !== undefined)
     writeFileSync(join(dir, ".config", "jig.yaml"), working);
   return dir;
@@ -116,7 +121,12 @@ describe("runRepoCommand", () => {
   });
 
   it("fails a command that cannot start", async () => {
-    const out = await runner(["run", "/nonexistent-dir-repo-command", "30", "true"]);
+    const out = await runner([
+      "run",
+      "/nonexistent-dir-repo-command",
+      "30",
+      "true",
+    ]);
     expect(out.kind).toBe("failed");
     expect(out.reason).toContain("could not start");
   });

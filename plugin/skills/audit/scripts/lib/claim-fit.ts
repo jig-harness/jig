@@ -10,9 +10,14 @@ import type { Finding } from "./schema.ts";
 
 type Config = Record<string, unknown>;
 
-function listAt(config: Config, section: string, field: string): string[] | null {
+function listAt(
+  config: Config,
+  section: string,
+  field: string,
+): string[] | null {
   const part = config[section];
-  if (part === null || typeof part !== "object" || Array.isArray(part)) return null;
+  if (part === null || typeof part !== "object" || Array.isArray(part))
+    return null;
   const value = (part as Record<string, unknown>)[field];
   return Array.isArray(value) && value.every((v) => typeof v === "string")
     ? (value as string[])
@@ -30,10 +35,14 @@ export function claimFromFindings(config: Config): Finding[] {
   const parts = [
     ...(refused.length === 0
       ? []
-      : [`the dispatcher picks up from ${refused.join(", ")}, which do_item.claim_from refuses, so those pickups are launched only to be refused`]),
+      : [
+          `the dispatcher picks up from ${refused.join(", ")}, which do_item.claim_from refuses, so those pickups are launched only to be refused`,
+        ]),
     ...(unused.length === 0
       ? []
-      : [`do_item.claim_from allows ${unused.join(", ")}, which dispatch.states never picks up from`]),
+      : [
+          `do_item.claim_from allows ${unused.join(", ")}, which dispatch.states never picks up from`,
+        ]),
   ];
   return [
     {

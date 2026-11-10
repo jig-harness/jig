@@ -469,6 +469,26 @@ function repositories(options: Tick, machine: MachineConfig | null): string[] {
 
 type Subcommand = Exclude<DispatchArguments, { action: "tick" }>;
 
+/** Forward a refused pickup's result: `--refused` and `--reason`, and no handoff. */
+function refusedResultMain(
+  args: Extract<Subcommand, { action: "result" }>,
+): number {
+  if (args.pr !== undefined || args.none !== undefined) {
+    console.error(
+      "jig dispatch result: --refused is a failed pickup's; it takes no --pr or --none",
+    );
+    return 2;
+  }
+  return resultMain([
+    args.record,
+    args.token,
+    args.outcome,
+    "--refused",
+    ...(args.refused === undefined ? [] : [args.refused]),
+    ...(args.reason === undefined ? [] : [args.reason]),
+  ]);
+}
+
 /** Forward a session result and its mutually exclusive handoff arguments. */
 function sessionResultMain(
   args: Extract<Subcommand, { action: "result" }>,
@@ -477,22 +497,8 @@ function sessionResultMain(
     console.error("jig dispatch result: pass either --pr or --none, not both");
     return 2;
   }
-  if (args.refused !== undefined || args.reason !== undefined) {
-    if (args.pr !== undefined || args.none !== undefined) {
-      console.error(
-        "jig dispatch result: --refused is a failed pickup's; it takes no --pr or --none",
-      );
-      return 2;
-    }
-    return resultMain([
-      args.record,
-      args.token,
-      args.outcome,
-      "--refused",
-      ...(args.refused === undefined ? [] : [args.refused]),
-      ...(args.reason === undefined ? [] : [args.reason]),
-    ]);
-  }
+  if (args.refused !== undefined || args.reason !== undefined)
+    return refusedResultMain(args);
   return resultMain([
     args.record,
     args.token,

@@ -17,6 +17,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { type ClaimTracker, claimIssue } from "../scripts/lib/claim.ts";
+import { readClaimMarker } from "../scripts/lib/claim-marker.ts";
 import { parseTrackerConfig } from "../scripts/lib/tracker/config.ts";
 import {
   type LinearTransport,
@@ -133,14 +134,16 @@ describe("claimIssue", () => {
 
     it("claims an item in a listed state", async () => {
       const { tracker } = memory("Todo", []);
-      expect((await claimIssue(tracker, "#5", { claimFrom: ["todo"] })).outcome).toBe(
-        "claimed",
-      );
+      expect(
+        (await claimIssue(tracker, "#5", { claimFrom: ["todo"] })).outcome,
+      ).toBe("claimed");
     });
 
     it("refuses an item in backlog, naming the state and the allowed ones, writing nothing", async () => {
       const { tracker, log } = memory("Backlog", []);
-      expect(await claimIssue(tracker, "#5", { claimFrom: [...todoOnly.claimFrom] })).toEqual({
+      expect(
+        await claimIssue(tracker, "#5", { claimFrom: [...todoOnly.claimFrom] }),
+      ).toEqual({
         outcome: "refused",
         issue: "#5",
         why: "state",
@@ -280,7 +283,7 @@ describe("GitHub adapter: claiming", () => {
   });
 });
 
-const FIXTURE = join(import.meta.dir, "support", "preflight-fixture.ts");
+const FIXTURE = join(import.meta.dir, "fixtures", "preflight-fixture.ts");
 
 /** Make `dir` a clone whose default branch (`origin/HEAD`) holds `config` as `.config/jig.yaml`. */
 function defaultBranch(dir: string, config: string): void {
@@ -398,7 +401,8 @@ describe("tracker.ts claim", () => {
     const base =
       "issue_tracker:\n  adapter: github\n  github:\n    repository: acme/app\n  facets:\n    type: { store: label }\n    priority: { store: label }\n";
     writeFileSync(overlay, base + (extra.overlay ?? ""));
-    if (extra.committed !== undefined) defaultBranch(dir, base + extra.committed);
+    if (extra.committed !== undefined)
+      defaultBranch(dir, base + extra.committed);
     try {
       const child = Bun.spawn(
         [
@@ -478,6 +482,9 @@ describe("tracker.ts claim", () => {
     expect(comment).toContain('"kind":"tracker-claim-marker"');
     expect(comment).toContain('"session":"session-1"');
     expect(comment).toContain("Claimed by factory · session session-1");
+    expect(
+      readClaimMarker((comment as string).slice("TrackerComment ".length)),
+    ).toMatchObject({ session: "session-1", claimant: "factory" });
     // The comment follows the claim's own writes.
     expect(out.writes.indexOf(comment as string)).toBe(out.writes.length - 1);
   });

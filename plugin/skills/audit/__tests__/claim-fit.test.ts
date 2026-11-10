@@ -5,7 +5,9 @@ import { claimFromFindings } from "../scripts/lib/claim-fit.ts";
 describe("claimFromFindings", () => {
   it("says nothing unless both lists are set", () => {
     expect(claimFromFindings({})).toEqual([]);
-    expect(claimFromFindings({ do_item: { claim_from: ["todo"] } })).toEqual([]);
+    expect(claimFromFindings({ do_item: { claim_from: ["todo"] } })).toEqual(
+      [],
+    );
     expect(claimFromFindings({ dispatch: { states: ["todo"] } })).toEqual([]);
   });
 

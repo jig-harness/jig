@@ -160,8 +160,27 @@ async function validateAssignment(
   }
 }
 
-/** No cached queue fact authorizes this write. Missing ancestry or provenance refuses it. */
+/**
+ * A served claim: refused before any write when the item's state is
+ * outside `claim_from`, else `claimServed`.
+ */
 export async function claimServedIssue(
+  tracker: Tracker,
+  key: string,
+  options: ServedClaim,
+): Promise<ClaimResult> {
+  const claimFrom = options.claimFrom ?? null;
+  if (claimFrom === null) return claimServed(tracker, key, options);
+  const start = await tracker.getIssue(key);
+  const outside =
+    start === null
+      ? null
+      : claimFromRefusal(tracker, key, start.state.name, claimFrom);
+  return outside ?? claimServed(tracker, key, options);
+}
+
+/** No cached queue fact authorizes this write. Missing ancestry or provenance refuses it. */
+async function claimServed(
   tracker: Tracker,
   key: string,
   options: ServedClaim,
@@ -175,17 +194,6 @@ export async function claimServedIssue(
   });
   let problem = await validateAssignment(tracker, key, user, options);
   if (problem) return refused(problem);
-  // Before any write: a state outside claim_from leaves nothing behind.
-  const start = await tracker.getIssue(key);
-  if (start) {
-    const outside = claimFromRefusal(
-      tracker,
-      key,
-      start.state.name,
-      options.claimFrom ?? null,
-    );
-    if (outside !== null) return outside;
-  }
   const assignUnassigned = tracker.assignUnassigned;
   if (options.ancestor && !assignUnassigned)
     return refused(
@@ -208,12 +216,6 @@ export async function claimServedIssue(
   if (
     !before ||
     !waiting(before.state.type) ||
-    claimFromRefusal(
-      tracker,
-      key,
-      before.state.name,
-      options.claimFrom ?? null,
-    ) !== null ||
     hold(before.labels, options) ||
     !only(await tracker.assignees(key), user)
   )

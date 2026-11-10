@@ -12,8 +12,8 @@ import {
 
 const ROOT = process.cwd();
 const ISSUE = JSON.stringify({ found: true, identifier: "#5" });
-const FIXTURE = join(import.meta.dir, "support", "preflight-fixture.ts");
-const RUNNER = join(import.meta.dir, "support", "preflight-runner.ts");
+const FIXTURE = join(import.meta.dir, "fixtures", "preflight-fixture.ts");
+const RUNNER = join(import.meta.dir, "fixtures", "preflight-runner.ts");
 /** A command that runs the fixture in `mode`, the same under `sh` and `cmd.exe`. */
 const fixture = (mode: string) => `bun ${FIXTURE} ${mode}`;
 

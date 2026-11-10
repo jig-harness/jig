@@ -536,7 +536,15 @@ describe("jig dispatch result", () => {
       ["failed", "--refused", "not a time", "--reason", "why"],
       ["failed", "--refused", "2026-01-02T00:00:00Z", "--reason", " "],
       ["failed", "--refused", "2026-01-02T00:00:00Z"],
-      ["failed", "--refused", "2026-01-02T00:00:00Z", "--reason", "why", "--none", "x"],
+      [
+        "failed",
+        "--refused",
+        "2026-01-02T00:00:00Z",
+        "--reason",
+        "why",
+        "--none",
+        "x",
+      ],
     ]) {
       expectSpawnExit(await w.dispatch(["result", id, token, ...args]), 2);
       expect(readResult(id, dispatchState(w))).toBeNull();

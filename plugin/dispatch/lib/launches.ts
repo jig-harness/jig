@@ -47,6 +47,9 @@
  */
 import { optionalLaunchFields } from "./launch-record-options.ts";
 import { readNext, type NextOwner } from "./next-owner.ts";
+import { type PickupRefusal, readRefusal } from "./pickup-refusal.ts";
+
+export type { PickupRefusal };
 import { unsettledStartups } from "./session-startup.ts";
 import type { Database } from "bun:sqlite";
 import { isMapping } from "../../shared/config-layers.ts";
@@ -260,28 +263,6 @@ export interface ReadRecord {
   next?: NextOwner | null;
   /** A pickup the repository's start rules refused, recorded with its `failed` result; absent otherwise. */
   refusal?: PickupRefusal | null;
-}
-
-/** Why the repository's start rules refused a pickup's claim, and the item's `updatedAt` they saw. */
-export interface PickupRefusal {
-  reason: string;
-  updatedAt: string;
-}
-
-/** A row's refusal; `null` when none, or when it does not read. */
-export function readRefusal(
-  value: string | null | undefined,
-): PickupRefusal | null {
-  if (value === null || value === undefined) return null;
-  const parsed = parseJson(value, "a pickup's refusal");
-  if (
-    !isMapping(parsed) ||
-    typeof parsed.reason !== "string" ||
-    typeof parsed.updatedAt !== "string" ||
-    !Number.isFinite(Date.parse(parsed.updatedAt))
-  )
-    return null;
-  return { reason: parsed.reason, updatedAt: parsed.updatedAt };
 }
 
 /** A launch record id: the time it was made, and a random suffix. */

@@ -93,7 +93,8 @@ export async function claimPreflightCommand(
       ok: true,
       value: asCommand(read.value, ", as the default branch sets it"),
     };
-  if (preflightCommandOf(workingTree) === null) return { ok: true, value: null };
+  if (preflightCommandOf(workingTree) === null)
+    return { ok: true, value: null };
   return {
     ok: false,
     failure: {
@@ -153,7 +154,11 @@ export async function runPreflight(
 }
 
 /** The refusal a claim returns: nothing was written. */
-function refusal(key: string, reason: string, updatedAt?: unknown): ClaimResult {
+function refusal(
+  key: string,
+  reason: string,
+  updatedAt?: unknown,
+): ClaimResult {
   return {
     outcome: "refused",
     issue: key,

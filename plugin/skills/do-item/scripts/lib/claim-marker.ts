@@ -15,7 +15,10 @@
  * The writer's host is a digest, as on every record the tracker keeps.
  */
 import { git } from "../../../../shared/proc.ts";
-import { encodeMarker } from "../../../../shared/records/envelope.ts";
+import {
+  decodeMarker,
+  encodeMarker,
+} from "../../../../shared/records/envelope.ts";
 import { localWriter } from "../../../../shared/records/writer.ts";
 
 export const CLAIM_MARKER = "<!-- jig-claim -->";
@@ -46,7 +49,7 @@ export function claimSession(
 /** The branch checked out at `root`; `HEAD` when detached or unreadable. */
 export async function claimBranch(root: string): Promise<string> {
   const head = await git(["-C", root, "rev-parse", "--abbrev-ref", "HEAD"], {
-    stderr: "ignore",
+    stderr: "pipe",
     timeoutSec: 10,
   });
   const name = head.stdout.trim();
@@ -68,4 +71,23 @@ export function claimMarkerBody(facts: ClaimMarkerFacts): string {
   );
   const line = `Claimed by ${facts.claimant} · session ${facts.session} · branch ${facts.branch}`;
   return `${CLAIM_MARKER}\n${data}\n${line}\n`;
+}
+
+/**
+ * The facts a comment's claim marker states; `null` when the comment holds
+ * none, or one that does not read. What it names is data: nothing reads a
+ * field of it as an act.
+ */
+export function readClaimMarker(body: string): ClaimMarkerFacts | null {
+  if (!body.includes(`<!-- ${CLAIM_DATA}`)) return null;
+  const read = decodeMarker(body, CLAIM_DATA, CLAIM_MARKER_KIND);
+  if (!read.ok) return null;
+  const { session, branch, claimant } = read.value.payload;
+  if (
+    typeof session !== "string" ||
+    typeof branch !== "string" ||
+    typeof claimant !== "string"
+  )
+    return null;
+  return { session, branch, claimant, at: read.value.envelope.at };
 }
