@@ -391,6 +391,12 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.190.1] - 2026-11-10
+
+### Fixed
+
+- A served-person pickup on GitHub Issues no longer stops with "Field 'id' doesn't exist on type 'Assignable'" when the item has no assignee: the inherited claim's assignment now selects only a field the `Assignable` interface declares, so the claim goes through.
+
 ## [0.190.0] - 2026-11-10
 
 Fixes and additions to the `docs`, `adr`, `change-areas` and `jig` skills.
@@ -6648,7 +6654,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.190.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.190.1...HEAD
+[0.190.1]: https://github.com/jig-harness/jig/compare/v0.190.0...v0.190.1
 [0.190.0]: https://github.com/jig-harness/jig/compare/v0.189.3...v0.190.0
 [0.189.3]: https://github.com/jig-harness/jig/compare/v0.189.2...v0.189.3
 [0.189.2]: https://github.com/jig-harness/jig/compare/v0.189.1...v0.189.2

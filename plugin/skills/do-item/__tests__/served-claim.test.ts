@@ -219,11 +219,45 @@ test("GitHub's inherited assignment adds without replacing a racing assignee", a
       };
     }
     if (c.op === "TrackerAddAssignee")
-      return { addAssigneesToAssignable: { assignable: { id: "I_5" } } };
+      return {
+        addAssigneesToAssignable: { assignable: { __typename: "Issue" } },
+      };
     throw new Error(`unexpected ${c.op}`);
   });
   expect(await fake.t.assignUnassigned?.("#5", person)).toBe(false);
   expect(fake.calls.some((c) => c.op === "TrackerAssign")).toBe(false);
+});
+
+test("GitHub's inherited assignment selects only what the Assignable interface declares", async () => {
+  const { gitHub } = await import("./github-fixtures.ts");
+  let reads = 0;
+  const fake = gitHub((c) => {
+    if (c.op === "TrackerAssignees") {
+      reads++;
+      return {
+        repository: {
+          issue: {
+            id: "I_5",
+            assignees: {
+              totalCount: reads === 1 ? 0 : 1,
+              nodes: reads === 1 ? [] : [{ id: "person", login: "dana" }],
+            },
+          },
+        },
+      };
+    }
+    if (c.op === "TrackerAddAssignee")
+      return {
+        addAssigneesToAssignable: { assignable: { __typename: "Issue" } },
+      };
+    throw new Error(`unexpected ${c.op}`);
+  });
+  expect(await fake.t.assignUnassigned?.("#5", person)).toBe(true);
+  const query = fake.calls.find((c) => c.op === "TrackerAddAssignee")?.query;
+  // `Assignable` is an interface with no `id` field: GitHub rejects a plain
+  // `id` there at validation, so only `__typename` or a fragment may be read.
+  const selection = /assignable\s*\{([^}]*)\}/.exec(query ?? "")?.[1] ?? "";
+  expect(selection.trim()).toBe("__typename");
 });
 
 test("claim CLI refuses incomplete and duplicate served options before tracker access", async () => {
