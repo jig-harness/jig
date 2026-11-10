@@ -17,7 +17,7 @@ describe("the links the line tells", () => {
   });
 
   it("work out nothing for a repository whose tracker the line holds no link of", () => {
-    expect(derivedLink("example-org/docs", "DOC-3", forges)).toBeNull();
+    expect(derivedLink("example-org/docs", "WEB-3", forges)).toBeNull();
   });
 
   it("fill a card whose record holds no link, and leave one that does", () => {

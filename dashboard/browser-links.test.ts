@@ -51,7 +51,7 @@ describe("tracker items", () => {
         expect(await queued.locator("a.tgt").getAttribute("href")).toBe(
           "https://tracker.example/acme/issue/API-80/backfill-the-ledger",
         );
-        expect(await queued.innerText()).toContain("Backfill the ledger");
+        expect(await queued.textContent()).toContain("Backfill the ledger");
         await page.goto(`${server.url}&view=history`);
         await shows(page, ".cell-tgt");
         expect(
@@ -63,7 +63,7 @@ describe("tracker items", () => {
           href: "https://tracker.example/acme/issue/API-77/add-the-audit-export",
           title: "Add the audit export",
         });
-        expect(await page.locator("body").innerText()).not.toContain(
+        expect(await page.locator("body").textContent()).not.toContain(
           "tracker base",
         );
       } finally {
@@ -110,7 +110,7 @@ describe("a repository another tick held busy", () => {
       );
       try {
         await shows(page, ".banner");
-        const banner = await page.locator(".banner").innerText();
+        const banner = await page.locator(".banner").textContent();
         expect(banner).toContain(
           "example-org/mobile has not been read since 16:05, 42 min ago.",
         );
