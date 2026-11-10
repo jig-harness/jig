@@ -186,6 +186,24 @@ describe("whole-comment answer forms", () => {
     ).toBeUndefined();
   });
 
+  it("preserves colons in parked keys as well as answer text", () => {
+    const colonItem = { ...item, key: "scope:release" };
+    expect(
+      parseAnswerComment(
+        colonItem,
+        comment("approve\nnote scope:release: after the migration"),
+        "thread",
+      )?.choice?.note,
+    ).toBe("after the migration");
+    expect(
+      parseAnswerComment(
+        colonItem,
+        comment("answer scope:release: choose Keep: safely"),
+        "conversation",
+      )?.choice,
+    ).toBeUndefined();
+  });
+
   it("matches only the public decision when stripping a notification quote", () => {
     const d = structuredClone(decision);
     const first = d.call.options[0];

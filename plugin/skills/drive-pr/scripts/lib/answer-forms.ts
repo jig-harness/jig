@@ -87,12 +87,16 @@ interface Line {
   key: string;
   text: string;
 }
-function addressedLine(raw: string): Line | null {
+function addressedLine(raw: string, knownKey?: string): Line | null {
   if (indented(raw)) return null;
   const m = /^(answer|note) (.+)$/i.exec(raw.trim());
   if (m === null) return null;
   const rest = m[2] ?? "";
-  const delimiter = rest.indexOf(":");
+  const delimiter =
+    knownKey !== undefined &&
+    rest.toLowerCase().startsWith(`${knownKey}:`.toLowerCase())
+      ? knownKey.length
+      : rest.lastIndexOf(":");
   const key = rest.slice(0, delimiter);
   const text = rest.slice(delimiter + 1).trimStart();
   return delimiter < 1 || /\s/.test(key) || !/^\S/.test(text)
@@ -130,14 +134,17 @@ function answerLines(item: ParkedItem, body: string): string[] {
 }
 
 /** Read keyed lines once, rejecting duplicates, prose and orphaned notes. */
-function addressedAnswers(lines: string[]): {
+function addressedAnswers(
+  lines: string[],
+  knownKey?: string,
+): {
   answers: Map<string, string>;
   notes: Map<string, string>;
 } | null {
   const answers = new Map<string, string>();
   const notes = new Map<string, string>();
   for (const raw of lines) {
-    const line = addressedLine(raw);
+    const line = addressedLine(raw, knownKey);
     if (line === null || answerTextFault(line.text) !== null) return null;
     const map = line.kind === "answer" ? answers : notes;
     if (map.has(line.key)) return null;
@@ -153,7 +160,7 @@ function bareThreadText(
   key: string,
 ): { text: string; note?: string } | null {
   const first = lines[0] ?? "";
-  const note = lines.length === 2 ? addressedLine(lines[1] ?? "") : null;
+  const note = lines.length === 2 ? addressedLine(lines[1] ?? "", key) : null;
   if (
     (lines.length !== 1 &&
       (note?.kind !== "note" || note.key !== key.toLowerCase())) ||
@@ -173,7 +180,7 @@ function structuredText(
 ): { text: string; note?: string } | null {
   const bare = place === "thread" ? bareThreadText(lines, key) : null;
   if (bare !== null) return bare;
-  const keyed = addressedAnswers(lines);
+  const keyed = addressedAnswers(lines, key);
   if (keyed === null) return null;
   const { answers, notes } = keyed;
   if (
