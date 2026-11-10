@@ -33,11 +33,13 @@ Whether `last_updated` moved with the body needs the diff, not the file: that
 is the [stale `last_updated` gate](../stale-last-updated/).
 
 The navigation index [`generate-index.ts`](../index/) writes is derived, not
-authored, and carries no frontmatter, so the checker leaves it out: the file at
+authored, and by default carries no frontmatter, so the checker leaves it out: the file at
 the index's path (`$OUT`, else `INDEX.md` in `$DOCS_DIR`, the same variables
 the generator reads) whose first line is the generator's `AUTO-GENERATED`
 marker, whether it is named or found in the tree. Anyone can write the marker,
-so it exempts nothing at any other path; the generator's `--check` is what
+so it exempts nothing at any other path. An index with frontmatter
+(`docs.index.frontmatter`) opens with it and has the marker after it; it is
+checked like any document; the generator's `--check` is what
 holds the file at that path to the generated content. The orphan report it
 writes beside the index has frontmatter and is checked like any document.
 

@@ -2,7 +2,7 @@
 /**
  * Check a decision-rules catalog after editing it.
  *
- * Usage: bun validate-rules.ts <rules-file>
+ * Usage: bun validate-rules.ts [--interpreter=lines|yaml] <rules-file>
  *
  * Checks that the file parses as YAML (a duplicated key is an error, not a
  * silent overwrite), that every rule in every top-level `*_rules` list has an
@@ -26,6 +26,18 @@
  * rule before), an inline `# comment` (the interpreter keeps it as part of the
  * value, so `severity: critical # note` counts as a warning), a block scalar
  * (`|` or `>`), a block-list `exclude`, and double-quote escapes.
+ *
+ * That comparison holds for the reference interpreter only. A catalog
+ * enforced by an interpreter that parses YAML names it with a top-level
+ * `interpreter: yaml` field, or the run does with `--interpreter=yaml`
+ * (the flag wins): the line-reading comparison is then not made, so a
+ * double-quote escape or a block-list `exclude` is read as YAML reads it, and
+ * the checks that hold for either reader stay. `lines` is the default.
+ *
+ * A `pattern_rules` entry enforced by something other than one pattern says
+ * so with an `implementation` or `detector` field, or with fields named
+ * `pattern_<name>` (each compiled); it is not reported for lacking `pattern`.
+ * An entry with none of these is still reported.
  *
  * Exit codes: 0 valid; 1 problems found (listed); 2 the file cannot be read or
  * parsed.
@@ -75,7 +87,12 @@ export function compileGlob(glob: string): RegExp {
  * The globs M5's interpreter takes from an `exclude` value: the entries
  * joined by commas, whitespace and quotes removed, split on commas.
  */
-function excludeGlobs(value: unknown[] | string): string[] {
+function excludeGlobs(
+  value: unknown[] | string,
+  interpreter: Interpreter,
+): string[] {
+  if (interpreter === "yaml" && Array.isArray(value))
+    return value.map((glob) => String(glob).trim()).filter(Boolean);
   return (Array.isArray(value) ? value.join(",") : value)
     .replace(/[\s"']/g, "")
     .split(",")
@@ -84,12 +101,54 @@ function excludeGlobs(value: unknown[] | string): string[] {
 
 export const SEVERITIES = ["critical", "warning", "info"];
 
+/** How the interpreter that enforces a catalog reads its `pattern_rules`. */
+export const INTERPRETERS = ["lines", "yaml"] as const;
+export type Interpreter = (typeof INTERPRETERS)[number];
+
+/** The fields that say a rule is enforced by something other than one `pattern`. */
+const ENFORCEMENT_FIELDS = ["implementation", "detector"];
+
+/**
+ * Whether a rule names, with a nonempty string, how it is enforced when it has
+ * no `pattern`. Only an interpreter that parses YAML reads such a field; the
+ * reference interpreter skips a rule without a `pattern`.
+ */
+function declaresEnforcement(fields: Record<string, unknown>): boolean {
+  return Object.entries(fields).some(
+    ([key, value]) =>
+      (ENFORCEMENT_FIELDS.includes(key) ||
+        (key.startsWith("pattern_") && key.length > "pattern_".length)) &&
+      typeof value === "string" &&
+      value.trim() !== "",
+  );
+}
+
+/**
+ * The interpreter a catalog is enforced by: the flag, else the catalog's own
+ * `interpreter` field, else the reference interpreter's line reading. Null
+ * names an unknown value.
+ */
+export function interpreterOf(
+  catalog: unknown,
+  flag?: string,
+): Interpreter | null {
+  const declared =
+    catalog && typeof catalog === "object" && !Array.isArray(catalog)
+      ? (catalog as Record<string, unknown>).interpreter
+      : undefined;
+  const value = flag ?? declared ?? "lines";
+  return INTERPRETERS.find((name) => name === value) ?? null;
+}
+
 export interface Summary {
   problems: string[];
   counts: Record<string, number>;
 }
 
-export function validateRules(catalog: unknown): Summary {
+export function validateRules(
+  catalog: unknown,
+  interpreter: Interpreter = "lines",
+): Summary {
   const problems: string[] = [];
   const counts: Record<string, number> = {};
   if (!catalog || typeof catalog !== "object" || Array.isArray(catalog))
@@ -118,7 +177,8 @@ export function validateRules(catalog: unknown): Summary {
       const label = typeof id === "string" && id ? id : where;
       if (
         section === "pattern_rules" &&
-        (fields.pattern === undefined || fields.pattern === "")
+        (fields.pattern === undefined || fields.pattern === "") &&
+        !(interpreter === "yaml" && declaresEnforcement(fields))
       )
         problems.push(`${label}: pattern_rules entry has no pattern`);
       const severity = fields.severity;
@@ -129,7 +189,10 @@ export function validateRules(catalog: unknown): Summary {
         problems.push(
           `${label}: severity must be one of ${SEVERITIES.join(", ")} (got ${String(severity)})`,
         );
-      for (const key of ["pattern", "follow_check"]) {
+      const patternKeys = Object.keys(fields).filter((key) =>
+        key.startsWith("pattern_"),
+      );
+      for (const key of ["pattern", "follow_check", ...patternKeys]) {
         const value = fields[key];
         if (value === undefined) continue;
         if (typeof value !== "string") {
@@ -156,7 +219,7 @@ export function validateRules(catalog: unknown): Summary {
         problems.push(`${label}: exclude must be a list of globs`);
         return;
       }
-      for (const glob of excludeGlobs(exclude)) {
+      for (const glob of excludeGlobs(exclude, interpreter)) {
         try {
           compileGlob(glob);
         } catch (error) {
@@ -289,12 +352,32 @@ export function interpreterProblems(text: string, catalog: unknown): string[] {
   return problems;
 }
 
+/** The usage line, printed with exit code 2. */
+const USAGE =
+  "usage: bun validate-rules.ts [--interpreter=lines|yaml] <rules-file>";
+
+/** The flag and the file named on a command line, or null when it is malformed. */
+export function parseArguments(
+  args: string[],
+): { file: string; interpreter: string | undefined } | null {
+  let interpreter: string | undefined;
+  const files: string[] = [];
+  for (const arg of args)
+    if (arg.startsWith("--interpreter=")) interpreter = arg.slice(14);
+    else files.push(arg);
+  const [file] = files;
+  return files.length === 1 && file !== undefined
+    ? { file, interpreter }
+    : null;
+}
+
 if (import.meta.main) {
-  const file = process.argv[2];
-  if (!file) {
-    console.error("usage: bun validate-rules.ts <rules-file>");
+  const args = parseArguments(process.argv.slice(2));
+  if (!args) {
+    console.error(USAGE);
     process.exitCode = 2;
   } else {
+    const { file } = args;
     let catalog: unknown;
     let text = "";
     try {
@@ -306,9 +389,20 @@ if (import.meta.main) {
       );
       process.exitCode = 2;
     }
+    const interpreter = interpreterOf(catalog, args.interpreter);
+    if (process.exitCode !== 2 && interpreter === null) {
+      console.error(
+        `validate-rules: the interpreter must be one of ${INTERPRETERS.join(", ")}`,
+      );
+      process.exitCode = 2;
+    }
     if (process.exitCode !== 2) {
-      const { problems, counts } = validateRules(catalog);
-      problems.push(...interpreterProblems(text, catalog));
+      const { problems, counts } = validateRules(
+        catalog,
+        interpreter ?? "lines",
+      );
+      if (interpreter === "lines")
+        problems.push(...interpreterProblems(text, catalog));
       for (const problem of problems) console.log(`ERROR ${problem}`);
       const summary = Object.entries(counts)
         .map(([section, count]) => `${count} ${section}`)
@@ -316,7 +410,7 @@ if (import.meta.main) {
       console.log(
         problems.length
           ? `${problems.length} problem(s) in ${file}`
-          : `OK — ${file}: ${summary || "no rule lists"}`,
+          : `OK — ${file}: ${summary || "no rule lists"}${interpreter === "yaml" ? " (read as YAML)" : ""}`,
       );
       process.exitCode = problems.length ? 1 : 0;
     }

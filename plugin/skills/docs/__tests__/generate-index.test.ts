@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   cpSync,
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -17,6 +18,12 @@ import {
 } from "../scripts/index/generate-index";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { spawnSync } from "../../../shared/guarded-git-spawn.ts";
+import {
+  documentFields,
+  frontmatterValue,
+  isGeneratedIndexPage,
+} from "../scripts/lib/docs";
+import { parseIndexSettings } from "../scripts/lib/settings";
 import { cleanEnv, repository } from "./helpers.ts";
 
 let root: string;
@@ -230,5 +237,281 @@ describe("regenerate.ts", () => {
     const result = regenerate(repository({ "README.md": "# R\n" }));
     expectSpawnExit(result, 2);
     expect(result.stderr).toContain("no docs tree");
+  });
+});
+
+describe("INDEX.md layout settings", () => {
+  const FRONTMATTER = {
+    title: "Documentation index",
+    type: "reference",
+    status: "active",
+    lifecycle: "permanent",
+    owner: "docs",
+    tags: ["navigation"],
+  };
+  const withIndex = (options: Parameters<typeof generateIndex>[2]) =>
+    generateIndex(docs, outputs(), options);
+
+  test("no setting leaves the bare listing", () => {
+    expect(withIndex({})).toBe(generateIndex(docs, outputs()));
+    expect(withIndex({})).toBe(read("INDEX.md"));
+  });
+
+  test("a preamble sits verbatim above the listing, after the title", () => {
+    const text = withIndex({
+      preambleText: "## Start here\n\nRead [a](a.md).\n",
+    });
+    expect(text).toContain(
+      "# Documentation index\n\n## Start here\n\nRead [a](a.md).\n\n## (root)",
+    );
+  });
+
+  test("an inherited property is no configured description", () => {
+    mkdirSync(join(docs, "constructor"));
+    writeFileSync(join(docs, "constructor", "a.md"), "---\ntitle: A\n---\n");
+    expect(withIndex({ descriptions: {} })).toContain(
+      "## constructor\n\n| Doc |",
+    );
+  });
+
+  test("frontmatter values are written so the reader reads them back", () => {
+    const fields = { title: "Guide # intro", tags: ["a: b", "c, d", "plain"] };
+    const text = withIndex({ frontmatter: fields });
+    expect(frontmatterValue(text, "title", "INDEX.md")).toBe("Guide # intro");
+    expect(documentFields(text, "INDEX.md").get("tags")).toEqual(fields.tags);
+  });
+
+  test("a plain value holding an apostrophe and a double quote is written as it is", () => {
+    const fields = { title: 'What\'s "new"', tags: ['it\'s "x"'] };
+    const text = withIndex({ frontmatter: fields });
+    expect(text).toContain('title: What\'s "new"\n');
+    expect(frontmatterValue(text, "title", "INDEX.md")).toBe(fields.title);
+    expect(documentFields(text, "INDEX.md").get("tags")).toEqual(fields.tags);
+  });
+
+  test("settings accept a plain value with an apostrophe and a double quote, and refuse a quoted one", () => {
+    const parse = (title: string) =>
+      parseIndexSettings({ frontmatter: { title } }, root);
+    expect(parse('What\'s "new"').frontmatter).toEqual({
+      title: 'What\'s "new"',
+    });
+    expect(() => parse('"a" it\'s')).toThrow("docs.index.frontmatter.title");
+  });
+
+  test("a description follows its category's heading", () => {
+    const text = withIndex({ descriptions: { guides: "How-to pages." } });
+    expect(text).toContain("## guides\n\nHow-to pages.\n\n| Doc |");
+    expect(text).not.toContain("## architecture\n\n\n");
+  });
+
+  test("a category without a configured description takes its README's", () => {
+    writeFileSync(
+      join(docs, "guides", "README.md"),
+      "---\ntitle: Guides\ndescription: From the README\n---\n\n# Guides\n",
+    );
+    const options = {
+      descriptions: { architecture: "Configured" },
+      descriptionsFromReadme: true,
+    };
+    const text = withIndex(options);
+    expect(text).toContain("## guides\n\nFrom the README\n\n");
+    expect(text).toContain("## architecture\n\nConfigured\n\n");
+    expect(
+      withIndex({ ...options, descriptionsFromReadme: false }),
+    ).not.toContain("From the README\n\n|");
+  });
+
+  test("categories order by name, by count, or as listed", () => {
+    writeFileSync(join(docs, "guides", "extra.md"), "# Extra\n");
+    const headings = (order: Parameters<typeof generateIndex>[2]) =>
+      [...withIndex(order).matchAll(/^## (.+)$/gm)].map((m) => m[1]);
+    expect(headings({})).toEqual(["(root)", "architecture", "guides"]);
+    expect(headings({ order: "count" })[0]).toBe("guides");
+    expect(headings({ order: ["guides", "gone", "architecture"] })).toEqual([
+      "guides",
+      "architecture",
+      "(root)",
+    ]);
+  });
+
+  test("frontmatter is stamped, keeps its date until the content changes, and passes the gate", () => {
+    const first = withIndex({
+      frontmatter: FRONTMATTER,
+      today: "2026-01-01",
+    });
+    expect(first.startsWith("---\ntitle: Documentation index\n")).toBe(true);
+    expect(first).toContain(
+      "tags: [navigation]\nlast_updated: 2026-01-01\n---\n\n<!-- AUTO",
+    );
+    expect(
+      withIndex({
+        frontmatter: FRONTMATTER,
+        today: "2026-02-02",
+        existing: first,
+      }),
+    ).toBe(first);
+    const changed = withIndex({
+      frontmatter: FRONTMATTER,
+      today: "2026-02-02",
+      existing: first,
+      descriptions: { guides: "New." },
+    });
+    expect(changed).toContain("last_updated: 2026-02-02");
+
+    writeFileSync(join(docs, "INDEX.md"), first);
+    const result = Bun.spawnSync(
+      [
+        process.execPath,
+        join(
+          import.meta.dir,
+          "../scripts/frontmatter-check/frontmatter-check.ts",
+        ),
+        join(docs, "INDEX.md"),
+      ],
+      {
+        env: {
+          ...process.env,
+          DOCS_DIR: docs,
+          SCHEMA: join(
+            import.meta.dir,
+            "fixtures/frontmatter-check/schema.yaml",
+          ),
+          NEW_DOCS: "",
+        },
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    expectSpawnExit(result, 0);
+    // A field the schema does not allow is reported: the index is not exempt.
+    writeFileSync(
+      join(docs, "INDEX.md"),
+      first.replace("type: reference", "type: nonsense"),
+    );
+    expectSpawnExit(
+      Bun.spawnSync(
+        [
+          process.execPath,
+          join(
+            import.meta.dir,
+            "../scripts/frontmatter-check/frontmatter-check.ts",
+          ),
+          join(docs, "INDEX.md"),
+        ],
+        {
+          env: {
+            ...process.env,
+            DOCS_DIR: docs,
+            SCHEMA: join(
+              import.meta.dir,
+              "fixtures/frontmatter-check/schema.yaml",
+            ),
+            NEW_DOCS: "",
+          },
+          stdout: "pipe",
+          stderr: "pipe",
+        },
+      ),
+      1,
+    );
+  });
+});
+
+describe("docs.index from the configuration", () => {
+  const REGENERATE = join(import.meta.dir, "../scripts/index/regenerate.ts");
+  const regenerate = (repo: string, args: string[] = []) => {
+    const result = spawnSync(process.execPath, [REGENERATE, ...args], {
+      cwd: repo,
+      env: cleanEnv(),
+    });
+    return {
+      exitCode: result.status,
+      stdout: result.stdout,
+      stderr: result.stderr,
+    };
+  };
+  const config = `docs:
+  root: docs
+  index:
+    preamble: docs/.index-preamble.txt
+    descriptions:
+      guides: How-to pages.
+    order: [guides]
+    frontmatter:
+      title: Documentation index
+      type: reference
+`;
+  const files = {
+    ".config/jig.yaml": config,
+    "docs/.index-preamble.txt": "## Start here\n\nRead the guides first.\n",
+    "docs/guides/a.md": "# A\n",
+    "docs/b.md": "# B\n",
+  };
+
+  test("the generator reads the settings, and the freshness check holds to them", () => {
+    const repo = repository(files);
+    expectSpawnExit(regenerate(repo), 0);
+    const text = readFileSync(join(repo, "docs/INDEX.md"), "utf8");
+    expect(text).toContain(
+      "title: Documentation index\ntype: reference\nlast_updated: ",
+    );
+    expect(text).toContain(
+      "## Start here\n\nRead the guides first.\n\n## guides\n\nHow-to pages.",
+    );
+    expect(text.indexOf("## guides")).toBeLessThan(text.indexOf("## (root)"));
+    expectSpawnExit(regenerate(repo, ["--check"]), 0);
+    writeFileSync(join(repo, "docs/.index-preamble.txt"), "Changed.\n");
+    expectSpawnExit(regenerate(repo, ["--check"]), 1);
+  });
+
+  const refused: [string, string, string][] = [
+    [
+      "an unknown field",
+      "    colour: red\n",
+      "docs.index has unknown field colour",
+    ],
+    ["a bad order", "    order: sideways\n", "docs.index.order must be"],
+    ["a missing preamble", "    preamble: nope.md\n", "which does not exist"],
+    [
+      "a preamble outside the repository",
+      "    preamble: ../outside.md\n",
+      "does not exist",
+    ],
+    [
+      "a stamped field",
+      "    frontmatter:\n      last_updated: 2026-01-01\n",
+      "last_updated is stamped",
+    ],
+    [
+      "a multi-line description",
+      '    descriptions:\n      guides: "a\\nb"\n',
+      "docs.index.descriptions must be",
+    ],
+  ];
+  for (const [name, index, message] of refused)
+    test(`refuses ${name}`, () => {
+      const repo = repository({
+        "docs/a.md": "# A\n",
+        ".config/jig.yaml": `docs:\n  root: docs\n  index:\n${index}`,
+      });
+      const result = regenerate(repo);
+      expectSpawnExit(result, 2);
+      expect(result.stderr).toContain(message);
+    });
+});
+
+describe("recognising a generated index", () => {
+  const marker =
+    "<!-- AUTO-GENERATED by generate-index.ts — do not edit by hand. -->";
+  test("the marker opens the page, or follows its frontmatter", () => {
+    expect(isGeneratedIndexPage(`${marker}\n\n# Documentation index\n`)).toBe(
+      true,
+    );
+    expect(isGeneratedIndexPage(`---\ntitle: T\n---\n\n${marker}\n`)).toBe(
+      true,
+    );
+    expect(isGeneratedIndexPage("---\ntitle: T\n---\n\n# Other\n")).toBe(false);
+    expect(isGeneratedIndexPage(`---\ntitle: T\n\n${marker}\n`)).toBe(false);
+    expect(isGeneratedIndexPage("# Other\n")).toBe(false);
   });
 });

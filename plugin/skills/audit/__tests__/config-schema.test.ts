@@ -111,7 +111,9 @@ import {
 import {
   DEFAULT_STALE_AFTER_DAYS,
   DEFAULT_PROMOTED_STATUSES,
+  DEFAULT_INDEX_SETTINGS,
   FIELDS as DOCS_FIELDS,
+  INDEX_FIELDS,
 } from "../../docs/scripts/lib/settings.ts";
 import {
   DEFAULT_BODY_SECTION,
@@ -353,7 +355,10 @@ describe("the reading skills", () => {
   });
 
   test("read the docs section's fields", () => {
-    expect(under("docs").sort()).toEqual([...DOCS_FIELDS].sort());
+    expect(
+      [...new Set(under("docs").map((path) => path.split(".")[0]))].sort(),
+    ).toEqual([...DOCS_FIELDS].sort());
+    expect(under("docs.index").sort()).toEqual([...INDEX_FIELDS].sort());
   });
 
   test("read the changelog section's fields, all of them repository-only", () => {
@@ -404,6 +409,9 @@ describe("the reading skills", () => {
       "code_stats.default_area": CODE_STATS_DEFAULT_AREA,
       "docs.stale_after_days": DEFAULT_STALE_AFTER_DAYS,
       "docs.promoted_statuses": DEFAULT_PROMOTED_STATUSES,
+      "docs.index.descriptions_from_readme":
+        DEFAULT_INDEX_SETTINGS.descriptionsFromReadme,
+      "docs.index.order": DEFAULT_INDEX_SETTINGS.order,
       "work_batch.point_budget": DEFAULT_POINT_BUDGET,
       "work_batch.max_items": DEFAULT_MAX_ITEMS,
       "work_batch.ranking.provenance": DEFAULT_RANKING.provenance,

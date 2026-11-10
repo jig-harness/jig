@@ -2,11 +2,13 @@
  * The catalog's invariants beyond its schema: the `impliedBy` graph, and
  * the facts about the repository the catalog states (workspaces, generated
  * files). Each check returns problems rather than throwing, so a composer
- * adds its own and reports them all together.
+ * adds its own, exempts or replaces a generic one, and reports them all
+ * together.
  */
 import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { globMatchesUnder } from "../../../drive-pr/scripts/lib/change-areas-catalog.ts";
+import { Defect } from "../../../../shared/errors.ts";
 import type { Area, Catalog } from "./catalog.ts";
 import { defaultGitRunner, matchesGlob, matchSeedAreas } from "./resolve.ts";
 
@@ -216,14 +218,56 @@ export function generatedProblems(
   );
 }
 
-/** Every generic invariant: the graph, the workspaces, the generated files. */
-export function checkCatalog(catalog: Catalog, ctx: CheckContext): string[] {
-  return [
-    ...graphProblems(catalog),
-    ...outputNameProblems(catalog),
-    ...workspaceProblems(catalog, ctx),
-    ...generatedProblems(catalog, ctx),
-  ];
+/** One invariant: the problems it finds in the catalog, none when it holds. */
+export type Invariant = (catalog: Catalog, ctx: CheckContext) => string[];
+
+/**
+ * The generic invariants by their stable names, in the order they are
+ * reported. A composer exempts one (`false`) or replaces it with its own
+ * check by this name.
+ */
+export const INVARIANTS = {
+  graph: (catalog) => graphProblems(catalog),
+  "output-names": (catalog) => outputNameProblems(catalog),
+  workspace: workspaceProblems,
+  generated: generatedProblems,
+} satisfies Record<string, Invariant>;
+
+export type InvariantName = keyof typeof INVARIANTS;
+
+/** What a composer does to the generic invariants, by name. */
+export type InvariantOverrides = Partial<
+  Record<InvariantName, false | Invariant>
+>;
+
+/** The names in `overrides` that are no generic invariant. */
+export function unknownInvariants(overrides: object): string[] {
+  return Object.keys(overrides).filter(
+    (name) => !Object.hasOwn(INVARIANTS, name),
+  );
+}
+
+/**
+ * Every generic invariant: the graph, the workspaces, the generated files.
+ * `overrides` exempts one by name (`false`) or replaces it with the
+ * composer's own check; a name that is no invariant is refused, so a typo
+ * cannot silently exempt nothing.
+ */
+export function checkCatalog(
+  catalog: Catalog,
+  ctx: CheckContext,
+  overrides: InvariantOverrides = {},
+): string[] {
+  const unknown = unknownInvariants(overrides);
+  if (unknown.length > 0)
+    throw new Defect(
+      `unknown invariant ${unknown.map((name) => `\`${name}\``).join(", ")} (known: ${Object.keys(INVARIANTS).join(", ")})`,
+    );
+  return (Object.keys(INVARIANTS) as InvariantName[]).flatMap((name) => {
+    const override = overrides[name];
+    if (override === false) return [];
+    return (override ?? INVARIANTS[name])(catalog, ctx);
+  });
 }
 
 /**
