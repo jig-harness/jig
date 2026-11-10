@@ -117,8 +117,10 @@ stage's answer back to the next tick, and a merged pull request's
 follow-up is guarded by a marker comment on it. A stop only a person can
 settle (a park, a drive stopped on a failure, a stalled pickup) is notified
 once. It never merges, answers a park, re-arms a drive a person stopped,
-takes over a driver another machine started or passes a flag reserved for
-a person, and writes a receipt per tick. Machine values in `~/.jig/dispatch.yaml`, a repository's
+stops a driver that is making progress or passes a flag reserved for a
+person, and writes a receipt per tick. It takes over only a silent driver:
+one a launch started, on this machine or another host, or one no launch
+started whose holder the clone's drive doctor reads dead or wedged. Machine values in `~/.jig/dispatch.yaml`, a repository's
 in a `dispatch` section of `.config/jig.yaml`. Built in the design's order:
 the report, then re-arms within account caps with the timer, then pickups,
 then follow-ups and notifications, then control: a permanent outcome
@@ -701,16 +703,16 @@ labels, with a documented default per adapter:
 
 GitHub detects an unnamed store, keeps a facet's existing labels and refuses
 conflicting label and field evidence. A named store never waits on detection.
-Jig names label stores for its facets. The issue forms and `report-bug.ts`,
+Jig's own repository keeps all three in GitHub's fields: the issue type,
+the Priority field and the Effort field. The issue forms and `report-bug.ts`,
 which file around the interface, set the type and leave priority and size
 to triage.
 
 Jira's issue-type and custom-field stores and Linear's estimate store are
-built. What remains is their live runs. Jig's own move to GitHub's fields still needs the
-organization's default Task issue type retired, then the checked move,
-the configuration and issue forms switched, the source labels retired and
-the weekly workflow dispatched to verify its token's reads. These are the remaining
-steps of [the design's build order](tracker-facets.md#build-order).
+built. What remains is their live runs, and, for Jig's own repository, the
+organization's default Task issue type retired, so the web interface
+offers no type that names nothing. These are the remaining steps of
+[the design's build order](tracker-facets.md#build-order).
 A store kept by the repository's own command waits until a repository names
 a facet that needs it.
 
