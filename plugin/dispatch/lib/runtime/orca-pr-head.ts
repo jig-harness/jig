@@ -47,7 +47,11 @@ function parseHead(text: string, branch: string): Proof<Head> {
   return ok({ sha: meta.headRefOid, repo: `${owner}/${name}`.toLowerCase() });
 }
 
-function requireOrigin(ctx: Context, clone: string, repo: string): Proof<void> {
+async function requireOrigin(
+  ctx: Context,
+  clone: string,
+  repo: string,
+): Promise<Proof<void>> {
   for (const mode of [[], ["--push"]]) {
     const urls = ctx.run([
       "git",
@@ -64,33 +68,34 @@ function requireOrigin(ctx: Context, clone: string, repo: string): Proof<void> {
         `cannot read origin's URLs (exit ${urls.status}): ${output(urls)}`,
       );
     if (urls.stdout.trim() === "") return refuse("origin reported no URLs");
-    if (
+    const repositories = await Promise.all(
       urls.stdout
         .trim()
         .split("\n")
-        .some((url) => repoOfUrl(url).toLowerCase() !== repo)
-    )
+        .map((url) => repoOfUrl(url, undefined, undefined, undefined, clone)),
+    );
+    if (repositories.some((resolved) => resolved.toLowerCase() !== repo))
       return refuse(`origin does not point at the head repository ${repo}`);
   }
   return ok(undefined);
 }
 
-export function resolvePullRequestHead(
+export async function resolvePullRequestHead(
   ctx: Context,
   clone: string,
   pr: number,
   branch: string,
-): Proof<string> {
-  const result = readHead(ctx, clone, pr, branch);
+): Promise<Proof<string>> {
+  const result = await readHead(ctx, clone, pr, branch);
   return result.ok ? result : refuse(`PR #${pr}: ${result.failure.reason}`);
 }
 
-function readHead(
+async function readHead(
   ctx: Context,
   clone: string,
   pr: number,
   branch: string,
-): Proof<string> {
+): Promise<Proof<string>> {
   const read = ctx.run(
     [
       "gh",
@@ -108,7 +113,7 @@ function readHead(
     );
   const head = parseHead(read.stdout, branch);
   if (!head.ok) return head;
-  const origin = requireOrigin(ctx, clone, head.value.repo);
+  const origin = await requireOrigin(ctx, clone, head.value.repo);
   if (!origin.ok) return origin;
   const remote = ctx.run([
     "git",

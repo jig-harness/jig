@@ -59,10 +59,10 @@ function context(
 }
 
 describe("PR workspace head proof", () => {
-  it("accepts a same-repository remote head at its reported SHA", () => {
-    expect(resolvePullRequestHead(context(), "/repo", 7, "feature")).toEqual(
-      ok(SHA),
-    );
+  it("accepts a same-repository remote head at its reported SHA", async () => {
+    expect(
+      await resolvePullRequestHead(context(), "/repo", 7, "feature"),
+    ).toEqual(ok(SHA));
   });
   for (const meta of [
     { ...META, isCrossRepository: true },
@@ -71,12 +71,14 @@ describe("PR workspace head proof", () => {
     { ...META, headRefName: "renamed" },
     { ...META, state: "CLOSED" },
   ])
-    it(`refuses an unproven head ${JSON.stringify(meta)}`, () => {
+    it(`refuses an unproven head ${JSON.stringify(meta)}`, async () => {
       const ctx = context();
       const run = ctx.run;
       ctx.run = (argv, opts) =>
         argv[0] === "gh" ? answer(JSON.stringify(meta)) : run(argv, opts);
-      expect(resolvePullRequestHead(ctx, "/repo", 7, "feature").ok).toBe(false);
+      expect(
+        (await resolvePullRequestHead(ctx, "/repo", 7, "feature")).ok,
+      ).toBe(false);
       expect(ctx.calls).toEqual([]);
     });
   for (const remote of [
@@ -84,35 +86,39 @@ describe("PR workspace head proof", () => {
     answer(`${"b".repeat(40)}\trefs/heads/feature\n`),
     answer(`${SHA}\trefs/heads/other\n`),
   ])
-    it("refuses an absent or moved origin branch", () => {
+    it("refuses an absent or moved origin branch", async () => {
       expect(
-        resolvePullRequestHead(
+        (
+          await resolvePullRequestHead(
+            context({
+              "git -C /repo ls-remote --exit-code origin refs/heads/feature":
+                remote,
+            }),
+            "/repo",
+            7,
+            "feature",
+          )
+        ).ok,
+      ).toBe(false);
+    });
+  it("refuses a different push repository even when the fetch URL matches", async () => {
+    expect(
+      (
+        await resolvePullRequestHead(
           context({
-            "git -C /repo ls-remote --exit-code origin refs/heads/feature":
-              remote,
+            "git -C /repo remote get-url --push --all origin": answer(
+              "git@github.com:other/repo.git",
+            ),
           }),
           "/repo",
           7,
           "feature",
-        ).ok,
-      ).toBe(false);
-    });
-  it("refuses a different push repository even when the fetch URL matches", () => {
-    expect(
-      resolvePullRequestHead(
-        context({
-          "git -C /repo remote get-url --push --all origin": answer(
-            "git@github.com:other/repo.git",
-          ),
-        }),
-        "/repo",
-        7,
-        "feature",
+        )
       ).ok,
     ).toBe(false);
   });
-  it("preserves authentication failures in its refusal", () => {
-    const result = resolvePullRequestHead(
+  it("preserves authentication failures in its refusal", async () => {
+    const result = await resolvePullRequestHead(
       context({
         "git -C /repo ls-remote --exit-code origin refs/heads/feature": {
           status: 128,
