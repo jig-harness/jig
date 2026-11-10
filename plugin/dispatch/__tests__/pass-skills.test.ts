@@ -33,21 +33,32 @@ function skillOf(argv: string[]): string {
   return skill;
 }
 
-/** The frontmatter block of a plugin skill's SKILL.md. */
-function frontmatter(skill: string): string {
+/** The parsed frontmatter of a plugin skill's SKILL.md; fails when it cannot be read. */
+function frontmatter(skill: string): Record<string, unknown> {
   const text = readFileSync(join(SKILLS, skill, "SKILL.md"), "utf8");
-  return /^---\n([\s\S]*?)\n---/.exec(text)?.[1] ?? "";
+  const block = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1];
+  if (block === undefined) throw new Error(`no frontmatter in ${skill}`);
+  const parsed: unknown = Bun.YAML.parse(block);
+  if (typeof parsed !== "object" || parsed === null) {
+    throw new Error(`frontmatter of ${skill} is not a mapping`);
+  }
+  return parsed as Record<string, unknown>;
 }
 
 describe("skills a dispatched Claude pass starts", () => {
   for (const [name, argv] of [
     ["steward", stewardPassArgv(record, [])],
     ["pickup", pickupPassArgv(record, [])],
+    [
+      "batch pickup",
+      pickupPassArgv(
+        { ...record, batchItems: [{ key: "#1", person: "someone" }] },
+        [],
+      ),
+    ],
   ] as const) {
     it(`${name}: the skill accepts a slash-command prompt`, () => {
-      expect(frontmatter(skillOf(argv))).not.toMatch(
-        /^user-invocable:\s*false\s*$/m,
-      );
+      expect(frontmatter(skillOf(argv))["user-invocable"]).not.toBe(false);
     });
   }
 });
