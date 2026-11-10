@@ -9,6 +9,8 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { writeLabels } from "../lib/actions/labels.ts";
+import type { editLabels } from "../lib/forge.ts";
 import { failureCauses, homeOf } from "../lib/failure-notices.ts";
 import {
   actionBook,
@@ -311,5 +313,28 @@ describe("a successful claim listing holding a trusted claim that does not read"
       book,
     );
     expect(readFailures("o/r", root).map((r) => r.key)).toEqual([end.key]);
+  });
+});
+
+describe("a pull request's state and marker label writes", () => {
+  it("keep failure rows of their own, so one's backoff and success leave the other's alone", async () => {
+    const root = stateRootForTest();
+    const book = actionBook("o/r", SETTINGS, () => undefined, root);
+    const changes = [
+      { pr: 7, add: ["a"], remove: [] },
+      { pr: 7, add: ["m"], remove: [], part: "markers" as const },
+    ];
+    const mode = { apply: true, late: () => null, book };
+    const refuse = async (_s: string, _pr: number, add: string[]) =>
+      add[0] === "m"
+        ? ({ ok: false, failure: { reason: "label m is missing" } } as const)
+        : ({ ok: true } as const);
+    const edit = refuse as unknown as typeof editLabels;
+    for (let i = 0; i < 2; i++) await writeLabels("o/r", changes, mode, edit);
+    expect(readFailures("o/r", root).map((r) => r.key)).toEqual([
+      "label markers PR #7",
+    ]);
+    const third = await writeLabels("o/r", changes, mode, edit);
+    expect(third.map((w) => w.outcome)).toEqual(["written", "waits"]);
   });
 });

@@ -217,6 +217,8 @@ export interface MergedPr {
   updatedAt?: string;
   /** Its labels, read only where the repository turns dispatch labels on. */
   labels?: string[];
+  /** Its description, read with its labels. */
+  body?: string;
 }
 
 /** A follow-up marker comment on a merged pull request, as the tick reads it. */
@@ -627,7 +629,13 @@ export interface LabelReport {
   states: Array<{ target: string; state: string | null }>;
   commands: LabelCommand[];
   /** The stages a `hold` label kept off. */
-  held: Array<{ target: string; stage: Stage; reason: string }>;
+  held: Array<{
+    target: string;
+    stage: Stage;
+    reason: string;
+    /** For a notification the hold kept off: its cause. */
+    cause?: NotifyCause;
+  }>;
   writes: LabelWrite[];
 }
 

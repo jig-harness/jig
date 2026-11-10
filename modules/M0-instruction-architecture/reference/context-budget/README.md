@@ -19,7 +19,7 @@ dependencies, on every change.
 | File | Role |
 |------|------|
 | `check-instruction-chain.ts` | `[--budget <bytes>] [--config <file>] [root]`: models Codex's `AGENTS.md` chain. For every directory with an instruction file, joins the chain from the root down (one file per directory, the first with content: `AGENTS.override.md`, then `AGENTS.md`, then the configured fallback names; a blank file is passed over) and fails each chain over budget, listing its files. Each chain uses the Codex configuration layered from the root down to its directory. Reports the largest chain |
-| `check-discovery-budget.ts` | `--skills <dir>… --agents <dir>… [--bare-skills <dir>…] [--namespace <plugin>] [--hard N] [--soft N] [--combined N] [--listing N] [--fail-soft]`: measures each skill's (`<dir>/<skill>/SKILL.md`) and agent's (`<dir>/*.md`) description and the aggregate skill listing. `--namespace` prefixes the `--skills` names; `--bare-skills` folders are listed unprefixed in the same listing, for a repository's own skills beside an installed plugin's |
+| `check-discovery-budget.ts` | `[--skills <dir>…] [--agents <dir>…] [--commands <dir>…] [--bare-skills <dir>…] [--namespace <plugin>] [--hard N] [--soft N] [--combined N] [--listing N] [--fail-soft]`: measures each skill's (`<dir>/<skill>/SKILL.md`), legacy command's (`<dir>/**/*.md`) and agent's (`<dir>/*.md`) description and the aggregate skill and command listing. `--namespace` prefixes the `--skills` names; `--bare-skills` folders are listed unprefixed in the same listing, for a repository's own skills beside an installed plugin's |
 | `fixtures/` | A small repository with a fallback-named instruction file, and a skills and an agents folder, all within budget |
 
 Each script's header comment states what it measures, what it leaves out and
@@ -85,9 +85,18 @@ instruction files and the runtime's built-in entries. They are part of the
 always-loaded surface, but no repository file shows them, so measure them in
 a running session as [mappings.md](../../mappings.md#what-each-runtime-loads)
 describes. Legacy command files (`.claude/commands/`) share Claude Code's
-listing too; the check leaves them out because the format is superseded by
-skills, so a repository still carrying them adds their cost by hand or
-migrates them. No runtime documents an aggregate allowance for agent
+listing too: include that folder with `--commands .claude/commands` when it
+exists. Only named folders are measured, so harnesses without command
+discovery leave that option out. Each command has its own report row and
+counts toward the same aggregate and per-entry caps as skills. Setting
+`disable-model-invocation: true` excludes its listing cost while retaining
+its per-entry caps; a command shadowed by a skill is omitted entirely. A skill's
+directory name and frontmatter `name` both shadow commands, with the plugin
+namespace applied when given. Nested command names use colons (`a/b.md`
+becomes `a:b`). A missing description falls back to the first nonblank body
+line with leading heading markers removed, truncated to 97 UTF-16 units
+plus `...` when longer than 100 units. Commands may omit frontmatter; malformed
+metadata still fails. No runtime documents an aggregate allowance for agent
 descriptions, so their total is reported and not gated.
 
 Try it with the pinned Bun runtime:
