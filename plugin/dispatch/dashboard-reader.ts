@@ -83,6 +83,55 @@ export function readerSettings(
     .digest("hex");
 }
 
+function ownerOnly(fd: number): boolean {
+  const stat = fstatSync(fd);
+  return (
+    stat.isFile() &&
+    (stat.mode & 0o077) === 0 &&
+    stat.uid === process.getuid?.()
+  );
+}
+
+function privateReaderUrl(raw: string): boolean {
+  const url = new URL(raw);
+  return (
+    url.protocol === "http:" &&
+    !url.username &&
+    !url.password &&
+    url.pathname === "/" &&
+    parseListen(url.host).ok
+  );
+}
+
+function accessFromRecord(
+  value: Record<string, unknown>,
+): Outcome<Access, "unavailable"> {
+  const identity = decodeIdentity(value.identity);
+  if (
+    identity === null ||
+    typeof value.url !== "string" ||
+    typeof value.configuration !== "string"
+  )
+    return failed("unavailable", "dashboard access record cannot be read");
+  if (!privateReaderUrl(value.url))
+    return failed(
+      "unavailable",
+      "dashboard access record names no private reader",
+    );
+  const alive = isAliveSync(identity);
+  if (!alive.ok || alive.value.state !== "alive")
+    return failed(
+      "unavailable",
+      "dashboard reader is not confirmed running; inspect --status and scheduler logs",
+    );
+  return ok({
+    url: value.url,
+    identity,
+    configuration: value.configuration,
+    ...(typeof value.entry === "string" ? { entry: value.entry } : {}),
+  });
+}
+
 /** Never puts the credential in a diagnostic, even when its file is malformed. */
 export function readAccess(
   root = readerRoot(),
@@ -93,48 +142,12 @@ export function readAccess(
       join(root, "access.json"),
       constants.O_RDONLY | constants.O_NOFOLLOW,
     );
-    const stat = fstatSync(fd);
-    if (
-      !stat.isFile() ||
-      (stat.mode & 0o077) !== 0 ||
-      stat.uid !== process.getuid?.()
-    )
+    if (!ownerOnly(fd))
       return failed(
         "unavailable",
         "dashboard access record must be an owner-only regular file",
       );
-    const value = JSON.parse(readFileSync(fd, "utf8"));
-    const identity = decodeIdentity(value.identity);
-    if (
-      identity === null ||
-      typeof value.url !== "string" ||
-      typeof value.configuration !== "string"
-    )
-      return failed("unavailable", "dashboard access record cannot be read");
-    const url = new URL(value.url);
-    if (
-      url.protocol !== "http:" ||
-      url.username ||
-      url.password ||
-      url.pathname !== "/" ||
-      !parseListen(url.host).ok
-    )
-      return failed(
-        "unavailable",
-        "dashboard access record names no private reader",
-      );
-    const alive = isAliveSync(identity);
-    if (!alive.ok || alive.value.state !== "alive")
-      return failed(
-        "unavailable",
-        "dashboard reader is not confirmed running; inspect --status and scheduler logs",
-      );
-    return ok({
-      url: value.url,
-      identity,
-      configuration: value.configuration,
-      ...(typeof value.entry === "string" ? { entry: value.entry } : {}),
-    });
+    return accessFromRecord(JSON.parse(readFileSync(fd, "utf8")));
   } catch (cause) {
     const code = causeCode(cause);
     return failed(
