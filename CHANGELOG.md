@@ -391,6 +391,30 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.192.0] - 2026-11-10
+
+### Added
+
+- **Jira: pools limited to issue types.** `issue_tracker.jira.pool_issue_types`
+  (such as `[Task, Bug]`) limits every candidate pool and population the Jira
+  adapter reads (the pools `work-batch`, `jig dispatch` and the queues pick
+  from, the issues assigned to an identity, and the open population the facet
+  census and `file-issue`'s sweep count, and the fleet metrics' unlabelled
+  window) to those issue types, so a team that shares a large project with
+  other lanes reads only its own items. Reads by key, an issue's children and
+  reads a label defines are not limited. A type the project lacks is refused
+  by `tracker.ts reach`, the audit's tracker check and before the first
+  limited read. Unset, every type is read as before.
+- **Jira: several link types per relation.** Each relation in
+  `issue_tracker.jira.link_types` may name a list of link types, each a name or
+  `{ name, inverted }`, such as `blocks: [Blocks, { name: "Depends", inverted:
+  true }]`, for a site whose planning app records dependencies on a link type
+  of its own. Every listed type is read and each edge reported once; a new
+  link is written with the first; `inverted: true` reads a type whose outward
+  side means "is blocked by". Every name is resolved against the site's link
+  types and refused when it matches none or several, and a name may appear
+  only once across the relations. A plain name keeps its meaning.
+
 ## [0.191.0] - 2026-11-10
 
 ### Added
@@ -6693,7 +6717,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.191.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.192.0...HEAD
+[0.192.0]: https://github.com/jig-harness/jig/compare/v0.191.0...v0.192.0
 [0.191.0]: https://github.com/jig-harness/jig/compare/v0.190.2...v0.191.0
 [0.190.2]: https://github.com/jig-harness/jig/compare/v0.190.1...v0.190.2
 [0.190.1]: https://github.com/jig-harness/jig/compare/v0.190.0...v0.190.1

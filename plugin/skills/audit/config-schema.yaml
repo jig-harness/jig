@@ -615,7 +615,7 @@ fields:
     distinct: true
     nonempty: true
     read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
-    since: next
+    since: 0.192.0
   issue_tracker.labels.epic:
     type: string
     read_by: [do-item, resolve-review-comments, drive-pr, work-batch, file-issue, reflect, dispatch]
