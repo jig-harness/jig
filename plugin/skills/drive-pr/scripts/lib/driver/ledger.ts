@@ -566,23 +566,23 @@ export async function publishStartup(pr: string): Promise<void> {
 }
 
 /**
- * Whether the ledger on the pull request still names the acquisition this
- * call runs in: its tree, its clone and the lock acquisition time. `false`
- * for a driver that no longer writes the ledger (taken over) or a ledger
- * that does not read, so a label is only written over a ledger that is ours.
+ * Whether this acquisition still drives the pull request: no takeover claim
+ * newer than its own is on it. A clone that takes the drive over claims it
+ * before it writes the ledger or a label, so a driver that read no such
+ * claim just before its label write is not overwriting a successor's.
+ * `false` for a driver that no longer writes the ledger (taken over) or a
+ * listing that does not read.
  */
 async function ledgerIsOurs(pr: string): Promise<boolean> {
   const driver = ledgerDriverFromEnv();
   if (driver === null) return false;
+  // No position among the claims, so none can be newer.
+  if (driver.floor === null) return true;
   const snapshot = await readLedgerSnapshot(pr, driver.login);
-  if (typeof snapshot === "string" || snapshot.canonical === null) return false;
-  const parsed = snapshot.canonical.parsed;
-  if (parsed.kind !== "ledger") return false;
-  const written = parsed.ledger.driver;
+  if (typeof snapshot === "string") return false;
   return (
-    written.actor === driver.actor &&
-    written.clone === driver.clone &&
-    (driver.started === undefined || written.started === driver.started)
+    newerClaim(snapshot.claims, driver.floor, driver.clone, driver.claim) ===
+    null
   );
 }
 

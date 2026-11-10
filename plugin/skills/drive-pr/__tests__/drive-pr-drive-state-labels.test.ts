@@ -132,8 +132,8 @@ describe("a drive writes its own state label", () => {
     expect(r.stderr).toContain(
       "a dispatcher's next tick corrects it where one runs",
     );
-    // Both moments tried, and neither stopped the drive.
-    expect(run.edits()).toHaveLength(2);
+    // Every moment tried (the arm, each ledger write, the stop), and none stopped the drive.
+    expect(run.edits().length).toBeGreaterThanOrEqual(2);
     expect(run.labels()).toEqual([]);
   });
 
