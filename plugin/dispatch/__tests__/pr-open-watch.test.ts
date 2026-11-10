@@ -103,4 +103,16 @@ describe("dispatch.states and pr_open", () => {
         "dispatch.states cannot list pr_open",
       );
   });
+
+  it("refuses a pickup state aliased to pr_open", () => {
+    const read = dispatchSection({
+      issue_tracker: { states: { pr_open: "Review", in_review: "Review" } },
+      dispatch: { identity: "factory", states: ["in_review"] },
+    });
+    expect(read.ok).toBe(false);
+    if (!read.ok)
+      expect(read.failure.reason).toContain(
+        "dispatch.states cannot list in_review",
+      );
+  });
 });
