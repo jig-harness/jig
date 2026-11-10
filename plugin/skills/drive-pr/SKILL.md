@@ -895,6 +895,17 @@ Other prose, code, HTML, duplicate lines or unmatched quotes make the
 answer free. An unknown option or an approval without a recommendation is
 also free. A note alone answers nothing.
 
+**Bind the answer to its framing.** Copy the notification's line including
+its [decision digest](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md),
+for example `answer <key>: approve [3fa9c2d1e0b4]`. A newly framed park stores
+the first 12 hexadecimal characters of its canonical decision's SHA-256
+hash; the ledger publishes that stored digest unchanged. A different digest
+makes an answer stale, including an unknown option or a comment with extra
+prose: the item stays parked and the next notification explains why. A
+disagreement between local and published framing leaves the item parked
+until the ledger catches up. Answers without a digest and legacy parks
+without one retain their time-based binding.
+
 Matching normalizes Unicode, case, phone quotes and dashes, bold marks,
 backticks and whitespace, and drops one final full stop or exclamation mark.
 Every person's latest structured answer must choose the same option with

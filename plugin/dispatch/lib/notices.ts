@@ -148,6 +148,18 @@ export function parkNotice(slug: string, pr: DrivenPr): Notice {
     disputes.length === 0
       ? ""
       : `, disputed ${createHash("sha256").update(disputes.join("\n")).digest("hex").slice(0, 16)}`;
+  const stale = waiting
+    .flatMap((p) =>
+      (p.stale ?? []).map(
+        (a) =>
+          `${p.key}:${a.author}:${a.at}:${a.digest}:${a.bodyHash ?? a.body}`,
+      ),
+    )
+    .sort((a, b) => a.localeCompare(b));
+  const staleKey =
+    stale.length === 0
+      ? ""
+      : `, stale ${createHash("sha256").update(stale.join("\n")).digest("hex").slice(0, 16)}`;
   // A park is read beside its base only while its pull request conflicts.
   const conflict =
     pr.evidence.mergeable === "CONFLICTING"
@@ -157,7 +169,7 @@ export function parkNotice(slug: string, pr: DrivenPr): Notice {
         ]
       : [];
   return notice(
-    `${slug} PR #${pr.number} parked, ledger generation ${generation(pr)}: ${keys}${disputeKey}${conflict.length === 0 ? "" : `, conflicting head ${pr.evidence.headSha ?? "unknown"}, base ${pr.evidence.baseSha ?? "unknown"}`}`,
+    `${slug} PR #${pr.number} parked, ledger generation ${generation(pr)}: ${keys}${disputeKey}${staleKey}${conflict.length === 0 ? "" : `, conflicting head ${pr.evidence.headSha ?? "unknown"}, base ${pr.evidence.baseSha ?? "unknown"}`}`,
     [
       `PR #${pr.number} (${pr.title}) is parked: ${waiting.length === 1 ? "one decision waits" : `${waiting.length} decisions wait`} for a person.`,
       "",
@@ -182,7 +194,14 @@ export function parkNotice(slug: string, pr: DrivenPr): Notice {
       "Answer each on the pull request, in a comment with a line `answer <key>: …` (or on its thread). Once every one is answered, the next tick re-arms the drive. A decision above that is cut off is framed in full in the drive's ledger comment on the pull request.",
       pr.url,
     ],
-    disputeSummary(waiting),
+    [
+      ...(stale.length === 0
+        ? []
+        : [
+            "Stale answers name an earlier decision framing and do not settle the park. Copy a current answer line with its digest from the ledger below.",
+          ]),
+      ...disputeSummary(waiting),
+    ],
   );
 }
 

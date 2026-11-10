@@ -13,6 +13,8 @@ import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.
 import { parseDecisionRecord } from "../scripts/lib/state/framed-park.ts";
 import { framedDecisionLines } from "../scripts/lib/state/park-frame.ts";
 import { useDrivePrSuite } from "./drive-pr-harness.ts";
+import { decisionDigest } from "../../../shared/decisions/digest.ts";
+import type { ParkedDecision } from "../../../shared/decisions/park.ts";
 import { createStateDurabilityFixtures } from "./drive-pr-state-durability-fixtures.ts";
 import {
   parkArgs,
@@ -238,7 +240,8 @@ if (args[0] === "api" && args[1] === "graphql") {
         key: string;
         class: string;
         reason: string;
-        decision: { steps: string[] };
+        decision: ParkedDecision;
+        digest: string;
         person: string;
       }>;
     };
@@ -247,6 +250,9 @@ if (args[0] === "api" && args[1] === "graphql") {
     expect(got.parked[0]?.person).toBe("maintainer");
     expect(got.parked[0]?.reason).toBe(QUESTION);
     expect(got.parked[0]?.decision.steps).toEqual([]);
+    expect(got.parked[0]?.digest).toBe(
+      decisionDigest(JSON.parse(parkRecord(QUESTION, "human-decision"))),
+    );
     const handoff = readFileSync(join(d, "handoff", "pr-drive-999.md"), "utf8");
     expect(handoff).toContain("## Recommended");
     expect(handoff).toContain("**Keep it** — because");

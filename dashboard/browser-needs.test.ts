@@ -13,6 +13,51 @@ const { browserIt, requireBrowser, served } = await browserSuite();
 
 describe("Needs you", () => {
   browserIt(
+    "renders a park's recommendation Markdown before opening the decision",
+    async () => {
+      const server = await served("loud");
+      const { page, context } = await open(
+        requireBrowser(),
+        server.origin,
+        `${server.url}&view=needs`,
+        LAPTOP,
+      );
+      try {
+        await page.route("**/state?*", async (route) => {
+          const response = await route.fetch();
+          const body = await response.json();
+          const decision = body.value.line.needs[0].decisions[0];
+          decision.options = [];
+          decision.recommendation =
+            "**Drop the exemption**, use `gates` and [read the policy](https://example.com/policy).";
+          await route.fulfill({ json: body });
+        });
+        await page.reload();
+        await shows(page, ".pNeeds .need");
+        const card = page.locator(".pNeeds .need").first();
+        await until(
+          "the Markdown recommendation arrives",
+          async () =>
+            (await card.textContent())?.includes("Drop the exemption") === true,
+        );
+        expect(await card.textContent()).not.toContain("**");
+        expect(await card.locator("strong").textContent()).toBe(
+          "Drop the exemption",
+        );
+        expect(await card.locator("code").textContent()).toBe("gates");
+        const link = card.getByRole("link", { name: "read the policy" });
+        expect(await link.getAttribute("href")).toBe(
+          "https://example.com/policy",
+        );
+        expect(await link.getAttribute("rel")).toBe("noreferrer noopener");
+      } finally {
+        await context.close();
+      }
+    },
+    TIMEOUT,
+  );
+
+  browserIt(
     "opens each card with its act, the ask, the recommended option and who it waits on",
     async () => {
       const server = await served("loud");

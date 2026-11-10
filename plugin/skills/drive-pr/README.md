@@ -612,6 +612,14 @@ mechanical state rather than on anyone's judgement:
   the pass interprets. An unknown option also stays free; `jig ask` labels
   it that way. Phone typography, case and Markdown emphasis do not affect
   matching. A note alone does not answer the question.
+  Copy the notification's answer line with its
+  [decision digest](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md),
+  for example `answer <key>: approve [3fa9c2d1e0b4]`. The digest identifies
+  the framing you read. If it has changed, your answer stays stale even if
+  you posted it after the new park; the next notification explains why.
+  A re-arm also waits when local state and the published ledger hold
+  different framings. A line without a digest, or a park made before
+  digests, stays bound by time alone.
   Each person's latest answer counts, using the comment's last edit time
   when edited. If everyone chooses the same option with the same note, it
   is answered. If everyone's answer is free, the pass interprets them all.
