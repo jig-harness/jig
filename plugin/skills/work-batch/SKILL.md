@@ -196,8 +196,10 @@ the release in step 4 restores them. Then, for each:
    not perform its guards. Never retry a refusal without those options.
 
    On exit `3` (someone already holds it) or `4` (another claim landed
-   first), stop the batch and report the refused claim. A fixed served batch
-   cannot safely continue after one of its members changes.
+   first), stop the batch, release the issues already claimed in this loop
+   (step 4's release, which preserves concurrent changes) and report the
+   refused claim. A fixed served batch cannot safely continue after one of
+   its members changes.
 
    The exception is a refusal by the repository's start rules, exit `3` with
    `"why": "preflight"` (its `do_item.preflight_command`) or `"why": "state"`
@@ -205,7 +207,8 @@ the release in step 4 restores them. Then, for each:
    (the reason is on stderr): nothing was written for that issue, so in an ordinary batch drop
    it, name it and its reason in the report, and go on with the rest; when
    fewer than two issues remain, release the ones claimed (step 4's release)
-   and stop. A fixed served batch still stops. A person's word to proceed
+   and stop. A fixed served batch stops too, after releasing the members
+   already claimed by the same release. A person's word to proceed
    does not clear it: the item or the command changes first.
 
    (**judgment** — native, only where none of `do_item.preflight_command`,
@@ -217,8 +220,10 @@ the release in step 4 restores them. Then, for each:
    when it shows another assignee, or is gone or no longer in the mapped
    state.)
 
-2. Once every claim above is settled, comment on each issue you kept
-   claimed, naming the anchor and every other claimed issue in the batch
+2. Once every claim above is settled, choose the anchor: the original
+   anchor, or when a preflight refusal dropped it, the highest-ranked issue
+   still claimed. Then comment on each issue you kept claimed, naming that
+   anchor and every other claimed issue in the batch
    (never one dropped or refused), so a second agent sees it is spoken for
    and by which batch (`bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" comment "<KEY>" --body-file body.md`).
    Once the last issue is commented on, remove the file
