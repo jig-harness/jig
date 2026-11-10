@@ -207,7 +207,7 @@ describe("ownership asked after the label read", () => {
 
   it("leaves a converged label when the head moves during the ownership check", async () => {
     const edits: unknown[] = [];
-    let heads = ["aaa", "bbb"];
+    const heads = ["aaa", "bbb"];
     const f: OwnForge = {
       labels: async () =>
         ok({ labels: ["jig:driving"], head: heads.shift() ?? "bbb" }),
