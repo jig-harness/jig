@@ -84,7 +84,9 @@ function checkCall(c: Checker, call: unknown): void {
   if (c.array(call.options, "$.call.options", 2)) {
     const ids = c.uniqueIds(call.options, "$.call.options");
     const names: string[] = [];
-    call.options.forEach((option, i) => checkOption(c, option, i, names));
+    call.options.forEach((option, i) => {
+      checkOption(c, option, i, names);
+    });
     if (new Set(names).size !== names.length)
       c.fail("$.call.options", "two options share a name");
     else if (new Set(names.map(normalizeAnswerText)).size !== names.length)
