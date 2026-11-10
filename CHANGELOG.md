@@ -391,6 +391,31 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.191.0] - 2026-11-10
+
+### Added
+
+- Answer a parked decision with `approve` for its recommendation or
+  `choose <option name>`, optionally followed by a `note <key>:` condition.
+  The drive receives the chosen option and decision. Other wording remains
+  a free answer, and `jig ask` labels how it was read.
+
+### Changed
+
+- **Breaking:** new parks refuse option names that become identical after
+  answer normalization or change when the public ledger redacts them.
+  Rename colliding options and remove email addresses and account identifiers
+  from option names before parking them.
+
+### Fixed
+
+- Re-arm, dispatch, `jig ask` and `jig send` read the same conversation and
+  thread answers, using each person's latest edit. Conflicting choices or
+  notes leave the decision disputed and notify the people involved; no
+  item with a person's answer is decided provisionally.
+- Preserve readable partial park answers, accept a thread choice with its keyed note, and keep structured choice options selectable and bounded in drive notices.
+- Keep answer parsing, redaction, and dispatch ordering safe for punctuation, notes, duplicate companion entries, and repeated partial evidence.
+
 ## [0.190.2] - 2026-11-10
 
 ### Fixed
@@ -6668,7 +6693,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.190.2...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.191.0...HEAD
+[0.191.0]: https://github.com/jig-harness/jig/compare/v0.190.2...v0.191.0
 [0.190.2]: https://github.com/jig-harness/jig/compare/v0.190.1...v0.190.2
 [0.190.1]: https://github.com/jig-harness/jig/compare/v0.190.0...v0.190.1
 [0.190.0]: https://github.com/jig-harness/jig/compare/v0.189.3...v0.190.0
