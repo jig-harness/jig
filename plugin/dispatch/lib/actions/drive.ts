@@ -69,6 +69,7 @@ import type {
   StaleCause,
 } from "../types.ts";
 import { armsUnarmed, factsOf } from "./drive-hold.ts";
+import { launchHeads } from "../failed-rearms.ts";
 import {
   accountBlocked,
   admitAccount,
@@ -436,6 +437,7 @@ function driveRecord(
   workspace: { id: string; path: string },
   id: string,
   named: Dispatched,
+  heads: string | null,
 ): LaunchRecord {
   const kind = isTakeover(action) ? "takeover" : "rearm";
   return {
@@ -469,6 +471,7 @@ function driveRecord(
     marker: null,
     round: roundOf(pr),
     redrive: action.redrive ?? null,
+    ...(heads === null ? {} : { heads }),
     rearmLabel:
       typeof pr.evidence.rearmLabel === "string"
         ? pr.evidence.rearmLabel
@@ -520,10 +523,11 @@ async function launchOne(
   const pastDeadline = outOfTime(state);
   if (pastDeadline !== null)
     return waits(action, pastDeadline, slots.account.name);
+  const heads = await launchHeads(repo.slug, pr);
   const result = await startCheckedRecovery(
     state,
     action,
-    driveRecord(state, repo, action, pr, slots, workspace, id, named),
+    driveRecord(state, repo, action, pr, slots, workspace, id, named, heads),
     slots,
     drive.claimer,
   );

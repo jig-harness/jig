@@ -6,7 +6,8 @@
  * for the remote, so its URL names `example/app` as a forge URL would), so the
  * attach's checkouts, fetches and worktree listing are git's own behaviour,
  * not a stub's. Only `gh` is faked: it answers `pr view` from `FAKE_GH_PR`,
- * its head commit read from the remote (`FAKE_GH_REMOTE`) as a forge's is,
+ * its head commit read from the remote (`FAKE_GH_REMOTE`) as a forge's is
+ * (except once while the file `FAKE_GH_LAG` names exists),
  * and `repo view` from `FAKE_GH_REPOS` (a map of directory to `owner/name`,
  * the longest prefix of its working directory winning), else `FAKE_GH_REPO`.
  */
@@ -25,7 +26,7 @@ const ATTACH = join(SCRIPTS, "attach-pr.ts");
 const SPAWN_TIMEOUT_MS = 120_000;
 
 const FAKE_GH = `#!/usr/bin/env bun
-import { realpathSync } from "node:fs";
+import { existsSync, realpathSync, rmSync } from "node:fs";
 const args = process.argv.slice(2);
 const field = (name) => args[args.indexOf(name) + 1];
 const project = (value) => {
@@ -41,8 +42,13 @@ if (args[0] === "pr" && args[1] === "view") {
     console.error("no pull requests found");
     process.exit(1);
   }
-  // The head is the remote's, as the forge reports it after every push.
-  if (process.env.FAKE_GH_REMOTE) {
+  // The head is the remote's, as the forge reports it after every push; the
+  // first read while FAKE_GH_LAG names a file that exists reports the stale
+  // head instead, and removes the file.
+  const lag = process.env.FAKE_GH_LAG;
+  const lagging = lag !== undefined && existsSync(lag);
+  if (lagging) rmSync(lag);
+  if (process.env.FAKE_GH_REMOTE && !lagging) {
     const tip = Bun.spawnSync(
       ["git", "--git-dir", process.env.FAKE_GH_REMOTE, "rev-parse", "refs/heads/" + pr.headRefName],
       { stdout: "pipe", stderr: "pipe" },

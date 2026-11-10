@@ -300,7 +300,15 @@ does not. Every launch begins with a launch record in the state database,
 so a launch whose answer is lost
 holds its slot and is retried only under its own record. A refusal
 `drive.ts` gives (another driver holds the pull request) is the stage's
-answer and is not launched again on the same ledger facts. A re-drive is
+answer and is not launched again on the same ledger facts. A re-arm that
+ended on any other failing exit (a usage-limit wall excepted) without moving
+its drive ledger (its attach
+refused, say) is not launched again while the pull request's head, its
+branch's head and the ledger's generation are those it launched at: a person
+is told once, and when the pull request is behind its branch (its head is not
+the branch's), the notice names both commits and the recovery, closing and
+reopening the pull request. A change of either head or of the ledger lets the
+next tick re-arm it. A re-drive is
 launched once per change: the drive merges the base in through its
 conflict-resolve round, or reviews the new head in its ordinary rounds. A
 converged drive's change is its pull request's head, conflicting or not. A
@@ -537,7 +545,9 @@ age and whose claim it is, to mark done or delete.
 
 **Notifications** (the `notify` stage) reach a person for each cause: a drive
 parked with a decision unanswered, carrying the drive's framed decision for
-each one; a drive stopped on an exit only a person settles, or with no exit;
+each one; a drive stopped on an exit only a person settles, or with no exit; a
+re-arm that failed without moving its ledger, with the close-and-reopen
+recovery where the pull request is behind its branch;
 a failed follow-up, with the question its pass stopped on; a stalled pickup,
 a double claim, a session waiting past `dispatch.blocked_after`; and a
 pull request that enters Ready to merge. Each message

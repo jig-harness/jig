@@ -12,8 +12,8 @@
  *   the comment already carries is recorded as sent without being sent
  *   again. A cause that still stands `dispatch.renotify_after` after it was
  *   last sent is sent again, marked as a repeat, unless the destination is
- *   still unread with it (`0s` sends each cause once). A drift or exhausted no-cause recovery is
- *   sent once for the life of its key. A suppression record is
+ *   still unread with it (`0s` sends each cause once). A drift, an exhausted no-cause recovery or a
+ *   failed re-arm is sent once for the life of its key. A suppression record is
  *   dropped when its cause leaves a tick that read every record whole (the
  *   park was answered, the drive moved on), so a cause that is settled is
  *   never repeated and new facts always notify.
@@ -679,7 +679,7 @@ function classOf(cause: Cause): OutcomeClass | null {
     case "stopped-unknown":
       return "unknown";
     case "needs-person": {
-      const exit = cause.evidence.exit;
+      const exit = cause.evidence.rearmExit ?? cause.evidence.exit;
       return typeof exit === "number"
         ? driveClass(exit, null).class
         : "unknown";
@@ -929,7 +929,8 @@ async function sendNotices(
           lasting:
             c.cause === "drifting" ||
             c.cause === "ready" ||
-            (c.cause === "stopped-unknown" && c.evidence.noCause === true),
+            (c.cause === "stopped-unknown" && c.evidence.noCause === true) ||
+            typeof c.evidence.failedRearm === "string",
         },
         // A cause about a stage this machine launched has its ended row instead.
         c.launched === true ? null : eventRow(repo.slug, c, at),
