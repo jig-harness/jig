@@ -96,7 +96,7 @@ function addressedLine(raw: string, knownKey?: string): Line | null {
     knownKey !== undefined &&
     rest.toLowerCase().startsWith(`${knownKey}:`.toLowerCase())
       ? knownKey.length
-      : (/:\s/.exec(rest)?.index ?? rest.indexOf(":"));
+      : rest.lastIndexOf(":");
   const key = rest.slice(0, delimiter);
   const text = rest.slice(delimiter + 1).trimStart();
   return delimiter < 1 || /\s/.test(key) || !/^\S/.test(text)
@@ -136,14 +136,40 @@ function answerLines(item: ParkedItem, body: string): string[] {
 /** Read keyed lines once, rejecting duplicates, prose and orphaned notes. */
 function addressedAnswers(
   lines: string[],
-  knownKey?: string,
+  knownKey: string,
+  allowOtherKeys: boolean,
 ): {
   answers: Map<string, string>;
   notes: Map<string, string>;
 } | null {
   const answers = new Map<string, string>();
   const notes = new Map<string, string>();
+  const companionAnswers = new Set<string>();
+  const companionNotes = new Set<string>();
   for (const raw of lines) {
+    const isKnownKey =
+      raw
+        .trim()
+        .toLowerCase()
+        .startsWith(`answer ${knownKey}:`.toLowerCase()) ||
+      raw.trim().toLowerCase().startsWith(`note ${knownKey}:`.toLowerCase());
+    if (
+      !isKnownKey &&
+      allowOtherKeys &&
+      /^(answer|note) \S+:/i.test(raw.trim())
+    ) {
+      const lower = raw.trim().toLowerCase();
+      const companionKey = [...companionAnswers].find((key) =>
+        lower.startsWith(`note ${key}:`),
+      );
+      const companion = addressedLine(raw, companionKey);
+      if (companion === null || answerTextFault(companion.text) !== null)
+        return null;
+      (companion.kind === "answer" ? companionAnswers : companionNotes).add(
+        companion.key,
+      );
+      continue;
+    }
     const line = addressedLine(raw, knownKey);
     if (line === null || answerTextFault(line.text) !== null) return null;
     const map = line.kind === "answer" ? answers : notes;
@@ -151,6 +177,8 @@ function addressedAnswers(
     map.set(line.key, line.text);
   }
   if ([...notes.keys()].some((k) => !answers.has(k))) return null;
+  if ([...companionNotes].some((key) => !companionAnswers.has(key)))
+    return null;
   return { answers, notes };
 }
 
@@ -180,7 +208,7 @@ function structuredText(
 ): { text: string; note?: string } | null {
   const bare = place === "thread" ? bareThreadText(lines, key) : null;
   if (bare !== null) return bare;
-  const keyed = addressedAnswers(lines, key);
+  const keyed = addressedAnswers(lines, key, place === "conversation");
   if (keyed === null) return null;
   const { answers, notes } = keyed;
   if (
