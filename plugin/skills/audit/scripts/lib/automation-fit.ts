@@ -165,6 +165,50 @@ const isQuote = (c: string): boolean => c === "'" || c === '"';
 const closesSubstitution = (c: string, depth: number): boolean =>
   c === ")" && depth === 1;
 
+/** Where a substitution's reading stands: the open parentheses, whether a word starts here, and the heredocs whose bodies follow the line. */
+interface Reading {
+  depth: number;
+  atWordStart: boolean;
+  heredocs: Heredoc[];
+}
+
+/** Skip a here-string or heredoc operator at `j`; the index of its last character, or null when `<<` is not one. */
+function skipRedirect(script: string, j: number, r: Reading): number | null {
+  if (script.charAt(j + 2) === "<") return j + 2;
+  const found = heredocAt(script, j);
+  if (found === null) return null;
+  r.heredocs.push(found.heredoc);
+  return found.end;
+}
+
+/** Skip the text at `j` that holds no delimiter (a quote, an escape, a heredoc or its body, a comment); the index of its last character, or null when `j` is none of these. */
+function skipOpaque(script: string, j: number, r: Reading): number | null {
+  const c = script.charAt(j);
+  if (isQuote(c)) return quotedEnd(script, j);
+  if (c === "\\") {
+    // A joined line is not a word character, so it preserves comment
+    // eligibility at the beginning of the continued line.
+    return j + 1;
+  }
+  if (c === "<" && script.charAt(j + 1) === "<")
+    return skipRedirect(script, j, r);
+  if (c === "\n" && r.heredocs.length > 0)
+    return skipHeredocs({ heredocs: r.heredocs } as Scan, script, j);
+  if (c === "#" && r.atWordStart) {
+    const end = script.indexOf("\n", j);
+    // Leave the newline for the heredoc branch on the next iteration.
+    return end === -1 ? script.length : end - 1;
+  }
+  return null;
+}
+
+/** Whether a word starts after the text skipped from `j`: a heredoc body or a comment ends at a line break, a joined line keeps the state it had, a quote, escape or here-string ends inside a word. */
+function startsWord(script: string, j: number, wasStart: boolean): boolean {
+  const c = script.charAt(j);
+  if (c === "\n" || c === "#") return true;
+  return c === "\\" && script.charAt(j + 1) === "\n" && wasStart;
+}
+
 /** Read the process substitution whose `(` is at `open` as one word of the command, its nested command unread; the index of its closing `)`, or of the script's last character when it never closes. Quoted, escaped and commented parentheses are text, not delimiters. */
 function substitution(
   scan: Scan,
@@ -172,60 +216,23 @@ function substitution(
   start: number,
   open: number,
 ): number {
-  let depth = 0;
-  let atWordStart = true;
-  const heredocs: Heredoc[] = [];
+  const r: Reading = { depth: 0, atWordStart: true, heredocs: [] };
   for (let j = open; j < script.length; j++) {
     const c = script.charAt(j);
-    if (isQuote(c)) {
-      j = quotedEnd(script, j);
-      atWordStart = false;
+    const wasStart = r.atWordStart;
+    const j0 = j;
+    const skipped = skipOpaque(script, j, r);
+    if (skipped !== null) {
+      j = skipped;
+      r.atWordStart = startsWord(script, j0, wasStart);
       continue;
     }
-    if (c === "\\") {
-      // A joined line is not a word character, so it preserves comment
-      // eligibility at the beginning of the continued line.
-      if (script.charAt(j + 1) !== "\n") atWordStart = false;
-      j++;
-      continue;
-    }
-    if (c === "<" && script.charAt(j + 1) === "<") {
-      if (script.charAt(j + 2) === "<") {
-        j += 2;
-        atWordStart = false;
-        continue;
-      }
-      const found = heredocAt(script, j);
-      if (found !== null) {
-        heredocs.push(found.heredoc);
-        j = found.end;
-        atWordStart = false;
-        continue;
-      }
-    }
-    if (c === "\n" && heredocs.length > 0) {
-      j = skipHeredocs({ heredocs } as Scan, script, j);
-      atWordStart = true;
-      continue;
-    }
-    if (c === "#" && atWordStart) {
-      const end = script.indexOf("\n", j);
-      // Leave the newline for the heredoc branch on the next iteration.
-      j = end === -1 ? script.length : end - 1;
-      atWordStart = true;
-      continue;
-    }
-    if (c === "(") {
-      depth++;
-      atWordStart = true;
-      continue;
-    }
-    if (closesSubstitution(c, depth)) {
+    if (c === "(") r.depth++;
+    else if (closesSubstitution(c, r.depth)) {
       scan.word = script.slice(start, j + 1);
       return j;
-    }
-    if (c === ")") depth--;
-    atWordStart = /[\s;&|]/.test(c);
+    } else if (c === ")") r.depth--;
+    r.atWordStart = c === "(" || /[\s;&|]/.test(c);
   }
   scan.word = script.slice(start);
   return script.length - 1;
