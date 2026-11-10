@@ -8,11 +8,11 @@
  * issues updated in the window and matches the text here: JQL's `comment ~`
  * matches words, and a marker it missed would be a lost finding.
  *
- * The candidate pools and the open population (`openIssues`, `assignedIssues`,
- * `openPopulation`, which the facet census counts) are limited to
- * `issue_tracker.jira.pool_issue_types` where it is set. Reads by key, an
- * issue's children and the label-defined metric reads are not: an epic's
- * accounting needs every type its label carries.
+ * The candidate pools and the populations (`openIssues`, `assignedIssues`,
+ * `openPopulation`, which the facet census counts, and an `issuesInWindow`
+ * that names no label) are limited to `issue_tracker.jira.pool_issue_types`
+ * where it is set. Reads by key, an issue's children and the reads a label
+ * defines are not: an epic's accounting needs every type its label carries.
  */
 
 import type {
@@ -297,8 +297,8 @@ export function reportOperations(
         query.createdIn === undefined && query.completedIn === undefined
           ? null
           : await client.timeZone();
-      const clauses: string[] = [];
-      if (query.label !== undefined) clauses.push(await label(query.label));
+      const clauses: string[] =
+        query.label === undefined ? await scope() : [await label(query.label)];
       if (query.createdIn !== undefined && zone !== null)
         clauses.push(widened("created", query.createdIn, zone));
       if (query.completedIn !== undefined && zone !== null)

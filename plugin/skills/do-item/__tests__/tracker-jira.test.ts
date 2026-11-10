@@ -676,6 +676,7 @@ describe("Jira adapter: relations", () => {
             { type: "Precedes", inward: "ENG-3" },
             { type: "Depends", outward: "ENG-4" },
             { type: "Depends", inward: "ENG-5" },
+            { type: "Depends", inward: "ENG-2" },
             { type: "Cloners", outward: "ENG-7" },
           ],
         }),

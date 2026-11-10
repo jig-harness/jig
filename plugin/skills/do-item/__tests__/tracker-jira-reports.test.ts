@@ -531,6 +531,30 @@ describe("Jira adapter: pools limited to issue types", () => {
     ).toHaveLength(1);
   });
 
+  it("limits a window that names no label, and leaves a labelled one whole", async () => {
+    const { t, calls } = jira(
+      routes({
+        "GET issue/createmeta/ENG/issuetypes": TYPES,
+        "GET myself": MYSELF,
+        "POST search/jql": page(),
+      }),
+      { issue_tracker: { jira: { pool_issue_types: ["Task"] } } },
+    );
+    const window = {
+      sinceMs: at("2026-03-01T00:00:00Z"),
+      untilMs: at("2026-03-08T00:00:00Z"),
+    };
+    await t.issuesInWindow({ completedIn: window });
+    await t.issuesInWindow({ label: "bug", completedIn: window });
+    const reads = calls.map(jqlOf).filter((q) => q !== "");
+    expect(reads[0]).toStartWith(
+      "project = ENG AND issuetype in (10001) AND statusCategory = Done",
+    );
+    expect(reads[1]).toStartWith(
+      'project = ENG AND labels = "bug" AND statusCategory = Done',
+    );
+  });
+
   it("leaves reads by key and an issue's children unscoped", async () => {
     const { t, calls } = scoped(["Task"]);
     await t.poolIssue("ENG-1");
