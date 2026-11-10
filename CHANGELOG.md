@@ -391,6 +391,45 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.190.1] - 2026-11-10
+
+### Fixed
+
+- A served-person pickup on GitHub Issues no longer stops with "Field 'id' doesn't exist on type 'Assignable'" when the item has no assignee: the inherited claim's assignment now selects only a field the `Assignable` interface declares, so the claim goes through.
+
+## [0.190.0] - 2026-11-10
+
+Fixes and additions to the `docs`, `adr`, `change-areas` and `jig` skills.
+
+### Added
+
+- `docs`: `docs.index` shapes the generated `INDEX.md`: a `preamble` file kept
+  verbatim above the listing, a `descriptions` line per category (or each
+  folder's `README.md` description, with `descriptions_from_readme`), an
+  `order` (`name`, `count`, or categories listed first) and `frontmatter`,
+  with `last_updated` stamped. An index with frontmatter is held to the
+  schema like any page. With none of these set, the output is unchanged.
+- `adr`: `validate-rules.ts` takes `--interpreter=yaml`, or reads a top-level
+  `interpreter: yaml` field in the catalog, for a catalog enforced by an
+  interpreter that parses YAML. The comparison with the reference
+  interpreter's line reading is then not made, so double-quote escapes and a
+  block-list `exclude` pass, and the checks that hold for either reader stay.
+  A rule with an `implementation`, `detector` or `pattern_<name>` field is no
+  longer reported for lacking `pattern`.
+- `change-areas`: `runCheck` takes `invariants`, keyed by the generic
+  invariants' names (`graph`, `output-names`, `workspace`, `generated`), to
+  exempt one or replace it with the composer's own check; `checkCatalog`
+  takes the same map. An unknown name is refused.
+
+### Fixed
+
+- `jig`: the manual copy layout in the plugin README now lists the
+  plugin-root files the skill reads, and the skill says where to read them
+  when they are missing.
+- `docs`: the reader no longer assigns a loop index inside the loop or uses
+  two regular expressions with super-linear backtracking (SonarCloud's notes
+  on the docs reader); what it reads is unchanged.
+
 ## [0.189.3] - 2026-11-10
 
 ### Fixed
@@ -6615,7 +6654,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.189.3...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.190.1...HEAD
+[0.190.1]: https://github.com/jig-harness/jig/compare/v0.190.0...v0.190.1
+[0.190.0]: https://github.com/jig-harness/jig/compare/v0.189.3...v0.190.0
 [0.189.3]: https://github.com/jig-harness/jig/compare/v0.189.2...v0.189.3
 [0.189.2]: https://github.com/jig-harness/jig/compare/v0.189.1...v0.189.2
 [0.189.1]: https://github.com/jig-harness/jig/compare/v0.189.0...v0.189.1
