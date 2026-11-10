@@ -32,7 +32,11 @@ const DELIMITER = /^---[ \t]*$/;
  */
 const isWhite = (ch: string | undefined) => ch === " " || ch === "\t";
 const trimStart = (text: string) => text.replace(/^[ \t]+/, "");
-const trimEnd = (text: string) => text.replace(/[ \t]+$/, "");
+const trimEnd = (text: string) => {
+  let end = text.length;
+  while (end > 0 && isWhite(text[end - 1])) end--;
+  return text.slice(0, end);
+};
 const trim = (text: string) => trimEnd(trimStart(text));
 /**
  * The first character YAML does not allow anywhere in a stream: a control
@@ -77,12 +81,14 @@ function scan(
 ): boolean {
   let quote = "";
   let atStart = true;
-  for (let i = 0; i < text.length; i++) {
+  let i = 0;
+  while (i < text.length) {
     const ch = text.charAt(i);
     if (quote) [i, quote] = inQuote(text, i, quote);
     else if (atStart && QUOTES.includes(ch)) quote = ch;
     else if (visit(i, ch)) return true;
     else if (!isWhite(ch)) atStart = flow && FLOW_OPENERS.includes(ch);
+    i++;
   }
   return !quote;
 }
@@ -156,10 +162,11 @@ const ESCAPE =
 
 /** The first backslash in a double-quoted body that starts no valid escape, or -1. */
 function badEscape(body: string): number {
-  for (let i = body.indexOf("\\"); i >= 0; i = body.indexOf("\\", i)) {
+  let i = body.indexOf("\\");
+  while (i >= 0) {
     ESCAPE.lastIndex = i;
     if (!ESCAPE.test(body)) return i;
-    i = ESCAPE.lastIndex;
+    i = body.indexOf("\\", ESCAPE.lastIndex);
   }
   return -1;
 }
@@ -486,7 +493,18 @@ export function splitLines(text: string): string[] {
  * the text and line `i` here is line `i` of `splitLines`.
  */
 export function linesWithBreaks(text: string): string[] {
-  return text.match(/(?:[^\r\n]*(?:\r\n|\r|\n))|(?:[^\r\n]+$)/g) ?? [];
+  const lines: string[] = [];
+  let start = 0;
+  let i = 0;
+  while (i < text.length) {
+    const ch = text[i];
+    i += ch === "\r" && text[i + 1] === "\n" ? 2 : 1;
+    if (ch !== "\n" && ch !== "\r") continue;
+    lines.push(text.slice(start, i));
+    start = i;
+  }
+  if (start < text.length) lines.push(text.slice(start));
+  return lines;
 }
 
 /**

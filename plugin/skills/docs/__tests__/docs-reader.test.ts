@@ -623,3 +623,74 @@ describe("lines with their breaks", () => {
         expect(line.replace(/\r\n|\r|\n/, "")).toBe(splitLines(text)[i] ?? "");
     });
 });
+
+// The reader once held these as regular expressions with super-linear
+// backtracking; each loop below keeps the old expression as the oracle the
+// rewrite must match on every input.
+describe("the loop and scan rewrites match the expressions they replaced", () => {
+  const corpus = [
+    "",
+    " ",
+    "\t",
+    "a",
+    "a ",
+    "a \t ",
+    " \ta\t ",
+    "a  b  ",
+    "a ",
+    "a  ",
+    "a\n",
+    "a\r\nb\rc\nd",
+    "\n\r\n\r",
+    "a\n\nb\r\n",
+    "\r\r\n\n\r",
+    "\u{1F600}\n\u{1F600}",
+  ];
+
+  test("a value loses only its trailing spaces and tabs", () => {
+    const oldTrimEnd = (text: string) => text.replace(/[ \t]+$/, "");
+    for (const text of corpus)
+      expect(decomment(text).length).toBe(oldTrimEnd(text).length);
+    expect(decomment("a \t ")).toBe("a");
+    expect(decomment("a  ")).toBe("a ");
+  });
+
+  test("lines keep their breaks as the old expression found them", () => {
+    const oldLines = (text: string) =>
+      text.match(/(?:[^\r\n]*(?:\r\n|\r|\n))|(?:[^\r\n]+$)/g) ?? [];
+    for (const text of corpus)
+      expect(linesWithBreaks(text)).toEqual(oldLines(text));
+  });
+
+  test("a double-quoted value is checked for its first bad escape as before", () => {
+    const quoted: [string, string][] = [
+      ['"a\\nb"', "ok"],
+      ['"a\\qb"', "bad"],
+      ['"\\x41\\u0041\\U00000041"', "ok"],
+      ['"\\u00"', "bad"],
+      ['"\\\\s*any\\\\b"', "ok"],
+      ['"\\s"', "bad"],
+      ['"a\\', "unterminated"],
+    ];
+    for (const [text, kind] of quoted) {
+      const value = readScalar(text);
+      if (kind === "ok") expect(typeof value).toBe("object");
+      else expect(typeof value).toBe("string");
+    }
+    expect(String(readScalar('"a\\qb"'))).toContain("\\q");
+  });
+
+  test("a quote stays open across an escaped quote and ends at its mate", () => {
+    expect(readScalar('"a\\"b"')).toEqual({ value: 'a\\"b' });
+    expect(readScalar("'it''s'")).toEqual({ value: "it''s" });
+    expect(typeof readScalar("'open")).toBe("string");
+  });
+
+  test("a long run of spaces does not take quadratic time", () => {
+    const text = `${" ".repeat(200_000)}x`;
+    const started = performance.now();
+    decomment(text);
+    linesWithBreaks(text);
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+});
