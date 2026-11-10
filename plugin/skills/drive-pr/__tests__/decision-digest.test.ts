@@ -120,6 +120,9 @@ test("digest is checked before obsolete names or mixed prose can become free ans
     "answer K: `approve [aaaaaaaaaaaa]`",
     "answer K: ａｐｐｒｏｖｅ ［ａａａａａａａａａａａａ］",
     "answer K: choose Removed option [aaaaaaaaaaaa]",
+    "answer K: approve [aaaaaaaaaaaa] Thanks",
+    "answer K: choose Removed option [aaaaaaaaaaaa] Thanks",
+    "answer K: approve [aaaaaaaaaaaa] [123456abcdef]",
     "answer K: approve [aaaaaaaaaaaa]\nThanks",
   ]) {
     const answer = parseAnswerComment(item, comment(body), "conversation");

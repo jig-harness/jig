@@ -2,6 +2,7 @@
 import type { ParkedItem } from "../state/park-frame.ts";
 import type { PendingAnswer } from "../state/pass-handoff.ts";
 import { readLedgerSnapshot } from "../state/ledger-forge.ts";
+import { ledgerDriverFromEnv } from "../state/ledger-mirror.ts";
 
 export function answerPublicationLag(
   item: ParkedItem,
@@ -34,7 +35,10 @@ export async function laggingAnswerPublication(
     )
   )
     return [];
-  const snapshot = await readLedgerSnapshot(String(pr), null);
+  const snapshot = await readLedgerSnapshot(
+    String(pr),
+    ledgerDriverFromEnv()?.login ?? null,
+  );
   if (typeof snapshot === "string") {
     console.error(
       `re-arm: could not compare answer framing with the published ledger: ${snapshot}; using local framing and park time.`,

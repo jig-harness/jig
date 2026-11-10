@@ -68,6 +68,7 @@ import {
 } from "./decisions.ts";
 import { type DriveEvent, isOptionalEvents } from "./events.ts";
 import { type ArbiterRuling, isOptionalRulings } from "./rulings.ts";
+import { decisionAnswerLines } from "./park-frame.ts";
 
 export const LEDGER_MARKER = "<!-- drive-pr-ledger -->";
 export const CLAIM_MARKER = "<!-- drive-pr-takeover-claim -->";
@@ -310,6 +311,7 @@ function ledgerBody(l: Ledger, parkedList: boolean, writer: Writer): string {
     for (const p of l.parked)
       lines.push(
         `- \`${p.key}\` (${p.kind}, ${p.class ?? "no class"}, round ${p.round}${p.digest === undefined ? "" : `, framing ${p.digest}`}): ${summaryText(p.reason)}`,
+        ...decisionAnswerLines(p).map((line) => `  ${line}`),
       );
   }
   if (l.decisions.length > 0)

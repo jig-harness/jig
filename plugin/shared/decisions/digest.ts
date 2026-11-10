@@ -32,7 +32,9 @@ export function splitAnswerDigest(text: string): {
   digest?: string;
 } {
   const normalized = normalizeAnswerText(text);
-  const match = /\s+\[([0-9a-f]{12})\]$/.exec(normalized);
+  // A framing digest is an identity claim, not optional prose. Find it before
+  // free-answer fallback even when a commenter appends text after the digest.
+  const match = /(?:^|\s)\[([0-9a-f]{12})\](?=\s|$)/.exec(normalized);
   return match === null
     ? { text }
     : {

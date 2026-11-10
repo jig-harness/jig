@@ -155,7 +155,7 @@ export function parkNotice(slug: string, pr: DrivenPr): Notice {
           `${p.key}:${a.author}:${a.at}:${a.digest}:${a.bodyHash ?? a.body}`,
       ),
     )
-    .sort();
+    .sort((a, b) => a.localeCompare(b));
   const staleKey =
     stale.length === 0
       ? ""
