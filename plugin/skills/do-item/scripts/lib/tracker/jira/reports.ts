@@ -488,7 +488,6 @@ export function reportOperations(
           "an assigned-issues query needs at least one state",
         );
       if (signal?.aborted === true) throw abortedError(signal);
-      const accountId = await client.accountId(identity, signal);
       const names = [
         ...new Set(
           states
@@ -496,6 +495,8 @@ export function reportOperations(
             .filter((n): n is string => n !== null),
         ),
       ];
+      if (names.length === 0) return [];
+      const accountId = await client.accountId(identity, signal);
       const read = await client.search(
         inProject(
           project,
