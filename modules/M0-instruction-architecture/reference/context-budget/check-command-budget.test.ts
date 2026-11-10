@@ -157,12 +157,16 @@ test("a plugin skill shadows only its namespaced command name", () => {
 
 test("commands count when_to_use toward the combined cap", () => {
   const root = fixture({ "a.md": definition("abc", "when_to_use: def\n") });
-  expectSpawnExit(run(root, "--combined", "8"), 1);
+  const result = run(root, "--combined", "8");
+  expectSpawnExit(result, 1);
+  expect(result.output).toContain("description + when_to_use");
 });
 
 test("malformed command metadata fails instead of under-counting", () => {
   const root = fixture({ "a.md": "---\ndescription: [invalid]\n---\nBody\n" });
-  expectSpawnExit(run(root), 1);
+  const result = run(root);
+  expectSpawnExit(result, 1);
+  expect(result.output).not.toBe("");
 });
 
 test("empty commands directories add no listing cost", () => {
