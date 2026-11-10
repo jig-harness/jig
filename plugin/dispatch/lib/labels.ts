@@ -212,6 +212,8 @@ export interface LabelChange {
   pr: number;
   add: string[];
   remove: string[];
+  /** `markers` for a change to the owed-steps and follow-up markers, which fails and backs off apart from the state's. */
+  part?: "markers";
 }
 
 /**

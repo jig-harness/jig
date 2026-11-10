@@ -952,7 +952,9 @@ ledger: a healthy one is reported quiet, and only a person's `rearm`
 starts it again. The repository's query reads each open pull request's
 head checks and its review threads with it, and the fresh read before a
 launch counts an automation pull request's threads again, the launch
-waiting when that count does not read. A healthy one is left for a person
+waiting when that count does not read, except where trouble is already
+observed (a failed check or a conflict) or a person's `drive` or `rearm`
+asks: those launches need no count. A healthy one is left for a person
 to merge. Whether a failed check failed
 on the infrastructure is not told here: the drive re-runs such a check
 rather than repairing code. Everything after adoption is the `drive` command's: the plan
@@ -1652,7 +1654,7 @@ stack, [ADR-0012](../docs/adr/ADR-0012-failures-as-values.md)) and the next
 try:
 
 - **An action**, keyed by what it does and its target, as the plan names
-  it: a pull request's dispatch label write (`label PR #<n>`), a
+  it: a pull request's dispatch label write (`label PR #<n>`, and `label markers PR #<n>` for its markers, which back off apart from its state), a
   notification's delivery (`notice <its key>`), a nudge the runtime refused
   (`nudge <record> <episode>`), and this host's claim end or follow-up
   marker answer (`claim-end` or `marker-answer PR #<n> comment <id>`).

@@ -64,9 +64,9 @@ describe("the owed-steps label", () => {
       ],
     });
     expect(changes).toEqual([
-      { pr: 1, add: ["manual-ops"], remove: [] },
-      { pr: 2, add: [], remove: ["manual-ops"] },
-      { pr: 3, add: [], remove: ["manual-ops"] },
+      { pr: 1, add: ["manual-ops"], remove: [], part: "markers" },
+      { pr: 2, add: [], remove: ["manual-ops"], part: "markers" },
+      { pr: 3, add: [], remove: ["manual-ops"], part: "markers" },
     ]);
   });
 
@@ -76,7 +76,7 @@ describe("the owed-steps label", () => {
         open: [{ number: 1, labels: [], body: OWES }],
         manualOps: "ops-step",
       }).changes,
-    ).toEqual([{ pr: 1, add: ["ops-step"], remove: [] }]);
+    ).toEqual([{ pr: 1, add: ["ops-step"], remove: [], part: "markers" }]);
     expect(
       plan({ open: [{ number: 1, labels: ["manual-ops"] }] }).changes,
     ).toEqual([]);
@@ -89,13 +89,13 @@ describe("the owed-steps label", () => {
   it("stays on a merged pull request until its follow-up is done, then leaves with followed-up in its place", () => {
     const pr = merged(7, ["jig:converged"], OWES);
     expect(plan({ merged: [pr] }).changes).toEqual([
-      { pr: 7, add: ["manual-ops"], remove: [] },
+      { pr: 7, add: ["manual-ops"], remove: [], part: "markers" },
     ]);
     const owing = merged(7, ["jig:converged", "manual-ops"], OWES);
     expect(plan({ merged: [owing], followedUp: new Set([7]) }).changes).toEqual(
       [
         { pr: 7, add: ["jig:followed-up"], remove: ["jig:converged"] },
-        { pr: 7, add: [], remove: ["manual-ops"] },
+        { pr: 7, add: [], remove: ["manual-ops"], part: "markers" },
       ],
     );
   });
@@ -153,7 +153,9 @@ describe("the automation label", () => {
         { number: 5, labels: ["automation:docs-sync"], author: PERSON },
       ],
     });
-    expect(changes).toEqual([{ pr: 1, add: ["automation"], remove: [] }]);
+    expect(changes).toEqual([
+      { pr: 1, add: ["automation"], remove: [], part: "markers" },
+    ]);
   });
 
   it("never goes on a pull request of a bot that is one of the host's own authors", () => {
@@ -170,7 +172,7 @@ describe("the automation label", () => {
         open: [{ number: 1, labels: [], author: BOT, body: OWES }],
         manualOps: null,
       }).changes,
-    ).toEqual([{ pr: 1, add: ["automation"], remove: [] }]);
+    ).toEqual([{ pr: 1, add: ["automation"], remove: [], part: "markers" }]);
   });
 
   it("is not written on a merged pull request", () => {
@@ -189,7 +191,7 @@ describe("the automation label", () => {
         .changes,
     ).toEqual([
       { pr: 1, add: [], remove: ["jig:driving"] },
-      { pr: 1, add: ["automation"], remove: [] },
+      { pr: 1, add: ["automation"], remove: [], part: "markers" },
     ]);
   });
 
@@ -197,7 +199,9 @@ describe("the automation label", () => {
     expect(
       plan({ open: [{ number: 1, labels: [], author: BOT, body: OWES }] })
         .changes,
-    ).toEqual([{ pr: 1, add: ["manual-ops", "automation"], remove: [] }]);
+    ).toEqual([
+      { pr: 1, add: ["manual-ops", "automation"], remove: [], part: "markers" },
+    ]);
   });
 });
 

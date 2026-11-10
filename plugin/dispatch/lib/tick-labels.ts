@@ -111,7 +111,7 @@ async function projectLabels(
   const writing = apply !== null && forge.listed;
   book?.wanted(
     "label",
-    writing ? planned.changes.map((c) => labelKey(c.pr)) : [],
+    writing ? planned.changes.map((c) => labelKey(c.pr, c.part)) : [],
     // A pull request the listings disagree on is read again next tick: its write is not known to be unwanted.
     (target) =>
       unobservedTarget(report, target) ||

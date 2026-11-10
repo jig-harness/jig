@@ -163,7 +163,7 @@ function project(
   }
   const markers = markerChange(input, pr, merged);
   if (markers.add.length > 0 || markers.remove.length > 0)
-    changes.push({ pr: number, ...markers });
+    changes.push({ pr: number, ...markers, part: "markers" });
 }
 
 /** The open pull requests read: a managed one's state, and every one's markers. */
@@ -254,8 +254,9 @@ export interface WriteMode {
   book?: ActionBook | null;
 }
 
-/** The failure ledger's key of a pull request's label write. */
-export const labelKey = (pr: number): string => `label PR #${pr}`;
+/** The failure ledger's key of a pull request's label write; its markers' write keeps a key of its own. */
+export const labelKey = (pr: number, part?: "markers"): string =>
+  part === undefined ? `label PR #${pr}` : `label ${part} PR #${pr}`;
 
 const describe = (c: LabelChange): string =>
   [...c.add.map((l) => `+${l}`), ...c.remove.map((l) => `-${l}`)].join(" ");
@@ -283,7 +284,7 @@ export async function writeLabels(
       out.push({ ...base, outcome: "waits", detail: late });
       continue;
     }
-    const key = labelKey(change.pr);
+    const key = labelKey(change.pr, change.part);
     const backing = mode.book?.waits(key) ?? null;
     if (backing !== null) {
       out.push({ ...base, outcome: "waits", detail: backing });
