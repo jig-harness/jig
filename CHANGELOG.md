@@ -181,6 +181,7 @@ changes are marked **Breaking** and say what a consumer changes.
 - [GLOSSARY.md](GLOSSARY.md) defines the test-to-code ratio: the lines of
   tests divided by the lines of code in the code-stats skill's default area,
   the figure its report states beside both counts.
+- M0’s discovery-budget check accepts `--commands <dir>` to include legacy command descriptions in the shared skill listing, with nested names, fallback descriptions, exclusions and skill shadowing.
 
 ### Changed
 
@@ -389,6 +390,117 @@ changes are marked **Breaking** and say what a consumer changes.
   under it.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
+
+## [0.189.1] - 2026-11-10
+
+### Fixed
+
+- Dispatcher ticks remove Electron's Node mode and crash reporter environment
+  before starting child programs, so an Electron host does not change how those
+  programs run.
+- Before opening a drive workspace, the dispatcher verifies the pull request's
+  head repository and commit, refusing mismatched remotes and stale checkouts
+  before repository setup hooks run. Merged follow-ups can still recreate a
+  deleted branch from the base.
+- Dispatcher-launched drives preserve the tick's configuration layers across
+  fresh terminal shells, including a custom or relative `JIG_HOME`.
+
+## [0.189.0] - 2026-11-10
+
+### Added
+
+- An owner-host steward inspects stopped work and the assigned queue when
+  its input changes, at most three times an hour. It proposes bounded
+  recoveries, one fixed resume for a routine question, missing issue facets,
+  queue tie order and clearer human needs; the next dispatcher tick applies
+  its records under existing holds, account admission and recovery budgets.
+  Enable it in the machine dispatch file with `steward.enabled: true` and
+  the repository's `steward` stage.
+
+## [0.188.0] - 2026-11-10
+
+### Added
+
+- Dispatch labels: `jig:followup-failed` marks a merged pull request whose follow-up failed and waits for a person; a later follow-up that is done replaces it with `jig:followed-up`. With the dispatch labels on, the dispatcher also keeps marker labels on the pull requests it reads: the repository's manual-operations label (`issue_tracker.labels.manual_ops`, `manual-ops` by default) on a pull request whose `## Out-of-tree follow-ups` section lists a step not yet checked off, kept after the merge until the follow-up is done; and `automation` on a pull request a bot opened that carries no `automation:` label, unless the bot is one the adoption rule names (the host's own identity). Create the new labels with `jig install dispatch --repo <path> --yes`, which lists the ones the signed-in account may not create; until they exist, the dispatcher reports each refused write and tries again at the next run ([CONFIGURATION.md](plugin/CONFIGURATION.md#dispatch)).
+- The audit's `config-fit` suggests labelling the workflow steps that open pull requests (`peter-evans/create-pull-request`, `gh pr create`) with an `automation:` label (`suggestion:automation-labels`).
+
+### Changed
+
+- The dispatcher drives an automation pull request (a bot's that `dispatch.adopt.authors` does not name, or one carrying `automation` or an `automation:` label) only while it needs work: a check on its head failed (a run cancelled on a superseded head, or one waiting for approval, is no failure), it conflicts with its base, or a review thread is unresolved. That holds for the adoption rule and for the re-drives, takeovers and re-arms the dispatcher starts of itself, such as a converged drive whose head moved. A healthy one is left for a person to merge; `jig:drive` or `jig:rearm` still starts one on request. A bot the adoption rule names is the host's own identity: its pull requests are adopted as before unless they carry an automation label.
+- **Breaking:** `dispatch.labels.prefix` takes at most 35 characters (39 before), so every label of the set, `followup-failed` the longest, fits the forge's 50. A repository whose prefix is longer must shorten it to at most 35 characters in its `.config/jig.yaml` on the default branch before upgrading, or the dispatcher refuses its `dispatch` section.
+- `dispatch.labels.prefix` may not start with `automation:`, the family workflows label their pull requests with; a prefix that does is refused like any other invalid one.
+- The dispatcher's repository query reads each open pull request's description, its head's checks and its review threads, which costs two points of the forge's GraphQL budget per page of 50 pull requests instead of one.
+
+## [0.187.0] - 2026-11-10
+
+### Added
+
+- Hosts can serve named people through `serve:` in their dispatch machine file. Their trusted assignments and unassigned epic descendants join a ranked queue, with blocked work and human checkpoints shown with a reason; claims preserve the served person as assignee. Served forge logins also join pull-request adoption.
+- The dispatch dashboard can run through its own retry timer on Linux with systemd user lingering or cron, independently of the dispatcher and without Orca. Installation, status, explicit private URL access and uninstall commands keep one read-only reader available across failures, logout, reboot and installed-copy updates; service logs do not print its access token.
+
+### Fixed
+
+- The dispatcher record inventory now accurately describes pickup-read cache writes as independent upserts rather than one tick-wide transaction.
+
+## [0.186.0] - 2026-11-10
+
+### Added
+
+- `jig dispatch --apply` counts what fails in a row: each pull request's
+  dispatch label write, each notification's delivery, each nudge the
+  runtime refused, and this host's claim ends and follow-up marker answers;
+  each repository's turn (refused, stopped by a defect, or a record that did
+  not read); and this host's ticks of one scope that exited 1. An action
+  that failed twice in a row backs off, reported as waiting with its count
+  and next try, from 2 minutes doubling to an hour, instead of being tried
+  every tick. Once a row reaches 3 failures in a row a person is told, once
+  and then on `dispatch.renotify_after`, with what failed, how many times,
+  since when and the last reason (causes `action-failing`,
+  `repository-failing` and `ticks-failing`). A success, or the action
+  leaving the plan, clears the row and retires the notice. The machine
+  file's new `failures` settings (`backoff`, `backoff_max`, `notify_after`)
+  tune it, and each receipt lists the rows backing off and the rows at or past the
+  notify threshold under `failures`. Launches are not counted: their
+  launch records already count attempts.
+
+### Changed
+
+- **Breaking:** New drive parks accept checked `parked-decision/v1` JSON on stdin instead of Markdown. Update custom park writers to the JSON contract; existing parked Markdown decisions remain readable. Parks now retain structured options and their optional details across the ledger, dashboard and `jig ask`, support conversion from decision sheets, and refuse decisions above 8 KiB or beyond the ledger's comment budget.
+
+### Fixed
+
+- Test processes remove inherited Git hook repository variables before running,
+  and the drive's conflict fixture explicitly uses a clean environment, so
+  fixture Git commands cannot be redirected by those variables.
+
+## [0.185.3] - 2026-11-09
+
+### Changed
+
+- Decision sheets build on a shared option, call and source checker, with
+  one table for optional option details. Sheet validation and rendered output
+  stay the same.
+
+## [0.185.2] - 2026-11-09
+
+### Fixed
+
+- Ready to merge, the merge-ready announcement and `jig ask` use the latest
+  ordinary check run by start time, then completion time. Superseded cancelled,
+  failed or pending runs no longer hide a successful retry; a latest failed or
+  cancelled required check still blocks merging and names the check.
+
+## [0.185.1] - 2026-11-09
+
+### Fixed
+
+- The review drive recovers a cancelled workflow with no active replacement
+  after a short grace period, requesting one re-run per head with a durable
+  budget shared across re-arms. An unsafe or refused request, or another
+  cancellation, parks with the run and recovery steps for a person instead of
+  repeating the initial CI wait. The doctor names that recovery. A completed
+  later attempt also replaces an old cancelled matrix template whose expanded
+  jobs have different names.
 
 ## [0.185.0] - 2026-11-09
 
@@ -6488,7 +6600,15 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.185.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.189.1...HEAD
+[0.189.1]: https://github.com/jig-harness/jig/compare/v0.189.0...v0.189.1
+[0.189.0]: https://github.com/jig-harness/jig/compare/v0.188.0...v0.189.0
+[0.188.0]: https://github.com/jig-harness/jig/compare/v0.187.0...v0.188.0
+[0.187.0]: https://github.com/jig-harness/jig/compare/v0.186.0...v0.187.0
+[0.186.0]: https://github.com/jig-harness/jig/compare/v0.185.3...v0.186.0
+[0.185.3]: https://github.com/jig-harness/jig/compare/v0.185.2...v0.185.3
+[0.185.2]: https://github.com/jig-harness/jig/compare/v0.185.1...v0.185.2
+[0.185.1]: https://github.com/jig-harness/jig/compare/v0.185.0...v0.185.1
 [0.185.0]: https://github.com/jig-harness/jig/compare/v0.184.1...v0.185.0
 [0.184.1]: https://github.com/jig-harness/jig/compare/v0.184.0...v0.184.1
 [0.184.0]: https://github.com/jig-harness/jig/compare/v0.183.2...v0.184.0

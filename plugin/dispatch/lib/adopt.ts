@@ -9,7 +9,12 @@
  * - it was updated within the rule's window (`within`, a week by default);
  * - a bot opened it only where the rule names that bot, never through the
  *   default author;
- * - a person's `hold` label is not on it.
+ * - a person's `hold` label is not on it;
+ * - an automation pull request (`automation.ts`: a bot's the rule does not
+ *   name, or one carrying `automation` or an `automation:` label) needs
+ *   work: a check fails, it
+ *   conflicts with its base, or a review thread is unresolved. Being recent
+ *   is not enough for one, so a healthy one is left for a person to merge.
  *
  * A draft is adopted like any other, since a pull request opens as a draft
  * and its drive marks it ready. Adoption reads only a pull request with no
@@ -17,6 +22,13 @@
  * never adopted again. Everything after it is a labelled arm's: once per
  * head commit, on an admitted account, behind a serialized area's hold.
  */
+import {
+  isAutomation,
+  isBot,
+  normalLogin,
+  type TroubleFacts,
+  troubleOf,
+} from "./automation.ts";
 import { hasCommand, type LabelConfig } from "./labels.ts";
 import type { DispatchSection } from "./types.ts";
 
@@ -35,7 +47,7 @@ export interface Author {
 }
 
 /** What the rule reads of an open pull request. */
-export interface Adoptable {
+export interface Adoptable extends TroubleFacts {
   author?: Author;
   updatedAt?: string;
   labels?: string[];
@@ -49,10 +61,24 @@ export function adoptionOf(
   const rule = section.adopt;
   if (!rule.enabled) return null;
   return {
-    authors: rule.authors ?? (login === null ? [] : [login]),
+    authors: [
+      ...new Set([
+        ...(rule.authors ?? (login === null ? [] : [login])),
+        ...(rule.servedAuthors ?? []),
+      ]),
+    ],
     named: rule.authors !== null,
     withinMs: rule.withinMs,
   };
+}
+
+/** The host's own authors, whose pull requests are never automation by their author: the adoption rule's, else the login the dispatcher reads the forge as. */
+export function ownAuthors(
+  adoption: Adoption | null,
+  login: string | null,
+): string[] {
+  if (adoption !== null) return adoption.authors;
+  return login === null ? [] : [login];
 }
 
 /** What the forge record's detail adds for the rule: how many it adopted, or why it adopts none; nothing when off. */
@@ -65,18 +91,6 @@ export function adoptionNote(
     return "; dispatch.adopt names no author and the dispatcher's forge login does not read, so it adopts none";
   const adopted = drives.filter((d) => typeof d.evidence.adopted === "string");
   return `; ${adopted.length} adopted by dispatch.adopt (authors ${adoption.authors.join(", ")}, within ${shownWindow(adoption.withinMs)})`;
-}
-
-/** A login as the rule compares it: case folded, and a GitHub App's `app/<name>` as its `<name>[bot]` account. */
-function normalLogin(login: string): string {
-  const folded = login.trim().toLowerCase();
-  return folded.startsWith("app/") ? `${folded.slice(4)}[bot]` : folded;
-}
-
-/** Whether an author is a bot: the forge says so, or its login is an app's. */
-function isBot(author: Author): boolean {
-  const login = author.login.toLowerCase();
-  return author.bot || login.endsWith("[bot]") || login.startsWith("app/");
 }
 
 /** A window in the duration grammar the section takes (`168h`, `90m`, `30s`). */
@@ -107,5 +121,11 @@ export function adopts(
   const updated = Date.parse(pr.updatedAt ?? "");
   if (!Number.isFinite(updated) || nowMs - updated > adoption.withinMs)
     return null;
-  return `dispatch.adopt: by ${author.login}${isBot(author) ? " (a bot the rule names)" : ""}, updated ${pr.updatedAt}, within its ${shownWindow(adoption.withinMs)} window`;
+  const adopted = `dispatch.adopt: by ${author.login}${isBot(author) ? " (a bot the rule names)" : ""}, updated ${pr.updatedAt}, within its ${shownWindow(adoption.withinMs)} window`;
+  if (!isAutomation(pr, adoption.authors)) return adopted;
+  const trouble = troubleOf(pr);
+  if (trouble !== null)
+    return `${adopted}; an automation pull request that needs work: ${trouble}`;
+  // Only trouble observed admits an automation pull request: a fact the forge did not give in full is unknown, not trouble.
+  return null;
 }

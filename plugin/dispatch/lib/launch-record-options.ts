@@ -20,6 +20,14 @@ function optionalSeconds(value: unknown): boolean {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
+/** Whether a value is absent or an array whose members are strings. */
+function optionalStrings(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (Array.isArray(value) && value.every((v) => typeof v === "string"))
+  );
+}
+
 /** The fields a later version added, each absent or of its type. */
 export function optionalLaunchFields(value: Record<string, unknown>): boolean {
   return (
@@ -32,18 +40,25 @@ export function optionalLaunchFields(value: Record<string, unknown>): boolean {
       "mark",
       "rearmLabel",
       "noReplay",
+      "servedPerson",
+      "ancestorEpic",
+      "stewardResume",
+      "stewardContext",
     ].every((k) => optionalText(value[k])) &&
     [value.marker, value.round].every(
       (v) => v === undefined || v === null || typeof v === "number",
     ) &&
+    batchShape(value.batchItems) &&
+    (value.stewardDecision === undefined ||
+      Number.isSafeInteger(value.stewardDecision)) &&
+    optionalStrings(value.claimedItems) &&
     optionalSeconds(value.passTimeoutSec) &&
-    (value.rearmConsumed === undefined ||
-      typeof value.rearmConsumed === "boolean") &&
-    (value.codexBypass === undefined ||
-      typeof value.codexBypass === "boolean") &&
-    (value.headless === undefined || typeof value.headless === "boolean") &&
-    (value.routineTags === undefined ||
-      typeof value.routineTags === "boolean") &&
+    optionalBooleans(value, [
+      "rearmConsumed",
+      "codexBypass",
+      "headless",
+      "routineTags",
+    ]) &&
     (value.standing === undefined ||
       value.standing === null ||
       isStandingAnswer(value.standing)) &&
@@ -65,5 +80,28 @@ function isRedrive(value: unknown): boolean {
       (value.earlier === undefined ||
         (Array.isArray(value.earlier) &&
           value.earlier.every((c) => typeof c === "string"))))
+  );
+}
+
+function batchShape(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (Array.isArray(value) &&
+      value.every(
+        (i) =>
+          isMapping(i) &&
+          typeof i.key === "string" &&
+          typeof i.person === "string" &&
+          optionalText(i.ancestor),
+      ))
+  );
+}
+
+function optionalBooleans(
+  value: Record<string, unknown>,
+  keys: string[],
+): boolean {
+  return keys.every(
+    (key) => value[key] === undefined || typeof value[key] === "boolean",
   );
 }

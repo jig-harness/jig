@@ -42,7 +42,7 @@ class AssignmentError extends Error {}
  * flag, and `extra` (the estimate, where size is kept in it).
  */
 const poolFields = (extra: string) => `
-  identifier title url priority${extra} createdAt
+  identifier title url priority${extra} createdAt updatedAt
   state { id name type }
   assignee { id name }
   labels(first: 100) { pageInfo { hasNextPage } nodes { name } }
@@ -99,6 +99,7 @@ export function parsePoolIssue(raw: unknown): WithEstimate<CorePoolIssue> {
     priority: priorityOf(n.priority, where),
     ...readEstimate(n, where),
     createdAt: timestamp(n.createdAt, `${where}.createdAt`),
+    ...(typeof n.updatedAt === "string" ? { updatedAt: n.updatedAt } : {}),
     state: {
       id: str(state.id, `${where}.state.id`),
       name: str(state.name, `${where}.state.name`),

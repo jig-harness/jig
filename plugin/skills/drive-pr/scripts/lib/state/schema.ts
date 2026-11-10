@@ -41,8 +41,8 @@ import { isActorId } from "./actor.ts";
 import type { DrivenBranch } from "./driven-branch.ts";
 import { isAccountHash } from "../identity.ts";
 import type { TakeoverRecord } from "./takeover.ts";
-import { isParkedItem } from "./park-frame.ts";
-export { isParkedItem } from "./park-frame.ts";
+import { type ParkedItem, isParkedItem } from "./park-frame.ts";
+export { type ParkedItem, isParkedItem } from "./park-frame.ts";
 import type { UnattendedDecision } from "./decisions.ts";
 import type { DriveEvent } from "./events.ts";
 import type { ArbiterRuling } from "./rulings.ts";
@@ -77,21 +77,6 @@ export interface QuotaParkRecord {
   at: string;
   /** The billing account the wall belongs to, hashed (`accountHash`); absent when unknown. */
   account?: string;
-}
-
-export interface ParkedItem {
-  /** The person this question routes to; absent only on older parks. */
-  person?: string;
-  key: string;
-  kind: "thread" | "finding";
-  /** The decision's question; a park from before framing holds its reason. */
-  reason: string;
-  round: number;
-  /** When it was parked; an answer must be later. Absent on an older park. */
-  at?: string;
-  /** The decision class and the decision record (`framed-park.ts`). */
-  class?: string;
-  record?: string;
 }
 
 /**

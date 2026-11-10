@@ -5,13 +5,14 @@
  * (`dispatch.labels.prefix`, `jig:` by default).
  *
  * - **States**, written by the tick and nobody else: `driving`,
- *   `converged`, `parked`, `stale`, `held`, `followed-up`. The ledger is
- *   the truth, and each tick derives the state from it again, so a state
- *   label a person edited, or one a killed drive left behind, is corrected
- *   at the next tick; `held` is the one state the ledger does not give: a
- *   pull request waiting its turn in a serialized change area carries it
- *   whatever its ledger says. Nothing reads a state label to decide what to
- *   start.
+ *   `converged`, `parked`, `stale`, `held`, `followed-up`,
+ *   `followup-failed`. The ledger is the truth, and each tick derives the
+ *   state from it again, so a state label a person edited, or one a killed
+ *   drive left behind, is corrected at the next tick; `held` is the one
+ *   open state the ledger does not give: a pull request waiting its turn in
+ *   a serialized change area carries it whatever its ledger says. A merged
+ *   pull request's state comes from its follow-up's end instead. Nothing
+ *   reads a state label to decide what to start.
  * - **Commands**, read by the tick and never added by it: `drive` adopts a
  *   pull request with no drive ledger (the tick arms a drive on it),
  *   `rearm` asks for a stopped drive to be re-armed in its existing tree,
@@ -21,6 +22,11 @@
  *   recorded; a removal that fails stays pending and is retried on later
  *   ticks without another launch, and while labels are disabled it stays
  *   pending untouched. `hold` is only ever removed by a person.
+ *
+ * Beside the set, the tick keeps marker labels that carry no prefix
+ * (`pr-markers.ts`): the repository's manual-operations label on a pull
+ * request that owes steps outside its code, and `automation` on a bot's.
+ * They are not in the set: neither puts a pull request in scope.
  *
  * This module is pure: which state a ledger maps to, which pull requests
  * the labels make the tick read, and what must change on a pull request
@@ -58,6 +64,7 @@ export const PROJECTED_STATES = [
   "stale",
   "held",
   "followed-up",
+  "followup-failed",
 ] as const;
 export type StateName = (typeof PROJECTED_STATES)[number];
 
@@ -75,6 +82,7 @@ const MEANINGS: Record<StateName | CommandName, string> = {
     "Its drive converged then went stale, or stopped or parked on a conflict: the dispatcher re-drives it",
   held: "Waits its turn in a serialized change area: the dispatcher drives it once it leads",
   "followed-up": "Merged, and its follow-up is done",
+  "followup-failed": "Merged, and its follow-up failed: a person acts",
   drive: "A person asks the dispatcher to drive this pull request",
   rearm:
     "A person asks the dispatcher to re-arm a stopped drive in its existing tree",
@@ -91,7 +99,7 @@ export interface LabelSpec {
 const STATE_COLOR = "c5def5";
 /** Green, so a pull request ready for a person to merge stands out from one still driven. */
 const CONVERGED_COLOR = "0e8a16";
-/** Red, so a pull request waiting on a person stands out from one still driven. */
+/** Red, so a pull request waiting on a person stands out from one still driven or followed up. */
 const PARKED_COLOR = "d93f0b";
 const COMMAND_COLOR = "fbca04";
 
@@ -99,7 +107,16 @@ const COMMAND_COLOR = "fbca04";
 const STATE_COLORS: Partial<Record<StateName, string>> = {
   converged: CONVERGED_COLOR,
   parked: PARKED_COLOR,
+  "followup-failed": PARKED_COLOR,
 };
+
+/** The longest label name the forge takes, in characters. */
+export const MAX_LABEL = 50;
+
+/** The longest name the prefix goes before: a prefix leaves room for it within the forge's 50 characters. */
+export const LONGEST_NAME = Math.max(
+  ...[...PROJECTED_STATES, ...COMMANDS].map((n) => n.length),
+);
 
 /** The full name of one label under the repository's prefix. */
 function labelName(config: LabelConfig, name: StateName | CommandName): string {
@@ -195,6 +212,8 @@ export interface LabelChange {
   pr: number;
   add: string[];
   remove: string[];
+  /** `markers` for a change to the owed-steps and follow-up markers, which fails and backs off apart from the state's. */
+  part?: "markers";
 }
 
 /**

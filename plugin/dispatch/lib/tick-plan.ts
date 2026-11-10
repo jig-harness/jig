@@ -6,11 +6,14 @@
  * plan's own records in the state database: the follow-up outcomes of ended
  * records, the settled nudges, the idle clock and the release of ended
  * pickups. A pickup whose agent finished frees its slot, so the slot table
- * of the apply state is counted again here.
+ * of the apply state is counted again here. With `--apply`, the failure
+ * ledger's rows past `failures.notify_after` are planned as notifications
+ * beside the plan's own (failure-notices.ts).
  */
 import { slotTable } from "./accounts.ts";
 import { planSteers, readNudges, settlePending } from "./actions/steer.ts";
 import { releaseEnded, settleAgents } from "./actions/pickup-hold.ts";
+import { planFailureNotices } from "./failure-notices.ts";
 import { readOutcomes, settleFollowups } from "./followup-outcomes.ts";
 import { readReleases, reconcileReleases } from "./followup-releases.ts";
 import { readIdle, updateIdle } from "./idle.ts";
@@ -20,6 +23,12 @@ import type { SessionsReport } from "./runtime/port.ts";
 import type { TickContext } from "./tick-context.ts";
 import type { RepoObservation } from "./tick-observe.ts";
 import type { RepoReport } from "./types.ts";
+import {
+  readStewardDigest,
+  recordBelongsToDigest,
+  stewardRecords,
+} from "./steward.ts";
+import { applyStewardOrder } from "./steward-queue.ts";
 
 /** Plan one observed repository into its report. */
 export function planObserved(
@@ -28,9 +37,24 @@ export function planObserved(
 ): void {
   const { opened, tracked, forge, ctx, claims, sessions } = observation;
   const { repo, section, report } = opened;
+  if (
+    opened.owner &&
+    opened.stages.has("steward") &&
+    context.options.machine?.steward?.enabled === true
+  ) {
+    const orders = stewardRecords(repo.slug).flatMap((record) => {
+      if (record.value.kind !== "order") return [];
+      const digest = readStewardDigest(record.run);
+      return digest.ok && recordBelongsToDigest(record.value, digest.value)
+        ? [record.value]
+        : [];
+    });
+    tracked.pickups = applyStewardOrder(tracked.pickups, orders);
+  }
   const onlyLabeled = observation.labels?.onlyLabeled === true;
   planRepo(context, repo.slug, report, {
     slug: repo.slug,
+    values: opened.values,
     ...(observation.board === undefined ? {} : { board: observation.board }),
     section,
     pickups: tracked.pickups,
@@ -51,6 +75,19 @@ export function planObserved(
     ...(onlyLabeled ? { inScope: forge.inScope } : {}),
   });
   if (onlyLabeled) report.inScope = [...forge.inScope];
+  // A failing action on a held pull request, or one not known to be labelled, stands down with every other.
+  const failing = {
+    actions: planFailureNotices(context, opened),
+    held: [],
+    withheld: report.withheld ?? [],
+  };
+  holdBack(
+    failing,
+    observation.held ?? new Set(),
+    onlyLabeled ? forge.inScope : undefined,
+  );
+  report.withheld = failing.withheld;
+  report.actions.push(...failing.actions);
 }
 
 /** A record's execution state: a replay moves it without making a new record. */

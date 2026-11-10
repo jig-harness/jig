@@ -46,7 +46,7 @@ function pullFields(n: number): string {
       latestReviews(first: ${REVIEWS}) { pageInfo { hasNextPage } nodes { state authorAssociation author { __typename login } commit { oid } } }
       commits(last: 1) { nodes { commit { oid statusCheckRollup { contexts(first: ${CHECKS}) { pageInfo { hasNextPage } nodes {
         __typename
-        ... on CheckRun { databaseId name status conclusion startedAt isRequired(pullRequestNumber: ${n}) checkSuite { app { slug } } }
+        ... on CheckRun { databaseId name status conclusion startedAt completedAt isRequired(pullRequestNumber: ${n}) checkSuite { app { slug } } }
         ... on StatusContext { context state isRequired(pullRequestNumber: ${n}) }
       } } } } } }
     }`;
@@ -118,6 +118,7 @@ function checkOf(node: unknown): HeadCheck | null {
     required: node.isRequired === true,
     state: checkState(node),
     startedAt: str(node.startedAt) || null,
+    completedAt: str(node.completedAt) || null,
   };
 }
 

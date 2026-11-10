@@ -19,7 +19,7 @@ export interface JobSpec {
   /** The installed `jig.ts` arguments the job runs. */
   args: string[];
   /** A local hour every day, or every so many minutes. */
-  schedule: { hour: number } | { everyMinutes: number };
+  schedule: { hour: number } | { everyMinutes: number; afterExit?: boolean };
   /** Extra environment the job runs with, beyond the scheduler's own. */
   env?: Record<string, string>;
   /** Seconds one run may take before the launcher stops it; the launcher's own bound when unset. */

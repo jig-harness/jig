@@ -122,8 +122,11 @@ export async function actTurn(
   await timer.time("log", () =>
     logRepo(context, opened.repo.slug, report, forge.drives),
   );
+  // The labels are projected before the notices go out, so a failure alert is judged against the rows the projection leaves.
+  const project = () =>
+    timer.time("labels", () => projectObserved(context, observation));
   const close = async () => {
-    await timer.time("labels", () => projectObserved(context, observation));
+    if (context.apply === null) await project();
     await timer.time("shared", () => closeShared(context, observation));
     timed(report, timer);
   };
@@ -148,7 +151,7 @@ export async function actTurn(
       }
     };
     await timer.time("apply", () =>
-      actObserved(context, observation, { guard, after: close }),
+      actObserved(context, observation, { guard, project, after: close }),
     );
   }
   return timed(report, timer);

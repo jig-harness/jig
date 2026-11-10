@@ -118,6 +118,10 @@ describe("the outcome log's key column", () => {
     old.run("ALTER TABLE launches DROP COLUMN result_next");
     old.run("ALTER TABLE followup_outcomes DROP COLUMN asked");
     old.run("DROP TABLE load_samples");
+    old.run("DROP TABLE failures");
+    old.run("DROP TABLE pickup_reads");
+    old.run("DROP TABLE steward_records");
+    old.run("DROP TABLE steward_runs");
     old.run(`PRAGMA user_version = ${BEFORE_TARGET}`);
     old.run("UPDATE db_meta SET version = ?", [BEFORE_TARGET]);
     old.close();

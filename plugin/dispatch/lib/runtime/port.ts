@@ -164,6 +164,8 @@ export interface ItemTarget {
 export interface PullRequestTarget {
   pr: number;
   head: string;
+  /** A merged PR follow-up may recreate a deleted branch from the base. */
+  purpose?: "followup";
   dispatched: Dispatched;
 }
 
@@ -298,7 +300,12 @@ const SEPARATOR = " · ";
 const LAUNCH = " · launch ";
 
 /** A stage the dispatcher starts something for: a launch record's action. */
-export type NamedStage = "pickup" | "rearm" | "takeover" | "followup";
+export type NamedStage =
+  | "pickup"
+  | "rearm"
+  | "takeover"
+  | "followup"
+  | "steward";
 
 /** The name a workspace the dispatcher creates carries: the mark, the stage and the key. */
 function dispatchedName(stage: NamedStage, key: string): string {
@@ -351,7 +358,7 @@ export interface MarkLine {
 
 /** A launch's mark line: a stage the dispatcher names, a key without spaces and a launch record's id. */
 const MARK_LINE = new RegExp(
-  `^(${DISPATCHED}${SEPARATOR}(?:pickup|rearm|takeover|followup) \\S+)${LAUNCH}(\\d{8}T\\d{6}Z-[a-f\\d]{8})$`,
+  `^(${DISPATCHED}${SEPARATOR}(?:pickup|rearm|takeover|followup|steward) \\S+)${LAUNCH}(\\d{8}T\\d{6}Z-[a-f\\d]{8})$`,
 );
 
 /**

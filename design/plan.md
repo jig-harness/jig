@@ -137,8 +137,8 @@ touch a change area the catalog marks `serialize: true` driven one at a
 time, the one closest to merge first and the rest held, with the conflict
 history report proposing which areas to mark; the re-arm step waits on the drive
 running in a session of its own, and the pickups start as headless
-`do-item` passes; item 44 ([line-at-capacity.md](line-at-capacity.md)) adds
-the pickups of the people a host serves. A park's notification carries the park's framed
+`do-item` passes for the [people the host serves](../plugin/README.md#the-dispatcher).
+A park's notification carries the park's framed
 decision.
 
 What is open is checking it on a live host. Done when, on a host running
@@ -243,58 +243,6 @@ checks named, a pull request under the CI hold reads held and is never in
 merge now, and the history view filtered to yesterday shows how many
 pull requests became ready, were merged, are still waiting, and were lost
 to waiting.
-
-### 44. The line at capacity: the host's load factor, served pickups and the steward
-
-Each tick measures the host's memory, processors, disk and the machine-wide
-test lock every gate run queues on, and reports the launches its load factor
-would hold; it still admits work by account slots alone until a person sets
-`load.enforce`, so a host with room to spare idles and one near its limit
-takes one more session. Pickups currently serve only the factory identity, including
-on Orca through account-bound headless passes; serving people a host is
-configured to serve remains step 7. The stops that reach a person mix real
-decisions with stops an agent could recover.
-[design/line-at-capacity.md](line-at-capacity.md) has how it works: each
-tick reads the host's gauges and computes the **load factor**, the fullest
-gauge's fill, starting a launch only while every gauge stays under its line
-with that launch's measured reservation counted, a new pickup retaining
-room for a drive or follow-up, and the existing alternation between drive
-launches and the other stages unchanged; it ships report-only
-(`load.enforce: false`). Pickups run as headless `do-item` passes through
-the follow-up's wrapper, bound and identity-checked as a drive's pass is,
-with only their implementer delegate on the route's model. A host's machine file names the people it serves
-(`serve:`); an open, not-started item a writer assigned to one of them, and
-each unassigned item under an epic assigned to them, is ranked by rules as
-data, held out with its reason when blocked or flagged for a person, and
-claimed with `claim --for <person>`, which keeps them as the assignee.
-Every 20 minutes, when its input changed, a **steward** pass reads the
-needs, stopped drives, waiting passes and the queue, and writes records
-from a closed list that the next tick carries out under its guards: a
-re-arm once on the recovery budget, an act and ask for each need that stays
-a person's, a missing facet, the queue's order; it never merges, answers a
-registry-class park, re-arms a drive a person stopped or sends a session
-free text. Every need opens with one act (Merge, Decide, Authorize, Reply,
-Do, Investigate) on the dashboard's
-[views](dispatch-board.md#five-views-one-column-of-cards).
-The route's tiers become item 31's complexity tiers. Built in the
-design's order, one pull request per step, under the item 44 epic.
-
-Done when, on a host running Orca, a converged pull request whose review
-the forge witnesses and that can merge is in merge now with a command
-pinned to its head within one interval; a park under `release` reads Authorize with its recommended
-option's cost, the same act in `jig ask`; every receipt carries each gauge,
-the load factor and the gauge that binds, and with enforcement off a launch
-a gauge would refuse still starts and is reported as would-hold; an item
-assigned to the factory identity gets one headless `do-item` pass on an
-admitted account within one interval, with its implementer on the route's model; an item a
-writer assigns to a served person starts within one interval when there is
-headroom and keeps that person as its only assignee, while a blocked one
-reads "waiting on #N" and a `hitl` one "needs a person to start"; with
-nothing changed no steward pass starts, a stop whose logs show a transient
-cause is re-armed once by the next tick on the recovery budget, and no
-steward record re-arms a drive a person stopped or held; and an S bug routes
-standard, the same bug labelled `has-migration` complex, a Codex account
-running it on Sol with no `routing.models` set.
 
 ### 39. Addresses: asking and telling the stations of the line
 
@@ -422,7 +370,7 @@ work, nothing shows a pickup's progress before its pull request exists,
 and answering a parked question takes a terminal.
 [design/hub.md](hub.md) has how it works. What it will build: the
 dispatch dashboard (item 33) grown into one page, `jig hub` in
-`plugin/hub/`, with item 44's views (Merge, where it opens while anything
+`plugin/hub/`, with the dispatcher's views (Merge, where it opens while anything
 is safe to merge, Needs you, Running, Queue and History), a Work page for
 each piece of work with its thread, and Hosts, each derived from the line's records at every
 read and none of them stored; marks on item 36's status row (the

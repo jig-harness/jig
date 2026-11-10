@@ -57,6 +57,16 @@
  * each managed pull request's state label is set from its ledger
  * (lib/actions/labels.ts). With them off, no label is read or written.
  *
+ * What fails in a row is counted in the failure ledger (lib/failures.ts),
+ * with `--apply` and a machine file: each label write, notice, nudge, claim
+ * end and marker answer the act phase attempts, each repository's turn and
+ * the tick as a whole, the last two once the exit is decided
+ * (lib/tick-settle.ts). An action that keeps failing backs off, reported as
+ * waiting until its next try, and a row past `failures.notify_after` is
+ * notified to a person (lib/failure-notices.ts). What is wanted is still
+ * derived every tick: a row only remembers failures, and goes when its
+ * action succeeds or leaves the plan.
+ *
  * Another host may dispatch the same repository: every host's launch claims
  * and their ends are read beside this host's records, and with `--apply`
  * this host claims its own launches there and writes their ends
@@ -97,7 +107,11 @@ import {
   startTurn,
 } from "./lib/tick-repo.ts";
 import { routeRecurrences } from "./lib/reflection-route.ts";
-import { settleOutcomes } from "./lib/tick-settle.ts";
+import {
+  finalizeTickFailure,
+  settleFailures,
+  settleOutcomes,
+} from "./lib/tick-settle.ts";
 import { launchedMeanwhile } from "./lib/tick-plan.ts";
 import type { RepoReport } from "./lib/types.ts";
 import { takeScheduledUpgrade } from "../runtime/upgrade-record.ts";
@@ -461,6 +475,7 @@ async function closeTick(
     failed || !copied || settleFailed || withheld !== undefined ? 1 : 0;
   // A defect the start kept on the receipt stays: the tick ran, but not whole.
   receipt.completed = receipt.defect === undefined;
+  settleFailures(receipt, context);
   receipt.finishedAt = new Date().toISOString();
   // The dashboard's copy is written here, so it carries the phases timed so far; the receipt file adds `close`.
   receipt.phasesMs = { ...timer.ms };
@@ -471,6 +486,8 @@ async function closeTick(
     inputs: context.lineInputs,
     codexOptIn: context.apply?.codexOptIn ?? hostCodexOptIn(),
   });
+  // Writing the line can set the exit to 1: the tick's failure row follows it.
+  finalizeTickFailure(receipt, context);
 }
 
 /**
@@ -523,9 +540,11 @@ async function actAndClose(
     receipt.exitStatus = 1;
     receipt.finishedAt = new Date().toISOString();
     logDefect("the tick", receipt.defect, error);
+    settleFailures(receipt, context);
     receipt.phasesMs = { ...timer.ms };
     if (context.options.machine)
       recordTickHealth(receipt, context.options.machine);
+    finalizeTickFailure(receipt, context);
   }
   receipt.phasesMs = { ...timer.ms };
   const path = writeReceipt(receipt);
@@ -534,6 +553,15 @@ async function actAndClose(
 }
 
 export async function runTick(options: TickOptions): Promise<TickResult> {
+  // A plugin host may run inside Electron. Its Node mode and crash reporter
+  // belong to that host, not to programs this tick starts.
+  for (const key of Object.keys(process.env))
+    if (
+      key === "ELECTRON_RUN_AS_NODE" ||
+      key.startsWith("ELECTRON_CRASH") ||
+      key === "CHROME_CRASHPAD_PIPE_NAME"
+    )
+      delete process.env[key];
   const timer = new PhaseTimer<TickPhase>();
   const started = await timer.time("start", () => startTick(options));
   const locks = new Map<string, Held>();

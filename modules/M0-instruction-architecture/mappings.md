@@ -132,8 +132,9 @@ Bun's built-ins, so they run before the dependency install, on every pull
 request and with no path filter. Run them from a pinned Jig checkout, or
 vendor the folder with the Jig files it imports, keeping their paths
 relative to it: `lib/cli.ts` and `lib/files.ts` for the checks, and
-`lib/test-helpers/expect-spawn-exit.ts` and `plugin/shared/guarded-git-spawn.ts` as
-well to run their self-tests. All four use only Bun's built-ins.
+`lib/test-helpers/expect-spawn-exit.ts`, `lib/test-helpers/windows-skip.ts` and
+`plugin/shared/guarded-git-spawn.ts` as well to run their self-tests. These
+files use only Bun's built-ins.
 
 The chain check models Codex's `AGENTS.md` chain. A repository whose
 instructions live only in `CLAUDE.md` files measures them the way Codex
@@ -185,6 +186,8 @@ holds real files rather than the symlink mirror) and add
 lists its skills as `<plugin>:<skill>`. A repository that measures its own
 plugin and also has skills of its own names those with `--bare-skills <dir>`:
 both appear in the same session's listing, so they share one allowance.
+When a repository has legacy commands, also pass `--commands .claude/commands`
+to the discovery check: commands share the aggregate listing with skills.
 
 ## The universal-file + delta pattern
 

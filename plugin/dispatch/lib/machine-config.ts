@@ -27,6 +27,10 @@
  * followup_concurrency: 2
  * receipts_days: 30
  * unclaimed_after: 15m
+ * failures:
+ *   backoff: 2m
+ *   backoff_max: 1h
+ *   notify_after: 3
  * dashboard:
  *   listen: 100.64.0.7:8765
  *   require_token: true     # false only with a loopback listen: a front authenticates
@@ -49,8 +53,10 @@ import { isMapping, jigHome } from "../../shared/config-layers.ts";
 import { OPEN_LIMIT_MS } from "../../shared/orca-workspace/limits.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { load } from "../../shared/yaml.ts";
+import { FAILURE_DEFAULTS, type FailureSettings } from "./failures.ts";
 import { isLoopback, type Listen, parseListen } from "./listen.ts";
 import { type LoadSettings, loadSettings } from "./load-config.ts";
+import { type ServedPerson, servedPeople } from "./serve-config.ts";
 
 /** The stages a machine file can enable. */
 const MACHINE_STAGES = [
@@ -59,6 +65,7 @@ const MACHINE_STAGES = [
   "followup",
   "notify",
   "steer",
+  "steward",
 ] as const;
 export type MachineStage = (typeof MACHINE_STAGES)[number];
 
@@ -98,7 +105,10 @@ const SHARED_MEDIA = ["forge"] as const;
 export type SharedMedium = (typeof SHARED_MEDIA)[number];
 
 export interface MachineConfig {
+  steward?: { enabled: boolean; everyMs: number };
   path: string;
+  /** People authorized by this host, never by a repository overlay. */
+  serve?: ServedPerson[];
   repositories: MachineRepository[];
   accounts: MachineAccount[];
   intervalMs: number;
@@ -114,6 +124,8 @@ export interface MachineConfig {
   receiptsDays: number;
   /** How long a launch the runtime answered as started may go unclaimed by its wrapper before it is stuck (`unclaimed_after`). */
   unclaimedAfterMs: number;
+  /** How the tick backs off an action that keeps failing, and when it tells a person (`failures`); the defaults when absent. */
+  failures?: FailureSettings;
   /** The address `jig dispatch dashboard` listens on (`dashboard.listen`); `null` when the file names none. */
   dashboardListen: Listen | null;
   /** Whether a request to the dashboard needs the token its command prints (`dashboard.require_token`); `true` unless the file says `false`, which only a loopback `listen` accepts. */
@@ -144,6 +156,8 @@ const DEFAULTS = {
 } as const;
 
 const TOP_KEYS = [
+  "steward",
+  "serve",
   "repositories",
   "accounts",
   "interval",
@@ -155,6 +169,7 @@ const TOP_KEYS = [
   "followup_concurrency",
   "receipts_days",
   "unclaimed_after",
+  "failures",
   "dashboard",
   "records",
   "send",
@@ -162,6 +177,7 @@ const TOP_KEYS = [
   "load",
 ];
 const DASHBOARD_KEYS = ["listen", "require_token", "allowed_hosts"];
+const FAILURES_KEYS = ["backoff", "backoff_max", "notify_after"];
 const RECORDS_KEYS = ["shared"];
 const REPOSITORY_KEYS = ["path", "stages", "followup_since", "owner"];
 const ACCOUNT_KEYS = [
@@ -496,6 +512,8 @@ function parseValues(values: unknown, where: string): Checked<MachineConfig> {
   if (!isMapping(top)) return invalid(`${where} must be a mapping`);
   const known = only(top, TOP_KEYS, where);
   if (!known.ok) return known;
+  const serve = servedPeople(top.serve);
+  if (!serve.ok) return serve;
   const repos = repositories(top.repositories);
   if (!repos.ok) return repos;
   const accountList = accounts(top.accounts);
@@ -506,14 +524,33 @@ function parseValues(values: unknown, where: string): Checked<MachineConfig> {
   if (!shared.ok) return shared;
   const host = loadSettings(top.load);
   if (!host.ok) return host;
+  const steward = stewardSettings(top.steward);
+  if (!steward.ok) return steward;
   return ok({
     path: where,
+    serve: serve.value,
     repositories: repos.value,
     accounts: accountList.value,
     ...timing.value,
     ...shared.value,
     load: host.value,
+    steward: steward.value,
   });
+}
+
+function stewardSettings(
+  value: unknown,
+): Checked<{ enabled: boolean; everyMs: number }> {
+  if (value === undefined || value === null)
+    return ok({ enabled: false, everyMs: 20 * 60_000 });
+  if (!isMapping(value)) return invalid("steward must be a mapping");
+  const known = only(value, ["enabled", "every"], "steward");
+  if (!known.ok) return known;
+  const enabled = flag(value.enabled, "steward.enabled", false);
+  if (!enabled.ok) return enabled;
+  const every = optionalDuration(value.every, "steward.every", 20 * 60_000);
+  if (!every.ok) return every;
+  return ok({ enabled: enabled.value, everyMs: every.value });
 }
 
 /** The tick's interval, backoff, timeouts, opens and retention, with defaults. */
@@ -606,6 +643,7 @@ function surfaces(
 ): Checked<
   Pick<
     MachineConfig,
+    | "failures"
     | "dashboardListen"
     | "dashboardRequireToken"
     | "dashboardAllowedHosts"
@@ -614,6 +652,8 @@ function surfaces(
     | "changeProbe"
   >
 > {
+  const failureSettings = failures(top.failures);
+  if (!failureSettings.ok) return failureSettings;
   const dashboardListen = dashboard(top.dashboard);
   if (!dashboardListen.ok) return dashboardListen;
   const requireToken = dashboardRequireToken(top.dashboard);
@@ -627,6 +667,7 @@ function surfaces(
   const changeProbe = flag(top.change_probe, "change_probe", true);
   if (!changeProbe.ok) return changeProbe;
   return ok({
+    failures: failureSettings.value,
     dashboardListen: dashboardListen.value,
     dashboardRequireToken: requireToken.value,
     dashboardAllowedHosts: allowedHosts.value,
@@ -649,6 +690,46 @@ function records(value: unknown): Checked<SharedMedium> {
       `records.shared must be one of ${SHARED_MEDIA.join(", ")}: ${String(shared)}`,
     );
   return ok(shared as SharedMedium);
+}
+
+/** The `failures` settings, each defaulted; a longest wait shorter than the first is refused. */
+function failures(value: unknown): Checked<FailureSettings> {
+  if (value === undefined || value === null) return ok({ ...FAILURE_DEFAULTS });
+  if (!isMapping(value)) return invalid("failures must be a mapping");
+  const known = only(value, FAILURES_KEYS, "failures");
+  if (!known.ok) return known;
+  const backoffMs = optionalDuration(
+    value.backoff,
+    "failures.backoff",
+    FAILURE_DEFAULTS.backoffMs,
+  );
+  if (!backoffMs.ok) return backoffMs;
+  const backoffMaxMs = optionalDuration(
+    value.backoff_max,
+    "failures.backoff_max",
+    FAILURE_DEFAULTS.backoffMaxMs,
+  );
+  if (!backoffMaxMs.ok) return backoffMaxMs;
+  const notifyAfter = count(
+    value.notify_after,
+    "failures.notify_after",
+    FAILURE_DEFAULTS.notifyAfter,
+  );
+  if (!notifyAfter.ok) return notifyAfter;
+  if (backoffMaxMs.value < backoffMs.value)
+    return invalid("failures.backoff_max must be at least failures.backoff");
+  return ok({
+    backoffMs: backoffMs.value,
+    backoffMaxMs: backoffMaxMs.value,
+    notifyAfter: notifyAfter.value,
+  });
+}
+
+/** The machine file's `failures` settings, the defaults where it has none. */
+export function failureSettings(
+  config: Pick<MachineConfig, "failures"> | null | undefined,
+): FailureSettings {
+  return config?.failures ?? { ...FAILURE_DEFAULTS };
 }
 
 /** The dashboard's address; `null` when the file names none. */
@@ -715,6 +796,14 @@ export function readMachineConfig(
       error,
     );
   }
+  return parseMachineConfigText(raw, file);
+}
+
+/** The machine file's text, already read, parsed and validated; `file` names it in reasons. */
+export function parseMachineConfigText(
+  raw: string,
+  file: string,
+): Outcome<MachineConfig, MachineConfigCode> {
   let values: unknown;
   try {
     values = load(raw);

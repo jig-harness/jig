@@ -2113,7 +2113,7 @@ function threadCommentNodes(
       __typename: (c.bot ?? t.bot) ? "Bot" : "User",
     },
     authorAssociation: c.authorAssociation ?? "NONE",
-    createdAt: "2026-09-10T10:00:00Z",
+    createdAt: new Date(Date.UTC(2026, 8, 10, 10, 0, i)).toISOString(),
     lastEditedAt: "2026-09-10T10:00:00Z",
     body: c.body,
     originalCommit: { oid: originalCommitOid },

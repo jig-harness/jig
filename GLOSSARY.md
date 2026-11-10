@@ -1718,6 +1718,11 @@ make, use the entry's term instead.
 
 ## Runnable tooling
 
+- **Lingering** — a systemd setting that starts an account's service manager
+  at boot and keeps it running after the account logs out. A dashboard
+  installed as a user job needs it to remain available without a login
+  session. See [dashboard availability](plugin/README.md#the-dispatcher).
+
 - **Wake and waiter** — A wake asks a reader to run sooner after a command
   writes a request. The request record remains authoritative: losing the
   wake only delays reading it until the next scheduled run. A waiter is the
@@ -2248,8 +2253,11 @@ make, use the entry's term instead.
   repository turns them on, all under one prefix the repository picks
   (`jig:` by default). The dispatcher keeps a state label on each pull
   request it manages (driving, converged, parked, stale, *held*,
-  followed-up), derived from the drive ledger and the *serialized areas* at
-  every *tick* and never read to decide what to start. A person adds the
+  followed-up, followup-failed), derived from the drive ledger, the
+  *serialized areas* and, after the merge, the follow-up's end at every
+  *tick*, and never read to decide what to start. Beside them it keeps
+  marker labels without the prefix: the *owed-steps label* and
+  `automation` (*automation pull request*). A person adds the
   commands: `drive` asks the dispatcher to drive a pull request that has
   no drive yet, and `hold` stands it down from a pull request until the
   person removes the label.
@@ -2257,7 +2265,24 @@ make, use the entry's term instead.
   the *dispatcher* drives its own recent pull requests without anyone
   labelling them: an open pull request with no drive ledger, opened by one
   of the rule's authors and updated within its window, is armed as if a
-  person had put the `drive` label on it.
+  person had put the `drive` label on it. An *automation pull request* is
+  armed only while it needs work.
+- **Automation pull request** — a pull request a bot or a workflow opened
+  (a regeneration, a sync, a dependency update) rather than a person: it
+  carries a label of the `automation:` family, which the workflow applies
+  to name its job (`automation:docs-sync`), or the generic `automation`
+  label, which the *dispatcher* puts on a bot's pull request that has none
+  (a bot the *adoption rule* names is the host's own identity, not
+  automation). The dispatcher drives one, adopted or re-driven, only while
+  it needs work (a failed check, a conflict with its base, an unresolved
+  review thread) and leaves a healthy one for a person to merge.
+- **Owed-steps label** — the repository's manual-operations label
+  (`issue_tracker.labels.manual_ops`, `manual-ops` by default) on a pull
+  request: its description's `## Out-of-tree follow-ups` section lists a
+  step a person still takes outside the code. The *dispatcher* sets it from
+  the description at every *tick*, and a merged pull request keeps it until
+  every step is checked off or its follow-up is done. The same label on an
+  issue marks the issue's own manual steps.
 - **Serialized area** — an area of a *change-area catalog* marked
   `serialize: true`: its pull requests conflict with each other whenever
   two of them move at once (a migrations folder, a schema), so the
@@ -2314,6 +2339,14 @@ make, use the entry's term instead.
   except for a notification about the stop of a session it started, which
   its row for that session already covers. One dashboard filters
   it; it is never rendered into a report file.
+- **Failure ledger** — the *dispatcher*'s count of what failed in a row,
+  a table of its state database: one row per action it retries on its own
+  (a label write, a notification's delivery, a nudge, a claim end), per
+  repository whose turn failed and per scope of its ticks that exited 1,
+  with the count, since when and the last reason. It paces the retries of
+  an action that keeps failing and tells a person once the count passes a
+  threshold; it never says what to do, which each tick still derives, and
+  a row goes when its action succeeds or is no longer wanted.
 - **Recurring class** — a bad outcome class (any but converged, merged and
   parked for a person) of one stage on one repository in the *outcome log* on
   at least three of the last seven days of the host's clock, counting the rows
@@ -2347,13 +2380,13 @@ make, use the entry's term instead.
   gauge stays under its limit with that session counted, and a new pickup
   never takes the last unit of room, so the drives that turn earlier work
   into merges keep running. It reports what it would hold before a person
-  turns the limit on ([design](design/line-at-capacity.md#the-hosts-load-factor)).
+  turns the limit on ([load factor](plugin/CONFIGURATION.md#the-machines-dispatch-file)).
 - **Served person** — a person a *dispatcher*'s host works for, named with
   their forge logins and tracker identities in the host's own dispatch
   file. An open item a person with write access assigned to them, and each
   unassigned item under an epic assigned to them, is ranked and picked up
   beside the *factory identity*'s, and the pickup keeps them as the
-  item's assignee ([design](design/line-at-capacity.md#serving-named-people)).
+  item's assignee ([served pickups](plugin/README.md#the-dispatcher)).
 - **Steward** — the agent pass a *dispatcher*'s host starts every 20
   minutes, when its input changed, to read what is stopped and waiting on
   the line and propose what to do about it: re-arm a drive once when its
@@ -2362,14 +2395,14 @@ make, use the entry's term instead.
   It writes records from a closed list, and the next *tick* carries them
   out under its own guards. It never merges, answers a parked question,
   re-arms a drive a person stopped or held, writes code or sends a session free
-  text ([design](design/line-at-capacity.md#the-steward-every-20-minutes)).
+  text ([steward](plugin/skills/steward/README.md)).
   *Avoid:* orchestrator.
 - **Act (of a need)** — the one thing a person does to settle something
   that waits on them, from a closed list: Merge, Decide, Authorize, Reply,
   Do or Investigate. Each need on the *dispatch board* opens with its act,
   derived from its park's class, then the ask and the recommended option
   with what it changes and costs
-  ([design](design/line-at-capacity.md#what-each-need-asks-of-a-person)).
+  ([a need's act](plugin/README.md#the-dispatcher)).
 - **Kickoff** — the first prompt an agent is given in a new workspace,
   usually the pickup skill and the issue key. The
   [Herdr workspace tool](tools/herdr/README.md) sends it once per piece of

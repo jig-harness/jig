@@ -26,7 +26,7 @@ writes (the `drive-answer` record, [plugin/RECORDS.md](../plugin/RECORDS.md)),
 the [re-arm](../GLOSSARY.md) that reads answers
 (`skills/drive-pr/scripts/lib/driver/rearm.ts`), and the
 [act](../GLOSSARY.md) every need opens with
-([line-at-capacity.md § What each need asks of a person](line-at-capacity.md#what-each-need-asks-of-a-person)).
+([a need's act](../plugin/README.md#the-dispatcher)).
 
 ## The rule
 

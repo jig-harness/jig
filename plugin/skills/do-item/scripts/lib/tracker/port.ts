@@ -226,6 +226,7 @@ export interface PoolIssue {
   /** The size facet; `null` = none. */
   size: string | null;
   createdAt: string;
+  updatedAt?: string;
   state: IssueState & { id: string };
   assignee: { id: string; name: string } | null;
   labels: string[];
@@ -637,6 +638,8 @@ export interface Tracker {
   assignees(key: string): Promise<TrackerUser[]>;
   /** Assign the issue to `user` alone, replacing any other assignee. */
   assign(key: string, user: TrackerUser): Promise<void>;
+  /** Add an assignee only to an unassigned issue, never replacing a racing assignee. False means refresh the queue. */
+  assignUnassigned?(key: string, user: TrackerUser): Promise<boolean>;
   /**
    * The user an identity names, in the form `dispatch.identity` takes (a
    * GitHub login; a Linear user's email or display name; a Jira account

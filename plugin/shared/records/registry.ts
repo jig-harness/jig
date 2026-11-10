@@ -83,9 +83,9 @@ const STATE_DIR = "~/.local/state/jig/drive-pr/<clone>/";
 const DRIVE_DB_FILE = "~/.local/state/jig/drive-pr/state.sqlite";
 const DISPATCH_DIR = "~/.local/state/jig/dispatch/";
 /** The dispatcher's database schema version (`dispatch/lib/state.ts`'s `SCHEMA_VERSION`). */
-const DISPATCH_DB = 17;
+const DISPATCH_DB = 20;
 /** The drive's database schema version (`skills/drive-pr/scripts/lib/state/db.ts`'s `DRIVE_DB_VERSION`). */
-const DRIVE_DB = 4;
+const DRIVE_DB = 5;
 const RRC = "skills/resolve-review-comments/scripts/";
 const REFLECT = "skills/reflect/scripts/";
 
@@ -166,6 +166,11 @@ const DRIVE_STATE: RecordKind[] = [
   },
   driveTable("drive-state-import", `${STATE}import.ts`, "imports"),
   driveTable("drive-counter", `${STATE}db.ts`, "counters"),
+  driveTable(
+    "drive-cancelled-ci",
+    `${DRIVE}lib/cancelled-recovery-state.ts`,
+    "cancelled_ci",
+  ),
   driveTable(
     "review-round-counter",
     `${STATE}review-rounds.ts`,
@@ -266,9 +271,25 @@ const DISPATCHER: RecordKind[] = [
     "merge_reads",
   ),
   dispatchTable(
+    "dispatch-pickup-read",
+    "dispatch/lib/pickup-reads.ts",
+    "pickup_reads",
+  ),
+  dispatchTable(
     "dispatch-load-sample",
     "dispatch/lib/load-samples.ts",
     "load_samples",
+  ),
+  dispatchTable("dispatch-failure", "dispatch/lib/failures.ts", "failures"),
+  dispatchTable(
+    "dispatch-steward-run",
+    "dispatch/lib/steward.ts",
+    "steward_runs",
+  ),
+  dispatchTable(
+    "dispatch-steward-record",
+    "dispatch/lib/steward.ts",
+    "steward_records",
   ),
   plain(
     "machine",
@@ -304,6 +325,27 @@ const DISPATCHER: RecordKind[] = [
     "dispatch/lib/change-probe.ts",
     `${DISPATCH_DIR}probe/state.json`,
     1,
+  ),
+  plain(
+    "machine",
+    "dispatch-dashboard-install",
+    "dispatch/dashboard-install.ts",
+    `${DISPATCH_DIR}dashboard/enabled`,
+    0,
+  ),
+  plain(
+    "machine",
+    "dispatch-dashboard-access",
+    "dispatch/dashboard-reader.ts",
+    `${DISPATCH_DIR}dashboard/access.json`,
+    0,
+  ),
+  plain(
+    "machine",
+    "dispatch-dashboard-reader-lock",
+    "shared/file-lock.ts",
+    `${DISPATCH_DIR}dashboard/reader.<digest>.lock`,
+    0,
   ),
   plain(
     "machine",

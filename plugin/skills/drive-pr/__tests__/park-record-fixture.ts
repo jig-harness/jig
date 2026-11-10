@@ -18,7 +18,7 @@ export function parkArgs(
 }
 
 /** A complete decision record asking `question` (a `?` is added when missing). */
-export function parkRecord(
+export function legacyParkRecord(
   question: string,
   parkClass: string = FIXTURE_PARK_CLASS,
 ): string {
@@ -50,4 +50,37 @@ export function parkRecord(
     "Replied on the thread with an interim status and parked it.",
     "",
   ].join("\n");
+}
+
+/** The JSON authored by every new park. */
+export function parkRecord(
+  question: string,
+  parkClass: string = FIXTURE_PARK_CLASS,
+): string {
+  return JSON.stringify({
+    schema: "parked-decision/v1",
+    class: parkClass,
+    call: {
+      id: "a",
+      question: question.endsWith("?") ? question : question + "?",
+      options: [
+        {
+          id: "a",
+          name: "Keep it",
+          summary: "nothing in the code.",
+          pay: ["the reviewer's concern stays open."],
+        },
+        {
+          id: "b",
+          name: "Change it",
+          summary: "the anchored function.",
+          pay: ["one more review round."],
+        },
+      ],
+      recommended: "a",
+      why: "because the current value matches the decision the pull request records.",
+    },
+    steps: [],
+    alreadyDone: "Replied on the thread with an interim status and parked it.",
+  });
 }

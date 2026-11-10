@@ -42,7 +42,7 @@ path that produces the exit, not because none of them name one.
 |---|---|---|---|
 | `0` | `ROUND_READY` | no | Unresolved threads and/or unaddressed summary-only findings exist. On a mergeable head the reviewer gates below also proved it reviewed that head; on a **conflicting** one they are skipped, so the findings may predate it — the `reason` and `reviewer.reviewedSha` say which (§ 14) |
 | `3` | `CONVERGED` | **yes** | Every convergence condition below holds |
-| `4` | `HEAD_LAG` / `AWAITING_REVIEWER` / `STALE_REVIEW` / `HEAD_MOVED` / `MERGEABILITY_UNKNOWN` | no | Not judgeable yet. With `--once` this returns immediately; otherwise after `--timeout`. `drive.ts` also reuses this code for a case `drive-status.ts` cannot see: the reviewer converged, but the Ready-mark lease is held by another driver — `claimed-by-other` is not proof that driver will finish, and reporting `0` would claim a still-draft PR that the draft-skipping reviewers have never seen is done (§ A draft PR is reviewed, and then marked Ready). And for a second such case: the reviewer converged, nothing is failing, and no fresh exact-head required-check witness arrived within `DRIVE_PR_FINAL_CI_WITNESS_POLLS` polls (default 180 × 10s = 30 min, `0` waits forever) — a required check whose fresh run completed `skipped` is passing to the aggregate verdict and no witness here, and no amount of waiting converts one into the other, so the drive names the rerun and hands back rather than sleeping until a human notices. And for a third: the verdict stayed `cancelled: …` for those same polls, with no run to replace the cancelled checks. A cancelled check is unknown, so this is neither a pass nor a failure to repair (§ 9) |
+| `4` | `HEAD_LAG` / `AWAITING_REVIEWER` / `STALE_REVIEW` / `HEAD_MOVED` / `MERGEABILITY_UNKNOWN` | no | Not judgeable yet. With `--once` this returns immediately; otherwise after `--timeout`. `drive.ts` also reuses this code for a case `drive-status.ts` cannot see: the reviewer converged, but the Ready-mark lease is held by another driver — `claimed-by-other` is not proof that driver will finish, and reporting `0` would claim a still-draft PR that the draft-skipping reviewers have never seen is done (§ A draft PR is reviewed, and then marked Ready). And for a second such case: the reviewer converged, nothing is failing, and no fresh exact-head required-check witness arrived within `DRIVE_PR_FINAL_CI_WITNESS_POLLS` polls (default 180 × 10s = 30 min, `0` waits forever) — a required check whose fresh run completed `skipped` is passing to the aggregate verdict and no witness here, and no amount of waiting converts one into the other, so the drive names the rerun and hands back rather than sleeping until a human notices. Cancelled workflows instead use one durable re-run per head after a 30-second grace period; an unsafe or refused re-run, or an unreplaced cancellation after recovery, parks with `8` (§ 9) |
 | `5` | `PR_NOT_OPEN` | **yes** | Merged or closed. Checked first, every pass |
 | `6` | — | **yes** | `drive.ts` only: hit `--max-rounds` without converging |
 | `7` | `REVIEWER_FAILED` | **yes** | The posting reviewer's check-run did not pass |
@@ -491,7 +491,7 @@ Once the only unresolved threads await a human, the loop wakes, re-enumerates
 the same undeferrable threads, discovers nothing it may act on, and burns turns.
 
 **Guard**: `bun "<skill-dir>/scripts/drive-state.ts" park` records the item under
-one of the registry's decision classes (`--class`) with its decision record on
+one of the registry's decision classes (`--class`) with its checked `ParkedDecision` JSON on
 stdin, and refuses a park without them; parked items stop counting as live
 work, the drive works everything else to its end, and then reaches
 `HITL_PARKED` and prints each decision in full. `drive.ts` does not wake
@@ -1523,8 +1523,16 @@ false "green":
   required check blocks the merge, beside the green the opening run left on the
   same head and under the same name, so a cancelled check is never read as
   passing. It reads `cancelled: …` (`lib/status/workflow-runs.ts`), below
-  `failing:` and `pending:` and above `green`, and the drive waits for it on
-  the witness bound, ending in exit `4`. It stops counting only when a run of
+  `failing:` and `pending:` and above `green`. With no active replacement
+  after a 30-second grace period, the drive requests one re-run per head,
+  recorded in SQLite before the request so re-arms share its budget. It
+  polls during recovery, including before an initial review pass that would
+  otherwise stop at `CI_HOLD_WAIT`. A refused or unconfirmed request, an
+  unsafe held event, or a cancellation still unreplaced 60 seconds after the
+  request with no active run parks `cancelled-ci` and exits `8`; its decision
+  record and doctor recovery name the run. Observing recovery clears that
+  operational park. A live CI hold is left for convergence to release.
+  Cancellation stops counting only when a run of
   the same workflow on the head, started no earlier, has completed with a
   result: by start time, because a concurrency group can cancel the higher run
   id in favour of a lower one started in the same second; with a job that
