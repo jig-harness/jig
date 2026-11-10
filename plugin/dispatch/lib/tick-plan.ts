@@ -55,6 +55,7 @@ export function planObserved(
   planRepo(context, repo.slug, report, {
     slug: repo.slug,
     values: opened.values,
+    root: repo.path,
     ...(observation.board === undefined ? {} : { board: observation.board }),
     section,
     pickups: tracked.pickups,
