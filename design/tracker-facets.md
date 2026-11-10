@@ -356,9 +356,9 @@ file.
   use up the read; the sweep lists them from a separate read of one page of
   100. It is the weekly sweep's read, and the one read of the interface that
   returns part of a population on purpose, so it says so in its name and its
-  cursor. Its pages are ordered oldest first by default and, with
-  `order: 'least-recently-updated'`, by last update, which is the order the
-  sweep's comment-only mode reads in
+  cursor. Its pages are ordered oldest first, an order no write changes, so
+  the cursor of one run can be kept and resumed by the next, which is how the
+  sweep's comment-only mode reaches issues past a capped read
   ([the weekly sweep](#the-weekly-sweep)).
 - `Tracker` gains `facetStores()`: each facet's effective store and why
   (configured, kept in labels, detected), and on GitHub what detection saw
@@ -545,12 +545,17 @@ issue is moved and commented on once. In comment-only mode the issue stays in th
 marker alone keeps the sweep to one comment per issue and set of missing
 facets: a run that finds the marker posts nothing, and posts again only when
 the missing facets change. A capped read would let the same first issues,
-already commented, take every run's pages, so in this mode the read orders
-the population by least recently updated: the sweep's own comment moves an
-issue to the back, issues never commented on come first, and the run needs no
-stored cursor. An issue whose missing facets change after its comment is
-revisited when its turn comes, which is within as many runs as the population
-holds pages.
+already commented, take every run's pages, and no order that depends on the
+sweep's own writes can advance past them, since a run that finds the marker
+writes nothing. So in this mode the read keeps a position: pages are ordered
+oldest first, a creation order that no write changes, and the run records the
+key of the last issue it read in the state the sweep keeps between runs (on
+Jig's workflow, its cache). The next run resumes after that key, and a read
+that reaches the end of the population starts again from the first issue. An
+issue whose missing facets change after its comment is revisited when the
+position comes round to it, which is within as many runs as the population
+holds capped reads. A run with no recorded position starts from the first
+issue.
 
 Its bounds:
 
