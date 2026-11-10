@@ -92,7 +92,11 @@ function entryOf(need: LineNeed): WaitingEntry | null {
     title: need.title,
     questions: [
       ...(need.question ? [need.question] : []),
-      ...need.decisions.map((d) => d.question ?? d.lines.join("\n")),
+      ...need.decisions.map((d) =>
+        d.decision === undefined
+          ? (d.question ?? d.lines.join("\n"))
+          : d.lines.join("\n"),
+      ),
     ].filter((q) => q.length > 0),
   };
 }

@@ -933,3 +933,16 @@ before 2.45 leaves ancestry unknown rather than risk a fetch. The fleet-health f
 whole-cohort bounds must agree too. Missing heads, rewritten branches and
 resolutions in other clones limit coverage. A capped forge cohort has no
 verdict. The report includes coverage and bounds in JSON and terminal output.
+
+### The decision a park carries
+
+A new park takes checked `ParkedDecision` JSON on standard input, with its
+question, options, costs, recommendation, steps and work already done. Unknown
+fields are refused by name. Each decision is limited to 8 KiB of UTF-8 JSON
+and must fit the drive ledger's 65,536-byte budget with its other parks;
+refusals name the sizes. The ledger redacts each string value separately.
+Optional option details appear as labels and text on the card and in
+`jig ask`. Decision sheets can supply a park through `parkFromSheet`, which
+expands sheet references and requires a recommendation. Parks stored in the
+older Markdown form still read until they leave the ledger. The authoring
+format and command are in [the skill, § 4](SKILL.md).

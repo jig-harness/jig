@@ -21,7 +21,7 @@ import {
 import { applyFollowups } from "./actions/followup.ts";
 import { applyNotices } from "./actions/notify.ts";
 import { applyPickups } from "./actions/pickup.ts";
-import { applySteers } from "./actions/steer.ts";
+import { applySteers, retireSteers } from "./actions/steer.ts";
 import { adoptionOf } from "./adopt.ts";
 import { type LaunchGroup, launchStageOrder } from "./apply-order.ts";
 import { readOutcomes } from "./followup-outcomes.ts";
@@ -40,6 +40,7 @@ import { launchClaimer, type SharedContext } from "./shared-launches.ts";
 import { readDrives } from "./sources/ledgers.ts";
 import {
   allRecords,
+  bookOf,
   type TickContext,
   type TickOptions,
 } from "./tick-context.ts";
@@ -50,6 +51,7 @@ import {
 } from "./tick-observe.ts";
 import { afterWait } from "./tick-plan.ts";
 import { endOwnClaims } from "./tick-shared.ts";
+import type { ActionBook } from "./failures.ts";
 import type {
   ApplyStage,
   DispatchSection,
@@ -112,24 +114,31 @@ export type StageGuard = (
  * Act on one observed and planned repository; nothing without `--apply`.
  * Its own claims end now; its launches and notifications are handed to
  * `context.pending`, run in turns once every repository is gathered, and
- * `after`, the close, runs when its last turn is done; `guard` bounds each
- * stage of them.
+ * `project` runs before its notifications are delivered, `after`, the
+ * close, when its last turn is done; `guard` bounds each stage of them.
  */
 export async function actObserved(
   context: TickContext,
   observation: RepoObservation,
-  hooks: { guard: StageGuard; after: () => Promise<void> },
+  hooks: {
+    guard: StageGuard;
+    /** The label projection, run ahead of the notices so their failure alerts stand against its rows. */
+    project: () => Promise<void>;
+    after: () => Promise<void>;
+  },
 ): Promise<void> {
   const apply = context.apply;
   if (apply === null) return;
   const { opened, forge, ctx, claims } = observation;
   const { repo, section, report } = opened;
+  const book = bookOf(context, repo.slug, report);
   await endOwnClaims(ctx, report, {
     claims,
     forge,
     records: allRecords(context),
     outcomes: readOutcomes(repo.slug),
     nowMs: context.nowMs,
+    book,
   });
   apply.sessionsOf ??= new Map();
   apply.sessionsOf.set(repo.slug, observation.sessions);
@@ -144,6 +153,7 @@ export async function actObserved(
     sessions: observation.sessions,
     shared: ctx,
     unplaced: withheldFromReplay(afterWait(context, observation.serialized)),
+    book,
   };
   context.pending.push({
     apply: (group) =>
@@ -156,6 +166,7 @@ export async function actObserved(
         inputs,
         "finish",
         hooks.guard,
+        hooks.project,
       ).then(() =>
         // `after` times its own phases: a boundary of its own, outside the apply timer.
         hooks.guard("close", hooks.after, false),
@@ -186,6 +197,8 @@ interface ApplyInputs {
   shared: SharedContext;
   /** Pull requests whose place in a serialized group this tick cannot tell, by number and why. */
   unplaced: ReadonlyMap<number, string>;
+  /** The failure ledger's book of the repository's actions. */
+  book: ActionBook | null;
 }
 
 /**
@@ -200,6 +213,7 @@ async function applyStages(
   inputs: ApplyInputs,
   group: LaunchGroup | "finish",
   guard: StageGuard,
+  project?: () => Promise<void>,
 ): Promise<void> {
   const { repo, runtime, section, tracked, login, join } = inputs;
   const fresh = () => readSessions(runtime, repo, join);
@@ -297,8 +311,13 @@ async function applyStages(
   if (group !== "finish") return;
   // The nudges first: a nudge that went unanswered is notified in the same tick.
   await guard("steer", async () => {
-    if (enabled.has("steer")) await applySteers(apply, repo.slug, report);
+    // Which nudges are wanted is known only from a session listing that read.
+    const observed = inputs.sessions.ok && report.records.every((r) => r.ok);
+    if (enabled.has("steer"))
+      await applySteers(apply, repo.slug, report, inputs.book, observed);
+    else retireSteers(report, inputs.book, observed);
   });
+  if (project !== undefined) await guard("close", project, false);
   await guard("notify", async () => {
     // A launch a busy holder refused is notified in the same tick, as a nudge left unanswered is.
     report.actions.push(...holderActions(repo.slug, report.launches));
@@ -308,6 +327,7 @@ async function applyStages(
         lingerMs: section.noticesLingerMs,
         renotifyAfterMs: section.renotifyAfterMs,
         branch: section.noticesBranch,
+        book: inputs.book,
       });
   });
 }

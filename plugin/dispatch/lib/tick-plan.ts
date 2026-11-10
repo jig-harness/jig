@@ -6,11 +6,14 @@
  * plan's own records in the state database: the follow-up outcomes of ended
  * records, the settled nudges, the idle clock and the release of ended
  * pickups. A pickup whose agent finished frees its slot, so the slot table
- * of the apply state is counted again here.
+ * of the apply state is counted again here. With `--apply`, the failure
+ * ledger's rows past `failures.notify_after` are planned as notifications
+ * beside the plan's own (failure-notices.ts).
  */
 import { slotTable } from "./accounts.ts";
 import { planSteers, readNudges, settlePending } from "./actions/steer.ts";
 import { releaseEnded, settleAgents } from "./actions/pickup-hold.ts";
+import { planFailureNotices } from "./failure-notices.ts";
 import { readOutcomes, settleFollowups } from "./followup-outcomes.ts";
 import { readReleases, reconcileReleases } from "./followup-releases.ts";
 import { readIdle, updateIdle } from "./idle.ts";
@@ -52,6 +55,19 @@ export function planObserved(
     ...(onlyLabeled ? { inScope: forge.inScope } : {}),
   });
   if (onlyLabeled) report.inScope = [...forge.inScope];
+  // A failing action on a held pull request, or one not known to be labelled, stands down with every other.
+  const failing = {
+    actions: planFailureNotices(context, opened),
+    held: [],
+    withheld: report.withheld ?? [],
+  };
+  holdBack(
+    failing,
+    observation.held ?? new Set(),
+    onlyLabeled ? forge.inScope : undefined,
+  );
+  report.withheld = failing.withheld;
+  report.actions.push(...failing.actions);
 }
 
 /** A record's execution state: a replay moves it without making a new record. */

@@ -7,6 +7,7 @@
  *
  *   bun decision-sheet.ts render <source.json> [--template compact|document] [--out <dir>] [--require-fresh]
  *   bun decision-sheet.ts validate <source.json>
+ *   bun decision-sheet.ts park <source.json> --call <id> [--class <class>]
  *   bun decision-sheet.ts trigger --facets <a,b> --options <n,m> [--human-asked]
  *   bun decision-sheet.ts extract <sheet.html>
  *   bun decision-sheet.ts template <sheet.html>
@@ -41,6 +42,7 @@ import {
   type SheetTemplate,
 } from "./html-shared.ts";
 import { renderComment, renderElaboration, sheetFilename } from "./markdown.ts";
+import { parkFromSheet } from "./park.ts";
 import {
   decisionStatus,
   parseSource,
@@ -67,11 +69,14 @@ const VALUE_FLAGS = new Set([
   "--facets",
   "--options",
   "--template",
+  "--call",
+  "--class",
 ]);
 
 /** Every flag each command accepts. A flag outside it is a typo, never ignored. */
 const COMMAND_FLAGS: Record<string, readonly string[]> = {
   validate: [],
+  park: ["--call", "--class"],
   render: ["--require-fresh", "--out", "--template"],
   trigger: ["--facets", "--options", "--human-asked"],
   extract: [],
@@ -138,11 +143,41 @@ function numbers(value: string | undefined, name: string): number[] {
   });
 }
 
-function main(argv: string[]): number {
-  const [command, ...args] = argv;
+function checkFlags(command: string | undefined, args: string[]): void {
   if (command !== undefined && command in COMMAND_FLAGS)
     rejectUnknownFlags(command, args);
+}
+
+function parkCommand(args: string[]): number {
+  const source = readSource(positional(args, "<source.json>"));
+  const callId = flag(args, "--call");
+  if (callId === undefined) throw new UsageError("--call <id> is required");
+  const parkClass = flag(args, "--class");
+  const result = parkFromSheet(
+    source,
+    callId,
+    parkClass === undefined ? {} : { class: parkClass },
+  );
+  if (!result.ok) {
+    console.error(result.failure.reason);
+    return 1;
+  }
+  console.log(JSON.stringify(result.value, null, 2));
+  return 0;
+}
+
+function unknownCommand(command: string | undefined): never {
+  throw new UsageError(
+    `unknown command ${command ?? "(none)"}; use ${Object.keys(COMMAND_FLAGS).join(", ")}`,
+  );
+}
+
+function main(argv: string[]): number {
+  const [command, ...args] = argv;
+  checkFlags(command, args);
   switch (command) {
+    case "park":
+      return parkCommand(args);
     case "validate": {
       const source = readSource(positional(args, "<source.json>"));
       assertRepositoriesConfigured(
@@ -285,22 +320,22 @@ function main(argv: string[]): number {
       return 0;
     }
     default:
-      throw new UsageError(
-        `unknown command ${command ?? "(none)"}; use render, validate, trigger, extract, template or stale-attachments`,
-      );
+      return unknownCommand(command);
   }
 }
 
-if (import.meta.main) {
+function runCommand(argv: string[]): number {
   try {
-    process.exit(main(process.argv.slice(2)));
+    return main(argv);
   } catch (err) {
     if (err instanceof SourceError || err instanceof UsageError) {
       console.error(err.message);
-      process.exit(1);
+      return 1;
     }
     throw err;
   }
 }
+
+if (import.meta.main) process.exit(runCommand(process.argv.slice(2)));
 
 export { main };

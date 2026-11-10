@@ -280,6 +280,7 @@ const DISPATCHER: RecordKind[] = [
     "dispatch/lib/load-samples.ts",
     "load_samples",
   ),
+  dispatchTable("dispatch-failure", "dispatch/lib/failures.ts", "failures"),
   plain(
     "machine",
     "dispatch-receipt",

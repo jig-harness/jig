@@ -207,10 +207,10 @@ when it fails. The phase names are the ones a receipt times.
 | Apply state (`act`) | `tick-apply.ts` | the launch records, `tick-index` | the rotation cursor | cursor unwritable: no launches |
 | `plan` | `tick-plan.ts` | everything above, the follow-up outcomes, the idle clock, the nudges | the idle clock, released pickups, settled nudges, the follow-up outcomes it settles | a write the database refuses is a defect: it stops this repository in phase `plan` |
 | `log` | `tick-settle.ts` | the ended launch records, the ledgers | one outcome row per ended record, with its end | reported; the record is kept until its row lands |
-| `apply` | `tick-apply.ts` | each target read again just before its launch | the launch record, the forge claim or marker, the runtime's launch, nudges, notices | per action: refused, reported, tried again next tick |
-| `labels` | `tick-labels.ts` | the ledgers | the state labels on pull requests | per write, reported |
+| `apply` | `tick-apply.ts` | each target read again just before its launch, the failure ledger | the launch record, the forge claim or marker, the runtime's launch, nudges, notices, the failure ledger | per action: refused, reported, tried again next tick; a nudge, notice, claim end or marker answer that keeps failing backs off (see Failures) |
+| `labels` | `tick-labels.ts` | the ledgers, the failure ledger | the state labels on pull requests, the failure ledger | per write, reported; one that keeps failing backs off (see Failures) |
 | `shared` | `tick-shared.ts` | the shared records' reads and writes this turn | none | none |
-| Close (`close`) | `tick.ts`, `tick-settle.ts`, `tick-reads.ts`, `tick-line.ts` | the receipt, the launch records, the forge's rate limit as the tick started (put on every repository's report) | outcome rows for repositories not read and not held by another tick, the month files, the line (only by a tick that read every repository of the machine file), the receipt | a part that reports its failure is said on the receipt, which stays complete; exit status 1; a budget that does not read is reported as unreadable. A defect in a closing step marks the receipt not completed |
+| Close (`close`) | `tick.ts`, `tick-settle.ts`, `tick-reads.ts`, `tick-line.ts` | the receipt, the launch records, the forge's rate limit as the tick started (put on every repository's report) | outcome rows for repositories not read and not held by another tick, the failure ledger's rows for each repository read and for the tick, the month files, the line (only by a tick that read every repository of the machine file), the receipt | a part that reports its failure is said on the receipt, which stays complete; exit status 1; a budget that does not read is reported as unreadable. A defect in a closing step marks the receipt not completed |
 
 **A defect stops only its own repository.** Every read and every action
 above turns its expected failures into a record or a refusal on the report.
@@ -1570,6 +1570,8 @@ follow-up's `Question:`), how long it has waited (from the stop's last
 ledger write, else the first send, else the first tick that saw it) and the
 workspace it was sent to. It is the one view over the line's waits, read
 from the same plan the notifications come from, so the two never disagree.
+The failure ledger's causes, about the dispatcher itself, are the
+exception: they are on the receipt (see Failures).
 
 A workspace holds one comment, so a message never replaces one a person has
 not read. The tick joins every cause it notifies to one target in a tick
@@ -1590,6 +1592,94 @@ nothing from the phone but that comment.
 
 Where several hosts dispatch a repository, only the host that owns it
 notifies for it (see Several hosts), so a person is told once.
+
+### Failures
+
+Every action a tick takes is retried at the next tick without anything
+remembering it: what is wanted is derived again from the forge, the
+tracker and the runtime, and a failed action is still wanted. That keeps a
+lost plan harmless, and it also hides a failure that never stops: a label
+write the forge refuses is tried every tick for as long as it stands, and
+ticks that all fail tell nobody. The **failure ledger** (`failures.ts`, the
+`failures` table) remembers only that: what failed in a row, never what
+to do ([ADR-0013](../docs/adr/ADR-0013-records-not-a-daemon.md)). An
+operations queue, with its attempts, backoff and dead letters per planned
+operation, would be a second record of what will happen, one that can go
+stale or be lost while the derivation is still right; the ledger is
+consulted by the actions the plan derives, and a missing row only means an
+action is tried at once.
+
+**What it counts.** One row per key, with the failures in a row, the first
+and the last failure's time, the last reason in one sentence (never a
+stack, [ADR-0012](../docs/adr/ADR-0012-failures-as-values.md)) and the next
+try:
+
+- **An action**, keyed by what it does and its target, as the plan names
+  it: a pull request's dispatch label write (`label PR #<n>`), a
+  notification's delivery (`notice <its key>`), a nudge the runtime refused
+  (`nudge <record> <episode>`), and this host's claim end or follow-up
+  marker answer (`claim-end` or `marker-answer PR #<n> comment <id>`).
+  These are the actions a tick tries again on its own with nothing else
+  counting the tries.
+- **A repository's turn**, under its path: one refused, stopped by a
+  defect, or that found a record that did not read.
+- **The tick**, by its scope: a tick of one repository (a wake-up, `jig
+  send`'s, a change probe's) has its own row, and every tick of several
+  repositories shares one, so the sweeps that succeed between failing
+  wake-ups do not clear the wake-ups' count. A tick that exits 1 counts;
+  one that exits 3 found the lock held and counts nothing.
+
+Only a tick with `--apply` and a machine file keeps the ledger; a person's
+report changes nothing there. Each host keeps its own.
+
+**Where the boundary is.** Launch admission is outside the ledger, since
+it already has records that count: a launch record counts its own attempts,
+a pending record lost twice, or answered as started and never claimed, is
+stuck and needs a person (see Launch records), and an unchanged refusal is
+suppressed by its own record. A stale follow-up claim is released once per
+pull request, with its own release record. The ledger never counts what
+those count, so no failure is notified twice.
+
+**Backoff.** A first failure is tried again at the next tick, as every
+action always was: most failures are passing. A second in a row waits
+`failures.backoff` (two minutes, one tick at the interval a sweep is meant
+to run at), doubling with each failure after that up to
+`failures.backoff_max` (an hour), so an action failing for a day is tried
+about thirty times rather than hundreds. While it waits, its outcome on the
+report is waiting, saying how many failures in a row since when and its
+next try. A repository's turn and the tick do not back off: their reads
+are what the next tick needs.
+
+**Escalation.** A row whose failures in a row reach `failures.notify_after`
+(three: past a passing outage and, at a five-minute interval, within about a
+quarter of an hour of a cause that stands) is planned as a notification,
+once and then on `dispatch.renotify_after`, like every cause: an action's
+as `action-failing` at its own repository, a repository's as
+`repository-failing` and the tick's as `ticks-failing` at this host's home,
+the first repository the machine file lists that this host owns with
+`notify` enabled and whose own turn is not failing, or, when every such
+repository is failing, the first of them. A repository that does not open
+cannot be told anything at its own destination, which is why the host's
+own failures have one. Such a notice has one identity wherever it is
+told: its key carries `host` in place of the destination's slug, and a
+send at one repository suppresses it at the others, so the home moving
+does not tell the same run of failures again. The notice names the key, the count, since
+when and the last reason. Its key carries when the run of failures began,
+so a later run is a new notice. A failure's own notice is counted like any
+delivery and never notified itself. Only the host that owns a repository
+notifies for it; the ticks' row is this host's. The rows are written as
+the actions run and as the tick closes, and the notifications planned from
+them at the next tick's plan. These causes are about the dispatcher rather
+than a piece of work, so they are on the receipt and not on the board's
+What needs you.
+
+**Clearing.** A success removes its row. So does the action leaving the
+plan: each kind's planner, once its reads were whole, names the keys it
+still wants, and every row of that kind it did not name goes (a pull
+request closed, a cause settled, a repository no longer in the machine
+file). A cause whose row went leaves the plan, and its suppression record
+goes the way every notice's does. The receipt lists the rows backing off
+and the rows past the threshold (`failures`).
 
 ### Receipts
 
@@ -1644,6 +1734,9 @@ per kind of record, each row under a unique key:
   a recurring class, keyed by the finding's id, holding the event as its
   first append sent it, pending until the store reports it stored (see
   Control).
+- **The failure ledger**: one row per action, repository or tick scope that
+  failed in a row, removed by a success or once its action leaves the plan
+  (see Failures).
 - **Merge reads**: one row per repository and merged pull request in the
   follow-up window, the markers a tick last read on it, and the launch
   claims where this host's ended launches still owed their ends, at its

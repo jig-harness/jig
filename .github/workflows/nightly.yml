@@ -13,6 +13,8 @@
 # Before its gates, Windows exercises the documented pickup and drive
 # commands in PowerShell against local fake services. The normal gate set
 # runs the same smoke with native argument arrays.
+# Every `bun run test`, including each platform gate shard's test stage,
+# writes a fresh JUnit report and checks tests executed (scripts/test.ts).
 #
 # Nothing waits for this run. GitHub notifies whoever last changed the
 # schedule when it fails; workflow_dispatch runs it on demand, against any
@@ -93,7 +95,7 @@ jobs:
         shell: pwsh
         env:
           JIG_TEST_PWSH: "1"
-        run: bun test --timeout 60000 tools/plugin/powershell-smoke.test.ts --test-name-pattern PowerShell
+        run: bun run test --timeout 60000 tools/plugin/powershell-smoke.test.ts --test-name-pattern PowerShell
       - name: Run gate set
         run: bun run gates
 

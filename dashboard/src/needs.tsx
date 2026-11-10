@@ -83,7 +83,7 @@ function clause(text: string): string {
 }
 
 /** An option as the card reads it: its name in bold, then what it changes and costs. */
-function OptionText({ option }: { option: LineOption }) {
+export function OptionText({ option }: { option: LineOption }) {
   return (
     <>
       <strong>{option.name}</strong>
@@ -91,6 +91,11 @@ function OptionText({ option }: { option: LineOption }) {
         <> — changes: {clause(option.changes)}</>
       )}
       {option.costs === null ? null : <>; costs: {clause(option.costs)}</>}
+      {(option.details ?? []).map((detail) => (
+        <span key={detail.label}>
+          ; {detail.label}: {detail.text}
+        </span>
+      ))}
     </>
   );
 }

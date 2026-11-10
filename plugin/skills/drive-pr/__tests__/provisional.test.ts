@@ -16,6 +16,7 @@ import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.
 import { PROVISIONAL_MARKER } from "../scripts/lib/outcome.ts";
 import { listedThreadStandsOnProvisional } from "../scripts/lib/provisional.ts";
 import { provisionalBody } from "../scripts/provisional-reply.ts";
+import { parkRecord } from "./park-record-fixture.ts";
 import { reversalParkedKeys } from "../scripts/lib/state/decisions.ts";
 import {
   type Comment,
@@ -407,7 +408,12 @@ describe("a person reverses a provisional decision by commenting, never by an un
       kind: "thread",
       class: "human-thread",
     });
-    expect(parked[0].record).toContain("## Question");
+    expect(parked[0].record).toBeUndefined();
+    expect(parked[0].decision).toMatchObject({
+      schema: "parked-decision/v1",
+      class: "human-thread",
+      call: { recommended: "follow" },
+    });
     const keys = await runIn(forge, join(SCRIPTS, "drive-state.ts"), [
       "reversal-parked-keys",
       "12",
@@ -493,33 +499,7 @@ describe("a person reverses a provisional decision by commenting, never by an un
 });
 
 const RECORD = (cls: string) =>
-  [
-    "## Question",
-    "",
-    "Should the retry budget be raised for this pull request?",
-    "",
-    "## Options",
-    "",
-    "- **Raise it** Changes: the budget. Costs: longer drives.",
-    "- **Keep it** Changes: nothing. Costs: a stop at the budget.",
-    "",
-    "## Recommended",
-    "",
-    "**Keep it**: the budget is the configured policy.",
-    "",
-    "## Class",
-    "",
-    cls,
-    "",
-    "## Steps for a person",
-    "",
-    "None.",
-    "",
-    "## Already done",
-    "",
-    "Read the configuration.",
-    "",
-  ].join("\n");
+  parkRecord("Should the retry budget be raised for this pull request?", cls);
 
 async function park(forge: Forge, key: string, cls: string) {
   const r = await runIn(

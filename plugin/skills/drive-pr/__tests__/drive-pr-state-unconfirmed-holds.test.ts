@@ -453,7 +453,7 @@ describe("drive-state.ts durability", () => {
         parkRecord("first line\nsecond line"),
       );
       expectSpawnExit(r, 2);
-      expect(r.stderr).toContain("Question must be one line");
+      expect(r.stderr).toContain("must be one line");
     });
 
     it("a reason QUOTING the narrative marker does not move the boundary", async () => {
