@@ -28,6 +28,7 @@ export function forgeRearmReader(
     login ??= resolveLogin(undefined, signal);
     const selfLogin = await login;
     if (signal?.aborted) return "the collector deadline passed";
+    if (selfLogin === null) return "the forge login could not be resolved";
     return rearmsFromSnapshot(
       await readLedgerSnapshot(String(pr), selfLogin, repo, signal),
     );

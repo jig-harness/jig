@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import yaml from "js-yaml";
@@ -10,7 +10,11 @@ import {
   type IssueFact,
   unattributedCeremony,
 } from "../scripts/lib/fleet-health.ts";
-import { rearmsFromSnapshot } from "../scripts/lib/fleet-health-rearms.ts";
+import {
+  forgeRearmReader,
+  rearmsFromSnapshot,
+} from "../scripts/lib/fleet-health-rearms.ts";
+import * as forge from "../scripts/lib/state/ledger-forge.ts";
 import {
   ledgerFromState,
   renderLedger,
@@ -126,6 +130,20 @@ test("the trusted canonical ledger supplies re-arms, and unreadable or older his
     "comments unreadable: request timed out",
   );
   expect(rearmsFromSnapshot(snapshotFrom([], "maintainer"))).toEqual([]);
+});
+
+test("an unreadable forge identity leaves re-arm history unknown", async () => {
+  const login = spyOn(forge, "resolveLogin").mockResolvedValue(null);
+  const snapshot = spyOn(forge, "readLedgerSnapshot");
+  try {
+    await expect(forgeRearmReader("owner/repo")(1)).resolves.toBe(
+      "the forge login could not be resolved",
+    );
+    expect(snapshot).not.toHaveBeenCalled();
+  } finally {
+    login.mockRestore();
+    snapshot.mockRestore();
+  }
 });
 
 test("older configurations receive the re-arm weight and drop only its obsolete unmeasured entry", () => {
