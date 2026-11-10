@@ -1,4 +1,5 @@
 import { parseDeclaration } from "../../../../gc/config.ts";
+import { manualOpsLabel } from "../../../../dispatch/lib/owed-steps.ts";
 import { dispatchSection } from "../../../../dispatch/lib/section.ts";
 import { parkClasses, resolveAutonomy } from "../../../../shared/autonomy.ts";
 import { ExitError } from "../../../../shared/cli.ts";
@@ -177,6 +178,15 @@ export function skillValidation(
   if (!gc.ok) refuse("gc", gc.failure.reason);
   const dispatch = dispatchSection(config);
   if (!dispatch.ok) refuse("dispatch", dispatch.failure.reason);
+  else if (dispatch.value.labels.enabled) {
+    const manualOps = manualOpsLabel(config, dispatch.value.labels.prefix);
+    if (!manualOps.ok)
+      findings.push({
+        id: "invalid:manual-ops-label",
+        severity: "error",
+        message: `dispatch cannot mark pull requests that owe steps: ${manualOps.failure.reason}; its other labels are unaffected`,
+      });
+  }
   attempt("docs", () => parseDocsSettings(config.docs, root));
   attempt("design-brief-builder (handback)", () => {
     const handback = at(config, "design_brief.handback");

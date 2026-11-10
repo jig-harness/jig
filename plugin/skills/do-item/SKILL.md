@@ -1,7 +1,7 @@
 ---
 name: do-item
-description: "Pick up one work item from the tracker and carry it to a driven pull request: scout, delegate, review, open the PR, arm the drive."
-argument-hint: "[issue-key]"
+description: "Pick up one tracker item through a driven pull request, or run its configured scouts before pickup for an issue key or free-text task."
+argument-hint: "[issue-key] | scout <issue-key> | scout --text <task>"
 allowed-tools: "Read Grep Glob Task Bash(bun *) Bash(git *) Bash(gh *) WebFetch AskUserQuestion"
 ---
 
@@ -48,6 +48,51 @@ the same way, e.g. `${CLAUDE_SKILL_DIR}/../drive-pr/scripts/drive.ts`.
 Run every command from the root of the repository the issue belongs to. Never
 `cd` into the skill directory: the scripts find the repository and its
 configuration from the working directory.
+
+### Scout before a pickup
+
+`/jig:do-item scout <issue-key>` runs the configured context-gathering scouts
+without starting the item. `/jig:do-item scout --text <task>` does the same
+for free text. Handle these forms here and stop after reporting findings;
+do not enter the pickup steps, claim an issue, write an intent chain,
+implement, open a pull request or arm a drive.
+
+1. For an issue key, fetch the issue with `scripts/get_issue.ts` as in
+   [Step 1](#step-1-fetch-the-issue), and write the returned JSON to
+   `.context/scout-input.json`. Stop if the fetch fails. For `--text`, write
+   JSON with the task verbatim as `title` and `description`, and `labels: []`,
+   to that file; do not read or write the tracker. Free text routes through
+   the configured title keywords or default agent, since it has no labels.
+2. Run the same routing used by a pickup:
+
+   ```bash
+   bun "${CLAUDE_SKILL_DIR}/scripts/determine_agent.ts" .context/scout-input.json
+   ```
+
+   Report the recommended agent and scouts. Stop on a non-zero exit. If the
+   scout list is empty, say no scouts are configured for that route and
+   stop without posting an empty findings comment.
+3. Run each scout named in the result with the task or full issue, the
+   repository instructions and the relevant context. Use the harness's
+   subagent tool with that scout's definition; when it is unavailable, read
+   the definition and perform its checks in this session. The scouts gather
+   context only. Collect their findings, evidence paths and unresolved
+   questions. If a scout fails, report the partial findings and the failure;
+   do not publish a reusable findings comment.
+4. After all scouts finish, read the repository hash:
+
+   ```bash
+   bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rev-parse --short HEAD
+   ```
+
+   Write `.context/scout-findings.md` with the first line exactly
+   `## Scout Findings (<hash>)`, substituting that hash, followed by the
+   collected findings. Print the complete findings for both forms. For an
+   issue key, also post that file through the tracker comment operation as in
+   [Step 4a item 3](#step-4a-standard-start-no-sub-issues). Report a failed
+   post and retain the file. For free text, the printed findings are the
+   result; no tracker comment is posted. A later pickup's Step 2 selects an
+   issue's comment under the existing hash and freshness rules.
 
 ### How to read the step markers
 
@@ -116,6 +161,11 @@ use a label never triggers its rule.
 **exact** — Never improvise how a pull request is named, based, opened or
 sized. `scripts/pr-plan.ts` applies the repository's policy (`pull_requests`
 and the facts derived from the repository) and prints what to do:
+
+The opening plan warns on foreign merges, listing the commits they bring in.
+With a change-area catalog, it adds the directly touched areas' tracker labels
+and flags to the fixed labels; implied areas add none. Unreadable history or
+catalog data stops planning.
 
 ```bash
 bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" branch --issue "<KEY>" --title "<issue title>"
@@ -484,6 +534,13 @@ review rounds use the PR pin instead.
 findings against the issue. The status writes, scripts, templates and gate
 routing below remain **exact**.
 
+**Premise check.** When the problem rests on a third-party tool's behaviour,
+verify that claim against the installed version or its version-matched
+documentation before delegating. Report `Premise: <claim>; checked by
+<command or documentation>; version: <version>; result: <finding>`.
+If the premise is false, stop the pickup and re-scope it with the user before
+implementation. Skip this check for issues about the repository's own code.
+
 > **Batch check (issues carrying any label in the repository's
 > `batch_sizes` list, by default `xs`, `small` or `medium`).** Review cost is
 > largely per PR, so several small closures sharing one review cycle cost
@@ -618,6 +675,17 @@ routing below remain **exact**.
    bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" claim "<KEY>"
    ```
 
+   A served-person dispatch prompt supplies the tracker identity and, for
+   inherited assignment, its ancestor epic. Use the same claim command with
+   `--for <identity>` and, when supplied, `--ancestor <epic-key>`.
+   Keep these as separate quoted arguments. The claim keeps that person as
+   sole assignee, checks writer authority and live ancestry, and refuses
+   changed holds or assignment. A refusal or stand-down requires a fresh
+   queue read; never retry without the served-person options. GitHub supports
+   inherited claims; Linear and Jira refuse them because their assignment
+   APIs cannot preserve a concurrent assignee. Claims serialize on this
+   host; simultaneous same-person claims on separate hosts remain a race.
+
    Exit `0` is the claim. Exit `3` is a refusal, nothing written: the issue
    is already `in_progress` or assigned to someone else. Exit `4` is a
    stand-down: the claim was written, and reading the issue back showed
@@ -640,9 +708,9 @@ routing below remain **exact**.
    bun "${CLAUDE_SKILL_DIR}/../../shared/orca-board.ts" in-progress
    ```
 
-   Then name the workspace for the stage. With a runtime that can rename its workspaces (Orca), this renames it, for
+   Then name the workspace for the stage. With a runtime that can rename its workspaces (Herdr or Orca), this renames it, for
    example to `JIG-12 [I] Rename workspaces` (the default `workspace_name.template`);
-   with the template set to `""`, or anywhere else, it does nothing; a failed Orca rename only warns and exits `0`,
+   with the template set to `""`, or anywhere else, it does nothing; a failed rename only warns and exits `0`,
    while a malformed argument, an invalid `workspace_name` field or an unreadable title
    file exits `2`, and a configuration file that cannot be parsed exits `1`. The issue title is
    tracker text, so write it alone to `.context/workspace-title.md` with the
@@ -1011,7 +1079,23 @@ routing below remain **exact**.
    run that flow as well: it would post a second comment and move the ticket
    twice.
 
-   **Arm the drive (terminal step, immediately after the PR opens):**
+   **Release the implementer's isolated worktree:** After the branch is
+   pushed and the PR is open, stop the delegate. When it used a separate
+   worktree, run from this session's tree:
+
+   ```bash
+   bun "${CLAUDE_SKILL_DIR}/scripts/release-implementer-worktree.ts" --tree "<delegate path>" --branch "<PR head branch>" --remote "<remote>"
+   ```
+
+   Pass only the path returned by that delegate. The script verifies a linked
+   tree of this clone, the expected branch, clean status, no hidden index flags
+   or git operation, and HEAD ancestry on the live remote branch, then detaches
+   it. This session's tree stays attached. Include a `held` report's path,
+   reason and command argument arrays in the final report; settle the blocker
+   and rerun the safety check before using the detach command. Skip when no
+   isolated delegate tree was created.
+
+   **Arm the drive (terminal step, after releasing any delegate tree):**
 
    First capture the `pickupId` retained from Step 3.5 with the command
    there, and report any refusal. The driver keeps that pin on re-arm; it

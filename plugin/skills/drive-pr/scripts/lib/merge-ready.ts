@@ -74,8 +74,10 @@ export interface HeadCheck {
   state: "pending" | "success" | "neutral" | "skipped" | "failure";
   /** Monotonic check-run attempt id; absent for commit statuses or unread ids. */
   id?: number | null;
-  /** When the run started; never used to order attempts. */
+  /** When an ordinary check attempt started; reviewer witnesses use their attempt ids. */
   startedAt: string | null;
+  /** When it completed, to order ordinary attempts whose starts match. */
+  completedAt?: string | null;
 }
 
 /** A reviewer's latest review. */
@@ -189,6 +191,39 @@ const OWN = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
 
 /** Merge states under which branch protection lets it merge now. */
 const MERGES_NOW = new Set(["CLEAN", "HAS_HOOKS"]);
+
+/** Whether the timestamps prove that one ordinary attempt superseded another. */
+function supersedes(a: HeadCheck, b: HeadCheck): boolean {
+  const startA = Date.parse(a.startedAt ?? "");
+  const startB = Date.parse(b.startedAt ?? "");
+  if (!Number.isFinite(startA) || !Number.isFinite(startB)) return false;
+  if (startA !== startB) return startA > startB;
+  const endA = Date.parse(a.completedAt ?? "");
+  const endB = Date.parse(b.completedAt ?? "");
+  return Number.isFinite(endA) && Number.isFinite(endB) && endA > endB;
+}
+
+/** Latest ordinary checks by name and posting app; unread order retains every possible blocker. */
+function latestChecks(facts: ForgeFacts, rules: ReadyRules): HeadCheck[] {
+  return facts.checks.filter((check) => {
+    // The review witness has its own stricter ordering by attempt id.
+    if (
+      rules.reviewerApp !== null &&
+      check.app === rules.reviewerApp &&
+      rules.reviewerCheck.test(check.name)
+    )
+      return true;
+    return !facts.checks.some(
+      (other) =>
+        other.name === check.name &&
+        other.app === check.app &&
+        // A skipped workflow job did not execute, so it cannot establish that
+        // it replaced an earlier pending or failed attempt.
+        other.state !== "skipped" &&
+        supersedes(other, check),
+    );
+  });
+}
 
 /** The latest attempt per reviewer check name; unread attempt order withholds the witness. */
 function reviewerRuns(facts: ForgeFacts, rules: ReadyRules): HeadCheck[] {
@@ -494,13 +529,19 @@ const BLOCKERS: Array<(r: Read) => Row | null> = [
       `changes were requested${by}: that reviewer re-reviews, or the drive is re-armed to address them`,
     ];
   },
-  ({ failing, state }) =>
+  ({ facts, failing, state }) =>
     failing.length > 0 &&
-    (state === null || state === "BLOCKED" || state === "UNSTABLE")
+    (state === null ||
+      state === "BLOCKED" ||
+      state === "UNSTABLE" ||
+      // A stale CLEAN merge state cannot override a current required failure.
+      facts.checks.some(
+        (c) => c.required && c.state === "failure" && failing.includes(c.name),
+      ))
       ? [
           "needs-you",
           person("re-run-check"),
-          "a check failed after the drive converged: re-run it, or re-arm the drive",
+          `a check failed after the drive converged (${failing.join(", ")}): re-run it, or re-arm the drive`,
         ]
       : null,
   ({ facts }) =>
@@ -578,6 +619,7 @@ function mergeNow(
 
 /** What every row and condition reads, worked out once. */
 function readOf(facts: MergeFacts, rules: ReadyRules): Read {
+  facts = { ...facts, checks: latestChecks(facts, rules) };
   return {
     facts,
     seen: witness(facts, rules),

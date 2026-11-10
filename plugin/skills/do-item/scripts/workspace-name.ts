@@ -22,8 +22,8 @@
  * renders empty and the spaces around it collapse.
  *
  * Without `workspace_name.template` the name is `DEFAULT_TEMPLATE`; an empty
- * string turns renaming off. It acts only in a terminal Orca opened whose
- * worktree Orca knows (the detection `shared/orca-board.ts` uses). Every runtime
+ * string turns renaming off. It acts in Herdr using HERDR_WORKSPACE_ID, or in a terminal Orca opened
+ * whose worktree Orca knows (the detection `shared/orca-board.ts` uses). Every runtime
  * failure only warns and the exit is 0; a malformed command line or a
  * template naming an unknown variable exits 2.
  */
@@ -214,7 +214,7 @@ export function renderName(
   return name.replace(/\s+/g, " ").trim();
 }
 
-/** Rename the working directory's Orca worktree; returns the line to report. */
+/** Rename the session's workspace; returns the line to report. */
 export async function renameWorkspace(
   request: NameRequest,
   config: NameConfig,
@@ -226,6 +226,15 @@ export async function renameWorkspace(
   const name = renderName(config.template, request, config.statuses);
   if (name === "")
     return "workspace-name: the template renders empty; nothing to do";
+  if (env.HERDR_ENV === "1") {
+    const id = env.HERDR_WORKSPACE_ID?.trim();
+    if (!id)
+      return "workspace-name: ⚠ HERDR_WORKSPACE_ID is missing; nothing to do";
+    const done = await runner("herdr", ["workspace", "rename", id, name]);
+    if (done.code !== 0)
+      return `workspace-name: ⚠ could not rename the Herdr workspace: ${done.stderr.trim() || done.stdout.trim() || `exit ${done.code}`}`;
+    return `workspace-name: ${name}`;
+  }
   const command = orcaCommand(env);
   if (command === null) return "workspace-name: not in Orca; nothing to do";
   const current = await currentWorktree(command, runner);

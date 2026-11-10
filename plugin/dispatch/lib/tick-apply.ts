@@ -21,14 +21,22 @@ import {
 import { applyFollowups } from "./actions/followup.ts";
 import { applyNotices } from "./actions/notify.ts";
 import { applyPickups } from "./actions/pickup.ts";
-import { applySteers } from "./actions/steer.ts";
-import { adoptionOf } from "./adopt.ts";
+import { applySteward } from "./actions/steward.ts";
+import { applyStewardRecords } from "./steward-apply.ts";
+import { applySteers, retireSteers } from "./actions/steer.ts";
+import { adoptionOf, ownAuthors } from "./adopt.ts";
 import { type LaunchGroup, launchStageOrder } from "./apply-order.ts";
 import { readOutcomes } from "./followup-outcomes.ts";
 import { holderActions } from "./holder-notices.ts";
-import { openPullRequest, pullRequestLabels } from "./forge.ts";
-import { ok } from "../../shared/outcome.ts";
-import { carriesSet, hasCommand } from "./labels.ts";
+import { isAutomation } from "./automation.ts";
+import {
+  type ListedPr,
+  openPullRequest,
+  pullRequestLabels,
+  unresolvedThreadCount,
+} from "./forge.ts";
+import { failed, ok, type Outcome } from "../../shared/outcome.ts";
+import { carriesSet, hasCommand, type LabelConfig } from "./labels.ts";
 import { nextTickIndex } from "../receipts.ts";
 import type { ReadRecord } from "./launches.ts";
 import type {
@@ -40,6 +48,7 @@ import { launchClaimer, type SharedContext } from "./shared-launches.ts";
 import { readDrives } from "./sources/ledgers.ts";
 import {
   allRecords,
+  bookOf,
   type TickContext,
   type TickOptions,
 } from "./tick-context.ts";
@@ -50,9 +59,11 @@ import {
 } from "./tick-observe.ts";
 import { afterWait } from "./tick-plan.ts";
 import { endOwnClaims } from "./tick-shared.ts";
+import type { ActionBook } from "./failures.ts";
 import type {
   ApplyStage,
   DispatchSection,
+  DrivenPr,
   MarkedPr,
   RepoReport,
   RepoTarget,
@@ -112,24 +123,32 @@ export type StageGuard = (
  * Act on one observed and planned repository; nothing without `--apply`.
  * Its own claims end now; its launches and notifications are handed to
  * `context.pending`, run in turns once every repository is gathered, and
- * `after`, the close, runs when its last turn is done; `guard` bounds each
- * stage of them.
+ * `project` runs before its notifications are delivered, `after`, the
+ * close, when its last turn is done; `guard` bounds each stage of them.
  */
 export async function actObserved(
   context: TickContext,
   observation: RepoObservation,
-  hooks: { guard: StageGuard; after: () => Promise<void> },
+  hooks: {
+    guard: StageGuard;
+    /** The label projection, run ahead of the notices so their failure alerts stand against its rows. */
+    project: () => Promise<void>;
+    after: () => Promise<void>;
+  },
 ): Promise<void> {
   const apply = context.apply;
   if (apply === null) return;
   const { opened, forge, ctx, claims } = observation;
   const { repo, section, report } = opened;
+  await hooks.guard("steward", () => applyStewardRecords(apply, observation));
+  const book = bookOf(context, repo.slug, report);
   await endOwnClaims(ctx, report, {
     claims,
     forge,
     records: allRecords(context),
     outcomes: readOutcomes(repo.slug),
     nowMs: context.nowMs,
+    book,
   });
   apply.sessionsOf ??= new Map();
   apply.sessionsOf.set(repo.slug, observation.sessions);
@@ -144,22 +163,28 @@ export async function actObserved(
     sessions: observation.sessions,
     shared: ctx,
     unplaced: withheldFromReplay(afterWait(context, observation.serialized)),
+    book,
   };
   context.pending.push({
     apply: (group) =>
       applyStages(apply, opened.stages, report, inputs, group, hooks.guard),
     finish: () =>
-      applyStages(
-        apply,
-        opened.stages,
-        report,
-        inputs,
-        "finish",
-        hooks.guard,
-      ).then(() =>
-        // `after` times its own phases: a boundary of its own, outside the apply timer.
-        hooks.guard("close", hooks.after, false),
-      ),
+      hooks
+        .guard("steward", () => applySteward(apply, observation))
+        .then(() =>
+          applyStages(
+            apply,
+            opened.stages,
+            report,
+            inputs,
+            "finish",
+            hooks.guard,
+            hooks.project,
+          ).then(() =>
+            // `after` times its own phases: a boundary of its own, outside the apply timer.
+            hooks.guard("close", hooks.after, false),
+          ),
+        ),
   });
 }
 
@@ -186,6 +211,44 @@ interface ApplyInputs {
   shared: SharedContext;
   /** Pull requests whose place in a serialized group this tick cannot tell, by number and why. */
   unplaced: ReadonlyMap<number, string>;
+  /** The failure ledger's book of the repository's actions. */
+  book: ActionBook | null;
+}
+
+/**
+ * An automation pull request read again, with the unresolved review threads
+ * the adoption rule reads of it and the view does not carry; `unreadable`,
+ * with why, when the count does not read, so the launch is not acted on. A
+ * pull request a person's `drive` or `rearm` label asks for, or one already
+ * failing a check or conflicting, needs no count: the request or the trouble
+ * does not wait on it.
+ */
+async function withThreads(
+  slug: string,
+  pr: ListedPr,
+  own: readonly string[],
+  asked: boolean,
+): Promise<Outcome<ListedPr, "unreadable">> {
+  if (asked || !isAutomation(pr, own)) return ok(pr);
+  // Trouble already observed admits the launch; the thread count is only needed to find trouble.
+  if (pr.failingChecks === true || pr.mergeable === "CONFLICTING")
+    return ok(pr);
+  const threads = await unresolvedThreadCount(slug, pr.number);
+  if (!threads.ok)
+    return failed(
+      "unreadable",
+      `its unresolved review threads do not read: ${threads.failure.reason}`,
+    );
+  return ok({ ...pr, unresolvedThreads: threads.value });
+}
+
+/** Whether a person's `drive` or `rearm` label is on the pull request. */
+function asksForDrive(labels: LabelConfig | null, pr: ListedPr): boolean {
+  return (
+    labels !== null &&
+    (hasCommand(labels, pr.labels, "drive") ||
+      hasCommand(labels, pr.labels, "rearm"))
+  );
 }
 
 /**
@@ -200,34 +263,14 @@ async function applyStages(
   inputs: ApplyInputs,
   group: LaunchGroup | "finish",
   guard: StageGuard,
+  project?: () => Promise<void>,
 ): Promise<void> {
   const { repo, runtime, section, tracked, login, join } = inputs;
   const fresh = () => readSessions(runtime, repo, join);
   const labels = section.labels.enabled ? section.labels : null;
   const drive = (): FreshDrive => ({
-    read: async (pr) => {
-      // The pull request read again too: a stale drive's head and mergeability are its facts, and a hold label may have appeared.
-      const view = await openPullRequest(repo.slug, pr, {
-        labels: labels !== null,
-      });
-      if (!view.ok) return view;
-      const listed = view.value;
-      if (
-        labels?.onlyLabeled === true &&
-        !carriesSet(labels, listed.labels ?? [])
-      )
-        return ok(null);
-      const [again] = await readDrives(
-        repo.slug,
-        login,
-        [listed],
-        Date.now(),
-        labels,
-        adoptionOf(section, login),
-      );
-      return ok(again ?? null);
-    },
-    held: (pr) => labels !== null && hasCommand(labels, pr.labels, "hold"),
+    read: (pr, steward) => freshDriveReading(inputs, labels, pr, steward),
+    held: (pr) => hasCommand(section.labels, pr.labels, "hold"),
     labelWrites: labels !== null,
     claimer: launchClaimer(inputs.shared),
     unplaced: inputs.unplaced,
@@ -250,6 +293,9 @@ async function applyStages(
             tracker,
             keys,
             branchPattern: join.branchPattern,
+            ...(tracked.servedPolicy === undefined
+              ? {}
+              : { servedPolicy: tracked.servedPolicy }),
             sessions: fresh,
           });
       },
@@ -294,8 +340,13 @@ async function applyStages(
   if (group !== "finish") return;
   // The nudges first: a nudge that went unanswered is notified in the same tick.
   await guard("steer", async () => {
-    if (enabled.has("steer")) await applySteers(apply, repo.slug, report);
+    // Which nudges are wanted is known only from a session listing that read.
+    const observed = inputs.sessions.ok && report.records.every((r) => r.ok);
+    if (enabled.has("steer"))
+      await applySteers(apply, repo.slug, report, inputs.book, observed);
+    else retireSteers(report, inputs.book, observed);
   });
+  if (project !== undefined) await guard("close", project, false);
   await guard("notify", async () => {
     // A launch a busy holder refused is notified in the same tick, as a nudge left unanswered is.
     report.actions.push(...holderActions(repo.slug, report.launches));
@@ -305,6 +356,43 @@ async function applyStages(
         lingerMs: section.noticesLingerMs,
         renotifyAfterMs: section.renotifyAfterMs,
         branch: section.noticesBranch,
+        book: inputs.book,
       });
   });
+}
+
+/** Steward authority always reads a person's holds, including when label projection is disabled. */
+async function freshDriveReading(
+  inputs: ApplyInputs,
+  labels: LabelConfig | null,
+  pr: number,
+  steward = false,
+): Promise<Outcome<DrivenPr | null>> {
+  const { repo, login, section } = inputs;
+  const view = await openPullRequest(repo.slug, pr, {
+    labels: labels !== null || steward,
+  });
+  if (!view.ok) return view;
+  const listed = view.value;
+  if (labels?.onlyLabeled === true && !carriesSet(labels, listed.labels ?? []))
+    return ok(null);
+  const adoption = adoptionOf(section, login);
+  const counted = await withThreads(
+    repo.slug,
+    listed,
+    ownAuthors(adoption, login),
+    asksForDrive(labels, listed),
+  );
+  if (!counted.ok) return counted;
+  const [again] = await readDrives(
+    repo.slug,
+    login,
+    [counted.value],
+    Date.now(),
+    labels,
+    adoption,
+  );
+  if (again === undefined) return ok(null);
+  if (steward) return ok({ ...again, labels: listed.labels ?? [] });
+  return ok(again);
 }

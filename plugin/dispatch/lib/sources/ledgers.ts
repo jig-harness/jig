@@ -113,7 +113,8 @@ import { lastStopEvent } from "../../../skills/drive-pr/scripts/lib/state/events
 import { ledgerTree } from "../stall-tree.ts";
 import { infraStopClass } from "../infra-backoff.ts";
 import { type DriverPresence, driverPresence } from "./silent-driver.ts";
-import { type Adoption, adopts, type Author } from "../adopt.ts";
+import { type Adoption, adopts, type Author, ownAuthors } from "../adopt.ts";
+import { idleAutomation } from "../automation.ts";
 import { branchHead } from "../forge.ts";
 import { hasCommand, type LabelConfig } from "../labels.ts";
 import type { Listing } from "../tick-comments.ts";
@@ -547,6 +548,7 @@ function ledgerEvidence(
     ...stopEvidence(ledger, forge),
     driverActor: ledger.driver.actor,
     driverClone: ledger.driver.clone,
+    handoff: ledger.narrative.join("\n").slice(-12_000),
     generation: ledger.generation,
     round: ledger.round,
     phase: ledger.phase,
@@ -661,6 +663,9 @@ export interface OpenPr {
   author?: Author;
   isDraft?: boolean;
   updatedAt?: string;
+  /** Whether a check on its head fails, and its unresolved review threads: what says an automation pull request needs work. */
+  failingChecks?: boolean;
+  unresolvedThreads?: number;
 }
 
 /** Why a snapshot holds no ledger this reader can classify; `null` when it holds one, `""` when it holds none. */
@@ -698,6 +703,7 @@ async function parkOf(
           key: p.key,
           kind: p.kind,
           lines: framedDecisionLines(p),
+          ...(p.decision === undefined ? {} : { decision: p.decision }),
         })),
       };
 }
@@ -873,11 +879,23 @@ async function driveOf(pr: OpenPr, r: Reading): Promise<DrivenPr | null> {
         ? snapshotFromListing(listing.value, login)
         : listing.failure.reason;
   if (typeof snapshot === "string")
-    return { ...base, class: "unplaced", why: snapshot, evidence: {} };
+    return {
+      ...base,
+      class: "unplaced",
+      why: snapshot,
+      evidence: {},
+      readFailed: true,
+    };
   const why = unreadable(snapshot);
   if (why === "") return unarmed(pr, base, r);
   if (why !== null || snapshot.canonical?.parsed.kind !== "ledger")
-    return { ...base, class: "unplaced", why: why ?? "", evidence: {} };
+    return {
+      ...base,
+      class: "unplaced",
+      why: why ?? "",
+      evidence: {},
+      readFailed: true,
+    };
   const ledger = snapshot.canonical.parsed.ledger;
   const park = await parkOf(
     pr.number,
@@ -892,10 +910,17 @@ async function driveOf(pr: OpenPr, r: Reading): Promise<DrivenPr | null> {
   return {
     ...base,
     ...classified,
+    ...(classified.class === "unplaced" &&
+    ((ledger.driver.exit === DRIVE_EXIT.HITL_PARKED &&
+      (park === undefined || "unreadable" in park)) ||
+      (forge.base !== undefined && "unreadable" in forge.base))
+      ? { readFailed: true as const }
+      : {}),
     evidence: {
       ...ledgerEvidence(ledger, nowMs, forge),
       ...request.evidence,
       ...(await presenceEvidence(pr.number, ledger, classified, r)),
+      ...idleAutomation(pr, ownAuthors(r.adoption, r.login)),
     },
     ...waitingOf(classified, park, pr.author?.login),
   };

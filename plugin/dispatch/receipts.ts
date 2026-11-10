@@ -54,6 +54,8 @@ import {
 import type { LastRun } from "../runtime/component.ts";
 import type { ScheduledUpgrade } from "../runtime/upgrade-record.ts";
 import type { NotAdmitted } from "./lib/accounts.ts";
+import type { FailureEntry } from "./lib/failures.ts";
+import type { LineLoad } from "./lib/dashboard-contract.ts";
 import type { ReflectionReport } from "./lib/reflection-route.ts";
 import { failureText } from "./lib/text.ts";
 import type { Defect, RepoReport } from "./lib/types.ts";
@@ -86,10 +88,21 @@ export interface TickReceipt {
   busy?: { path: string; heldBy: string }[];
   /** The forge's budget as the tick started, when it was low enough that the optional reads (thread samples, serialization's reads) were skipped. */
   lowBudget?: { remaining: number; limit: number; skipped: string[] };
+  /** The host's gauges as the act phase read them, the load factor, each kind's reservation and the launches the load factor held or would hold (`lib/load.ts`); absent from a tick with no machine file. */
+  load?: LineLoad;
+  /** Why the host's load was not read: the tick admitted its launches by accounts alone. */
+  loadUnread?: string;
   /** Milliseconds the tick spent in each of its phases; absent from a receipt written before phases were timed. */
   phasesMs?: Partial<Record<TickPhase, number>>;
   /** The defect that stopped the tick's closing steps; a receipt with one is not completed. */
   defect?: Defect;
+  /** The failure ledger after the tick (`lib/failures.ts`): the actions backing off, and the rows at or past the notify threshold; absent when it holds none. */
+  failures?: {
+    backingOff: FailureEntry[];
+    escalated: FailureEntry[];
+  };
+  /** Why the failure ledger's rows for the repositories and the tick were not written. */
+  failuresUnwritten?: string;
   /** The classes that recur, as the reflection route recorded them, left them pending or would record them; absent when it had nothing to do. */
   reflection?: ReflectionReport;
   /** Set on the receipt of a tick that found the tick lock held, naming the holder: it holds only the upgrade its launcher ran, and did nothing else. */

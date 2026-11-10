@@ -274,8 +274,12 @@ issue on merge, merged by a human.
 | `pull_requests.branch_name` | pattern | `{key_lower}-{slug}` | Branch name for an issue. Placeholders: `{key}` (`ENG-12`), `{key_lower}` (`eng-12`), `{slug}` (the issue title in lowercase words joined by `-`, at most 40 characters). Must contain `{key}` or `{key_lower}`: the issue key in the branch name is what links the pull request to its issue. Placeholders must be separated by at least one character, the key must not have a digit beside it, and `{slug}` may appear once, or the key cannot be read back from a branch. Example: `feature/{key_lower}-{slug}`. `do-item` and `dispatch` both read it |
 | `pull_requests.issue_link` | `closes`, `refs`, `none` | `closes` | The line linking the pull request to its issue: `Closes ENG-12` (merging closes the issue), `Refs ENG-12` (linked, left open), or none |
 | `pull_requests.size_budget` | whole number ≥ 1 | no budget | Most changed lines (added plus deleted, against the pull request's base) one pull request may carry; the audit record `.config/jig-audit.yaml`, which every audit rewrites whole, is not counted, and `pr-plan.ts` names it beside the size. Over it, `pr-plan.ts` refuses: split the change (into a stack when stacking is allowed), or state why it cannot be split with `--accept-oversize <reason>` and put the reason in the body |
-| `pull_requests.labels` | list of label names | none | Labels added when the pull request opens, such as `agent-authored`. Each must already exist in the repository |
+| `pull_requests.labels` | list of label names | none | Fixed labels added when the pull request opens, such as `agent-authored`. With `drive.change_areas_catalog`, `pr-plan.ts` also adds `tracker.labels` and `tracker.flags` from the areas the diff directly touches (including generated sources), deduplicated with this list; implied areas add none. Each label must already exist in the repository |
 | `pull_requests.title_format` | `conventional`, `free` | Derived (see [above](#what-is-derived-not-declared)) | Whether titles follow Conventional Commits. With squash merges the title becomes the trunk commit, so it matters |
+
+Before opening, `pr-plan.ts` warns when a merge commit brings in commits from
+a parent outside the planned base, naming those commits. Merges of the base
+produce no warning. A failed history or configured catalog read stops planning.
 
 ### Stacking
 
@@ -511,7 +515,7 @@ it. Until then, opt in only to take part in that measurement.
 | `issue_tracker.jira.field_labels` | map from a field's name or id to a label prefix, such as `{ Size: "size:" }` | No field is read as labels | do-item, drive-pr, file-issue, reflect, work-batch, dispatch | Jira only: fields whose values the skills read as labels beside the issue's own, each behind its prefix: a select field `Size` holding `M` gives the label `size:M`, and a multi-select gives one label per value. Single-line text, number, select, checkbox and labels fields qualify (a multiline text field, the description and the environment hold rich text and are refused); a field of another type, or a name that matches no field of the site or several (name one by its id, `customfield_10050`), is refused. Values are trimmed. A pool, a population or a ledger selected by such a label is selected by the field in JQL, except a text field's, which JQL matches only by words and is refused; an option whose value carries surrounding spaces is matched in JQL only by its exact value, so trim the option on the site. An entry whose labels are a facet's values, such as a `Size` field behind `size:` where the label taxonomy's sizes are `size:S`, `size:M` and `size:L`, is that facet's field store (where `issue_tracker.facets` names no other store for it): the facet is written to the field when an issue is filed or changed, each value as the field's value behind the prefix, and its values still show as labels. The adapter never writes another entry's field, and filing or patching an issue with a label behind any prefix is refused, pointing at the facet where the field keeps one. A prefix has no whitespace, and no prefix may begin another; choose prefixes no Jira label of the project starts with, since a label behind a prefix is taken for the field's value |
 | `issue_tracker.labels.epic` | label | `review.taxonomy.epic_label`, else `epic` | do-item, resolve-review-comments, drive-pr (fleet health), work-batch, file-issue, reflect, dispatch | Marks an issue whose sub-issues are worked one at a time |
 | `issue_tracker.labels.hitl` | label | `hitl` | do-item, decide, work-batch | The human-in-the-loop flag; its facets are `<hitl>:<stakeholder>` |
-| `issue_tracker.labels.manual_ops` | label | `manual-ops` | do-item, work-batch | A step a person performs outside the code; caps an epic at `ops_pending` |
+| `issue_tracker.labels.manual_ops` | label | `manual-ops` | do-item, work-batch, dispatch | A step a person performs outside the code; caps an epic at `ops_pending`. With the dispatch labels on, the dispatcher also puts it on a pull request whose `## Out-of-tree follow-ups` section lists a step not yet checked off; it then must hold no comma and be none of the dispatcher's own labels (under `dispatch.labels.prefix`, `automation` or `automation:…`), or the dispatcher writes no owed-steps label and says so |
 | `issue_tracker.labels.followup` | label | `review.taxonomy.provenance_label`, else `pr-followup` | do-item, resolve-review-comments, drive-pr (fleet health), work-batch | Marks an issue filed from a review finding |
 | `issue_tracker.labels.bug` | list of labels | `[bug, type:bug]` | do-item, drive-pr, file-issue, reflect, work-batch, dispatch, resolve-review-comments | Any of these marks a bug |
 | `issue_tracker.labels.pattern_prefix` | text | `pattern:` | do-item, reflect, review-reflections | A recurring pattern's label is `<prefix><slug>`; a reflection class's issue is `<prefix><class>` |
@@ -592,9 +596,11 @@ unknown key is refused.
 ## `workspace_name`
 
 Names the workspace a skill runs in after the work it holds and the stage the
-work is at, in a runtime that can rename its workspaces (Orca today), for
+work is at, in a runtime that can rename its workspaces (Herdr or Orca), for
 example `#12 [D] Rename workspaces`. On by default; `template: ""` turns it
-off. A failed rename only warns.
+off. A failed rename only warns. Herdr sessions use `HERDR_ENV=1` and
+`HERDR_WORKSPACE_ID`; a missing workspace id warns without renaming anything.
+Herdr takes precedence when variables from both runtimes are present.
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
@@ -1217,7 +1223,7 @@ repository. What a run may start is the machine's to say, in
 | `dispatch.notices_branch` | branch name, with no space | None: every notification for the repository goes to its notices workspace. A branch names the workspace a person watches instead: every notification goes to the workspace on that branch, never to the one joined to the pull request or item. The dispatcher never opens or removes it, and a notification waits, reported, while no workspace on it is open or its comment is a person's. Naming `jig-dispatch-notices`, the notices workspace's own branch, is the same as naming none | dispatch |
 | `dispatch.renotify_after` | duration, or `0s` | `24h`: a notification whose cause still stands this long after it was last sent is sent again, saying since when it has waited, until the cause goes. `0s` sends each one once | dispatch |
 | `dispatch.labels.enabled` | `true` or `false` | `false`: no label is read or written. `true` turns the [dispatch labels](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) on (below) | dispatch |
-| `dispatch.labels.prefix` | string of at most 39 characters, with no comma and no space at either end | `jig:`: put before every label name (`jig:driving`, `jig:hold`). A repository whose label taxonomy has a convention of its own picks one that fits it | dispatch |
+| `dispatch.labels.prefix` | string of at most 35 characters, with no comma and no space at either end | `jig:`: put before every label name (`jig:driving`, `jig:hold`). A repository whose label taxonomy has a convention of its own picks one that fits it | dispatch |
 | `dispatch.labels.only_labeled` | `true` or `false` | `false`: every open pull request is read for a drive ledger. `true` limits the dispatcher to the pull requests that carry a label of the set: one that carries none is never read, re-armed or followed up. Refused unless `enabled` is `true` | dispatch |
 | `dispatch.adopt.enabled` | `true` or `false` | `false`: a pull request with no drive ledger is driven only when a person labels it `drive`. `true` turns the adoption rule on (below). Refused beside `labels.only_labeled: true` | dispatch |
 | `dispatch.adopt.authors` | nonempty list of forge logins (a GitHub App's as `<name>[bot]`) | The login the dispatcher reads the forge as, the one the host's sessions open pull requests under: the authors whose pull requests the rule adopts | dispatch |
@@ -1269,9 +1275,35 @@ take commands from a person. With the default prefix:
 | `jig:stale` | the dispatcher | the drive's stop no longer settles the pull request: it converged, then conflicted with its base or its head moved, or it stopped on a conflict. The dispatcher re-drives it |
 | `jig:held` | the dispatcher | the pull request waits its turn in a serialized change area (below): the dispatcher drives it once it leads |
 | `jig:followed-up` | the dispatcher | merged, and its follow-up is done |
+| `jig:followup-failed` | the dispatcher | merged, and its follow-up failed: a person acts. A later follow-up that is done replaces it with `jig:followed-up` |
 | `jig:drive` | a person, by hand or with `jig send … drive` | adopt a pull request with no drive ledger: the dispatcher arms a drive on it (the machine file's `rearm` stage), once per head commit, and replaces the label with the state label once the ledger exists. The adoption rule (`dispatch.adopt`, below) does the same for a repository's own recent pull requests without the label |
 | `jig:rearm` | a person, by hand or with `jig send … rearm` | request another attempt for a stopped drive in its existing worktree, through the machine file's `rearm` stage and account admission. Running drives and a person's recorded stops are refused; an accepted launch consumes the label |
 | `jig:hold` | a person, by hand or with `jig send … hold` (and `release`) | stand the dispatcher down from this pull request: no stage runs on it while the label is there, and the dispatcher reports it and never removes it |
+
+Beside the set, the dispatcher keeps marker labels that carry no
+prefix, on every pull request it reads. None is a label of the set, so
+none puts a pull request in scope under `only_labeled`:
+
+| Label | Who writes it | Meaning |
+|-------|---------------|---------|
+| `manual-ops` (the repository's `issue_tracker.labels.manual_ops`) | the dispatcher | the pull request owes steps a person takes outside the code: its description's `## Out-of-tree follow-ups` section lists a step not yet checked off. Set from the description at every run, on open pull requests and on the merged ones the run reads (those merged since the follow-up stage's start, read only where `followup_command` is set): one that lists none, or only the explicit "None", loses it, so a label added or removed by hand is corrected. A merged pull request keeps it until every step is checked off or its follow-up is done, which reports each step done or filed; one whose follow-up the run cannot place (its markers do not read) keeps the label exactly as it is |
+| `automation` | the dispatcher | a bot or a workflow opened the pull request. Put on a bot's pull request that carries no label of the `automation:` family, unless the bot is one of the host's own authors (below), which a repository's workflows apply to say which job opened it (`automation:docs-sync`); never put on a person's, and never removed, nor is any `automation:` label |
+
+A pull request that carries `automation` or an `automation:` label, or that
+a bot opened, is an **automation pull request**, except a bot's that is one
+of the host's own authors (`dispatch.adopt.authors` where the adoption rule
+is on, else the login the dispatcher reads the forge as): that bot is the
+identity the host's own sessions work under, and its pull request is an
+automation pull request only when it carries an automation label. The
+dispatcher drives an automation pull request only while it needs work: a
+check on its head failed (`FAILURE`, `ERROR`, `TIMED_OUT` or a run that
+failed to start; a run cancelled on a superseded head or one waiting for a
+person's approval is no failure), it conflicts with its base, or a review
+thread is unresolved. That holds for its adoption (below) and for every
+re-drive, takeover and re-arm the dispatcher would start of itself, a
+converged drive whose head moved among them: a healthy one is reported and
+left for a person to merge. A person's `jig:drive` or `jig:rearm` still
+starts one.
 
 A serialized change area (`serialize: true` on an area of the
 [change-area catalog](#drive) that `drive.change_areas_catalog` names, read
@@ -1294,13 +1326,16 @@ re-arm and no label written, and the next run reads it again.
 
 The ledger is the truth: each `--apply` run sets each managed pull
 request's state label from its ledger again (`jig:held` from the serialized
-areas), one forge call per pull
-request whose labels disagree, so a state label a person changed comes
+areas, a merged pull request's from its follow-up's end) and each marker
+label from the pull request itself, one forge call per pull
+request whose state label disagrees and one whose marker labels do (so a
+marker label the repository lacks never holds a state back), so a state label a person changed comes
 back at the next run, and the dispatcher never reads a state label to
 decide what to start. A run without `--apply`, or for a repository the
 machine file does not list, writes nothing and reports what it would
 write. The labels must exist before a run writes them: `jig install
-dispatch --repo <path> --yes` creates the missing ones where the signed-in
+dispatch --repo <path> --yes` creates the missing ones, the marker labels
+included, where the signed-in
 account may, and lists the rest for a person, as `pull_requests.labels`
 must exist before a pull request opens with them. A write the forge
 refuses is reported and tried again at the next run; it does not fail the
@@ -1315,7 +1350,13 @@ dispatcher reads the forge as, which is the identity the host's sessions
 open pull requests under) and it was updated within `adopt.within`. A
 draft is adopted like any other, since a drive marks its pull request
 ready. A bot's pull request (a dependency update, say) is adopted only
-when `authors` names the bot, and one carrying `jig:hold` never is. From
+when `authors` names the bot, and one carrying `jig:hold` never is. An
+automation pull request (above) is adopted only while it needs work; a
+healthy one is left for a person to merge, and `jig:drive` still drives
+one on a person's word. A bot the rule names is the host's own identity, so
+its pull requests are adopted as any own pull request unless they carry an
+automation label. A check that failed on the CI
+service's infrastructure is re-run by the drive rather than repaired. From
 there the `drive` label's rules apply unchanged: armed once per head
 commit, on an admitted account, behind a serialized area's hold, and a
 drive a person stopped is never re-armed, since its ledger records the
@@ -1326,6 +1367,11 @@ labels on; under `labels.only_labeled` it is refused, since a pull request
 with no label of the set is never read.
 
 ### The machine's dispatch file
+
+The steward's hourly cap is shared across the host's repositories. Missing
+field writes re-read the field immediately before updating it and preserve
+values found nonempty. A simultaneous external edit can still race these
+separate tracker requests; see the [steward's concurrency limit](skills/steward/README.md).
 
 What this machine dispatches, and on whose accounts, lives only in
 `$JIG_HOME/dispatch.yaml` (default `~/.jig/dispatch.yaml`); a repository
@@ -1340,7 +1386,7 @@ unknown key anywhere in the file is refused.
 ```yaml
 repositories:
   - path: /home/me/dev/web          # absolute; ~/ is expanded
-    stages: [rearm]                  # rearm, pickup, followup, notify, steer
+    stages: [rearm]                  # rearm, pickup, followup, notify, steer, steward
     followup_since: 2026-10-30T00:00:00Z
     owner: true                      # false on every other host that lists it
 accounts:
@@ -1349,6 +1395,10 @@ accounts:
     config_dir: /home/me/.claude-work
     identity: me@example.com
     max_per_account: 2
+serve:
+  - name: maintainer
+    forge: [maintainer-login, maintainer-work-login]
+    tracker: { github: maintainer-login, linear: maintainer@example.com }
 interval: 5m
 wall_backoff: 1h
 runtime_timeout: 1m
@@ -1357,6 +1407,10 @@ followup_opens_per_tick: 2          # the follow-ups' own opens, beside opens_pe
 followup_concurrency: 2             # follow-up passes running at once on this host
 receipts_days: 30
 unclaimed_after: 15m                # a started launch no wrapper claimed by then needs a person
+failures:
+  backoff: 2m                       # the wait after an action's second failure in a row, doubled after each one
+  backoff_max: 1h
+  notify_after: 3                   # failures in a row at which a person is told
 dashboard:
   listen: 100.64.0.7:8765           # jig dispatch dashboard; private or loopback only
   # require_token: false            # only with a loopback listen: a front authenticates
@@ -1365,10 +1419,28 @@ records:
   shared: forge                     # where another host reads this host's launches
 send: true                          # false refuses every jig send from this machine
 change_probe: true                  # false turns off the minute-by-minute change probe
+steward:
+  enabled: false                    # true enables the stage on the owner host
+  every: 20m                        # unchanged digests still start no pass
+load:
+  enforce: false                    # true holds what a gauge refuses; false only reports it
+  memory_free: 0.15                 # share of the host's memory kept free after a launch
+  load_per_core: 0.9                # one-minute load per core
+  lock_waiters: 2                   # runs waiting on the test lock that stop pickups and drive passes
+  disk_free_gb: 10                  # free space kept on the workspaces' filesystem
+  forge_floor: 0.1                  # share of the forge's budget kept
+  reservations_gb:                  # each kind's memory until it has five samples of its own
+    pickup: 2
+    drive: 1.5
+    followup: 1
+    steward: 1
 ```
 
 | Setting | Default / meaning |
 |---------|-------------------|
+| `serve[]` | Empty; the people this host serves, beside any repository's factory identity. Each entry has a `name`, `forge` logins and a `tracker` map from adapter name (`github`, `linear`, `jira`) to that person's identity. Only this machine file can name served people; repository configuration cannot widen the list. Their forge logins join the adoption authors. With `pickup` enabled, an open, not-started assignment from a repository writer is wanted without a dispatch-state requirement. Unassigned descendants of an assigned epic inherit that person. Holds and open blockers stay visible in the Queue view with their reason |
+| `steward.enabled` | `false`; enables the owner host's headless [steward](skills/steward/README.md) for repositories whose stages include `steward`. The pass reads a digest and submits closed records for the next tick; it never launches work itself. It shares account slots and load admission, uses the admitted vendor's complex-tier model, has a 15-minute deadline and starts at most three times in a rolling hour. The tick rechecks every effect against current facts and preserves human stops, holds and registry-class parks |
+| `steward.every` | `20m`; the minimum time between steward passes for a repository. An unchanged digest starts no pass regardless of elapsed time. Digests, once-only recovery records and submitted queue ordering remain in the owner host's state database |
 | `repositories[].path` | Required; the repository's local checkout. Several hosts may list one repository, each in its own machine file, with one of them its owner (`owner`) |
 | `repositories[].owner` | `true`; whether this host owns the repository's notifications, dispatch labels and outcome-log rows, its board and its reflection findings. Set it `false` on every host but one that lists the repository: such a host launches, re-arms, re-drives and takes over through the shared records (`records.shared`) as the owner does, and never notifies for the repository, never writes its labels, never writes outcome-log rows for stops it did not launch and never records a recurring class as a reflection finding, so each is written once. A session it launched that waits or drifts is reported on that host, not notified. Every run's report names the host that owns the repository, and says so when another host's claims say they own it too |
 | `repositories[].stages` | Empty; the stages `--apply` starts for it. `rearm` starts re-arms and takeovers of drives, and a re-drive, once per change, of a converged drive whose pull request now conflicts with its base or whose head moved past the head the drive verified, and of a drive that stopped on a conflict (exit `9`). `pickup` starts a headless `do-item` pass per item the repository's `dispatch` section makes a pickup, bound to an admitted account through its configuration directory as a follow-up's pass is, under `dispatch.pickup_deadline` and with the host's `drive.pass_args` (or, on a Codex account, only where `drive.codex_bypass` is set). The pass keeps the agent's own model and effort, and `do-item` forwards the item's route to the implementer it delegates to. A pass that cannot finish without a person stops on a `Question:` line, which is notified as a need; nothing is started for the item again until it leaves the dispatch states and comes back. `followup` starts a headless pass running `dispatch.followup_command` per merged pull request, bound to an admitted account through its configuration directory as a drive's pass is, under the pass deadline and with the host's `drive.pass_args` (or, on a Codex account, `drive.codex_bypass`). Follow-ups open their workspaces in a lane of their own (`followup_opens_per_tick`, `followup_concurrency`), so they never wait for a drive's launch, nor a drive's launch for them; they still share the accounts' slots. A pass that stops on a routine question (one of the dispatcher's fixed classes, which the pass tags itself: today `local-leftover`, a local branch or worktree it may not delete without asking) is run again once with the class's standing answer (keep it, list it, finish the rest and record done), as is a follow-up that failed before passes tagged their questions, which needs its launch record still on the host only when no retry evidence was kept with its outcome; a pass that stops on any other question, or fails again after that run, is notified with its question. `notify` sends each notification once (with Orca, the workspace's comment, marked unread). `steer` sends the one nudge, `Your usage limit has reset. Continue`, once to an interactive session the runtime reports waiting after its account's wall reset; no other stage implies it |
@@ -1387,12 +1459,31 @@ change_probe: true                  # false turns off the minute-by-minute chang
 | `followup_concurrency` | `2`; positive whole number of follow-up passes that may run on this host at once, counted from the launch records still holding (pending, alive or unknown). A pending record the tick reports stuck (notified to a person, held until `jig dispatch clear`) keeps its account's slot but is not counted while the runtime shows no session running on its target, so a launch that never started does not hold the lane; one whose target has a session running, or whose sessions cannot be read, is counted, since that wrapper may be running its stage without having claimed the record; a record whose state is unknown (claimed on another host, or an unreadable process table) is counted until it resolves or a person clears it. A follow-up past it waits for the next tick, named as waiting on the lane's cap (`waitsOn: lane-cap`). It is the lane's own cap: a follow-up still needs an admitted account with a free slot (`accounts[].max_per_account`), and one that finds none is named as waiting on the accounts (`waitsOn: accounts`). Two matches the lane's per-tick budget, so every follow-up one tick opens a workspace for can start; on a host whose accounts have few slots, lower it to leave slots for drives |
 | `receipts_days` | 30; days receipts and ended launch records are kept. The outcome log is never removed |
 | `unclaimed_after` | `15m`; how long after the session runtime answered a launch as started its launch record may stay pending, with no wrapper's claim, before the tick reports it stuck: notified to a person as needing them (once, then on `dispatch.renotify_after`) and shown on the dashboard as needing a person, holding its stage and slot until `jig dispatch clear <record>`. A record claimed within it is never flagged. The wrapper claims its record as its first act, seconds after its terminal starts, and the workspace is opened before the launch, so fifteen minutes is many times a slow start and three ticks at the default `interval`. While the runtime cannot say which sessions run, the tick waits; a session it joins to the record's target is named in the notice, since that wrapper may have started its stage without claiming the record |
+| `failures.backoff` | `2m`; how long the tick waits before trying again an action that failed twice in a row, doubled with each failure in a row after that, up to `failures.backoff_max`. A first failure is tried again at the next tick. The actions it paces are the ones a tick tries again on its own, with no record of their own that counts attempts: each pull request's dispatch label write, each notification's delivery, each nudge the runtime refused, and the end of this host's launch claim or the follow-up's answer on its marker. Launches are not among them: a launch record counts its own attempts, one lost twice is stuck (`unclaimed_after` and the records it names), and a refusal that did not change is not tried again. While an action waits, the receipt reports it waiting, with its failures in a row and its next try. The count is this host's, kept in its state database (the `failures` table), and only a tick with `--apply` keeps it. Two minutes is one tick at the interval a sweep is meant to run at; doubling reaches the hour after seven failures in a row |
+| `failures.backoff_max` | `1h`; the longest wait between two tries of an action that keeps failing. It may not be shorter than `failures.backoff` |
+| `failures.notify_after` | `3`; positive whole number of failures in a row at which the tick tells a person, once and then on `dispatch.renotify_after`, through the repository's notifications: an action that kept failing (cause `action-failing`); a repository whose turn was refused, stopped by a defect, or found a record that did not read (`repository-failing`); and this host's ticks of one scope that exited 1 (`ticks-failing`; each single-repository tick, such as a wake-up, has its own scope, and every tick of several repositories shares one). The notice names what failed, how many times in a row, since when, and the last reason. An action's notice goes to its own repository; a repository's and the ticks' go to this host's first repository listed here that it owns with `notify` enabled and whose turn is not failing (the first of them when all are failing); a host failure's notice is the same one wherever it is told, so the destination moving does not send it again. Only the host that owns a repository notifies for it. A row is removed, and its notice retires, when the action succeeds, the repository is read whole or a tick of that scope exits 0, or when the action is no longer wanted. Three in a row is past a passing outage and, at the default `interval`, within about a quarter of an hour of a cause that stands |
 | `records.shared` | `forge`, the only value; where this host publishes the records another host dispatching the same repository reads: a claim per drive launch on the pull request it concerns (its launch record, its host and, once it ended, its end), and the follow-up marker with the follow-up's answer. A value this version does not know is refused. The claims coordinate launches and never authorize anything a person does; the forge cannot create a comment only if none exists, so two hosts can each read themselves the holder of one launch, and the stage's own refusal (the drive's lock and ledger claim, `do-item`'s claim) is the backstop |
 | `send` | `true`; whether [`jig send`](README.md#telling-a-station-what-to-do) may write a request from this machine. `false` refuses every send, `--dry-run` included, so a machine whose sessions should only ask the line can say so once. Read by `jig send` alone; the dispatcher ignores it |
 | `change_probe` | `true`; whether the change probe runs: every minute, `jig dispatch probe --apply` (its own timer, which `jig install dispatch` writes beside the tick's) reads the forge once for the pull requests of every repository listed here with a stage, and wakes the tick of each repository where one was updated or its checks changed since the last probe. `false` makes a probe read and wake nothing, and the next `jig install dispatch --yes` removes its timer. Read by `jig dispatch probe` and the dispatcher's install |
+| `load.enforce` | `false`; whether the [load factor](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) holds a launch one of the host's gauges refuses. Each tick reads the gauges once, under the act lock, when it builds what it launches against: memory (`MemAvailable` on Linux, the free memory the platform reports on Windows, not read on macOS), the one-minute load per core (not read on Windows), the test lock's holders and waiters, the least free space among the filesystems of the running workspaces and the repositories, the forge's budget the tick read at its start, and the accounts' free slots. Each gauge's fill against its line, and the fullest of them as the load factor with the gauge that binds ("82% · memory binds"), are on every receipt (`load`), the dashboard's line and the Running view; a gauge the host cannot read is left out and says why. A launch fits while every gauge stays under its line with its kind's memory reservation and every reservation the tick already admitted counted; the test lock's waiters stop only pickups and drive passes; and a pickup also keeps room for a drive or follow-up after it (the larger of their reservations above the memory floor, and one account slot free). With `false` a launch that does not fit still starts and the receipt lists it under `load.holds` as one the load factor would hold (`held: false`); with `true` it waits for a later tick, its launch naming the gauge, and is listed with `held: true`. Turning it on is a person's call, made after reading a week of those receipts |
+| `load.memory_free` | `0.15`; the share of the host's memory a launch must leave available after its reservation, above 0 and below 1 |
+| `load.load_per_core` | `0.9`; the one-minute load per core the processors stay under |
+| `load.lock_waiters` | `2`; the runs waiting on the machine-wide test lock (`LOCK_ROOT`, else the temporary directory; `LOCK_NAME`, else `heavy`, as the tick's environment sets them) at which no pickup or drive pass starts |
+| `load.disk_free_gb` | `10`; the free space, in GiB, kept on the filesystems of the workspaces and the repositories |
+| `load.forge_floor` | `0.1`; the share of the forge's core budget kept, the share below which the tick already skips its optional reads; above 0 and below 1 |
+| `load.reservations_gb.<kind>` | `pickup` 2, `drive` 1.5 (a re-arm, takeover or re-drive pass), `followup` 1, `steward` 1; each kind's memory reservation in GiB until it is measured. On Linux each `--apply` tick records, per running session, the memory of the processes whose working directory is in its workspace, and keeps each kind's newest 20 samples in the state database; once a kind has 5, its reservation is their 90th percentile. Elsewhere no process's working directory is shown, and the defaults stand |
 | `dashboard.listen` | None; the address `jig dispatch dashboard` listens on: a numeric address in the loopback or private ranges (`127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`, `::1`, `fc00::/7`, `fe80::/10`) with an optional port (`8765` when none is named; `--port` overrides it). A host name or any other address is refused. Without it, the dashboard does not start |
 | `dashboard.require_token` | `true`; whether a request needs the token the command prints. `false` serves the page with no token and is accepted only when `dashboard.listen` is a loopback address (`127.0.0.0/8`, `::1`), so the only way in from another machine is a front on the host (Tailscale Serve, a reverse proxy) that authenticates the person first. The page is read-only either way |
 | `dashboard.allowed_hosts` | None; the host names a front forwards requests under (the `Host` header), read only with `require_token: false`. A tokenless dashboard answers `localhost`, `127.0.0.0/8` and `::1` and these names, and refuses any other `Host` with 403, so a page on another origin cannot read it by pointing its own name at this address |
+
+The same dashboard settings apply to the foreground command and to
+`jig dispatch dashboard --install --yes`. The installed reader has its own
+retry timer and requires a fixed listen port. Linux systemd requires user
+[lingering](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), which keeps the account's service manager running without a login; Linux cron is also supported. macOS LaunchAgents tied to a login cannot keep
+a reader through logout, so installation refuses them. No Orca install is
+needed. `--status` reports availability and diagnosis; `--access` alone
+prints the installed reader's private URL; `--uninstall --yes` removes it.
+See [the dashboard's availability and host checks](README.md#the-dispatcher).
 
 Durations are a whole number with `s`, `m` or `h`. What a run keeps lives
 under `~/.local/state/jig/dispatch/`. The files there are `receipts/` (one
@@ -1401,9 +1492,11 @@ latest recorded reset), the tick's locks (`tick.lock`, which one tick
 acts under at a time, and `observe/`, one per repository a tick is
 reading), the rotation cursor (`tick-index`),
 `wake/` (each repository's pending wakes and their log), `probe/` (the
-change probe's state, `state.json`, and its timer's launcher copy)
-and the outcome log's text copy, `log-<year>-<month>.jsonl`, which nothing
-removes. Everything else is one
+change probe's state, `state.json`, and its timer's launcher copy),
+the outcome log's text copy, `log-<year>-<month>.jsonl`, which nothing
+removes, and `dashboard/` (the installed reader's `enabled` record, its
+`access.json` with the access credentials, its `reader.<digest>.lock`, and
+the scheduler's launcher copy). Everything else is one
 SQLite database, `state.sqlite`: the launch records (one per launch,
 written before it, with a pickup session's own result), since when each
 claimed item has had no running session (for `stalled_after`), each

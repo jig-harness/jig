@@ -334,8 +334,16 @@ earlier, has completed with a result, the cancelled run's checks no longer
 count, under whatever name they carry, except that an unsuccessful check stays
 when the replacing runs report its name only as skipped. The event that started
 either run does not matter. A failure beside a cancelled check is still a failure, and
-reads `failing: …`. Until something replaces it the drive waits, on the bound
-below, and if nothing does it exits `4`: not judgeable, and retry-safe. An older
+reads `failing: …`. With no active run of the same workflow on this head,
+the drive observes a 30-second grace period, then requests one re-run per
+head. Its SQLite claim survives re-arms and is recorded before the request.
+The drive keeps polling during the grace period and re-run; unrelated pending
+workflows do not hide a cancellation. It never replays an event created under
+the CI hold. A refused or unconfirmed request, or cancellation still unreplaced
+60 seconds after the request with no active replacement, parks `cancelled-ci`
+with a framed decision and exits `8`. The doctor names the run and recovery.
+A successful replacement clears that operational park. Intentional held-run
+cancellations are left for the hold release at convergence. An older
 passing run never answers a cancelled check, which is what keeps a held run
 that cancels itself blocking the merge.
 
@@ -1161,8 +1169,8 @@ could forge or forget.
    serves none or several leaves out `--id` and `--title-file`). Run it
    without the variables step 2's `env.unset` names, as the arm command is,
    so it reads the destination repository's template. It does
-   nothing when `workspace_name.template` is `""` or outside Orca, and a failed
-   Orca rename only warns and exits `0`; a malformed argument, an invalid `workspace_name` field or an unreadable title
+   nothing when `workspace_name.template` is `""` or outside Herdr and Orca, and a failed
+   rename only warns and exits `0`; a malformed argument, an invalid `workspace_name` field or an unreadable title
    file exits `2`, and a configuration file that cannot be parsed exits `1`:
 
    ```bash
@@ -2421,36 +2429,36 @@ A decision outside the classes is yours to take: decide it, and record it
 where a person can reverse it (§ 8). A park with no class is refused with
 "decide and record it", at every autonomy level.
 
-Write the decision record to a file with the file-writing tool, with these
-sections in this order, following the
-[writing rules for text that asks a human to decide](../decide/references/human-call-elaboration.md#writing-rules-for-text-that-asks-a-human-to-decide):
+Write a `ParkedDecision` JSON file with the file-writing tool, following the
+[writing rules for text that asks a human to decide](../decide/references/human-call-elaboration.md#writing-rules-for-text-that-asks-a-human-to-decide).
+Its schema is `parked-decision/v1`:
 
-```markdown
-## Question
-
-<one sentence, ending with ?>
-
-## Options
-
-- **<name>** — Changes: <what it changes>. Costs: <what it costs>.
-- **<name>** — Changes: <…>. Costs: <…>.
-
-## Recommended
-
-**<name>**, because <why>.
-
-## Class
-
-<the class, the same as --class>
-
-## Steps for a person
-
-None. | - <a command, or a named action>
-
-## Already done
-
-<what you did about it so far>
+```json
+{
+  "schema": "parked-decision/v1",
+  "class": "<class>",
+  "call": {
+    "id": "a",
+    "question": "<one line ending with ?>",
+    "options": [
+      { "id": "a", "name": "<name>", "summary": "<what it changes>", "pay": ["<what it costs>"] },
+      { "id": "b", "name": "<another name>", "summary": "<what it changes>", "pay": ["<what it costs>"] }
+    ],
+    "recommended": "a",
+    "why": "<why this option is recommended>"
+  },
+  "steps": ["<a command or named action; use an empty array for none>"],
+  "alreadyDone": "<what you did about it so far>"
+}
 ```
+
+Option ids are one to eight letters or digits and unique within the call;
+option names are unique single lines. Each option may also carry `tag`,
+`keep` (a string array), `rightWhen`, `obligation` and `reversible` (a boolean).
+Optional top-level `facts`, `interplay` and `sheet` carry sourced claims,
+relationships between calls and a decision-sheet link. Unknown fields are
+refused with their JSON path. A sheet call is converted by `parkFromSheet`
+(decide § 4), which expands its references and requires a recommendation.
 
 Substitute `<class>` in the command below: for a thread the arbiter ruled,
 the class its ruling recorded; otherwise the registry class the decision
@@ -2459,7 +2467,7 @@ falls in.
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/park-record.md -- bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" park [PR] --key <key> --kind <thread|finding> --class <class>
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/park-decision.json -- bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" park [PR] --key <key> --kind <thread|finding> --class <class>
 ```
 
 `<key>` is the thread id (`PRRT_kwDO...`) for `--kind thread` and the
@@ -2473,8 +2481,12 @@ person owners on overlapping areas use the fallback. Non-login owner values
 and invalid or unreadable catalogs also use the fallback, with catalog errors reported. Login identity is case insensitive; null recipient settings are unset. The notification and `ask` name
 that person; an answer from any trusted author still counts.
 
-The script checks the sections mechanically and refuses, naming each missing
-or malformed part. Parked items stop counting as live work, and the drive
+The script checks the JSON mechanically and refuses, naming each missing
+or malformed field. A decision may use at most 8 KiB of UTF-8 JSON, and its
+park must fit the 65,536-byte ledger after trimming other history; a refusal
+names the measured size and limit. New parks store the JSON once, with the
+question as their reason. The ledger redacts each string value separately.
+Parks already stored as Markdown remain readable until they leave the ledger. Parked items stop counting as live work, and the drive
 keeps working around them: everything a parked item does not block is driven
 to its end before the drive stops, so `HITL_PARKED` means only the parked
 decisions remain. The stop prints each decision in full, and the handoff file
@@ -3589,7 +3601,7 @@ or `1` when the forge's facts did not read).
 
 **judgment** — After `announce-merge-ready.ts` exits `0`, whether it posted the
 announcement or found one already posted, name the workspace for the ready stage
-(it does nothing when `workspace_name.template` is `""` or outside Orca, and a failed Orca rename only warns and exits `0`, while a
+(it does nothing when `workspace_name.template` is `""` or outside Herdr and Orca, and a failed rename only warns and exits `0`, while a
 malformed argument, an invalid `workspace_name` field or an unreadable title file exits `2`, and a configuration file that cannot be parsed exits `1`). The item is the one tracker issue
 the PR serves (run [Arm](#arm) step 3's `get_issue.ts` lookup in this pass, since a driver pass is headless and one-shot); write its title alone to
 `workspace-title.md` in the worktree's git directory (the output of

@@ -1,28 +1,13 @@
+import type { ParkedDecision } from "../../../../../shared/decisions/park.ts";
+import {
+  parkAdmissionContext,
+  parkAdmissionProblem,
+  readParkedDecision,
+} from "./park-admission.ts";
 /**
- * A park is a framed decision.
- *
- * `drive-state.ts park` records an item whose decision is a person's. It
- * takes the decision class that keeps the agent from deciding (`--class`,
- * one of `autonomy.park_classes`) and a decision record on stdin, so the
- * person who reads the stop gets the question, the options with what each
- * changes and costs, the recommendation, what they must do and what the
- * agent already did, rather than a key and a sentence. A park with no class
- * is refused at every autonomy level: the classes are the whole list of what
- * a person must decide, and a decision outside them is the agent's to take
- * and record.
- *
- * The record is Markdown with these headings, in this order, each once:
- *
- *   ## Question        one sentence on one line, ending with `?`
- *   ## Options         two or more `- **<name>** …` items, each with
- *                      `Changes:` and `Costs:`
- *   ## Recommended     the recommended option's `**<name>**`, and why
- *   ## Class           the `--class` value
- *   ## Steps for a person  `None.`, or `- ` items, each a command or a named action
- *   ## Already done    what the agent did about it so far
- *
- * The sections are checked mechanically; prose quality is the writing rules'
- * (`decide`'s human-call elaboration), which no script can judge.
+ * Checked JSON park authoring and the legacy Markdown decision reader.
+ * New parks carry ParkedDecision; parseDecisionRecord and renderRecord keep
+ * earlier stored records readable until those parks leave the ledger.
  */
 import { isRecord } from "../../../../../shared/guards.ts";
 import {
@@ -231,16 +216,9 @@ export async function framedPark(
     fail(
       2,
       "park requires the decision record on stdin: decide and record it.",
-      `Sections, in order: ${RECORD_SECTIONS.map((s) => `## ${s}`).join(", ")}.`,
+      "Give parked-decision/v1 JSON with class, call, steps and alreadyDone.",
     );
-  const parsed = parseDecisionRecord(text, a.parkClass);
-  if ("problems" in parsed)
-    fail(
-      2,
-      "park: the decision record is incomplete:",
-      ...parsed.problems.map((p) => `  - ${p}`),
-    );
-  const record = parsed.record;
+  const decision = readParkedDecision(text, a.parkClass);
   const refusal = parkRefusal(
     store.read().state,
     a.key,
@@ -256,6 +234,10 @@ export async function framedPark(
     a.kind,
     a.paths[0] ?? "",
   );
+  const capacity = await parkAdmissionContext(
+    String(store.read().state.pr),
+    store.stateDir,
+  );
   await store.update((s) => {
     const refusal = parkRefusal(
       s,
@@ -266,7 +248,10 @@ export async function framedPark(
       unreadablePolicy,
     );
     if (refusal !== null) fail(2, `park: ${refusal}.`);
-    return parkedWith(s, a, record, person);
+    const next = parkedWith(s, a, decision, person);
+    const admission = parkAdmissionProblem(next, decision, capacity);
+    if (admission !== null) fail(2, `park: ${admission}`);
+    return next;
   });
   return 0;
 }
@@ -275,7 +260,7 @@ export async function framedPark(
 function parkedWith(
   s: DriveState,
   a: ParkArgs,
-  record: DecisionRecord,
+  decision: ParkedDecision,
   person: string,
 ): DriveState {
   return {
@@ -286,9 +271,9 @@ function parkedWith(
         key: a.key,
         person,
         kind: a.kind as "thread" | "finding",
-        reason: record.Question,
+        reason: decision.call.question,
         class: a.parkClass,
-        record: renderRecord(record),
+        decision,
         round: s.rounds,
         at: new Date().toISOString(),
       },

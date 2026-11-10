@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { retryAttempts } from "../../../shared/retry.ts";
+import { recoverCancelledOnHead } from "./lib/cancelled-recovery-live.ts";
 
 /**
  * Own the repository's temporary CI-hold label (`ci.hold_label`). The GitHub
@@ -476,6 +477,14 @@ async function ensure(pr: string, expectedPushHead: string): Promise<number> {
     return 0;
   }
   if (!observed) {
+    const recovery = await recoverCancelledOnHead(
+      pr,
+      head,
+      policy.requiredChecks,
+      true,
+    );
+    if (recovery === "parked") return 8;
+    if (recovery === "unknown") return 1;
     console.error(
       latest?.event === "unlabeled"
         ? "ci-hold: the required checks triggered by the latest unlabel have not completed on this head; refusing to re-add the hold yet"

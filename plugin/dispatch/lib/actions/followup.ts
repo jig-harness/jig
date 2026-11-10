@@ -205,7 +205,7 @@ function laneHolds(
  * removed; one that cannot be deleted ends its record failed, so the next
  * tick reports a failed follow-up for a person to settle.
  */
-async function claim(
+export async function claim(
   state: ApplyState,
   repo: RepoTarget,
   ctx: FollowupContext,
@@ -349,7 +349,7 @@ async function launchOne(
     );
   const held = laneHolds(state, repo, action, read);
   if (held !== null) return held;
-  const admitted = await admitAccount(state, action);
+  const admitted = await admitAccount(state, repo.slug, action);
   if ("outcome" in admitted) return admitted.outcome;
   const { slots } = admitted;
   const id = newRecordId(new Date());
@@ -432,6 +432,7 @@ async function dropUnmarked(
   const unmarked = state.records.filter(
     (r) =>
       r.record.action === "followup" &&
+      r.record.stewardResume === undefined &&
       r.record.repo === repo.slug &&
       r.record.marker === null &&
       r.record.attempts.length === 0 &&
@@ -563,6 +564,7 @@ async function retryMarked(
   for (const r of marked) {
     const { record } = r;
     held.set(record.pr, record.id);
+    if (record.stewardResume !== undefined) continue;
     if (!retryable(record)) continue;
     const action = { target: `PR #${record.pr}`, stage: "followup" } as Action;
     if (ctx.section.followupCommand === null) {

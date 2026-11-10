@@ -23,6 +23,7 @@
  * Each report is a notification's cause, with its message and the key
  * that suppresses a repeat (`notices.ts`); `actions/notify.ts` sends it.
  */
+import { batchPickups } from "./queue-batch.ts";
 import { agentOf, holdingRecords, pickupHold } from "./actions/pickup-hold.ts";
 import { type Holding, holding, liveAgents } from "./holding.ts";
 import {
@@ -58,6 +59,7 @@ export interface PickupInput {
   /** Since when each claimed item has been idle, as the idle clock last recorded it. */
   idleSince: ReadonlyMap<string, number>;
   nowMs: number;
+  values?: Record<string, unknown>;
 }
 
 export type PickupPlan = Pick<
@@ -178,25 +180,14 @@ export function planPickups(input: PickupInput): PickupPlan {
       planEnded(input.slug, item, hold.why, launches, plan);
       continue;
     }
-    plan.actions.push({
-      stage: "pickup",
-      target: item.key,
-      record: "tracker",
-      reason: `assigned to ${item.assignee} by ${item.assignedBy}, in ${item.state}, with no running session`,
-      evidence: {
-        title: item.title,
-        url: item.url,
-        state: item.state,
-        assignee: item.assignee,
-        assignedBy: item.assignedBy,
-        ...(held.evidence === null ? {} : { finishedSessions: held.evidence }),
-      },
-    });
+    plan.actions.push(pickupAction(item, held.evidence));
   }
 
   for (const item of input.claimed ?? [])
     planClaimed(item, input, plan, joined(item.key));
   planWaiting(input, plan);
+  if (input.values !== undefined)
+    plan.actions = batchPickups(plan.actions, input.pickups, input.values);
   return plan;
 }
 
@@ -296,7 +287,8 @@ function questionAsked(
     .filter(
       (r) =>
         r.record.action === "pickup" &&
-        r.record.item === item.key &&
+        (r.record.item === item.key ||
+          r.record.batchItems?.some((i) => i.key === item.key) === true) &&
         !r.record.released,
     )
     .sort((a, b) => a.record.createdAt.localeCompare(b.record.createdAt))
@@ -373,4 +365,32 @@ function planWaiting(input: PickupInput, plan: PickupPlan): void {
       workspace: found.workspace.path,
     });
   }
+}
+
+function pickupAction(
+  item: WantedItem,
+  finishedSessions: string | null,
+): Action {
+  return {
+    stage: "pickup",
+    target: item.key,
+    record: "tracker",
+    reason: `assigned to ${item.assignee} by ${item.assignedBy}, in ${item.state}, with no running session`,
+    evidence: {
+      title: item.title,
+      url: item.url,
+      state: item.state,
+      assignee: item.assignee,
+      assignedBy: item.assignedBy,
+      ...(item.servedPerson === undefined
+        ? {}
+        : { servedPerson: item.servedPerson }),
+      ...(item.ancestorEpic === undefined
+        ? {}
+        : { ancestorEpic: item.ancestorEpic }),
+      ...(finishedSessions === null
+        ? {}
+        : { finishedSessions: finishedSessions }),
+    },
+  };
 }

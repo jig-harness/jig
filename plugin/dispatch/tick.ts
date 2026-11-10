@@ -57,6 +57,16 @@
  * each managed pull request's state label is set from its ledger
  * (lib/actions/labels.ts). With them off, no label is read or written.
  *
+ * What fails in a row is counted in the failure ledger (lib/failures.ts),
+ * with `--apply` and a machine file: each label write, notice, nudge, claim
+ * end and marker answer the act phase attempts, each repository's turn and
+ * the tick as a whole, the last two once the exit is decided
+ * (lib/tick-settle.ts). An action that keeps failing backs off, reported as
+ * waiting until its next try, and a row past `failures.notify_after` is
+ * notified to a person (lib/failure-notices.ts). What is wanted is still
+ * derived every tick: a row only remembers failures, and goes when its
+ * action succeeds or leaves the plan.
+ *
  * Another host may dispatch the same repository: every host's launch claims
  * and their ends are read beside this host's records, and with `--apply`
  * this host claims its own launches there and writes their ends
@@ -69,12 +79,14 @@ import { defectOf, logDefect } from "./lib/defect.ts";
 import { accountsReport, timeLeftMs } from "./lib/actions/launch.ts";
 import { applyInTurns } from "./lib/apply-order.ts";
 import { settleFollowups } from "./lib/followup-outcomes.ts";
-import { readLaunches } from "./lib/launches.ts";
+import { type ReadRecord, readLaunches } from "./lib/launches.ts";
 import type { MachineConfig } from "./lib/machine-config.ts";
 import { PhaseTimer } from "./lib/phase-timer.ts";
 import { orcaRuntime } from "./lib/runtime/orca.ts";
 import type { SessionRuntime } from "./lib/runtime/port.ts";
 import { applyState } from "./lib/tick-apply.ts";
+import { loadReport } from "./lib/load.ts";
+import { readTickLoad } from "./lib/tick-load.ts";
 import {
   allRecords,
   type TickContext,
@@ -95,7 +107,11 @@ import {
   startTurn,
 } from "./lib/tick-repo.ts";
 import { routeRecurrences } from "./lib/reflection-route.ts";
-import { settleOutcomes } from "./lib/tick-settle.ts";
+import {
+  finalizeTickFailure,
+  settleFailures,
+  settleOutcomes,
+} from "./lib/tick-settle.ts";
 import { launchedMeanwhile } from "./lib/tick-plan.ts";
 import type { RepoReport } from "./lib/types.ts";
 import { takeScheduledUpgrade } from "../runtime/upgrade-record.ts";
@@ -308,6 +324,37 @@ async function startAct(started: StartedTick): Promise<void> {
   if (started.withheld !== undefined) receipt.applyWithheld = started.withheld;
   Object.assign(receipt, accountsReport(options.machine ?? null, apply));
   receipt.unreadableLaunches = read.unreadable;
+  await readLoadUnderAct(started, read.records);
+}
+
+/**
+ * The host's gauges, read once under the act lock so two ticks never spend
+ * the same headroom; an `--apply` tick's launches are admitted against
+ * them. A reading that fails leaves admission to the accounts, and says so.
+ */
+async function readLoadUnderAct(
+  started: StartedTick,
+  records: ReadRecord[],
+): Promise<void> {
+  const { receipt, context } = started;
+  const machine = context.options.machine ?? null;
+  if (machine === null) return;
+  const { apply } = context;
+  const load = readTickLoad({
+    machine,
+    records,
+    ...(apply === null ? {} : { table: apply.table }),
+    budget: await context.reads.budget(),
+    codexOptIn: apply?.codexOptIn ?? hostCodexOptIn(),
+    nowMs: context.nowMs,
+    sample: apply !== null,
+  });
+  if (!load.ok) {
+    receipt.loadUnread = load.failure.reason;
+    return;
+  }
+  if (apply !== null) apply.load = load.value;
+  receipt.load = loadReport(load.value);
 }
 
 /**
@@ -428,6 +475,7 @@ async function closeTick(
     failed || !copied || settleFailed || withheld !== undefined ? 1 : 0;
   // A defect the start kept on the receipt stays: the tick ran, but not whole.
   receipt.completed = receipt.defect === undefined;
+  settleFailures(receipt, context);
   receipt.finishedAt = new Date().toISOString();
   // The dashboard's copy is written here, so it carries the phases timed so far; the receipt file adds `close`.
   receipt.phasesMs = { ...timer.ms };
@@ -438,6 +486,8 @@ async function closeTick(
     inputs: context.lineInputs,
     codexOptIn: context.apply?.codexOptIn ?? hostCodexOptIn(),
   });
+  // Writing the line can set the exit to 1: the tick's failure row follows it.
+  finalizeTickFailure(receipt, context);
 }
 
 /**
@@ -490,9 +540,11 @@ async function actAndClose(
     receipt.exitStatus = 1;
     receipt.finishedAt = new Date().toISOString();
     logDefect("the tick", receipt.defect, error);
+    settleFailures(receipt, context);
     receipt.phasesMs = { ...timer.ms };
     if (context.options.machine)
       recordTickHealth(receipt, context.options.machine);
+    finalizeTickFailure(receipt, context);
   }
   receipt.phasesMs = { ...timer.ms };
   const path = writeReceipt(receipt);

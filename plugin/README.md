@@ -40,6 +40,7 @@ runs, what it hands over to.
 | [resolve-conflicts](skills/resolve-conflicts/README.md) | Resolves a stopped merge, rebase or cherry-pick: names each side by role, traces why each side changed, regenerates lockfiles and generated files (those the repository lists in its configuration or declares in its change-area catalog), records every decision in the commit message, checks that no change was silently dropped, verifies staged work belongs to the operation, and applies repository obligations to the whole resolved diff; replays past merges to report where they conflicted, why, and the change that removes each cause | `/jig:resolve-conflicts` | Runs in [drive-pr](skills/drive-pr/README.md)'s conflict round; [fix-ci](skills/fix-ci/SKILL.md) takes over for checks that fail after the merge |
 | [fix-ci](skills/fix-ci/SKILL.md) | Fetches a failed CI run's log, sorts the errors, fixes them and verifies locally before pushing | `/jig:fix-ci` | The repair by hand when no [drive-pr](skills/drive-pr/README.md) drive is running or its CI-repair budget is spent; [github-actions](skills/github-actions/SKILL.md) reviews the fix when it changes a workflow |
 | [operator](skills/operator/SKILL.md) | Answers a person's question about the line (where a pull request, item or follow-up stands, what waits on a person, what was said to a station) from [`jig ask`](#asking-a-station-where-it-stands), a status as one fixed card and anything else in sentences, and sends their command to a station (hold, release, drive, an answer to a parked question, a mailbox directive) with [`jig send`](#telling-a-station-what-to-do), only on their instruction and after showing them the dry run; holds no state of its own | `/jig:operator` | Reads and writes the records [do-item](skills/do-item/SKILL.md), [drive-pr](skills/drive-pr/README.md) and the follow-up leave and act on; hands the work of a station to that station's skill, and a question about how Jig works to [jig](skills/jig/README.md) |
+| [steward](skills/steward/README.md) | Inspects stopped work and the assigned queue, proposes recoveries and missing facets, and frames what still needs a person; the next tick applies its records under existing guards | `/jig:steward` (dispatcher only) | Reads the dispatcher's digest, writes owner-local records, and sends recurring recoveries to [reflect](skills/reflect/README.md) |
 
 **Review a change.** Check work against the repository's own standards before and during review: `change-areas` says what the change owes, `review` and `github-actions` check it.
 
@@ -282,7 +283,7 @@ until the plugin is updated.
 **`--apply`** starts what the machine file
 ([`~/.jig/dispatch.yaml`](CONFIGURATION.md#the-machines-dispatch-file))
 enables for each repository: the `rearm` stage, and the `pickup`,
-`followup`, `notify` and `steer` stages below. With `rearm`, each re-arm
+`followup`, `notify`, `steer` and `steward` stages below. With `rearm`, each re-arm
 of a stopped drive, and each takeover of a wedged driver this machine
 started (or another host did: see several hosts, below), or of a silent
 driver no launch started that ran on this host and whose run this host
@@ -374,14 +375,25 @@ machine file and never admitted. Each run reports these at its top
 the turn-budget hook counts responses in both runtimes
 ([Codex notes](#codex-notes)).
 
-**Pickups** (the `pickup` stage) start one `do-item` session per item
-assigned to the factory identity in a dispatch state, once: just before
-the launch the item is read again (still assigned, still in a dispatch
-state, no session running for it, no launch record holding it), an account
-with a free slot is admitted and its identity checked, the item gets a
-workspace (a new branch named by `pull_requests.branch_name`, its issue
-linked), and the session starts on `/jig:do-item <key>` with the model and
-effort of the item's route. Its prompt ends by asking the session to record
+**Pickups** (the `pickup` stage) start headless `do-item` passes for
+items assigned to the factory identity in a dispatch state, and for the
+people the host's machine file names under `serve:`. A served person's
+open, not-started assignments need no dispatch state. Unassigned items
+under an epic assigned to them inherit that person, including nested
+epics. Only assignments made by a repository writer qualify.
+
+The Queue view names holds: an open blocker reads "waiting on #N";
+`hitl`, `hitl:*`, `manual-ops` and `jig:hold` read "needs a person to start".
+Eligible items are ranked by priority, the work they unblock, epic order,
+size and age. Assignment provenance, relations and children are cached
+until the item's update time changes. Assignment lists refresh with
+headroom and at least every 15 minutes. Served forge logins also join the
+pull-request adoption authors.
+
+Before launching, the tick rechecks the item and admits an account. The
+pass runs through the account-bound wrapper under `dispatch.pickup_deadline`;
+it keeps the orchestrator's model and effort and forwards the item's route
+to its implementer. Its prompt ends by asking the session to record
 how it ended, `jig dispatch result <record> <token> done|failed`, which
 refuses another record's token and a second answer. A completed pickup adds
 `--pr <number>` for the pull request it opened, or `--none "<reason>"` when
@@ -401,27 +413,30 @@ reported as stalled and never relaunched; an item more than one running
 session joins to is reported as a double claim; a session waiting longer
 than `dispatch.blocked_after` is reported.
 
-A pickup starts only where the session runtime binds the session to the
-account it bills, whatever account the host has active. Orca cannot yet:
-`orca agent launch` takes no account and no environment of its own (`orca
-account select` covers OpenCode and Devin only), and starts its agent with
-the configuration directory of the account the host has selected, which a
-person can switch at any moment. So with Orca every pickup is reported,
-with that reason, and nothing is opened or started. The launch path is
-built behind the runtime's answer: a terminal tab running the dispatcher's
-wrapper, which starts the agent of the account's vendor (Claude Code, or
-Codex on the route's `routing.models.codex` model and `routing.efforts.codex`
-effort), binds it through the account's configuration directory as it does
-a drive's pass, and reads the agent's id back as the terminal's tab and
-pane, the id `orca worktree ps` reports agents under. Orca reports a Codex
-session started that way as an agent under that id, but Codex first asks
-whether to trust a folder it has not seen, and nobody answers; that it
-reports a Claude Code session started that way is not shown. It switches on
-once both are settled.
+A pickup starts only where the session runtime binds the pass to the
+account it bills. On Orca it runs through the headless wrapper used by
+follow-ups, with the admitted account's configuration directory and an
+identity check before launch. An interactive launch remains unavailable
+until the runtime can bind it to an account.
 
 ```sh
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> done|failed [--pr <number> | --none <reason>]
 ```
+
+**The steward** (the `steward` stage, with `steward.enabled: true` in the
+machine file) inspects what the rules leave stopped, under the owner host's
+account and load admission. Every 20 minutes, only when the digest changed,
+it can propose a transient-stop retry, a missing issue facet, queue tie order
+and the act and ask for a human need. It can also propose one fixed resume of
+an ended dispatched pass that recommended an option outside the human-decision
+registry. The follow-up lane's own routine retry runs first. The next tick
+applies its closed records under the current holds and recovery budget;
+the steward itself launches nothing. It never answers a registry park or
+re-arms a drive a person stopped. A pass lasts at most 15 minutes, uses the
+admitted vendor's complex-tier model, and runs at most three times an hour.
+Its digest and records stay in the owner's state database. A recovery class
+re-armed three times in a week proposes a reflection rule.
+See [steward](skills/steward/README.md) for setup and record boundaries.
 
 **Follow-ups** (the `followup` stage) start one headless pass per pull
 request merged since the stage was switched on (`followup_since`), running
@@ -643,8 +658,10 @@ A drive stopped with exit 12 gets one recovery pass per head commit in its exist
 dispatcher's state visible on each pull request, from any forge client,
 and let a person steer it the same way. Each `--apply` run sets each
 managed pull request's state label (`jig:driving`, `jig:converged`,
-`jig:parked`, `jig:stale`, `jig:held`, `jig:followed-up` under the
-default prefix) from its drive ledger and the serialized areas below, writing only where the labels disagree, so a label
+`jig:parked`, `jig:stale`, `jig:held`, `jig:followed-up`,
+`jig:followup-failed` under the default prefix) from its drive ledger and
+the serialized areas below, a merged one's from its follow-up's end
+(`jig:followup-failed` while a failed follow-up waits for a person), writing only where the labels disagree, so a label
 changed by hand, or left behind by a drive that was killed, is corrected
 at the next run; no state label is ever read to decide what to start. The command
 labels are a person's commands, which the dispatcher reads and never
@@ -652,9 +669,21 @@ adds: `jig:drive` on a pull request with no drive ledger arms a drive on
 it (the `rearm` stage, once per head commit) and is replaced by the state
 label once the ledger exists. `jig:rearm` asks to restart a stopped drive in its existing branch tree, on an admitted account, and is consumed after launch; it never restarts a running drive or one a person stopped. `jig:hold` keeps every stage off the
 pull request while it is there, reported at every run and removed only by
-a person. With `only_labeled`, the dispatcher reads only the pull requests
+a person. Marker labels without the prefix sit beside the set: the
+repository's manual-operations label (`issue_tracker.labels.manual_ops`,
+`manual-ops` by default) on a pull request whose
+`## Out-of-tree follow-ups` section lists a step not yet checked off, set
+from the description at every run and kept after the merge until the
+follow-up is done (a merged pull request is read only where
+`followup_command` is set); and `automation` on a pull request a bot opened
+that carries no label of the `automation:` family a repository's workflows
+apply (`automation:docs-sync`), unless the bot is one the adoption rule
+names, which is the host's own identity. The dispatcher never removes `automation`
+or an `automation:` label, and never puts either on a person's pull
+request. With `only_labeled`, the dispatcher reads only the pull requests
 that carry a label of the set. The labels must exist first: `jig install
-dispatch --repo <path>` lists the missing ones beside the timer, and with
+dispatch --repo <path>` lists the missing ones, the marker labels with
+them, beside the timer, and with
 `--yes` creates them where the signed-in account may and lists the rest
 with the command a person runs. A label write the forge refuses is reported in the receipt,
 and the run does not fail.
@@ -666,7 +695,13 @@ request with no drive ledger, opened by one of the rule's authors (by
 default the login the dispatcher reads the forge as) and updated within
 its window (a week by default), draft or not, is armed as if it carried
 `jig:drive`, once per head commit. A bot's pull request is adopted only
-when the rule names the bot, and one carrying `jig:hold` never is. Each
+when the rule names the bot, and one carrying `jig:hold` never is. An
+automation pull request (a bot's the rule does not name, or one carrying
+`automation` or an `automation:` label) is adopted, re-driven, taken over
+or re-armed of the dispatcher's own accord only while it needs work: a
+failed check (not a cancelled one or one waiting for approval), a conflict
+with its base, or an unresolved review thread. A healthy one is left for a
+person to merge; `jig:drive` or `jig:rearm` still drives one on request. Each
 run reports every pull request the rule adopted, with the reason.
 
 **Serialized areas.** Some pull requests conflict with each other whenever
@@ -779,9 +814,59 @@ bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatc
 
 It listens on the machine file's `dashboard.listen`, an address in the
 private or loopback ranges (a Tailscale address of the host, say), and
-prints a URL whose token every request needs. Nothing installs or keeps it
-running: start it from a terminal on the host (Orca's phone app reaches one),
-open the URL on the phone, and stop it with Ctrl-C.
+prints a URL whose token every request needs. The foreground command runs
+until Ctrl-C. On Linux, the dashboard can also run under its own retry timer,
+independent of the dispatch and change-probe timers, without Orca:
+
+```sh
+jig dispatch dashboard --install         # preview, using dashboard.listen
+jig dispatch dashboard --install --yes   # install once; repeating is safe
+jig dispatch dashboard --status          # timer, listener health and log locations
+jig dispatch dashboard --access          # explicitly print the private URL
+jig dispatch dashboard --uninstall --yes # remove this reader and its retry timer
+```
+
+Use the installed plugin's `jig` command. An installed reader needs a fixed
+port; stop a foreground reader on that address before installing. Existing
+`dashboard.listen`, `require_token` and `allowed_hosts` settings apply to both
+forms. The URL is a credential when tokens are enabled: only `--access`
+prints the installed reader's URL; service output and installation previews
+never print it. The access record is owner-only and invalidated on renewal.
+The server routes still only read the dispatch records; availability state
+and the private access record live under `~/.local/state/jig/dispatch/dashboard/`.
+
+The supported durable setup is Linux with either a systemd user timer and
+**[lingering](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) enabled** (the account's service manager runs without a login), or cron. With systemd, install refuses until
+`loginctl show-user <user> --property=Linger --value` answers `yes`; ask the
+host administrator to enable lingering for the intended account. Jig does
+not change that host setting. A cron daemon must run at boot. macOS
+LaunchAgents tied to a login stop at logout, so this install refuses them; use the foreground
+command there. Scheduled jobs are unavailable on Windows. Orca is optional
+for all dashboard commands.
+
+The timer starts a reader after install, reboot or failure: allow up to two
+minutes on systemd (including its default timer accuracy window), or a minute
+on cron, plus the installed-copy lookup time. systemd waits a minute after the reader
+exits before retrying; cron checks every minute and the reader lease excludes
+overlaps. A reader notices a new installed plugin copy within a minute and
+exits so the next invocation starts that copy. It stops on the next one-second poll
+when its configuration changes or disappears (after any in-flight bounded
+installed-copy lookup), and renews at the launcher's
+24-hour deadline even without an update. Transient registry failures keep the
+current reader serving and retry the lookup. Each renewal rotates the token;
+run `--access` again for the new URL. The command does not install a private
+network front or open a public listener.
+
+To verify availability on the configured host, first wait for `--status` to
+report a healthy reader and note its pid. End the terminal session, reconnect
+and repeat `--status`; after a host reboot, repeat it again. For crash recovery,
+systemd users can run `systemctl --user kill --signal=SIGKILL
+jig-dispatch-dashboard.service` and wait for the next healthy status with a
+new pid. After updating the installed plugin, check the same recovery and
+obtain a new URL with `--access`. A stopped or disabled timer, failed copy
+lookup, occupied listen address or missing configuration is diagnosed by
+`--status` and the log locations it prints. These checks distinguish host
+logout and reboot verification from the automated process and scheduler tests.
 
 The page reads two things, every minute and when it comes back into focus, and
 writes nothing to the host:

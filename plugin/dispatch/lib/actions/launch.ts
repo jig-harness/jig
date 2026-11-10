@@ -58,6 +58,8 @@ import type {
 } from "../types.ts";
 import type { SessionsReport } from "../runtime/port.ts";
 import { laneBudgetWait } from "./followup-lane.ts";
+import type { LoadKind } from "../dashboard-contract.ts";
+import { judge, type LoadState } from "../load.ts";
 
 /** What `--apply` carries across a tick's repositories. */
 export interface ApplyState {
@@ -97,6 +99,8 @@ export interface ApplyState {
   /** How many repositories the tick walks, the radix the stages' and targets' turns count in. */
   repos?: number;
   root?: string;
+  /** The host's gauges as this tick read them under the act lock, and what its launches have reserved of them (`load.ts`). */
+  load?: LoadState;
 }
 
 /**
@@ -288,10 +292,11 @@ export async function openWithinBudget(
   repo: RepoTarget,
   target: ItemTarget | PullRequestTarget | NoticesTarget,
   lane = false,
+  reserveNotice = true,
 ): Promise<Opened> {
   const late = outOfTime(state) ?? openRoomWait(state);
   if (late !== null) return { waits: late };
-  const spent = takeOpen(state, "notices" in target, lane);
+  const spent = takeOpen(state, reserveNotice && "notices" in target, lane);
   if (spent !== null) return spent;
   let opened: RuntimeReceipt;
   try {
@@ -323,7 +328,11 @@ function attemptOf(receipt: RuntimeReceipt): LaunchAttempt {
 }
 
 /** What the dispatcher's names call a record's target: the item's key, else `#<pr>`. */
-function nameKey(record: Pick<LaunchRecord, "item" | "pr">): string {
+function nameKey(
+  record: Pick<LaunchRecord, "item" | "pr"> &
+    Partial<Pick<LaunchRecord, "action">>,
+): string {
+  if (record.action === "steward") return "line";
   return record.item ?? `#${String(record.pr)}`;
 }
 
@@ -407,6 +416,7 @@ function release(state: ApplyState, record: LaunchRecord): void {
 
 /** What a record acts on, as a launch's outcome names it. */
 function targetOfRecord(record: LaunchRecord): string {
+  if (record.action === "steward") return "the steward";
   return record.item ?? `PR #${record.pr}`;
 }
 
@@ -432,6 +442,7 @@ function outcome(
 
 /** The launch an action asks for. */
 function kindOf(action: Action): LaunchOutcome["action"] {
+  if (action.stage === "steward") return "steward";
   if (action.stage === "pickup" || action.stage === "followup")
     return action.stage;
   return isTakeover(action) ? "takeover" : "rearm";
@@ -605,7 +616,7 @@ function admission(
 ) {
   const codex = state.codexOptIn;
   // A pickup is a headless pass under its own deadline (`dispatch.pickup_deadline`).
-  if (action.stage === "pickup")
+  if (action.stage === "pickup" || action.stage === "steward")
     return admitRearm(
       state.table,
       state.last,
@@ -626,15 +637,40 @@ function admission(
     : admitTakeover(state.table, replaced, state.passDeadlineSec, codex);
 }
 
+/** The kind of launch whose reservation an action counts. */
+function loadKindOf(action: Action): LoadKind {
+  if (action.stage === "steward") return "steward";
+  if (action.stage === "pickup" || action.stage === "followup")
+    return action.stage;
+  return "drive";
+}
+
+/** The admitted account, unless the host's load holds the launch. */
+function byLoad(
+  state: ApplyState,
+  repo: string,
+  action: Action,
+  slots: Slots,
+): { slots: Slots } | { outcome: LaunchOutcome } {
+  if (state.load === undefined) return { slots };
+  const held = judge(state.load, loadKindOf(action), repo, action.target);
+  return held === null
+    ? { slots }
+    : { outcome: waits(action, held, slots.account.name) };
+}
+
 /**
  * The account a launch bills, admitted afresh against the walls and the
- * identity check. A re-arm or a pickup tries the next account when one
+ * identity check, then against the host's load (`load.ts`): under
+ * `load.enforce` a launch a gauge refuses waits, and otherwise it starts and
+ * is reported as one the load factor would hold. A re-arm or a pickup tries the next account when one
  * fails its identity check, so a stale login cannot starve the others; a
  * takeover has only its own account. A pickup is admitted as a headless
  * pass under `pickupDeadlineSec`, the repository's `dispatch.pickup_deadline`.
  */
 export async function admitAccount(
   state: ApplyState,
+  repo: string,
   action: Action,
   pickupDeadlineSec = 0,
 ): Promise<{ slots: Slots } | { outcome: LaunchOutcome }> {
@@ -655,7 +691,7 @@ export async function admitAccount(
     const identity = await identityOf(state, slots);
     if ("waits" in identity)
       return { outcome: waits(action, identity.waits, slots.account.name) };
-    if (identity.ok) return { slots };
+    if (identity.ok) return byLoad(state, repo, action, slots);
     const name = slots.account.name;
     refusal ??= refused(action, `identity check: ${identity.reason}`, name);
     if (action.takeover !== undefined) return { outcome: refusal };

@@ -41,6 +41,12 @@ import {
   withDefault,
 } from "../shared/vendor/optique.mjs";
 import { DEFAULT_PORT, dashboardMain } from "./dashboard.ts";
+import {
+  dashboardAccess,
+  dashboardInstall,
+  dashboardStatus,
+  scheduledDashboard,
+} from "./dashboard-install.ts";
 import { clearMain } from "./clear.ts";
 import { installDispatch } from "./install.ts";
 import { newerStateRefusal } from "./lib/state.ts";
@@ -304,6 +310,12 @@ const dashboard = command(
   "dashboard",
   object({
     action: constant("dashboard"),
+    install: option("--install"),
+    uninstall: option("--uninstall"),
+    confirm: option("--yes"),
+    status: option("--status"),
+    access: option("--access"),
+    scheduled: option("--scheduled"),
     port: optional(
       option("--port", portValue, {
         description: message`The port to listen on. Without it, the port dashboard.listen names, else ${String(DEFAULT_PORT)}.`,
@@ -476,6 +488,41 @@ function dashboardCommand(port: number | undefined): Promise<number> {
   );
 }
 
+function checkDashboardArguments(
+  args: Extract<Subcommand, { action: "dashboard" }>,
+): void {
+  const actions = [
+    args.install,
+    args.uninstall,
+    args.status,
+    args.access,
+    args.scheduled,
+  ].filter(Boolean).length;
+  if (
+    actions > 1 ||
+    (actions > 0 && args.port !== undefined) ||
+    (args.confirm && !args.install && !args.uninstall)
+  )
+    throw new ExitError(
+      USAGE_EXIT,
+      "Choose one dashboard action; --port is for the foreground reader and --yes for install/uninstall",
+    );
+}
+
+/** Route the dashboard lifecycle separately from dispatch's other actions. */
+function dashboardAction(
+  args: Extract<Subcommand, { action: "dashboard" }>,
+  script: string,
+): number | Promise<number> {
+  checkDashboardArguments(args);
+  if (args.install || args.uninstall)
+    return dashboardInstall(args.confirm, args.uninstall, script);
+  if (args.status) return dashboardStatus();
+  if (args.access) return dashboardAccess();
+  if (args.scheduled) return scheduledDashboard(script);
+  return dashboardCommand(args.port);
+}
+
 /** A subcommand's run: everything but the tick. */
 function subcommandMain(
   args: Subcommand,
@@ -492,7 +539,7 @@ function subcommandMain(
   if (args.action === "clear") return clearMain(args.record);
   if (args.action === "probe")
     return probeMain({ apply: args.apply, json: args.json }, machineFile());
-  if (args.action === "dashboard") return dashboardCommand(args.port);
+  if (args.action === "dashboard") return dashboardAction(args, script);
   if (args.action === "marker")
     return markerMain({
       verb: args.verb,

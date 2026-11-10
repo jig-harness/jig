@@ -132,6 +132,7 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
         model.priorityLabels.some((p) => same(p, l)),
       ),
       createdAt: issue.createdAt,
+      updatedAt: issue.updatedAt,
       // The state's id is its canonical key: GitHub has no state objects,
       // and a claim re-check compares ids.
       state: {

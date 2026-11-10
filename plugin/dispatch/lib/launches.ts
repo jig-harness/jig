@@ -70,7 +70,12 @@ import type { StandingAnswer } from "./routine-questions.ts";
 export { cancelledBeforeExecution } from "./cancellation.ts";
 
 /** What a launch starts: a re-arm of a stopped drive, a takeover of a wedged one, a pickup's `do-item` session, or a merge's follow-up pass. */
-export type LaunchAction = "rearm" | "takeover" | "pickup" | "followup";
+export type LaunchAction =
+  | "rearm"
+  | "takeover"
+  | "pickup"
+  | "followup"
+  | "steward";
 
 /** Whether a record starts a drive's headless pass, whose exit is its answer. */
 export function isDrive(record: Pick<LaunchRecord, "action">): boolean {
@@ -101,6 +106,9 @@ export interface LaunchAttempt {
 
 /** The tick's part of a record. */
 export interface LaunchRecord {
+  stewardResume?: string;
+  stewardDecision?: number;
+  stewardContext?: string;
   version: 1;
   id: string;
   token: string;
@@ -121,6 +129,9 @@ export interface LaunchRecord {
   passTimeoutSec?: number | null;
   /** For a pickup: it runs as a headless pass of `do-item` through the wrapper. Absent on an interactive pickup an earlier release started. */
   headless?: boolean;
+  servedPerson?: string;
+  ancestorEpic?: string;
+  batchItems?: import("./queue-batch.ts").BatchItem[];
   /** For a headless pass: whether the tick admitted it on a host opted in to Codex's bypass. A Codex pass carries the bypass only when this is `true`; the wrapper does not read the setting itself, since it can read another user layer from the tick's. */
   codexBypass?: boolean;
   /** For a takeover: the record whose driver it replaces, whose slot it takes. */
@@ -137,7 +148,9 @@ export interface LaunchRecord {
   effort: string | null;
   /** A pickup's ended record no longer holds its item: the item left the dispatch states since. */
   released: boolean;
-  /** A pickup's item was seen claimed (in progress) after the record ended: coming back to the dispatch states releases the record. Absent until then. */
+  /** A pickup's members seen claimed (in progress) after the record ended: each releases only after it returns to the dispatch states. Absent until then. */
+  claimedItems?: string[];
+  /** @deprecated Kept for records written before claimedItems tracked batch members separately. */
   claimedSeen?: boolean;
   /** The command a follow-up pass runs (the repository's `dispatch.followup_command`); `null` for any other record. */
   command: string | null;
@@ -208,6 +221,7 @@ export interface LaunchClaim extends ProcessIdentity {
 }
 
 export interface LaunchExit {
+  context?: string;
   startup?: "quota" | "unstarted"; // headless stop before any result or transcript
   at: string;
   /** The stage's exit code; `null` when it ended on a signal. */
@@ -315,6 +329,8 @@ function hasStrings(value: Record<string, unknown>, keys: string[]): boolean {
 
 /** What a record names: a pull request for a drive or a follow-up, an item for a pickup. */
 function namesTarget(value: Record<string, unknown>): boolean {
+  if (value.action === "steward")
+    return value.pr === null && value.item === null;
   if (value.action === "pickup")
     return typeof value.item === "string" && value.item !== "";
   return (
@@ -393,7 +409,11 @@ function followupFields(
 }
 
 /** What a record acts on, as the plan names it: the item, else `PR #<n>`. */
-export function targetOf(record: Pick<LaunchRecord, "item" | "pr">): string {
+export function targetOf(
+  record: Pick<LaunchRecord, "item" | "pr"> &
+    Partial<Pick<LaunchRecord, "action">>,
+): string {
+  if (record.action === "steward") return "the steward";
   return record.item ?? `PR #${String(record.pr)}`;
 }
 

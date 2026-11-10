@@ -78,6 +78,11 @@ export interface ProbeRead {
 
 /** The forge reads the probe makes; GitHub's is `githubProbeForge`. */
 export interface ProbeForge {
+  /** Issue updates for served pickups; read only on pickup-enabled repositories. */
+  issues?(
+    slugs: readonly string[],
+    since: string,
+  ): Promise<Outcome<{ changed: ChangedPr[]; calls: number }, "unreadable">>;
   /** The forge repository (`owner/name`) the checkout at `path` belongs to. */
   slug(path: string): Promise<Outcome<string, "unreadable">>;
   /** The pull requests of `slugs` updated at or after `since`, and every open one's checks. */
@@ -421,6 +426,32 @@ export async function probe(
   }
 }
 
+/** The issue probe is bounded to the host's served pickup repositories. */
+async function readServedChanges(
+  machine: MachineConfig,
+  forge: ProbeForge,
+  slugs: Record<string, { slug: string }>,
+  since: string,
+): Promise<Outcome<{ changed: ChangedPr[]; calls: number }, "unreadable">> {
+  if ((machine.serve?.length ?? 0) === 0 || forge.issues === undefined)
+    return ok({ changed: [], calls: 0 });
+  const pickupPaths = new Set(
+    machine.repositories
+      .filter((r) => r.stages.includes("pickup"))
+      .map((r) => r.path),
+  );
+  const pickups = [
+    ...new Set(
+      Object.entries(slugs)
+        .filter(([path]) => pickupPaths.has(path))
+        .map(([, value]) => value.slug),
+    ),
+  ];
+  return pickups.length === 0
+    ? ok({ changed: [], calls: 0 })
+    : await forge.issues(pickups, since);
+}
+
 async function probeOnce(
   machine: MachineConfig,
   apply: boolean,
@@ -446,6 +477,15 @@ async function probeOnce(
   const since = searchTime(windowStart(previous, now));
   const read = await deps.forge.search(probed, since);
   if (!read.ok) return read;
+  const issues = await readServedChanges(
+    machine,
+    deps.forge,
+    found.slugs,
+    since,
+  );
+  if (!issues.ok) return issues;
+  read.value.changed.push(...issues.value.changed);
+  read.value.calls += issues.value.calls;
   const decision = decide(previous, read.value, now);
   const report = reported(
     base,

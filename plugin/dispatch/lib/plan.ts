@@ -48,6 +48,7 @@ import { planDrift } from "./expectations.ts";
 import { isDrive, type ReadRecord } from "./launches.ts";
 import { parkNotice, stopNotice } from "./notices.ts";
 import { goneUnlaunched } from "./recovery-facts.ts";
+import { idleBlocksStart } from "./automation.ts";
 import { backingOff } from "./infra-backoff.ts";
 import { conflictNote } from "./sources/ledgers.ts";
 import { requestedTree, workspaceOfTree } from "./stall-tree.ts";
@@ -75,10 +76,12 @@ import type {
   RepoReport,
   Running,
   Stage,
+  Unplaced,
   WantedItem,
 } from "./types.ts";
 
 export interface PlanInput {
+  values?: Record<string, unknown>;
   /** The repository's `owner/name`. */
   slug: string;
   /** The board read: the converged pull requests it placed, notified as they enter Ready to merge. */
@@ -123,7 +126,12 @@ type Plan = Pick<RepoReport, "actions" | "running" | "unplaced" | "quiet"> & {
   /** The claimed items whose clock is left as it is. */
   idleKeep: string[];
   /** The actions a `hold` label kept off. */
-  held: Array<{ target: string; stage: Stage; reason: string }>;
+  held: Array<{
+    target: string;
+    stage: Stage;
+    reason: string;
+    cause?: NotifyCause;
+  }>;
   /** The targets `only_labeled` withheld actions from: their notice records stand. */
   withheld: string[];
   /** The re-arms, takeovers and re-drives a serialized area's hold kept off. */
@@ -310,6 +318,7 @@ export function holdBack(
         target: action.target,
         stage: action.stage,
         reason: `a person's hold label stands the dispatcher down from it; without it the tick would ${action.stage}: ${action.reason}`,
+        ...(action.cause === undefined ? {} : { cause: action.cause }),
       });
       plan.withheld?.push(action.target);
     } else kept.push(action);
@@ -446,7 +455,12 @@ function planForeign(
   )
     return null;
   if (hold.kind === "unread") {
-    plan.unplaced.push({ target, record: "forge", reason: hold.why });
+    plan.unplaced.push({
+      target,
+      record: "forge",
+      reason: hold.why,
+      readFailed: true,
+    });
     return true;
   }
   const says = hold.claim.says.value;
@@ -497,10 +511,27 @@ function treeBound(pr: DrivenPr, sessions: SessionsReport): DrivenPr | null {
   };
 }
 
+/** Why an automation pull request's drive is not started again of itself: it needs no work. `null` for any other drive, and for a person's rearm request. */
+function idleWhy(pr: DrivenPr): string | null {
+  if (!idleBlocksStart(pr)) return null;
+  return `${pr.why}; but it is an automation pull request that needs no work (no failing check, no conflict, no unresolved thread), so nothing is started of itself: a person merges it, or labels it rearm`;
+}
+
+/** A drive left unplaced; a ledger or comments that did not read are said to be a failed read. */
+function unplacedDrive(target: string, pr: DrivenPr): Unplaced {
+  return {
+    target,
+    record: "forge",
+    reason: pr.why,
+    ...(pr.readFailed === true ? { readFailed: true as const } : {}),
+  };
+}
+
 /**
  * The drive as this host plans it, or `null` once it is reported quiet
  * because nothing is launched for it yet: its work is in a tree on another
- * host, or its re-drive waits out a backoff.
+ * host, its re-drive waits out a backoff, or it is an automation pull
+ * request that needs no work.
  */
 function plannable(
   input: PlanInput,
@@ -517,7 +548,7 @@ function plannable(
     });
     return null;
   }
-  const waiting = backingOff(pr, input.nowMs);
+  const waiting = backingOff(pr, input.nowMs) ?? idleWhy(pr);
   if (waiting === null) return pr;
   plan.quiet.push({ target, class: pr.class, why: waiting });
   return null;
@@ -535,15 +566,7 @@ function planDrive(
   const pr = plannable(input, read, plan);
   if (pr === null) return;
   const hold = driveHold(pr, launches);
-  if (
-    !(
-      hold.kind === "refused" &&
-      pr.class === "stopped-unknown" &&
-      pr.evidence.noCause === true
-    ) &&
-    placedByHold(target, hold, plan)
-  )
-    return;
+  if (heldByRecord(target, pr, hold, plan)) return;
   const takeover = hold.kind === "takeover" ? hold.record.record.id : null;
   // Another host's open takeover on these ledger facts holds the drive even
   // where this host's own record would take it over.
@@ -558,7 +581,7 @@ function planDrive(
     return;
   }
   if (pr.class === "unplaced") {
-    plan.unplaced.push({ target, record: "forge", reason: pr.why });
+    plan.unplaced.push(unplacedDrive(target, pr));
     return;
   }
   const cause = taken ? undefined : NOTIFY.get(pr.class);
@@ -575,6 +598,23 @@ function planDrive(
     },
     (w) => w.prs.includes(pr.number),
   );
+}
+
+/** Whether a launch record placed a drive; a ledger that did not read is still said so, as the record does not decide that. */
+function heldByRecord(
+  target: string,
+  pr: DrivenPr,
+  hold: DriveHold,
+  plan: Plan,
+): boolean {
+  const stoppedWithoutCause =
+    hold.kind === "refused" &&
+    pr.class === "stopped-unknown" &&
+    pr.evidence.noCause === true;
+  if (stoppedWithoutCause || !placedByHold(target, hold, plan)) return false;
+  if (pr.class === "unplaced" && pr.readFailed === true)
+    plan.unplaced.push(unplacedDrive(target, pr));
+  return true;
 }
 
 /**

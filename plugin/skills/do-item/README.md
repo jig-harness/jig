@@ -16,6 +16,33 @@ base snapshot of its own: each lens the diff triggers runs with fresh
 context, the gate's summary says why it skipped the others, and the lenses'
 warnings go into the pull request body under Review Notes.
 
+## Scouts before a pickup
+
+At pickup, a claim about a third-party tool is checked against the version in
+use or its documentation before implementation is delegated. The status names
+the claim, check, version and result. A false premise stops the pickup for the
+user to re-scope; issues about the repository's own code skip this check.
+
+Run `/jig:do-item scout <issue-key>` to gather context before deciding to
+start an issue, or `/jig:do-item scout --text <task>` for work outside the
+tracker. Both use the same configured scouts and agent routing as a pickup;
+free text uses title keywords or the default agent because it has no labels.
+Neither claims or implements the work.
+
+The issue form posts completed findings with the `## Scout Findings (<hash>)`
+heading a pickup reads, so a later pickup reuses them while their hash matches
+or they are under 24 hours old. The text form prints its findings without
+contacting the tracker. A route without scouts is reported without an empty
+comment, and partial findings from a failed scout are reported without being
+published as reusable findings.
+
+Before opening, the pull-request planner warns about merge commits that bring
+in work outside the planned base, listing the foreign commits. When a
+change-area catalog is configured, it adds the directly touched areas' tracker
+labels and flags alongside the fixed `pull_requests.labels`; implied areas
+add none. Labels must already exist in the repository. An unreadable history
+or configured catalog stops planning.
+
 ## The item's spec
 
 Once it has the issue, it shows what the issue says must be built: the
@@ -73,6 +100,22 @@ racing inside that re-read can both pass; the
 [dispatcher](../../README.md#the-dispatcher) reports an item two running
 sessions work on.
 
+A dispatcher pickup serving a named person uses `claim --for <identity>`.
+It verifies that a repository writer made the assignment, keeps the person
+as the sole assignee, and moves the item in progress. With
+`--ancestor <epic-key>`, it walks the current ancestry, rejects holds or
+conflicting assignees, and checks the ancestor epic's assignment. GitHub
+adds the person to an unassigned child without replacing a concurrent
+assignee; a detected race stands down and refreshes the queue. Inherited
+claims on Linear and Jira are refused because their assignment APIs cannot
+add a person without replacing an assignee.
+
+Command-line claims share a machine-local mutex across worktrees and
+re-read authority before writing. This does not serialize claims on
+separate hosts: simultaneous claims for the same person can still both
+pass. A tracker state transition is not a cross-host lease; the dispatcher's
+double-claim watch remains necessary.
+
 ## Requirements and platforms
 
 Install the [plugin requirements](../../README.md#requirements), and name the
@@ -104,6 +147,12 @@ is still pending. Automated component coverage does not establish that
 interactive flow.
 
 ## Arming the drive
+
+Before starting the drive, the skill detaches the implementer's isolated
+worktree after its branch is pushed, it is clean and no git operation remains.
+A tree with changes, unpushed commits or unreadable safety evidence stays
+attached; the report names it and gives inspection and release commands.
+The session's own tree stays attached.
 
 Once the pull request opens, the skill starts its
 [drive](../drive-pr/README.md), the unattended loop that works the review
@@ -152,7 +201,7 @@ board with custom columns maps these stages onto them in
 nothing in another runtime changes: outside Orca it makes no call, and an
 Orca call that fails only warns.
 
-The workspace is also renamed as the work moves, from a template over the item key, title, pull request and a short status (`[I]`
+In Herdr as well as Orca, the workspace is renamed as the work moves, from a template over the item key, title, pull request and a short status (`[I]`
 implementing, `[D]` driving, `[R]` ready to merge; `✅` done is reserved for
 a follow-up step and nothing sets it yet), `{id} {status} {title} {pr}` by
 default: [`workspace_name`](../../CONFIGURATION.md#workspace_name) changes the

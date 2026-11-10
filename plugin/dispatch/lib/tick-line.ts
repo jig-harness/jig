@@ -14,7 +14,7 @@ import {
   slotTable,
 } from "./accounts.ts";
 import { readNudges } from "./actions/steer.ts";
-import type { LineAccount } from "./dashboard-contract.ts";
+import type { LineAccount, LineSnapshot } from "./dashboard-contract.ts";
 import type { ReadRecord } from "./launches.ts";
 import {
   buildLine,
@@ -159,6 +159,11 @@ function addTick(receipt: TickReceipt, sweep: boolean): Outcome<void> {
   );
 }
 
+/** The line with the host's load the tick read, when it read one. */
+function withLoad(line: LineSnapshot, receipt: TickReceipt): LineSnapshot {
+  return receipt.load === undefined ? line : { ...line, load: receipt.load };
+}
+
 /** Keep a partial or failed tick in history, preserving the last complete snapshot. */
 export function recordTickHealth(
   receipt: TickReceipt,
@@ -233,7 +238,10 @@ export function writeTickLine(
         previous.ok ? previous.value?.ticks : undefined,
         tickHealthOf(receipt, true),
       );
-      writeLine({ ...line, ticks }, JSON.stringify(receipt, null, 2));
+      writeLine(
+        withLoad({ ...line, ticks }, receipt),
+        JSON.stringify(receipt, null, 2),
+      );
     },
   );
   if (written.ok) return;
