@@ -2,6 +2,7 @@
 import type { ParkedItem } from "../state/park-frame.ts";
 import type { PendingAnswer } from "../state/pass-handoff.ts";
 import { readLedgerSnapshot } from "../state/ledger-forge.ts";
+import type { LedgerSnapshot } from "../state/ledger.ts";
 import { ledgerDriverFromEnv } from "../state/ledger-mirror.ts";
 
 export function answerPublicationLag(
@@ -19,6 +20,19 @@ export function answerPublicationLag(
       a.digest !== undefined &&
       (a.digest === item.digest || a.digest === ledger?.digest),
   );
+}
+
+/** Explain why a framing comparison has no trustworthy published ledger. */
+export function publicationLedgerDiagnostic(
+  snapshot: LedgerSnapshot,
+): string | null {
+  const parsed = snapshot.canonical?.parsed;
+  if (parsed?.kind === "unknown-version")
+    return `the published ledger uses unsupported ledgerVersion ${parsed.version}`;
+  if (snapshot.malformed.length > 0)
+    return `the published ledger has ${snapshot.malformed.length} damaged comment(s)`;
+  if (parsed?.kind !== "ledger") return "no trusted published ledger exists";
+  return null;
 }
 
 /** No readable ledger is no comparison; legacy and digest-free answers keep their rule. */
@@ -45,7 +59,13 @@ export async function laggingAnswerPublication(
     );
     return [];
   }
-  if (snapshot.canonical?.parsed.kind !== "ledger") return [];
+  const diagnostic = publicationLedgerDiagnostic(snapshot);
+  if (diagnostic !== null) {
+    console.error(
+      `re-arm: could not compare answer framing with the published ledger: ${diagnostic}; using local framing and park time.`,
+    );
+    return [];
+  }
   const published = snapshot.canonical.parsed.ledger.parked;
   return parks
     .filter((p) => answerPublicationLag(p, answers(p.key), published))

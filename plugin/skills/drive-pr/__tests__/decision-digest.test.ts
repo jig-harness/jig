@@ -3,7 +3,10 @@ import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { answerPublicationLag } from "../scripts/lib/driver/answer-publication.ts";
+import {
+  answerPublicationLag,
+  publicationLedgerDiagnostic,
+} from "../scripts/lib/driver/answer-publication.ts";
 import {
   readPendingVerdicts,
   writePendingVerdicts,
@@ -191,6 +194,32 @@ test("local and published framing disagreement blocks either matching bound answ
   expect(answerPublicationLag(item, [unbound], published)).toBe(false);
   const { digest: _digest, ...old } = item;
   expect(answerPublicationLag(old, [a], published)).toBe(false);
+});
+
+test("published-ledger diagnostics distinguish absent, damaged, and unsupported ledgers", () => {
+  const snapshot = (overrides: Record<string, unknown>) =>
+    ({
+      canonical: null,
+      duplicates: [],
+      malformed: [],
+      untrusted: [],
+      claims: [],
+      maxGeneration: 0,
+      ...overrides,
+    }) as Parameters<typeof publicationLedgerDiagnostic>[0];
+  expect(publicationLedgerDiagnostic(snapshot({}))).toBe(
+    "no trusted published ledger exists",
+  );
+  expect(publicationLedgerDiagnostic(snapshot({ malformed: [{}] }))).toBe(
+    "the published ledger has 1 damaged comment(s)",
+  );
+  expect(
+    publicationLedgerDiagnostic(
+      snapshot({
+        canonical: { parsed: { kind: "unknown-version", version: 7 } },
+      }),
+    ),
+  ).toBe("the published ledger uses unsupported ledgerVersion 7");
 });
 
 test("a copied notification line settles its framing and a reframe sends a new stale notice", async () => {
