@@ -698,6 +698,7 @@ async function parkOf(
           key: p.key,
           kind: p.kind,
           lines: framedDecisionLines(p),
+          ...(p.decision === undefined ? {} : { decision: p.decision }),
         })),
       };
 }

@@ -68,6 +68,7 @@ import {
   type ThreadEntry,
   type WaitsOn,
 } from "./answer.ts";
+import { renderParkedDecision } from "../../shared/decisions/park.ts";
 import { answered, lineParkOf, parkedWait } from "./park-wait.ts";
 import {
   type CommentFields,
@@ -469,7 +470,8 @@ function ledgerEntries(
     from: name,
     to: "a person",
     // The decision's question, as the drive framed it.
-    text: p.reason,
+    text:
+      p.decision === undefined ? p.reason : renderParkedDecision(p.decision),
     record,
   }));
   const { state, exit, heartbeat } = ledger.driver;
