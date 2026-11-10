@@ -176,7 +176,7 @@ async function workspaceFor(
   return openWithinBudget(
     state,
     repo,
-    { pr: pr.number, head: pr.head, dispatched: named },
+    { pr: pr.number, head: pr.head, purpose: "followup", dispatched: named },
     true,
   );
 }
