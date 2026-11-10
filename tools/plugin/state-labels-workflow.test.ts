@@ -111,7 +111,8 @@ function step(): Step {
  * call: `pr view 12 --repo <slug> --json labels --jq '.labels[].name'` prints
  * the names one per line (and fails while `view-fails` exists), and
  * `pr edit 12 --repo <slug>` applies its `--add-label` and `--remove-label`
- * values in one change; anything else is refused.
+ * values in one change; \`api repos/<slug>/issues/12/events --paginate\` prints
+ * the pages in \`events.json\` (none when absent); anything else is refused.
  */
 const FAKE_GH = `#!/usr/bin/env bun
 const fs = require("node:fs");
@@ -121,6 +122,13 @@ const args = process.argv.slice(2);
 fs.appendFileSync(path.join(dir, "calls.log"), JSON.stringify(args) + "\\n");
 const file = path.join(dir, "labels.json");
 const labels = JSON.parse(fs.readFileSync(file, "utf8"));
+if (args[0] === "api") {
+  if (args[1] !== "repos/example-org/example-repo/issues/12/events" || args[2] !== "--paginate" || args.length !== 3) process.exit(2);
+  const events = path.join(dir, "events.json");
+  // One array per page, as \`gh api --paginate\` prints them.
+  if (fs.existsSync(events)) for (const page of JSON.parse(fs.readFileSync(events, "utf8"))) process.stdout.write(JSON.stringify(page) + "\\n");
+  process.exit(0);
+}
 if (args[0] !== "pr" || args[2] !== "12" || args[3] !== "--repo") process.exit(2);
 if (args[1] === "view") {
   if (fs.existsSync(path.join(dir, "view-fails"))) { process.stderr.write("gh: HTTP 502\\n"); process.exit(1); }
@@ -136,11 +144,30 @@ fs.writeFileSync(file, JSON.stringify([...labels.filter((l) => !remove.includes(
 `;
 
 /** Run the step for a push to PR #12 carrying `labels` when the job runs, as GitHub would. */
-function push(labels: string[], prefix?: string, viewFails = false) {
+function push(
+  labels: string[],
+  prefix?: string,
+  viewFails = false,
+  labeledEvents: string[][] = [],
+) {
   const dir = mkdtempSync(join(scratch, "push-"));
   writeFakeProgram(join(dir, "gh"), FAKE_GH);
   writeFileSync(join(dir, "labels.json"), JSON.stringify(labels));
   if (viewFails) writeFileSync(join(dir, "view-fails"), "");
+  const name = `${prefix ?? "jig:"}converged`;
+  if (labeledEvents.length > 0)
+    writeFileSync(
+      join(dir, "events.json"),
+      JSON.stringify(
+        labeledEvents.map((page) =>
+          page.map((created_at) => ({
+            event: "labeled",
+            label: { name },
+            created_at,
+          })),
+        ),
+      ),
+    );
   const s = step();
   const result = Bun.spawnSync(["bash", "-e", "-c", s.run], {
     cwd: dir,
@@ -149,6 +176,7 @@ function push(labels: string[], prefix?: string, viewFails = false) {
       GH_TOKEN: "test-token",
       REPO: "example-org/example-repo",
       PR: "12",
+      PUSHED_AT: "2026-01-02T03:04:05Z",
       // The push's event payload, which the step must not trust: it lists converged.
       LABELS: JSON.stringify(["jig:converged"]),
       PREFIX: prefix ?? s.env.PREFIX ?? "",
@@ -174,6 +202,43 @@ function push(labels: string[], prefix?: string, viewFails = false) {
 }
 
 describe("on a push to a pull request", () => {
+  const pushedAt = "2026-01-02T03:04:05Z";
+  const before = "2026-01-02T03:00:00Z";
+  const after = "2026-01-02T03:10:00Z";
+
+  test("leaves a converged label put on after the push", () => {
+    const run = push(["jig:converged"], undefined, false, [[after]]);
+    expectSpawnExit(run.result, 0, "the step");
+    expect(run.calls).toEqual([]);
+    expect(run.after).toEqual(["jig:converged"]);
+  });
+
+  test("replaces a converged label put on before the push", () => {
+    const run = push(["jig:converged"], undefined, false, [[before]]);
+    expectSpawnExit(run.result, 0, "the step");
+    expect(run.after).toEqual(["jig:stale"]);
+  });
+
+  test("treats a converged label put on in the push's own second as not certifying it", () => {
+    const run = push(["jig:converged"], undefined, false, [[pushedAt]]);
+    expectSpawnExit(run.result, 0, "the step");
+    expect(run.after).toEqual(["jig:stale"]);
+  });
+
+  test("chooses the newest event across every page of the history", () => {
+    const run = push(["jig:converged"], undefined, false, [[before], [after]]);
+    expectSpawnExit(run.result, 0, "the step");
+    expect(run.calls).toEqual([]);
+    expect(run.after).toEqual(["jig:converged"]);
+  });
+
+  test("takes a prefix with a quote or a backslash as data", () => {
+    const prefix = 'b"\\o/';
+    const run = push([`${prefix}converged`], prefix, false, [[before]]);
+    expectSpawnExit(run.result, 0, "the step");
+    expect(run.after).toEqual([`${prefix}stale`]);
+  });
+
   test("replaces converged with stale, in one call", () => {
     const { result, calls, after } = push(["area:docs", "jig:converged"]);
     expectSpawnExit(result, 0, "the step");

@@ -116,8 +116,8 @@ export function ledgerStillCurrent(
   return async (change) => {
     if (change.part !== undefined) return null;
     const read = merged?.read.get(change.pr);
-    if (read !== undefined && !open.has(change.pr))
-      return await mergedLabelsUnchanged(change.pr, read, merged!.reread);
+    if (merged !== undefined && read !== undefined)
+      return await mergedLabelsUnchanged(change.pr, read, merged.reread);
     if (!open.has(change.pr)) return null;
     const drive = byNumber.get(change.pr);
     if (drive?.class === "unplaced") return null;

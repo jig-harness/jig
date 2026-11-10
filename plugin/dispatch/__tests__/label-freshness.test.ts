@@ -164,4 +164,12 @@ describe("a merged pull request's labels are read again before its state write",
       "labels changed",
     );
   });
+
+  it("checks the merged labels when the tick also listed the pull request open", async () => {
+    const both = ledgerStillCurrent(new Set([9]), [], async () => null, {
+      read: new Map([[9, ["jig:merged"]]]),
+      reread: async () => ok(["jig:merged", "jig:followed-up"]),
+    });
+    expect(await both(change)).toContain("labels changed");
+  });
 });

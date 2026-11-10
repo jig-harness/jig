@@ -57,9 +57,14 @@ jobs:
           fi
           # A converged label put on after this push certifies this push's head
           # (or a later one): a job that waited for a runner must not undo it.
+          # Every page of the history is read before the newest event is chosen,
+          # and the label name reaches jq as data. A label put on in the same
+          # second as the push cannot be ordered against it, so it is not taken
+          # as certifying it: only a strictly later one is left as it is.
           labeled_at="$(gh api "repos/${REPO}/issues/${PR}/events" --paginate \
-            --jq "[.[] | select(.event == \"labeled\" and .label.name == \"${converged}\")] | last | .created_at // empty")"
-          if [ -n "$labeled_at" ] && [[ ! "$labeled_at" < "$PUSHED_AT" ]]; then
+            | jq -rs --arg label "$converged" \
+              'flatten | map(select(.event == "labeled" and .label.name == $label) | .created_at) | max // empty')"
+          if [ -n "$labeled_at" ] && [[ "$labeled_at" > "$PUSHED_AT" ]]; then
             echo "PR #${PR}: ${converged} was set at ${labeled_at}, after this push (${PUSHED_AT}): left as it is."
             exit 0
           fi

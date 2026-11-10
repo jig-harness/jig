@@ -536,7 +536,8 @@ export function ledgerRenewal(pr: string): () => Promise<number | null> {
     const code = await mirrorNow(pr, true);
     // A write the guards refused is not a failed one: the ledger is another's, and the claims below say whether to stand down.
     const landed = afterHandoff(code) !== "unwritten";
-    if (afterHandoff(code) === "label") await labelOwnDrive(pr, { armed: true });
+    if (afterHandoff(code) === "label")
+      await labelOwnDrive(pr, { armed: true });
     dueAt = performance.now() + (landed ? LEDGER_RENEW_MS : LEDGER_RETRY_MS);
     if (!landed) {
       console.error(
