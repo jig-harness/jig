@@ -195,8 +195,9 @@ and its interpreter, and create one only if the user agrees.
 
    It checks that the file parses (a duplicated key is an error), that every
    rule has an id and no id appears twice, that every pattern rule has a
-   pattern (or an `implementation`, a `detector` or a `pattern_<name>` field,
-   which say it is enforced by something other than one pattern), that every
+   pattern (in a catalog read as YAML, a nonempty `implementation`, `detector`
+   or `pattern_<name>` string says it is enforced by something other than one
+   pattern; the reference interpreter skips a rule without a `pattern`), that every
    `severity` is `critical`, `warning` or `info`, that every `pattern`,
    `follow_check`, `pattern_<name>` and `exclude` glob compiles, and, by
    default, that M5's line-by-line interpreter reads every `pattern_rules`

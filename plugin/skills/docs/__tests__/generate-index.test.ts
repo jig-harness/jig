@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   cpSync,
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -17,7 +18,11 @@ import {
 } from "../scripts/index/generate-index";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { spawnSync } from "../../../shared/guarded-git-spawn.ts";
-import { isGeneratedIndexPage } from "../scripts/lib/docs";
+import {
+  documentFields,
+  frontmatterValue,
+  isGeneratedIndexPage,
+} from "../scripts/lib/docs";
 import { cleanEnv, repository } from "./helpers.ts";
 
 let root: string;
@@ -258,6 +263,21 @@ describe("INDEX.md layout settings", () => {
     expect(text).toContain(
       "# Documentation index\n\n## Start here\n\nRead [a](a.md).\n\n## (root)",
     );
+  });
+
+  test("an inherited property is no configured description", () => {
+    mkdirSync(join(docs, "constructor"));
+    writeFileSync(join(docs, "constructor", "a.md"), "---\ntitle: A\n---\n");
+    expect(withIndex({ descriptions: {} })).toContain(
+      "## constructor\n\n| Doc |",
+    );
+  });
+
+  test("frontmatter values are written so the reader reads them back", () => {
+    const fields = { title: "Guide # intro", tags: ["a: b", "c, d", "plain"] };
+    const text = withIndex({ frontmatter: fields });
+    expect(frontmatterValue(text, "title", "INDEX.md")).toBe("Guide # intro");
+    expect(documentFields(text, "INDEX.md").get("tags")).toEqual(fields.tags);
   });
 
   test("a description follows its category's heading", () => {

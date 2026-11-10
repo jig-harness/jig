@@ -649,8 +649,7 @@ describe("the loop and scan rewrites match the expressions they replaced", () =>
 
   test("a value loses only its trailing spaces and tabs", () => {
     const oldTrimEnd = (text: string) => text.replace(/[ \t]+$/, "");
-    for (const text of corpus)
-      expect(decomment(text).length).toBe(oldTrimEnd(text).length);
+    for (const text of corpus) expect(decomment(text)).toBe(oldTrimEnd(text));
     expect(decomment("a \t ")).toBe("a");
     expect(decomment("a  ")).toBe("a ");
   });

@@ -113,9 +113,10 @@ describe("the interpreter a catalog is enforced by", () => {
     expect(out).toContain("severity must be one of");
   });
 
-  it("does not report a rule that names how it is enforced", () => {
+  it("does not report a rule that names how it is enforced, in YAML mode", () => {
     const ok = (rule: string) =>
-      validateRules(load(`pattern_rules:\n  - id: r1\n${rule}\n`)).problems;
+      validateRules(load(`pattern_rules:\n  - id: r1\n${rule}\n`), "yaml")
+        .problems;
     expect(ok("    implementation: ast-scan")).toEqual([]);
     expect(ok("    detector: tsc")).toEqual([]);
     expect(ok("    pattern_frontend: a\n    pattern_backend: b")).toEqual([]);
@@ -125,5 +126,27 @@ describe("the interpreter a catalog is enforced by", () => {
     expect(ok("    pattern_frontend: 'a('")[0]).toContain(
       "pattern_frontend does not compile",
     );
+  });
+  it("rejects an enforcement field the reference interpreter skips or that is empty", () => {
+    const text = (rule: string) =>
+      load(`pattern_rules:\n  - id: r1\n${rule}\n`);
+    expect(
+      validateRules(text("    implementation: ast-scan")).problems,
+    ).toEqual(["r1: pattern_rules entry has no pattern"]);
+    for (const rule of [
+      "implementation: ''",
+      "detector: false",
+      "pattern_frontend: ''",
+    ])
+      expect(validateRules(text(`    ${rule}`), "yaml").problems).toEqual([
+        "r1: pattern_rules entry has no pattern",
+      ]);
+  });
+
+  it("keeps array entries whole for a YAML-read exclude", () => {
+    const catalog = load(
+      "pattern_rules:\n  - id: r1\n    pattern: a\n    exclude: ['[a,b]']\n",
+    );
+    expect(validateRules(catalog, "yaml").problems).toEqual([]);
   });
 });

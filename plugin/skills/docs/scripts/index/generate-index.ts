@@ -26,6 +26,7 @@ import {
   generatedIndexPath,
   markdownFiles,
   readDocument,
+  readScalar,
 } from "../lib/docs.ts";
 import { consumerRoot } from "../../../../shared/consumer.ts";
 import {
@@ -89,7 +90,11 @@ function describeCategory(
   category: string,
   options: IndexOptions,
 ): string {
-  const configured = options.descriptions?.[category];
+  const configured =
+    options.descriptions &&
+    Object.prototype.hasOwnProperty.call(options.descriptions, category)
+      ? options.descriptions[category]
+      : undefined;
   if (configured !== undefined) return configured;
   if (!options.descriptionsFromReadme || category === "(root)") return "";
   const readme = join(directory, category, "README.md");
@@ -103,6 +108,26 @@ function describeCategory(
     .trim();
 }
 
+/**
+ * A value written so the document reader reads it back unchanged: plain when
+ * it can be, else in the quote that does not occur in it (the reader strips
+ * quotes and never decodes escapes).
+ */
+function yamlScalar(value: string): string {
+  const plain = readScalar(value);
+  if (
+    typeof plain !== "string" &&
+    plain.value === value &&
+    !/[,[\]{}]/.test(value)
+  )
+    return value;
+  if (!/["\\]/.test(value)) return `"${value}"`;
+  if (!value.includes("'")) return `'${value}'`;
+  throw new Error(
+    `cannot write a frontmatter value with both quotes: ${value}`,
+  );
+}
+
 /** The frontmatter block of the index, its date still today's. */
 function indexFrontmatterBlock(
   fields: Record<string, string | string[]>,
@@ -110,7 +135,7 @@ function indexFrontmatterBlock(
 ): string {
   const lines = Object.entries(fields).map(
     ([key, value]) =>
-      `${key}: ${Array.isArray(value) ? `[${value.join(", ")}]` : value}`,
+      `${key}: ${Array.isArray(value) ? `[${value.map(yamlScalar).join(", ")}]` : yamlScalar(value)}`,
   );
   return `---\n${[...lines, `last_updated: ${today}`].join("\n")}\n---\n\n`;
 }

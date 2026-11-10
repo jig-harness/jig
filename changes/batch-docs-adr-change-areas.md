@@ -2,8 +2,7 @@
 release: minor
 ---
 
-Five small fixes and additions to the `docs`, `adr`, `change-areas` and `jig`
-skills.
+Fixes and additions to the `docs`, `adr`, `change-areas` and `jig` skills.
 
 ### Added
 

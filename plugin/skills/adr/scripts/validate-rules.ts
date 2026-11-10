@@ -87,7 +87,12 @@ export function compileGlob(glob: string): RegExp {
  * The globs M5's interpreter takes from an `exclude` value: the entries
  * joined by commas, whitespace and quotes removed, split on commas.
  */
-function excludeGlobs(value: unknown[] | string): string[] {
+function excludeGlobs(
+  value: unknown[] | string,
+  interpreter: Interpreter,
+): string[] {
+  if (interpreter === "yaml" && Array.isArray(value))
+    return value.map((glob) => String(glob).trim()).filter(Boolean);
   return (Array.isArray(value) ? value.join(",") : value)
     .replace(/[\s"']/g, "")
     .split(",")
@@ -103,12 +108,18 @@ export type Interpreter = (typeof INTERPRETERS)[number];
 /** The fields that say a rule is enforced by something other than one `pattern`. */
 const ENFORCEMENT_FIELDS = ["implementation", "detector"];
 
-/** Whether a rule names how it is enforced when it has no `pattern`. */
+/**
+ * Whether a rule names, with a nonempty string, how it is enforced when it has
+ * no `pattern`. Only an interpreter that parses YAML reads such a field; the
+ * reference interpreter skips a rule without a `pattern`.
+ */
 function declaresEnforcement(fields: Record<string, unknown>): boolean {
-  return Object.keys(fields).some(
-    (key) =>
-      ENFORCEMENT_FIELDS.includes(key) ||
-      (key.startsWith("pattern_") && key.length > "pattern_".length),
+  return Object.entries(fields).some(
+    ([key, value]) =>
+      (ENFORCEMENT_FIELDS.includes(key) ||
+        (key.startsWith("pattern_") && key.length > "pattern_".length)) &&
+      typeof value === "string" &&
+      value.trim() !== "",
   );
 }
 
@@ -134,7 +145,10 @@ export interface Summary {
   counts: Record<string, number>;
 }
 
-export function validateRules(catalog: unknown): Summary {
+export function validateRules(
+  catalog: unknown,
+  interpreter: Interpreter = "lines",
+): Summary {
   const problems: string[] = [];
   const counts: Record<string, number> = {};
   if (!catalog || typeof catalog !== "object" || Array.isArray(catalog))
@@ -164,7 +178,7 @@ export function validateRules(catalog: unknown): Summary {
       if (
         section === "pattern_rules" &&
         (fields.pattern === undefined || fields.pattern === "") &&
-        !declaresEnforcement(fields)
+        !(interpreter === "yaml" && declaresEnforcement(fields))
       )
         problems.push(`${label}: pattern_rules entry has no pattern`);
       const severity = fields.severity;
@@ -205,7 +219,7 @@ export function validateRules(catalog: unknown): Summary {
         problems.push(`${label}: exclude must be a list of globs`);
         return;
       }
-      for (const glob of excludeGlobs(exclude)) {
+      for (const glob of excludeGlobs(exclude, interpreter)) {
         try {
           compileGlob(glob);
         } catch (error) {
@@ -383,7 +397,10 @@ if (import.meta.main) {
       process.exitCode = 2;
     }
     if (process.exitCode !== 2) {
-      const { problems, counts } = validateRules(catalog);
+      const { problems, counts } = validateRules(
+        catalog,
+        interpreter ?? "lines",
+      );
       if (interpreter === "lines")
         problems.push(...interpreterProblems(text, catalog));
       for (const problem of problems) console.log(`ERROR ${problem}`);
