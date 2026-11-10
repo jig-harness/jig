@@ -779,9 +779,59 @@ bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatc
 
 It listens on the machine file's `dashboard.listen`, an address in the
 private or loopback ranges (a Tailscale address of the host, say), and
-prints a URL whose token every request needs. Nothing installs or keeps it
-running: start it from a terminal on the host (Orca's phone app reaches one),
-open the URL on the phone, and stop it with Ctrl-C.
+prints a URL whose token every request needs. The foreground command runs
+until Ctrl-C. On Linux, the dashboard can also run under its own retry timer,
+independent of the dispatch and change-probe timers, without Orca:
+
+```sh
+jig dispatch dashboard --install         # preview, using dashboard.listen
+jig dispatch dashboard --install --yes   # install once; repeating is safe
+jig dispatch dashboard --status          # timer, listener health and log locations
+jig dispatch dashboard --access          # explicitly print the private URL
+jig dispatch dashboard --uninstall --yes # remove this reader and its retry timer
+```
+
+Use the installed plugin's `jig` command. An installed reader needs a fixed
+port; stop a foreground reader on that address before installing. Existing
+`dashboard.listen`, `require_token` and `allowed_hosts` settings apply to both
+forms. The URL is a credential when tokens are enabled: only `--access`
+prints the installed reader's URL; service output and installation previews
+never print it. The access record is owner-only and invalidated on renewal.
+The server routes still only read the dispatch records; availability state
+and the private access record live under `~/.local/state/jig/dispatch/dashboard/`.
+
+The supported durable setup is Linux with either a systemd user timer and
+**[lingering](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md#runnable-tooling) enabled** (the account's service manager runs without a login), or cron. With systemd, install refuses until
+`loginctl show-user <user> --property=Linger --value` answers `yes`; ask the
+host administrator to enable lingering for the intended account. Jig does
+not change that host setting. A cron daemon must run at boot. macOS
+LaunchAgents tied to a login stop at logout, so this install refuses them; use the foreground
+command there. Scheduled jobs are unavailable on Windows. Orca is optional
+for all dashboard commands.
+
+The timer starts a reader after install, reboot or failure: allow up to two
+minutes on systemd (including its default timer accuracy window), or a minute
+on cron, plus the installed-copy lookup time. systemd waits a minute after the reader
+exits before retrying; cron checks every minute and the reader lease excludes
+overlaps. A reader notices a new installed plugin copy within a minute and
+exits so the next invocation starts that copy. It stops on the next one-second poll
+when its configuration changes or disappears (after any in-flight bounded
+installed-copy lookup), and renews at the launcher's
+24-hour deadline even without an update. Transient registry failures keep the
+current reader serving and retry the lookup. Each renewal rotates the token;
+run `--access` again for the new URL. The command does not install a private
+network front or open a public listener.
+
+To verify availability on the configured host, first wait for `--status` to
+report a healthy reader and note its pid. End the terminal session, reconnect
+and repeat `--status`; after a host reboot, repeat it again. For crash recovery,
+systemd users can run `systemctl --user kill --signal=SIGKILL
+jig-dispatch-dashboard.service` and wait for the next healthy status with a
+new pid. After updating the installed plugin, check the same recovery and
+obtain a new URL with `--access`. A stopped or disabled timer, failed copy
+lookup, occupied listen address or missing configuration is diagnosed by
+`--status` and the log locations it prints. These checks distinguish host
+logout and reboot verification from the automated process and scheduler tests.
 
 The page reads two things, every minute and when it comes back into focus, and
 writes nothing to the host:

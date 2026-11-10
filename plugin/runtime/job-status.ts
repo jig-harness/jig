@@ -65,6 +65,10 @@ export function installedSchedule(
         ? number(/<key>Hour<\/key><integer>(\d+)<\/integer>/)
         : number(/^0 (\d+) \* \* \* /);
   if (daily !== null) return { hour: daily };
+  if (scheduler === "systemd") {
+    const afterExit = number(/^OnUnitInactiveSec=(\d+)min$/m);
+    if (afterExit !== null) return { everyMinutes: afterExit, afterExit: true };
+  }
   const minutes = interval(scheduler, number);
   return minutes === null ? null : { everyMinutes: minutes };
 }
@@ -90,7 +94,7 @@ function interval(
 export function describeSchedule(schedule: Schedule): string {
   return "hour" in schedule
     ? `daily at ${String(schedule.hour).padStart(2, "0")}:00`
-    : `every ${schedule.everyMinutes} minute${schedule.everyMinutes === 1 ? "" : "s"}`;
+    : `every ${schedule.everyMinutes} minute${schedule.everyMinutes === 1 ? "" : "s"}${schedule.afterExit ? " after exit" : ""}`;
 }
 
 /**

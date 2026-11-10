@@ -1419,6 +1419,15 @@ load:
 | `dashboard.require_token` | `true`; whether a request needs the token the command prints. `false` serves the page with no token and is accepted only when `dashboard.listen` is a loopback address (`127.0.0.0/8`, `::1`), so the only way in from another machine is a front on the host (Tailscale Serve, a reverse proxy) that authenticates the person first. The page is read-only either way |
 | `dashboard.allowed_hosts` | None; the host names a front forwards requests under (the `Host` header), read only with `require_token: false`. A tokenless dashboard answers `localhost`, `127.0.0.0/8` and `::1` and these names, and refuses any other `Host` with 403, so a page on another origin cannot read it by pointing its own name at this address |
 
+The same dashboard settings apply to the foreground command and to
+`jig dispatch dashboard --install --yes`. The installed reader has its own
+retry timer and requires a fixed listen port. Linux systemd requires user
+[lingering](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md#runnable-tooling), which keeps the account's service manager running without a login; Linux cron is also supported. macOS LaunchAgents tied to a login cannot keep
+a reader through logout, so installation refuses them. No Orca install is
+needed. `--status` reports availability and diagnosis; `--access` alone
+prints the installed reader's private URL; `--uninstall --yes` removes it.
+See [the dashboard's availability and host checks](README.md#the-dispatcher).
+
 Durations are a whole number with `s`, `m` or `h`. What a run keeps lives
 under `~/.local/state/jig/dispatch/`. The files there are `receipts/` (one
 per run), `walls/` (each account's usage-limit wall, which lifts at its
