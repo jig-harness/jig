@@ -2,7 +2,8 @@
  * The Jira adapter's requests: one issue, a JQL listing, an issue's comments
  * and changelog, and the resolvers that turn a configured or given name into
  * the one Jira resource it names (a fix version, a priority, a link type, an
- * issue type, a field read as labels, a user). `tracker.ts`, `reports.ts`
+ * issue type, a field read as labels, a user), and the clause that limits a
+ * pool to the configured issue types. `tracker.ts`, `reports.ts`
  * and `assigner.ts` build the port on these.
  *
  * A name that resolves to no resource, or to several, is refused before
@@ -34,7 +35,7 @@ import {
 } from "./read.ts";
 
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
-import { KEY, ORDER, OPEN } from "./jql.ts";
+import { KEY, ORDER, OPEN, quote } from "./jql.ts";
 import type { JiraModel } from "./model.ts";
 import type { JiraSettings, LinkedRelation } from "./settings.ts";
 import {
@@ -65,6 +66,12 @@ export interface LinkType {
   name: string;
   inward: string;
   outward: string;
+}
+
+/** One link type a relation is carried by, resolved against the site. */
+export interface RelationLink extends LinkType {
+  /** The type's outward side reads as the relation's inverse. */
+  inverted: boolean;
 }
 
 export interface IssueTypeMeta {
@@ -109,10 +116,19 @@ export interface Client {
   version(name: string, signal?: AbortSignal): Promise<string>;
   /** A priority by its name; its id. */
   priority(name: string, signal?: AbortSignal): Promise<string>;
-  /** The configured link types, each resolved to exactly one. */
-  linkTypes(): Promise<Record<LinkedRelation, LinkType>>;
+  /**
+   * Each relation's configured link types, each resolved to exactly one of
+   * the site's, the type a new link gets first.
+   */
+  linkTypes(): Promise<Record<LinkedRelation, RelationLink[]>>;
   /** The project's issue types, with their hierarchy level. */
   issueTypes(signal?: AbortSignal): Promise<IssueTypeMeta[]>;
+  /**
+   * The JQL clause limiting a pool to `issue_tracker.jira.pool_issue_types`,
+   * each name resolved to one of the project's issue types; `null`, and no
+   * request, when none is configured.
+   */
+  poolScope(signal?: AbortSignal): Promise<string | null>;
   /**
    * The fields `issue_tracker.jira.field_labels` names, each resolved to
    * exactly one field of the site; read once, and without a request when
@@ -380,7 +396,7 @@ export function jiraClient(opts: ClientOptions): Client {
       signal,
     );
 
-  let links: Promise<Record<LinkedRelation, LinkType>> | undefined;
+  let links: Promise<Record<LinkedRelation, RelationLink[]>> | undefined;
   let labelFields: Promise<FieldLabel[]> | undefined;
   let allFields: Promise<SiteField[]> | undefined;
   let storeFields: Promise<FacetField[]> | undefined;
@@ -645,16 +661,19 @@ export function jiraClient(opts: ClientOptions): Client {
             outward: optStr(r.outward, "linkType.outward") ?? "",
           };
         });
-        const out = {} as Record<LinkedRelation, LinkType>;
-        for (const [relation, name] of Object.entries(settings.linkTypes)) {
-          const matches = all.filter((t) => same(t.name, name));
-          if (matches.length !== 1)
-            throw new TrackerConfigError(
-              `issue_tracker.jira.link_types.${relation}`,
-              `issue_tracker.jira.link_types.${relation} names '${name}', which matches ${matches.length} issue link types of the site (${all.map((t) => t.name).join(", ")}), expected exactly 1`,
-            );
-          out[relation as LinkedRelation] = matches[0] as LinkType;
-        }
+        const out = {} as Record<LinkedRelation, RelationLink[]>;
+        for (const [relation, entries] of Object.entries(settings.linkTypes))
+          out[relation as LinkedRelation] = entries.map(
+            ({ name, inverted }) => {
+              const matches = all.filter((t) => same(t.name, name));
+              if (matches.length !== 1)
+                throw new TrackerConfigError(
+                  `issue_tracker.jira.link_types.${relation}`,
+                  `issue_tracker.jira.link_types.${relation} names '${name}', which matches ${matches.length} issue link types of the site (${all.map((t) => t.name).join(", ")}), expected exactly 1`,
+                );
+              return { ...(matches[0] as LinkType), inverted };
+            },
+          );
         return out;
       })();
       links.catch(() => {
@@ -665,6 +684,25 @@ export function jiraClient(opts: ClientOptions): Client {
 
     issueTypes(signal) {
       return readTypes(signal);
+    },
+
+    async poolScope(signal) {
+      const wanted = settings.poolIssueTypes;
+      if (wanted.length === 0) return null;
+      const types = await readTypes(signal);
+      const ids = wanted.map((name) => {
+        const matches = types.filter((t) => same(t.name, name));
+        if (matches.length !== 1)
+          throw new TrackerConfigError(
+            "issue_tracker.jira.pool_issue_types",
+            `issue_tracker.jira.pool_issue_types names '${name}', which matches ${matches.length} issue types of project ${project} (${types.map((t) => t.name).join(", ") || "none"}), expected exactly 1`,
+          );
+        // By id, so a type renamed later still matches; a name, quoted,
+        // where the metadata gave no numeric id.
+        const found = matches[0] as IssueTypeMeta;
+        return /^\d+$/.test(found.id) ? found.id : quote(found.name);
+      });
+      return `issuetype in (${ids.join(", ")})`;
     },
 
     fieldLabels(signal) {
