@@ -42,7 +42,10 @@ function userOf(value: unknown, where: string): TrackerUser {
 
 export function claimOperations(
   client: Client,
-): Pick<Tracker, "viewer" | "assignees" | "assign" | "user"> {
+): Pick<
+  Tracker,
+  "viewer" | "assignees" | "assign" | "user" | "assignUnassigned"
+> {
   /** The issue's node id and every assignee; throws when the issue is absent or the list is cut. */
   async function read(
     key: string,
@@ -84,6 +87,18 @@ export function claimOperations(
     async assign(key, user) {
       const { id } = await read(key);
       await client.mutate(ASSIGN, { input: { id, assigneeIds: [user.id] } });
+    },
+    async assignUnassigned(key, user) {
+      const before = await read(key);
+      if (before.users.length !== 0) return false;
+      await client.mutate(
+        `mutation TrackerAddAssignee($input: AddAssigneesToAssignableInput!) {
+        addAssigneesToAssignable(input: $input) { assignable { id } }
+      }`,
+        { input: { assignableId: before.id, assigneeIds: [user.id] } },
+      );
+      const after = await read(key);
+      return after.users.length === 1 && after.users[0]?.id === user.id;
     },
     async user(identity) {
       const login = identity.trim();

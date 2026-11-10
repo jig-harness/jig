@@ -100,6 +100,22 @@ racing inside that re-read can both pass; the
 [dispatcher](../../README.md#the-dispatcher) reports an item two running
 sessions work on.
 
+A dispatcher pickup serving a named person uses `claim --for <identity>`.
+It verifies that a repository writer made the assignment, keeps the person
+as the sole assignee, and moves the item in progress. With
+`--ancestor <epic-key>`, it walks the current ancestry, rejects holds or
+conflicting assignees, and checks the ancestor epic's assignment. GitHub
+adds the person to an unassigned child without replacing a concurrent
+assignee; a detected race stands down and refreshes the queue. Inherited
+claims on Linear and Jira are refused because their assignment APIs cannot
+add a person without replacing an assignee.
+
+Command-line claims share a machine-local mutex across worktrees and
+re-read authority before writing. This does not serialize claims on
+separate hosts: simultaneous claims for the same person can still both
+pass. A tracker state transition is not a cross-host lease; the dispatcher's
+double-claim watch remains necessary.
+
 ## Requirements and platforms
 
 Install the [plugin requirements](../../README.md#requirements), and name the

@@ -322,6 +322,10 @@ const MIGRATIONS: readonly Migration[] = [
   );
   `,
   },
+  {
+    additive: true,
+    sql: `CREATE TABLE pickup_reads (key TEXT PRIMARY KEY, value TEXT NOT NULL);`,
+  },
 ];
 
 /** The schema version this plugin writes. */

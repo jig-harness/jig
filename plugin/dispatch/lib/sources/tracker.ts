@@ -11,6 +11,8 @@
  * which the plan watches for stalls and double claims; and the fresh read a
  * pickup's launch makes just before it starts.
  */
+import type { ServedPerson } from "../serve-config.ts";
+import { readServedPickups } from "./served.ts";
 import type {
   CanonicalState,
   PoolIssue,
@@ -182,7 +184,7 @@ async function readAssigned(
  * detection the reads depend on is bounded too, and which assigned items
  * lack one (an item carrying `facets.epic` needs no size).
  */
-export async function readPickups(
+async function readFactoryPickups(
   open: () => Tracker,
   section: DispatchSection,
   facets?: { bound: () => FacetBound; epic: string },
@@ -285,4 +287,56 @@ export async function freshPickup(
     return `who assigned it cannot be read again: ${failureText(error)}`;
   }
   return issue;
+}
+
+/** Factory and host-served work share the same plan and capacity checks. */
+export async function readPickups(
+  open: () => Tracker,
+  section: DispatchSection,
+  facets?: { bound: () => FacetBound; epic: string },
+  served?: {
+    cache?: import("../pickup-reads.ts").PickupReads;
+    people: readonly ServedPerson[];
+    nowMs: number;
+    headroom: boolean;
+    hitl?: string;
+    manualOps?: string;
+    executionPlanBlock?: string;
+  },
+): Promise<TrackerReading> {
+  let tracker: Tracker | undefined;
+  const once = () => (tracker ??= open());
+  const factory = await readFactoryPickups(once, section, facets);
+  if (served === undefined || served.people.length === 0) return factory;
+  const extra = await readServedPickups(once(), served.people, {
+    ...(served.cache === undefined ? {} : { cache: served.cache }),
+    epic: facets?.epic ?? "epic",
+    nowMs: served.nowMs,
+    headroom: served.headroom,
+    ...(served.hitl === undefined ? {} : { hitl: served.hitl }),
+    ...(served.manualOps === undefined ? {} : { manualOps: served.manualOps }),
+    ...(served.executionPlanBlock === undefined
+      ? {}
+      : { executionPlanBlock: served.executionPlanBlock }),
+  });
+  const keys = new Set(extra.wanted.map((i) => i.key));
+  return {
+    read: {
+      ...factory.read,
+      detail: `${factory.read.detail}; ${extra.wanted.length} served pickup(s)`,
+    },
+    wanted: [
+      ...extra.wanted,
+      ...factory.wanted.filter((i) => !keys.has(i.key)),
+    ],
+    unplaced: [...factory.unplaced, ...extra.unplaced],
+    claimed:
+      factory.claimed === null
+        ? null
+        : [
+            ...new Map(
+              [...factory.claimed, ...extra.claimed].map((i) => [i.key, i]),
+            ).values(),
+          ],
+  };
 }

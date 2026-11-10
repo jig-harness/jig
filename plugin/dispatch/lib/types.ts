@@ -58,6 +58,8 @@ export interface DispatchSection {
 
 /** `dispatch.adopt`: which open pull requests with no drive ledger the tick drives as if labelled `drive`. */
 export interface AdoptRule {
+  /** Machine-only served logins, added after resolving the default author. */
+  servedAuthors?: string[];
   enabled: boolean;
   /** The authors it adopts; `null` for the login the dispatcher reads the forge as. */
   authors: string[] | null;
@@ -89,6 +91,10 @@ export interface WantedItem {
   state: string;
   assignee: string;
   assignedBy: string;
+  servedPerson?: string;
+  ancestorEpic?: string;
+  batchAllowed?: boolean;
+  queueIssue?: import("../../skills/do-item/scripts/lib/tracker/port.ts").PoolIssue;
 }
 
 /** How a drive ledger reads, per the design's ledger-to-class table. */

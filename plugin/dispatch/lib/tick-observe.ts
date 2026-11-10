@@ -70,6 +70,9 @@ import {
 import { observeContention } from "./sources/contention.ts";
 import { type HolderReadings, readHolders } from "./sources/doctor.ts";
 import type { readDrives } from "./sources/ledgers.ts";
+import { batchSafePickups } from "./queue-batch-areas.ts";
+import { slotTable } from "./accounts.ts";
+import type { ServedPerson } from "./serve-config.ts";
 import { readPickups } from "./sources/tracker.ts";
 import { facetBound } from "./sources/tracker-facets.ts";
 import { emptyReport, type TickOptions } from "./tick-context.ts";
@@ -118,6 +121,7 @@ export interface OpenedRepo {
 
 /** What the tracker gives one repository's tick. */
 export interface Tracked {
+  servedPolicy?: import("./sources/served.ts").ServedPolicy;
   keys: IssueKeys | null;
   pickups: WantedItem[];
   /** `null` when the claimed items could not be read. */
@@ -193,6 +197,13 @@ export async function openRepo(
   const read = readSection(file, where);
   if (!read.ok) return unread(failureText(read.failure.reason));
   const { values, section } = read.value;
+  const authors = options.machine?.serve?.flatMap((p) => p.forge) ?? [];
+  if (authors.length > 0)
+    section.adopt = {
+      ...section.adopt,
+      enabled: true,
+      servedAuthors: authors,
+    };
   const report: RepoReport = {
     ...emptyReport(path, ""),
     refused: null,
@@ -269,6 +280,18 @@ export async function observeRepo(
             trackerReport,
             where,
             context.deadline,
+            opened.stages.has("pickup")
+              ? (context.options.machine?.serve ?? [])
+              : [],
+            nowMs,
+            context.options.machine == null ||
+              slotTable(context.options.machine.accounts, records, nowMs).some(
+                (s) =>
+                  s.held < s.account.maxPerAccount &&
+                  s.wall === null &&
+                  !s.wallUnrecorded,
+              ),
+            reads.budget,
           ),
         ),
       ),
@@ -474,6 +497,10 @@ async function readTracker(
   report: RepoReport,
   where: string,
   deadline: number | undefined,
+  people: readonly ServedPerson[],
+  nowMs: number,
+  headroom: boolean,
+  budget: TickReads["budget"],
 ): Promise<Tracked> {
   const tracked: Tracked = {
     keys: null,
@@ -484,6 +511,16 @@ async function readTracker(
   try {
     const config = trackerConfigOf(values, repo.slug);
     tracked.keys = issueKeysOf(config);
+    const item = values.do_item as
+      | { execution_plan_block?: unknown }
+      | undefined;
+    tracked.servedPolicy = {
+      hitl: config.labels.hitl,
+      manualOps: config.labels.manualOps,
+      ...(typeof item?.execution_plan_block === "string"
+        ? { executionPlanBlock: item.execution_plan_block }
+        : {}),
+    };
     const reading = await readPickups(
       () => {
         tracked.tracker = openTracker(config, repo.path);
@@ -491,10 +528,16 @@ async function readTracker(
       },
       section,
       { bound: () => facetBound(deadline), epic: config.labels.epic },
+      { people, nowMs, headroom, ...tracked.servedPolicy },
     );
     report.records.push(reading.read);
     report.unplaced.push(...reading.unplaced);
-    tracked.pickups = reading.wanted;
+    tracked.pickups = await batchSafePickups(
+      repo,
+      values,
+      reading.wanted,
+      !lowBudget(await budget()),
+    );
     if (reading.read.ok) tracked.claimed = reading.claimed;
   } catch (error) {
     report.records.push({

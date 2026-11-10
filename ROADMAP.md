@@ -71,22 +71,14 @@ whoever drives it: coming, picking up, driven, needs you, ready to merge,
 or merged. Work moves in any direction, and a pull request
 that was ready and moved back says why. Merging stays a person's.
 
-### 44. The line at capacity: the host's load factor, served pickups and the steward
+### 44. The line at capacity: the steward
 
-The dispatcher measures its host before it starts more work: memory, the
-processors, the disk and the queue for the shared test lock. It starts a
-session only while every measure stays under its limit. New work never
-takes the last of the room, so the drives that turn earlier work into
-merges keep running. It first reports what it would hold back, and a person
-turns the limit on. A host can also serve named people. The work a
-maintainer assigns to them is ranked and started on the model its
-complexity calls for. A blocked item says what it waits on, and the person
-stays its assignee. Every 20 minutes an agent, the
-[steward](GLOSSARY.md), reads what is stopped and waiting. It has the
-dispatcher restart a drive that stopped for a passing reason, and fills in
-a missing priority or size. It frames what still needs a person. It never
-merges, settles what only a person may decide, or writes code. Every dashboard item starts with the one act it
-asks of a person: merge, decide, authorize, reply, do or investigate.
+Every 20 minutes an agent, the [steward](GLOSSARY.md), reads what is stopped
+and waiting, including the served people's queue. It has the dispatcher
+restart a drive that stopped for a passing reason, and fills in a missing
+priority or size. It frames what still needs a person. It never merges,
+settles what only a person may decide, or writes code. Nothing starts while
+its input stays the same.
 
 ### 39. Addresses: asking and telling the stations of the line
 

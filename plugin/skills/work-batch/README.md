@@ -21,6 +21,12 @@ five closures cost about what one costs.
 [SKILL.md](SKILL.md); the constraints and their reasons are in
 [references/batch-policy.md](references/batch-policy.md).
 
+A dispatcher can launch a batch from a served person's queue. Its named
+items are the maximum scope, and each claim preserves that person as
+assignee. The claim checks inherited assignment and writer provenance live;
+a refused item stops the batch. A question needing a person stops the
+headless pass and is recorded with the launch result.
+
 Contents: [the procedure](#the-procedure) · [anchors](#anchors) ·
 [solo-only issues](#solo-only-issues) · [batch size](#batch-size) ·
 [ranking](#ranking) · [tracker reads](#tracker-reads) ·

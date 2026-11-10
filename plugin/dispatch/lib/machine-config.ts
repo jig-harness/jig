@@ -56,6 +56,7 @@ import { load } from "../../shared/yaml.ts";
 import { FAILURE_DEFAULTS, type FailureSettings } from "./failures.ts";
 import { isLoopback, type Listen, parseListen } from "./listen.ts";
 import { type LoadSettings, loadSettings } from "./load-config.ts";
+import { type ServedPerson, servedPeople } from "./serve-config.ts";
 
 /** The stages a machine file can enable. */
 const MACHINE_STAGES = [
@@ -104,6 +105,8 @@ export type SharedMedium = (typeof SHARED_MEDIA)[number];
 
 export interface MachineConfig {
   path: string;
+  /** People authorized by this host, never by a repository overlay. */
+  serve?: ServedPerson[];
   repositories: MachineRepository[];
   accounts: MachineAccount[];
   intervalMs: number;
@@ -151,6 +154,7 @@ const DEFAULTS = {
 } as const;
 
 const TOP_KEYS = [
+  "serve",
   "repositories",
   "accounts",
   "interval",
@@ -505,6 +509,8 @@ function parseValues(values: unknown, where: string): Checked<MachineConfig> {
   if (!isMapping(top)) return invalid(`${where} must be a mapping`);
   const known = only(top, TOP_KEYS, where);
   if (!known.ok) return known;
+  const serve = servedPeople(top.serve);
+  if (!serve.ok) return serve;
   const repos = repositories(top.repositories);
   if (!repos.ok) return repos;
   const accountList = accounts(top.accounts);
@@ -517,6 +523,7 @@ function parseValues(values: unknown, where: string): Checked<MachineConfig> {
   if (!host.ok) return host;
   return ok({
     path: where,
+    serve: serve.value,
     repositories: repos.value,
     accounts: accountList.value,
     ...timing.value,
