@@ -140,7 +140,9 @@ export interface LaunchRecord {
   effort: string | null;
   /** A pickup's ended record no longer holds its item: the item left the dispatch states since. */
   released: boolean;
-  /** A pickup's item was seen claimed (in progress) after the record ended: coming back to the dispatch states releases the record. Absent until then. */
+  /** A pickup's members seen claimed (in progress) after the record ended: each releases only after it returns to the dispatch states. Absent until then. */
+  claimedItems?: string[];
+  /** @deprecated Kept for records written before claimedItems tracked batch members separately. */
   claimedSeen?: boolean;
   /** The command a follow-up pass runs (the repository's `dispatch.followup_command`); `null` for any other record. */
   command: string | null;

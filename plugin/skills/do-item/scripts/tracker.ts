@@ -99,6 +99,14 @@ const USAGE = `usage:
   tracker.ts available-labels
   tracker.ts facet-stores`;
 
+/** The machine-local claim mutex identity for one canonical tracker issue. */
+export function claimLockKey(
+  tracker: Pick<Tracker, "adapter" | "team">,
+  issue: string,
+): string {
+  return `${tracker.adapter}:${tracker.team}:${issue}`;
+}
+
 async function readStdin(): Promise<string> {
   process.stdin.setEncoding("utf8");
   let s = "";
@@ -362,24 +370,21 @@ const OPERATIONS: Record<string, Operation> = {
       const config = ownTrackerConfig();
       const shape = issueKeysOf(config);
       const normalized = shape?.normalize(key as string) ?? (key as string);
-      return withClaimLock(
-        `${config.adapter}:${config.team ?? "unknown"}:${normalized}`,
-        () => {
-          const tracker = openTracker();
-          const ancestorKey = ancestor
-            ? (shape?.normalize(ancestor) ?? ancestor)
-            : undefined;
-          return person
-            ? claimServedIssue(tracker, normalized, {
-                person,
-                ...(ancestorKey ? { ancestor: ancestorKey } : {}),
-                epicLabel: config.labels.epic,
-                hitlLabel: config.labels.hitl,
-                manualOpsLabel: config.labels.manualOps,
-              })
-            : claimIssue(tracker, key as string);
-        },
-      );
+      const tracker = openTracker();
+      return withClaimLock(claimLockKey(tracker, normalized), () => {
+        const ancestorKey = ancestor
+          ? (shape?.normalize(ancestor) ?? ancestor)
+          : undefined;
+        return person
+          ? claimServedIssue(tracker, normalized, {
+              person,
+              ...(ancestorKey ? { ancestor: ancestorKey } : {}),
+              epicLabel: config.labels.epic,
+              hitlLabel: config.labels.hitl,
+              manualOpsLabel: config.labels.manualOps,
+            })
+          : claimIssue(tracker, key as string);
+      });
     },
     exitOf: (out) => {
       const result = out as Awaited<ReturnType<typeof claimIssue>>;

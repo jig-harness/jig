@@ -3,6 +3,16 @@ import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import { claimLockKey } from "../scripts/tracker.ts";
+
+test("uses the resolved tracker namespace in a claim lock key", () => {
+  expect(
+    claimLockKey({ adapter: "github", team: "jig-harness/jig" }, "#12"),
+  ).toBe("github:jig-harness/jig:#12");
+  expect(
+    claimLockKey({ adapter: "github", team: "another/repository" }, "#12"),
+  ).not.toBe("github:jig-harness/jig:#12");
+});
 
 test("claims in different worktrees share the host lock", async () => {
   const root = mkdtempSync(join(tmpdir(), "jig-claim-lock-"));

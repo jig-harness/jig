@@ -122,3 +122,49 @@ it("releases an ended batch when its returned member is ready to retry", () => {
     w.close();
   }
 });
+
+it("keeps an unclaimed batch member held after a sibling was claimed", () => {
+  const w = world();
+  try {
+    const record = earlierRecord(w, {
+      id: "2026-11-09T00-00-00-000Z-unclaimed-member",
+      account: "a",
+      action: "pickup",
+      pr: null,
+      item: "#1",
+      batchItems: [
+        { key: "#1", person: "alex" },
+        { key: "#2", person: "alex" },
+      ],
+    });
+    const read: ReadRecord = {
+      record,
+      state: {
+        kind: "ended",
+        exit: { at: "2026-11-09T00:00:00Z", code: 0, signal: null },
+        process: null,
+      },
+      result: "failed",
+    };
+    releaseEnded(
+      [read],
+      SLUG,
+      new Set(["#2"]),
+      new Set(["#1"]),
+      new Set(["#2"]),
+      dispatchState(w),
+    );
+    releaseEnded(
+      [read],
+      SLUG,
+      new Set(["#2"]),
+      new Set(),
+      new Set(["#2"]),
+      dispatchState(w),
+    );
+    expect(record.released).toBe(false);
+    expect(pickupHold("#2", [read]).kind).toBe("ended");
+  } finally {
+    w.close();
+  }
+});

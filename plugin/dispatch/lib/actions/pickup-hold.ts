@@ -134,9 +134,9 @@ export function holdingRecords(
  * after a whole read of the tracker.
  *
  * An item that is claimed (in progress) keeps its record, so the question its
- * pass stopped on stays a need; the record notes the claim, and releases once
- * the item is back among `returned` (the dispatch states), which is how a
- * person settles that question.
+ * pass stopped on stays a need; the record notes that member's claim, and
+ * releases it once it is back among `returned` (the dispatch states), which is
+ * how a person settles that question.
  */
 export function releaseEnded(
   records: ReadRecord[],
@@ -154,9 +154,9 @@ export function releaseEnded(
     // A claim seen while the pass still runs counts too: the item may be
     // back among the dispatch states by the time the record ends.
     const members = record.batchItems?.map((i) => i.key) ?? [item];
-    const isClaimed = members.some((key) => claimed.has(key));
-    if (isClaimed) noteClaim(record, root);
-    if (isClaimed || holds(r.state)) continue;
+    const claimedMembers = members.filter((key) => claimed.has(key));
+    if (claimedMembers.length > 0) noteClaims(record, claimedMembers, root);
+    if (claimedMembers.length > 0 || holds(r.state)) continue;
     if (keepsWanted(record, members, wanted, returned)) continue;
     record.released = true;
     writeRecord(record, root);
@@ -170,15 +170,30 @@ function wantsRecord(
   wanted: ReadonlySet<string>,
   returned: ReadonlySet<string>,
 ): boolean {
-  if (record.claimedSeen === true)
-    return !returned.has(item) && wanted.has(item);
+  if (wasClaimed(record, item)) return !returned.has(item) && wanted.has(item);
   return wanted.has(item);
 }
 
-/** Remember that the record's item was seen claimed, once. */
-function noteClaim(record: LaunchRecord, root?: string): void {
-  if (record.claimedSeen === true) return;
-  record.claimedSeen = true;
+/** Whether this batch member was seen claimed after its record ended. */
+function wasClaimed(record: LaunchRecord, item: string): boolean {
+  return record.claimedItems?.includes(item) ?? record.claimedSeen === true;
+}
+
+/** Remember the batch members seen claimed, without marking their siblings. */
+function noteClaims(
+  record: LaunchRecord,
+  claimed: string[],
+  root?: string,
+): void {
+  const seen = new Set(record.claimedItems ?? []);
+  let changed = false;
+  for (const item of claimed) {
+    if (seen.has(item)) continue;
+    seen.add(item);
+    changed = true;
+  }
+  if (!changed) return;
+  record.claimedItems = [...seen];
   writeRecord(record, root);
 }
 
