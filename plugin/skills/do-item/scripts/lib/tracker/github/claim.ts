@@ -93,7 +93,7 @@ export function claimOperations(
       if (before.users.length !== 0) return false;
       await client.mutate(
         `mutation TrackerAddAssignee($input: AddAssigneesToAssignableInput!) {
-        addAssigneesToAssignable(input: $input) { assignable { id } }
+        addAssigneesToAssignable(input: $input) { assignable { __typename } }
       }`,
         { input: { assignableId: before.id, assigneeIds: [user.id] } },
       );
