@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   checkedRecords,
+  recordBelongsToDigest,
   stewardDue,
   rearmableBySteward,
 } from "../lib/steward.ts";
@@ -88,6 +89,54 @@ describe("steward boundaries", () => {
         },
       ]).ok,
     ).toBe(true);
+  });
+  test("records stay within the evidence their own digest supplied", () => {
+    const digest: StewardDigest = {
+      version: 1,
+      repo: "example/repo",
+      drives: [],
+      needs: [{ target: "#12" } as never],
+      queue: [{ identifier: "#34" } as never],
+      passes: [],
+      failures: [],
+      load: null,
+    };
+    expect(
+      recordBelongsToDigest(
+        {
+          kind: "need",
+          target: "#12",
+          act: "Reply",
+          ask: "Choose",
+          reason: "still needed",
+        },
+        digest,
+      ),
+    ).toBe(true);
+    expect(
+      recordBelongsToDigest(
+        {
+          kind: "need",
+          target: "PR #12",
+          act: "Reply",
+          ask: "Choose",
+          reason: "not a need",
+        },
+        digest,
+      ),
+    ).toBe(false);
+    expect(
+      recordBelongsToDigest(
+        { kind: "order", targets: ["#34"], reason: "keep the tie together" },
+        digest,
+      ),
+    ).toBe(true);
+    expect(
+      recordBelongsToDigest(
+        { kind: "order", targets: ["#99"], reason: "outside the digest" },
+        digest,
+      ),
+    ).toBe(false);
   });
   test("human stops, held work and registry parks cannot be rearmed", () => {
     const pr = {

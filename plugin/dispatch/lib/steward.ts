@@ -65,6 +65,29 @@ export type SubmitStewardResult =
   | "already-submitted"
   | "missing-run";
 
+/** A steward can act only on evidence included in its own signed-off digest. */
+export function recordBelongsToDigest(
+  record: StewardRecord,
+  digest: StewardDigest,
+): boolean {
+  switch (record.kind) {
+    case "rearm":
+      return digest.drives.some(
+        (drive) => `PR #${drive.number}` === record.target,
+      );
+    case "need":
+      return digest.needs.some((need) => need.target === record.target);
+    case "resume":
+      return digest.passes.some((pass) => pass.record === record.record);
+    case "facet":
+      return digest.queue.some((issue) => issue.identifier === record.target);
+    case "order":
+      return record.targets.every((target) =>
+        digest.queue.some((issue) => issue.identifier === target),
+      );
+  }
+}
+
 /** A changed input, the cadence and a rolling hourly cap must all permit a run. */
 export function stewardDue(
   hash: string,

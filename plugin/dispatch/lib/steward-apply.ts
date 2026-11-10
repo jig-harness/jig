@@ -11,6 +11,7 @@ import {
   claimStewardRecord,
   markStewardEffect,
   readStewardDigest,
+  recordBelongsToDigest,
   rearmableBySteward,
   releaseStewardRecord,
   stewardRecords,
@@ -24,28 +25,6 @@ import type { Action, DrivenPr } from "./types.ts";
 type Rearm = Extract<StewardRecord, { kind: "rearm" }>;
 type Need = Extract<StewardRecord, { kind: "need" }>;
 type Facet = Extract<StewardRecord, { kind: "facet" }>;
-
-/** A token-bound pass may propose only targets it was actually shown. */
-function belongsToDigest(
-  record: StewardRecord,
-  digest: StewardDigest,
-): boolean {
-  switch (record.kind) {
-    case "rearm":
-    case "need":
-      return digest.drives.some(
-        (drive) => `PR #${drive.number}` === record.target,
-      );
-    case "resume":
-      return digest.passes.some((pass) => pass.record === record.record);
-    case "facet":
-      return digest.queue.some((issue) => issue.identifier === record.target);
-    case "order":
-      return record.targets.every((target) =>
-        digest.queue.some((issue) => issue.identifier === target),
-      );
-  }
-}
 
 async function replayResumes(
   state: ApplyState,
@@ -211,7 +190,7 @@ async function applyOne(
     });
     return;
   }
-  if (!belongsToDigest(kept.value, digest.value)) {
+  if (!recordBelongsToDigest(kept.value, digest.value)) {
     if (claimStewardRecord(kept.id, state.root))
       markStewardEffect(kept.id, "refused", state.root);
     observation.opened.report.unplaced.push({
