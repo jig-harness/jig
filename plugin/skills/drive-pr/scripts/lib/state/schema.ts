@@ -4,7 +4,7 @@
  * ABSENT and MALFORMED are different answers, and collapsing them is a
  * fail-open. A drive with no stored state has nothing to lose, so a fresh empty
  * object is correct. A file that EXISTS but does not parse is the opposite
- * case: it is the only record of the parked human decisions, the durable round
+ * case: it records parked human decisions, the durable round
  * budget and the verified SHA, and substituting fresh state there silently
  * grants a new round budget and re-arms work a human deliberately parked —
  * precisely the re-arm loop drive-state exists to close, reached by the one
@@ -38,15 +38,16 @@
 
 import { isGitSha } from "../cli.ts";
 import { isActorId } from "./actor.ts";
-import { type DrivenBranch, isOptionalDrivenBranch } from "./driven-branch.ts";
+import type { DrivenBranch } from "./driven-branch.ts";
 import { isAccountHash } from "../identity.ts";
-import { type TakeoverRecord, isOptionalTakeovers } from "./takeover.ts";
-import { isOptionalRetryCount } from "./deadline-retries.ts";
+import type { TakeoverRecord } from "./takeover.ts";
 import { type ParkedItem, isParkedItem } from "./park-frame.ts";
 export { type ParkedItem, isParkedItem } from "./park-frame.ts";
-import { type UnattendedDecision, isOptionalDecisions } from "./decisions.ts";
-import { type DriveEvent, isOptionalEvents } from "./events.ts";
-import { type ArbiterRuling, isOptionalRulings } from "./rulings.ts";
+import type { UnattendedDecision } from "./decisions.ts";
+import type { DriveEvent } from "./events.ts";
+import type { ArbiterRuling } from "./rulings.ts";
+import type { RecordedLadderVerdict } from "./ladder-verdict-model.ts";
+import { hasUsableOptionalFields } from "./optional-fields.ts";
 
 /**
  * The persisted shape of a recorded quota park — what
@@ -400,6 +401,7 @@ export interface DriveState {
   events?: DriveEvent[];
   /** The review arbiter's ruling per thread (`rulings.ts`). */
   rulings?: ArbiterRuling[];
+  ladderVerdicts?: RecordedLadderVerdict[];
   [extra: string]: unknown;
 }
 
@@ -520,19 +522,6 @@ function isQuotaParkRecord(v: unknown): boolean {
     instant(park.at) &&
     (park.account === undefined || isAccountHash(park.account))
   );
-}
-
-/** The fields a stored state may lack: absent, or well-formed. */
-function hasUsableOptionalFields(s: Record<string, unknown>): boolean {
-  return [
-    isOptionalDrivenBranch(s.drivenBranch),
-    isOptionalTakeovers(s.takeovers),
-    isOptionalRetryCount(s.deadlineRetries),
-    isOptionalDecisions(s.decisions),
-    isOptionalEvents(s.events),
-    isOptionalRulings(s.rulings),
-    s.ledgerGeneration === undefined || isCount(s.ledgerGeneration),
-  ].every(Boolean);
 }
 
 const isNonEmptyString = (v: unknown): v is string =>
@@ -761,14 +750,8 @@ export function isUsableState(v: unknown, pr: number): v is DriveState {
     // means a hand-edited file, and the validator restates the writer's
     // invariant rather than tolerating a record no consumer can use.
     //
-    // The EXACT grammar `resolveActor()` produces (`wt-` + 16 lowercase hex),
-    // not merely "non-empty, no newline". `restore-held` already enforces this
-    // at the write side (its own comment explains why: a hand-edited value
-    // like `"x|forged"` both names a DIFFERENT worktree — letting that tree's
-    // `stamp-held` wrongly vouch for this hold — and breaks the handoff's
-    // backtick-delimited table row, which a bare newline ban never caught).
-    // Backward compatibility before general availability is deliberately not
-    // offered, so a wider stored shape is refused rather than tolerated.
+    // Match the writer's actor grammar: a wider value could name another
+    // working tree or break the handoff's backtick-delimited table row.
     if (typeof e.actor !== "string" || !isActorId(e.actor)) return false;
     // Optional (absent until the holding actor pushes), but when present must
     // be the exact grammar `stamp-held`/`restore-held` write — a full

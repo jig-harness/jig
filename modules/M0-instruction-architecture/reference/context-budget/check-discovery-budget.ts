@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// Skill and agent discovery metadata stays inside its per-item and aggregate
+// Skill, legacy command and agent discovery metadata stays inside its per-item and aggregate
 // budgets.
 //
 // A runtime lists every model-invocable skill's name and description in each
@@ -24,6 +24,12 @@
 // nothing there, though its own description is still capped. A skill with
 // `paths:` is counted as listed: it joins the listing once a matching file is
 // read, so a listing measured without it turns red mid-session.
+// Legacy commands (`--commands <dir>`, recursively) share that listing and
+// its caps. Their names come from relative paths, separated with colons.
+// A skill shadows a command matching its directory or frontmatter name.
+// Without a description, a command uses its first nonblank body line,
+// stripping heading markers, shortened to 97 UTF-16 units plus "..." when
+// it exceeds 100. Commands also honour disable-model-invocation.
 //
 // Agent files (`<dir>/*.md`, README.md excepted) get the same per-item caps,
 // since their descriptions are discovery text paid in every session too. No
@@ -46,7 +52,7 @@
 // instructions, none of which a repository file shows.
 //
 // Usage: bun check-discovery-budget.ts [--skills <dir>]... [--agents <dir>]...
-//          [--bare-skills <dir>]... [--namespace <plugin>] [--hard N]
+//          [--bare-skills <dir>]... [--commands <dir>]... [--namespace <plugin>] [--hard N]
 //          [--soft N] [--combined N] [--listing N] [--fail-soft]
 //   --namespace    the plugin name a runtime prefixes to each --skills name
 //                  (`<plugin>:<skill>`), counted in the listing
@@ -58,7 +64,7 @@
 // census found but the measurement missed, a duplicate skill name, or a
 // skills directory with no skill; 2 usage error or an unreadable directory.
 import { lstatSync, readdirSync, realpathSync, statSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, join, relative } from "node:path";
 import { parseArgs } from "node:util";
 import { cli } from "../../../../lib/cli.ts";
 import { readRegularFile } from "../../../../lib/files.ts";
@@ -72,7 +78,7 @@ type Budgets = {
 };
 
 type Item = {
-  kind: "skill" | "agent";
+  kind: "skill" | "agent" | "command";
   label: string;
   /** The name as listed, with its plugin namespace when it has one. */
   name: string;
@@ -88,12 +94,18 @@ type Item = {
 type Found = { label: string; file: string; fallbackName: string };
 
 const USAGE =
-  "usage: check-discovery-budget.ts [--skills <dir>]... [--agents <dir>]... [--bare-skills <dir>]... [--namespace <plugin>] [--hard N] [--soft N] [--combined N] [--listing N] [--fail-soft]";
+  "usage: check-discovery-budget.ts [--skills <dir>]... [--agents <dir>]... [--commands <dir>]... [--bare-skills <dir>]... [--namespace <plugin>] [--hard N] [--soft N] [--combined N] [--listing N] [--fail-soft]";
 
-function frontmatter(raw: string): Record<string, unknown> {
-  const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
+const FRONTMATTER = /^---\r?\n([\s\S]*?\r?\n)?---(?:\r?\n|$)/;
+
+function frontmatter(raw: string, allowEmpty = false): Record<string, unknown> {
+  const match = raw.match(FRONTMATTER);
   if (!match) throw new Error("no YAML frontmatter block");
-  const parsed: unknown = Bun.YAML.parse(match[1] ?? "");
+  const source = match[1] ?? "";
+  const empty = source
+    .split(/\r?\n/)
+    .every((line) => !line.trim() || line.trimStart().startsWith("#"));
+  const parsed: unknown = allowEmpty && empty ? {} : Bun.YAML.parse(source);
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed))
     throw new Error("frontmatter is not a mapping");
   return parsed as Record<string, unknown>;
@@ -117,12 +129,19 @@ type Metadata = {
 };
 
 /** The fields a runtime lists; throws a message naming an unusable one. */
-function metadata(fields: Record<string, unknown>, fallback: string): Metadata {
+function metadata(
+  fields: Record<string, unknown>,
+  fallback: string,
+  command = false,
+): Metadata {
   const name = fields.name ?? fallback;
   const { description, when_to_use: whenToUse, paths } = fields;
   const explicitOnly = fields["disable-model-invocation"];
   const problems: [boolean, string][] = [
-    [!isNonEmpty(description), "no non-empty description"],
+    [
+      command ? typeof description !== "string" : !isNonEmpty(description),
+      "no non-empty description",
+    ],
     [!isNonEmpty(name), "name must be a non-empty string"],
     [
       whenToUse !== undefined && typeof whenToUse !== "string",
@@ -159,8 +178,12 @@ function measure(
   found: Found,
   namespace: string | undefined,
 ): Item {
-  const fields = frontmatter(readDefinition(found.file));
-  const meta = metadata(fields, found.fallbackName);
+  const raw = readDefinition(found.file);
+  const fields =
+    kind === "command"
+      ? commandMetadata(raw, found.fallbackName)
+      : frontmatter(raw);
+  const meta = metadata(fields, found.fallbackName, kind === "command");
   const text = meta.whenToUse
     ? `${meta.description} - ${meta.whenToUse}`
     : meta.description;
@@ -174,6 +197,20 @@ function measure(
     listing: meta.listed ? listedName.length + 4 + text.length : 0,
     scoped: meta.scoped,
   };
+}
+
+/** Legacy commands may omit metadata; their body supplies the listing text. */
+function commandMetadata(raw: string, name: string): Record<string, unknown> {
+  const block = raw.match(FRONTMATTER);
+  const fields =
+    block || /^---(?:\r?\n|$)/.test(raw) ? frontmatter(raw, true) : {};
+  const body = block ? raw.slice(block[0].length) : raw;
+  const firstLine = (body.split(/\r?\n/).find((line) => line.trim()) ?? "")
+    .trim()
+    .replace(/^#+\s*/, "");
+  const fallback =
+    firstLine.length > 100 ? `${firstLine.slice(0, 97)}...` : firstLine;
+  return { ...fields, name, description: fields.description ?? fallback };
 }
 
 function isDirectory(path: string): boolean {
@@ -231,6 +268,30 @@ function agentFiles(dir: string): Found[] {
     .filter((found) => isCandidate(found.file));
 }
 
+/** Nested command folders contribute colon-separated names; follow links once. */
+function commandFiles(dir: string): Found[] {
+  const seen = new Set<string>();
+  const found: Found[] = [];
+  const walk = (folder: string, prefix: string) => {
+    const physical = realpathSync(folder);
+    if (seen.has(physical)) return;
+    seen.add(physical);
+    for (const entry of listDirectory(folder)) {
+      const file = join(folder, entry);
+      const name = prefix ? `${prefix}:${entry}` : entry;
+      if (isDirectory(file)) walk(file, name);
+      else if (/\.md$/i.test(entry) && isCandidate(file))
+        found.push({
+          label: file,
+          file,
+          fallbackName: name.replace(/\.md$/i, ""),
+        });
+    }
+  };
+  walk(dir, "");
+  return found;
+}
+
 /** Every matching entry under the directory, found without the loops above. */
 function census(dir: string, matches: (name: string) => boolean): string[] {
   return (readdirSync(dir, { recursive: true }) as string[])
@@ -243,40 +304,61 @@ class Corpus {
   readonly items: Item[] = [];
   readonly errors: string[] = [];
   private readonly seen = new Set<string>();
+  private readonly skillNames = new Set<string>();
 
   add(kind: Item["kind"], dir: string, found: Found[], namespace?: string) {
-    for (const entry of found) {
-      const physical = physicalPath(entry.file);
-      if (physical === undefined) {
-        this.seen.add(entry.file);
-        this.errors.push(`${entry.label}: unreadable (a link to nothing)`);
-        continue;
-      }
-      if (this.seen.has(physical)) continue;
-      this.seen.add(physical);
-      try {
-        this.items.push(measure(kind, entry, namespace));
-      } catch (error) {
-        this.errors.push(`${entry.label}: ${(error as Error).message}`);
-      }
-    }
+    for (const entry of found) this.addEntry(kind, entry, namespace);
     // A skills folder with nothing in it is a wrong path; an agents folder
     // may legitimately be empty.
     if (found.length) return;
     if (kind === "skill") this.errors.push(`${dir}: no skill to measure`);
-    else console.log(`  note ${dir}: no agent to measure`);
+    else console.log(`  note ${dir}: no ${kind} to measure`);
+  }
+
+  private addEntry(kind: Item["kind"], entry: Found, namespace?: string) {
+    // A shadowed command is omitted before resolving or deduplicating its
+    // definition. It may be a dangling link, and must not consume the
+    // physical file's measurement slot when an unshadowed alias reaches it.
+    if (kind === "command" && this.skillNames.has(entry.fallbackName)) return;
+    const physical = physicalPath(entry.file);
+    if (physical === undefined) {
+      this.seen.add(entry.file);
+      this.errors.push(`${entry.label}: unreadable (a link to nothing)`);
+      return;
+    }
+    if (this.seen.has(physical)) return;
+    this.seen.add(physical);
+    try {
+      const item = measure(kind, entry, namespace);
+      this.items.push(item);
+      if (kind === "skill") {
+        this.skillNames.add(item.name);
+        this.skillNames.add(
+          namespace ? `${namespace}:${entry.fallbackName}` : entry.fallbackName,
+        );
+      }
+    } catch (error) {
+      this.errors.push(`${entry.label}: ${(error as Error).message}`);
+    }
   }
 
   checkCensus(kind: Item["kind"], dir: string) {
     const [matches, shape] =
       kind === "skill"
         ? [isSkillFile, "<dir>/<skill>/SKILL.md"]
-        : [isAgentFile, "<dir>/*.md"];
-    for (const file of census(dir, matches))
+        : kind === "command"
+          ? [(name: string) => /\.md$/i.test(name), "<dir>/**/*.md"]
+          : [isAgentFile, "<dir>/*.md"];
+    for (const file of census(dir, matches)) {
+      const commandName = relative(dir, file)
+        .replace(/[\\\\/]/g, ":")
+        .replace(/\.md$/i, "");
+      if (kind === "command" && this.skillNames.has(commandName)) continue;
       if (!this.seen.has(physicalPath(file) ?? file))
         this.errors.push(
           `${file}: ${kind} definition never reached by the measurement (only ${shape} is measured)`,
         );
+    }
   }
 
   checkDuplicates() {
@@ -314,6 +396,7 @@ function parse(argv: string[]) {
       skills: { type: "string", multiple: true },
       "bare-skills": { type: "string", multiple: true },
       agents: { type: "string", multiple: true },
+      commands: { type: "string", multiple: true },
       namespace: { type: "string" },
       hard: { type: "string" },
       soft: { type: "string" },
@@ -327,31 +410,37 @@ function parse(argv: string[]) {
   const skills = values.skills ?? [];
   const bareSkills = values["bare-skills"] ?? [];
   const agents = values.agents ?? [];
+  const commands = values.commands ?? [];
   if (
     positionals.length ||
-    !(skills.length || bareSkills.length || agents.length)
+    ![skills, bareSkills, agents, commands].some((dirs) => dirs.length)
   )
     throw new Error(USAGE);
   return {
     skills,
     bareSkills,
     agents,
+    commands,
     namespace: values.namespace,
     budgets: budgetsFrom(values),
   };
 }
 
 export function checkDiscoveryBudget(argv: string[]): number {
-  const { skills, bareSkills, agents, namespace, budgets } = parse(argv);
-  for (const dir of [...skills, ...bareSkills, ...agents]) listDirectory(dir);
+  const { skills, bareSkills, agents, commands, namespace, budgets } =
+    parse(argv);
+  for (const dir of [...skills, ...bareSkills, ...agents, ...commands])
+    listDirectory(dir);
   const corpus = new Corpus();
   for (const dir of skills)
     corpus.add("skill", dir, skillFiles(dir), namespace);
   for (const dir of bareSkills) corpus.add("skill", dir, skillFiles(dir));
   for (const dir of agents) corpus.add("agent", dir, agentFiles(dir));
+  for (const dir of commands) corpus.add("command", dir, commandFiles(dir));
   for (const dir of [...skills, ...bareSkills])
     corpus.checkCensus("skill", dir);
   for (const dir of agents) corpus.checkCensus("agent", dir);
+  for (const dir of commands) corpus.checkCensus("command", dir);
   corpus.checkDuplicates();
   return report(corpus, budgets);
 }
@@ -365,16 +454,21 @@ function listingCost(listed: Item[]): number {
 
 function summarize(items: Item[], budgets: Budgets): void {
   const skills = items.filter((i) => i.kind === "skill");
-  const listed = skills.filter((i) => i.listing > 0);
+  const commands = items.filter((i) => i.kind === "command");
+  const listed = items.filter((i) => i.kind !== "agent" && i.listing > 0);
   const scoped = listed.filter((i) => i.scoped).length;
   const agents = items.filter((i) => i.kind === "agent");
   const agentChars = agents.reduce((sum, i) => sum + i.combined, 0);
   console.log(
-    `Discovery budget: ${skills.length} skill(s), ${listed.length} listed (${scoped} path-scoped), ${agents.length} agent(s)`,
+    `Discovery budget: ${skills.length} skill(s), ${listed.length} listed (${scoped} path-scoped), ${agents.length} agent(s)${commands.length ? `, ${commands.length} command(s)` : ""}`,
   );
   console.log(
     `  skill listing ${listingCost(listed)} / ${budgets.listing} chars; agent descriptions ${agentChars} chars (reported, not gated)`,
   );
+  for (const item of commands)
+    console.log(
+      `  command ${item.name}: ${item.listing} listing chars (${item.label})`,
+    );
   const longest = [...items].sort((a, b) => b.length - a.length)[0];
   if (longest)
     console.log(
@@ -383,7 +477,7 @@ function summarize(items: Item[], budgets: Budgets): void {
 }
 
 function listingFailures(items: Item[], budgets: Budgets): string[] {
-  const listed = items.filter((i) => i.kind === "skill" && i.listing > 0);
+  const listed = items.filter((i) => i.kind !== "agent" && i.listing > 0);
   const cost = listingCost(listed);
   if (cost <= budgets.listing) return [];
   const largest = [...listed]

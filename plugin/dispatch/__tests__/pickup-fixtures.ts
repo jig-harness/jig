@@ -4,7 +4,7 @@
  * run with an Orca runtime that binds interactive sessions; and what the
  * fakes recorded.
  */
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import type { TickReceipt } from "../receipts.ts";
@@ -48,7 +48,8 @@ function boundTick(w: World): string {
 
 /** Give the world's clone a bare origin with `main` as its `origin/HEAD`. */
 export function withOrigin(w: World): void {
-  const origin = join(w.root, "origin.git");
+  const origin = join(w.root, "example-org", "example-repo.git");
+  mkdirSync(join(w.root, "example-org"), { recursive: true });
   for (const args of [
     ["clone", "-q", "--bare", w.repo, origin],
     ["-C", w.repo, "remote", "add", "origin", origin],
@@ -61,6 +62,21 @@ export function withOrigin(w: World): void {
       stderr: "pipe",
     });
     expectSpawnExit(r, 0);
+  }
+}
+
+/** Give a fake open pull request a real branch on the world's origin. */
+export function publishedBranch(w: World, branch: string): void {
+  for (const args of [
+    ["-C", w.repo, "branch", branch, "main"],
+    ["-C", w.repo, "push", "-q", "origin", branch],
+  ]) {
+    const result = Bun.spawnSync(["git", ...args], {
+      env: w.env,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    expectSpawnExit(result, 0, `git ${args.join(" ")}`);
   }
 }
 

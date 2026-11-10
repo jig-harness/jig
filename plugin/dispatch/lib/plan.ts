@@ -48,6 +48,7 @@ import { planDrift } from "./expectations.ts";
 import { isDrive, type ReadRecord } from "./launches.ts";
 import { parkNotice, stopNotice } from "./notices.ts";
 import { goneUnlaunched } from "./recovery-facts.ts";
+import { idleBlocksStart } from "./automation.ts";
 import { backingOff } from "./infra-backoff.ts";
 import { conflictNote } from "./sources/ledgers.ts";
 import { requestedTree, workspaceOfTree } from "./stall-tree.ts";
@@ -81,6 +82,8 @@ import type {
 
 export interface PlanInput {
   values?: Record<string, unknown>;
+  /** The repository's checkout, where the label taxonomy the size facet reads is. */
+  root?: string;
   /** The repository's `owner/name`. */
   slug: string;
   /** The board read: the converged pull requests it placed, notified as they enter Ready to merge. */
@@ -125,7 +128,12 @@ type Plan = Pick<RepoReport, "actions" | "running" | "unplaced" | "quiet"> & {
   /** The claimed items whose clock is left as it is. */
   idleKeep: string[];
   /** The actions a `hold` label kept off. */
-  held: Array<{ target: string; stage: Stage; reason: string }>;
+  held: Array<{
+    target: string;
+    stage: Stage;
+    reason: string;
+    cause?: NotifyCause;
+  }>;
   /** The targets `only_labeled` withheld actions from: their notice records stand. */
   withheld: string[];
   /** The re-arms, takeovers and re-drives a serialized area's hold kept off. */
@@ -312,6 +320,7 @@ export function holdBack(
         target: action.target,
         stage: action.stage,
         reason: `a person's hold label stands the dispatcher down from it; without it the tick would ${action.stage}: ${action.reason}`,
+        ...(action.cause === undefined ? {} : { cause: action.cause }),
       });
       plan.withheld?.push(action.target);
     } else kept.push(action);
@@ -504,6 +513,12 @@ function treeBound(pr: DrivenPr, sessions: SessionsReport): DrivenPr | null {
   };
 }
 
+/** Why an automation pull request's drive is not started again of itself: it needs no work. `null` for any other drive, and for a person's rearm request. */
+function idleWhy(pr: DrivenPr): string | null {
+  if (!idleBlocksStart(pr)) return null;
+  return `${pr.why}; but it is an automation pull request that needs no work (no failing check, no conflict, no unresolved thread), so nothing is started of itself: a person merges it, or labels it rearm`;
+}
+
 /** A drive left unplaced; a ledger or comments that did not read are said to be a failed read. */
 function unplacedDrive(target: string, pr: DrivenPr): Unplaced {
   return {
@@ -517,7 +532,8 @@ function unplacedDrive(target: string, pr: DrivenPr): Unplaced {
 /**
  * The drive as this host plans it, or `null` once it is reported quiet
  * because nothing is launched for it yet: its work is in a tree on another
- * host, or its re-drive waits out a backoff.
+ * host, its re-drive waits out a backoff, or it is an automation pull
+ * request that needs no work.
  */
 function plannable(
   input: PlanInput,
@@ -534,7 +550,7 @@ function plannable(
     });
     return null;
   }
-  const waiting = backingOff(pr, input.nowMs);
+  const waiting = backingOff(pr, input.nowMs) ?? idleWhy(pr);
   if (waiting === null) return pr;
   plan.quiet.push({ target, class: pr.class, why: waiting });
   return null;

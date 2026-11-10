@@ -44,12 +44,68 @@ describe("issue_tracker.jira", () => {
         duplicate: "Duplicate",
       },
       linkTypes: {
-        blocks: "Blocks",
-        related: "Relates",
-        duplicate: "Duplicate",
+        blocks: [{ name: "Blocks", inverted: false }],
+        related: [{ name: "Relates", inverted: false }],
+        duplicate: [{ name: "Duplicate", inverted: false }],
       },
       fieldLabels: {},
+      poolIssueTypes: [],
     });
+  });
+
+  it("reads a relation as one link type or a list of names and { name, inverted }", () => {
+    const s = parseJiraSettings({
+      link_types: {
+        blocks: [
+          "Blocks",
+          { name: " Depends ", inverted: true },
+          { name: "Precedes" },
+        ],
+        related: "Relates",
+      },
+    });
+    expect(s.linkTypes.blocks).toEqual([
+      { name: "Blocks", inverted: false },
+      { name: "Depends", inverted: true },
+      { name: "Precedes", inverted: false },
+    ]);
+    expect(s.linkTypes.related).toEqual([{ name: "Relates", inverted: false }]);
+  });
+
+  it("refuses a malformed link type list, and a name in two lists", () => {
+    const of = (link_types: unknown) =>
+      fieldOf(() => parseJiraSettings({ link_types }));
+    expect(of({ blocks: [] })).toBe("issue_tracker.jira.link_types.blocks");
+    expect(of({ blocks: ["Blocks", 3] })).toBe(
+      "issue_tracker.jira.link_types.blocks[1]",
+    );
+    expect(of({ blocks: [{ name: "Depends", inverted: "yes" }] })).toBe(
+      "issue_tracker.jira.link_types.blocks[0].inverted",
+    );
+    expect(of({ blocks: [{ name: "Depends", direction: "in" }] })).toBe(
+      "issue_tracker.jira.link_types.blocks[0].direction",
+    );
+    expect(of({ related: [{ name: "Relates", inverted: true }] })).toBe(
+      "issue_tracker.jira.link_types.related[0].inverted",
+    );
+    expect(of({ blocks: ["Blocks", "Depends"], related: ["depends"] })).toBe(
+      "issue_tracker.jira.link_types",
+    );
+    expect(of({ blocks: ["Blocks", "blocks"] })).toBe(
+      "issue_tracker.jira.link_types",
+    );
+  });
+
+  it("reads pool_issue_types as a list of names, refusing an empty or repeated one", () => {
+    expect(
+      parseJiraSettings({ pool_issue_types: ["Task", " Bug "] }).poolIssueTypes,
+    ).toEqual(["Task", "Bug"]);
+    const of = (pool_issue_types: unknown) =>
+      fieldOf(() => parseJiraSettings({ pool_issue_types }));
+    expect(of([])).toBe("issue_tracker.jira.pool_issue_types");
+    expect(of("Task")).toBe("issue_tracker.jira.pool_issue_types");
+    expect(of(["Task", ""])).toBe("issue_tracker.jira.pool_issue_types[1]");
+    expect(of(["Task", "task"])).toBe("issue_tracker.jira.pool_issue_types");
   });
 
   it("refuses each malformed field, naming it", () => {
@@ -88,7 +144,7 @@ describe("issue_tracker.jira", () => {
       link_types: { blocks: " Blocks\t" },
     });
     expect(s.priorities.urgent).toBe("Highest");
-    expect(s.linkTypes.blocks).toBe("Blocks");
+    expect(s.linkTypes.blocks).toEqual([{ name: "Blocks", inverted: false }]);
   });
 
   it("lets the closed states share a status under Jira only", () => {

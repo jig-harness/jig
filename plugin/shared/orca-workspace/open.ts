@@ -273,6 +273,8 @@ export interface CreateOptions {
   comment?: string;
   /** More arguments for `orca worktree create`, after the comment (`--activate`, say). */
   createFlags?: string[];
+  /** A PR checkout must match this commit before its create hook runs. */
+  expectedHead?: string;
 }
 
 /** `orca worktree create`'s arguments: the repository's own setup is skipped, since the hook runs once the branch has its name. */
@@ -421,6 +423,23 @@ export function openBranch(
     options.branch,
     options,
   );
+  if (options.expectedHead !== undefined) {
+    const head = port.host.run([
+      "git",
+      "-C",
+      worktree.path,
+      "rev-parse",
+      "HEAD",
+    ]);
+    if (head.status !== 0)
+      throw new OrcaError(
+        `cannot read HEAD in ${worktree.path} (exit ${head.status}): ${output(head)}`,
+      );
+    if (head.stdout.trim() !== options.expectedHead)
+      throw new OrcaError(
+        `${worktree.path} does not match the pull request head ${options.expectedHead}; reconcile the checkout before driving it`,
+      );
+  }
   const hookRan =
     options.createHook !== false &&
     ensureCreateHook(port, worktree.path, gitDirOf(port, worktree.path));

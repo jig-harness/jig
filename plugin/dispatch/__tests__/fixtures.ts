@@ -77,10 +77,23 @@ if (args[0] === "pr" && args[1] === "list") {
   out(fs.readFileSync(F + "/prs-" + state + ".json", "utf8"));
 }
 if (args[0] === "pr" && args[1] === "view" && args.some((a) => a.includes("headRefOid"))) {
+  if (args.some((a) => a.includes("labels")) && fs.existsSync(F + "/pr-labels-fail")) { process.stderr.write("gh: labels unavailable\\n"); process.exit(1); }
   // One open pull request read again, as prs-open.json lists it.
   const listed = JSON.parse(fs.readFileSync(F + "/prs-open.json", "utf8")).find((p) => p.number === Number(args[2]));
   if (listed === undefined) { process.stderr.write("gh: no pull requests found\\n"); process.exit(1); }
+  if (args.some((a) => a.includes("isCrossRepository"))) {
+    const head = Bun.spawnSync(["git", "rev-parse", "--verify", "refs/heads/" + listed.headRefName]);
+    out({ ...listed, state: "OPEN", headRefOid: head.exitCode === 0 ? head.stdout.toString().trim() : listed.headRefOid,
+      isCrossRepository: false, headRepositoryOwner: { login: "example-org" }, headRepository: { name: "example-repo" } });
+  }
   out({ ...listed, state: "OPEN" });
+}
+if (args[0] === "pr" && args[1] === "view" && args[args.length - 1] === "labels") {
+  // One pull request's labels read again, open or merged, as its listing holds them.
+  const all = ["open", "merged"].flatMap((s) => JSON.parse(fs.readFileSync(F + "/prs-" + s + ".json", "utf8")));
+  const listed = all.find((p) => p.number === Number(args[2]));
+  if (listed === undefined) { process.stderr.write("gh: no pull requests found\\n"); process.exit(1); }
+  out({ labels: listed.labels ?? [] });
 }
 if (args[0] === "api" && args[1] === "graphql" && args.some((a) => a.includes("reviewThreads"))) {
   // A pull request's unresolved review threads, as many as threads-<pr> says.
@@ -193,7 +206,11 @@ if (args[0] === "terminal" && args[1] === "create") {
     const log = fs.openSync(F + "/terminal.log", "a");
     // With orca-terminal-shell, a shell that outlives its command as a login shell does, named by its PID as Orca names it.
     const shell = fs.existsSync(F + "/orca-terminal-shell");
-    const child = spawn("sh", ["-c", shell ? command + "; exec sleep 60" : command], { detached: true, stdio: ["ignore", log, log], env: process.env });
+    const envFile = F + "/orca-terminal-env.json";
+    const env = fs.existsSync(envFile) ? JSON.parse(fs.readFileSync(envFile, "utf8")) : process.env;
+    const cwdFile = F + "/orca-terminal-cwd";
+    const cwd = fs.existsSync(cwdFile) ? fs.readFileSync(cwdFile, "utf8") : process.cwd();
+    const child = spawn("sh", ["-c", shell ? command + "; exec sleep 60" : command], { detached: true, stdio: ["ignore", log, log], env, cwd });
     child.unref();
     if (shell) answer({ terminal: { handle: "term-1", tabId: "tab-1", processId: child.pid } });
   }
@@ -424,6 +441,18 @@ export const openPr = (
   labels: [] as Array<{ name: string }>,
   ...extra,
 });
+
+/** A failed check on an open pull request's head, as the listing gives it. */
+export const FAILING = {
+  statusCheckRollup: [
+    {
+      __typename: "CheckRun",
+      name: "ci",
+      status: "COMPLETED",
+      conclusion: "FAILURE",
+    },
+  ],
+};
 
 /** A pull request as the listing returns it, carrying `labels`. */
 export const labeled = <T extends object>(pr: T, ...labels: string[]) => ({

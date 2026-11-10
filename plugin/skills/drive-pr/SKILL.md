@@ -752,6 +752,27 @@ outlives the session that spawned it, so its console is not where you look:
   Missing, foreign, surviving or uncertain evidence leaves the ledger running;
   dispatch notifies once and includes it in the waiting list. See
   [terminal states](references/terminal-states.md) for the recovery guards.
+- **The pull request's state label** — where `dispatch.labels.enabled` is
+  on on the default branch (`dispatch/lib/label-config.ts`, as the
+  dispatcher reads it), `drive.ts` labels the pull request through the
+  shared projection (`shared/pr-labels/`, `lib/driver/state-labels.ts`)
+  after each ledger write of its own that lands (`handoff` tells a write
+  its guards refused apart, and none is labelled): `driving` once the arm
+  publishes the running ledger, before round one, removing the `drive`
+  command in the same write; at the stop, the class the exit table gives
+  (`lib/status/exit-classes.ts`, which the dispatcher's classifier reads
+  too): `converged` on `CONVERGED` only while the head is the verified
+  head, `parked` for a park, a person's stop, a stop only a person settles
+  and a stop the dispatcher re-drives (where it would read `stale`),
+  `driving` for one it re-arms or a second driver refused, nothing for
+  `PR_NOT_OPEN` or `TAKEN_OVER` (the full list:
+  [terminal states](references/terminal-states.md#exit-codes)). A person's
+  stop through `drives.ts` names no exit and is labelled `parked` once it
+  marks the ledger stopped. Never `stale`
+  or `held`, nothing on a pull request carrying `hold` or `held`, and never
+  a new label. Best effort: `gh` calls under `ghCall`'s deadline, the edit
+  only when the labels disagree; a refusal is one `labels:` line on stderr
+  and never changes the exit. A pass never writes a state label.
 - **Relocating the state dir** — `$DRIVE_PR_STATE_DIR` relocates the state
   root: the database and one `<clone-key>/` directory per clone (the hash of
   its persisted [universally unique identifier](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (UUID); linked worktrees share it). The driver exports its resolved
@@ -836,7 +857,8 @@ stops admit it on a mechanical state:
   passes it, never an agent, as with `clear-lease`.
 - **`HITL_PARKED` (exit `8`).** Once **every** parked item has an answer — a
   comment by an author GitHub reports as the repository's owner, member or
-  collaborator, later than the park, on the item's thread or in a
+  collaborator, last edited (or posted) later than the park, on the item's
+  thread or in a
   pull-request comment with a line `answer <key>: …` — the re-arm keeps the
   answers in the drive's state directory, unparks every item at once (or none),
   and hands the answers to every pass as human verdicts
@@ -844,6 +866,11 @@ stops admit it on a mechanical state:
   A comment the drive itself writes (one opening
   with an outcome token, or carrying a hidden marker other than the record
   of an answer `jig send` wrote) is never an answer.
+  Read [structured answers](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+  under the rules below. Each person's latest answer
+  replaces their earlier one. Different choices, different notes, or a
+  structured answer beside another person's free answer leave the item
+  disputed and parked. The dispatcher notifies the disputing answers.
   With any item unanswered nothing is unparked. If the PR conflicts with
   its base, the first gate reports `PR_CONFLICTING` before the park: the
   re-arm attempts conflict repair within its budget. Successful repair lets
@@ -851,10 +878,36 @@ stops admit it on a mechanical state:
   `9` (`PR_CONFLICTING`), including when repair fails, is disabled or has
   spent its budget, or the base cannot be read. Otherwise the drive stops `8` at its first gate
   again, naming what it still waits on; at the `wide`
-  autonomy level, except where every unanswered item has the class
+  autonomy level, except where every unanswered item has no person's answer
+  and the class
   `escalated`: the re-arm then unparks them with the answered ones and
   hands them to the first round to decide provisionally (§ Autonomy). One
   unanswered item of any other class stays parked, at every level.
+
+**Structured answers.** In a pull-request comment, write
+`answer <key>: approve` for the recommended option, or
+`answer <key>: choose <option name>` for another option. A thread reply may
+contain just `approve` or `choose <option name>`. A line
+`note <key>: <text>` may add a condition of at most 500 characters.
+The whole comment must contain only answers and their notes, apart from
+blank lines, the `jig send` record and identifiable notification quotes.
+Other prose, code, HTML, duplicate lines or unmatched quotes make the
+answer free. An unknown option or an approval without a recommendation is
+also free. A note alone answers nothing.
+
+Matching normalizes Unicode, case, phone quotes and dashes, bold marks,
+backticks and whitespace, and drops one final full stop or exclamation mark.
+Every person's latest structured answer must choose the same option with
+the same note. If all latest answers are free, the pass receives them all
+to interpret. `jig ask` labels answers structured, free or disputed.
+
+**Apply a structured verdict.** The pass notice and kept answers include
+the chosen option, its framed decision and any note. Apply that option as
+the decision states it. A note may narrow the option or add a condition;
+it cannot widen permission. If the note conflicts with the option or asks
+for more, park the item again and quote the note. Name the chosen option
+and its author in the outcome reply. Never decide provisionally over any
+item with a person's answer, including a disputed item.
 
 Replacing a driver that still holds its locks is a **takeover**:
 
@@ -1224,6 +1277,13 @@ background command, a remote test box above all; run every step the round
 depends on to completion **within the turn**, and do not stop until
 `finish-round.ts` returns.
 
+The driver sets `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` for spawned passes.
+Claude Code removes background tool parameters and auto-backgrounding under
+this setting; other runtimes follow the foreground rule below. If a pass
+exits `0` with uncommitted edits and this tree's unverified holds from the
+current round, the driver stops as `WORKTREE_UNCLEAN` (exit `12`), naming the
+unfinished held fixes. This stop does not claim convergence.
+
 Never use the Bash tool's `run_in_background` in a driver pass — not for the
 commit, not for `finish-round.ts` (the one step that pushes), not for
 validation. Run each step in the foreground. The Bash tool's per-call ceiling
@@ -1349,7 +1409,7 @@ base branch again. Never set `$DRIVE_PR_POLICY_BASE` or `$DRIVE_PR_POLICY_BOUND`
 | A technical choice `decide`'s last row would escalate: no sensitivity flag, no stakeholder category, no persisted-data or published-contract consequence | Escalate | Escalate | Decide it, marked provisional: record it as `decide-provisional` (§ 8) |
 | A bot-review thread the arbiter rules `escalate` with `class: escalated` and no recorded human decision behind it | Park under `escalated` (§ 4) | Same | Reply provisionally with a reply outcome, resolve and record it (below) |
 | A bot-review thread the arbiter rules `escalate` with any other class | Park under its `class:` (§ 4) | Same | Same |
-| Unpark unanswered items after `HITL_PARKED` (conflict repair leaves them parked) | Never | Never | The re-arm hands the unanswered `escalated` items to the first round to decide provisionally; one item of any other class stays parked |
+| Unpark unanswered items after `HITL_PARKED` (conflict repair leaves them parked) | Never | Never | The re-arm hands `escalated` items with no person's answer to the first round to decide provisionally; any dispute or item of another class stays parked |
 
 The registry's classes are on no row: no level decides them, and a park
 outside them is refused (§ 4). Every decision taken is recorded where a
@@ -1727,6 +1787,10 @@ it exempt.
 
 ### 2. Enumerate — threads **and** summary-only findings
 
+Before reading code for a fix, classify each finding and run step 3's decline
+ladder with `--pr <PR> --key <threadId|fingerprint>`. An accepted hold requires
+that key's accepting verdict in the current review round.
+
 **exact** — Run both enumerations and preserve enumeration failures and measurement semantics.
 
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
@@ -1879,8 +1943,14 @@ declines the finding.
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../resolve-review-comments/scripts/triage-ladder.ts" --severity <blocker|high|medium|low|unknown> --tier <tier> --category <token|unknown> --self-inflicted <true|false|unknown> [--pr <PR>] [--obligatory]
+bun "${CLAUDE_SKILL_DIR}/../resolve-review-comments/scripts/triage-ladder.ts" --severity <blocker|high|medium|low|unknown> --tier <tier> --category <token|unknown> --self-inflicted <true|false|unknown> --pr <PR> --key <threadId|fingerprint> [--obligatory]
 ```
+
+The command records its verdict in the drive state. The `hold` operation of
+`drive-state.ts` refuses an accepted hold without that key's accepting verdict for the current
+round (exit 2). A `--round` calculation records nothing. Crash recovery may
+record an existing reply with `--unconfirmed` at round -1; it cannot be
+stamped or released until a live re-hold passes the ladder check.
 
 `--tier` is the finding's rank in the rubric's
 [Priorities](../resolve-review-comments/references/triage-rubric.md#priorities):
@@ -2453,7 +2523,10 @@ Its schema is `parked-decision/v1`:
 ```
 
 Option ids are one to eight letters or digits and unique within the call;
-option names are unique single lines. Each option may also carry `tag`,
+option names are single lines, unique after answer normalization, and contain
+no email address or account identifier that ledger redaction changes.
+An Authorize decision includes refusal as an option, such as **Do not release**.
+Each option may also carry `tag`,
 `keep` (a string array), `rightWhen`, `obligation` and `reversible` (a boolean).
 Optional top-level `facts`, `interplay` and `sheet` carry sourced claims,
 relationships between calls and a decision-sheet link. Unknown fields are
@@ -3144,6 +3217,12 @@ What is load-bearing about the numbers:
   differently (a new decoration, a new layout) is a new shape, added to
   `scripts/lib/severity-formats.ts` deliberately with fixtures from the reviewer's
   real comments. Or ask the reviewer to keep the old one.
+
+  Code-scanning threads use their linked alert's rule severity instead of a
+  comment token. `review.code_scanning_severities` overrides individual alert
+  levels for both triage and metrics; an unreadable alert stays `unknown`.
+  Their outage warning directs you to alert access and that mapping, since
+  adding a comment format cannot recover a severity the comment never states.
 
   The per-author line itself carries a lifetime figure and a current-round
   one — `1/5 lifetime (20.0%) · 1/1 this round (100.0%)` — because the

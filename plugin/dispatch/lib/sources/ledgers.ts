@@ -99,7 +99,6 @@
  * read here.
  */
 import { stallThresholdMs } from "../../../skills/drive-pr/scripts/lib/doctor.ts";
-import { parkAnswers } from "../../../skills/drive-pr/scripts/lib/driver/rearm.ts";
 import type {
   Ledger,
   LedgerSnapshot,
@@ -111,14 +110,17 @@ import {
 import { DRIVE_EXIT } from "../../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { lastStopEvent } from "../../../skills/drive-pr/scripts/lib/state/events.ts";
 import { ledgerTree } from "../stall-tree.ts";
+import { exitClass as stopClass } from "../../../skills/drive-pr/scripts/lib/status/exit-classes.ts";
 import { infraStopClass } from "../infra-backoff.ts";
 import { type DriverPresence, driverPresence } from "./silent-driver.ts";
-import { type Adoption, adopts, type Author } from "../adopt.ts";
+import { type Adoption, adopts, type Author, ownAuthors } from "../adopt.ts";
+import { idleAutomation } from "../automation.ts";
 import { branchHead } from "../forge.ts";
 import { hasCommand, type LabelConfig } from "../labels.ts";
 import type { Listing } from "../tick-comments.ts";
 import { failureText, minutesBetween } from "../text.ts";
-import { framedDecisionLines } from "../../../skills/drive-pr/scripts/lib/state/park-frame.ts";
+import { readPark, type ParkReading } from "./park-reading.ts";
+export type { ParkReading } from "./park-reading.ts";
 import type {
   DrivenPr,
   Evidence,
@@ -126,11 +128,6 @@ import type {
   StaleCause,
   WaitingPark,
 } from "../types.ts";
-
-/** What answers a park's items, when the ledger stopped `HITL_PARKED`. */
-export type ParkReading =
-  | { answered: number; waiting: string[]; parks?: WaitingPark[] }
-  | { unreadable: string };
 
 /** What the head of a pull request's base branch read as. */
 type BaseHead = { oid: string } | { unreadable: string };
@@ -415,44 +412,26 @@ function boundToTree(
   return kind === "deadline" && own && last?.leftWork === true;
 }
 
-/** The class of each exit the table names but `CONVERGED`, `HITL_PARKED` and `PR_CONFLICTING`, which read the pull request and its parks. */
-const EXITS: Record<number, (ledger: Ledger) => Classified> = {
-  [DRIVE_EXIT.PR_NOT_OPEN]: () => ({
-    class: "done",
-    why: `stopped ${DRIVE_EXIT.PR_NOT_OPEN} (merged or closed)`,
-  }),
-  [DRIVE_EXIT.TAKEN_OVER]: () => ({
-    class: "done",
-    why: `stopped ${DRIVE_EXIT.TAKEN_OVER} (taken over by another clone)`,
-  }),
-  [DRIVE_EXIT.MAILBOX_STOPPED]: () => ({
-    class: "stopped-by-person",
-    why: `stopped ${DRIVE_EXIT.MAILBOX_STOPPED} (a mailbox stop): a person's stop is never re-armed`,
-  }),
-  [DRIVE_EXIT.MAILBOX_PAUSE_TIMEOUT]: () => ({
-    class: "stopped-by-person",
-    why: `stopped ${DRIVE_EXIT.MAILBOX_PAUSE_TIMEOUT} (a mailbox pause): a person's stop is never re-armed`,
-  }),
-  [DRIVE_EXIT.QUOTA_PARKED]: (ledger) => ({
-    class: "re-armable",
-    why: `stopped ${DRIVE_EXIT.QUOTA_PARKED} (quota-parked; wall resets ${ledger.quotaPark?.resetAt ?? "at an unknown time"}): re-arm on an account other than the wall's, or after the reset`,
-  }),
-  [DRIVE_EXIT.NOT_SETTLED]: () => ({
-    class: "re-armable",
-    why: `stopped ${DRIVE_EXIT.NOT_SETTLED} (not judgeable yet): re-arm on any account`,
-  }),
-  [DRIVE_EXIT.SINGLE_INSTANCE_LOCK]: () => ({
-    class: "refused",
-    why: `stopped ${DRIVE_EXIT.SINGLE_INSTANCE_LOCK}: another driver holds it`,
-  }),
-  [DRIVE_EXIT.DRIVE_HELD_BY_OTHER_WORKTREE]: () => ({
-    class: "refused",
-    why: `stopped ${DRIVE_EXIT.DRIVE_HELD_BY_OTHER_WORKTREE}: another driver holds it`,
-  }),
-  [DRIVE_EXIT.REVIEW_SKIPPED]: () => ({
-    class: "needs-person",
-    why: `stopped ${DRIVE_EXIT.REVIEW_SKIPPED} (the reviewer skipped its head, and its review of an earlier head does not cover it): a re-arm waits for a review that will not come, so a person has the reviewer review the head or pushes a commit it reviews (see the drive's handoff)`,
-  }),
+/** Why a stop the exit table (`exitClass`) places by its exit alone reads as its class, for the exits that say more than a person's stop. */
+const EXIT_WHY: Record<number, (ledger: Ledger) => string> = {
+  [DRIVE_EXIT.PR_NOT_OPEN]: () =>
+    `stopped ${DRIVE_EXIT.PR_NOT_OPEN} (merged or closed)`,
+  [DRIVE_EXIT.TAKEN_OVER]: () =>
+    `stopped ${DRIVE_EXIT.TAKEN_OVER} (taken over by another clone)`,
+  [DRIVE_EXIT.MAILBOX_STOPPED]: () =>
+    `stopped ${DRIVE_EXIT.MAILBOX_STOPPED} (a mailbox stop): a person's stop is never re-armed`,
+  [DRIVE_EXIT.MAILBOX_PAUSE_TIMEOUT]: () =>
+    `stopped ${DRIVE_EXIT.MAILBOX_PAUSE_TIMEOUT} (a mailbox pause): a person's stop is never re-armed`,
+  [DRIVE_EXIT.QUOTA_PARKED]: (ledger) =>
+    `stopped ${DRIVE_EXIT.QUOTA_PARKED} (quota-parked; wall resets ${ledger.quotaPark?.resetAt ?? "at an unknown time"}): re-arm on an account other than the wall's, or after the reset`,
+  [DRIVE_EXIT.NOT_SETTLED]: () =>
+    `stopped ${DRIVE_EXIT.NOT_SETTLED} (not judgeable yet): re-arm on any account`,
+  [DRIVE_EXIT.SINGLE_INSTANCE_LOCK]: () =>
+    `stopped ${DRIVE_EXIT.SINGLE_INSTANCE_LOCK}: another driver holds it`,
+  [DRIVE_EXIT.DRIVE_HELD_BY_OTHER_WORKTREE]: () =>
+    `stopped ${DRIVE_EXIT.DRIVE_HELD_BY_OTHER_WORKTREE}: another driver holds it`,
+  [DRIVE_EXIT.REVIEW_SKIPPED]: () =>
+    `stopped ${DRIVE_EXIT.REVIEW_SKIPPED} (the reviewer skipped its head, and its review of an earlier head does not cover it): a re-arm waits for a review that will not come, so a person has the reviewer review the head or pushes a commit it reviews (see the drive's handoff)`,
 };
 
 function runningClass(
@@ -487,7 +466,8 @@ function parkClass(park: ParkReading | undefined, forge: PrFacts): Classified {
       class: "re-armable",
       why: `stopped ${DRIVE_EXIT.HITL_PARKED} (parked), every parked item answered (${park.answered}): re-arm on any account`,
     };
-  const waiting = `waiting on ${park.waiting.join(", ")}`;
+  const disputes = park.disputed ?? [];
+  const waiting = `waiting on ${park.waiting.join(", ")}${disputes.length === 0 ? "" : `; disputed answers to ${disputes.join(", ")}`}`;
   return (
     parkConflictClass(waiting, forge) ?? {
       class: "parked",
@@ -547,6 +527,7 @@ function ledgerEvidence(
     ...stopEvidence(ledger, forge),
     driverActor: ledger.driver.actor,
     driverClone: ledger.driver.clone,
+    handoff: ledger.narrative.join("\n").slice(-12_000),
     generation: ledger.generation,
     round: ledger.round,
     phase: ledger.phase,
@@ -636,10 +617,11 @@ function exitClass(
   const failed = exit === FAILED ? failedConflictClass(forge) : null;
   return (
     failed ??
-    mechanicalStopClass(ledger, exit, forge) ??
-    EXITS[exit]?.(ledger) ?? {
-      class: "needs-person",
-      why: `stopped ${exit}: only a person settles it${conflictNote(forge.mergeable)} (see the drive's handoff)`,
+    mechanicalStopClass(ledger, exit, forge) ?? {
+      class: stopClass(exit).class,
+      why:
+        EXIT_WHY[exit]?.(ledger) ??
+        `stopped ${exit}: only a person settles it${conflictNote(forge.mergeable)} (see the drive's handoff)`,
     }
   );
 }
@@ -661,6 +643,9 @@ export interface OpenPr {
   author?: Author;
   isDraft?: boolean;
   updatedAt?: string;
+  /** Whether a check on its head fails, and its unresolved review threads: what says an automation pull request needs work. */
+  failingChecks?: boolean;
+  unresolvedThreads?: number;
 }
 
 /** Why a snapshot holds no ledger this reader can classify; `null` when it holds one, `""` when it holds none. */
@@ -674,33 +659,6 @@ function unreadable(snapshot: LedgerSnapshot): string | null {
   return canonical.parsed.kind === "unknown-version"
     ? `its drive ledger is version ${String(canonical.parsed.version)}, which this reader does not know`
     : `its drive ledger does not read: ${canonical.parsed.reason}`;
-}
-
-async function parkOf(
-  pr: number,
-  ledger: Ledger,
-  slug: string,
-  listing: readonly unknown[] | undefined,
-): Promise<ParkReading | undefined> {
-  if (
-    ledger.driver.state !== "stopped" ||
-    ledger.driver.exit !== DRIVE_EXIT.HITL_PARKED
-  )
-    return undefined;
-  const found = await parkAnswers(pr, ledger.parked, slug, listing);
-  return "unreadable" in found
-    ? found
-    : {
-        answered: found.answered.length,
-        waiting: found.waiting.map((p) => `${p.kind} ${p.key}`),
-        parks: found.waiting.map((p) => ({
-          ...(p.person === undefined ? {} : { person: p.person }),
-          key: p.key,
-          kind: p.kind,
-          lines: framedDecisionLines(p),
-          ...(p.decision === undefined ? {} : { decision: p.decision }),
-        })),
-      };
 }
 
 /**
@@ -892,7 +850,7 @@ async function driveOf(pr: OpenPr, r: Reading): Promise<DrivenPr | null> {
       readFailed: true,
     };
   const ledger = snapshot.canonical.parsed.ledger;
-  const park = await parkOf(
+  const park = await readPark(
     pr.number,
     ledger,
     slug,
@@ -915,6 +873,7 @@ async function driveOf(pr: OpenPr, r: Reading): Promise<DrivenPr | null> {
       ...ledgerEvidence(ledger, nowMs, forge),
       ...request.evidence,
       ...(await presenceEvidence(pr.number, ledger, classified, r)),
+      ...idleAutomation(pr, ownAuthors(r.adoption, r.login)),
     },
     ...waitingOf(classified, park, pr.author?.login),
   };

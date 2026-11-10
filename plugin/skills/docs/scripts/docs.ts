@@ -24,7 +24,7 @@ import { adrConfig } from "../../adr/scripts/locate.ts";
 import { consumerRoot, readConfig } from "../../../shared/consumer.ts";
 import { git } from "../../../shared/proc.ts";
 import { DEFAULT_CONFIG as DEFERRAL_CONFIG } from "./deferral-references/check-deferrals.ts";
-import { cli, isGeneratedIndex } from "./lib/docs.ts";
+import { cli, isGeneratedIndexPage } from "./lib/docs.ts";
 import { staleDrafts, today } from "./lib/drafts.ts";
 import {
   type CheckResult,
@@ -233,7 +233,7 @@ function gates(
   const generated =
     index !== "" &&
     existsSync(index) &&
-    isGeneratedIndex(readFileSync(index, "utf8"));
+    isGeneratedIndexPage(readFileSync(index, "utf8"));
   return [
     frontmatterGate(settings, added),
     generated && root !== null

@@ -181,6 +181,7 @@ changes are marked **Breaking** and say what a consumer changes.
 - [GLOSSARY.md](GLOSSARY.md) defines the test-to-code ratio: the lines of
   tests divided by the lines of code in the code-stats skill's default area,
   the figure its report states beside both counts.
+- M0’s discovery-budget check accepts `--commands <dir>` to include legacy command descriptions in the shared skill listing, with nested names, fallback descriptions, exclusions and skill shadowing.
 
 ### Changed
 
@@ -389,6 +390,199 @@ changes are marked **Breaking** and say what a consumer changes.
   under it.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
+
+## [0.194.0] - 2026-11-10
+
+### Added
+
+- **Implementation guidance in `do-item`.** `do_item.guidance` lists skills
+  and notes by issue label and path, in the shape of `do_item.gates`, and a
+  change area's new `implementation: { skills, notes }` adds the same per
+  area. `determine_agent.ts` prints the union of what matches, with the
+  matched areas' own notes, and `do-item` hands it to the implementing agent
+  under `## Implementation guidance`. A guidance skill that resolves to
+  nothing installed is named in the status message, and `/jig:audit`
+  refuses it.
+- **Issue labels and reviewers on the pull request.**
+  `pull_requests.labels_from_issue` and `pull_requests.reviewers_from_issue`
+  map the issue's labels, in any case, to pull-request labels and to
+  reviewers (logins or `org/team`); a change area's new
+  `pr: { labels, reviewers }` does the same for the pull requests that touch
+  it. `pr-plan.ts open --issue-json <file>` adds them to the plan, shows
+  where each came from, and stops naming a mapped label the repository does
+  not have; the audit reports a missing `labels_from_issue` label too.
+  Reviewers requested on a draft are notified once it is marked Ready.
+
+## [0.193.0] - 2026-11-10
+
+### Added
+
+- A drive labels its own pull request whenever it writes its ledger, with no dispatcher needed: `jig:driving` once it arms, before its first round (removing `jig:drive` in the same write), and at its stop the state one exit table gives both the drive and the dispatcher: `jig:converged` while the head is the one it verified, `jig:parked` for a park, a stop a person settles or made, and a stop the dispatcher re-drives (which a dispatcher turns into `jig:stale`). The write is best effort: a refused write is reported on the drive's output and never changes its exit, and a pull request carrying `jig:hold` or `jig:held` is left as it is. See [CONFIGURATION.md § dispatch](plugin/CONFIGURATION.md#dispatch).
+- A follow-up sets `jig:followed-up` or `jig:followup-failed` when it ends, whether the dispatcher ran it or a person did: the dispatcher's wrapper writes it once the pass's exit is recorded, `jig dispatch marker done` writes `jig:followed-up`, and the new `jig dispatch marker failed <PR> --comment <id>` writes `jig:followup-failed`, leaves the run's marker claiming the follow-up, and exits `1` when that label is not written.
+- `jig dispatch labels [--repo <path>]... [--yes]` creates the state labels, with the manual-operations label and `automation`, once, without installing the dispatcher's job, and says which labels it created and which a person must create, each with its command.
+- An optional workflow template, drive-pr's `templates/github/state-labels.yml`, replaces `jig:converged` with `jig:stale` on a push to the pull request, without waiting for the dispatcher.
+
+### Changed
+
+- The pull request state labels are one projection in the plugin's shared code, which the drive, the follow-up and the dispatcher all write through; each of them reads `dispatch.labels` from the repository's default branch, so a repository that only drives pull requests can turn the labels on, and every writer uses one prefix. With `only_labeled` on, a drive armed by hand now comes into the dispatcher's scope through its own `jig:driving` label.
+- The dispatcher reads a pull request's drive ledger again just before it writes its state label, and leaves the pull request to a later run when the ledger changed since it read it, so a drive's label for a newer ledger is not replaced from the older one the run planned from.
+
+## [0.192.0] - 2026-11-10
+
+### Added
+
+- **Jira: pools limited to issue types.** `issue_tracker.jira.pool_issue_types`
+  (such as `[Task, Bug]`) limits every candidate pool and population the Jira
+  adapter reads (the pools `work-batch`, `jig dispatch` and the queues pick
+  from, the issues assigned to an identity, and the open population the facet
+  census and `file-issue`'s sweep count, and the fleet metrics' unlabelled
+  window) to those issue types, so a team that shares a large project with
+  other lanes reads only its own items. Reads by key, an issue's children and
+  reads a label defines are not limited. A type the project lacks is refused
+  by `tracker.ts reach`, the audit's tracker check and before the first
+  limited read. Unset, every type is read as before.
+- **Jira: several link types per relation.** Each relation in
+  `issue_tracker.jira.link_types` may name a list of link types, each a name or
+  `{ name, inverted }`, such as `blocks: [Blocks, { name: "Depends", inverted:
+  true }]`, for a site whose planning app records dependencies on a link type
+  of its own. Every listed type is read and each edge reported once; a new
+  link is written with the first; `inverted: true` reads a type whose outward
+  side means "is blocked by". Every name is resolved against the site's link
+  types and refused when it matches none or several, and a name may appear
+  only once across the relations. A plain name keeps its meaning.
+
+## [0.191.0] - 2026-11-10
+
+### Added
+
+- Answer a parked decision with `approve` for its recommendation or
+  `choose <option name>`, optionally followed by a `note <key>:` condition.
+  The drive receives the chosen option and decision. Other wording remains
+  a free answer, and `jig ask` labels how it was read.
+
+### Changed
+
+- **Breaking:** new parks refuse option names that become identical after
+  answer normalization or change when the public ledger redacts them.
+  Rename colliding options and remove email addresses and account identifiers
+  from option names before parking them.
+
+### Fixed
+
+- Re-arm, dispatch, `jig ask` and `jig send` read the same conversation and
+  thread answers, using each person's latest edit. Conflicting choices or
+  notes leave the decision disputed and notify the people involved; no
+  item with a person's answer is decided provisionally.
+- Preserve readable partial park answers, accept a thread choice with its keyed note, and keep structured choice options selectable and bounded in drive notices.
+- Keep answer parsing, redaction, and dispatch ordering safe for punctuation, notes, duplicate companion entries, and repeated partial evidence.
+
+## [0.190.2] - 2026-11-10
+
+### Fixed
+
+- Dispatch no longer starts a served person's item in the wrong repository's
+  checkout. Where several repositories share a tracker team, each one's tick
+  read every item assigned to a served person, so an item labelled for one
+  repository could be launched from another's. An item that carries another
+  repository's label (a `review.taxonomy.repos` entry other than the
+  checkout's `review.repo_label`) is now left to that repository, both when
+  the queue is read and again at launch; an item with no repository label, or
+  one that also carries this repository's, is unchanged. A checkout that sets
+  no `review.repo_label` keeps today's behaviour.
+
+## [0.190.1] - 2026-11-10
+
+### Fixed
+
+- A served-person pickup on GitHub Issues no longer stops with "Field 'id' doesn't exist on type 'Assignable'" when the item has no assignee: the inherited claim's assignment now selects only a field the `Assignable` interface declares, so the claim goes through.
+
+## [0.190.0] - 2026-11-10
+
+Fixes and additions to the `docs`, `adr`, `change-areas` and `jig` skills.
+
+### Added
+
+- `docs`: `docs.index` shapes the generated `INDEX.md`: a `preamble` file kept
+  verbatim above the listing, a `descriptions` line per category (or each
+  folder's `README.md` description, with `descriptions_from_readme`), an
+  `order` (`name`, `count`, or categories listed first) and `frontmatter`,
+  with `last_updated` stamped. An index with frontmatter is held to the
+  schema like any page. With none of these set, the output is unchanged.
+- `adr`: `validate-rules.ts` takes `--interpreter=yaml`, or reads a top-level
+  `interpreter: yaml` field in the catalog, for a catalog enforced by an
+  interpreter that parses YAML. The comparison with the reference
+  interpreter's line reading is then not made, so double-quote escapes and a
+  block-list `exclude` pass, and the checks that hold for either reader stay.
+  A rule with an `implementation`, `detector` or `pattern_<name>` field is no
+  longer reported for lacking `pattern`.
+- `change-areas`: `runCheck` takes `invariants`, keyed by the generic
+  invariants' names (`graph`, `output-names`, `workspace`, `generated`), to
+  exempt one or replace it with the composer's own check; `checkCatalog`
+  takes the same map. An unknown name is refused.
+
+### Fixed
+
+- `jig`: the manual copy layout in the plugin README now lists the
+  plugin-root files the skill reads, and the skill says where to read them
+  when they are missing.
+- `docs`: the reader no longer assigns a loop index inside the loop or uses
+  two regular expressions with super-linear backtracking (SonarCloud's notes
+  on the docs reader); what it reads is unchanged.
+
+## [0.189.3] - 2026-11-10
+
+### Fixed
+
+- `jig dispatch` no longer stops a repository's turn with "issue_tracker.facets.size names a store, but the repository's label taxonomy has no size group" when the repository names a size store. The pickup planner reads the size values from the repository's own label taxonomy, as the tracker already does.
+
+## [0.189.2] - 2026-11-10
+
+### Fixed
+
+- Review passes disable background tasks in Claude Code and report unfinished held fixes before another round is spent.
+- The standalone review loop waits for the configured reviewer's evidence on the current head before reporting convergence.
+- Accepted findings require a recorded triage-ladder verdict for their round, and thread resolution requires a later reply from the resolving login.
+- Code-scanning severity metrics read the linked alert, support repository-specific mappings and keep unreadable alerts unknown.
+
+## [0.189.1] - 2026-11-10
+
+### Fixed
+
+- Dispatcher ticks remove Electron's Node mode and crash reporter environment
+  before starting child programs, so an Electron host does not change how those
+  programs run.
+- Before opening a drive workspace, the dispatcher verifies the pull request's
+  head repository and commit, refusing mismatched remotes and stale checkouts
+  before repository setup hooks run. Merged follow-ups can still recreate a
+  deleted branch from the base.
+- Dispatcher-launched drives preserve the tick's configuration layers across
+  fresh terminal shells, including a custom or relative `JIG_HOME`.
+
+## [0.189.0] - 2026-11-10
+
+### Added
+
+- An owner-host steward inspects stopped work and the assigned queue when
+  its input changes, at most three times an hour. It proposes bounded
+  recoveries, one fixed resume for a routine question, missing issue facets,
+  queue tie order and clearer human needs; the next dispatcher tick applies
+  its records under existing holds, account admission and recovery budgets.
+  Enable it in the machine dispatch file with `steward.enabled: true` and
+  the repository's `steward` stage.
+
+## [0.188.0] - 2026-11-10
+
+### Added
+
+- Dispatch labels: `jig:followup-failed` marks a merged pull request whose follow-up failed and waits for a person; a later follow-up that is done replaces it with `jig:followed-up`. With the dispatch labels on, the dispatcher also keeps marker labels on the pull requests it reads: the repository's manual-operations label (`issue_tracker.labels.manual_ops`, `manual-ops` by default) on a pull request whose `## Out-of-tree follow-ups` section lists a step not yet checked off, kept after the merge until the follow-up is done; and `automation` on a pull request a bot opened that carries no `automation:` label, unless the bot is one the adoption rule names (the host's own identity). Create the new labels with `jig install dispatch --repo <path> --yes`, which lists the ones the signed-in account may not create; until they exist, the dispatcher reports each refused write and tries again at the next run ([CONFIGURATION.md](plugin/CONFIGURATION.md#dispatch)).
+- The audit's `config-fit` suggests labelling the workflow steps that open pull requests (`peter-evans/create-pull-request`, `gh pr create`) with an `automation:` label (`suggestion:automation-labels`).
+
+### Changed
+
+- The dispatcher drives an automation pull request (a bot's that `dispatch.adopt.authors` does not name, or one carrying `automation` or an `automation:` label) only while it needs work: a check on its head failed (a run cancelled on a superseded head, or one waiting for approval, is no failure), it conflicts with its base, or a review thread is unresolved. That holds for the adoption rule and for the re-drives, takeovers and re-arms the dispatcher starts of itself, such as a converged drive whose head moved. A healthy one is left for a person to merge; `jig:drive` or `jig:rearm` still starts one on request. A bot the adoption rule names is the host's own identity: its pull requests are adopted as before unless they carry an automation label.
+- **Breaking:** `dispatch.labels.prefix` takes at most 35 characters (39 before), so every label of the set, `followup-failed` the longest, fits the forge's 50. A repository whose prefix is longer must shorten it to at most 35 characters in its `.config/jig.yaml` on the default branch before upgrading, or the dispatcher refuses its `dispatch` section.
+- `dispatch.labels.prefix` may not start with `automation:`, the family workflows label their pull requests with; a prefix that does is refused like any other invalid one.
+- The dispatcher's repository query reads each open pull request's description, its head's checks and its review threads, which costs two points of the forge's GraphQL budget per page of 50 pull requests instead of one.
 
 ## [0.187.0] - 2026-11-10
 
@@ -6559,7 +6753,19 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.187.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.194.0...HEAD
+[0.194.0]: https://github.com/jig-harness/jig/compare/v0.193.0...v0.194.0
+[0.193.0]: https://github.com/jig-harness/jig/compare/v0.192.0...v0.193.0
+[0.192.0]: https://github.com/jig-harness/jig/compare/v0.191.0...v0.192.0
+[0.191.0]: https://github.com/jig-harness/jig/compare/v0.190.2...v0.191.0
+[0.190.2]: https://github.com/jig-harness/jig/compare/v0.190.1...v0.190.2
+[0.190.1]: https://github.com/jig-harness/jig/compare/v0.190.0...v0.190.1
+[0.190.0]: https://github.com/jig-harness/jig/compare/v0.189.3...v0.190.0
+[0.189.3]: https://github.com/jig-harness/jig/compare/v0.189.2...v0.189.3
+[0.189.2]: https://github.com/jig-harness/jig/compare/v0.189.1...v0.189.2
+[0.189.1]: https://github.com/jig-harness/jig/compare/v0.189.0...v0.189.1
+[0.189.0]: https://github.com/jig-harness/jig/compare/v0.188.0...v0.189.0
+[0.188.0]: https://github.com/jig-harness/jig/compare/v0.187.0...v0.188.0
 [0.187.0]: https://github.com/jig-harness/jig/compare/v0.186.0...v0.187.0
 [0.186.0]: https://github.com/jig-harness/jig/compare/v0.185.3...v0.186.0
 [0.185.3]: https://github.com/jig-harness/jig/compare/v0.185.2...v0.185.3

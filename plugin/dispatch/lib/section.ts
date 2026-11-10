@@ -11,7 +11,8 @@ import {
   type TrackerConfig,
 } from "../../skills/do-item/scripts/lib/tracker/config.ts";
 import { CANONICAL_STATES } from "../../skills/do-item/scripts/lib/tracker/port.ts";
-import { DEFAULT_LABELS, type LabelConfig } from "./labels.ts";
+import { parseLabelConfig } from "../../shared/pr-labels/config.ts";
+import type { LabelConfig } from "./labels.ts";
 import { duration } from "./machine-config.ts";
 import type { AdoptRule, DispatchSection } from "./types.ts";
 
@@ -48,12 +49,9 @@ const KEYS = [
   "labels",
   "adopt",
 ];
-const LABEL_KEYS = ["enabled", "prefix", "only_labeled"];
 const ADOPT_KEYS = ["enabled", "authors", "within"];
 /** `adopt.within`'s default: a week. */
 const DEFAULT_ADOPT_WITHIN_MS = 168 * 3_600_000;
-/** A GitHub label is at most 50 characters, and the longest name the prefix goes before is `followed-up`. */
-const MAX_PREFIX = 50 - "followed-up".length;
 
 /** `pull_requests.branch_name`'s default, the branch form of an item. */
 const BRANCH_PATTERN = "{key_lower}-{slug}";
@@ -160,62 +158,9 @@ function noticesBranch(value: unknown): Checked<string | null> {
   return named;
 }
 
-function flag(
-  value: unknown,
-  field: string,
-  fallback: boolean,
-): Checked<boolean> {
-  if (value === undefined || value === null) return ok(fallback);
-  if (typeof value !== "boolean")
-    return invalid(`dispatch.labels.${field} must be true or false`);
-  return ok(value);
-}
-
-function prefix(value: unknown): Checked<string> {
-  if (value === undefined || value === null) return ok(DEFAULT_LABELS.prefix);
-  // `gh pr edit --add-label` splits its value at commas.
-  if (
-    typeof value !== "string" ||
-    value === "" ||
-    value !== value.trim() ||
-    value.includes(",") ||
-    value.length > MAX_PREFIX
-  )
-    return invalid(
-      `dispatch.labels.prefix must be a nonempty string of at most ${MAX_PREFIX} characters, with no comma and no space at either end`,
-    );
-  return ok(value);
-}
-
-/** `dispatch.labels`: off unless `enabled`, and `only_labeled` only with it. */
+/** `dispatch.labels`, checked as every writer of the state labels checks it. */
 function labels(value: unknown): Checked<LabelConfig> {
-  if (value === undefined || value === null) return ok(DEFAULT_LABELS);
-  if (!isMapping(value)) return invalid("dispatch.labels must be a mapping");
-  const raw = value as Record<string, unknown>;
-  const unknown = Object.keys(raw).filter((k) => !LABEL_KEYS.includes(k));
-  if (unknown.length > 0)
-    return invalid(
-      `dispatch.labels has unknown key(s): ${unknown.join(", ")} (known: ${LABEL_KEYS.join(", ")})`,
-    );
-  const enabled = flag(raw.enabled, "enabled", DEFAULT_LABELS.enabled);
-  if (!enabled.ok) return enabled;
-  const labelPrefix = prefix(raw.prefix);
-  if (!labelPrefix.ok) return labelPrefix;
-  const onlyLabeled = flag(
-    raw.only_labeled,
-    "only_labeled",
-    DEFAULT_LABELS.onlyLabeled,
-  );
-  if (!onlyLabeled.ok) return onlyLabeled;
-  if (onlyLabeled.value && !enabled.value)
-    return invalid(
-      "dispatch.labels.only_labeled needs dispatch.labels.enabled: with the labels off, no pull request carries one",
-    );
-  return ok({
-    enabled: enabled.value,
-    prefix: labelPrefix.value,
-    onlyLabeled: onlyLabeled.value,
-  });
+  return parseLabelConfig(value);
 }
 
 /** `dispatch.adopt.authors`: a nonempty list of logins; `null` (the dispatcher's own login) when absent. */

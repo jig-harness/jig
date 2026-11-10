@@ -77,8 +77,8 @@ repositories it did not read still owe, copies the outcome log, writes the
 dashboard's line and writes its receipt. Each phase lives in its own module
 under `plugin/dispatch/lib/`.
 
-Item 44 ([line-at-capacity.md](line-at-capacity.md)) adds four parts to
-this tick. The observe phase reads the served people's assigned items
+The [dispatcher](../plugin/README.md#the-dispatcher) owns these parts of
+the tick. The observe phase reads the served people's assigned items
 beside the factory identity's, and makes the board read, a query of its
 own once a repository's ledgers name its converged drives
 ([dispatch-board.md § The board read](dispatch-board.md#the-board-read)).
@@ -208,7 +208,7 @@ when it fails. The phase names are the ones a receipt times.
 | `plan` | `tick-plan.ts` | everything above, the follow-up outcomes, the idle clock, the nudges | the idle clock, released pickups, settled nudges, the follow-up outcomes it settles | a write the database refuses is a defect: it stops this repository in phase `plan` |
 | `log` | `tick-settle.ts` | the ended launch records, the ledgers | one outcome row per ended record, with its end | reported; the record is kept until its row lands |
 | `apply` | `tick-apply.ts` | each target read again just before its launch, the failure ledger | the launch record, the forge claim or marker, the runtime's launch, nudges, notices, the failure ledger | per action: refused, reported, tried again next tick; a nudge, notice, claim end or marker answer that keeps failing backs off (see Failures) |
-| `labels` | `tick-labels.ts` | the ledgers, the failure ledger | the state labels on pull requests, the failure ledger | per write, reported; one that keeps failing backs off (see Failures) |
+| `labels` | `tick-labels.ts` | the ledgers, each written pull request's ledger read again just before its write, the failure ledger | the state labels on pull requests, the failure ledger | per write, reported; one whose ledger changed since the tick read it waits for a later tick; one that keeps failing backs off (see Failures) |
 | `shared` | `tick-shared.ts` | the shared records' reads and writes this turn | none | none |
 | Close (`close`) | `tick.ts`, `tick-settle.ts`, `tick-reads.ts`, `tick-line.ts` | the receipt, the launch records, the forge's rate limit as the tick started (put on every repository's report) | outcome rows for repositories not read and not held by another tick, the failure ledger's rows for each repository read and for the tick, the month files, the line (only by a tick that read every repository of the machine file), the receipt | a part that reports its failure is said on the receipt, which stays complete; exit status 1; a budget that does not read is reported as unreadable. A defect in a closing step marks the receipt not completed |
 
@@ -255,8 +255,9 @@ of reads in flight. Each repository is read in one GraphQL query
 (`forge-batch.ts`), run in its checkout so the forge client names the
 repository as its own view of the checkout does: the repository and its
 default branch, `.config/jig.yaml` on that branch, and its open pull
-requests, 50 to a page (one point of the forge's GraphQL budget each), each
-with its labels, head, mergeability and first 100 comments, in the shapes
+requests, 50 to a page (two points of the forge's GraphQL budget each), each
+with its labels, description, head, mergeability, its head's checks,
+its first 100 review threads and first 100 comments, in the shapes
 the pull request and comment listings give them. A pull request with more
 comments than that is listed on its own, in full. A query that fails or
 reads in part leaves each of these to its own read, as before it. Each pull
@@ -608,7 +609,7 @@ tracker identities; a repository's file cannot add to it), and wherever the
 not-started item a person with write access assigned to a
 [served person](../GLOSSARY.md), whatever its state, and each unassigned
 open item under an epic assigned to one, nested epics walked level by
-level, with `jig:hold` and `hitl` keeping an item waiting. Their pull
+level, with `jig:hold` and `hitl` keeping an item waiting. Every repository's tick reads the same assigned list from a shared tracker team, so an item that carries another repository's label (one of `review.taxonomy.repos` other than this repository's `review.repo_label`) is left to that repository's checkout, neither wanted nor reported as held, and refused again at the launch recheck; an unlabelled item stays startable by any. Their pull
 requests are adopted as `dispatch.adopt.authors` adopts a repository's own.
 The tick ranks those items by rules as data, shows each item it holds out
 with its reason, and starts the next within the host's load factor; the
@@ -616,8 +617,7 @@ session claims it with `claim --for <person>`, which keeps the served person
 as its assignee, so the stalled and double-claim watches read the served
 people's in-progress items as they read the factory identity's. How the
 ranking, the cheap reads and the claim work is in
-[line-at-capacity.md § Serving named people](line-at-capacity.md#serving-named-people)
-(item 44).
+[served pickups](../plugin/README.md#the-dispatcher).
 
 **The forge.** The tick lists the repository's open pull requests and reads
 each one's comments for the ledger's marker, as the drive itself does; it
@@ -852,26 +852,73 @@ this machine no longer has is still found and reported. A merge
 the cap keeps from starting at once stays wanted until a later tick starts
 it; nothing about it depends on a time window between ticks.
 
-**Labels** (optional). A repository may turn on dispatch labels
-(`dispatch.labels`, off by default, every name under a prefix the
-repository picks, `jig:` by default), which put the tick's view of each
-pull request where a person sees it from any forge client and take a
+**Labels** (optional). A repository may turn on the pull request state
+labels (`dispatch.labels`, off by default, every name under a prefix the
+repository picks, `jig:` by default), which show where each driven pull
+request stands, where a person sees it from any forge client, and take a
 person's commands the same way. With them on, the open pull requests are
 listed with their labels in the same one listing, and the merged ones
 with theirs; with them off, no label is read or written.
 
-- **States**, written by the tick alone: `driving` (a driver runs, or the
+The drive, the follow-up and the tick write the states, all through one
+projection in the plugin's shared code (`shared/pr-labels/`): the label
+set, the prefix, the mapping from a ledger to its state and the diff that
+brings a pull request's labels to it. The drive writes its own pull
+request's label after each ledger write of its own that lands (`driving`
+once it arms, before its first round, removing `drive` in the same write;
+at the stop, the state the exit table the tick's classifier reads too gives,
+drive-pr's `exit-classes.ts`: `converged` for `CONVERGED` while the head is
+the verified head, `parked` for a park, a stop only a person settles, a
+person's stop and a stop the tick re-drives, `driving` for a stop the tick
+re-arms, nothing for `PR_NOT_OPEN`), and the follow-up writes
+`followed-up` or `followup-failed` when it ends, from the dispatcher's
+wrapper or a person's `jig dispatch marker done` or `marker failed`. Each
+reads `dispatch.labels` from the repository's default branch, as the tick
+does (`label-config.ts`), so a repository with no dispatcher turns the
+labels on the same way and every writer uses one prefix; each writes in one
+forge call only where the labels disagree, never writes `stale` or `held`,
+which depend on what only the tick reads, and is best effort: a refused
+write is one line on its output and never changes a drive's exit, and the
+next tick corrects it where a dispatcher runs. A drive leaves a pull
+request carrying `hold` or `held` as it is. Where the tick re-drives a
+stop, it replaces the drive's `parked` with `stale`. There is one mapping, and the
+tick corrects every label at every tick: the drive and the follow-up are
+earlier triggers of the same projection, never a second mapping. No
+writer creates a label: a one-time setup does, `jig dispatch labels
+[--repo <path>] [--yes]`, with no job installed, or `jig install dispatch
+--repo <path> --yes` beside the timer, each naming the labels it created
+and listing, with the command, those a person must create. An optional
+workflow (drive-pr's `templates/github/state-labels.yml`) replaces
+`converged` with `stale` on a push to the pull request, which the next tick
+confirms or corrects.
+
+- **States**, written by the tick at every tick, and by the drive and the
+  follow-up as above: `driving` (a driver runs, or the
   drive stopped on a state the tick re-arms), `converged`, `parked` (a
   person settles it: a park, a stop only a person
   settles, a person's own stop), `stale`, `held` (an open pull request
   waiting its turn in a serialized area, below, whatever its ledger
-  says), and `followed-up` (a merged pull request whose follow-up is
-  done). The ledger is the truth: after the
+  says), `followed-up` (a merged pull request whose follow-up is
+  done) and `followup-failed` (a merged pull request whose follow-up
+  failed and is not started again, so a person acts; a later follow-up
+  that is done replaces it with `followed-up`). A merged pull request's
+  state comes from its follow-up's end, as the plan reads it from the
+  follow-up's outcome record and markers: a failed follow-up is labelled
+  whether or not the pull request carries a label of the set, a done one
+  only when it does. The ledger is the truth: after the
   plan, each managed pull request's state is derived from its ledger
   again and set as its one state label, in one forge call per pull
-  request whose labels disagree and none where they agree. A label a
-  person edited, or one a killed drive left behind, is corrected at the
-  next tick. A ledger the tick cannot read leaves the labels as they are.
+  request whose labels disagree and none where they agree. Just before
+  each state write on an open pull request the tick re-reads its ledger
+  and leaves the pull request to a later tick when the ledger changed since
+  it read it (its generation, its driver's heartbeat, state or exit) or no
+  longer reads, so a drive's label written for a newer ledger is not
+  replaced from the older one the tick planned from; a drive's ledger write
+  that lands between that re-read and the tick's own write can still be
+  undone until the next tick. The re-read lists the pull request's
+  comments, one listing per state write, which a tick makes only where
+  labels disagree. A label a person edited, or one a
+  killed drive left behind, is corrected at the next tick. A ledger the tick cannot read leaves the labels as they are.
   Only the states listed here are kept by this projection, so a state a
   later stage owns, which no ledger produces, is never touched by it.
 - **Commands**, written by a person and read by the tick: `drive` on an
@@ -889,7 +936,11 @@ with theirs; with them off, no label is read or written.
 - **Only labelled pull requests.** With `only_labeled` on, a pull request
   that carries no label of the set is never read for a ledger, launched,
   notified or followed up; what puts one under the dispatcher is a
-  person's `drive`, and the state labels keep it there. Membership reads
+  person's `drive`, or the `driving` label a drive writes on its own pull
+  request when it arms, and the state labels keep it there. So a drive a
+  person arms by hand comes into the dispatcher's scope with its first label
+  and is re-armed, re-driven and followed up from then on; a person keeps one
+  out with `hold`. Membership reads
   any label of the set; which stage is planned never reads one. The scope
   is decided once per tick, from the listings that hold each pull request
   (the open one and the merged one): in scope when each finds a label of
@@ -900,7 +951,24 @@ with theirs; with them off, no label is read or written.
   launch's fresh read is the observation that launch acts on, so it checks
   the scope again there. With `only_labeled` off, every open pull request
   is still read, so a drive a person armed by hand on an unlabelled pull
-  request is found and gets its label.
+  request is found, and its label is the drive's own.
+- **Markers**, written by the tick on every pull request it reads, with no
+  prefix and outside the set, so neither puts a pull request in scope. The
+  repository's manual-operations label (`issue_tracker.labels.manual_ops`)
+  marks a pull request whose description's `## Out-of-tree follow-ups`
+  section lists a step not yet checked off (a plain item or an unchecked
+  box; the explicit "None", fenced code and comments list none). It is
+  derived from the description as a state is from its ledger, so a hand
+  edit is corrected, and a merged pull request keeps it until every step
+  is checked off or its follow-up is done, which reports each step done or
+  filed; one whose follow-up the tick cannot place keeps it as it is. The
+  listings read each description with its labels, and merged pull
+  requests are listed only where `followup_command` is set. `automation`
+  marks a pull request a bot opened that carries no label of the
+  `automation:` family, which a repository's workflows apply to name their
+  job, unless the bot is one of the host's own authors (the adoption
+  rule's, else the dispatcher's own login); the tick adds it and never
+  removes it or a label of the family.
 
 **Adoption** (optional). A pull request nobody armed is never driven
 otherwise: the drive label asks a person to notice each idle one, which is
@@ -918,7 +986,22 @@ the rule names that bot: driving dependency updates stays a choice the
 repository makes by name. A pull request a person's `hold` label is on is
 never adopted, and one a person stopped carries a ledger that records the
 stop, so adoption, which reads only pull requests with no ledger, never
-reaches it. Everything after adoption is the `drive` command's: the plan
+reaches it. An automation pull request (a bot's that is not one of the
+host's own authors, or one carrying `automation` or an `automation:`
+label) is adopted only while it needs work: a check on its head failed (a
+cancelled run or one waiting for approval did not), it conflicts with its
+base, or a review thread is unresolved. The same holds for the re-drives,
+takeovers and re-arms the plan would start of itself on one with a
+ledger: a healthy one is reported quiet, and only a person's `rearm`
+starts it again. The repository's query reads each open pull request's
+head checks and its review threads with it, and the fresh read before a
+launch counts an automation pull request's threads again, the launch
+waiting when that count does not read, except where trouble is already
+observed (a failed check or a conflict) or a person's `drive` or `rearm`
+asks: those launches need no count. A healthy one is left for a person
+to merge. Whether a failed check failed
+on the infrastructure is not told here: the drive re-runs such a check
+rather than repairing code. Everything after adoption is the `drive` command's: the plan
 arms it as a re-arm, once per head commit (its launch record's facts are
 a labelled arm's), on an admitted account, behind a serialized area's
 hold, and the fresh read before the launch applies the rule again. The
@@ -1187,7 +1270,7 @@ create` does not do) live in the plugin, in
   that `orca agent launch` can bind its agent to
   an account so is checked when the pickup stage is built, and until it
   does, interactive sessions are not launched. A pickup is launched as a
-  headless pass instead ([line-at-capacity.md § Pickups run headless](line-at-capacity.md#pickups-run-headless))
+  headless pass instead ([headless pickups](../plugin/README.md#the-dispatcher))
   and takes the headless form above, with the wrapper running
   `do-item`. The key is kept by the
   record itself for a headless pass: the wrapper claims the record
@@ -1377,7 +1460,7 @@ Orca agent launch can bind its agent to an account is not verified (Orca's
 command line selects accounts only for some agents), so a pickup does not
 start as an interactive session: it runs as a headless pass, as a
 follow-up does
-([line-at-capacity.md § Pickups run headless](line-at-capacity.md#pickups-run-headless)).
+([headless pickups](../plugin/README.md#the-dispatcher)).
 
 A follow-up does not wait for that: it runs as a headless pass, the
 account's vendor's non-interactive command (`claude -p`, `codex exec`) on
@@ -1615,7 +1698,7 @@ stack, [ADR-0012](../docs/adr/ADR-0012-failures-as-values.md)) and the next
 try:
 
 - **An action**, keyed by what it does and its target, as the plan names
-  it: a pull request's dispatch label write (`label PR #<n>`), a
+  it: a pull request's dispatch label write (`label PR #<n>`, and `label markers PR #<n>` for its markers, which back off apart from its state), a
   notification's delivery (`notice <its key>`), a nudge the runtime refused
   (`nudge <record> <episode>`), and this host's claim end or follow-up
   marker answer (`claim-end` or `marker-answer PR #<n> comment <id>`).
@@ -2294,9 +2377,9 @@ One pull request each, in this order; each is usable on its own.
    none), its result recorded through `jig dispatch result` and its slot
    held until its agent ends; the fresh read at launch; stalled
    pickups, double claims and waiting sessions reported. Usable alone:
-   assigning an item is the start button. Item 44's steps 6 and 7
-   ([line-at-capacity.md § Build order](line-at-capacity.md#build-order))
-   start the pickups as headless passes and add the served people's.
+   assigning an item is the start button. The
+   [dispatcher](../plugin/README.md#the-dispatcher) starts headless pickups
+   for the people the host serves.
 5. **Follow-ups and notifications.** The follow-up marker, the follow-up's
    outcome record, and a follow-up pass per merged pull request with the repository's follow-up
    command, which claims the pull request with a manual marker when a

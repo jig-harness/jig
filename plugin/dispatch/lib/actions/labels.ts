@@ -4,18 +4,26 @@
  * says what was written. A pull request is managed when it was read for a
  * ledger and carries one, or carries a label of the set; a merged one when
  * it carries a label of the set, and only its follow-up's end moves it
- * (`followed-up`). An open pull request a serialized change area holds
- * behind another (`contention.ts`) carries `held` whatever its ledger
- * says, and one whose place there cannot be told this tick keeps the
- * labels it has. Only a pull request whose labels disagree is written,
- * in one `gh` call; one that agrees costs nothing.
+ * (`followed-up`). A merged pull request whose follow-up failed, so that a
+ * person acts, carries `followup-failed` whether it carries a label of the
+ * set or not, until a follow-up is done. An open pull request a serialized
+ * change area holds behind another (`contention.ts`) carries `held`
+ * whatever its ledger says, and one whose place there cannot be told this
+ * tick keeps the labels it has. Every pull request read also gets its
+ * marker labels (`pr-markers.ts`). Only a pull request whose labels
+ * disagree is written, in one `gh` call for its state and one for its
+ * markers; one that agrees costs nothing.
  *
  * Writes happen only with `--apply`, for a repository the machine file
  * lists; otherwise the receipt says what would be written. A write the
  * forge refuses (a label that does not exist, no permission) is a record of
  * the receipt, not a failed tick, and a later tick tries again: the failure
  * ledger (`failures.ts`) counts the failures in a row and backs the write
- * off, reported as waiting, until its next try.
+ * off, reported as waiting, until its next try. Just before a state write
+ * the open pull request's ledger is re-read, and the write waits for a
+ * later tick when the ledger changed since this tick read it, so a drive's
+ * label for its newer ledger is not replaced from the older one
+ * (`label-freshness.ts`).
  */
 import type { Contention } from "../contention.ts";
 import type { ActionBook } from "../failures.ts";
@@ -29,6 +37,11 @@ import {
   type Projected,
   stateOf,
 } from "../labels.ts";
+import {
+  type FollowupState,
+  type MarkedLabels,
+  markerChange,
+} from "../pr-markers.ts";
 import { failureText } from "../text.ts";
 import type {
   DrivenPr,
@@ -40,14 +53,22 @@ import type {
 
 export interface ProjectionInput {
   config: LabelConfig;
-  /** The open pull requests, with their labels. */
-  open: ReadonlyArray<{ number: number; labels?: string[] }>;
+  /** The open pull requests, with their labels and what the markers read. */
+  open: ReadonlyArray<{ number: number } & MarkedLabels>;
   /** The open pull requests read for a ledger this tick. */
   read: ReadonlySet<number>;
   drives: readonly DrivenPr[];
   merged: readonly MergedPr[];
   /** The merged pull requests whose follow-up is done. */
   followedUp: ReadonlySet<number>;
+  /** The merged pull requests whose follow-up failed and waits for a person. */
+  followupFailed: ReadonlySet<number>;
+  /** The merged pull requests whose follow-up this tick cannot place (its markers do not read): their owed-steps marker is left as it is. */
+  followupUnplaced: ReadonlySet<number>;
+  /** The repository's manual-operations label; `null` when its name does not read, and the owed-steps marker is left as it is. */
+  manualOps: string | null;
+  /** The host's own authors, whose bot pull requests get no `automation` label (`automation.ts`). */
+  own: readonly string[];
   /** The pull requests serialization holds, or cannot place, this tick. */
   serialized?: Pick<Contention, "held" | "unplaced">;
 }
@@ -109,13 +130,92 @@ export function heldPullRequests(
   );
 }
 
+/** One tick's projection as it is planned: its input, the receipt's labels part and the changes so far. */
+interface Planning {
+  input: ProjectionInput;
+  report: LabelReport;
+  changes: LabelChange[];
+}
+
+/**
+ * One pull request's changes: its state's where `projected` is given, and
+ * its markers' in a call of their own, so a marker label the repository
+ * lacks never holds a state back.
+ */
+function project(
+  { input, report, changes }: Planning,
+  pr: { number: number } & MarkedLabels,
+  projected: Projected | null,
+  consumeDrive: boolean,
+  merged: FollowupState | null,
+): void {
+  const { number } = pr;
+  if (projected !== null) {
+    report.states.push({
+      target: `PR #${number}`,
+      state: projected === "unknown" ? "unknown" : projected.state,
+    });
+    const labels = pr.labels ?? [];
+    const state = labelChange(
+      input.config,
+      number,
+      labels,
+      projected,
+      consumeDrive,
+    );
+    if (state !== null) changes.push(state);
+  }
+  const markers = markerChange(input, pr, merged);
+  if (markers.add.length > 0 || markers.remove.length > 0)
+    changes.push({ pr: number, ...markers, part: "markers" });
+}
+
+/** The open pull requests read: a managed one's state, and every one's markers. */
+function projectOpen(planning: Planning): void {
+  const { input, report } = planning;
+  const { config } = input;
+  const drives = new Map(input.drives.map((d) => [d.number, d]));
+  // Merged between the two listings: the merged state wins, as the plan has it.
+  const mergedNumbers = new Set(input.merged.map((m) => m.number));
+  for (const pr of input.open) {
+    if (!input.read.has(pr.number) || mergedNumbers.has(pr.number)) continue;
+    const labels = pr.labels ?? [];
+    const drive = drives.get(pr.number);
+    report.commands.push(...commandsOf(config, pr.number, labels, drive, true));
+    const managed = drive !== undefined || carriesSet(config, labels);
+    const state = managed ? serialState(input, pr.number, drive) : null;
+    project(planning, pr, state, READABLE(drive), null);
+  }
+}
+
+/** The merged pull requests: a managed one's state, or a failed follow-up's whatever it carries, and every one's markers. */
+function projectMerged(planning: Planning): void {
+  const { input, report } = planning;
+  for (const pr of input.merged) {
+    const labels = pr.labels ?? [];
+    const done = input.followedUp.has(pr.number);
+    const failed = !done && input.followupFailed.has(pr.number);
+    const managed = carriesSet(input.config, labels) || failed;
+    if (managed)
+      report.commands.push(
+        ...commandsOf(input.config, pr.number, labels, undefined, false),
+      );
+    const state = managed ? mergedState(done, failed) : null;
+    const followup: FollowupState = done
+      ? "done"
+      : input.followupUnplaced.has(pr.number)
+        ? "unknown"
+        : "not-done";
+    project(planning, pr, state, false, followup);
+  }
+}
+
 /** The changes the projection wants, and the receipt's labels part before any write. */
 export function planLabels(input: ProjectionInput): {
   report: LabelReport;
   changes: LabelChange[];
 } {
   const { config } = input;
-  const drives = new Map(input.drives.map((d) => [d.number, d]));
   const report: LabelReport = {
     prefix: config.prefix,
     onlyLabeled: config.onlyLabeled,
@@ -125,51 +225,16 @@ export function planLabels(input: ProjectionInput): {
     held: [],
     writes: [],
   };
-  const changes: LabelChange[] = [];
-  const project = (
-    number: number,
-    labels: readonly string[],
-    projected: Projected,
-    consumeDrive: boolean,
-  ) => {
-    report.states.push({
-      target: `PR #${number}`,
-      state: projected === "unknown" ? "unknown" : projected.state,
-    });
-    const change = labelChange(config, number, labels, projected, consumeDrive);
-    if (change !== null) changes.push(change);
-  };
-  // Merged between the two listings: the merged state wins, as the plan has it.
-  const mergedNumbers = new Set(input.merged.map((m) => m.number));
-  for (const pr of input.open) {
-    if (!input.read.has(pr.number)) continue;
-    if (mergedNumbers.has(pr.number)) continue;
-    const labels = pr.labels ?? [];
-    const drive = drives.get(pr.number);
-    report.commands.push(...commandsOf(config, pr.number, labels, drive, true));
-    if (drive === undefined && !carriesSet(config, labels)) continue;
-    project(
-      pr.number,
-      labels,
-      serialState(input, pr.number, drive),
-      READABLE(drive),
-    );
-  }
-  for (const pr of input.merged) {
-    const labels = pr.labels ?? [];
-    if (!carriesSet(config, labels)) continue;
-    report.commands.push(
-      ...commandsOf(config, pr.number, labels, undefined, false),
-    );
-    const done = input.followedUp.has(pr.number);
-    project(
-      pr.number,
-      labels,
-      done ? { state: "followed-up" } : "unknown",
-      false,
-    );
-  }
-  return { report, changes };
+  const planning: Planning = { input, report, changes: [] };
+  projectOpen(planning);
+  projectMerged(planning);
+  return { report, changes: planning.changes };
+}
+
+/** A merged pull request's state: from its follow-up's end, and left as it is while it has none. */
+function mergedState(done: boolean, failed: boolean): Projected {
+  if (done) return { state: "followed-up" };
+  return failed ? { state: "followup-failed" } : "unknown";
 }
 
 /** An open pull request's state: `held` while serialization holds it, its ledger's otherwise; left as it is while its place cannot be told. */
@@ -191,13 +256,29 @@ export interface WriteMode {
   late: () => string | null;
   /** The failure ledger: a write that keeps failing backs off, and each write's result is counted. */
   book?: ActionBook | null;
+  /** Just before a write, why it is skipped this tick (its pull request's ledger changed since the tick read it, `label-freshness.ts`); `null` to write it. */
+  current?: (change: LabelChange) => Promise<string | null>;
 }
 
-/** The failure ledger's key of a pull request's label write. */
-export const labelKey = (pr: number): string => `label PR #${pr}`;
+/** The failure ledger's key of a pull request's label write; its markers' write keeps a key of its own. */
+export const labelKey = (pr: number, part?: "markers"): string =>
+  part === undefined ? `label PR #${pr}` : `label ${part} PR #${pr}`;
 
 const describe = (c: LabelChange): string =>
   [...c.add.map((l) => `+${l}`), ...c.remove.map((l) => `-${l}`)].join(" ");
+
+/** Why a write waits for a later tick: the tick's time is spent, the write backs off, or its ledger changed since the tick read it; `null` to write it now. */
+async function waitsFor(
+  change: LabelChange,
+  key: string,
+  mode: WriteMode,
+): Promise<string | null> {
+  const late = mode.late();
+  if (late !== null) return late;
+  const backing = mode.book?.waits(key) ?? null;
+  if (backing !== null) return backing;
+  return (await mode.current?.(change)) ?? null;
+}
 
 /** Write each change in one call, in pull request order; each outcome goes into the receipt. */
 export async function writeLabels(
@@ -217,15 +298,10 @@ export async function writeLabels(
       out.push({ ...base, outcome: "would", detail: describe(change) });
       continue;
     }
-    const late = mode.late();
-    if (late !== null) {
-      out.push({ ...base, outcome: "waits", detail: late });
-      continue;
-    }
-    const key = labelKey(change.pr);
-    const backing = mode.book?.waits(key) ?? null;
-    if (backing !== null) {
-      out.push({ ...base, outcome: "waits", detail: backing });
+    const key = labelKey(change.pr, change.part);
+    const waits = await waitsFor(change, key, mode);
+    if (waits !== null) {
+      out.push({ ...base, outcome: "waits", detail: waits });
       continue;
     }
     const of = { key, kind: "label" as const, target: base.target };

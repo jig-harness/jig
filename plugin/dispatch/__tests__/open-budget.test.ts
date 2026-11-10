@@ -1,4 +1,8 @@
-import { expect, it, spyOn } from "bun:test";
+import { afterEach, expect, it, spyOn } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { closeStateDb } from "../lib/state.ts";
 import * as accounts from "../lib/accounts.ts";
 import {
   openWithinBudget,
@@ -8,6 +12,14 @@ import {
 import type { MachineConfig } from "../lib/machine-config.ts";
 import type { RepoTarget } from "../lib/types.ts";
 
+const roots: string[] = [];
+afterEach(() => {
+  for (const root of roots.splice(0)) {
+    closeStateDb(root);
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 const repo = {
   slug: "example-org/example-repo",
   path: "/tmp/repo",
@@ -15,9 +27,11 @@ const repo = {
 const dispatched = { name: "test", mark: "test" };
 const launch = { pr: 7, head: "feature/7", dispatched };
 const notice = { notices: "jig-dispatch-notices", dispatched };
-
 function state(): ApplyState {
+  const root = mkdtempSync(join(tmpdir(), "dispatch-open-budget-"));
+  roots.push(root);
   return {
+    root,
     machine: {
       opensPerTick: 4,
       workspaceTimeoutMs: 1000,

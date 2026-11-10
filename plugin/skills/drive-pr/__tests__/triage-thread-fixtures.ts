@@ -1,3 +1,4 @@
+import { seedAcceptedLadder } from "./ladder-verdict-fixture.ts";
 import { createThreadWorktree } from "./thread-worktree-fixture.ts";
 import { scopedStateDir } from "./scoped-state-dir.ts";
 import { stateDirIdentityToken } from "../scripts/lib/state/lease.ts";
@@ -71,6 +72,12 @@ set -euo pipefail
 ) || exit $?
 F="\${TRT_FIXTURES:?fixture dir not set}"
 case "$*" in
+  *'viewer { login }'*'comments(first:100'*)
+    tid=""
+    for b in "$@"; do case "$b" in threadId=*) tid="\${b#threadId=}" ;; esac; done
+    posted=$(ls "$F"/posted-*.json 2>/dev/null | wc -l || true)
+    jq -c --arg id "$tid" --argjson posted "$posted" --arg default "operator" '[.data.node.comments.nodes[] | {author, authorAssociation, body, createdAt}] as $raw | (([$raw[] | select(.authorAssociation as $a | ["OWNER","MEMBER","COLLABORATOR"] | index($a))] | last | .author.login) // $default) as $viewer | (if ([$raw[] | select(.author.login != $viewer)] | length) == 0 then [{author:{login:"reviewer"},authorAssociation:"NONE",body:"finding",createdAt:"2025-12-31T00:00:00Z"}] + $raw else $raw end) as $seen | {data:{viewer:{login:$viewer},node:{id:$id,comments:{nodes:($seen + [range(0; $posted) | {author:{login:$viewer},authorAssociation:"MEMBER",body:"posted reply",createdAt:"2026-06-01T00:00:00Z"}]),pageInfo:{hasNextPage:false,endCursor:null}}}}}' "$F/node.json"
+    exit 0 ;;
   *"pullRequest { number state }"*)
     # The review skill reads the owning PR's liveness immediately before
     # every thread mutation; the fixture PR is open.
@@ -139,6 +146,7 @@ function nodePayload(opts: {
             author: { login: c.author, __typename: c.authorType ?? "User" },
             authorAssociation: c.authorAssociation,
             body: c.body,
+            createdAt: new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString(),
           })),
         },
       },
@@ -189,6 +197,9 @@ export function runTriage(
   fixtureDir: string,
   stateDir: string,
 ): { stdout: string; stderr: string; exitCode: number } {
+  // This fixture models triage already completed before posting accepted replies.
+  if (body.startsWith("**accepted**"))
+    seedAcceptedLadder(stateDir, args[0] ?? "");
   const proc = spawnSync(process.execPath, [SCRIPT, ...args], {
     cwd: scratchWorktree,
     env: withStateDirIdentity({
@@ -289,6 +300,7 @@ export function holdDirectly(
   outcome: string,
   commentUrl: string,
 ): void {
+  if (outcome === "accepted") seedAcceptedLadder(stateDir, key);
   const proc = Bun.spawnSync(
     [
       process.execPath,

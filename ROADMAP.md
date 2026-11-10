@@ -71,15 +71,6 @@ whoever drives it: coming, picking up, driven, needs you, ready to merge,
 or merged. Work moves in any direction, and a pull request
 that was ready and moved back says why. Merging stays a person's.
 
-### 44. The line at capacity: the steward
-
-Every 20 minutes an agent, the [steward](GLOSSARY.md), reads what is stopped
-and waiting, including the served people's queue. It has the dispatcher
-restart a drive that stopped for a passing reason, and fills in a missing
-priority or size. It frames what still needs a person. It never merges,
-settles what only a person may decide, or writes code. Nothing starts while
-its input stays the same.
-
 ### 39. Addresses: asking and telling the stations of the line
 
 Every station on a piece of work has an address, such as
@@ -172,6 +163,18 @@ holds, so an agent that may arm a merge has no other way to push or merge.
 Jig itself keeps a person merging
 ([ADR-0003](docs/adr/ADR-0003-a-person-merges.md)).
 
+### 47. A repository's own rules for starting, reviewing and finishing work
+
+A team states the rules its agent work follows, and every Jig skill that
+claims, moves or closes an item keeps them. Work starts only when a check
+the team supplies passes and only from the states the team allows. The item
+shows that its pull request waits for review. It stops short of done after
+the merge when a person closes it. The board shows stopped work as blocked,
+with a reason. The issue's labels can put reviewers and labels on the pull
+request, and bring skills and notes to the agent that implements it. The
+dispatcher can also pick up from an unassigned ready pool. Every rule is
+optional, and a team that sets none keeps today's behaviour.
+
 ### 26. `init`: setting a repository up for Jig
 
 One command in a fresh clone that derives the values the repository already
@@ -221,7 +224,10 @@ asks. Every way Jig's tools file an issue through the tracker sets all three
 leave priority and size to triage. The weekly check can move an issue missing an attribute back to
 triage while it has not been started. Jira's issue-type and custom-field
 stores and Linear's estimate are built; still to come are live checks of
-those stores.
+those stores. Also to come: an epic recognised by its issue type as well as
+its label. Several tracker names will read as one value, such as a site's
+seven priorities onto Jig's four. The weekly check will be able to comment
+without moving an issue.
 
 ### 43. Consumer actions: which Jig changes a repository must act on
 
@@ -242,7 +248,10 @@ change.
 A plan file kept in the repository, beside Linear, GitHub Issues and
 Jira. The [tracker interface](GLOSSARY.md) first gains attaching a file,
 the one operation the skills need that the interface does not have yet, and
-the workspace launcher learns to open GitHub issues.
+the workspace launcher learns to open GitHub issues. On Jira, a team can
+scope work to chosen issue types and read dependencies from several link
+types. Each issue type can have its own workflow states. A team can sign in
+with a scoped or brokered token instead of a personal one.
 
 ### 27. Work types: depth by kind of work
 

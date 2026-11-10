@@ -138,6 +138,8 @@ direction only) and `deployTier`. Optional blocks:
 | `validation` | `{ profile?, ownTests?, notes? }` | the validation plan |
 | `generated` | list of `{ outputs, source, command, check, notes? }`, M2's [inventory format](https://github.com/jig-harness/jig/blob/main/modules/M2-generated-artifact-freshness/README.md) | the validation plan, `generated` |
 | `review` | `{ skills, notes? }` | `review`, `reviewSkills`, the review table |
+| `implementation` | `{ skills?, notes? }`, at least one | the implementation guidance of [do-item](../do-item/SKILL.md), for an item that reaches the area |
+| `pr` | `{ labels?, reviewers? }`, at least one; a reviewer is a login or `org/team`, with or without `@` | do-item's pull-request planner, for a pull request whose diff touches the area's own globs |
 | `postDeploy` | list of `{ action, when, envs, notes? }` | `postDeploy`, the checklist |
 | `tracker` | `{ labels?, flags? }`; `linear` is its older spelling, not both | `linear` |
 | `agent` | text | the agent routing of [do-item](../do-item/SKILL.md) |
@@ -205,11 +207,22 @@ runMain("change-areas", () =>
   (`seedGlobs`, `matchSeedAreas`, `applyImpliedClosure`, `resolveAreas`,
   `transitiveImpliedBy`, `changedFilesFromGit`), so a composer rebuilds its
   own policy in its own order.
-- `runCheck(argv, { catalogPath, fields, checks })` in `lib/cli.ts` runs the
-  check with the composer's fields and its own invariants;
-  `lib/check.ts` exports `checkCatalog(catalog, { root, trackedFiles })` and
+- `runCheck(argv, { catalogPath, fields, checks, invariants })` in
+  `lib/cli.ts` runs the check with the composer's fields and its own
+  invariants; `lib/check.ts` exports
+  `checkCatalog(catalog, { root, trackedFiles }, invariants?)` and
   `uncoveredFiles(files, catalog)` for a policy that every file belongs to an
   area.
+- `invariants` exempts or replaces a generic invariant by its name: `false`
+  turns it off, a function `(catalog, { root, trackedFiles }) => string[]`
+  stands in for it. The names, in the order they are reported, are `graph`
+  (the `impliedBy` graph), `output-names` (colliding GitHub output names),
+  `workspace` (a workspace is a directory one area's paths cover) and
+  `generated` (generated outputs and sources); `INVARIANTS` in `lib/check.ts`
+  lists them. A repository that deliberately splits one workspace into two
+  areas replaces `workspace` with a check against the union of both areas'
+  paths. A name that is none of these is refused (`runCheck` exits 2), so a
+  typo cannot exempt nothing.
 
 Jig's own
 [`scripts/change-areas.ts`](https://github.com/jig-harness/jig/blob/main/scripts/change-areas.ts)

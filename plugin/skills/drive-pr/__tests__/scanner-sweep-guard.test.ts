@@ -1,3 +1,4 @@
+import { seedAcceptedLadder } from "./ladder-verdict-fixture.ts";
 /**
  * A declined code-scanning finding closes only over a dismissed alert, on
  * every path that resolves a merit reply: the replied-thread sweep and
@@ -117,6 +118,8 @@ out() { if [ -n "$filter" ]; then printf '%s' "$1" | jq -r "$filter"; else print
 tid=""
 for a in "$@"; do case "$a" in threadId=*) tid="\${a#threadId=}" ;; esac; done
 case "$*" in
+  *'viewer { login }'*'comments(first:100'*)
+    out "$(jq -nc --arg id "$tid" --arg default "example-user" 'first(inputs | (.data.repository.pullRequest.reviewThreads.nodes[]? | select(.id == $id)), (.data.node? | select(. != null and .comments != null))) as $t | [$t.comments.nodes[] | {author, authorAssociation, body, createdAt}] as $raw | (([$raw[] | select(.authorAssociation as $a | ["OWNER","MEMBER","COLLABORATOR"] | index($a))] | last | .author.login) // $default) as $viewer | (if ([$raw[] | select(.author.login != $viewer)] | length) == 0 then [{author:{login:"reviewer"},authorAssociation:"NONE",body:"finding",createdAt:"2025-12-31T00:00:00Z"}] + $raw else $raw end) as $seen | {data:{viewer:{login:$viewer},node:{id:$id,comments:{nodes:$seen,pageInfo:{hasNextPage:false,endCursor:null}}}}}' "$F"/threads.json "$F"/node.json 2>/dev/null)"; exit 0 ;;
   *resolveReviewThread*)
     printf '%s\\n' "$tid" >> "$F/resolved.txt"
     out '{"data":{"resolveReviewThread":{"thread":{"isResolved":true}}}}'; exit 0 ;;
@@ -184,11 +187,12 @@ function unlinkedComments(id: string, replies: string[]): Comment[] {
 function graphqlComments(comments: Comment[]) {
   return {
     pageInfo: { hasNextPage: false },
-    nodes: comments.map((c) => ({
+    nodes: comments.map((c, i) => ({
       url: c.url,
       author: { login: c.author, __typename: "User" },
       authorAssociation: c.authorAssociation,
       body: c.body,
+      createdAt: new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString(),
     })),
   };
 }
@@ -288,6 +292,7 @@ function heldKeys(dir: string, stateDir: string): string {
 }
 
 function holdAccepted(dir: string, stateDir: string, key: string, url: string) {
+  seedAcceptedLadder(stateDir, key);
   const r = run(
     DRIVE_STATE,
     [

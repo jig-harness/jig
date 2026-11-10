@@ -33,7 +33,7 @@ import {
   machineFile,
   waitFor,
 } from "./launch-fixtures.ts";
-import { claudeRuns, withOrigin } from "./pickup-fixtures.ts";
+import { claudeRuns, publishedBranch, withOrigin } from "./pickup-fixtures.ts";
 
 let current: World | null = null;
 afterEach(() => {
@@ -220,6 +220,7 @@ function queued(
     ["rearm", "followup", "notify"],
     { followup_since: "2026-10-30T00:00:00Z" },
   );
+  publishedBranch(w, "feature/1");
   w.setPrs("open", [openPr(1, "feature/1"), openPr(99, "feature/99")]);
   w.setComments(1, [ledgerComment(1000, stoppedLedger(1, 16))]);
   w.setComments(99, [

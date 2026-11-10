@@ -1131,7 +1131,10 @@ test.skipIf(process.platform === "win32")(
 import { appendFileSync, readFileSync } from "node:fs";
 const args = process.argv.slice(2);
 const query = args.find(arg => arg.startsWith("query=")) ?? "";
-if (query.includes("node(id:$threadId)")) {
+if (query.includes("viewer { login }")) {
+  const id = args.find(arg => arg.startsWith("threadId="))?.slice(9);
+  console.log(JSON.stringify({ data: {viewer: {login: "operator"}, node: {id, comments: {nodes: [{author: {login: "reviewer"}, createdAt: "2026-01-01T00:00:00Z"}, {author: {login: "operator"}, createdAt: "2026-01-01T00:01:00Z"}], pageInfo: {hasNextPage: false, endCursor: null}}}}}));
+} else if (query.includes("node(id:$threadId)")) {
   appendFileSync(process.env.TEST_GH_LOG!, "read\\n");
   if (process.env.TEST_PR_STATE === "unreadable") process.exit(1);
   const id = args.find(arg => arg.startsWith("threadId="))?.slice(9);

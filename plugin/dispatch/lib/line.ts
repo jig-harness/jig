@@ -19,7 +19,7 @@ import type {
 } from "./dashboard-contract.ts";
 import type { LaunchAction, ReadRecord } from "./launches.ts";
 import { pullUrl } from "./forge.ts";
-import { actOfNeed } from "../../shared/acts.ts";
+import { actOfNeed, NEED_ACTS, type NeedAct } from "../../shared/acts.ts";
 import { decisionOf } from "./line-decision.ts";
 export { decisionOf } from "./line-decision.ts";
 import { holds, targetOf } from "./launches.ts";
@@ -126,6 +126,7 @@ const LAUNCH_ACTIONS: ReadonlySet<string> = new Set<LaunchAction>([
   "takeover",
   "pickup",
   "followup",
+  "steward",
 ]);
 
 /** The stage a need is about: the launch's own, for a cause about one launch record, else its cause's. */
@@ -157,13 +158,22 @@ function needDecisions(
   const decisions = stuck
     ? []
     : (view.drive(pr)?.waiting ?? []).map(decisionOf);
+  const steward = action.evidence.stewardAct;
+  const proposed =
+    typeof steward === "string" &&
+    (NEED_ACTS as readonly string[]).includes(steward)
+      ? (steward as NeedAct)
+      : undefined;
   return {
     decisions,
-    act: actOfNeed({
-      cause: action.cause,
-      decisionClass: decisions[0]?.decisionClass ?? null,
-      stuck,
-    }),
+    act:
+      action.cause !== "parked" && !stuck && proposed !== undefined
+        ? proposed
+        : actOfNeed({
+            cause: action.cause,
+            decisionClass: decisions[0]?.decisionClass ?? null,
+            stuck,
+          }),
   };
 }
 
@@ -293,7 +303,9 @@ function needsOf(
         at ??
         sightedSince(previous, view.slug, action, nowIso),
       reason: action.reason,
-      question: text(action.evidence, "question"),
+      question:
+        text(action.evidence, "stewardAsk") ??
+        text(action.evidence, "question"),
       decisions,
       notified:
         notification === undefined

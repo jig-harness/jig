@@ -83,7 +83,7 @@ describe.skipIf(process.platform === "win32")("a failing gh call", () => {
   test("by default reports the failure without a stack", () => {
     const r = runScript({});
     expect(r.code).toBe(1);
-    expect(r.stderr).toContain("cannot read owning PR liveness");
+    expect(r.stderr).toContain("cannot read reply evidence");
     expect(r.stderr).toContain(LAST_LINE);
     expect(r.stderr).not.toContain("stderrTail");
     expect(r.stderr).not.toMatch(/\n\s+at /);
@@ -160,7 +160,7 @@ describe.skipIf(process.platform === "win32")("a failing gh call", () => {
     const r = runScript({ JIG_LOG: "debug" }, garbled);
     expect(r.code).toBe(1);
     expect(textField(r.stderr, "cause")).toStartWith(
-      "DecodeError: the owning pull request of thread PRRT_x: $ is not JSON",
+      "DecodeError: reply evidence for thread PRRT_x: $ is not JSON",
     );
   });
 });

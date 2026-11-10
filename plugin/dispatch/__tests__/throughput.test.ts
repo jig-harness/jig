@@ -15,7 +15,7 @@ import {
   world,
 } from "./fixtures.ts";
 import { account, dispatchState, machineFile } from "./launch-fixtures.ts";
-import { withOrigin } from "./pickup-fixtures.ts";
+import { publishedBranch, withOrigin } from "./pickup-fixtures.ts";
 
 let current: World | null = null;
 afterEach(() => {
@@ -57,8 +57,10 @@ it.each([
       "open",
       [1, 2, 3, 4, 5, 99].map((n) => openPr(n, `feature/${n}`)),
     );
-    for (const n of [1, 2, 3, 4, 5])
+    for (const n of [1, 2, 3, 4, 5]) {
+      publishedBranch(w, `feature/${n}`);
       w.setComments(n, [ledgerComment(n * 1000, stoppedLedger(n, 16))]);
+    }
     w.setComments(99, [
       ledgerComment(
         99000,
@@ -132,6 +134,7 @@ it("starts an adoption in its first tick despite ten follow-ups, even with only 
       updatedAt: new Date().toISOString(),
     },
   ]);
+  publishedBranch(w, "feature/99");
   w.setComments(99, []);
   const receipt = await tick(w);
   const started = receipt.repos

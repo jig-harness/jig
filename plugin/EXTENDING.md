@@ -248,7 +248,14 @@ are named by canonical keys (`in_progress`, `in_review`, …) that
     already exist on the site;
   - parent and children are Jira's parent field, for sub-tasks and an
     Epic's issues alike, and relations are issue links of the types
-    `issue_tracker.jira.link_types` names; links of other types are ignored;
+    `issue_tracker.jira.link_types` names, several per relation where it
+    lists them (each edge reported once, a new link written with the first,
+    an `inverted` type read and written the other way round); links of other
+    types are ignored;
+  - every candidate pool and population is limited to the issue types
+    `issue_tracker.jira.pool_issue_types` names, matched to the project's
+    issue types when the site is first read; reads by key, an issue's
+    children and reads a label defines are not;
   - a field a team relies on that Jig's interface has no place for (a size,
     a facet, an owning repository) reads as labels through
     `issue_tracker.jira.field_labels`: each value behind the field's
@@ -398,6 +405,15 @@ triage by opening each finding with it, once its login is the configured
 reviewer or has an entry of its own below. The bullets of the reviewer's
 summary comment are read in this format, after the formats of the login
 that posted it.
+
+GitHub code-scanning threads carry no severity token in their comment. Their
+same-repository details link identifies an alert: its `rule.security_severity_level`
+(`critical`, `high`, `medium`, `low`) takes precedence over `rule.severity`
+(`error`, `warning`, `note`). The defaults map those to blocker, high, medium,
+low, high, medium and low respectively. A repository can override individual
+levels in `review.code_scanning_severities` ([fields](CONFIGURATION.md#review)).
+Thread triage and loop metrics use the same alert mapping; an alert the token
+cannot read remains `unknown` and keeps the ladder inert where configured.
 
 Any other reviewer is added in `review.severity_formats`
 ([fields](CONFIGURATION.md#review)), one entry per login, without a change to

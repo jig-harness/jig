@@ -10,7 +10,11 @@ import { basename, join, relative, sep } from "node:path";
 import { swallow } from "../../../../shared/errors.ts";
 import { isRecord } from "../../../../shared/guards.ts";
 import { CANDIDATE_DIRS as DECISION_DIRS } from "../../../adr/scripts/locate.ts";
-import { isGeneratedIndex, markdownFiles, readFrontmatter } from "./docs.ts";
+import {
+  isGeneratedIndexPage,
+  markdownFiles,
+  readFrontmatter,
+} from "./docs.ts";
 import { byteOrder, isDir } from "./settings.ts";
 
 export const PROJECT_TYPES = ["service", "library", "application"] as const;
@@ -122,7 +126,8 @@ function readTree(repo: string, root: string | null): Tree {
   if (root === null) return { root, types };
   for (const path of markdownFiles(join(repo, root)).sort(byteOrder)) {
     const content = readFileSync(path, "utf8");
-    if (basename(path) === ".orphans.md" || isGeneratedIndex(content)) continue;
+    if (basename(path) === ".orphans.md" || isGeneratedIndexPage(content))
+      continue;
     const type = readFrontmatter(content).fields.get("type");
     const rel = repoPath(repo, path);
     if (typeof type === "string" && !types.has(type)) types.set(type, rel);
@@ -161,7 +166,7 @@ export function expectedDocuments(
   const docs = root ?? "docs";
   const index = join(repo, docs, "INDEX.md");
   const generatedIndex =
-    existsSync(index) && isGeneratedIndex(readFileSync(index, "utf8"));
+    existsSync(index) && isGeneratedIndexPage(readFileSync(index, "utf8"));
   const schemaDoc = root === null ? [] : markdownFiles(join(repo, root));
   const wikiSchema = schemaDoc.find((p) =>
     /^wiki-schema\.md$/i.test(basename(p)),

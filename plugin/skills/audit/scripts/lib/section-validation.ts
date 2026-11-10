@@ -1,4 +1,5 @@
 import { parseDeclaration } from "../../../../gc/config.ts";
+import { manualOpsLabel } from "../../../../dispatch/lib/owed-steps.ts";
 import { dispatchSection } from "../../../../dispatch/lib/section.ts";
 import { parkClasses, resolveAutonomy } from "../../../../shared/autonomy.ts";
 import { ExitError } from "../../../../shared/cli.ts";
@@ -32,6 +33,7 @@ import {
 } from "../../../do-item/scripts/lib/tracker/config.ts";
 import { parseWorkTypes } from "../../../do-item/scripts/lib/work-types.ts";
 import { parsePrPolicy } from "../../../drive-pr/scripts/lib/pr-policy.ts";
+import { parseCodeScanningSeverities } from "../../../resolve-review-comments/scripts/lib/code-scanning-severity.ts";
 import { parseSeverityFormats } from "../../../drive-pr/scripts/lib/severity-formats.ts";
 import { journalPath } from "../../../reflect/scripts/lib/context.ts";
 import { checkLensConfig } from "../../../review/scripts/select-lenses.ts";
@@ -156,6 +158,11 @@ export function skillValidation(
     if (typeof review === "object" && review !== null && !Array.isArray(review))
       parseSeverityFormats((review as Config).severity_formats);
   });
+  attempt("resolve-review-comments (code-scanning severities)", () => {
+    const review = config.review;
+    if (typeof review === "object" && review !== null && !Array.isArray(review))
+      parseCodeScanningSeverities((review as Config).code_scanning_severities);
+  });
   attempt("autonomy (level, ceiling, park classes)", () => {
     const layered = {
       values: config,
@@ -177,6 +184,15 @@ export function skillValidation(
   if (!gc.ok) refuse("gc", gc.failure.reason);
   const dispatch = dispatchSection(config);
   if (!dispatch.ok) refuse("dispatch", dispatch.failure.reason);
+  else if (dispatch.value.labels.enabled) {
+    const manualOps = manualOpsLabel(config, dispatch.value.labels.prefix);
+    if (!manualOps.ok)
+      findings.push({
+        id: "invalid:manual-ops-label",
+        severity: "error",
+        message: `dispatch cannot mark pull requests that owe steps: ${manualOps.failure.reason}; its other labels are unaffected`,
+      });
+  }
   attempt("docs", () => parseDocsSettings(config.docs, root));
   attempt("design-brief-builder (handback)", () => {
     const handback = at(config, "design_brief.handback");

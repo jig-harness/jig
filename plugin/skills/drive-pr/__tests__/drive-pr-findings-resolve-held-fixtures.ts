@@ -1,3 +1,4 @@
+import { seedAcceptedLadder } from "./ladder-verdict-fixture.ts";
 import { fixtureStateTree } from "./scoped-state-dir.ts";
 import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
@@ -16,8 +17,8 @@ import {
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 
 export function createFindingsResolveHeldFixtures() {
-  // `resolve-thread.ts`'s mutation is unconditional — no notion of which push
-  // justifies a resolve. This wrapper is what SKILL.md § 6 calls instead for a
+  // `resolve-thread.ts` checks a posted reply but cannot establish which push
+  // justifies resolving it. SKILL.md § 6 calls this wrapper instead for a
   // held thread; these probes need BOTH a drive-state.ts state dir (to seed
   // `hold`/`bump-round`) and a gh/git fixture (to satisfy the --pushed-sha
   // checks) — a combination neither the `drive-state.ts durability` probes
@@ -61,6 +62,10 @@ export function createFindingsResolveHeldFixtures() {
      */
     sessionless = false,
   ) {
+    if (args[0] === "hold" && args.includes("accepted")) {
+      const key = args[args.indexOf("--key") + 1];
+      if (key) seedAcceptedLadder(stateDir, key, args[1] ?? "999");
+    }
     const proc = Bun.spawn(
       scriptArgv(join(SCRIPTS, "drive-state.ts"), ...args),
       {

@@ -4,8 +4,9 @@
  * `drive` when its author is one the rule names (by default, the login the
  * dispatcher reads the forge as), it was updated within the rule's window,
  * draft or not. A bot's pull request is adopted only when the rule names
- * the bot, one a person's `hold` label is on never is, and an adopted pull
- * request is armed once per head commit. Without the rule nothing changes.
+ * the bot, and, as an automation pull request, only while it needs work;
+ * one a person's `hold` label is on never is, and an adopted pull request
+ * is armed once per head commit. Without the rule nothing changes.
  */
 import { afterEach, describe, expect, it } from "bun:test";
 import { mkdirSync } from "node:fs";
@@ -14,7 +15,14 @@ import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts"
 import { adoptionOf, adopts, type Adoption } from "../lib/adopt.ts";
 import { dispatchSection } from "../lib/section.ts";
 import type { TickReceipt } from "../receipts.ts";
-import { labeled, openPr, SLUG, type World, world } from "./fixtures.ts";
+import {
+  FAILING,
+  labeled,
+  openPr,
+  SLUG,
+  type World,
+  world,
+} from "./fixtures.ts";
 import {
   account,
   driveRuns,
@@ -99,13 +107,13 @@ async function tick(w: World, args: string[] = []): Promise<TickReceipt> {
 const rearms = (r: TickReceipt) =>
   (r.repos[0]?.actions ?? []).filter((a) => a.stage === "rearm");
 
-/** The pull requests the world lists: its own recent draft, its own stale one, another author's, a bot's, and its own on hold. */
+/** The pull requests the world lists: its own recent draft, its own stale one, another author's, a bot's whose check fails, and its own on hold. */
 function population(w: World): void {
   w.setPrs("open", [
     authored(8, "drive-bot", ago(HOUR), { isDraft: true }),
     authored(9, "drive-bot", ago(100 * HOUR)),
     authored(10, "someone-else", ago(HOUR)),
-    authored(11, "app/dependabot", ago(HOUR), { bot: true }),
+    { ...authored(11, "app/dependabot", ago(HOUR), { bot: true }), ...FAILING },
     labeled(authored(12, "drive-bot", ago(HOUR)), "jig:hold"),
   ]);
   for (const n of [8, 9, 10, 11, 12]) w.setComments(n, []);
@@ -225,10 +233,28 @@ describe("the default author", () => {
     adopt: { enabled: true, authors, withinMs: 168 * HOUR },
   });
 
-  it("never adopts a bot the dispatcher's own login makes the default, only one the rule names", () => {
+  it("never adopts a bot the dispatcher's own login makes the default, and adopts one the rule names as the host's own, an automation-labelled one only while it needs work", () => {
     const implicit = adoptionOf(section(null), "drive-app[bot]");
     expect(adopts(pr, implicit as Adoption, null, Date.now())).toBeNull();
     const named = adoptionOf(section(["drive-app[bot]"]), "drive-bot");
     expect(adopts(pr, named as Adoption, null, Date.now())).not.toBeNull();
+    const labelled = {
+      ...pr,
+      labels: ["automation:docs-sync"],
+      failingChecks: false,
+      unresolvedThreads: 0,
+    };
+    expect(adopts(labelled, named as Adoption, null, Date.now())).toBeNull();
+    // Only observed trouble adopts: a fact the forge did not give in full is not trouble.
+    const { unresolvedThreads: _unread, ...unread } = labelled;
+    expect(adopts(unread, named as Adoption, null, Date.now())).toBeNull();
+    expect(
+      adopts(
+        { ...labelled, mergeable: "CONFLICTING" },
+        named as Adoption,
+        null,
+        Date.now(),
+      ),
+    ).toContain("it conflicts with its base");
   });
 });

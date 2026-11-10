@@ -39,6 +39,12 @@ describe("drive-state.ts durability", () => {
       // SIGKILL, not a clean exit: an EXIT trap could otherwise be what makes
       // this pass, and a compacted agent fires no traps.
       const d = stateDirFor("held-killed");
+      await state(
+        d,
+        ["record-ladder", "999"],
+        {},
+        JSON.stringify({ key: "PRRT_a", stance: "accepted", round: 0 }),
+      );
       const holder = Bun.spawn(
         [
           "bash",

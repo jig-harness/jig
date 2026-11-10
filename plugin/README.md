@@ -40,6 +40,7 @@ runs, what it hands over to.
 | [resolve-conflicts](skills/resolve-conflicts/README.md) | Resolves a stopped merge, rebase or cherry-pick: names each side by role, traces why each side changed, regenerates lockfiles and generated files (those the repository lists in its configuration or declares in its change-area catalog), records every decision in the commit message, checks that no change was silently dropped, verifies staged work belongs to the operation, and applies repository obligations to the whole resolved diff; replays past merges to report where they conflicted, why, and the change that removes each cause | `/jig:resolve-conflicts` | Runs in [drive-pr](skills/drive-pr/README.md)'s conflict round; [fix-ci](skills/fix-ci/SKILL.md) takes over for checks that fail after the merge |
 | [fix-ci](skills/fix-ci/SKILL.md) | Fetches a failed CI run's log, sorts the errors, fixes them and verifies locally before pushing | `/jig:fix-ci` | The repair by hand when no [drive-pr](skills/drive-pr/README.md) drive is running or its CI-repair budget is spent; [github-actions](skills/github-actions/SKILL.md) reviews the fix when it changes a workflow |
 | [operator](skills/operator/SKILL.md) | Answers a person's question about the line (where a pull request, item or follow-up stands, what waits on a person, what was said to a station) from [`jig ask`](#asking-a-station-where-it-stands), a status as one fixed card and anything else in sentences, and sends their command to a station (hold, release, drive, an answer to a parked question, a mailbox directive) with [`jig send`](#telling-a-station-what-to-do), only on their instruction and after showing them the dry run; holds no state of its own | `/jig:operator` | Reads and writes the records [do-item](skills/do-item/SKILL.md), [drive-pr](skills/drive-pr/README.md) and the follow-up leave and act on; hands the work of a station to that station's skill, and a question about how Jig works to [jig](skills/jig/README.md) |
+| [steward](skills/steward/README.md) | Inspects stopped work and the assigned queue, proposes recoveries and missing facets, and frames what still needs a person; the next tick applies its records under existing guards | `/jig:steward` (dispatcher only) | Reads the dispatcher's digest, writes owner-local records, and sends recurring recoveries to [reflect](skills/reflect/README.md) |
 
 **Review a change.** Check work against the repository's own standards before and during review: `change-areas` says what the change owes, `review` and `github-actions` check it.
 
@@ -282,7 +283,7 @@ until the plugin is updated.
 **`--apply`** starts what the machine file
 ([`~/.jig/dispatch.yaml`](CONFIGURATION.md#the-machines-dispatch-file))
 enables for each repository: the `rearm` stage, and the `pickup`,
-`followup`, `notify` and `steer` stages below. With `rearm`, each re-arm
+`followup`, `notify`, `steer` and `steward` stages below. With `rearm`, each re-arm
 of a stopped drive, and each takeover of a wedged driver this machine
 started (or another host did: see several hosts, below), or of a silent
 driver no launch started that ran on this host and whose run this host
@@ -381,6 +382,15 @@ open, not-started assignments need no dispatch state. Unassigned items
 under an epic assigned to them inherit that person, including nested
 epics. Only assignments made by a repository writer qualify.
 
+Served people's assignments are read from the tracker team, which several
+repositories may share, so each repository's tick sees the same list. A served
+item that carries another repository's label (one of `review.taxonomy.repos`
+other than this repository's `review.repo_label`) is left to that repository's
+checkout: it is not wanted here and not reported as held, and the launch-time
+recheck refuses it too. An item with no repository label, or one that also
+carries this repository's, stays startable here; without both settings nothing
+is left out.
+
 The Queue view names holds: an open blocker reads "waiting on #N";
 `hitl`, `hitl:*`, `manual-ops` and `jig:hold` read "needs a person to start".
 Eligible items are ranked by priority, the work they unblock, epic order,
@@ -422,6 +432,21 @@ until the runtime can bind it to an account.
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> done|failed [--pr <number> | --none <reason>]
 ```
 
+**The steward** (the `steward` stage, with `steward.enabled: true` in the
+machine file) inspects what the rules leave stopped, under the owner host's
+account and load admission. Every 20 minutes, only when the digest changed,
+it can propose a transient-stop retry, a missing issue facet, queue tie order
+and the act and ask for a human need. It can also propose one fixed resume of
+an ended dispatched pass that recommended an option outside the human-decision
+registry. The follow-up lane's own routine retry runs first. The next tick
+applies its closed records under the current holds and recovery budget;
+the steward itself launches nothing. It never answers a registry park or
+re-arms a drive a person stopped. A pass lasts at most 15 minutes, uses the
+admitted vendor's complex-tier model, and runs at most three times an hour.
+Its digest and records stay in the owner's state database. A recovery class
+re-armed three times in a week proposes a reflection rule.
+See [steward](skills/steward/README.md) for setup and record boundaries.
+
 **Follow-ups** (the `followup` stage) start one headless pass per pull
 request merged since the stage was switched on (`followup_since`), running
 the repository's `dispatch.followup_command` on it (`/followup` in Jig) in
@@ -444,12 +469,18 @@ interactive session to an account. A hidden-marker comment on the merged
 pull request is the claim: the dispatcher posts one naming its launch
 record before it starts the pass, reads the markers back, and stands down
 when an earlier one is there. A follow-up a person runs by hand claims the
-same way, and marks its marker done once it succeeded:
+same way, marks its marker done once it succeeded, which also sets the
+pull request's `jig:followed-up` state label, and says it failed with
+`marker failed`, which sets `jig:followup-failed` and leaves the marker
+claiming the follow-up; since that label is all `marker failed` records,
+it exits `1` when the label is not written, and says it recorded nothing
+where the labels are off:
 
 ```sh
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch marker claim <PR> [--repo owner/name]
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch marker check <PR> --comment <id> [--repo owner/name]
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch marker done <PR> --comment <id> [--repo owner/name]
+bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch marker failed <PR> --comment <id> [--repo owner/name]
 ```
 
 `claim` exits `3` when an earlier marker holds the follow-up, and `check`
@@ -458,7 +489,9 @@ marker written by the dispatcher's own login or by an owner, member or
 collaborator counts. When a dispatched follow-up's pass ends, its wrapper
 writes the result onto the marker (`outcome: done` or `failed`), where
 another host reads it, and the next run writes it there when the wrapper
-could not; the result is also kept in an outcome record per pull request
+could not; the wrapper then sets the pull request's state label
+(`jig:followed-up` or `jig:followup-failed`) where the labels are on, and
+the result is also kept in an outcome record per pull request
 that never expires. A follow-up that failed, or whose marker names a
 launch record this machine no longer has and carries no answer, is notified
 and never started again: delete its marker to have it run again. A pass that
@@ -637,26 +670,58 @@ each with the name it carries now.
 
 A drive stopped with exit 12 gets one recovery pass per head commit in its existing branch tree. The pass inspects the uncommitted work and commits and pushes what belongs to the change, discards only known disposable work, or stops for unclear ownership. A missing tree is reported; no replacement tree is opened. A second exit 12 at the same head waits for a person, whose notice names `jig send drive@owner/name#N rearm`.
 
-**Dispatch labels** (`dispatch.labels` in the repository's
-[configuration](CONFIGURATION.md#dispatch), off by default) make the
-dispatcher's state visible on each pull request, from any forge client,
-and let a person steer it the same way. Each `--apply` run sets each
-managed pull request's state label (`jig:driving`, `jig:converged`,
-`jig:parked`, `jig:stale`, `jig:held`, `jig:followed-up` under the
-default prefix) from its drive ledger and the serialized areas below, writing only where the labels disagree, so a label
-changed by hand, or left behind by a drive that was killed, is corrected
-at the next run; no state label is ever read to decide what to start. The command
+**Pull request state labels** (`dispatch.labels` in the repository's
+[configuration](CONFIGURATION.md#dispatch), off by default) show where each
+driven pull request stands, from any forge client, and let a person steer
+the same way. Each pull request carries one state label (`jig:driving`,
+`jig:converged`, `jig:parked`, `jig:stale`, `jig:held`, `jig:followed-up`,
+`jig:followup-failed` under the default prefix), projected from its drive
+ledger by one mapping its writers share, each writing when what it owns
+changes: the drive itself when it arms (`jig:driving`) and when it stops,
+by the exit table it shares with the dispatcher (`jig:converged` at the
+head it verified; `jig:parked` for a park, a stop a person settles or
+made, and a stop the dispatcher re-drives, which a run turns into
+`jig:stale`), the follow-up when it ends, done or failed, whoever
+runs it, and the dispatcher's every `--apply` run, which also writes
+`jig:stale` and `jig:held` (from the serialized areas below) and corrects
+any label that disagrees, so a label changed by hand, or left behind by a
+drive that was killed, comes back. A drive's and a follow-up's writes need
+no dispatcher: a repository that only drives pull requests gets the labels
+too. Every writer reads `dispatch.labels` from the default branch, so all
+of them use one prefix. A run re-reads a pull request's ledger just before
+it writes, and leaves one whose ledger changed since it read it to a later
+run; no state label is ever read to decide what to start. The command
 labels are a person's commands, which the dispatcher reads and never
 adds: `jig:drive` on a pull request with no drive ledger arms a drive on
 it (the `rearm` stage, once per head commit) and is replaced by the state
 label once the ledger exists. `jig:rearm` asks to restart a stopped drive in its existing branch tree, on an admitted account, and is consumed after launch; it never restarts a running drive or one a person stopped. `jig:hold` keeps every stage off the
 pull request while it is there, reported at every run and removed only by
-a person. With `only_labeled`, the dispatcher reads only the pull requests
-that carry a label of the set. The labels must exist first: `jig install
-dispatch --repo <path>` lists the missing ones beside the timer, and with
-`--yes` creates them where the signed-in account may and lists the rest
-with the command a person runs. A label write the forge refuses is reported in the receipt,
-and the run does not fail.
+a person. Marker labels without the prefix sit beside the set: the
+repository's manual-operations label (`issue_tracker.labels.manual_ops`,
+`manual-ops` by default) on a pull request whose
+`## Out-of-tree follow-ups` section lists a step not yet checked off, set
+from the description at every run and kept after the merge until the
+follow-up is done (a merged pull request is read only where
+`followup_command` is set); and `automation` on a pull request a bot opened
+that carries no label of the `automation:` family a repository's workflows
+apply (`automation:docs-sync`), unless the bot is one the adoption rule
+names, which is the host's own identity. The dispatcher never removes `automation`
+or an `automation:` label, and never puts either on a person's pull
+request. With `only_labeled`, the dispatcher reads only the pull requests
+that carry a label of the set, which includes one a drive armed by hand
+has labelled `jig:driving`; `jig:hold` keeps such a pull request out. The labels must exist first, and no writer
+creates one: `jig dispatch labels [--repo <path>] [--yes]` lists the missing
+ones, the marker labels with them, with no job installed, and with `--yes`
+names each it created and lists the rest with the command a person who may
+create labels runs; `jig install dispatch --repo <path>` does the same
+beside the timer. A label write the forge refuses is reported (in the
+receipt, or on the drive's or the command's output) and fails nothing, except
+`jig dispatch marker failed`, which exits `1` when it cannot write its enabled
+label, since that label is its only record of the failure. An
+optional workflow, drive-pr's
+[`templates/github/state-labels.yml`](skills/drive-pr/templates/github/state-labels.yml),
+replaces `jig:converged` with `jig:stale` on a push to the pull request,
+without waiting for a run.
 
 **Adoption** (`dispatch.adopt` in the repository's
 [configuration](CONFIGURATION.md#dispatch), off by default) drives the
@@ -665,7 +730,13 @@ request with no drive ledger, opened by one of the rule's authors (by
 default the login the dispatcher reads the forge as) and updated within
 its window (a week by default), draft or not, is armed as if it carried
 `jig:drive`, once per head commit. A bot's pull request is adopted only
-when the rule names the bot, and one carrying `jig:hold` never is. Each
+when the rule names the bot, and one carrying `jig:hold` never is. An
+automation pull request (a bot's the rule does not name, or one carrying
+`automation` or an `automation:` label) is adopted, re-driven, taken over
+or re-armed of the dispatcher's own accord only while it needs work: a
+failed check (not a cancelled one or one waiting for approval), a conflict
+with its base, or an unresolved review thread. A healthy one is left for a
+person to merge; `jig:drive` or `jig:rearm` still drives one on request. Each
 run reports every pull request the rule adopted, with the reason.
 
 **Serialized areas.** Some pull requests conflict with each other whenever
@@ -994,8 +1065,9 @@ a probe run then reads nothing, and the next install removes its timer.
 `jig upgrade` refreshes the probe's timer with the tick's; a machine whose
 dispatcher timer was installed before the probe existed gets the probe's at
 its next `jig install dispatch --yes`. `jig install dispatch
---repo <path>` also lists the [dispatch labels](#the-dispatcher) that
-repository turns on and lacks, and creates them with `--yes`. The earlier
+--repo <path>` also lists the [state labels](#the-dispatcher) that
+repository turns on and lacks, and creates them with `--yes`, as
+`jig dispatch labels` does with no job installed. The earlier
 `jig dispatch install [--interval 5m] [--yes] [--uninstall]` keeps working,
 and is the one form that sets an interval other than the machine file's.
 
@@ -1958,7 +2030,7 @@ runs as you:
 | A container image or CI runner that runs an agent | Install at image build: run the install commands with git credentials available. For Claude Code, build a read-only *seed* with `CLAUDE_CODE_PLUGIN_CACHE_DIR=/opt/claude-seed claude plugin install jig --marketplace https://github.com/jig-harness/jig.git#stable`, set `CLAUDE_CODE_PLUGIN_SEED_DIR=/opt/claude-seed` at run time, and enable it with `enabledPlugins` ([details](https://code.claude.com/docs/en/plugins/org#seed-containers-and-ci)). For Codex, run the two install commands in the image, or copy `plugin/skills/*` to `/etc/codex/skills/` and `plugin/shared/` to `/etc/codex/shared/`: the scripts import the shared code from the folder beside the skills folder |
 | CI jobs that only run tests and gates | Nothing: they do not need the skills |
 | A runner that gives each session its own Claude Code configuration directory (`CLAUDE_CONFIG_DIR`) | A user-level install lives in the default directory and is not seen there. Build a seed once (as for containers) and set `CLAUDE_CODE_PLUGIN_SEED_DIR` in the runner's environment; repositories enable the plugin through `enabledPlugins` in `.claude/settings.json` |
-| A tool without plugin support | Copy or link every folder of `plugin/skills/` into that tool's user skill directory (for example `~/.claude/skills/` or `~/.agents/skills/`), side by side, and `plugin/shared/` into a `shared/` folder beside that directory (`~/.claude/shared/`, `~/.agents/shared/`): skills import scripts from their siblings and code from `shared/`, so one skill alone, or the skills without `shared/`, do not run. The command name is then the bare skill name |
+| A tool without plugin support | Copy or link every folder of `plugin/skills/` into that tool's user skill directory (for example `~/.claude/skills/` or `~/.agents/skills/`), side by side, and `plugin/shared/` into a `shared/` folder beside that directory (`~/.claude/shared/`, `~/.agents/shared/`): skills import scripts from their siblings and code from `shared/`, so one skill alone, or the skills without `shared/`, do not run. The `jig` skill also reads the plugin's own files from the folder two levels above its `SKILL.md` (the directory that holds the skills folder, such as `~/.claude/`): copy `plugin/README.md`, `plugin/CONFIGURATION.md` and one manifest folder, `plugin/.claude-plugin/` or `plugin/.codex-plugin/`, there too, or its answers come from Jig's repository at a tag and a bug report records the plugin version as unknown. The command name is then the bare skill name |
 
 ## Troubleshooting
 

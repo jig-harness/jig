@@ -292,10 +292,11 @@ export async function openWithinBudget(
   repo: RepoTarget,
   target: ItemTarget | PullRequestTarget | NoticesTarget,
   lane = false,
+  reserveNotice = true,
 ): Promise<Opened> {
   const late = outOfTime(state) ?? openRoomWait(state);
   if (late !== null) return { waits: late };
-  const spent = takeOpen(state, "notices" in target, lane);
+  const spent = takeOpen(state, reserveNotice && "notices" in target, lane);
   if (spent !== null) return spent;
   let opened: RuntimeReceipt;
   try {
@@ -327,7 +328,11 @@ function attemptOf(receipt: RuntimeReceipt): LaunchAttempt {
 }
 
 /** What the dispatcher's names call a record's target: the item's key, else `#<pr>`. */
-function nameKey(record: Pick<LaunchRecord, "item" | "pr">): string {
+function nameKey(
+  record: Pick<LaunchRecord, "item" | "pr"> &
+    Partial<Pick<LaunchRecord, "action">>,
+): string {
+  if (record.action === "steward") return "line";
   return record.item ?? `#${String(record.pr)}`;
 }
 
@@ -411,6 +416,7 @@ function release(state: ApplyState, record: LaunchRecord): void {
 
 /** What a record acts on, as a launch's outcome names it. */
 function targetOfRecord(record: LaunchRecord): string {
+  if (record.action === "steward") return "the steward";
   return record.item ?? `PR #${record.pr}`;
 }
 
@@ -436,6 +442,7 @@ function outcome(
 
 /** The launch an action asks for. */
 function kindOf(action: Action): LaunchOutcome["action"] {
+  if (action.stage === "steward") return "steward";
   if (action.stage === "pickup" || action.stage === "followup")
     return action.stage;
   return isTakeover(action) ? "takeover" : "rearm";
@@ -609,7 +616,7 @@ function admission(
 ) {
   const codex = state.codexOptIn;
   // A pickup is a headless pass under its own deadline (`dispatch.pickup_deadline`).
-  if (action.stage === "pickup")
+  if (action.stage === "pickup" || action.stage === "steward")
     return admitRearm(
       state.table,
       state.last,
@@ -632,6 +639,7 @@ function admission(
 
 /** The kind of launch whose reservation an action counts. */
 function loadKindOf(action: Action): LoadKind {
+  if (action.stage === "steward") return "steward";
   if (action.stage === "pickup" || action.stage === "followup")
     return action.stage;
   return "drive";

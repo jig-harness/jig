@@ -60,6 +60,8 @@ export interface PickupInput {
   idleSince: ReadonlyMap<string, number>;
   nowMs: number;
   values?: Record<string, unknown>;
+  /** The repository's checkout: the label taxonomy the size facet's values come from is read here. */
+  root?: string;
 }
 
 export type PickupPlan = Pick<
@@ -186,8 +188,13 @@ export function planPickups(input: PickupInput): PickupPlan {
   for (const item of input.claimed ?? [])
     planClaimed(item, input, plan, joined(item.key));
   planWaiting(input, plan);
-  if (input.values !== undefined)
-    plan.actions = batchPickups(plan.actions, input.pickups, input.values);
+  if (input.values !== undefined && input.root !== undefined)
+    plan.actions = batchPickups(
+      plan.actions,
+      input.pickups,
+      input.values,
+      input.root,
+    );
   return plan;
 }
 

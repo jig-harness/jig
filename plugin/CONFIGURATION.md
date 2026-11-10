@@ -196,10 +196,10 @@ the `review` skill's semantic tier runs.
 | `review.job_pattern` | regular expression, or `null` | Reviewer checks recognised by name | resolve-review-comments | Which check runs the review skill waits on. Setting it requires `review.required_checks`. `--job-pattern` overrides it |
 | `review.required_checks` | list of distinct check names | none | resolve-review-comments | Reviewer checks that must each complete before a round is judged. Required when `review.job_pattern` is set. Unrelated to `ci.required_checks` |
 | `review.deferral_team` | team key | none: deferring a finding with no originating issue then needs `--team` | resolve-review-comments | Tracker team that deferred findings are filed into. `--team` overrides it |
-| `review.repo_label` | label | Empty, which fails unless `--repo-label` is given | resolve-review-comments, work-batch | Repository label put on filed follow-ups, and the one a batch item must carry; must be one of `review.taxonomy.repos`. work-batch does not ask an issue to carry it where the tracker is the GitHub adapter and `review.taxonomy.repos` names no repository besides this label, since every issue in that tracker belongs to the repository already. Only letters, digits and `. _ : @ + / -`: the label is part of a deferral batch's key, which the review skill refuses to write otherwise |
+| `review.repo_label` | label | Empty, which fails unless `--repo-label` is given | resolve-review-comments, work-batch, dispatch | Repository label put on filed follow-ups, and the one a batch item must carry; dispatch also leaves a served item that carries another label of `review.taxonomy.repos` and not this one to that repository's checkout (an item with no repository label stays startable by any); must be one of `review.taxonomy.repos`. work-batch does not ask an issue to carry it where the tracker is the GitHub adapter and `review.taxonomy.repos` names no repository besides this label, since every issue in that tracker belongs to the repository already. Only letters, digits and `. _ : @ + / -`: the label is part of a deferral batch's key, which the review skill refuses to write otherwise |
 | `review.repo_slug` | `owner/name` | Empty, which fails unless `--repo-slug` is given | resolve-review-comments | Repository whose links a deferred finding must point into |
 | `review.taxonomy.types` | list of labels | none | resolve-review-comments, work-batch | Type labels a follow-up may carry, one of which a batch item must carry. Requires `ownership_prefixes`. Only letters, digits and `. _ : @ + / -`: the label is part of a deferral batch's key, which the review skill refuses to write otherwise |
-| `review.taxonomy.repos` | list of labels | none | resolve-review-comments, drive-pr (fleet health), work-batch | Repository labels a follow-up may carry. Requires `ownership_prefixes`. Only letters, digits and `. _ : @ + / -`: the label is part of a deferral batch's key, which the review skill refuses to write otherwise |
+| `review.taxonomy.repos` | list of labels | none | resolve-review-comments, drive-pr (fleet health), work-batch, dispatch | Repository labels a follow-up may carry, and the labels by which dispatch tells another repository's served item from this one's (with `review.repo_label`). Requires `ownership_prefixes`. Only letters, digits and `. _ : @ + / -`: the label is part of a deferral batch's key, which the review skill refuses to write otherwise |
 | `review.taxonomy.sizes` | list of labels | `[xs, small]` | resolve-review-comments, work-batch | Size labels a batch of follow-ups may carry |
 | `review.taxonomy.categories` | list of names | only `unknown` | resolve-review-comments | Allowed finding categories |
 | `review.taxonomy.context_prefixes` | list of prefixes | none | resolve-review-comments, work-batch | Prefixes of labels carried from the pull request onto its follow-ups. Requires `ownership_prefixes` |
@@ -213,6 +213,7 @@ the `review` skill's semantic tier runs.
 | `review.reviewed_sha_marker` | text | `ai-reviewed-sha` | drive-pr | Marker for the commit the reviewer reviewed, inside that comment. Read only when a reviewer is expected. `DRIVE_PR_SHA_MARKER` overrides it |
 | `review.skip_notice_marker` | text | `ai-review-skip-notice` | drive-pr | Marker around the reviewer's notice, inside that comment, that it did not review a pushed commit: `<!-- <marker> -->`, the notice naming the commit, then `<!-- /<marker> -->`. A skipped head whose pull-request diff equals the reviewed one's converges on that review; any other skip of the head stops the drive with `REVIEW_SKIPPED` (`22`). Read only when a reviewer is expected. `DRIVE_PR_SKIP_NOTICE_MARKER` overrides it |
 | `review.severity_formats` | list of `{login, shape, severities}` | none: the [built-in formats](EXTENDING.md#severity-formats) only | drive-pr, resolve-review-comments | How a reviewer writes a finding's severity, so the decline ladder can use it: a reviewer with no built-in format, or words or a shape a built-in format does not read. `login` is the reviewer's GitHub login (`[bot]` optional); `shape` is `bold-token` (`🟡 **Major**`), `badge` (a `![P1 Badge]` image), `html-badge` (an `<img alt="P1">` image), `pipe-fields` (`**category** \| **Major** \| **effort**`) or `icon-fields` (`**<picture>…</picture> Major** · **category** · **effort**`); `severities` maps each of the reviewer's words to `blocker`, `high`, `medium` or `low`. Read before the built-in formats, which still apply to a comment no entry reads, and only on comments that login posted. `null` means not set |
+| `review.code_scanning_severities` | map of alert level to Jig severity | `critical: blocker`, `high: high`, `medium: medium`, `low: low`, `error: high`, `warning: medium`, `note: low` | drive-pr, resolve-review-comments | Partial overrides of GitHub code-scanning alert rule levels to `blocker`, `high`, `medium` or `low`. A recognized `rule.security_severity_level` takes precedence over `rule.severity`. Code-scanning threads take severity from their linked alert, not `review.severity_formats`; unreadable alerts stay `unknown`. The same mapping feeds thread triage and loop metrics. `null` means defaults |
 | `review.lenses.dir` | path | none: only the plugin's seed lenses run | review, do-item | Folder of the repository's own lens files, one Markdown file per lens in the plugin's lens format, read from the base branch. A repository lens keeps its `LENS-NNN` number; the `jig.` prefix is the seed lenses'. A lens file the change under review adds is reported as proposed and not run |
 | `review.lenses.off` | list of lens ids | none | review, do-item | Lenses not to run. `--lens=<id>` still runs one. An id that names no lens stops the review |
 | `review.lenses.triggers` | map from lens id to `{paths, exclude, added_lines, removed_lines}`, each a list | none | review, do-item | Patterns appended to a lens's own trigger, never replacing them, so a repository fits a seed lens to its languages and layout: `paths` and `exclude` are globs, `added_lines` and `removed_lines` regular expressions matched against one changed line at a time. An unknown id, an unknown key or a pattern that is not a regular expression stops the review |
@@ -275,11 +276,25 @@ issue on merge, merged by a human.
 | `pull_requests.issue_link` | `closes`, `refs`, `none` | `closes` | The line linking the pull request to its issue: `Closes ENG-12` (merging closes the issue), `Refs ENG-12` (linked, left open), or none |
 | `pull_requests.size_budget` | whole number ≥ 1 | no budget | Most changed lines (added plus deleted, against the pull request's base) one pull request may carry; the audit record `.config/jig-audit.yaml`, which every audit rewrites whole, is not counted, and `pr-plan.ts` names it beside the size. Over it, `pr-plan.ts` refuses: split the change (into a stack when stacking is allowed), or state why it cannot be split with `--accept-oversize <reason>` and put the reason in the body |
 | `pull_requests.labels` | list of label names | none | Fixed labels added when the pull request opens, such as `agent-authored`. With `drive.change_areas_catalog`, `pr-plan.ts` also adds `tracker.labels` and `tracker.flags` from the areas the diff directly touches (including generated sources), deduplicated with this list; implied areas add none. Each label must already exist in the repository |
+| `pull_requests.labels_from_issue` | map from an issue label to a label name | none | Labels the pull request carries for the issue's own labels, so branch protection, CODEOWNERS or a merge rule can enforce what the issue's kind of change needs, such as `{ "kind:db-migration": needs-dba-review }`. `pr-plan.ts open --issue-json <file>` reads the issue's labels from the issue JSON do-item writes when it picks the item up, matches them ignoring case and adds the mapped labels; a touched change area's `pr.labels` add theirs. Each label must already exist in the repository: `pr-plan.ts` stops naming a missing one, and the audit reports it |
+| `pull_requests.reviewers_from_issue` | map from an issue label to a list of reviewers | none | Reviewers requested for the issue's own labels (`gh pr create --reviewer`), matched as `labels_from_issue` is, beside a touched change area's `pr.reviewers`. A reviewer is a login or `org/team`, with or without `@`. See [reviewers on a draft](#reviewers-on-a-draft) |
 | `pull_requests.title_format` | `conventional`, `free` | Derived (see [above](#what-is-derived-not-declared)) | Whether titles follow Conventional Commits. With squash merges the title becomes the trunk commit, so it matters |
 
 Before opening, `pr-plan.ts` warns when a merge commit brings in commits from
 a parent outside the planned base, naming those commits. Merges of the base
 produce no warning. A failed history or configured catalog read stops planning.
+
+### Reviewers on a draft
+
+GitHub notifies the reviewers requested on a draft pull request only when
+it is marked Ready. Under the default policy a pull request opens as a draft
+and `drive-pr` marks it Ready after the round `pull_requests.mark_ready`
+names, so the reviewers that `reviewers_from_issue` or an area's
+`pr.reviewers` request are notified then; with `mark_ready: never` they are
+notified when a person marks it Ready, and with `open_as: ready` at once.
+`pr-plan.ts` says so in its warnings when it plans reviewers for a draft. A
+label is on the pull request from the start, so a merge rule that reads it
+holds while the pull request is still a draft.
 
 ### Stacking
 
@@ -511,11 +526,12 @@ it. Until then, opt in only to take part in that measurement.
 | `issue_tracker.jira.subtask_type` | issue type name | The project's one sub-task issue type; refused when it has none or several | do-item, drive-pr, file-issue, reflect, work-batch, dispatch | Jira only: the type of an issue created under a standard issue. Creating an issue under a sub-task is refused. Where `issue_tracker.facets.type` keeps type in the issue types (`store: native`), a sub-task keeps its type in its label, and a type label wins over a sub-task type when the issue is read; where it keeps type in a custom field, a sub-task keeps its type in that field like any other issue |
 | `issue_tracker.jira.priorities` | map from `urgent`, `high`, `medium`, `low` to a Jira priority name | `Highest`, `High`, `Medium`, `Low` | do-item, drive-pr, file-issue, reflect, work-batch, dispatch | Jira only: the priority that carries each of Jig's priorities (1 to 4). An issue with another priority has none (0). A Jira issue always has a priority, so moving one to no priority is refused, and a new issue with none is created with the project's default. These are the priority facet's `values`: `issue_tracker.facets.priority.values` may name them instead, and where both are set they must agree |
 | `issue_tracker.jira.resolutions` | map from `done`, `canceled`, `duplicate` to a resolution name | `Done`, `Won't Do`, `Duplicate` | do-item, drive-pr, file-issue, reflect, work-batch, dispatch | Jira only: the resolution set when an issue moves into one of these states, where the transition's screen has a resolution field, and read back to tell the three apart when they share one status |
-| `issue_tracker.jira.link_types` | map from `blocks`, `related`, `duplicate` to an issue link type name | `Blocks`, `Relates`, `Duplicate` | do-item, drive-pr, file-issue, reflect, work-batch, dispatch | Jira only: the issue link type that carries each relation between issues; links of any other type are ignored |
+| `issue_tracker.jira.link_types` | map from `blocks`, `related`, `duplicate` to an issue link type name, or to a list of them, each a name or `{ name, inverted }` | `Blocks`, `Relates`, `Duplicate` | do-item, drive-pr, file-issue, reflect, work-batch, dispatch | Jira only: the issue link types that carry each relation between issues; links of any other type are ignored. A list such as `blocks: [Blocks, { name: "Depends", inverted: true }]` lets several link types carry one relation, for a site whose planning app records dependencies on a link type of its own: every listed type is read, an edge two types carry is reported once, and a new link is written with the first. `inverted: true` reads a type whose outward side means the relation's inverse ("depends on" for `blocks`, meaning "is blocked by"), and a new link of that type is written the other way round; `related` has no direction, so it takes no `inverted`. A plain name means what it always has. Each name is resolved against the site's link types, ignoring case, the first time a relation is read or written, and one that matches none or several is refused; a name may appear only once across all relations |
 | `issue_tracker.jira.field_labels` | map from a field's name or id to a label prefix, such as `{ Size: "size:" }` | No field is read as labels | do-item, drive-pr, file-issue, reflect, work-batch, dispatch | Jira only: fields whose values the skills read as labels beside the issue's own, each behind its prefix: a select field `Size` holding `M` gives the label `size:M`, and a multi-select gives one label per value. Single-line text, number, select, checkbox and labels fields qualify (a multiline text field, the description and the environment hold rich text and are refused); a field of another type, or a name that matches no field of the site or several (name one by its id, `customfield_10050`), is refused. Values are trimmed. A pool, a population or a ledger selected by such a label is selected by the field in JQL, except a text field's, which JQL matches only by words and is refused; an option whose value carries surrounding spaces is matched in JQL only by its exact value, so trim the option on the site. An entry whose labels are a facet's values, such as a `Size` field behind `size:` where the label taxonomy's sizes are `size:S`, `size:M` and `size:L`, is that facet's field store (where `issue_tracker.facets` names no other store for it): the facet is written to the field when an issue is filed or changed, each value as the field's value behind the prefix, and its values still show as labels. The adapter never writes another entry's field, and filing or patching an issue with a label behind any prefix is refused, pointing at the facet where the field keeps one. A prefix has no whitespace, and no prefix may begin another; choose prefixes no Jira label of the project starts with, since a label behind a prefix is taken for the field's value |
+| `issue_tracker.jira.pool_issue_types` | list of issue type names | Every issue type | do-item, drive-pr, file-issue, reflect, work-batch, dispatch | Jira only: the issue types every candidate pool and population is limited to, such as `[Task, Bug]`, for a shared project whose other issue types belong to other teams or other lanes. It limits the pools `work-batch`, `jig dispatch` and the queues pick from, the issues assigned to an identity, the open population the facet census and `file-issue`'s sweep count, and the fleet metrics' read of every issue created or completed in a window. Reads of an issue by its key, an issue's children, and the fleet metrics' reads a label defines (a ledger, an epic's activity, a labelled window) are not limited, so an epic of another type is still followed through its children. Each name is matched to one of the project's issue types, ignoring case, when the tracker is first reached (`tracker.ts reach`, the audit's tracker check) or before the first limited read, and a name the project lacks is refused. The project's issue types are read from its create metadata, so the credential must be allowed to create issues of each named type. There is no free JQL clause: a query from the configuration could not be checked before it runs |
 | `issue_tracker.labels.epic` | label | `review.taxonomy.epic_label`, else `epic` | do-item, resolve-review-comments, drive-pr (fleet health), work-batch, file-issue, reflect, dispatch | Marks an issue whose sub-issues are worked one at a time |
 | `issue_tracker.labels.hitl` | label | `hitl` | do-item, decide, work-batch | The human-in-the-loop flag; its facets are `<hitl>:<stakeholder>` |
-| `issue_tracker.labels.manual_ops` | label | `manual-ops` | do-item, work-batch | A step a person performs outside the code; caps an epic at `ops_pending` |
+| `issue_tracker.labels.manual_ops` | label | `manual-ops` | do-item, work-batch, dispatch | A step a person performs outside the code; caps an epic at `ops_pending`. With the dispatch labels on, the dispatcher also puts it on a pull request whose `## Out-of-tree follow-ups` section lists a step not yet checked off; it then must hold no comma and be none of the dispatcher's own labels (under `dispatch.labels.prefix`, `automation` or `automation:…`), or the dispatcher writes no owed-steps label and says so |
 | `issue_tracker.labels.followup` | label | `review.taxonomy.provenance_label`, else `pr-followup` | do-item, resolve-review-comments, drive-pr (fleet health), work-batch | Marks an issue filed from a review finding |
 | `issue_tracker.labels.bug` | list of labels | `[bug, type:bug]` | do-item, drive-pr, file-issue, reflect, work-batch, dispatch, resolve-review-comments | Any of these marks a bug |
 | `issue_tracker.labels.pattern_prefix` | text | `pattern:` | do-item, reflect, review-reflections | A recurring pattern's label is `<prefix><slug>`; a reflection class's issue is `<prefix><class>` |
@@ -542,6 +558,7 @@ same), rather than running without the repository's routing and gates.
 | `do_item.agents.title_keywords` | map from keyword to agent | none | do-item | Last-resort routing on a case-insensitive title match |
 | `do_item.scouts` | map from agent to a list of scouts | none | do-item | Scouts that run before each agent. The key is the **agent**, not a label |
 | `do_item.gates` | list of `{labels, paths, skill}` | none | do-item | Review skills that must approve a change before it is pushed, when the issue carries one of the `labels` or the change touches one of the `paths` |
+| `do_item.guidance` | list of `{labels, paths, skills, notes}` | none | do-item | Implementation guidance: skills and notes the implementing agent is given when the issue carries one of the `labels` (ignoring case) or the change touches one of the `paths`, matched as a gate is. Each entry names labels or paths, and skills or notes. `determine_agent.ts` prints the union of the matching entries and of the matched change areas' `implementation` blocks and own `notes`, in entry order and then catalog order, and do-item's delegation prompt lists them under `## Implementation guidance`. An area is matched by a label `do_item.agents.codearea_areas` maps to it, one of its `tracker.labels`, or a path its globs claim among those `--paths` names. Separate from `do_item.gates`, which it never replaces; a label may appear in both. Guidance every item needs belongs in the repository's own agent instructions. A skill that resolves to nothing installed (the repository's `.claude/skills` or `.agents/skills`, the user's skills, this plugin's, or another plugin's as `<plugin>:<skill>`) is named in do-item's status message, and the audit refuses it |
 | `do_item.execution_plan_block` | name | `execution-plan-v1` | do-item | Name of the fenced block in an epic's description that holds its machine-readable execution plan |
 | `do_item.arm_drive` | `auto`, `tab`, `background`, `print` | `auto` | do-item, drive-pr | How `/jig:do-item`'s § Arm the drive and `/jig:drive-pr`'s § Arm start the drive (both through drive-pr's `arm-drive.ts`). `auto`: in a terminal tab of the pull request's workspace where the session can open one (in an [Orca](https://www.onorca.dev) workspace on a macOS or Linux host), and with the session's background execution elsewhere, falling back to the background, and saying why, when Orca refuses the tab or the tab's drive is not listed in time. `tab`: a terminal tab, or a reported failure. `background`: the session's background execution. `print`: the command only, for a person to run. The tab is a fresh login shell of the user's, so `bun`, the agent's command (`claude` or `codex`) and the account or profile come from it, not from the session. The tab closes when the drive ends with nothing for a person, and stays open after a park or a failure until the pull request is armed again. A Windows host opens no tab, since Orca's tab there can run `cmd.exe` or PowerShell and the drive's command is quoted for a POSIX shell: `auto` arms in the background, and `tab` fails. The drive's pass command is the one of the agent tool the session runs in: a Codex session arms Codex's pass command in a tab or through its managed background command tool. Without that tool, the caller prints the command and reports the limitation; when the host ends children with the session, keep it alive until the drive ends or use an external terminal. A session of any other tool prints Claude Code's command whatever the setting, and so does a human checkpoint the run has no clearance for |
 | `do_item.work_types` | map from a work type to fields of its row in the depth table below | The table's defaults | do-item | How much each delivery station does for an item of each type. An entry overrides single fields and keeps the rest of the row; a type outside the default list must set every field. Refused: an entry for a type outside `issue_tracker.types`, an entry for `unknown`, a field the table does not have, and a value outside a field's set. do-item prints the type and its row when it picks up an item |
@@ -1017,6 +1034,11 @@ line.
 | `docs.schema` | path, relative to the repository root | Detected: the shallowest `frontmatter-schema.yaml` or `.frontmatter-schema.yaml` (or `.yml`) under the docs tree; none skips the frontmatter check | docs | The frontmatter schema the documents are checked against. A configured path must name an existing file, not a folder. Configured or detected, it must lie inside the repository once symbolic links are followed. Repository-only |
 | `docs.stale_after_days` | whole number, 1 or more | `180` | docs | A `status: draft` document whose `last_updated` is more than this many days old is reported as a stale draft (a warning) |
 | `docs.promoted_statuses` | nonempty list of distinct one-word `status` values | `[approved]` | docs | The statuses whose documents the scar lint holds to no review scars. A repository whose lifecycle ends in another status (a legal corpus that ends in `active`, say) lists it, with `approved` when both are in use; a document with any other status is reported as not scanned when it is named explicitly. The lint also reads the `PROMOTED_STATUSES` environment variable (space-separated), which wins over this field |
+| `docs.index.preamble` | path, relative to the root, to a file | none | docs | A file kept verbatim above the generated `INDEX.md`'s listing, after its title: a "start here" section. A configured path must name an existing file inside the repository. Repository-only |
+| `docs.index.descriptions` | mapping of category name to one line of text | none | docs | A line under a category's heading in the generated index, by the category's folder name (`(root)` for loose files). Wins over `docs.index.descriptions_from_readme` |
+| `docs.index.descriptions_from_readme` | `true` or `false` | `false` | docs | A category with no configured description takes the `description` in the frontmatter of its folder's `README.md` |
+| `docs.index.order` | `name`, `count`, or a list of distinct category names | `name` | docs | The order of the index's categories: byte order of the name, most documents first, or the listed categories first in that order and the rest by name |
+| `docs.index.frontmatter` | mapping of field to one line of text (or a list of words) | none, the index has no frontmatter | docs | Frontmatter written at the top of the generated index, so the index passes the frontmatter check like any page. `last_updated` is stamped with the sticky date and cannot be set here. With none of the `docs.index.*` fields the index is the bare listing |
 | `promote_memory.lint_command` | shell command; `{dir}` and `{file}` stand for the memory folder and file | none: the check is done by hand | promote-memory | Checks one agent memory against the repository; exit 0 means clean |
 | `promote_memory.target_dir` | folder, relative to the root | `docs/retrospection` | promote-memory | Where promoted pages go, in `YYYY/MM/` below it |
 | `fix_ci.regenerate_commands` | list of shell commands | none: the agent finds the command | fix-ci | Commands that regenerate committed generated files a CI check compares |
@@ -1060,6 +1082,7 @@ These are set per machine or per run, not committed:
 | `JIRA_EMAIL`, `JIRA_API_TOKEN` | Credentials for the Jira adapter: an Atlassian account's email address and an API token made for it |
 | `DRIVE_PR_BASE_BRANCH`, `DRIVE_PR_REVIEWER_APP`, `DRIVE_PR_REVIEWER_CHECK`, `DRIVE_PR_STICKY_MARKER`, `DRIVE_PR_SHA_MARKER` | Override the matching field for one run |
 | `DRIVE_PR_ATTACH` | `off` makes `drive.ts` drive the working tree as it stands, without attaching the pull request to it first (for a harness that prepares its own trees), and `attach-pr.ts --place` choose the tree without attaching; `on` or unset attaches ([which tree drives a PR](skills/drive-pr/README.md#which-working-tree-drives-it)) |
+| `DRIVE_PR_HANDOFF_TELLS_REFUSED` | Set by the driver, never by a person: `1` makes `drive-state.ts handoff` exit `76` (`LEDGER_REFUSED_EXIT`) when its guards refused the ledger write (a lost acquisition, a newer takeover claim, a ledger that is not the stopped driver's) instead of `0`, so the drive labels its pull request's state only after a ledger write of its own; unset, a refused write exits `0` as a landed one does. A write that was attempted and did not land exits `75` (`LEDGER_NOT_WRITTEN_EXIT`) either way |
 | `DRIVE_PR_LEDGER` | `off` makes `drive.ts` drive without the drive ledger on the pull request: no seeding from it, no check for another clone's driver, no writes; `on` or unset uses it ([where its state lives](skills/drive-pr/README.md#where-its-state-lives)) |
 | `DRIVE_PR_POLICY_BASE` | Set by the driver, never by a person: the commit of the pull request's base branch whose `.config/jig.yaml` the driver and its passes read `autonomy.max_level` and `autonomy.park_classes` from ([`autonomy`](#autonomy)); empty when the base cannot be resolved, which fails closed. The driver overwrites any inherited value |
 | `DRIVE_PR_POLICY_BOUND` | Set by the driver, never by a person, only when the pull request's base is not the integration branch (a stacked layer): the integration branch's commit whose policy bounds the base's. Unset otherwise; the driver removes any inherited value |
@@ -1230,9 +1253,9 @@ repository. What a run may start is the machine's to say, in
 | `dispatch.notices_linger` | duration, or `0s` | `1h`: the repository's notices workspace, once read, is removed this long after the first tick that finds it read; `0s` removes it at that tick. An unread one is removed once every cause it carries is gone | dispatch |
 | `dispatch.notices_branch` | branch name, with no space | None: every notification for the repository goes to its notices workspace. A branch names the workspace a person watches instead: every notification goes to the workspace on that branch, never to the one joined to the pull request or item. The dispatcher never opens or removes it, and a notification waits, reported, while no workspace on it is open or its comment is a person's. Naming `jig-dispatch-notices`, the notices workspace's own branch, is the same as naming none | dispatch |
 | `dispatch.renotify_after` | duration, or `0s` | `24h`: a notification whose cause still stands this long after it was last sent is sent again, saying since when it has waited, until the cause goes. `0s` sends each one once | dispatch |
-| `dispatch.labels.enabled` | `true` or `false` | `false`: no label is read or written. `true` turns the [dispatch labels](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) on (below) | dispatch |
-| `dispatch.labels.prefix` | string of at most 39 characters, with no comma and no space at either end | `jig:`: put before every label name (`jig:driving`, `jig:hold`). A repository whose label taxonomy has a convention of its own picks one that fits it | dispatch |
-| `dispatch.labels.only_labeled` | `true` or `false` | `false`: every open pull request is read for a drive ledger. `true` limits the dispatcher to the pull requests that carry a label of the set: one that carries none is never read, re-armed or followed up. Refused unless `enabled` is `true` | dispatch |
+| `dispatch.labels.enabled` | `true` or `false` | `false`: no label is read or written. `true` turns the [pull request state labels](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) on (below), for every writer (the drive, the follow-up through `jig dispatch marker` and the dispatcher's wrapper, and the dispatcher's tick): a repository with no dispatcher turns them on here too | dispatch, drive-pr |
+| `dispatch.labels.prefix` | string of at most 35 characters, with no comma and no space at either end | `jig:`: put before every label name (`jig:driving`, `jig:hold`). A repository whose label taxonomy has a convention of its own picks one that fits it | dispatch, drive-pr |
+| `dispatch.labels.only_labeled` | `true` or `false` | `false`: every open pull request is read for a drive ledger. `true` limits the dispatcher to the pull requests that carry a label of the set: one that carries none is never read, re-armed or followed up. A drive labels its own pull request (`driving` once it arms), so a drive a person arms by hand comes into the dispatcher's scope with its first label, and the dispatcher re-arms, re-drives and follows it up from then on; a person keeps one out with `hold`. Refused unless `enabled` is `true` | dispatch |
 | `dispatch.adopt.enabled` | `true` or `false` | `false`: a pull request with no drive ledger is driven only when a person labels it `drive`. `true` turns the adoption rule on (below). Refused beside `labels.only_labeled: true` | dispatch |
 | `dispatch.adopt.authors` | nonempty list of forge logins (a GitHub App's as `<name>[bot]`) | The login the dispatcher reads the forge as, the one the host's sessions open pull requests under: the authors whose pull requests the rule adopts | dispatch |
 | `dispatch.adopt.within` | duration | `168h` (a week): how recently a pull request must have been updated for the rule to adopt it | dispatch |
@@ -1271,21 +1294,49 @@ finding where [`reflection`](#reflection) is on, and the change is a
 person's, through `review-reflections` (see
 [the plugin's README](README.md#the-dispatcher)).
 
-The dispatch labels (`dispatch.labels`) put the dispatcher's state on each
-pull request it manages, where a person sees it from any forge client, and
-take commands from a person. With the default prefix:
+The pull request state labels (`dispatch.labels`) show where each driven
+pull request stands, where a person sees it from any forge client, and take
+commands from a person. They are written by the drives, the follow-ups and
+the dispatcher, wherever each runs: a repository that drives pull requests
+with no dispatcher installed gets them too. With the default prefix:
 
 | Label | Who writes it | Meaning |
 |-------|---------------|---------|
-| `jig:driving` | the dispatcher | a drive runs, or stopped on a state the dispatcher re-arms (a usage limit, an answered park) |
-| `jig:converged` | the dispatcher | the drive converged at the pull request's head: a person merges |
-| `jig:parked` | the dispatcher | the drive stopped on something only a person settles |
-| `jig:stale` | the dispatcher | the drive's stop no longer settles the pull request: it converged, then conflicted with its base or its head moved, or it stopped on a conflict. The dispatcher re-drives it |
+| `jig:driving` | the drive when it arms (removing `jig:drive` in the same write) or stops on a state the dispatcher re-arms, and the dispatcher | a drive runs, or stopped on a state the dispatcher re-arms (a usage limit, an answered park) |
+| `jig:converged` | the drive when it stops `CONVERGED` at the head it verified, and the dispatcher | the drive converged at the pull request's head: a person merges |
+| `jig:parked` | the drive when it parks, stops on something a person settles, is stopped by a person, or stops on what the dispatcher re-drives (below), and the dispatcher | the drive stopped on something only a person settles |
+| `jig:stale` | the dispatcher, and the optional workflow below on a push | the drive's stop no longer settles the pull request: it converged, then conflicted with its base or its head moved, or it stopped on a conflict. The dispatcher re-drives it |
 | `jig:held` | the dispatcher | the pull request waits its turn in a serialized change area (below): the dispatcher drives it once it leads |
-| `jig:followed-up` | the dispatcher | merged, and its follow-up is done |
+| `jig:followed-up` | the follow-up when it ends done, and the dispatcher | merged, and its follow-up is done |
+| `jig:followup-failed` | the follow-up when it fails, and the dispatcher | merged, and its follow-up failed: a person acts. A later follow-up that is done replaces it with `jig:followed-up` |
 | `jig:drive` | a person, by hand or with `jig send … drive` | adopt a pull request with no drive ledger: the dispatcher arms a drive on it (the machine file's `rearm` stage), once per head commit, and replaces the label with the state label once the ledger exists. The adoption rule (`dispatch.adopt`, below) does the same for a repository's own recent pull requests without the label |
 | `jig:rearm` | a person, by hand or with `jig send … rearm` | request another attempt for a stopped drive in its existing worktree, through the machine file's `rearm` stage and account admission. Running drives and a person's recorded stops are refused; an accepted launch consumes the label |
-| `jig:hold` | a person, by hand or with `jig send … hold` (and `release`) | stand the dispatcher down from this pull request: no stage runs on it while the label is there, and the dispatcher reports it and never removes it |
+| `jig:hold` | a person, by hand or with `jig send … hold` (and `release`) | stand the dispatcher down from this pull request: no stage runs on it while the label is there, and the dispatcher reports it and never removes it. A drive on it writes no state label either |
+
+Beside the set, the dispatcher keeps marker labels that carry no
+prefix, on every pull request it reads. None is a label of the set, so
+none puts a pull request in scope under `only_labeled`:
+
+| Label | Who writes it | Meaning |
+|-------|---------------|---------|
+| `manual-ops` (the repository's `issue_tracker.labels.manual_ops`) | the dispatcher | the pull request owes steps a person takes outside the code: its description's `## Out-of-tree follow-ups` section lists a step not yet checked off. Set from the description at every run, on open pull requests and on the merged ones the run reads (those merged since the follow-up stage's start, read only where `followup_command` is set): one that lists none, or only the explicit "None", loses it, so a label added or removed by hand is corrected. A merged pull request keeps it until every step is checked off or its follow-up is done, which reports each step done or filed; one whose follow-up the run cannot place (its markers do not read) keeps the label exactly as it is |
+| `automation` | the dispatcher | a bot or a workflow opened the pull request. Put on a bot's pull request that carries no label of the `automation:` family, unless the bot is one of the host's own authors (below), which a repository's workflows apply to say which job opened it (`automation:docs-sync`); never put on a person's, and never removed, nor is any `automation:` label |
+
+A pull request that carries `automation` or an `automation:` label, or that
+a bot opened, is an **automation pull request**, except a bot's that is one
+of the host's own authors (`dispatch.adopt.authors` where the adoption rule
+is on, else the login the dispatcher reads the forge as): that bot is the
+identity the host's own sessions work under, and its pull request is an
+automation pull request only when it carries an automation label. The
+dispatcher drives an automation pull request only while it needs work: a
+check on its head failed (`FAILURE`, `ERROR`, `TIMED_OUT` or a run that
+failed to start; a run cancelled on a superseded head or one waiting for a
+person's approval is no failure), it conflicts with its base, or a review
+thread is unresolved. That holds for its adoption (below) and for every
+re-drive, takeover and re-arm the dispatcher would start of itself, a
+converged drive whose head moved among them: a healthy one is reported and
+left for a person to merge. A person's `jig:drive` or `jig:rearm` still
+starts one.
 
 A serialized change area (`serialize: true` on an area of the
 [change-area catalog](#drive) that `drive.change_areas_catalog` names, read
@@ -1306,20 +1357,90 @@ A pull request whose files, threads or ledger do not read this run, or a
 catalog that does not read, leaves its group unplaced for the run, with no
 re-arm and no label written, and the next run reads it again.
 
-The ledger is the truth: each `--apply` run sets each managed pull
-request's state label from its ledger again (`jig:held` from the serialized
-areas), one forge call per pull
-request whose labels disagree, so a state label a person changed comes
-back at the next run, and the dispatcher never reads a state label to
-decide what to start. A run without `--apply`, or for a repository the
-machine file does not list, writes nothing and reports what it would
-write. The labels must exist before a run writes them: `jig install
-dispatch --repo <path> --yes` creates the missing ones where the signed-in
-account may, and lists the rest for a person, as `pull_requests.labels`
-must exist before a pull request opens with them. A write the forge
-refuses is reported and tried again at the next run; it does not fail the
-run. With `only_labeled` off, a drive a person armed by hand on a pull
-request with no label is still found, and gets its label at the next run.
+The ledger is the truth, and one projection maps it to the state label,
+which every writer shares (`shared/pr-labels/`). A drive writes its own
+pull request's label when it writes its ledger: `jig:driving` once it arms,
+before its first round, and at its stop the state one table of exits gives
+both the drive and the dispatcher (drive-pr's
+`scripts/lib/status/exit-classes.ts`):
+
+- `jig:converged` for `CONVERGED`, only while the pull request's head is
+  still the head the drive verified; otherwise it leaves the labels, a
+  `jig:stale` the workflow below wrote among them;
+- `jig:parked` for a park (`HITL_PARKED`), a stop only a person settles
+  (`MAX_ROUNDS`, `REVIEWER_FAILED`, `REVIEW_SKIPPED`, `INDETERMINATE`,
+  `UNSUPPORTED_CLI` and any exit the registry does not name), a person's stop (`MAILBOX_STOPPED`,
+  `MAILBOX_PAUSE_TIMEOUT`, `drives.ts --stop`), and a stop the dispatcher
+  re-drives (`PR_CONFLICTING`, `WORKTREE_UNCLEAN`, `STALLED`,
+  `PASS_DEADLINE`, `CI_REPAIR_SPENT`, `CI_INFRA_PERSISTED`): without a
+  dispatcher a person acts on those, and where one runs its tick replaces
+  `jig:parked` with `jig:stale`;
+- `jig:driving` for a stop the dispatcher re-arms (`NOT_SETTLED`,
+  `QUOTA_PARKED`) and a second driver refused while another drives
+  (`SINGLE_INSTANCE_LOCK`, `DRIVE_HELD_BY_OTHER_WORKTREE`);
+- nothing for `PR_NOT_OPEN`, a stop on a pull request no longer open, for
+  `TAKEN_OVER`, whose ledger is the successor's, and for a stop with no exit
+  and no person's stop recorded.
+
+A follow-up writes `jig:followed-up` or `jig:followup-failed` when it ends,
+whoever runs it: the dispatcher's wrapper once the pass's exit is recorded,
+and a person's run through `jig dispatch marker done` or `jig dispatch
+marker failed` (which leaves the run's marker claiming the follow-up, and
+exits `1` when its label is not written, since nothing else records that
+failure; with the labels off it says it recorded nothing).
+
+Every writer reads `dispatch.labels` from the repository's default branch,
+as the dispatcher's tick and the label setup do, never from a checkout's
+copy, so a pull request that changes the prefix does not get a state label
+under each. A drive's and a follow-up's write follows only a ledger or an
+end it wrote itself (a ledger write the guards refused, such as one a newer
+takeover claim stopped, gets no label), writes in one forge call only where
+the labels disagree, never writes `jig:stale` or `jig:held`, and is best
+effort (a drive also leaves a pull request carrying `jig:hold` or
+`jig:held` as it is): a refused write is one line on the drive's or the
+command's output and never changes the drive's exit; a dispatcher's next
+run corrects it where one runs, and otherwise `jig dispatch labels --yes`
+creates a missing label, or a person sets it by hand.
+
+Each `--apply` run of the dispatcher sets each managed pull request's state
+label from its ledger again (`jig:held` from the serialized areas, a merged
+pull request's from its follow-up's end) and each marker label from the
+pull request itself, one forge call per pull request whose state label
+disagrees and one whose marker labels do (so a marker label the repository
+lacks never holds a state back), so a state label a person changed comes
+back at the next run, and no writer ever reads a state label to decide what
+to start. Just before a state write the run reads the pull request's ledger
+again and leaves the pull request to a later run when the ledger changed
+since it read it, so a drive's label written for a newer ledger is not
+replaced from the older one the run planned from. A run without `--apply`,
+or for a repository the machine file does not list, writes nothing and
+reports what it would write. A write the forge refuses is reported and
+tried again at the next run; it does not fail the run. With `only_labeled`
+off, a drive a person armed by hand on a pull request with no label gets
+its label from the drive itself.
+
+The labels must exist before anything writes them, and no writer creates
+one: setting them up is a one-time step,
+
+```sh
+jig dispatch labels [--repo <path>]... [--yes]
+```
+
+which installs no job and needs no machine file. For each repository whose
+`dispatch.labels` (read from its default branch) is on it lists the labels
+of the set it lacks, with the marker labels; with `--yes` it names each one
+it created and lists, each with the `gh label create` command, those the
+signed-in account may not create, for a person who may. `jig install
+dispatch --repo <path> --yes` does the same beside the dispatcher's timer.
+
+An optional workflow clears `jig:converged` when the head moves, without
+waiting for a run: copy drive-pr's
+[`templates/github/state-labels.yml`](skills/drive-pr/templates/github/state-labels.yml)
+to `.github/workflows/`, set its `PREFIX` to `dispatch.labels.prefix`, and
+on each push to a pull request carrying `jig:converged` it replaces the
+label with `jig:stale`; a pull request without `jig:converged` is left as it
+is. It runs on `pull_request_target` with a token that may write pull
+request labels, and checks out and runs nothing from the pull request.
 
 The adoption rule (`dispatch.adopt`) drives a repository's own recent pull
 requests without anyone labelling them. With it on, an open pull request
@@ -1329,7 +1450,13 @@ dispatcher reads the forge as, which is the identity the host's sessions
 open pull requests under) and it was updated within `adopt.within`. A
 draft is adopted like any other, since a drive marks its pull request
 ready. A bot's pull request (a dependency update, say) is adopted only
-when `authors` names the bot, and one carrying `jig:hold` never is. From
+when `authors` names the bot, and one carrying `jig:hold` never is. An
+automation pull request (above) is adopted only while it needs work; a
+healthy one is left for a person to merge, and `jig:drive` still drives
+one on a person's word. A bot the rule names is the host's own identity, so
+its pull requests are adopted as any own pull request unless they carry an
+automation label. A check that failed on the CI
+service's infrastructure is re-run by the drive rather than repaired. From
 there the `drive` label's rules apply unchanged: armed once per head
 commit, on an admitted account, behind a serialized area's hold, and a
 drive a person stopped is never re-armed, since its ledger records the
@@ -1340,6 +1467,11 @@ labels on; under `labels.only_labeled` it is refused, since a pull request
 with no label of the set is never read.
 
 ### The machine's dispatch file
+
+The steward's hourly cap is shared across the host's repositories. Missing
+field writes re-read the field immediately before updating it and preserve
+values found nonempty. A simultaneous external edit can still race these
+separate tracker requests; see the [steward's concurrency limit](skills/steward/README.md).
 
 What this machine dispatches, and on whose accounts, lives only in
 `$JIG_HOME/dispatch.yaml` (default `~/.jig/dispatch.yaml`); a repository
@@ -1354,7 +1486,7 @@ unknown key anywhere in the file is refused.
 ```yaml
 repositories:
   - path: /home/me/dev/web          # absolute; ~/ is expanded
-    stages: [rearm]                  # rearm, pickup, followup, notify, steer
+    stages: [rearm]                  # rearm, pickup, followup, notify, steer, steward
     followup_since: 2026-10-30T00:00:00Z
     owner: true                      # false on every other host that lists it
 accounts:
@@ -1387,6 +1519,9 @@ records:
   shared: forge                     # where another host reads this host's launches
 send: true                          # false refuses every jig send from this machine
 change_probe: true                  # false turns off the minute-by-minute change probe
+steward:
+  enabled: false                    # true enables the stage on the owner host
+  every: 20m                        # unchanged digests still start no pass
 load:
   enforce: false                    # true holds what a gauge refuses; false only reports it
   memory_free: 0.15                 # share of the host's memory kept free after a launch
@@ -1404,6 +1539,8 @@ load:
 | Setting | Default / meaning |
 |---------|-------------------|
 | `serve[]` | Empty; the people this host serves, beside any repository's factory identity. Each entry has a `name`, `forge` logins and a `tracker` map from adapter name (`github`, `linear`, `jira`) to that person's identity. Only this machine file can name served people; repository configuration cannot widen the list. Their forge logins join the adoption authors. With `pickup` enabled, an open, not-started assignment from a repository writer is wanted without a dispatch-state requirement. Unassigned descendants of an assigned epic inherit that person. Holds and open blockers stay visible in the Queue view with their reason |
+| `steward.enabled` | `false`; enables the owner host's headless [steward](skills/steward/README.md) for repositories whose stages include `steward`. The pass reads a digest and submits closed records for the next tick; it never launches work itself. It shares account slots and load admission, uses the admitted vendor's complex-tier model, has a 15-minute deadline and starts at most three times in a rolling hour. The tick rechecks every effect against current facts and preserves human stops, holds and registry-class parks |
+| `steward.every` | `20m`; the minimum time between steward passes for a repository. An unchanged digest starts no pass regardless of elapsed time. Digests, once-only recovery records and submitted queue ordering remain in the owner host's state database |
 | `repositories[].path` | Required; the repository's local checkout. Several hosts may list one repository, each in its own machine file, with one of them its owner (`owner`) |
 | `repositories[].owner` | `true`; whether this host owns the repository's notifications, dispatch labels and outcome-log rows, its board and its reflection findings. Set it `false` on every host but one that lists the repository: such a host launches, re-arms, re-drives and takes over through the shared records (`records.shared`) as the owner does, and never notifies for the repository, never writes its labels, never writes outcome-log rows for stops it did not launch and never records a recurring class as a reflection finding, so each is written once. A session it launched that waits or drifts is reported on that host, not notified. Every run's report names the host that owns the repository, and says so when another host's claims say they own it too |
 | `repositories[].stages` | Empty; the stages `--apply` starts for it. `rearm` starts re-arms and takeovers of drives, and a re-drive, once per change, of a converged drive whose pull request now conflicts with its base or whose head moved past the head the drive verified, and of a drive that stopped on a conflict (exit `9`). `pickup` starts a headless `do-item` pass per item the repository's `dispatch` section makes a pickup, bound to an admitted account through its configuration directory as a follow-up's pass is, under `dispatch.pickup_deadline` and with the host's `drive.pass_args` (or, on a Codex account, only where `drive.codex_bypass` is set). The pass keeps the agent's own model and effort, and `do-item` forwards the item's route to the implementer it delegates to. A pass that cannot finish without a person stops on a `Question:` line, which is notified as a need; nothing is started for the item again until it leaves the dispatch states and comes back. `followup` starts a headless pass running `dispatch.followup_command` per merged pull request, bound to an admitted account through its configuration directory as a drive's pass is, under the pass deadline and with the host's `drive.pass_args` (or, on a Codex account, `drive.codex_bypass`). Follow-ups open their workspaces in a lane of their own (`followup_opens_per_tick`, `followup_concurrency`), so they never wait for a drive's launch, nor a drive's launch for them; they still share the accounts' slots. A pass that stops on a routine question (one of the dispatcher's fixed classes, which the pass tags itself: today `local-leftover`, a local branch or worktree it may not delete without asking) is run again once with the class's standing answer (keep it, list it, finish the rest and record done), as is a follow-up that failed before passes tagged their questions, which needs its launch record still on the host only when no retry evidence was kept with its outcome; a pass that stops on any other question, or fails again after that run, is notified with its question. `notify` sends each notification once (with Orca, the workspace's comment, marked unread). `steer` sends the one nudge, `Your usage limit has reset. Continue`, once to an interactive session the runtime reports waiting after its account's wall reset; no other stage implies it |
@@ -1546,6 +1683,7 @@ review:
     - login: example-linter[bot]
       shape: badge                       # bold-token | badge | html-badge | pipe-fields | icon-fields
       severities: { Sev1: blocker, Sev2: high, Sev3: medium, Sev4: low }
+  code_scanning_severities: { critical: blocker, high: high, medium: medium, low: low, error: high, warning: medium, note: low }
   lenses:
     dir: .config/review-lenses           # the repository's own lens files
     off: [LENS-004]                      # lenses not to run
@@ -1565,6 +1703,8 @@ pull_requests:
   issue_link: closes                     # closes | refs | none
   size_budget: 600
   labels: [agent-authored]
+  labels_from_issue: { "kind:db-migration": needs-dba-review }
+  reviewers_from_issue: { "kind:db-migration": ["@org/dba"] }
   title_format: conventional             # conventional | free
 drive:
   validation_plan_command: "<your plan command>"   # changed files on stdin, JSON plan on stdout
@@ -1634,8 +1774,9 @@ issue_tracker:
     subtask_type: Sub-task               # default: the project's one sub-task type
     priorities: { urgent: Highest, high: High, medium: Medium, low: Low }
     resolutions: { done: Done, canceled: "Won't Do", duplicate: Duplicate }
-    link_types: { blocks: Blocks, related: Relates, duplicate: Duplicate }
+    link_types: { blocks: [Blocks, { name: Depends, inverted: true }], related: Relates, duplicate: Duplicate }
     field_labels: { Size: "size:" } # a field's values read as labels
+    pool_issue_types: [Task, Bug]        # default: every issue type
 do_item:
   agents:
     default: general-purpose
@@ -1648,6 +1789,8 @@ do_item:
     backend-dev: [schema-scout, api-scout]
   gates:
     - { labels: [db-migration], paths: ["migrations/**"], skill: db-migration-review }
+  guidance:
+    - { labels: [db-migration], paths: ["migrations/**"], skills: [jig:review], notes: "Add a rollback beside every forward migration." }
   execution_plan_block: execution-plan-v1
   arm_drive: auto                        # auto | tab | background | print
   work_types:                            # fields of the depth table to override
@@ -1703,6 +1846,16 @@ docs:
   schema: docs/.frontmatter-schema.yaml
   stale_after_days: 180
   promoted_statuses: [approved, active]
+  index:
+    preamble: docs/.index-preamble.md
+    descriptions:
+      guides: How-to pages for contributors
+    descriptions_from_readme: true
+    order: [guides, architecture]
+    frontmatter:
+      title: Documentation index
+      type: reference
+      tags: [navigation]
 promote_memory:
   lint_command: "<your memory lint> --dir {dir} --file {file}"
   target_dir: docs/retrospection

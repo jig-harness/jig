@@ -23,6 +23,12 @@ import type { SessionsReport } from "./runtime/port.ts";
 import type { TickContext } from "./tick-context.ts";
 import type { RepoObservation } from "./tick-observe.ts";
 import type { RepoReport } from "./types.ts";
+import {
+  readStewardDigest,
+  recordBelongsToDigest,
+  stewardRecords,
+} from "./steward.ts";
+import { applyStewardOrder } from "./steward-queue.ts";
 
 /** Plan one observed repository into its report. */
 export function planObserved(
@@ -31,10 +37,25 @@ export function planObserved(
 ): void {
   const { opened, tracked, forge, ctx, claims, sessions } = observation;
   const { repo, section, report } = opened;
+  if (
+    opened.owner &&
+    opened.stages.has("steward") &&
+    context.options.machine?.steward?.enabled === true
+  ) {
+    const orders = stewardRecords(repo.slug).flatMap((record) => {
+      if (record.value.kind !== "order") return [];
+      const digest = readStewardDigest(record.run);
+      return digest.ok && recordBelongsToDigest(record.value, digest.value)
+        ? [record.value]
+        : [];
+    });
+    tracked.pickups = applyStewardOrder(tracked.pickups, orders);
+  }
   const onlyLabeled = observation.labels?.onlyLabeled === true;
   planRepo(context, repo.slug, report, {
     slug: repo.slug,
     values: opened.values,
+    root: repo.path,
     ...(observation.board === undefined ? {} : { board: observation.board }),
     section,
     pickups: tracked.pickups,

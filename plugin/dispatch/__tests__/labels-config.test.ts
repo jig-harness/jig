@@ -10,6 +10,7 @@ import {
   type LabelConfig,
   stateOf,
 } from "../lib/labels.ts";
+import { markerSet } from "../lib/pr-markers.ts";
 import { dispatchSection } from "../lib/section.ts";
 import type { DrivenPr, LedgerClass } from "../lib/types.ts";
 
@@ -65,7 +66,8 @@ describe("dispatch.labels", () => {
       "dispatch.labels has unknown key(s): colour",
     );
     refusal({ enabled: true, prefix: "a,b" }, "no comma");
-    refusal({ enabled: true, prefix: "x".repeat(40) }, "at most 39 characters");
+    refusal({ enabled: true, prefix: "x".repeat(36) }, "at most 35 characters");
+    refusal({ enabled: true, prefix: "automation:x-" }, "automation:");
     refusal({ enabled: "yes" }, "must be true or false");
     refusal(
       { only_labeled: true },
@@ -83,6 +85,7 @@ describe("the label set", () => {
       "bot/stale",
       "bot/held",
       "bot/followed-up",
+      "bot/followup-failed",
       "bot/drive",
       "bot/rearm",
       "bot/hold",
@@ -105,11 +108,21 @@ describe("the label set", () => {
     expect(color("jig:parked")).not.toBe(color("jig:driving"));
     expect(color("jig:parked")).not.toBe(color("jig:converged"));
   });
+
+  it("colors a failed follow-up the parked red: a person acts on both", () => {
+    const failed = labelSet(ON).find((l) => l.name === "jig:followup-failed");
+    expect(failed?.color).toBe("d93f0b");
+    expect(failed?.description).toBe(
+      "Merged, and its follow-up failed: a person acts",
+    );
+  });
 });
 
 describe("the label set", () => {
   it("describes each label within the 100 characters the forge takes", () => {
-    const tooLong = labelSet(ON).filter((l) => l.description.length > 100);
+    const tooLong = [...labelSet(ON), ...markerSet("manual-ops")].filter(
+      (l) => l.description.length > 100,
+    );
     expect(tooLong.map((l) => l.name)).toEqual([]);
   });
 });

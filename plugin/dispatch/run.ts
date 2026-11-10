@@ -113,9 +113,12 @@ import {
 } from "./lib/launches.ts";
 import { probeWall } from "./lib/quota-probe.ts";
 import { settleAtExit } from "./lib/shared-launches.ts";
+import { followupEndOf, labelFollowupEnd } from "./lib/followup-label.ts";
+import { defectLine } from "../shared/pr-labels/write.ts";
 import {
   followupPassArgv,
   pickupPassArgv,
+  stewardPassArgv,
   QUESTION_PREFIX,
   sessionArgv,
 } from "./lib/session.ts";
@@ -435,6 +438,8 @@ async function tryWriteWall(
  * recorded. Throws when the pass's permission settings do not read.
  */
 function stageArgv(record: LaunchRecord): string[] {
+  if (record.action === "steward")
+    return stewardPassArgv(record, configuredPassArgs().words);
   if (isDrive(record)) return driveCommand(record, driveScript());
   if (record.action === "followup")
     return followupPassArgv(record, configuredPassArgs().words);
@@ -446,6 +451,7 @@ function stageArgv(record: LaunchRecord): string[] {
 /** Whether the wrapper runs a record's stage as a pass of its own: a follow-up's or a pickup's, under its own deadline, its last question kept. */
 function ownPass(record: LaunchRecord): boolean {
   return (
+    record.action === "steward" ||
     record.action === "followup" ||
     (record.action === "pickup" && !isInteractive(record))
   );
@@ -462,10 +468,13 @@ function runOptions(record: LaunchRecord): RunOptions {
 }
 
 /** The end of a follow-up's or a pickup's pass output, kept on its exit when it ended without recording done. */
-function saidOf(record: LaunchRecord, ran: Ran): { said?: string } {
+function saidOf(
+  record: LaunchRecord,
+  ran: Ran,
+): { said?: string; context?: string } {
   const said = ran.said?.trim() ?? "";
   if (said === "" || readResult(record.id) === "done") return {};
-  return { said };
+  return { said, context: (ran.output ?? "").slice(-8000) };
 }
 
 /** Whether a drive that stopped on its account's wall had that wall recorded; true when there was none to record. */
@@ -610,6 +619,7 @@ async function finishRun(
     ...saidOf(record, ran),
   });
   await endSharedClaim(id);
+  await labelFollowup(id);
   await closeTabIfDone(record, code);
   return code ?? 1;
 }
@@ -631,6 +641,31 @@ async function endSharedClaim(id: string): Promise<void> {
     console.error(
       `jig dispatch run: the launch's end is not on its claim (${why}); the next tick writes it`,
     );
+}
+
+/**
+ * A follow-up's end as its pull request's state label, now that its exit is
+ * recorded: best effort, one line here when it is not written, and the next
+ * tick corrects it; the wrapper's exit stays the stage's.
+ */
+async function labelFollowup(id: string): Promise<void> {
+  let line: string | null;
+  let target = `the follow-up of launch record ${id}`;
+  try {
+    const ended = readEnded(id);
+    const outcome = ended === null ? null : followupEndOf(ended);
+    if (ended === null || outcome === null || ended.record.pr === null) return;
+    target = `PR #${ended.record.pr}`;
+    const label = await labelFollowupEnd({
+      slug: ended.record.repo,
+      pr: ended.record.pr,
+      outcome,
+    });
+    line = label.line;
+  } catch (error) {
+    line = defectLine(target, error);
+  }
+  if (line !== null) console.error(`jig dispatch run: ${line}`);
 }
 
 /** Close the run's tab when the run left nothing for a person; a failure only says so. */

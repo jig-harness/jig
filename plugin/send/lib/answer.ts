@@ -17,7 +17,8 @@ import {
   answerLine,
   postAnswerComment,
 } from "../../skills/drive-pr/scripts/lib/answer-comment.ts";
-import { parkedQuestions, readDrive } from "../../ask/lib/drive.ts";
+import { readDrive } from "../../ask/lib/drive.ts";
+import { parkedQuestions } from "../../ask/lib/park-reading.ts";
 import type { AskContext } from "../../ask/lib/station.ts";
 import { NEXT_TICK, type Planned, refused, type TickReader } from "./plan.ts";
 import { openDrive } from "./open-drive.ts";
@@ -54,7 +55,11 @@ export async function planAnswer(
     return refused(
       `the parked questions of pull request ${pr} cannot be read: ${d.ledger}`,
     );
-  const questions = parkedQuestions(d.ledger, d.comments);
+  if (d.parks === null || "unreadable" in d.parks || d.parks.unread.length > 0)
+    return refused(
+      `not every place an answer to pull request ${pr}'s parked questions could be was read; no answer is sent`,
+    );
+  const questions = parkedQuestions(d.ledger, d.parks);
   const question = questions.find((q) => q.key === key);
   if (question === undefined)
     return refused(

@@ -6,6 +6,7 @@ import type {
   Tracker,
 } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
 import { servedParentHold } from "./served-parents.ts";
+import { otherRepoLabel, type RepoScope } from "./served-repo.ts";
 import { servedPlan } from "./served-plan.ts";
 import {
   readExecutionPlan,
@@ -40,15 +41,14 @@ export interface ServedPolicy {
   hitl?: string;
   manualOps?: string;
   executionPlanBlock?: string;
+  /** This repository's label and the other repositories': an item carrying another's is not this checkout's to start. */
+  repoScope?: RepoScope;
 }
-export interface ServedOptions {
+export interface ServedOptions extends ServedPolicy {
   cache?: PickupReads;
   epic: string;
   nowMs: number;
   headroom: boolean;
-  hitl?: string;
-  manualOps?: string;
-  executionPlanBlock?: string;
 }
 const closed = (i: PoolIssue) =>
   ["completed", "canceled", "duplicate"].includes(i.state.type);
@@ -130,6 +130,13 @@ export async function readServedPickups(
   const out: ServedReading = { wanted: [], unplaced: [], claimed: [] };
   const candidates: Candidate[] = [];
   const seen = new Set<string>();
+  const refused = options.repoScope?.invalid !== undefined;
+  if (refused)
+    out.unplaced.push({
+      target: tracker.adapter,
+      record: "tracker",
+      reason: `served pickups are refused: the repository scope is invalid: ${options.repoScope?.invalid}`,
+    });
   for (const person of people) {
     const identity =
       person.tracker[tracker.adapter as keyof ServedPerson["tracker"]];
@@ -143,6 +150,8 @@ export async function readServedPickups(
           state: i.state.name,
         })),
       );
+      // Claims are monitored either way; an invalid scope only starts nothing.
+      if (refused) continue;
       const roots = [
         ...(await assignments(tracker, identity, options, cache)),
         ...progress.filter(
@@ -188,6 +197,10 @@ export async function readServedPickups(
     assignedBy: c.by,
     servedPerson: c.identity,
     queueIssue: c.issue,
+    queueRank: {
+      unblocks: c.unblocks,
+      ...(c.epicOrder === undefined ? {} : { epicOrder: c.epicOrder }),
+    },
     ...(c.ancestor === undefined ? {} : { ancestorEpic: c.ancestor }),
   }));
   return out;
@@ -205,6 +218,11 @@ export async function freshServedPickup(
     const issue = await tracker.poolIssue(key);
     if (issue === null || !ready(issue))
       return "the served item is no longer open and not started";
+    if (policy.repoScope?.invalid !== undefined)
+      return `the repository scope is invalid: ${policy.repoScope.invalid}`;
+    const elsewhere = otherRepoLabel(issue.labels, policy.repoScope);
+    if (elsewhere !== null)
+      return `it carries the repository label ${elsewhere}, which is another repository's`;
     const parentHold = await servedParentHold(
       tracker,
       issue,
@@ -292,19 +310,30 @@ async function enqueueChildren(
     });
 }
 
+/**
+ * Whether the walk passes this node by: already seen, nothing to start and no
+ * epic to walk, or another repository's item (an epic is still walked, its
+ * children carry their own labels).
+ */
+function leavesNode(
+  issue: PoolIssue,
+  options: ServedOptions,
+  seen: ReadonlySet<string>,
+): boolean {
+  const walkedEpic =
+    issue.labels.includes(options.epic) &&
+    issue.hasOpenChildren &&
+    !closed(issue);
+  if (seen.has(issue.identifier) || (!ready(issue) && !walkedEpic)) return true;
+  return (
+    !walkedEpic && otherRepoLabel(issue.labels, options.repoScope) !== null
+  );
+}
+
 async function visitNode(ctx: WalkContext, node: Pending): Promise<void> {
   const { tracker, identity, options, cache, out, candidates, seen } = ctx;
   const { issue, ancestor } = node;
-  if (
-    seen.has(issue.identifier) ||
-    (!ready(issue) &&
-      !(
-        issue.labels.includes(options.epic) &&
-        issue.hasOpenChildren &&
-        !closed(issue)
-      ))
-  )
-    return;
+  if (leavesNode(issue, options, seen)) return;
   // A child assigned elsewhere is not inherited. A direct assignment is read in its owner's list.
   if (ancestor !== undefined && issue.assignee !== null) return;
   seen.add(issue.identifier);
@@ -339,7 +368,10 @@ async function visitNode(ctx: WalkContext, node: Pending): Promise<void> {
     }
     if (meta.children.length > 0) {
       await enqueueChildren(ctx, issue, ancestor, meta, candidate);
-    } else if (ready(issue)) {
+    } else if (
+      ready(issue) &&
+      otherRepoLabel(issue.labels, options.repoScope) === null
+    ) {
       const parentHold = await servedParentHold(
         tracker,
         issue,

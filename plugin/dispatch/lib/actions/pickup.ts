@@ -314,6 +314,7 @@ async function retryPending(
   ctx: PickupContext,
 ): Promise<void> {
   for (const record of replayable(state, repo.slug, ["pickup"])) {
+    if (record.stewardResume !== undefined) continue;
     const item = record.item as string;
     const unauthorized = servedAuthorization(state, ctx, record, item);
     const fresh =

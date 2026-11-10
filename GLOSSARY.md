@@ -2248,21 +2248,46 @@ make, use the entry's term instead.
   merged, taken over, re-armable, stopped by a person); a run that parks or
   fails keeps its tab, and the next run for the same pull request or item
   closes it. A tab a person opened is never closed.
-- **Dispatch labels** — the pull-request labels through which the
-  *dispatcher* and a person see and steer each other, off unless a
-  repository turns them on, all under one prefix the repository picks
-  (`jig:` by default). The dispatcher keeps a state label on each pull
-  request it manages (driving, converged, parked, stale, *held*,
-  followed-up), derived from the drive ledger and the *serialized areas* at
-  every *tick* and never read to decide what to start. A person adds the
-  commands: `drive` asks the dispatcher to drive a pull request that has
-  no drive yet, and `hold` stands it down from a pull request until the
-  person removes the label.
+- **Pull request state labels (dispatch labels)** (after their setting `dispatch.labels`) — the labels that show where a pull request stands,
+  from any forge client, and through which a person steers its drive and
+  the *dispatcher*: off unless a repository turns them on, all under one
+  prefix the repository picks (`jig:` by default). Each driven pull request
+  carries one state label (driving, converged, parked, stale, *held*,
+  followed-up, followup-failed), projected from its drive ledger by one
+  mapping the drive, the follow-up and the dispatcher's tick share, each
+  writing when what it owns changes: the drive when it writes its ledger
+  (driving, converged, parked), the follow-up
+  when it ends (followed-up, followup-failed), and the dispatcher at every
+  *tick*, which also writes stale and held (from the *serialized areas*)
+  and corrects any label that disagrees. No writer reads a state label to
+  decide what to start, and none creates one: a one-time setup does. Beside
+  them the dispatcher keeps marker labels without the prefix: the
+  *owed-steps label* and `automation` (*automation pull request*). A person
+  adds the commands: `drive` asks the dispatcher to drive a pull request
+  that has no drive yet, and `hold` stands the dispatcher and the drive's
+  own label writes down from a pull request until the person removes it.
 - **Adoption rule** — a repository's opt-in (`dispatch.adopt`) under which
   the *dispatcher* drives its own recent pull requests without anyone
   labelling them: an open pull request with no drive ledger, opened by one
   of the rule's authors and updated within its window, is armed as if a
-  person had put the `drive` label on it.
+  person had put the `drive` label on it. An *automation pull request* is
+  armed only while it needs work.
+- **Automation pull request** — a pull request a bot or a workflow opened
+  (a regeneration, a sync, a dependency update) rather than a person: it
+  carries a label of the `automation:` family, which the workflow applies
+  to name its job (`automation:docs-sync`), or the generic `automation`
+  label, which the *dispatcher* puts on a bot's pull request that has none
+  (a bot the *adoption rule* names is the host's own identity, not
+  automation). The dispatcher drives one, adopted or re-driven, only while
+  it needs work (a failed check, a conflict with its base, an unresolved
+  review thread) and leaves a healthy one for a person to merge.
+- **Owed-steps label** — the repository's manual-operations label
+  (`issue_tracker.labels.manual_ops`, `manual-ops` by default) on a pull
+  request: its description's `## Out-of-tree follow-ups` section lists a
+  step a person still takes outside the code. The *dispatcher* sets it from
+  the description at every *tick*, and a merged pull request keeps it until
+  every step is checked off or its follow-up is done. The same label on an
+  issue marks the issue's own manual steps.
 - **Serialized area** — an area of a *change-area catalog* marked
   `serialize: true`: its pull requests conflict with each other whenever
   two of them move at once (a migrations folder, a schema), so the
@@ -2360,13 +2385,13 @@ make, use the entry's term instead.
   gauge stays under its limit with that session counted, and a new pickup
   never takes the last unit of room, so the drives that turn earlier work
   into merges keep running. It reports what it would hold before a person
-  turns the limit on ([design](design/line-at-capacity.md#the-hosts-load-factor)).
+  turns the limit on ([load factor](plugin/CONFIGURATION.md#the-machines-dispatch-file)).
 - **Served person** — a person a *dispatcher*'s host works for, named with
   their forge logins and tracker identities in the host's own dispatch
   file. An open item a person with write access assigned to them, and each
   unassigned item under an epic assigned to them, is ranked and picked up
   beside the *factory identity*'s, and the pickup keeps them as the
-  item's assignee ([design](design/line-at-capacity.md#serving-named-people)).
+  item's assignee ([served pickups](plugin/README.md#the-dispatcher)).
 - **Steward** — the agent pass a *dispatcher*'s host starts every 20
   minutes, when its input changed, to read what is stopped and waiting on
   the line and propose what to do about it: re-arm a drive once when its
@@ -2375,14 +2400,14 @@ make, use the entry's term instead.
   It writes records from a closed list, and the next *tick* carries them
   out under its own guards. It never merges, answers a parked question,
   re-arms a drive a person stopped or held, writes code or sends a session free
-  text ([design](design/line-at-capacity.md#the-steward-every-20-minutes)).
+  text ([steward](plugin/skills/steward/README.md)).
   *Avoid:* orchestrator.
 - **Act (of a need)** — the one thing a person does to settle something
   that waits on them, from a closed list: Merge, Decide, Authorize, Reply,
   Do or Investigate. Each need on the *dispatch board* opens with its act,
   derived from its park's class, then the ask and the recommended option
   with what it changes and costs
-  ([design](design/line-at-capacity.md#what-each-need-asks-of-a-person)).
+  ([a need's act](plugin/README.md#the-dispatcher)).
 - **Kickoff** — the first prompt an agent is given in a new workspace,
   usually the pickup skill and the issue key. The
   [Herdr workspace tool](tools/herdr/README.md) sends it once per piece of
@@ -2447,6 +2472,11 @@ make, use the entry's term instead.
   past it as a line, so smooth shapes such as a cylinder's sides get an
   outline that edge lines alone would miss
   ([design/website.md](design/website.md)).
+- **Implementation guidance** — the skills and notes a kind of change brings
+  to whichever agent implements it, chosen by the issue's labels, the paths
+  the change touches and the change areas it reaches, and handed to the
+  agent with the work. It adds to the review gates and never replaces one
+  ([do-item](plugin/skills/do-item/SKILL.md)).
 - **Intent chain** — the short statement of why a piece of work exists: the
   epic's intent, the issue's scope and its acceptance criteria. `do-item`
   writes it to a snapshot file and *Refocus* puts it back in front of an agent

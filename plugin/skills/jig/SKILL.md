@@ -18,7 +18,14 @@ containing this `SKILL.md`. Claude Code fills it in. In any other harness,
 replace it with that path yourself before reading a file or running a
 command: a shell would expand the unset variable to an empty string.
 `<plugin>` is the installed plugin's root, two directories up
-(`${CLAUDE_SKILL_DIR}/../..`).
+(`${CLAUDE_SKILL_DIR}/../..`). A copy made by hand, with no plugin install,
+holds the skills but may lack the files at that root
+([README.md § Where it works](../../README.md#where-it-works) lists
+them): where `<plugin>/README.md` or `<plugin>/CONFIGURATION.md` is missing,
+read it at the installed version's tag (the version is in `<plugin>`'s
+manifest folder, `.claude-plugin/plugin.json` or `.codex-plugin/plugin.json`;
+with no manifest either, say the version is unknown and read the default
+branch).
 
 ## Where the reference is
 
@@ -50,6 +57,8 @@ then `do-item` (or `work-batch`), which opens the pull request and arms
 - **Deliver a change:** `file-issue`, `do-item`, `work-batch`, `drive-pr`,
   `resolve-review-comments`, `resolve-conflicts`, `fix-ci`, `operator`,
   which says where work stands and what waits on a person.
+  `steward` is the dispatcher-launched pass that proposes guarded recovery
+  records and frames the needs that remain a person's.
 - **Review a change:** `change-areas`, `review`, `github-actions`.
 - **Understand, decide and record:** `explain`, `decide`, `adr`, `red-team`,
   `design-brief-builder`.

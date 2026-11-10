@@ -77,6 +77,11 @@ These are the reasoned parts Jig has:
 - **The audit's judgement**: the scores the audit session gives every
   criterion no [probe](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
   settles.
+- **The steward's judgement**: an owner-host pass reads stopped work and the
+  assigned queue and submits closed records through
+  `skills/steward/scripts/steward.ts`. The next tick rechecks them under its
+  launch guards and recovery budget. The model starts no launch and never
+  answers a registry-class park; see [steward](skills/steward/README.md).
 
 The two kinds meet in one pattern almost everywhere: **a model decides, and
 a script writes the record.** A pass chooses a thread's outcome;
@@ -328,12 +333,18 @@ development and shipped as a version.
   (`skills/drive-pr/scripts/lib/status/terminal-states.ts`'s `DRIVE_EXIT` and
   the sets beside it), never as a number of their own, and the registry's
   consistency test fails a dispatcher file that restates one. Where a repository turns
-  [dispatch labels](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+  [pull request state labels](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
   on, the tick reads the pull requests' labels with them, reads `drive`
   and `hold` as a person's commands, and last sets each managed pull
-  request's state label from its ledger (`dispatch/lib/labels.ts`,
-  `dispatch/lib/actions/labels.ts`); it never reads a state label to
-  decide what to start. Where a repository turns its
+  request's state label from its ledger, re-reading the ledger just before
+  a write and skipping one whose ledger changed since the tick read it
+  (`dispatch/lib/actions/labels.ts`, `dispatch/lib/label-freshness.ts`); it
+  never reads a state label to decide what to start. The mapping from a
+  ledger to its state label is one projection in shared code
+  (`shared/pr-labels/`), which the drive (`drive-pr`'s
+  `scripts/lib/driver/state-labels.ts`) and the follow-up
+  (`dispatch/lib/followup-label.ts`) write through too, each when what it
+  owns changes. Where a repository turns its
   [adoption rule](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
   on, the tick arms a pull request with no ledger that the rule's author
   and window match as it arms a labelled one (`dispatch/lib/adopt.ts`).
@@ -530,6 +541,11 @@ development and shipped as a version.
   fully triaged (`finish-round.ts` exit 7); a post from a pass whose lease
   was revoked (`skills/drive-pr/scripts/assert-post-allowed.ts`); a ledger
   version it cannot read (exit 1).
+- **Answers to parked decisions.** One parser reads whole-comment
+  `approve` and `choose <option>` answers and their notes for re-arm, the
+  dispatcher, `jig ask` and `jig send`. It uses each person's latest edit,
+  keeps other text as a free answer, and leaves conflicting choices or
+  notes disputed. Any person's answer prevents a provisional decision.
 - **Reasoned.** Each pass decides, for every finding, its outcome and its
   fix, at the repository's
   [autonomy level](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
@@ -826,6 +842,13 @@ Several parts of the right-hand column above are kept by the instructions
 every skill follows and by the forge's own trust rules, not by a check that
 stops a model. A team that runs passes unattended should know which:
 
+- **Applying a chosen option.** A
+  [structured answer](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) gives the pass the
+  chosen option, the framed decision and any note. The pass's instructions
+  require it to apply that option, permit a note only to narrow it, and
+  park again when the note conflicts or asks for more. No script checks
+  that the changes implement the option's prose.
+
 - **Comments a script trusts by their author.** A ledger and a takeover
   claim count when the drive's own login or an owner, member or
   collaborator wrote them; a follow-up marker when the dispatcher's own
@@ -847,9 +870,13 @@ stops a model. A team that runs passes unattended should know which:
   sends only on the person's instruction, after showing the dry run, is a
   rule of its instructions.
 - **Resolving a thread.**
-  `skills/resolve-review-comments/scripts/resolve-thread.ts` resolves whatever thread it is
-  given; that a thread is resolved only after its fix or reply is posted is
-  a rule of the skill's instructions, not a check in the script.
+  `skills/resolve-review-comments/scripts/resolve-thread.ts` refuses resolution
+  without a reply from the resolving login after the last substantive reviewer
+  comment. The drive's canonical transparent bot follow-up after that reply
+  requires no further answer; standalone installs without the drive stay strict.
+  A pass holding the forge credential can bypass the script with a direct
+  mutation; the credential does not enforce this check. The skill's
+  instructions still govern that boundary and whether the fix was pushed.
 - **The push and the merge.** A pass pushes through
   `skills/drive-pr/scripts/guarded-push.ts` and
   never merges because its instructions say so: the plugin's only hook is

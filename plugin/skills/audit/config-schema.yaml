@@ -69,6 +69,7 @@ strict:
   - issue_tracker.jira.priorities
   - issue_tracker.jira.resolutions
   - issue_tracker.jira.link_types
+  - docs.index
   - resolve_conflicts
   - review.lenses
   - reflection
@@ -209,14 +210,14 @@ fields:
   dispatch.labels.enabled:
     type: boolean
     default: false
-    read_by: [dispatch]
+    read_by: [dispatch, drive-pr]
     repository_only: true
     since: 0.122.0
   dispatch.labels.prefix:
     type: string
     default: "jig:"
-    pattern: "^(?=.{1,39}$)[^,\\s](?:[^,]*[^,\\s])?$"
-    read_by: [dispatch]
+    pattern: "^(?=.{1,35}$)[^,\\s](?:[^,]*[^,\\s])?$"
+    read_by: [dispatch, drive-pr]
     repository_only: true
     since: 0.122.0
   dispatch.labels.only_labeled:
@@ -281,7 +282,7 @@ fields:
   review.repo_label:
     type: string
     pattern: "^[A-Za-z0-9._:@+/-]+$"
-    read_by: [resolve-review-comments, work-batch]
+    read_by: [resolve-review-comments, work-batch, dispatch]
     repository_only: true
   review.repo_slug:
     type: string
@@ -299,7 +300,7 @@ fields:
     items: { type: string, pattern: "^[A-Za-z0-9._:@+/-]+$" }
     distinct: true
     nonempty: true
-    read_by: [resolve-review-comments, drive-pr, work-batch]
+    read_by: [resolve-review-comments, drive-pr, work-batch, dispatch]
   review.taxonomy.sizes:
     type: list
     items: string
@@ -348,6 +349,12 @@ fields:
     type: string
     read_by: [drive-pr]
     since: 0.169.0
+  review.code_scanning_severities:
+    type: map
+    nullable: true
+    values_type: string
+    read_by: [drive-pr, resolve-review-comments]
+    since: 0.189.2
   review.severity_formats:
     type: list
     nullable: true
@@ -425,6 +432,15 @@ fields:
     type: list
     items: string
     distinct: true
+    read_by: [do-item]
+  pull_requests.labels_from_issue:
+    type: map
+    since: 0.194.0
+    read_by: [do-item]
+  pull_requests.reviewers_from_issue:
+    type: map
+    values_type: { type: list, items: string }
+    since: 0.194.0
     read_by: [do-item]
   pull_requests.title_format:
     type: enum
@@ -594,6 +610,7 @@ fields:
   issue_tracker.jira.link_types:
     type: map
     keys: [blocks, related, duplicate]
+    values_type: any
     read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
     since: 0.111.0
   issue_tracker.jira.field_labels:
@@ -601,6 +618,13 @@ fields:
     values_type: string
     read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
     since: 0.145.0
+  issue_tracker.jira.pool_issue_types:
+    type: list
+    items: string
+    distinct: true
+    nonempty: true
+    read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
+    since: 0.192.0
   issue_tracker.labels.epic:
     type: string
     read_by: [do-item, resolve-review-comments, drive-pr, work-batch, file-issue, reflect, dispatch]
@@ -609,7 +633,7 @@ fields:
     read_by: [do-item, decide, work-batch]
   issue_tracker.labels.manual_ops:
     type: string
-    read_by: [do-item, work-batch]
+    read_by: [do-item, work-batch, dispatch]
   issue_tracker.labels.followup:
     type: string
     read_by: [do-item, resolve-review-comments, drive-pr, work-batch]
@@ -682,6 +706,17 @@ fields:
         labels: { type: list, items: string }
         paths: { type: list, items: string }
         skill: string
+    read_by: [do-item]
+  do_item.guidance:
+    type: list
+    items:
+      fields:
+        labels: { type: list, items: string }
+        paths: { type: list, items: string }
+        skills: { type: list, items: string }
+        notes: string
+      optional: [labels, paths, skills, notes]
+    since: 0.194.0
     read_by: [do-item]
   do_item.execution_plan_block:
     type: string
@@ -901,6 +936,31 @@ fields:
     read_by: [docs]
     default: [approved]
     since: 0.175.0
+  docs.index.preamble:
+    type: path
+    exists: required
+    read_by: [docs]
+    repository_only: true
+    since: 0.190.0
+  docs.index.descriptions:
+    type: map
+    read_by: [docs]
+    since: 0.190.0
+  docs.index.descriptions_from_readme:
+    type: boolean
+    default: false
+    read_by: [docs]
+    since: 0.190.0
+  docs.index.order:
+    type: any
+    default: name
+    read_by: [docs]
+    since: 0.190.0
+  docs.index.frontmatter:
+    type: map
+    values_type: any
+    read_by: [docs]
+    since: 0.190.0
   promote_memory.lint_command:
     type: command
     read_by: [promote-memory]

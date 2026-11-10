@@ -5,17 +5,23 @@
 import { describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { type Catalog, validateCatalog } from "../scripts/lib/catalog.ts";
 import {
   checkCatalog,
   generatedProblems,
   graphProblems,
+  INVARIANTS,
+  type Invariant,
+  type InvariantOverrides,
   outputNameProblems,
+  unknownInvariants,
   repositoryFiles,
   uncoveredFiles,
   workspaceProblems,
 } from "../scripts/lib/check.ts";
-import { fixture, repository, temporary, write } from "./helpers.ts";
+import { matchesGlob } from "../scripts/lib/resolve.ts";
+import { fixture, repository, run, temporary, write } from "./helpers.ts";
 
 const area = (paths: string[], impliedBy: string[] = [], extra = {}) => ({
   title: "An area",
@@ -298,4 +304,123 @@ test("repositoryFiles lists tracked and untracked files, not ignored ones", () =
     "a.txt",
     "new.txt",
   ]);
+});
+
+describe("exempting or replacing a generic invariant", () => {
+  const ctx = (root: string, trackedFiles: string[]) => ({
+    root,
+    trackedFiles,
+  });
+  // One workspace split into two areas: code and content.
+  const split = () => {
+    const root = temporary();
+    mkdirSync(join(root, "apps", "web"), { recursive: true });
+    return {
+      root,
+      files: ["apps/web/src/main.ts", "apps/web/content/a.md"],
+      catalog: catalogOf({
+        code: area(["apps/web/src/**"], [], { workspace: ["apps/web"] }),
+        content: area(["apps/web/content/**"]),
+      }),
+    };
+  };
+  const union: Invariant = (catalog, { trackedFiles }) =>
+    trackedFiles
+      .filter((file) => file.startsWith("apps/web/"))
+      .filter(
+        (file) =>
+          !Object.values(catalog.areas).some((a) =>
+            a.paths.some((glob) => matchesGlob(file, glob)),
+          ),
+      )
+      .map((file) => `workspace file \`${file}\` belongs to no area`);
+
+  test("the generic workspace invariant fails the split workspace", () => {
+    const { root, files, catalog } = split();
+    expect(checkCatalog(catalog, ctx(root, files))).toHaveLength(1);
+  });
+
+  test("a replacement checks the split against the union of its areas' paths", () => {
+    const { root, files, catalog } = split();
+    expect(
+      checkCatalog(catalog, ctx(root, files), { workspace: union }),
+    ).toEqual([]);
+    expect(
+      checkCatalog(catalog, ctx(root, [...files, "apps/web/other.txt"]), {
+        workspace: union,
+      }),
+    ).toEqual(["workspace file `apps/web/other.txt` belongs to no area"]);
+  });
+
+  test("false exempts an invariant and leaves the others", () => {
+    const { root, files, catalog } = split();
+    expect(
+      checkCatalog(catalog, ctx(root, files), { workspace: false }),
+    ).toEqual([]);
+    const loop = catalogOf({ a: area(["a/**"], ["a"]) });
+    expect(checkCatalog(loop, ctx(root, []), { workspace: false })).toEqual([
+      "a: implies itself",
+    ]);
+  });
+
+  test("every generic invariant has a name, and an unknown one is refused", () => {
+    expect(Object.keys(INVARIANTS)).toEqual([
+      "graph",
+      "output-names",
+      "workspace",
+      "generated",
+    ]);
+    const { root, files, catalog } = split();
+    const typo = { workspaces: false } as unknown as InvariantOverrides;
+    expect(() => checkCatalog(catalog, ctx(root, files), typo)).toThrow(
+      "unknown invariant `workspaces` (known: graph, output-names, workspace, generated)",
+    );
+    expect(unknownInvariants({ graph: false, nope: false })).toEqual(["nope"]);
+  });
+
+  describe("through runCheck", () => {
+    const composer = (invariants: string) => `
+import { runCheck } from ${JSON.stringify(join(import.meta.dir, "../scripts/lib/cli.ts"))};
+process.exitCode = await runCheck(process.argv.slice(2), { catalogPath: "catalog.yaml", invariants: ${invariants} });
+`;
+    const repo = () =>
+      repository({
+        "catalog.yaml": [
+          "areas:",
+          "  code:",
+          "    title: Code",
+          "    category: library",
+          "    paths: ['apps/web/src/**']",
+          "    workspace: [apps/web]",
+          "    impliedBy: []",
+          "    deployTier: none",
+          "  content:",
+          "    title: Content",
+          "    category: docs",
+          "    paths: ['apps/web/content/**']",
+          "    workspace: []",
+          "    impliedBy: []",
+          "    deployTier: none",
+          "",
+        ].join("\n"),
+        "apps/web/src/main.ts": "x\n",
+        "apps/web/content/a.md": "x\n",
+        "composer.ts": composer("{}"),
+      });
+    const runComposer = (root: string, invariants: string) => {
+      write(root, "composer.ts", composer(invariants));
+      return run(root, join(root, "composer.ts"), []);
+    };
+
+    test("fails without the option, passes exempted, refuses a typo", () => {
+      const root = repo();
+      const failing = runComposer(root, "{}");
+      expectSpawnExit(failing, 1);
+      expect(failing.stderr).toContain("workspace `apps/web` holds 1 file(s)");
+      expectSpawnExit(runComposer(root, "{ workspace: false }"), 0);
+      const typo = runComposer(root, "{ workspaces: false }");
+      expectSpawnExit(typo, 2);
+      expect(typo.stderr).toContain("unknown invariant workspaces");
+    });
+  });
 });

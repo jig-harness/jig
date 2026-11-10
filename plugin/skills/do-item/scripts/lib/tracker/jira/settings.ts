@@ -9,6 +9,10 @@
  *     resolutions: { done: Done, canceled: Won't Do, duplicate: Duplicate }
  *     link_types: { blocks: Blocks, related: Relates, duplicate: Duplicate }
  *     field_labels: { Size: "size:" }   # a field's values read as labels
+ *     pool_issue_types: [Task, Bug]     # default: every type
+ *
+ * A relation in `link_types` may name several link types, each a name or
+ * `{ name, inverted }`: `[Blocks, { name: "Depends", inverted: true }]`.
  *
  * The section is parsed whatever the adapter, so a mistyped field is refused
  * before the adapter is chosen; only the Jira adapter requires `site`.
@@ -29,6 +33,13 @@ export type ResolvedState = (typeof RESOLVED_STATES)[number];
 export const LINKED_RELATIONS = ["blocks", "related", "duplicate"] as const;
 export type LinkedRelation = (typeof LINKED_RELATIONS)[number];
 
+/** One link type a relation is carried by. */
+export interface LinkTypeEntry {
+  name: string;
+  /** The type's outward side reads as the relation's inverse ("is blocked by"). */
+  inverted: boolean;
+}
+
 export interface JiraSettings {
   /** `https://<name>.atlassian.net`, no trailing slash; `null` = not set. */
   site: string | null;
@@ -37,9 +48,12 @@ export interface JiraSettings {
   subtaskType: string | null;
   priorities: Record<PriorityName, string>;
   resolutions: Record<ResolvedState, string>;
-  linkTypes: Record<LinkedRelation, string>;
+  /** Each relation's link types; the first is the one a new link gets. */
+  linkTypes: Record<LinkedRelation, LinkTypeEntry[]>;
   /** A field's name or id → the prefix of the labels its values become. */
   fieldLabels: Record<string, string>;
+  /** The issue types every pool and population is limited to; empty = every type. */
+  poolIssueTypes: string[];
 }
 
 const FIELDS = [
@@ -50,6 +64,7 @@ const FIELDS = [
   "resolutions",
   "link_types",
   "field_labels",
+  "pool_issue_types",
 ];
 
 /** The issue type a new issue gets when none is configured. */
@@ -149,6 +164,106 @@ function namesOf<K extends string>(
   return out;
 }
 
+/** The relations whose links have a direction, which `inverted` turns round. */
+const DIRECTED: ReadonlyArray<LinkedRelation> = ["blocks", "duplicate"];
+
+/** One entry of a relation's list: a name, or `{ name, inverted }`. */
+function linkEntryOf(
+  v: unknown,
+  at: string,
+  relation: LinkedRelation,
+): LinkTypeEntry {
+  if (typeof v === "string")
+    return { name: nonEmpty(v, at).trim(), inverted: false };
+  if (!isRecord(v))
+    throw new TrackerConfigError(
+      at,
+      `${at} must be a link type's name or { name, inverted }`,
+    );
+  const extra = Object.keys(v).find((k) => k !== "name" && k !== "inverted");
+  if (extra !== undefined)
+    throw new TrackerConfigError(
+      `${at}.${extra}`,
+      `${at}.${extra} is not one of name, inverted`,
+    );
+  if (v.inverted !== undefined && typeof v.inverted !== "boolean")
+    throw new TrackerConfigError(
+      `${at}.inverted`,
+      `${at}.inverted must be true or false`,
+    );
+  const inverted = v.inverted === true;
+  if (inverted && !DIRECTED.includes(relation))
+    throw new TrackerConfigError(
+      `${at}.inverted`,
+      `${at}.inverted: ${relation} has no direction to invert`,
+    );
+  return { name: nonEmpty(v.name, `${at}.name`).trim(), inverted };
+}
+
+/**
+ * `link_types`: each relation to one link type or a list of them. Every name
+ * in every list must differ from the others, ignoring case, since a link of a
+ * type named twice would read as two relations.
+ */
+function linkTypesOf(v: unknown): Record<LinkedRelation, LinkTypeEntry[]> {
+  const at = field("link_types");
+  if (v !== undefined && v !== null && !isRecord(v))
+    throw new TrackerConfigError(at, `${at} must be a mapping`);
+  const out = Object.fromEntries(
+    LINKED_RELATIONS.map((r) => [
+      r,
+      [{ name: DEFAULT_LINK_TYPES[r], inverted: false }],
+    ]),
+  ) as Record<LinkedRelation, LinkTypeEntry[]>;
+  for (const [key, value] of Object.entries(v ?? {})) {
+    const where = `${at}.${key}`;
+    if (!(LINKED_RELATIONS as readonly string[]).includes(key))
+      throw new TrackerConfigError(
+        where,
+        `${where} is not one of ${LINKED_RELATIONS.join(", ")}`,
+      );
+    const relation = key as LinkedRelation;
+    const list = Array.isArray(value) ? value : [value];
+    if (list.length === 0)
+      throw new TrackerConfigError(where, `${where} names no link type`);
+    out[relation] = list.map((e, i) =>
+      linkEntryOf(e, Array.isArray(value) ? `${where}[${i}]` : where, relation),
+    );
+  }
+  const names = LINKED_RELATIONS.flatMap((r) => out[r].map((e) => e.name));
+  const twice = names.find(
+    (n, i) => names.findIndex((m) => m.toLowerCase() === n.toLowerCase()) !== i,
+  );
+  if (twice !== undefined)
+    throw new TrackerConfigError(
+      at,
+      `${at} names '${twice}' twice; each needs its own name`,
+    );
+  return out;
+}
+
+/**
+ * `pool_issue_types`: the issue types every pool is limited to. Whether the
+ * project has each is checked when the site is first read.
+ */
+function poolIssueTypesOf(v: unknown): string[] {
+  const at = field("pool_issue_types");
+  if (v === undefined || v === null) return [];
+  if (!Array.isArray(v) || v.length === 0)
+    throw new TrackerConfigError(
+      at,
+      `${at} must be a non-empty list of issue type names; leave it out to pool every type`,
+    );
+  const out: string[] = [];
+  for (const [i, t] of v.entries()) {
+    const name = nonEmpty(t, `${at}[${i}]`).trim();
+    if (out.some((o) => o.toLowerCase() === name.toLowerCase()))
+      throw new TrackerConfigError(at, `${at} names '${name}' twice`);
+    out.push(name);
+  }
+  return out;
+}
+
 /** A label prefix: no whitespace, since a Jira label holds none. */
 const PREFIX = /^\S{1,100}$/;
 
@@ -218,13 +333,9 @@ export function parseJiraSettings(raw: unknown): JiraSettings {
       RESOLVED_STATES,
       DEFAULT_RESOLUTIONS,
     ),
-    linkTypes: namesOf(
-      section.link_types,
-      "link_types",
-      LINKED_RELATIONS,
-      DEFAULT_LINK_TYPES,
-    ),
+    linkTypes: linkTypesOf(section.link_types),
     fieldLabels: fieldLabelsOf(section.field_labels),
+    poolIssueTypes: poolIssueTypesOf(section.pool_issue_types),
   };
 }
 
