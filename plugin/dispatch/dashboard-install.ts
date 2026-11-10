@@ -299,8 +299,12 @@ async function answers(url: string): Promise<boolean> {
     (cause) => failed("not-answering", "reader not answering", cause),
   );
   if (!response.ok) return false;
-  await response.value.body?.cancel();
-  return response.value.ok;
+  // A body that errors after the headers arrive makes cancel() reject.
+  const cancelled = await Promise.resolve(response.value.body?.cancel()).then(
+    () => true,
+    () => false,
+  );
+  return cancelled && response.value.ok;
 }
 
 export async function dashboardStatus(): Promise<number> {
