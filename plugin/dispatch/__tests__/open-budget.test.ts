@@ -2,6 +2,7 @@ import { afterEach, expect, it, spyOn } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { closeStateDb } from "../lib/state.ts";
 import * as accounts from "../lib/accounts.ts";
 import {
   openWithinBudget,
@@ -27,9 +28,8 @@ const repo = {
 const dispatched = { name: "test", mark: "test" };
 const launch = { pr: 7, head: "feature/7", dispatched };
 const notice = { notices: "jig-dispatch-notices", dispatched };
-
 function state(): ApplyState {
-  const root = mkdtempSync(join(tmpdir(), "jig-open-budget-"));
+  const root = mkdtempSync(join(tmpdir(), "dispatch-open-budget-"));
   roots.push(root);
   return {
     root,

@@ -166,6 +166,7 @@ export async function settleOutcomes(
     ),
     context.nowMs,
     days ?? 30,
+    context.apply?.root,
   );
   return (
     unlogged.length > 0 ||

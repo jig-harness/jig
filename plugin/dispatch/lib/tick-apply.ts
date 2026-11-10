@@ -21,6 +21,8 @@ import {
 import { applyFollowups } from "./actions/followup.ts";
 import { applyNotices } from "./actions/notify.ts";
 import { applyPickups } from "./actions/pickup.ts";
+import { applySteward } from "./actions/steward.ts";
+import { applyStewardRecords } from "./steward-apply.ts";
 import { applySteers, retireSteers } from "./actions/steer.ts";
 import { adoptionOf, ownAuthors } from "./adopt.ts";
 import { type LaunchGroup, launchStageOrder } from "./apply-order.ts";
@@ -61,6 +63,7 @@ import type { ActionBook } from "./failures.ts";
 import type {
   ApplyStage,
   DispatchSection,
+  DrivenPr,
   MarkedPr,
   RepoReport,
   RepoTarget,
@@ -137,6 +140,7 @@ export async function actObserved(
   if (apply === null) return;
   const { opened, forge, ctx, claims } = observation;
   const { repo, section, report } = opened;
+  await hooks.guard("steward", () => applyStewardRecords(apply, observation));
   const book = bookOf(context, repo.slug, report);
   await endOwnClaims(ctx, report, {
     claims,
@@ -165,18 +169,22 @@ export async function actObserved(
     apply: (group) =>
       applyStages(apply, opened.stages, report, inputs, group, hooks.guard),
     finish: () =>
-      applyStages(
-        apply,
-        opened.stages,
-        report,
-        inputs,
-        "finish",
-        hooks.guard,
-        hooks.project,
-      ).then(() =>
-        // `after` times its own phases: a boundary of its own, outside the apply timer.
-        hooks.guard("close", hooks.after, false),
-      ),
+      hooks
+        .guard("steward", () => applySteward(apply, observation))
+        .then(() =>
+          applyStages(
+            apply,
+            opened.stages,
+            report,
+            inputs,
+            "finish",
+            hooks.guard,
+            hooks.project,
+          ).then(() =>
+            // `after` times its own phases: a boundary of its own, outside the apply timer.
+            hooks.guard("close", hooks.after, false),
+          ),
+        ),
   });
 }
 
@@ -261,37 +269,8 @@ async function applyStages(
   const fresh = () => readSessions(runtime, repo, join);
   const labels = section.labels.enabled ? section.labels : null;
   const drive = (): FreshDrive => ({
-    read: async (pr) => {
-      // The pull request read again too: a stale drive's head and mergeability are its facts, and a hold label may have appeared.
-      const view = await openPullRequest(repo.slug, pr, {
-        labels: labels !== null,
-      });
-      if (!view.ok) return view;
-      const listed = view.value;
-      if (
-        labels?.onlyLabeled === true &&
-        !carriesSet(labels, listed.labels ?? [])
-      )
-        return ok(null);
-      const adoption = adoptionOf(section, login);
-      const counted = await withThreads(
-        repo.slug,
-        listed,
-        ownAuthors(adoption, login),
-        asksForDrive(labels, listed),
-      );
-      if (!counted.ok) return counted;
-      const [again] = await readDrives(
-        repo.slug,
-        login,
-        [counted.value],
-        Date.now(),
-        labels,
-        adoption,
-      );
-      return ok(again ?? null);
-    },
-    held: (pr) => labels !== null && hasCommand(labels, pr.labels, "hold"),
+    read: (pr, steward) => freshDriveReading(inputs, labels, pr, steward),
+    held: (pr) => hasCommand(section.labels, pr.labels, "hold"),
     labelWrites: labels !== null,
     claimer: launchClaimer(inputs.shared),
     unplaced: inputs.unplaced,
@@ -380,4 +359,40 @@ async function applyStages(
         book: inputs.book,
       });
   });
+}
+
+/** Steward authority always reads a person's holds, including when label projection is disabled. */
+async function freshDriveReading(
+  inputs: ApplyInputs,
+  labels: LabelConfig | null,
+  pr: number,
+  steward = false,
+): Promise<Outcome<DrivenPr | null>> {
+  const { repo, login, section } = inputs;
+  const view = await openPullRequest(repo.slug, pr, {
+    labels: labels !== null || steward,
+  });
+  if (!view.ok) return view;
+  const listed = view.value;
+  if (labels?.onlyLabeled === true && !carriesSet(labels, listed.labels ?? []))
+    return ok(null);
+  const adoption = adoptionOf(section, login);
+  const counted = await withThreads(
+    repo.slug,
+    listed,
+    ownAuthors(adoption, login),
+    asksForDrive(labels, listed),
+  );
+  if (!counted.ok) return counted;
+  const [again] = await readDrives(
+    repo.slug,
+    login,
+    [counted.value],
+    Date.now(),
+    labels,
+    adoption,
+  );
+  if (again === undefined) return ok(null);
+  if (steward) return ok({ ...again, labels: listed.labels ?? [] });
+  return ok(again);
 }

@@ -200,6 +200,7 @@ async function startTerminal(
 function subjectOf(record: string): string | null {
   const launch = readRecord(record);
   if (launch === null) return null;
+  if (launch.action === "steward") return `steward:${launch.repo}`;
   if (launch.pr !== null) return prSubject(launch.pr);
   return launch.item === null ? null : `item:${launch.item}`;
 }

@@ -65,6 +65,7 @@ const MACHINE_STAGES = [
   "followup",
   "notify",
   "steer",
+  "steward",
 ] as const;
 export type MachineStage = (typeof MACHINE_STAGES)[number];
 
@@ -104,6 +105,7 @@ const SHARED_MEDIA = ["forge"] as const;
 export type SharedMedium = (typeof SHARED_MEDIA)[number];
 
 export interface MachineConfig {
+  steward?: { enabled: boolean; everyMs: number };
   path: string;
   /** People authorized by this host, never by a repository overlay. */
   serve?: ServedPerson[];
@@ -154,6 +156,7 @@ const DEFAULTS = {
 } as const;
 
 const TOP_KEYS = [
+  "steward",
   "serve",
   "repositories",
   "accounts",
@@ -521,6 +524,8 @@ function parseValues(values: unknown, where: string): Checked<MachineConfig> {
   if (!shared.ok) return shared;
   const host = loadSettings(top.load);
   if (!host.ok) return host;
+  const steward = stewardSettings(top.steward);
+  if (!steward.ok) return steward;
   return ok({
     path: where,
     serve: serve.value,
@@ -529,7 +534,23 @@ function parseValues(values: unknown, where: string): Checked<MachineConfig> {
     ...timing.value,
     ...shared.value,
     load: host.value,
+    steward: steward.value,
   });
+}
+
+function stewardSettings(
+  value: unknown,
+): Checked<{ enabled: boolean; everyMs: number }> {
+  if (value === undefined || value === null)
+    return ok({ enabled: false, everyMs: 20 * 60_000 });
+  if (!isMapping(value)) return invalid("steward must be a mapping");
+  const known = only(value, ["enabled", "every"], "steward");
+  if (!known.ok) return known;
+  const enabled = flag(value.enabled, "steward.enabled", false);
+  if (!enabled.ok) return enabled;
+  const every = optionalDuration(value.every, "steward.every", 20 * 60_000);
+  if (!every.ok) return every;
+  return ok({ enabled: enabled.value, everyMs: every.value });
 }
 
 /** The tick's interval, backoff, timeouts, opens and retention, with defaults. */

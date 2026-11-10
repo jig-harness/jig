@@ -243,6 +243,7 @@ test("the skills are in families, in the order they are used, each saying how it
         "resolve-conflicts",
         "fix-ci",
         "operator",
+        "steward",
       ],
     ],
     ["Review a change", ["change-areas", "review", "github-actions"]],

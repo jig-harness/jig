@@ -391,6 +391,18 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.189.0] - 2026-11-10
+
+### Added
+
+- An owner-host steward inspects stopped work and the assigned queue when
+  its input changes, at most three times an hour. It proposes bounded
+  recoveries, one fixed resume for a routine question, missing issue facets,
+  queue tie order and clearer human needs; the next dispatcher tick applies
+  its records under existing holds, account admission and recovery budgets.
+  Enable it in the machine dispatch file with `steward.enabled: true` and
+  the repository's `steward` stage.
+
 ## [0.188.0] - 2026-11-10
 
 ### Added
@@ -6574,7 +6586,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.188.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.189.0...HEAD
+[0.189.0]: https://github.com/jig-harness/jig/compare/v0.188.0...v0.189.0
 [0.188.0]: https://github.com/jig-harness/jig/compare/v0.187.0...v0.188.0
 [0.187.0]: https://github.com/jig-harness/jig/compare/v0.186.0...v0.187.0
 [0.186.0]: https://github.com/jig-harness/jig/compare/v0.185.3...v0.186.0

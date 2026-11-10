@@ -554,6 +554,7 @@ function ledgerEvidence(
     ...stopEvidence(ledger, forge),
     driverActor: ledger.driver.actor,
     driverClone: ledger.driver.clone,
+    handoff: ledger.narrative.join("\n").slice(-12_000),
     generation: ledger.generation,
     round: ledger.round,
     phase: ledger.phase,
