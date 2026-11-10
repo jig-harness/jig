@@ -34,6 +34,12 @@ import { recoveryReservationRefusal } from "./no-cause-stops.ts";
 import { budgeted, sameFacts } from "./recovery-facts.ts";
 import type { Outcome } from "../../shared/outcome.ts";
 import type { ActionBook } from "./failures.ts";
+import {
+  endTarget,
+  settleRetryableFollowups,
+  writeOwedEnds,
+  type OwedEnd,
+} from "./settlement.ts";
 import { settlesWithPerson } from "./redrive-settle.ts";
 import { databaseInstance } from "../../shared/records/db.ts";
 import { forgeShared } from "../../shared/records/shared-forge.ts";
@@ -70,7 +76,6 @@ import {
   type LaunchRecord,
   type ReadRecord,
   settleEnds,
-  settledEnds,
   writeRecord,
   cancelledBeforeExecution,
 } from "./launches.ts";
@@ -582,19 +587,13 @@ export async function settleOwnClaims(
   book?: ActionBook,
 ): Promise<string[]> {
   const byId = new Map(records.map((r) => [r.record.id, r]));
-  const retryFailures: string[] = [];
-  const settled = settledEnds(ctx.root);
-  for (const r of records) {
-    if (
-      r.record.repo === ctx.slug &&
-      retryableFollowup(r) &&
-      !settled.has(r.record.id) &&
-      (startupScope === undefined || startupScope.has(Number(r.record.pr)))
-    )
-      retryFailures.push(
-        ...(await settleRecordClaims(ctx, r, nowIso, ctx.root)),
-      );
-  }
+  const retryFailures = await settleRetryableFollowups(
+    ctx,
+    records,
+    nowIso,
+    startupScope,
+    settleRecordClaims,
+  );
   const ends = [
     ...driveEnds(claims, ctx.host, byId, nowIso),
     ...merged.flatMap((pr) =>
@@ -613,8 +612,6 @@ export async function settleOwnClaims(
       ),
     ),
   ];
-  const failures: string[] = [...retryFailures];
-  const written = new Set<number>();
   const owing = ends.filter(
     (o) =>
       !(
@@ -623,12 +620,6 @@ export async function settleOwnClaims(
         o.end.outcome === null
       ),
   );
-  const endOf = (o: (typeof ends)[number]) => ({
-    key: `${o.stage === "drive" ? "claim-end" : "marker-answer"} PR #${o.pr} comment ${o.id}`,
-    kind:
-      o.stage === "drive" ? ("claim-end" as const) : ("marker-answer" as const),
-    target: `PR #${o.pr}`,
-  });
   // A pull request whose claims, or any trusted marker, did not read owes what it owed: its rows stay.
   const unread = new Set<string>([
     ...[...claims]
@@ -645,44 +636,21 @@ export async function settleOwnClaims(
   const unobserved = (target: string) => unread.has(target);
   book?.wanted(
     "claim-end",
-    owing.filter((o) => o.stage === "drive").map((o) => endOf(o).key),
+    owing.filter((o) => o.stage === "drive").map((o) => endTarget(o).key),
     unobserved,
   );
   book?.wanted(
     "marker-answer",
-    owing.filter((o) => o.stage !== "drive").map((o) => endOf(o).key),
+    owing.filter((o) => o.stage !== "drive").map((o) => endTarget(o).key),
     unobserved,
   );
-  for (const o of owing) {
-    const backing = book?.waits(endOf(o).key) ?? null;
-    if (backing !== null) {
-      failures.push(
-        `PR #${o.pr}: the end of claim comment ${o.id} waits: ${backing}`,
-      );
-      continue;
-    }
-    const r = await ctx.records.end(
-      { repo: ctx.slug, pr: o.pr },
-      o.stage,
-      o.id,
-      o.end,
-      o.host,
-    );
-    book?.ran(endOf(o), r.ok ? null : r.failure.reason);
-    if (r.ok) {
-      if (o.stage === "drive") written.add(o.id);
-    } else {
-      failures.push(
-        `PR #${o.pr}: the end of claim comment ${o.id} could not be written: ${r.failure.reason}`,
-      );
-    }
-  }
+  const { failures, written } = await writeOwedEnds(ctx, owing, book);
   settleEnds(
     settledRecords(claims, ctx.host, records, written, nowIso),
     nowIso,
     ctx.root,
   );
-  return failures;
+  return [...retryFailures, ...failures];
 }
 
 /** How long each forge call of the wrapper's settle may take: the wrapper's terminal stays open until they are done. */
@@ -906,15 +874,6 @@ export function settledRecords(
 }
 
 /** One end this host owes: its own claim's, on a pull request. */
-interface OwedEnd {
-  pr: number;
-  stage: "drive" | "followup";
-  id: number;
-  end: LaunchEnd;
-  /** The host to name on a marker that names none. */
-  host?: string;
-}
-
 const owed = (
   pr: number,
   stage: OwedEnd["stage"],
