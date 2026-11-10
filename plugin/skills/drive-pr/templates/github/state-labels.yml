@@ -1,0 +1,84 @@
+# Pull request state labels: `converged` leaves when the head moves —
+# GitHub Actions workflow, optional. Copy to
+# .github/workflows/state-labels.yml in a repository that turns the state
+# labels on (`dispatch.labels.enabled`).
+#
+# Replace before use:
+#   jig:   the repository's `dispatch.labels.prefix`, when it sets one
+#
+# What it does: a drive that converged labels its pull request `converged`,
+# which is how a person finds a pull request to merge. A commit pushed to the
+# pull request after that leaves the converged head behind, so this workflow
+# replaces `converged` with `stale` on that push, at once, without waiting for
+# the dispatcher's next tick, which then confirms or corrects it. A pull
+# request without `converged` is left as it is.
+#
+# Safety: it runs on `pull_request_target` so a pull request from a fork gets
+# a token that may write labels, and for that reason it checks nothing out and
+# runs nothing from the pull request. It reads the pull request's current
+# labels through the forge, and changes two labels in one `gh pr edit` call.
+
+name: state-labels
+
+on:
+  pull_request_target:
+    types: [synchronize]
+
+permissions: {}
+
+concurrency:
+  group: state-labels-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  stale:
+    name: Mark a converged pull request stale
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Replace converged with stale
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          PREFIX: "jig:"
+          PUSHED_AT: ${{ github.event.pull_request.updated_at }}
+        run: |
+          converged="${PREFIX}converged"
+          stale="${PREFIX}stale"
+          # The labels as they are now, not as the push's event saw them: a
+          # converged label gone since then is not replaced.
+          labels="$(gh pr view "$PR" --repo "$REPO" --json labels --jq '.labels[].name')"
+          if ! grep -qxF -- "$converged" <<<"$labels"; then
+            echo "PR #${PR} does not carry ${converged}: nothing to do."
+            exit 0
+          fi
+          # A converged label put on after this push certifies this push's head
+          # (or a later one): a job that waited for a runner must not undo it.
+          # Every page of the history is read before the newest event is chosen,
+          # and the label name reaches jq as data. A label put on in the same
+          # second as the push cannot be ordered against it, so it is not taken
+          # as certifying it: only a strictly later one is left as it is.
+          # The history is fetched on its own so a failed page stops the step:
+          # a pipeline's status is its last command's, and a partial history
+          # would read as no newer label and remove a convergence.
+          history="$(gh api "repos/${REPO}/issues/${PR}/events" --paginate)" || {
+            echo "PR #${PR}: the label history did not read: ${converged} is left as it is."
+            exit 1
+          }
+          labeled_at="$(jq -rs --arg label "$converged" \
+            'flatten | map(select(.event == "labeled" and .label.name == $label) | .created_at) | max // empty' <<<"$history")" || {
+            echo "PR #${PR}: the label history did not parse: ${converged} is left as it is."
+            exit 1
+          }
+          if [ -n "$labeled_at" ] && [[ "$labeled_at" > "$PUSHED_AT" ]]; then
+            echo "PR #${PR}: ${converged} was set at ${labeled_at}, after this push (${PUSHED_AT}): left as it is."
+            exit 0
+          fi
+          # One call adds the one and removes the other, so a run cancelled
+          # by a newer push never leaves half a change behind.
+          gh pr edit "$PR" --repo "$REPO" \
+            --add-label "$stale" --remove-label "$converged"
+          echo "PR #${PR}: ${converged} replaced with ${stale}."

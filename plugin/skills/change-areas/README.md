@@ -138,6 +138,8 @@ direction only) and `deployTier`. Optional blocks:
 | `validation` | `{ profile?, ownTests?, notes? }` | the validation plan |
 | `generated` | list of `{ outputs, source, command, check, notes? }`, M2's [inventory format](https://github.com/jig-harness/jig/blob/main/modules/M2-generated-artifact-freshness/README.md) | the validation plan, `generated` |
 | `review` | `{ skills, notes? }` | `review`, `reviewSkills`, the review table |
+| `implementation` | `{ skills?, notes? }`, at least one | the implementation guidance of [do-item](../do-item/SKILL.md), for an item that reaches the area |
+| `pr` | `{ labels?, reviewers? }`, at least one; a reviewer is a login or `org/team`, with or without `@` | do-item's pull-request planner, for a pull request whose diff touches the area's own globs |
 | `postDeploy` | list of `{ action, when, envs, notes? }` | `postDeploy`, the checklist |
 | `tracker` | `{ labels?, flags? }`; `linear` is its older spelling, not both | `linear` |
 | `agent` | text | the agent routing of [do-item](../do-item/SKILL.md) |

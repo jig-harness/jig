@@ -25,6 +25,7 @@ import { swallow } from "../../../../shared/errors.ts";
 import type { ClaimDiag } from "./claim.ts";
 import { inspectLock, prLockName } from "./driver/locks.ts";
 import { driveState } from "./driver/paths.ts";
+import { labelDrive } from "./driver/state-labels.ts";
 import { helperTimeoutSeconds, pidAlive, run, tsArgv } from "./proc.ts";
 import { worktreePathKey } from "./state/actor.ts";
 import { driveDb, inTransaction } from "./state/db.ts";
@@ -41,6 +42,8 @@ import {
 import { ledgerOfStoppedDriver } from "./state/ledger.ts";
 import { readLedgerSnapshot, resolveLogin } from "./state/ledger-forge.ts";
 import {
+  HANDOFF_TELLS_REFUSED,
+  LEDGER_REFUSED_EXIT,
   LEDGER_DRIVER_ENV,
   type LedgerDriverEnv,
   cloneId,
@@ -269,11 +272,9 @@ async function markGuarded(
     );
     return "retry";
   }
-  const found = ledgerOfStoppedDriver(
-    snapshot,
-    who,
-    personStopFor(stateDir, pr, diag.started).personStop !== undefined,
-  );
+  const byPerson =
+    personStopFor(stateDir, pr, diag.started).personStop !== undefined;
+  const found = ledgerOfStoppedDriver(snapshot, who, byPerson);
   if ("why" in found) {
     // Silent when there is nothing to say: no ledger, or one already stopped.
     const parsed = snapshot.canonical?.parsed;
@@ -324,9 +325,22 @@ async function markGuarded(
       stdout: "ignore",
       stderr: "inherit",
       timeoutSec: helperTimeoutSeconds(),
-      env: { ...env, [LEDGER_DRIVER_ENV]: JSON.stringify(driver) },
+      env: {
+        ...env,
+        [LEDGER_DRIVER_ENV]: JSON.stringify(driver),
+        [HANDOFF_TELLS_REFUSED]: "1",
+      },
     });
-    if (res.code === 0) return "done";
+    // A write the guards refused has nothing left to write, and is not ours to label.
+    if (res.code === LEDGER_REFUSED_EXIT) return "done";
+    if (res.code === 0) {
+      await labelDrive(pr, {
+        stopped: exit,
+        byPerson,
+        verifiedSha: found.ledger.verifiedSha,
+      });
+      return "done";
+    }
     console.error(
       `ledger: PR #${pr}'s ledger was not marked stopped (drive-state.ts handoff exited ${res.code}).`,
     );

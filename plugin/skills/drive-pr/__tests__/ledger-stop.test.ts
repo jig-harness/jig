@@ -9,7 +9,7 @@ import { poll } from "../../../shared/retry.ts";
 import { describe, expect, it } from "bun:test";
 import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import {
   expectSpawnExit,
   expectSpawnExitNot,
@@ -49,6 +49,7 @@ import {
   ledgerBody,
 } from "./ledger-forge-fixtures.ts";
 import { scopedStateDir } from "./scoped-state-dir.ts";
+import { labelForge } from "./state-labels-forge.ts";
 import {
   driverRecordRow,
   lockRow,
@@ -121,13 +122,18 @@ function plantLock(s: Stage, pid: number, diagnosticPr = "999"): void {
   });
 }
 
-async function drives(s: Stage, args: string[]) {
+async function drives(
+  s: Stage,
+  args: string[],
+  env: Record<string, string> = {},
+) {
   const proc = Bun.spawn(scriptArgv(join(SCRIPTS, "drives.ts"), ...args), {
     cwd: s.forge.repo,
     env: {
       ...s.forge.env,
       DRIVE_PR_STATE_DIR: s.leaf,
       DRIVE_PR_STOP_GRACE_SEC: "1",
+      ...env,
     },
     stdout: "pipe",
     stderr: "pipe",
@@ -181,6 +187,36 @@ describe("drives.ts --stop marks the stopped driver's ledger", () => {
       expectSpawnExit(r, 0);
       expect(driverOf(s)).toMatchObject({ actor: s.actor, state: "stopped" });
       expect(driverOf(s)?.personStop?.reason).toBe("maintenance");
+    },
+    60_000,
+  );
+
+  it.skipIf(posixStop)(
+    "labels the pull request parked once a person's stop marks its ledger stopped",
+    async () => {
+      const s = stage();
+      const forgeGh = Bun.which("gh", { PATH: s.forge.env.PATH ?? "" });
+      if (forgeGh === null)
+        throw new Error("the fake forge's gh is not on PATH");
+      const labels = labelForge(s.forge.dir, forgeGh, ["jig:driving"], "");
+      const owner = Bun.spawn(
+        [
+          process.execPath,
+          "-e",
+          "setInterval(() => {}, 1000)",
+          "drive.ts",
+          "999",
+        ],
+        { stdout: "ignore", stderr: "ignore" },
+      );
+      plantLock(s, owner.pid);
+      const r = await drives(s, ["--stop", "999", "--reason", "maintenance"], {
+        PATH: `${labels.bin}${delimiter}${s.forge.env.PATH ?? ""}`,
+      });
+      owner.kill("SIGKILL");
+      expectSpawnExit(r, 0);
+      expect(driverOf(s)?.personStop?.reason).toBe("maintenance");
+      expect(labels.labels()).toEqual(["jig:parked"]);
     },
     60_000,
   );

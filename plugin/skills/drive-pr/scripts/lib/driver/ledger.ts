@@ -66,15 +66,19 @@ import {
   resolveLogin,
 } from "./../state/ledger-forge.ts";
 import {
+  HANDOFF_TELLS_REFUSED,
   LEDGER_DRIVER_ENV,
+  LEDGER_REFUSED_EXIT,
   type LedgerDriverEnv,
   cloneId,
   ledgerDriverFromEnv,
 } from "./../state/ledger-mirror.ts";
+import { personStopFor } from "./../state/person-stop.ts";
 import { DRIVE_HELD_ELSEWHERE_EXIT } from "./../state/lease.ts";
 import type { DriveState } from "./../state/schema.ts";
 import type { DriveLock } from "./locks.ts";
 import { driveState } from "./paths.ts";
+import { labelDrive } from "./state-labels.ts";
 import { readDriveState, recordDriveEvent } from "./rearm.ts";
 import { driverRuntime } from "./runtime.ts";
 import { SINGLE_INSTANCE_LOCK_EXIT, TAKEN_OVER_EXIT } from "./settings.ts";
@@ -484,14 +488,22 @@ export async function standDownOnNewerClaim(
 
 /**
  * Write the ledger now (after a takeover, through a wait), through the
- * handoff command: its exit, `0` with no driver to write for.
+ * handoff command: its exit, `0` with no driver to write for. With
+ * `tellsRefused`, a write the guards refused exits `LEDGER_REFUSED_EXIT`
+ * rather than `0`.
  */
-export async function mirrorNow(pr: string): Promise<number> {
+export async function mirrorNow(
+  pr: string,
+  tellsRefused = false,
+): Promise<number> {
   if (ledgerDriverFromEnv() === null) return 0;
   const res = await run(tsArgv(driveState, ["handoff", pr]), {
     stdout: "ignore",
     stderr: "inherit",
     timeoutSec: helperTimeoutSeconds(),
+    ...(tellsRefused
+      ? { env: { ...process.env, [HANDOFF_TELLS_REFUSED]: "1" } }
+      : {}),
   });
   return res.code;
 }
@@ -521,8 +533,11 @@ export function ledgerRenewal(pr: string): () => Promise<number | null> {
   let dueAt = Number.NEGATIVE_INFINITY;
   return async () => {
     if (performance.now() < dueAt) return null;
-    const code = await mirrorNow(pr);
-    const landed = code === 0;
+    const code = await mirrorNow(pr, true);
+    // A write the guards refused is not a failed one: the ledger is another's, and the claims below say whether to stand down.
+    const landed = afterHandoff(code) !== "unwritten";
+    if (afterHandoff(code) === "label")
+      await labelOwnDrive(pr, { armed: true });
     dueAt = performance.now() + (landed ? LEDGER_RENEW_MS : LEDGER_RETRY_MS);
     if (!landed) {
       console.error(
@@ -533,13 +548,98 @@ export function ledgerRenewal(pr: string): () => Promise<number | null> {
   };
 }
 
-/** Publish before a long first status probe, so an operator can stop this acquisition. */
+/**
+ * Publish before a long first status probe, so an operator can stop this
+ * acquisition; once the running ledger is out, the pull request's state
+ * label follows it before the first round, best effort. A drive with no
+ * ledger publishes and labels nothing.
+ */
 export async function publishStartup(pr: string): Promise<void> {
-  const publication = await mirrorNow(pr);
-  if (publication !== 0)
-    console.error(
-      `ledger: initial running-ledger publication failed (exit ${publication}); stop requests remain refused until this acquisition publishes, and round-boundary writes retry it.`,
-    );
+  if (ledgerDriverFromEnv() === null) return;
+  const publication = await mirrorNow(pr, true);
+  const next = afterHandoff(publication);
+  if (next === "label") await labelOwnDrive(pr, { armed: true });
+  // A write the guards refused leaves a ledger that is not this driver's.
+  if (next !== "unwritten") return;
+  console.error(
+    `ledger: initial running-ledger publication failed (exit ${publication}); stop requests remain refused until this acquisition publishes, and round-boundary writes retry it.`,
+  );
+}
+
+/**
+ * Whether this acquisition still drives the pull request: no takeover claim
+ * newer than its own is on it. A clone that takes the drive over claims it
+ * before it writes the ledger or a label, so a driver that read no such
+ * claim just before its label write is not overwriting a successor's.
+ * `false` for a driver that no longer writes the ledger (taken over) or a
+ * listing that does not read.
+ */
+async function ledgerIsOurs(pr: string): Promise<boolean> {
+  const driver = ledgerDriverFromEnv();
+  if (driver === null) return false;
+  // No position among the claims, so none can be newer.
+  if (driver.floor === null) return true;
+  const snapshot = await readLedgerSnapshot(pr, driver.login);
+  if (typeof snapshot === "string") return false;
+  return (
+    newerClaim(snapshot.claims, driver.floor, driver.clone, driver.claim) ===
+    null
+  );
+}
+
+/** The state label for a ledger this driver just wrote, written only while that ledger is still its own. */
+async function labelOwnDrive(
+  pr: string,
+  moment: Parameters<typeof labelDrive>[1],
+): Promise<void> {
+  // A drive with no ledger labels nothing.
+  if (ledgerDriverFromEnv() === null) return;
+  await labelDrive(pr, moment, undefined, () => ledgerIsOurs(pr));
+}
+
+/** Write the running ledger now and, once it landed, the state label that follows it; what `handoff` exited with. */
+export async function publishRunning(pr: string): Promise<number> {
+  const code = await mirrorNow(pr, true);
+  if (afterHandoff(code) === "label") await labelOwnDrive(pr, { armed: true });
+  return code;
+}
+
+/**
+ * What follows a ledger write the drive asked `handoff` for, told refusals
+ * (`HANDOFF_TELLS_REFUSED`): `label` when it landed, so the state label may
+ * follow; `refused` when the guards refused it, so the ledger is not this
+ * driver's to label; `unwritten` when it was attempted and did not land.
+ */
+export function afterHandoff(code: number): "label" | "refused" | "unwritten" {
+  if (code === 0) return "label";
+  return code === LEDGER_REFUSED_EXIT ? "refused" : "unwritten";
+}
+
+/**
+ * What follows the stopped ledger's write: a write that landed, or one the
+ * guards refused (nothing left to write), drops the driver record; any other
+ * exit, `LEDGER_NOT_WRITTEN_EXIT` included, keeps it, as the recovery's only
+ * evidence once the locks are released. Only a ledger this driver wrote gets
+ * its state label, best effort.
+ */
+async function afterStopWrite(
+  pr: string,
+  handoff: number,
+  code: number | null,
+  started: string,
+  dropRecord: () => Promise<void>,
+): Promise<void> {
+  const next = afterHandoff(handoff);
+  if (next === "unwritten") return;
+  await dropRecord();
+  if (next === "refused") return;
+  await labelOwnDrive(pr, async () => ({
+    stopped: code,
+    byPerson:
+      personStopFor(await resolveStateDir(), pr, started).personStop !==
+      undefined,
+    verifiedSha: (await readDriveState(pr))?.verifiedSha ?? "",
+  }));
 }
 
 /**
@@ -617,11 +717,10 @@ export function ledgerSettlement(
       env: {
         ...process.env,
         [LEDGER_DRIVER_ENV]: JSON.stringify({ ...driver, stopped: code }),
+        [HANDOFF_TELLS_REFUSED]: "1",
       },
     });
-    // Any other exit, `LEDGER_NOT_WRITTEN_EXIT` included, keeps the record:
-    // it is the recovery's only evidence once the locks are released.
-    if (res.code === 0) await dropRecord();
+    await afterStopWrite(pr, res.code, code, started, dropRecord);
   };
   return {
     async done(code: number): Promise<number> {
