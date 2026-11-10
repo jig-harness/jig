@@ -10,7 +10,8 @@
  * interval; `jig dispatch result` is how a dispatched session or follow-up pass
  * records how it ended; `jig dispatch marker` is how a follow-up command
  * claims a merged pull request's follow-up, checks its claim and marks it
- * done; `jig dispatch dashboard` serves one page over the outcome log while
+ * done or failed; `jig dispatch labels` creates the pull request state labels
+ * a repository turns on, once, with no job installed; `jig dispatch dashboard` serves one page over the outcome log while
  * it runs; `jig dispatch log` prints the outcome log as text; `jig dispatch
  * line --json` prints the newest tick's line as the dashboard serves it;
  * `jig dispatch clear` removes a launch record only a person can settle;
@@ -49,6 +50,7 @@ import {
 } from "./dashboard-install.ts";
 import { clearMain } from "./clear.ts";
 import { installDispatch } from "./install.ts";
+import { installLabels } from "./install-labels.ts";
 import { newerStateRefusal } from "./lib/state.ts";
 import { lineMain } from "./line-command.ts";
 import { logMain } from "./log-command.ts";
@@ -205,15 +207,15 @@ const marker = command(
   "marker",
   object({
     action: constant("marker"),
-    verb: argument(choice(["claim", "check", "done"] as const), {
-      description: message`claim posts a manual run's marker; check stops a run an earlier marker holds; done marks a manual run's marker done.`,
+    verb: argument(choice(["claim", "check", "done", "failed"] as const), {
+      description: message`claim posts a manual run's marker; check stops a run an earlier marker holds; done marks a manual run's marker done; failed labels a manual run's follow-up failed, leaving its marker.`,
     }),
     pr: argument(countValue("PR"), {
       description: message`The merged pull request.`,
     }),
     comment: optional(
       option("--comment", countValue("ID"), {
-        description: message`The marker's comment id, as claim printed it or the session's prompt names it (check and done).`,
+        description: message`The marker's comment id, as claim printed it or the session's prompt names it (check, done and failed).`,
       }),
     ),
     repo: optional(
@@ -223,7 +225,26 @@ const marker = command(
     ),
   }),
   {
-    brief: message`Claim a merged pull request's follow-up, check the claim, or mark it done.`,
+    brief: message`Claim a merged pull request's follow-up, check the claim, mark it done, or label it failed.`,
+  },
+);
+
+const labels = command(
+  "labels",
+  object({
+    action: constant("labels"),
+    repos: multiple(
+      option("--repo", pathValue, {
+        description: message`A checkout of the repository whose labels to check. Without it, the current checkout's. Repeat for several.`,
+      }),
+    ),
+    confirm: option("--yes", {
+      description: message`Create the labels the preview lists.`,
+    }),
+  }),
+  {
+    brief: message`Create the pull request state labels a repository turns on, once.`,
+    description: message`For a repository whose dispatch.labels (read from its default branch) is on, lists the state and command labels it lacks, with its manual-operations label and automation; --yes creates them and lists, with the command that creates each, those the signed-in account may not create. Installs no job: drives and follow-ups write the labels without the dispatcher.`,
   },
 );
 
@@ -329,7 +350,7 @@ const dashboard = command(
 );
 
 /**
- * `jig dispatch`: one tick by default, with `result`, `marker`, `dashboard`,
+ * `jig dispatch`: one tick by default, with `result`, `marker`, `labels`, `dashboard`,
  * `log`, `line`, `clear` and `probe` as its subcommands. Its `install` and `receipts`
  * subcommands do what the lifecycle verbs `jig install dispatch` and
  * `jig receipts dispatch` do, and stay for the command lines that use them,
@@ -344,6 +365,7 @@ const dispatch = (wholeMinutes: boolean) =>
         receipts,
         result,
         marker,
+        labels,
         dashboard,
         log,
         line,
@@ -523,6 +545,23 @@ function dashboardAction(
   return dashboardCommand(args.port);
 }
 
+/** The subcommands that act on a repository's pull requests: the label setup and the follow-up marker. */
+function pullRequestAction(
+  args: Extract<Subcommand, { action: "labels" | "marker" }>,
+): Promise<number> {
+  if (args.action === "labels")
+    return installLabels(
+      args.repos.length === 0 ? [consumerRoot()] : args.repos,
+      args.confirm,
+    );
+  return markerMain({
+    verb: args.verb,
+    pr: args.pr,
+    comment: args.comment ?? null,
+    repo: args.repo ?? null,
+  });
+}
+
 /** A subcommand's run: everything but the tick. */
 function subcommandMain(
   args: Subcommand,
@@ -540,13 +579,8 @@ function subcommandMain(
   if (args.action === "probe")
     return probeMain({ apply: args.apply, json: args.json }, machineFile());
   if (args.action === "dashboard") return dashboardAction(args, script);
-  if (args.action === "marker")
-    return markerMain({
-      verb: args.verb,
-      pr: args.pr,
-      comment: args.comment ?? null,
-      repo: args.repo ?? null,
-    });
+  if (args.action === "labels" || args.action === "marker")
+    return pullRequestAction(args);
   // `install`. A removal needs no machine file: a broken one must not keep the timer installed.
   return installDispatch(
     {

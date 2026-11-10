@@ -1,6 +1,6 @@
 # Jig's skills: the `jig` plugin
 
-Agent procedures (_skills_) that many repositories use should have one
+Agent procedures (*skills*) that many repositories use should have one
 maintained source, so a fix reaches every repository at once and no copy drifts.
 Without that, each repository carries its own copy of the same procedure, the
 copies diverge, and every agent tool on every machine needs its own setup step
@@ -24,66 +24,66 @@ runs, what it hands over to.
 
 **Find your way.** `jig` says which skill a task needs and what comes after it, where the plugin's reference is, and how to report a Jig bug.
 
-| Skill                       | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Invoke as  | Works with                                                                                                                                                                                                                       |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Skill | What it does | Invoke as | Works with |
+|-------|--------------|-----------|------------|
 | [jig](skills/jig/README.md) | Answers which skill fits a task and how the skills hand work on, from the reference installed with the plugin (these tables, the configuration reference, each skill's pages) and Jig's repository at the installed version's tag; when Jig itself is wrong, decides whether the fault is Jig's, searches for an existing issue, and drafts a bug report in the fields of Jig's bug form, with the repository's own names replaced, for a person to confirm before it is filed on jig-harness/jig | `/jig:jig` | Names the skill that does the work and hands over to it; sends a lesson that is not a defect to [reflect](skills/reflect/README.md), and in Jig's own repository files the bug through [file-issue](skills/file-issue/README.md) |
 
 **Deliver a change.** One item of work, from the tracker to a merged pull request. `file-issue` puts the item on the tracker, labelled by the repository's label taxonomy; `do-item` opens the pull request and arms `drive-pr`, and `work-batch` does the same for several small issues closed in one pull request; `drive-pr` runs one `resolve-review-comments` pass per review round, works a conflict through `resolve-conflicts`, and repairs red CI in its own repair round; `fix-ci` is the repair by hand when no drive runs or its budget is spent; `operator` tells a person where a piece of work stands on the line and passes their commands to it. Each also works by hand.
 
-| Skill                                                               | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Invoke as                        | Works with                                                                                                                                                                                                                                                                                                                      |
-| ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [file-issue](skills/file-issue/README.md)                           | Files a new tracker issue from a discussion, or plans an existing one (re-labels it, splits it into sub-issues, records its relations): writes a durable issue body, derives the labels from the change's areas or its description, checks them against the repository's label taxonomy, and searches for a duplicate before anything is written; sweeps the open issues for one filed without a type, a priority or a size, and moves those facets from one store to another                                                                        | `/jig:file-issue`                | Writes through [do-item](skills/do-item/SKILL.md)'s tracker scripts, and files what do-item and [work-batch](skills/work-batch/README.md) later pick up; derives labels from [change-areas](skills/change-areas/README.md); holds the label-taxonomy lint and the label validator                                               |
-| [do-item](skills/do-item/SKILL.md)                                  | Picks up one work item from whatever the tracker adapter reads (an issue tracker today, a plan file in future), routes it to the right agent, implements it, opens a pull request as the repository's pull-request policy says and starts `drive-pr` on it                                                                                                                                                                                                                                                                                           | `/jig:do-item`                   | Starts [drive-pr](skills/drive-pr/README.md) on the pull request it opens; runs its own pre-pull-request review in the same tiers as [review](skills/review/SKILL.md), plus each review skill its declared gates name; escalates a dilemma to [decide](skills/decide/SKILL.md)                                                  |
-| [work-batch](skills/work-batch/README.md)                           | Groups several small, independent issues from one area of the code into one pull request, one commit each: proposes a ranked batch within a point budget, holds back every issue a sensitivity flag makes solo-only, claims the batch, opens the pull request and drives it once; after the merge, closes out every issue in it                                                                                                                                                                                                                      | `/jig:work-batch`                | The batched form of [do-item](skills/do-item/SKILL.md), whose batch check suggests it; opens the pull request under do-item's pull-request policy and starts [drive-pr](skills/drive-pr/README.md) on it                                                                                                                        |
-| [drive-pr](skills/drive-pr/README.md)                               | Runs a pull request's review rounds unattended until it reaches one named end state (converged, waiting on a human, conflicting, …); each round is a fresh agent process, so a long drive never depends on one session surviving                                                                                                                                                                                                                                                                                                                     | `/jig:drive-pr`                  | Started by [do-item](skills/do-item/SKILL.md); runs [resolve-review-comments](skills/resolve-review-comments/README.md) every review round; calls [resolve-conflicts](skills/resolve-conflicts/SKILL.md) when the branch conflicts; repairs red CI in its own repair round, with the repository's CI-repair skill if it has one |
-| [resolve-review-comments](skills/resolve-review-comments/README.md) | Walks every unresolved pull-request review thread to an explicit outcome, fixes, verifies, and resolves; repeats until reviewers settle                                                                                                                                                                                                                                                                                                                                                                                                              | `/jig:resolve-review-comments`   | One review round of [drive-pr](skills/drive-pr/README.md); hands contested findings to the `review-arbiter` agent and design questions to [decide](skills/decide/SKILL.md)                                                                                                                                                      |
-| [resolve-conflicts](skills/resolve-conflicts/README.md)             | Resolves a stopped merge, rebase or cherry-pick: names each side by role, traces why each side changed, regenerates lockfiles and generated files (those the repository lists in its configuration or declares in its change-area catalog), records every decision in the commit message, checks that no change was silently dropped, verifies staged work belongs to the operation, and applies repository obligations to the whole resolved diff; replays past merges to report where they conflicted, why, and the change that removes each cause | `/jig:resolve-conflicts`         | Runs in [drive-pr](skills/drive-pr/README.md)'s conflict round; [fix-ci](skills/fix-ci/SKILL.md) takes over for checks that fail after the merge                                                                                                                                                                                |
-| [fix-ci](skills/fix-ci/SKILL.md)                                    | Fetches a failed CI run's log, sorts the errors, fixes them and verifies locally before pushing                                                                                                                                                                                                                                                                                                                                                                                                                                                      | `/jig:fix-ci`                    | The repair by hand when no [drive-pr](skills/drive-pr/README.md) drive is running or its CI-repair budget is spent; [github-actions](skills/github-actions/SKILL.md) reviews the fix when it changes a workflow                                                                                                                 |
-| [operator](skills/operator/SKILL.md)                                | Answers a person's question about the line (where a pull request, item or follow-up stands, what waits on a person, what was said to a station) from [`jig ask`](#asking-a-station-where-it-stands), a status as one fixed card and anything else in sentences, and sends their command to a station (hold, release, drive, an answer to a parked question, a mailbox directive) with [`jig send`](#telling-a-station-what-to-do), only on their instruction and after showing them the dry run; holds no state of its own                           | `/jig:operator`                  | Reads and writes the records [do-item](skills/do-item/SKILL.md), [drive-pr](skills/drive-pr/README.md) and the follow-up leave and act on; hands the work of a station to that station's skill, and a question about how Jig works to [jig](skills/jig/README.md)                                                               |
-| [steward](skills/steward/README.md)                                 | Inspects stopped work and the assigned queue, proposes recoveries and missing facets, and frames what still needs a person; the next tick applies its records under existing guards                                                                                                                                                                                                                                                                                                                                                                  | `/jig:steward` (dispatcher only) | Reads the dispatcher's digest, writes owner-local records, and sends recurring recoveries to [reflect](skills/reflect/README.md)                                                                                                                                                                                                |
+| Skill | What it does | Invoke as | Works with |
+|-------|--------------|-----------|------------|
+| [file-issue](skills/file-issue/README.md) | Files a new tracker issue from a discussion, or plans an existing one (re-labels it, splits it into sub-issues, records its relations): writes a durable issue body, derives the labels from the change's areas or its description, checks them against the repository's label taxonomy, and searches for a duplicate before anything is written; sweeps the open issues for one filed without a type, a priority or a size, and moves those facets from one store to another | `/jig:file-issue` | Writes through [do-item](skills/do-item/SKILL.md)'s tracker scripts, and files what do-item and [work-batch](skills/work-batch/README.md) later pick up; derives labels from [change-areas](skills/change-areas/README.md); holds the label-taxonomy lint and the label validator |
+| [do-item](skills/do-item/SKILL.md) | Picks up one work item from whatever the tracker adapter reads (an issue tracker today, a plan file in future), routes it to the right agent, implements it, opens a pull request as the repository's pull-request policy says and starts `drive-pr` on it | `/jig:do-item` | Starts [drive-pr](skills/drive-pr/README.md) on the pull request it opens; runs its own pre-pull-request review in the same tiers as [review](skills/review/SKILL.md), plus each review skill its declared gates name; escalates a dilemma to [decide](skills/decide/SKILL.md) |
+| [work-batch](skills/work-batch/README.md) | Groups several small, independent issues from one area of the code into one pull request, one commit each: proposes a ranked batch within a point budget, holds back every issue a sensitivity flag makes solo-only, claims the batch, opens the pull request and drives it once; after the merge, closes out every issue in it | `/jig:work-batch` | The batched form of [do-item](skills/do-item/SKILL.md), whose batch check suggests it; opens the pull request under do-item's pull-request policy and starts [drive-pr](skills/drive-pr/README.md) on it |
+| [drive-pr](skills/drive-pr/README.md) | Runs a pull request's review rounds unattended until it reaches one named end state (converged, waiting on a human, conflicting, …); each round is a fresh agent process, so a long drive never depends on one session surviving | `/jig:drive-pr` | Started by [do-item](skills/do-item/SKILL.md); runs [resolve-review-comments](skills/resolve-review-comments/README.md) every review round; calls [resolve-conflicts](skills/resolve-conflicts/SKILL.md) when the branch conflicts; repairs red CI in its own repair round, with the repository's CI-repair skill if it has one |
+| [resolve-review-comments](skills/resolve-review-comments/README.md) | Walks every unresolved pull-request review thread to an explicit outcome, fixes, verifies, and resolves; repeats until reviewers settle | `/jig:resolve-review-comments` | One review round of [drive-pr](skills/drive-pr/README.md); hands contested findings to the `review-arbiter` agent and design questions to [decide](skills/decide/SKILL.md) |
+| [resolve-conflicts](skills/resolve-conflicts/README.md) | Resolves a stopped merge, rebase or cherry-pick: names each side by role, traces why each side changed, regenerates lockfiles and generated files (those the repository lists in its configuration or declares in its change-area catalog), records every decision in the commit message, checks that no change was silently dropped, verifies staged work belongs to the operation, and applies repository obligations to the whole resolved diff; replays past merges to report where they conflicted, why, and the change that removes each cause | `/jig:resolve-conflicts` | Runs in [drive-pr](skills/drive-pr/README.md)'s conflict round; [fix-ci](skills/fix-ci/SKILL.md) takes over for checks that fail after the merge |
+| [fix-ci](skills/fix-ci/SKILL.md) | Fetches a failed CI run's log, sorts the errors, fixes them and verifies locally before pushing | `/jig:fix-ci` | The repair by hand when no [drive-pr](skills/drive-pr/README.md) drive is running or its CI-repair budget is spent; [github-actions](skills/github-actions/SKILL.md) reviews the fix when it changes a workflow |
+| [operator](skills/operator/SKILL.md) | Answers a person's question about the line (where a pull request, item or follow-up stands, what waits on a person, what was said to a station) from [`jig ask`](#asking-a-station-where-it-stands), a status as one fixed card and anything else in sentences, and sends their command to a station (hold, release, drive, an answer to a parked question, a mailbox directive) with [`jig send`](#telling-a-station-what-to-do), only on their instruction and after showing them the dry run; holds no state of its own | `/jig:operator` | Reads and writes the records [do-item](skills/do-item/SKILL.md), [drive-pr](skills/drive-pr/README.md) and the follow-up leave and act on; hands the work of a station to that station's skill, and a question about how Jig works to [jig](skills/jig/README.md) |
+| [steward](skills/steward/README.md) | Inspects stopped work and the assigned queue, proposes recoveries and missing facets, and frames what still needs a person; the next tick applies its records under existing guards | `/jig:steward` (dispatcher only) | Reads the dispatcher's digest, writes owner-local records, and sends recurring recoveries to [reflect](skills/reflect/README.md) |
 
 **Review a change.** Check work against the repository's own standards before and during review: `change-areas` says what the change owes, `review` and `github-actions` check it.
 
-| Skill                                            | What it does                                                                                                                                                                                                                                                             | Invoke as             | Works with                                                                                                                                                                                                                                                                                                                       |
-| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [change-areas](skills/change-areas/README.md)    | Resolves a change against the repository's change-area catalog: which areas it touches, which checks, reviews, tracker labels and post-deploy actions it owes, printed as JSON, GitHub Actions outputs or a path-filter spec; checks the catalog's schema and invariants | `/jig:change-areas`   | Its JSON is the validation plan [drive-pr](skills/drive-pr/README.md), [review](skills/review/SKILL.md) and [fix-ci](skills/fix-ci/SKILL.md) read through `drive.validation_plan_command`; [review](skills/review/SKILL.md) resolves the catalog with it when no plan command is set                                             |
-| [review](skills/review/SKILL.md)                 | Reviews a diff, plan or pull request in tiers (pattern checks, contract checks, semantic review) against the repository's decision rules and change-area catalog                                                                                                         | `/jig:review`         | Its tiers are the ones [do-item](skills/do-item/SKILL.md)'s pre-pull-request gate runs; reads the rules [adr](skills/adr/SKILL.md) derives; posts none of its findings to the pull-request threads [resolve-review-comments](skills/resolve-review-comments/README.md) settles, which come from the pull request's own reviewers |
-| [github-actions](skills/github-actions/SKILL.md) | Reviews GitHub Actions workflow changes for security, pinning, concurrency keys, caching and the repository's own workflow conventions                                                                                                                                   | `/jig:github-actions` | The workflow-specific form of [review](skills/review/SKILL.md); sends a red CI run to [fix-ci](skills/fix-ci/SKILL.md)                                                                                                                                                                                                           |
+| Skill | What it does | Invoke as | Works with |
+|-------|--------------|-----------|------------|
+| [change-areas](skills/change-areas/README.md) | Resolves a change against the repository's change-area catalog: which areas it touches, which checks, reviews, tracker labels and post-deploy actions it owes, printed as JSON, GitHub Actions outputs or a path-filter spec; checks the catalog's schema and invariants | `/jig:change-areas` | Its JSON is the validation plan [drive-pr](skills/drive-pr/README.md), [review](skills/review/SKILL.md) and [fix-ci](skills/fix-ci/SKILL.md) read through `drive.validation_plan_command`; [review](skills/review/SKILL.md) resolves the catalog with it when no plan command is set |
+| [review](skills/review/SKILL.md) | Reviews a diff, plan or pull request in tiers (pattern checks, contract checks, semantic review) against the repository's decision rules and change-area catalog | `/jig:review` | Its tiers are the ones [do-item](skills/do-item/SKILL.md)'s pre-pull-request gate runs; reads the rules [adr](skills/adr/SKILL.md) derives; posts none of its findings to the pull-request threads [resolve-review-comments](skills/resolve-review-comments/README.md) settles, which come from the pull request's own reviewers |
+| [github-actions](skills/github-actions/SKILL.md) | Reviews GitHub Actions workflow changes for security, pinning, concurrency keys, caching and the repository's own workflow conventions | `/jig:github-actions` | The workflow-specific form of [review](skills/review/SKILL.md); sends a red CI run to [fix-ci](skills/fix-ci/SKILL.md) |
 
 **Understand, decide and record.** Design-level work: learn how it works today, settle the question, challenge the requirements and the architecture, write the answer where the next session finds it.
 
-| Skill                                                        | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                      | Invoke as                   | Works with                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [explain](skills/explain/SKILL.md)                           | Writes a cited, commit-dated explainer sheet (HTML and Markdown) of how part of the system works today                                                                                                                                                                                                                                                                                                                                            | `/jig:explain`              | Comes before [decide](skills/decide/SKILL.md) and shares its sheet kit; cites the records [adr](skills/adr/SKILL.md) keeps                                                                                                                                                                                                                                                                                                       |
-| [decide](skills/decide/SKILL.md)                             | Settles a technical dilemma: searches the repository's precedent first, then rules or escalates to a human with a cited decision sheet                                                                                                                                                                                                                                                                                                            | `/jig:decide`               | Called by [do-item](skills/do-item/SKILL.md) and [resolve-review-comments](skills/resolve-review-comments/README.md) when a call is architectural; routes an outcome that clears the bar to [adr](skills/adr/SKILL.md)                                                                                                                                                                                                           |
-| [adr](skills/adr/SKILL.md)                                   | Creates, updates and checks architecture decision records and the machine-readable rules derived from them                                                                                                                                                                                                                                                                                                                                        | `/jig:adr`                  | Records what [decide](skills/decide/SKILL.md) rules; its rules are what [review](skills/review/SKILL.md) checks against                                                                                                                                                                                                                                                                                                          |
-| [red-team](skills/red-team/README.md)                        | Reviews a requirements or architecture document adversarially: personas (a critical chief technology officer, a security auditor, a performance engineer, a cost optimizer and, for requirements, more who stand for the people who use and approve it) each read it in fresh context, and one report gives each persona's verdict and every finding with the passage, the risk and the question the author must answer; never edits the document | `/jig:red-team`             | Questions the document from the standpoint of the people it affects, before any plan or code, where [review](skills/review/SKILL.md) checks the same document against the repository's standards and decisions: run both, since one does not replace the other; a dilemma a finding raises goes to [decide](skills/decide/SKILL.md), and the revised document gets a [descar](skills/descar/SKILL.md) pass before it is accepted |
-| [design-brief-builder](skills/design-brief-builder/SKILL.md) | Assembles the numbered brief bundle for an external design session (Claude Design, so far), then merges and checks the returned bundle                                                                                                                                                                                                                                                                                                            | `/jig:design-brief-builder` | Stands alone: the design-prototype station, ahead of the delivery skills                                                                                                                                                                                                                                                                                                                                                         |
+| Skill | What it does | Invoke as | Works with |
+|-------|--------------|-----------|------------|
+| [explain](skills/explain/SKILL.md) | Writes a cited, commit-dated explainer sheet (HTML and Markdown) of how part of the system works today | `/jig:explain` | Comes before [decide](skills/decide/SKILL.md) and shares its sheet kit; cites the records [adr](skills/adr/SKILL.md) keeps |
+| [decide](skills/decide/SKILL.md) | Settles a technical dilemma: searches the repository's precedent first, then rules or escalates to a human with a cited decision sheet | `/jig:decide` | Called by [do-item](skills/do-item/SKILL.md) and [resolve-review-comments](skills/resolve-review-comments/README.md) when a call is architectural; routes an outcome that clears the bar to [adr](skills/adr/SKILL.md) |
+| [adr](skills/adr/SKILL.md) | Creates, updates and checks architecture decision records and the machine-readable rules derived from them | `/jig:adr` | Records what [decide](skills/decide/SKILL.md) rules; its rules are what [review](skills/review/SKILL.md) checks against |
+| [red-team](skills/red-team/README.md) | Reviews a requirements or architecture document adversarially: personas (a critical chief technology officer, a security auditor, a performance engineer, a cost optimizer and, for requirements, more who stand for the people who use and approve it) each read it in fresh context, and one report gives each persona's verdict and every finding with the passage, the risk and the question the author must answer; never edits the document | `/jig:red-team` | Questions the document from the standpoint of the people it affects, before any plan or code, where [review](skills/review/SKILL.md) checks the same document against the repository's standards and decisions: run both, since one does not replace the other; a dilemma a finding raises goes to [decide](skills/decide/SKILL.md), and the revised document gets a [descar](skills/descar/SKILL.md) pass before it is accepted |
+| [design-brief-builder](skills/design-brief-builder/SKILL.md) | Assembles the numbered brief bundle for an external design session (Claude Design, so far), then merges and checks the returned bundle | `/jig:design-brief-builder` | Stands alone: the design-prototype station, ahead of the delivery skills |
 
 **Learn from the work.** What a session learned about the scaffolding goes into a shared store; a person approves what changes; lasting lessons end up in the repository's own documents.
 
-| Skill                                                     | What it does                                                                                                                                                                                                                                                                                              | Invoke as                 | Works with                                                                                                                                                                                     |
-| --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [reflect](skills/reflect/README.md)                       | Records what a session learned about the repository's scaffolding (instructions, skills, gates) in a store every repository shares: merges duplicates, names each finding's class, escalates a class that keeps recurring to one tracker issue. On only when the configuration has a `reflection` section | `/jig:reflect`            | Offered at the end of a [drive-pr](skills/drive-pr/README.md) and by [do-item](skills/do-item/SKILL.md); its findings are what [review-reflections](skills/review-reflections/README.md) reads |
-| [review-reflections](skills/review-reflections/README.md) | Turns the stored findings into changes a person approves: reconciles approved fixes with what merged, groups what recurred, proposes a change, deferral, dismissal or escalation per group, and records each decision                                                                                     | `/jig:review-reflections` | The second half of [reflect](skills/reflect/README.md): run it periodically, or when a class of finding keeps recurring                                                                        |
-| [promote-memory](skills/promote-memory/SKILL.md)          | Turns an agent's private memory into a reviewed, shared document in the repository                                                                                                                                                                                                                        | `/jig:promote-memory`     | Sends an architectural lesson to [adr](skills/adr/SKILL.md); a page it promotes gets a [descar](skills/descar/SKILL.md) pass before it becomes a permanent, approved document                  |
-| [descar](skills/descar/SKILL.md)                          | Removes review history, correction ledgers and finished-work rows from a promoted document, keeping what a reader needs now                                                                                                                                                                               | `/jig:descar`             | The pass a page [promote-memory](skills/promote-memory/SKILL.md) promoted gets before it becomes a permanent, approved document; runs on any docs page before it is promoted                   |
+| Skill | What it does | Invoke as | Works with |
+|-------|--------------|-----------|------------|
+| [reflect](skills/reflect/README.md) | Records what a session learned about the repository's scaffolding (instructions, skills, gates) in a store every repository shares: merges duplicates, names each finding's class, escalates a class that keeps recurring to one tracker issue. On only when the configuration has a `reflection` section | `/jig:reflect` | Offered at the end of a [drive-pr](skills/drive-pr/README.md) and by [do-item](skills/do-item/SKILL.md); its findings are what [review-reflections](skills/review-reflections/README.md) reads |
+| [review-reflections](skills/review-reflections/README.md) | Turns the stored findings into changes a person approves: reconciles approved fixes with what merged, groups what recurred, proposes a change, deferral, dismissal or escalation per group, and records each decision | `/jig:review-reflections` | The second half of [reflect](skills/reflect/README.md): run it periodically, or when a class of finding keeps recurring |
+| [promote-memory](skills/promote-memory/SKILL.md) | Turns an agent's private memory into a reviewed, shared document in the repository | `/jig:promote-memory` | Sends an architectural lesson to [adr](skills/adr/SKILL.md); a page it promotes gets a [descar](skills/descar/SKILL.md) pass before it becomes a permanent, approved document |
+| [descar](skills/descar/SKILL.md) | Removes review history, correction ledgers and finished-work rows from a promoted document, keeping what a reader needs now | `/jig:descar` | The pass a page [promote-memory](skills/promote-memory/SKILL.md) promoted gets before it becomes a permanent, approved document; runs on any docs page before it is promoted |
 
 **Inspect and analyse.** Tools that inspect the repository: `audit` records its findings; `code-stats` measures what it is made of; `docs` checks its docs tree; `changelog` keeps its changelog and version; `programmatic-execution` runs read-only analysis.
 
-| Skill                                                            | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Invoke as                     | Works with                                                                                                                                                                                                                                                                                                                                                              |
-| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [audit](skills/audit/README.md)                                  | Audits the repository against Jig's practice modules: checks its `.config/jig.yaml` against the repository, scores every module's maturity criteria with evidence, and records the result in the repository so the next audit reports what changed                                                                                                                                                                                                                              | `/jig:audit`                  | Opens the pull request for an applied recommendation under [do-item](skills/do-item/SKILL.md)'s pull-request policy and offers [drive-pr](skills/drive-pr/README.md) on it                                                                                                                                                                                              |
-| [code-stats](skills/code-stats/README.md)                        | Measures what the repository is made of: classifies every tracked file by area (what it is for), kind (what it is), language and module, counts its lines of code, and reports in the terminal, as JSON or as an interactive HTML report, with the share it could not classify. Detects without configuration; `.config/jig.yaml` corrects it, and `--explain` names the rule behind any file                                                                                   | `/jig:code-stats`             | Stands alone for now; its JSON is meant as measured evidence for [audit](skills/audit/README.md)                                                                                                                                                                                                                                                                        |
-| [docs](skills/docs/README.md)                                    | Checks a docs tree in one pass against the docs-governance module's gates (frontmatter schema, generated index, `last_updated` dates, review scars, deferrals), flags drafts left stale, and lists the documents the project's type calls for and the tree lacks; holds those gates for a repository's hooks and CI                                                                                                                                                             | `/jig:docs`                   | Sends the scars it reports to [descar](skills/descar/SKILL.md); finds the decision records [adr](skills/adr/SKILL.md) keeps                                                                                                                                                                                                                                             |
-| [changelog](skills/changelog/README.md)                          | Keeps a repository's changelog and version from change notes: each pull request adds a small note instead of editing the changelog, a release step writes the notes in after the merge, and the skill's commands check a branch and show the next release; a GitHub Action and workflow template run the check, the release and the tags in CI, and `/jig:changelog setup` walks through turning it on. On only where the repository's `.config/jig.yaml` sets `changelog.file` | `/jig:changelog`              | Where it is on, [do-item](skills/do-item/SKILL.md) writes the note before it opens the pull request, [drive-pr](skills/drive-pr/SKILL.md) and [resolve-review-comments](skills/resolve-review-comments/SKILL.md) keep it true through review, and [resolve-conflicts](skills/resolve-conflicts/SKILL.md) converts a branch's changelog edits into a note before merging |
-| [programmatic-execution](skills/programmatic-execution/SKILL.md) | Runs bulk read-only analysis as one script instead of many tool calls, so large outputs stay out of the conversation                                                                                                                                                                                                                                                                                                                                                            | `/jig:programmatic-execution` | Supports every other skill; none depends on it                                                                                                                                                                                                                                                                                                                          |
+| Skill | What it does | Invoke as | Works with |
+|-------|--------------|-----------|------------|
+| [audit](skills/audit/README.md) | Audits the repository against Jig's practice modules: checks its `.config/jig.yaml` against the repository, scores every module's maturity criteria with evidence, and records the result in the repository so the next audit reports what changed | `/jig:audit` | Opens the pull request for an applied recommendation under [do-item](skills/do-item/SKILL.md)'s pull-request policy and offers [drive-pr](skills/drive-pr/README.md) on it |
+| [code-stats](skills/code-stats/README.md) | Measures what the repository is made of: classifies every tracked file by area (what it is for), kind (what it is), language and module, counts its lines of code, and reports in the terminal, as JSON or as an interactive HTML report, with the share it could not classify. Detects without configuration; `.config/jig.yaml` corrects it, and `--explain` names the rule behind any file | `/jig:code-stats` | Stands alone for now; its JSON is meant as measured evidence for [audit](skills/audit/README.md) |
+| [docs](skills/docs/README.md) | Checks a docs tree in one pass against the docs-governance module's gates (frontmatter schema, generated index, `last_updated` dates, review scars, deferrals), flags drafts left stale, and lists the documents the project's type calls for and the tree lacks; holds those gates for a repository's hooks and CI | `/jig:docs` | Sends the scars it reports to [descar](skills/descar/SKILL.md); finds the decision records [adr](skills/adr/SKILL.md) keeps |
+| [changelog](skills/changelog/README.md) | Keeps a repository's changelog and version from change notes: each pull request adds a small note instead of editing the changelog, a release step writes the notes in after the merge, and the skill's commands check a branch and show the next release; a GitHub Action and workflow template run the check, the release and the tags in CI, and `/jig:changelog setup` walks through turning it on. On only where the repository's `.config/jig.yaml` sets `changelog.file` | `/jig:changelog` | Where it is on, [do-item](skills/do-item/SKILL.md) writes the note before it opens the pull request, [drive-pr](skills/drive-pr/SKILL.md) and [resolve-review-comments](skills/resolve-review-comments/SKILL.md) keep it true through review, and [resolve-conflicts](skills/resolve-conflicts/SKILL.md) converts a branch's changelog edits into a note before merging |
+| [programmatic-execution](skills/programmatic-execution/SKILL.md) | Runs bulk read-only analysis as one script instead of many tool calls, so large outputs stay out of the conversation | `/jig:programmatic-execution` | Supports every other skill; none depends on it |
 
 The plugin also ships agents (a [subagent](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) is a separately prompted helper
 that a skill hands a narrow job to):
 
-| Agent                                      | What it does                                                                                                                                           | Available as                                                        |
-| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------- |
+| Agent | What it does | Available as |
+|-------|--------------|--------------|
 | [review-arbiter](agents/review-arbiter.md) | Rules on contested review findings the triage rubric cannot settle (fix now, reject, won't fix, defer or escalate to a human); reads code, never edits | `jig:review-arbiter` (Claude Code; see [Codex notes](#codex-notes)) |
 
 Which of these parts are scripts with no model in them, which are a model
@@ -479,12 +479,18 @@ interactive session to an account. A hidden-marker comment on the merged
 pull request is the claim: the dispatcher posts one naming its launch
 record before it starts the pass, reads the markers back, and stands down
 when an earlier one is there. A follow-up a person runs by hand claims the
-same way, and marks its marker done once it succeeded:
+same way, marks its marker done once it succeeded, which also sets the
+pull request's `jig:followed-up` state label, and says it failed with
+`marker failed`, which sets `jig:followup-failed` and leaves the marker
+claiming the follow-up; since that label is all `marker failed` records,
+it exits `1` when the label is not written, and says it recorded nothing
+where the labels are off:
 
 ```sh
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch marker claim <PR> [--repo owner/name]
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch marker check <PR> --comment <id> [--repo owner/name]
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch marker done <PR> --comment <id> [--repo owner/name]
+bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch marker failed <PR> --comment <id> [--repo owner/name]
 ```
 
 `claim` exits `3` when an earlier marker holds the follow-up, and `check`
@@ -493,7 +499,9 @@ marker written by the dispatcher's own login or by an owner, member or
 collaborator counts. When a dispatched follow-up's pass ends, its wrapper
 writes the result onto the marker (`outcome: done` or `failed`), where
 another host reads it, and the next run writes it there when the wrapper
-could not; the result is also kept in an outcome record per pull request
+could not; the wrapper then sets the pull request's state label
+(`jig:followed-up` or `jig:followup-failed`) where the labels are on, and
+the result is also kept in an outcome record per pull request
 that never expires. A follow-up that failed, or whose marker names a
 launch record this machine no longer has and carries no answer, is notified
 and never started again: delete its marker to have it run again. A pass that
@@ -672,17 +680,27 @@ each with the name it carries now.
 
 A drive stopped with exit 12 gets one recovery pass per head commit in its existing branch tree. The pass inspects the uncommitted work and commits and pushes what belongs to the change, discards only known disposable work, or stops for unclear ownership. A missing tree is reported; no replacement tree is opened. A second exit 12 at the same head waits for a person, whose notice names `jig send drive@owner/name#N rearm`.
 
-**Dispatch labels** (`dispatch.labels` in the repository's
-[configuration](CONFIGURATION.md#dispatch), off by default) make the
-dispatcher's state visible on each pull request, from any forge client,
-and let a person steer it the same way. Each `--apply` run sets each
-managed pull request's state label (`jig:driving`, `jig:converged`,
-`jig:parked`, `jig:stale`, `jig:held`, `jig:followed-up`,
-`jig:followup-failed` under the default prefix) from its drive ledger and
-the serialized areas below, a merged one's from its follow-up's end
-(`jig:followup-failed` while a failed follow-up waits for a person), writing only where the labels disagree, so a label
-changed by hand, or left behind by a drive that was killed, is corrected
-at the next run; no state label is ever read to decide what to start. The command
+**Pull request state labels** (`dispatch.labels` in the repository's
+[configuration](CONFIGURATION.md#dispatch), off by default) show where each
+driven pull request stands, from any forge client, and let a person steer
+the same way. Each pull request carries one state label (`jig:driving`,
+`jig:converged`, `jig:parked`, `jig:stale`, `jig:held`, `jig:followed-up`,
+`jig:followup-failed` under the default prefix), projected from its drive
+ledger by one mapping its writers share, each writing when what it owns
+changes: the drive itself when it arms (`jig:driving`) and when it stops,
+by the exit table it shares with the dispatcher (`jig:converged` at the
+head it verified; `jig:parked` for a park, a stop a person settles or
+made, and a stop the dispatcher re-drives, which a run turns into
+`jig:stale`), the follow-up when it ends, done or failed, whoever
+runs it, and the dispatcher's every `--apply` run, which also writes
+`jig:stale` and `jig:held` (from the serialized areas below) and corrects
+any label that disagrees, so a label changed by hand, or left behind by a
+drive that was killed, comes back. A drive's and a follow-up's writes need
+no dispatcher: a repository that only drives pull requests gets the labels
+too. Every writer reads `dispatch.labels` from the default branch, so all
+of them use one prefix. A run re-reads a pull request's ledger just before
+it writes, and leaves one whose ledger changed since it read it to a later
+run; no state label is ever read to decide what to start. The command
 labels are a person's commands, which the dispatcher reads and never
 adds: `jig:drive` on a pull request with no drive ledger arms a drive on
 it (the `rearm` stage, once per head commit) and is replaced by the state
@@ -700,12 +718,20 @@ apply (`automation:docs-sync`), unless the bot is one the adoption rule
 names, which is the host's own identity. The dispatcher never removes `automation`
 or an `automation:` label, and never puts either on a person's pull
 request. With `only_labeled`, the dispatcher reads only the pull requests
-that carry a label of the set. The labels must exist first: `jig install
-dispatch --repo <path>` lists the missing ones, the marker labels with
-them, beside the timer, and with
-`--yes` creates them where the signed-in account may and lists the rest
-with the command a person runs. A label write the forge refuses is reported in the receipt,
-and the run does not fail.
+that carry a label of the set, which includes one a drive armed by hand
+has labelled `jig:driving`; `jig:hold` keeps such a pull request out. The labels must exist first, and no writer
+creates one: `jig dispatch labels [--repo <path>] [--yes]` lists the missing
+ones, the marker labels with them, with no job installed, and with `--yes`
+names each it created and lists the rest with the command a person who may
+create labels runs; `jig install dispatch --repo <path>` does the same
+beside the timer. A label write the forge refuses is reported (in the
+receipt, or on the drive's or the command's output) and fails nothing, except
+`jig dispatch marker failed`, which exits `1` when it cannot write its enabled
+label, since that label is its only record of the failure. An
+optional workflow, drive-pr's
+[`templates/github/state-labels.yml`](skills/drive-pr/templates/github/state-labels.yml),
+replaces `jig:converged` with `jig:stale` on a push to the pull request,
+without waiting for a run.
 
 **Adoption** (`dispatch.adopt` in the repository's
 [configuration](CONFIGURATION.md#dispatch), off by default) drives the
@@ -756,18 +782,18 @@ the model, the duration, a drive's rounds, and an outcome class from a
 closed list, with a reason that carries the stage's own answer (the exit,
 the recorded result, or the last state):
 
-| Class               | What ended there                                                                                                                                                                                                                                                                            |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| converged           | a drive's convergence, `CONVERGED` (`0`); a pickup's or follow-up's result `done`                                                                                                                                                                                                           |
-| merged              | a drive whose pull request merged while it ran, `PR_NOT_OPEN` (`5`)                                                                                                                                                                                                                         |
-| quota wall          | a usage limit, `QUOTA_PARKED` (`16`), or a session that ended with no result while its wall stood                                                                                                                                                                                           |
-| parked for a person | a park, `HITL_PARKED` (`8`); a follow-up pass that stopped on a question                                                                                                                                                                                                                    |
-| stalled             | the drive's stall, `STALLED` (`14`), or its round limit, `MAX_ROUNDS` (`6`); a driver replaced by a takeover                                                                                                                                                                                |
-| died                | a process gone without an exit; a session that ended with no result                                                                                                                                                                                                                         |
-| refused             | a stage's own refusal or a stop it was given: `UNSUPPORTED_CLI` (`2`), `NOT_SETTLED` (`4`), `SINGLE_INSTANCE_LOCK` (`11`), `DRIVE_HELD_BY_OTHER_WORKTREE` (`13`), `MAILBOX_STOPPED` (`18`), `MAILBOX_PAUSE_TIMEOUT` (`19`), `TAKEN_OVER` (`20`), and `PR_NOT_OPEN` on a closed pull request |
-| gates failed        | a stage that ran to its end without achieving it: `INDETERMINATE` (`1`), `REVIEWER_FAILED` (`7`), `REVIEW_SKIPPED` (`22`), `PR_CONFLICTING` (`9`), `WORKTREE_UNCLEAN` (`12`), `PASS_DEADLINE` (`15`), `CI_REPAIR_SPENT` (`21`), `CI_INFRA_PERSISTED` (`23`); a result `failed`              |
-| double claim        | an item more than one session joins to (an event row)                                                                                                                                                                                                                                       |
-| unknown             | anything else, with its last state                                                                                                                                                                                                                                                          |
+| Class | What ended there |
+| --- | --- |
+| converged | a drive's convergence, `CONVERGED` (`0`); a pickup's or follow-up's result `done` |
+| merged | a drive whose pull request merged while it ran, `PR_NOT_OPEN` (`5`) |
+| quota wall | a usage limit, `QUOTA_PARKED` (`16`), or a session that ended with no result while its wall stood |
+| parked for a person | a park, `HITL_PARKED` (`8`); a follow-up pass that stopped on a question |
+| stalled | the drive's stall, `STALLED` (`14`), or its round limit, `MAX_ROUNDS` (`6`); a driver replaced by a takeover |
+| died | a process gone without an exit; a session that ended with no result |
+| refused | a stage's own refusal or a stop it was given: `UNSUPPORTED_CLI` (`2`), `NOT_SETTLED` (`4`), `SINGLE_INSTANCE_LOCK` (`11`), `DRIVE_HELD_BY_OTHER_WORKTREE` (`13`), `MAILBOX_STOPPED` (`18`), `MAILBOX_PAUSE_TIMEOUT` (`19`), `TAKEN_OVER` (`20`), and `PR_NOT_OPEN` on a closed pull request |
+| gates failed | a stage that ran to its end without achieving it: `INDETERMINATE` (`1`), `REVIEWER_FAILED` (`7`), `REVIEW_SKIPPED` (`22`), `PR_CONFLICTING` (`9`), `WORKTREE_UNCLEAN` (`12`), `PASS_DEADLINE` (`15`), `CI_REPAIR_SPENT` (`21`), `CI_INFRA_PERSISTED` (`23`); a result `failed` |
+| double claim | an item more than one session joins to (an event row) |
+| unknown | anything else, with its last state |
 
 What the tick observes rather than what ends is an event row, once per
 cause: a stalled pickup, a double claim, a stage drifting from its
@@ -1049,8 +1075,9 @@ a probe run then reads nothing, and the next install removes its timer.
 `jig upgrade` refreshes the probe's timer with the tick's; a machine whose
 dispatcher timer was installed before the probe existed gets the probe's at
 its next `jig install dispatch --yes`. `jig install dispatch
---repo <path>` also lists the [dispatch labels](#the-dispatcher) that
-repository turns on and lacks, and creates them with `--yes`. The earlier
+--repo <path>` also lists the [state labels](#the-dispatcher) that
+repository turns on and lacks, and creates them with `--yes`, as
+`jig dispatch labels` does with no job installed. The earlier
 `jig dispatch install [--interval 5m] [--yes] [--uninstall]` keeps working,
 and is the one form that sets an interval other than the machine file's.
 
@@ -1092,11 +1119,11 @@ person, one line per entry. Anything else it answers in sentences.
 [address](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md),
 `station@owner/name#key`, such as `drive@jig-harness/jig#456`:
 
-| Station    | Key                                                                        | Who holds it                                                                        |
-| ---------- | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `pickup`   | the tracker's item key (`#12` on GitHub Issues, `ENG-4` on Linear or Jira) | the session that claimed the item                                                   |
-| `drive`    | the pull request's number                                                  | the live driver: a dispatched re-arm or takeover, or a driver someone armed by hand |
-| `followup` | the merged pull request's number                                           | the follow-up pass, or a person's run                                               |
+| Station | Key | Who holds it |
+| --- | --- | --- |
+| `pickup` | the tracker's item key (`#12` on GitHub Issues, `ENG-4` on Linear or Jira) | the session that claimed the item |
+| `drive` | the pull request's number | the live driver: a dispatched re-arm or takeover, or a driver someone armed by hand |
+| `followup` | the merged pull request's number | the follow-up pass, or a person's run |
 
 The repository may be its short name where the
 [machine's dispatch file](CONFIGURATION.md#the-machines-dispatch-file) lists
@@ -1109,13 +1136,13 @@ whose configuration names the tracker.
 
 **The answer.** Every answer prints the address in full and these fields:
 
-| Field     | What it says                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `holder`  | the launch that holds the station now: its stage, its host (`this machine`, or another dispatching host as its launch claims name it), the drive's driver generation, and whether its process is alive, dead or unknown; the account, the session and the launch record where this machine's records name them; `none` when nobody holds it                                                                                                                                                                                                                                                       |
-| `state`   | the station's state in its own words: for a drive, `running`, the [terminal-state](skills/drive-pr/README.md) name of its last stop (`HITL_PARKED`, `CONVERGED`, …), `not driven`, `merged` or `closed`; for a pick-up, `assigned`, `claimed`, `stalled`, `doubly claimed`, `not assigned` or `closed`; for a follow-up, `claimed`, `done`, `failed`, `not claimed` or `not merged`                                                                                                                                                                                                               |
+| Field | What it says |
+| --- | --- |
+| `holder` | the launch that holds the station now: its stage, its host (`this machine`, or another dispatching host as its launch claims name it), the drive's driver generation, and whether its process is alive, dead or unknown; the account, the session and the launch record where this machine's records name them; `none` when nobody holds it |
+| `state` | the station's state in its own words: for a drive, `running`, the [terminal-state](skills/drive-pr/README.md) name of its last stop (`HITL_PARKED`, `CONVERGED`, …), `not driven`, `merged` or `closed`; for a pick-up, `assigned`, `claimed`, `stalled`, `doubly claimed`, `not assigned` or `closed`; for a follow-up, `claimed`, `done`, `failed`, `not claimed` or `not merged` |
 | `waitsOn` | `none`; `waiting`, with what it waits for, when it settles by itself (a dispatcher's next tick, another driver); or `person`, with the act that settles it: answer, re-arm, merge, re-run the follow-up, choose the session that keeps the item, look at the stalled pickup, settle a pickup's question and return the item to the dispatch states, answer the waiting session, or assign the item as someone who can write; and `needAct`, what the person does as the dispatch dashboard groups it (Merge, Decide, Authorize, Reply, Do or Investigate; a park's comes from its decision class) |
-| `last`    | the last ended launch: its class from the [outcome log](#the-dispatcher)'s closed list and when, from this machine's outcome log or, elsewhere, from the end written on its launch claim                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `sources` | every record kind the answer consulted, whether it was read and why not, and how many forge and tracker calls it made                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `last` | the last ended launch: its class from the [outcome log](#the-dispatcher)'s closed list and when, from this machine's outcome log or, elsewhere, from the end written on its launch claim |
+| `sources` | every record kind the answer consulted, whether it was read and why not, and how many forge and tracker calls it made |
 
 **What it reads.** A `drive` or a `followup` reads the pull request and its
 comments once (the drive ledger, the launch claims, the follow-up marker,
@@ -1188,14 +1215,14 @@ the dispatcher's tick, `send` wakes it (see below). It takes the same [addresses
 jig send <station>@<owner>/<name>#<key> <verb> [arguments] [--dry-run] [--as <login>]
 ```
 
-| Verb                                                            | To                  | The record it writes                                                                                                                        | Read by                                                                                                                  |
-| --------------------------------------------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `assign`                                                        | `pickup`            | the item assigned to the factory identity (`dispatch.identity`), moved into the first dispatch state (`dispatch.states`) when it is in none | the dispatcher's next tick, which starts the pick-up when the person who made the assignment can write to the repository |
-| `drive`                                                         | `drive`             | the `drive` [dispatch label](CONFIGURATION.md#dispatch)                                                                                     | the dispatcher's next tick, which arms a drive                                                                           |
-| `rearm`                                                         | `drive`             | the `rearm` dispatch label for a stopped drive                                                                                              | the dispatcher's next tick, which re-arms it on an admitted account in the existing worktree                             |
-| `hold`, `release`                                               | `drive`, `followup` | the `hold` dispatch label, added or removed                                                                                                 | the dispatcher's next tick, which keeps every stage off a held pull request                                              |
-| `answer <key> <text>`                                           | `drive`             | a comment on the pull request whose first line is `answer <key>: <text>`                                                                    | the re-arm, which hands the answer to the drive's passes as your verdict                                                 |
-| `pause`, `resume <hold-push\|pause\|stop>`, `stop`, `hold-push` | `drive`             | a directive in the [mailbox](skills/drive-pr/README.md) of the working tree that holds the drive on this machine                            | the driver: `hold-push` before each push, `pause` and `stop` at its next round boundary                                  |
+| Verb | To | The record it writes | Read by |
+| --- | --- | --- | --- |
+| `assign` | `pickup` | the item assigned to the factory identity (`dispatch.identity`), moved into the first dispatch state (`dispatch.states`) when it is in none | the dispatcher's next tick, which starts the pick-up when the person who made the assignment can write to the repository |
+| `drive` | `drive` | the `drive` [dispatch label](CONFIGURATION.md#dispatch) | the dispatcher's next tick, which arms a drive |
+| `rearm` | `drive` | the `rearm` dispatch label for a stopped drive | the dispatcher's next tick, which re-arms it on an admitted account in the existing worktree |
+| `hold`, `release` | `drive`, `followup` | the `hold` dispatch label, added or removed | the dispatcher's next tick, which keeps every stage off a held pull request |
+| `answer <key> <text>` | `drive` | a comment on the pull request whose first line is `answer <key>: <text>` | the re-arm, which hands the answer to the drive's passes as your verdict |
+| `pause`, `resume <hold-push\|pause\|stop>`, `stop`, `hold-push` | `drive` | a directive in the [mailbox](skills/drive-pr/README.md) of the working tree that holds the drive on this machine | the driver: `hold-push` before each push, `pause` and `stop` at its next round boundary |
 
 **It checks before it writes.** It reads the address first, through `jig
 ask`'s readers, and refuses (exit `1`) a request the station cannot take:
@@ -1368,14 +1395,14 @@ open; the guide lists the evidence it needs.
 
 ## Requirements
 
-| Tool                                                                         | Version                                                                                                                                                                                                                                                                | Needed for                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Claude Code** and/or a **Codex CLI** with plugin support                   | Claude Code 2.1.292 or later for the one-step install below (older: the two-step install), and 2.1.285 or later for a drive's [long background commands](skills/drive-pr/README.md#the-background-time-limit). Codex: tested with 0.159                                | Every skill. Either tool is enough; install for each one you use                                                                                                                                                                                                                                                                                                                                                            |
-| **[Bun](https://bun.sh)** on `PATH`                                          | The version in [mise.toml](https://github.com/jig-harness/jig/blob/main/mise.toml), which Jig tests; an older Bun may lack an API a script uses                                                                                                                        | Every skill's scripts, which are TypeScript run by Bun. The repository being worked on needs no Bun of its own                                                                                                                                                                                                                                                                                                              |
-| **git**                                                                      | 2.36 or later (`--path-format` for absolute paths and `git worktree list -z`; `resolve-conflicts` needs 2.41, to reconstruct automatic merge results and read attributes from the index with `--attr-source`, and its history report 2.43, or 2.45 in a partial clone) | Every skill that reads the repository                                                                                                                                                                                                                                                                                                                                                                                       |
-| **GitHub CLI** (`gh`), signed in with access to the repositories you work on | 2.48 or later (`gh api --slurp`)                                                                                                                                                                                                                                       | Every skill that works on pull requests. Jig supports GitHub as its only forge ([extending](EXTENDING.md#forge-github))                                                                                                                                                                                                                                                                                                     |
-| **The `gh-stack` extension**                                                 | Any                                                                                                                                                                                                                                                                    | Only `pull_requests.stacking: native`                                                                                                                                                                                                                                                                                                                                                                                       |
-| **Issue-tracker access**                                                     | —                                                                                                                                                                                                                                                                      | `do-item`, and `drive-pr`'s tracker reads. With the default GitHub adapter, the signed-in `gh` above and nothing more. With the Linear adapter: `LINEAR_API_KEY` or `LINEAR_API_TOKEN` in the environment, or the Linear MCP server or `linear` command line tool signed in. With the Jira adapter: `JIRA_EMAIL` and `JIRA_API_TOKEN` in the environment, an Atlassian account's email address and an API token made for it |
+| Tool | Version | Needed for |
+|------|---------|------------|
+| **Claude Code** and/or a **Codex CLI** with plugin support | Claude Code 2.1.292 or later for the one-step install below (older: the two-step install), and 2.1.285 or later for a drive's [long background commands](skills/drive-pr/README.md#the-background-time-limit). Codex: tested with 0.159 | Every skill. Either tool is enough; install for each one you use |
+| **[Bun](https://bun.sh)** on `PATH` | The version in [mise.toml](https://github.com/jig-harness/jig/blob/main/mise.toml), which Jig tests; an older Bun may lack an API a script uses | Every skill's scripts, which are TypeScript run by Bun. The repository being worked on needs no Bun of its own |
+| **git** | 2.36 or later (`--path-format` for absolute paths and `git worktree list -z`; `resolve-conflicts` needs 2.41, to reconstruct automatic merge results and read attributes from the index with `--attr-source`, and its history report 2.43, or 2.45 in a partial clone) | Every skill that reads the repository |
+| **GitHub CLI** (`gh`), signed in with access to the repositories you work on | 2.48 or later (`gh api --slurp`) | Every skill that works on pull requests. Jig supports GitHub as its only forge ([extending](EXTENDING.md#forge-github)) |
+| **The `gh-stack` extension** | Any | Only `pull_requests.stacking: native` |
+| **Issue-tracker access** | — | `do-item`, and `drive-pr`'s tracker reads. With the default GitHub adapter, the signed-in `gh` above and nothing more. With the Linear adapter: `LINEAR_API_KEY` or `LINEAR_API_TOKEN` in the environment, or the Linear MCP server or `linear` command line tool signed in. With the Jira adapter: `JIRA_EMAIL` and `JIRA_API_TOKEN` in the environment, an Atlassian account's email address and an API token made for it |
 
 Most skills do not check these versions when they run: an older tool fails
 on the command it lacks. The `resolve-conflicts` history report is the
@@ -1509,17 +1536,17 @@ A repository adopts a skill by committing its values. Nothing else is
 committed: no copy of the skill, no install script, no generated files.
 
 1. **Create `.config/jig.yaml`** with the values the skill needs.
-   This file is the _consumer overlay_ (see the [glossary](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)):
+   This file is the *consumer overlay* (see the [glossary](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)):
    the repository's own values, laid over the shared procedure. JSON is valid
    YAML, so a JSON-formatted file works too. The minimum for
    `resolve-review-comments`:
 
    ```yaml
    gates:
-     command: make check # the full local checks before a push
-   review: # optional
-     bots: ["example-review[bot]"] # your AI reviewer's login
-     deferral_team: ENG # issue-tracker team for deferred findings
+     command: make check             # the full local checks before a push
+   review:                           # optional
+     bots: ["example-review[bot]"]   # your AI reviewer's login
+     deferral_team: ENG              # issue-tracker team for deferred findings
    ```
 
    Only `gates.command` is required: the review skill works every reviewer's
@@ -1620,35 +1647,34 @@ field only when its default does not fit. The
 
 ```yaml
 repository:
-  base_branch: develop # default: the repository's default branch on GitHub
-pull_requests: # how agents open and stack pull requests
-  stacking: none # none | native (GitHub stacks) | branch (plain chains); default none
-  open_as: draft # draft | ready; default draft
-  mark_ready: 1 # drive marks a draft Ready after round N | converged | never; default 1
-  branch_name: "{key_lower}-{slug}" # must contain {key} or {key_lower}
-  issue_link: closes # closes | refs | none
-  size_budget: 600 # changed lines per pull request; default: no budget
+  base_branch: develop        # default: the repository's default branch on GitHub
+pull_requests:                # how agents open and stack pull requests
+  stacking: none              # none | native (GitHub stacks) | branch (plain chains); default none
+  open_as: draft              # draft | ready; default draft
+  mark_ready: 1               # drive marks a draft Ready after round N | converged | never; default 1
+  branch_name: "{key_lower}-{slug}"   # must contain {key} or {key_lower}
+  issue_link: closes          # closes | refs | none
+  size_budget: 600            # changed lines per pull request; default: no budget
 review:
-  reviewer_app: example-review # GitHub App whose check runs show the AI reviewer ran; naming it (or reviewer_check_pattern) is what makes drive-pr wait for a reviewer; default: none, no reviewer expected
+  reviewer_app: example-review   # GitHub App whose check runs show the AI reviewer ran; naming it (or reviewer_check_pattern) is what makes drive-pr wait for a reviewer; default: none, no reviewer expected
 drive:
-  validation_plan_command:
-    "<your plan command>"
-    # reads changed files on stdin, prints a JSON validation plan; default: run gates.command
-  load_guard_command: "<your load-guard command>" # returns once the machine can take heavy checks; default: none
-  change_areas_catalog: docs/change-areas.yaml # change-area catalog for area-aware reports; default: none
-  reviews_drafts: true # does the AI reviewer review draft pull requests
-  max_rounds: 10 # default round budget of a drive-pr run; --max-rounds overrides; default 10
-  pass_deadline_retries: 2 # passes killed at their deadline one drive restarts from, across re-arms; default 2
-  pass_model: sonnet # model each pass runs on: a model id, a Claude Code alias or a routing tier; default sonnet
+  validation_plan_command: "<your plan command>"
+                              # reads changed files on stdin, prints a JSON validation plan; default: run gates.command
+  load_guard_command: "<your load-guard command>"   # returns once the machine can take heavy checks; default: none
+  change_areas_catalog: docs/change-areas.yaml      # change-area catalog for area-aware reports; default: none
+  reviews_drafts: true        # does the AI reviewer review draft pull requests
+  max_rounds: 10              # default round budget of a drive-pr run; --max-rounds overrides; default 10
+  pass_deadline_retries: 2    # passes killed at their deadline one drive restarts from, across re-arms; default 2
+  pass_model: sonnet          # model each pass runs on: a model id, a Claude Code alias or a routing tier; default sonnet
 ci:
-  required_checks: [build, test] # check runs that must complete on the final head; default: what the base branch's protection requires
-  hold_label: ci:hold # label your workflows honour to skip heavy jobs between review rounds; default: none (every push runs full CI)
+  required_checks: [build, test]   # check runs that must complete on the final head; default: what the base branch's protection requires
+  hold_label: ci:hold         # label your workflows honour to skip heavy jobs between review rounds; default: none (every push runs full CI)
 issue_tracker:
-  adapter: github # which tracker adapter to use: github (GitHub Issues, the default), linear or jira
+  adapter: github             # which tracker adapter to use: github (GitHub Issues, the default), linear or jira
   # team: ENG                 # Linear's team key or Jira's project key, required by those adapters
-  file_command: /jig:file-issue # how an agent files an issue by hand
-  taxonomy: label-taxonomy.yaml # the label taxonomy file-issue validates against; default label-taxonomy.yaml
-  states: # the tracker's own names for the workflow states
+  file_command: /jig:file-issue   # how an agent files an issue by hand
+  taxonomy: label-taxonomy.yaml   # the label taxonomy file-issue validates against; default label-taxonomy.yaml
+  states:                     # the tracker's own names for the workflow states
     backlog: Backlog
     todo: Todo
     in_progress: In Progress
@@ -1659,29 +1685,25 @@ issue_tracker:
     ops_pending: Ops Pending
     duplicate: Duplicate
 do_item:
-  agents: # which agent implements an issue
+  agents:                     # which agent implements an issue
     default: general-purpose
     integrator: integrator
-    labels: { frontend: frontend-dev } # issue label → agent
-    catalog: { api: backend-dev } # catalog agent name → agent
+    labels: { frontend: frontend-dev }          # issue label → agent
+    catalog: { api: backend-dev }               # catalog agent name → agent
     codearea_areas: { "area:billing": billing } # issue label → change-area key
-  scouts: # agent → the scouts sent ahead of it (a list per agent)
+  scouts:                     # agent → the scouts sent ahead of it (a list per agent)
     backend-dev: [schema-scout, api-scout]
-  gates: # extra review skills a pickup must run first
-    - {
-        labels: [db-migration],
-        paths: ["migrations/**"],
-        skill: db-migration-review,
-      }
-  execution_plan_block: execution-plan-v1 # fenced block name read from an epic's description
-  arm_drive: auto # how do-item and drive-pr start a drive: auto (a terminal tab in Orca, else the background), tab, background or print; default auto
-work_batch: # how work-batch sizes a batch
-  point_budget: 16 # default 16
-  max_items: 6 # default 6
-  sizes: [xs, small, medium, large, xl] # example, no default: every size label, for the labelling-gap report; unset, that report is off
+  gates:                      # extra review skills a pickup must run first
+    - { labels: [db-migration], paths: ["migrations/**"], skill: db-migration-review }
+  execution_plan_block: execution-plan-v1   # fenced block name read from an epic's description
+  arm_drive: auto             # how do-item and drive-pr start a drive: auto (a terminal tab in Orca, else the background), tab, background or print; default auto
+work_batch:                   # how work-batch sizes a batch
+  point_budget: 16            # default 16
+  max_items: 6                # default 6
+  sizes: [xs, small, medium, large, xl]     # example, no default: every size label, for the labelling-gap report; unset, that report is off
 fleet_health:
-  config: .config/fleet-health.yaml # fleet-health settings file
-  snapshot_dir: ~/.local/state/jig/dashboard # where snapshots are written; `~` is expanded
+  config: .config/fleet-health.yaml         # fleet-health settings file
+  snapshot_dir: ~/.local/state/jig/dashboard   # where snapshots are written; `~` is expanded
 ```
 
 The agent and scout names above are examples; use the agents your repository
@@ -1716,7 +1738,7 @@ folder too; `JIG_VERIFICATION_FIT_LOG` overrides it.
 **How the skills reach the issue tracker.** `do-item` and `drive-pr` talk to
 the tracker only through a small [tracker interface](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (read an issue with its
 comments, list its children, change its state, post a comment, run the
-reports' queries). An _adapter_ implements that interface for one tracker;
+reports' queries). An *adapter* implements that interface for one tracker;
 `issue_tracker.adapter` chooses it: `github` for GitHub Issues (the default), `linear` or `jira` (Jira Cloud).
 `issue_tracker.states` translates the skills' state names (`in_progress`,
 `done`, …) into the tracker's own; on GitHub Issues an open state is a label
@@ -1744,39 +1766,39 @@ these only when detection picks the wrong thing:
 
 ```yaml
 adr:
-  directory: docs/adr # decision records; default: detected (docs/adr, doc/adr, docs/decisions, …)
-  rules_file: docs/adr/rules.yaml # machine-readable rules (Jig M5); default: detected, else none
+  directory: docs/adr                 # decision records; default: detected (docs/adr, doc/adr, docs/decisions, …)
+  rules_file: docs/adr/rules.yaml     # machine-readable rules (Jig M5); default: detected, else none
 descar:
-  lint_command: "bun scripts/check-descarring-scars.ts" # scar lint taking document paths; default: detected, else the docs skill's lint
+  lint_command: "bun scripts/check-descarring-scars.ts"   # scar lint taking document paths; default: detected, else the docs skill's lint
 docs:
-  root: docs # the governed docs tree; default: detected (docs/, doc/, documentation/)
-  schema: docs/.frontmatter-schema.yaml # default: detected under the docs tree, else no frontmatter check
-  stale_after_days: 180 # a draft older than this is reported stale; default: 180
-  promoted_statuses: [approved, active] # statuses the scar lint holds to no review scars; default: [approved]
+  root: docs                          # the governed docs tree; default: detected (docs/, doc/, documentation/)
+  schema: docs/.frontmatter-schema.yaml   # default: detected under the docs tree, else no frontmatter check
+  stale_after_days: 180               # a draft older than this is reported stale; default: 180
+  promoted_statuses: [approved, active]   # statuses the scar lint holds to no review scars; default: [approved]
 promote_memory:
-  lint_command: "<your memory lint> --dir {dir} --file {file}" # exit 0 = clean; default: none
-  target_dir: docs/retrospection # where promoted pages go (YYYY/MM/ below it); default: docs/retrospection
+  lint_command: "<your memory lint> --dir {dir} --file {file}"   # exit 0 = clean; default: none
+  target_dir: docs/retrospection      # where promoted pages go (YYYY/MM/ below it); default: docs/retrospection
 fix_ci:
-  regenerate_commands: # commands that regenerate committed generated files CI checks; default: none
+  regenerate_commands:                # commands that regenerate committed generated files CI checks; default: none
     - bun run generate:api
 resolve_conflicts:
-  generated: # files rebuilt, never hand-merged, on a conflict; default: the built-in lockfile table
+  generated:                          # files rebuilt, never hand-merged, on a conflict; default: the built-in lockfile table
     - paths: ["src/generated/**"]
       command: bun run generate
 github_actions:
-  conventions_doc: docs/ci.md # the repository's workflow conventions; default: searched for, else generic guidance
+  conventions_doc: docs/ci.md         # the repository's workflow conventions; default: searched for, else generic guidance
 design_brief:
-  kit: docs/design-kit # voice, colours and type, rubric, logo; default: detected, else the design-language document
-  design_language: docs/design.md # design-language document; default: detected
-  prototypes: design/prototypes # where finished design bundles land; default: ask
+  kit: docs/design-kit                # voice, colours and type, rubric, logo; default: detected, else the design-language document
+  design_language: docs/design.md     # design-language document; default: detected
+  prototypes: design/prototypes       # where finished design bundles land; default: ask
 decide:
-  policy_files: [AGENTS.md] # files whose ## sections are standing policy; default: [AGENTS.md]
-  rules_directory: .claude/rules # conditional rules, one per .md file; default: .claude/rules
-  glossary_file: CONTEXT.md # canonical vocabulary (**Term**: / _Avoid_: lines); default: CONTEXT.md
-  architect_agent: architect # subagent that rules in phase 3; default: a briefed general-purpose subagent
-  escalation_labels: [agent:architect] # extra labels on an escalated issue, beside hitl; default: none
+  policy_files: [AGENTS.md]           # files whose ## sections are standing policy; default: [AGENTS.md]
+  rules_directory: .claude/rules      # conditional rules, one per .md file; default: .claude/rules
+  glossary_file: CONTEXT.md           # canonical vocabulary (**Term**: / _Avoid_: lines); default: CONTEXT.md
+  architect_agent: architect          # subagent that rules in phase 3; default: a briefed general-purpose subagent
+  escalation_labels: [agent:architect]   # extra labels on an escalated issue, beside hitl; default: none
 explain:
-  figure_build_command: "<your figure build command>" # builds one figure, given its stem; default: explainers have no figures
+  figure_build_command: "<your figure build command>"   # builds one figure, given its stem; default: explainers have no figures
 ```
 
 Every field, with its default and the detection behind it, is in the
@@ -1894,10 +1916,10 @@ generated: every commit on them is written by the release tooling, built
 from a version's tag, and records in its message which version it carries
 and which commit it was built from.
 
-| Channel  | What it carries                                                      | When it moves                                                                        | For                                                                    |
-| -------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------- |
-| `stable` | A version that spent 72 hours on `latest` without an open regression | When Jig's maintainers promote a version, or roll back                               | Most machines, organization rollouts, container images                 |
-| `latest` | Every version                                                        | When a version is tagged, which happens once its release commit has passed the gates | Jig's maintainers, and teams that want each change as soon as it ships |
+| Channel | What it carries | When it moves | For |
+|---------|-----------------|---------------|-----|
+| `stable` | A version that spent 72 hours on `latest` without an open regression | When Jig's maintainers promote a version, or roll back | Most machines, organization rollouts, container images |
+| `latest` | Every version | When a version is tagged, which happens once its release commit has passed the gates | Jig's maintainers, and teams that want each change as soon as it ships |
 
 **[Promotion](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md).** A version moves from `latest` to `stable` only when all of
 these hold, and the promotion command refuses otherwise, naming each
@@ -2010,15 +2032,15 @@ The plugin lives in each tool's user-level plugin directory
 (`~/.claude/plugins/`, `~/.codex/plugins/`), so it applies wherever that tool
 runs as you:
 
-| Where                                                                                              | What to do                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A terminal session in any clone or worktree                                                        | Nothing beyond the one-time install                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| Herdr, Orca, Conductor, or any tool that creates worktrees and starts sessions                     | Nothing: new workspaces are ordinary directories on a machine that has the plugin                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `claude -p`, `codex exec`, scripts and loops                                                       | Nothing; plugins load in headless runs too                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| A container image or CI runner that runs an agent                                                  | Install at image build: run the install commands with git credentials available. For Claude Code, build a read-only _seed_ with `CLAUDE_CODE_PLUGIN_CACHE_DIR=/opt/claude-seed claude plugin install jig --marketplace https://github.com/jig-harness/jig.git#stable`, set `CLAUDE_CODE_PLUGIN_SEED_DIR=/opt/claude-seed` at run time, and enable it with `enabledPlugins` ([details](https://code.claude.com/docs/en/plugins/org#seed-containers-and-ci)). For Codex, run the two install commands in the image, or copy `plugin/skills/*` to `/etc/codex/skills/` and `plugin/shared/` to `/etc/codex/shared/`: the scripts import the shared code from the folder beside the skills folder                                                                                                                                                                                            |
-| CI jobs that only run tests and gates                                                              | Nothing: they do not need the skills                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| A runner that gives each session its own Claude Code configuration directory (`CLAUDE_CONFIG_DIR`) | A user-level install lives in the default directory and is not seen there. Build a seed once (as for containers) and set `CLAUDE_CODE_PLUGIN_SEED_DIR` in the runner's environment; repositories enable the plugin through `enabledPlugins` in `.claude/settings.json`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| A tool without plugin support                                                                      | Copy or link every folder of `plugin/skills/` into that tool's user skill directory (for example `~/.claude/skills/` or `~/.agents/skills/`), side by side, and `plugin/shared/` into a `shared/` folder beside that directory (`~/.claude/shared/`, `~/.agents/shared/`): skills import scripts from their siblings and code from `shared/`, so one skill alone, or the skills without `shared/`, do not run. The `jig` skill also reads the plugin's own files from the folder two levels above its `SKILL.md` (the directory that holds the skills folder, such as `~/.claude/`): copy `plugin/README.md`, `plugin/CONFIGURATION.md` and one manifest folder, `plugin/.claude-plugin/` or `plugin/.codex-plugin/`, there too, or its answers come from Jig's repository at a tag and a bug report records the plugin version as unknown. The command name is then the bare skill name |
+| Where | What to do |
+|-------|------------|
+| A terminal session in any clone or worktree | Nothing beyond the one-time install |
+| Herdr, Orca, Conductor, or any tool that creates worktrees and starts sessions | Nothing: new workspaces are ordinary directories on a machine that has the plugin |
+| `claude -p`, `codex exec`, scripts and loops | Nothing; plugins load in headless runs too |
+| A container image or CI runner that runs an agent | Install at image build: run the install commands with git credentials available. For Claude Code, build a read-only *seed* with `CLAUDE_CODE_PLUGIN_CACHE_DIR=/opt/claude-seed claude plugin install jig --marketplace https://github.com/jig-harness/jig.git#stable`, set `CLAUDE_CODE_PLUGIN_SEED_DIR=/opt/claude-seed` at run time, and enable it with `enabledPlugins` ([details](https://code.claude.com/docs/en/plugins/org#seed-containers-and-ci)). For Codex, run the two install commands in the image, or copy `plugin/skills/*` to `/etc/codex/skills/` and `plugin/shared/` to `/etc/codex/shared/`: the scripts import the shared code from the folder beside the skills folder |
+| CI jobs that only run tests and gates | Nothing: they do not need the skills |
+| A runner that gives each session its own Claude Code configuration directory (`CLAUDE_CONFIG_DIR`) | A user-level install lives in the default directory and is not seen there. Build a seed once (as for containers) and set `CLAUDE_CODE_PLUGIN_SEED_DIR` in the runner's environment; repositories enable the plugin through `enabledPlugins` in `.claude/settings.json` |
+| A tool without plugin support | Copy or link every folder of `plugin/skills/` into that tool's user skill directory (for example `~/.claude/skills/` or `~/.agents/skills/`), side by side, and `plugin/shared/` into a `shared/` folder beside that directory (`~/.claude/shared/`, `~/.agents/shared/`): skills import scripts from their siblings and code from `shared/`, so one skill alone, or the skills without `shared/`, do not run. The `jig` skill also reads the plugin's own files from the folder two levels above its `SKILL.md` (the directory that holds the skills folder, such as `~/.claude/`): copy `plugin/README.md`, `plugin/CONFIGURATION.md` and one manifest folder, `plugin/.claude-plugin/` or `plugin/.codex-plugin/`, there too, or its answers come from Jig's repository at a tag and a bug report records the plugin version as unknown. The command name is then the bare skill name |
 
 ## Troubleshooting
 
@@ -2130,14 +2152,14 @@ Up to 0.11.0 the plugin was called `groundwork` (`groundwork@groundwork`, with
 configuration file, the `GROUNDWORK_*` variables and the old folders are
 ignored without a notice, so each of them has to be moved by hand:
 
-| Before                                             | Now                                         | What happens to the old one                             |
-| -------------------------------------------------- | ------------------------------------------- | ------------------------------------------------------- |
-| `.config/groundwork-overlay.yaml`                  | `.config/jig.yaml`                          | ignored; a skill reports the repository as unconfigured |
-| `GROUNDWORK_*` variables                           | `JIG_*`                                     | ignored                                                 |
-| `~/.local/state/groundwork/drive-pr/`              | `~/.local/state/jig/drive-pr/`              | ignored; a drive starts from empty state                |
-| `~/.local/state/groundwork/dashboard/`             | `~/.local/state/jig/dashboard/`             | ignored                                                 |
-| `~/.local/state/groundwork/verification-fit.jsonl` | `~/.local/state/jig/verification-fit.jsonl` | ignored; move the file to keep its history              |
-| `~/.cache/groundwork/gh-cache/`                    | `~/.cache/jig/gh-cache/`                    | ignored; the cache refills on its own                   |
+| Before | Now | What happens to the old one |
+|--------|-----|-----------------------------|
+| `.config/groundwork-overlay.yaml` | `.config/jig.yaml` | ignored; a skill reports the repository as unconfigured |
+| `GROUNDWORK_*` variables | `JIG_*` | ignored |
+| `~/.local/state/groundwork/drive-pr/` | `~/.local/state/jig/drive-pr/` | ignored; a drive starts from empty state |
+| `~/.local/state/groundwork/dashboard/` | `~/.local/state/jig/dashboard/` | ignored |
+| `~/.local/state/groundwork/verification-fit.jsonl` | `~/.local/state/jig/verification-fit.jsonl` | ignored; move the file to keep its history |
+| `~/.cache/groundwork/gh-cache/` | `~/.cache/jig/gh-cache/` | ignored; the cache refills on its own |
 
 **On each machine**, for both tools:
 

@@ -110,6 +110,7 @@ import {
 import { DRIVE_EXIT } from "../../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { lastStopEvent } from "../../../skills/drive-pr/scripts/lib/state/events.ts";
 import { ledgerTree } from "../stall-tree.ts";
+import { exitClass as stopClass } from "../../../skills/drive-pr/scripts/lib/status/exit-classes.ts";
 import { infraStopClass } from "../infra-backoff.ts";
 import { type DriverPresence, driverPresence } from "./silent-driver.ts";
 import { type Adoption, adopts, type Author, ownAuthors } from "../adopt.ts";
@@ -411,44 +412,26 @@ function boundToTree(
   return kind === "deadline" && own && last?.leftWork === true;
 }
 
-/** The class of each exit the table names but `CONVERGED`, `HITL_PARKED` and `PR_CONFLICTING`, which read the pull request and its parks. */
-const EXITS: Record<number, (ledger: Ledger) => Classified> = {
-  [DRIVE_EXIT.PR_NOT_OPEN]: () => ({
-    class: "done",
-    why: `stopped ${DRIVE_EXIT.PR_NOT_OPEN} (merged or closed)`,
-  }),
-  [DRIVE_EXIT.TAKEN_OVER]: () => ({
-    class: "done",
-    why: `stopped ${DRIVE_EXIT.TAKEN_OVER} (taken over by another clone)`,
-  }),
-  [DRIVE_EXIT.MAILBOX_STOPPED]: () => ({
-    class: "stopped-by-person",
-    why: `stopped ${DRIVE_EXIT.MAILBOX_STOPPED} (a mailbox stop): a person's stop is never re-armed`,
-  }),
-  [DRIVE_EXIT.MAILBOX_PAUSE_TIMEOUT]: () => ({
-    class: "stopped-by-person",
-    why: `stopped ${DRIVE_EXIT.MAILBOX_PAUSE_TIMEOUT} (a mailbox pause): a person's stop is never re-armed`,
-  }),
-  [DRIVE_EXIT.QUOTA_PARKED]: (ledger) => ({
-    class: "re-armable",
-    why: `stopped ${DRIVE_EXIT.QUOTA_PARKED} (quota-parked; wall resets ${ledger.quotaPark?.resetAt ?? "at an unknown time"}): re-arm on an account other than the wall's, or after the reset`,
-  }),
-  [DRIVE_EXIT.NOT_SETTLED]: () => ({
-    class: "re-armable",
-    why: `stopped ${DRIVE_EXIT.NOT_SETTLED} (not judgeable yet): re-arm on any account`,
-  }),
-  [DRIVE_EXIT.SINGLE_INSTANCE_LOCK]: () => ({
-    class: "refused",
-    why: `stopped ${DRIVE_EXIT.SINGLE_INSTANCE_LOCK}: another driver holds it`,
-  }),
-  [DRIVE_EXIT.DRIVE_HELD_BY_OTHER_WORKTREE]: () => ({
-    class: "refused",
-    why: `stopped ${DRIVE_EXIT.DRIVE_HELD_BY_OTHER_WORKTREE}: another driver holds it`,
-  }),
-  [DRIVE_EXIT.REVIEW_SKIPPED]: () => ({
-    class: "needs-person",
-    why: `stopped ${DRIVE_EXIT.REVIEW_SKIPPED} (the reviewer skipped its head, and its review of an earlier head does not cover it): a re-arm waits for a review that will not come, so a person has the reviewer review the head or pushes a commit it reviews (see the drive's handoff)`,
-  }),
+/** Why a stop the exit table (`exitClass`) places by its exit alone reads as its class, for the exits that say more than a person's stop. */
+const EXIT_WHY: Record<number, (ledger: Ledger) => string> = {
+  [DRIVE_EXIT.PR_NOT_OPEN]: () =>
+    `stopped ${DRIVE_EXIT.PR_NOT_OPEN} (merged or closed)`,
+  [DRIVE_EXIT.TAKEN_OVER]: () =>
+    `stopped ${DRIVE_EXIT.TAKEN_OVER} (taken over by another clone)`,
+  [DRIVE_EXIT.MAILBOX_STOPPED]: () =>
+    `stopped ${DRIVE_EXIT.MAILBOX_STOPPED} (a mailbox stop): a person's stop is never re-armed`,
+  [DRIVE_EXIT.MAILBOX_PAUSE_TIMEOUT]: () =>
+    `stopped ${DRIVE_EXIT.MAILBOX_PAUSE_TIMEOUT} (a mailbox pause): a person's stop is never re-armed`,
+  [DRIVE_EXIT.QUOTA_PARKED]: (ledger) =>
+    `stopped ${DRIVE_EXIT.QUOTA_PARKED} (quota-parked; wall resets ${ledger.quotaPark?.resetAt ?? "at an unknown time"}): re-arm on an account other than the wall's, or after the reset`,
+  [DRIVE_EXIT.NOT_SETTLED]: () =>
+    `stopped ${DRIVE_EXIT.NOT_SETTLED} (not judgeable yet): re-arm on any account`,
+  [DRIVE_EXIT.SINGLE_INSTANCE_LOCK]: () =>
+    `stopped ${DRIVE_EXIT.SINGLE_INSTANCE_LOCK}: another driver holds it`,
+  [DRIVE_EXIT.DRIVE_HELD_BY_OTHER_WORKTREE]: () =>
+    `stopped ${DRIVE_EXIT.DRIVE_HELD_BY_OTHER_WORKTREE}: another driver holds it`,
+  [DRIVE_EXIT.REVIEW_SKIPPED]: () =>
+    `stopped ${DRIVE_EXIT.REVIEW_SKIPPED} (the reviewer skipped its head, and its review of an earlier head does not cover it): a re-arm waits for a review that will not come, so a person has the reviewer review the head or pushes a commit it reviews (see the drive's handoff)`,
 };
 
 function runningClass(
@@ -634,10 +617,11 @@ function exitClass(
   const failed = exit === FAILED ? failedConflictClass(forge) : null;
   return (
     failed ??
-    mechanicalStopClass(ledger, exit, forge) ??
-    EXITS[exit]?.(ledger) ?? {
-      class: "needs-person",
-      why: `stopped ${exit}: only a person settles it${conflictNote(forge.mergeable)} (see the drive's handoff)`,
+    mechanicalStopClass(ledger, exit, forge) ?? {
+      class: stopClass(exit).class,
+      why:
+        EXIT_WHY[exit]?.(ledger) ??
+        `stopped ${exit}: only a person settles it${conflictNote(forge.mergeable)} (see the drive's handoff)`,
     }
   );
 }

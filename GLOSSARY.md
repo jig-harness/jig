@@ -2253,19 +2253,25 @@ make, use the entry's term instead.
   merged, taken over, re-armable, stopped by a person); a run that parks or
   fails keeps its tab, and the next run for the same pull request or item
   closes it. A tab a person opened is never closed.
-- **Dispatch labels** — the pull-request labels through which the
-  *dispatcher* and a person see and steer each other, off unless a
-  repository turns them on, all under one prefix the repository picks
-  (`jig:` by default). The dispatcher keeps a state label on each pull
-  request it manages (driving, converged, parked, stale, *held*,
-  followed-up, followup-failed), derived from the drive ledger, the
-  *serialized areas* and, after the merge, the follow-up's end at every
-  *tick*, and never read to decide what to start. Beside them it keeps
-  marker labels without the prefix: the *owed-steps label* and
-  `automation` (*automation pull request*). A person adds the
-  commands: `drive` asks the dispatcher to drive a pull request that has
-  no drive yet, and `hold` stands it down from a pull request until the
-  person removes the label.
+- **Pull request state labels** (*dispatch labels*, after their setting
+  `dispatch.labels`) — the labels that show where a pull request stands,
+  from any forge client, and through which a person steers its drive and
+  the *dispatcher*: off unless a repository turns them on, all under one
+  prefix the repository picks (`jig:` by default). Each driven pull request
+  carries one state label (driving, converged, parked, stale, *held*,
+  followed-up, followup-failed), projected from its drive ledger by one
+  mapping the drive, the follow-up and the dispatcher's tick share, each
+  writing when what it owns changes: the drive when it writes its ledger
+  (driving, converged, parked), the follow-up
+  when it ends (followed-up, followup-failed), and the dispatcher at every
+  *tick*, which also writes stale and held (from the *serialized areas*)
+  and corrects any label that disagrees. No writer reads a state label to
+  decide what to start, and none creates one: a one-time setup does. Beside
+  them the dispatcher keeps marker labels without the prefix: the
+  *owed-steps label* and `automation` (*automation pull request*). A person
+  adds the commands: `drive` asks the dispatcher to drive a pull request
+  that has no drive yet, and `hold` stands the dispatcher and the drive's
+  own label writes down from a pull request until the person removes it.
 - **Adoption rule** — a repository's opt-in (`dispatch.adopt`) under which
   the *dispatcher* drives its own recent pull requests without anyone
   labelling them: an open pull request with no drive ledger, opened by one
@@ -2472,6 +2478,11 @@ make, use the entry's term instead.
   past it as a line, so smooth shapes such as a cylinder's sides get an
   outline that edge lines alone would miss
   ([design/website.md](design/website.md)).
+- **Implementation guidance** — the skills and notes a kind of change brings
+  to whichever agent implements it, chosen by the issue's labels, the paths
+  the change touches and the change areas it reaches, and handed to the
+  agent with the work. It adds to the review gates and never replaces one
+  ([do-item](plugin/skills/do-item/SKILL.md)).
 - **Intent chain** — the short statement of why a piece of work exists: the
   epic's intent, the issue's scope and its acceptance criteria. `do-item`
   writes it to a snapshot file and *Refocus* puts it back in front of an agent

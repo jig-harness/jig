@@ -82,27 +82,34 @@ async function ghJson(
   return text.ok ? parsed(text.value, what) : text;
 }
 
-/** The forge repository a checkout belongs to, and its default branch. */
+/** The forge repository a checkout belongs to, or the one `slug` names, and its default branch. */
 export async function repoTarget(
   path: string,
+  slug?: string,
 ): Promise<Outcome<RepoTarget, "unreadable">> {
   const read = await ghJson(
-    ["repo", "view", "--json", "nameWithOwner,defaultBranchRef"],
+    [
+      "repo",
+      "view",
+      ...(slug === undefined ? [] : [slug]),
+      "--json",
+      "nameWithOwner,defaultBranchRef",
+    ],
     "the repository view",
     path,
   );
   if (!read.ok) return read;
   const out = read.value;
-  const slug = isRecord(out) ? out.nameWithOwner : undefined;
+  const named = isRecord(out) ? out.nameWithOwner : undefined;
   const branch =
     isRecord(out) && isRecord(out.defaultBranchRef)
       ? out.defaultBranchRef.name
       : undefined;
-  if (typeof slug !== "string" || !/^[\w.-]+\/[\w.-]+$/.test(slug))
+  if (typeof named !== "string" || !/^[\w.-]+\/[\w.-]+$/.test(named))
     return unreadable("the repository view names no owner/name");
   if (typeof branch !== "string" || branch === "")
-    return unreadable(`${slug} reports no default branch`);
-  return ok({ path, slug, defaultBranch: branch });
+    return unreadable(`${named} reports no default branch`);
+  return ok({ path, slug: named, defaultBranch: branch });
 }
 
 /**
@@ -460,6 +467,25 @@ export async function pullRequestLabels(
   );
   if (!out.ok) return out;
   return labelNames(field(out.value, "labels"), `PR #${pr}`);
+}
+
+/** The head commit of open pull request `pr`, read now; a pull request that is no longer open does not read. */
+export async function pullRequestHead(
+  slug: string,
+  pr: number,
+): Promise<Outcome<string, "unreadable">> {
+  const out = await ghJson(
+    ["pr", "view", String(pr), "--repo", slug, "--json", "headRefOid,state"],
+    "the pull request view",
+  );
+  if (!out.ok) return out;
+  const state = field(out.value, "state");
+  if (state !== "OPEN")
+    return failed("unreadable", `PR #${pr} reads ${String(state)}`);
+  const head = field(out.value, "headRefOid");
+  return typeof head === "string" && head !== ""
+    ? ok(head)
+    : failed("unreadable", `PR #${pr}'s head did not read`);
 }
 
 /** Every pull request merged at or after `since` (ISO 8601). */
