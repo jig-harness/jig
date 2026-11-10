@@ -170,13 +170,26 @@ test("a framing suffix preserves option text and rejects extra identity claims",
       "conversation",
     )?.stale,
   ).toBe(true);
-  expect(
-    parseAnswerComment(
-      withDigestName,
+  const withOverlappingDigestNames = {
+    ...withDigestName,
+    decision: {
+      ...withDigestName.decision,
+      call: {
+        ...withDigestName.decision.call,
+        options: [keep, ...withDigestName.decision.call.options],
+      },
+    },
+  };
+  for (const park of [withDigestName, withOverlappingDigestNames]) {
+    const answer = parseAnswerComment(
+      park,
       comment("answer K: choose Keep [aaaaaaaaaaaa] [123456abcdef] Thanks"),
       "conversation",
-    )?.stale,
-  ).toBeUndefined();
+    );
+    expect(answer).not.toBeNull();
+    expect(answer?.stale).toBeUndefined();
+    expect(answer?.choice).toBeUndefined();
+  }
   expect(
     parseAnswerComment(
       item,

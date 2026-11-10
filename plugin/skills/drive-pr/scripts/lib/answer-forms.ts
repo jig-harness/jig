@@ -351,14 +351,20 @@ function embeddedDigests(item: ParkedItem, text: string): string[] {
   const call = answerDecision(item)?.call;
   const option =
     normalized.startsWith("choose ") && call !== undefined
-      ? call.options.find((candidate) => {
-          const name = normalizeAnswerText(candidate.name);
-          const rest = normalized.slice(7 + name.length);
-          return (
-            normalized.startsWith(`choose ${name}`) &&
-            (rest.length === 0 || /^\s/.test(rest))
-          );
-        })
+      ? call.options.reduce<(typeof call.options)[number] | undefined>(
+          (matched, candidate) => {
+            const name = normalizeAnswerText(candidate.name);
+            const rest = normalized.slice(7 + name.length);
+            const matches =
+              normalized.startsWith(`choose ${name}`) &&
+              (rest.length === 0 || /^\s/.test(rest));
+            return matches &&
+              (matched === undefined || name.length > matched.name.length)
+              ? candidate
+              : matched;
+          },
+          undefined,
+        )
       : undefined;
   const scan =
     option === undefined
