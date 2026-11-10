@@ -11,7 +11,6 @@ import {
 } from "../lib/actions/launch.ts";
 import type { MachineConfig } from "../lib/machine-config.ts";
 import type { RepoTarget } from "../lib/types.ts";
-import { closeStateDb } from "../lib/state.ts";
 
 const roots: string[] = [];
 afterEach(() => {
