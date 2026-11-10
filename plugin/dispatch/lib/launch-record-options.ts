@@ -20,6 +20,14 @@ function optionalSeconds(value: unknown): boolean {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
+/** Whether a value is absent or an array whose members are strings. */
+function optionalStrings(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (Array.isArray(value) && value.every((v) => typeof v === "string"))
+  );
+}
+
 /** The fields a later version added, each absent or of its type. */
 export function optionalLaunchFields(value: Record<string, unknown>): boolean {
   return (
@@ -39,6 +47,7 @@ export function optionalLaunchFields(value: Record<string, unknown>): boolean {
       (v) => v === undefined || v === null || typeof v === "number",
     ) &&
     batchShape(value.batchItems) &&
+    optionalStrings(value.claimedItems) &&
     optionalSeconds(value.passTimeoutSec) &&
     (value.rearmConsumed === undefined ||
       typeof value.rearmConsumed === "boolean") &&

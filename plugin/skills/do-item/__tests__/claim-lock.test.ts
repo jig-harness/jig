@@ -12,6 +12,9 @@ test("uses the resolved tracker namespace in a claim lock key", () => {
   expect(
     claimLockKey({ adapter: "github", team: "another/repository" }, "#12"),
   ).not.toBe("github:jig-harness/jig:#12");
+  expect(
+    claimLockKey({ adapter: "github", team: "Jig-Harness/Jig" }, "#12"),
+  ).toBe("github:jig-harness/jig:#12");
 });
 
 test("claims in different worktrees share the host lock", async () => {

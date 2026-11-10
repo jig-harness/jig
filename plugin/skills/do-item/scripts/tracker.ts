@@ -104,7 +104,9 @@ export function claimLockKey(
   tracker: Pick<Tracker, "adapter" | "team">,
   issue: string,
 ): string {
-  return `${tracker.adapter}:${tracker.team}:${issue}`;
+  const namespace =
+    tracker.adapter === "github" ? tracker.team.toLowerCase() : tracker.team;
+  return `${tracker.adapter}:${namespace}:${issue}`;
 }
 
 async function readStdin(): Promise<string> {
