@@ -1,20 +1,22 @@
 import { FollowupSummary } from "./followups.tsx";
 import { StandingSource, useCurrentLine } from "./pr.tsx";
 /**
- * The page's views. Now keeps the question order, its top half reshaped
- * by state: with nothing to do the answer is a plain line; with something to
- * do a filled band appears and the panel that needs the person comes first.
- * The panels stack in one column at every width, so the page scrolls one way.
- * History is the outcome log; Help says how to read the rest.
+ * The page's views, one per question: Merge, Needs you, Running, Queue and
+ * History, each one column of full-width cards and each tab with its count,
+ * then Help. The page opens on Merge while merge now holds a pull request,
+ * else on Needs you, and while merge now holds one every other view flashes
+ * it. Keys and the palette reach every card (`keys.ts`, `palette.tsx`).
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   LineSnapshot,
   RowsAnswer,
 } from "../../plugin/dispatch/lib/dashboard-contract.ts";
 import { receiptUrl } from "./api.ts";
 import { PanelBoundary } from "./boundary.tsx";
-import { ClipParts, CopyButton } from "./copy.tsx";
+import { tabCounts } from "./cards.ts";
+import { ClipParts, CopyButton, KeyToast } from "./copy.tsx";
+import { KeyBar } from "./key-bar.tsx";
 import { Fold, Hint, PopupRoot } from "./fold.tsx";
 import { hostDay } from "./format.ts";
 import { HelpView } from "./help.tsx";
@@ -22,8 +24,11 @@ import { LinePanel } from "./line.tsx";
 import { LogPanel } from "./log-panel.tsx";
 import { type Forges, forgesOf, type RowClock } from "./log-view.ts";
 import { Strip } from "./marks.tsx";
+import { MergeFlash, MergePanel, useFlash } from "./merge.tsx";
+import { type FlashView, mergeNowCount } from "./merge-view.ts";
 import { NeedsPanel } from "./needs.tsx";
-import { answerBand, hasNeedRows, needCount } from "./needs-view.ts";
+import { answerBand, hasNeedRows } from "./needs-view.ts";
+import { Palette } from "./palette.tsx";
 import {
   lastReadLead,
   type PageView,
@@ -39,10 +44,13 @@ import {
   useStateRead,
 } from "./reads.ts";
 import { Refused } from "./refused.tsx";
+import { type Steering, useSteering, ViewFilter } from "./steering.tsx";
 import { TicksPanel } from "./ticks.tsx";
 import { forgetOldReplies } from "./replies.ts";
 import {
+  FILTERED_VIEWS,
   type LogFilter,
+  openingView,
   tokenOf,
   useFilter,
   useView,
@@ -197,46 +205,73 @@ function ThemeSwitch({
   );
 }
 
+/** What each tab's count counts, said after it for a screen reader. */
+const COUNTED: Partial<Record<ViewId, [string, string]>> = {
+  merge: ["ready to merge", "ready to merge"],
+  needs: ["needs you", "need you"],
+  running: ["session", "sessions"],
+  queue: ["coming", "coming"],
+  history: ["row in the window", "rows in the window"],
+};
+
 /** The views, as links that keep the address, so one opens in a new tab too. */
 function ViewNav({
   view,
   setView,
-  needs,
+  counts,
   filter,
   theme,
 }: {
   view: ViewId;
   setView: (view: ViewId) => void;
-  /** How many rows need a person, which the Now tab carries. */
-  needs: number;
+  counts: Partial<Record<ViewId, number>>;
   filter: LogFilter;
   theme: Theme;
 }) {
+  const nav = useRef<HTMLElement | null>(null);
+  // On a phone the tabs scroll sideways; the current one is kept in sight.
+  useEffect(() => {
+    nav.current
+      ?.querySelector(`[data-view="${view}"]`)
+      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [view]);
   return (
-    <nav className="views" aria-label="Views">
-      {VIEWS.map((v) => (
-        <a
-          className="viewTab"
-          key={v.id}
-          href={hrefOf(v.id, filter, theme)}
-          aria-current={v.id === view ? "page" : undefined}
-          onClick={(event) => {
-            if (event.metaKey || event.ctrlKey || event.shiftKey) return;
-            event.preventDefault();
-            setView(v.id);
-          }}
-        >
-          {v.label}
-          {v.id === "now" && needs > 0 ? (
-            <>
-              <span className="badge" aria-hidden="true">
-                {needs}
-              </span>
-              <span className="vh">, {needs} need you</span>
-            </>
-          ) : null}
-        </a>
-      ))}
+    <nav className="views" aria-label="Views" ref={nav}>
+      {VIEWS.map((v) => {
+        const n = counts[v.id];
+        const words = COUNTED[v.id];
+        return (
+          <a
+            className={v.id === "help" ? "viewTab helpTab" : "viewTab"}
+            key={v.id}
+            data-view={v.id}
+            href={hrefOf(v.id, filter, theme)}
+            aria-current={v.id === view ? "page" : undefined}
+            onClick={(event) => {
+              if (event.metaKey || event.ctrlKey || event.shiftKey) return;
+              event.preventDefault();
+              setView(v.id);
+            }}
+          >
+            {v.label}
+            {n === undefined || words === undefined ? null : (
+              <>
+                <span
+                  className={
+                    v.id === "needs" && n > 0 ? "badge" : "badge quiet"
+                  }
+                  aria-hidden="true"
+                >
+                  {n}
+                </span>
+                <span className="vh">
+                  , {n} {n === 1 ? words[0] : words[1]}
+                </span>
+              </>
+            )}
+          </a>
+        );
+      })}
     </nav>
   );
 }
@@ -245,11 +280,7 @@ function ViewNav({
 function hrefOf(view: ViewId, filter: LogFilter, theme: Theme): string {
   return pageQuery(
     filter,
-    withParam(
-      themeSearch(location.search, theme),
-      "view",
-      view === "now" ? null : view,
-    ),
+    withParam(themeSearch(location.search, theme), "view", view),
   );
 }
 
@@ -271,20 +302,21 @@ function Page({
   rows: Read<RowsAnswer>;
 }) {
   const [popupRoot, setPopupRoot] = useState<HTMLElement | null>(null);
-  const [tab, setTab] = useView();
   const snapshot = pageView(state, rows, useMonoNow());
   const view = {
     ...snapshot,
     line: useCurrentLine(snapshot.line),
   };
   const { line, clock } = view;
-  const needs = needCount(line, clock.nowMs);
-  const today = hostDay(clock.nowMs, clock.timeZone);
-  const rowClock: RowClock = useMemo(
-    () => ({ today, timeZone: clock.timeZone }),
-    [today, clock.timeZone],
+  // The opening view waits for the first answer: a failed first read must not settle it.
+  const read = view.answer !== null;
+  const [tab, setTabNow] = useView(
+    read ? openingView(mergeNowCount(line)) : null,
   );
-  const forges = useMemo(() => forgesOf(line), [line]);
+  const counts = tabCounts(line, clock, rows.data?.total ?? null);
+  const [flash, dismissFlash] = useFlash(line);
+  const main = useRef<HTMLElement | null>(null);
+  const steer = useSteering(main, { line, clock, counts, setView: setTabNow });
   return (
     <div
       className="dd"
@@ -299,39 +331,128 @@ function Page({
             nav={
               <ViewNav
                 view={tab}
-                setView={setTab}
-                needs={needs}
+                setView={steer.go}
+                counts={counts}
                 filter={filter}
                 theme={theme}
               />
             }
             tools={<ThemeSwitch theme={theme} setTheme={setTheme} />}
           />
-          <main className="main">
+          <main className="main" ref={main}>
             <Banners view={view} />
-            {tab === "help" ? (
-              <HelpView Fold={Fold} />
-            ) : view.answer === null ? null : tab === "history" ? (
-              <HistoryPanels
-                theme={theme}
-                view={view}
-                log={rows.data}
-                filter={filter}
-                setFilter={setFilter}
-                rowClock={rowClock}
-                forges={forges}
-              />
-            ) : (
-              <NowPanels view={view} log={rows.data} />
-            )}
+            <ViewTop
+              tab={tab}
+              flash={tab === "merge" ? null : flash}
+              mergeHref={hrefOf("merge", filter, theme)}
+              onDismiss={dismissFlash}
+              steer={steer}
+              read={view.answer !== null}
+            />
+            <ViewBody
+              tab={tab}
+              view={view}
+              log={rows.data}
+              filter={filter}
+              setFilter={setFilter}
+              theme={theme}
+            />
           </main>
           <footer className="foot">
             <Colophon view={view} token={token} />
           </footer>
+          {steer.entries === null ? null : (
+            <Palette
+              entries={steer.entries}
+              onRun={steer.runPalette}
+              onClose={steer.closePalette}
+            />
+          )}
+          <KeyBar />
+          <KeyToast />
           <ClipParts />
         </StandingSource.Provider>
       </PopupRoot.Provider>
     </div>
+  );
+}
+
+/** What stands above a view: the merge flash, and the filter over its cards. */
+function ViewTop({
+  tab,
+  flash,
+  mergeHref,
+  onDismiss,
+  steer,
+  read,
+}: {
+  tab: ViewId;
+  flash: FlashView | null;
+  mergeHref: string;
+  onDismiss: () => void;
+  steer: Steering;
+  read: boolean;
+}) {
+  return (
+    <>
+      {flash === null ? null : (
+        <MergeFlash
+          flash={flash}
+          href={mergeHref}
+          onGo={() => steer.goAndFocus("merge")}
+          onDismiss={() => {
+            onDismiss();
+            steer.focusStart();
+          }}
+        />
+      )}
+      {FILTERED_VIEWS.has(tab) && read ? (
+        <ViewFilter
+          value={steer.cardQuery}
+          setValue={steer.setCardQuery}
+          shown={steer.shown}
+        />
+      ) : null}
+    </>
+  );
+}
+
+/** The view the tab names: Help, History, or one of the card views. */
+function ViewBody({
+  tab,
+  view,
+  log,
+  filter,
+  setFilter,
+  theme,
+}: {
+  tab: ViewId;
+  view: PageView;
+  log: RowsAnswer | null;
+  filter: LogFilter;
+  setFilter: (patch: Partial<LogFilter>) => void;
+  theme: Theme;
+}) {
+  const { line, clock } = view;
+  const today = hostDay(clock.nowMs, clock.timeZone);
+  const rowClock: RowClock = useMemo(
+    () => ({ today, timeZone: clock.timeZone }),
+    [today, clock.timeZone],
+  );
+  const forges = useMemo(() => forgesOf(line), [line]);
+  if (tab === "help") return <HelpView Fold={Fold} />;
+  if (view.answer === null) return null;
+  if (tab !== "history") return <CardView tab={tab} view={view} log={log} />;
+  return (
+    <HistoryPanels
+      theme={theme}
+      view={view}
+      log={log}
+      filter={filter}
+      setFilter={setFilter}
+      rowClock={rowClock}
+      forges={forges}
+    />
   );
 }
 
@@ -361,10 +482,35 @@ function Banners({ view }: { view: PageView }) {
   );
 }
 
-/** Now: the answer and the panels in the grid, each behind its own defect boundary. */
-function NowPanels({ view, log }: { view: PageView; log: RowsAnswer | null }) {
+/** One of the card views, its panel behind its own defect boundary. */
+function CardView({
+  tab,
+  view,
+  log,
+}: {
+  tab: ViewId;
+  view: PageView;
+  log: RowsAnswer | null;
+}) {
   const { line, clock } = view;
-  const loud = hasNeedRows(line, clock.nowMs);
+  if (tab === "merge")
+    return (
+      <PanelBoundary name="Ready to merge" className="pMerge" reads={line}>
+        <MergePanel line={line} clock={clock} />
+      </PanelBoundary>
+    );
+  if (tab === "running")
+    return (
+      <PanelBoundary name="What is running" className="pLine" reads={line}>
+        <LinePanel line={line} clock={clock} />
+      </PanelBoundary>
+    );
+  if (tab === "queue")
+    return (
+      <PanelBoundary name="What is coming" className="pQueue" reads={line}>
+        <QueuePanel line={line} clock={clock} />
+      </PanelBoundary>
+    );
   return (
     <>
       <PanelBoundary name="The answer" reads={line}>
@@ -375,19 +521,11 @@ function NowPanels({ view, log }: { view: PageView; log: RowsAnswer | null }) {
           pastTense={view.pastTense}
         />
       </PanelBoundary>
-      <div className={`grid ${loud ? "loud" : "quiet"}`}>
-        {line !== null && loud ? (
-          <PanelBoundary name="What needs you" className="pNeeds" reads={line}>
-            <NeedsPanel line={line} clock={clock} />
-          </PanelBoundary>
-        ) : null}
-        <PanelBoundary name="What is running" className="pLine" reads={line}>
-          <LinePanel line={line} clock={clock} />
+      {line !== null && hasNeedRows(line, clock.nowMs) ? (
+        <PanelBoundary name="What needs you" className="pNeeds" reads={line}>
+          <NeedsPanel line={line} clock={clock} />
         </PanelBoundary>
-        <PanelBoundary name="What is coming" className="pQueue" reads={line}>
-          <QueuePanel line={line} clock={clock} />
-        </PanelBoundary>
-      </div>
+      ) : null}
     </>
   );
 }

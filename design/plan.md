@@ -136,9 +136,9 @@ vendor choosing the agent a session runs in, then the pull requests that
 touch a change area the catalog marks `serialize: true` driven one at a
 time, the one closest to merge first and the rest held, with the conflict
 history report proposing which areas to mark; the re-arm step waits on the drive
-running in a session of its own, and the pickups' launches on an Orca
-session that can be bound to a chosen account (until then the pickups are
-reported, not started). A park's notification carries the park's framed
+running in a session of its own, and the pickups start as headless
+`do-item` passes; item 44 ([line-at-capacity.md](line-at-capacity.md)) adds
+the pickups of the people a host serves. A park's notification carries the park's framed
 decision.
 
 What is open is checking it on a live host. Done when, on a host running
@@ -187,8 +187,8 @@ protection rules remain unread; update next, one
 per repository) or says why not, and merge now never rests on the ledger
 alone: the forge must witness a review of the head (the reviewer app's
 check, or a person's approval), and an outside author's pull request needs
-a person's approval. A board read per repository, made after planning and
-isolated from it, under a deadline and a floor on the forge budget it
+a person's approval. A board read per repository, its own query in the tick's observe phase
+and kept apart from the planning's, under a deadline and a floor on the forge budget it
 shares with the drives, reads the facts the predicate and each pull
 request's status row need (conflicts, checks with the failing ones named,
 unresolved threads, the derived merge state); every card says whether it
@@ -212,6 +212,22 @@ person asked for. The design round covers the whole hub, its views, cards and ch
 the layout holds when the hub's writes arrive, and the board view comes
 with the hub's Work page.
 
+Built: the baseline (step 1) and, of step 2, the predicate the tick, the
+announcement and `jig ask` share, the board read in the tick's observe
+phase, the merge command's strict forms, the `ready` notification and the
+line's lanes; open in step 2: the status row's marks, the merge station,
+the overflow follow-up reads, the event rows, the receipt's figures and the
+report's merge queue.
+
+The baseline, measured on the dispatch host on 2026-11-08 over the six
+days its outcome log held (from 2026-11-02): in jig-harness/jig, 50 pull
+requests had a converged drive and all 50 merged, a median 1.3 hours after
+the first converged row and at most 12.3 hours. In that time 14 re-drives
+of a stale converged pull request ran on 11 pull requests: 12 because the
+branch then conflicted with its base, 2 because its head had moved past the
+verified head. A second repository waited a median 4.4 hours, at most
+11.3, with 5 conflict re-drives across 10 converged pull requests.
+
 Done when, on a host running Orca, a converged pull request whose review the
 forge witnesses and that the forge lets merge is in merge now with its
 pinned command within one interval and reaches a person's phone once, one
@@ -227,6 +243,58 @@ checks named, a pull request under the CI hold reads held and is never in
 merge now, and the history view filtered to yesterday shows how many
 pull requests became ready, were merged, are still waiting, and were lost
 to waiting.
+
+### 44. The line at capacity: the host's load factor, served pickups and the steward
+
+Each tick measures the host's memory, processors, disk and the machine-wide
+test lock every gate run queues on, and reports the launches its load factor
+would hold; it still admits work by account slots alone until a person sets
+`load.enforce`, so a host with room to spare idles and one near its limit
+takes one more session. Pickups currently serve only the factory identity, including
+on Orca through account-bound headless passes; serving people a host is
+configured to serve remains step 7. The stops that reach a person mix real
+decisions with stops an agent could recover.
+[design/line-at-capacity.md](line-at-capacity.md) has how it works: each
+tick reads the host's gauges and computes the **load factor**, the fullest
+gauge's fill, starting a launch only while every gauge stays under its line
+with that launch's measured reservation counted, a new pickup retaining
+room for a drive or follow-up, and the existing alternation between drive
+launches and the other stages unchanged; it ships report-only
+(`load.enforce: false`). Pickups run as headless `do-item` passes through
+the follow-up's wrapper, bound and identity-checked as a drive's pass is,
+with only their implementer delegate on the route's model. A host's machine file names the people it serves
+(`serve:`); an open, not-started item a writer assigned to one of them, and
+each unassigned item under an epic assigned to them, is ranked by rules as
+data, held out with its reason when blocked or flagged for a person, and
+claimed with `claim --for <person>`, which keeps them as the assignee.
+Every 20 minutes, when its input changed, a **steward** pass reads the
+needs, stopped drives, waiting passes and the queue, and writes records
+from a closed list that the next tick carries out under its guards: a
+re-arm once on the recovery budget, an act and ask for each need that stays
+a person's, a missing facet, the queue's order; it never merges, answers a
+registry-class park, re-arms a drive a person stopped or sends a session
+free text. Every need opens with one act (Merge, Decide, Authorize, Reply,
+Do, Investigate) on the dashboard's
+[views](dispatch-board.md#five-views-one-column-of-cards).
+The route's tiers become item 31's complexity tiers. Built in the
+design's order, one pull request per step, under the item 44 epic.
+
+Done when, on a host running Orca, a converged pull request whose review
+the forge witnesses and that can merge is in merge now with a command
+pinned to its head within one interval; a park under `release` reads Authorize with its recommended
+option's cost, the same act in `jig ask`; every receipt carries each gauge,
+the load factor and the gauge that binds, and with enforcement off a launch
+a gauge would refuse still starts and is reported as would-hold; an item
+assigned to the factory identity gets one headless `do-item` pass on an
+admitted account within one interval, with its implementer on the route's model; an item a
+writer assigns to a served person starts within one interval when there is
+headroom and keeps that person as its only assignee, while a blocked one
+reads "waiting on #N" and a `hitl` one "needs a person to start"; with
+nothing changed no steward pass starts, a stop whose logs show a transient
+cause is re-armed once by the next tick on the recovery budget, and no
+steward record re-arms a drive a person stopped or held; and an S bug routes
+standard, the same bug labelled `has-migration` complex, a Codex account
+running it on Sol with no `routing.models` set.
 
 ### 39. Addresses: asking and telling the stations of the line
 
@@ -293,6 +361,56 @@ thread with its answer and status; and a pick-up, the drive of the pull
 request it opened and that pull request's follow-up read as one thread,
 which leaves the thread list once nothing in it waits on a person.
 
+### 46. Structured answers: approving or choosing a parked decision in a word
+
+A parked decision is framed with its options and a recommended one, but a
+person answers it in their own words and the next pass works out which
+option they meant: no reader can tell which option was chosen, nothing ties
+an answer to the framing it answers, and nobody can see how often a kind of
+decision just follows the recommendation.
+[design/structured-answers.md](structured-answers.md) has how it works.
+What it will build: two answer forms, `approve` (the recommended option)
+and `choose <option>`, read wherever an answer is read today (an
+`answer <key>:` line or a reply on the item's thread) and only when they
+are the comment's whole answer, normalized so a phone's typography still
+matches; any other text a free answer, read as today; each person's latest
+answer theirs (its time the comment's last edit), and two people's
+answers that are not the same option leaving the item disputed and
+waiting; a decision digest stored with each park and published in the
+ledger, carried by every line Jig offers to copy, so an answer to an
+earlier framing is stale and does not count; the pass handed the chosen
+option, the record and any note the person added; every reader of answers (the re-arm, the tick,
+`jig send`, `jig ask`) moved to one parser at once; `jig send … answer
+--approve | --choose | --all` (Decide items only for `--all`), a
+correcting answer, the operator's verbs, the notification's answer lines,
+the dashboard's copy buttons and the Orca panel's buttons, all writing the
+same line; `jig ask`'s question and answer fields and an answered-park
+event in the outcome log, with a per-class report of how often the
+recommendation is approved; one decision model shared by a park
+and a `/jig:decide` decision sheet, moved out of `decide`, whose options can
+say what they keep, when they are right, what they oblige and whether they
+can be undone; a card with a row per
+decision, where `j`, `1`, `c` picks the recommendation and copies it, a
+pick staying local and undoable until it is committed; then, with item
+40's first proof that a person answered, the attested classes (`destructive`, `release`, `legal` by
+default), and the same forms for a follow-up's question, a loosened
+ratchet's evidence and a pickup only a person may start. One pull request
+per step, in the design's order; the first moves the shared
+model.
+
+Done when a park answered `approve` hands its pass the recommended option
+and a park answered `choose <option>` that option; an answer that is not
+exactly a form reaches the pass as a free answer and `jig ask` labels it
+free; an answer naming an earlier framing's digest leaves the drive parked
+and the next notification says why; two people choosing different options
+leave the item waiting; the panel, `jig ask` and the dashboard show the
+same options and choice for one park; a sheet and a park use the same
+option type, every existing sheet renders unchanged, and a field added to
+the model shows on the card and in `jig ask`; a card of two decisions copies
+one comment answering both; and `jig dispatch log` reports, per
+class, how many parks were approved as recommended and how long they
+waited.
+
 ### 42. The hub: one place to watch and steer the line
 
 Where a piece of work stands is spread over machines and tools: the
@@ -304,9 +422,9 @@ work, nothing shows a pickup's progress before its pull request exists,
 and answering a parked question takes a terminal.
 [design/hub.md](hub.md) has how it works. What it will build: the
 dispatch dashboard (item 33) grown into one page, `jig hub` in
-`plugin/hub/`, that opens on an Inbox of what waits on the person and adds
-a Board, Ready to merge, a Work page for each piece of work with its
-thread, History and Hosts, each derived from the line's records at every
+`plugin/hub/`, with item 44's views (Merge, where it opens while anything
+is safe to merge, Needs you, Running, Queue and History), a Work page for
+each piece of work with its thread, and Hosts, each derived from the line's records at every
 read and none of them stored; marks on item 36's status row (the
 drive's round and its time, the unresolved threads by bot and not a bot,
 and the CI hold, which reads held and never failing); a `pickup-progress`
@@ -319,8 +437,10 @@ visibility class, so a shared control plane can later serve the same feed;
 a host's hub read-only on loopback, answering only its own pages, a
 laptop's hub that serves any browser and reads each host over SSH (Secure
 Shell) with a key that runs the feed and nothing else, and Orca, where a
-person uses it, opening the hub in its own browser; an optional
-private-network front, Tailscale Serve first, that gives a phone an HTTPS
+person uses it, opening the hub in its own browser; required read-only phone access, with
+visible copy controls, forge and tracker links, continuous availability and
+phone acceptance budgets; a private-network front, Tailscale Serve first,
+that gives a phone an HTTPS
 name and the viewer's login, scopes what each person sees by the grants of
 the tailnet (Tailscale's private network), trusts that login only on a
 Unix socket only Tailscale's daemon reaches, and refuses Tailscale Funnel,
@@ -343,13 +463,16 @@ item 40 settles how a comment a pass posts under the person's login is
 told from the person's own; each commit then asks for proof that a person
 is present. Nothing of it is built. Built in stages, one pull request per
 step: the per-pull-request status on the dashboard that exists (rounds and
-resolved parks in the drive ledger, item 36's board read, Ready to merge
-and placement with the marks, a line one repository's tick refreshes,
-pickup progress, then one design round for the whole hub and the Board and
-Work views); then each piece of work across machines (item 39's thread
+resolved parks in the drive ledger, item 36's board read, the phone
+measurement fixture, Ready to merge and placement with the marks, a line one
+repository's tick refreshes, pickup progress, then one design round for the
+whole hub and the Running, Queue and Work views), with phone support part of
+each view's acceptance and the resident dashboard install, URL sharing and
+private-network front guidance filed as items that do not wait on the later
+stages ([hub.md § Phone scope and access](hub.md#phone-scope-and-access)); then each piece of work across machines (item 39's thread
 additions, `jig send --json` with `--expect`, the `jig hub` server, its
-Inbox, Hosts and History views and its install, the private-network front,
-the Orca plugin's "Open the hub" command and its install from a catalog);
+Needs you across every source, Hosts and History views and its install,
+the private-network front, the Orca plugin's "Open the hub" command and its install from a catalog);
 then the chat, and writes once item 40 settles. Stages 2 and 3 are
 planned in detail once stage 1 has been in use for four weeks, and the
 person who asked for the hub decides whether each is built, from the
@@ -588,8 +711,8 @@ Jig names label stores for its facets. The issue forms and `report-bug.ts`,
 which file around the interface, set the type and leave priority and size
 to triage.
 
-What remains is Jira's issue-type and custom-field stores, Linear's estimate
-and their live runs. Jig's own move to GitHub's fields still needs the
+Jira's issue-type and custom-field stores and Linear's estimate store are
+built. What remains is their live runs. Jig's own move to GitHub's fields still needs the
 organization's default Task issue type retired, then the checked move,
 the configuration and issue forms switched, the source labels retired and
 the weekly workflow dispatched to verify its token's reads. These are the remaining
@@ -720,29 +843,39 @@ implemented on whatever model the session runs, the one the launcher's
 settings or a person picked. [design/agent-routing.md](agent-routing.md)
 has how it works, decided in
 [ADR-0009](../docs/adr/ADR-0009-routes-are-derived-by-rules-as-data.md): a
-route (agent, model tier, effort) for the implementer, derived from the
-work type (item 27), the size and flag labels and the catalog's flags and
+route (agent, complexity tier, effort) for the implementer, derived from
+the work type (item 27), the size and flag labels and the catalog's flags and
 mandatory reviews, by rules as data with defaults a repository overrides;
-raises that only move the effort up; the strictest value on every
+complexity tiers, simple, standard and complex, from the type, the
+size and the flags a repository marks complex at any size
+(`routing.complex_flags`), each mapped to a model per vendor with Claude's
+and OpenAI's defaults (simple and standard on `sonnet` or `terra`, complex
+on `opus` or `sol`); raises that move the effort up, and only a configured
+complex flag that sets the tier; the strictest value on every
 conflict; a pinned agent keeping its pin; the reason, the source and
 whether it was applied on the pull request, where the drive's loop-cost
 report joins them to the outcome; a person's choice always winning; opt-in
-until a repository declares its rules; no model asked to route. The design
-is written and decided, and its first step is built: `determine_route.ts`
-derives the route from the `routing` section and its defaults, and
-`do-item` prints it and forwards nothing. What stays open is the rest of
-the build, its own epic, one pull request per step:
+until a repository declares its rules; no model asked to route, and no
+model or tier written on an issue. The design
+is written and decided, and its first two steps are built:
+`determine_route.ts` derives the route from the `routing` section and its
+defaults, on the complexity tiers with Claude's and OpenAI's families
+known (`plugin/shared/model-families.ts`, which the loader checks every
+`routing.models` row against), and `do-item` prints it and forwards
+nothing. What stays open is the rest of the build, its own epic, one pull
+request per step:
 
 - **The record**: the `## Route` section written and parsed from
   `plugin/shared/`, and the loop-cost report reading it.
-- **M0's declaration point**: the policy, the criterion and the loader's
-  families check.
+- **M0's declaration point**: the policy's invariant and table, and the
+  criterion's statement.
 - **`do-item` forwards**, behind a declared `routing` section: the model
   and effort to the subagent tool, the launcher's `route:` prompt line
   honoured, the pinned agent kept.
 - **`work-batch` and the audit criterion** at M0 Standard.
 
-The build epic is done when a flagged bug is delegated on a higher effort
+The build epic is done when an S bug routes standard and the same bug
+labelled `has-migration` routes complex, a flagged bug is delegated on a higher effort
 than an unflagged one with the `## Route` section saying why, a `route: yours` prompt
 delegates with nothing forwarded, and a loop-cost report shows the route
 beside the rounds.
@@ -1023,7 +1156,7 @@ where the fake and Notion disagree, in both.
 Done when that test passes, and a repository reflects into a database `init`
 created using only `NOTION_TOKEN` and `reflection.notion.database`.
 
-### 44. Distribution: a common setup entry point
+### 45. Distribution: a common setup entry point
 
 A person installing Jig must find the marketplace address and prepare its
 prerequisites. The [distribution design](distribution.md) starts with one

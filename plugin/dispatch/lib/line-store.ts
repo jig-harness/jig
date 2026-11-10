@@ -9,6 +9,8 @@
  * dashboard's `GET /state` and `jig dispatch line --json` both answer with it,
  * so the two never say different things about one database.
  */
+import { ACTS } from "../../skills/drive-pr/scripts/lib/merge-ready.ts";
+import { NEED_ACTS } from "../../shared/acts.ts";
 import { Database } from "bun:sqlite";
 import { existsSync } from "node:fs";
 import { isMapping } from "../../shared/config-layers.ts";
@@ -68,6 +70,16 @@ const DECISION_FIELDS: Fields = {
   question: nullOr(isString),
   recommendation: nullOr(isString),
   decisionClass: nullOr(isString),
+  options: (value) =>
+    value === undefined ||
+    listOf({
+      name: isString,
+      changes: nullOr(isString),
+      costs: nullOr(isString),
+      recommended: (v) => typeof v === "boolean",
+    })(value),
+  steps: (value) =>
+    value === undefined || (Array.isArray(value) && value.every(isString)),
 };
 
 /** What the sessions view reads of each thread sample. */
@@ -81,6 +93,9 @@ const SAMPLE_FIELDS: Fields = {
 const ENTRY_FIELDS = {
   needs: {
     cause: isString,
+    // A closed list: an act a later version adds would make this reader refuse the line, so the list stays closed across versions.
+    act: (value) =>
+      value === undefined || (NEED_ACTS as readonly unknown[]).includes(value),
     repo: isString,
     target: isString,
     since: isTime,
@@ -108,6 +123,9 @@ const ENTRY_FIELDS = {
   },
   queue: { repo: isString, target: isString, why: isString },
   repos: {
+    readyOmitted: (v) =>
+      v === undefined || (Number.isSafeInteger(v) && Number(v) >= 0),
+    boardUnread: (v) => v === undefined || v === null || isString(v),
     path: isString,
     stages: Array.isArray,
     failedReads: Array.isArray,
@@ -141,6 +159,45 @@ const TICK_FIELDS: Fields = {
   defects: isNumber,
 };
 
+const LOAD_GAUGES = [
+  "memory",
+  "processors",
+  "test-lock",
+  "disk",
+  "forge",
+  "accounts",
+];
+const LOAD_KINDS = ["pickup", "drive", "followup", "steward"];
+const oneOf = (values: string[]) => (value: unknown) =>
+  typeof value === "string" && values.includes(value);
+
+/** The load factor's report (`LineLoad`). */
+const LOAD_FIELDS: Fields = {
+  enforce: (value) => typeof value === "boolean",
+  factor: nullOr(isNumber),
+  binds: nullOr(oneOf(LOAD_GAUGES)),
+  gauges: listOf({
+    gauge: oneOf(LOAD_GAUGES),
+    fill: nullOr(isNumber),
+    reads: isString,
+    line: isString,
+  }),
+  reservations: listOf({
+    kind: oneOf(LOAD_KINDS),
+    bytes: isNumber,
+    samples: isNumber,
+    measured: (value) => typeof value === "boolean",
+  }),
+  holds: listOf({
+    repo: isString,
+    target: isString,
+    kind: oneOf(LOAD_KINDS),
+    gauge: oneOf(LOAD_GAUGES),
+    detail: isString,
+    held: (value) => typeof value === "boolean",
+  }),
+};
+
 const LINE_FIELDS: Fields = {
   runId: isString,
   startedAt: isTime,
@@ -160,6 +217,42 @@ const LINE_FIELDS: Fields = {
   sessions: listOf(ENTRY_FIELDS.sessions),
   accounts: listOf(ENTRY_FIELDS.accounts),
   queue: listOf(ENTRY_FIELDS.queue),
+  ready: (value) =>
+    value === undefined ||
+    listOf({
+      repo: isString,
+      pr: (v) => typeof v === "number" && Number.isSafeInteger(v) && v > 0,
+      url: isString,
+      head: isString,
+      title: isString,
+      place: (v) =>
+        typeof v === "string" &&
+        ["ready", "needs-you", "coming", "stay"].includes(v),
+      lane: nullOr(
+        (v) =>
+          typeof v === "string" &&
+          ["merge-now", "approve-first", "update-next"].includes(v),
+      ),
+      says: isString,
+      act: nullOr(
+        (v) => typeof v === "string" && (ACTS as readonly string[]).includes(v),
+      ),
+      waitingFor: nullOr(isString),
+      command: nullOr(isString),
+      withheld: nullOr(isString),
+      requested: (v) => Array.isArray(v) && v.every(isString),
+      failing: (v) => Array.isArray(v) && v.every(isString),
+      failingOmitted: (v) => Number.isSafeInteger(v) && Number(v) >= 0,
+      conditions: listOf({
+        name: isString,
+        met: nullOr((v) => typeof v === "boolean"),
+        fact: isString,
+      }),
+      unblocks: (v) =>
+        Array.isArray(v) && v.every((n) => Number.isSafeInteger(n) && n > 0),
+      since: isString,
+    })(value),
+  load: (value) => value === undefined || hasFields(value, LOAD_FIELDS),
   repos: listOf(ENTRY_FIELDS.repos),
 };
 

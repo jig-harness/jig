@@ -1,22 +1,26 @@
 #!/usr/bin/env bun
 /**
- * Derive the route an issue's implementer runs on: the agent, the model tier
- * and the effort, from the issue JSON `get_issue.ts` prints and the
- * consumer's routing rules (`routing`; `lib/routing.ts`).
+ * Derive the route an issue's implementer runs on: the agent, the
+ * complexity tier and the effort, from the issue JSON `get_issue.ts` prints
+ * and the consumer's routing rules (`routing`; `lib/routing.ts`).
  *
  * The steps:
  *   1. the agent, exactly as `determine_agent.ts` chooses it;
- *   2. the base tier and effort, from the work type's row
- *      (`determine_type.ts`); `unknown`, and a type with no row, take the
- *      strictest row;
+ *   2. the base: the tier from the complexity table over the work type
+ *      (`determine_type.ts`) and the size facet, an unknown size read as M,
+ *      replaced by the type row's own tier where it names one, and set to
+ *      `complex` by a label in `routing.complex_flags` the item carries or
+ *      an area it seeds declares; the effort from the type's row.
+ *      `unknown`, and a type with no row, take the strictest row;
  *   3. the raises, each class moving the effort up one step at most once, in
  *      this order: a flag label, a mandatory review of an area the item's
  *      labels reach, a size too large to batch, the human-in-the-loop label;
  *   4. the cap: an effort raised past `max` stays at `max`, and a raise never
  *      moves the tier;
  *   5. the translation: the tier to the runtime's family alias
- *      (`routing.models`), the effort to the runtime's spelling
- *      (`routing.efforts`).
+ *      (`routing.models`) and the model the runtime takes for it
+ *      (`plugin/shared/model-families.ts`), the effort to the runtime's
+ *      spelling (`routing.efforts`).
  * Every part carries the rule that gave it in `reasons`.
  *
  * It prints the proposed route only: whether it was applied is for the
@@ -28,8 +32,8 @@
  * `nativeType`. Where the repository has a size facet, the size raise reads
  * the item's `size`, and each size the configuration lists is read as a
  * size value or as the label of one; without one, it reads the labels.
- * Output: JSON `{ agent, type, tier, effort, model, runtime_effort, runtime,
- *   declared, fields, reasons }`
+ * Output: JSON `{ agent, type, size, tier, effort, model, runtime_model,
+ *   runtime_effort, runtime, declared, fields, reasons }`
  *
  * Usage:
  *     bun determine_route.ts <issue-json-file>
@@ -47,6 +51,7 @@ import {
   withSource,
 } from "../../../shared/consumer.ts";
 import { detectHarness } from "../../../shared/harness.ts";
+import { runtimeModel } from "../../../shared/model-families.ts";
 import { parseTrackerLabels } from "../../../shared/tracker-labels.ts";
 import { applyImpliedClosure } from "../../change-areas/scripts/lib/resolve.ts";
 import type { ChangeAreaCatalog } from "../../drive-pr/scripts/lib/change-areas-catalog.ts";
@@ -81,12 +86,19 @@ import {
   type Effort,
   parseRouting,
   RoutingError,
-  type RouteRow,
   type RoutingRules,
+  SIZE_STEPS,
+  type SizeStep,
+  sizeStep,
+  TIER_TABLE,
   type Tier,
   undeclaredRaiseLabels,
 } from "./lib/routing.ts";
-import { UNKNOWN_TYPE, type WorkTypes } from "./lib/work-types.ts";
+import {
+  isDefaultType,
+  UNKNOWN_TYPE,
+  type WorkTypes,
+} from "./lib/work-types.ts";
 
 /** A mandatory review the item's labels reach: the area and its skills. */
 export interface Review {
@@ -100,6 +112,8 @@ export interface CatalogFacts {
   flags: string[];
   /** The mandatory reviews of the areas the item's labels seed, and their `impliedBy` closure. */
   reviews: Review[];
+  /** The flags the areas the item's labels seed, and their `impliedBy` closure, declare. */
+  seededFlags?: string[];
 }
 
 /** Everything the derivation reads besides the rules. */
@@ -135,10 +149,14 @@ export interface FieldSource {
 export interface Route {
   agent: string;
   type: string;
+  /** The size step the complexity table read, an unknown size as M. */
+  size: SizeStep;
   tier: Tier;
   effort: Effort;
   /** The tier's family alias for the runtime, or `null` when it has none. */
   model: string | null;
+  /** The model the runtime is given for the alias: Codex's model id, Claude Code's alias. */
+  runtime_model: string | null;
   /** The effort as the runtime spells it. */
   runtime_effort: string;
   runtime: string | null;
@@ -224,21 +242,75 @@ function raises(facts: RouteFacts, rules: RoutingRules): string[] {
   ].filter((r): r is string => r !== null);
 }
 
-/** The type's row, or the strictest row, and the reason for it. */
-function baseRow(
+/**
+ * The item's size step, from its size facet or its size labels, and the
+ * reason. Where several sizes are recognised the largest wins, so the
+ * order of the labels never changes the route.
+ */
+function sizeOf(facts: RouteFacts): { step: SizeStep; why: string } {
+  let largest: SizeStep | null = null;
+  for (const name of facts.sizes ?? facts.labels) {
+    const step = sizeStep(name);
+    if (
+      step !== null &&
+      (largest === null ||
+        SIZE_STEPS.indexOf(step) > SIZE_STEPS.indexOf(largest))
+    )
+      largest = step;
+  }
+  if (largest !== null) return { step: largest, why: `size ${largest}` };
+  const named = facts.sizes?.[0];
+  return {
+    step: "M",
+    why:
+      named === undefined
+        ? "no size, read as M"
+        : `size ${named}, not one the table knows, read as M`,
+  };
+}
+
+/** The complex flag the item carries or an area it seeds declares, or `null`. */
+function complexFlag(facts: RouteFacts, rules: RoutingRules): string | null {
+  if (rules.complexFlags.length === 0) return null;
+  const label = firstIn(facts.labels, rules.complexFlags);
+  if (label !== undefined) return `flag ${label}`;
+  if (facts.catalog === null)
+    return "the catalog cannot be read, so a complex flag is taken to apply";
+  const seeded = firstIn(facts.catalog.seededFlags ?? [], rules.complexFlags);
+  return seeded === undefined ? null : `flag ${seeded} of an area it seeds`;
+}
+
+/** The base tier and effort, and the reason for each. */
+function baseOf(
   facts: RouteFacts,
   rules: RoutingRules,
-): { row: RouteRow; base: string } {
+  size: { step: SizeStep; why: string },
+): { tier: Tier; effort: Effort; tierWhy: string; effortWhy: string } {
   const own = Object.hasOwn(rules.rows, facts.type)
     ? rules.rows[facts.type]
     : undefined;
-  if (own !== undefined) return { row: own, base: `type ${facts.type}` };
-  return {
-    row: rules.unknownRow,
-    base:
+  if (own === undefined) {
+    const why =
       facts.type === UNKNOWN_TYPE
         ? "type unknown: the strictest row"
-        : `type ${facts.type} has no routing row: the strictest row`,
+        : `type ${facts.type} has no routing row: the strictest row`;
+    return { ...rules.unknownRow, tierWhy: why, effortWhy: why };
+  }
+  const effortWhy = `type ${facts.type}`;
+  if (own.tier !== null)
+    return {
+      tier: own.tier,
+      effort: own.effort,
+      tierWhy: `routing.types.${facts.type}.tier`,
+      effortWhy,
+    };
+  // A type with no tier of its own is a default type: the table has its row.
+  const table = isDefaultType(facts.type) ? TIER_TABLE[facts.type] : null;
+  return {
+    tier: table?.[size.step] ?? rules.unknownRow.tier,
+    effort: own.effort,
+    tierWhy: `type ${facts.type}, ${size.why}`,
+    effortWhy,
   };
 }
 
@@ -276,11 +348,14 @@ function modelFor(
   const model = Object.hasOwn(rules.models, runtime)
     ? (rules.models[runtime]?.[tier] ?? null)
     : null;
-  reasons.push(
-    model === null
-      ? `model: none (no model for ${runtime})`
-      : `model: ${model} (routing.models.${runtime}.${tier})`,
-  );
+  if (model === null) {
+    reasons.push(`model: none (no model for ${runtime})`);
+    return null;
+  }
+  reasons.push(`model: ${model} (routing.models.${runtime}.${tier})`);
+  const given = runtimeModel(runtime, model);
+  if (given !== model)
+    reasons.push(`model: ${given} for ${runtime} (the model ${model} names)`);
   return model;
 }
 
@@ -303,21 +378,28 @@ function spelledFor(
 /** Derive the proposed route from the facts and the rules. */
 export function deriveRoute(facts: RouteFacts, rules: RoutingRules): Route {
   const reasons: string[] = [`agent: ${facts.agent} (determine_agent.ts)`];
-  const { row, base } = baseRow(facts, rules);
-  reasons.push(
-    `tier: ${row.tier} (${base})`,
-    `effort: ${row.effort} (${base})`,
-  );
-  const effort = raisedEffort(row.effort, raises(facts, rules), reasons);
-  const model = modelFor(row.tier, facts.runtime, rules, reasons);
+  const size = sizeOf(facts);
+  const base = baseOf(facts, rules, size);
+  reasons.push(`tier: ${base.tier} (${base.tierWhy})`);
+  const flag = complexFlag(facts, rules);
+  const tier: Tier = flag === null ? base.tier : "complex";
+  if (flag !== null) reasons.push(`tier: complex (${flag})`);
+  reasons.push(`effort: ${base.effort} (${base.effortWhy})`);
+  const effort = raisedEffort(base.effort, raises(facts, rules), reasons);
+  const model = modelFor(tier, facts.runtime, rules, reasons);
   const runtimeEffort = spelledFor(effort, facts.runtime, rules, reasons);
   const rulesField = (): FieldSource => ({ requested: null, source: "rules" });
   return {
     agent: facts.agent,
     type: facts.type,
-    tier: row.tier,
+    size: size.step,
+    tier,
     effort,
     model,
+    runtime_model:
+      model === null || facts.runtime === null
+        ? null
+        : runtimeModel(facts.runtime, model),
     runtime_effort: runtimeEffort,
     runtime: facts.runtime,
     declared: rules.declared,
@@ -408,13 +490,15 @@ export function catalogFacts(
     skillsOf.set(key, reviewSkillsOf(key, area.fields.review));
   }
   const reviews: Review[] = [];
+  const seededFlags = new Set<string>();
   for (const key of [...applyImpliedClosure(seeds, { areas })].sort((a, b) =>
     a < b ? -1 : a > b ? 1 : 0,
   )) {
     const named = skillsOf.get(key) ?? [];
     if (named.length > 0) reviews.push({ area: key, skills: named });
+    for (const flag of catalog.get(key)?.flags ?? []) seededFlags.add(flag);
   }
-  return { flags, reviews };
+  return { flags, reviews, seededFlags: [...seededFlags] };
 }
 
 /**

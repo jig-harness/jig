@@ -1,6 +1,6 @@
 /**
  * What every `--apply` launch shares, a headless pass (a drive's, a
- * follow-up's) or a pickup's interactive session:
+ * follow-up's, a pickup's):
  * the state carried across a tick's repositories, the account admitted
  * afresh against its walls and the identity check, the launch record
  * written before the runtime's `launch` and the slot it holds, and the
@@ -21,6 +21,7 @@ import {
 } from "../accounts.ts";
 import {
   holds,
+  isInteractive,
   type LaunchAttempt,
   type LaunchRecord,
   type ReadRecord,
@@ -53,11 +54,12 @@ import type {
   LaneWait,
   BusyHolder,
   LaunchOutcome,
-  RepoReport,
   RepoTarget,
 } from "../types.ts";
 import type { SessionsReport } from "../runtime/port.ts";
 import { laneBudgetWait } from "./followup-lane.ts";
+import type { LoadKind } from "../dashboard-contract.ts";
+import { judge, type LoadState } from "../load.ts";
 
 /** What `--apply` carries across a tick's repositories. */
 export interface ApplyState {
@@ -97,6 +99,8 @@ export interface ApplyState {
   /** How many repositories the tick walks, the radix the stages' and targets' turns count in. */
   repos?: number;
   root?: string;
+  /** The host's gauges as this tick read them under the act lock, and what its launches have reserved of them (`load.ts`). */
+  load?: LoadState;
 }
 
 /**
@@ -334,13 +338,13 @@ function markOf(record: LaunchRecord): string {
   );
 }
 
-/** What the runtime starts for a record: a pickup's interactive session, or a headless pass (a drive's, a follow-up's). */
+/** What the runtime starts for a record: a headless pass (a drive's, a follow-up's, a pickup's), or an interactive pickup an earlier release recorded, which a runtime that cannot bind one refuses. */
 function stageOf(record: LaunchRecord): LaunchStage {
   const named = {
     title: tabTitle(record.action, nameKey(record)),
     mark: markOf(record),
   };
-  if (record.action === "pickup")
+  if (isInteractive(record))
     return {
       kind: "interactive",
       ...named,
@@ -460,26 +464,6 @@ export function waits(
     record: null,
     detail,
   };
-}
-
-/**
- * Report every wanted interactive launch (a pickup's), and start none, when
- * the runtime cannot bind an interactive session to the account it bills;
- * true when it reported them.
- */
-export function reportedUnbound(
-  state: ApplyState,
-  wanted: Action[],
-  report: RepoReport,
-): boolean {
-  const binding = state.runtime.interactiveBinding;
-  if (binding.ok) return false;
-  for (const action of wanted)
-    report.launches.push({
-      ...waits(action, binding.reason),
-      outcome: "reported",
-    });
-  return true;
 }
 
 function refused(
@@ -621,13 +605,15 @@ function admission(
   state: ApplyState,
   action: Action,
   excluded: ReadonlySet<string>,
+  pickupDeadlineSec: number,
 ) {
   const codex = state.codexOptIn;
+  // A pickup is a headless pass under its own deadline (`dispatch.pickup_deadline`).
   if (action.stage === "pickup")
     return admitRearm(
       state.table,
       state.last,
-      { kind: "interactive", codex },
+      { kind: "pass", deadlineSec: pickupDeadlineSec, codex },
       excluded,
     );
   // A follow-up is a headless pass, admitted as a drive's pass is: under the pass deadline it runs under.
@@ -644,21 +630,47 @@ function admission(
     : admitTakeover(state.table, replaced, state.passDeadlineSec, codex);
 }
 
+/** The kind of launch whose reservation an action counts. */
+function loadKindOf(action: Action): LoadKind {
+  if (action.stage === "pickup" || action.stage === "followup")
+    return action.stage;
+  return "drive";
+}
+
+/** The admitted account, unless the host's load holds the launch. */
+function byLoad(
+  state: ApplyState,
+  repo: string,
+  action: Action,
+  slots: Slots,
+): { slots: Slots } | { outcome: LaunchOutcome } {
+  if (state.load === undefined) return { slots };
+  const held = judge(state.load, loadKindOf(action), repo, action.target);
+  return held === null
+    ? { slots }
+    : { outcome: waits(action, held, slots.account.name) };
+}
+
 /**
  * The account a launch bills, admitted afresh against the walls and the
- * identity check. A re-arm or a pickup tries the next account when one
+ * identity check, then against the host's load (`load.ts`): under
+ * `load.enforce` a launch a gauge refuses waits, and otherwise it starts and
+ * is reported as one the load factor would hold. A re-arm or a pickup tries the next account when one
  * fails its identity check, so a stale login cannot starve the others; a
- * takeover has only its own account.
+ * takeover has only its own account. A pickup is admitted as a headless
+ * pass under `pickupDeadlineSec`, the repository's `dispatch.pickup_deadline`.
  */
 export async function admitAccount(
   state: ApplyState,
+  repo: string,
   action: Action,
+  pickupDeadlineSec = 0,
 ): Promise<{ slots: Slots } | { outcome: LaunchOutcome }> {
   refreshWalls(state.table, state.records, Date.now(), state.root);
   const failed = new Set<string>();
   let refusal: LaunchOutcome | null = null;
   for (;;) {
-    const admitted = admission(state, action, failed);
+    const admitted = admission(state, action, failed, pickupDeadlineSec);
     if ("waits" in admitted)
       return {
         outcome: refusal ?? {
@@ -671,7 +683,7 @@ export async function admitAccount(
     const identity = await identityOf(state, slots);
     if ("waits" in identity)
       return { outcome: waits(action, identity.waits, slots.account.name) };
-    if (identity.ok) return { slots };
+    if (identity.ok) return byLoad(state, repo, action, slots);
     const name = slots.account.name;
     refusal ??= refused(action, `identity check: ${identity.reason}`, name);
     if (action.takeover !== undefined) return { outcome: refusal };

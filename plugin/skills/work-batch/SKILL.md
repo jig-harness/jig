@@ -450,9 +450,12 @@ are read from `labels`.
 issue whose area-naming label names one is `solo-area`. `stateNames` maps
 each `issue_tracker.states` name, lower case, to its canonical state; it
 decides a state whose `type` is empty or not one the tracker interface
-names, and a state it does not name either is `unknown-state`. A `null` `repoLabel`,
-`typeLabels` or `contextPrefixes` means the repository configures none, and
-that check is off. `knownContextLabels` are the labels the configuration
+names, and a state it does not name either is `unknown-state`. A `null` `typeLabels` or
+`contextPrefixes` means the repository configures none, and that check is
+off. A `null` `repoLabel` means the same, or that the label is configured
+but not required: on a GitHub tracker whose `review.taxonomy.repos` names no
+other repository, every issue belongs to the repository by being in the
+tracker. `knownContextLabels` are the labels the configuration
 already names (the area-naming labels, `do_item.agents.labels`, the
 catalog's labels); an issue whose every context label is outside it is held
 back. `knownSizes` is `work_batch.sizes`, else the batchable sizes and

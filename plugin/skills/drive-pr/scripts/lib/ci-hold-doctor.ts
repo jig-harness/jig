@@ -68,8 +68,19 @@ async function currentLedger(pr: string): Promise<Ledger> {
   return ledger;
 }
 
-async function readDriver(
-  e: CiHoldEvidence,
+export type LedgerDriverEvidence = Pick<
+  CiHoldEvidence,
+  | "driver"
+  | "driverReason"
+  | "worktree"
+  | "actor"
+  | "generation"
+  | "started"
+  | "pr"
+>;
+
+export async function readLedgerDriver(
+  e: LedgerDriverEvidence,
   stateDir: string,
   lock: string,
   ledger: Ledger,
@@ -129,7 +140,7 @@ async function readDriver(
 
 /** A released record witnesses that the pass tree ended; an absent local pid proves the driver ended too. */
 function readReleasedDriver(
-  e: CiHoldEvidence,
+  e: LedgerDriverEvidence,
   stateDir: string,
   lock: string,
   ledger: Ledger,
@@ -213,6 +224,7 @@ async function readHold(
     throw new DiagnosticReadError(
       "the CI hold timeline contains an unreadable label transition",
     );
+  e.transitionId = transitions.at(-1)?.id ?? null;
   e.ownership =
     transitions !== null &&
     ownsHeldTransition(state.ciHold, transitions.at(-1) ?? null);
@@ -371,7 +383,7 @@ export async function ciHoldDoctor(
     const ledger = await currentLedger(pr);
     e.ledgerGeneration = ledger.generation;
     e.parked = Math.max(state.parked.length, ledger.parked.length);
-    await readDriver(e, stateDir, lock, ledger);
+    await readLedgerDriver(e, stateDir, lock, ledger);
     requirePassTermination(e, stateDir, ledger);
     const live = await readHold(e, state);
     if (live === null || e.worktree === null) return diagnoseCiHold(e);

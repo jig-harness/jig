@@ -16,6 +16,33 @@ base snapshot of its own: each lens the diff triggers runs with fresh
 context, the gate's summary says why it skipped the others, and the lenses'
 warnings go into the pull request body under Review Notes.
 
+## Scouts before a pickup
+
+At pickup, a claim about a third-party tool is checked against the version in
+use or its documentation before implementation is delegated. The status names
+the claim, check, version and result. A false premise stops the pickup for the
+user to re-scope; issues about the repository's own code skip this check.
+
+Run `/jig:do-item scout <issue-key>` to gather context before deciding to
+start an issue, or `/jig:do-item scout --text <task>` for work outside the
+tracker. Both use the same configured scouts and agent routing as a pickup;
+free text uses title keywords or the default agent because it has no labels.
+Neither claims or implements the work.
+
+The issue form posts completed findings with the `## Scout Findings (<hash>)`
+heading a pickup reads, so a later pickup reuses them while their hash matches
+or they are under 24 hours old. The text form prints its findings without
+contacting the tracker. A route without scouts is reported without an empty
+comment, and partial findings from a failed scout are reported without being
+published as reusable findings.
+
+Before opening, the pull-request planner warns about merge commits that bring
+in work outside the planned base, listing the foreign commits. When a
+change-area catalog is configured, it adds the directly touched areas' tracker
+labels and flags alongside the fixed `pull_requests.labels`; implied areas
+add none. Labels must already exist in the repository. An unreadable history
+or configured catalog stops planning.
+
 ## The item's spec
 
 Once it has the issue, it shows what the issue says must be built: the
@@ -44,19 +71,22 @@ fault, since the route below reads it too.
 
 ## The implementer's route
 
-Before it delegates, the skill also says which
-[model tier](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) and
-which effort the implementing agent should run on, and why: the item's
-[route](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md). The type
-gives a base (a task runs on the Execution tier at low effort, a spike on
-the Strategic tier at high effort), and a flag label, an area with a
-mandatory review, a size too large to batch and the human-in-the-loop label
-each move the effort up one step. The rules are data in the repository's
-`routing` section, with defaults
-([configuration reference](../../CONFIGURATION.md#routing)). In this version
-the route is reported and the implementer runs on the model it ran on
-before. A `routing` section the rules refuse stops the pickup, naming the
-field at fault, until the repository corrects it.
+Before it delegates, the skill also says which complexity tier (simple,
+standard or complex) and which effort the implementing agent should run on,
+and why: the item's
+[route](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md). The
+tier comes from the item's type and size (a bug, improvement or feature is
+standard up to M and complex from L, a task is simple up to L and standard
+at XL, a spike is complex at any size, and an unknown size reads as M),
+and a complex flag label, on the item or declared by an area it seeds, makes
+it complex at any size. The effort starts from the type's base, and a flag
+label, an area with a mandatory review, a size too large to batch and the
+human-in-the-loop label each move it up one step. The tier maps to a model
+per vendor. The rules are data in the repository's `routing` section, with
+defaults ([configuration reference](../../CONFIGURATION.md#routing)). In
+this version the route is reported and the implementer runs on the model it
+ran on before. A `routing` section the rules refuse stops the pickup,
+naming the field at fault, until the repository corrects it.
 
 ## The claim
 
@@ -102,6 +132,12 @@ interactive flow.
 
 ## Arming the drive
 
+Before starting the drive, the skill detaches the implementer's isolated
+worktree after its branch is pushed, it is clean and no git operation remains.
+A tree with changes, unpushed commits or unreadable safety evidence stays
+attached; the report names it and gives inspection and release commands.
+The session's own tree stays attached.
+
 Once the pull request opens, the skill starts its
 [drive](../drive-pr/README.md), the unattended loop that works the review
 rounds, through drive-pr's `arm-drive.ts`, the same way `/jig:drive-pr`
@@ -114,11 +150,11 @@ A Claude Code round uses `drive.pass_model`
 ([configuration](../../CONFIGURATION.md#drive)), defaulting to `sonnet`,
 and the extra arguments in `drive.pass_args` (none unless this host's
 [user file](../../CONFIGURATION.md#a-hosts-opt-in-to-bypass) sets them).
-A Codex round uses `routing.models.codex.execution`, or Codex's own
-configured model when that routing row is absent, and carries its bypass only
+A Codex round uses `routing.models.codex.standard` (by default `terra`,
+given as `gpt-5.6-terra`), and carries its bypass only
 on a host that set `drive.codex_bypass`; it does not read
 `drive.pass_model` or `drive.pass_args`. For either runtime, `--pass-model`
-overrides the model for one drive, resolving a routing tier through that
+overrides the model for one drive, resolving a complexity tier through that
 runtime's row of `routing.models` (see [drive-pr](../drive-pr/README.md)).
 The skill reports
 the command, the model, the permission mode, the driver log and the
@@ -149,7 +185,7 @@ board with custom columns maps these stages onto them in
 nothing in another runtime changes: outside Orca it makes no call, and an
 Orca call that fails only warns.
 
-The workspace is also renamed as the work moves, from a template over the item key, title, pull request and a short status (`[I]`
+In Herdr as well as Orca, the workspace is renamed as the work moves, from a template over the item key, title, pull request and a short status (`[I]`
 implementing, `[D]` driving, `[R]` ready to merge; `✅` done is reserved for
 a follow-up step and nothing sets it yet), `{id} {status} {title} {pr}` by
 default: [`workspace_name`](../../CONFIGURATION.md#workspace_name) changes the

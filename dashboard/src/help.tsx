@@ -1,13 +1,39 @@
 /**
- * Help: how to read the page, the words its panels use, and the legend, in one
- * view a person opens when something is unclear, so Now and History stay lean.
+ * Help: the keys, how to read the page, the words its panels use, and the
+ * legend, in one view a person opens when something is unclear, so the other
+ * views stay lean.
  */
+import { KEYS } from "./keys.ts";
 import { type FoldComponent, Legend } from "./legend.tsx";
 import { SOURCE_LEGEND, STAGE_LEGEND, stageMeaning, TERMS } from "./status.ts";
 
 export function HelpView({ Fold }: { Fold: FoldComponent }) {
   return (
     <>
+      <section className="panel pKeys" aria-labelledby="h-keys">
+        <h2 id="h-keys" tabIndex={-1}>
+          Keys
+        </h2>
+        <p className="sm mut">
+          No key fires while you type in a field. j and k move one focus between
+          the cards, so Tab still reaches every control.
+        </p>
+        <dl className="kv keyList">
+          {KEYS.map((k) => (
+            <div key={k.does} style={{ display: "contents" }}>
+              <dt>
+                {k.keys.map((key, i) => (
+                  <span key={key}>
+                    {i === 0 ? "" : " "}
+                    <kbd>{key}</kbd>
+                  </span>
+                ))}
+              </dt>
+              <dd className="prose">{k.does}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
       <section className="panel" aria-labelledby="h-reading">
         <h2 id="h-reading">Reading this page</h2>
         <div className="prose helpText">
@@ -20,12 +46,17 @@ export function HelpView({ Fold }: { Fold: FoldComponent }) {
             turn into a warning.
           </p>
           <p>
-            <b>Now</b> answers what needs you, what is running on which account,
-            and what is coming. <b>History</b> shows how the recent ticks ran,
-            one row per tick with its slowest phase, and the outcome log: one
-            row per ended launch, filtered by time, repository, stage, account,
-            class and reason. The filters are the page's address, so a view is a
-            link.
+            Each view answers one question, and its tab carries its count.{" "}
+            <b>Merge</b> lists the converged pull requests by the act they ask,
+            and only its merge now lane is safe to merge; while it holds one,
+            every other view says so at its top. <b>Needs you</b> lists what
+            only a person can settle. <b>Running</b> shows each account and the
+            sessions holding its slots. <b>Queue</b> is what the next ticks will
+            start, hold or report. <b>History</b> shows how the recent ticks
+            ran, one row per tick with its slowest phase, and the outcome log:
+            one row per ended launch, filtered by time, repository, stage,
+            account, class and reason. The filters are the page's address, so a
+            view is a link.
           </p>
           <p>
             Words with a dotted underline, chips and the <b>?</b> beside a

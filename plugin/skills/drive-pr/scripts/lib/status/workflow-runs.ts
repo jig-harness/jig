@@ -43,6 +43,11 @@ export interface WorkflowRun {
 
 /** What a check run has to say for its run to be read. */
 export interface JobEvidence {
+  /** A newer attempt's check id, when available. */
+  id?: number;
+  /** Check-run start, in either reader's field spelling. */
+  started?: string | null;
+  startedAt?: string | null;
   /** The check's name; absent when the reading does not need it. */
   name?: string;
   status: string;
@@ -56,6 +61,8 @@ export interface JobEvidence {
  * hold's label was on when it was created, which a re-run would replay.
  */
 export interface FailedRun {
+  /** Failing job names belonging to this run, linked through its check suite. */
+  jobNames?: string[];
   id: number;
   createdAt: string;
 }
@@ -238,12 +245,45 @@ export function withoutSuperseded<T extends JobEvidence>(
   workflowRuns: readonly WorkflowRun[] | null,
 ): T[] {
   if (workflowRuns === null) return [...jobs];
-  const replaced = replacedSuites(jobs, workflowRuns);
-  return jobs.filter((job) => {
+  const current = jobs.filter(
+    (job) => !replacedAttempt(job, jobs, workflowRuns),
+  );
+  const replaced = replacedSuites(current, workflowRuns);
+  return current.filter((job) => {
     if (job.suiteId === undefined || job.suiteId === null) return true;
     const successors = replaced.get(job.suiteId);
-    return successors === undefined || answeredBySkip(job, successors, jobs);
+    return successors === undefined || answeredBySkip(job, successors, current);
   });
+}
+
+/** A completed later attempt can expand a matrix without retaining its template name. */
+function replacedAttempt(
+  job: JobEvidence,
+  jobs: readonly JobEvidence[],
+  runs: readonly WorkflowRun[],
+): boolean {
+  if (job.conclusion !== "cancelled") return false;
+  const run = runs.find((run) => run.checkSuiteId === job.suiteId);
+  if (
+    run === undefined ||
+    run.attempt <= 1 ||
+    run.status !== "completed" ||
+    run.conclusion === null ||
+    !RESULT_CONCLUSIONS.has(run.conclusion)
+  )
+    return false;
+  const floor = Date.parse(run.startedAt);
+  const started = Date.parse(job.started ?? job.startedAt ?? "");
+  if (!Number.isFinite(started) || !Number.isFinite(floor) || started >= floor)
+    return false;
+  const latest = jobs.filter(
+    (other) =>
+      other.suiteId === job.suiteId &&
+      Date.parse(other.started ?? other.startedAt ?? "") >= floor,
+  );
+  return (
+    hasResult(run, latest) && !answeredBySkip(job, [run.checkSuiteId], latest)
+  );
 }
 
 /**
@@ -314,5 +354,11 @@ export function failedRunsOf(
   return workflowRuns
     .filter((run) => suites.has(run.checkSuiteId))
     .sort((a, b) => a.id - b.id)
-    .map((run) => ({ id: run.id, createdAt: run.createdAt }));
+    .map((run) => ({
+      id: run.id,
+      createdAt: run.createdAt,
+      jobNames: jobs
+        .filter((job) => job.suiteId === run.checkSuiteId)
+        .map((job) => job.name ?? ""),
+    }));
 }

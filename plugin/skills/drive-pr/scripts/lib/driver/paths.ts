@@ -11,6 +11,10 @@ export const driveStatus = join(here, "drive-status.ts");
 
 export const ciHold = join(here, "ci-hold.ts");
 
+export const baseSync = join(here, "base-sync.ts");
+
+export const guardedPush = join(here, "guarded-push.ts");
+
 export const loopMetrics = join(here, "loop-metrics.ts");
 
 export const markReady = join(here, "mark-ready.ts");

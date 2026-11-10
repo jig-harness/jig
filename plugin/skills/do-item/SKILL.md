@@ -1,7 +1,7 @@
 ---
 name: do-item
-description: "Pick up one work item from the tracker and carry it to a driven pull request: scout, delegate, review, open the PR, arm the drive."
-argument-hint: "[issue-key]"
+description: "Pick up one tracker item through a driven pull request, or run its configured scouts before pickup for an issue key or free-text task."
+argument-hint: "[issue-key] | scout <issue-key> | scout --text <task>"
 allowed-tools: "Read Grep Glob Task Bash(bun *) Bash(git *) Bash(gh *) WebFetch AskUserQuestion"
 ---
 
@@ -48,6 +48,51 @@ the same way, e.g. `${CLAUDE_SKILL_DIR}/../drive-pr/scripts/drive.ts`.
 Run every command from the root of the repository the issue belongs to. Never
 `cd` into the skill directory: the scripts find the repository and its
 configuration from the working directory.
+
+### Scout before a pickup
+
+`/jig:do-item scout <issue-key>` runs the configured context-gathering scouts
+without starting the item. `/jig:do-item scout --text <task>` does the same
+for free text. Handle these forms here and stop after reporting findings;
+do not enter the pickup steps, claim an issue, write an intent chain,
+implement, open a pull request or arm a drive.
+
+1. For an issue key, fetch the issue with `scripts/get_issue.ts` as in
+   [Step 1](#step-1-fetch-the-issue), and write the returned JSON to
+   `.context/scout-input.json`. Stop if the fetch fails. For `--text`, write
+   JSON with the task verbatim as `title` and `description`, and `labels: []`,
+   to that file; do not read or write the tracker. Free text routes through
+   the configured title keywords or default agent, since it has no labels.
+2. Run the same routing used by a pickup:
+
+   ```bash
+   bun "${CLAUDE_SKILL_DIR}/scripts/determine_agent.ts" .context/scout-input.json
+   ```
+
+   Report the recommended agent and scouts. Stop on a non-zero exit. If the
+   scout list is empty, say no scouts are configured for that route and
+   stop without posting an empty findings comment.
+3. Run each scout named in the result with the task or full issue, the
+   repository instructions and the relevant context. Use the harness's
+   subagent tool with that scout's definition; when it is unavailable, read
+   the definition and perform its checks in this session. The scouts gather
+   context only. Collect their findings, evidence paths and unresolved
+   questions. If a scout fails, report the partial findings and the failure;
+   do not publish a reusable findings comment.
+4. After all scouts finish, read the repository hash:
+
+   ```bash
+   bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rev-parse --short HEAD
+   ```
+
+   Write `.context/scout-findings.md` with the first line exactly
+   `## Scout Findings (<hash>)`, substituting that hash, followed by the
+   collected findings. Print the complete findings for both forms. For an
+   issue key, also post that file through the tracker comment operation as in
+   [Step 4a item 3](#step-4a-standard-start-no-sub-issues). Report a failed
+   post and retain the file. For free text, the printed findings are the
+   result; no tracker comment is posted. A later pickup's Step 2 selects an
+   issue's comment under the existing hash and freshness rules.
 
 ### How to read the step markers
 
@@ -116,6 +161,11 @@ use a label never triggers its rule.
 **exact** — Never improvise how a pull request is named, based, opened or
 sized. `scripts/pr-plan.ts` applies the repository's policy (`pull_requests`
 and the facts derived from the repository) and prints what to do:
+
+The opening plan warns on foreign merges, listing the commits they bring in.
+With a change-area catalog, it adds the directly touched areas' tracker labels
+and flags to the fixed labels; implied areas add none. Unreadable history or
+catalog data stops planning.
 
 ```bash
 bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" branch --issue "<KEY>" --title "<issue title>"
@@ -208,7 +258,8 @@ Where this skill says "ask the user", use `AskUserQuestion` under Claude Code
 where the session can use it; in any interactive harness where it cannot
 (another harness, or a permission mode that denies the tool), ask a
 plain-text numbered question and end the turn; under a [headless runner](#headless-runners), raise it through the
-runner. With nobody to answer and no runner, stop and state the question.
+runner. With nobody to answer and no runner, stop and state the question,
+as a [dispatched pass](#dispatched-passes) does.
 Never pick on the user's behalf.
 
 ## In the delivery loop
@@ -483,6 +534,13 @@ review rounds use the PR pin instead.
 findings against the issue. The status writes, scripts, templates and gate
 routing below remain **exact**.
 
+**Premise check.** When the problem rests on a third-party tool's behaviour,
+verify that claim against the installed version or its version-matched
+documentation before delegating. Report `Premise: <claim>; checked by
+<command or documentation>; version: <version>; result: <finding>`.
+If the premise is false, stop the pickup and re-scope it with the user before
+implementation. Skip this check for issues about the repository's own code.
+
 > **Batch check (issues carrying any label in the repository's
 > `batch_sizes` list, by default `xs`, `small` or `medium`).** Review cost is
 > largely per PR, so several small closures sharing one review cycle cost
@@ -587,8 +645,21 @@ routing below remain **exact**.
    Put the tier, the effort, the model and the effort's reasons (its base
    row and every raise in `reasons`) in the status message, e.g.
    `Route: execution, high, sonnet (type bug: medium; flag has-migration raised medium)`.
-   The route is not forwarded: the delegation below runs on the model and
-   effort it would run on without one, whatever `declared` says. Exit `1` is a
+   The route is forwarded only in a [dispatched pass](#dispatched-passes),
+   whose first prompt carries the line `route: rules`, and only when
+   `declared` is `true`: item 4's delegation then passes `runtime_model` as
+   the subagent's model and `runtime_effort` as its effort, field by field
+   where the harness's subagent tool takes it, and the fix loop after the
+   review delegates with the same values; a field the tool does not take is
+   not forwarded, and the status message says so. Before forwarding, resolve
+   the delegated agent's definition: a model or effort it pins is kept, and
+   only the fields it leaves open are forwarded; when no single effective
+   definition can be found, or a scope that might hold one cannot be read,
+   forward neither (`tier: pin unknown`, [agent
+   routing](https://github.com/jig-harness/jig/blob/main/design/agent-routing.md) § Derivation, item 5). This session keeps its
+   own model and effort. Anywhere else the route is not forwarded: the
+   delegation below runs on the model and effort it would run on without
+   one, whatever `declared` says. Exit `1` is a
    configuration the loading rules refuse: stop the pickup and report its
    message, which names the field at fault. A refused `routing` section is
    never read as absent; the repository corrects it before the item is
@@ -626,9 +697,9 @@ routing below remain **exact**.
    bun "${CLAUDE_SKILL_DIR}/../../shared/orca-board.ts" in-progress
    ```
 
-   Then name the workspace for the stage. With a runtime that can rename its workspaces (Orca), this renames it, for
+   Then name the workspace for the stage. With a runtime that can rename its workspaces (Herdr or Orca), this renames it, for
    example to `JIG-12 [I] Rename workspaces` (the default `workspace_name.template`);
-   with the template set to `""`, or anywhere else, it does nothing; a failed Orca rename only warns and exits `0`,
+   with the template set to `""`, or anywhere else, it does nothing; a failed rename only warns and exits `0`,
    while a malformed argument, an invalid `workspace_name` field or an unreadable title
    file exits `2`, and a configuration file that cannot be parsed exits `1`. The issue title is
    tracker text, so write it alone to `.context/workspace-title.md` with the
@@ -997,7 +1068,23 @@ routing below remain **exact**.
    run that flow as well: it would post a second comment and move the ticket
    twice.
 
-   **Arm the drive (terminal step, immediately after the PR opens):**
+   **Release the implementer's isolated worktree:** After the branch is
+   pushed and the PR is open, stop the delegate. When it used a separate
+   worktree, run from this session's tree:
+
+   ```bash
+   bun "${CLAUDE_SKILL_DIR}/scripts/release-implementer-worktree.ts" --tree "<delegate path>" --branch "<PR head branch>" --remote "<remote>"
+   ```
+
+   Pass only the path returned by that delegate. The script verifies a linked
+   tree of this clone, the expected branch, clean status, no hidden index flags
+   or git operation, and HEAD ancestry on the live remote branch, then detaches
+   it. This session's tree stays attached. Include a `held` report's path,
+   reason and command argument arrays in the final report; settle the blocker
+   and rerun the safety check before using the detach command. Skip when no
+   isolated delegate tree was created.
+
+   **Arm the drive (terminal step, after releasing any delegate tree):**
 
    First capture the `pickupId` retained from Step 3.5 with the command
    there, and report any refusal. The driver keeps that pin on re-arm; it
@@ -1041,7 +1128,7 @@ routing below remain **exact**.
       spawn nothing. The pass command is the documented one of the agent
       tool this session runs in: Claude Code's (`claude --model <model> -p
       "..."`) or Codex's (`codex exec … "Use the jig:drive-pr skill: …"`,
-      on `routing.models.codex`, overridden by `--pass-model`, with its bypass
+      on the standard tier of `routing.models.codex`, overridden by `--pass-model`, with its bypass
       only on a host that set `drive.codex_bypass`). A Codex session
       that cannot open a tab gets `spawn`. In any other
       agent tool the script answers `print`. Do not guess one for another
@@ -1547,6 +1634,32 @@ delegated, pre-PR review, PR opened). Payloads sent to a runner carry
 references (paths, commit hashes, PR and issue links), never file contents.
 Without such a runner, ask as in [Asking the user](#asking-the-user).
 
+## Dispatched passes
+
+`jig dispatch` starts this skill as a headless pass for an item assigned to
+the factory identity: `/jig:do-item <KEY>` followed by the line
+`route: rules`, with nobody at the keyboard and nobody to answer while it
+runs. Its prompt says so, and names the `jig dispatch result` commands that
+record how it ended. In such a pass:
+
+- **The route reaches the implementer, not this session**: forward it as
+  [Step 4a item 1](#step-4a-standard-start-no-sub-issues) says.
+- **Every point that asks the user stops instead.** The Step 4b choice, an
+  ambiguous requirement, a `hitl` clarification and the pre-push "cannot
+  tell" branch each need a person. Carry out every step that does not
+  depend on the answer (scouts, findings, the tracker comment a `hitl` item
+  gets), then stop: record `failed` with the command the prompt names, and
+  end the output with one line that starts `Question:` and states what the
+  person must decide, with no secret or personal data in it. The
+  dispatcher keeps that line and notifies it as a need; it does not start
+  the item again until the item leaves the dispatch states and comes back.
+- **Never pick on the person's behalf** to finish unattended: a question
+  the pass cannot settle from the repository's rules is the person's.
+- **The pass has a deadline** (`dispatch.pickup_deadline`, 3 hours by
+  default), after which the wrapper stops it: open the pull request and arm
+  its drive as soon as the work allows, and record the result before
+  anything long-running that follows.
+
 ## Error handling
 
 | Error | Solution |
@@ -1564,7 +1677,7 @@ Without such a runner, ask as in [Asking the user](#asking-the-user).
 | `tracker.ts` | Tracker operations: `children`, `transition`, `comment`, and the configured `states` and `labels` | Operation, issue key, and a canonical state or a body from `--body-file` (stdin also supported) | Operation result |
 | `determine_type.ts` | Derive an issue's work type and its depth-table row | Issue JSON (path or `-`) | JSON `{ type, evidence, depth }` |
 | `determine_agent.ts` | Route an issue to an agent and its scouts | Issue JSON (path or `-`) | JSON with agent and scouts |
-| `determine_route.ts` | Derive the implementer's route: agent, model tier, effort, the runtime's model, and the reasons | Issue JSON (path or `-`) | JSON `{ agent, type, tier, effort, model, runtime_effort, runtime, declared, fields, reasons }` |
+| `determine_route.ts` | Derive the implementer's route: agent, complexity tier (from type, size and complex flags), effort, the runtime's model, and the reasons | Issue JSON (path or `-`) | JSON `{ agent, type, size, tier, effort, model, runtime_model, runtime_effort, runtime, declared, fields, reasons }` |
 | `select_scout_finding.ts` | Pick the newest Scout Findings comment and judge freshness | Comments JSON (`--input` or stdin), `--git-head` or `--current-hash` | JSON decision (`reuse`/`rerun`/`run`) |
 | `select_execution_issue.ts` | Read an epic's Execution Plan and list eligible sub-issues | Selection JSON (`--input` or stdin) | JSON `{ present, eligible, gates, mergeConflicts }` |
 | `reconcile_parent_status.ts` | Decide a parent's status from its sub-issues | `ReconcileInput` JSON (`--input` or stdin) | JSON decision (`verdict`, `parentState`, `parentStateName`, `reason`) |

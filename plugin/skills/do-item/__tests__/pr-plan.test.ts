@@ -775,3 +775,136 @@ describe("pr-plan.ts open", () => {
     expect(r.stdout).toContain("issue link:  Closes ENG-1");
   });
 });
+
+describe("PR diff context", () => {
+  it("warns with foreign commits when a sibling branch was merged", () => {
+    git("switch", "-q", "-c", "sibling");
+    commitLines("foreign.txt", 1);
+    const foreign = git("rev-parse", "--short", "HEAD").trim();
+    git("switch", "-q", "eng-1-work");
+    commitLines("own.txt", 1);
+    git("merge", "--no-ff", "-m", "merge sibling", "sibling");
+    const r = plan("open", "--json");
+    expectSpawnExit(
+      { exitCode: r.code, stdout: r.stdout, stderr: r.stderr },
+      0,
+    );
+    const warnings = JSON.parse(r.stdout).warnings.join("\n");
+    expect(warnings).toContain("foreign merge");
+    expect(warnings).toContain(foreign);
+    expect(warnings).toContain("feat: add foreign.txt");
+    expect(warnings).not.toContain("feat: add own.txt");
+  });
+
+  it("does not warn when only the base was merged", () => {
+    git("switch", "-q", "main");
+    commitLines("base-update.txt", 1);
+    git("update-ref", "refs/remotes/origin/main", "HEAD");
+    git("switch", "-q", "eng-1-work");
+    commitLines("own.txt", 1);
+    git("merge", "--no-ff", "-m", "merge base", "main");
+    const r = plan("open", "--json");
+    expectSpawnExit(
+      { exitCode: r.code, stdout: r.stdout, stderr: r.stderr },
+      0,
+    );
+    expect(JSON.parse(r.stdout).warnings.join("\n")).not.toContain(
+      "foreign merge",
+    );
+  });
+
+  it("adds only seed tracker labels and flags, deduplicated with fixed labels", () => {
+    writeFileSync(
+      join(repo, "areas.yaml"),
+      `areas:
+  source:
+    paths: ['*.txt']
+    labels: [not-a-tracker-label]
+    tracker: {labels: ['area:source', shared], flags: [contract]}
+  implied:
+    paths: ['other/**']
+    impliedBy: [source]
+    tracker: {labels: ['area:implied']}
+`,
+    );
+    overlay(
+      "drive:\n  change_areas_catalog: areas.yaml\npull_requests:\n  labels: [shared, fixed]\n",
+    );
+    commitLines("new file.txt", 1);
+    const r = plan("open", "--json");
+    expectSpawnExit(
+      { exitCode: r.code, stdout: r.stdout, stderr: r.stderr },
+      0,
+    );
+    const args = JSON.parse(r.stdout).createArgs as string[];
+    expect(args.filter((_, i) => args[i - 1] === "--label").sort()).toEqual([
+      "area:source",
+      "contract",
+      "fixed",
+      "shared",
+    ]);
+  });
+});
+
+describe("PR catalog reads", () => {
+  it("includes generated source paths in the seed labels", () => {
+    writeFileSync(
+      join(repo, "areas.yaml"),
+      `areas:
+  generated:
+    paths: ['output/**']
+    generated: [{source: ['schema.txt']}]
+    tracker: {labels: ['area:generated']}
+`,
+    );
+    overlay("drive:\n  change_areas_catalog: areas.yaml\n");
+    commitLines("schema.txt", 1);
+    const r = plan("open", "--json");
+    expectSpawnExit(
+      { exitCode: r.code, stdout: r.stdout, stderr: r.stderr },
+      0,
+    );
+    expect(JSON.parse(r.stdout).createArgs).toContain("area:generated");
+  });
+
+  it("stops on an unreadable configured catalog", () => {
+    overlay("drive:\n  change_areas_catalog: missing.yaml\n");
+    const r = plan("open", "--json");
+    expectSpawnExit(
+      { exitCode: r.code, stdout: r.stdout, stderr: r.stderr },
+      1,
+    );
+    expect(r.stderr).toContain("missing.yaml");
+  });
+});
+
+describe("PR renamed paths", () => {
+  it("labels both the old and new seed areas of a rename", () => {
+    git("switch", "-q", "main");
+    commitLines("old.txt", 2);
+    git("update-ref", "refs/remotes/origin/main", "HEAD");
+    git("switch", "-q", "eng-1-work");
+    git("merge", "--ff-only", "main");
+    git("mv", "old.txt", "new.txt");
+    git("commit", "-q", "-m", "rename file");
+    writeFileSync(
+      join(repo, "areas.yaml"),
+      `areas:
+  old:
+    paths: ['old.txt']
+    tracker: {labels: ['area:old']}
+  new:
+    paths: ['new.txt']
+    tracker: {labels: ['area:new']}
+`,
+    );
+    overlay("drive:\n  change_areas_catalog: areas.yaml\n");
+    const r = plan("open", "--json");
+    expectSpawnExit(
+      { exitCode: r.code, stdout: r.stdout, stderr: r.stderr },
+      0,
+    );
+    expect(JSON.parse(r.stdout).createArgs).toContain("area:old");
+    expect(JSON.parse(r.stdout).createArgs).toContain("area:new");
+  });
+});

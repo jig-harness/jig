@@ -28,7 +28,7 @@ describe("the disclosures", () => {
       const { page, context } = await open(
         requireBrowser(),
         server.origin,
-        server.url,
+        `${server.url}&view=running`,
         LAPTOP,
       );
       try {
@@ -95,7 +95,7 @@ describe("the disclosures", () => {
       const { page, context } = await open(
         requireBrowser(),
         server.origin,
-        server.url,
+        `${server.url}&view=running`,
         LAPTOP,
       );
       try {
@@ -140,7 +140,7 @@ describe("the disclosures", () => {
       const { page, context } = await open(
         requireBrowser(),
         server.origin,
-        server.url,
+        `${server.url}&view=running`,
         LAPTOP,
       );
       try {
@@ -156,8 +156,12 @@ describe("the disclosures", () => {
           );
         };
         await hovered(".pLine .chipBtn", "Restarting a stopped drive");
+        await openView(page, "Queue");
+        await shows(page, ".pQueue .chipBtn");
         await hovered(".pQueue .chipBtn", "may restart by itself");
         await hovered(".fresh", "The next tick is due 16:50.");
+        await openView(page, "Needs you");
+        await shows(page, ".pNeeds .helpBtn");
         await hovered(".pNeeds .helpBtn", "only a person can settle");
       } finally {
         await context.close();
@@ -173,7 +177,7 @@ describe("the disclosures", () => {
       const { page, context } = await open(
         requireBrowser(),
         server.origin,
-        server.url,
+        `${server.url}&view=queue`,
         PHONE,
       );
       try {
@@ -240,7 +244,19 @@ describe("the disclosures", () => {
         expect(await page.locator(".quote.md h2").first().innerText()).toBe(
           "Question",
         );
-        expect(await page.locator(".quote.md li").count()).toBe(2);
+        // Two options and the step for a person.
+        expect(await page.locator(".quote.md li").count()).toBe(3);
+        expect(
+          await page.evaluate(() => {
+            const lines = document.createElement("div");
+            lines.className = "quote md lines";
+            lines.textContent = "first line\nsecond line";
+            document.body.append(lines);
+            const whiteSpace = getComputedStyle(lines).whiteSpace;
+            lines.remove();
+            return whiteSpace;
+          }),
+        ).toBe("pre-line");
       } finally {
         await context.close();
       }
@@ -333,22 +349,24 @@ describe("a phone with everything open", () => {
         PHONE,
       );
       try {
-        await shows(page, ".slot");
-        await page
-          .getByRole("button", { name: /^Show all/ })
-          .first()
-          .click();
-        const folds = page.locator(".foldBtn[aria-expanded='false']");
-        for (let left = await folds.count(); left > 0; left--)
-          await folds.first().click();
+        await shows(page, ".need");
         const overflowOf = () =>
           page.evaluate(
             () =>
               document.documentElement.scrollWidth -
               document.documentElement.clientWidth,
           );
-        expect(await overflowOf()).toBeLessThanOrEqual(0);
-        expect(await shortControls(page)).toEqual([]);
+        for (const label of ["Needs you", "Running", "Queue"]) {
+          await openView(page, label);
+          await shows(page, "main :is(h1, h2)");
+          const all = page.getByRole("button", { name: /^Show all/ });
+          if ((await all.count()) > 0) await all.first().click();
+          const folds = page.locator(".foldBtn[aria-expanded='false']");
+          for (let left = await folds.count(); left > 0; left--)
+            await folds.first().click();
+          expect(await overflowOf()).toBeLessThanOrEqual(0);
+          expect(await shortControls(page)).toEqual([]);
+        }
 
         await openView(page, "History");
         await page.locator(".rowExpand").first().click();
@@ -381,7 +399,7 @@ browserIt(
     const { page, context } = await open(
       requireBrowser(),
       server.origin,
-      server.url,
+      `${server.url}&view=running`,
       LAPTOP,
     );
     try {
@@ -520,9 +538,13 @@ browserIt(
           true,
       );
       expect(await summary.textContent()).toContain("1 follow-up running");
+      await openView(page, "Queue");
+      await shows(page, ".qItem .followupBadge");
       expect(await page.locator(".qItem .followupBadge").textContent()).toBe(
         "Merged · Awaiting follow-up",
       );
+      await openView(page, "Running");
+      await shows(page, ".slot .followupBadge");
       expect(await page.locator(".slot .followupBadge").textContent()).toBe(
         "Merged · Follow-up running",
       );
@@ -575,11 +597,15 @@ for (const outcome of ["success", "http-error", "null"] as const)
             },
           });
         });
+        // Needs you drops a merged decision, so what shows the merged state is the read itself.
+        const read = page.waitForResponse((response) =>
+          response.url().includes("/pr?"),
+        );
         await page.reload();
         const decision = page
           .locator(".need .tgt")
           .filter({ hasText: "PR #456" });
-        await shows(page, ".pr-merged");
+        await read;
         await until(
           "the merged decision is removed",
           async () => (await decision.count()) === 0,
@@ -612,7 +638,7 @@ browserIt(
     const { page, context } = await open(
       requireBrowser(),
       server.origin,
-      server.url,
+      `${server.url}&view=running`,
       LAPTOP,
     );
     let release: (() => void) | undefined;

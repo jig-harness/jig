@@ -2,7 +2,7 @@
 /**
  * List UNRESOLVED review threads on a PR as NDJSON — one thread per line.
  *
- * Each line: { threadId, confirmedHumanStarted, path, line, startLine,
+ * Each line: { threadId, confirmedHumanStarted, startedByBot, path, line, startLine,
  *               diffSide, startDiffSide, isResolved, isOutdated, url,
  *               commentsTruncated, comments:[{author,authorAssociation,body,url}] }
  *   - confirmedHumanStarted → whether the thread's OPENING comment is
@@ -402,6 +402,7 @@ async function main(): Promise<number> {
           // never as bot-started's own lenient inverse (see
           // `confirmedHumanStarted`'s own definition above).
           confirmedHumanStarted,
+          startedByBot,
           path: t.path,
           line: t.line,
           startLine: t.startLine,

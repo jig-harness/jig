@@ -83,9 +83,9 @@ const STATE_DIR = "~/.local/state/jig/drive-pr/<clone>/";
 const DRIVE_DB_FILE = "~/.local/state/jig/drive-pr/state.sqlite";
 const DISPATCH_DIR = "~/.local/state/jig/dispatch/";
 /** The dispatcher's database schema version (`dispatch/lib/state.ts`'s `SCHEMA_VERSION`). */
-const DISPATCH_DB = 17;
+const DISPATCH_DB = 18;
 /** The drive's database schema version (`skills/drive-pr/scripts/lib/state/db.ts`'s `DRIVE_DB_VERSION`). */
-const DRIVE_DB = 4;
+const DRIVE_DB = 5;
 const RRC = "skills/resolve-review-comments/scripts/";
 const REFLECT = "skills/reflect/scripts/";
 
@@ -166,6 +166,11 @@ const DRIVE_STATE: RecordKind[] = [
   },
   driveTable("drive-state-import", `${STATE}import.ts`, "imports"),
   driveTable("drive-counter", `${STATE}db.ts`, "counters"),
+  driveTable(
+    "drive-cancelled-ci",
+    `${DRIVE}lib/cancelled-recovery-state.ts`,
+    "cancelled_ci",
+  ),
   driveTable(
     "review-round-counter",
     `${STATE}review-rounds.ts`,
@@ -264,6 +269,11 @@ const DISPATCHER: RecordKind[] = [
     "dispatch-merge-read",
     "dispatch/lib/merge-reads.ts",
     "merge_reads",
+  ),
+  dispatchTable(
+    "dispatch-load-sample",
+    "dispatch/lib/load-samples.ts",
+    "load_samples",
   ),
   dispatchTable("dispatch-failure", "dispatch/lib/failures.ts", "failures"),
   plain(
@@ -483,7 +493,7 @@ const MACHINE: RecordKind[] = [
     "machine",
     "resource-lock",
     "shared/resource-lock.ts",
-    "<tmp>/jig-lock.<name>",
+    "<tmp>/jig-lock.<name>, its slots <tmp>/jig-lock.<name>-slot-<n>, and <tmp>/jig-lock.<name>.admission and .exclusive",
     0,
   ),
   plain(

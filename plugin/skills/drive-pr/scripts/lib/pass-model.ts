@@ -14,14 +14,17 @@
  *   3. `drive.pass_model`, else `sonnet`, added after `claude`.
  *
  * A value is a model id, a Claude Code alias (`sonnet` follows the latest
- * Sonnet) or a routing tier (`execution`, `strategic`), which resolves through
- * the same tier-to-model table as the implementer's route
+ * Sonnet) or a complexity tier (`simple`, `standard`, `complex`; the legacy
+ * `execution` and `strategic` read as `standard` and `complex`), which
+ * resolves through the same tier-to-model table as the implementer's route
  * (`routing.models.claude-code`).
  *
  * When it is Codex's (`codex`, the other documented pass command,
  * `pass-command.ts`), the model is the pass command's own (`-m`, `--model`),
- * else the execution tier of `routing.models.codex`, added after `exec`,
- * else none, and Codex's own configuration decides. `drive.pass_model` and
+ * else the standard tier of `routing.models.codex` (by default `terra`),
+ * given as the model the family names today (`plugin/shared/model-families.ts`)
+ * and added after `exec`. A family alias Codex knows, named by
+ * `--pass-model` or a tier, is given as its model too. `drive.pass_model` and
  * `--pass-model` differ: the setting is Claude Code's, while the flag
  * overrides either vendor and resolves tiers through that vendor's row.
  *
@@ -32,10 +35,11 @@
  */
 import { basename } from "node:path";
 import { swallow } from "../../../../shared/errors.ts";
+import { runtimeModel } from "../../../../shared/model-families.ts";
 import {
   parseRoutingModels,
   RoutingError,
-  TIERS,
+  tierNamed,
 } from "../../../do-item/scripts/lib/routing.ts";
 import { passVendor } from "./identity.ts";
 import {
@@ -50,7 +54,7 @@ const PASS_RUNTIME = "claude-code";
 
 /** The runtime row, and its tier, a Codex pass's model comes from. */
 const CODEX_RUNTIME = "codex";
-const CODEX_TIER = "execution";
+const CODEX_TIER = "standard";
 
 /** A pass model and where it came from, for the driver log. */
 export interface PassModel {
@@ -62,9 +66,10 @@ export interface PassModel {
 export class PassModelUsageError extends Error {}
 
 /**
- * The model `value` names: a routing tier resolved through
- * the selected runtime's `routing.models` row, anything else as written. `where` names the
- * value's origin in the source and in errors.
+ * The model `value` names: a complexity tier resolved through the selected
+ * runtime's `routing.models` row, anything else as written, each given as
+ * the model the runtime takes for it (Codex's model id for a family alias).
+ * `where` names the value's origin in the source and in errors.
  */
 export function resolveModelValue(
   value: string,
@@ -74,18 +79,27 @@ export function resolveModelValue(
 ): PassModel {
   if (!PASS_MODEL_PATTERN.test(value))
     throw new PassModelUsageError(
-      `${where} must be one word naming a model, a Claude Code alias or a routing tier (got '${value}')`,
+      `${where} must be one word naming a model, a Claude Code alias or a complexity tier (got '${value}')`,
     );
-  const tier = TIERS.find((t) => t === value);
-  if (tier === undefined) return { model: value, source: where };
-  const model = parseRoutingModels(overlay())[runtime]?.[tier];
-  if (model === undefined)
+  const tier = tierNamed(value);
+  if (tier === undefined) {
+    const model = runtimeModel(runtime, value);
+    return {
+      model,
+      source: model === value ? where : `${where}: the model ${value} names`,
+    };
+  }
+  const alias = parseRoutingModels(overlay())[runtime]?.[tier];
+  if (alias === undefined)
     throw new RoutingError(
       `${where} names the ${tier} tier, but routing.models has no ${runtime} row to resolve it through`,
     );
+  const named =
+    value === tier ? `the ${tier} tier` : `the ${tier} tier (${value})`;
+  const model = runtimeModel(runtime, alias);
   return {
     model,
-    source: `${where}: the ${tier} tier, routing.models.${runtime}.${tier}`,
+    source: `${where}: ${named}, routing.models.${runtime}.${tier}${model === alias ? "" : ` (${alias})`}`,
   };
 }
 
@@ -107,22 +121,24 @@ export interface CodexPassModel {
 }
 
 /**
- * The model the configuration asks for a Codex pass: the execution tier of
- * `routing.models.codex`, else none.
+ * The model the configuration asks for a Codex pass: the standard tier of
+ * `routing.models.codex`, its default included, given as the model the
+ * family names; none only where no row names one.
  */
 export function configuredCodexModel(
   overlay: () => Record<string, unknown> = readOptionalOverlay,
 ): CodexPassModel {
-  const model = parseRoutingModels(overlay())[CODEX_RUNTIME]?.[CODEX_TIER];
-  return model === undefined
-    ? {
-        model: null,
-        source: `Codex's own configuration; routing.models.${CODEX_RUNTIME} names no ${CODEX_TIER} model`,
-      }
-    : {
-        model,
-        source: `routing.models.${CODEX_RUNTIME}.${CODEX_TIER}`,
-      };
+  const alias = parseRoutingModels(overlay())[CODEX_RUNTIME]?.[CODEX_TIER];
+  if (alias === undefined)
+    return {
+      model: null,
+      source: `Codex's own configuration; routing.models.${CODEX_RUNTIME} names no ${CODEX_TIER} model`,
+    };
+  const model = runtimeModel(CODEX_RUNTIME, alias);
+  return {
+    model,
+    source: `routing.models.${CODEX_RUNTIME}.${CODEX_TIER}${model === alias ? "" : ` (${alias})`}`,
+  };
 }
 
 /** The words that take the model as the next word: `--model` for both tools, and Codex's `-m`. */

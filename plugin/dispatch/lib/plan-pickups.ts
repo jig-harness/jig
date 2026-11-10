@@ -16,6 +16,9 @@
  *   a claimed item.
  * - A session this machine launched that the runtime reports waiting for
  *   longer than `dispatch.blocked_after` is reported; it keeps its slot.
+ * - An item whose latest pickup pass ended on a question, without recording
+ *   `done`, is a need: its `Question:` line is notified, and nothing is
+ *   started for it, whether it was claimed or is still in a dispatch state.
  *
  * Each report is a notification's cause, with its message and the key
  * that suppresses a repeat (`notices.ts`); `actions/notify.ts` sends it.
@@ -29,6 +32,7 @@ import {
   targetOf,
 } from "./launches.ts";
 import { pickupNotice } from "./notices.ts";
+import { questionOf } from "./session.ts";
 import {
   type SessionsReport,
   WAITING_STATES,
@@ -171,11 +175,7 @@ export function planPickups(input: PickupInput): PickupPlan {
       continue;
     }
     if (hold.kind === "ended") {
-      plan.quiet.push({
-        target: item.key,
-        class: "pickup-ended",
-        why: hold.why,
-      });
+      planEnded(input.slug, item, hold.why, launches, plan);
       continue;
     }
     plan.actions.push({
@@ -198,6 +198,19 @@ export function planPickups(input: PickupInput): PickupPlan {
     planClaimed(item, input, plan, joined(item.key));
   planWaiting(input, plan);
   return plan;
+}
+
+/** An item whose latest pickup ended without claiming it: a need when its pass stopped on a question, else quiet. */
+function planEnded(
+  slug: string,
+  item: WantedItem,
+  why: string,
+  launches: ReadRecord[],
+  plan: PickupPlan,
+): void {
+  const asked = questionAsked(slug, item, launches);
+  if (asked !== null) plan.actions.push(asked);
+  else plan.quiet.push({ target: item.key, class: "pickup-ended", why });
 }
 
 /** One claimed item: a double claim, running, idle, or stalled. */
@@ -231,6 +244,11 @@ function planClaimed(
     return;
   }
   plan.idleNow.push(item.key);
+  const asked = questionAsked(input.slug, item, input.launches);
+  if (asked !== null) {
+    plan.actions.push(asked);
+    return;
+  }
   const since = input.idleSince.get(item.key) ?? input.nowMs;
   const idle = input.nowMs - since;
   if (idle < input.section.stalledAfterMs) {
@@ -262,6 +280,55 @@ function planClaimed(
       `${item.key} (${item.title}): ${reason}`,
     ),
   });
+}
+
+/**
+ * The need an item's latest pickup raises when its pass ended on a
+ * question without recording `done`: the question, notified once per
+ * launch record; `null` otherwise.
+ */
+function questionAsked(
+  slug: string,
+  item: { key: string; title: string; state: string },
+  launches: ReadRecord[],
+): Action | null {
+  const latest = launches
+    .filter(
+      (r) =>
+        r.record.action === "pickup" &&
+        r.record.item === item.key &&
+        !r.record.released,
+    )
+    .sort((a, b) => a.record.createdAt.localeCompare(b.record.createdAt))
+    .at(-1);
+  if (latest === undefined || latest.result === "done") return null;
+  const question = questionOf(latest.state);
+  if (question === null) return null;
+  const { record } = latest;
+  const reason = `the pickup stopped on a question for a person: ${question}`;
+  return {
+    stage: "notify",
+    target: item.key,
+    record: "runtime",
+    reason,
+    evidence: {
+      record: record.id,
+      stage: "pickup",
+      title: item.title,
+      state: item.state,
+      account: record.account,
+      question,
+    },
+    cause: "pickup-question",
+    notice: pickupNotice(
+      slug,
+      `${item.key} question, record ${record.id}`,
+      `${item.key} (${item.title}): ${reason}; nothing starts for it until the item leaves the dispatch states and comes back`,
+    ),
+    ...(record.workspace === null ? {} : { workspace: record.workspace.path }),
+    // The pass's ended row in the outcome log already holds how it ended.
+    launched: true,
+  };
 }
 
 /** What the tick read as a waiting session's cause: the usage-limit wall still its last record, if any. */

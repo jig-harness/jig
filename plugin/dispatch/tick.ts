@@ -10,8 +10,8 @@
  * would start, and why. With it, the re-arms and takeovers a repository's
  * machine-file entry enables are launched within each account's cap
  * (actions/drive.ts), its follow-ups as headless passes the same way
- * (actions/followup.ts), its pickups where the runtime binds an interactive
- * session to its account (actions/pickup.ts), its nudges are sent once per
+ * (actions/followup.ts) and its pickups as `do-item` passes
+ * (actions/pickup.ts), its nudges are sent once per
  * waiting episode (actions/steer.ts), and its notifications are sent once
  * per cause (actions/notify.ts); everything else is still reported.
  *
@@ -79,12 +79,14 @@ import { defectOf, logDefect } from "./lib/defect.ts";
 import { accountsReport, timeLeftMs } from "./lib/actions/launch.ts";
 import { applyInTurns } from "./lib/apply-order.ts";
 import { settleFollowups } from "./lib/followup-outcomes.ts";
-import { readLaunches } from "./lib/launches.ts";
+import { type ReadRecord, readLaunches } from "./lib/launches.ts";
 import type { MachineConfig } from "./lib/machine-config.ts";
 import { PhaseTimer } from "./lib/phase-timer.ts";
 import { orcaRuntime } from "./lib/runtime/orca.ts";
 import type { SessionRuntime } from "./lib/runtime/port.ts";
 import { applyState } from "./lib/tick-apply.ts";
+import { loadReport } from "./lib/load.ts";
+import { readTickLoad } from "./lib/tick-load.ts";
 import {
   allRecords,
   type TickContext,
@@ -322,6 +324,37 @@ async function startAct(started: StartedTick): Promise<void> {
   if (started.withheld !== undefined) receipt.applyWithheld = started.withheld;
   Object.assign(receipt, accountsReport(options.machine ?? null, apply));
   receipt.unreadableLaunches = read.unreadable;
+  await readLoadUnderAct(started, read.records);
+}
+
+/**
+ * The host's gauges, read once under the act lock so two ticks never spend
+ * the same headroom; an `--apply` tick's launches are admitted against
+ * them. A reading that fails leaves admission to the accounts, and says so.
+ */
+async function readLoadUnderAct(
+  started: StartedTick,
+  records: ReadRecord[],
+): Promise<void> {
+  const { receipt, context } = started;
+  const machine = context.options.machine ?? null;
+  if (machine === null) return;
+  const { apply } = context;
+  const load = readTickLoad({
+    machine,
+    records,
+    ...(apply === null ? {} : { table: apply.table }),
+    budget: await context.reads.budget(),
+    codexOptIn: apply?.codexOptIn ?? hostCodexOptIn(),
+    nowMs: context.nowMs,
+    sample: apply !== null,
+  });
+  if (!load.ok) {
+    receipt.loadUnread = load.failure.reason;
+    return;
+  }
+  if (apply !== null) apply.load = load.value;
+  receipt.load = loadReport(load.value);
 }
 
 /**

@@ -151,7 +151,7 @@ its `--json` report; the canonical (exit, state) pairing is code, not this
 table — [`terminal-states.ts`](scripts/lib/status/terminal-states.ts),
 checked against this and the other prose restatements by
 [`__tests__/terminal-states-consistency.ts`](https://github.com/jig-harness/jig/blob/main/plugin/skills/drive-pr/__tests__/terminal-states-consistency.ts).
-`PASS_DEADLINE`, `QUOTA_PARKED`, `MAILBOX_STOPPED`, `MAILBOX_PAUSE_TIMEOUT`, `TAKEN_OVER` and `CI_REPAIR_SPENT` are the
+`PASS_DEADLINE`, `QUOTA_PARKED`, `MAILBOX_STOPPED`, `MAILBOX_PAUSE_TIMEOUT`, `TAKEN_OVER`, `CI_REPAIR_SPENT` and `CI_INFRA_PERSISTED` are the
 exception: named exits `drive.ts` returns directly, never through this report — a
 consumer polling `--json` for one of these states will never see it there.
 
@@ -167,6 +167,7 @@ consumer polling `--json` for one of these states will never see it there.
 | `MAILBOX_STOPPED` | 18 | A mailbox `stop` for this driver (one naming its generation, or one naming none) ended `drive.ts` at a round boundary, after any running pass completed; the outbox carries its `ack`. A stop naming no generation stops every later driver too: resume it before re-arming |
 | `MAILBOX_PAUSE_TIMEOUT` | 19 | A mailbox `pause` remained active past `$DRIVE_PR_PAUSE_MAX_SEC` (default 30m). Resume the pause directive and re-arm |
 | `CI_REPAIR_SPENT` | 21 | The review converged, the fresh exact-head CI verdict still names failing checks, and the CI-repair passes (`DRIVE_PR_CI_REPAIR_ROUNDS`) are spent. A CI repair, not a person's decision: repair it with [`/jig:fix-ci`](../fix-ci/SKILL.md), or re-arm, which starts with a fresh budget. Under `jig dispatch` the dispatcher re-drives it once per head commit. With repair disabled (`0`), or a verdict that names no failing check, the stop stays `1` |
+| `CI_INFRA_PERSISTED` | 23 | The review converged, and every failing check on the head failed on the infrastructure (a lost runner, or a setup step's network failure, with no code diagnostic) through the drive's re-runs and head moves (`DRIVE_PR_CI_INFRA_RERUNS` per head and `DRIVE_PR_CI_INFRA_HEAD_MOVES` per drive, default 2 each). No CI-repair pass was spent and nothing in the code needs repair. Under `jig dispatch` the dispatcher re-drives it after a backoff that doubles with each consecutive such stop, and tells a person once the stops outlast its re-drives |
 | `TAKEN_OVER` | 20 | Another clone took the drive over: a takeover claim in force, newer than this driver's own, was on the PR at a round boundary or during a quota sleep or mailbox pause, and the driver stopped without another pass; or this driver's own `--take-over` claim lost to a rival's earlier claim on the same ledger generation. `drive.ts` only. That clone drives now; do not re-arm beside it (§ Picking up a stopped drive) |
 
 In an [Orca](https://www.onorca.dev) worktree, `drive.ts` shows a stop a
@@ -297,6 +298,34 @@ CI-repair pass handed neither a run nor a check name has nothing to work from.
 Once the budget is spent — or on the first red if it is `0` — the drive takes
 the original exit-`1` stop and hands the red CI back for repair.
 
+**A failure of the infrastructure is re-run, not repaired.** Before it spends a
+repair pass, the driver reads each failed run's failed-step log against the
+rule `fix-ci` shares
+(`shared/ci-infra.ts`): a job failed on the infrastructure when its runner was
+lost, or every failed step is a setup step (the job's set-up, a checkout, a
+tool download or install, a cache restore, a tool's initialisation) that failed
+on the network (an HTTP 5xx, a timeout, a reset or refused connection), and its
+log prints no code diagnostic. Anything ambiguous is the code's. When every
+failing check reads that way, the driver re-runs the run's failed jobs, at most `DRIVE_PR_CI_INFRA_RERUNS` (default 2) times per head
+and never a run created under the CI hold's label; when the forge refuses the
+re-run (it does for a default-setup code scan) or the re-runs are spent, it
+moves the head: it merges the base when the branch is behind it, and otherwise
+pushes an empty commit, `ci: re-run checks after an infrastructure failure`, at
+most `DRIVE_PR_CI_INFRA_HEAD_MOVES` (default 2) times per drive. It re-gates;
+a local base merge goes through a validated review round before its push,
+then the driver waits for checks as usual. The CI-repair budget does not move. Past both bounds it stops `23` (`CI_INFRA_PERSISTED`). A commit status, a
+check no failed-run log names, or a log that cannot be read is left to the
+repair path.
+
+Infrastructure retry budgets accept integers from 0 through 100; invalid or
+excessive values use the default. A base-sync refusal or unreadable report
+stops recovery without an empty commit. A successful local base merge is
+handed to the next review round, which runs the configured validation plan
+before pushing it through `finish-round.ts`. Log classification keeps each
+failed job tied to its workflow run and rejects unplaced negative evidence.
+An empty recovery commit must retain the reviewed parent and tree; a changed
+head or tree stops its direct push and needs a validated review round.
+
 **A cancelled check is waited for, never repaired and never passed.** It says
 nothing about the code, so the verdict reads `cancelled: …`. That covers only a
 check concluded `cancelled`; another failed job in the same cancelled run
@@ -305,8 +334,16 @@ earlier, has completed with a result, the cancelled run's checks no longer
 count, under whatever name they carry, except that an unsuccessful check stays
 when the replacing runs report its name only as skipped. The event that started
 either run does not matter. A failure beside a cancelled check is still a failure, and
-reads `failing: …`. Until something replaces it the drive waits, on the bound
-below, and if nothing does it exits `4`: not judgeable, and retry-safe. An older
+reads `failing: …`. With no active run of the same workflow on this head,
+the drive observes a 30-second grace period, then requests one re-run per
+head. Its SQLite claim survives re-arms and is recorded before the request.
+The drive keeps polling during the grace period and re-run; unrelated pending
+workflows do not hide a cancellation. It never replays an event created under
+the CI hold. A refused or unconfirmed request, or cancellation still unreplaced
+60 seconds after the request with no active replacement, parks `cancelled-ci`
+with a framed decision and exits `8`. The doctor names the run and recovery.
+A successful replacement clears that operational park. Intentional held-run
+cancellations are left for the hold release at convergence. An older
 passing run never answers a cancelled check, which is what keeps a held run
 that cancels itself blocking the merge.
 
@@ -388,16 +425,18 @@ Codex drive.
 driver decides: `--pass-model <model>` for this run, else the pass command's
 own `--model`, else `drive.pass_model`, else `sonnet` (Claude Code's alias
 for the latest Sonnet), added after `claude`. A model id, an alias or a
-routing tier (`execution`, `strategic`, resolved through
+complexity tier (`simple`, `standard`, `complex`, with `execution` and
+`strategic` read as `standard` and `complex`, resolved through
 `routing.models.claude-code`). The driver log's `pass model:` line names it
 and where it came from (an own `--model` the configuration resolves to is
 named as that setting's; one that names no model is reported as none), the
 `drives.ts` row names it, and every re-arm or takeover command the driver
 prints carries it. A Codex pass (`codex …`) runs on its own `-m`, else the
-execution tier of `routing.models.codex`, added after `exec`, else Codex's
-own configured model; `drive.pass_model` is Claude Code's and is not read for
-it. `--pass-model` overrides either vendor's model; a Codex tier resolves
-through `routing.models.codex`. Any other pass command chooses its own
+standard tier of `routing.models.codex` (by default `terra`), added after
+`exec` as the model the family names (`gpt-5.6-terra`); `drive.pass_model`
+is Claude Code's and is not read for it. `--pass-model` overrides either
+vendor's model; a Codex tier or family alias resolves through
+`routing.models.codex` to its model. Any other pass command chooses its own
 model and refuses `--pass-model` (exit `2`).
 
 **The pass arguments.** A Claude Code pass command can carry extra words
@@ -899,7 +938,8 @@ request. Before the mode table below, read the README section
 Re-read `jig ask drive <PR>` or the drive doctor and establish stopped local
 ownership, review convergence on the current head, no human decisions and a
 clean matching worktree. Run the printed CI-hold release command only
-for that explicit request, from that worktree and with its expected head;
+for that explicit request, from that worktree with its expected head and
+diagnosed label transition (`--expect-transition`);
 relay any refusal without bypassing it. Observe label removal and fresh CI
 on that head, report those separately from CI success, and stop without
 arming a driver. A status question does not authorize recovery.
@@ -1129,8 +1169,8 @@ could forge or forget.
    serves none or several leaves out `--id` and `--title-file`). Run it
    without the variables step 2's `env.unset` names, as the arm command is,
    so it reads the destination repository's template. It does
-   nothing when `workspace_name.template` is `""` or outside Orca, and a failed
-   Orca rename only warns and exits `0`; a malformed argument, an invalid `workspace_name` field or an unreadable title
+   nothing when `workspace_name.template` is `""` or outside Herdr and Orca, and a failed
+   rename only warns and exits `0`; a malformed argument, an invalid `workspace_name` field or an unreadable title
    file exits `2`, and a configuration file that cannot be parsed exits `1`:
 
    ```bash
@@ -1263,6 +1303,7 @@ state directory holding all of it: read that file before acting.
 | `RE-ARMED AFTER A STALL` | The drive before this one stopped with exit `14`; the notice carries what its passes recorded last, and says when it left work in this tree, which this drive then takes as its own to finish | Finish what the tree holds first (§ 5, **A tree the round inherits**), find why those passes did not act and act on it; if a step refuses and you stop, record it (§ 8) |
 | `RE-ARMED AFTER A PASS DEADLINE` | The drive before this one stopped with exit `15`: its passes reached their deadline and the driver did not restart them again; the notice says when they left work in this tree, which this drive then takes as its own to finish | Finish what the tree holds first (§ 5, **A tree the round inherits**), in steps small enough to end inside the deadline |
 | `RE-ARMED AFTER THE CI-REPAIR BUDGET WAS SPENT` | The drive before this one stopped with exit `21`: CI still failed on its converged head after its repair passes | Work the round as usual; this drive has its own CI-repair passes, which the driver dispatches once the review converges again |
+| `RE-ARMED AFTER AN INFRASTRUCTURE FAILURE PERSISTED` | The drive before this one stopped with exit `23`: every failing check had failed on the infrastructure through its re-runs and head moves | Work the round as usual; nothing in the code needs repair for it, and the driver re-runs the checks once the review converges again |
 | `TAKEN OVER` | This drive replaced a wedged or dead driver; holds whose promised fix is not verified as pushed are listed: each thread re-held unconfirmed on its reply, each finding released, and apart those that could not be reopened; a failed reconciliation is said here | For a re-held thread, read the anchored code, make the promised fix if it is missing, then confirm it with the hold command shown; or supersede the reply with a fresh outcome. Triage a released finding afresh. Check each item that could not be reopened against the held batch first |
 | `RE-ARMED WITH HUMAN ANSWERS` | Every parked item was answered by an owner, member or collaborator and is unparked; every item has a `[kind] key — url` entry, answer bodies may be cut, and the file named on its third line holds every answer in full | Treat each answer as a person's verdict on its item: act on it, reply with the outcome it leads to, and resolve or hold as usual |
 | `RE-ARMED TO DECIDE PROVISIONALLY` | At the `wide` level, parked items of the class `escalated` that nobody answered are unparked, one `[kind] key` line each | Check each again first: the level read afresh (an off-hours window may have closed), and `decide`'s `wide` conditions (no sensitivity flag, no stakeholder category, no persisted-data or published-contract consequence; for a thread, a recorded `escalate` ruling of the class `escalated`). Where one fails, park the item again under its class (§ 4). Otherwise decide it this round, provisionally and with a reply outcome only: a thread with `provisional-reply.ts`, a finding with `decide`'s ruling recorded as `decide-provisional` (§ 8) |
@@ -1444,7 +1485,9 @@ The budgets are `DRIVE_PR_CI_REPAIR_ROUNDS` (default 2) and
 `DRIVE_PR_CONFLICT_REPAIR_ROUNDS` (default 1), both in-memory per driver
 process and both disabled by `0`, which stops on the first red CI or
 conflict without a repair pass. A spent CI-repair budget stops with exit
-`21` (`CI_REPAIR_SPENT`). See § Terminal states.
+`21` (`CI_REPAIR_SPENT`). A failure of the infrastructure spends neither: it is
+re-run, and stops `23` (`CI_INFRA_PERSISTED`) past its own bounds. See
+§ Terminal states.
 
 ### 1. Gate
 
@@ -1489,6 +1532,12 @@ PR-global claim about what it closed, verbatim, if one was recorded
  — `null` otherwise, including while the signal is unarmed. What an
 armed signal obliges, and what to do with its echoed claim, is in § 3; all
 three fields are advisory and none changes an exit code.
+
+`work.summaryHeldUndispatchedKeys` lists unaddressed summary findings whose
+holds carry no `verifiedSha` push stamp (`null` when not measured or unreadable).
+The reason names these as "held but not dispatched: re-hold to dispatch".
+Verify the promised fix before re-holding, then push and finish the round so
+the answer is posted. The diagnostic does not certify that the code is fixed.
 
 Run this command as shown even inside a pass `drive.ts` spawned — always pass
 `--bump-attempt`, never conditionally. `drive.ts` already recorded this exact
@@ -1976,7 +2025,8 @@ Omitting the flag is the default (resolve now) — the same behavior as every
 other merit outcome, and what you want for a `moot` whose premise predates
 this round entirely. That default applies only to a **fresh** post: a `moot`
 found already on the thread (the reconciliation rule above) is always held
-(except on a code-scanning thread, above),
+(except on a code-scanning thread, above, or a reply carrying the durable
+leave-open marker that proves it was posted as a non-hold moot),
 whatever this invocation's own flag says — the flag names only this
 invocation's belief, and a reconciled reply may have been posted by an
 earlier, now-gone invocation whose belief this one has no way to see. A
@@ -1989,6 +2039,11 @@ releases regardless.
 A reply that is genuinely **not** a triage decision (a clarifying question,
 with nothing to hold or resolve) has no outcome for `triage-thread.ts` to
 dispatch on — use `bun "${CLAUDE_SKILL_DIR}/../resolve-review-comments/scripts/reply-to-thread.ts" --no-outcome` directly for that case.
+
+A legacy marked moot on a bot-started thread resolves on both direct retry
+and automatic reconciliation once any code-scanning alert is confirmed fixed,
+closed or dismissed. Its marker proves that no push was needed; it does not
+bypass the alert check or authorize leaving another bot thread open.
 
 **Leaving a human thread open.** A merit outcome (`rejected`/`wont-fix`/
 `deferred`/plain `moot`) is resolved automatically — pass `--leave-open` to
@@ -2023,7 +2078,8 @@ threads from the sweep's input entirely (`historyOnly`) — so no unattended
 run can see that reply, let alone resolve it. It is reversible only by a
 human deliberately running `reconcile-replied-threads.ts` unscoped, which is
 the one mode a human is present to make that call in. Do **not** use this
-path on a bot-started thread: `--leave-open` has no legitimate use there —
+path on a bot-started thread. `--leave-open` refuses a bot-started thread
+with exit `2` before posting, holding or resolving; it has no legitimate use there —
 there is no author to defer to, and a marked-left-open bot thread is counted
 as live work forever (never resolved, and nothing parks it automatically),
 permanently blocking convergence rather than merely surviving one sweep.
@@ -3381,10 +3437,11 @@ telemetry could clear the failed pass's real wall. So `drive.ts` binds the
 evidence immediately before the spawn:
 
 - `snapshotQuotaSessions()` records every session file its walk reaches — the
-  Claude adapter's `candidateFiles()` scans the projects root and one
-  directory level beneath it, which does not include a **subagent**
-  transcript nested a level deeper (`<project>/<session-id>/subagents/
-  agent-*.jsonl`); widening that walk is deferred. Both vendors
+  Claude adapter's `candidateFiles()` walks through
+  `<project>/<session-id>/subagents/agent-*.jsonl`, with a directory-depth
+  bound and one aggregate entry and time budget for the whole tree. The
+  snapshot and detection share that walk. Subagent records carry the parent
+  session id and use the same exact-id correlation below. Both vendors
   create a session's file when the session starts, so anything
   appearing afterwards is a session started during the pass — and, absent the
   exact-id correlation below, anything in the snapshot is treated as somebody
@@ -3529,9 +3586,18 @@ trains readers to skip the block where the non-empty case needs their eyes.
 The wording is "safe to merge from the driver's perspective". Marking a PR ready
 and merging it stay human steps.
 
+On top of those gates it asks the Ready predicate (`scripts/lib/merge-ready.ts`,
+the one the dispatcher's tick and `jig ask` place the pull request with) about
+the live head: the forge must witness a review of it (the reviewer app's check
+run, or a person's approval where no app is named), an outside author's pull
+request needs a person's approval, and branch protection must let it merge. It
+posts only in merge now or approve first, the second worded "an approval is
+still required", and otherwise refuses with the predicate's reason (exit `4`,
+or `1` when the forge's facts did not read).
+
 **judgment** — After `announce-merge-ready.ts` exits `0`, whether it posted the
 announcement or found one already posted, name the workspace for the ready stage
-(it does nothing when `workspace_name.template` is `""` or outside Orca, and a failed Orca rename only warns and exits `0`, while a
+(it does nothing when `workspace_name.template` is `""` or outside Herdr and Orca, and a failed rename only warns and exits `0`, while a
 malformed argument, an invalid `workspace_name` field or an unreadable title file exits `2`, and a configuration file that cannot be parsed exits `1`). The item is the one tracker issue
 the PR serves (run [Arm](#arm) step 3's `get_issue.ts` lookup in this pass, since a driver pass is headless and one-shot); write its title alone to
 `workspace-title.md` in the worktree's git directory (the output of

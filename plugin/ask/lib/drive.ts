@@ -1,4 +1,3 @@
-import { uniqueLogins } from "../../shared/forge-logins.ts";
 import { derivedNext } from "../../dispatch/lib/next-owner.ts";
 /**
  * The `drive` station of a pull request: who drives it, the state of its
@@ -10,19 +9,17 @@ import { derivedNext } from "../../dispatch/lib/next-owner.ts";
  * with the exit named from the drive's terminal-state registry, so a drive's
  * state means here what it means to the tick.
  *
- * On the machine that dispatched it, this machine's launch records name the
- * account, the session and whether the process runs; elsewhere the launch
- * claims on the forge say which host holds a launch and how the last one
- * ended. A drive nobody dispatched is read from its own listing in a
- * checkout of the repository, with the doctor's verdict and the recovery
- * command it gives, which is printed and never run.
+ * Here, this machine's launch records name the account, the session and
+ * whether the process runs; elsewhere the forge's launch claims say which
+ * host holds a launch and how the last one ended. A drive nobody dispatched
+ * is read from its listing in a checkout, with the doctor's verdict and its
+ * recovery command, printed and never run.
  */
 import {
   DRIVE_EXIT,
   driveExitName,
 } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { stallThresholdMs } from "../../skills/drive-pr/scripts/lib/doctor.ts";
-import { answersKey } from "../../skills/drive-pr/scripts/lib/driver/rearm.ts";
 import {
   type Ledger,
   type LedgerSnapshot,
@@ -64,7 +61,14 @@ import {
   driverPresence,
 } from "../../dispatch/lib/sources/silent-driver.ts";
 import { statePath } from "../../dispatch/lib/state.ts";
-import type { Holder, Last, ThreadEntry, WaitsOn } from "./answer.ts";
+import {
+  type Holder,
+  type Last,
+  personWait,
+  type ThreadEntry,
+  type WaitsOn,
+} from "./answer.ts";
+import { answered, lineParkOf, parkedWait } from "./park-wait.ts";
 import {
   type CommentFields,
   commentFields,
@@ -74,6 +78,7 @@ import {
 } from "./forge.ts";
 import { driveRow, type DriveRow } from "./local.ts";
 import { takeoverSettled } from "./drive-takeover.ts";
+import { convergedWait } from "./merge.ts";
 import {
   type AskContext,
   dispatcherReads,
@@ -88,7 +93,6 @@ import {
   answerEntries,
   claimEntries,
   commentUrl,
-  countsAsAnswer,
   localLaunchEntries,
   logEntries,
   loggedRecords,
@@ -120,19 +124,6 @@ function ledgerOf(snapshot: LedgerSnapshot | null): Ledger | string | null {
   return canonical.parsed.kind === "unknown-version"
     ? `its drive ledger is version ${String(canonical.parsed.version)}, which this reader does not know`
     : `its drive ledger does not read: ${canonical.parsed.reason}`;
-}
-
-/** Whether a trusted comment made after the park answers its key, as the re-arm reads an answer. */
-function answered(
-  key: string,
-  at: string | undefined,
-  comments: readonly CommentFields[],
-): boolean {
-  if (at === undefined) return false;
-  const after = Date.parse(at);
-  return comments.some(
-    (c) => countsAsAnswer(c, after) && answersKey(c.body, key),
-  );
 }
 
 /** The parks' answers the pull request's conversation holds; a reply on a parked thread is not read here. */
@@ -274,6 +265,7 @@ function waitsOnOf(
   ctx: AskContext,
   held: boolean,
   base: PrFacts["base"],
+  merge: WaitsOn,
 ): WaitsOn {
   const classification = classifyLedger(
     ledger,
@@ -312,16 +304,13 @@ function waitsOnOf(
       Date.now(),
     )[0] ?? classification;
   const settled = conflictSettled(placed, ledger, r, ctx.host);
-  if (settled !== null) return { person: "re-arm", why: settled };
+  if (settled !== null) return personWait("re-arm", settled);
   // A dispatcher re-arms what settles by itself: this machine's, or one whose launch claims are on the pull request.
   const dispatched = ctx.dispatches || current(r.claims) !== null;
   const rearm = (why: string): WaitsOn =>
     dispatched
       ? { waiting: why }
-      : {
-          person: "re-arm",
-          why: `${why}; no dispatcher is known to re-arm it`,
-        };
+      : personWait("re-arm", `${why}; no dispatcher is known to re-arm it`);
   // A launch that holds the drive says nothing of a park nobody answered or of a ledger gone silent.
   if (
     held &&
@@ -334,21 +323,13 @@ function waitsOnOf(
     case "driven":
       return "none";
     case "parked":
-      return {
-        person: "answer",
-        why: placed.why,
-        people: uniqueLogins(
-          ledger.parked
-            .filter(
-              (p) => r.comments === null || !answered(p.key, p.at, r.comments),
-            )
-            .flatMap((p) =>
-              p.person === undefined
-                ? [r.pull.author].filter(Boolean)
-                : [p.person],
-            ),
-        ),
-      };
+      return parkedWait(
+        ledger.parked,
+        r.comments,
+        r.pull.author,
+        placed.why,
+        lineParkOf(ctx, r.pull.number),
+      );
     case "re-armable":
       return rearm(placed.why);
     case "stale":
@@ -357,14 +338,9 @@ function waitsOnOf(
     case "unplaced":
       return { waiting: placed.why };
     case "done":
-      return ledger.driver.exit === DRIVE_EXIT.CONVERGED
-        ? {
-            person: "merge",
-            why: `${placed.why}; a person merges, and whether an approval or an update of the branch must come first is not read here`,
-          }
-        : "none";
+      return ledger.driver.exit === DRIVE_EXIT.CONVERGED ? merge : "none";
     default:
-      return { person: "re-arm", why: placed.why };
+      return personWait("re-arm", placed.why);
   }
 }
 
@@ -767,6 +743,7 @@ export async function readDrive(ctx: AskContext): Promise<DriveReading> {
       read: pull.read,
       base,
       presence,
+      merge: await convergedWait(ctx, read, doc),
     }),
     last: lastOf(reads),
     entries,
@@ -865,6 +842,7 @@ function driveWait(
     read: boolean;
     base: PrFacts["base"];
     presence: DriverPresence | null;
+    merge: WaitsOn;
   },
 ): WaitsOn {
   if (!facts.read)
@@ -887,13 +865,13 @@ function driveWait(
       ? {
           waiting: `its heartbeat is past the lease window and this host shows its driver's run ended (${facts.presence.why}): a dispatcher may take it over, once per ledger state and within the pull request's recovery budget, and drive.ts --take-over decides`,
         }
-      : { person: "re-arm", why: spent };
+      : personWait("re-arm", spent);
   }
   const diagnosis = diagnosticWait(reads.row, ledger, reads.pull, holder);
   if (diagnosis !== null) return diagnosis;
   return ledger === null
     ? "none"
-    : waitsOnOf(ledger, reads, ctx, holder !== "none", facts.base);
+    : waitsOnOf(ledger, reads, ctx, holder !== "none", facts.base, facts.merge);
 }
 
 /** The doctor names a stranded hold's guarded recovery; an unproven running ledger names a missing probe. */
@@ -944,10 +922,10 @@ function holdWait(
     diagnosis.driver === "dead" &&
     diagnosis.review === "converged"
   )
-    return {
-      person: "release the CI hold",
-      why: `${reason}; recovery: ${diagnosis.recovery}; this starts full CI, whose success remains to be checked`,
-    };
+    return personWait(
+      "release the CI hold",
+      `${reason}; recovery: ${diagnosis.recovery}; this starts full CI, whose success remains to be checked`,
+    );
   const missing = [reason];
   if (!matched)
     missing.push(

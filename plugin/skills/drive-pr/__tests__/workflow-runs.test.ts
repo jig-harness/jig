@@ -74,6 +74,33 @@ const verdict = (runs: CheckRun[], workflowRuns: WorkflowRun[] | null) =>
   ciVerdictOf(runs, [], false, HEAD, workflowRuns);
 
 describe("a cancelled run and the run that replaced it", () => {
+  it("drops an old matrix template after a later attempt of the same run expands it", () => {
+    const jobs = [
+      job("matrix-template", "cancelled", 40, { started: T0 }),
+      job("matrix-0", "success", 40, { started: T2 }),
+    ];
+    const runs = [workflowRun(40, "success", T2, { attempt: 2 })];
+    expect(verdict(jobs, runs)).toBe("green");
+    expect(withoutSuperseded(jobs, runs).map((j) => j.name)).toEqual([
+      "matrix-0",
+    ]);
+  });
+
+  it("retains old passing jobs on a partial rerun and cancellation when the new attempt skips its name", () => {
+    const passed = job("retained-pass", "success", 40, { started: T0 });
+    const cancelled = job("tests", "cancelled", 40, { started: T0 });
+    const jobs = [
+      passed,
+      cancelled,
+      job("tests", "skipped", 40, { started: T2 }),
+      job("lint", "success", 40, { started: T2 }),
+    ];
+    const kept = withoutSuperseded(jobs, [
+      workflowRun(40, "success", T2, { attempt: 2 }),
+    ]);
+    expect(kept).toContain(passed);
+    expect(kept).toContain(cancelled);
+  });
   it("reads the sibling's result once it has one, whatever the order of the ids", () => {
     // Measured on one head, both orders: the concurrency group cancelled the
     // higher run id in favour of a lower one started in the same second, and
@@ -332,7 +359,7 @@ describe("a true failure beside a cancelled sibling", () => {
     ];
     expect(verdict(runs, workflowRuns)).toBe("failing: gates, unit");
     expect(failingRunsOf(runs, workflowRuns)).toEqual([
-      { id: 41, createdAt: T1 },
+      { id: 41, createdAt: T1, jobNames: ["gates", "unit"] },
     ]);
   });
 

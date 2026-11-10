@@ -20,8 +20,14 @@ import type {
 } from "./dashboard-contract.ts";
 import type { LaunchAction, ReadRecord } from "./launches.ts";
 import { pullUrl } from "./forge.ts";
+import { actOfNeed } from "../../shared/acts.ts";
+import {
+  recordOptions,
+  recordSteps,
+} from "../../skills/drive-pr/scripts/lib/state/park-frame.ts";
 import { holds, targetOf } from "./launches.ts";
 import { isFailureCause } from "./failure-notices.ts";
+import { boardUnread, readyOf } from "./line-ready.ts";
 import { needWorkspace } from "./line-workspace.ts";
 import type { MachineConfig } from "./machine-config.ts";
 import type { SessionsReport } from "./runtime/port.ts";
@@ -106,13 +112,18 @@ function prNumber(target: string): number | null {
 /** The heading the drive prints above a framed decision: its kind, key, class and round. */
 const FRAME_HEAD = /^\[[a-z]+\] \S+ · class (\S.*?) · parked at round \d+$/;
 
-/** The text under a `## ` heading of a decision record, up to the next heading. */
-function section(lines: string[], heading: string): string | null {
+/** The lines under a `## ` heading of a decision record, up to the next heading; `null` when it has none. */
+function sectionLines(lines: string[], heading: string): string[] | null {
   const from = lines.indexOf(`## ${heading}`);
   if (from < 0) return null;
   const rest = lines.slice(from + 1);
   const end = rest.findIndex((l) => l.startsWith("## "));
-  const body = (end < 0 ? rest : rest.slice(0, end))
+  return end < 0 ? rest : rest.slice(0, end);
+}
+
+/** The text under a `## ` heading of a decision record, on one line. */
+function section(lines: string[], heading: string): string | null {
+  const body = (sectionLines(lines, heading) ?? [])
     .join(" ")
     .replace(/\s+/g, " ")
     .trim();
@@ -136,15 +147,22 @@ export function decisionOf(park: {
     l.startsWith("  ") ? l.slice(2) : l,
   );
   const named = framed?.[1];
+  const recommendation = section(lines, "Recommended");
+  const steps = sectionLines(lines, "Steps for a person");
   return {
     key: park.key,
     ...(park.person === undefined ? {} : { person: park.person }),
     kind: park.kind,
     lines,
     question: section(lines, "Question"),
-    recommendation: section(lines, "Recommended"),
+    recommendation,
     decisionClass:
       named === undefined || named === "(none recorded)" ? null : named,
+    options: recordOptions(
+      (sectionLines(lines, "Options") ?? []).join("\n"),
+      recommendation,
+    ),
+    steps: steps === null ? [] : recordSteps(steps.join("\n")),
   };
 }
 
@@ -156,6 +174,7 @@ function needStage(cause: NeedCause): LineNeed["stage"] {
   if (
     cause === "stalled" ||
     cause === "double-claim" ||
+    cause === "pickup-question" ||
     cause === "assigner-cannot-write"
   )
     return "pickup";
@@ -183,8 +202,29 @@ function isNeed(action: Action): action is Action & { cause: NeedCause } {
     action.cause !== undefined &&
     action.cause !== "waiting" &&
     action.cause !== "drifting" &&
+    action.cause !== "ready" &&
     !isFailureCause(action.cause)
   );
+}
+
+/** A need's open decisions and its act: a stuck launch record has no decisions and is investigated. */
+function needDecisions(
+  view: RepoView,
+  action: Action & { cause: NeedCause },
+  pr: number | null,
+): Pick<LineNeed, "decisions"> & { act: NonNullable<LineNeed["act"]> } {
+  const stuck = text(action.evidence, "stuck") !== null;
+  const decisions = stuck
+    ? []
+    : (view.drive(pr)?.waiting ?? []).map(decisionOf);
+  return {
+    decisions,
+    act: actOfNeed({
+      cause: action.cause,
+      decisionClass: decisions[0]?.decisionClass ?? null,
+      stuck,
+    }),
+  };
 }
 
 function isItemTarget(target: string): boolean {
@@ -281,6 +321,7 @@ function needsOf(
 ): LineNeed[] {
   const planned = view.report.actions.filter(isNeed).map((action): LineNeed => {
     const pr = prNumber(action.target);
+    const { act, decisions } = needDecisions(view, action, pr);
     const notification = view.report.notifications.find(
       (n) => n.key === action.notice?.key,
     );
@@ -290,6 +331,7 @@ function needsOf(
         : view.stored.notified.get(action.notice.key);
     return {
       cause: action.cause,
+      act,
       stage: stageOfNeed(action),
       repo: view.slug,
       target: action.target,
@@ -312,10 +354,7 @@ function needsOf(
         sightedSince(previous, view.slug, action, nowIso),
       reason: action.reason,
       question: text(action.evidence, "question"),
-      decisions:
-        text(action.evidence, "stuck") !== null
-          ? []
-          : (view.drive(pr)?.waiting ?? []).map(decisionOf),
+      decisions,
       notified:
         notification === undefined
           ? null
@@ -342,6 +381,7 @@ function needsOf(
     .map(
       (u): LineNeed => ({
         cause: "assigner-cannot-write",
+        act: actOfNeed({ cause: "assigner-cannot-write" }),
         stage: "pickup",
         repo: view.slug,
         target: u.target,
@@ -519,6 +559,7 @@ function repoOf(report: RepoReport, machine: MachineConfig): LineRepo {
     notes: report.records
       .filter((r) => r.ok && r.record === "tracker")
       .map((r) => r.detail),
+    ...boardUnread(report),
   };
 }
 
@@ -692,6 +733,7 @@ export function buildLine(input: LineInput): LineSnapshot {
       needsOf(v, input.finishedAt, input.previousNeeds ?? []),
     ),
     queue: views.flatMap(queueOf),
+    ready: readyOf(input.reports),
     repos: input.reports.map((r) => repoOf(r, input.machine)),
   };
 }

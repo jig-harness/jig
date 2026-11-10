@@ -28,8 +28,11 @@ up front.
 > Parallel agents sharing one machine are a supported mode, so the shared
 > resources are partitioned deterministically rather than contended: each
 > worktree gets a **deterministic port** derived from its identity; heavy
-> build/test runs pass through a **cross-worktree mutex** (atomic, with a
-> **CI bypass**, since a CI runner is already isolated); branches are
+> build/test runs pass through a **cross-worktree lock that admits runs by
+> the machine's load** (atomic, with a **CI bypass**, since a CI runner is
+> already isolated): a run starts while the machine has room for one more,
+> the first always does, and a holder that needs the machine to itself waits
+> for every run to finish and holds back new ones; branches are
 > **reused before created**; the shared-state footguns (`git stash` across
 > worktrees, a root install with the wrong package manager, global git config)
 > are **banned with a stated rationale**; each worktree's data lives in a
@@ -59,16 +62,31 @@ per-ecosystem wiring lives in [mappings.md](mappings.md).
    portable allocator is [`reference/port-allocator/`](reference/port-allocator/)
    (`allocate-port.ts` + self-test); the collision caveat and range-sizing
    guidance are in its README.
-2. **A cross-worktree heavy-run mutex** — full build/test passes run one-at-a-time
-   machine-wide instead of thrashing, via an atomic process-id lock at a shared
-   path (a symlink, or a hard link on Windows) with a wait timeout and
-   dead-holder reclaim:
+2. **A cross-worktree heavy-run lock, admitted by load** — full build/test
+   passes run only as many at once as the machine can carry, instead of
+   thrashing it or idling it behind one run. The lock has slots, each an
+   atomic process-id lock at a shared path (a symlink, or a hard link on
+   Windows) with a wait timeout and dead-holder reclaim. A waiter takes a
+   free first slot at once; any other slot only while the predicted load
+   (the one-minute load average plus the cost of each run started in the last
+   minute, which the average does not show yet) leaves room for one more run
+   under a share of the cores, and the available memory stays above a floor.
+   The first run is always admitted, so the queue always moves, and a check
+   that cannot read the host admits, so a broken reading falls back to a
+   ceiling on slots rather than stalling every run. A ceiling of one slot is
+   a plain one-at-a-time mutex. A holder that needs the machine to itself (a
+   collection of stale resources, say) takes every slot in a fixed order and
+   holds back new runs while it waits. A waiting run says what it waits on
+   (every slot held, the load, the memory, an exclusive holder) and who
+   holds the slots, and announces itself beside the lock while it waits, so
+   another mechanism (a scheduler deciding whether to start one more agent)
+   can count the runs that hold a slot and the runs waiting for one:
    [`reference/resource-lock/`](reference/resource-lock/) (`with-resource-lock.ts`
-   + self-test). It **bypasses under [CI](../../GLOSSARY.md)** because a CI runner
-   is an already-isolated machine — serializing there would be pure latency. This
+   + self-tests). It **bypasses under [CI](../../GLOSSARY.md)** because a CI runner
+   is an already-isolated machine — waiting there would be pure latency. This
    is the **same `with-resource-lock` mechanism** the
    [M1 gates & enforcement ladder](../M1-gates-enforcement-ladder/) module points
-   to for putting heavy pre-push gates behind a mutex; M12 owns the script, M1
+   to for putting heavy pre-push gates behind the lock; M12 owns the script, M1
    consumes it. It can also be skipped locally — not just bypassed in CI —
    when a [change-area catalog](../M3-change-area-catalog/)'s validation plan
    clears it on *both* axes: it selects no heavy profile *including its
@@ -81,7 +99,7 @@ per-ecosystem wiring lives in [mappings.md](mappings.md).
    is not enough to skip: it's seed-only by design, so a shallow seed set can
    still reach, purely through the closure, a dependent that needs the
    machine — only agreement on both axes means nothing heavy enough to need
-   serializing ran.
+   the lock ran.
 3. **Branch reuse before create** — before creating a branch, look for an
    existing one (local or remote) and reuse it; only create when none exists, so
    two agents on the same task converge on one branch instead of forking two. The
@@ -247,8 +265,8 @@ can tighten a repository declaration and cannot widen it.
   with the rule that no filter in a pipe stands between a gate and its exit
   status.
 - **Standard** — deterministic per-worktree port allocation is **scripted**
-  (mechanical, not eyeballed); the cross-worktree heavy-run mutex is **scripted
-  with a CI bypass**; and worktree create/remove hooks are wired so the port slot
+  (mechanical, not eyeballed); the cross-worktree heavy-run lock is **scripted
+  with a CI bypass**, one run at a time or admitted by the machine's load; and worktree create/remove hooks are wired so the port slot
   is allocated on create and reflection is nudged on remove; where worktrees
   share a database, each worktree's **namespace is derived from its
   identity** and created with an owner and an expiry, and a report-first
@@ -274,9 +292,11 @@ can tighten a repository declaration and cannot widen it.
 
 1. Copy [`templates/WORKTREE-ERGONOMICS.md`](templates/WORKTREE-ERGONOMICS.md)
    into your docs tree and trim the footgun table and port ranges to your stack.
-2. Vendor [`reference/port-allocator/`](reference/port-allocator/) and
-   [`reference/resource-lock/`](reference/resource-lock/); wrap your heavy gate
-   commands with `with-resource-lock.ts` locally (CI is handled by the bypass).
+2. Vendor [`reference/port-allocator/`](reference/port-allocator/), and use
+   [`reference/resource-lock/`](reference/resource-lock/) from a pinned Jig
+   checkout that keeps `plugin/shared/` at its relative path (the lock imports
+   it); wrap your heavy gate commands with `with-resource-lock.ts` locally
+   (CI is handled by the bypass).
 3. Wire the create/remove hooks from
    [`templates/worktree-hooks.md`](templates/worktree-hooks.md) at your worktree
    manager's hook points (see [mappings.md](mappings.md)).
@@ -323,7 +343,7 @@ can tighten a repository declaration and cannot widen it.
 | [`templates/branch-discipline.md`](templates/branch-discipline.md) | The branch reuse-before-create rule and the footgun bans, written to be imported into an agent instruction file |
 | [`templates/worktree-hooks.md`](templates/worktree-hooks.md) | Create-hook (allocate and print the port slot) and remove-hook (nudge reflection) skeletons |
 | [`reference/port-allocator/`](reference/port-allocator/) | The deterministic per-worktree port allocator |
-| [`reference/resource-lock/`](reference/resource-lock/) | The cross-worktree mutex for heavy runs, with its CI bypass (shared with [M1](../M1-gates-enforcement-ladder/)) |
+| [`reference/resource-lock/`](reference/resource-lock/) | The cross-worktree heavy-run lock, admitted by load, with its CI bypass (shared with [M1](../M1-gates-enforcement-ladder/)) |
 | [`changelog` skill](../../plugin/skills/changelog/README.md) | The change note's procedure, the branch check that holds pull requests to it, and the release step that writes the notes in after the merge ([M16](../M16-releases-versions/README.md)'s runnable form too) |
 | [`reference/worktree-namespace/`](reference/worktree-namespace/) | The per-worktree data namespace: the name derived from a worktree's identity, and the reaper's decision (which of one owner's namespaces are expired or orphaned, which were created unlabelled, with production refused) |
 | [`reference/quiet-run/`](reference/quiet-run/) | The quiet-run wrapper: a verdict line and the tail on green, everything on red, the command's own exit status; with its self-test |
@@ -333,9 +353,10 @@ can tighten a repository declaration and cannot widen it.
 | [maturity criteria](../../plugin/skills/audit/criteria/M12-parallel-agent-ergonomics.yaml) | The criteria the [audit skill](../../plugin/skills/audit/README.md) scores |
 
 Each reference utility is a Bun script with a self-test. The port allocator
-and the resource lock stand alone; the namespace scripts import helpers from
-the Jig repository's `lib/`, so run them from a pinned Jig checkout or vendor
-`lib/` at the same place relative to them
+stands alone; the resource lock imports the shared helpers under the Jig
+repository's `plugin/shared/`, and the namespace scripts import helpers from
+its `lib/`, so run them from a pinned Jig checkout or vendor those directories
+at the same place relative to them
 ([their README](reference/worktree-namespace/README.md)).
 
 ### Left out by design

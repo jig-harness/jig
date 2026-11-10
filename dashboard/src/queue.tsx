@@ -6,7 +6,9 @@ import { Pr, RepoLink } from "./pr.tsx";
  * a control.
  */
 import type { LineSnapshot } from "../../plugin/dispatch/lib/dashboard-contract.ts";
-import { PanelHelp, SourceHint } from "./fold.tsx";
+import { Evidence, Fold, PanelHelp, SourceHint } from "./fold.tsx";
+import { queueCard } from "./cards.ts";
+import { cardAttrs } from "./keys.ts";
 import { Mark } from "./marks.tsx";
 import { MoreToggle, SHOWN_CLOSED, useShowAll } from "./more.tsx";
 import { type QueueItemView, queueGroups } from "./queue-view.ts";
@@ -14,7 +16,10 @@ import type { Clock } from "./view.ts";
 
 function QueueItem({ item, rest }: { item: QueueItemView; rest: boolean }) {
   return (
-    <div className={rest ? "qItem rest" : "qItem"}>
+    <div
+      className={rest ? "qItem rest" : "qItem"}
+      {...cardAttrs(queueCard(item))}
+    >
       <div className="rowTop">
         <Mark role={item.role} />
         <Pr repo={item.repo} target={item.target} url={item.url} />
@@ -27,6 +32,11 @@ function QueueItem({ item, rest }: { item: QueueItemView; rest: boolean }) {
       </div>
       {item.title === null ? null : <div className="sm">{item.title}</div>}
       {item.why === null ? null : <div className="sm mut qWhy">{item.why}</div>}
+      <div className="goto">
+        <Fold label={`The record for ${item.target}`}>
+          <Evidence rows={item.evidence} />
+        </Fold>
+      </div>
     </div>
   );
 }

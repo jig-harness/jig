@@ -98,6 +98,7 @@ describe("the records registry", () => {
     );
     expect(tables.map((k) => k.table).sort()).toEqual(
       [
+        "cancelled_ci",
         "claims",
         "counters",
         "driver_records",
@@ -151,6 +152,55 @@ describe("a drive killed inside its locked section", () => {
 });
 
 describe("two drive-state.ts commands at once", () => {
+  it("uses the canonical head history when prospecting a round", () => {
+    const dir = stateDir();
+    expectSpawnExit(run(dir, ["bump-round", "999", "--head", HEAD_A]), 0);
+    expectSpawnExit(run(dir, ["bump-round", "999", "--head", HEAD_B]), 0);
+
+    const revisited = run(dir, ["prospective-round", "999", "--head", HEAD_A]);
+    expectSpawnExit(revisited, 0);
+    expect(revisited.stdout.toString().trim()).toBe("2");
+
+    const next = run(dir, [
+      "prospective-round",
+      "999",
+      "--head",
+      "c".repeat(40),
+    ]);
+    expectSpawnExit(next, 0);
+    expect(next.stdout.toString().trim()).toBe("3");
+  });
+
+  it("reports the current round when no head is named", () => {
+    const dir = stateDir();
+    expectSpawnExit(run(dir, ["bump-round", "999", "--head", HEAD_A]), 0);
+    expectSpawnExit(run(dir, ["bump-round", "999", "--head", HEAD_B]), 0);
+    const current = run(dir, ["prospective-round", "999"]);
+    expectSpawnExit(current, 0);
+    expect(current.stdout.toString().trim()).toBe("2");
+  });
+
+  it("stamps a hold at the review round a hand-driven loop reached", () => {
+    const dir = stateDir();
+    expectSpawnExit(run(dir, ["bump-round", "999", "--head", HEAD_A]), 0);
+    expectSpawnExit(run(dir, ["count-round", "999", "--head", HEAD_B]), 0);
+    const hold = run(dir, [
+      "hold",
+      "999",
+      "--key",
+      "PRRT_x",
+      "--kind",
+      "thread",
+      "--outcome",
+      "accepted",
+      "--comment-url",
+      "https://example.test/c/1",
+    ]);
+    expectSpawnExit(hold, 0);
+    const held = readState(dir, "999")?.held as { round: number }[];
+    expect(held[0]?.round).toBe(2);
+  });
+
   it("serialize on the database and leave no file behind", async () => {
     const dir = stateDir();
     const root = dirname(dir);

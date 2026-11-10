@@ -66,10 +66,27 @@ failing ones named, unresolved review threads, and whether it is ready, with
 the reason when not. Every card says whether it settles by waiting or waits
 on a person. A person is told once when a pull request becomes ready, and
 the history shows how long ready work waited and how much was lost to
-waiting. Then a board view shows every piece of work the dispatcher knows,
-whoever drives it, in one column: coming, picking up, driven, needs you,
-ready to merge, or merged. Work moves in any direction, and a pull request
+waiting. Then the page places every piece of work the dispatcher knows,
+whoever drives it: coming, picking up, driven, needs you, ready to merge,
+or merged. Work moves in any direction, and a pull request
 that was ready and moved back says why. Merging stays a person's.
+
+### 44. The line at capacity: the host's load factor, served pickups and the steward
+
+The dispatcher measures its host before it starts more work: memory, the
+processors, the disk and the queue for the shared test lock. It starts a
+session only while every measure stays under its limit. New work never
+takes the last of the room, so the drives that turn earlier work into
+merges keep running. It first reports what it would hold back, and a person
+turns the limit on. A host can also serve named people. The work a
+maintainer assigns to them is ranked and started on the model its
+complexity calls for. A blocked item says what it waits on, and the person
+stays its assignee. Every 20 minutes an agent, the
+[steward](GLOSSARY.md), reads what is stopped and waiting. It has the
+dispatcher restart a drive that stopped for a passing reason, and fills in
+a missing priority or size. It frames what still needs a person. It never
+merges, settles what only a person may decide, or writes code. Every dashboard item starts with the one act it
+asks of a person: merge, decide, authorize, reply, do or investigate.
 
 ### 39. Addresses: asking and telling the stations of the line
 
@@ -85,14 +102,32 @@ and checks first that the station can take it. The operator skill,
 those commands. Nothing new is stored, and no agent has to keep running for an
 address to answer.
 
+### 46. Structured answers: approving or choosing a parked decision in a word
+
+When a drive stops for a person, it frames the decision with its options
+and the one it recommends. A person will answer `approve` to take the
+recommended option, or `choose` and an option's name to take another. They
+can answer from a terminal, the dashboard, the Orca panel or the forge on a
+phone. The next pass gets the chosen option itself, not words to
+interpret, and an answer in a person's own words still works as before.
+Every answer line Jig offers carries a short code for the version of the
+decision it answers, so an approval of an older version does not count.
+On the dashboard a person moves to a card with `j` and `k` and
+presses `1` to pick the recommendation. A pick stays on the page and can be
+undone, and one comment can answer all of a pull request's decisions.
+Jig also reports how often each kind of decision follows the
+recommendation, so a team can see which decisions still need a person.
+Later, decisions that cannot be undone, such as a release, will need proof
+that a person answered.
+
 ### 42. The hub: one place to watch and steer the line
 
 One page shows a person every piece of work in flight, across the machines
 that run it. A piece of work is a tracker item, the pull request it opens
 and that pull request's follow-up, on one card. The page, the
-[hub](GLOSSARY.md), opens on what waits for that person. It places each
-piece of work on a board and opens any one of them end to end, with its
-correspondence. A card shows the drive's round and how long it has run, and
+[hub](GLOSSARY.md), opens on what is safe to merge, else on what waits for
+that person. It shows what runs and what is queued, and opens any piece of
+work end to end, with its correspondence. A card shows the drive's round and how long it has run, and
 which review threads wait on a person rather than a bot. A pull request held
 back from CI on purpose reads held, never failing. A pickup shows its
 progress before its pull request exists. The hub reads the records the line
@@ -100,8 +135,9 @@ keeps and stores no copy of them. On a host, the hub only reads and accepts
 no commands. A laptop serves the page to any browser and reads each host
 over SSH (Secure Shell). Every view works without Orca. A team that uses
 Orca opens the hub in Orca's own browser. A phone reaches a host's page
-through an optional front on a private network. Tailscale Serve is the first
-such front. The front names who is looking and shows each person only their
+through a front on a private network. Phone access is required, with read-only
+views, visible copy controls and links to pull requests and issues. Tailscale
+Serve is the first such front. The front names who is looking and shows each person only their
 own repositories. A chat with the [operator](GLOSSARY.md), the agent a
 person asks about the line, explains why work is stuck and drafts what to
 do. A person confirms every action, and the words of an answer are always
@@ -191,8 +227,9 @@ does not already keep them in labels. No repository's store moves unless it
 asks. Every way Jig's tools file an issue through the tracker sets all three
 (an epic needs no size) and checks them. The issue forms set the type and
 leave priority and size to triage. The weekly check can move an issue missing an attribute back to
-triage while it has not been started. Still to come are Jira's issue-type
-and custom-field stores, Linear's estimate, and live checks of those stores.
+triage while it has not been started. Jira's issue-type and custom-field
+stores and Linear's estimate are built; still to come are live checks of
+those stores.
 
 ### 43. Consumer actions: which Jig changes a repository must act on
 
@@ -238,8 +275,9 @@ write specs well are recommended beside the adapter that reads each.
 ### 31. Routing work to an agent, a model and an effort
 
 Delegation already picks an agent from the issue's change areas, labels and
-title, and `do-item` reports the model tier and effort the work's type, its
-size and flag labels and the change areas' mandatory reviews call for, by
+title, and `do-item` reports the complexity tier, the model and the effort
+the work's type, its size and flag labels and the change areas' mandatory
+reviews call for, with Claude's and OpenAI's model families known, by
 rules a repository declares with defaults it overrides. The agent still
 runs on whichever model and effort the session was started with, whatever
 the work. Routing will apply that route to the implementer, opt-in, with
@@ -354,7 +392,7 @@ reflections passes its tests against a stand-in for Notion's API. This item
 runs it against Notion itself and fixes what differs. That run waits on a
 person with an access token for a Notion workspace.
 
-### 44. Distribution: a common setup entry point
+### 45. Distribution: a common setup entry point
 
 A common setup path checks the machine and explains missing prerequisites
 before installing Jig through the agent tool's marketplace. It preserves the

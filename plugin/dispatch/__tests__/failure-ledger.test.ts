@@ -121,6 +121,44 @@ function edits(w: World): string[] {
 const converged = (pr: number) =>
   ledgerComment(pr * 100 + 1, stoppedLedger(pr, 0, { verifiedSha: HEAD_SHA }));
 
+/** The board query's answer: PR #7 clean at its verified head, so the board places it and the absence of a cause about it settles that cause's notice. */
+function boardPlaces(w: World): void {
+  const page = { pageInfo: { hasNextPage: false }, nodes: [] };
+  const pr7 = {
+    number: 7,
+    headRefOid: HEAD_SHA,
+    isDraft: false,
+    mergeable: "MERGEABLE",
+    mergeStateStatus: "CLEAN",
+    reviewDecision: null,
+    authorAssociation: "MEMBER",
+    isMergeQueueEnabled: false,
+    labels: page,
+    reviewThreads: page,
+    reviewRequests: page,
+    latestReviews: page,
+    commits: {
+      nodes: [
+        { commit: { oid: HEAD_SHA, statusCheckRollup: { contexts: page } } },
+      ],
+    },
+  };
+  writeFileSync(
+    join(w.dir, "board.json"),
+    JSON.stringify({
+      data: {
+        rateLimit: { cost: 1, remaining: 4900, limit: 5000 },
+        repository: {
+          squashMergeAllowed: true,
+          mergeCommitAllowed: false,
+          rebaseMergeAllowed: false,
+          pr7,
+        },
+      },
+    }),
+  );
+}
+
 describe("jig dispatch backs off a label write that keeps failing", () => {
   it("waits between tries, notifies a person once past three failures in a row, and clears the row once the write succeeds", async () => {
     const w = fixture(LABELS);
@@ -179,7 +217,9 @@ describe("jig dispatch backs off a label write that keeps failing", () => {
     expect(rows(w)).toEqual([]);
     expect(written.failures).toBeUndefined();
 
-    // The cause left the plan with its row: its suppression record retires.
+    // The cause left the plan with its row: its suppression record retires
+    // once the board places the pull request it is about.
+    boardPlaces(w);
     const after = await tick(w);
     expect(failing(after)).toEqual([]);
     expect(noticeKeys(w).filter((k) => k.includes("failing"))).toEqual([]);

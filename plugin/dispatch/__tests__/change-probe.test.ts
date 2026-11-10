@@ -28,6 +28,7 @@ import {
   readProbeState,
   searchTime,
 } from "../lib/change-probe.ts";
+import { LOAD_DEFAULTS } from "../lib/load-config.ts";
 import {
   type MachineConfig,
   readMachineConfig,
@@ -136,6 +137,7 @@ function machine(changeProbe = true): MachineConfig {
     sharedRecords: "forge",
     send: true,
     changeProbe,
+    load: LOAD_DEFAULTS,
   };
 }
 

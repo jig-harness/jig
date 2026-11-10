@@ -51,6 +51,7 @@ const NEED_LABEL: Record<LineNeed["cause"], string> = {
   "followup-failed": "Follow-up failed",
   "followup-stale": "Follow-up claim went stale",
   "nudge-unanswered": "Nudge unanswered",
+  "pickup-question": "Pickup stopped on a question",
   "double-claim": "Claimed twice",
   "assigner-cannot-write": "Assigned by someone who cannot write",
 };

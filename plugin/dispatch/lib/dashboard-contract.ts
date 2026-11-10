@@ -16,6 +16,23 @@ import type {
   NotifyCause,
   NotifyOutcome,
 } from "./types.ts";
+import type {
+  Act,
+  Lane,
+  Placement,
+} from "../../skills/drive-pr/scripts/lib/merge-ready.ts";
+import type { NeedAct } from "../../shared/acts.ts";
+
+/** One option of a framed decision, as the drive recorded it. */
+export interface LineOption {
+  name: string;
+  /** Its `Changes:`; `null` when the record gives none. */
+  changes: string | null;
+  /** Its `Costs:`; `null` when the record gives none. */
+  costs: string | null;
+  /** Whether the record's `## Recommended` names it. */
+  recommended: boolean;
+}
 
 /** One decision a parked drive waits on, as the drive framed it. */
 export interface LineDecision {
@@ -32,6 +49,10 @@ export interface LineDecision {
   recommendation: string | null;
   /** The class the drive filed it under (`scope`, `destructive`, …); `null` when it names none. */
   decisionClass: string | null;
+  /** Its options, in the record's order; empty for a park from before parks were framed. Absent from a line written before it was kept. */
+  options?: LineOption[];
+  /** The record's steps for a person, each a command or a named action; empty for `None.`. Absent from a line written before it was kept. */
+  steps?: string[];
 }
 
 /** How a cause's notification went, at the newest tick. */
@@ -49,12 +70,14 @@ export interface LineNotified {
  * and are on the receipt instead.
  */
 export type NeedCause =
-  | Exclude<NotifyCause, "waiting" | "drifting" | FailureCause>
+  | Exclude<NotifyCause, "waiting" | "drifting" | "ready" | FailureCause>
   | "assigner-cannot-write";
 
 /** One thing the line waits on a person for. */
 export interface LineNeed {
   cause: NeedCause;
+  /** What the person does about it (`shared/acts.ts`). Absent from a line written before it was kept; a reader then derives it the same way. */
+  act?: NeedAct;
   /** The stage it is about. */
   stage: LaunchAction | "steer";
   repo: string;
@@ -216,6 +239,50 @@ export interface LineRepo {
   failedReads: Array<{ record: string; source: string; detail: string }>;
   /** What each record's read said about what this repository has, such as no pickups. */
   notes: string[];
+  /** Why the board read did not place its converged pull requests at the newest tick; `null` when it did, absent when it did not run. */
+  boardUnread?: string | null;
+  /** Cards beyond the line's per-repository bound; absent before Ready was read. */
+  readyOmitted?: number;
+}
+
+/**
+ * One converged pull request as the tick's board read placed it: in a lane
+ * of Ready to merge (merge now, approve first, update next), or wherever its
+ * reason says, with the act that settles it or what it waits for.
+ */
+export interface LineReady {
+  repo: string;
+  pr: number;
+  url: string;
+  /** Its title: text the pull request's author wrote, shown as quoted text. */
+  title: string;
+  /** The head the drive verified. */
+  head: string;
+  place: Placement;
+  /** Its lane, for a pull request in Ready to merge; `null` elsewhere. */
+  lane: Lane | null;
+  /** What the card says, in the board's own words. */
+  says: string;
+  /** The person's act that settles it, or `null` when it settles by waiting. */
+  act: Act | null;
+  /** What it waits for, when it settles by waiting; `null` when it waits on a person. */
+  waitingFor: string | null;
+  /** For merge now: the merge command pinned to the verified head; `null` when withheld or not in merge now. */
+  command: string | null;
+  /** Which value withheld the command; `null` when none did. */
+  withheld: string | null;
+  /** The reviewers or teams a review is requested from, as requested: logins the forge gives. */
+  requested: string[];
+  /** The checks failing on its head, by name: text the checks' apps wrote, at most `MAX_FAILING`. */
+  failing: string[];
+  /** Failing check names beyond this card's bound. */
+  failingOmitted: number;
+  /** The Ready conditions, each met (`true`), not (`false`) or not read (`null`). */
+  conditions: Array<{ name: string; met: boolean | null; fact: string }>;
+  /** The pull requests that wait behind it in a serialized area. */
+  unblocks: number[];
+  /** When it converged, as its ledger last wrote. */
+  since: string;
 }
 
 /** One repository's turn in a recent tick. */
@@ -252,6 +319,59 @@ export interface LineTick {
   defects: number;
 }
 
+/** The host's gauges the load factor reads (`load.ts`). */
+export type LoadGauge =
+  | "memory"
+  | "processors"
+  | "test-lock"
+  | "disk"
+  | "forge"
+  | "accounts";
+
+/** The kinds of launch, each with its own memory reservation. */
+export type LoadKind = "pickup" | "drive" | "followup" | "steward";
+
+/** One gauge as the tick read it, under the act lock. */
+export interface LineLoadGauge {
+  gauge: LoadGauge;
+  /** Its fill against its line: `1` at the line; `null` when the host cannot read it. */
+  fill: number | null;
+  /** What it read, for a person ("12.3 GiB available of 62.5 GiB"); why not, when it read nothing. */
+  reads: string;
+  /** Its line, for a person ("15% of memory kept free"). */
+  line: string;
+}
+
+/** A launch a gauge refused: held when enforcement is on, else started and reported as one it would hold. */
+export interface LineLoadHold {
+  repo: string;
+  target: string;
+  kind: LoadKind;
+  gauge: LoadGauge;
+  detail: string;
+  /** Whether it was held (`load.enforce: true`) rather than started. */
+  held: boolean;
+}
+
+/** What the load factor read and decided in a tick. */
+export interface LineLoad {
+  /** Whether it holds the launches a gauge refuses (`load.enforce`). */
+  enforce: boolean;
+  /** The fullest gauge's fill; `null` when no gauge read. */
+  factor: number | null;
+  /** The gauge whose fill is the factor. */
+  binds: LoadGauge | null;
+  gauges: LineLoadGauge[];
+  /** Each kind's reservation: its 90th percentile once it has five samples, else its default. */
+  reservations: Array<{
+    kind: LoadKind;
+    bytes: number;
+    samples: number;
+    measured: boolean;
+  }>;
+  holds: LineLoadHold[];
+}
+
 /** The line as one tick found it. */
 export interface LineSnapshot {
   version: 1;
@@ -281,6 +401,10 @@ export interface LineSnapshot {
   sessions: LineSession[];
   needs: LineNeed[];
   queue: LineQueued[];
+  /** The converged pull requests the board read placed, Ready to merge first in its order; absent from a line written before the board read. */
+  ready?: LineReady[];
+  /** The host's load as the tick read it, and what it held or would hold; absent from a line written before the load factor. */
+  load?: LineLoad;
   repos: LineRepo[];
 }
 

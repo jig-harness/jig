@@ -63,6 +63,7 @@ import {
 } from "../../drive-pr/scripts/lib/pr-policy.ts";
 import { ghCall, git } from "../../drive-pr/scripts/lib/proc.ts";
 import { parseArgs, runEntry } from "./lib/cli.ts";
+import { prDiffContext } from "./lib/pr-diff-context.ts";
 import { trackerConfigFrom } from "./lib/tracker/config.ts";
 import {
   ANY_TEAM_KEY,
@@ -373,15 +374,17 @@ async function buildOpenPlan(opts: {
     );
 
   // --- Opening ------------------------------------------------------------
+  const context = await prDiffContext(root, baseRef, policy.labels);
+  warnings.push(...context.warnings);
   const openAs = resolveOpenAs(policy, reviewsDrafts());
   const createArgs = ["--base", base];
   if (openAs.value === "draft") createArgs.push("--draft");
-  for (const label of policy.labels) createArgs.push("--label", label);
+  for (const label of context.labels) createArgs.push("--label", label);
 
   const title = await detectTitleFormat(root, policy, `${remote}/${trunk}`);
-  if (policy.labels.length > 0)
+  if (context.labels.length > 0)
     warnings.push(
-      `gh pr create fails when a label does not exist in the repository; the labels are ${policy.labels.join(", ")}`,
+      `gh pr create fails when a label does not exist in the repository; the labels are ${context.labels.join(", ")}`,
     );
 
   return {

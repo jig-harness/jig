@@ -10,7 +10,7 @@ import type {
 import { queuedFollowup } from "./followup-view.ts";
 import { ago } from "./format.ts";
 import { ROLES, type Role } from "./status.ts";
-import { type Clock, nextFreeAccount } from "./view.ts";
+import { type Clock, type EvidenceRow, nextFreeAccount } from "./view.ts";
 
 // ---------- what is coming ----------
 
@@ -25,6 +25,22 @@ export interface QueueItemView {
   why: string | null;
   wait: string | null;
   role: Role;
+  /** The record behind it, which its card folds. */
+  evidence: EvidenceRow[];
+}
+
+function queueEvidence(q: LineQueued): EvidenceRow[] {
+  const rows: EvidenceRow[] = [
+    { k: "source", v: q.source },
+    { k: "reason", v: q.why },
+  ];
+  if (q.assignedBy !== null) rows.push({ k: "assigned by", v: q.assignedBy });
+  if (q.launch !== null)
+    rows.push({
+      k: "last launch",
+      v: `${q.launch.outcome}: ${q.launch.detail}`,
+    });
+  return rows;
 }
 
 export interface QueueGroupView {
@@ -52,6 +68,7 @@ function queueItem(q: LineQueued, nowMs: number): QueueItemView {
     wait:
       q.hold === null ? null : `waited ${ago(Date.parse(q.hold.since), nowMs)}`,
     role: q.stale ? ROLES.stale : ROLES.held,
+    evidence: queueEvidence(q),
   };
 }
 

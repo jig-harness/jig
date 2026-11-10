@@ -10,7 +10,15 @@ import type {
   LineSnapshot,
 } from "../plugin/dispatch/lib/dashboard-contract.ts";
 import type { LogRow } from "../plugin/dispatch/lib/log.ts";
-import { drive, framedDecision, line, need, queued } from "./fixture-line.ts";
+import {
+  busyLoad,
+  drive,
+  framedDecision,
+  line,
+  need,
+  queued,
+} from "./fixture-line.ts";
+import { mergingReady, waitingReady } from "./fixture-ready.ts";
 import {
   API,
   generated,
@@ -28,6 +36,7 @@ import {
 export const SCENARIOS = [
   "quiet",
   "loud",
+  "merge",
   "hung",
   "queue",
   "stopped",
@@ -90,9 +99,10 @@ function loudNeeds(): LineNeed[] {
             "- **A: retry 5xx only** what the issue asks. Changes: the retry helper. Costs: leaves 429 unhandled.",
             "- **B: retry 5xx and 429** Changes: one more test. Costs: needs a backoff cap.",
           ],
-          "A, because 429 is rate limiting and wants its own issue",
+          "**A: retry 5xx only**, because 429 is rate limiting and wants its own issue",
           "A",
           "The 5xx retry is implemented and its test passes.",
+          "maintainer-a",
         ),
       ],
       notified: T(7, 10),
@@ -116,9 +126,10 @@ function loudNeeds(): LineNeed[] {
               "- **A: drop it here** Changes: one migration. Costs: cannot be rolled back after deploy.",
               "- **B: drop it in a later release** Changes: two migrations. Costs: the column stays for a release.",
             ],
-            "B, because a rollback stays possible",
+            "**B: drop it in a later release**, because a rollback stays possible",
             "B",
             "The table split is migrated and its tests pass.",
+            "maintainer-b",
           ),
           kind: "finding",
         },
@@ -557,6 +568,20 @@ export function fixture(id: ScenarioId): Fixture {
           sessions: loudSessions(),
           needs: loudNeeds(),
           queue: loudQueue(),
+          ready: waitingReady(),
+          load: busyLoad(),
+        }),
+        rows: loudRows(),
+      };
+    case "merge":
+      return {
+        now,
+        line: line({
+          sessions: loudSessions(),
+          needs: loudNeeds(),
+          queue: loudQueue(),
+          ready: mergingReady(),
+          load: busyLoad(),
         }),
         rows: loudRows(),
       };
@@ -584,6 +609,7 @@ export function fixture(id: ScenarioId): Fixture {
           sessions: loudSessions(),
           needs: loudNeeds(),
           queue: loudQueue(),
+          ready: waitingReady(),
           longestTickMs: 3 * 60_000,
         }),
         rows: loudRows(),

@@ -349,7 +349,7 @@ async function launchOne(
     );
   const held = laneHolds(state, repo, action, read);
   if (held !== null) return held;
-  const admitted = await admitAccount(state, action);
+  const admitted = await admitAccount(state, repo.slug, action);
   if ("outcome" in admitted) return admitted.outcome;
   const { slots } = admitted;
   const id = newRecordId(new Date());

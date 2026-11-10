@@ -1,5 +1,6 @@
 /** Release held CI, establish fresh evidence, repair actionable failures and bound witness polling. */
 import type { DriveRoundContext } from "./round-context.ts";
+import { recoverCancelledOnHead } from "../cancelled-recovery-live.ts";
 
 import {
   run,
@@ -26,6 +27,11 @@ import { failedRunsToTell } from "./failed-runs.ts";
 
 import { runRepairPass } from "./repair.ts";
 import { announcePolicyBase } from "./policy-base.ts";
+
+import {
+  type FailingChecks,
+  recoverInfrastructureFailure,
+} from "./infra-recovery.ts";
 
 import { driverRuntime } from "./runtime.ts";
 
@@ -484,10 +490,9 @@ function witnessBoundSpent(
 }
 
 /**
- * Wait, on the witness bound, for a run to replace cancelled checks. Nothing is
- * known about them, so the wait ends only in a read of that run or in the
- * not-judgeable exit `4`: never a repair and never a pass, whatever
- * `final-ready` said, which counts a cancelled required check as completed.
+ * Recover an orphaned cancellation through the shared durable budget. A dry
+ * run or a stale verdict without a current cancelled workflow uses the witness
+ * bound; cancellation itself is never a code repair or passing evidence.
  */
 async function waitForReplacement(
   reviewedHead: string,
@@ -497,6 +502,15 @@ async function waitForReplacement(
     ReturnType<DriveRoundContext["finalCiWait"]["prime"]>
   >,
 ): Promise<number | "continue"> {
+  if (!context.dryRun) {
+    const recovery = await recoverCancelledOnHead(context.pr, reviewedHead);
+    if (recovery === "parked") return 8;
+    if (recovery === "unknown") return 1;
+    if (recovery === "wait") {
+      await sleep(FINAL_CI_POLL_SECONDS);
+      return "continue";
+    }
+  }
   if (witnessBoundSpent(reviewedHead, context)) {
     console.error(
       `review converged, but the verdict has stayed '${finalVerdict}': no run replaced the cancelled check(s) in ${Math.round((context.witnessWaitLimit * FINAL_CI_POLL_SECONDS) / 60)} minute(s).`,
@@ -576,7 +590,7 @@ export async function evaluateFinalCi(
   finalCiSignals: Awaited<
     ReturnType<DriveRoundContext["finalCiWait"]["prime"]>
   >,
-  failingRuns: unknown,
+  failing: FailingChecks,
 ): Promise<number | "continue" | null> {
   if (finalVerdict.startsWith("cancelled:"))
     return await waitForReplacement(
@@ -590,12 +604,24 @@ export async function evaluateFinalCi(
   // did not parse) are absences of evidence, not evidence of failure,
   // and a `/fix-ci` pass handed neither a run nor a check name has
   // nothing to work from. Those keep today's stop verbatim, below.
+  //
+  // A failure every one of whose checks failed on the infrastructure is
+  // re-run first, whatever the repair budget: no code change fixes it, so it
+  // spends no repair pass (`infra-recovery.ts`).
+  if (finalVerdict.startsWith("failing:") && !staleRequiredFailure) {
+    const infra = await recoverInfrastructureFailure(
+      context,
+      reviewedHead,
+      failing,
+    );
+    if (infra !== null) return infra;
+  }
   if (
     finalVerdict.startsWith("failing:") &&
     !staleRequiredFailure &&
     context.ciRepairs < context.ciRepairBudget
   ) {
-    return await repairConvergedCi(finalVerdict, context, failingRuns);
+    return await repairConvergedCi(finalVerdict, context, failing.runs);
   }
   // A `pending:` verdict is never a stop condition: it reaches here
   // only when `finalCi.code === 4` (the branch above let it through

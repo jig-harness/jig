@@ -15,7 +15,10 @@
  *
  * Orca cannot yet start an interactive session billed to a chosen account
  * (`ORCA_BINDING`): `orca agent launch` starts its agent on the account the
- * host has active, and takes no account or environment of its own.
+ * host has active, and takes no account or environment of its own. That
+ * refusal is the interactive launch's only: a headless pass (a drive's, a
+ * follow-up's, a pickup's) runs in a terminal tab under the wrapper, which
+ * binds it through the account's configuration directory.
  *
  * `notify` writes the workspace's comment and marks it unread (`orca
  * worktree set --comment … --unread`), then reads the comment back
@@ -70,12 +73,13 @@ import {
  * under the id its launch receipt names, but Codex then waits on its
  * question whether to trust a folder it has not seen, which nobody answers;
  * that Orca reports a Claude Code session started that way is not shown.
- * Until both are settled, pickups are reported and none is started.
+ * Until both are settled, no interactive session is started: a pickup runs
+ * as a headless pass instead.
  */
 const ORCA_BINDING: Binding = {
   ok: false,
   reason:
-    "an Orca agent launch cannot bind its session to a chosen account yet (it runs on the host's active account), so pickups are reported and none is started",
+    "an Orca agent launch cannot bind its session to a chosen account yet (it runs on the host's active account), so no interactive session is started",
 };
 
 /** Seconds one Orca call may take: `runtime_timeout`'s default. */

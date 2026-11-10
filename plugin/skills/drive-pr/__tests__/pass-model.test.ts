@@ -34,11 +34,24 @@ describe("resolveModelValue", () => {
 
   it("resolves a tier through the default tier-to-model table", () => {
     expect(
+      resolveModelValue("standard", "drive.pass_model", noRouting),
+    ).toEqual({
+      model: "sonnet",
+      source:
+        "drive.pass_model: the standard tier, routing.models.claude-code.standard",
+    });
+    expect(resolveModelValue("complex", "--pass-model", noRouting).model).toBe(
+      "opus",
+    );
+  });
+
+  it("reads the legacy tier names as standard and complex", () => {
+    expect(
       resolveModelValue("execution", "drive.pass_model", noRouting),
     ).toEqual({
       model: "sonnet",
       source:
-        "drive.pass_model: the execution tier, routing.models.claude-code.execution",
+        "drive.pass_model: the standard tier (execution), routing.models.claude-code.standard",
     });
     expect(
       resolveModelValue("strategic", "--pass-model", noRouting).model,
@@ -48,12 +61,31 @@ describe("resolveModelValue", () => {
   it("resolves a tier through the repository's own table", () => {
     const routing = () => ({
       routing: {
-        models: { "claude-code": { execution: "haiku", strategic: "opus" } },
+        models: { "claude-code": { execution: "opus", strategic: "fable" } },
       },
     });
     expect(resolveModelValue("execution", "--pass-model", routing).model).toBe(
-      "haiku",
+      "opus",
     );
+    expect(resolveModelValue("complex", "--pass-model", routing).model).toBe(
+      "fable",
+    );
+  });
+
+  it("gives a Codex tier or family alias as the model the family names", () => {
+    expect(
+      resolveModelValue("complex", "--pass-model", noRouting, "codex"),
+    ).toEqual({
+      model: "gpt-6.1-sol",
+      source:
+        "--pass-model: the complex tier, routing.models.codex.complex (sol)",
+    });
+    expect(
+      resolveModelValue("terra", "--pass-model", noRouting, "codex"),
+    ).toEqual({
+      model: "gpt-5.6-terra",
+      source: "--pass-model: the model terra names",
+    });
   });
 
   it("refuses a value that is not one word", () => {
@@ -114,10 +146,10 @@ describe("effectivePass", () => {
 
   it("names --pass-model alone when it names the model the pass command already carries", () => {
     const own = ["claude", "--model", "opus", ...PASS.slice(1)];
-    const pass = effectivePass(own, "strategic", configured);
+    const pass = effectivePass(own, "complex", configured);
     expect([pass.argv, pass.source]).toEqual([
       own,
-      "--pass-model: the strategic tier, routing.models.claude-code.strategic",
+      "--pass-model: the complex tier, routing.models.claude-code.complex",
     ]);
   });
 
@@ -155,17 +187,17 @@ describe("effectivePass", () => {
     );
   });
 
-  it("runs a Codex pass on its own model, else routing.models.codex's execution tier after exec, else Codex's own", () => {
+  it("runs a Codex pass on its own model, else routing.models.codex's standard tier after exec, else Codex's own", () => {
     const codex = ["codex", "exec", "/jig:drive-pr 7"];
     const routed = () => ({
       model: "gpt-example",
-      source: "routing.models.codex.execution",
+      source: "routing.models.codex.standard",
     });
     const none = () => ({ model: null, source: "Codex's own configuration" });
     expect(effectivePass(codex, undefined, configured, routed)).toEqual({
       argv: ["codex", "exec", "-m", "gpt-example", "/jig:drive-pr 7"],
       model: "gpt-example",
-      source: "routing.models.codex.execution",
+      source: "routing.models.codex.standard",
     });
     expect(effectivePass(codex, undefined, configured, none)).toEqual({
       argv: codex,

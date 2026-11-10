@@ -28,6 +28,7 @@
  * Usage:
  *   drive-state.ts get          [PR]                 # whole state as JSON
  *   drive-state.ts rounds       [PR]                 # the PR's review round (lib/state/review-rounds.ts)
+ *   drive-state.ts prospective-round [PR] [--head SHA]  # that head (none: the current round)'s current or next review round
  *   drive-state.ts bump-round   [PR] --head SHA      # count a NEW head as the drive's round
  *   drive-state.ts count-round  [PR] --head SHA      # count a head for a hand-driven loop; unleased
  *   drive-state.ts open-rounds  [PR]                 # rounds since that loop last converged
@@ -152,6 +153,7 @@
  *                                     #
  *   drive-state.ts admit        [PR]                 # 0 = this tree may act on this PR,
  *                                     # 13 = another working tree is driving it.
+ *                                     # 2 = invalid or dead $DRIVE_PR_SESSION.
  *                                     # No lease taken, nothing mutated — for a
  *                                     # caller whose side effect is on GITHUB and
  *                                     # so is never gated by the session lease
@@ -288,6 +290,7 @@ import { openStore, type StateStore } from "./lib/state/store.ts";
 import {
   bumpDriveRound,
   clearReviewRounds,
+  prospectiveReviewRound,
   ROUND_VERBS,
   reviewRound,
 } from "./lib/state/review-rounds.ts";
@@ -410,7 +413,8 @@ function usage(): void {
   handoff      [PR]                 (re)write the handoff file, and the ledger under a driver
   seed-ledger  [PR]                 lay a newer ledger over this state (its body on stdin)
   admit        [PR]                 exit 0 if this tree may act on this PR, 13 if
-                                    another working tree is driving it. Takes no
+                                    another working tree is driving it;
+                                    2 if $DRIVE_PR_SESSION is invalid or names a dead pid. Takes no
                                     lease and mutates nothing — for callers whose
                                     side effects leave the machine (GitHub) and so
                                     are never gated by the session lease
@@ -1109,6 +1113,14 @@ async function main(): Promise<number> {
 
     case "rounds": {
       process.stdout.write(`${reviewRound(store, pr)}\n`);
+      return 0;
+    }
+
+    case "prospective-round": {
+      // No head: the reviewed head is unknown, so report the current round.
+      process.stdout.write(
+        `${a.sha === "" ? reviewRound(store, pr) : prospectiveReviewRound(store, pr, a.sha)}\n`,
+      );
       return 0;
     }
 
@@ -2369,7 +2381,13 @@ async function main(): Promise<number> {
         // Carrying the old stamp forward would let a re-hold inherit
         // provenance from a push that predates the promise it now
         // represents.
-        const { state } = store.read();
+        const { state: stored } = store.read();
+        // A hand-driven loop may have counted past the drive's own counter:
+        // stamp the review round the readers see, and carry the counter to it.
+        const state: DriveState = {
+          ...stored,
+          rounds: Math.max(stored.rounds, reviewRound(store, pr)),
+        };
         const next: DriveState = {
           ...state,
           held: [
@@ -3128,15 +3146,11 @@ async function main(): Promise<number> {
       // "May this tree act on this PR at all?" — the PR-wide gate, asked
       // WITHOUT taking a lease and without mutating anything. Exits 0 when no
       // other working tree is driving, 13 when one is (same code, same
-      // diagnostic as every other PR-wide refusal).
+      // diagnostic as every other PR-wide refusal). An invalid or dead explicit
+      // DRIVE_PR_SESSION exits 2 before admission, as resolveSession requires.
       //
-      // It exists for callers that mutate something OTHER than drive state and
-      // so are never gated by `claimLease`. The measured one is
-      // `drive-status.ts`'s replied-thread reconciliation sweep: it invokes
-      // `resolve-thread.ts`, which resolves threads ON GITHUB, and it runs
-      // well before the leased `bump-round` where exit 13 was previously first
-      // raised — so a second worktree could resolve threads and only then be
-      // told it was not admitted.
+      // Callers whose side effects leave this machine, such as the replied-thread
+      // reconciliation sweep, ask before mutating GitHub without a state lease.
       //
       // Honestly a PREFLIGHT, not a fence, and the difference is worth stating
       // because this file is careful about it elsewhere: a GitHub mutation

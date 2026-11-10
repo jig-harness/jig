@@ -448,6 +448,9 @@ async function gatherDoctorInput(
     parkedQuestions: snapshot.ok
       ? snapshot.state.parked.map((p) => p.reason)
       : [],
+    cancelledCiRecovery: snapshot.ok
+      ? snapshot.state.parked.find((p) => p.key === "cancelled-ci")?.record
+      : undefined,
     leftovers,
     stallThresholdMs: stallThresholdMs(),
     pr: row.key,

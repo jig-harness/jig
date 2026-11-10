@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { retryAttempts } from "../../../shared/retry.ts";
+import { recoverCancelledOnHead } from "./lib/cancelled-recovery-live.ts";
 
 /**
  * Own the repository's temporary CI-hold label (`ci.hold_label`). The GitHub
@@ -10,18 +11,14 @@ import { retryAttempts } from "../../../shared/retry.ts";
  * (`adopted`), never a reason to stop. A repository without a hold label has nothing to
  * own: `ensure`, `release` and `rollback` print `disabled` and succeed, and
  * `final-ready` proves the required checks on the exact head directly.
- * A conflicting PR runs no CI, so there `ensure` holds nothing (`conflicting`).
  *
  * Usage:
  *   ci-hold.ts ensure [PR] --expect-head SHA
- *   ci-hold.ts release [PR] --expect-head SHA
+ *   ci-hold.ts release [PR] --expect-head SHA [--expect-transition ID]
  *   ci-hold.ts rollback [PR] --expect-head SHA
  *   ci-hold.ts final-ready [PR] --expect-head SHA [--require-success]
  *
- * `--require-success` (final-ready only) additionally requires every
- * required check (`lib/ci-policy.ts`) to have concluded `success`, not
- * merely `completed` — see `finalReady`'s own doc comment for why this is
- * opt-in rather than the default.
+ * `--require-success` requires completed checks to succeed, for final-ready only.
  */
 
 import {
@@ -77,7 +74,6 @@ let policy: CiPolicy = {
   holdLabel: null,
 };
 
-/** The hold label; only the hold's own transitions call this. */
 function holdLabel(): string {
   if (policy.holdLabel === null)
     fail(1, "ci-hold: no hold label is configured (ci.hold_label)");
@@ -172,7 +168,6 @@ const releasedBy = (
   source,
 });
 
-/** The removal following a recorded release intent is ours when its actor made it. */
 const exactReleaseOf = (
   successor: LabelTransition,
   head: string,
@@ -482,6 +477,14 @@ async function ensure(pr: string, expectedPushHead: string): Promise<number> {
     return 0;
   }
   if (!observed) {
+    const recovery = await recoverCancelledOnHead(
+      pr,
+      head,
+      policy.requiredChecks,
+      true,
+    );
+    if (recovery === "parked") return 8;
+    if (recovery === "unknown") return 1;
     console.error(
       latest?.event === "unlabeled"
         ? "ci-hold: the required checks triggered by the latest unlabel have not completed on this head; refusing to re-add the hold yet"
@@ -558,7 +561,11 @@ async function ensure(pr: string, expectedPushHead: string): Promise<number> {
   return 0;
 }
 
-async function release(pr: string, head: string): Promise<number> {
+async function release(
+  pr: string,
+  head: string,
+  expectedTransition?: string,
+): Promise<number> {
   let persisted = await readCiState(pr);
   const live = await snapshot(pr);
   if (live === null) fail(1, "ci-hold: cannot read the PR state");
@@ -568,6 +575,17 @@ async function release(pr: string, head: string): Promise<number> {
   if (initialTimeline === null)
     fail(1, "ci-hold: cannot read the label timeline");
   const latest = latestOf(initialTimeline);
+  if (
+    expectedTransition !== undefined &&
+    (!live.held ||
+      latest?.event !== "labeled" ||
+      latest.id !== expectedTransition)
+  ) {
+    console.error(
+      "ci-hold: diagnosed CI hold transition changed; diagnose again before releasing",
+    );
+    return 4;
+  }
 
   if (persisted?.phase === "releasing") {
     const successor = exactSuccessor(initialTimeline, persisted.heldEventId);
@@ -646,6 +664,8 @@ async function release(pr: string, head: string): Promise<number> {
     beforeLive.state !== "OPEN" ||
     beforeLive.head !== head ||
     !beforeLive.held ||
+    (expectedTransition !== undefined &&
+      latestOf(beforeTimeline)?.id !== expectedTransition) ||
     !ownsHeldTransition(persisted, latestOf(beforeTimeline))
   )
     return 4;
@@ -782,24 +802,7 @@ async function release(pr: string, head: string): Promise<number> {
  *   this caller specifically, without changing what exit 4 means for the
  *   other one.
  */
-/**
- * ONE predicate for "does CI genuinely prove this head is done and green" —
- * called for the INITIAL proof in `finalReady` AND, unchanged, for the
- * re-verification `stillCurrentForFinalReady` performs — the identical
- * reasoning `drive-state.ts`'s `proveCiGreen()` already applies for
- * `set-verified`. A SEPARATE, cheaper re-check fell out of sync with the
- * initial proof: an earlier version added the aggregate `ciVerdictOf` check but
- * only ever re-verified IT on refresh, never `completedRequiredCi` — so a
- * required check superseded by a fresher SKIPPED run (which `ciVerdictOf`'s own
- * `PASSING_CONCLUSIONS` treats as passing, unlike `completedRequiredCi`)
- * slipped past the re-check even though it would have failed the initial proof.
- * Sharing one implementation makes that class of drift impossible rather than
- * merely unlikely.
- *
- * Always re-fetches check-runs — never reuses a caller's earlier `runs` —
- * so every call is a genuinely fresh read, not a re-evaluation of data that
- * may already be stale by the time this runs a second time.
- */
+/** Re-read all CI evidence for both the initial proof and final verification. */
 async function finalCiProofGreen(
   head: string,
   persisted: Extract<CiHoldState, { phase: "released" }> | null,
@@ -880,19 +883,7 @@ async function finalCiProofGreen(
   };
 }
 
-/**
- * The same aggregate CI verdict `drive-state.ts`'s `proveCiGreen()` already
- * requires — check-runs AND legacy commit statuses, not check-runs alone.
- * `finalReady`'s own `completedRequiredCi` check only ever reads check-runs, so
- * a legacy status context turning pending or failing after
- * `announce-merge-ready.ts`'s initial snapshot was invisible to every later
- * `--require-success` confirmation, which could then post or preserve a "Safe
- * to merge" comment over a red aggregate verdict. Gated behind
- * `requireSuccess`, matching every other strictness check `finalReady` already
- * gates that way — `drive.ts`'s own polling loop never passes it and derives
- * green/red from `drive-status.ts`'s `.ci` field separately, so this must not
- * change what `finalReady`'s return means for that caller.
- */
+/** Strict success requires both check runs and attributed legacy statuses to be green. */
 async function requiredCiAggregateIsGreen(head: string): Promise<boolean> {
   const [allRuns, statuses] = await Promise.all([
     checkRunsFor("{owner}", "{repo}", head),
@@ -1064,6 +1055,23 @@ async function rollback(pr: string, expectedPushHead: string): Promise<number> {
   return release(pr, live.head);
 }
 
+function takeExpectedTransition(
+  command: string,
+  argv: string[],
+): string | undefined {
+  const index = argv.indexOf("--expect-transition");
+  if (index < 0) return undefined;
+  const id = argv[index + 1];
+  if (
+    command !== "release" ||
+    id === undefined ||
+    !/^[A-Za-z0-9_+/=-]+$/.test(id)
+  )
+    usage();
+  argv.splice(index, 2);
+  return id;
+}
+
 async function main(): Promise<number> {
   const argv = process.argv.slice(2);
   const command = argv.shift() ?? "";
@@ -1072,6 +1080,7 @@ async function main(): Promise<number> {
   let pr = "";
   let head = "";
   let requireSuccess = false;
+  const expectedTransition = takeExpectedTransition(command, argv);
   for (let index = 0; index < argv.length; index++) {
     const value = argv[index];
     if (value === undefined) continue;
@@ -1131,7 +1140,7 @@ async function main(): Promise<number> {
     try {
       if (command === "ensure") return await ensure(pr, head);
       if (command === "rollback") return await rollback(pr, head);
-      return await release(pr, head);
+      return await release(pr, head, expectedTransition);
     } finally {
       if (heartbeat !== null) clearInterval(heartbeat);
       remoteLock?.release();

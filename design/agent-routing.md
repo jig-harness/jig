@@ -13,7 +13,7 @@ how to choose exists
 the tiers, the effort rule, the judgment-tier admission test), but it is
 prose a person applies by hand. With this built, the implementer of every
 item picked up gets one [route](../GLOSSARY.md): an agent, a
-[model tier](../GLOSSARY.md) and an effort, derived from facts the
+[complexity tier](../GLOSSARY.md) and an effort, derived from facts the
 repository already states by rules it declares, with the reason, the source
 and whether it was applied written on the pull request, where the review
 loop's report joins it to how the work went; and a person's choice always
@@ -22,7 +22,9 @@ wins.
 This is the design of [plan.md](plan.md) item 31, a change to `do-item` and
 `work-batch`, with one line added to the
 [workspace launcher](../tools/launcher/README.md)'s first prompt. The
-derivation ([build order](#build-order) step 1) is built; the rest is not.
+derivation and the complexity tiers ([build order](#build-order) steps 1
+and 2) are built, and of step 4 the known-families list, `routing.family_tiers`
+and the loader's checks; the rest is not.
 It builds on the agent selection that exists
 (`plugin/skills/do-item/scripts/determine_agent.ts`) and on the
 [work type](../GLOSSARY.md) derivation of item 27
@@ -35,9 +37,11 @@ is [ADR-0009](../docs/adr/ADR-0009-routes-are-derived-by-rules-as-data.md).
 > change-area catalog's flags, the mandatory reviews of the areas the item
 > seeds and of every area their `impliedBy` closure reaches, and the
 > repository's routing rules, and never asked when it can be
-> derived. The rules are **data with defaults**: one row per work type gives
-> the base tier and effort, and a closed list of **raises** moves the effort
-> up one step each, never down and never past the highest effort. The
+> derived. The rules are **data with defaults**: the type, the size and the
+> flags a repository marks complex give one of three **complexity tiers**,
+> one row per work type gives the base effort, and a closed list of
+> **raises** moves the effort up one step each, never down and never past
+> the highest effort. The
 > **strictest value wins** on every conflict, and an item whose type cannot
 > be derived takes the strictest row. The route carries its **reason** (which
 > rule gave each part), its **source** (the rules, or the person who chose
@@ -66,15 +70,69 @@ they have today ([Left out](#left-out)).
 | Part | Values | Who takes it |
 |---|---|---|
 | `agent` | the repository's agent names, as `determine_agent.ts` prints them today | `do-item`'s delegation, as the subagent type |
-| `tier` | `execution` or `strategic` (M0's tiers, as roles) | translated to the runtime's [family alias](../GLOSSARY.md) through `routing.models` before the runtime sees it |
+| `tier` | `simple`, `standard` or `complex`, the [complexity tier](../GLOSSARY.md) | translated to the runtime's [family alias](../GLOSSARY.md) through `routing.models.<runtime>.<tier>` before the runtime sees it |
 | `effort` | `low`, `medium`, `high`, `max` | translated through `routing.efforts` where a runtime spells a level differently |
 
-Only two tiers can be routed to. An implementer writes, so the Scout tier,
-which M0 keeps read-only, is refused for it; the Judgment tier is admitted
-per decision layer with a named baseline, never by a rule that fires on
-every item of a type, so it is refused too. The tier is a role and never a
-model id: the translation table is the only place a model name appears, and
-it is configuration a check reads.
+A complexity tier says how hard the item is, not which model runs it. By
+default the simple and standard tiers map to M0's Execution tier and the
+complex tier to its Strategic tier. No tier maps the implementer to a
+family M0 places on its Scout tier (`haiku`, `luna`), by default or by
+configuration: M0 keeps that tier read-only, and the loader refuses such a
+mapping. Within an implementation, the implementer may still hand simple
+sub-steps to a Scout model, as a skill chooses its own scouts. No tier's
+default is a Judgment family (`fable`, `astra`); the loader accepts one
+where a repository configures it for a tier, and the audit reports each
+such mapping
+([ADR-0009](../docs/adr/ADR-0009-routes-are-derived-by-rules-as-data.md)). The tier is never a model id: the translation table is the
+only place a model name appears, and it is configuration a check reads.
+
+### Complexity tiers
+
+The tier comes from the item's type and size and the repository's complex
+flags, by one table kept as data in `plugin/skills/do-item/scripts/lib/routing.ts`:
+
+| The item | Tier |
+| --- | --- |
+| a `spike`, or any item carrying a label in `routing.complex_flags` | `complex`, at any size |
+| a `bug`, an `improvement` or a `feature` | `standard` up to M, `complex` from L |
+| a `task`, the mechanical type | `simple` up to L, `standard` at XL |
+| an `unknown` type | `complex`, the strictest row |
+
+The type and the size are read from the issue's
+[facets](../GLOSSARY.md), as every caller of the tracker reads them, and an
+unknown size reads as M. `routing.complex_flags` defaults to the
+sensitivity names `decide` uses (`has-migration`, `api-change`,
+`dpa-relevant`), read from the issue's labels and from the flags of the
+catalog's areas it seeds. A configured flag **sets** the tier: an item that
+carries one is complex whatever its type and size. That is a rule of the
+table, the same for every item, not a raise: a raise still moves only the
+effort.
+
+Each tier maps to a model per runtime, the account's vendor choosing the
+runtime, with Claude's and OpenAI's families known out of the box:
+
+| Tier | `claude-code` | `codex` |
+| --- | --- | --- |
+| `simple` | `sonnet` | `terra` |
+| `standard` | `sonnet` | `terra` |
+| `complex` | `opus` | `sol` |
+
+A repository overrides any cell in `routing.models.<runtime>.<tier>`. The
+family aliases and the model each names today are kept in one place,
+`plugin/shared/model-families.ts`, which a release updates: Claude's
+`haiku`, `sonnet`, `opus` and `fable`; OpenAI's `luna`, `terra`, `sol`
+and `astra` (`gpt-6-astra`).
+A Codex pass with no model of its own runs the standard tier's Codex model
+rather than Codex's own default.
+
+`execution` and `strategic` are accepted as aliases of `standard` and
+`complex`, in `routing` and in `drive.pass_model`.
+
+No model is asked for the tier, and no tier or model is written on the
+issue. Where a size or a type is missing, the
+[steward](../GLOSSARY.md) of [item 44](line-at-capacity.md#the-steward-every-20-minutes)
+may fill in the facet, with a comment saying why, and the rules then derive
+the tier from it as from any other.
 
 ### Derivation
 
@@ -91,9 +149,12 @@ implementer ran ([the record](#where-it-is-read)):
    label map, then the title keywords, then the default. Routing changes
    nothing here; a second way to pick the agent would disagree with the
    first ([work-types.md § Left out](work-types.md#left-out)).
-2. **The base**, from the work type's row of `routing.types` (defaults
-   below). `unknown` takes the strictest row computed field by field: the
-   highest tier and the highest effort any row names. An unattended run
+2. **The base**: the tier from the [complexity table](#complexity-tiers),
+   replaced by an explicit `routing.types.<type>.tier` when present,
+   with complex flags still forcing complex,
+   and the effort from the work type's row of `routing.types` (defaults
+   below). `unknown` takes the strictest row: the complex tier and the
+   highest effort any row names. An unattended run
    stops on an `unknown` item anyway ([work-types.md](work-types.md#the-depth-table)),
    so that route is taken only in a session where a person can override it.
 3. **The raises**, each class moving the effort up one step at most once,
@@ -122,10 +183,12 @@ implementer ran ([the record](#where-it-is-read)):
    - the human-in-the-loop label, `issue_tracker.labels.hitl`, counted
      once even where the catalog also lists it as a flag.
 4. **The cap.** An effort raised past `max` stays at `max`; the tier never
-   moves on a raise. M0 says to choose the cheaper tier and let it
-   escalate, and that an Execution task which keeps needing the maximum
-   effort belongs on the Strategic tier: that is a row a person moves with
-   the records showing it, not a step the derivation takes per item.
+   moves on a raise, only on the complexity table's own rows. M0 says to
+   choose the cheaper tier and let it escalate, and that an Execution task
+   which keeps needing the maximum effort belongs on the Strategic tier:
+   that is a row a person moves with the records showing it, or a flag a
+   person adds to `routing.complex_flags`, not a step the derivation takes
+   per item.
 5. **The pinned agent.** An agent whose definition pins a model or an
    effort (Claude Code: `model:` other than `inherit`, or `effort:`, in the
    agent's definition) keeps its pin against the rules: the repository
@@ -158,25 +221,24 @@ implementer ran ([the record](#where-it-is-read)):
 
 Nothing lowers below the type's row: a type lowers depth only where nothing
 else raises it, the same rule as [work types](work-types.md#the-rule). The
-`reasons` list names which rule gave each part (`tier: execution (type
-feature)`, `effort: high (flag has-migration raised medium)`), so a person
+`reasons` list names which rule gave each part (`tier: standard (type
+feature, size M)`, `tier: complex (flag has-migration)`, `effort: high (flag has-migration raised medium)`), so a person
 reading a route record can see what to change.
 
-The default rows, from M0's ladder (the *what* of a bug, an improvement or a
-task is known and the job is to execute it; a feature is longer-horizon
-work; a spike's deliverable is a decision, which is novel reasoning):
+The default effort rows, from M0's ladder (the *what* of a bug, an
+improvement or a task is known and the job is to execute it; a feature is
+longer-horizon work; a spike's deliverable is a decision, which is novel
+reasoning):
 
 | Field | `bug` | `feature` | `improvement` | `task` | `spike` |
 |---|---|---|---|---|---|
-| `tier` | `execution` | `execution` | `execution` | `execution` | `strategic` |
 | `effort` | `medium` | `high` | `medium` | `low` | `high` |
 
-The default translation has one row, for the runtime whose aliases
-[M0's mappings](../modules/M0-instruction-architecture/mappings.md#family-aliases-and-pins-in-claude-code)
-record: `claude-code` maps `execution` to `sonnet` and `strategic` to
-`opus`. A repository on another runtime declares that runtime's row with
-the names the runtime takes; until it does, its routes are recorded and not
-applied.
+The default translation has a row for each runtime whose families
+`plugin/shared/model-families.ts` knows, `claude-code` and `codex`, as the
+[complexity table](#complexity-tiers) gives them. A repository on another
+runtime declares that runtime's row with the names the runtime takes; until
+it does, its routes are recorded and not applied.
 
 ### Sources and overrides
 
@@ -217,11 +279,20 @@ the agent definition's pin, then the rules.
   `source: settings` for it; a field the settings leave out is derived by
   the rules. A setting that names only the agent chooses nothing about the
   model or the effort, and the rules apply to both.
+- **A dispatched pickup.** The headless `do-item` pass `jig dispatch`
+  starts carries the line `route: rules`: the session keeps the agent's
+  own model and effort, and `do-item` forwards the rules' model and effort
+  to its implementer explicitly, recording `source: rules` for each, where
+  the repository declares `routing`
+  ([line-at-capacity.md § Pickups run headless](line-at-capacity.md#pickups-run-headless)).
+  It is the forwarding [Build order](#build-order) step 5 brings to every
+  run, here ahead of it for the dispatched pass, whose session nobody
+  chose.
 - **Nobody there and no line.** The rules decide, and an unattended run
   never stops to ask for a route: the strictest value is always a safe
   answer for the work, if not the cheapest.
-- **Never on the item.** A route is not written to the issue as a label or
-  a field: labels are lasting claims on the record, and a route is a
+- **Never on the item.** A route, its tier and its model are not written
+  to the issue as a label or a field: labels are lasting claims on the record, and a route is a
   decision at pickup that the next pickup takes again from the facts as
   they stand then.
 
@@ -329,11 +400,14 @@ is policy, not an override, and the reasons name the rule that fired.
   metadata. The policy's invariant, its table and the audit's
   `model-pins-are-family-aliases` criterion say so, and the configuration
   loader is the check. One list of known families per runtime in
-  `plugin/shared/`, which M0's mappings link, records the tier M0's
-  mappings give each family (for Claude Code: `sonnet` execution, `opus`
-  strategic). The loader refuses an alias outside the list, and a
-  `routing.models` row that maps a tier to a family the list gives another
-  tier: `execution: opus` with `strategic: sonnet` would make the
+  `plugin/shared/` (`model-families.ts`), which M0's mappings link,
+  records the tier M0's mappings give each family (for Claude Code:
+  `haiku` scout, `sonnet` execution, `opus` strategic, `fable` judgment; for
+  Codex: `luna` scout, `terra` execution, `sol` strategic, `astra`
+  judgment, rows M0's mappings gain at step 4). The loader
+  refuses an alias outside the list, and a `routing.models` row in which a
+  stricter complexity tier maps to a family of a lower M0 tier than a
+  lighter one: `complex: sonnet` with `standard: opus` would make the
   strictest tier the cheaper family, the declared tier contradicting the
   model's that M0's policy rejects. A repository whose mapping
   legitimately differs (a provider whose alias resolves to another family)
@@ -341,6 +415,11 @@ is policy, not an override, and the reasons name the rule that fired.
   with a `reason`, which the loader reads in place of the list's tier for
   that family and refuses without the reason; the audit reports each one.
   A runtime with no list takes any name.
+  Independently of ordering, the loader refuses any tier mapped to a
+  Scout family, and a `family_tiers` override cannot move a Scout family
+  out of that refusal. A tier mapped to a Judgment family is accepted when
+  the repository configures it, never by default, and the audit reports
+  each one beside the model mapping.
 
 ### The audit
 
@@ -362,22 +441,43 @@ rules, the share a person chose and the share recorded and not applied.
 | Field | Type | Default | Read by |
 |---|---|---|---|
 | `routing` | mapping; `{}` accepts every default | absent: routes derived and recorded, none applied | `determine_route.ts`, do-item, work-batch |
-| `routing.types.<type>.tier` | `execution` or `strategic` | the table above | `determine_route.ts` |
+| `routing.complex_flags` | list of labels | `[has-migration, api-change, dpa-relevant]`: an item carrying one is complex at any size | `determine_route.ts` |
 | `routing.types.<type>.effort` | `low`, `medium`, `high`, `max` | the table above | `determine_route.ts` |
+| `routing.types.<type>.tier` | optional complexity tier; legacy `execution` and `strategic` mean `standard` and `complex` | absent: derive from type and size | `determine_route.ts` |
 | `routing.raise.flags` | list of labels, or `catalog` | `catalog`: every flag the catalog's areas declare | `determine_route.ts` |
 | `routing.raise.sizes` | list of labels | the known sizes (`work_batch.sizes`, else the batchable sizes, always with `review.taxonomy.sizes`) outside `batch_sizes`; `[large]` where that leaves none | `determine_route.ts` |
 | `routing.raise.reviews` | `true`, `false` | `true` | `determine_route.ts` |
-| `routing.models.<runtime>.<tier>` | the runtime's family alias | `claude-code: {execution: sonnet, strategic: opus}` | `determine_route.ts`, the configuration loader |
+| `routing.models.<runtime>.<tier>` | the runtime's family alias, per complexity tier | `claude-code: {simple: sonnet, standard: sonnet, complex: opus}`, `codex: {simple: terra, standard: terra, complex: sol}` | `determine_route.ts`, the configuration loader, `drive-pr`, the dispatcher |
 | `routing.efforts.<runtime>.<effort>` | the runtime's own level name | unchanged | `determine_route.ts` |
 | `routing.family_tiers.<runtime>.<family>` | `{tier, reason}` | none: the tier the known-families list gives | the configuration loader, the audit |
+
+**Existing type overrides keep their precedence.** An explicit
+`routing.types.<type>.tier` replaces the type/size table's initial tier,
+then complex flags may force complex. The existing raise rules still
+raise only effort. Its effort override is retained independently. The
+loader normalizes legacy tier
+values and legacy model keys (`execution` to `standard`, `strategic` to
+`complex`). If a runtime row declares both an old and new key, identical
+values coalesce and different values are refused with both field paths;
+neither silently wins. Before filling runtime defaults, the loader uses a
+legacy `execution` model as the fallback for both `simple` and `standard`;
+an explicit `simple` model replaces only that fallback. A legacy model that
+names a Scout family is refused like any other Scout mapping. This applies to
+custom runtimes too, even when they have no built-in defaults. Without a
+legacy `execution` key, an omitted `simple` uses its runtime default.
+This preserves an existing `bug: {tier: strategic, effort: high}`
+as complex/high even for a small bug. The route records the explicit
+override as its reason.
 
 Loading the configuration refuses, with the field at fault: a type row for
 a type outside the effective type set, or a type in the set with no
 complete row where the repository renamed it (the
 [work-types rule](work-types.md#configuration)); a tier or effort outside
-the closed lists; an alias outside the known families for a runtime that
-has them; a `routing.models` row mapping a tier to a family whose tier
-(from the list, or from `routing.family_tiers`) is another; a
+the closed lists (`execution` and `strategic` read as `standard` and
+`complex`); an alias outside the known families for a runtime that
+has them; a `routing.models` row in which a stricter complexity tier maps
+to a family of a lower M0 tier (from the list, or from
+`routing.family_tiers`) than a lighter one; a
 `family_tiers` entry with no reason; and, where the repository has a label taxonomy
 (`issue_tracker.taxonomy`), a raise list the repository declares naming a
 label the taxonomy does not declare. A default list is never refused: a
@@ -393,16 +493,33 @@ refused `do_item` section does today; it is never read as absent.
    [CONFIGURATION.md](../plugin/CONFIGURATION.md); `do-item` prints the route
    and changes nothing yet. Waits on item 27's first step, the type
    derivation.
-2. **The record.** `plugin/shared/route.ts` writes and parses the `## Route`
+2. **The complexity tiers**, item 44's step 9
+   ([#640](https://github.com/jig-harness/jig/issues/640)): the tier table
+   with type and size read from the issue's facets, `routing.complex_flags`,
+   `routing.models.<runtime>.<tier>` with the `claude-code` and `codex`
+   defaults, `plugin/shared/model-families.ts`, `determine_route.ts`
+   printing the tier and what decided it, a Codex pass with no model of
+   its own on the standard tier's model, and the old tier names read as
+   the new ones. Done when an S bug routes standard and the same bug
+   labelled `has-migration` complex, a Codex account runs a complex item
+   on `sol` and a standard one on `terra` with no `routing.models` set,
+   and a repository that still names `execution` and `strategic` routes
+   as before. Migration fixtures cover a small task with
+   `claude-code: {execution: opus, strategic: opus}` retaining `opus` as
+   simple, a custom runtime with only legacy model keys retaining its
+   execution model for simple and standard, an explicit simple model
+   overriding the compatibility fallback, and conflicting legacy/new
+   keys being refused.
+3. **The record.** `plugin/shared/route.ts` writes and parses the `## Route`
    section, proposed, requested and effective values apart; `do-item` writes it with
    `applied: no`; the loop-cost report reads the description and prints
    the route, grouped by the effective one. Recording comes before any
    forwarding, so the first routes applied are already measured.
-3. **M0's declaration point.** The policy's invariant and table, the
+4. **M0's declaration point.** The policy's invariant and table, the
    criterion's statement, the known-families list with each family's tier
    in `plugin/shared/`, `routing.family_tiers`, and the loader's alias and
    tier checks; M0's mappings link the list.
-4. **`do-item` forwards.** Behind a declared `routing` section: the
+5. **`do-item` forwards.** Behind a declared `routing` section: the
    delegation passes the model and effort where the runtime's tool takes
    them, field by field, records `applied`, and records the effective
    value the runtime reports after the implementer ran; the definition
@@ -424,7 +541,7 @@ refused `do_item` section does today; it is never read as absent.
    runtime reports nothing for, recorded `unknown`; and each of these
    records written by `route.ts` and parsed back to the same values and
    markers, a reported value holding a delimiter recorded `unknown`.
-5. **`work-batch` and the audit criterion.**
+6. **`work-batch` and the audit criterion.**
 
 ## Left out
 

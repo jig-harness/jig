@@ -125,6 +125,15 @@ describe("stopPickup", () => {
     expect(r.inheritsEdits).toBe(false);
   });
 
+  it("names an infrastructure failure that persisted, and asks for no repair", async () => {
+    const r = await pickupAfter([stop("23")]);
+    expect(r.notice).toStartWith(
+      "RE-ARMED AFTER AN INFRASTRUCTURE FAILURE PERSISTED",
+    );
+    expect(r.notice).toContain("Nothing in the code needs repair");
+    expect(r.inheritsEdits).toBe(false);
+  });
+
   it("says nothing after any other stop, or the last of several", async () => {
     for (const events of [
       [],

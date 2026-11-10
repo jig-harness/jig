@@ -59,6 +59,11 @@ if (args[0] === "api" && args[1] === "graphql" && args.some((a) => a.includes("q
   if (answer === null) { process.stderr.write("gh: HTTP 502\\n"); process.exit(1); }
   out(answer);
 }
+if (args[0] === "api" && args[1] === "graphql" && args.some((a) => a.includes("query DispatchBoard"))) {
+  // The board read's query: board.json's answer, failing while board-fail exists or when no test wrote one.
+  if (fs.existsSync(F + "/board-fail") || !fs.existsSync(F + "/board.json")) { process.stderr.write("gh: HTTP 502\\n"); process.exit(1); }
+  out(fs.readFileSync(F + "/board.json", "utf8"));
+}
 if (args[0] === "repo" && args[1] === "view" && args.includes("nameWithOwner,defaultBranchRef"))
   // A checkout named "other" is another repository; every other is ${SLUG}.
   out({ nameWithOwner: process.cwd().endsWith("/other") ? "example-org/other-repo" : "${SLUG}", defaultBranchRef: { name: "main" } });

@@ -880,6 +880,15 @@ make, use the entry's term instead.
   directories, letting several agents work different branches of the same repo
   in parallel on one machine. *Avoid*: workspace for the checkout itself; a
   workspace is what a *workspace provider* opens around a worktree.
+- **Load admission** — letting one more heavy run start on a machine only
+  while it has room for it: the predicted load (the recent load average plus
+  the cost of runs started too recently to show in it) stays under a share
+  of the cores and the available memory above a floor, and the first run is
+  always admitted. M12's resource lock admits runs into its *slots* this way
+  ([M12](modules/M12-parallel-agent-ergonomics/README.md)).
+- **Slot** (of a resource lock) — one of the numbered locks a run may hold
+  for a named resource lock; the first is the lock's own name. A run holds
+  one; an *exclusive* holder holds all of them.
 - **Worktree namespace** — the data namespace (a database schema, a
   database, a key prefix) a *worktree* derives from its own identity, so
   worktrees sharing one database server never share tables. Created with an
@@ -1310,6 +1319,46 @@ make, use the entry's term instead.
   `autonomy.park_classes`, and a *PR drive loop* may park only under one of
   them (for a review thread, the class the review arbiter ruled for it)
   ([configuration](plugin/CONFIGURATION.md#autonomy)).
+- **Structured answer, free answer** — the two forms of a person's answer
+  to a *framed decision*. A **structured answer** is a comment whose whole
+  answer is `approve`, which chooses the recommended option, or
+  `choose <option>`, which chooses
+  the option by its name; the pass is handed that option as the decision
+  record states it, with any **note** the person added on a `note <key>:`
+  line, which binds the pass. A **free answer** is
+  anything else, in the person's own words, which a pass interprets
+  ([design](design/structured-answers.md)).
+- **Decision model** — the shape of a decision for a person that a *park*
+  and a decision sheet share: a **call** is one question with options that
+  exclude each other. A park is one call; a sheet is one or more calls, with their
+  context ([design](design/structured-answers.md#one-decision-model)).
+- **Pick (of an option)** — the choice of an option on a card, made with a
+  key or a tap, kept in the browser and undoable. Nothing reads a pick until
+  the person commits it as an answer
+  ([design](design/structured-answers.md#picking-an-answer)).
+- **Decision digest, stale answer** — a short hash of a *framed decision*,
+  stored when the decision is parked and published in the drive
+  ledger. An answer line may end with it, and
+  every line Jig offers to copy does; a structured answer naming a digest
+  that is no longer the park's is a **stale answer** and does not count, so
+  an approval of an earlier framing never settles the one that replaced it
+  ([design](design/structured-answers.md#binding-an-answer-to-its-framing)).
+- **Resolution receipt** — the record a re-arm writes into the *drive
+  ledger* when it unparks an item: the park's key and digest, the answer it
+  consumed, the outcome and the times. The dispatcher's tick counts a park
+  as answered from its receipt, and a park that left the ledger with none as
+  removed ([design](design/structured-answers.md#showing-what-was-decided)).
+- **Disputed answer** — a parked item whose people's latest answers are not
+  all the same option with the same notes (two different choices, the same
+  choice with differing notes, or a choice beside another person's free
+  answer; answers that are all free are not disputed, the item is answered
+  and they are handed to the pass). It is not answered and waits, which sets it apart
+  from a *stale answer* (naming an earlier framing) and from an item merely
+  waiting for its first answer
+  ([design](design/structured-answers.md#several-answers-to-one-item)).
+- **Attested class** — a *decision class* whose answers count only with
+  proof that a person, not a pass posting under their login, gave them
+  ([design](design/structured-answers.md#who-may-answer)).
 - **Autonomy level** — how far an agent may decide without asking a person:
   `attended`, the default, `unattended`, or `wide`, which also takes
   *provisional decisions*. A repository sets it and caps it with its
@@ -1547,13 +1596,21 @@ make, use the entry's term instead.
   family it declares, not from how important its job sounds. See the
   [model routing policy](modules/M0-instruction-architecture/reference/model-routing-policy.md).
   *Avoid*: model level (a *maturity level* is something else).
-- **Route** — the agent, *model tier* and reasoning effort chosen for the
+- **Route** — the agent, *complexity tier* and reasoning effort chosen for the
   implementer of one piece of work at its pickup; derived from the item's
   *work type*, size, *flag labels* and the *change-area catalog*'s flags and
   mandatory reviews, by rules a repository keeps as data, with the rule behind
   each part, the source (the rules, or the person who chose instead, whose
   choice always wins) and whether it was applied recorded on the pull request
   ([design](design/agent-routing.md)).
+- **Complexity tier** — how hard one piece of work is, for its *route*:
+  simple, standard or complex, derived from its *work type*, its size and
+  the flags a repository marks complex at any size (a migration, an API
+  change). Each tier maps to a model per agent tool, by default Sonnet or
+  OpenAI's Terra for simple and standard work and Opus or Sol for complex
+  work. Never asked of a model and never written on the item. Not a *model
+  tier*, which is a model's cost class
+  ([design](design/agent-routing.md#complexity-tiers)).
 - **Judgment tier** — the narrowest *model tier*: the top reasoning model,
   admitted only for a *decision layer* that is judgment-only, low-volume and
   high-leverage, and that a mechanical rule already tried and failed to
@@ -2047,7 +2104,8 @@ make, use the entry's term instead.
   (assigns it to itself and moves it to the in-progress state, refusing an
   item someone already holds), which keeps an item from being picked up twice
   in all but a race between two claims, which the dispatcher reports.
-- **Stalled pickup** — an item the *factory identity* claimed (in its
+- **Stalled pickup** — an item the *factory identity* or a pickup for a
+  *served person* claimed (in its
   in-progress state) that has had no running session for longer than the
   repository's `dispatch.stalled_after`. The *dispatcher* reports it and
   never starts it again: a second session would be a second implementer on
@@ -2077,8 +2135,9 @@ make, use the entry's term instead.
   its own, so any session on any machine can be the operator. *Avoid:*
   orchestrator, lead agent.
 - **Hub** — the page a person watches and steers the execution line from,
-  and the `jig hub` process that serves it: what waits on the person, a
-  board of every *piece of work*, a page per piece of work with its thread,
+  and the `jig hub` process that serves it: what is safe to merge, what
+  waits on the person, what runs and what is queued, each *piece of work*
+  on a card, a page per piece of work with its thread,
   and a chat with the *operator* that explains and drafts and never sends.
   Each machine serves its own. A host's hub answers reads only, on its
   loopback address; a laptop's reads each host over *SSH* through the
@@ -2094,7 +2153,19 @@ make, use the entry's term instead.
   item is one, and so is an item with no pull request yet. Each of its
   stations has an *address*. See
   [design/hub.md](design/hub.md#a-piece-of-work-and-its-views).
-- **Private-network front** — an optional layer that publishes a
+- **QR code** (quick response code) — a square barcode a phone camera can
+  scan to open an address. The *hub*'s planned sharing path encodes its
+  private, token-free address; scanning transfers the address and does not
+  authenticate the reader.
+- **Secure context** — a page environment the browser considers trustworthy,
+  normally because it was delivered over an encrypted web connection or
+  from the browser's own loopback address. Browser APIs such as the
+  clipboard require it, and may also require permission. An unencrypted web connection to another
+  machine's private address does not qualify just because the network is
+  encrypted. A phone reads
+  the *hub* through its encrypted private-network front for this reason. See
+  [MDN's secure-context definition](https://developer.mozilla.org/en-US/docs/Web/Security/Defenses/Secure_Contexts).
+- **Private-network front** — a layer that publishes a
   machine's *hub* from its loopback address to a private network, with a
   certificate and the viewer's identity, so a phone can open the page;
   called a front for short. Tailscale Serve is its first implementation: it
@@ -2128,7 +2199,8 @@ make, use the entry's term instead.
   [design/hub.md](design/hub.md#the-source-feed-from-a-host-to-a-hub).
 - **Views API** — the protocol between the *hub*'s page and the hub that
   serves it: a `hello` that names the protocol version, the viewer and each
-  source's state; the reads that draw the Inbox, the board and each
+  source's state; the reads that draw each view, Needs you and Running
+  among them, and each
   *piece of work*'s page; and a stream of changes the page resumes from its
   last cursor. Every answer is a value or a coded failure
   ([ADR-0012](docs/adr/ADR-0012-failures-as-values.md)). The page talks to
@@ -2213,6 +2285,15 @@ make, use the entry's term instead.
   and further requirements possible. Update next identifies the next branch
   to update, with any known approval need shown.
   Planned: [ROADMAP.md](ROADMAP.md) item 36.
+- **Command palette** — the search box a page opens over its content from a
+  key, where typing narrows a list of places to go and commands to copy and
+  Enter runs the chosen one. The *dispatcher*'s dashboard opens it on Ctrl-K (⌘K); it
+  lists the views and the cards and commands on Merge, Needs you, Running and
+  Queue.
+- **Roving focus** — keyboard focus kept on one item of a group at a time:
+  Tab enters the group at that item and leaves it at the next control, while
+  other keys (j and k on the dashboard) move the focus to a neighbour. The
+  *dispatcher*'s dashboard uses it over a view's cards.
 - **Ready episode** — one unbroken period a pull request spends in the
   *dispatch board*'s Ready to merge column at one verified head. A pull
   request that leaves (a check fails, a thread opens, a hold is added) and
@@ -2267,6 +2348,36 @@ make, use the entry's term instead.
   record: the wall's observation time and reset, and whether the session's
   last record is still the wall. A new observation time starts a new
   episode; the *nudge* is sent at most once per episode.
+- **Load factor** — how full the *dispatcher*'s host is, as the fill of
+  its fullest gauge against that gauge's limit: memory, the processors, the
+  disk, the queue for the machine-wide test lock, the forge's rate limit
+  and the accounts' free *slots*. A *tick* starts a session only while every
+  gauge stays under its limit with that session counted, and a new pickup
+  never takes the last unit of room, so the drives that turn earlier work
+  into merges keep running. It reports what it would hold before a person
+  turns the limit on ([design](design/line-at-capacity.md#the-hosts-load-factor)).
+- **Served person** — a person a *dispatcher*'s host works for, named with
+  their forge logins and tracker identities in the host's own dispatch
+  file. An open item a person with write access assigned to them, and each
+  unassigned item under an epic assigned to them, is ranked and picked up
+  beside the *factory identity*'s, and the pickup keeps them as the
+  item's assignee ([design](design/line-at-capacity.md#serving-named-people)).
+- **Steward** — the agent pass a *dispatcher*'s host starts every 20
+  minutes, when its input changed, to read what is stopped and waiting on
+  the line and propose what to do about it: re-arm a drive once when its
+  logs show a passing cause, frame each need that stays a person's with
+  its *act*, fill in a missing priority, size or type, and order the queue.
+  It writes records from a closed list, and the next *tick* carries them
+  out under its own guards. It never merges, answers a parked question,
+  re-arms a drive a person stopped or held, writes code or sends a session free
+  text ([design](design/line-at-capacity.md#the-steward-every-20-minutes)).
+  *Avoid:* orchestrator.
+- **Act (of a need)** — the one thing a person does to settle something
+  that waits on them, from a closed list: Merge, Decide, Authorize, Reply,
+  Do or Investigate. Each need on the *dispatch board* opens with its act,
+  derived from its park's class, then the ask and the recommended option
+  with what it changes and costs
+  ([design](design/line-at-capacity.md#what-each-need-asks-of-a-person)).
 - **Kickoff** — the first prompt an agent is given in a new workspace,
   usually the pickup skill and the issue key. The
   [Herdr workspace tool](tools/herdr/README.md) sends it once per piece of

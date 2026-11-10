@@ -9,6 +9,7 @@
  * object; and nothing is written to the forge.
  */
 import { afterEach, describe, expect, it } from "bun:test";
+import { writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import {
@@ -33,6 +34,7 @@ import type { AskAnswer } from "../lib/answer.ts";
 import {
   type AskWorld,
   askWorld,
+  boardAnswer,
   comment,
   pullDoc,
   REPO,
@@ -331,6 +333,7 @@ describe("jig ask", () => {
       w.state,
     );
 
+    writeFileSync(join(w.dir, "board.json"), boardAnswer(9, "a".repeat(40)));
     const { r, answer } = await askJson(w, [`drive@${REPO}#9`]);
     expectSpawnExit(r, 0);
     expect(answer.holder).toBe("none");
@@ -343,6 +346,10 @@ describe("jig ask", () => {
       next: { person: "repository maintainer", act: "merge the pull request" },
     });
     expect(answer.waitsOn).toMatchObject({ person: "merge" });
+    // The predicate's lane and the merge command pinned to the verified head.
+    expect(JSON.stringify(answer.waitsOn)).toContain(
+      `merge-now: converged, witnessed and mergeable at the verified head; gh pr merge 9 --repo ${REPO} --match-head-commit ${"a".repeat(40)} --squash`,
+    );
   });
 
   it("answers from a launch claim's end where no outcome log holds the launch", async () => {
@@ -518,5 +525,109 @@ describe("jig ask", () => {
     expect(answer.sources.records).toContainEqual(
       expect.objectContaining({ record: "drive-ledger", read: false }),
     );
+  });
+});
+
+it("honours a live dispatch hold from default-branch configuration away from a checkout", async () => {
+  const w = world();
+  const head = "a".repeat(40);
+  w.api(`repos/${REPO}/pulls/9`, pullDoc(9));
+  w.api(`repos/${REPO}/issues/9/comments`, [
+    comment(901, ledgerBody(stoppedLedger(9, 0, { verifiedSha: head }))),
+  ]);
+  const board = JSON.parse(boardAnswer(9, head));
+  board.data.repository.defaultBranchRef.target.file = {
+    object: {
+      text: "dispatch:\n  labels:\n    enabled: true\n",
+      isTruncated: false,
+    },
+  };
+  board.data.repository.pr9.labels.nodes = [{ name: "jig:hold" }];
+  writeFileSync(join(w.dir, "board.json"), JSON.stringify(board));
+  const r = await w.ask([`drive@${REPO}#9`, "--json"], w.away);
+  expectSpawnExit(r, 0);
+  const answer = JSON.parse(r.stdout);
+  expect(answer.waitsOn.person).toBe("remove the label");
+});
+
+it("waits behind the repository's first update-next pull request", async () => {
+  const w = world();
+  const head = "a".repeat(40);
+  w.api(`repos/${REPO}/pulls/9`, pullDoc(9));
+  w.api(`repos/${REPO}/pulls`, [{ number: 8 }, { number: 9 }]);
+  for (const n of [8, 9])
+    w.api(`repos/${REPO}/issues/${n}/comments`, [
+      comment(900 + n, ledgerBody(stoppedLedger(n, 0, { verifiedSha: head }))),
+    ]);
+  const board = JSON.parse(boardAnswer(9, head));
+  board.data.repository.pr9.mergeStateStatus = "BEHIND";
+  board.data.repository.pr8 = { ...board.data.repository.pr9, number: 8 };
+  writeFileSync(join(w.dir, "board.json"), JSON.stringify(board));
+  const { r, answer } = await askJson(w, [`drive@${REPO}#9`]);
+  expectSpawnExit(r, 0);
+  expect(answer.waitsOn).toMatchObject({
+    waiting: expect.stringContaining("after #8"),
+  });
+});
+
+it("excludes unlabelled peers from a labelled-only update queue", async () => {
+  const w = world();
+  const head = "a".repeat(40);
+  w.api(`repos/${REPO}/pulls/9`, pullDoc(9));
+  w.api(`repos/${REPO}/pulls`, [
+    { number: 8, labels: [] },
+    { number: 9, labels: [{ name: "team:converged" }] },
+  ]);
+  // No comments endpoint for #8: its ledger must never be read.
+  for (const n of [9])
+    w.api(`repos/${REPO}/issues/${n}/comments`, [
+      comment(900 + n, ledgerBody(stoppedLedger(n, 0, { verifiedSha: head }))),
+    ]);
+  const board = JSON.parse(boardAnswer(9, head));
+  board.data.repository.defaultBranchRef.target.file = {
+    object: {
+      text: "dispatch:\n  labels:\n    enabled: true\n    only_labeled: true\n    prefix: 'team:'\n",
+      isTruncated: false,
+    },
+  };
+  board.data.repository.pr9.mergeStateStatus = "BEHIND";
+  board.data.repository.pr8 = { ...board.data.repository.pr9, number: 8 };
+  board.data.repository.pr8.reviewThreads = {
+    nodes: [],
+    pageInfo: { hasNextPage: true },
+  };
+  board.data.repository.pr9.labels = {
+    nodes: [{ name: "team:converged" }],
+    pageInfo: { hasNextPage: false },
+  };
+  writeFileSync(join(w.dir, "board.json"), JSON.stringify(board));
+  const { r, answer } = await askJson(w, [`drive@${REPO}#9`]);
+  expectSpawnExit(r, 0);
+  expect(answer.waitsOn).toMatchObject({ person: "update the branch" });
+  // A peer may leave the label set between the listing and the facts query.
+  // Its unrelated partial connections must not poison the remaining queue.
+  w.api(`repos/${REPO}/pulls`, [
+    { number: 8, labels: [{ name: "team:converged" }] },
+    { number: 9, labels: [{ name: "team:converged" }] },
+  ]);
+  w.api(`repos/${REPO}/issues/8/comments`, [
+    comment(908, ledgerBody(stoppedLedger(8, 0, { verifiedSha: head }))),
+  ]);
+  const changed = await askJson(w, [`drive@${REPO}#9`]);
+  expectSpawnExit(changed.r, 0);
+  expect(changed.answer.waitsOn).toMatchObject({ person: "update the branch" });
+  board.data.repository.pr8.labels.pageInfo.hasNextPage = true;
+  writeFileSync(join(w.dir, "board.json"), JSON.stringify(board));
+  const incompleteLabels = await askJson(w, [`drive@${REPO}#9`]);
+  expectSpawnExit(incompleteLabels.r, 0);
+  expect(incompleteLabels.answer.waitsOn).toMatchObject({
+    waiting: expect.stringContaining("facts are partial"),
+  });
+  // Unknown label scope cannot certify that a peer is outside the queue.
+  w.api(`repos/${REPO}/pulls`, [{ number: 8 }, { number: 9 }]);
+  const unread = await askJson(w, [`drive@${REPO}#9`]);
+  expectSpawnExit(unread.r, 0);
+  expect(unread.answer.waitsOn).toMatchObject({
+    waiting: expect.stringContaining("label scope did not read"),
   });
 });

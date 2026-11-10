@@ -96,6 +96,8 @@ export function roundFingerprint(
   if (localSource !== "git") return null;
   const threadKeys = work?.unresolvedThreadKeys;
   const summaryKeys = work?.summaryUnaddressedKeys;
+  const threadVersions = work?.unresolvedThreadVersions;
+  if (!Array.isArray(threadVersions)) return null;
   if (!Array.isArray(threadKeys) || !Array.isArray(summaryKeys)) return null;
   const parkedKeys = work?.parkedKeys;
   // Required, not optional, same as threadKeys/summaryKeys above: parking is
@@ -113,6 +115,7 @@ export function roundFingerprint(
     local,
     localSource,
     threadKeys,
+    threadVersions,
     summaryKeys,
     parkedKeys,
     // The totals ride along as evidence for the printed report, and because a
@@ -281,6 +284,9 @@ export const TAKEN_OVER_EXIT = driverOnlyExitCode("TAKEN_OVER");
 
 /** The converged head's CI still fails once the CI-repair passes are spent. */
 export const CI_REPAIR_SPENT_EXIT = driverOnlyExitCode("CI_REPAIR_SPENT");
+
+/** Every failing check failed on the infrastructure, and its re-runs and head moves are spent. */
+export const CI_INFRA_PERSISTED_EXIT = driverOnlyExitCode("CI_INFRA_PERSISTED");
 
 /**
  * The result of one `runRepairPass` call, kept apart from a raw process exit

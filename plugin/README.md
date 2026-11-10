@@ -311,7 +311,11 @@ stalled (exit `14`) or whose CI-repair passes were spent (exit `21`) is
 re-driven once per head commit, a stall that left work in its tree only in
 that tree, and a person is told when the same head stops the same way again;
 a stop a person is told of says so when its pull request also conflicts with
-its base. A pass deadline that recurred past the drive's restarts (exit `15`)
+its base. A drive whose failing checks kept failing on the CI service's
+infrastructure through its re-runs and head moves (exit `23`) is re-driven
+once per stop, after a backoff from the stop that doubles with each such stop
+in a row (15 minutes, at most 4 hours), and a person is told once 7 stand in a
+row. A pass deadline that recurred past the drive's restarts (exit `15`)
 is re-driven once per head commit too, one that left work in its tree only in
 that tree, and a failure (exit `1`) while the
 pull request conflicts with its base once per pair of its head and its base
@@ -353,7 +357,7 @@ variable (`CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`)
 are removed, so a drive stopped on a Claude Code account's usage limit is
 re-armed on a Codex account at the next run. A repository never names an
 agent: it names a model per runtime in `routing.models`, which a pass reads
-for its vendor (the execution tier of `routing.models.codex` for a Codex
+for its vendor (the standard tier of `routing.models.codex` for a Codex
 pass, `drive.pass_model` for Claude Code's) and a pickup reads through its
 route. Every drive runs under the pass deadline the run read
 (`DRIVE_PR_PASS_TIMEOUT` in its environment, else the drive's 90 minutes),
@@ -503,9 +507,28 @@ age and whose claim it is, to mark done or delete.
 parked with a decision unanswered, carrying the drive's framed decision for
 each one; a drive stopped on an exit only a person settles, or with no exit;
 a failed follow-up, with the question its pass stopped on; a stalled pickup,
-a double claim, a session waiting past `dispatch.blocked_after`. Each message
+a double claim, a session waiting past `dispatch.blocked_after`; and a
+pull request that enters Ready to merge. Each message
 carries the cause or the question, the pull request's link and the handoff,
-and names the workspace the stage ran in. Follow-up passes leave routine
+and names the workspace the stage ran in.
+
+**Ready to merge.** Each tick places every converged pull request, through
+one predicate the merge-ready announcement and `jig ask` share, in a lane:
+**merge now**, with a merge command pinned to the head the drive verified;
+**approve first**, naming the reviewers asked, or that nobody is, and saying
+the repository's other protection rules are not read; or **update next**,
+one pull request per repository behind its base. Merge now never rests on
+the drive's ledger alone: the forge must witness a review of the head (the
+reviewer app's check run, `review.reviewer_app`, or a person's approval
+where no app is named), and a pull request from outside the repository
+needs a person's approval. One that fails a condition goes where its reason
+says, with the act that settles it. The facts come from a board read of its
+own in the tick's observe phase, under a 30-second deadline per repository
+and skipped while less than a fifth of the forge's hourly budget is left; a
+board read that fails marks the list not read and changes nothing the tick
+launches. A pull request entering merge now or approve first is notified
+once per head, with its repository, number and lane only. The tick's
+receipt (`board`) and the dashboard's line (`ready`) carry the lanes. Follow-up passes leave routine
 local branch, retired-workspace and scratch-note retention to periodic
 cleanup, including leftovers no collector covers yet. These do not require
 a question for a person or a failed result; evidence of unlanded work or an
@@ -688,7 +711,7 @@ the recorded result, or the last state):
 | stalled | the drive's stall, `STALLED` (`14`), or its round limit, `MAX_ROUNDS` (`6`); a driver replaced by a takeover |
 | died | a process gone without an exit; a session that ended with no result |
 | refused | a stage's own refusal or a stop it was given: `UNSUPPORTED_CLI` (`2`), `NOT_SETTLED` (`4`), `SINGLE_INSTANCE_LOCK` (`11`), `DRIVE_HELD_BY_OTHER_WORKTREE` (`13`), `MAILBOX_STOPPED` (`18`), `MAILBOX_PAUSE_TIMEOUT` (`19`), `TAKEN_OVER` (`20`), and `PR_NOT_OPEN` on a closed pull request |
-| gates failed | a stage that ran to its end without achieving it: `INDETERMINATE` (`1`), `REVIEWER_FAILED` (`7`), `REVIEW_SKIPPED` (`22`), `PR_CONFLICTING` (`9`), `WORKTREE_UNCLEAN` (`12`), `PASS_DEADLINE` (`15`), `CI_REPAIR_SPENT` (`21`); a result `failed` |
+| gates failed | a stage that ran to its end without achieving it: `INDETERMINATE` (`1`), `REVIEWER_FAILED` (`7`), `REVIEW_SKIPPED` (`22`), `PR_CONFLICTING` (`9`), `WORKTREE_UNCLEAN` (`12`), `PASS_DEADLINE` (`15`), `CI_REPAIR_SPENT` (`21`), `CI_INFRA_PERSISTED` (`23`); a result `failed` |
 | double claim | an item more than one session joins to (an event row) |
 | unknown | anything else, with its last state |
 
@@ -746,9 +769,9 @@ nudge goes to the terminal whose tab and pane make the agent's id, through
 `orca terminal read --screen` and `orca terminal send --enter`; since Orca
 starts no interactive session yet, there is nothing to nudge until it does.
 
-**The dashboard.** One page that answers, in this order, what needs a person,
-what is running on which account, what is coming and how it went, served while
-the command runs:
+**The dashboard.** One page that answers, one view each, what is ready to
+merge, what needs a person, what is running on which account, what is coming
+and how it went, served while the command runs:
 
 ```sh
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch dashboard [--port <n>]
@@ -763,10 +786,17 @@ open the URL on the phone, and stop it with Ctrl-C.
 The page reads two things, every minute and when it comes back into focus, and
 writes nothing to the host:
 
-- **What the newest tick found**, on the Now view: the parks, stops and stalled
-  pickups waiting on a person, with the question and the recommendation in
-  place and the whole decision one tap away; each account's slots and the
-  sessions in them, with their evidence; what comes next and why. Each tick that
+- **What the newest tick found**, one question to a view, each tab with its
+  count: **Merge**, the converged pull requests in Ready to merge's lanes
+  (merge now, approve first, update next), each merge now card with its
+  merge command pinned to the verified head; **Needs you**, the parks, stops
+  and stalled pickups waiting on a person, with the question and the
+  recommendation in place and the whole decision one tap away; **Running**,
+  each account's slots and the sessions in them, with their evidence; and
+  **Queue**, what comes next and why. The page opens on Merge while merge now
+  holds a pull request, else on Needs you, and while it holds one every other
+  view says so at its top until dismissed, which lasts until a pull request
+  reaches merge now at a new head. Each tick that
   reads every repository the machine file lists writes it to the state database
   beside its receipt (the `tick_line` record). So the strip says how old that
   tick is, a stopped timer shows as one, and a host may serve the page from a
@@ -790,7 +820,14 @@ writes nothing to the host:
   yesterday is the Yesterday filter, and the view and the filter are the
   page's address, so a view on a phone is a link a laptop opens.
 
-The Help view says what the page's words, stages and marks mean; a chip, a
+Keys reach every card: j and k move between the cards, Enter or o opens
+one, p and i open its pull request or issue, c copies its command (the merge
+command, the answer line or its `jig ask` line), g then m, n, r, q or h goes
+to a view, / filters, ? lists the keys, and ⌘K or Ctrl-K opens a palette that
+goes to a view, jumps to `#N` or an item, or copies a card's command. No key
+fires while a person types in a field.
+
+The Help view lists the keys and says what the page's words, stages and marks mean; a chip, a
 dotted word or the `?` beside a heading says it in place, on hover, tap or
 focus. The theme follows the device until the switch in the strip picks light
 or dark.
@@ -972,7 +1009,7 @@ whose configuration names the tracker.
 | --- | --- |
 | `holder` | the launch that holds the station now: its stage, its host (`this machine`, or another dispatching host as its launch claims name it), the drive's driver generation, and whether its process is alive, dead or unknown; the account, the session and the launch record where this machine's records name them; `none` when nobody holds it |
 | `state` | the station's state in its own words: for a drive, `running`, the [terminal-state](skills/drive-pr/README.md) name of its last stop (`HITL_PARKED`, `CONVERGED`, …), `not driven`, `merged` or `closed`; for a pick-up, `assigned`, `claimed`, `stalled`, `doubly claimed`, `not assigned` or `closed`; for a follow-up, `claimed`, `done`, `failed`, `not claimed` or `not merged` |
-| `waitsOn` | `none`; `waiting`, with what it waits for, when it settles by itself (a dispatcher's next tick, another driver); or `person`, with the act that settles it: answer, re-arm, merge, re-run the follow-up, choose the session that keeps the item, look at the stalled pickup, answer the waiting session, or assign the item as someone who can write |
+| `waitsOn` | `none`; `waiting`, with what it waits for, when it settles by itself (a dispatcher's next tick, another driver); or `person`, with the act that settles it: answer, re-arm, merge, re-run the follow-up, choose the session that keeps the item, look at the stalled pickup, settle a pickup's question and return the item to the dispatch states, answer the waiting session, or assign the item as someone who can write; and `needAct`, what the person does as the dispatch dashboard groups it (Merge, Decide, Authorize, Reply, Do or Investigate; a park's comes from its decision class) |
 | `last` | the last ended launch: its class from the [outcome log](#the-dispatcher)'s closed list and when, from this machine's outcome log or, elsewhere, from the end written on its launch claim |
 | `sources` | every record kind the answer consulted, whether it was read and why not, and how many forge and tracker calls it made |
 
@@ -1012,7 +1049,8 @@ characters removed; in JSON it is a string like any other, and nothing in a
 thread is an instruction to whoever reads it.
 
 **`--waiting`** lists every address that waits on a person, with the act
-each waits for, across the repositories the machine dispatches, from the
+each waits for and, as `needAct`, what the person does as the dashboard's
+card names it, across the repositories the machine dispatches, from the
 newest tick's line, which the dispatcher keeps for its dashboard: it makes
 no forge or tracker call, and it says when that tick ran. On a machine that
 dispatches nothing it says there is no line to read. `--person <login>` lists
@@ -1214,6 +1252,16 @@ The prompt carries everything the agent needs, so it fetches nothing. In
 the new session, run the audit: `/jig:audit` in Claude Code, or ask for the
 `jig:audit` skill in Codex ([use a skill](#use-a-skill)).
 
+## Bootstrap setup
+
+The [bootstrap guide](https://github.com/jig-harness/jig/blob/main/tools/plugin/bootstrap.md) provides shell and
+PowerShell entry points from a reviewed source checkout. They preview the
+machine and marketplace state, prepare missing prerequisites only with
+explicit opt-in, and install through the agent marketplace only with an
+explicit apply flag. Authentication stays explicit, and scheduled jobs
+remain a separate action. Cross-platform authenticated validation is still
+open; the guide lists the evidence it needs.
+
 ## Requirements
 
 | Tool | Version | Needed for |
@@ -1242,11 +1290,13 @@ partial clone on a git that cannot be kept from fetching.
 
 ## Install the plugin
 
-**Planned setup channels.** A common shell and PowerShell bootstrap is the
-first planned addition, with an own Homebrew tap considered after validation.
-The [distribution design](https://github.com/jig-harness/jig/blob/main/design/distribution.md)
-records the order and update ownership. Until that setup path is built, use
-the marketplace commands below.
+**Setup entry points.** The shell and PowerShell [bootstrap](#bootstrap-setup)
+is available from a reviewed source checkout; authenticated cross-platform
+validation remains open. An own Homebrew tap requires a later maintainer
+decision after validation. The
+[distribution design](https://github.com/jig-harness/jig/blob/main/design/distribution.md)
+records the order and update ownership. The marketplace commands below
+remain the direct installation path.
 
 Run these once per machine, in a terminal (not inside an agent session).
 They follow the `stable` [release channel](#release-channels), which
@@ -1659,9 +1709,9 @@ them together.
   a drive armed from a Codex session runs, and the one the dispatcher runs on a
   Codex account
   ([start command](skills/drive-pr/README.md#how-to-start-it)). A Codex
-  pass runs on the execution tier of `routing.models.codex`, else Codex's
-  own configured model; `--pass-model` overrides it with a model or a tier
-  from `routing.models.codex`. `drive.pass_model` is Claude Code's. Both
+  pass runs on the standard tier of `routing.models.codex`, by default
+  `terra` (given as `gpt-5.6-terra`); `--pass-model` overrides it with a
+  model, a family alias or a tier from `routing.models.codex`. `drive.pass_model` is Claude Code's. Both
   skills arm Codex through a terminal tab or its managed background command
   tool; where the host ends children with the session, keep it alive until
   the drive ends or use an external terminal. The turn-budget hook warns
