@@ -4,9 +4,10 @@
  * anywhere the forge shows one. Every name carries the repository's prefix
  * (`dispatch.labels.prefix`, `jig:` by default).
  *
- * This is the one projection from a drive ledger to its state label. Three
- * writers use it, each when what it owns changes: the drive when its ledger
- * does (`drive-pr`), the follow-up when it ends, and the dispatcher's tick,
+ * This is the one projection from a drive ledger to its state label. The
+ * drive, the follow-up and the dispatcher's tick write through it, each when
+ * what it owns changes: the drive when it writes its ledger (`drive-pr`),
+ * the follow-up when it ends, and the tick,
  * which projects every managed pull request again and corrects any label
  * that disagrees. None of them reads a state label to decide what to start.
  *

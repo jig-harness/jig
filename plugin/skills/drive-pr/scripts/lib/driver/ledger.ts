@@ -66,11 +66,14 @@ import {
   resolveLogin,
 } from "./../state/ledger-forge.ts";
 import {
+  HANDOFF_TELLS_REFUSED,
   LEDGER_DRIVER_ENV,
+  LEDGER_REFUSED_EXIT,
   type LedgerDriverEnv,
   cloneId,
   ledgerDriverFromEnv,
 } from "./../state/ledger-mirror.ts";
+import { personStopFor } from "./../state/person-stop.ts";
 import { DRIVE_HELD_ELSEWHERE_EXIT } from "./../state/lease.ts";
 import type { DriveState } from "./../state/schema.ts";
 import type { DriveLock } from "./locks.ts";
@@ -485,14 +488,22 @@ export async function standDownOnNewerClaim(
 
 /**
  * Write the ledger now (after a takeover, through a wait), through the
- * handoff command: its exit, `0` with no driver to write for.
+ * handoff command: its exit, `0` with no driver to write for. With
+ * `tellsRefused`, a write the guards refused exits `LEDGER_REFUSED_EXIT`
+ * rather than `0`.
  */
-export async function mirrorNow(pr: string): Promise<number> {
+export async function mirrorNow(
+  pr: string,
+  tellsRefused = false,
+): Promise<number> {
   if (ledgerDriverFromEnv() === null) return 0;
   const res = await run(tsArgv(driveState, ["handoff", pr]), {
     stdout: "ignore",
     stderr: "inherit",
     timeoutSec: helperTimeoutSeconds(),
+    ...(tellsRefused
+      ? { env: { ...process.env, [HANDOFF_TELLS_REFUSED]: "1" } }
+      : {}),
   });
   return res.code;
 }
@@ -542,14 +553,51 @@ export function ledgerRenewal(pr: string): () => Promise<number | null> {
  */
 export async function publishStartup(pr: string): Promise<void> {
   if (ledgerDriverFromEnv() === null) return;
-  const publication = await mirrorNow(pr);
-  if (publication === 0) {
-    await labelDrive(pr, { armed: true });
-    return;
-  }
+  const publication = await mirrorNow(pr, true);
+  const next = afterHandoff(publication);
+  if (next === "label") await labelDrive(pr, { armed: true });
+  // A write the guards refused leaves a ledger that is not this driver's.
+  if (next !== "unwritten") return;
   console.error(
     `ledger: initial running-ledger publication failed (exit ${publication}); stop requests remain refused until this acquisition publishes, and round-boundary writes retry it.`,
   );
+}
+
+/**
+ * What follows a ledger write the drive asked `handoff` for, told refusals
+ * (`HANDOFF_TELLS_REFUSED`): `label` when it landed, so the state label may
+ * follow; `refused` when the guards refused it, so the ledger is not this
+ * driver's to label; `unwritten` when it was attempted and did not land.
+ */
+export function afterHandoff(code: number): "label" | "refused" | "unwritten" {
+  if (code === 0) return "label";
+  return code === LEDGER_REFUSED_EXIT ? "refused" : "unwritten";
+}
+
+/**
+ * What follows the stopped ledger's write: a write that landed, or one the
+ * guards refused (nothing left to write), drops the driver record; any other
+ * exit, `LEDGER_NOT_WRITTEN_EXIT` included, keeps it, as the recovery's only
+ * evidence once the locks are released. Only a ledger this driver wrote gets
+ * its state label, best effort.
+ */
+async function afterStopWrite(
+  pr: string,
+  handoff: number,
+  code: number | null,
+  started: string,
+  dropRecord: () => Promise<void>,
+): Promise<void> {
+  const next = afterHandoff(handoff);
+  if (next === "unwritten") return;
+  await dropRecord();
+  if (next === "refused") return;
+  const stateDir = await resolveStateDir();
+  await labelDrive(pr, {
+    stopped: code,
+    byPerson: personStopFor(stateDir, pr, started).personStop !== undefined,
+    verifiedSha: (await readDriveState(pr))?.verifiedSha ?? "",
+  });
 }
 
 /**
@@ -627,14 +675,10 @@ export function ledgerSettlement(
       env: {
         ...process.env,
         [LEDGER_DRIVER_ENV]: JSON.stringify({ ...driver, stopped: code }),
+        [HANDOFF_TELLS_REFUSED]: "1",
       },
     });
-    // Any other exit, `LEDGER_NOT_WRITTEN_EXIT` included, keeps the record:
-    // it is the recovery's only evidence once the locks are released.
-    if (res.code !== 0) return;
-    await dropRecord();
-    // The stopped ledger is written: its state label follows, best effort.
-    await labelDrive(pr, { stopped: code });
+    await afterStopWrite(pr, res.code, code, started, dropRecord);
   };
   return {
     async done(code: number): Promise<number> {

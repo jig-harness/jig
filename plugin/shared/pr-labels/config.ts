@@ -1,14 +1,13 @@
 /**
- * `dispatch.labels`, read and checked in one place for every writer of the
- * pull request state labels: the dispatcher reads it from the section on the
- * default branch (`dispatch/lib/section.ts`), and a drive or a follow-up from
- * the configuration layers of the repository it runs in, through the shared
- * reader (`shared/consumer.ts`). A repository with no dispatcher turns the
- * labels on with the same setting.
+ * `dispatch.labels`, checked in one place: the dispatcher's section reader
+ * (`dispatch/lib/section.ts`) checks it with the rest of the section, and
+ * every writer of the pull request state labels (the drive, the follow-up
+ * and the dispatcher's tick) reads it from the repository's default branch
+ * through that reader (`dispatch/lib/label-config.ts`). A repository with no
+ * dispatcher turns the labels on with the same setting.
  */
 import { isMapping } from "../config-layers.ts";
-import { readConfig } from "../consumer.ts";
-import { attempt, failed, ok, type Outcome } from "../outcome.ts";
+import { failed, ok, type Outcome } from "../outcome.ts";
 import {
   DEFAULT_LABELS,
   type LabelConfig,
@@ -88,28 +87,4 @@ export function parseLabelConfig(value: unknown): Checked<LabelConfig> {
     prefix: labelPrefix.value,
     onlyLabeled: onlyLabeled.value,
   });
-}
-
-/**
- * The `dispatch.labels` of merged configuration `values`; by default the
- * layers of the repository the process runs in. A `dispatch` that is not a
- * mapping reads as no setting, as the dispatcher's own section check reports
- * it.
- */
-export function readLabelConfig(
-  values?: Record<string, unknown>,
-): Checked<LabelConfig> {
-  const merged =
-    values === undefined
-      ? attempt("invalid", "the repository's configuration does not read", () =>
-          readConfig(),
-        )
-      : ok(values);
-  if (!merged.ok) return merged;
-  const dispatch = merged.value.dispatch;
-  return parseLabelConfig(
-    isMapping(dispatch)
-      ? (dispatch as Record<string, unknown>).labels
-      : undefined,
-  );
 }

@@ -28,6 +28,7 @@ const CONFIG = `issue_tracker:
     repository: ${SLUG}
 dispatch:
   followup_command: /followup
+  labels: { enabled: true }
 `;
 
 const HEAD = "feature/9-done";
@@ -40,7 +41,7 @@ afterEach(() => {
   current = null;
 });
 
-/** PR #9 merged carrying `jig:converged`, with the state labels on where the follow-up runs. */
+/** PR #9 merged carrying `jig:converged`, with the state labels on on the default branch. */
 function fixture(): World {
   const w = world();
   current = w;
@@ -58,7 +59,6 @@ function fixture(): World {
   machineFile(w, [account(w, "a", "a@example.com")], {}, ["followup"], {
     followup_since: "2026-10-30T00:00:00Z",
   });
-  w.env.JIG__DISPATCH__LABELS__ENABLED = "true";
   return w;
 }
 
@@ -108,7 +108,7 @@ describe("a follow-up labels its own end", () => {
     expect(markerRuns(w)).toEqual([{ kind: "manual", done: false }]);
   });
 
-  it("reports a refused write and keeps the marker's exit", async () => {
+  it("reports a refused write and keeps the marker's exit for done, which the marker records", async () => {
     const w = fixture();
     w.setComments(9, [forgeComment(901, manualMarker(false, POST))]);
     writeFileSync(join(w.dir, "label-edit-fail"), "");
@@ -116,6 +116,39 @@ describe("a follow-up labels its own end", () => {
     expectSpawnExit(r, 0);
     expect(r.stderr).toContain("PR #9's state label could not be written");
     expect(markerRuns(w)).toEqual([{ kind: "manual", done: true }]);
+  });
+
+  it("fails marker failed when its label, the only record of the failure, is refused", async () => {
+    const w = fixture();
+    w.setComments(9, [forgeComment(901, manualMarker(false, POST))]);
+    writeFileSync(join(w.dir, "label-edit-fail"), "");
+    const r = await w.dispatch(marker("failed"));
+    expectSpawnExit(r, 1);
+    expect(r.stderr).toContain(
+      "nothing else records the failed run: no tick sets it for a run a person claimed",
+    );
+    expect(r.stderr).not.toContain("tick corrects");
+  });
+
+  it("says marker failed records nothing where the labels are off", async () => {
+    const w = fixture();
+    w.setConfig(CONFIG.replace("  labels: { enabled: true }\n", ""));
+    w.setComments(9, [forgeComment(901, manualMarker(false, POST))]);
+    const r = await w.dispatch(marker("failed"));
+    expectSpawnExit(r, 0);
+    expect(r.stderr).toContain(
+      "dispatch.labels is off on the default branch, so nothing was recorded",
+    );
+    expect(labels(w)).toEqual(["area:docs", "jig:converged"]);
+  });
+
+  it("fails marker failed when the default branch's setting does not read", async () => {
+    const w = fixture();
+    w.setConfig("dispatch:\n  labels: { enabled: yes-please }\n");
+    w.setComments(9, [forgeComment(901, manualMarker(false, POST))]);
+    const r = await w.dispatch(marker("failed"));
+    expectSpawnExit(r, 1);
+    expect(r.stderr).toContain("followup-failed label was not written");
   });
 
   it("leaves followed-up when a dispatched pass records done, before the next tick", async () => {

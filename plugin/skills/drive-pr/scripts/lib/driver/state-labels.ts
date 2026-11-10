@@ -1,36 +1,43 @@
 /**
- * The drive's own pull request state label, written when its ledger changes:
- * `driving` once the arm has published the running ledger (removing the
- * `drive` command label in the same write), and at the stop the ledger
- * records, `converged` for `CONVERGED`, `parked` for `HITL_PARKED` and for
- * `REVIEW_SKIPPED`, which a person settles. Any other stop leaves the labels
- * to the dispatcher's tick, which reads what the drive cannot (whether a
- * converged head moved, whether the pull request conflicts), and so does a
- * drive with no ledger (a dry run, `$DRIVE_PR_LEDGER=off`).
+ * The drive's own pull request state label, written when the drive itself
+ * writes its ledger: `driving` once the arm has published the running
+ * ledger (removing the `drive` command label in the same write), and at the
+ * stop the stopped ledger records, as the exit table both the drive and the
+ * dispatcher read gives it (`../status/exit-classes.ts`): `converged` for
+ * `CONVERGED` while the pull request's head is still the head the drive
+ * verified, `parked` for a park, a stop only a person settles, a person's
+ * stop and a stop the dispatcher would re-drive, `driving` for a stop the
+ * dispatcher re-arms. A stop on a pull request no longer open, and a drive
+ * with no ledger (a dry run, `$DRIVE_PR_LEDGER=off`), leave the labels. A
+ * ledger write the guards refused (a lost acquisition, a newer takeover
+ * claim) is not this drive's, so no label follows it.
  *
  * The state comes from the shared projection (`shared/pr-labels/`), the one
- * the tick projects with, and the setting from `dispatch.labels` in the
- * repository's configuration layers, so a repository with no dispatcher
- * turns the labels on the same way. The write is best effort and bounded:
- * two `gh` calls under `ghCall`'s deadline, the second only when the labels
- * disagree; a refusal is one line on the drive's output and never changes
- * its exit. It leaves a pull request carrying `hold` or `held` as it is, and
- * never creates a label: the one-time label setup does
- * (`jig dispatch labels`).
+ * the dispatcher's tick projects with, and the setting from `dispatch.labels`
+ * on the repository's default branch, as the tick and the label setup read it
+ * (`dispatch/lib/label-config.ts`), so a repository with no dispatcher turns
+ * the labels on the same way. The write is best effort and bounded: every
+ * `gh` call goes through `ghCall`'s deadline, and the edit is made only when
+ * the labels disagree; a refusal is one line on the drive's output and never
+ * changes its exit, and a defect is reported with its stack, never thrown. It
+ * leaves a pull request carrying `hold` or `held` as it is, and never creates
+ * a label: the one-time label setup does (`jig dispatch labels`).
  */
-import { failed, ok } from "../../../../../shared/outcome.ts";
-import { readLabelConfig } from "../../../../../shared/pr-labels/config.ts";
+import { attempt, failed, ok } from "../../../../../shared/outcome.ts";
 import {
   type DoneExits,
   type LedgerReading,
   ledgerState,
 } from "../../../../../shared/pr-labels/projection.ts";
 import {
+  defectLine,
   type OwnForge,
   ownWriteLine,
   writeOwnState,
 } from "../../../../../shared/pr-labels/write.ts";
+import { defaultBranchLabels } from "../../../../../dispatch/lib/label-config.ts";
 import { forge } from "../state/ledger-forge.ts";
+import { driveStopClass } from "../status/exit-classes.ts";
 import { DRIVE_EXIT } from "../status/terminal-states.ts";
 
 const DONE_EXITS: DoneExits = {
@@ -38,49 +45,77 @@ const DONE_EXITS: DoneExits = {
   takenOver: DRIVE_EXIT.TAKEN_OVER,
 };
 
-/** The ledger change a label follows: the arm's running ledger, or a stop with its exit (`null` when unknown). */
-export type DriveMoment = { armed: true } | { stopped: number | null };
+/**
+ * The ledger write a label follows: the arm's running ledger, or a stop with
+ * its exit (`null` when unknown), whether a person's stop is recorded for it,
+ * and the head the drive verified.
+ */
+export type DriveMoment =
+  | { armed: true }
+  | { stopped: number | null; byPerson: boolean; verifiedSha: string };
 
-/** How the dispatcher will read the ledger this moment writes; `null` for a stop whose state only the tick can tell. */
+/** How the dispatcher will read the ledger this moment writes, as the drive labels it; `null` for a stop with no exit. */
 export function ledgerAt(moment: DriveMoment): LedgerReading | null {
   if ("armed" in moment) return { class: "driven" };
-  const code = moment.stopped;
-  if (code === DRIVE_EXIT.CONVERGED) return { class: "done", exit: code };
-  if (code === DRIVE_EXIT.HITL_PARKED) return { class: "parked" };
-  if (code === DRIVE_EXIT.REVIEW_SKIPPED) return { class: "needs-person" };
-  return null;
+  if (moment.stopped === null) return null;
+  return driveStopClass(moment.stopped, moment.byPerson);
 }
 
-/** The pull request's labels and their edit, through the drive's own `gh` chokepoint. */
-export const driveLabelForge: OwnForge = {
-  async labels(pr) {
-    const r = await forge(["pr", "view", String(pr), "--json", "labels"]);
-    if (!r.ok) return failed("unreadable", `its labels did not read: ${r.why}`);
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(r.stdout);
-    } catch {
-      return failed("unreadable", "its labels did not read: not JSON");
-    }
-    const labels = (parsed as { labels?: unknown }).labels;
-    if (!Array.isArray(labels))
-      return failed("unreadable", "its labels did not read: no label list");
-    return ok(
-      labels
+/** The labels and head of a pull request on `slug`, and their edit, through the drive's own `gh` chokepoint. */
+export function driveLabelForge(slug: string): OwnForge {
+  return {
+    async labels(pr) {
+      const r = await forge([
+        "pr",
+        "view",
+        String(pr),
+        "--repo",
+        slug,
+        "--json",
+        "labels,headRefOid",
+      ]);
+      if (!r.ok)
+        return failed("unreadable", `its labels did not read: ${r.why}`);
+      const parsed = attempt("unreadable", "its labels did not read", () =>
+        JSON.parse(r.stdout),
+      );
+      if (!parsed.ok) return parsed;
+      const value = parsed.value as { labels?: unknown; headRefOid?: unknown };
+      if (!Array.isArray(value.labels))
+        return failed("unreadable", "its labels did not read: no label list");
+      const labels = value.labels
         .map((l) => (l as { name?: unknown }).name)
-        .filter((n): n is string => typeof n === "string"),
-    );
-  },
-  async edit(pr, add, remove) {
-    const r = await forge([
-      "pr",
-      "edit",
-      String(pr),
-      ...add.flatMap((l) => ["--add-label", l]),
-      ...remove.flatMap((l) => ["--remove-label", l]),
-    ]);
-    return r.ok ? ok(undefined) : failed("refused", r.why);
-  },
+        .filter((n): n is string => typeof n === "string");
+      return ok(
+        typeof value.headRefOid === "string"
+          ? { labels, head: value.headRefOid }
+          : { labels },
+      );
+    },
+    async edit(pr, add, remove) {
+      const r = await forge([
+        "pr",
+        "edit",
+        String(pr),
+        "--repo",
+        slug,
+        ...add.flatMap((l) => ["--add-label", l]),
+        ...remove.flatMap((l) => ["--remove-label", l]),
+      ]);
+      return r.ok ? ok(undefined) : failed("refused", r.why);
+    },
+  };
+}
+
+/** Where the label calls go: the repository's setting and its forge; by default the checkout's repository on the forge. */
+export interface LabelSource {
+  settings(): ReturnType<typeof defaultBranchLabels>;
+  forge(slug: string): OwnForge;
+}
+
+const FORGE_SOURCE: LabelSource = {
+  settings: () => defaultBranchLabels(process.cwd()),
+  forge: driveLabelForge,
 };
 
 /**
@@ -90,30 +125,40 @@ export const driveLabelForge: OwnForge = {
 export async function labelDrive(
   pr: string,
   moment: DriveMoment,
-  labelForge: OwnForge = driveLabelForge,
+  source: LabelSource = FORGE_SOURCE,
 ): Promise<void> {
   try {
     const ledger = ledgerAt(moment);
     if (ledger === null) return;
-    const config = readLabelConfig();
-    if (!config.ok) {
+    const settings = await source.settings();
+    if (!settings.ok) {
       console.error(
-        `labels: PR #${pr}'s state label is not written: dispatch.labels does not read (${config.failure.reason})`,
+        `labels: PR #${pr}'s state label is not written: dispatch.labels does not read (${settings.failure.reason})`,
+      );
+      return;
+    }
+    const projected = ledgerState(ledger, DONE_EXITS);
+    const converged =
+      "stopped" in moment &&
+      projected !== "unknown" &&
+      projected.state === "converged";
+    if (converged && moment.verifiedSha === "") {
+      console.error(
+        `labels: PR #${pr}'s labels are left as they are: the drive recorded no verified head to label converged`,
       );
       return;
     }
     const written = await writeOwnState({
-      config: config.value,
+      config: settings.value.config,
       pr: Number(pr),
-      projected: ledgerState(ledger, DONE_EXITS),
+      projected,
       writer: "drive",
-      forge: labelForge,
+      forge: source.forge(settings.value.slug),
+      ...(converged ? { head: moment.verifiedSha } : {}),
     });
     const line = ownWriteLine(Number(pr), written);
     if (line !== null) console.error(`labels: ${line}`);
   } catch (error) {
-    console.error(
-      `labels: PR #${pr}'s state label could not be written (${error instanceof Error ? error.message : String(error)}); the dispatcher's next tick corrects it`,
-    );
+    console.error(`labels: ${defectLine(`PR #${pr}`, error)}`);
   }
 }

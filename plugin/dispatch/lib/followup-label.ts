@@ -6,24 +6,24 @@
  * (`run.ts`), and a person's run through `jig dispatch marker done` or
  * `marker failed` (`marker.ts`).
  *
- * The setting is `dispatch.labels` in the configuration layers of the
- * checkout the command runs in. The write is best effort: two forge calls
- * under `ghCall`'s deadline, the second only when the labels disagree, and a
- * failure is one line the caller prints; the next tick corrects the labels.
- * A follow-up that is run again, its marker released (a startup that never
- * began, a first death, a routine question), has not ended and writes
- * nothing.
+ * The setting is `dispatch.labels` on the repository's default branch, as
+ * the tick reads it (`label-config.ts`). The write is best effort: its forge
+ * calls run under `ghCall`'s deadline, the edit only when the labels
+ * disagree, and a failure is one line the caller prints. A follow-up that is
+ * run again, its marker released (a startup that never began, a first death,
+ * a routine question), has not ended and writes nothing.
  */
 import { failureText } from "./text.ts";
 import { editLabels, pullRequestLabels } from "./forge.ts";
 import type { ReadRecord } from "./launches.ts";
 import { outcomeOf } from "./followup-outcomes.ts";
 import { routineEnd } from "./routine-reruns.ts";
-import type { Outcome } from "../../shared/outcome.ts";
-import { readLabelConfig } from "../../shared/pr-labels/config.ts";
-import type { LabelConfig } from "../../shared/pr-labels/projection.ts";
+import { defaultBranchLabels } from "./label-config.ts";
+import { ok } from "../../shared/outcome.ts";
 import {
+  defectLine,
   type OwnForge,
+  type OwnWrite,
   ownWriteLine,
   writeOwnState,
 } from "../../shared/pr-labels/write.ts";
@@ -31,7 +31,10 @@ import {
 /** The forge of repository `slug`, through the dispatcher's own reads and writes. */
 function followupForge(slug: string): OwnForge {
   return {
-    labels: (pr) => pullRequestLabels(slug, pr),
+    labels: async (pr) => {
+      const read = await pullRequestLabels(slug, pr);
+      return read.ok ? ok({ labels: read.value }) : read;
+    },
     edit: (pr, add, remove) => editLabels(slug, pr, add, remove),
   };
 }
@@ -40,21 +43,37 @@ export interface FollowupEnd {
   slug: string;
   pr: number;
   outcome: "done" | "failed";
-  /** `dispatch.labels`; by default the current checkout's layers. */
-  config?: Outcome<LabelConfig>;
+  /** The repository's setting; by default its default branch's. */
+  settings?: () => ReturnType<typeof defaultBranchLabels>;
   forge?: OwnForge;
 }
 
-/** Write the follow-up's end as its state label; the line to print, or `null` when there is nothing to say. */
+/** What one follow-up label write did, and the line to print (`null` for nothing to say). */
+export interface FollowupLabel {
+  write:
+    | OwnWrite
+    | { outcome: "unreadable"; detail: string }
+    | { outcome: "defect"; detail: string };
+  line: string | null;
+}
+
+/** Write the follow-up's end as its state label. Never throws. */
 export async function labelFollowupEnd(
   end: FollowupEnd,
-): Promise<string | null> {
+): Promise<FollowupLabel> {
   try {
-    const config = end.config ?? readLabelConfig();
-    if (!config.ok)
-      return `PR #${end.pr}'s state label is not written: dispatch.labels does not read (${config.failure.reason})`;
-    const written = await writeOwnState({
-      config: config.value,
+    const settings = await (
+      end.settings ?? (() => defaultBranchLabels(process.cwd(), end.slug))
+    )();
+    if (!settings.ok) {
+      const detail = settings.failure.reason;
+      return {
+        write: { outcome: "unreadable", detail },
+        line: `PR #${end.pr}'s state label is not written: dispatch.labels does not read (${detail})`,
+      };
+    }
+    const write = await writeOwnState({
+      config: settings.value.config,
       pr: end.pr,
       projected: {
         state: end.outcome === "done" ? "followed-up" : "followup-failed",
@@ -62,10 +81,19 @@ export async function labelFollowupEnd(
       writer: "followup",
       forge: end.forge ?? followupForge(end.slug),
     });
-    return ownWriteLine(end.pr, written);
+    return { write, line: ownWriteLine(end.pr, write) };
   } catch (error) {
-    return `PR #${end.pr}'s state label could not be written (${failureText(error)}); the dispatcher's next tick corrects it`;
+    return {
+      write: { outcome: "defect", detail: failureText(error) },
+      line: defectLine(`PR #${end.pr}`, error),
+    };
   }
+}
+
+/** Whether a follow-up label write left nothing recorded that should have been: unread, refused, or a defect. */
+export function labelFailed(label: FollowupLabel): boolean {
+  const o = label.write.outcome;
+  return o === "unreadable" || o === "refused" || o === "defect";
 }
 
 /** How an ended follow-up record ended, for its label: `null` while it holds, or when it runs again. */

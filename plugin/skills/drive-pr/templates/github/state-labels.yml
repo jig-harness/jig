@@ -16,7 +16,7 @@
 # Safety: it runs on `pull_request_target` so a pull request from a fork gets
 # a token that may write labels, and for that reason it checks nothing out and
 # runs nothing from the pull request. It reads only the event's label names,
-# through the environment, and writes two labels through the forge's API.
+# through the environment, and changes two labels in one `gh pr edit` call.
 
 name: state-labels
 
@@ -52,20 +52,8 @@ jobs:
             echo "PR #${PR} does not carry ${converged}: nothing to do."
             exit 0
           fi
-          # A label name in a URL path: every byte but the unreserved ones escaped.
-          uri() {
-            local s="$1" out="" c i
-            for ((i = 0; i < ${#s}; i++)); do
-              c="${s:i:1}"
-              case "$c" in
-                [A-Za-z0-9._~-]) out+="$c" ;;
-                *) printf -v c '%%%02X' "'$c"; out+="$c" ;;
-              esac
-            done
-            printf '%s' "$out"
-          }
-          gh api --method POST "repos/${REPO}/issues/${PR}/labels" \
-            -f "labels[]=${stale}" >/dev/null
-          gh api --method DELETE \
-            "repos/${REPO}/issues/${PR}/labels/$(uri "$converged")" >/dev/null
+          # One call adds the one and removes the other, so a run cancelled
+          # by a newer push never leaves half a change behind.
+          gh pr edit "$PR" --repo "$REPO" \
+            --add-label "$stale" --remove-label "$converged"
           echo "PR #${PR}: ${converged} replaced with ${stale}."

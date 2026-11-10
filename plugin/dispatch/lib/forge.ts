@@ -82,27 +82,34 @@ async function ghJson(
   return text.ok ? parsed(text.value, what) : text;
 }
 
-/** The forge repository a checkout belongs to, and its default branch. */
+/** The forge repository a checkout belongs to, or the one `slug` names, and its default branch. */
 export async function repoTarget(
   path: string,
+  slug?: string,
 ): Promise<Outcome<RepoTarget, "unreadable">> {
   const read = await ghJson(
-    ["repo", "view", "--json", "nameWithOwner,defaultBranchRef"],
+    [
+      "repo",
+      "view",
+      ...(slug === undefined ? [] : [slug]),
+      "--json",
+      "nameWithOwner,defaultBranchRef",
+    ],
     "the repository view",
     path,
   );
   if (!read.ok) return read;
   const out = read.value;
-  const slug = isRecord(out) ? out.nameWithOwner : undefined;
+  const named = isRecord(out) ? out.nameWithOwner : undefined;
   const branch =
     isRecord(out) && isRecord(out.defaultBranchRef)
       ? out.defaultBranchRef.name
       : undefined;
-  if (typeof slug !== "string" || !/^[\w.-]+\/[\w.-]+$/.test(slug))
+  if (typeof named !== "string" || !/^[\w.-]+\/[\w.-]+$/.test(named))
     return unreadable("the repository view names no owner/name");
   if (typeof branch !== "string" || branch === "")
-    return unreadable(`${slug} reports no default branch`);
-  return ok({ path, slug, defaultBranch: branch });
+    return unreadable(`${named} reports no default branch`);
+  return ok({ path, slug: named, defaultBranch: branch });
 }
 
 /**

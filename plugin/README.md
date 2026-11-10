@@ -463,7 +463,9 @@ when an earlier one is there. A follow-up a person runs by hand claims the
 same way, marks its marker done once it succeeded, which also sets the
 pull request's `jig:followed-up` state label, and says it failed with
 `marker failed`, which sets `jig:followup-failed` and leaves the marker
-claiming the follow-up:
+claiming the follow-up; since that label is all `marker failed` records,
+it exits `1` when the label is not written, and says it recorded nothing
+where the labels are off:
 
 ```sh
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch marker claim <PR> [--repo owner/name]
@@ -666,16 +668,20 @@ the same way. Each pull request carries one state label (`jig:driving`,
 `jig:converged`, `jig:parked`, `jig:stale`, `jig:held`, `jig:followed-up`,
 `jig:followup-failed` under the default prefix), projected from its drive
 ledger by one mapping its writers share, each writing when what it owns
-changes: the drive itself when it arms (`jig:driving`) and when it stops
-converged or parked, the follow-up when it ends, done or failed, whoever
+changes: the drive itself when it arms (`jig:driving`) and when it stops,
+by the exit table it shares with the dispatcher (`jig:converged` at the
+head it verified; `jig:parked` for a park, a stop a person settles or
+made, and a stop the dispatcher re-drives, which a run turns into
+`jig:stale`), the follow-up when it ends, done or failed, whoever
 runs it, and the dispatcher's every `--apply` run, which also writes
 `jig:stale` and `jig:held` (from the serialized areas below) and corrects
 any label that disagrees, so a label changed by hand, or left behind by a
 drive that was killed, comes back. A drive's and a follow-up's writes need
 no dispatcher: a repository that only drives pull requests gets the labels
-too. A run reads a pull request's ledger again before it writes, so it never
-puts back an older state over a drive's newer one, and no state label is
-ever read to decide what to start. The command
+too. Every writer reads `dispatch.labels` from the default branch, so all
+of them use one prefix. A run re-reads a pull request's ledger just before
+it writes, and leaves one whose ledger changed since it read it to a later
+run; no state label is ever read to decide what to start. The command
 labels are a person's commands, which the dispatcher reads and never
 adds: `jig:drive` on a pull request with no drive ledger arms a drive on
 it (the `rearm` stage, once per head commit) and is replaced by the state
@@ -693,7 +699,8 @@ apply (`automation:docs-sync`), unless the bot is one the adoption rule
 names, which is the host's own identity. The dispatcher never removes `automation`
 or an `automation:` label, and never puts either on a person's pull
 request. With `only_labeled`, the dispatcher reads only the pull requests
-that carry a label of the set. The labels must exist first, and no writer
+that carry a label of the set, which includes one a drive armed by hand
+has labelled `jig:driving`; `jig:hold` keeps such a pull request out. The labels must exist first, and no writer
 creates one: `jig dispatch labels [--repo <path>] [--yes]` lists the missing
 ones, the marker labels with them, with no job installed, and with `--yes`
 names each it created and lists the rest with the command a person who may

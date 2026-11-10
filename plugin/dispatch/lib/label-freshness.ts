@@ -1,12 +1,14 @@
 /**
- * The tick never puts back an older state label. It projects each pull
- * request's state from the ledger it read at the start of its turn, and a
- * drive writes its own label as soon as its ledger changes
- * (`shared/pr-labels/write.ts`): a write planned from the earlier ledger
- * would undo the drive's. So just before a state write on an open pull
- * request the tick reads the ledger again, and skips the write when it
- * changed since the tick read it, or no longer reads; the next tick projects
- * the ledger as it then is.
+ * The tick re-reads a pull request's ledger just before it writes its state
+ * label. It projects each pull request's state from the ledger it read at
+ * the start of its turn, and a drive writes its own label as soon as its
+ * ledger changes (`shared/pr-labels/write.ts`): a write planned from the
+ * earlier ledger would undo the drive's. So just before a state write on an
+ * open pull request the tick reads the ledger again, and skips the write
+ * when it changed since the tick read it, or no longer reads; the next tick
+ * projects the ledger as it then is. A drive whose label write lands
+ * between that re-read and the tick's own write can still be undone, until
+ * the next tick.
  *
  * A ledger is the same when its generation, its driver's heartbeat (the time
  * of its last write), its driver's state and its exit are: every ledger write
@@ -14,7 +16,10 @@
  */
 import type { Ledger } from "../../skills/drive-pr/scripts/lib/state/ledger.ts";
 import { readLedgerSnapshot } from "../../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
+import { failureFields } from "../../shared/errors.ts";
+import { log } from "../../shared/log.ts";
 import type { LabelChange } from "./labels.ts";
+import { failureText } from "./text.ts";
 import type { DrivenPr } from "./types.ts";
 
 /** One ledger's identity: `null` for a pull request that carries none. */
@@ -86,7 +91,12 @@ export function ledgerStillCurrent(
     try {
       now = await reread(change.pr);
     } catch (error) {
-      now = error instanceof Error ? error.message : String(error);
+      // A throw here is a defect, not an unread ledger: logged with its stack, and the write waits.
+      log.warn(
+        `PR #${change.pr}: re-reading its drive ledger before a label write threw`,
+        failureFields(error),
+      );
+      return `re-reading its drive ledger hit a defect (${failureText(error)}), so a later tick projects it`;
     }
     if (typeof now === "string")
       return `its drive ledger did not read again before the write (${now}), so a later tick projects it`;

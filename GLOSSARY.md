@@ -2255,8 +2255,9 @@ make, use the entry's term instead.
   prefix the repository picks (`jig:` by default). Each driven pull request
   carries one state label (driving, converged, parked, stale, *held*,
   followed-up, followup-failed), projected from its drive ledger by one
-  mapping that three writers share, each when what it owns changes: the
-  drive when its ledger does (driving, converged, parked), the follow-up
+  mapping the drive, the follow-up and the dispatcher's tick share, each
+  writing when what it owns changes: the drive when it writes its ledger
+  (driving, converged, parked), the follow-up
   when it ends (followed-up, followup-failed), and the dispatcher at every
   *tick*, which also writes stale and held (from the *serialized areas*)
   and corrects any label that disagrees. No writer reads a state label to

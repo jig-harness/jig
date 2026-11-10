@@ -1,5 +1,5 @@
 /**
- * The tick never puts back an older state label: a drive writes its own
+ * The tick re-reads a ledger before it writes its state label: a drive writes its own
  * label as soon as its ledger changes, and a tick that read the ledger
  * before that write reads it again before its own, and leaves the pull
  * request for a later tick when it changed.

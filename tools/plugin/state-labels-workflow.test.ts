@@ -105,27 +105,22 @@ function step(): Step {
 
 /**
  * A `gh` that keeps PR #12's labels in `labels.json` beside it and logs each
- * call: `POST …/labels` adds the `labels[]` field, `DELETE …/labels/<name>`
- * removes the decoded name.
+ * call: `pr edit 12 --repo <slug>` applies its `--add-label` and
+ * `--remove-label` values in one change; anything else is refused.
  */
 const FAKE_GH = `#!/usr/bin/env bun
 const fs = require("node:fs");
 const path = require("node:path");
 const dir = path.dirname(process.argv[1]);
 const args = process.argv.slice(2);
-fs.appendFileSync(path.join(dir, "calls.log"), args.join(" ") + "\\n");
+fs.appendFileSync(path.join(dir, "calls.log"), JSON.stringify(args) + "\\n");
 const file = path.join(dir, "labels.json");
 const labels = JSON.parse(fs.readFileSync(file, "utf8"));
-const method = args[args.indexOf("--method") + 1];
-const endpoint = args.find((a) => a.startsWith("repos/"));
-if (args[0] !== "api" || endpoint === undefined) process.exit(2);
-if (method === "POST") {
-  const added = args.filter((a) => a.startsWith("labels[]=")).map((a) => a.slice(9));
-  fs.writeFileSync(file, JSON.stringify([...labels, ...added]));
-} else if (method === "DELETE") {
-  const name = decodeURIComponent(endpoint.split("/labels/")[1]);
-  fs.writeFileSync(file, JSON.stringify(labels.filter((l) => l !== name)));
-} else process.exit(2);
+if (args[0] !== "pr" || args[1] !== "edit" || args[2] !== "12" || args[3] !== "--repo") process.exit(2);
+const values = (flag) => args.flatMap((a, i) => (a === flag ? [args[i + 1]] : []));
+const remove = values("--remove-label");
+const add = values("--add-label");
+fs.writeFileSync(file, JSON.stringify([...labels.filter((l) => !remove.includes(l)), ...add]));
 `;
 
 /** Run the step for a push to PR #12 carrying `labels`, as GitHub would. */
@@ -150,7 +145,10 @@ function push(labels: string[], prefix?: string) {
   });
   const calls = (() => {
     try {
-      return readFileSync(join(dir, "calls.log"), "utf8").trim().split("\n");
+      return readFileSync(join(dir, "calls.log"), "utf8")
+        .trim()
+        .split("\n")
+        .map((l) => JSON.parse(l) as string[]);
     } catch {
       return [];
     }
@@ -162,10 +160,23 @@ function push(labels: string[], prefix?: string) {
 }
 
 describe("on a push to a pull request", () => {
-  test("replaces converged with stale", () => {
-    const { result, after } = push(["area:docs", "jig:converged"]);
+  test("replaces converged with stale, in one call", () => {
+    const { result, calls, after } = push(["area:docs", "jig:converged"]);
     expectSpawnExit(result, 0, "the step");
     expect(after.sort()).toEqual(["area:docs", "jig:stale"]);
+    expect(calls).toEqual([
+      [
+        "pr",
+        "edit",
+        "12",
+        "--repo",
+        "example-org/example-repo",
+        "--add-label",
+        "jig:stale",
+        "--remove-label",
+        "jig:converged",
+      ],
+    ]);
   });
 
   test("does nothing on a pull request without converged", () => {
@@ -176,9 +187,18 @@ describe("on a push to a pull request", () => {
     expect(result.stdout.toString()).toContain("nothing to do");
   });
 
-  test("respects the repository's prefix, escaping it in the label's path", () => {
+  test("respects the repository's prefix, a label name beyond ASCII included", () => {
     const { result, after } = push(["bot/converged", "jig:converged"], "bot/");
     expectSpawnExit(result, 0, "the step");
     expect(after.sort()).toEqual(["bot/stale", "jig:converged"]);
+    const accented = push(["état·converged"], "état·");
+    expectSpawnExit(accented.result, 0, "the step");
+    expect(accented.after).toEqual(["état·stale"]);
+  });
+
+  test("does nothing when only another prefix's converged is there", () => {
+    const { calls, after } = push(["jig:converged"], "bot/");
+    expect(calls).toEqual([]);
+    expect(after).toEqual(["jig:converged"]);
   });
 });

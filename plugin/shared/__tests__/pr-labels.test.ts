@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from "bun:test";
 import { failed, ok, type Outcome } from "../outcome.ts";
-import { readLabelConfig } from "../pr-labels/config.ts";
+import { parseLabelConfig } from "../pr-labels/config.ts";
 import {
   DEFAULT_LABELS,
   type LabelConfig,
@@ -28,11 +28,12 @@ const EXITS = { converged: 0, takenOver: 20 };
 function forge(
   labels: string[],
   edit: () => Outcome<void> = () => ok(undefined),
+  head?: string,
 ) {
   const edits: Array<{ add: readonly string[]; remove: readonly string[] }> =
     [];
   const f: OwnForge = {
-    labels: async () => ok(labels),
+    labels: async () => ok(head === undefined ? { labels } : { labels, head }),
     edit: async (_pr, add, remove) => {
       edits.push({ add, remove });
       return edit();
@@ -115,7 +116,7 @@ describe("a writer's own state label", () => {
     ]);
   });
 
-  it("returns a refused read, a refused edit and a throw as values", async () => {
+  it("returns a refused read and a refused edit as values, and lets a throw through as a defect", async () => {
     const unread: OwnForge = {
       labels: async () => failed("unreadable", "HTTP 502"),
       edit: async () => ok(undefined),
@@ -130,19 +131,20 @@ describe("a writer's own state label", () => {
       outcome: "refused",
       detail: "'jig:driving' not found",
     });
+    // Accurate with no dispatcher: a tick corrects it only where one runs.
     expect(ownWriteLine(7, refused)).toContain(
-      "the dispatcher's next tick corrects it",
+      "a dispatcher's next tick corrects it where one runs; otherwise `jig dispatch labels --yes` creates a missing label",
     );
+    // A throw is a defect, not a refusal: it reaches the writer's boundary.
     const throwing: OwnForge = {
       labels: async () => {
         throw new Error("spawn failed");
       },
       edit: async () => ok(undefined),
     };
-    expect(await write("drive", { state: "driving" }, throwing)).toEqual({
-      outcome: "refused",
-      detail: "spawn failed",
-    });
+    await expect(
+      write("drive", { state: "driving" }, throwing),
+    ).rejects.toThrow("spawn failed");
   });
 
   it("reads and writes nothing while the labels are off", async () => {
@@ -154,18 +156,48 @@ describe("a writer's own state label", () => {
   });
 });
 
-describe("dispatch.labels from any configuration", () => {
+describe("converged only at the head the drive verified", () => {
+  it("writes converged while the head is the verified one", async () => {
+    const { f, edits } = forge(["jig:driving"], undefined, "aaa");
+    const r = await writeOwnState({
+      config: ON,
+      pr: 7,
+      projected: { state: "converged" },
+      writer: "drive",
+      forge: f,
+      head: "aaa",
+    });
+    expect(r.outcome).toBe("written");
+    expect(edits).toHaveLength(1);
+  });
+
+  it("leaves the labels, a newer stale among them, once the head moved", async () => {
+    const { f, edits } = forge(["jig:stale"], undefined, "bbb");
+    const r = await writeOwnState({
+      config: ON,
+      pr: 7,
+      projected: { state: "converged" },
+      writer: "drive",
+      forge: f,
+      head: "aaa",
+    });
+    expect(r.outcome).toBe("moved");
+    expect(edits).toEqual([]);
+    expect(ownWriteLine(7, r)).toContain(
+      "is not the head aaa the drive verified",
+    );
+  });
+});
+
+describe("dispatch.labels", () => {
   it("reads the setting and its prefix, off by default", () => {
-    expect(readLabelConfig({})).toEqual(ok(DEFAULT_LABELS));
-    expect(
-      readLabelConfig({
-        dispatch: { labels: { enabled: true, prefix: "bot/" } },
-      }),
-    ).toEqual(ok({ enabled: true, prefix: "bot/", onlyLabeled: false }));
+    expect(parseLabelConfig(undefined)).toEqual(ok(DEFAULT_LABELS));
+    expect(parseLabelConfig({ enabled: true, prefix: "bot/" })).toEqual(
+      ok({ enabled: true, prefix: "bot/", onlyLabeled: false }),
+    );
   });
 
   it("refuses a value the dispatcher refuses", () => {
-    const r = readLabelConfig({ dispatch: { labels: { enabled: "yes" } } });
-    expect(r.ok).toBe(false);
+    expect(parseLabelConfig({ enabled: "yes" }).ok).toBe(false);
   });
 });

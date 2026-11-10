@@ -336,8 +336,8 @@ development and shipped as a version.
   [pull request state labels](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
   on, the tick reads the pull requests' labels with them, reads `drive`
   and `hold` as a person's commands, and last sets each managed pull
-  request's state label from its ledger, reading the ledger again just
-  before a write so it never puts back a state older than a drive's own
+  request's state label from its ledger, re-reading the ledger just before
+  a write and skipping one whose ledger changed since the tick read it
   (`dispatch/lib/actions/labels.ts`, `dispatch/lib/label-freshness.ts`); it
   never reads a state label to decide what to start. The mapping from a
   ledger to its state label is one projection in shared code

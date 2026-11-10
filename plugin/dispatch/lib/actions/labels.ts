@@ -20,9 +20,9 @@
  * the receipt, not a failed tick, and a later tick tries again: the failure
  * ledger (`failures.ts`) counts the failures in a row and backs the write
  * off, reported as waiting, until its next try. Just before a state write
- * the open pull request's ledger is read again, and the write waits for a
- * later tick when the ledger changed since this tick read it, so the tick
- * never undoes the label a drive wrote for its newer ledger
+ * the open pull request's ledger is re-read, and the write waits for a
+ * later tick when the ledger changed since this tick read it, so a drive's
+ * label for its newer ledger is not replaced from the older one
  * (`label-freshness.ts`).
  */
 import type { Contention } from "../contention.ts";

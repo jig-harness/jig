@@ -25,15 +25,16 @@ import { PASS_NOOP, runDriveIn } from "./drive-loop-harness.ts";
 
 useDrivePrSuite();
 
-const LABELS_ON = {
-  DRIVE_PR_LEDGER: "on",
-  JIG__DISPATCH__LABELS__ENABLED: "true",
-};
+const LEDGER_ON = { DRIVE_PR_LEDGER: "on" };
+/** The default branch's configuration with the labels on, as the forge serves it. */
+const LABELS_ON = "dispatch:\n  labels:\n    enabled: true\n";
 
 /**
- * A `gh` that keeps the pull request's labels in `labels.json` beside it,
- * logs each label edit to `edits.log`, refuses one while `edit-refused`
- * exists, and runs the stub forge for everything else.
+ * A `gh` that serves the repository and its default branch's
+ * `.config/jig.yaml` (`jig.yaml` beside it), keeps the pull request's labels
+ * in `labels.json` and its head in `head` (the label read's own), logs each
+ * label edit to `edits.log`, refuses one while `edit-refused` exists, and
+ * runs the stub forge for everything else.
  */
 const LABEL_GH = (stub: string) => `#!/usr/bin/env bun
 const fs = require("node:fs");
@@ -42,10 +43,13 @@ const dir = path.dirname(process.argv[1]);
 const args = process.argv.slice(2);
 const file = path.join(dir, "labels.json");
 const read = () => JSON.parse(fs.readFileSync(file, "utf8"));
-if (args[0] === "pr" && args[1] === "view" && args.at(-2) === "--json" && args.at(-1) === "labels") {
-  process.stdout.write(JSON.stringify({ labels: read().map((name) => ({ name })) }));
-  process.exit(0);
-}
+const out = (v) => { process.stdout.write(JSON.stringify(v)); process.exit(0); };
+if (args[0] === "repo" && args[1] === "view" && args.at(-1) === "nameWithOwner,defaultBranchRef")
+  out({ nameWithOwner: "example/project", defaultBranchRef: { name: "main" } });
+if (args[0] === "api" && args[1] === "repos/example/project/contents/.config/jig.yaml?ref=main")
+  out({ encoding: "base64", content: fs.readFileSync(path.join(dir, "jig.yaml")).toString("base64") });
+if (args[0] === "pr" && args[1] === "view" && args.at(-2) === "--json" && args.at(-1) === "labels,headRefOid")
+  out({ labels: read().map((name) => ({ name })), headRefOid: fs.readFileSync(path.join(dir, "head"), "utf8") });
 const values = (flag) => args.flatMap((a, i) => (a === flag ? [args[i + 1]] : []));
 const add = values("--add-label");
 const remove = values("--remove-label");
@@ -75,6 +79,8 @@ function labelled(f: Fixture, labels: string[]) {
   mkdirSync(bin, { recursive: true });
   writeFakeProgram(join(bin, "gh"), LABEL_GH(join(binDir, "gh")));
   writeFileSync(join(bin, "labels.json"), JSON.stringify(labels));
+  writeFileSync(join(bin, "jig.yaml"), LABELS_ON);
+  writeFileSync(join(bin, "head"), tree.head);
   return {
     dir,
     stateDir,
@@ -96,7 +102,7 @@ async function drive(
   run: ReturnType<typeof labelled>,
   pass: string[],
   flags: string[] = [],
-  env: Record<string, string> = LABELS_ON,
+  env: Record<string, string> = LEDGER_ON,
 ) {
   return runDriveIn(
     run.dir,
@@ -133,6 +139,8 @@ describe("a drive writes its own state label", () => {
     expect(r.stderr).toContain(
       "labels: PR #999's state label written: +jig:driving -jig:drive",
     );
+    // MAX_ROUNDS is a stop only a person settles: parked replaces driving.
+    expect(run.labels().sort()).toEqual(["area:docs", "jig:parked"]);
   });
 
   it("replaces the state label with converged when it stops CONVERGED", async () => {
@@ -144,6 +152,21 @@ describe("a drive writes its own state label", () => {
       { add: ["jig:driving"], remove: ["jig:stale"] },
       { add: ["jig:converged"], remove: ["jig:driving"] },
     ]);
+  });
+
+  it("leaves the labels when the head moved past the head it verified", async () => {
+    const run = labelled({ threads: [] }, []);
+    // The label read sees a head the drive did not verify: a push since, or a stale written by a workflow.
+    writeFileSync(
+      join(run.bin, "head"),
+      "7bd2ca906c111111111111111111111111111111",
+    );
+    const r = await drive(run, PASS_NOOP);
+    expectSpawnExit({ ...r, stdout: null }, 0);
+    expect(run.labels()).toEqual(["jig:driving"]);
+    expect(r.stderr).toContain(
+      "labels: PR #999's labels are left as they are: its head 7bd2ca906c111111111111111111111111111111 is not the head",
+    );
   });
 
   it("replaces the state label with parked when it parks", async () => {
@@ -165,7 +188,9 @@ describe("a drive writes its own state label", () => {
     expect(r.stderr).toContain(
       "labels: PR #999's state label could not be written",
     );
-    expect(r.stderr).toContain("the dispatcher's next tick corrects it");
+    expect(r.stderr).toContain(
+      "a dispatcher's next tick corrects it where one runs",
+    );
     // Both moments tried, and neither stopped the drive.
     expect(run.edits()).toHaveLength(2);
     expect(run.labels()).toEqual([]);
@@ -181,9 +206,17 @@ describe("a drive writes its own state label", () => {
       expect(r.stderr).toContain(`it carries ${stand}`);
     });
 
-  it("reads and writes no label while dispatch.labels is off", async () => {
+  it("reads and writes no label while dispatch.labels is off on the default branch, whatever the checkout says", async () => {
     const run = labelled({ threads: [] }, ["jig:stale"]);
-    const r = await drive(run, PASS_NOOP, [], { DRIVE_PR_LEDGER: "on" });
+    writeFileSync(
+      join(run.bin, "jig.yaml"),
+      "dispatch:\n  stalled_after: 30m\n",
+    );
+    const r = await drive(run, PASS_NOOP, [], {
+      ...LEDGER_ON,
+      // A checkout's own layer turning them on does not count.
+      JIG__DISPATCH__LABELS__ENABLED: "true",
+    });
     expectSpawnExit({ ...r, stdout: null }, 0);
     expect(run.edits()).toEqual([]);
     expect(r.stderr).not.toContain("labels: ");

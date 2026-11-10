@@ -114,6 +114,7 @@ import {
 import { probeWall } from "./lib/quota-probe.ts";
 import { settleAtExit } from "./lib/shared-launches.ts";
 import { followupEndOf, labelFollowupEnd } from "./lib/followup-label.ts";
+import { defectLine } from "../shared/pr-labels/write.ts";
 import {
   followupPassArgv,
   pickupPassArgv,
@@ -649,17 +650,20 @@ async function endSharedClaim(id: string): Promise<void> {
  */
 async function labelFollowup(id: string): Promise<void> {
   let line: string | null;
+  let target = `the follow-up of launch record ${id}`;
   try {
     const ended = readEnded(id);
     const outcome = ended === null ? null : followupEndOf(ended);
     if (ended === null || outcome === null || ended.record.pr === null) return;
-    line = await labelFollowupEnd({
+    target = `PR #${ended.record.pr}`;
+    const label = await labelFollowupEnd({
       slug: ended.record.repo,
       pr: ended.record.pr,
       outcome,
     });
+    line = label.line;
   } catch (error) {
-    line = `the follow-up's state label could not be written (${failureText(error)}); the next tick corrects it`;
+    line = defectLine(target, error);
   }
   if (line !== null) console.error(`jig dispatch run: ${line}`);
 }
