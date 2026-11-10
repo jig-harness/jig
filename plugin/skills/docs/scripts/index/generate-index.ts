@@ -25,8 +25,8 @@ import {
   GENERATED_INDEX as GENERATED,
   generatedIndexPath,
   markdownFiles,
+  isPlainWritable,
   readDocument,
-  readScalar,
 } from "../lib/docs.ts";
 import { consumerRoot } from "../../../../shared/consumer.ts";
 import {
@@ -113,13 +113,7 @@ function describeCategory(
  * quotes and never decodes escapes).
  */
 function yamlScalar(value: string): string {
-  const plain = readScalar(value);
-  if (
-    typeof plain !== "string" &&
-    plain.value === value &&
-    !/[,[\]{}]/.test(value)
-  )
-    return value;
+  if (isPlainWritable(value)) return value;
   if (!/["\\]/.test(value)) return `"${value}"`;
   return `'${value}'`;
 }

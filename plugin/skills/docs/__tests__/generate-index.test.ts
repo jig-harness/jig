@@ -23,6 +23,7 @@ import {
   frontmatterValue,
   isGeneratedIndexPage,
 } from "../scripts/lib/docs";
+import { parseIndexSettings } from "../scripts/lib/settings";
 import { cleanEnv, repository } from "./helpers.ts";
 
 let root: string;
@@ -278,6 +279,23 @@ describe("INDEX.md layout settings", () => {
     const text = withIndex({ frontmatter: fields });
     expect(frontmatterValue(text, "title", "INDEX.md")).toBe("Guide # intro");
     expect(documentFields(text, "INDEX.md").get("tags")).toEqual(fields.tags);
+  });
+
+  test("a plain value holding an apostrophe and a double quote is written as it is", () => {
+    const fields = { title: 'What\'s "new"', tags: ['it\'s "x"'] };
+    const text = withIndex({ frontmatter: fields });
+    expect(text).toContain('title: What\'s "new"\n');
+    expect(frontmatterValue(text, "title", "INDEX.md")).toBe(fields.title);
+    expect(documentFields(text, "INDEX.md").get("tags")).toEqual(fields.tags);
+  });
+
+  test("settings accept a plain value with an apostrophe and a double quote, and refuse a quoted one", () => {
+    const parse = (title: string) =>
+      parseIndexSettings({ frontmatter: { title } }, root);
+    expect(parse('What\'s "new"').frontmatter).toEqual({
+      title: 'What\'s "new"',
+    });
+    expect(() => parse('"a" it\'s')).toThrow("docs.index.frontmatter.title");
   });
 
   test("a description follows its category's heading", () => {

@@ -8,6 +8,7 @@ import { existsSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, join, posix, relative, sep } from "node:path";
 import { readConfig, withSource } from "../../../../shared/consumer.ts";
 import { isRecord } from "../../../../shared/guards.ts";
+import { isPlainWritable } from "./docs.ts";
 
 export const FIELDS = [
   "root",
@@ -185,11 +186,13 @@ const oneLine = (value: unknown): value is string =>
   typeof value === "string" && value.trim() !== "" && !/[\r\n]/.test(value);
 
 /**
- * One line the index can write: the document reader never decodes quotes, so
- * text holding an apostrophe cannot also hold a double quote or a backslash.
+ * One line the index can write: plain when the reader returns it unchanged,
+ * else quoted. The reader never decodes quotes, so quoted text holding an
+ * apostrophe cannot also hold a double quote or a backslash.
  */
 const writable = (value: unknown): value is string =>
-  oneLine(value) && !(value.includes("'") && /["\\]/.test(value));
+  oneLine(value) &&
+  (isPlainWritable(value) || !(value.includes("'") && /["\\]/.test(value)));
 
 /** A frontmatter value the index can write as a scalar or a flow list. */
 const frontmatterValue = (value: unknown): value is string | string[] =>

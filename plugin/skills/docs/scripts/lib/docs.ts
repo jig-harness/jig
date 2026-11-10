@@ -206,6 +206,16 @@ export function readScalar(raw: string): Scalar {
   return { value: NULLS.has(text) ? null : text };
 }
 
+/** Whether the index can write the value as a plain scalar the reader returns unchanged. */
+export function isPlainWritable(value: string): boolean {
+  const plain = readScalar(value);
+  return (
+    typeof plain !== "string" &&
+    plain.value === value &&
+    !/[,[\]{}]/.test(value)
+  );
+}
+
 /** Split on commas outside quotes; an unclosed quote returns undefined. */
 function splitOutsideQuotes(inner: string): string[] | undefined {
   const cuts: number[] = [];
