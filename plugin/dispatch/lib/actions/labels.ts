@@ -13,9 +13,12 @@
  * Writes happen only with `--apply`, for a repository the machine file
  * lists; otherwise the receipt says what would be written. A write the
  * forge refuses (a label that does not exist, no permission) is a record of
- * the receipt, not a failed tick, and the next tick tries again.
+ * the receipt, not a failed tick, and a later tick tries again: the failure
+ * ledger (`failures.ts`) counts the failures in a row and backs the write
+ * off, reported as waiting, until its next try.
  */
 import type { Contention } from "../contention.ts";
+import type { ActionBook } from "../failures.ts";
 import { editLabels } from "../forge.ts";
 import {
   carriesSet,
@@ -186,7 +189,12 @@ export interface WriteMode {
   apply: boolean;
   /** Why the tick's time is spent; `null` while it is not. */
   late: () => string | null;
+  /** The failure ledger: a write that keeps failing backs off, and each write's result is counted. */
+  book?: ActionBook | null;
 }
+
+/** The failure ledger's key of a pull request's label write. */
+export const labelKey = (pr: number): string => `label PR #${pr}`;
 
 const describe = (c: LabelChange): string =>
   [...c.add.map((l) => `+${l}`), ...c.remove.map((l) => `-${l}`)].join(" ");
@@ -214,12 +222,21 @@ export async function writeLabels(
       out.push({ ...base, outcome: "waits", detail: late });
       continue;
     }
-    const refused = (why: string) =>
+    const key = labelKey(change.pr);
+    const backing = mode.book?.waits(key) ?? null;
+    if (backing !== null) {
+      out.push({ ...base, outcome: "waits", detail: backing });
+      continue;
+    }
+    const of = { key, kind: "label" as const, target: base.target };
+    const refused = (why: string) => {
       out.push({
         ...base,
         outcome: "failed",
-        detail: `${describe(change)} was refused, and the next tick tries again: ${why}`,
+        detail: `${describe(change)} was refused, and a later tick tries again: ${why}`,
       });
+      mode.book?.ran(of, `${describe(change)} was refused: ${why}`);
+    };
     let edited: Awaited<ReturnType<typeof edit>>;
     try {
       edited = await edit(slug, change.pr, change.add, change.remove);
@@ -227,9 +244,10 @@ export async function writeLabels(
       refused(failureText(error));
       continue;
     }
-    if (edited.ok)
+    if (edited.ok) {
       out.push({ ...base, outcome: "written", detail: describe(change) });
-    else refused(edited.failure.reason);
+      mode.book?.ran(of, null);
+    } else refused(edited.failure.reason);
   }
   return out;
 }

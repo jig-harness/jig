@@ -5,9 +5,25 @@
  * beside them (`logRepo`); the close of the tick logs the records of every
  * repository the tick did not read, without them, and then prunes the
  * records whose rows are in the log (`settleOutcomes`).
+ *
+ * Once the tick's exit is decided, the failure ledger (failures.ts) counts
+ * what failed in a row (`settleFailures`): each repository this tick read
+ * whose turn was refused, stopped by a defect or found a record that did not
+ * read, and the tick itself when it exits 1. A repository read whole, and a
+ * tick that exits 0, clears its row. Only a tick with `--apply` and a
+ * machine file counts: a person's report changes nothing there.
  */
 import { resolve } from "node:path";
 import { swallow } from "../../shared/errors.ts";
+import {
+  clearFailure,
+  entryOf,
+  isActionKind,
+  readFailures,
+  recordFailure,
+} from "./failures.ts";
+import { failureSettings, type MachineConfig } from "./machine-config.ts";
+import { failureText } from "./text.ts";
 import { mergedNotClosed } from "./forge.ts";
 import { logEnded } from "./log-ended.ts";
 import { hasEnded } from "./log.ts";
@@ -16,6 +32,7 @@ import type { readDrives } from "./sources/ledgers.ts";
 import { allRecords, type TickContext } from "./tick-context.ts";
 import {
   type Lock,
+  stateRoot,
   type TickReceipt,
   takeObserveLock,
   takeRepositoryLock,
@@ -157,7 +174,225 @@ export async function settleOutcomes(
         r.refused !== null ||
         (r.stageDefects?.length ?? 0) > 0 ||
         r.records.some((x) => !x.ok) ||
-        r.unplaced.some((u) => u.target === "the outcome log"),
+        // An individual claim, ledger or marker that did not read fails the turn as repoFailure says.
+        r.unplaced.some(
+          (u) => u.readFailed === true || u.target === "the outcome log",
+        ),
     )
   );
+}
+
+/** Why a repository's turn failed this tick; `null` when it was read whole. */
+function repoFailure(report: RepoReport): string | null {
+  if (report.refused !== null) return report.refused;
+  const defect = report.stageDefects?.[0];
+  if (defect !== undefined) return defect.reason;
+  const unread = report.records.find((r) => !r.ok);
+  if (unread !== undefined)
+    return `the ${unread.record} record (${unread.source}) did not read: ${unread.detail}`;
+  // An individual comment listing or ledger that failed leaves the aggregate forge record ok.
+  const failed = report.unplaced.find((u) => u.readFailed === true);
+  return failed === undefined
+    ? null
+    : `${failed.target} did not read: ${failed.reason}`;
+}
+
+/** Why the tick exits 1, in one sentence. */
+function tickFailure(receipt: TickReceipt): string {
+  if (receipt.defect !== undefined) return receipt.defect.reason;
+  if (receipt.applyWithheld !== undefined)
+    return `--apply was withheld: ${receipt.applyWithheld}`;
+  const failing = receipt.repos.flatMap((r) => {
+    const why = repoFailure(r);
+    return why === null ? [] : [`${r.slug ?? r.path}: ${why}`];
+  });
+  if (failing.length > 0)
+    return `${failing.length === 1 ? "a repository's turn failed" : `${failing.length} repositories' turns failed`}, ${failing[0]}${failing.length > 1 ? ` (and ${failing.length - 1} more)` : ""}`;
+  const unlogged =
+    receipt.unloggedOutcomes?.[0] ??
+    receipt.repos
+      .flatMap((r) => r.unplaced)
+      .find((u) => u.target === "the outcome log")?.reason;
+  if (unlogged !== undefined)
+    return `the outcome log was not written: ${unlogged}`;
+  if (receipt.logCopyFailed !== undefined)
+    return `the outcome log's copy was not written: ${receipt.logCopyFailed}`;
+  if (receipt.lineFailed !== undefined)
+    return `the dashboard line was not written: ${receipt.lineFailed}`;
+  return "the tick exited 1 with no cause on its receipt";
+}
+
+/**
+ * The failure ledger's key of a tick's scope: a tick of one repository (a
+ * wake-up) has its own, so the sweeps that succeed between failing wake-ups
+ * do not clear theirs; every tick of several shares the sweep's.
+ */
+function tickScope(
+  receipt: TickReceipt,
+  repos: readonly string[],
+): { key: string; target: string } {
+  const paths = [...new Set(repos.map((p) => resolve(p)))];
+  if (paths.length !== 1)
+    return { key: "ticks sweep", target: "ticks of several repositories" };
+  const path = paths[0] as string;
+  const slug = receipt.repos.find((r) => resolve(r.path) === path)?.slug;
+  return { key: `ticks ${path}`, target: `ticks of ${slug ?? path}` };
+}
+
+/**
+ * The rows of repositories the machine file no longer lists, and of their
+ * wake-ups' ticks, go, and the sweep's once a single repository is listed; so do the action rows of a repository no listed path
+ * names, when this tick read every listed path and so knows each one's slug.
+ */
+function dropUnlisted(
+  machine: MachineConfig,
+  receipt: TickReceipt,
+  root: string,
+): void {
+  const listed = new Set(machine.repositories.map((r) => resolve(r.path)));
+  const slugs = new Set<string>();
+  let known = true;
+  for (const path of listed) {
+    const slug = receipt.repos.find((r) => resolve(r.path) === path)?.slug;
+    if (slug == null) known = false;
+    else slugs.add(slug);
+  }
+  for (const row of readFailures(undefined, root)) {
+    const gone =
+      (row.kind === "repository" && !listed.has(resolve(row.repo))) ||
+      (row.kind === "tick" &&
+        (row.key === "ticks sweep"
+          ? // With one repository listed, every tick is that repository's own scope.
+            listed.size === 1
+          : !listed.has(resolve(row.key.replace(/^ticks /, ""))))) ||
+      (known && isActionKind(row.kind) && !slugs.has(row.repo));
+    if (gone) clearFailure(row.repo, row.key, root);
+  }
+}
+
+/**
+ * Count this tick's failures of each repository it read and of the tick
+ * itself, with `--apply` and a machine file, once its exit is decided; then
+ * put the ledger's rows that back off or are notified on the receipt. A
+ * write the database refuses is said on the receipt and leaves the exit as
+ * it is.
+ */
+export function settleFailures(
+  receipt: TickReceipt,
+  context: TickContext,
+): void {
+  const { options } = context;
+  const machine = options.machine;
+  if (options.apply !== true || machine == null) return;
+  if (context.failuresSettled === true) return;
+  context.failuresSettled = true;
+  const root = context.apply?.root ?? stateRoot();
+  const settings = failureSettings(machine);
+  const nowMs = Date.now();
+  try {
+    for (const r of receipt.repos) {
+      const path = resolve(r.path);
+      const why = repoFailure(r);
+      if (why === null) clearFailure(path, "repository", root);
+      else
+        recordFailure(
+          {
+            repo: path,
+            key: "repository",
+            kind: "repository",
+            target: r.slug ?? r.path,
+          },
+          why,
+          nowMs,
+          settings,
+          root,
+        );
+    }
+    const pending = settleTick(receipt, context, root, nowMs, false);
+    dropUnlisted(machine, receipt, root);
+    reportFailures(receipt, root, settings, nowMs, pending);
+  } catch (error) {
+    receipt.failuresUnwritten = failureText(error);
+  }
+}
+
+/**
+ * The tick's own row for the exit as it stands: counted at 1. At 0 it is
+ * cleared only once `final`: before the dashboard's line is written the
+ * exit may still become 1, and a streak cleared and begun again would hide
+ * a failure that never stops. The key of the row left pending, or `null`.
+ */
+function settleTick(
+  receipt: TickReceipt,
+  context: TickContext,
+  root: string,
+  nowMs: number,
+  final: boolean,
+): string | null {
+  const machine = context.options.machine as MachineConfig;
+  const scope = tickScope(receipt, context.options.repos);
+  if (receipt.exitStatus === 0 && !final) {
+    delete context.tickSettledExit;
+    return scope.key;
+  }
+  context.tickSettledExit = receipt.exitStatus;
+  if (receipt.exitStatus === 0) clearFailure("", scope.key, root);
+  else if (receipt.exitStatus === 1)
+    recordFailure(
+      { repo: "", ...scope, kind: "tick" },
+      tickFailure(receipt),
+      nowMs,
+      failureSettings(machine),
+      root,
+    );
+  return null;
+}
+
+/** Put the ledger's rows that back off or are notified on the receipt. */
+function reportFailures(
+  receipt: TickReceipt,
+  root: string,
+  settings: ReturnType<typeof failureSettings>,
+  nowMs: number,
+  pendingTick: string | null = null,
+): void {
+  // The row of a tick that exits 0 so far goes at the end of the close, if the exit holds.
+  const rows = readFailures(undefined, root).filter(
+    (r) => !(r.kind === "tick" && r.key === pendingTick),
+  );
+  const backingOff = rows.filter(
+    (r) => isActionKind(r.kind) && r.nextAtMs > nowMs,
+  );
+  const escalated = rows.filter((r) => r.count >= settings.notifyAfter);
+  delete receipt.failures;
+  if (backingOff.length > 0 || escalated.length > 0)
+    receipt.failures = {
+      backingOff: backingOff.map(entryOf),
+      escalated: escalated.map(entryOf),
+    };
+}
+
+/**
+ * Settle the tick's row for the exit the receipt ends with: `settleFailures`
+ * counts a tick that exits 1 and leaves a tick that exits 0 to this, which
+ * clears its row only once the dashboard's line or its history has not set
+ * the exit to 1. The repositories' rows are
+ * counted once, by `settleFailures`.
+ */
+export function finalizeTickFailure(
+  receipt: TickReceipt,
+  context: TickContext,
+): void {
+  const { options } = context;
+  if (options.apply !== true || options.machine == null) return;
+  if (context.failuresSettled !== true) return;
+  if (context.tickSettledExit === receipt.exitStatus) return;
+  const root = context.apply?.root ?? stateRoot();
+  const nowMs = Date.now();
+  try {
+    settleTick(receipt, context, root, nowMs, true);
+    reportFailures(receipt, root, failureSettings(options.machine), nowMs);
+  } catch (error) {
+    receipt.failuresUnwritten = failureText(error);
+  }
 }

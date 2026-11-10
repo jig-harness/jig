@@ -33,6 +33,13 @@
 import { recoveryReservationRefusal } from "./no-cause-stops.ts";
 import { budgeted, sameFacts } from "./recovery-facts.ts";
 import type { Outcome } from "../../shared/outcome.ts";
+import type { ActionBook } from "./failures.ts";
+import {
+  endTarget,
+  settleRetryableFollowups,
+  writeOwedEnds,
+  type OwedEnd,
+} from "./settlement.ts";
 import { settlesWithPerson } from "./redrive-settle.ts";
 import { databaseInstance } from "../../shared/records/db.ts";
 import { forgeShared } from "../../shared/records/shared-forge.ts";
@@ -69,7 +76,6 @@ import {
   type LaunchRecord,
   type ReadRecord,
   settleEnds,
-  settledEnds,
   writeRecord,
   cancelledBeforeExecution,
 } from "./launches.ts";
@@ -567,8 +573,8 @@ function endOfRecord(
 /**
  * Write the end of each of this host's own claims that has none, once its
  * launch record ended or is gone; with `--apply` only, since it writes to the
- * forge. Returns why an end could not be written, for the report: the next
- * tick writes it.
+ * forge. Returns why an end could not be written, for the report: a later
+ * tick writes it. `book`, the failure ledger, backs off a repeating failure.
  */
 export async function settleOwnClaims(
   ctx: SharedContext,
@@ -578,21 +584,16 @@ export async function settleOwnClaims(
   outcomes: ReadonlyMap<number, FollowupOutcome>,
   nowIso: string,
   startupScope?: ReadonlySet<number>,
+  book?: ActionBook,
 ): Promise<string[]> {
   const byId = new Map(records.map((r) => [r.record.id, r]));
-  const retryFailures: string[] = [];
-  const settled = settledEnds(ctx.root);
-  for (const r of records) {
-    if (
-      r.record.repo === ctx.slug &&
-      retryableFollowup(r) &&
-      !settled.has(r.record.id) &&
-      (startupScope === undefined || startupScope.has(Number(r.record.pr)))
-    )
-      retryFailures.push(
-        ...(await settleRecordClaims(ctx, r, nowIso, ctx.root)),
-      );
-  }
+  const retryFailures = await settleRetryableFollowups(
+    ctx,
+    records,
+    nowIso,
+    startupScope,
+    settleRecordClaims,
+  );
   const ends = [
     ...driveEnds(claims, ctx.host, byId, nowIso),
     ...merged.flatMap((pr) =>
@@ -611,36 +612,45 @@ export async function settleOwnClaims(
       ),
     ),
   ];
-  const failures: string[] = [...retryFailures];
-  const written = new Set<number>();
-  for (const o of ends) {
-    if (
-      o.stage === "followup" &&
-      o.end.state === "ended" &&
-      o.end.outcome === null
-    )
-      continue;
-    const r = await ctx.records.end(
-      { repo: ctx.slug, pr: o.pr },
-      o.stage,
-      o.id,
-      o.end,
-      o.host,
-    );
-    if (r.ok) {
-      if (o.stage === "drive") written.add(o.id);
-    } else {
-      failures.push(
-        `PR #${o.pr}: the end of claim comment ${o.id} could not be written: ${r.failure.reason}`,
-      );
-    }
-  }
+  const owing = ends.filter(
+    (o) =>
+      !(
+        o.stage === "followup" &&
+        o.end.state === "ended" &&
+        o.end.outcome === null
+      ),
+  );
+  // A pull request whose claims, or any trusted marker, did not read owes what it owed: its rows stay.
+  const unread = new Set<string>([
+    ...[...claims]
+      .filter(([, read]) => unreadClaims(read) !== null)
+      .map(([pr]) => `PR #${pr}`),
+    ...merged
+      .filter(
+        (pr) =>
+          "unreadable" in pr.markers ||
+          pr.markers.some((m) => m.trusted && m.run.kind === "unreadable"),
+      )
+      .map((pr) => `PR #${pr.number}`),
+  ]);
+  const unobserved = (target: string) => unread.has(target);
+  book?.wanted(
+    "claim-end",
+    owing.filter((o) => o.stage === "drive").map((o) => endTarget(o).key),
+    unobserved,
+  );
+  book?.wanted(
+    "marker-answer",
+    owing.filter((o) => o.stage !== "drive").map((o) => endTarget(o).key),
+    unobserved,
+  );
+  const { failures, written } = await writeOwedEnds(ctx, owing, book);
   settleEnds(
     settledRecords(claims, ctx.host, records, written, nowIso),
     nowIso,
     ctx.root,
   );
-  return failures;
+  return [...retryFailures, ...failures];
 }
 
 /** How long each forge call of the wrapper's settle may take: the wrapper's terminal stays open until they are done. */
@@ -864,15 +874,6 @@ export function settledRecords(
 }
 
 /** One end this host owes: its own claim's, on a pull request. */
-interface OwedEnd {
-  pr: number;
-  stage: "drive" | "followup";
-  id: number;
-  end: LaunchEnd;
-  /** The host to name on a marker that names none. */
-  host?: string;
-}
-
 const owed = (
   pr: number,
   stage: OwedEnd["stage"],

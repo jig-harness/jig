@@ -193,6 +193,8 @@ export interface DrivenPr {
   stale?: StaleCause;
   /** Its labels, read only where the repository turns dispatch labels on. */
   labels?: string[];
+  /** For an `unplaced` ledger: its comments or its ledger did not read, as against a state the forge leaves undecided. */
+  readFailed?: true;
 }
 
 /** One pull request merged since the follow-up stage's start. */
@@ -249,6 +251,8 @@ export interface Unplaced {
   reason: string;
   /** Set for an item assigned by someone who cannot write: only a person can settle it. */
   cause?: "assigner-cannot-write";
+  /** Set when reading the record failed (a comment listing, an unreadable ledger), as against a state the record legitimately leaves unplaced. */
+  readFailed?: true;
 }
 
 /** What a notification is about. */
@@ -264,7 +268,18 @@ export type NotifyCause =
   | "drifting"
   | "nudge-unanswered"
   | "pickup-question"
-  | "ready";
+  | "ready"
+  | FailureCause;
+
+/**
+ * The causes of the failure ledger (`failures.ts`): an action that failed
+ * `failures.notify_after` times in a row, a repository whose turn did, and
+ * this host's ticks of one scope that exited 1 as often.
+ */
+export type FailureCause =
+  | "action-failing"
+  | "repository-failing"
+  | "ticks-failing";
 
 /** A follow-up claim past `followup_stale_after` with no done mark and no session joined to it: the marker the tick releases, and whose claim it was. */
 export interface StaleClaim {

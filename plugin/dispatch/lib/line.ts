@@ -23,6 +23,7 @@ import { actOfNeed } from "../../shared/acts.ts";
 import { decisionOf } from "./line-decision.ts";
 export { decisionOf } from "./line-decision.ts";
 import { holds, targetOf } from "./launches.ts";
+import { isFailureCause } from "./failure-notices.ts";
 import { boardUnread, readyOf } from "./line-ready.ts";
 import { needWorkspace } from "./line-workspace.ts";
 import type { MachineConfig } from "./machine-config.ts";
@@ -141,7 +142,8 @@ function isNeed(action: Action): action is Action & { cause: NeedCause } {
     action.cause !== undefined &&
     action.cause !== "waiting" &&
     action.cause !== "drifting" &&
-    action.cause !== "ready"
+    action.cause !== "ready" &&
+    !isFailureCause(action.cause)
   );
 }
 

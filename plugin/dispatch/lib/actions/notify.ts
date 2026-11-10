@@ -38,6 +38,12 @@
  *   at that record and keyed by the same facts; a cause about a stage this
  *   machine launched has its ended row instead.
  *
+ * - **Backed off while it keeps failing.** A cause whose delivery was lost
+ *   is counted in the failure ledger (`failures.ts`) under `notice <key>`:
+ *   until its next try it is reported waiting, and past
+ *   `failures.notify_after` lost deliveries in a row it is notified as
+ *   failing, through whatever destination still delivers.
+ *
  * Once they are sent, the notices workspace is removed when its job is done
  * (`retire-notices.ts`); a workspace `notices_branch` names is a person's,
  * and is never removed.
@@ -54,6 +60,12 @@ import {
   type LogRow,
   type OutcomeClass,
 } from "../log.ts";
+import { type ActionBook, readFailures } from "../failures.ts";
+import {
+  HOST_NOTICE,
+  hostNoticeKeys,
+  isFailureCause,
+} from "../failure-notices.ts";
 import { holderRecordStands } from "../holder-notices.ts";
 import { carries, holdsNotice, unobservedTarget } from "../notices.ts";
 import {
@@ -111,11 +123,28 @@ function readSuppressions(
   repo: string,
   root: string,
 ): Map<string, Suppression> {
+  return suppressionsWhere("repo = ?", [repo], root);
+}
+
+/**
+ * The suppression records of the host's own failures at any repository, by
+ * key, the latest send of a key standing: the destination of such a notice
+ * can move, its identity and suppression do not.
+ */
+function readHostSuppressions(root: string): Map<string, Suppression> {
+  return suppressionsWhere("key LIKE ?", [`${HOST_NOTICE} %`], root);
+}
+
+function suppressionsWhere(
+  where: string,
+  params: string[],
+  root: string,
+): Map<string, Suppression> {
   const rows = stateDb(root)
     .query(
-      "SELECT repo, key, target, workspace, at, sent_at, lasting FROM notices WHERE repo = ?",
+      `SELECT repo, key, target, workspace, at, sent_at, lasting FROM notices WHERE ${where} ORDER BY COALESCE(sent_at, at)`,
     )
-    .all(repo) as Array<
+    .all(...params) as Array<
     Omit<Suppression, "lasting" | "sentAt"> & {
       lasting: number;
       sent_at: string | null;
@@ -239,6 +268,9 @@ function hours(ms: number): string {
     : `${Math.round(ms / 60_000)}m`;
 }
 
+/** The repository whose suppression record a repeat moves: a host failure's record stays where it was first told. */
+const repeatedAt = new WeakMap<Cause, string>();
+
 /** A cause sent again: its message says it still waits, and since when. */
 function asRepeat(
   cause: Cause,
@@ -248,11 +280,13 @@ function asRepeat(
 ): Cause {
   const [head = "", ...rest] = cause.notice.text.split("\n");
   const again = `Sent again: this still waits on a person as of ${new Date(nowMs).toISOString()}, first sent ${record.at} (dispatch.renotify_after ${hours(everyMs)}).`;
-  return {
+  const repeated = {
     ...cause,
-    repeat: true,
+    repeat: true as const,
     notice: { ...cause.notice, text: [head, again, ...rest].join("\n") },
   };
+  repeatedAt.set(repeated, record.repo);
+  return repeated;
 }
 
 function outcomeFor(
@@ -534,6 +568,10 @@ async function sendTo(
     receipt.comment !== undefined
   )
     recordComment(workspace, receipt.comment, root, repo);
+  if (receipt.ok && receipt.comment !== undefined) {
+    workspace.comment = receipt.comment;
+    workspace.unread = receipt.unread ?? null;
+  }
   for (const c of send) {
     const outcome = delivered(receipt, c, workspace.path);
     if (outcome.outcome === "sent") suppress(c, workspace.path);
@@ -614,6 +652,7 @@ async function atDestination(
 
 /** The stage a cause is about, for its event row. */
 function stageOf(cause: Cause): string {
+  if (isFailureCause(cause.cause)) return "dispatch";
   if (typeof cause.evidence.stage === "string") return cause.evidence.stage;
   if (cause.cause === "followup-failed" || cause.cause === "followup-stale")
     return "followup";
@@ -677,6 +716,88 @@ export interface NoticeSettings {
   renotifyAfterMs: number;
   /** `notices_branch`; `null` for the repository's notices workspace. */
   branch: string | null;
+  /** The failure ledger's book of the repository's actions, with `--apply`. */
+  book?: ActionBook | null;
+}
+
+/** The failure ledger's key and kind of a cause's delivery. */
+function deliveryOf(c: Cause): {
+  key: string;
+  kind: "notice" | "failure-notice";
+  target: string;
+} {
+  return {
+    key: `notice ${c.notice.key}`,
+    kind: isFailureCause(c.cause) ? "failure-notice" : "notice",
+    target: c.target,
+  };
+}
+
+/**
+ * Count each delivery the tick attempted in the failure ledger: a lost one
+ * fails, a sent or already-carried one succeeds; one that waited for its
+ * destination was not attempted.
+ */
+function countDeliveries(
+  book: ActionBook,
+  due: readonly Cause[],
+  outcomes: readonly NotifyOutcome[],
+): void {
+  const byKey = new Map(due.map((c) => [c.notice.key, c]));
+  for (const o of outcomes) {
+    const c = byKey.get(o.key);
+    if (c === undefined) continue;
+    if (o.outcome === "lost") book.ran(deliveryOf(c), o.detail);
+    else if (o.outcome === "sent" || o.outcome === "already")
+      book.ran(deliveryOf(c), null);
+  }
+}
+
+/** The causes due now; one whose deliveries keep failing is reported waiting until its next try. */
+function notBackingOff(
+  due: Cause[],
+  book: ActionBook | null | undefined,
+  report: RepoReport,
+): Cause[] {
+  if (book == null) return due;
+  return due.filter((c) => {
+    const waits = book.waits(deliveryOf(c).key);
+    if (waits === null) return true;
+    report.notifications.push(outcomeFor(c, "waits", null, waits));
+    return false;
+  });
+}
+
+/** Whether a cause is not about an action whose failure row this tick's act phase has cleared. */
+function failureStands(book: ActionBook | null | undefined, c: Cause): boolean {
+  const row = c.evidence.row;
+  return (
+    book == null ||
+    c.cause !== "action-failing" ||
+    typeof row !== "string" ||
+    book.standing(row)
+  );
+}
+
+/** Drop the ledger's rows of the causes this tick no longer names, when every record read whole. */
+function wantedDeliveries(
+  book: ActionBook | null | undefined,
+  report: RepoReport,
+  causes: readonly Cause[],
+): void {
+  if (book == null || !report.records.every((r) => r.ok)) return;
+  const of = causes.map(deliveryOf);
+  const unobserved = (target: string) => unobservedTarget(report, target);
+  book.wanted(
+    "notice",
+    of.filter((d) => d.kind === "notice").map((d) => d.key),
+    unobserved,
+  );
+  book.wanted(
+    "failure-notice",
+    of.filter((d) => d.kind === "failure-notice").map((d) => d.key),
+    unobserved,
+  );
 }
 
 /** Whether a cause already sent is due again: it still stands `renotify_after` after its last send, and is not an observation notified once. */
@@ -688,6 +809,34 @@ function dueAgain(
   if (everyMs <= 0 || record.lasting) return false;
   const last = Date.parse(record.sentAt);
   return Number.isFinite(last) && nowMs - last >= everyMs;
+}
+
+/** The keys that stand: the causes named, and the host failures still standing, whose records stay at the repository that told them wherever they are told now. */
+function standingKeys(causes: readonly Cause[], root: string): Set<string> {
+  const live = new Set(causes.map((c) => c.notice.key));
+  for (const key of hostNoticeKeys(readFailures(undefined, root)))
+    live.add(key);
+  return live;
+}
+
+/** The send of a cause that stands: a host failure's at any repository, else this repository's. */
+function earlierSend(
+  c: Cause,
+  sent: ReadonlyMap<string, Suppression>,
+  hostSent: ReadonlyMap<string, Suppression>,
+): Suppression | undefined {
+  return (
+    (isFailureCause(c.cause) ? hostSent.get(c.notice.key) : undefined) ??
+    sent.get(c.notice.key)
+  );
+}
+
+/** The suppression records that keep an unread notices workspace: the repository's own and the host failures' at any repository, which can be told here. */
+function retirementRecords(repo: string, root: string): Suppression[] {
+  const records = readSuppressions(repo, root);
+  for (const [key, record] of readHostSuppressions(root))
+    if (!records.has(key)) records.set(key, record);
+  return [...records.values()];
 }
 
 /** `--apply` for one repository's notifications, then its notices workspace. */
@@ -716,7 +865,7 @@ export async function applyNotices(
     takesComment: notices !== null && ownsComment(notices, root),
     written,
     causes: causes.map((c) => c.notice.key),
-    records: [...readSuppressions(repo.slug, root).values()],
+    records: retirementRecords(repo.slug, root),
     lingerMs,
     nowMs: Date.now(),
     root,
@@ -730,20 +879,24 @@ async function sendNotices(
   report: RepoReport,
   sessions: SessionsReport,
   {
-    causes,
+    causes: planned,
     root,
     settings,
   }: { causes: Cause[]; root: string; settings: NoticeSettings },
 ): Promise<Set<string>> {
   const sent = readSuppressions(repo.slug, root);
-  prune(report, new Set(causes.map((c) => c.notice.key)), sent, root);
+  const hostSent = readHostSuppressions(root);
+  wantedDeliveries(settings.book, report, planned);
+  // The plan named a failing action's notice before the act phase found the action no longer wanted.
+  const causes = planned.filter((c) => failureStands(settings.book, c));
+  prune(report, standingKeys(causes, root), sent, root);
   const nowMs = Date.now();
-  const due: Cause[] = [];
+  const all: Cause[] = [];
   for (const c of causes) {
-    const earlier = sent.get(c.notice.key);
-    if (earlier === undefined) due.push(c);
+    const earlier = earlierSend(c, sent, hostSent);
+    if (earlier === undefined) all.push(c);
     else if (dueAgain(earlier, settings.renotifyAfterMs, nowMs))
-      due.push(asRepeat(c, earlier, settings.renotifyAfterMs, nowMs));
+      all.push(asRepeat(c, earlier, settings.renotifyAfterMs, nowMs));
     else
       report.notifications.push(
         outcomeFor(
@@ -756,6 +909,7 @@ async function sendNotices(
         ),
       );
   }
+  const due = notBackingOff(all, settings.book, report);
   if (due.length === 0) return new Set();
   if (!sessions.ok) {
     for (const c of due)
@@ -767,7 +921,7 @@ async function sendNotices(
     try {
       suppress(
         {
-          repo: repo.slug,
+          repo: repeatedAt.get(c) ?? repo.slug,
           target: c.target,
           key: c.notice.key,
           at,
@@ -790,16 +944,18 @@ async function sendNotices(
       );
     }
   };
-  const group = await atDestination(
-    state,
-    repo,
-    due,
-    { workspaces: sessions.workspaces, report },
-    settings.branch,
-  );
-  if (group === null) return new Set();
-  report.notifications.push(
-    ...(await sendTo(
+  const written = new Set<string>();
+  const deliver = async (batch: Cause[]): Promise<void> => {
+    if (batch.length === 0) return;
+    const group = await atDestination(
+      state,
+      repo,
+      batch,
+      { workspaces: sessions.workspaces, report },
+      settings.branch,
+    );
+    if (group === null) return;
+    const outcomes = await sendTo(
       state,
       group.workspace,
       group.causes,
@@ -807,7 +963,17 @@ async function sendNotices(
       root,
       repo.slug,
       settings.branch !== null,
-    )),
+    );
+    report.notifications.push(...outcomes);
+    if (settings.book != null) countDeliveries(settings.book, batch, outcomes);
+    written.add(group.workspace.path);
+  };
+  // The notices go first: a delivery that recovers here clears its row before the failure notice about it is decided.
+  await deliver(due.filter((c) => !isFailureCause(c.cause)));
+  await deliver(
+    due.filter(
+      (c) => isFailureCause(c.cause) && failureStands(settings.book, c),
+    ),
   );
-  return new Set([group.workspace.path]);
+  return written;
 }
