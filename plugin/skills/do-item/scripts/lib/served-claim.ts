@@ -212,6 +212,13 @@ async function claimServed(
     // The state is checked again before the assignment write, so a refusal
     // for it never follows a write.
     const current = await tracker.getIssue(key);
+    if (options.claimFrom && current === null)
+      return {
+        outcome: "refused",
+        issue: key,
+        why: "state",
+        reason: `${key} could not be read, so its state is not known to be in claim_from`,
+      };
     const outsideNow =
       options.claimFrom && current
         ? claimFromRefusal(tracker, key, current.state.name, options.claimFrom)
@@ -244,8 +251,9 @@ async function claimServed(
   const outside = options.claimFrom
     ? claimFromRefusal(tracker, key, before.state.name, options.claimFrom)
     : null;
-  // The assignment may already be written, so this is a stand-down, never a
-  // refusal that reads as nothing written.
+  // A direct claim has written nothing yet, so it keeps the state refusal; an
+  // inherited one may already have written the assignment, so it stands down.
+  if (outside && !options.ancestor) return outside;
   if (outside)
     return {
       outcome: "stood_down",
