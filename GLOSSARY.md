@@ -65,6 +65,14 @@ make, use the entry's term instead.
   holds one concrete, tested implementation of it, and what it learns comes
   back as *backflow*. Short form: consumer. *Avoid*: instance, downstream
   repository, target repository, adopting repository.
+- **Tracker claim token** — the marker comment a claim posts on a tracker
+  item (`do_item.claim_marker`) before it writes the item, so two hosts
+  picking the same item can tell their claims apart: of the markers posted
+  within ten minutes of a claim's own, the earliest wins and a later claim
+  stands down. A marker older than that lapses. The tracker offers no
+  conditional create for a comment, so the token narrows a race between
+  hosts and does not exclude it
+  ([plugin/RECORDS.md](plugin/RECORDS.md)).
 - **Tracker namespace** — the stable name of the tracker collection whose
   served assignments a repository reads: `linear:<team>` for Linear, or
   `jira:<site>:<project>` for Jira, where the site is its `https://` address. The adapter and, for Jira, its site keep

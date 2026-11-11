@@ -212,7 +212,13 @@ describe("GitHub adapter: fleet metrics", () => {
         createdIn: WINDOW,
       }),
     ).toEqual([
-      { issue: "#1", body: "marker: yes", createdAt: at(1), trusted: true },
+      {
+        issue: "#1",
+        id: "C1",
+        body: "marker: yes",
+        createdAt: at(1),
+        trusted: true,
+      },
     ]);
   });
 

@@ -558,8 +558,9 @@ step:
   projection of the drive ledger writes, with the park class and reason,
   when a drive stops on parked work, and clears when the park is answered.
 - **Pool pickup.** The dispatcher picks up unassigned items in a ready
-  pool as a served lane, trusting who made an item ready. It waits on an
-  inherited claim on Linear and Jira and on claims across hosts.
+  pool as a served lane, trusting who made an item ready. A pool requires
+  the claim marker, which arbitrates, best effort, between the hosts that pick up from it
+  ([claims across hosts](dark-factory-dispatch.md#the-records-it-reads)).
 
 Done when a repository on Jira with all of these set runs an item from its
 ready pool to a merged pull request without a hook or script of its own,

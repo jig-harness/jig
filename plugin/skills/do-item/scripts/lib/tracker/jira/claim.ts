@@ -1,18 +1,32 @@
 /**
  * What claiming an issue reads and writes on Jira: the account the
  * credential acts as (`myself`), the issue's assignee (a Jira issue has at
- * most one), an assignment by account id, and the account an identity
- * names. A user is named by its account id, compared exactly, and its
- * display name.
+ * most one), an assignment by account id, the assignment of an unassigned
+ * issue verified against the issue's changelog (`assign-verified.ts`: Jira
+ * offers no conditional write), and the account an identity names. A user
+ * is named by its account id, compared exactly, and its display name.
  */
 
+import { assignVerified } from "../assign-verified.ts";
 import type { Tracker, TrackerUser } from "../port.ts";
 import type { Client } from "./client.ts";
 import { JiraApiError } from "./transport.ts";
 
 export function claimOperations(
   client: Client,
-): Pick<Tracker, "viewer" | "assignees" | "assign" | "user"> {
+): Pick<
+  Tracker,
+  "viewer" | "assignees" | "assign" | "user" | "assignUnassigned"
+> {
+  async function assignId(key: string, accountId: string): Promise<void> {
+    const issue = await client.mustIssue(key);
+    await client.transport({
+      method: "PUT",
+      path: `issue/${encodeURIComponent(issue.key)}/assignee`,
+      body: { accountId },
+    });
+  }
+
   return {
     async viewer() {
       const me = await client.transport({ method: "GET", path: "myself" });
@@ -37,12 +51,29 @@ export function claimOperations(
           ];
     },
     async assign(key, user) {
-      const issue = await client.mustIssue(key);
-      await client.transport({
-        method: "PUT",
-        path: `issue/${encodeURIComponent(issue.key)}/assignee`,
-        body: { accountId: user.id },
-      });
+      await assignId(key, user.id);
+    },
+    async assignUnassigned(key, user) {
+      return assignVerified(
+        {
+          assignee: async () =>
+            (await client.mustIssue(key)).assignee?.accountId ?? null,
+          assign: (id) => assignId(key, id),
+          history: async () =>
+            (await client.changelog(key)).flatMap((e) =>
+              e.items
+                .filter((i) => i.fieldId === "assignee")
+                .map((i) => {
+                  if (!i.explicit)
+                    throw new JiraApiError(
+                      `changelog of ${key}: an assignee change at ${e.createdAt} omits a side`,
+                    );
+                  return { from: i.from, to: i.to, at: e.createdAt };
+                }),
+            ),
+        },
+        user.id,
+      );
     },
     async user(identity) {
       // The account id resolves as the dispatcher's assigned-issues read resolves it.
