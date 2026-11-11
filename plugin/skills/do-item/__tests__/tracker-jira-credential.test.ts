@@ -391,6 +391,33 @@ describe("JIRA_TOKEN_COMMAND", () => {
     }
   });
 
+  it("names the token command when the call's deadline ends the wait", async () => {
+    const late = Promise.withResolvers<TokenRun>();
+    const auth = command(() => late.promise);
+    try {
+      const r = await auth.header(AbortSignal.timeout(50));
+      expect(r.ok ? r.value : r.failure.reason).toMatch(
+        /^JIRA_TOKEN_COMMAND \(.+\) printed no token before the request's deadline$/,
+      );
+    } finally {
+      late.resolve(tokenRun("late\n"));
+    }
+  });
+
+  it("starts no renewal run for a request that has already ended", async () => {
+    let runs = 0;
+    const auth = command(async () => {
+      runs++;
+      return tokenRun("t\n");
+    });
+    const lease = await auth.lease();
+    const stop = new AbortController();
+    stop.abort(new Error("gone"));
+    const renewed = await lease.renew(stop.signal);
+    expect(renewed !== null && !renewed.ok).toBe(true);
+    expect(runs).toBe(1);
+  });
+
   it("runs a real command, and stops one that overruns its deadline", async () => {
     const real = jiraAuthorization({
       kind: "command",

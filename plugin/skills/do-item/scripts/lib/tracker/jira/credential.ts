@@ -41,10 +41,7 @@ export type JiraCredential =
   | { kind: "command"; argv: string[] };
 
 export type CredentialCode =
-  | "no-credential"
-  | "bearer-token"
-  | "token-command"
-  | "cancelled";
+  "no-credential" | "bearer-token" | "token-command" | "cancelled";
 
 const NO_CREDENTIAL =
   "no Jira credential: set JIRA_BEARER_TOKEN to an OAuth access token, JIRA_TOKEN_COMMAND to a command that prints one, or JIRA_EMAIL and JIRA_API_TOKEN to an Atlassian account's email and API token";
@@ -175,13 +172,18 @@ function said(stderr: string): string {
   return line === "" ? "" : `: ${line.slice(0, 200)}`;
 }
 
+/** How a failure names the token command: the variable and the program. */
+function programOf(argv: string[]): string {
+  return `JIRA_TOKEN_COMMAND (${argv[0]?.split(/[\\/]/).pop() ?? ""})`;
+}
+
 /** The token a finished run printed, or why it gave none. */
 function tokenOf(
   argv: string[],
   r: TokenRun,
   timeoutMs: number,
 ): Outcome<string, CredentialCode> {
-  const program = `JIRA_TOKEN_COMMAND (${argv[0]?.split(/[\\/]/).pop() ?? ""})`;
+  const program = programOf(argv);
   const fail = (why: string) => failed("token-command", `${program} ${why}`);
   if (r.spawnFailed) return fail(`could not start${said(r.stderr)}`);
   if (r.timedOut)
@@ -196,18 +198,35 @@ function tokenOf(
 }
 
 /**
+ * Why a wait ended early: the caller's cancellation, or the call's deadline
+ * running out, which names the token command.
+ */
+function stopped<T>(
+  signal: AbortSignal,
+  program: string,
+): Outcome<T, CredentialCode> {
+  const reason: unknown = signal.reason;
+  return reason instanceof Error && reason.name === "TimeoutError"
+    ? failed(
+        "token-command",
+        `${program} printed no token before the request's deadline`,
+      )
+    : failed("cancelled", "cancelled while waiting for a token");
+}
+
+/**
  * Ends the wait for `pending` when `signal` aborts; the run it waits on goes
  * on, for the other requests that share it.
  */
 function until<T>(
   pending: Promise<Outcome<T, CredentialCode>>,
   signal: AbortSignal | undefined,
+  program: string,
 ): Promise<Outcome<T, CredentialCode>> {
   if (signal === undefined) return pending;
-  const stop = failed("cancelled", "cancelled while waiting for a token");
-  if (signal.aborted) return Promise.resolve(stop);
+  if (signal.aborted) return Promise.resolve(stopped(signal, program));
   return new Promise((resolve) => {
-    const onAbort = () => resolve(stop);
+    const onAbort = () => resolve(stopped(signal, program));
     signal.addEventListener("abort", onAbort, { once: true });
     void pending.then((value) => {
       signal.removeEventListener("abort", onAbort);
@@ -235,6 +254,7 @@ function commandAuthorization(
     header: Promise<Outcome<string, CredentialCode>>;
     failed: boolean;
   }
+  const program = programOf(argv);
   let generation = 0;
   let current: Run | null = null;
   const start = (): Run => {
@@ -261,14 +281,15 @@ function commandAuthorization(
     run: Run,
     signal?: AbortSignal,
   ): Promise<JiraLease> => ({
-    header: await until(run.header, signal),
+    header: await until(run.header, signal, program),
     renew: (renewSignal) => {
       // A later generation already replaced the one this lease holds.
-      const next =
-        current !== null && current.generation > run.generation
-          ? current
-          : start();
-      return until(next.header, renewSignal);
+      if (current !== null && current.generation > run.generation)
+        return until(current.header, renewSignal, program);
+      // No one is waiting once the request has ended: start no new run.
+      if (renewSignal?.aborted)
+        return Promise.resolve(stopped(renewSignal, program));
+      return until(start().header, renewSignal, program);
     },
   });
   const lease = (signal?: AbortSignal) =>
