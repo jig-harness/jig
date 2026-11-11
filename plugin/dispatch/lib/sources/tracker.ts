@@ -13,7 +13,10 @@
  */
 import type { ServedPerson } from "../serve-config.ts";
 import { limitedRow, readServedPickups } from "./served.ts";
-import { isRateLimited } from "../../../shared/tracker-budget.ts";
+import {
+  isRateLimited,
+  type TrackerRateLimited,
+} from "../../../shared/tracker-budget.ts";
 import type {
   CanonicalState,
   PoolIssue,
@@ -61,6 +64,7 @@ async function readClaimed(
       state: i.state.name,
     }));
   } catch (error) {
+    if (isRateLimited(error)) throw error;
     return {
       target: `items in ${tracker.stateName("in_progress")}`,
       record: "tracker",
@@ -88,7 +92,11 @@ async function byTrustedAssigner(
   tracker: Tracker,
   issues: ReadonlyArray<PoolIssue>,
   identity: string,
-): Promise<{ wanted: WantedItem[]; unplaced: Unplaced[] }> {
+): Promise<{
+  wanted: WantedItem[];
+  unplaced: Unplaced[];
+  limited?: TrackerRateLimited;
+}> {
   const wanted: WantedItem[] = [];
   const unplaced: Unplaced[] = [];
   for (const issue of issues) {
@@ -97,8 +105,7 @@ async function byTrustedAssigner(
       by = await tracker.assignedBy(issue.identifier, identity);
     } catch (error) {
       if (isRateLimited(error)) {
-        unplaced.push(limitedRow(tracker, error));
-        return { wanted: [], unplaced };
+        return { wanted: [], unplaced, limited: error };
       }
       unplaced.push({
         target: issue.identifier,
@@ -235,12 +242,21 @@ async function readFactoryPickups(
       claimed: null,
     };
   const issues = assigned.value;
-  const { wanted, unplaced } = await byTrustedAssigner(
+  const { wanted, unplaced, limited } = await byTrustedAssigner(
     tracker,
     issues,
     identity,
   );
-  const claimed = await readClaimed(tracker, identity);
+  if (limited !== undefined)
+    return limitedFactory(tracker, identity, limited, stores);
+  let claimed: Awaited<ReturnType<typeof readClaimed>>;
+  try {
+    claimed = await readClaimed(tracker, identity);
+  } catch (error) {
+    if (isRateLimited(error))
+      return limitedFactory(tracker, identity, error, stores);
+    throw error;
+  }
   if (!Array.isArray(claimed)) unplaced.push(claimed);
   const record =
     stores === undefined || facets === undefined

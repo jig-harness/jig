@@ -146,20 +146,30 @@ describe("a served queue's cost in tracker requests", () => {
     );
 
     // An assignment itself changes.
-    fake.touch("ENG-9", at(5), { labels: ["backend"] });
-    mark = fake.count();
-    await tick(tracker, cache, 6);
-    const itemChange = fake.count() - mark;
-    expect(itemChange).toBeLessThanOrEqual(5);
-
-    // A parent's description changes.
-    fake.touch("ENG-311", at(7), {
-      description: plan("ENG-311", "ENG-411", "ENG-11"),
+    fake.touch("ENG-9", at(5), {
+      state: { name: "In Progress", type: "started" },
     });
     mark = fake.count();
-    await tick(tracker, cache, 8);
+    const started = await tick(tracker, cache, 6);
+    const itemChange = fake.count() - mark;
+    expect(itemChange).toBeLessThanOrEqual(5);
+    expect(started.wanted.map((w) => w.key)).not.toContain("ENG-9");
+
+    // A parent's description changes to a plan of another epic: its child is held.
+    fake.touch("ENG-311", at(7), {
+      description: plan("ENG-999", "ENG-411", "ENG-11"),
+    });
+    mark = fake.count();
+    const replanned = await tick(tracker, cache, 8);
     const parentChange = fake.count() - mark;
     expect(parentChange).toBeLessThanOrEqual(5);
+    expect(replanned.wanted.map((w) => w.key)).not.toContain("ENG-11");
+    expect(replanned.unplaced).toContainEqual(
+      expect.objectContaining({
+        target: "ENG-11",
+        reason: expect.stringContaining("different epic"),
+      }),
+    );
 
     // And quiet again.
     mark = fake.count();

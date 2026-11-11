@@ -87,10 +87,9 @@ describe("the Linear transport's request budget", () => {
           }),
     );
     const transport = httpTransport("lin_api_a", fetchImpl, governor);
-    expect(transport("query { a }", {})).rejects.toBeInstanceOf(
+    await expect(transport("query { a }", {})).rejects.toBeInstanceOf(
       TrackerRateLimited,
     );
-    await Bun.sleep(0);
     expect(calls.n).toBe(1);
     refuse = false;
     for (let i = 0; i < 5; i++) {
@@ -132,10 +131,9 @@ describe("the Linear transport's request budget", () => {
     const { chmodSync } = await import("node:fs");
     chmodSync(bin, 0o755);
     const transport = cliTransport(bin, governor);
-    expect(transport("query { a }", {})).rejects.toBeInstanceOf(
+    await expect(transport("query { a }", {})).rejects.toBeInstanceOf(
       TrackerRateLimited,
     );
-    await Bun.sleep(50);
     const record = store.read(credentialKey("linear", `cli:${bin}`));
     expect(record?.limitedUntil).toBeGreaterThan(Date.now());
   });
@@ -210,5 +208,61 @@ describe("the Linear transport's request budget", () => {
       fetches: 1,
       ended: "answered",
     });
+  });
+
+  it("reserves each admitted request, so concurrent callers spend the balance once", () => {
+    const now = Date.parse("2026-11-10T12:00:00Z");
+    const store = memoryBudgetStore();
+    const key = credentialKey("linear", "lin_api_r");
+    const governor = budgetGovernor(store, {
+      clock: () => now,
+      share: () => 0.5,
+    });
+    governor.observe(key, {
+      requests: { limit: 2500, remaining: 1251, resetAt: now + 60_000 },
+    });
+    expect(() => governor.admit("linear", key)).not.toThrow();
+    expect(() => governor.admit("linear", key)).toThrow(/share \(50%\)/);
+  });
+
+  it("keeps the newer window when a delayed answer from the older one arrives", () => {
+    const now = Date.parse("2026-11-10T12:00:00Z");
+    const store = memoryBudgetStore();
+    const key = credentialKey("linear", "lin_api_o");
+    const governor = budgetGovernor(store, {
+      clock: () => now,
+      share: () => null,
+    });
+    governor.observe(key, {
+      requests: { limit: 2500, remaining: 2400, resetAt: now + 3_600_000 },
+    });
+    governor.observe(key, {
+      requests: { limit: 2500, remaining: 10, resetAt: now + 1_000 },
+    });
+    expect(store.read(key)?.requests.resetAt).toBe(now + 3_600_000);
+  });
+
+  it("reads a damaged stored record as none", () => {
+    const home = mkdtempSync(join(tmpdir(), "linear-damaged-"));
+    dirs.push(home);
+    const path = budgetPath(home);
+    const store = sqliteBudgetStore(path);
+    const key = credentialKey("linear", "lin_api_d");
+    store.update(key, () => ({
+      requests: { limit: null, remaining: null, resetAt: null },
+      complexity: { limit: null, remaining: null, resetAt: null },
+      limitedUntil: null,
+      why: null,
+      observedAt: 1,
+    }));
+    expect(store.read(key)).not.toBeNull();
+    const { Database } = require("bun:sqlite");
+    const db = new Database(path);
+    db.query("UPDATE tracker_budget SET value = '{}' WHERE key = ?").run(key);
+    db.close();
+    expect(store.read(key)).toBeNull();
+    expect(() =>
+      budgetGovernor(store, { share: () => 0.5 }).admit("linear", key),
+    ).not.toThrow();
   });
 });

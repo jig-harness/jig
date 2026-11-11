@@ -3,7 +3,7 @@
  * process on the machine shares: the dispatcher's ticks, the pickup and
  * follow-up passes it starts, and the skills a person runs.
  *
- * A tracker's transport asks the budget before each request (`admit`) and
+ * A tracker's transport asks the budget before each request (`admit`, which also reserves that request's part of the request count; a query's complexity is known only from its answer) and
  * tells it what each answer said of the limits (`observe`). While the
  * tracker has refused the credential (its rate limit is spent), no request
  * leaves the machine until the reset the answer named: `admit` throws a
@@ -99,10 +99,13 @@ export function credentialKey(adapter: string, secret: string): string {
 /** Where the records are kept. */
 export interface BudgetStore {
   read(key: string): BudgetRecord | null;
-  /** Apply `change` to the record in one transaction, so two processes' answers do not lose one another. */
+  /**
+   * Apply `change` to the record in one transaction, so two processes' answers
+   * do not lose one another; a `null` result leaves the record as it was.
+   */
   update(
     key: string,
-    change: (prev: BudgetRecord | null) => BudgetRecord,
+    change: (prev: BudgetRecord | null) => BudgetRecord | null,
   ): void;
 }
 
@@ -112,7 +115,8 @@ export function memoryBudgetStore(): BudgetStore {
   return {
     read: (key) => rows.get(key) ?? null,
     update(key, change) {
-      rows.set(key, change(rows.get(key) ?? null));
+      const next = change(rows.get(key) ?? null);
+      if (next !== null) rows.set(key, next);
     },
   };
 }
@@ -129,12 +133,37 @@ export function budgetPath(home = homedir()): string {
   return join(home, ".local", "state", "jig", "tracker", "budget.sqlite");
 }
 
+const orNull = (v: unknown, ok: (n: number) => boolean): boolean =>
+  v === null || (typeof v === "number" && Number.isFinite(v) && ok(v));
+
+function validWindow(w: unknown): w is BudgetWindow {
+  if (typeof w !== "object" || w === null) return false;
+  const { limit, remaining, resetAt } = w as Record<string, unknown>;
+  return (
+    orNull(limit, (n) => n >= 0) &&
+    orNull(remaining, () => true) &&
+    orNull(resetAt, (n) => n >= 0)
+  );
+}
+
+/** A record read from the store only when every field has its shape; a damaged one reads as none. */
+function validRecord(value: unknown): value is BudgetRecord {
+  if (typeof value !== "object" || value === null) return false;
+  const r = value as Record<string, unknown>;
+  return (
+    validWindow(r.requests) &&
+    validWindow(r.complexity) &&
+    orNull(r.limitedUntil, (n) => n >= 0) &&
+    (r.why === null || typeof r.why === "string") &&
+    typeof r.observedAt === "number" &&
+    Number.isFinite(r.observedAt)
+  );
+}
+
 function parseRecord(text: string): BudgetRecord | null {
   try {
     const value: unknown = JSON.parse(text);
-    return typeof value === "object" && value !== null
-      ? (value as BudgetRecord)
-      : null;
+    return validRecord(value) ? value : null;
   } catch (error) {
     swallow(error, "a tracker budget record does not read");
     return null;
@@ -172,9 +201,11 @@ export function sqliteBudgetStore(path = budgetPath()): BudgetStore {
         const d = open();
         if (d === null) return;
         inTransaction(d, () => {
+          const next = change(get(d, key));
+          if (next === null) return;
           d.query(
             "INSERT OR REPLACE INTO tracker_budget (key, value) VALUES (?, ?)",
-          ).run(key, JSON.stringify(change(get(d, key))));
+          ).run(key, JSON.stringify(next));
         });
       } catch (error) {
         swallow(error, "write the tracker budget");
@@ -209,7 +240,11 @@ export interface BudgetGovernor {
 
 const EMPTY: BudgetWindow = { limit: null, remaining: null, resetAt: null };
 
-/** The newer of two readings of a window: the lower count within the same window, else the later reading. */
+/**
+ * The newer of two readings of a window: the lower count within the same
+ * window, the stored reading when the answer is from an older window (a
+ * delayed response across a reset), else the answer.
+ */
 function merged(
   prev: BudgetWindow,
   next: BudgetWindow | undefined,
@@ -222,6 +257,12 @@ function merged(
     next.remaining !== null
   )
     return { ...next, remaining: Math.min(prev.remaining, next.remaining) };
+  if (
+    prev.resetAt !== null &&
+    next.resetAt !== null &&
+    next.resetAt < prev.resetAt
+  )
+    return prev;
   return next;
 }
 
@@ -261,18 +302,38 @@ export function budgetGovernor(
   const share = opts.share ?? currentShare;
   return {
     admit(adapter, key) {
-      const record = store.read(key);
-      if (record === null) return;
       const now = clock();
-      if (record.limitedUntil !== null && record.limitedUntil > now)
-        throw new TrackerRateLimited(
-          adapter,
-          record.limitedUntil,
-          record.why ?? "the tracker refused it",
-        );
-      const spent = spentWindow(record, share(), now);
-      if (spent !== null)
-        throw new TrackerRateLimited(adapter, spent.resetAt, spent.why);
+      const out: { refusal: TrackerRateLimited | null } = { refusal: null };
+      // The decision and the reservation of one request are one transaction,
+      // so concurrent callers each spend their own part of the balance.
+      store.update(key, (record) => {
+        if (record === null) return null;
+        if (record.limitedUntil !== null && record.limitedUntil > now) {
+          out.refusal = new TrackerRateLimited(
+            adapter,
+            record.limitedUntil,
+            record.why ?? "the tracker refused it",
+          );
+          return null;
+        }
+        const spent = spentWindow(record, share(), now);
+        if (spent !== null) {
+          out.refusal = new TrackerRateLimited(
+            adapter,
+            spent.resetAt,
+            spent.why,
+          );
+          return null;
+        }
+        const w = record.requests;
+        if (w.remaining === null || w.resetAt === null || w.resetAt <= now)
+          return null;
+        return {
+          ...record,
+          requests: { ...w, remaining: w.remaining - 1 },
+        };
+      });
+      if (out.refusal !== null) throw out.refusal;
     },
     observe(key, answer) {
       const now = clock();

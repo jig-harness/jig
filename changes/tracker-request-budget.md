@@ -29,7 +29,9 @@ spent limit stops every request on the host until the reset.
   blockers and parents costs one request on a quiet tick and two or three
   when an issue changed, where it cost about a hundred per repository.
 - `jig dispatch result <record> <token> waits --until <time>`: a pickup
-  pass the tracker's rate limit stopped records it, and the item starts
+  pass the tracker's rate limit stopped before it claimed the item records
+  it (after the claim it waits within its deadline or records `failed`),
+  and the item starts
   again after the reset with no question for a person. Tracker scripts exit
   `5` (`RATE-LIMITED until <time>` on stderr) when the limit refuses them.
 

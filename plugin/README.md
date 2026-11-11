@@ -427,8 +427,9 @@ how it ended, `jig dispatch result <record> <token> done|failed`, which
 refuses another record's token and a second answer. A completed pickup adds
 `--pr <number>` for the pull request it opened, or `--none "<reason>"` when
 no pull request was needed. A `done` without either is refused. A pickup the
-tracker's rate limit stopped (a tracker script exits `5`) records
-`waits --until <time>` instead: the item is held until that time, with no
+tracker's rate limit stopped before it claimed the item (a tracker script
+exits `5`) records `waits --until <time>` instead (after the claim the pass
+waits for the reset within its deadline, else records `failed`): the item is held until that time, with no
 question for a person, and the first tick after it launches the item again. Every ended
 launch's outcome keeps its next owner: a station address, a person and their
 act, or nobody with a reason. `jig ask` shows this as `last.next`; older

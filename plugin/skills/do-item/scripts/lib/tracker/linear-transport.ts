@@ -283,7 +283,9 @@ function cliFailure(r: RunResult): LinearApiError | null {
  * Transport through the `linear` command-line client (`linear api`), which
  * keeps its own credential. Variables travel as JSON so a string that looks
  * like a number stays a string. The client shows no headers, so with
- * `governor` only a refusal is recorded, for `FALLBACK_LIMIT_MS`.
+ * `governor` only a refusal is recorded, for `FALLBACK_LIMIT_MS`. The record
+ * is the executable's (`bin`), not an authenticated profile's: every profile
+ * the client holds shares it, and it is not shared with a token's HTTP record.
  */
 export function cliTransport(
   bin = "linear",

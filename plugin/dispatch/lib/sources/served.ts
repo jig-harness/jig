@@ -82,7 +82,7 @@ async function metadata(
   cache: PickupReads,
   carried: QueueRelation[] | null,
 ): Promise<Metadata> {
-  const key = `${tracker.adapter}:${tracker.team}:item:${issue.identifier}:${identity}`;
+  const key = `${tracker.adapter}:${tracker.team}:item:${issue.identifier}:${identity}:${epic}`;
   const kept = cache.get<Metadata>(key);
   if (issue.updatedAt && kept?.updatedAt === issue.updatedAt)
     return carried === null
@@ -197,7 +197,9 @@ async function readPerson(
     }));
     // Claims are monitored either way; an invalid scope only starts nothing.
     if (options.repoScope?.invalid !== undefined) return got;
-    const found = await walk(
+    // The walk fills `got` as it goes, so a limit met in a later generation
+    // keeps what the earlier ones placed.
+    await walk(
       { tracker, identity, options, cache, view, seen },
       [
         ...view.open().map((h) => h.issue),
@@ -205,9 +207,8 @@ async function readPerson(
           (i) => i.labels.includes(options.epic) && i.hasOpenChildren,
         ),
       ],
+      got,
     );
-    got.unplaced = found.unplaced;
-    got.candidates = found.candidates;
     if (view.limited === null) view.save();
   } catch (error) {
     if (isRateLimited(error)) got.limited ??= { error, view };
@@ -339,13 +340,14 @@ interface Found {
 /**
  * Visit the roots, then each generation of children, every node of a
  * generation at once so the reads they ask for leave together; what each
- * found is merged in node order. A rate-limited read ends the walk.
+ * found is merged in node order into `all`. A rate-limited read ends the walk,
+ * leaving what the earlier generations found in `all`.
  */
 async function walk(
   ctx: WalkContext,
   roots: PoolIssue[],
+  all: Omit<Found, "pending"> = { unplaced: [], candidates: [] },
 ): Promise<Omit<Found, "pending">> {
-  const all: Omit<Found, "pending"> = { unplaced: [], candidates: [] };
   let generation: Pending[] = roots.map((issue) => ({
     issue,
     ancestor: undefined,
@@ -473,7 +475,7 @@ async function placeNode(
     });
   const carried = view.held(issue.identifier)?.relations ?? null;
   const meta = await view.once(
-    `metadata ${issue.identifier} ${issue.updatedAt ?? ""}`,
+    `metadata ${issue.identifier} ${issue.updatedAt ?? ""} ${options.epic}`,
     () => metadata(tracker, issue, identity, options.epic, cache, carried),
   );
   const initialHold = nodeHold(node, meta, identity, options);
