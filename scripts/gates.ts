@@ -4,7 +4,8 @@
 // the repository checks take seconds and run before the minutes the tests and
 // build take, so a broken link is reported at the start of a run, not after
 // the suite. `--fast` runs only those stages, for the pre-push hook
-// (lefthook.yml); CI runs them all.
+// (lefthook.yml); CI runs them all, as two parts at once (`JIG_GATES_PART`):
+// every stage but the tests, and the tests.
 //
 // Every stage reports. The stages are independent, so a failing one does not
 // end the run: each remaining stage still runs, the run ends with the list of
@@ -243,12 +244,42 @@ export function heavyStages(test: Stage): Stage[] {
 }
 
 /**
+ * Which part of the gate set a run takes: `checks` is every stage but the
+ * test stage, `tests` is the test stage alone. Unset runs both, as a local
+ * `bun run gates` does. CI runs the two as parallel jobs (the matrix of
+ * `.github/workflows/gates.yml`'s `gate-set` job), since the test stage is
+ * most of the minutes and the rest reports in a couple. Under `--fast` the
+ * part is not read.
+ */
+export const PART_ENV = "JIG_GATES_PART";
+export const PARTS = ["checks", "tests"] as const;
+export type Part = (typeof PARTS)[number];
+
+/** A part the environment names that is not one of `PARTS`. */
+class PartError extends Error {}
+
+/** The part `env` asks for: none when unset; an unknown one throws. */
+export function partOf(
+  env: Record<string, string | undefined>,
+): Part | undefined {
+  const value = env[PART_ENV];
+  if (value === undefined || value === "") return undefined;
+  const part = PARTS.find((p) => p === value);
+  if (part === undefined)
+    throw new PartError(
+      `${PART_ENV} must be one of ${PARTS.join(", ")}, not ${JSON.stringify(value)}`,
+    );
+  return part;
+}
+
+/**
  * What a run executes, in order: the stages that take seconds (the context
  * budget first, as in CI, where it runs before dependencies are installed;
  * then format, lint, types and the repository checks), and in a full run the
- * heavy stages after them.
+ * heavy stages after them. A part leaves out the other half: `tests` runs the
+ * test stage alone, `checks` everything else.
  */
-export function plan(fast: boolean, test: Stage): Stage[] {
+export function plan(fast: boolean, test: Stage, part?: Part): Stage[] {
   const quick: Stage[] = [
     check("check-context-budget.ts", checkContextBudget),
     command("run", "format:check"),
@@ -257,7 +288,13 @@ export function plan(fast: boolean, test: Stage): Stage[] {
     command("run", "pins"),
     ...CHECKS,
   ];
-  return fast ? quick : [...quick, ...heavyStages(test)];
+  if (fast) return quick;
+  if (part === "tests") return [test];
+  const heavy = heavyStages(test);
+  return [
+    ...quick,
+    ...(part === "checks" ? heavy.filter((s) => s !== test) : heavy),
+  ];
 }
 
 /** What one stage of a run reported. */
@@ -320,10 +357,19 @@ export function verdict(outcomes: Outcome[]): number {
  * line, the command that reruns each, its status after it as a shell comment
  * so the line pasted whole still runs the command.
  */
-export function summary(outcomes: Outcome[], fast: boolean): string {
+export function summary(
+  outcomes: Outcome[],
+  fast: boolean,
+  part?: Part,
+): string {
   if (!outcomes.length) return "gates: could not check: no stage ran";
   const failed = outcomes.filter((o) => o.status !== 0);
-  if (!failed.length) return fast ? "fast gates passed" : "all gates passed";
+  if (!failed.length)
+    return fast
+      ? "fast gates passed"
+      : part
+        ? `${part} gates passed`
+        : "all gates passed";
   return [
     `gates: ${failed.length} of ${outcomes.length} stages failed`,
     ...failed.map((o) => `  ${o.name}  # exit ${o.status}`),
@@ -331,6 +377,16 @@ export function summary(outcomes: Outcome[], fast: boolean): string {
 }
 
 async function gates(fast: boolean): Promise<number> {
+  let part: Part | undefined;
+  try {
+    part = fast ? undefined : partOf(process.env);
+  } catch (error: unknown) {
+    // A misspelled part would otherwise run nothing and read as a pass.
+    return couldNotCheck(
+      PART_ENV,
+      error instanceof Error ? error.message : String(error),
+    );
+  }
   const skipped = fast ? [] : skippedSuites(process.platform, process.env);
   if (skipped.length)
     console.log(`test step skips (see scripts/gates.ts): ${skipped.join(" ")}`);
@@ -338,11 +394,12 @@ async function gates(fast: boolean): Promise<number> {
     plan(
       fast,
       testStage(skipped, configuredIgnores, () => shardArgs(process.env)),
+      part,
     ),
     root,
   );
   const status = verdict(outcomes);
-  (status ? console.error : console.log)(summary(outcomes, fast));
+  (status ? console.error : console.log)(summary(outcomes, fast, part));
   return status;
 }
 if (import.meta.main) cli(() => gates(process.argv.includes("--fast")));

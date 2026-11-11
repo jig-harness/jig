@@ -251,6 +251,25 @@ describe("the size cut", () => {
     return Buffer.byteLength(r.body);
   }
 
+  it("keeps the newest receipts that fit before dropping them all", () => {
+    const rec = (n: number) => ({
+      key: `PRRT_r${n}`,
+      kind: "thread" as const,
+      reason: "x".repeat(2000),
+      parkedAt: "2026-11-10T09:00:00.000Z",
+      outcome: "answered" as const,
+      answers: [],
+      resolvedAt: "2026-11-10T11:00:00.000Z",
+    });
+    const l = { ...bulky(), resolvedParks: [1, 2, 3, 4].map(rec) };
+    const full = sizeOf(l);
+    const cut = renderLedger(l, full - 1500);
+    if ("error" in cut) throw new Error(cut.error);
+    expect(cut.ledger.cut).toEqual(["the older resolved parks"]);
+    expect(cut.ledger.resolvedParks?.at(-1)?.key).toBe("PRRT_r4");
+    expect(cut.ledger.resolvedParks?.length).toBeLessThan(4);
+  });
+
   it("drops held outcomes first, then the narrative, never a parked decision", () => {
     const full = sizeOf(bulky());
     const noOutcomes = sizeOf({

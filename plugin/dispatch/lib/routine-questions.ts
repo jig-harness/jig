@@ -2,7 +2,9 @@
  * The routine question classes: the questions a follow-up's pass may stop
  * on that have one safe answer, which the dispatcher gives without a person.
  * The registry is fixed here, in the dispatcher's code, and lists only
- * housekeeping whose safe answer is to keep and list.
+ * questions with an answer that needs no person: keep and list a local
+ * leftover, report a step only a person can take as owed, file the items
+ * the pass drafted within its own authority.
  *
  * A pass classifies its own question: when it is only one of these classes,
  * its question line carries the class's tag right after the prefix
@@ -32,6 +34,20 @@ export const ROUTINE_QUESTIONS: readonly RoutineQuestion[] = [
       "a local branch or worktree the follow-up may not delete without asking",
     answer:
       "keep it, list it in the result, finish every other arm and record done",
+  },
+  {
+    id: "person-owed",
+    covers:
+      "who takes, authorizes or scopes a step after the merge that only a person can: a live check against a real service, a rollout to another repository, an organization's setting, an operational action, a release gate that failed",
+    answer:
+      "take none of it; report it as owed by a person, file one item for it in this repository's tracker when none tracks it yet (naming no other repository), finish every other arm and record done",
+  },
+  {
+    id: "drafted-items",
+    covers:
+      "whether to file the follow-up items the pass drafted itself: deferred findings, carve-outs, scope cuts, a review the work skipped",
+    answer:
+      "file them as drafted, related to the merged work's item, list them in the result, finish every other arm and record done",
   },
 ];
 
