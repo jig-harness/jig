@@ -866,7 +866,8 @@ stops admit it on a mechanical state:
   thread or in a
   pull-request comment with a line `answer <key>: …` — the re-arm keeps the
   answers in the drive's state directory, unparks every item at once (or none),
-  and hands the answers to every pass as human verdicts
+  leaving in the drive ledger a resolution receipt for each (the answers it
+  consumed and when), and hands the answers to every pass as human verdicts
   (`$DRIVE_PR_PASS_NOTICE`) until one exits `0`, across later re-arms too.
   A comment the drive itself writes (one opening
   with an outcome token, or carrying a hidden marker other than the record
@@ -2586,7 +2587,8 @@ and hands the answers to its passes (§ Picking up a stopped drive).
 Unpark by hand with
 `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" unpark [PR] --key K` (repeat
 `--key` for several; a key that is not parked unparks none) only for an item a
-person answered some other way.
+person answered some other way. A hand unpark leaves no resolution receipt,
+so the dispatcher's outcome log counts that park as removed, not answered.
 
 **The change note — only where the repository has opted in.** When
 `bun "${CLAUDE_SKILL_DIR}/../changelog/scripts/check.ts" --base <remote>/<base>`
