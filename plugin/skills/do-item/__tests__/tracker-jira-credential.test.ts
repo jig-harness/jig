@@ -16,6 +16,7 @@ import {
   requestBase,
 } from "../scripts/lib/tracker/jira/settings.ts";
 import {
+  defaultTransport,
   httpTransport,
   type JiraApiError,
 } from "../scripts/lib/tracker/jira/transport.ts";
@@ -557,5 +558,79 @@ describe("JIRA_TOKEN_COMMAND process state", () => {
     expect(of(0)).toBe(first);
     for (let i = 1; i <= SHARED_COMMANDS_MAX; i++) of(i);
     expect(of(0)).not.toBe(first);
+  });
+});
+
+describe("a Bearer credential at an Atlassian Cloud site", () => {
+  const sent = () => {
+    const urls: string[] = [];
+    const impl = (async (url: unknown) => {
+      urls.push(String(url));
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch;
+    return { urls, impl };
+  };
+
+  it.each([
+    ["JIRA_BEARER_TOKEN", { JIRA_BEARER_TOKEN: "oauth-token" }],
+    ["JIRA_TOKEN_COMMAND", { JIRA_TOKEN_COMMAND: "broker token" }],
+  ])(
+    "is refused before a request without api_base (%s)",
+    async (variable, env) => {
+      const { urls, impl } = sent();
+      const err = await failure(defaultTransport(SITE, env, impl)(request));
+      expect(err.message).toContain(variable);
+      expect(err.message).toContain("issue_tracker.jira.api_base");
+      expect(err.message).not.toContain("HTTP 403");
+      expect(urls).toEqual([]);
+    },
+  );
+
+  it("is sent through the gateway", async () => {
+    const { urls, impl } = sent();
+    await defaultTransport(
+      GATEWAY,
+      { JIRA_BEARER_TOKEN: "oauth-token" },
+      impl,
+    )(request);
+    expect(urls).toHaveLength(1);
+    expect(urls[0]?.startsWith(`${GATEWAY}/`)).toBe(true);
+  });
+
+  it("leaves Basic authentication at the site alone", async () => {
+    const { urls, impl } = sent();
+    await defaultTransport(
+      SITE,
+      { JIRA_EMAIL: "a@example.com", JIRA_API_TOKEN: "t" },
+      impl,
+    )(request);
+    expect(urls).toHaveLength(1);
+  });
+
+  it("leaves an allowed self-hosted site alone, and names the variable on its first 403", async () => {
+    const env = {
+      JIRA_BEARER_TOKEN: "pat",
+      JIRA_ALLOWED_HOSTS: "jira.example.com",
+    };
+    const refused = await failure(
+      defaultTransport(
+        "https://jira.example.com",
+        env,
+        statuses(403).impl,
+      )(request),
+    );
+    expect(refused.status).toBe(403);
+    expect(refused.message).toContain("HTTP 403");
+    expect(refused.message).toContain("JIRA_BEARER_TOKEN");
+    // Once the site has answered, a later 403 is the request's own.
+    const transport = defaultTransport(
+      "https://jira.example.com",
+      env,
+      statuses(200, 403).impl,
+    );
+    await transport(request);
+    const later = await failure(transport(request));
+    expect(later.status).toBe(403);
+    expect(later.message).not.toContain("JIRA_BEARER_TOKEN");
   });
 });
