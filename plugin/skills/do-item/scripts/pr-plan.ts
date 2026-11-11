@@ -408,14 +408,26 @@ async function planOpening(
   return { openAs, signals, labels, createArgs };
 }
 
-/** The issue as the link line names it: qualified when the tracker is another repository. */
+/**
+ * The issue as the link line names it: qualified when the tracker is another
+ * repository. A tracker repository the configuration names stays qualified
+ * even when the code repository cannot be read, since a bare number would
+ * then name the code repository's own issue.
+ */
 function linkKeyFor(root: string, issue: string): string {
   try {
     const config = trackerConfigFrom(readConfig());
     if (config.adapter !== "github") return issue;
     const url = remoteUrl(root);
     const repo = url === null ? null : repoFromRemote(url);
-    if (repo === null) return issue;
+    if (repo === null)
+      return config.github.repository === null
+        ? issue
+        : linkLineKey(
+            issue,
+            slug(homeRepo(config.github.repository, () => url)),
+            "",
+          );
     const tracker = slug(homeRepo(config.github.repository, () => url));
     return linkLineKey(issue, tracker, slug(repo));
   } catch {

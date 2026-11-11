@@ -175,18 +175,40 @@ describe("readLinkedPr", () => {
     );
   });
 
-  it("accepts a comment-linked pull request without a body link when none is required", async () => {
-    const r = await readLinkedPr("ENG-1", {
-      reads: reads({
-        comments: async () => [`https://github.com/${REPO}/pull/9`],
-        view: async () => ({ ...pull(9, "MERGED"), body: "no link line" }),
-      }),
-      repository: REPO,
-      keySource: "ENG-\\d+(?!\\w)",
-      trunk: TRUNK,
-      bodyLinkRequired: false,
-    });
-    expect(r.pullRequest).toBe("merged");
+  it("accepts a comment-linked pull request that names the item when no link line is required", async () => {
+    const readFor = (body: string) =>
+      readLinkedPr("ENG-1", {
+        reads: reads({
+          comments: async () => [`https://github.com/${REPO}/pull/9`],
+          view: async () => ({ ...pull(9, "MERGED"), body }),
+        }),
+        repository: REPO,
+        keySource: "ENG-\\d+(?!\\w)",
+        trunk: TRUNK,
+        bodyLinkRequired: false,
+      });
+    expect((await readFor("Implements ENG-1 per the plan")).pullRequest).toBe(
+      "merged",
+    );
+    expect((await readFor("An unrelated change")).pullRequest).toBe("none");
+    expect((await readFor("Touches ENG-12 only")).pullRequest).toBe("none");
+  });
+
+  it("matches a same-repository qualified issue-link line beside the bare one", async () => {
+    const readFor = (body: string) =>
+      readLinkedPr("#5", {
+        reads: reads({
+          search: async () => [{ ...pull(9, "MERGED"), body }],
+        }),
+        repository: REPO,
+        keySource: "#[1-9]\\d*(?!\\w)",
+        trunk: TRUNK,
+        trackerRepository: REPO,
+      });
+    expect((await readFor(`Refs ${REPO}#5`)).pullRequest).toBe("merged");
+    expect((await readFor("Closes #5")).pullRequest).toBe("merged");
+    expect((await readFor(`Closes ${REPO}#50`)).pullRequest).toBe("none");
+    expect((await readFor("Closes other-org/x#5")).pullRequest).toBe("none");
   });
 
   it("reads an item with no linked pull request as none", async () => {

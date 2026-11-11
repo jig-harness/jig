@@ -93,6 +93,22 @@ export function linksIssue(
 }
 
 /**
+ * Whether `body` mentions `key` anywhere, not only in an issue-link line.
+ * `keySource` keeps `ENG-12` from matching inside `ENG-123`, and a leading
+ * word, slash or `#` character keeps `#5` from matching inside `x#5`.
+ */
+export function mentionsIssue(
+  body: string,
+  key: string,
+  keySource: string,
+): boolean {
+  const re = new RegExp(`(?:^|[^\\w/#-])(${keySource})`, "gim");
+  return [...body.matchAll(re)].some(
+    (m) => m[1]?.toUpperCase() === key.toUpperCase(),
+  );
+}
+
+/**
  * The reading of an item's linked pull requests: `open` while any is open,
  * else `merged` when one merged into `trunk`, else `none`. A pull request
  * merged into another branch (a stacked layer) has not landed and reads as
@@ -152,8 +168,9 @@ export async function readLinkedPr(
     /**
      * Whether a pull request found through a comment must link the item in
      * its own body. False where `pull_requests.issue_link` is `none`: the
-     * pull request then carries no link line, and the item's comment is the
-     * only record of it.
+     * pull request then carries no link line, so its body need only name the
+     * item somewhere, which an unrelated pull request that a comment happens
+     * to cite does not.
      */
     bodyLinkRequired?: boolean;
   },
@@ -165,6 +182,19 @@ export async function readLinkedPr(
     linkKey === key
       ? opts.keySource
       : `${escapeRe(linkKey.slice(0, linkKey.lastIndexOf("#")))}#[1-9]\\d*(?!\\w)`;
+  const sameRepoNumber =
+    linkKey === key &&
+    trackerRepository !== undefined &&
+    /^#[1-9]\d*$/.test(key) &&
+    trackerRepository.toLowerCase() === repository.toLowerCase();
+  const qualifiedKey = `${repository}${key}`;
+  const qualifiedSource = `${escapeRe(repository)}#[1-9]\\d*(?!\\w)`;
+  const linked = (body: string) =>
+    linksIssue(body, linkKey, keySource) ||
+    (sameRepoNumber && linksIssue(body, qualifiedKey, qualifiedSource));
+  const mentioned = (body: string) =>
+    mentionsIssue(body, linkKey, keySource) ||
+    (sameRepoNumber && mentionsIssue(body, qualifiedKey, qualifiedSource));
   const comments = await reads.comments(key);
   if (comments === null)
     return unreadable(`the comments of ${key} could not be read`);
@@ -172,8 +202,7 @@ export async function readLinkedPr(
   if (searched === null)
     return unreadable(`the pull requests naming ${key} could not be searched`);
   const pulls = new Map<number, PullFact>();
-  for (const p of searched)
-    if (linksIssue(p.body, linkKey, keySource)) pulls.set(p.number, p);
+  for (const p of searched) if (linked(p.body)) pulls.set(p.number, p);
   for (const n of new Set(
     comments.flatMap((c) => pullNumbersIn(c, repository)),
   )) {
@@ -183,7 +212,7 @@ export async function readLinkedPr(
       return unreadable(
         `pull request #${n}, linked from ${key}, could not be read`,
       );
-    if (!bodyLinkRequired || linksIssue(viewed.body, linkKey, keySource))
+    if (bodyLinkRequired ? linked(viewed.body) : mentioned(viewed.body))
       pulls.set(n, viewed);
   }
   const facts = [...pulls.values()].sort((a, b) => a.number - b.number);
