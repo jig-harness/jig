@@ -120,6 +120,7 @@ import { hasCommand, type LabelConfig } from "../labels.ts";
 import type { Listing } from "../tick-comments.ts";
 import { failureText, minutesBetween } from "../text.ts";
 import { readPark, type ParkReading } from "./park-reading.ts";
+import { ledgerParks } from "../park-events.ts";
 export type { ParkReading } from "./park-reading.ts";
 import type {
   DrivenPr,
@@ -876,6 +877,7 @@ async function driveOf(pr: OpenPr, r: Reading): Promise<DrivenPr | null> {
       ...idleAutomation(pr, ownAuthors(r.adoption, r.login)),
     },
     ...waitingOf(classified, park, pr.author?.login),
+    parks: ledgerParks(ledger),
   };
 }
 

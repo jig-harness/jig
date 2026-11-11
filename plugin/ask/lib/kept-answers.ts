@@ -8,7 +8,7 @@ import { stateDirOfClone } from "../../skills/drive-pr/scripts/lib/state/store.t
 import type { Ledger } from "../../skills/drive-pr/scripts/lib/state/ledger.ts";
 import type { ThreadEntry } from "./answer.ts";
 import type { AskContext } from "./station.ts";
-import { answerText, readParkThread } from "./park-reading.ts";
+import { answerFields, answerText, readParkThread } from "./park-reading.ts";
 
 /** Read only this host's kept file, then compare comment bodies by their retained hash. */
 export async function keptAnswerEntries(
@@ -73,6 +73,7 @@ async function verdictEntries(
       to: ctx.name,
       text: `${verdict.key}: ${answerText(answer)}${edited ? "; edited since it was read; the retained verdict is unchanged" : ""}`,
       record: { kind: "pull-request-comment", url: answer.url },
+      ...answerFields(verdict.key, answer),
     };
   });
 }

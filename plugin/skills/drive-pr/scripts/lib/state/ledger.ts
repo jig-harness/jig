@@ -68,6 +68,11 @@ import {
 } from "./decisions.ts";
 import { type DriveEvent, isOptionalEvents } from "./events.ts";
 import { type ArbiterRuling, isOptionalRulings } from "./rulings.ts";
+import {
+  isOptionalResolvedParks,
+  redactedReceipt,
+  type ResolutionReceipt,
+} from "./resolution-receipt.ts";
 import { decisionAnswerLines } from "./park-frame.ts";
 
 export const LEDGER_MARKER = "<!-- drive-pr-ledger -->";
@@ -159,6 +164,8 @@ export interface Ledger {
    * before they were carried, which seeds none over the local ones.
    */
   rulings?: ArbiterRuling[];
+  /** The resolution receipts of the parks re-arms unparked (`resolution-receipt.ts`); absent in a ledger written before them. */
+  resolvedParks?: ResolutionReceipt[];
   driver: LedgerDriver;
   /** The handoff narrative's last lines. */
   narrative: string[];
@@ -227,9 +234,10 @@ export function ledgerFromState(
     })),
     events: s.events ?? [],
     rulings: s.rulings ?? [],
+    resolvedParks: (s.resolvedParks ?? []).map(redactedReceipt),
     driver: opts.driver,
     narrative: opts.narrative.slice(-NARRATIVE_LINES).map(redact),
-    cut: [],
+    cut: s.resolvedParksLost === true ? [OLDER_PARKS_CUT] : [],
   };
 }
 
@@ -329,9 +337,14 @@ function bytes(text: string): number {
   return Buffer.byteLength(text, "utf8");
 }
 
+/** What `cut` names when the size cut dropped receipts: all of them, or the older ones. Readers treat either as an incomplete read of the receipts. */
+export const RESOLVED_PARKS_CUT = "the resolved parks";
+export const OLDER_PARKS_CUT = "the older resolved parks";
+
 /**
- * The comment body for `ledger`, cut to `limit`: held items' outcomes go
- * first, the narrative second, then the visible list of parked decisions
+ * The comment body for `ledger`, cut to `limit`: the resolved parks' receipts
+ * go first, held items' outcomes next, the narrative then, and last the
+ * visible list of parked decisions
  * (the data keeps every one). A parked decision is never dropped, so a body
  * that still does not fit is an error, not a smaller ledger. `writer` is the
  * envelope's: this process, with the forge login where the caller knows it.
@@ -347,14 +360,28 @@ export function renderLedger(
       ledger.driver.personStop === undefined
         ? ledger.ledgerVersion
         : OPERATOR_STOP_LEDGER_VERSION,
-    cut: [],
+    // A receipt loss the state already carries stays named, whatever this render drops.
+    cut: ledger.cut.filter(
+      (c) => c === RESOLVED_PARKS_CUT || c === OLDER_PARKS_CUT,
+    ),
   };
   let body = ledgerBody(l, true, writer);
   if (bytes(body) <= limit) return { body, ledger: l };
+  const receipts = l.resolvedParks ?? [];
+  // The oldest receipts go first: the newest are the ones no tick has read.
+  for (let keep = receipts.length - 1; keep >= 0; keep--) {
+    l = {
+      ...l,
+      resolvedParks: receipts.slice(receipts.length - keep),
+      cut: [keep === 0 ? RESOLVED_PARKS_CUT : OLDER_PARKS_CUT],
+    };
+    body = ledgerBody(l, true, writer);
+    if (bytes(body) <= limit) return { body, ledger: l };
+  }
   l = {
     ...l,
     held: l.held.map(({ outcome: _dropped, reason: _answer, ...rest }) => rest),
-    cut: ["held items' outcomes"],
+    cut: [...l.cut, "held items' outcomes"],
   };
   body = ledgerBody(l, true, writer);
   if (bytes(body) <= limit) return { body, ledger: l };
@@ -468,6 +495,7 @@ function ledgerFault(v: Record<string, unknown>): string {
     ],
     ["events", isOptionalEvents(v.events)],
     ["rulings", isOptionalRulings(v.rulings)],
+    ["resolvedParks", isOptionalResolvedParks(v.resolvedParks)],
     ["driver", isLedgerDriver(v.driver)],
     ["narrative", Array.isArray(v.narrative) && v.narrative.every(isText)],
     ["cut", Array.isArray(v.cut) && v.cut.every(isText)],
@@ -940,6 +968,12 @@ export function seedFromLedger(
     decisions: l.decisions,
     events: l.events ?? local.events ?? [],
     ...(l.rulings === undefined ? {} : { rulings: l.rulings }),
+    ...(l.resolvedParks === undefined
+      ? {}
+      : { resolvedParks: l.resolvedParks }),
+    ...(l.cut.some((c) => c === RESOLVED_PARKS_CUT || c === OLDER_PARKS_CUT)
+      ? { resolvedParksLost: true }
+      : {}),
     ledgerGeneration: l.generation,
   };
   if (!isUsableState(state, local.pr))
