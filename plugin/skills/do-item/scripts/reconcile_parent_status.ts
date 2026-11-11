@@ -170,6 +170,42 @@ function labelName(l: LabelLike | undefined): string {
   return typeof l === "string" ? l : (l.name ?? "");
 }
 
+function extractTailReason(
+  tails: string,
+  labels: TrackerLabels,
+  states: StateNames,
+  postMergeState: PostMergeState,
+  parentHasManualOps: boolean,
+): string {
+  const lead = `Every remaining incomplete sub-issue carries an extractable tail label (${tails}) — `;
+  const extract =
+    "verify an ACCEPT/ACCEPT-WITH-FOLLOWUPS verdict from /epic-acceptance-review, or a recorded human waiver; then extract each tail, link and comment it back to this epic, and move it to its standing destination";
+  if (parentHasManualOps)
+    return `${lead}but the PARENT itself carries ${labels.manualOps}. ${extract.replace("verify", "Verify")}. Leave the epic open and transition it to "${states.ops_pending}" until its own operator checklist clears.`;
+  if (postMergeState !== "done")
+    return `${lead}${extract}. Leave the epic open and transition it to do_item.post_merge_state "${states[postMergeState]}".`;
+  return `${lead}${extract}, and close the epic.`;
+}
+
+function allDoneOutcome(
+  labels: TrackerLabels,
+  states: StateNames,
+  postMergeState: PostMergeState,
+  parentHasManualOps: boolean,
+): [ParentState, string] {
+  if (parentHasManualOps)
+    return [
+      "ops_pending",
+      `All sub-issues are Done (or Canceled/Duplicate); the parent carries ${labels.manualOps}, so it is capped at "${states.ops_pending}" until the operator checklist is acknowledged.`,
+    ];
+  if (postMergeState === "done")
+    return ["done", "All sub-issues are Done (or Canceled/Duplicate)."];
+  return [
+    postMergeState,
+    `All sub-issues are Done (or Canceled/Duplicate); do_item.post_merge_state caps the parent at "${states[postMergeState]}", where a person closes it.`,
+  ];
+}
+
 export function reconcileParentStatus(
   input: ReconcileInput,
   vocabulary: ReconcileVocabulary = DEFAULT_VOCABULARY,
@@ -258,11 +294,13 @@ export function reconcileParentStatus(
     return decide(
       "extract_and_close_eligible",
       null,
-      parentHasManualOps
-        ? `Every remaining incomplete sub-issue carries an extractable tail label (${tails}) — but the PARENT itself carries ${labels.manualOps}. Verify an ACCEPT/ACCEPT-WITH-FOLLOWUPS verdict from /epic-acceptance-review, or a recorded human waiver; then extract each tail, link and comment it back to this epic, and move it to its standing destination. Leave the epic open and transition it to "${states.ops_pending}" until its own operator checklist clears.`
-        : postMergeState !== "done"
-          ? `Every remaining incomplete sub-issue carries an extractable tail label (${tails}) — verify an ACCEPT/ACCEPT-WITH-FOLLOWUPS verdict from /epic-acceptance-review, or a recorded human waiver; then extract each tail, link and comment it back to this epic, and move it to its standing destination. Leave the epic open and transition it to do_item.post_merge_state "${states[postMergeState]}".`
-          : `Every remaining incomplete sub-issue carries an extractable tail label (${tails}) — verify an ACCEPT/ACCEPT-WITH-FOLLOWUPS verdict from /epic-acceptance-review, or a recorded human waiver; then extract each tail, link and comment it back to this epic, move it to its standing destination, and close the epic.`,
+      extractTailReason(
+        tails,
+        labels,
+        states,
+        postMergeState,
+        parentHasManualOps,
+      ),
     );
   }
 
@@ -300,23 +338,13 @@ export function reconcileParentStatus(
   }
 
   if (allDone) {
-    if (parentHasManualOps)
-      return decide(
-        "set_status",
-        "ops_pending",
-        `All sub-issues are Done (or Canceled/Duplicate); the parent carries ${labels.manualOps}, so it is capped at "${states.ops_pending}" until the operator checklist is acknowledged.`,
-      );
-    return postMergeState === "done"
-      ? decide(
-          "set_status",
-          "done",
-          "All sub-issues are Done (or Canceled/Duplicate).",
-        )
-      : decide(
-          "set_status",
-          postMergeState,
-          `All sub-issues are Done (or Canceled/Duplicate); do_item.post_merge_state caps the parent at "${states[postMergeState]}", where a person closes it.`,
-        );
+    const [parentState, reason] = allDoneOutcome(
+      labels,
+      states,
+      postMergeState,
+      parentHasManualOps,
+    );
+    return decide("set_status", parentState, reason);
   }
 
   // Reached only when every child is merged-or-parked AND not all are
