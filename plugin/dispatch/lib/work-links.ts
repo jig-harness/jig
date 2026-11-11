@@ -65,19 +65,44 @@ const CLOSING = "(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)";
 const SEP =
   "(?:[ \\t]*,[ \\t]*(?:and[ \\t]+)?|[ \\t]*&[ \\t]*|[ \\t]+and[ \\t]+)";
 
+/** Advance an HTML-comment state while leaving delimiters inside complete inline-code spans literal. */
+function commentState(line: string, open: boolean): boolean {
+  for (let at = 0; at < line.length; ) {
+    if (line.startsWith("<!--", at)) {
+      open = true;
+      at += 4;
+      continue;
+    }
+    if (open && line.startsWith("-->", at)) {
+      open = false;
+      at += 3;
+      continue;
+    }
+    if (line[at] !== "`") {
+      at++;
+      continue;
+    }
+    const run = /^`+/.exec(line.slice(at))?.[0] ?? "";
+    const close = line.indexOf(run, at + run.length);
+    at = close === -1 ? at + run.length : close + run.length;
+  }
+  return open;
+}
+
 /** Remove blockquote containers before the shared reader sees their Markdown, without changing a quote that is literal text inside a top-level fence or comment. */
 function withoutBlockquoteContainers(body: string): string {
-  let fence: { marker: string; quote: boolean } | null = null;
+  let fence: { marker: string; quoteDepth: number } | null = null;
   let comment = false;
   const visible: string[] = [];
   for (const line of body.split(/\r?\n/)) {
-    const quote = /^(?: {0,3}>[ \t]?)+/.test(line);
-    if (fence?.quote && !quote) {
+    const quotePrefix = /^(?: {0,3}>[ \t]?)+/.exec(line)?.[0] ?? "";
+    const quoteDepth = (quotePrefix.match(/>/g) ?? []).length;
+    if (fence !== null && quoteDepth < fence.quoteDepth) {
       visible.push(fence.marker);
       fence = null;
     }
     const text =
-      (fence === null && !comment) || fence?.quote
+      (fence === null && !comment) || fence?.quoteDepth !== 0
         ? line.replace(/^(?: {0,3}>[ \t]?)+/, "")
         : line;
     const raw = /^( {0,3})(`{3,}|~{3,})(.*)$/.exec(text);
@@ -93,13 +118,12 @@ function withoutBlockquoteContainers(body: string): string {
       continue;
     }
     if (!comment && raw !== null) {
-      fence = { marker: raw[2] ?? "", quote };
+      fence = { marker: raw[2] ?? "", quoteDepth };
       visible.push(text);
       continue;
     }
     visible.push(text);
-    if (line.includes("<!--")) comment = true;
-    if (comment && line.includes("-->")) comment = false;
+    comment = commentState(text, comment);
   }
   return visible.join("\n");
 }

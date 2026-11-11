@@ -205,6 +205,27 @@ describe("a team key", () => {
     expect(closingKeys(body, TEAM.keys)).toEqual(["ENG-2", "ENG-4"]);
   });
 
+  it("does not treat inline-code comment delimiters as comments while normalizing quotes", () => {
+    const body = [
+      "`<!--`",
+      "> ~~~",
+      "> Closes ENG-1",
+      "> ~~~",
+      "Closes ENG-2",
+    ].join("\n");
+    expect(closingKeys(body, TEAM.keys)).toEqual(["ENG-2"]);
+  });
+
+  it("ends a nested quoted fence when its quote container ends", () => {
+    const body = [
+      "> > ~~~",
+      "> > example",
+      "> Closes ENG-1",
+      "> Closes ENG-2",
+    ].join("\n");
+    expect(closingKeys(body, TEAM.keys)).toEqual(["ENG-1", "ENG-2"]);
+  });
+
   it("reads every item in an Oxford-comma list", () => {
     expect(closingKeys("Closes ENG-1, ENG-2, and ENG-3", TEAM.keys)).toEqual([
       "ENG-1",
