@@ -391,6 +391,22 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.208.0] - 2026-11-11
+
+The dispatch dashboard can be installed on a phone as an app.
+
+### Added
+
+- The dashboard's page names a web app manifest (`/manifest.webmanifest`) and
+  its icons (`/icons/*`), and sets a theme colour for each colour scheme, so
+  Chrome on Android offers **Install app** for it. The installed app opens in
+  its own window at the dashboard's root address, with no token in any address.
+  A dashboard that asks for a token refuses the manifest with every other
+  request without the token, so only a dashboard served without a token, behind
+  an HTTPS front, is offered for install. The
+  [phone access guide](plugin/phone-access.md#install-it-as-an-app) has the
+  steps and the check.
+
 ## [0.207.0] - 2026-11-11
 
 ### Added
@@ -7165,7 +7181,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.207.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.208.0...HEAD
+[0.208.0]: https://github.com/jig-harness/jig/compare/v0.207.0...v0.208.0
 [0.207.0]: https://github.com/jig-harness/jig/compare/v0.206.0...v0.207.0
 [0.206.0]: https://github.com/jig-harness/jig/compare/v0.205.0...v0.206.0
 [0.205.0]: https://github.com/jig-harness/jig/compare/v0.204.0...v0.205.0
