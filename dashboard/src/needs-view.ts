@@ -16,6 +16,7 @@ import {
 } from "../../plugin/shared/acts.ts";
 import { uniqueLogins } from "../../plugin/shared/forge-logins.ts";
 import { ago, clock, plural } from "./format.ts";
+import { noLinkText } from "./links.ts";
 import { ROLES, type Role, stageMark } from "./status.ts";
 import {
   type Clock,
@@ -42,6 +43,8 @@ export interface NeedView {
   /** Who it waits on, as the parks name them; empty when no record names anyone. */
   people: string[];
   target: string;
+  /** The target's title as the line holds it; `null` when no read gave one. */
+  title: string | null;
   repo: string;
   stage: string;
   mark: string;
@@ -160,6 +163,7 @@ export function needView(n: LineNeed, clockNow: Clock): NeedView {
     steps: [...new Set(n.decisions.flatMap((d) => d.steps ?? []))],
     people: needPeople(n),
     target: n.target,
+    title: n.title,
     repo: n.repo,
     stage: n.stage,
     mark: stageMark(n.stage),
@@ -179,10 +183,7 @@ export function needView(n: LineNeed, clockNow: Clock): NeedView {
     decision,
     url: n.url,
     goLabel: n.url === null ? null : goLabelOf(n),
-    noLink:
-      n.url === null
-        ? `No tracker link: this repository has no tracker base. Look up ${n.target} in the tracker.`
-        : null,
+    noLink: n.url === null ? noLinkText(n.repo, n.target) : null,
     answerKeys: [...new Set(n.decisions.map((d) => d.key))],
     keyText: n.url === null ? n.target : null,
     foldLabel: decision === null ? "Details" : "The whole decision",

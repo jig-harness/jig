@@ -1,5 +1,5 @@
 import { ChevronRight } from "lucide-react";
-import { Pr, RepoLink } from "./pr.tsx";
+import { ItemTitle, Pr, RepoLink } from "./pr.tsx";
 /**
  * The log's rows. TanStack Table holds the columns and which rows are open;
  * TanStack Virtual keeps only what is near the window in the document, measuring
@@ -20,12 +20,8 @@ import { CopyButton } from "./copy.tsx";
 import { DecisionText } from "./decision-text.tsx";
 import { Evidence, StageHint } from "./fold.tsx";
 import { cardAttrs } from "./keys.ts";
-import {
-  type Forges,
-  type RowClock,
-  rowView,
-  type RowView,
-} from "./log-view.ts";
+import type { Forges } from "./links.ts";
+import { type RowClock, rowView, type RowView } from "./log-view.ts";
 import { Mark, StageChip } from "./marks.tsx";
 import { stageMeaning } from "./status.ts";
 
@@ -67,6 +63,7 @@ const columns = helper.columns([
           stage={row.original.stage}
           title={stageMeaning(row.original.stage)}
         />
+        <ItemTitle title={row.original.title} />
       </span>
     ),
   }),
@@ -104,7 +101,7 @@ function RowBody({ view }: { view: RowView }) {
       <div className="goto">
         {view.url === null ? null : (
           <a href={view.url} target="_blank" rel="noreferrer noopener">
-            Open the pull request
+            {view.goLabel}
           </a>
         )}
         {view.noLink === null ? null : (
