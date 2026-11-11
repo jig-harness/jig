@@ -337,7 +337,8 @@ describe("reconcileParentStatus with do_item.post_merge_state", () => {
       verdict: "extract_and_close_eligible",
       parentState: null,
     });
-    expect(r.reason).toContain("sweep-epic.ts --no-close");
+    expect(r.reason).toContain("extract each tail");
+    expect(r.reason).not.toContain("sweep-epic");
     expect(r.reason).toContain('do_item.post_merge_state "In Review"');
   });
 

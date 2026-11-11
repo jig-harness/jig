@@ -14,6 +14,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  DEFAULT_VOCABULARY,
   isReconcileInputShape,
   positiveIntEnv,
   type ReconcileChildInput,
@@ -323,10 +324,7 @@ describe("reconcileParentStatus", () => {
       expect(r.verdict).toBe("extract_and_close_eligible");
     });
 
-    it("warns about sweep-epic.ts's --close refusal when the PARENT itself carries manual-ops", () => {
-      // sweep-epic.ts refuses `--close` outright on a manual-ops epic — the
-      // reason must say so, since the plain reading of this verdict ("run
-      // sweep-epic.ts") would otherwise dispatch a call that guard rejects.
+    it("describes the portable no-close procedure when the PARENT carries manual-ops", () => {
       const r = reconcileParentStatus({
         parentLabels: ["manual-ops"],
         children: [
@@ -334,17 +332,27 @@ describe("reconcileParentStatus", () => {
         ],
       });
       expect(r.verdict).toBe("extract_and_close_eligible");
-      expect(r.reason).toContain("--no-close");
+      expect(r.reason).toContain("extract each tail");
+      expect(r.reason).toContain('transition it to "Ops Pending"');
+      expect(r.reason).not.toContain("sweep-epic");
     });
 
-    it("does not warn about --no-close when the parent has no manual-ops label", () => {
-      const r = reconcileParentStatus({
-        parentLabels: ["chore"],
-        children: [
-          child("Todo", { type: "unstarted", labels: ["pr-followup"] }),
-        ],
-      });
-      expect(r.reason).not.toContain("--no-close");
+    it("describes the configured no-close procedure when post-merge stops short of done", () => {
+      const r = reconcileParentStatus(
+        {
+          parentLabels: ["chore"],
+          children: [
+            child("Todo", { type: "unstarted", labels: ["pr-followup"] }),
+          ],
+        },
+        {
+          ...DEFAULT_VOCABULARY,
+          postMergeState: "in_review",
+        },
+      );
+      expect(r.reason).toContain("extract each tail");
+      expect(r.reason).toContain('post_merge_state "In Review"');
+      expect(r.reason).not.toContain("sweep-epic");
     });
   });
 

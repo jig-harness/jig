@@ -385,7 +385,7 @@ steps a single issue gets after its pull request merges, not only the first.
      touch. A flag the catalog derives that the issue lacks is a gap to
      report (and to settle, if it obliged a step the batch did not take);
      add a missing area label.
-3. **Each parent once**: for every distinct parent of the closed issues,
+3. **Each parent once**: for every distinct parent of the processed rows,
    after its children's statuses moved, run `/jig:do-item`
    [Step 5a](../do-item/SKILL.md#step-5a-all-sub-issues-complete)'s
    reconciliation (`reconcile_parent_status.ts`) and act on its decision.
@@ -395,17 +395,20 @@ steps a single issue gets after its pull request merges, not only the first.
    findings, since a deferred thread resolves the moment its reply posts and
    a summary finding has no thread; check the tracker item behind each
    deferral exists.
-5. **Record the close/open ratio**: the issues the batch closed against the
-   new follow-up issues its review rounds filed. Comment it on the anchor
-   issue (an issue or epic anchor); for an area or path anchor, on the
-   highest-priority issue the batch closed:
+5. **Record the processed/follow-up ratio**: the rows the batch processed
+   against the new follow-up issues its review rounds filed. State separately
+   how many processed rows reached `done` and how many remain open under the
+   post-merge policy. Comment it on the anchor issue (an issue or epic
+   anchor); for an area or path anchor, on the highest-priority processed
+   row:
 
    ```
-   Batch close/open: <PR> closed <n> issues and filed <m> follow-ups (<n>:<m>).
+   Batch processed/follow-up: <PR> processed <n> issues (<d> done, <o> open)
+   and filed <m> follow-ups (<n>:<m>).
    ```
 
-   That ratio is the evidence that batching closes small issues faster than
-   review creates them, not only that it feels faster.
+   That ratio is the evidence that batching completes small units faster than
+   review creates follow-up work, not only that it feels faster.
 
 ## The eligibility mode
 

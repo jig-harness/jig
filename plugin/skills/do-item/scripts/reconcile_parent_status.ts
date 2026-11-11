@@ -255,19 +255,14 @@ export function reconcileParentStatus(
   // never in MERGED_OR_PARKED), so falling through would route straight back
   // to "keep_in_progress" — the very Step 4b loop this rule exists to break.
   if (allIncompleteAreExtractable) {
-    // sweep-epic.ts's own close guard refuses `--close` outright on an epic
-    // carrying the manual-operations label (do-item § Step 5a caps such an
-    // epic at `ops_pending`, never `done`) — the reason must say so up
-    // front, since the plain reading of this verdict ("run sweep-epic.ts")
-    // would otherwise dispatch a call that guard rejects.
     return decide(
       "extract_and_close_eligible",
       null,
       parentHasManualOps
-        ? `Every remaining incomplete sub-issue carries an extractable tail label (${tails}) — but the PARENT itself carries ${labels.manualOps}, so sweep-epic.ts refuses \`--close\` on it. Verify an ACCEPT/ACCEPT-WITH-FOLLOWUPS verdict from /epic-acceptance-review, or a recorded human waiver, then run sweep-epic.ts --no-close to move the tails and leave the epic open (capped at "${states.ops_pending}") until its own operator checklist clears.`
+        ? `Every remaining incomplete sub-issue carries an extractable tail label (${tails}) — but the PARENT itself carries ${labels.manualOps}. Verify an ACCEPT/ACCEPT-WITH-FOLLOWUPS verdict from /epic-acceptance-review, or a recorded human waiver; then extract each tail, link and comment it back to this epic, and move it to its standing destination. Leave the epic open and transition it to "${states.ops_pending}" until its own operator checklist clears.`
         : postMergeState !== "done"
-          ? `Every remaining incomplete sub-issue carries an extractable tail label (${tails}) — verify an ACCEPT/ACCEPT-WITH-FOLLOWUPS verdict from /epic-acceptance-review, or a recorded human waiver, then run sweep-epic.ts --no-close to move the tails and leave the epic open at do_item.post_merge_state "${states[postMergeState]}".`
-          : `Every remaining incomplete sub-issue carries an extractable tail label (${tails}) — verify an ACCEPT/ACCEPT-WITH-FOLLOWUPS verdict from /epic-acceptance-review, or a recorded human waiver, then run sweep-epic.ts instead of setting a status here.`,
+          ? `Every remaining incomplete sub-issue carries an extractable tail label (${tails}) — verify an ACCEPT/ACCEPT-WITH-FOLLOWUPS verdict from /epic-acceptance-review, or a recorded human waiver; then extract each tail, link and comment it back to this epic, and move it to its standing destination. Leave the epic open and transition it to do_item.post_merge_state "${states[postMergeState]}".`
+          : `Every remaining incomplete sub-issue carries an extractable tail label (${tails}) — verify an ACCEPT/ACCEPT-WITH-FOLLOWUPS verdict from /epic-acceptance-review, or a recorded human waiver; then extract each tail, link and comment it back to this epic, move it to its standing destination, and close the epic.`,
     );
   }
 
