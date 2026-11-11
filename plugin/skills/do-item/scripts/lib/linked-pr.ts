@@ -90,10 +90,13 @@ export function hasPullAssociation(
   repository: string,
   number: number,
 ): boolean {
-  return new RegExp(
+  const marker = new RegExp(
     `^<!-- do-item-pr: https://github\\.com/${escapeRe(repository)}/pull/${number} -->$`,
-    "im",
-  ).test(text);
+    "i",
+  );
+  return [...markdownLines(text)].some(
+    ({ line, kind, quoted }) => kind === "text" && !quoted && marker.test(line),
+  );
 }
 
 /** The pull requests an item's comments link, with their explicit association evidence. */
@@ -133,9 +136,15 @@ export function linksIssue(
   );
   return [...markdownLines(body)].some(({ line, kind, quoted }) => {
     if (kind !== "text" || quoted) return false;
-    re.lastIndex = 0;
-    return re.exec(line)?.[1]?.toUpperCase() === key.toUpperCase();
+    return [...withoutInlineCode(line).matchAll(re)].some(
+      (match) => match[1]?.toUpperCase() === key.toUpperCase(),
+    );
   });
+}
+
+/** Remove inline-code spans so Markdown examples cannot establish an association. */
+function withoutInlineCode(line: string): string {
+  return line.replace(/(`+)(?:[^`]|`(?!\1))*\1/g, "");
 }
 
 /**
@@ -229,8 +238,10 @@ export async function readLinkedPr(
     return unreadable(`the pull requests naming ${key} could not be searched`);
   const pulls = new Map<number, PullFact>();
   for (const p of searched) if (linked(p.body)) pulls.set(p.number, p);
-  for (const [n, associated] of commentPulls(comments, repository)) {
-    if (pulls.has(n)) continue;
+  const readable = [...commentPulls(comments, repository)].filter(
+    ([n, associated]) => !pulls.has(n) && (bodyLinkRequired || associated),
+  );
+  for (const [n, associated] of readable) {
     const viewed = await reads.view(n);
     if (viewed === null)
       return unreadable(

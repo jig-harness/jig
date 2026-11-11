@@ -108,6 +108,13 @@ describe("linksIssue", () => {
     );
     expect(linksIssue("> Closes ENG-123", "ENG-123", team)).toBe(false);
   });
+
+  it("reads every eligible table cell but not inline-code examples", () => {
+    expect(linksIssue("| Refs ENG-1 | Refs ENG-5 |", "ENG-5", team)).toBe(true);
+    expect(linksIssue("Example: `| Closes ENG-5 |`", "ENG-5", team)).toBe(
+      false,
+    );
+  });
 });
 
 describe("linkedPrState", () => {
@@ -258,6 +265,49 @@ describe("readLinkedPr", () => {
           {
             body: `<!-- do-item-pr: https://github.com/${REPO}/pull/9 -->`,
             trusted: false,
+          },
+        ],
+        view: async () => ({ ...pull(9, "MERGED"), body: "Unrelated" }),
+      }),
+      repository: REPO,
+      keySource: "ENG-\\d+(?!\\w)",
+      trunk: TRUNK,
+      bodyLinkRequired: false,
+    });
+    expect(r.pullRequest).toBe("none");
+  });
+
+  it("ignores unassociated comment links before reading their pull requests", async () => {
+    const viewed: number[] = [];
+    const r = await readLinkedPr("ENG-1", {
+      reads: reads({
+        comments: async () => [
+          {
+            body: `https://github.com/${REPO}/pull/999`,
+            trusted: false,
+          },
+        ],
+        view: async (number) => {
+          viewed.push(number);
+          return null;
+        },
+      }),
+      repository: REPO,
+      keySource: "ENG-\\d+(?!\\w)",
+      trunk: TRUNK,
+      bodyLinkRequired: false,
+    });
+    expect(viewed).toEqual([]);
+    expect(r.pullRequest).toBe("none");
+  });
+
+  it("does not accept association markers in fenced examples", async () => {
+    const r = await readLinkedPr("ENG-1", {
+      reads: reads({
+        comments: async () => [
+          {
+            body: `\`\`\`html\n<!-- do-item-pr: https://github.com/${REPO}/pull/9 -->\n\`\`\``,
+            trusted: true,
           },
         ],
         view: async () => ({ ...pull(9, "MERGED"), body: "Unrelated" }),
