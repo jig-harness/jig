@@ -125,9 +125,13 @@ export type FollowupClass = "followup-done" | "followup-held";
 /** A parked decision still waiting on its answer, as the drive framed it. */
 export interface WaitingPark {
   digest?: string;
+  /** When the item was parked (`ParkedItem.at`); absent on an older park. */
+  parkedAt?: string;
   stale?: import("../../skills/drive-pr/scripts/lib/state/pass-handoff.ts").PendingAnswer[];
   /** The latest answers that disagree, which keep the item waiting. */
   disputed?: import("../../skills/drive-pr/scripts/lib/state/pass-handoff.ts").PendingAnswer[];
+  /** Every person's latest answer to it, stale ones included; absent when it has none. */
+  answers?: import("../../skills/drive-pr/scripts/lib/state/pass-handoff.ts").PendingAnswer[];
   decision?: import("../../shared/decisions/park.ts").ParkedDecision;
   person?: string;
   key: string;
@@ -203,6 +207,8 @@ export interface DrivenPr {
   evidence: Evidence;
   /** For a `parked` ledger: the decisions still unanswered. */
   waiting?: WaitingPark[];
+  /** For a ledger that read: every park it holds and the receipts of those re-arms unparked (`park-events.ts`). */
+  parks?: import("./park-events.ts").LedgerParks;
   /** For a `stale` ledger: what its stop does not settle. */
   stale?: StaleCause;
   /** Its labels, read only where the repository turns dispatch labels on. */

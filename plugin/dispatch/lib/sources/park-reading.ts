@@ -20,13 +20,14 @@ export async function readPark(
   ledger: Ledger,
   slug: string,
   listing: readonly unknown[] | undefined,
+  loaders: Parameters<typeof parkAnswers>[4] = {},
 ): Promise<ParkReading | undefined> {
   if (
     ledger.driver.state !== "stopped" ||
     ledger.driver.exit !== DRIVE_EXIT.HITL_PARKED
   )
     return undefined;
-  const found = await parkAnswers(pr, ledger.parked, slug, listing);
+  const found = await parkAnswers(pr, ledger.parked, slug, listing, loaders);
   if (!("unreadable" in found) && found.unread.length > 0)
     return {
       unreadable: found.unread.map((p) => `${p.kind} ${p.key}`).join(", "),
@@ -40,15 +41,18 @@ export async function readPark(
         parks: found.waiting.map((p) => {
           const disputed = found.disputed.find((d) => d.item.key === p.key);
           const stale = found.stale.find((d) => d.item.key === p.key);
+          const answers = found.responses.find((d) => d.item.key === p.key);
           return {
             ...(p.person === undefined ? {} : { person: p.person }),
             key: p.key,
             kind: p.kind,
             ...(p.digest === undefined ? {} : { digest: p.digest }),
+            ...(p.at === undefined ? {} : { parkedAt: p.at }),
             ...(stale === undefined ? {} : { stale: stale.answers }),
             lines: framedDecisionLines(p),
             ...(p.decision === undefined ? {} : { decision: p.decision }),
             ...(disputed === undefined ? {} : { disputed: disputed.answers }),
+            ...(answers === undefined ? {} : { answers: answers.answers }),
           };
         }),
       };

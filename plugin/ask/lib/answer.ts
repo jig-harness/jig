@@ -159,6 +159,22 @@ export interface ThreadEntry {
   local?: true;
   /** For a label request that has come off: when. */
   until?: string;
+  /** For a question or an answer to one: the parked item's key, which an `answer <key>:` line names. */
+  key?: string;
+  /** For a framed question: the decision digest its answer lines carry. */
+  digest?: string;
+  /** For a framed question: its options, each numbered as a card numbers it (`shared/decision-card.ts`). */
+  options?: import("../../dispatch/lib/dashboard-contract.ts").LineOption[];
+  /** For a structured answer: the option it chose. */
+  choice?: NonNullable<
+    import("../../shared/decision-card.ts").ShownAnswer["choice"]
+  >;
+  /** For a structured answer: the person's note beside it. */
+  note?: string;
+  /** For an answer in the person's own words. */
+  free?: true;
+  /** For an answer naming an earlier framing: the digest it named. */
+  stale?: { digest: string };
 }
 
 export interface AskAnswer {

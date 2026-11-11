@@ -47,6 +47,8 @@ const RECENT_TICKS = 288;
 /** What one repository's tick read beside its report. */
 export interface RepoLineInput {
   drives: DrivenPr[];
+  /** The open pull requests the forge listed; `null` when its listing did not read. */
+  open?: number[] | null;
   /** Every pull request and item the tick read a title or a link for. */
   known: Array<{ target: string; title: string; url: string | null }>;
   sessions: SessionsReport;

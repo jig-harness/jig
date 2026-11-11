@@ -526,11 +526,18 @@ death is notified. A pass that cannot finish without a person stops and
 ends its output with a line starting `Question:`; the notification carries
 that question, and the outcome log counts it as parked for a person. A
 question that is only one of the dispatcher's fixed **routine question
-classes** carries the class's tag (`Question: [local-leftover] …`: a local
-branch or worktree the pass may not delete without asking), and such a
-follow-up is run again once, within the same budget, with the class's
-standing answer in its prompt (keep it, list it, finish the rest and record
-done); unlike a death's run again, it has no 6-hour age limit. A follow-up
+classes** carries the class's tag, and such a follow-up is run again once,
+within the same budget, with the class's standing answer in its prompt:
+
+| Tag | The question | The standing answer |
+|---|---|---|
+| `local-leftover` | a local branch or worktree the pass may not delete without asking | keep it, list it |
+| `person-owed` | who takes, authorizes or scopes a step only a person can: a live check, a rollout to another repository, an organization's setting, an operational action, a failed release gate | take none of it; report it as owed and file one item for it in this repository's tracker |
+| `drafted-items` | whether to file the follow-up items the pass drafted itself | file them as drafted |
+
+Each answer ends with finishing the other arms and recording done. A step
+only a person can take is no reason to stop in the first place: the pass
+reports it as owed, files it, and counts the arm settled; unlike a death's run again, it has no 6-hour age limit. A follow-up
 that failed before passes tagged their questions is run again once with
 every class's standing answer; an outcome whose retry evidence the dispatcher
 kept needs no launch record, while an older one needs its record still on the
@@ -818,7 +825,19 @@ launch, each nudge with whether it arrived, and a
 stopped one stage of a repository's `--apply` (event `defect`, with no
 class), which stops that stage only: the repository's other stages launch
 in the same tick, the receipt lists it under the repository's
-`stageDefects`, and its stack goes to the tick's error output. A stop the classifier cannot
+`stageDefects`, and its stack goes to the tick's error output. On the host
+that owns the repository, each park that leaves its drive ledger is an
+event row too, read from the
+[resolution receipt](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+the re-arm left beside it, never from the park's disappearance alone:
+`park-answered` with the class, the form of the answers (`approve`,
+`choose` or `free`), whether the option chosen was the recommended one,
+whether a note narrowed it and how long the park waited for its answer;
+`park-provisional` for a park handed on to be decided provisionally; and
+`park-removed` for a park the line held that left with no receipt
+(withdrawn or framed again; a park on a pull request no longer open is not counted). A park
+raised and answered between two ticks is counted from its receipt, and no
+park is counted twice. A stop the classifier cannot
 place is logged as `unknown`, never dropped, so a reason that recurs among
 those rows is what a new class is made from.
 
@@ -915,7 +934,9 @@ installed-copy lookup), and renews at the launcher's
 24-hour deadline even without an update. Transient registry failures keep the
 current reader serving and retry the lookup. Each renewal rotates the token;
 run `--access` again for the new URL. The command does not install a private
-network front or open a public listener.
+network front or open a public listener. To open the page from a phone over
+private HTTPS, or over private HTTP with its limits, follow
+[phone-access.md](phone-access.md).
 
 To verify availability on the configured host, first wait for `--status` to
 report a healthy reader and note its pid. End the terminal session, reconnect
@@ -936,7 +957,8 @@ writes nothing to the host:
   (merge now, approve first, update next), each merge now card with its
   merge command pinned to the verified head; **Needs you**, the parks, stops
   and stalled pickups waiting on a person, with the question and the
-  recommendation in place and the whole decision one tap away; **Running**,
+  recommendation in place, what any stale or disputed answer that keeps a
+  decision waiting chose, and the whole decision one tap away; **Running**,
   each account's slots and the sessions in them, with their evidence; and
   **Queue**, what comes next and why. The page opens on Merge while merge now
   holds a pull request, else on Needs you, and while it holds one every other
@@ -976,10 +998,14 @@ writes nothing to the host:
 
 Keys reach every card: j and k move between the cards, Enter or o opens
 one, p and i open its pull request or issue, c copies its command (the merge
-command, the answer line or its `jig ask` line), g then m, n, r, q or h goes
-to a view, / filters, ? lists the keys, and ⌘K or Ctrl-K opens a palette that
-goes to a view, jumps to `#N` or an item, or copies a card's command. No key
-fires while a person types in a field.
+command, a parked need's answers or its `jig ask` line), g then m, n, r, q or
+h goes to a view, / filters, ? lists the keys, and ⌘K or Ctrl-K opens a
+palette that goes to a view, jumps to `#N` or an item, or copies a card's
+command. On a parked need, 1 to 9 pick an option of the current decision (1
+is always the recommended one) and move to the next decision with no pick,
+h and l move between its decisions, u clears the last pick, r writes a note
+beside a pick or an answer in the person's own words, and Escape leaves that
+field. No key fires while a person types in a field.
 
 The Help view lists the keys and says what the page's words, stages and marks mean; a chip, a
 dotted word or the `?` beside a heading says it in place, on hover, tap or
@@ -987,11 +1013,18 @@ focus. The theme follows the device until the switch in the strip picks light
 or dark.
 
 The page acts on nothing: it links to the pull request a decision is answered on
-and copies what cannot open, such as a workspace path or an answer line. Beside
-a parked decision a person can draft the reply, which stays in that browser
-only; Copy answer then takes `answer <key>: <reply>`, ready to paste as a
-comment on the pull request. When the server stops answering, it keeps what it
-last read and says when that was.
+and copies what cannot open, such as a workspace path or an answer line. A
+parked need shows one short row per decision, and a person picks an option
+with a key or a tap, adds a note or writes an answer in their own words; all
+of it stays in that browser only, can be undone, and is dropped, with the row
+saying so, when the decision is framed or parked again. The card's Copy takes
+one comment answering every decision picked, `answer <key>: approve [<digest>]`
+or `choose <option>` with the framing's digest and any `note <key>:` line,
+ready to paste on the pull request; with nothing picked, a card of one
+decision under a class listed as Decide copies its approval when its recommended option can be undone and no earlier answer was dropped, and otherwise only the starting `answer <key>:` line. A pick under a
+class not listed as Decide, or of an option that cannot be undone, copies only
+on the second step, which first shows what it changes and costs. When the
+server stops answering, it keeps what it last read and says when that was.
 
 **The line as JSON.** A program beside the dispatcher (an editor's plugin, a
 status bar) reads what the newest tick found without opening the state
@@ -1206,7 +1239,15 @@ decision in the drive ledger), an `answer` (an `answer <key>:` line from an
 author the forge vouches for), a `launch` and an `outcome`. Every entry has
 `at`, `kind`, `from`, `to`, `text` (the record's own words) and `record`
 (its kind and a link or a path); one read only from this machine's records
-says so. It prints the newest 20 entries, oldest first, and says how many
+says so. A `question` from a framed decision also carries its `key`, its
+`digest` and its `options`, each with its `number` (the recommended option
+is 1, the rest follow in the decision's order), its `name`, whether it is
+`recommended`, what it `changes` and `costs` and its `details`; an `answer`
+carries its `key` and, read through the same rule as the re-arm, the
+`choice` it made (the option, whether it is the recommended one, and the
+form) with its `note`, or `free: true` for an answer in the person's own
+words, or `stale` with the digest of the earlier framing it named. The
+dashboard shows the same options and choices for the same park. It prints the newest 20 entries, oldest first, and says how many
 it left out; `--since <date>` keeps every entry from that date on and
 `--all` every entry. Printed for a person, `text` has its control
 characters removed; in JSON it is a string like any other, and nothing in a
