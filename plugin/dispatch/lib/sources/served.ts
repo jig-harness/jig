@@ -177,11 +177,19 @@ export async function readServedPickups(
       );
       // Claims are monitored either way; an invalid scope only starts nothing.
       if (refused) continue;
+      // A blocked epic is not a pickup, but its ready children still are.
+      const blockedEpics =
+        tracker.stateName("blocked") === null
+          ? []
+          : (await tracker.assignedIssues(identity, ["blocked"])).filter(
+              (i) => i.labels.includes(options.epic) && i.hasOpenChildren,
+            );
       const roots = [
         ...(await assignments(tracker, identity, options, cache)),
         ...progress.filter(
           (i) => i.labels.includes(options.epic) && i.hasOpenChildren,
         ),
+        ...blockedEpics,
       ];
       const pending = roots.map((issue) => ({
         issue,

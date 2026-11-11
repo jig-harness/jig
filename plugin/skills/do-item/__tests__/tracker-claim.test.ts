@@ -97,6 +97,20 @@ describe("claimIssue", () => {
     expect(log).toEqual([]);
   });
 
+  it("refuses an issue the projection blocked, from the state the claim itself reads", async () => {
+    const states = parseTrackerConfig({
+      issue_tracker: { states: { blocked: "Blocked" } },
+    }).states;
+    const { tracker, log } = memory("Blocked", [], undefined, states);
+    const out = await claimIssue(tracker, "#5");
+    expect(out).toMatchObject({
+      outcome: "refused",
+      issue: "#5",
+      why: "blocked",
+    });
+    expect(log).toEqual([]);
+  });
+
   it("refuses an issue already in progress, writing nothing", async () => {
     const { tracker, log } = memory("In Progress", []);
     expect(await claimIssue(tracker, "#5")).toEqual({

@@ -348,7 +348,7 @@ development and shipped as a version.
   drive and the tick also move the items a pull request links to and out
   of it from the same projection (`shared/pr-labels/blocked.ts` decides,
   `do-item/scripts/lib/blocked-move.ts` writes, `dispatch/lib/actions/blocked.ts`
-  at the tick), each item read and written only where it disagrees. Where a repository turns its
+  at the tick), each item read, and written only where it disagrees. Where a repository turns its
   [adoption rule](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
   on, the tick arms a pull request with no ledger that the rule's author
   and window match as it arms a labelled one (`dispatch/lib/adopt.ts`).
