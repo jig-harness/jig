@@ -64,6 +64,7 @@ import {
 import { type ProcessRow, processTable } from "../../shared/process-table.ts";
 import { LAUNCH_RECORD_ID } from "../../shared/records/launch-claims.ts";
 import { pendingRearm } from "./rearm-state.ts";
+import { pickupClaims } from "./pickup-claim-table.ts";
 import { DRIVER_REFUSAL_EXITS } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { stateRoot } from "../receipts.ts";
 import { existingStateDb, inTransaction, stateDb, statePath } from "./state.ts";
@@ -73,6 +74,7 @@ import type { StandingAnswer } from "./routine-questions.ts";
 export { cancelledBeforeExecution } from "./cancellation.ts";
 export { UNARMED_FACTS } from "./launch-keep.ts";
 import { latestArms, latestFailedRearms } from "./launch-keep.ts";
+import { latestPickups } from "./launch-pickups.ts";
 
 /** What a launch starts: a re-arm of a stopped drive, a takeover of a wedged one, a pickup's `do-item` session, or a merge's follow-up pass. */
 export type LaunchAction =
@@ -501,20 +503,6 @@ export function recordOf(
   return { ...record, ...(rows ?? EMPTY) };
 }
 
-/** Claims written at the tracker boundary, kept apart from tick-owned record JSON. */
-function pickupClaims(launch: string, db: Database): string[] {
-  const table = db
-    .query(
-      "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'pickup_claims'",
-    )
-    .get();
-  if (table === null) return [];
-  return db
-    .query("SELECT item FROM pickup_claims WHERE launch = ? ORDER BY item")
-    .all(launch)
-    .map((row) => (row as { item: string }).item);
-}
-
 interface EpisodeRow {
   launch: string;
   observed_at: string;
@@ -859,30 +847,6 @@ function latestRedrives(records: ReadRecord[]): Set<string> {
     }
   }
   return new Set([...latest.values()].map((r) => r.record.id));
-}
-
-/**
- * The ids of each item's latest pickup record: while it is unreleased it is
- * the only thing that keeps the item from being picked up again, so it stays
- * until `releaseEnded` has seen the item leave the dispatch states.
- */
-function latestPickups(records: ReadRecord[]): Set<string> {
-  const latest = new Map<string, ReadRecord>();
-  for (const read of records) {
-    const { record } = read;
-    if (record.action !== "pickup" || record.released) continue;
-    const members = record.batchItems?.map((item) => item.key) ?? [record.item];
-    for (const member of members) {
-      if (member === null) continue;
-      const key = `${record.repo}\0${member}`;
-      const seen = latest.get(key);
-      if (seen === undefined || record.createdAt >= seen.record.createdAt)
-        latest.set(key, read);
-    }
-  }
-  const ids = new Set<string>();
-  for (const { record } of latest.values()) ids.add(record.id);
-  return ids;
 }
 
 /** When an ended or died record finished; `null` for one still holding its stage. */
