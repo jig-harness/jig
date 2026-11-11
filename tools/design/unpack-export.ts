@@ -10,13 +10,20 @@
  * script writes, beside the export:
  *
  * - `generated/<title-slug>.html` for every page that stands on its own
- *   (holds an `<x-dc>` template and imports no other page), with the
- *   runtime's manifest reference replaced by three scripts at the end of
- *   its body: the scenario hook below, inline; the React builds, by path;
- *   and the page runtime as exported, inline; every page's React builds
- *   must be the same bytes;
+ *   (holds an `<x-dc>` template, and every component it imports with
+ *   `<dc-import name="X">`, directly or through another component, is
+ *   carried in its own manifest as `./X.dc.html`), with the runtime's
+ *   manifest reference replaced by three scripts at the end of its body:
+ *   the scenario hook below, inline, with the imported components' sources
+ *   inline before it; the React builds, by path; and the page runtime as
+ *   exported, inline; every page's React builds must be the same bytes;
  * - `vendor/react.production.min.js` and `vendor/react-dom.production.min.js`,
  *   the React builds as exported (their licence stays in `vendor/LICENSE`).
+ *
+ * The runtime loads an imported component by reading `./X.dc.html`
+ * through `window.__resources` and `window.__resourceBlobs` when the page
+ * maps it there, and over the network otherwise; the generated page maps
+ * each one to its inline source, so it still loads nothing.
  *
  * The scenario hook, which is not part of the design, reads `?scenario=`,
  * `?theme=` and `?switch=off` from the URL into the page's props before the
@@ -56,10 +63,17 @@ interface Asset {
   data: string;
 }
 
+/** A path the page's runtime asks for, and the manifest entry that answers it. */
+interface Resource {
+  id: string;
+  uuid: string;
+}
+
 interface Bundle {
   manifest: Record<string, Asset>;
   template: string;
   pageOrder: string[];
+  resources: Resource[];
 }
 
 function section(html: string, kind: string): string | null {
@@ -82,12 +96,22 @@ function isManifest(value: unknown): value is Record<string, Asset> {
   return isRecord(value) && Object.values(value).every(isAsset);
 }
 
+function isResources(value: unknown): value is Resource[] {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (entry) => isRecord(entry) && isString(entry.id) && isString(entry.uuid),
+    )
+  );
+}
+
 /** The bundle a self-extracting document carries; `null` when it carries none. */
 export function parseBundle(html: string): Bundle | null {
   const manifest = section(html, "manifest");
   const template = section(html, "template");
   if (manifest === null || template === null) return null;
   const order = section(html, "page_order");
+  const resources = section(html, "ext_resources");
   return {
     manifest: decodeJson(manifest, isManifest, "the export's manifest"),
     template: decodeJson(template, isString, "the export's template"),
@@ -95,6 +119,10 @@ export function parseBundle(html: string): Bundle | null {
       order === null
         ? []
         : decodeJson(order, isStringArray, "the export's page order"),
+    resources:
+      resources === null
+        ? []
+        : decodeJson(resources, isResources, "the export's resources"),
   };
 }
 
@@ -165,9 +193,32 @@ function inline(js: string): string {
   return js.replace(/<\/script/gi, "<\\/script").replace(/<!--/g, "<\\!--");
 }
 
-/** The scripts a generated page ends its body with. */
-function scripts(runtime: string): string {
+/**
+ * The script that hands the runtime each imported component's source:
+ * a `Blob` in `window.__resourceBlobs`, named for its path in
+ * `window.__resources`. Empty when the page imports none.
+ */
+function componentScript(components: Map<string, string>): string {
+  if (components.size === 0) return "";
   return `<script>
+/* The components this page imports, as exported, for the runtime to read. */
+${inline(`(function () {
+  var components = ${JSON.stringify(Object.fromEntries(components))};
+  var resources = (window.__resources = window.__resources || {});
+  var blobs = (window.__resourceBlobs = window.__resourceBlobs || {});
+  Object.keys(components).forEach(function (path) {
+    var key = "inline:" + path;
+    blobs[key] = new Blob([components[path]], { type: "text/html" });
+    resources[path] = key;
+  });
+})();`)}
+</script>
+`;
+}
+
+/** The scripts a generated page ends its body with. */
+function scripts(runtime: string, components: Map<string, string>): string {
+  return `${componentScript(components)}<script>
 /* Landing-check hook, not part of the design (tools/design/unpack-export.ts). */
 ${inline(HOOK)}
 </script>
@@ -202,9 +253,42 @@ function titleOf(template: string, fallback: string): string {
   return /<title>([^<]*)<\/title>/.exec(template)?.[1] ?? fallback;
 }
 
-/** Whether a page renders on its own: it holds a template and imports no other page. */
-function standsAlone(template: string): boolean {
-  return template.includes("<x-dc") && !template.includes("<dc-import");
+/** The component names a template or component imports, as the runtime reads them. */
+function importsOf(html: string): string[] {
+  const names: string[] = [];
+  for (const tag of html.match(/<dc-import\b[^>]*>/g) ?? []) {
+    const name = /\s(?:name|component)="([^"]*)"/.exec(tag)?.[1];
+    names.push(name ?? "");
+  }
+  return names;
+}
+
+/**
+ * The components a page imports, by the path the runtime asks for
+ * (`./X.dc.html`), with their sources, following imports inside them;
+ * `null` when one is not carried in the page's own manifest, or is itself
+ * one of the export's pages (`pages`, by title), so the page draws another.
+ */
+function componentsOf(
+  inner: Bundle,
+  pages: Set<string>,
+): Map<string, string> | null {
+  const uuids = new Map(inner.resources.map((r) => [r.id, r.uuid]));
+  const found = new Map<string, string>();
+  const pending = importsOf(inner.template);
+  for (let name = pending.pop(); name !== undefined; name = pending.pop()) {
+    if (!SAFE_STEM.test(name)) return null;
+    const path = `./${name}.dc.html`;
+    if (found.has(path)) continue;
+    const uuid = uuids.get(path);
+    const asset = uuid === undefined ? undefined : inner.manifest[uuid];
+    if (asset === undefined) return null;
+    const source = assetText(asset);
+    if (pages.has(titleOf(source, ""))) return null;
+    found.set(path, source);
+    pending.push(...importsOf(source));
+  }
+  return found;
 }
 
 /**
@@ -265,29 +349,30 @@ function withScripts(
   title: string,
   html: string,
   runtime: string | null,
+  components: Map<string, string>,
 ): string {
   const end = html.lastIndexOf("</body>");
   if (end === -1) throw new UnpackError(`${title}: no </body>`);
   if (runtime === null)
     throw new UnpackError(`${title}: names no page runtime in its manifest`);
-  return `${html.slice(0, end)}${scripts(runtime)}${html.slice(end)}`;
+  return `${html.slice(0, end)}${scripts(runtime, components)}${html.slice(end)}`;
 }
 
 /** A file name that cannot leave the directory it is written to. */
 const SAFE_STEM = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 
-/** Add one page's file to `files`; a page that imports another is skipped. */
+/** Add one page's file to `files`; a page that imports another page, or a component it does not carry, is skipped. */
 function unpackPage(
   id: string,
-  page: Asset,
+  inner: Bundle,
+  pages: Set<string>,
   shared: Shared,
   files: Map<string, string>,
   out: Unpacked,
 ): void {
-  const inner = parseBundle(assetText(page));
-  if (inner === null) return;
   const title = titleOf(inner.template, id);
-  if (!standsAlone(inner.template)) {
+  const components = componentsOf(inner, pages);
+  if (!inner.template.includes("<x-dc") || components === null) {
     out.skipped.push(title);
     return;
   }
@@ -296,6 +381,7 @@ function unpackPage(
     title,
     withViewport(title, resolved),
     shared.runtime,
+    components,
   );
   const stem = slug(title) || id;
   if (!SAFE_STEM.test(stem))
@@ -321,14 +407,21 @@ export function build(dir: string): {
   const shared: Shared = { runtime: null, react: new Map() };
   const files = new Map<string, string>();
   const out: Unpacked = { pages: [], skipped: [], react: [] };
-  for (const id of outer.pageOrder) {
+  const inners = outer.pageOrder.map((id) => {
     const page = outer.manifest[id];
     if (page === undefined)
       throw new UnpackError(
         `${exportPath} lists page ${id} but does not carry it`,
       );
-    unpackPage(id, page, shared, files, out);
-  }
+    return [id, parseBundle(assetText(page))] as const;
+  });
+  const titles = new Set(
+    inners.flatMap(([id, inner]) =>
+      inner === null ? [] : [titleOf(inner.template, id)],
+    ),
+  );
+  for (const [id, inner] of inners)
+    if (inner !== null) unpackPage(id, inner, titles, shared, files, out);
   if (out.pages.length === 0)
     throw new UnpackError(`${exportPath} holds no self-standing page`);
   for (const name of REACT_FILES) {

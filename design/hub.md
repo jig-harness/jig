@@ -733,19 +733,16 @@ cover navigation, folded alternatives, links, successful and refused
 clipboard access, stale reads, a failed host and reconnecting after the
 phone resumes. The key bar is absent and no action depends on it.
 
-The initial page-size ceiling is 700 KiB (716,800 bytes), counting the
-uncompressed HTML, CSS and JavaScript needed for the read views, including
-inline assets. The current built dashboard document measured 676,191
-bytes on 2026-11-09; splitting it into files must not evade the total.
-Before the first Stage 1 view implementation, measure actual transfer bytes
-and first paint at phone width, with a cold cache and a named network
-profile. Record the measurements and set the first-paint and transfer
-ceilings in an acceptance fixture before that implementation begins; every
-view implementation must fail its browser checks above the uncompressed
-page-size, transfer, or first-paint ceiling. No phone chat bundle is loaded.
+The page's size in bytes is not a phone constraint; how soon the phone
+shows the page is. Before the first Stage 1 view implementation, measure
+first paint at phone width, with a cold cache and a named network profile.
+Record the measurement and set the first-paint ceiling in an acceptance
+fixture before that implementation begins; every view implementation must
+fail its browser checks above it. No phone chat bundle is loaded.
 Data is budgeted separately:
 History reads at most 100 rows per page and decision details load on open.
-An unset ceiling is an unmet acceptance check, not an unlimited budget.
+An unset first-paint ceiling is an unmet acceptance check, not an unlimited
+budget.
 
 **Access probes, before stage 2 is planned.** A throwaway loopback page
 must open in Orca's phone app through a paired host, with its origin and
@@ -876,12 +873,12 @@ a test fails a view that answers slower than its target:
   repository and target, so a filtered read stays under a second at a year
   of rows.
 - **The page a phone loads** is the read views alone, with no chat bundle.
-  Its transfer bytes and first paint must meet the measured ceilings in
+  Its first paint must meet the measured ceiling in
   [Phone acceptance](#phone-scope-and-access), at both phone widths.
 
 The outcome log's row count at a year is set from what stage 1 measures.
-The phone page's size, transfer and first-paint ceilings are fixed by stage
-1's measurement and acceptance fixture before its view implementation lands.
+The phone page's first-paint ceiling is fixed by stage 1's measurement and
+acceptance fixture before its view implementation lands.
 The unhealthy
 values for memory, streams, reconnects and the write-ahead log are set by
 stage 2 from its server's own figures, and from then `jig doctor hub`
@@ -1151,9 +1148,8 @@ that fixture; 8 needs 3, 6 and 7; 9 needs 8's fixtures; 10 needs 9.
    threads by bot and not a bot, and the CI hold, which reads "held: not
    built at this head" until step 8 keeps each card's history.
 4. **Phone measurement and acceptance fixture**: before any Stage 1 view
-   implementation, measure transfer bytes and first paint at both phone widths
-   with a cold cache and named network profile. Record the resulting transfer
-   and first-paint ceilings alongside the existing uncompressed page-size
+   implementation, measure first paint at both phone widths with a cold
+   cache and named network profile. Record the resulting first-paint
    ceiling; an unset ceiling fails acceptance.
 5. **Ready to merge on today's dashboard**: item 36's step 3 with the marks,
    its server opening every database read-only, so serving the page leaves

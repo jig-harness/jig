@@ -1,9 +1,10 @@
 /**
  * `tools/design/unpack-export.ts` over a synthetic export: a self-standing
  * page comes out with its runtime reference replaced by the hook, the React
- * script tags and the runtime inline, a page that imports another is
- * skipped, the React builds are written beside it, and a file that is not an
- * export is refused.
+ * script tags and the runtime inline, the components a page imports from its
+ * own manifest are inlined for the runtime to read, a page that imports
+ * another page or a component it does not carry is skipped, the React builds
+ * are written beside it, and a file that is not an export is refused.
  */
 import { describe, expect, it } from "bun:test";
 import {
@@ -37,6 +38,7 @@ function bundle(
   template: string,
   manifest: Record<string, unknown>,
   pageOrder?: string[],
+  resources?: { id: string; uuid: string }[],
 ): string {
   const order =
     pageOrder === undefined
@@ -46,10 +48,14 @@ function bundle(
   // `</script>` does not end the script element that carries it.
   const json = (value: unknown) =>
     JSON.stringify(value).replace(/<\//g, "<\\/");
+  const ext =
+    resources === undefined
+      ? ""
+      : `<script type="__bundler/ext_resources">${json(resources)}</script>`;
   return `<!doctype html><html><body>
 <script type="__bundler/manifest">${json(manifest)}</script>
 <script type="__bundler/template">${json(template)}</script>
-${order}</body></html>`;
+${order}${ext}</body></html>`;
 }
 
 const RUNTIME = '"use strict";window.__runtime="</script><!--<script>";';
@@ -114,6 +120,86 @@ function syntheticExport(): string {
     },
     [PAGE_ID, IMPORTER_ID],
   );
+}
+
+const IDENT_ID = "66666666-6666-4666-8666-666666666666";
+const MARK_ID = "77777777-7777-4777-8777-777777777777";
+const HALF_ID = "88888888-8888-4888-8888-888888888888";
+const IDENT =
+  '<!doctype html>\n<html><head><title>Work identity</title></head><body><x-dc><b>ident</b><dc-import name="Mark"></dc-import><script>"</script>"</script></x-dc></body></html>';
+const MARK =
+  "<!doctype html>\n<html><head><title>Mark</title></head><body><x-dc><i>mark</i></x-dc></body></html>";
+
+/**
+ * An export whose pages import components (`<dc-import>`), the way the
+ * design tool carries them: in the page's own manifest, mapped from the
+ * path the runtime asks for by the page's `ext_resources`. One page carries
+ * everything it imports, one imports another page, one lacks a component
+ * its component imports.
+ */
+function componentsExport(): string {
+  const shared = {
+    [RUNTIME_ID]: asset(RUNTIME),
+    [REACT_ID]: asset(REACT),
+    [DOM_ID]: asset(DOM),
+  };
+  const cards = bundle(
+    pageTemplate(
+      "Cards page",
+      '<x-dc><div class="dd"><dc-import name="Ident" w="{{r.ident}}" hint-size="120px,28px"></dc-import></div></x-dc>',
+    ),
+    {
+      ...shared,
+      [IDENT_ID]: asset(IDENT, "text/html"),
+      [MARK_ID]: asset(MARK, "text/html"),
+    },
+    undefined,
+    [
+      { id: "./Ident.dc.html", uuid: IDENT_ID },
+      { id: "./Mark.dc.html", uuid: MARK_ID },
+    ],
+  );
+  const phone = bundle(
+    pageTemplate(
+      "Cards page, phone",
+      '<x-dc><dc-import name="Cards"></dc-import></x-dc>',
+    ),
+    {
+      ...shared,
+      [MARK_ID]: asset(
+        "<!doctype html>\n<html><head><title>Cards page</title></head><body><x-dc>cards</x-dc></body></html>",
+        "text/html",
+      ),
+    },
+    undefined,
+    [{ id: "./Cards.dc.html", uuid: MARK_ID }],
+  );
+  const half = bundle(
+    pageTemplate(
+      "Half page",
+      '<x-dc><dc-import name="Ident"></dc-import></x-dc>',
+    ),
+    { ...shared, [IDENT_ID]: asset(IDENT, "text/html") },
+    undefined,
+    [{ id: "./Ident.dc.html", uuid: IDENT_ID }],
+  );
+  return bundle(
+    "<html><body></body></html>",
+    {
+      [PAGE_ID]: asset(cards, "text/html"),
+      [IMPORTER_ID]: asset(phone, "text/html"),
+      [HALF_ID]: asset(half, "text/html"),
+    },
+    [PAGE_ID, IMPORTER_ID, HALF_ID],
+  );
+}
+
+/** The body of the inline script that follows `marker` in `html`. */
+function scriptAfter(html: string, marker: string): string {
+  const start = html.indexOf(marker);
+  expect(start).toBeGreaterThan(-1);
+  const body = start + marker.length;
+  return html.slice(body, html.indexOf("</script>", body));
 }
 
 interface Run {
@@ -184,6 +270,51 @@ describe("unpack-export", () => {
       expect(html).not.toContain("<!--");
       expect(read(dir, "vendor", "react.production.min.js")).toBe(REACT);
       expect(read(dir, "vendor", "react-dom.production.min.js")).toBe(DOM);
+    });
+  });
+
+  it("inlines the components a page carries and skips one that imports another page or a missing component", async () => {
+    let html = "";
+    withExport(componentsExport(), (dir, result) => {
+      expectSpawnExit(result, 0);
+      expect(result.stdout).toContain("generated/cards-page.html");
+      expect(result.stdout).toContain(
+        "skipped (imports another page): Cards page, phone",
+      );
+      expect(result.stdout).toContain(
+        "skipped (imports another page): Half page",
+      );
+      html = read(dir, "generated", "cards-page.html");
+    });
+    expect(html).not.toContain(IDENT_ID);
+    expect(html).not.toContain('"</script>"');
+    const marker =
+      "/* The components this page imports, as exported, for the runtime to read. */\n";
+    expect(html.indexOf(marker)).toBeLessThan(
+      html.indexOf("/* Landing-check hook"),
+    );
+    const window: Record<string, Record<string, unknown>> = {};
+    new Function("window", scriptAfter(html, marker))(window);
+    const resources = window.__resources as Record<string, string>;
+    const blobs = window.__resourceBlobs as Record<string, Blob>;
+    expect(Object.keys(resources).sort()).toEqual([
+      "./Ident.dc.html",
+      "./Mark.dc.html",
+    ]);
+    expect(await blobs[resources["./Ident.dc.html"] as string]?.text()).toBe(
+      IDENT,
+    );
+    expect(await blobs[resources["./Mark.dc.html"] as string]?.text()).toBe(
+      MARK,
+    );
+  });
+
+  it("adds no component script to a page that imports nothing", () => {
+    withExport(syntheticExport(), (dir, result) => {
+      expectSpawnExit(result, 0);
+      expect(read(dir, "generated", "sample-page.html")).not.toContain(
+        "__resourceBlobs",
+      );
     });
   });
 
