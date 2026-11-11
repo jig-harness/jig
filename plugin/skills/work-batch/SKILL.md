@@ -264,7 +264,7 @@ branch from that base and switch to it before the first commit
 `origin`):
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/pr-plan.ts" branch --issue "<highest-priority KEY>" --title "<that issue's title>"
+bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/pr-plan.ts" branch --issue "<highest-priority KEY>" --title "<that issue's title>" --issue-json <that issue's JSON file>
 bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git switch -c <printed-branch-name> <remote>/<base>
 ```
 
@@ -335,7 +335,7 @@ pre-PR code review gate (Step 4a) once over the union, with every mandatory
 review gate any issue's labels or paths name. Then plan the pull request:
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/pr-plan.ts" open --issue "<highest-priority KEY>" [--json]
+bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/pr-plan.ts" open --issue "<highest-priority KEY>" --issue-json <that issue's JSON file> [--json]
 ```
 
 Follow the plan as `/jig:do-item`'s

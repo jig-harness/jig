@@ -32,11 +32,12 @@ export interface BaseRule {
 /**
  * A branch name as a base names it: no remote prefix is detectable here, so
  * this refuses only what git refuses in any branch name (a leading `-`, `.`
- * or `/`, `..`, `//`, a trailing `/` or `.`, `.lock` at the end) and
+ * or `/`, `..`, `//`, a trailing `/` or `.`, a component starting with `.` or
+ * ending in `.lock`) and
  * anything beyond ASCII letters, digits, `.`, `_`, `/` and `-`.
  */
 const BRANCH_NAME =
-  /^(?![-./])(?!.*\.\.)(?!.*\/\/)(?!.*\.lock$)[A-Za-z0-9._/-]+(?<![./])$/;
+  /^(?![-./])(?!.*\.\.)(?!.*\/\/)(?!.*\/\.)(?!.*\.lock(?:\/|$))[A-Za-z0-9._/-]+(?<![./])$/;
 
 const isLabelList = (v: unknown): v is string[] =>
   Array.isArray(v) &&
@@ -134,9 +135,13 @@ function checkPlaceholders(
     );
   if (/[\r\n]/.test(pattern))
     throw invalid(`pull_requests.${field} must be one line`);
-  for (const name of allowed)
-    if (!used.includes(name))
+  for (const name of allowed) {
+    const count = used.filter((u) => u === name).length;
+    if (count === 0)
       throw invalid(`pull_requests.${field} must contain {${name}}`);
+    if (count > 1)
+      throw invalid(`pull_requests.${field} must contain {${name}} once`);
+  }
 }
 
 function oneLineString(field: string, raw: unknown): string | null {
@@ -153,13 +158,13 @@ export function renderTitle(
   summary: string,
 ): string {
   return pattern
-    .replaceAll("{key}", key)
-    .replaceAll("{summary}", summary.trim());
+    .replaceAll("{key}", () => key)
+    .replaceAll("{summary}", () => summary.trim());
 }
 
 /** The commit-message prefix `prefix` gives an item's key. */
 export function renderCommitPrefix(prefix: string, key: string): string {
-  return prefix.replaceAll("{key}", key);
+  return prefix.replaceAll("{key}", () => key);
 }
 
 /** A key of any tracker Jig knows, as a title carries it: `ENG-12`, `#12`. */
@@ -195,8 +200,13 @@ export function parseConventions(
   titleFormat: TitleFormat | null,
 ): Conventions {
   const titlePattern = oneLineString("title_pattern", section.title_pattern);
-  if (titlePattern !== null)
+  if (titlePattern !== null) {
+    if (titlePattern !== titlePattern.trim())
+      throw invalid(
+        "pull_requests.title_pattern must not start or end with whitespace: a title is matched trimmed",
+      );
     checkPlaceholders("title_pattern", titlePattern, TITLE_PLACEHOLDERS);
+  }
   if ((titleFormat === "pattern") !== (titlePattern !== null))
     throw invalid(
       titlePattern === null

@@ -127,6 +127,25 @@ export async function branchCommits(
   remote: string,
   branch: string,
 ): Promise<BranchCommit[]> {
+  const refs = (
+    await gitOut(root, [
+      "for-each-ref",
+      "--format=%(refname)",
+      `refs/remotes/${remote}/`,
+    ])
+  )
+    .split("\n")
+    .filter(
+      (r) =>
+        r !== "" &&
+        r !== `refs/remotes/${remote}/${branch}` &&
+        r !== `refs/remotes/${remote}/HEAD`,
+    );
+  if (refs.length === 0)
+    throw new JigError(
+      "git-failed",
+      `no remote-tracking branch of ${remote} but ${branch} is fetched, so the branch's own commits cannot be told from the base's history: fetch ${remote}'s base branch, then re-run`,
+    );
   const own = await gitOut(root, [
     "rev-list",
     "--topo-order",
@@ -214,6 +233,13 @@ export async function rewordUnpushed(
 ): Promise<PrefixReport["reworded"]> {
   const moved = new Map<string, string>();
   const reworded: PrefixReport["reworded"] = [];
+  const head = (await gitOut(root, ["rev-parse", "HEAD"])).trim();
+  const ref = await headRef(root, false);
+  if (commits.length > 0 && !commits.some((c) => c.sha === head))
+    throw new JigError(
+      "git-failed",
+      `HEAD moved to ${head.slice(0, 12)} after the branch's commits were read; nothing was rewritten: re-run`,
+    );
   for (const commit of commits) {
     if (commit.pushed) continue;
     const lacks = !commit.message.startsWith(prefix);
@@ -225,10 +251,16 @@ export async function rewordUnpushed(
     if (lacks)
       reworded.push({ from: commit.sha, to, subject: subjectOf(message) });
   }
-  const head = (await gitOut(root, ["rev-parse", "HEAD"])).trim();
   const newHead = moved.get(head);
   if (newHead === undefined) return reworded;
-  const ref = await headRef(root, false);
+  if (
+    (await headRef(root, false)) !== ref ||
+    (await gitOut(root, ["rev-parse", "HEAD"])).trim() !== head
+  )
+    throw new JigError(
+      "git-failed",
+      "HEAD or its branch changed while the commits were rewritten; nothing was moved: re-run",
+    );
   await gitOut(root, [
     "update-ref",
     ...(ref === null ? ["--no-deref"] : []),
