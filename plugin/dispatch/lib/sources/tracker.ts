@@ -135,6 +135,37 @@ async function byTrustedAssigner(
   return { wanted, unplaced };
 }
 
+/**
+ * The assigned items split by who assigned them, and the claimed items; the
+ * tracker's rate limit, when either read met it, instead of a reading
+ * the limit cut short.
+ */
+async function trustedAndClaimed(
+  tracker: Tracker,
+  identity: string,
+  issues: ReadonlyArray<PoolIssue>,
+): Promise<
+  | { limited: TrackerRateLimited }
+  | {
+      wanted: WantedItem[];
+      unplaced: Unplaced[];
+      claimed: Awaited<ReturnType<typeof readClaimed>>;
+    }
+> {
+  const { wanted, unplaced, limited } = await byTrustedAssigner(
+    tracker,
+    issues,
+    identity,
+  );
+  if (limited !== undefined) return { limited };
+  try {
+    return { wanted, unplaced, claimed: await readClaimed(tracker, identity) };
+  } catch (error) {
+    if (isRateLimited(error)) return { limited: error };
+    throw error;
+  }
+}
+
 /** `read`, or a rejection once `bound` has ended it. */
 async function within<T>(read: Promise<T>, bound: FacetBound): Promise<T> {
   let stop: (() => void) | undefined;
@@ -242,21 +273,10 @@ async function readFactoryPickups(
       claimed: null,
     };
   const issues = assigned.value;
-  const { wanted, unplaced, limited } = await byTrustedAssigner(
-    tracker,
-    issues,
-    identity,
-  );
-  if (limited !== undefined)
-    return limitedFactory(tracker, identity, limited, stores);
-  let claimed: Awaited<ReturnType<typeof readClaimed>>;
-  try {
-    claimed = await readClaimed(tracker, identity);
-  } catch (error) {
-    if (isRateLimited(error))
-      return limitedFactory(tracker, identity, error, stores);
-    throw error;
-  }
+  const read = await trustedAndClaimed(tracker, identity, issues);
+  if ("limited" in read)
+    return limitedFactory(tracker, identity, read.limited, stores);
+  const { wanted, unplaced, claimed } = read;
   if (!Array.isArray(claimed)) unplaced.push(claimed);
   const record =
     stores === undefined || facets === undefined
