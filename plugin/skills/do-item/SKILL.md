@@ -709,7 +709,9 @@ implementation. Skip this check for issues about the repository's own code.
    changed holds or assignment. A refusal or stand-down requires a fresh
    queue read; never retry without the served-person options. Every
    adapter supports inherited claims. Claims serialize on this host;
-   between hosts, only `do_item.claim_marker` serializes same-person claims.
+   between hosts, only `do_item.claim_marker` arbitrates same-person claims,
+   best effort: a lagging listing can let two claims both win, and a later
+   loss stands the claim down after its writes.
 
    Exit `0` is the claim. Exit `3` is a refusal, nothing written: the issue
    is already `in_progress` or assigned to someone else; its state is not

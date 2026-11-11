@@ -443,7 +443,9 @@ landed first), so the tick never writes to the tracker. Hosts that serve
 one person, or pick up from one queue, claim with the same identity, so
 only the claim marker tells their claims apart: with
 `do_item.claim_marker` set, of two hosts claiming one item the one whose
-marker is earliest claims it and the other refuses with nothing written
+marker is earliest claims it and the other refuses, usually with nothing
+written (best effort: a lagging listing can let both win, and a later loss
+stands a claim down after its writes)
 ([do-item's start rules](skills/do-item/README.md#the-repositorys-own-start-rules)).
 Without it, claims serialize on one host only. A claimed item
 with no running session for longer than `dispatch.stalled_after` is

@@ -46,7 +46,7 @@ describe("checkAssignment", () => {
       { from: null, to: "me", at: at(1) },
       { from: "me", to: null, at: at(2) },
     ];
-    expect(checkAssignment("me", changes, "me", 2)).toEqual({
+    expect(checkAssignment("me", changes, "me", changes)).toEqual({
       ok: false,
       replaced: null,
     });
@@ -55,9 +55,24 @@ describe("checkAssignment", () => {
         "me",
         [...changes, { from: null, to: "me", at: at(3) }],
         "me",
-        2,
+        changes,
       ),
     ).toEqual({ ok: true });
+  });
+
+  it("does not mistake a tied-time older change for the write's evidence", () => {
+    const old: AssigneeChange[] = [
+      { from: "me", to: null, at: at(1) },
+      { from: null, to: "me", at: at(1) },
+    ];
+    const listing: AssigneeChange[] = [
+      { from: "dana", to: "me", at: at(1) },
+      ...old,
+    ];
+    expect(checkAssignment("me", listing, "me", old)).toEqual({
+      ok: false,
+      replaced: "dana",
+    });
   });
 
   it("refuses, restoring nobody, when the issue is no longer the user's or the history holds no change to it", () => {
@@ -163,7 +178,13 @@ describe("Linear: assigning an unassigned issue", () => {
 });
 
 /** Jira issue ENG-1 whose assignee and changelog the fake keeps; `race` assigns MEMBER just before the claim's write. */
-function jiraWorld(options: { assignee?: string | null; race?: boolean } = {}) {
+function jiraWorld(
+  options: {
+    assignee?: string | null;
+    race?: boolean;
+    incomplete?: boolean;
+  } = {},
+) {
   let assignee: string | null = options.assignee ?? null;
   const changelog: Array<Record<string, unknown>> = [];
   const writes: string[] = [];
@@ -178,7 +199,11 @@ function jiraWorld(options: { assignee?: string | null; race?: boolean } = {}) {
       id: String(changelog.length + 1),
       created: at(changelog.length + 1),
       author: FACTORY,
-      items: [{ fieldId: "assignee", from: assignee, to }],
+      items: [
+        options.incomplete
+          ? { fieldId: "assignee", to }
+          : { fieldId: "assignee", from: assignee, to },
+      ],
     });
     assignee = to;
   };
@@ -217,6 +242,13 @@ describe("Jira: assigning an unassigned issue", () => {
     const w = jiraWorld({ assignee: MEMBER.accountId });
     expect(await w.t.assignUnassigned?.("ENG-1", me)).toBe(false);
     expect(w.writes).toEqual([]);
+  });
+
+  it("refuses to verify from a changelog item that omits its from side", async () => {
+    const w = jiraWorld({ incomplete: true });
+    await expect(w.t.assignUnassigned?.("ENG-1", me)).rejects.toThrow(
+      /omits a side/,
+    );
   });
 
   it("puts back an assignee its write replaced, and refuses", async () => {

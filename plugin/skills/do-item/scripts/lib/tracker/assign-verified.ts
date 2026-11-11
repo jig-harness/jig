@@ -33,8 +33,7 @@ export interface VerifiedAssignOps {
 
 /** The assignee this write replaced, when the history shows it replaced one. */
 export type AssignmentCheck =
-  | { ok: true }
-  | { ok: false; replaced: string | null };
+  { ok: true } | { ok: false; replaced: string | null };
 
 /** The changes in the order the tracker recorded them. */
 function ordered(changes: readonly AssigneeChange[]): AssigneeChange[] {
@@ -44,20 +43,44 @@ function ordered(changes: readonly AssigneeChange[]): AssigneeChange[] {
     .map(({ c }) => c);
 }
 
+/** A change's identity for matching one listing against another. */
+function identity(c: AssigneeChange): string {
+  return JSON.stringify([c.from, c.to, Date.parse(c.at)]);
+}
+
+/**
+ * The changes a listing holds beyond the ones `known` held: each known change
+ * cancels one equal change (the tracker supplies no event ids), so a tie in
+ * time or a different listing order cannot move the boundary.
+ */
+function unseen(
+  changes: readonly AssigneeChange[],
+  known: readonly AssigneeChange[],
+): AssigneeChange[] {
+  const owed = new Map<string, number>();
+  for (const c of known)
+    owed.set(identity(c), (owed.get(identity(c)) ?? 0) + 1);
+  return ordered(changes).filter((c) => {
+    const left = owed.get(identity(c)) ?? 0;
+    if (left === 0) return true;
+    owed.set(identity(c), left - 1);
+    return false;
+  });
+}
+
 /**
  * Read the history after assigning `user`: did the write replace nobody?
- * `known` is how many changes the history held before the write; only the
- * changes after them count as this write's evidence.
+ * `known` is the history before the write; only the changes it did not hold
+ * count as this write's evidence.
  */
 export function checkAssignment(
   current: string | null,
   changes: readonly AssigneeChange[],
   user: string,
-  known = 0,
+  known: readonly AssigneeChange[] = [],
 ): AssignmentCheck {
   if (current !== user) return { ok: false, replaced: null };
-  const latest = ordered(changes)
-    .slice(known)
+  const latest = unseen(changes, known)
     .filter((c) => c.to === user)
     .at(-1);
   if (latest === undefined) return { ok: false, replaced: null };
@@ -72,7 +95,7 @@ export async function assignVerified(
   user: string,
 ): Promise<boolean> {
   if ((await ops.assignee()) !== null) return false;
-  const known = (await ops.history()).length;
+  const known = await ops.history();
   await ops.assign(user);
   const check = checkAssignment(
     await ops.assignee(),

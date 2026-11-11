@@ -63,7 +63,13 @@ export function claimOperations(
             (await client.changelog(key)).flatMap((e) =>
               e.items
                 .filter((i) => i.fieldId === "assignee")
-                .map((i) => ({ from: i.from, to: i.to, at: e.createdAt })),
+                .map((i) => {
+                  if (!i.explicit)
+                    throw new JiraApiError(
+                      `changelog of ${key}: an assignee change at ${e.createdAt} omits a side`,
+                    );
+                  return { from: i.from, to: i.to, at: e.createdAt };
+                }),
             ),
         },
         user.id,

@@ -58,7 +58,13 @@ export interface JiraComment {
 export interface ChangelogEntry {
   createdAt: string;
   author: Record<string, unknown> | null;
-  items: Array<{ fieldId: string; from: string | null; to: string | null }>;
+  items: Array<{
+    fieldId: string;
+    from: string | null;
+    to: string | null;
+    /** Whether the tracker stated both sides; an absent side is not `null`. */
+    explicit: boolean;
+  }>;
 }
 
 /** A link type the configuration names, with the words for its two sides. */
@@ -614,6 +620,7 @@ export function jiraClient(opts: ClientOptions): Client {
               fieldId: String(item.fieldId ?? item.field ?? ""),
               from: optStr(item.from, `${where}.items[${j}].from`),
               to: optStr(item.to, `${where}.items[${j}].to`),
+              explicit: item.from !== undefined && item.to !== undefined,
             };
           }),
         };
