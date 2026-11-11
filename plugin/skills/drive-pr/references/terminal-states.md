@@ -161,7 +161,8 @@ to a human or to a pass.
 | `PR_CONFLICTING` with no workable finding | `conflict-resolve` (`base-sync.ts`, then resolve the conflict) | `DRIVE_PR_CONFLICT_REPAIR_ROUNDS`, default 1 | exit `9`, with its `Fix:` command |
 
 The task reaches the pass in its **environment** (`DRIVE_PR_ROUND_TASK`,
-`DRIVE_PR_ROUND_TASK_DETAIL`, and on a CI repair `DRIVE_PR_ROUND_FAILED_RUNS`),
+`DRIVE_PR_ROUND_TASK_DETAIL`, and on a CI repair `DRIVE_PR_ROUND_FAILED_RUNS`,
+`DRIVE_PR_ROUND_FAILED_STATUSES` and `DRIVE_PR_ROUND_REPAIR_SKILL`),
 never by rewriting the argv after `--`: that argv belongs to whichever agent the
 operator armed the drive with, and a driver editing it would be guessing at
 another tool's command grammar. `SKILL.md` § 0 is the pass-side half.
@@ -177,7 +178,9 @@ Properties worth stating because each closes a way this could go wrong:
   base branch — the guess the operator-facing message deliberately does not
   make — one level further away where nobody can see it being made.
 - **Only positively-named failures spend CI budget.** `failing: …` yes;
-  `cancelled:`, `unknown:` and an unparseable report no. Those are absences of
+  `cancelled:`, `unknown:` and an unparseable report no. A commit status in
+  state `error` whose description says the build was aborted is `cancelled:`,
+  as a cancelled check run is. Those are absences of
   evidence, and a CI-repair pass handed no run and no check name has nothing to
   work from.
 - **A CI repair is told which runs failed.** `DRIVE_PR_ROUND_FAILED_RUNS` holds
@@ -187,6 +190,11 @@ Properties worth stating because each closes a way this could go wrong:
   that event, and it is empty when the label's history cannot be read. While a
   run is being re-run its jobs that did not pass read as `pending:`, so a pass
   that re-ran it does not spend the next repair on the attempt it replaced.
+  A CI service that reports as commit statuses has no run to name:
+  `DRIVE_PR_ROUND_FAILED_STATUSES` holds each failing status as
+  `{context, target_url}` JSON, the form `ci.log_command` reads, and
+  `DRIVE_PR_ROUND_REPAIR_SKILL` names the skill the pass loads
+  (`ci.repair_skill`).
 - **A repair re-gates from the top, never re-checks in place.** A repair that
   pushed moved the head, staling `reviewedHead` and every witness gathered
   under it — the reviewer's own stamp included. Rebuilding that evidence is

@@ -415,9 +415,29 @@ The Queue view names holds: an open blocker reads "waiting on #N";
 `hitl`, `hitl:*`, `manual-ops` and `jig:hold` read "needs a person to start".
 Eligible items are ranked by priority, the work they unblock, epic order,
 size and age. Assignment provenance, relations and children are cached
-until the item's update time changes. Assignment lists refresh with
-headroom and at least every 15 minutes. Served forge logins also join the
+until the item's update time changes. Served forge logins also join the
 pull-request adoption authors.
+
+A served queue costs the tracker a handful of requests a tick. On Linear,
+one paged query reads a person's assignments with each one's relations
+(and the related issue's state) and its parent (with its description); the
+issues the walk still needs by key, such as an execution plan's steps,
+leave together in one lookup. The reading is kept between ticks, and a
+tick first asks the tracker, in one request, whether any issue it depended
+on, any child of one, or any issue newly assigned to the person changed
+since: when nothing did, the tick reuses the reading whole, and when
+something did, it reads the queue again and only the issues that changed.
+The reading is taken whole every 15 minutes regardless, and a tick with no
+free slot reuses one younger than that without asking. Every repository of
+the machine file that names the same tracker, team and person shares one
+reading per tick.
+
+Every process on the host shares each tracker credential's request budget
+(`tracker_share` in [the machine's dispatch file](CONFIGURATION.md#the-machines-dispatch-file)).
+While the tracker refuses the credential for its rate limit, no request
+leaves the host before the reset it named: a tick reports the tracker once
+as rate limited until then, the queue it shows is the last reading, and
+the pickups it would launch wait.
 
 Before launching, the tick rechecks the item and admits an account. The
 pass runs through the account-bound wrapper under `dispatch.pickup_deadline`;
@@ -426,10 +446,17 @@ to its implementer. Its prompt ends by asking the session to record
 how it ended, `jig dispatch result <record> <token> done|failed`, which
 refuses another record's token and a second answer. A completed pickup adds
 `--pr <number>` for the pull request it opened, or `--none "<reason>"` when
-no pull request was needed. A `done` without either is refused. A pickup
+no pull request was needed. A `done` without either is refused. A pickup the
+tracker's rate limit stopped before it claimed the item (a tracker script
+exits `5`) records `waits --until <time>` instead (after the claim the pass
+waits for the reset within its deadline, else records `failed`): the item is held until that time, with no
+question for a person, and the first tick after it launches the item again. A pickup
 whose claim the repository's start rules (`do_item.preflight_command`)
 refused records `failed --refused <updated-at> --reason <reason>`, and the dispatcher
-shows the item as held with that reason until the item changes. Every ended
+shows the item as held with that reason until the item changes. A batch
+pickup names each refused member with `--key <item>` beside its `--refused`:
+only those members are held, each until it changes, and the rest of the
+batch is picked up again without them. Every ended
 launch's outcome keeps its next owner: a station address, a person and their
 act, or nobody with a reason. `jig ask` shows this as `last.next`; older
 outcomes that did not keep it say it was not recorded. A converged drive
@@ -439,7 +466,15 @@ slot while the runtime reports its agent working or waiting, and gives it
 back when the agent finishes. `do-item` claims the item itself
 (`tracker.ts claim`: refused when the item is already in progress or
 assigned to someone else, and abandoned when a re-read shows another claim
-landed first), so the tick never writes to the tracker. A claimed item
+landed first), so the tick never writes to the tracker. Hosts that serve
+one person, or pick up from one queue, claim with the same identity, so
+only the claim marker tells their claims apart: with
+`do_item.claim_marker` set, of two hosts claiming one item the one whose
+marker is earliest claims it and the other refuses, usually with nothing
+written (best effort: a lagging listing can let both win, and a later loss
+stands a claim down after its writes)
+([do-item's start rules](skills/do-item/README.md#the-repositorys-own-start-rules)).
+Without it, claims serialize on one host only. A claimed item
 with no running session for longer than `dispatch.stalled_after` is
 reported as stalled and never relaunched; an item more than one running
 session joins to is reported as a double claim; a session waiting longer
@@ -453,6 +488,7 @@ until the runtime can bind it to an account.
 
 ```sh
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> done|failed [--pr <number> | --none <reason>]
+bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> waits --until <time>
 ```
 
 **The steward** (the `steward` stage, with `steward.enabled: true` in the
@@ -845,8 +881,19 @@ those rows is what a new class is made from.
 `--jsonl` as JSON lines:
 
 ```sh
-bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch log [--since <date>] [--jsonl]
+bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch log [--since <date>] [--jsonl] [--acceptance]
 ```
+
+With `--acceptance` it prints, instead of the rows, one line per repository
+and decision class over the parked decisions the log counted: how many
+parks, how many were answered, how many of those chose the recommended
+option with no note, and the median wait for an answer (`--jsonl` prints one
+JSON object per line). It counts parks that have left their ledger, so a
+park still waiting is not in it, and `--since` selects by when the log
+recorded the park's end, not when it was parked: the resolution time for a
+park answered or handed on, the time a tick noticed the park was withdrawn
+for one removed. It is evidence for deciding whether a class should
+stay a park, and nothing acts on it.
 
 Every run also adds the rows it wrote to a copy, one file per month,
 `~/.local/state/jig/dispatch/log-<year>-<month>.jsonl`, which never
@@ -1515,7 +1562,7 @@ open; the guide lists the evidence it needs.
 | **git** | 2.36 or later (`--path-format` for absolute paths and `git worktree list -z`; `resolve-conflicts` needs 2.41, to reconstruct automatic merge results and read attributes from the index with `--attr-source`, and its history report 2.43, or 2.45 in a partial clone) | Every skill that reads the repository |
 | **GitHub CLI** (`gh`), signed in with access to the repositories you work on | 2.48 or later (`gh api --slurp`) | Every skill that works on pull requests. Jig supports GitHub as its only forge ([extending](EXTENDING.md#forge-github)) |
 | **The `gh-stack` extension** | Any | Only `pull_requests.stacking: native` |
-| **Issue-tracker access** | — | `do-item`, and `drive-pr`'s tracker reads. With the default GitHub adapter, the signed-in `gh` above and nothing more. With the Linear adapter: `LINEAR_API_KEY` or `LINEAR_API_TOKEN` in the environment, or the Linear MCP server or `linear` command line tool signed in. With the Jira adapter: `JIRA_EMAIL` and `JIRA_API_TOKEN` in the environment, an Atlassian account's email address and an API token made for it |
+| **Issue-tracker access** | — | `do-item`, and `drive-pr`'s tracker reads. With the default GitHub adapter, the signed-in `gh` above and nothing more. With the Linear adapter: `LINEAR_API_KEY` or `LINEAR_API_TOKEN` in the environment, or the Linear MCP server or `linear` command line tool signed in. With the Jira adapter: `JIRA_EMAIL` and `JIRA_API_TOKEN` in the environment, an Atlassian account's email address and an API token made for it, or an OAuth access token in `JIRA_BEARER_TOKEN`, or a command that prints one in `JIRA_TOKEN_COMMAND` ([environment variables](CONFIGURATION.md#environment-variables)) |
 
 Most skills do not check these versions when they run: an older tool fails
 on the command it lacks. The `resolve-conflicts` history report is the

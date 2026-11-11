@@ -43,6 +43,8 @@ export interface SiteField {
   id: string;
   name: string;
   schema: unknown;
+  /** The names JQL knows the field by (`fixVersion` for `fixVersions`); absent when the site lists none. */
+  clauseNames?: string[];
 }
 
 /** A custom field a facet is kept in, resolved against the site. */

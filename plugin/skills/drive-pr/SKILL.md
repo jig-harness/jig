@@ -677,8 +677,10 @@ outlives the session that spawned it, so its console is not where you look:
   is live on it, and nothing in the family was touched for `--min-age-days`
   (default 7); and the files an earlier release kept there, once the
   database's import of them is 30 days old. Displaced file-lock quarantine
-  entries form a separate family, reported with count and bytes but kept:
-  neither an idle snapshot nor the database mutex excludes legacy writers.
+  entries form a separate family, reported with count and bytes and retired
+  by `--delete` once no `.lock` or `.lock.recovering` of the earlier layout is
+  present, none of its state, lease, driver or claim files was written in the
+  last 24 hours, and no entry was written to in that time.
   This applies whether or not the clone was imported.
   A closed-but-unmerged PR is
   deliberately kept — GitHub permits reopening it with no time limit. A name
@@ -1481,7 +1483,7 @@ carries the specifics.
 
 | `$DRIVE_PR_ROUND_TASK` | `…_DETAIL` | What this round is |
 |---|---|---|
-| `ci-repair` | the failing check names, as CI reported them; `$DRIVE_PR_ROUND_FAILED_RUNS` holds the ids of the workflow runs behind them, separated by spaces | The reviewer has converged and the exact-head full-CI verdict is red. Repair CI. |
+| `ci-repair` | the failing check names, as CI reported them; `$DRIVE_PR_ROUND_FAILED_RUNS` holds the ids of the workflow runs behind them, separated by spaces; `$DRIVE_PR_ROUND_FAILED_STATUSES` the failing commit statuses, a JSON list of `{context, target_url}`; `$DRIVE_PR_ROUND_REPAIR_SKILL` the repository's CI-repair skill (`ci.repair_skill`) | The reviewer has converged and the exact-head full-CI verdict is red. Repair CI. |
 | `conflict-resolve` | the PR's base ref name | The PR conflicts with its base and has **no** workable finding. Merge the base in and resolve. |
 
 **Expect § 1's gate to answer `CONVERGED` (exit 3) on a `ci-repair` round, and
@@ -1503,16 +1505,27 @@ exit does, so the driver's own next gate read decides what to dispatch next.
 
 Then:
 
-- **`ci-repair`** — repair CI on this PR, with the repository's CI-repair
-  skill if it has one: read the logs of the runs `$DRIVE_PR_ROUND_FAILED_RUNS`
-  names, reproduce locally where possible, fix the cause. Fix every failing
+- **`ci-repair`** — repair CI on this PR. When `$DRIVE_PR_ROUND_REPAIR_SKILL`
+  is set, load that skill first and follow it; otherwise follow
+  [`/jig:fix-ci`](../fix-ci/SKILL.md)'s procedure. Read the logs of the runs
+  `$DRIVE_PR_ROUND_FAILED_RUNS` names and of the statuses
+  `$DRIVE_PR_ROUND_FAILED_STATUSES` names:
+  `bun "${CLAUDE_SKILL_DIR}/../fix-ci/scripts/parse-ci-log.ts" --pr <PR>`
+  reads both, a status's log through the repository's `ci.log_command`. A
+  status it reports as `unread` (no command) or `gone` has no log to read:
+  open its `target_url` only when it is an `https` link on the CI service's
+  own host (never a loopback, internal-network or metadata address, or a
+  host the repository does not use for CI), and when that gives none either,
+  end the round without a commit and say the log is missing: a fix without it is a guess.
+  Reproduce locally where possible, fix the cause. Fix every failing
   check, not only the first. Then pick up at **§ 5**: sync the base, resolve and
   run the round's validation plan over the cumulative tree, and **§ 6** to
   commit and push. §§ 2–4 have nothing to enumerate — the review converged
   before you were dispatched.
 
   When the log shows the failure is not in the code (a lost runner, a network
-  error), re-run the failed runs instead of committing:
+  error), re-run the failed workflow runs instead of committing (a commit
+  status's build is re-run only as the repository's CI-repair skill says):
   `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh run rerun <id> --failed`,
   for the ids that variable names and no other run on the head. A run with only
   cancelled checks has no failure to repair; re-running it leaves a sibling
@@ -2910,7 +2923,13 @@ explicitly scoped to never act on human threads.
 That is the whole of step 6. It performs, in this exact order:
 
 1. **refuses** on a dirty worktree or an unconcluded git operation — before
-   the one irreversible act, not after it; then **refuses** again when at
+   the one irreversible act, not after it; then, where the repository sets
+   `pull_requests.commit_prefix`, runs `bun "${CLAUDE_SKILL_DIR}/scripts/commit-prefix.ts"` on the pull
+   request's head branch, which rewords each unpushed commit lacking the
+   prefix (the base-sync merge and a conflict merge included) and moves
+   HEAD, so every later step holds, pushes, stamps and syncs the reworded
+   head; a commit already pushed without the prefix is reported on stderr
+   and the push goes ahead, and a check that cannot run refuses (`9`); then **refuses** again when at
    least one unresolved review thread anchors a file this round's own
    *non-merge* commits touch (a base-sync merge's own imported files do not
    count) with *incomplete or stale* triage state — not just "no qualifying
@@ -2976,6 +2995,7 @@ returned, which is the case this rule covers.
 | `11` | Another live **session in your tree** holds the drive lease | Almost always stop. `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" clear-lease [PR]` only if you know that session is gone |
 | `13` | Another live **working tree** is driving this PR | Stop. It names the tree, and its session pid when it has one |
 | `7` | Refused *before* pushing: an unresolved, unparked thread anchors a file this round's own non-merge commits touch, and its triage state isn't complete and current — never triaged at all, a current accepted/fix-dependent-moot reply with no hold recorded (a crash between `reply-to-thread.ts` and the hold), an unmarked merit reply on a thread that was never actually resolved (the identical crash, on the resolve side), or an existing hold that's gone stale (a newer comment superseded it, or the *same* comment was edited in place to a different outcome) | Each offending thread is named (id, path, url) in the reason **with its own remedy** — the cases above are not interchangeable, and the command names which one applies to each thread rather than leaving that for you to work out. Follow the printed remedy (re-run `bun "${CLAUDE_SKILL_DIR}/scripts/triage-thread.ts"` with no new post for a stale/crash-recovered hold or resolve, post a fresh reply first for a genuinely superseded one), or park it (§ 4) if `triage-thread.ts` itself refuses, then re-run |
+| `9` | Refused *before* pushing (`REFUSED_COMMIT_PREFIX`): `pull_requests.commit_prefix` is set and the commit-prefix check could not put it on the unpushed commits: the head branch carries no key, a git operation is open, or the configuration, the repository or the pull request could not be read. Nothing was pushed, but a reword may already have landed locally when the refusal came from the check after the rewrite, so read `git log` before relying on unchanged history | Fix what the reason names (conclude or abort the git operation, correct the configuration), then re-run. A head branch that carries no key needs a person: the prefix cannot be rendered for it |
 | `1` | A step failed: the push, the stamp, the head-sync wait, an unreadable batch, or the untriaged-thread check's own infra reads (`TRIAGE_CHECK_FAILED` — an unusable round base, an unreadable `held` batch, an unreadable `parked-keys` set, or a failed `list-unresolved-threads.ts` call) | If the failure is the push, the stamp, or the head-sync wait, nothing downstream ran. An unreadable batch can instead be a **re-read** after a stale item mid-drain — in that case earlier items in the same drain may already be dispatched; the report's `items` list is the record of what actually happened, not the summary line. A `TRIAGE_CHECK_FAILED` means nothing was pushed either — the check fails closed rather than guessing at whether a thread is triaged. Read the step's own diagnostic and re-run once it is addressed |
 
 If you are refused by `11` or `13`, the right response is almost never to clear

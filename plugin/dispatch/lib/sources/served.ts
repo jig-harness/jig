@@ -1,11 +1,22 @@
-/** Served assignments, inherited through epics, with metadata kept at updatedAt. */
-import {
-  type Assigner,
-  type IssueRelation,
-  type PoolIssue,
-  type Tracker,
-  workingStates,
+/**
+ * Served assignments, inherited through epics, with metadata kept at
+ * updatedAt. The tracker is read through the tick's view of the person's
+ * queue (`served-reads.ts`): one queue read, batched lookups, and the
+ * previous reading reused when the change probe finds nothing changed. A
+ * read the tracker's rate limit refuses stops the walk, which reports the
+ * limit once rather than one unplaced row per item.
+ */
+import type {
+  Assigner,
+  IssueRelation,
+  PoolIssue,
+  QueueRelation,
+  Tracker,
 } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
+import {
+  isRateLimited,
+  type TrackerRateLimited,
+} from "../../../shared/tracker-budget.ts";
 import { servedParentHold } from "./served-parents.ts";
 import {
   NEEDS_REPOSITORY_LABEL,
@@ -14,19 +25,20 @@ import {
   type UnlabeledMode,
   unlabeledOutcome,
 } from "./served-repo.ts";
-import { servedPlan } from "./served-plan.ts";
+import { planKeys, servedPlan } from "./served-plan.ts";
 import {
-  readExecutionPlan,
-  type LiveIssue,
-} from "../../../skills/do-item/scripts/lib/execution-plan.ts";
+  type ServedView,
+  trackerScope,
+  type ServedViews,
+  sharedView,
+} from "./served-reads.ts";
+import type { LiveIssue } from "../../../skills/do-item/scripts/lib/execution-plan.ts";
 import type { ServedPerson } from "../serve-config.ts";
 import { pickupReads, type PickupReads } from "../pickup-reads.ts";
 import { queueHold, rankQueue, type QueueItem } from "../queue-rank.ts";
 import { failureText } from "../text.ts";
 import type { ClaimedItem, Unplaced, WantedItem } from "../types.ts";
 
-const OPEN = ["triage", "backlog", "todo"] as const;
-const REREAD_MS = 15 * 60_000;
 interface Metadata {
   updatedAt: string;
   by: Assigner | null;
@@ -43,6 +55,10 @@ export interface ServedReading {
   wanted: WantedItem[];
   unplaced: Unplaced[];
   claimed: ClaimedItem[];
+  /** The tracker refused the reads for its rate limit: until when, in ISO 8601. */
+  limitedUntil?: string;
+  /** A served identity's queue failed to read for another reason: the claims are not known. */
+  incomplete?: boolean;
 }
 export interface ServedPolicy {
   hitl?: string;
@@ -60,6 +76,8 @@ export interface ServedOptions extends ServedPolicy {
   epic: string;
   nowMs: number;
   headroom: boolean;
+  /** The tick's views, shared by every repository that reads the same tracker, team and person. */
+  views?: ServedViews;
 }
 /** An unplaced row's target, with the title and link the listing returned for it. */
 const itemOf = (i: PoolIssue) => ({
@@ -69,28 +87,14 @@ const itemOf = (i: PoolIssue) => ({
 });
 const closed = (i: PoolIssue) =>
   ["completed", "canceled", "duplicate"].includes(i.state.type);
+const closedType = (type: string) =>
+  ["completed", "canceled", "duplicate"].includes(type);
 /** Not started, and not `blocked` (whatever category the tracker gives that state): only the drive-ledger projection or a person moves an item out of it. */
 const ready = (i: PoolIssue, tracker: Pick<Tracker, "stateName">) =>
   !closed(i) &&
   ["triage", "backlog", "unstarted"].includes(i.state.type) &&
   i.state.name.trim().toLowerCase() !==
     tracker.stateName("blocked")?.trim().toLowerCase();
-
-/** Each identity's list is read with capacity, or on the Queue view's slow cadence. */
-async function assignments(
-  tracker: Tracker,
-  identity: string,
-  options: ServedOptions,
-  cache: PickupReads,
-): Promise<PoolIssue[]> {
-  const key = `${tracker.adapter}:${tracker.team}:assigned:${identity}`;
-  const kept = cache.get<{ at: number; issues: PoolIssue[] }>(key);
-  if (!options.headroom && kept !== null && options.nowMs - kept.at < REREAD_MS)
-    return kept.issues;
-  const issues = await tracker.assignedIssues(identity, OPEN);
-  cache.set(key, { at: options.nowMs, issues });
-  return issues;
-}
 
 /** Cache entries without a timestamp are never reused. */
 async function metadata(
@@ -99,15 +103,25 @@ async function metadata(
   identity: string,
   epic: string,
   cache: PickupReads,
+  carried: QueueRelation[] | null,
 ): Promise<Metadata> {
-  const key = `${tracker.adapter}:${tracker.team}:item:${issue.identifier}:${identity}`;
+  const key = `${trackerScope(tracker)}:item:${issue.identifier}:${identity}:${epic}`;
   const kept = cache.get<Metadata>(key);
-  if (issue.updatedAt && kept?.updatedAt === issue.updatedAt) return kept;
+  if (issue.updatedAt && kept?.updatedAt === issue.updatedAt)
+    return carried === null
+      ? kept
+      : {
+          ...kept,
+          relations: carried.map(({ type, issue: i }) => ({ type, issue: i })),
+        };
   const by =
     issue.assignee === null
       ? null
       : await tracker.assignedBy(issue.identifier, identity);
-  const relations = await tracker.listRelations(issue.identifier);
+  const relations =
+    carried === null
+      ? await tracker.listRelations(issue.identifier)
+      : carried.map(({ type, issue: i }) => ({ type, issue: i }));
   const children =
     issue.labels.includes(epic) && issue.hasOpenChildren
       ? await tracker.openChildren(issue.identifier)
@@ -127,31 +141,113 @@ async function metadata(
   return value;
 }
 
-/** A failed blocker read holds the item: absence of evidence never means unblocked. */
+/**
+ * The open blockers among `relations`: a relation the queue read carried
+ * with the blocker's state needs no read; the others are read together. A
+ * failed blocker read holds the item: absence of evidence never means
+ * unblocked.
+ */
 async function blockers(
-  tracker: Tracker,
-  relations: IssueRelation[],
+  pool: (key: string) => Promise<PoolIssue | null>,
+  relations: ReadonlyArray<IssueRelation | QueueRelation>,
 ): Promise<string[]> {
-  const open: string[] = [];
-  for (const r of relations)
-    if (r.type === "blocked_by") {
-      const other = await tracker.poolIssue(r.issue);
-      if (other === null || !closed(other)) open.push(r.issue);
-    }
-  return open;
+  const blocking = relations.filter((r) => r.type === "blocked_by");
+  const states = await Promise.all(
+    blocking.map(async (r) => {
+      const known = "state" in r ? r.state : null;
+      if (known !== null) return known;
+      const other = await pool(r.issue);
+      return other === null ? null : other.state.type;
+    }),
+  );
+  return blocking
+    .filter((_, i) => {
+      const state = states[i];
+      return state === null || state === undefined || !closedType(state);
+    })
+    .map((r) => r.issue);
 }
 
-/** The identity's epics sitting in the tracker's `blocked` state, whose children may still be ready. */
-async function blockedEpicsOf(
+/** The single row a rate-limited tracker leaves on the receipt. */
+export function limitedRow(
+  tracker: Pick<Tracker, "adapter" | "team">,
+  limited: TrackerRateLimited,
+  view: Pick<ServedView, "readAt"> | null = null,
+): Unplaced {
+  const until = new Date(limited.resetAt).toISOString();
+  const kept =
+    view !== null && view.readAt > 0
+      ? `; the queue shown is the reading of ${new Date(view.readAt).toISOString()}`
+      : "";
+  return {
+    target: `${tracker.adapter} ${tracker.team}`,
+    record: "tracker",
+    reason: `the tracker is rate limited until ${until}: pickups wait for the reset, and no request is sent before it${kept}`,
+  };
+}
+
+/** What one served identity's queue gave: its claims, its holds and candidates, and the limit that stopped it. */
+interface PersonReading {
+  claimed: ClaimedItem[];
+  unplaced: Unplaced[];
+  candidates: Candidate[];
+  limited: { error: TrackerRateLimited; view: ServedView | null } | null;
+  failed: boolean;
+}
+
+/** Read one served identity's queue and walk it; an unreadable one is one unplaced row. */
+async function readPerson(
   tracker: Tracker,
   identity: string,
   options: ServedOptions,
-): Promise<PoolIssue[]> {
-  if (tracker.stateName("blocked") === null) return [];
-  const blocked = await tracker.assignedIssues(identity, ["blocked"]);
-  return blocked.filter(
-    (i) => i.labels.includes(options.epic) && i.hasOpenChildren,
-  );
+  cache: PickupReads,
+  seen: Set<string>,
+): Promise<PersonReading> {
+  const got: PersonReading = {
+    claimed: [],
+    unplaced: [],
+    candidates: [],
+    limited: null,
+    failed: false,
+  };
+  let view: ServedView | null = null;
+  try {
+    view = await sharedView(options.views, tracker, identity, options, cache);
+    if (view.limited !== null) got.limited = { error: view.limited, view };
+    const progress = view.progress();
+    got.claimed = progress.map((i) => ({
+      key: i.identifier,
+      title: i.title,
+      url: i.url,
+      state: i.state.name,
+    }));
+    // Claims are monitored either way; an invalid scope only starts nothing.
+    if (options.repoScope?.invalid !== undefined) return got;
+    // The walk fills `got` as it goes, so a limit met in a later generation
+    // keeps what the earlier ones placed.
+    await walk(
+      { tracker, identity, options, cache, view, seen },
+      [
+        ...view.open().map((h) => h.issue),
+        ...progress.filter(
+          (i) => i.labels.includes(options.epic) && i.hasOpenChildren,
+        ),
+      ],
+      got,
+    );
+    if (view.limited === null) view.save();
+  } catch (error) {
+    if (isRateLimited(error)) got.limited ??= { error, view };
+    else {
+      got.failed = true;
+      got.unplaced.push({
+        target: identity,
+        record: "tracker",
+        reason: `the served assignments could not be read: ${failureText(error)}`,
+      });
+    }
+  }
+  return got;
 }
 
 /** Read every served identity for this adapter; an unreadable identity starts nothing. */
@@ -164,70 +260,27 @@ export async function readServedPickups(
   const out: ServedReading = { wanted: [], unplaced: [], claimed: [] };
   const candidates: Candidate[] = [];
   const seen = new Set<string>();
-  const refused = options.repoScope?.invalid !== undefined;
-  if (refused)
+  let limited: PersonReading["limited"] = null;
+  if (options.repoScope?.invalid !== undefined)
     out.unplaced.push({
       target: tracker.adapter,
       record: "tracker",
-      reason: `served pickups are refused: the repository scope is invalid: ${options.repoScope?.invalid}`,
+      reason: `served pickups are refused: the repository scope is invalid: ${options.repoScope.invalid}`,
     });
   for (const person of people) {
     const identity =
       person.tracker[tracker.adapter as keyof ServedPerson["tracker"]];
     if (identity === undefined) continue;
-    try {
-      const progress = await tracker.assignedIssues(
-        identity,
-        workingStates(tracker),
-      );
-      out.claimed.push(
-        ...progress.map((i) => ({
-          key: i.identifier,
-          title: i.title,
-          url: i.url,
-          state: i.state.name,
-        })),
-      );
-      // Claims are monitored either way; an invalid scope only starts nothing.
-      if (refused) continue;
-      // A blocked epic is not a pickup, but its ready children still are.
-      const blockedEpics = await blockedEpicsOf(tracker, identity, options);
-      const roots = [
-        ...(await assignments(tracker, identity, options, cache)),
-        ...progress.filter(
-          (i) => i.labels.includes(options.epic) && i.hasOpenChildren,
-        ),
-        ...blockedEpics,
-      ];
-      const pending = roots.map((issue) => ({
-        issue,
-        ancestor: undefined as string | undefined,
-        by: undefined as string | undefined,
-        epicOrder: undefined as number | undefined,
-        planHold: undefined as string | undefined,
-      }));
-      const ctx: WalkContext = {
-        tracker,
-        identity,
-        options,
-        cache,
-        out,
-        pending,
-        candidates,
-        seen,
-      };
-      for (let n = 0; n < pending.length; n++) {
-        const node = pending[n];
-        if (node === undefined) continue;
-        await visitNode(ctx, node);
-      }
-    } catch (error) {
-      out.unplaced.push({
-        target: identity,
-        record: "tracker",
-        reason: `the served assignments could not be read: ${failureText(error)}`,
-      });
-    }
+    const got = await readPerson(tracker, identity, options, cache, seen);
+    out.claimed.push(...got.claimed);
+    out.unplaced.push(...got.unplaced);
+    candidates.push(...got.candidates);
+    if (got.failed) out.incomplete = true;
+    limited ??= got.limited;
+  }
+  if (limited !== null) {
+    out.unplaced.push(limitedRow(tracker, limited.error, limited.view));
+    out.limitedUntil = new Date(limited.error.resetAt).toISOString();
   }
   out.wanted = rankQueue(candidates).map((c) => ({
     key: c.issue.identifier,
@@ -285,7 +338,10 @@ export async function freshServedPickup(
     const held = queueHold(
       {
         issue,
-        blockers: await blockers(tracker, await tracker.listRelations(key)),
+        blockers: await blockers(
+          (k) => tracker.poolIssue(k),
+          await tracker.listRelations(key),
+        ),
         unblocks: 0,
       },
       policy,
@@ -311,10 +367,49 @@ interface WalkContext {
   identity: string;
   options: ServedOptions;
   cache: PickupReads;
-  out: ServedReading;
-  pending: Pending[];
-  candidates: Candidate[];
+  view: ServedView;
   seen: Set<string>;
+}
+/** What one node of the walk found, merged in the walk's order. */
+interface Found {
+  unplaced: Unplaced[];
+  candidates: Candidate[];
+  pending: Pending[];
+  /** A read of this node failed, so the reading is incomplete. */
+  failed?: boolean;
+}
+
+/**
+ * Visit the roots, then each generation of children, every node of a
+ * generation at once so the reads they ask for leave together; what each
+ * found is merged in node order into `all`. A rate-limited read ends the walk,
+ * leaving what the earlier generations found in `all`.
+ */
+async function walk(
+  ctx: WalkContext,
+  roots: PoolIssue[],
+  all: Omit<Found, "pending">,
+): Promise<Omit<Found, "pending">> {
+  let generation: Pending[] = roots.map((issue) => ({
+    issue,
+    ancestor: undefined,
+    by: undefined,
+    epicOrder: undefined,
+    planHold: undefined,
+  }));
+  while (generation.length > 0) {
+    const found = await Promise.all(
+      generation.map((node) => visitNode(ctx, node)),
+    );
+    generation = [];
+    for (const f of found) {
+      all.unplaced.push(...f.unplaced);
+      all.candidates.push(...f.candidates);
+      if (f.failed) all.failed = true;
+      generation.push(...f.pending);
+    }
+  }
+  return all;
 }
 
 async function enqueueChildren(
@@ -323,21 +418,26 @@ async function enqueueChildren(
   ancestor: string | undefined,
   meta: Metadata,
   candidate: Candidate,
+  found: Found,
 ): Promise<void> {
-  const { tracker, options, out, pending } = ctx;
+  const { options, view } = ctx;
+  const read = await Promise.all(
+    meta.children.map((kept) => view.pool(kept.identifier)),
+  );
   const children: PoolIssue[] = [];
-  for (const kept of meta.children) {
-    const child = await tracker.poolIssue(kept.identifier);
-    if (child === null || child.truncated.length) {
-      out.unplaced.push({
+  meta.children.forEach((kept, i) => {
+    const child = read[i];
+    if (child === null || child === undefined || child.truncated.length) {
+      found.unplaced.push({
         ...itemOf(kept),
         record: "tracker",
         reason: "the child cannot be read completely",
       });
-      continue;
+      found.failed = true;
+      return;
     }
     children.push(child);
-  }
+  });
   const live = await childStates(ctx, children, meta);
   const selection = servedPlan(
     meta.description ?? "",
@@ -346,7 +446,7 @@ async function enqueueChildren(
     options.executionPlanBlock,
   );
   for (const child of children)
-    pending.push({
+    found.pending.push({
       issue: child,
       ancestor: ancestor ?? issue.identifier,
       by: candidate.by,
@@ -388,95 +488,123 @@ function leavesNode(
   );
 }
 
-async function visitNode(ctx: WalkContext, node: Pending): Promise<void> {
-  const { tracker, identity, options, cache, out, seen } = ctx;
+async function visitNode(ctx: WalkContext, node: Pending): Promise<Found> {
+  const { tracker, options, seen } = ctx;
+  const found: Found = { unplaced: [], candidates: [], pending: [] };
   const { issue, ancestor } = node;
-  if (leavesNode(issue, options, seen, tracker)) return;
+  if (leavesNode(issue, options, seen, tracker)) return found;
   // A child assigned elsewhere is not inherited. A direct assignment is read in its owner's list.
-  if (ancestor !== undefined && issue.assignee !== null) return;
+  if (ancestor !== undefined && issue.assignee !== null) return found;
   seen.add(issue.identifier);
+  if (issue.truncated.length) {
+    found.failed = true;
+    found.unplaced.push({
+      ...itemOf(issue),
+      record: "tracker",
+      reason: "the item cannot be read completely",
+    });
+    return found;
+  }
   try {
-    const meta = await metadata(tracker, issue, identity, options.epic, cache);
-    const initialHold = nodeHold(node, meta, identity, options);
-    if (initialHold !== null) {
-      out.unplaced.push({
-        ...itemOf(issue),
-        record: "tracker",
-        reason: initialHold,
-      });
-      return;
-    }
-    const candidate: Candidate = {
-      issue,
-      identity,
-      by: meta.by?.name ?? node.by ?? "",
-      ancestor,
-      blockers: await blockers(tracker, meta.relations),
-      ...(node.epicOrder === undefined ? {} : { epicOrder: node.epicOrder }),
-      unblocks: meta.relations.filter((r) => r.type === "blocks").length,
-    };
-    const held = queueHold(candidate, options);
-    if (held !== null) {
-      out.unplaced.push({
-        ...itemOf(issue),
-        record: "tracker",
-        reason: held,
-      });
-      return;
-    }
-    if (meta.children.length > 0) {
-      await enqueueChildren(ctx, issue, ancestor, meta, candidate);
-    } else if (
-      ready(issue, tracker) &&
-      otherRepoLabel(issue.labels, options.repoScope) === null
-    ) {
-      await placeLeaf(ctx, candidate);
-    }
+    await placeNode(ctx, node, found);
   } catch (error) {
-    out.unplaced.push({
+    if (isRateLimited(error)) throw error;
+    found.failed = true;
+    found.unplaced.push({
       ...itemOf(issue),
       record: "tracker",
       reason: `the queue metadata could not be read: ${failureText(error)}`,
     });
   }
+  return found;
 }
 
-/** A startable item with nothing left to walk: a candidate, unless no repository label places it or its parent holds it. */
-async function placeLeaf(
+/** Read what a node needs and place it: held with why, a candidate, or an epic whose children come next. */
+async function placeNode(
   ctx: WalkContext,
-  candidate: Candidate,
+  node: Pending,
+  found: Found,
 ): Promise<void> {
-  const { tracker, options, cache, out, candidates } = ctx;
-  const { issue } = candidate;
-  const hold = (reason: string, cause?: "needs-repository-label"): void => {
-    out.unplaced.push({
+  const { tracker, identity, options, cache, view } = ctx;
+  const { issue, ancestor } = node;
+  const unplace = unplacer(issue, options.trackerNamespace, found);
+  const carried = view.held(issue.identifier)?.relations ?? null;
+  const meta = await view.once(
+    `metadata ${issue.identifier} ${issue.updatedAt ?? ""} ${options.epic}`,
+    () => metadata(tracker, issue, identity, options.epic, cache, carried),
+  );
+  const initialHold = nodeHold(node, meta, identity, options);
+  if (initialHold !== null) {
+    // An epic whose description is unreadable hides its subtree: the claims below it are unknown.
+    if (meta.description === null) found.failed = true;
+    return void unplace(initialHold);
+  }
+  const candidate: Candidate = {
+    issue,
+    identity,
+    by: meta.by?.name ?? node.by ?? "",
+    ancestor,
+    blockers: await blockers((k) => view.pool(k), carried ?? meta.relations),
+    ...(node.epicOrder === undefined ? {} : { epicOrder: node.epicOrder }),
+    unblocks: meta.relations.filter((r) => r.type === "blocks").length,
+  };
+  const held = queueHold(candidate, options);
+  if (held !== null) return void unplace(held);
+  if (meta.children.length > 0)
+    return enqueueChildren(ctx, issue, ancestor, meta, candidate, found);
+  await placeLeaf(ctx, candidate, found, unplace);
+}
+
+type Unplace = (reason: string, cause?: "needs-repository-label") => void;
+
+/** Records an item the walk could not place, with the namespace it was read from. */
+function unplacer(
+  issue: PoolIssue,
+  namespace: string | undefined,
+  found: Found,
+): Unplace {
+  return (reason, cause) => {
+    found.unplaced.push({
       ...itemOf(issue),
       record: "tracker",
       reason,
       ...(cause === undefined ? {} : { cause }),
-      ...(options.trackerNamespace === undefined
-        ? {}
-        : { source: options.trackerNamespace }),
+      ...(namespace === undefined ? {} : { source: namespace }),
     });
   };
+}
+
+/** A node with no children: left out, held for its repository label or parent, or a candidate. */
+async function placeLeaf(
+  ctx: WalkContext,
+  candidate: Candidate,
+  found: Found,
+  unplace: Unplace,
+): Promise<void> {
+  const { tracker, options, cache, view } = ctx;
+  const { issue } = candidate;
+  if (
+    !ready(issue, tracker) ||
+    otherRepoLabel(issue.labels, options.repoScope) !== null
+  )
+    return;
   const unlabeled = unlabeledOutcome(
     issue.labels,
     options.repoScope,
     options.unlabeled,
   );
-  if (unlabeled === "hold") {
-    hold(NEEDS_REPOSITORY_LABEL, "needs-repository-label");
-    return;
-  }
+  if (unlabeled === "hold")
+    return void unplace(NEEDS_REPOSITORY_LABEL, "needs-repository-label");
   if (unlabeled === "leave") return;
   const parentHold = await servedParentHold(
     tracker,
     issue,
     cache,
     options.executionPlanBlock,
+    view,
   );
-  if (parentHold !== null) hold(parentHold);
-  else candidates.push(candidate);
+  if (parentHold !== null) unplace(parentHold);
+  else found.candidates.push(candidate);
 }
 
 function nodeHold(
@@ -503,44 +631,58 @@ function nodeHold(
     : null;
 }
 
+/** The live state of an epic's children and the issues its plan names, read together. */
 async function childStates(
   ctx: WalkContext,
   children: PoolIssue[],
   meta: Metadata,
 ): Promise<Record<string, LiveIssue>> {
-  const { tracker, identity, options, cache } = ctx;
+  const { tracker, identity, options, cache, view } = ctx;
   const live: Record<string, LiveIssue> = {};
-  const plan = readExecutionPlan(
+  const keys = planKeys(
     meta.description ?? "",
     options.executionPlanBlock,
+    children.map((c) => c.identifier),
   );
-  const keys = new Set([
-    ...children.map((c) => c.identifier),
-    ...(plan?.steps.map((s) => s.issue) ?? []),
-    ...(plan?.edges.map((e) => e.from) ?? []),
-  ]);
-  for (const key of keys) {
-    const child =
-      children.find((c) => c.identifier === key) ??
-      (await tracker.poolIssue(key));
-    if (child === null || child.truncated.length) continue;
-    const info = await metadata(tracker, child, identity, options.epic, cache);
-    live[key] = {
-      state: child.state.type,
-      blockedBy: info.relations
-        .filter((r) => r.type === "blocked_by")
-        .map((r) => r.issue),
-    };
-    for (const blocker of live[key]?.blockedBy ?? []) {
-      const other = await tracker.poolIssue(blocker);
-      if (
-        other !== null &&
-        !other.truncated.length &&
-        live[blocker] === undefined
-      )
-        live[blocker] = { state: other.state.type, blockedBy: [] };
-    }
-  }
+  const read = await Promise.all(
+    keys.map(
+      async (key) =>
+        children.find((c) => c.identifier === key) ?? (await view.pool(key)),
+    ),
+  );
+  const infos = await Promise.all(
+    read.map((child) =>
+      child === null || child.truncated.length
+        ? null
+        : view.once(
+            `metadata ${child.identifier} ${child.updatedAt ?? ""} ${options.epic}`,
+            () => metadata(tracker, child, identity, options.epic, cache, null),
+          ),
+    ),
+  );
+  const blockersOf = new Map<string, string[]>();
+  keys.forEach((key, i) => {
+    const child = read[i];
+    const info = infos[i];
+    if (child === null || child === undefined || !info) return;
+    const blockedBy = info.relations
+      .filter((r) => r.type === "blocked_by")
+      .map((r) => r.issue);
+    live[key] = { state: child.state.type, blockedBy };
+    blockersOf.set(key, blockedBy);
+  });
+  const blockerKeys = [...new Set([...blockersOf.values()].flat())];
+  const others = await Promise.all(blockerKeys.map((k) => view.pool(k)));
+  blockerKeys.forEach((blocker, i) => {
+    const other = others[i];
+    if (
+      other !== null &&
+      other !== undefined &&
+      !other.truncated.length &&
+      live[blocker] === undefined
+    )
+      live[blocker] = { state: other.state.type, blockedBy: [] };
+  });
   return live;
 }
 

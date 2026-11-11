@@ -43,8 +43,13 @@
  * exit, or a run past its deadline, refuses too. Where the repository sets
  * `do_item.claim_from`, an item in a state outside it, or in a status that
  * maps to no canonical state, is refused (exit 3, `"why": "state"`). With
- * `do_item.claim_marker`, a successful claim posts the claim marker
- * (`lib/claim-marker.ts`); `"marker"` in the JSON says whether it was posted.
+ * `do_item.claim_marker`, the claim posts the claim marker
+ * (`lib/claim-marker.ts`) before it writes, and of the markers on the item
+ * the earliest wins (`lib/claim-token.ts`): a claim that finds an earlier
+ * one, or cannot post and read back its own, refuses (exit 3,
+ * `"why": "marker"`, nothing written to the item), and one that finds an
+ * earlier one after it wrote stands down (exit 4). `"marker"` in the JSON
+ * says whether the read after the write confirmed it.
  *
  * Canonical states: backlog, todo, in_progress, in_review, done, canceled,
  * and where the consumer uses them triage, pr_open, blocked, ops_pending,
@@ -88,11 +93,16 @@
  * Output: JSON on stdout. Exit codes: 0 done, 2 usage (input the operation
  * cannot take), 1 the operation failed (the reason on stderr), a label,
  * project or issue that does not resolve to exactly one included; for
- * `claim`, 3 refused and 4 stood down; for `transition --post-merge`, 3
- * refused.
+ * `claim`, 3 refused and 4 stood down; 5 the tracker's rate limit for this
+ * credential is spent, with the time it resets on stderr
+ * (`RATE-LIMITED until <time>`): the request it names was not sent or was
+ * refused. A claim refused part way may have written its first step; the
+ * dispatcher's stall check then reports the item as claimed with no
+ * session.
  */
 
 import { readFile } from "node:fs/promises";
+import { isRateLimited } from "../../../shared/tracker-budget.ts";
 import { claimServedIssue } from "./lib/served-claim.ts";
 import { withClaimLock } from "./lib/claim-lock.ts";
 import { claimIssue } from "./lib/claim.ts";
@@ -104,11 +114,8 @@ import {
   unreadablePreflight,
 } from "./lib/preflight.ts";
 import { claimSettingsFromDefaultBranch } from "./lib/claim-settings.ts";
-import {
-  claimBranch,
-  claimMarkerBody,
-  claimSession,
-} from "./lib/claim-marker.ts";
+import { claimBranch, claimSession } from "./lib/claim-marker.ts";
+import { claimWithMarker } from "./lib/claim-token.ts";
 import { consumerRoot, readOverlay } from "../../../shared/consumer.ts";
 import { syncPlanBlocks } from "./lib/plan-blocks.ts";
 import { executionPlanBlock } from "./select_execution_issue.ts";
@@ -384,16 +391,15 @@ async function claim(
   if (refusal !== null) return refusal;
   const blocked = await blockedClaimRefusal(tracker, normalized);
   if (blocked !== null) return blocked;
-  const result = await withClaimLock(
-    claimLockKey(tracker, normalized),
-    async () => {
-      // The projection may have blocked the item while the claim waited for the lock.
-      const stale = await blockedClaimRefusal(tracker, normalized);
-      if (stale !== null) return stale;
-      const ancestorKey = ancestor
-        ? (shape?.normalize(ancestor) ?? ancestor)
-        : undefined;
-      return person
+  return withClaimLock(claimLockKey(tracker, normalized), async () => {
+    // The projection may have blocked the item while the claim waited for the lock.
+    const stale = await blockedClaimRefusal(tracker, normalized);
+    if (stale !== null) return stale;
+    const ancestorKey = ancestor
+      ? (shape?.normalize(ancestor) ?? ancestor)
+      : undefined;
+    const body = () =>
+      person
         ? claimServedIssue(tracker, normalized, {
             person,
             ...(ancestorKey ? { ancestor: ancestorKey } : {}),
@@ -403,37 +409,18 @@ async function claim(
             claimFrom: settings.claimFrom,
           })
         : claimIssue(tracker, key, { claimFrom: settings.claimFrom });
-    },
-  );
-  if (result.outcome !== "claimed" || !settings.claimMarker) return result;
-  return { ...result, marker: await postClaimMarker(tracker, result, root) };
-}
-
-/**
- * Post the claim marker on a claimed item. A failed post leaves the claim
- * standing: it is reported, with the reason, beside the claim.
- */
-async function postClaimMarker(
-  tracker: ReturnType<typeof openTracker>,
-  claim: { issue: string; claimant: { name: string } },
-  root: string,
-): Promise<{ posted: true } | { posted: false; reason: string }> {
-  const body = claimMarkerBody({
-    session: claimSession(),
-    branch: await claimBranch(root),
-    claimant: claim.claimant.name,
-    at: new Date().toISOString(),
-  });
-  try {
-    await tracker.postComment(claim.issue, body);
-    return { posted: true };
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
-    console.error(
-      `the claim marker was not posted on ${claim.issue}: ${reason}`,
+    if (!settings.claimMarker) return body();
+    // The marker names who the item will be assigned to, before it is.
+    const claimant = person
+      ? (await tracker.user(person)).name
+      : (await tracker.viewer()).name;
+    return claimWithMarker(
+      tracker,
+      normalized,
+      { session: claimSession(), branch: await claimBranch(root), claimant },
+      body,
     );
-    return { posted: false, reason };
-  }
+  });
 }
 
 /** `claim`'s exit codes: refused before any write, stood down after the re-read. */
@@ -716,8 +703,17 @@ function operationArguments(op: Operation, name: string, rest: string[]) {
   return { args, flags: new Set(flags) };
 }
 
+/** The exit code of an operation the tracker's rate limit stopped. */
+const RATE_LIMITED_EXIT = 5;
+
 function reportFailure(error: unknown): number {
   if (isUsage(error)) return usage(error.message);
+  if (isRateLimited(error)) {
+    console.error(
+      `RATE-LIMITED until ${new Date(error.resetAt).toISOString()}: ${error.message}`,
+    );
+    return RATE_LIMITED_EXIT;
+  }
   console.error(
     `ERROR: ${error instanceof Error ? error.message : String(error)}`,
   );

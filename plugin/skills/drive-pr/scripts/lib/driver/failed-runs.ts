@@ -7,6 +7,30 @@ import {
 import { holdLabelPolicy } from "../ci-policy.ts";
 import { timelineEvents } from "../pr-timeline.ts";
 import type { FailedRun } from "../status/workflow-runs.ts";
+import type { FailingStatus } from "../../../../../shared/ci-status.ts";
+
+/** `failingStatuses` off a `drive-status.ts --json` report, shape-checked. */
+export function failedStatusesField(raw: unknown): FailingStatus[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((entry) => {
+    if (typeof entry !== "object" || entry === null) return [];
+    const { context, target_url: url } = entry as Record<string, unknown>;
+    if (typeof context !== "string" || context === "") return [];
+    return [{ context, target_url: typeof url === "string" ? url : null }];
+  });
+}
+
+/** What a repair pass is told of the failing commit statuses, and says so. */
+export function failedStatusesToTell(
+  failingStatuses: unknown,
+): FailingStatus[] {
+  const statuses = failedStatusesField(failingStatuses);
+  for (const status of statuses)
+    console.error(
+      `  Failed commit status: ${status.context}${status.target_url === null ? "" : ` (${status.target_url})`}.`,
+    );
+  return statuses;
+}
 
 /** `failingRuns` off a `drive-status.ts --json` report, shape-checked. */
 export function failedRunsField(raw: unknown): FailedRun[] {

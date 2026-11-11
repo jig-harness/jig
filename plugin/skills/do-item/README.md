@@ -131,15 +131,19 @@ as the sole assignee, and moves the item in progress. With
 `--ancestor <epic-key>`, it walks the current ancestry, rejects holds or
 conflicting assignees, and checks the ancestor epic's assignment. GitHub
 adds the person to an unassigned child without replacing a concurrent
-assignee; a detected race stands down and refreshes the queue. Inherited
-claims on Linear and Jira are refused because their assignment APIs cannot
-add a person without replacing an assignee.
+assignee. Linear and Jira hold one assignee and have no write that applies
+only to an unassigned item, so there the claim assigns the child, then reads
+the item's history: if the assignment replaced someone who was assigned in
+between, it puts them back. Either way a detected race stands down and
+refreshes the queue.
 
 Command-line claims share a machine-local mutex across worktrees and
-re-read authority before writing. This does not serialize claims on
-separate hosts: simultaneous claims for the same person can still both
-pass. A tracker state transition is not a cross-host lease; the dispatcher's
-double-claim watch remains necessary.
+re-read authority before writing. That does not serialize claims on
+separate hosts: two hosts claiming for the same person write the same
+assignee and state, so the re-read cannot tell them apart. The claim marker
+can (`do_item.claim_marker`, below): set it wherever more than one host
+picks up from one queue. The dispatcher's double-claim watch stays as the
+backstop.
 
 ### The repository's own start rules
 
@@ -163,9 +167,17 @@ More settings narrow a claim, read from the default branch like the command, so 
 may start from: an item in any other state, or in a status that maps to no
 canonical state, is refused with nothing written, so a side state a team
 uses as its record of why work stopped is never cleared by a claim.
-`do_item.claim_marker` posts a marker comment on each claimed item naming
-the session, the host and the branch, so other tools reading the tracker
-can tell which session holds it. The settings are in the
+`do_item.claim_marker` posts a marker comment on each item a claim starts,
+naming the session, the host and the branch, so other tools reading the
+tracker can tell which session holds it. The claim posts it before it
+writes anything else and reads the item's markers back. When another
+claim's marker posted in the last 10 minutes is earlier, it removes its own
+and refuses, with nothing written to the item. It does the same when its
+marker cannot be posted or read back. That makes the marker the token two
+hosts claiming one item agree on. The tracker offers no conditional write
+for a comment, so two claims whose reads each miss the other's marker can
+both win; the read after the claim narrows that to the claim's own few
+seconds. The settings are in the
 [configuration](../../CONFIGURATION.md#do_item).
 
 ## Requirements and platforms

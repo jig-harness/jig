@@ -59,7 +59,13 @@ export interface JiraComment {
 export interface ChangelogEntry {
   createdAt: string;
   author: Record<string, unknown> | null;
-  items: Array<{ fieldId: string; to: string | null }>;
+  items: Array<{
+    fieldId: string;
+    from: string | null;
+    to: string | null;
+    /** Whether the tracker stated both sides; an absent side is not `null`. */
+    explicit: boolean;
+  }>;
 }
 
 /** A link type the configuration names, with the words for its two sides. */
@@ -293,16 +299,22 @@ function matchOf(
   if (holdsRichText(schema))
     throw new TrackerConfigError(
       at,
-      `${at}: the field '${name}' holds rich text, which does not read as a label; only single-line text, number, select, checkbox and labels fields do`,
+      `${at}: the field '${name}' holds rich text, which does not read as a label; only single-line text, number, select, checkbox, labels and version fields do`,
     );
   if (type === "string") return null;
   if (type === "number") return "number";
   if (type === "option") return "string";
-  if (type === "array" && (items === "option" || items === "string"))
+  // A version field (Fix versions, Affects versions, a version picker): each
+  // version by its name, which JQL matches as a quoted string.
+  if (type === "version") return "string";
+  if (
+    type === "array" &&
+    (items === "option" || items === "string" || items === "version")
+  )
     return "string";
   throw new TrackerConfigError(
     at,
-    `${at}: the field '${name}' is of type ${JSON.stringify(type)}${items === undefined ? "" : ` of ${JSON.stringify(items)}`}; only single-line text, number, select, checkbox and labels fields read as labels`,
+    `${at}: the field '${name}' is of type ${JSON.stringify(type)}${items === undefined ? "" : ` of ${JSON.stringify(items)}`}; only single-line text, number, select, checkbox, labels and version fields read as labels`,
   );
 }
 
@@ -481,10 +493,14 @@ export function jiraClient(opts: ClientOptions): Client {
         throw new JiraApiError("fields of the site: expected a list");
       return raw.map((f, i) => {
         const r = record(f, `fields[${i}]`);
+        const clauseNames = Array.isArray(r.clauseNames)
+          ? r.clauseNames.filter((c): c is string => typeof c === "string")
+          : [];
         return {
           id: str(r.id, `fields[${i}].id`),
           name: str(r.name, `fields[${i}].name`),
           schema: r.schema,
+          ...(clauseNames.length === 0 ? {} : { clauseNames }),
         };
       });
     })();
@@ -620,7 +636,9 @@ export function jiraClient(opts: ClientOptions): Client {
             const item = record(it, `${where}.items[${j}]`);
             return {
               fieldId: String(item.fieldId ?? item.field ?? ""),
+              from: optStr(item.from, `${where}.items[${j}].from`),
               to: optStr(item.to, `${where}.items[${j}].to`),
+              explicit: item.from !== undefined && item.to !== undefined,
             };
           }),
         };
@@ -734,7 +752,11 @@ export function jiraClient(opts: ClientOptions): Client {
             configured: name,
             id: f.id,
             name: f.name,
-            clause: clauseOf(f.id),
+            // A system field's JQL name can differ from its id
+            // (`fixVersion` for `fixVersions`); a custom field's is cf[n].
+            clause: f.id.startsWith("customfield_")
+              ? clauseOf(f.id)
+              : (f.clauseNames?.[0] ?? f.id),
             prefix,
             match: matchOf(f.schema, at, f.name),
           };

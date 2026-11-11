@@ -1,19 +1,27 @@
-import { describe, expect, it } from "bun:test";
+import { beforeEach, describe, expect, it } from "bun:test";
 import { parseTrackerConfig } from "../scripts/lib/tracker/config.ts";
 import { TrackerConfigError } from "../scripts/lib/tracker/config-error.ts";
 import { openTracker } from "../scripts/lib/tracker/index.ts";
 import { iso } from "../scripts/lib/tracker/jira/read.ts";
 import { parseJiraSettings } from "../scripts/lib/tracker/jira/settings.ts";
 import {
+  jiraAuthorization,
+  resolveJiraCredential,
+} from "../scripts/lib/tracker/jira/credential.ts";
+import {
   defaultTransport,
   httpTransport,
   type JiraApiError,
   type JiraTransport,
   offsetPages,
-  resolveJiraCredential,
   searchPages,
 } from "../scripts/lib/tracker/jira/transport.ts";
-import { SITE } from "./jira-fixtures.ts";
+import {
+  budgetGovernor,
+  isRateLimited,
+  memoryBudgetStore,
+} from "../../../shared/tracker-budget.ts";
+import { GATEWAY, SITE, tokenRun } from "./jira-fixtures.ts";
 
 const fieldOf = (f: () => unknown): string | null => {
   try {
@@ -30,6 +38,7 @@ describe("issue_tracker.jira", () => {
   it("fills in the defaults", () => {
     expect(parseJiraSettings({ site: `${SITE}/` })).toEqual({
       site: SITE,
+      apiBase: null,
       issueType: "Task",
       subtaskType: null,
       priorities: {
@@ -214,7 +223,38 @@ describe("issue_tracker.jira", () => {
   });
 });
 
-describe("Jira transport", () => {
+/** Each way a request is signed, to the base each is used with. */
+const MODES = [
+  {
+    name: "Basic, to the site",
+    base: SITE,
+    auth: () =>
+      jiraAuthorization({
+        kind: "basic",
+        email: "factory@example.com",
+        token: "t0ken",
+      }),
+    header: `Basic ${Buffer.from("factory@example.com:t0ken").toString("base64")}`,
+  },
+  {
+    name: "Bearer, to the gateway",
+    base: GATEWAY,
+    auth: () => jiraAuthorization({ kind: "bearer", token: "be4rer" }),
+    header: "Bearer be4rer",
+  },
+  {
+    name: "a token command, to the gateway",
+    base: GATEWAY,
+    auth: () =>
+      jiraAuthorization(
+        { kind: "command", argv: ["broker", "token"] },
+        { runner: async () => tokenRun("c0mmand\n") },
+      ),
+    header: "Bearer c0mmand",
+  },
+];
+
+describe.each(MODES)("Jira transport: $name", (mode) => {
   interface Sent {
     url: string;
     init: RequestInit;
@@ -231,14 +271,21 @@ describe("Jira transport", () => {
     }) as typeof fetch;
     return { sent, impl };
   };
-  const credential = { email: "factory@example.com", token: "t0ken" };
+  let credential = mode.auth();
+  beforeEach(() => {
+    credential = mode.auth();
+  });
 
   it("does not follow redirects with the credential", async () => {
     const { sent, impl } = fake(302, "", {
       location: "https://other.example/",
     });
     await expect(
-      httpTransport(SITE, credential, impl)({ method: "GET", path: "myself" }),
+      httpTransport(
+        mode.base,
+        credential,
+        impl,
+      )({ method: "GET", path: "myself" }),
     ).rejects.toThrow();
     expect(sent[0]?.init.redirect).toBe("manual");
   });
@@ -254,7 +301,7 @@ describe("Jira transport", () => {
     }) as unknown as typeof fetch;
     await expect(
       httpTransport(
-        SITE,
+        mode.base,
         credential,
         impl,
       )({
@@ -265,9 +312,9 @@ describe("Jira transport", () => {
     ).rejects.toMatchObject({ answerLost: true, status: 201 });
   });
 
-  it("sends Basic authentication, JSON and the query under /rest/api/3", async () => {
+  it("sends the credential, JSON and the query under /rest/api/3", async () => {
     const { sent, impl } = fake(200, '{"ok":true}');
-    const t = httpTransport(SITE, credential, impl);
+    const t = httpTransport(mode.base, credential, impl);
     expect(
       await t({
         method: "POST",
@@ -277,11 +324,11 @@ describe("Jira transport", () => {
       }),
     ).toEqual({ ok: true });
     const [req] = sent;
-    expect(req?.url).toBe(`${SITE}/rest/api/3/issue/ENG-1/comment?expand=a+b`);
-    const headers = req?.init.headers as Record<string, string>;
-    expect(headers.Authorization).toBe(
-      `Basic ${Buffer.from("factory@example.com:t0ken").toString("base64")}`,
+    expect(req?.url).toBe(
+      `${mode.base}/rest/api/3/issue/ENG-1/comment?expand=a+b`,
     );
+    const headers = req?.init.headers as Record<string, string>;
+    expect(headers.Authorization).toBe(mode.header);
     expect(headers.Accept).toBe("application/json");
     expect(headers["Content-Type"]).toBe("application/json");
     expect(req?.init.body).toBe('{"x":1}');
@@ -292,11 +339,54 @@ describe("Jira transport", () => {
     const { impl } = fake(204, "");
     expect(
       await httpTransport(
-        SITE,
+        mode.base,
         credential,
         impl,
       )({ method: "PUT", path: "issue/ENG-1" }),
     ).toBeNull();
+  });
+
+  it("limits the credential by one key and bounds an absurd Retry-After", async () => {
+    const keys: string[] = [];
+    const limits: number[] = [];
+    const governor = {
+      admit: (_adapter: string, key: string) => void keys.push(key),
+      observe: (key: string, answer: { limitedUntil?: number }) => {
+        keys.push(key);
+        limits.push(answer.limitedUntil ?? 0);
+      },
+    };
+    const call = (retryAfter: string) =>
+      httpTransport(
+        mode.base,
+        credential,
+        fake(429, "", { "Retry-After": retryAfter }).impl,
+        governor,
+      )({ method: "GET", path: "x" }).catch((e: unknown) => e);
+    const before = Date.now();
+    await call("1e13");
+    await call("30");
+    expect(new Set(keys).size).toBe(1);
+    expect(limits[0]).toBeLessThanOrEqual(before + 24 * 3_600_000 + 5_000);
+    expect(() => new Date(limits[0] ?? 0).toISOString()).not.toThrow();
+    expect(limits[1]).toBeLessThan(before + 60_000);
+  });
+
+  it("admits once per request sent", async () => {
+    const admitted: string[] = [];
+    const governor = {
+      admit: (_adapter: string, key: string) => void admitted.push(key),
+      observe: () => undefined,
+    };
+    const transport = httpTransport(
+      mode.base,
+      credential,
+      fake(200, "{}").impl,
+      governor,
+    );
+    await transport({ method: "GET", path: "x" });
+    await transport({ method: "GET", path: "x" });
+    expect(admitted.length).toBe(2);
   });
 
   it("maps statuses and carries Jira's error body", async () => {
@@ -306,7 +396,7 @@ describe("Jira transport", () => {
       headers: Record<string, string> = {},
     ) =>
       (await httpTransport(
-        SITE,
+        mode.base,
         credential,
         fake(status, body, headers).impl,
       )({ method: "GET", path: "x" }).catch((e: unknown) => e)) as JiraApiError;
@@ -340,7 +430,7 @@ describe("Jira transport", () => {
     abort.abort(new Error("stop"));
     await expect(
       httpTransport(
-        SITE,
+        mode.base,
         credential,
         impl,
       )({ method: "GET", path: "x" }, abort.signal),
@@ -354,7 +444,7 @@ describe("Jira transport", () => {
       )) as typeof fetch;
     const later = new AbortController();
     const pending = httpTransport(
-      SITE,
+      mode.base,
       credential,
       hanging,
     )({ method: "GET", path: "x" }, later.signal);
@@ -362,27 +452,91 @@ describe("Jira transport", () => {
     await expect(pending).rejects.toThrow("cancelled: deadline");
   });
 
-  it("needs both halves of the credential, failing at the first request", async () => {
-    expect(resolveJiraCredential({ JIRA_EMAIL: "a@example.com" })).toBeNull();
+  it("needs both halves of the Basic pair, failing at the first request", async () => {
+    expect(resolveJiraCredential({ JIRA_EMAIL: "a@example.com" })).toEqual({
+      ok: false,
+      failure: {
+        code: "no-credential",
+        reason:
+          "no Jira credential: set JIRA_BEARER_TOKEN to an OAuth access token, JIRA_TOKEN_COMMAND to a command that prints one, or JIRA_EMAIL and JIRA_API_TOKEN to an Atlassian account's email and API token",
+      },
+    });
     expect(
       resolveJiraCredential({
         JIRA_EMAIL: " a@example.com ",
         JIRA_API_TOKEN: "t",
       }),
     ).toEqual({
-      email: "a@example.com",
-      token: "t",
+      ok: true,
+      value: { kind: "basic", email: "a@example.com", token: "t" },
     });
     const err = (await defaultTransport(
-      SITE,
+      mode.base,
       {},
     )({ method: "GET", path: "myself" }).catch(
       (e: unknown) => e,
     )) as JiraApiError;
     expect([err.unavailable, err.message]).toEqual([
       true,
-      "JIRA_EMAIL and JIRA_API_TOKEN must hold an Atlassian account's email and API token",
+      "no Jira credential: set JIRA_BEARER_TOKEN to an OAuth access token, JIRA_TOKEN_COMMAND to a command that prints one, or JIRA_EMAIL and JIRA_API_TOKEN to an Atlassian account's email and API token",
     ]);
+  });
+});
+
+describe("Jira request budget across credential modes", () => {
+  const status = (code: number, headers: Record<string, string> = {}) =>
+    (async () =>
+      new Response(code === 200 ? "{}" : "", {
+        status: code,
+        headers,
+      })) as unknown as typeof fetch;
+  const bearer = (token: string) =>
+    jiraAuthorization({ kind: "bearer", token });
+  const command = (token: string) =>
+    jiraAuthorization(
+      { kind: "command", argv: ["broker", "token"] },
+      { runner: async () => tokenRun(`${token}\n`) },
+    );
+
+  it("shares one budget between a direct Bearer token and a command returning it", async () => {
+    const governor = budgetGovernor(memoryBudgetStore());
+    await httpTransport(
+      GATEWAY,
+      bearer("same-t0ken"),
+      status(429, { "Retry-After": "300" }),
+      governor,
+    )({ method: "GET", path: "x" }).catch(() => undefined);
+
+    let sent = 0;
+    const counting = (async () => {
+      sent += 1;
+      return new Response("{}", { status: 200 });
+    }) as unknown as typeof fetch;
+    const refused = await httpTransport(
+      GATEWAY,
+      command("same-t0ken"),
+      counting,
+      governor,
+    )({ method: "GET", path: "x" }).catch((e: unknown) => e);
+    expect(isRateLimited(refused)).toBe(true);
+    expect(sent).toBe(0);
+  });
+
+  it("keeps a different token independent", async () => {
+    const governor = budgetGovernor(memoryBudgetStore());
+    await httpTransport(
+      GATEWAY,
+      bearer("one"),
+      status(429, { "Retry-After": "300" }),
+      governor,
+    )({ method: "GET", path: "x" }).catch(() => undefined);
+    const answer = await httpTransport(
+      GATEWAY,
+      command("two"),
+      status(200),
+      governor,
+    )({ method: "GET", path: "x" });
+    expect(answer).toEqual({});
   });
 });
 

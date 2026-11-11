@@ -32,7 +32,7 @@ import {
 } from "./github/transport.ts";
 import { jiraClient } from "./jira/client.ts";
 import { jiraModel } from "./jira/model.ts";
-import { requireSite } from "./jira/settings.ts";
+import { requestBase, requireSite } from "./jira/settings.ts";
 import { jiraTracker } from "./jira/tracker.ts";
 import { defaultTransport as jiraTransport } from "./jira/transport.ts";
 import { defaultTransport, linearTracker } from "./linear.ts";
@@ -95,7 +95,7 @@ const ADAPTERS: Record<string, AdapterFactory> = {
         site,
         model: jiraModel(config.states, config.jira),
         settings: config.jira,
-        transport: jiraTransport(site),
+        transport: jiraTransport(requestBase(config.jira)),
         facets: facets(),
       }),
     );

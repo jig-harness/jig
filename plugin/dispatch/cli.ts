@@ -65,7 +65,7 @@ import { markerMain } from "./marker.ts";
 import { probeMain } from "./probe-command.ts";
 import { readReceipt, receiptPaths, type TickReceipt } from "./receipts.ts";
 import { upgradeLine } from "../runtime/upgrade-record.ts";
-import { resultMain } from "./result.ts";
+import { refusedResultMain, resultMain } from "./result.ts";
 import { runTick } from "./tick.ts";
 
 /** Exit when another tick holds the lock. */
@@ -186,8 +186,8 @@ const result = command(
     token: argument(string({ metavar: "TOKEN" }), {
       description: message`The record's token, named in the session's prompt.`,
     }),
-    outcome: argument(string({ metavar: "done|failed" }), {
-      description: message`How the session ended.`,
+    outcome: argument(string({ metavar: "done|failed|waits" }), {
+      description: message`How the session ended; waits is a pickup the tracker's rate limit stopped.`,
     }),
     pr: optional(
       option("--pr", countValue("PR"), {
@@ -199,14 +199,24 @@ const result = command(
         description: message`Why a completed pickup needs no pull request. Mutually exclusive with --pr.`,
       }),
     ),
-    refused: optional(
+    refused: multiple(
       option("--refused", string({ metavar: "UPDATED-AT" }), {
-        description: message`A failed pickup whose claim the repository's start rules refused: the item's updatedAt the claim printed. Needs --reason.`,
+        description: message`A failed pickup whose claim the repository's start rules refused: the item's updatedAt the claim printed. Needs --reason. Repeat it with --key for each batch member refused.`,
       }),
     ),
-    reason: optional(
+    keys: multiple(
+      option("--key", string({ metavar: "ITEM" }), {
+        description: message`The batch member the --refused in the same place belongs to; only the members named are held. Without it, the one --refused holds the whole pickup.`,
+      }),
+    ),
+    reasons: multiple(
       option("--reason", string({ metavar: "REASON" }), {
-        description: message`The reason the refused claim printed.`,
+        description: message`The reason the refused claim printed: once, or once per --key.`,
+      }),
+    ),
+    until: optional(
+      option("--until", string({ metavar: "TIME" }), {
+        description: message`With waits: when the tracker's rate limit resets (ISO 8601); the item starts again after it.`,
       }),
     ),
   }),
@@ -270,10 +280,13 @@ const log = command(
     jsonl: option("--jsonl", {
       description: message`Print each row as the JSON line the month files hold.`,
     }),
+    acceptance: option("--acceptance", {
+      description: message`Report, per repository and decision class, how many parks were answered, how many with the recommended option and no note, and the median wait, instead of the rows.`,
+    }),
   }),
   {
     brief: message`Print the outcome log as text, in the order the rows were written.`,
-    description: message`Reads the state database and prints one line a row; --jsonl prints the rows as the log-<year>-<month>.jsonl files hold them.`,
+    description: message`Reads the state database and prints one line a row; --jsonl prints the rows as the log-<year>-<month>.jsonl files hold them. --acceptance prints one line per repository and decision class (or one JSON line with --jsonl) over the parked decisions the log counted; it acts on nothing.`,
   },
 );
 
@@ -491,42 +504,52 @@ function repositories(options: Tick, machine: MachineConfig | null): string[] {
 
 type Subcommand = Exclude<DispatchArguments, { action: "tick" }>;
 
-/** Forward a refused pickup's result: `--refused` and `--reason`, and no handoff. */
-function refusedResultMain(
+/** Forward a refused pickup's result: `--refused`, `--key` and `--reason`, and no handoff. */
+function refusedResult(
   args: Extract<Subcommand, { action: "result" }>,
 ): number {
-  if (args.pr !== undefined || args.none !== undefined) {
+  if (
+    args.pr !== undefined ||
+    args.none !== undefined ||
+    args.until !== undefined
+  ) {
     console.error(
-      "jig dispatch result: --refused is a failed pickup's; it takes no --pr or --none",
+      "jig dispatch result: --refused is a failed pickup's; it takes no --pr, --none or --until",
     );
     return 2;
   }
-  return resultMain([
-    args.record,
-    args.token,
-    args.outcome,
-    "--refused",
-    ...(args.refused === undefined ? [] : [args.refused]),
-    ...(args.reason === undefined ? [] : [args.reason]),
-  ]);
+  return refusedResultMain(args.record, args.token, args.outcome, {
+    refused: args.refused,
+    keys: args.keys,
+    reasons: args.reasons,
+  });
 }
 
 /** Forward a session result and its mutually exclusive handoff arguments. */
 function sessionResultMain(
   args: Extract<Subcommand, { action: "result" }>,
 ): number {
-  if (args.pr !== undefined && args.none !== undefined) {
-    console.error("jig dispatch result: pass either --pr or --none, not both");
+  if (
+    [args.pr, args.none, args.until].filter((v) => v !== undefined).length > 1
+  ) {
+    console.error(
+      "jig dispatch result: pass one of --pr, --none and --until, not several",
+    );
     return 2;
   }
-  if (args.refused !== undefined || args.reason !== undefined)
-    return refusedResultMain(args);
+  if (
+    args.refused.length > 0 ||
+    args.keys.length > 0 ||
+    args.reasons.length > 0
+  )
+    return refusedResult(args);
   return resultMain([
     args.record,
     args.token,
     args.outcome,
     ...(args.pr === undefined ? [] : ["--pr", String(args.pr)]),
     ...(args.none === undefined ? [] : ["--none", args.none]),
+    ...(args.until === undefined ? [] : ["--until", args.until]),
   ]);
 }
 
@@ -604,6 +627,7 @@ function subcommandMain(
   if (args.action === "log")
     return logMain({
       jsonl: args.jsonl,
+      acceptance: args.acceptance,
       ...(args.since === undefined ? {} : { since: args.since }),
     });
   if (args.action === "line") return lineMain();

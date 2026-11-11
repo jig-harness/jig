@@ -445,8 +445,26 @@ fields:
     read_by: [do-item]
   pull_requests.title_format:
     type: enum
-    values: [conventional, free]
+    values: [conventional, free, pattern]
     read_by: [do-item]
+  pull_requests.title_pattern:
+    type: string
+    pattern: "\\{key\\}"
+    since: 0.204.0
+    read_by: [do-item]
+  pull_requests.base_rules:
+    type: list
+    items:
+      fields:
+        when: { type: map, values_type: { type: list, items: string } }
+        base: string
+    since: 0.206.0
+    read_by: [do-item]
+  pull_requests.commit_prefix:
+    type: string
+    pattern: "\\{key\\}"
+    since: 0.206.0
+    read_by: [do-item, drive-pr, fix-ci, resolve-conflicts]
 
   drive.validation_plan_command:
     type: command
@@ -540,6 +558,16 @@ fields:
   ci.hold_label:
     type: string
     read_by: [drive-pr]
+  ci.log_command:
+    type: command
+    read_by: [fix-ci]
+    repository_only: true
+    since: 0.205.0
+  ci.repair_skill:
+    type: string
+    pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*(?::[A-Za-z0-9][A-Za-z0-9._-]*)?$"
+    read_by: [drive-pr]
+    since: 0.205.0
 
   issue_tracker.adapter:
     type: enum
@@ -589,6 +617,12 @@ fields:
     read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
     repository_only: true
     since: 0.111.0
+  issue_tracker.jira.api_base:
+    type: string
+    pattern: "^https://api\\.atlassian\\.com/ex/jira/[A-Za-z0-9][A-Za-z0-9-]{0,63}/?$"
+    read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
+    repository_only: true
+    since: 0.209.0
   issue_tracker.jira.issue_type:
     type: string
     default: Task

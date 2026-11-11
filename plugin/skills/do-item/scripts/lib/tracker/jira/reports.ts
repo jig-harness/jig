@@ -385,6 +385,7 @@ export function reportOperations(
       const comments = [];
       for (const c of await client.comments(issue.key))
         comments.push({
+          id: c.id,
           body: c.body,
           createdAt: c.createdAt,
           trusted: await client.trusted(c.author),

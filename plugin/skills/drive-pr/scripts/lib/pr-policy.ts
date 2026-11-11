@@ -2,9 +2,10 @@
  * The consumer repository's pull-request policy: how agents open and stack
  * pull requests. Declared values come from the `pull_requests`
  * section of `.config/jig.yaml`; the facts a repository already
- * states elsewhere (its default branch, pull-request template, title
- * convention, delete-branch-on-merge setting, code owners) are derived
- * here instead of being asked for twice.
+ * states elsewhere (its default branch, pull-request template,
+ * delete-branch-on-merge setting, code owners) are derived here instead of
+ * being asked for twice; the title convention, a base per item and the commit
+ * prefix are in `pr-conventions.ts`.
  *
  * Every declared field is optional and has a default, so a repository without
  * the section still gets one explicit, conservative policy: no stacking, draft
@@ -15,7 +16,7 @@
  *
  * `do-item`'s `pr-plan.ts` applies the policy when a pull request is opened.
  */
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { withSource } from "../../../../shared/consumer.ts";
 import {
@@ -23,10 +24,12 @@ import {
   tidyBranchName,
 } from "../../../do-item/scripts/lib/tracker/keys.ts";
 import { readOptionalOverlay } from "./overlay.ts";
-import { ghCall, git } from "./proc.ts";
+import { type BaseRule, parseConventions } from "./pr-conventions.ts";
+import { ghCall } from "./proc.ts";
 import { isRecord } from "../../../../shared/guards.ts";
 import { JigError } from "../../../../shared/errors.ts";
 import { REVIEWER, reviewerArg } from "../../../../shared/forge-logins.ts";
+import { parseTitlePattern } from "../../../../shared/title-pattern.ts";
 
 export const STACKING_MODES = ["none", "native", "branch"] as const;
 export type Stacking = (typeof STACKING_MODES)[number];
@@ -34,7 +37,7 @@ export const OPEN_AS = ["draft", "ready"] as const;
 export type OpenAs = (typeof OPEN_AS)[number];
 export const ISSUE_LINKS = ["closes", "refs", "none"] as const;
 export type IssueLink = (typeof ISSUE_LINKS)[number];
-export const TITLE_FORMATS = ["conventional", "free"] as const;
+export const TITLE_FORMATS = ["conventional", "free", "pattern"] as const;
 /** When the drive marks a draft Ready: after round N, at convergence, or never. */
 export type MarkReady = number | "converged" | "never";
 export type TitleFormat = (typeof TITLE_FORMATS)[number];
@@ -67,6 +70,12 @@ export interface PrPolicy {
   reviewersFromIssue: ReadonlyMap<string, string[]>;
   /** `null` = not declared; `detectTitleFormat` derives it. */
   titleFormat: TitleFormat | null;
+  /** `pull_requests.title_pattern`; set exactly when `titleFormat` is `pattern`. */
+  titlePattern: string | null;
+  /** In order; the first one of whose labels the item carries names its base. */
+  baseRules: BaseRule[];
+  /** Every commit message's prefix, with `{key}`; `null` = none. */
+  commitPrefix: string | null;
 }
 
 /** The fields `pull_requests` may hold; any other key is refused. */
@@ -82,6 +91,9 @@ export const KNOWN_KEYS = [
   "labels_from_issue",
   "reviewers_from_issue",
   "title_format",
+  "title_pattern",
+  "base_rules",
+  "commit_prefix",
 ] as const;
 
 function oneOf<T extends string>(
@@ -220,6 +232,7 @@ export function parsePrPolicy(overlay: Record<string, unknown>): PrPolicy {
     );
 
   const { labelsFromIssue, reviewersFromIssue } = parseIssueMaps(section);
+  const titleFormat = oneOf(section, "title_format", TITLE_FORMATS);
 
   const stacking = oneOf(section, "stacking", STACKING_MODES) ?? "none";
   const maxStackDepth = positiveInt(section, "max_stack_depth");
@@ -253,7 +266,9 @@ export function parsePrPolicy(overlay: Record<string, unknown>): PrPolicy {
     labels: labels as string[],
     labelsFromIssue,
     reviewersFromIssue,
-    titleFormat: oneOf(section, "title_format", TITLE_FORMATS),
+    titleFormat,
+    titlePattern: parseTitlePattern(section, titleFormat),
+    ...parseConventions(section),
   };
 }
 
@@ -395,112 +410,6 @@ const CODEOWNERS_PATHS = [
 /** The `CODEOWNERS` file GitHub reads (first match wins), or `null`. */
 export function findCodeowners(root: string): string | null {
   return CODEOWNERS_PATHS.find((p) => existsSync(join(root, p))) ?? null;
-}
-
-const COMMITLINT_FILES = [
-  ".commitlintrc",
-  ".commitlintrc.json",
-  ".commitlintrc.yaml",
-  ".commitlintrc.yml",
-  ".commitlintrc.js",
-  ".commitlintrc.cjs",
-  ".commitlintrc.mjs",
-  ".commitlintrc.ts",
-  ".commitlintrc.cts",
-  "commitlint.config.js",
-  "commitlint.config.cjs",
-  "commitlint.config.mjs",
-  "commitlint.config.ts",
-  "commitlint.config.cts",
-];
-
-/** A commitlint configuration at the repository root, or `null`. */
-export function findCommitlintConfig(root: string): string | null {
-  const file = COMMITLINT_FILES.find((f) => existsSync(join(root, f)));
-  if (file !== undefined) return file;
-  try {
-    const pkg = JSON.parse(
-      readFileSync(join(root, "package.json"), "utf8"),
-    ) as Record<string, unknown>;
-    if (isRecord(pkg) && pkg.commitlint !== undefined)
-      return "package.json (commitlint)";
-  } catch {
-    // no package.json, or not JSON: no commitlint configuration there
-  }
-  return null;
-}
-
-/**
- * The commitlint configuration when it names the Conventional Commits rules
- * (`@commitlint/config-conventional` or a preset built on it), else `null`.
- * A commitlint configuration alone proves commits are linted, not which
- * convention they follow.
- */
-export function conventionalCommitlintConfig(root: string): string | null {
-  const found = findCommitlintConfig(root);
-  if (found === null) return null;
-  let text: string;
-  try {
-    if (found === "package.json (commitlint)") {
-      const pkg = JSON.parse(
-        readFileSync(join(root, "package.json"), "utf8"),
-      ) as Record<string, unknown>;
-      text = JSON.stringify(pkg.commitlint);
-    } else {
-      text = readFileSync(join(root, found), "utf8");
-    }
-  } catch {
-    return null;
-  }
-  return /conventional/i.test(text) ? found : null;
-}
-
-/** A Conventional Commits subject: `type(scope)!: description`. */
-export const CONVENTIONAL_SUBJECT = /^[a-z]+(\([^()\s][^()]*\))?!?: \S/;
-
-/** Share of recent trunk subjects that must be conventional to infer the convention. */
-export const CONVENTIONAL_SHARE = 0.8;
-
-/**
- * Which title convention recent trunk history follows. Merge commits are
- * skipped (their subjects are generated); fewer than five remaining subjects
- * is too little history to infer anything, so the answer is `free`.
- */
-export function inferTitleFormat(subjects: string[]): TitleFormat {
-  const own = subjects.filter(
-    (s) =>
-      s.trim() !== "" &&
-      !/^Merge (pull request|branch|remote-tracking)/.test(s),
-  );
-  if (own.length < 5) return "free";
-  const conventional = own.filter((s) => CONVENTIONAL_SUBJECT.test(s)).length;
-  return conventional / own.length >= CONVENTIONAL_SHARE
-    ? "conventional"
-    : "free";
-}
-
-/** The title convention and where it came from. */
-export async function detectTitleFormat(
-  root: string,
-  policy: PrPolicy,
-  trunkRef: string | null,
-): Promise<{ value: TitleFormat; source: string }> {
-  if (policy.titleFormat !== null)
-    return { value: policy.titleFormat, source: "pull_requests.title_format" };
-  const commitlint = conventionalCommitlintConfig(root);
-  if (commitlint !== null)
-    return { value: "conventional", source: `derived: ${commitlint}` };
-  if (trunkRef === null) return { value: "free", source: "default" };
-  const log = await git(
-    ["-C", root, "log", "--no-merges", "--format=%s", "-n", "30", trunkRef],
-    { stderr: "ignore" },
-  );
-  if (log.code !== 0) return { value: "free", source: "default" };
-  const value = inferTitleFormat(log.stdout.split("\n"));
-  return {
-    value,
-    source: `derived: recent subjects on ${trunkRef}`,
-  };
 }
 
 export interface RepoSettings {

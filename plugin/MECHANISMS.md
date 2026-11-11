@@ -404,10 +404,17 @@ development and shipped as a version.
   That answer is the session's own judgement; the script refuses another
   record's token, a drive pass's record and a second answer. Nothing
   else reasoned writes these records. A completed pickup names its pull
-  request with `--pr <number>`, or `--none "<reason>"` when none was needed.
+  request with `--pr <number>`, or `--none "<reason>"` when none was needed;
+  a pickup the tracker's rate limit stopped before it claimed the item
+  records `waits --until <time>`, and the tick starts it again after that
+  time; after the claim the pass waits within its deadline or records
+  `failed`.
   A pickup whose claim the repository's start rules refused records
   `failed --refused <updated-at> --reason <reason>`: the tick holds the item, showing
-  the reason, until its `updatedAt` moves past that time.
+  the reason, until its `updatedAt` moves past that time. A batch pickup adds
+  `--key <item>` beside each `--refused`, once per refused member: only those
+  members are held, each on its own `updatedAt`, and the rest of the batch is
+  picked up again without them.
   The answer and its next owner are written together. An ended launch's
   outcome keeps that handoff, deriving it where the line fixes it; `jig ask`
   prints it as `last.next`.
@@ -692,12 +699,20 @@ development and shipped as a version.
   concurrent claims on this host share a file mutex across worktrees.
   `claim --for <identity>` preserves the served person's sole assignment
   and checks writer provenance, holds, blockers and inherited ancestry live.
-  GitHub adds an inherited assignee without replacing another one and
-  reports a detected race; adapters without a safe non-replacing assignment
-  refuse inherited claims. The mutex is machine-local: two hosts claiming
-  for the same person can both succeed because the tracker supplies no
-  conditional state transition. The re-read detects conflicting assignees,
-  but cannot establish exclusive ownership between those same-person claims.
+  GitHub adds an inherited assignee without replacing another one; Linear
+  and Jira, which hold one assignee and offer no conditional write, assign
+  and then verify through the issue's history that the assignment replaced
+  nobody, putting back anyone it did replace
+  (`skills/do-item/scripts/lib/tracker/assign-verified.ts`); either way a
+  detected race stands down. The mutex is machine-local, and two hosts
+  claiming with the same identity write the same assignee and state, which
+  the re-read cannot tell apart. With `do_item.claim_marker`, the claim
+  marker is the token between hosts
+  (`skills/do-item/scripts/lib/claim-token.ts`): posted before the claim
+  writes, read back, and of the live markers on the item the earliest wins;
+  the other claim withdraws its marker and refuses with nothing written to
+  the item. Two read-backs that each lag past the other's post can still
+  both win.
   `work-batch` claims each issue of its
   batch with the same command. `skills/do-item/scripts/determine_route.ts`
   derives the implementer's agent, complexity tier, model and effort from
@@ -723,8 +738,9 @@ development and shipped as a version.
   fails a resolution while a path is unmerged or conflict markers remain;
   `skills/resolve-conflicts/scripts/conflict-map.ts` names each side;
   `skills/resolve-conflicts/scripts/record.ts` records the decisions.
-  `skills/fix-ci/scripts/parse-ci-log.ts` fetches a failed run's log and
-  sorts its errors in the order to fix them. `shared/ci-infra.ts` reads the
+  `skills/fix-ci/scripts/parse-ci-log.ts` fetches a failed run's log, and a
+  failing commit status's through the repository's `ci.log_command`, and
+  sorts their errors in the order to fix them. `shared/ci-infra.ts` reads the
   same log for a failure of the infrastructure rather than the code (a lost
   runner, a setup step's network failure, no code diagnostic); the drive
   re-runs such checks, or moves the head to run them again, instead of

@@ -1,5 +1,10 @@
 #!/usr/bin/env bun
-import type { ItemResult, Report } from "./lib/finish-round-report.ts";
+import {
+  echoDiagnostic,
+  emit,
+  type ItemResult,
+  type Report,
+} from "./lib/finish-round-report.ts";
 import { retryAttempts } from "../../../shared/retry.ts";
 /**
  * Finish one drive-pr round: take a validated commit that exists locally all
@@ -9,7 +14,10 @@ import { retryAttempts } from "../../../shared/retry.ts";
  * branch inside the last one. Every step of it is load-bearing and none of it
  * is discoverable from the scripts themselves:
  *
- *   ci-hold.ts ensure                   own the CI hold label (when the repository
+ *   commit-prefix.ts --branch <head>    the issue key in every unpushed commit
+ *                                       (pull_requests.commit_prefix, when set),
+ *                                       before anything records the head
+ *   ci-hold.ts ensure                  own the CI hold label (when the repository
  *                                       has one) before an intermediate push
  *   guarded-push.ts                     the push, liveness-rechecked
  *   drive-state.ts stamp-held           per-hold push provenance
@@ -136,6 +144,12 @@ import { retryAttempts } from "../../../shared/retry.ts";
  *      cases are not interchangeable, see `remedyFor`. Follow the printed
  *      remedy, or park it (SKILL.md § 4) if triage-thread.ts itself
  *      refuses, then re-run
+ *   9  refused BEFORE pushing (REFUSED_COMMIT_PREFIX): pull_requests.commit_prefix
+ *      is set and commit-prefix.ts could not put it on the unpushed commits
+ *      (the head branch carries no key, a git operation is open, or the
+ *      configuration, the repository or the PR could not be read). A pushed
+ *      commit without the prefix does not refuse: it is reported on stderr
+ *      and the push goes ahead
  *  11  another live SESSION in this working tree holds the drive lease
  *  13  another live WORKING TREE is driving this PR
  *
@@ -147,6 +161,7 @@ import { retryAttempts } from "../../../shared/retry.ts";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isTransparentFollowUp } from "./lib/bot-confirmation.ts";
+import { applyCommitPrefix } from "./lib/commit-prefix-step.ts";
 import { fail, isDigits, isGitSha, runMain, short } from "./lib/cli.ts";
 import { hasLeaveOpenMarker, qualifyingOutcome } from "./lib/outcome.ts";
 import {
@@ -220,35 +235,6 @@ interface HeldRecord {
   actor: string;
   verifiedSha?: string;
   commentUrl?: string;
-}
-
-function emit(report: Report, asJson: boolean): void {
-  if (asJson) {
-    process.stdout.write(`${JSON.stringify(report)}\n`);
-    return;
-  }
-  process.stdout.write(`${report.state}: ${report.reason}\n`);
-  for (const i of report.items) {
-    process.stdout.write(
-      `  ${i.action === "refused" ? `refused(${i.code})` : i.action} ${i.kind} ${i.key}\n`,
-    );
-  }
-}
-
-function prefixLines(prefix: string, text: string): string {
-  const body = text.endsWith("\n") ? text.slice(0, -1) : text;
-  return body === "" ? "" : `${prefix}${body.replaceAll("\n", `\n${prefix}`)}`;
-}
-
-/**
- * Re-print a helper's captured stderr so a human watching the run sees the
- * refusal as it happens, not only in the final report. Captured rather than
- * inherited because the report carries it too — and a diagnostic that exists
- * only in a scrollback is one an unattended pass cannot act on.
- */
-function echoDiagnostic(label: string, stderr: string): void {
-  if (stderr.trim() === "") return;
-  console.error(prefixLines(`  ${label}: `, stderr));
 }
 
 /**
@@ -1269,6 +1255,12 @@ async function main(): Promise<number> {
       "the working tree is dirty — commit (or discard) the leftovers, then re-run",
     );
   }
+
+  // The issue key in every commit (`pull_requests.commit_prefix`): a reword
+  // moves local HEAD, so it runs before anything below records a head.
+  const prefixed = await applyCommitPrefix(pr, report.head, gitTimeoutSec);
+  if (!prefixed.ok) return done(9, "REFUSED_COMMIT_PREFIX", prefixed.reason);
+  report.head = prefixed.head;
 
   // The untriaged-thread refusal — see `checkUntriagedThreads`'s
   // own header for the full argument. Run here, AFTER every prior refusal in

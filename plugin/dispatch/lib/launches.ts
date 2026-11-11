@@ -47,9 +47,13 @@
  */
 import { optionalLaunchFields } from "./launch-record-options.ts";
 import { readNext, type NextOwner } from "./next-owner.ts";
-import { type PickupRefusal, readRefusal } from "./pickup-refusal.ts";
+import {
+  type PickupRefusal,
+  readRefusal,
+  type RefusedMember,
+} from "./pickup-refusal.ts";
 
-export type { PickupRefusal };
+export type { PickupRefusal, RefusedMember };
 import { unsettledStartups } from "./session-startup.ts";
 import type { Database } from "bun:sqlite";
 import { isMapping } from "../../shared/config-layers.ts";
@@ -72,7 +76,11 @@ import { cancelledBeforeExecution } from "./cancellation.ts";
 import type { StandingAnswer } from "./routine-questions.ts";
 export { cancelledBeforeExecution } from "./cancellation.ts";
 export { UNARMED_FACTS } from "./launch-keep.ts";
-import { latestArms, latestFailedRearms } from "./launch-keep.ts";
+import {
+  latestArms,
+  latestFailedRearms,
+  latestPickups,
+} from "./launch-keep.ts";
 
 /** What a launch starts: a re-arm of a stopped drive, a takeover of a wedged one, a pickup's `do-item` session, or a merge's follow-up pass. */
 export type LaunchAction =
@@ -98,8 +106,12 @@ export function isInteractive(
   return record.action === "pickup" && record.headless !== true;
 }
 
-/** A pickup's session's or a follow-up pass's own answer, recorded through `jig dispatch result`. */
-export type SessionResult = "done" | "failed";
+/**
+ * A pickup's session's or a follow-up pass's own answer, recorded through
+ * `jig dispatch result`: `waits` is a pickup the tracker's rate limit
+ * stopped, to be started again once the limit resets (`waitsUntil`).
+ */
+export type SessionResult = "done" | "failed" | "waits";
 
 /** The runtime's answer to one `launch` call for the record. */
 export interface LaunchAttempt {
@@ -267,6 +279,8 @@ export interface ReadRecord {
   /** A pickup's session's or a follow-up pass's recorded answer; `null` when none. */
   result: SessionResult | null;
   next?: NextOwner | null;
+  /** For a `waits` result, when the pickup may start again (ISO 8601). */
+  waitsUntil?: string;
   /** A pickup the repository's start rules refused, recorded with its `failed` result; absent otherwise. */
   refusal?: PickupRefusal | null;
 }
@@ -465,6 +479,8 @@ export interface LaunchRow {
   exit: string | null;
   result: string | null;
   result_next?: string | null;
+  /** A pickup that waits on a tracker's rate limit: when it may start again. */
+  result_until?: string | null;
   refusal?: string | null;
 }
 
@@ -566,16 +582,32 @@ export function readEnded(id: string, root = stateRoot()): ReadRecord | null {
   return {
     record,
     state: stateOf(row, null, thisHost()),
-    result: asResult(row.result),
+    result: asResult(row.result, row.result_until ?? null),
     next: readNext(row.result_next),
+    ...waitsOf(row),
     refusal: readRefusal(row.refusal),
   };
 }
 
 export { recordResult } from "./launch-result.ts";
 
-function asResult(value: string | null): SessionResult | null {
+/**
+ * A row's answer. A `waits` result is kept as `failed` with the time in
+ * `result_until`, so a copy of the plugin that knows no `waits` reads a
+ * failed pass, which it holds until a person settles it.
+ */
+export function asResult(
+  value: string | null,
+  until: string | null = null,
+): SessionResult | null {
+  if (value === "failed" && until !== null) return "waits";
   return value === "done" || value === "failed" ? value : null;
+}
+
+/** When a `waits` result lets the pickup start again, as the row carries it. */
+function waitsOf(row: LaunchRow): { waitsUntil?: string } {
+  const until = row.result_until ?? null;
+  return row.result === "failed" && until !== null ? { waitsUntil: until } : {};
 }
 
 /** A record's recorded answer; `null` when none. */
@@ -583,7 +615,8 @@ export function readResult(
   id: string,
   root = stateRoot(),
 ): SessionResult | null {
-  return asResult(launchRow(id, root)?.result ?? null);
+  const row = launchRow(id, root);
+  return asResult(row?.result ?? null, row?.result_until ?? null);
 }
 
 /** A row's claim: `undefined` when none, `null` when it does not read. */
@@ -736,8 +769,9 @@ export async function readLaunches(
     records.push({
       record,
       state: stateOf(row, rows, here),
-      result: asResult(row.result),
+      result: asResult(row.result, row.result_until ?? null),
       next: readNext(row.result_next),
+      ...waitsOf(row),
       refusal: readRefusal(row.refusal),
     });
   }
@@ -811,23 +845,6 @@ function latestRedrives(records: ReadRecord[]): Set<string> {
     }
   }
   return new Set([...latest.values()].map((r) => r.record.id));
-}
-
-/**
- * The ids of each item's latest pickup record: while it is unreleased it is
- * the only thing that keeps the item from being picked up again, so it stays
- * until `releaseEnded` has seen the item leave the dispatch states.
- */
-function latestPickups(records: ReadRecord[]): Set<string> {
-  const latest = latestBy(
-    records,
-    (r) => r.action === "pickup",
-    (r) => `${r.repo}\0${String(r.item)}`,
-  );
-  const ids = new Set<string>();
-  for (const { record } of latest.values())
-    if (!record.released) ids.add(record.id);
-  return ids;
 }
 
 /** When an ended or died record finished; `null` for one still holding its stage. */

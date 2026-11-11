@@ -23,6 +23,7 @@ export interface Report {
     | "FINISHED"
     | "REFUSED_UNCLEAN"
     | "REFUSED_UNTRIAGED"
+    | "REFUSED_COMMIT_PREFIX"
     | "TRIAGE_CHECK_FAILED"
     | "PR_NOT_OPEN"
     | "PUSH_FAILED"
@@ -39,4 +40,33 @@ export interface Report {
   stamped: boolean;
   headSynced: boolean;
   items: ItemResult[];
+}
+
+export function emit(report: Report, asJson: boolean): void {
+  if (asJson) {
+    process.stdout.write(`${JSON.stringify(report)}\n`);
+    return;
+  }
+  process.stdout.write(`${report.state}: ${report.reason}\n`);
+  for (const i of report.items) {
+    process.stdout.write(
+      `  ${i.action === "refused" ? `refused(${i.code})` : i.action} ${i.kind} ${i.key}\n`,
+    );
+  }
+}
+
+export function prefixLines(prefix: string, text: string): string {
+  const body = text.endsWith("\n") ? text.slice(0, -1) : text;
+  return body === "" ? "" : `${prefix}${body.replaceAll("\n", `\n${prefix}`)}`;
+}
+
+/**
+ * Re-print a helper's captured stderr so a human watching the run sees the
+ * refusal as it happens, not only in the final report. Captured rather than
+ * inherited because the report carries it too — and a diagnostic that exists
+ * only in a scrollback is one an unattended pass cannot act on.
+ */
+export function echoDiagnostic(label: string, stderr: string): void {
+  if (stderr.trim() === "") return;
+  console.error(prefixLines(`  ${label}: `, stderr));
 }

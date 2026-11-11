@@ -86,6 +86,7 @@ contract column says what else the command is given or must print.
 | `descar.lint_command`                   | descar                                                               | Takes document paths; finds review scars in them                                                                                                                                                                                                                                                                                                            |
 | `promote_memory.lint_command`           | promote-memory                                                       | `{dir}` and `{file}` stand for the memory folder and file; checks one memory against the repository                                                                                                                                                                                                                                                         |
 | `fix_ci.regenerate_commands`            | fix-ci                                                               | Each regenerates committed generated files a CI check compares                                                                                                                                                                                                                                                                                              |
+| `ci.log_command`                        | fix-ci, for a drive's CI-repair pass                                 | Reads `{"context", "target_url"}` of a failing commit status as JSON on standard input; prints that status's failed log, at most 64 KiB. Exit 3, the reason its first output line, when the log is gone; 300 s                                                                                                                                              |
 | `resolve_conflicts.generated[].command` | resolve-conflicts                                                    | Rebuilds the files its `paths` match when they conflict                                                                                                                                                                                                                                                                                                     |
 | `explain.figure_build_command`          | explain                                                              | Builds one explainer figure; the figure's stem is appended                                                                                                                                                                                                                                                                                                  |
 | `code_stats.classify_command`           | code-stats                                                           | Reads every tracked path, one per line, on standard input; prints one JSON object per line, `{"path", "area"?, "kind"?, "language"?, "module"?}`, whose values override the skill's own classification ([contract](skills/code-stats/README.md#the-classify-command)). Exit 0 within 300 seconds; any other exit, or a line it cannot use, fails the report |
@@ -209,9 +210,14 @@ are named by canonical keys (`in_progress`, `in_review`, …) that
 - **Jira Cloud** ([`jira/`](skills/do-item/scripts/lib/tracker/jira/tracker.ts)),
   the adapter `issue_tracker.adapter: jira` selects: the issues of one
   project on one site (`issue_tracker.team` is the project key,
-  `issue_tracker.jira.site` the site). It uses Jira's REST API version 3
-  with `JIRA_EMAIL` and `JIRA_API_TOKEN`, an Atlassian account's email
-  address and an API token made for it, and converts text between Markdown
+  `issue_tracker.jira.site` the site). It uses Jira's REST API version 3,
+  at the site or through Atlassian's API gateway
+  (`issue_tracker.jira.api_base`), signed with an OAuth access token
+  (`JIRA_BEARER_TOKEN`, or one `JIRA_TOKEN_COMMAND` prints) or with
+  `JIRA_EMAIL` and `JIRA_API_TOKEN`, an Atlassian account's email address
+  and an API token made for it
+  ([`credential.ts`](skills/do-item/scripts/lib/tracker/jira/credential.ts)),
+  and converts text between Markdown
   and ADF (Atlassian Document Format), the rich-text form Jira stores. Keys
   are `<PROJECT>-<n>`. How the interface's vocabulary maps onto Jira:
   - a state is the status whose name `issue_tracker.states` gives, matched
@@ -499,7 +505,10 @@ any CI that can read a pull request's labels can.
 Bound to GitHub Actions today:
 
 - **`fix-ci` downloading a failed run's log** (`gh run view --log-failed`).
-  With another CI, save the log and run `parse-ci-log.ts --log <file>`; the
+  A CI that reports as commit statuses (Jenkins through its GitHub Branch
+  Source plugin, for one) has its logs read through the repository's
+  `ci.log_command`, and its repair skill named in `ci.repair_skill`. With
+  any other CI, save the log and run `parse-ci-log.ts --log <file>`; the
   sorting, fixing and local verification are the same.
 - **The `github-actions` skill**, which reviews `.github/workflows` by
   definition. A review skill for another CI's files would be a sibling, not

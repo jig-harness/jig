@@ -450,6 +450,22 @@ standing: say so in your report. Mapping the next stop of a rebase records the
 earlier stop first, so a rebase that stops several times leaves its events
 even when only the last one is recorded by hand.
 
+Before any push of the concluded operation, put the issue key in its
+commits where the repository sets `pull_requests.commit_prefix`; it does
+nothing where it does not:
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/commit-prefix.ts" [--branch <head branch>]
+```
+
+It rewords each unpushed commit that lacks the prefix, the merge commit and
+replayed commits included, keeping trees, parents and authors; pass
+`--branch` with the pull request's head branch on a detached tree. Exit `4`
+names a commit already pushed without it: report it, since rewriting it needs
+a force-push a person decides on. Run it after the events are recorded: a
+recorded conflict stays identified by its operation when its commit is
+reworded.
+
 Inside a drive, carry on with the drive's own steps (validation and push)
 after concluding.
 
