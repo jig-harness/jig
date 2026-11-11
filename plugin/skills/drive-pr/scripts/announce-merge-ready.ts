@@ -180,9 +180,10 @@ async function main(): Promise<number> {
     fail(2, "announce-merge-ready: could not resolve a PR number");
   }
 
-  // A driver pass inherits its base-branch policy commit; a standalone run
-  // resolves it, so the draft-skipping reviewers come from the base either way.
-  if ((process.env.DRIVE_PR_TARGET ?? "").trim() === "")
+  // A driver pass inherits its base-branch policy commit, but only for the
+  // pull request it drives; any other announcement resolves its own, so the
+  // draft-skipping reviewers come from the announced PR's base either way.
+  if ((process.env.DRIVE_PR_TARGET ?? "").trim() !== pr)
     await announcePolicyBase(pr);
 
   // Read stdin BEFORE the status call: a terminal with no redirect would

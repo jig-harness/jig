@@ -88,7 +88,11 @@ function board(
 async function dryRun(
   f: Fixture & { head: string },
   answer: string,
-  more: { timeline?: unknown[]; env?: Record<string, string> } = {},
+  more: {
+    timeline?: unknown[];
+    env?: Record<string, string>;
+    driverEnv?: Record<string, string>;
+  } = {},
 ) {
   const { dir, stateDir } = writeFixture(f, scratchClean.dir);
   writeVerifiedSha(stateDir, f.head);
@@ -108,6 +112,7 @@ async function dryRun(
         DRIVE_PR_MERGE_MARKER_FIXTURE: `<!-- drive-pr-merge-ready: ${f.head} -->`,
         DRIVE_PR_ANNOUNCE_OPENER_FIXTURE: OPENER,
         ...announcePolicyEnv(scratchClean.dir, more.env),
+        ...more.driverEnv,
       },
       stdin: "ignore",
       stdout: "pipe",
@@ -244,6 +249,18 @@ describe("announce-merge-ready.ts and the reviewers that skip drafts", () => {
     );
     expectSpawnExit(r, 0);
     expect(r.stdout).toContain(OPENER);
+  });
+
+  it("resolves its own policy rather than another pull request's inherited snapshot", async () => {
+    const r = await dryRun(
+      {
+        ...converged,
+        checkRuns: [ownRun, rabbit("2026-11-11T09:25:00Z", "Review completed")],
+      },
+      board(converged.head),
+      { timeline: READY, env: SKIPPERS, driverEnv: { DRIVE_PR_TARGET: "1000" } },
+    );
+    expect(r.stderr).toContain("autonomy policy:");
   });
 
   it("refuses a fresh run that skipped the head instead of reviewing it", async () => {
