@@ -141,6 +141,19 @@ async function blockers(
   return open;
 }
 
+/** The identity's epics sitting in the tracker's `blocked` state, whose children may still be ready. */
+async function blockedEpicsOf(
+  tracker: Tracker,
+  identity: string,
+  options: ServedOptions,
+): Promise<PoolIssue[]> {
+  if (tracker.stateName("blocked") === null) return [];
+  const blocked = await tracker.assignedIssues(identity, ["blocked"]);
+  return blocked.filter(
+    (i) => i.labels.includes(options.epic) && i.hasOpenChildren,
+  );
+}
+
 /** Read every served identity for this adapter; an unreadable identity starts nothing. */
 export async function readServedPickups(
   tracker: Tracker,
@@ -178,12 +191,7 @@ export async function readServedPickups(
       // Claims are monitored either way; an invalid scope only starts nothing.
       if (refused) continue;
       // A blocked epic is not a pickup, but its ready children still are.
-      const blockedEpics =
-        tracker.stateName("blocked") === null
-          ? []
-          : (await tracker.assignedIssues(identity, ["blocked"])).filter(
-              (i) => i.labels.includes(options.epic) && i.hasOpenChildren,
-            );
+      const blockedEpics = await blockedEpicsOf(tracker, identity, options);
       const roots = [
         ...(await assignments(tracker, identity, options, cache)),
         ...progress.filter(
