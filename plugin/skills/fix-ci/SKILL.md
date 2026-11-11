@@ -234,7 +234,7 @@ bun "${CLAUDE_SKILL_DIR}/scripts/parse-ci-log.ts" <run-id-or-options>
 Read the JSON. If `errors_found` is 0:
 
 - `"error": "no_failed_runs"`: report that no failed run was found.
-- The run failed but no error was parsed: fetch the raw log with
+- `run_id` is nonempty and no error was parsed from that run: fetch its raw log with
   `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh run view <RUN_ID> --log-failed` and investigate.
 
 Whatever `errors_found` says, check every entry of `statuses`
@@ -251,7 +251,8 @@ another status):
   when it is not enough.
 
 `infrastructure.infrastructure` is true only when no commit status failed;
-with one failing, repair the code.
+with one failing, inspect its log to determine whether the cause is in the code
+or the infrastructure.
 
 > **Cancelled, not broken?** Check the run's conclusion and its jobs'
 > annotations before analyzing code. A job's ID is also the ID of its check

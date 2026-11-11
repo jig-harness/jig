@@ -733,6 +733,32 @@ describe("a pull request whose CI reports as a commit status", () => {
     ]);
   });
 
+  it("keeps the verdict at not-infrastructure when an infrastructure-only run fails beside a status", async () => {
+    const infraLog = readFileSync(
+      join(
+        import.meta.dir,
+        "../../../shared/__tests__/fixtures/ci-infra/tool-download-504.log",
+      ),
+      "utf8",
+    );
+    const { runner } = fakeRunner({
+      "gh pr view 12 --json headRefName,headRefOid": prView("feature/pay"),
+      "gh api --paginate --slurp repos/{owner}/{repo}/commits/c0ffee/status":
+        statusPages([red]),
+      "gh run list --branch feature/pay": ok('[{"databaseId":77}]'),
+      "gh run view 77 --log-failed": ok(infraLog),
+    });
+    const { logs } = logCommand({
+      [JENKINS]: { kind: "log", text: "FAIL src/b.test.ts\n" },
+    });
+    const r = await capture(["--pr", "12"], runner, {}, logs);
+    const out = JSON.parse(r.out) as {
+      infrastructure: { infrastructure: boolean; jobs: unknown[] };
+    };
+    expect(out.infrastructure.infrastructure).toBe(false);
+    expect(out.infrastructure.jobs.length).toBeGreaterThan(0);
+  });
+
   it("exits 1 when ci.log_command fails", async () => {
     const { runner } = statusOnly([red]);
     const { logs } = logCommand({
