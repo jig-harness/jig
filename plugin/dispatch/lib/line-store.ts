@@ -110,7 +110,7 @@ const DECISION_FIELDS: Fields = {
       at: isString,
       url: isString,
       digest: (v) => v === undefined || isString(v),
-      stale: (v) => v === undefined || v === true,
+      stale: (v) => v === undefined || hasFields(v, { digest: isString }),
       choice: (v) =>
         v === undefined ||
         hasFields(v, {

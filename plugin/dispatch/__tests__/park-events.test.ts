@@ -16,6 +16,7 @@ import {
   type ParkMemory,
   type ParkRepo,
   parkOutcomes,
+  withUnreadRepos,
 } from "../lib/park-events.ts";
 import type { DrivenPr } from "../lib/types.ts";
 import {
@@ -313,4 +314,37 @@ describe("the outcome log over real ticks", () => {
     expect(parkRows(w)).toHaveLength(3);
     expect(storedLine(w).ingested).toHaveLength(2);
   }, 120_000);
+});
+
+describe("parks of repositories the tick's part does not carry", () => {
+  const none = { parks: [], ingested: [], rows: [] };
+  const other = { ...linePark("B"), repo: "o/other" };
+  const memory: ParkMemory = {
+    parks: [linePark("A"), other],
+    ingested: [`${SLUG}#7 old`, "o/other#9 old"],
+  };
+
+  it("keeps a listed repository the tick did not read, and drops one no longer listed", () => {
+    const got = withUnreadRepos(
+      none,
+      new Set([SLUG]),
+      new Set([SLUG, "o/other"]),
+      memory,
+    );
+    expect(got.parks.map((p) => p.key)).toEqual(["B"]);
+    expect(got.ingested).toEqual(["o/other#9 old"]);
+    const dropped = withUnreadRepos(
+      none,
+      new Set([SLUG]),
+      new Set([SLUG]),
+      memory,
+    );
+    expect(dropped.parks).toEqual([]);
+    expect(dropped.ingested).toEqual([]);
+  });
+
+  it("keeps the parks of a repository whose newer part the tick left in place", () => {
+    const got = withUnreadRepos(none, new Set(), new Set([SLUG]), memory);
+    expect(got.parks.map((p) => p.key)).toEqual(["A"]);
+  });
 });

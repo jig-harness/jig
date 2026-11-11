@@ -36,9 +36,9 @@ import type { SessionsReport } from "./runtime/port.ts";
 import { inTransaction, stateDb } from "./state.ts";
 import { insertRow } from "./log.ts";
 import {
-  type ParkMemory,
   type ParkOutcomes,
   parkOutcomes,
+  withUnreadRepos,
   type ParkRepo,
 } from "./park-events.ts";
 import { failureText } from "./text.ts";
@@ -154,35 +154,6 @@ function writeWithParks(
       receipt,
     );
   });
-}
-
-/**
- * The park outcomes with what the line before held for repositories this
- * tick could not identify: their parks and ingested receipts carry forward
- * as unread, so a gap in identifying one never reads as its parks leaving.
- */
-function withUnidentified(
-  parked: ParkOutcomes,
-  receipt: TickReceipt,
-  before: ParkMemory,
-): ParkOutcomes {
-  if (!receipt.repos.some((r) => r.slug === null)) return parked;
-  const known = new Set(
-    receipt.repos.flatMap((r) => (r.slug === null ? [] : [r.slug])),
-  );
-  const held = new Set(parked.parks.map((p) => `${p.repo}#${p.pr} ${p.key}`));
-  const kept = (before.parks ?? []).filter(
-    (p) => !known.has(p.repo) && !held.has(`${p.repo}#${p.pr} ${p.key}`),
-  );
-  const seen = new Set(parked.ingested);
-  const ingested = (before.ingested ?? []).filter(
-    (i) => !seen.has(i) && !known.has(i.split("#")[0] ?? ""),
-  );
-  return {
-    ...parked,
-    parks: [...parked.parks, ...kept],
-    ingested: [...parked.ingested, ...ingested],
-  };
 }
 
 /** Each repository the tick read, as the park outcomes compare it: its owner flag, its open pull requests and its drives. */
@@ -386,13 +357,25 @@ function writeKept(
               receiptText === null ? "fresh" : "kept",
             );
       const ticks = withTick(before?.ticks, tickHealthOf(receipt, whole));
-      const parked = withUnidentified(
+      const slugsOf = (current: boolean): Set<string> =>
+        new Set(
+          line.repos.flatMap((r) =>
+            r.slug === null || (current && r.runId !== receipt.runId)
+              ? []
+              : [r.slug],
+          ),
+        );
+      const accepted = slugsOf(true);
+      const parked = withUnreadRepos(
         parkOutcomes(
-          parkRepos(receipt, machine, tick.inputs),
+          parkRepos(receipt, machine, tick.inputs).filter((r) =>
+            accepted.has(r.slug),
+          ),
           before ?? {},
           receipt.finishedAt,
         ),
-        receipt,
+        accepted,
+        slugsOf(false),
         before ?? {},
       );
       writeWithParks(

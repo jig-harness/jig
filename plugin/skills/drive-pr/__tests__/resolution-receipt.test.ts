@@ -160,9 +160,14 @@ describe("unpark --stdin leaves a resolution receipt", () => {
   it("refuses verdicts that do not read, unparking nothing", async () => {
     expect(parseConsumed("not json")).toBeString();
     expect(parseConsumed(JSON.stringify([{ key: "a" }]))).toBeString();
-    expect(parseConsumed(JSON.stringify([{ key: "a", answers: [] }]))).toEqual([
-      { key: "a", answers: [] },
-    ]);
+    expect(
+      parseConsumed(JSON.stringify([{ key: "a", answers: [] }])),
+    ).toBeString();
+    expect(
+      parseConsumed(
+        JSON.stringify([{ key: "a", provisional: true, answers: [] }]),
+      ),
+    ).toEqual([{ key: "a", provisional: true, answers: [] }]);
   });
 });
 

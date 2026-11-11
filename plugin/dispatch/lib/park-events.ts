@@ -9,7 +9,7 @@
  * | --- | --- |
  * | a receipt whose identity the line has not ingested, whether or not the line held its park | `park-answered`, or `park-provisional` for one handed on to be decided provisionally |
  * | a park the line held that is gone, with no receipt for it | `park-removed` |
- * | a park the line held on a pull request no longer open | `park-removed` |
+ * | a park the line held on a pull request no longer open | none: it is dropped without a row |
  *
  * So a park raised and answered between two ticks is counted from its
  * receipt, and a park withdrawn or framed again is never counted as
@@ -292,5 +292,38 @@ export function parkOutcomes(
     parks: each.flatMap((o) => o.parks),
     ingested: each.flatMap((o) => o.ingested),
     rows: each.flatMap((o) => o.rows),
+  };
+}
+
+/**
+ * The park outcomes with what the line before held for the listed
+ * repositories this tick's part of the line does not carry: those it did not
+ * read (a wake-up for a few, a busy repository), could not identify, or read
+ * after a newer tick had (`accepted` names the slugs whose part this tick
+ * wrote). Their parks and ingested receipts carry forward as unread, so
+ * neither a gap nor an older read ever counts as parks leaving.
+ */
+export function withUnreadRepos(
+  parked: ParkOutcomes,
+  accepted: ReadonlySet<string>,
+  listed: ReadonlySet<string>,
+  before: ParkMemory,
+): ParkOutcomes {
+  const held = new Set(parked.parks.map((p) => `${p.repo}#${p.pr} ${p.key}`));
+  const kept = (before.parks ?? []).filter(
+    (p) =>
+      listed.has(p.repo) &&
+      !accepted.has(p.repo) &&
+      !held.has(`${p.repo}#${p.pr} ${p.key}`),
+  );
+  const seen = new Set(parked.ingested);
+  const ingested = (before.ingested ?? []).filter((i) => {
+    const repo = i.split("#")[0] ?? "";
+    return !seen.has(i) && listed.has(repo) && !accepted.has(repo);
+  });
+  return {
+    ...parked,
+    parks: [...parked.parks, ...kept],
+    ingested: [...parked.ingested, ...ingested],
   };
 }

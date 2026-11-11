@@ -139,11 +139,13 @@ export function parseConsumed(raw: string): ConsumedVerdict[] | string {
         isText(v.key) &&
         (v.provisional === undefined || v.provisional === true) &&
         Array.isArray(v.answers) &&
+        // Only a provisional verdict consumed no answer; an answered one names at least one.
+        (v.provisional === true || v.answers.length > 0) &&
         v.answers.every(isConsumedAnswer),
     );
   return ok
     ? (value as ConsumedVerdict[])
-    : "unpark --stdin: each verdict needs a key and its answers";
+    : "unpark --stdin: each verdict needs a key and its answers (an empty list only with provisional: true)";
 }
 
 /** An answer without its body: the receipt names the comment, the pass reads the words. */
