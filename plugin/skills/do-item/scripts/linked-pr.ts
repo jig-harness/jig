@@ -96,7 +96,7 @@ function forgeReads(
   return {
     async comments(key) {
       try {
-        return (await tracker.listComments(key)).map((c) => c.body);
+        return (await tracker.issueComments(key)).comments;
       } catch (err) {
         console.error(
           `linked-pr.ts: the comments of ${key} could not be read: ${err instanceof Error ? err.message : String(err)}`,

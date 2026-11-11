@@ -25,6 +25,8 @@
  * that fails makes the whole answer `unreadable`.
  */
 
+import { markdownLines } from "../../../../shared/spec/markdown.ts";
+
 /** What the forge says about an item's linked pull requests. */
 export type LinkedPrState = "merged" | "open" | "none" | "unreadable";
 
@@ -51,10 +53,18 @@ export interface LinkedPr {
   reason: string;
 }
 
+export interface LinkedPrComment {
+  body: string;
+  /** Only a trusted author may create an explicit association marker. */
+  trusted: boolean;
+}
+
 /** The forge reads the lookup makes; each answers `null` when it cannot read. */
 export interface LinkedPrReads {
   /** The bodies of the item's comments. */
-  comments(key: string): Promise<string[] | null>;
+  comments(
+    key: string,
+  ): Promise<ReadonlyArray<LinkedPrComment | string> | null>;
   /** The pull requests whose body mentions `term`, each with its body. */
   search(term: string): Promise<Array<PullFact & { body: string }> | null>;
   /** One pull request by number, with its body. */
@@ -80,24 +90,29 @@ export function hasPullAssociation(
   repository: string,
   number: number,
 ): boolean {
-  return text.includes(
-    `<!-- do-item-pr: https://github.com/${repository}/pull/${number} -->`,
-  );
+  return new RegExp(
+    `^<!-- do-item-pr: https://github\\.com/${escapeRe(repository)}/pull/${number} -->$`,
+    "im",
+  ).test(text);
 }
 
 /** The pull requests an item's comments link, with their explicit association evidence. */
 function commentPulls(
-  comments: readonly string[],
+  comments: ReadonlyArray<LinkedPrComment | string>,
   repository: string,
 ): ReadonlyMap<number, boolean> {
   const pulls = new Map<number, boolean>();
-  for (const comment of comments)
-    for (const number of pullNumbersIn(comment, repository))
+  for (const input of comments) {
+    const comment =
+      typeof input === "string" ? { body: input, trusted: false } : input;
+    for (const number of pullNumbersIn(comment.body, repository))
       pulls.set(
         number,
         (pulls.get(number) ?? false) ||
-          hasPullAssociation(comment, repository, number),
+          (comment.trusted &&
+            hasPullAssociation(comment.body, repository, number)),
       );
+  }
   return pulls;
 }
 
@@ -116,9 +131,11 @@ export function linksIssue(
     `(?:^|\\|)[ \\t]*(?:closes|refs)[ \\t]+(${keySource})`,
     "gim",
   );
-  return [...body.matchAll(re)].some(
-    (m) => m[1]?.toUpperCase() === key.toUpperCase(),
-  );
+  return [...markdownLines(body)].some(({ line, kind, quoted }) => {
+    if (kind !== "text" || quoted) return false;
+    re.lastIndex = 0;
+    return re.exec(line)?.[1]?.toUpperCase() === key.toUpperCase();
+  });
 }
 
 /**

@@ -63,6 +63,16 @@ describe("hasPullAssociation", () => {
       ),
     ).toBe(false);
   });
+
+  it("accepts repository casing GitHub treats as equivalent", () => {
+    expect(
+      hasPullAssociation(
+        "<!-- do-item-pr: https://github.com/EXAMPLE-ORG/EXAMPLE-REPO/pull/12 -->",
+        REPO,
+        12,
+      ),
+    ).toBe(true);
+  });
 });
 
 describe("linksIssue", () => {
@@ -90,6 +100,13 @@ describe("linksIssue", () => {
   it("reads a GitHub number key", () => {
     expect(linksIssue("Closes #770", "#770", numbers)).toBe(true);
     expect(linksIssue("Closes #7701", "#770", numbers)).toBe(false);
+  });
+
+  it("does not read issue links from quoted or fenced examples", () => {
+    expect(linksIssue("```text\nCloses ENG-123\n```", "ENG-123", team)).toBe(
+      false,
+    );
+    expect(linksIssue("> Closes ENG-123", "ENG-123", team)).toBe(false);
   });
 });
 
@@ -200,7 +217,10 @@ describe("readLinkedPr", () => {
       readLinkedPr("ENG-1", {
         reads: reads({
           comments: async () => [
-            `<!-- do-item-pr: https://github.com/${REPO}/pull/9 -->\nhttps://github.com/${REPO}/pull/9`,
+            {
+              body: `<!-- do-item-pr: https://github.com/${REPO}/pull/9 -->\nhttps://github.com/${REPO}/pull/9`,
+              trusted: true,
+            },
           ],
           view: async () => ({ ...pull(9, "MERGED"), body }),
         }),
@@ -222,6 +242,25 @@ describe("readLinkedPr", () => {
           ...pull(9, "MERGED"),
           body: "Remaining validation is deferred to ENG-1",
         }),
+      }),
+      repository: REPO,
+      keySource: "ENG-\\d+(?!\\w)",
+      trunk: TRUNK,
+      bodyLinkRequired: false,
+    });
+    expect(r.pullRequest).toBe("none");
+  });
+
+  it("requires a trusted author for an explicit association marker", async () => {
+    const r = await readLinkedPr("ENG-1", {
+      reads: reads({
+        comments: async () => [
+          {
+            body: `<!-- do-item-pr: https://github.com/${REPO}/pull/9 -->`,
+            trusted: false,
+          },
+        ],
+        view: async () => ({ ...pull(9, "MERGED"), body: "Unrelated" }),
       }),
       repository: REPO,
       keySource: "ENG-\\d+(?!\\w)",
