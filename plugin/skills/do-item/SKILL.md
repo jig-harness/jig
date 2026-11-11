@@ -941,7 +941,8 @@ implementation. Skip this check for issues about the repository's own code.
    when `drive.change_areas_catalog` is declared, and the repository's gate
    command otherwise; do not substitute a fixed command list. `<base>` below
    is the branch the PR will target, as `<remote>/<base>`: the integration
-   branch, or the predecessor's branch for a stacked PR (the `base` that
+   branch, the release line a base rule names, or the predecessor's branch
+   for a stacked PR (the `base` that
    `bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" open` prints), and `<remote>`
    the git remote it prints (`remote:`: `repository.remote`, else `origin`).
 
