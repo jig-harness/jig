@@ -4,6 +4,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 
 import { resolveActor } from "../scripts/lib/state/actor";
 
@@ -102,20 +103,32 @@ describe("drive-state.ts durability", () => {
       expect(ok.exitCode).toBe(0);
     });
 
-    it("reset clears the ready-mark lease, which no claim sweep covers", async () => {
-      // The lease is a claim of its own kind (`ready`), deliberately outside
-      // the held-batch sweep (`claimRefsFor` lists held claims only), so
-      // reset has to clear it by name. An operator resetting to unwedge a
-      // drive would otherwise get a fresh state plus an orphaned lease that
-      // keeps reporting contention for a full staleness window, with nothing
-      // left to explain why.
+    it("reset preserves a live Ready-mark lease, including this session's", async () => {
+      const d = stateDirFor("reset-live-ready-lease");
+      await state(d, ["phase", "999", "--set", "probe"]);
+      putClaim(d, "999", "ready", "", "in-flight-token");
+      const r = await state(d, ["reset", "999"]);
+      expectSpawnExit(r, 9);
+      expect(r.stderr).toContain("Ready-mark lease");
+      expect(r.stderr).toContain("release-ready-mark");
+      expect(claimRow(d, "999", "ready")?.token).toBe("in-flight-token");
+      expect((await state(d, ["get", "999"])).stdout).toContain("probe");
+    });
+
+    it("reset clears a stale Ready-mark lease", async () => {
       const d = stateDirFor("reset-ready-lease");
       await state(d, ["phase", "999", "--set", "probe"]);
-      putClaim(d, "999", "ready", "", "an-abandoned-token");
+      putClaim(
+        d,
+        "999",
+        "ready",
+        "",
+        "abandoned-token",
+        new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+      );
       const r = await state(d, ["reset", "999"]);
-      expect(r.exitCode).toBe(0);
+      expectSpawnExit(r, 0);
       expect(claimRow(d, "999", "ready")).toBeNull();
-      // And the very next claim succeeds rather than reporting contention.
       const claim = await state(d, ["claim-ready-mark", "999"]);
       expect(claim.stdout.trim().startsWith("claimed ")).toBe(true);
     });

@@ -552,15 +552,15 @@ async function main(): Promise<number> {
 
   const repoRes = await cachedRepoView([
     "--json",
-    "owner,name",
+    "owner,name,url",
     "-q",
-    '.owner.login + " " + .name',
+    '.owner.login + " " + .name + " " + .url',
   ]);
   if (repoRes.code !== 0) {
     if (repoRes.stderr) process.stderr.write(repoRes.stderr);
     fail(2, "could not resolve the repository");
   }
-  const [owner, repo] = repoRes.stdout.trim().split(" ");
+  const [owner, repo, repoUrl] = repoRes.stdout.trim().split(" ");
   // Exit 0 with empty or single-token stdout leaves these undefined, and every
   // later call then asks for `repos/undefined/undefined/...`, 404s, and reports
   // INDETERMINATE three times over — naming the check-run read as the fault
@@ -825,6 +825,7 @@ async function main(): Promise<number> {
       `${owner}/${repo}`,
       identityEnv,
       remote.remote,
+      repoUrl,
     );
     if (!remoteCheck.ok) return driftMemo;
     // The remote being the right REPOSITORY does not prove this WORKTREE is
@@ -865,14 +866,15 @@ async function main(): Promise<number> {
 
   async function emit(code: number): Promise<void> {
     const drift = await baseDrift();
+    const reflectionDue = await reflectDue();
     if (json) {
-      // Computed only here, like `reflectDue` beside it — never used outside
+      // Computed only here — never used outside
       // the JSON payload, so hoisting it above this branch (the way `drift`
       // has to be, since the plain-text path's stderr narration reads it
       // below) would cost the non-`--json` caller a `drive-state.ts get`
       // subprocess call for a field it never reports.
       const escalation = await structuralEscalationStatus();
-      // ADVISORY, like `reflectDue`: read from the snapshot the dev-dashboard
+      // ADVISORY: read from the snapshot the dev-dashboard
       // collector already published, never sampled here.
       const fleetHealth = readFleetHealthAdvisory(
         Number.parseInt(pr, 10),
@@ -884,7 +886,7 @@ async function main(): Promise<number> {
           exit: code,
           pr: Number.parseInt(pr, 10),
           reason: report.reason,
-          reflectDue: await reflectDue(),
+          reflectDue: reflectionDue,
           structuralEscalationDue: escalation.due,
           // The claim the last acknowledgment recorded via
           // `set-escalated --invariant`, echoed back ONLY while
@@ -970,7 +972,9 @@ async function main(): Promise<number> {
     } else {
       process.stdout.write(`${report.state}\n`);
     }
-    console.error(`${report.state}: ${report.reason}`);
+    console.error(
+      `${reflectionDue ? "[REFLECT DUE] " : ""}${report.state}: ${report.reason}`,
+    );
     if (!json) {
       const fh = fleetHealthLine(
         Number.parseInt(pr, 10),

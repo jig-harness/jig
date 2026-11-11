@@ -17,8 +17,8 @@ ceremony:
     rounds_beyond_free: 1
     followups_minted: 1
     sdlc_issues_opened: 1
+    drive_rearms: 1
   unmeasured:
-    drive_rearms: no durable record — drive state is per-clone
     handoffs: no durable record — handoff files are per-worktree (.context/)
 signals:
   stuck_epic:

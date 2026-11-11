@@ -603,7 +603,9 @@ mechanical state rather than on anyone's judgement:
   Answer each parked item on its thread, or in a
   pull-request comment with a line `answer <key>: …`, as an owner, member or
   collaborator; `jig send drive@<owner>/<name>#<PR> answer <key> "<text>"`
-  writes that comment after checking the key is parked and unanswered
+  writes that comment after checking the key is parked, and
+  `answer <key> --approve` or `--choose "<option>"` writes a structured
+  answer bound to the digest you read
   ([the plugin's README](../../README.md#telling-a-station-what-to-do)).
   Use `approve` to choose the recommendation or `choose <option name>` to
   choose an option by name. On a thread, either form can be the whole reply.
@@ -974,6 +976,13 @@ before 2.45 leaves ancestry unknown rather than risk a fetch. The fleet-health f
 whole-cohort bounds must agree too. Missing heads, rewritten branches and
 resolutions in other clones limit coverage. A capped forge cohort has no
 verdict. The report includes coverage and bounds in JSON and terminal output.
+
+When reflection is due, the `drive-status.ts` summary starts with
+`[REFLECT DUE]`; reflect before triaging the round.
+
+Fleet health counts re-arms recorded in the pull request’s drive ledger as
+ceremony, weighted by `ceremony.weights.drive_rearms` (default `1`). Handoffs
+remain unmeasured because their narratives carry no dated history.
 
 ### The decision a park carries
 
