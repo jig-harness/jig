@@ -53,6 +53,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
+import { decodeHTMLAttribute } from "entities";
 import { cli } from "../../lib/cli.ts";
 import {
   decodeJson,
@@ -295,26 +296,6 @@ const RAW_TEXT = new Set([
   "noframes",
 ]);
 
-const NAMED_REFERENCES: Record<string, string> = {
-  amp: "&",
-  lt: "<",
-  gt: ">",
-  quot: '"',
-  apos: "'",
-};
-
-/** An attribute value with its character references decoded, as `getAttribute` returns it. */
-function decodeReferences(value: string): string {
-  return value.replace(
-    /&(?:#[xX]([0-9a-fA-F]+)|#([0-9]+)|([A-Za-z]+));?/g,
-    (whole, hex?: string, dec?: string, named?: string) => {
-      if (named !== undefined) return NAMED_REFERENCES[named] ?? whole;
-      const code = hex !== undefined ? parseInt(hex, 16) : Number(dec);
-      return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : whole;
-    },
-  );
-}
-
 /**
  * The attributes of one tag's attribute text, as HTML parses them: names
  * compare without case, a value is quoted or bare and its character
@@ -327,7 +308,7 @@ function attributesOf(text: string): Map<string, string> {
   for (const [, name = "", quoted, single, bare] of text.matchAll(attribute)) {
     const key = name.toLowerCase();
     if (!attributes.has(key))
-      attributes.set(key, decodeReferences(quoted ?? single ?? bare ?? ""));
+      attributes.set(key, decodeHTMLAttribute(quoted ?? single ?? bare ?? ""));
   }
   return attributes;
 }
@@ -342,7 +323,7 @@ function attributesOf(text: string): Map<string, string> {
 export function importsOf(html: string): string[] {
   const names: string[] = [];
   const token =
-    /<!--[\s\S]*?(?:-->|$)|<([A-Za-z][^\s/>]*)((?:"[^"]*"|'[^']*'|[^'">])*)(?:>|$)|<[!?/][^>]*(?:>|$)/g;
+    /<!--(?:-?>|[\s\S]*?(?:--!?>|$))|<([A-Za-z][^\s/>]*)((?:"[^"]*"|'[^']*'|[^'">])*)(?:>|$)|<[!?/][^>]*(?:>|$)/g;
   for (let at = token.exec(html); at !== null; at = token.exec(html)) {
     const tag = at[1]?.toLowerCase();
     if (tag === undefined) continue;

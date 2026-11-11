@@ -630,6 +630,22 @@ describe("importsOf", () => {
   it("decodes character references in attribute values", () => {
     expect(importsOf('<dc-import name="Id&#101;nt">')).toEqual(["Ident"]);
     expect(importsOf('<dc-import name="Id&#x65;nt&amp;">')).toEqual(["Ident&"]);
+    expect(importsOf('<dc-import name="Ident&lowbar;Mark">')).toEqual([
+      "Ident_Mark",
+    ]);
+  });
+
+  it("ends a comment the ways HTML does: `-->`, `--!>`, and the abrupt `<!-->` and `<!--->`", () => {
+    for (const comment of [
+      "<!-- note -->",
+      "<!-- note --!>",
+      "<!-->",
+      "<!--->",
+    ])
+      expect(importsOf(`${comment}<dc-import name="Ident">`)).toEqual([
+        "Ident",
+      ]);
+    expect(importsOf('<!-- <dc-import name="Ghost"> --!>')).toEqual([]);
   });
 
   it("reads only elements: not comments, raw text or other tag names, and a bogus comment ends at its first `>`", () => {
