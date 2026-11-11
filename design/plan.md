@@ -117,8 +117,12 @@ stage's answer back to the next tick, and a merged pull request's
 follow-up is guarded by a marker comment on it. A stop only a person can
 settle (a park, a drive stopped on a failure, a stalled pickup) is notified
 once. It never merges, answers a park, re-arms a drive a person stopped,
-takes over a driver another machine started or passes a flag reserved for
-a person, and writes a receipt per tick. Machine values in `~/.jig/dispatch.yaml`, a repository's
+stops a driver that is making progress or passes a flag reserved for a
+person, and writes a receipt per tick. It takes over only a silent driver:
+one a launch started, on this machine or another host; one no launch
+started that ran on this host and whose run the host's drive database shows
+ended; or one no launch started whose holder the clone's drive doctor reads
+dead or wedged. Machine values in `~/.jig/dispatch.yaml`, a repository's
 in a `dispatch` section of `.config/jig.yaml`. Built in the design's order:
 the report, then re-arms within account caps with the timer, then pickups,
 then follow-ups and notifications, then control: a permanent outcome
