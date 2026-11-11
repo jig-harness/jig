@@ -138,42 +138,59 @@ function commentState(
   }
 }
 
+/** The blockquote markers opening a line: how many there are and how long the prefix is. */
+function quotePrefix(line: string): { depth: number; length: number } {
+  let depth = 0;
+  let at = 0;
+  for (;;) {
+    let next = at;
+    while (next < at + 3 && line[next] === " ") next++;
+    if (line[next] !== ">") break;
+    next++;
+    if (line[next] === " " || line[next] === "\t") next++;
+    at = next;
+    depth++;
+  }
+  return { depth, length: at };
+}
+
+type Fence = { marker: string; quoteDepth: number };
+
+/** Whether a line closes the open fence: the same character, at least as long, and nothing after it. */
+function closesFence(text: string, fence: Fence): boolean {
+  const raw = /^( {0,3})(`{3,}|~{3,})(.*)$/.exec(text);
+  return (
+    raw !== null &&
+    raw[2]?.[0] === fence.marker[0] &&
+    (raw[2]?.length ?? 0) >= fence.marker.length &&
+    (raw[3] ?? "").trim() === ""
+  );
+}
+
 /** Remove blockquote containers before the shared reader sees their Markdown, without changing a quote that is literal text inside a top-level fence or comment. */
 function withoutBlockquoteContainers(body: string): string {
-  let fence: { marker: string; quoteDepth: number } | null = null;
+  let fence = null as Fence | null;
   const state = { comment: false, span: null as string | null };
   const visible: string[] = [];
   const lines = body.split(/\r?\n/);
   for (const [lineIndex, line] of lines.entries()) {
-    const quotePrefix = /^(?: {0,3}>[ \t]?)+/.exec(line)?.[0] ?? "";
-    const quoteDepth = (quotePrefix.match(/>/g) ?? []).length;
-    if (fence !== null && quoteDepth < fence.quoteDepth) {
+    const prefix = quotePrefix(line);
+    if (fence !== null && prefix.depth < fence.quoteDepth) {
       visible.push(fence.marker);
       fence = null;
     }
-    const text =
-      (fence === null && !state.comment) || fence?.quoteDepth !== 0
-        ? line.replace(/^(?: {0,3}>[ \t]?)+/, "")
-        : line;
-    const raw = /^( {0,3})(`{3,}|~{3,})(.*)$/.exec(text);
+    const literal: boolean = fence?.quoteDepth === 0;
+    const text: string = literal ? line : line.slice(prefix.length);
     if (fence !== null) {
-      if (
-        raw !== null &&
-        raw[2]?.[0] === fence.marker[0] &&
-        (raw[2]?.length ?? 0) >= fence.marker.length &&
-        (raw[3] ?? "").trim() === ""
-      )
-        fence = null;
-      visible.push(text);
-      continue;
-    }
-    if (!state.comment && raw !== null) {
-      fence = { marker: raw[2] ?? "", quoteDepth };
+      if (closesFence(text, fence)) fence = null;
       visible.push(text);
       continue;
     }
     visible.push(text);
-    commentState(lines, lineIndex, state);
+    const open = state.comment ? null : /^( {0,3})(`{3,}|~{3,})/.exec(text);
+    if (open !== null)
+      fence = { marker: open[2] ?? "", quoteDepth: prefix.depth };
+    else commentState(lines, lineIndex, state);
   }
   return visible.join("\n");
 }
