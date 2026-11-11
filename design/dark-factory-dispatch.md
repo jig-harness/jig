@@ -618,10 +618,12 @@ its place, on the served item's authority: the pickup's claim carries the
 item it blocks (`claim --blocking`), re-reads that item's assignment by a
 repository writer (or its epic ancestry) and the live `blocked_by` chain at
 the write, refuses a blocker that has acquired an assignee, and assigns it to
-the served person only where the tracker can then verify from history that it
-replaced nobody. When that check finds a replaced concurrent assignee, it
-conditionally makes a best-effort restoration and refuses the pickup (GitHub
-Issues, Linear and Jira). The walk follows the blockers of a pulled blocker to three
+the served person only where the tracker can make the required check. GitHub
+Issues adds an assignee and checks that the resulting list contains only the
+served person, so a concurrent assignee makes it refuse without replacing or
+restoring anyone. Linear and Jira hold one assignee, so they verify the write
+from history; when that check finds a replaced concurrent assignee, they
+conditionally make a best-effort restoration and refuse the pickup. The walk follows the blockers of a pulled blocker to three
 links from the assigned item and ends at a cycle. A blocker that is assigned
 to someone else, in progress, an epic, held, another repository's or unreadable
 is never started on the strength of the relation, since anyone with write

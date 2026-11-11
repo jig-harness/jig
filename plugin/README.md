@@ -418,11 +418,13 @@ picked up first (to three links from the assigned item), claimed with
 `tracker.ts claim --for <person> --blocking <item>` and assigned to the person.
 A blocker assigned to someone else, in progress, held, an epic or another
 repository's is never taken: the item stays waiting and names it with its
-reason. A tracker assigns a blocker, then verifies from its history that the
-assignment came from nobody; if that check shows it replaced a concurrent
-assignee, it conditionally makes a best-effort restoration and refuses the
-pickup. GitHub Issues, Linear and Jira provide that operation. A
-tracker without it leaves the blocker for a person to assign. An assigned epic without an execution plan works one child at a time,
+reason. GitHub Issues adds the person rather than replacing an assignee, then
+checks that the resulting assignee list contains only that person; a concurrent
+assignee makes the pickup refuse without restoring anyone. Linear and Jira
+have one assignee, so they assign first and verify the assignment from history;
+when that check finds a concurrent assignee was replaced, they conditionally
+make a best-effort restoration and refuse the pickup. A tracker without either
+operation leaves the blocker for a person to assign. An assigned epic without an execution plan works one child at a time,
 none while a child of it is in progress; an epic none of whose open children
 can start reports one reason.
 
