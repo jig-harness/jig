@@ -16,6 +16,8 @@
  *     bun tracker.ts search [--include-closed] [--] <text>
  *     bun tracker.ts relations <issue-key>
  *     bun tracker.ts relate <issue-key> <blocks|related|duplicate> <target-key>
+ *     bun tracker.ts migrate-relations [--dry-run]
+ *     bun tracker.ts sync-plan-blocks <epic-key> [--dry-run]
  *     bun tracker.ts available-labels             # every label issues can carry
  *     bun tracker.ts facet-stores                 # where type, priority and size are kept
  *
@@ -53,6 +55,16 @@
  * `blocks`, `blocked_by`, `related`, `duplicate` (it is a duplicate of the
  * other) and `duplicated_by` (the other is a duplicate of it).
  *
+ * `migrate-relations` converts the relations an adapter once kept as text
+ * into the tracker's own (GitHub: the `related` comments become related
+ * links and are marked superseded), and reports what it converted; with
+ * `--dry-run` it writes nothing. Run it again after a failure: it only does
+ * what is left.
+ *
+ * `sync-plan-blocks` writes the dependency edges of an epic's execution plan
+ * as `blocks` relations the tracker lacks, so a dependency is stated in both
+ * places; run it after the plan is written.
+ *
  * Output: JSON on stdout. Exit codes: 0 done, 2 usage (input the operation
  * cannot take), 1 the operation failed (the reason on stderr), a label,
  * project or issue that does not resolve to exactly one included; for
@@ -63,6 +75,8 @@ import { readFile } from "node:fs/promises";
 import { claimServedIssue } from "./lib/served-claim.ts";
 import { withClaimLock } from "./lib/claim-lock.ts";
 import { claimIssue } from "./lib/claim.ts";
+import { syncPlanBlocks } from "./lib/plan-blocks.ts";
+import { executionPlanBlock } from "./select_execution_issue.ts";
 import { runEntry } from "./lib/cli.ts";
 import { ownTrackerConfig } from "./lib/tracker/config.ts";
 import { issueKeysOf, ANY_KEY_SOURCE } from "./lib/tracker/keys.ts";
@@ -96,6 +110,8 @@ const USAGE = `usage:
   tracker.ts search [--include-closed] [--] <text>   (-- ends the options)
   tracker.ts relations <issue-key>
   tracker.ts relate <issue-key> <${RELATION_TYPES.join("|")}> <target-key>
+  tracker.ts migrate-relations [--dry-run]
+  tracker.ts sync-plan-blocks <epic-key> [--dry-run]
   tracker.ts available-labels
   tracker.ts facet-stores`;
 
@@ -464,6 +480,38 @@ const OPERATIONS: Record<string, Operation> = {
       );
       return { issue: key, type, target };
     },
+  },
+  "migrate-relations": {
+    arity: 0,
+    takes: "no argument",
+    flags: ["--dry-run"],
+    indent: true,
+    run: async (_args, flags) => {
+      const tracker = openTracker();
+      if (tracker.migrateRelations === undefined)
+        throw new UsageError(
+          `the ${tracker.adapter} adapter keeps every relation in the tracker's own, so there is nothing to migrate`,
+        );
+      return tracker.migrateRelations({ dryRun: flags.has("--dry-run") });
+    },
+    exitOf: (out) => {
+      const report = out as { unresolved?: unknown[]; unmarked?: unknown[] };
+      return (report.unresolved?.length ?? 0) > 0 ||
+        (report.unmarked?.length ?? 0) > 0
+        ? 1
+        : 0;
+    },
+  },
+  "sync-plan-blocks": {
+    arity: 1,
+    takes: "one epic key",
+    flags: ["--dry-run"],
+    indent: true,
+    run: ([epic], flags) =>
+      syncPlanBlocks(openTracker(), epic as string, {
+        block: executionPlanBlock(),
+        dryRun: flags.has("--dry-run"),
+      }),
   },
   "available-labels": {
     arity: 0,

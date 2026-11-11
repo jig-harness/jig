@@ -9,6 +9,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { syncPlanBlocks } from "../scripts/lib/plan-blocks.ts";
 import {
   type ExecutionPlan,
   humanGates,
@@ -183,6 +184,51 @@ describe("shared execution-plan-v1 pickup", () => {
       ).toContain("ENG-3");
     }
   });
+  it("refuses a plan whose dependency edge the tracker's blocks contradict, and names both issues", () => {
+    // The plan puts ENG-1 before ENG-3; the tracker says ENG-1 waits for ENG-3.
+    const reversed = {
+      ...input(fixture("linear-issue")),
+      live: { ...live, "ENG-1": { state: "unstarted", blockedBy: ["ENG-3"] } },
+    };
+    expect(() => selectExecutionIssue(reversed)).toThrow(
+      "ENG-1 is blocked by ENG-3 in the tracker, but the plan puts ENG-1 first",
+    );
+    // A dependency the tracker does not state yet is not a contradiction: the plan's edge holds.
+    expect(
+      selectExecutionIssue({
+        ...input(fixture("linear-issue")),
+        live: { ...live, "ENG-3": { state: "unstarted", blockedBy: [] } },
+      }).eligible,
+    ).not.toContain("ENG-3");
+  });
+  it("ignores a contradicting relation once either issue is finished", () => {
+    for (const done of ["ENG-1", "ENG-3"])
+      expect(() =>
+        selectExecutionIssue({
+          ...input(fixture("linear-issue")),
+          live: {
+            ...live,
+            "ENG-1": { state: "unstarted", blockedBy: ["ENG-3"] },
+            [done]: {
+              state: "completed",
+              blockedBy: done === "ENG-1" ? ["ENG-3"] : [],
+            },
+          },
+        }),
+      ).not.toThrow();
+  });
+  it("refuses a tracker blocker that the plan places in a later band", () => {
+    const noEdges = md({ ...plan, edges: [] });
+    expect(() =>
+      selectExecutionIssue({
+        ...input(noEdges),
+        live: {
+          ...live,
+          "ENG-1": { state: "unstarted", blockedBy: ["ENG-3"] },
+        },
+      }),
+    ).toThrow("contradicts the tracker's blocks");
+  });
   // The two guards below are exercised in isolation: with ENG-1 in both
   // ENG-3's live blockedBy and its incoming done edge, either guard alone
   // excludes ENG-3 and masks a regression in the other.
@@ -307,5 +353,104 @@ describe("shared execution-plan-v1 pickup", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("writing a plan's dependency edges to the tracker", () => {
+  const tracker = (written: string[]) => {
+    const relations: Record<
+      string,
+      Array<{ type: string; issue: string }>
+    > = {};
+    return {
+      getIssue: async () =>
+        ({
+          identifier: "ENG-100",
+          description: fixture("linear-issue"),
+        }) as { identifier: string; description: string },
+      listRelations: async (key: string) => relations[key] ?? [],
+      relate: async (from: string, type: string, to: string) => {
+        written.push(`${from} ${type} ${to}`);
+        relations[from] = [...(relations[from] ?? []), { type, issue: to }];
+      },
+    };
+  };
+  it("writes each dependency edge as blocks once, and no conflict edge", async () => {
+    const written: string[] = [];
+    const t = {
+      ...tracker(written),
+      getIssue: async () => ({
+        identifier: "ENG-100",
+        description: fixture("linear-issue").replace(
+          '"edges": [',
+          '"edges": [\n    {"from": "ENG-2", "to": "ENG-3", "kind": "conflict", "reason": "same file", "completion": "done"},',
+        ),
+      }),
+    } as never;
+    const first = await syncPlanBlocks(t, "ENG-100");
+    expect(first.present).toBe(true);
+    expect(written).toEqual(["ENG-1 blocks ENG-3"]);
+    const again = await syncPlanBlocks(t, "ENG-100");
+    expect(again.written).toEqual([]);
+    expect(again.existing).toEqual([{ from: "ENG-1", to: "ENG-3" }]);
+    expect(written).toHaveLength(1);
+  });
+  it("writes nothing on a dry run", async () => {
+    const written: string[] = [];
+    const report = await syncPlanBlocks(tracker(written) as never, "ENG-100", {
+      dryRun: true,
+    });
+    expect(report.written).toEqual([{ from: "ENG-1", to: "ENG-3" }]);
+    expect(written).toEqual([]);
+  });
+  it("compares the plan's epic with the issue's canonical identifier, not the argument's spelling", async () => {
+    const written: string[] = [];
+    const report = await syncPlanBlocks(tracker(written) as never, "100");
+    expect(report.written).toEqual([{ from: "ENG-1", to: "ENG-3" }]);
+  });
+  it("refuses a description with an Execution Plan heading and no readable block", async () => {
+    const t = {
+      getIssue: async () => ({
+        identifier: "ENG-100",
+        description: "## Execution Plan\n\nno block here\n",
+      }),
+      listRelations: async () => [],
+      relate: async () => undefined,
+    };
+    await expect(syncPlanBlocks(t as never, "ENG-100")).rejects.toThrow(
+      "lacks a",
+    );
+  });
+  it("writes nothing when a later edge contradicts the tracker", async () => {
+    const written: string[] = [];
+    const description = fixture("linear-issue").replace(
+      '"edges": [',
+      '"edges": [\n    {"from": "ENG-2", "to": "ENG-3", "kind": "dependency", "reason": "copy first", "completion": "done"},',
+    );
+    const t = {
+      getIssue: async () => ({ identifier: "ENG-100", description }),
+      listRelations: async (key: string) =>
+        key === "ENG-1" ? [{ type: "blocked_by", issue: "ENG-3" }] : [],
+      relate: async (from: string, type: string, to: string) => {
+        written.push(`${from} ${type} ${to}`);
+      },
+    };
+    await expect(syncPlanBlocks(t as never, "ENG-100")).rejects.toThrow(
+      "ENG-3 blocks ENG-1",
+    );
+    expect(written).toEqual([]);
+  });
+  it("refuses to write a blocks the tracker already has the other way", async () => {
+    const t = {
+      getIssue: async () => ({
+        identifier: "ENG-100",
+        description: fixture("linear-issue"),
+      }),
+      listRelations: async () => [{ type: "blocked_by", issue: "ENG-3" }],
+      relate: async () => undefined,
+    };
+    await expect(syncPlanBlocks(t as never, "ENG-100")).rejects.toThrow(
+      "ENG-3 blocks ENG-1",
+    );
   });
 });
