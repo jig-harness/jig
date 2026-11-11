@@ -13,6 +13,7 @@ import { stateDirIdentityToken } from "../scripts/lib/state/lease";
 import {
   binDir,
   type Fixture,
+  announcePolicyEnv,
   gitCleanEnv,
   SCRIPTS,
   scratchClean,
@@ -106,7 +107,7 @@ async function dryRun(
         DRIVE_PR_STATE_DIR_IDENTITY: stateDirIdentityToken(stateDir),
         DRIVE_PR_MERGE_MARKER_FIXTURE: `<!-- drive-pr-merge-ready: ${f.head} -->`,
         DRIVE_PR_ANNOUNCE_OPENER_FIXTURE: OPENER,
-        ...more.env,
+        ...announcePolicyEnv(scratchClean.dir, more.env),
       },
       stdin: "ignore",
       stdout: "pipe",

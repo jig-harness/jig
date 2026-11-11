@@ -25,7 +25,11 @@ import {
   remoteName,
   type ReviewBot,
 } from "../../../../shared/consumer.ts";
-import { readPolicySnapshot } from "../../../../shared/autonomy.ts";
+import {
+  POLICY_BASE_VARIABLE,
+  POLICY_BOUND_VARIABLE,
+  readSnapshotAt,
+} from "../../../../shared/autonomy.ts";
 import { verifyRemoteIsPrRepo } from "./base-drift.ts";
 import {
   evidenceProblem,
@@ -177,33 +181,63 @@ export function reviewerEvidenceProblem(): string | null {
  * `review.draft_skipping_reviewers`: the GitHub Apps whose reviewers skip
  * draft pull requests and must have run on a head after it was marked Ready
  * before the merge-ready announcement vouches for it; `[]` when not set.
- * In a driver pass the list is the base branch's, never the pull request's
- * own file, so the change being certified cannot empty its own gate; a base
- * whose policy cannot be read throws.
+ * The list is the base branch's, in a driver pass and in the standalone
+ * announcement alike (both name the commit in `$DRIVE_PR_POLICY_BASE`), never
+ * the pull request's own file nor a user, environment or overlay layer, so
+ * the change being certified cannot empty its own gate. A stacked layer's
+ * list adds to the integration branch's (`$DRIVE_PR_POLICY_BOUND`), never
+ * removes from it. A base whose policy cannot be read, or whose `review`
+ * section is not a mapping, throws.
  */
 export function draftSkippingReviewers(): string[] {
-  const snapshot = readPolicySnapshot();
-  if (snapshot.from === "unreadable")
-    throw new DecodeError(
-      configSource("review.draft_skipping_reviewers"),
-      "$.review.draft_skipping_reviewers",
-      `the base branch's configuration cannot be read (${snapshot.reason})`,
-    );
-  const review = snapshot.from === "base" ? snapshot.values.review : undefined;
-  const value =
-    snapshot.from === "base"
-      ? review !== null && typeof review === "object"
-        ? (review as Record<string, unknown>).draft_skipping_reviewers
-        : undefined
-      : section("review").draft_skipping_reviewers;
-  if (value === undefined || value === null) return [];
-  if (!isDistinctNameList(value))
-    throw new DecodeError(
-      configSource("review.draft_skipping_reviewers"),
-      "$.review.draft_skipping_reviewers",
-      "must be a list of distinct GitHub App slugs",
-    );
-  return value;
+  const field = "review.draft_skipping_reviewers";
+  const refuse = (message: string): never => {
+    throw new DecodeError(configSource(field), `$.${field}`, message);
+  };
+  const listAt = (
+    snapshot: ReturnType<typeof readSnapshotAt>,
+    branch: string,
+  ): string[] => {
+    if (snapshot.from !== "base")
+      return refuse(
+        `the ${branch} branch's configuration cannot be read (${
+          snapshot.from === "unreadable" ? snapshot.reason : "no snapshot"
+        })`,
+      );
+    const review = snapshot.values.review;
+    if (review === undefined || review === null) return [];
+    if (typeof review !== "object" || Array.isArray(review))
+      return refuse(`the ${branch} branch's review section must be a mapping`);
+    const value = (review as Record<string, unknown>).draft_skipping_reviewers;
+    if (value === undefined || value === null) return [];
+    if (!isDistinctNameList(value))
+      return refuse("must be a list of distinct GitHub App slugs");
+    return value;
+  };
+  const root = consumerRoot(process.cwd(), process.env);
+  const base = listAt(
+    readSnapshotAt(
+      (process.env[POLICY_BASE_VARIABLE] ?? "").trim(),
+      POLICY_BASE_VARIABLE,
+      "base",
+      process.env,
+      root,
+    ),
+    "base",
+  );
+  const boundCommit = (process.env[POLICY_BOUND_VARIABLE] ?? "").trim();
+  if (boundCommit === "") return base;
+  const bound = listAt(
+    readSnapshotAt(
+      boundCommit,
+      POLICY_BOUND_VARIABLE,
+      "integration",
+      process.env,
+      root,
+    ),
+    "integration",
+  );
+  return [...new Set([...bound, ...base])];
 }
 
 /**

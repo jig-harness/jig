@@ -57,6 +57,7 @@ import {
 } from "./lib/announce-ready.ts";
 import { parsePrSnapshot } from "./lib/ci-hold.ts";
 import { ciHoldLabelSetting } from "./lib/overlay.ts";
+import { announcePolicyBase } from "./lib/driver/policy-base.ts";
 
 /** How messages name the repository's CI-hold label. */
 const holdName = (): string => ciHoldLabelSetting() ?? "CI hold";
@@ -178,6 +179,11 @@ async function main(): Promise<number> {
   if (!isDigits(pr)) {
     fail(2, "announce-merge-ready: could not resolve a PR number");
   }
+
+  // A driver pass inherits its base-branch policy commit; a standalone run
+  // resolves it, so the draft-skipping reviewers come from the base either way.
+  if ((process.env.DRIVE_PR_TARGET ?? "").trim() === "")
+    await announcePolicyBase(pr);
 
   // Read stdin BEFORE the status call: a terminal with no redirect would
   // otherwise block here after the network round-trip, looking like a hung

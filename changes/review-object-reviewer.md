@@ -6,7 +6,7 @@ release: minor
 
 - `drive-pr` reads an AI reviewer that submits pull-request reviews instead of
   a summary comment with a reviewed-SHA stamp (`review.reviewer_evidence:
-  review_object`). A review naming the head, or the reviewer's check run
+review_object`). A review naming the head, or the reviewer's check run
   completed on the head with no later review, is a review of the head; a run
   titled `Review paused…` or `Review skipped…` stops the drive with
   `REVIEW_SKIPPED` (`22`), the reason naming which and quoting the title. On
@@ -18,7 +18,8 @@ release: minor
   and for the dispatcher's merge-ready board.
 - `review.draft_skipping_reviewers` names the reviewers that skip drafts; the
   merge-ready announcement waits (exit `4`) until each has run on the head
-  since the pull request was last marked Ready
+  since the pull request was last marked Ready; the list is read from the base
+  branch's file, never the pull request's own
   ([fields](../plugin/CONFIGURATION.md#review)).
 - `arm-drive.ts` refuses a configuration whose reviewer evidence the drive
   cannot read (`review_object` without `review.reviewer_app` where a reviewer is expected, or `sticky` for

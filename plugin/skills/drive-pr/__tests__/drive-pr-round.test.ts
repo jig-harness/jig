@@ -40,6 +40,7 @@ import {
   DORMANT_ARM,
   binDir,
   scratchClean,
+  announcePolicyEnv,
   gitCleanEnv,
   makeScratchRepo,
   makeUnresolvedMergeRepo,
@@ -207,7 +208,7 @@ describe("announce-merge-ready.ts", () => {
           ...(opts.postedIdBase
             ? { DRIVE_PR_POSTED_ID_BASE: opts.postedIdBase }
             : {}),
-          ...(opts.env ?? {}),
+          ...announcePolicyEnv(cwd, opts.env),
         },
         stdin: "ignore",
         stdout: "pipe",
@@ -312,6 +313,7 @@ describe("announce-merge-ready.ts", () => {
           DRIVE_PR_STATE_DIR: stateDir,
           DRIVE_PR_MERGE_MARKER_FIXTURE: `<!-- drive-pr-merge-ready: ${CONVERGED.head} -->`,
           DRIVE_PR_ANNOUNCE_OPENER_FIXTURE: OPENER,
+          ...announcePolicyEnv(scratchClean.dir),
         },
         stdin: "ignore",
         stdout: "pipe",
@@ -1414,6 +1416,7 @@ describe("announce-merge-ready.ts", () => {
           DRIVE_PR_FIXTURES: dir,
           DRIVE_PR_STATE_DIR: stateDir,
           DRIVE_PR_ANNOUNCE_OPENER_FIXTURE: OPENER,
+          ...announcePolicyEnv(scratchClean.dir),
         },
         stdin: "ignore",
         stdout: "pipe",
