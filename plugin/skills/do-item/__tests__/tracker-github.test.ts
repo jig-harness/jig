@@ -1,5 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { TrackerRequestError } from "../scripts/lib/tracker/port.ts";
+import { parseTrackerConfig } from "../scripts/lib/tracker/config.ts";
+import { gitHubModel } from "../scripts/lib/tracker/github/model.ts";
 import { GitHubApiError } from "../scripts/lib/tracker/github/transport.ts";
 import {
   boardAnswer,
@@ -176,6 +178,70 @@ describe("GitHub adapter: reading an issue", () => {
     });
   });
 
+  it("reads pr_open by its label, and a label it shares with in_review as pr_open", async () => {
+    const read = async (states: Record<string, string>, labels: string[]) => {
+      const { t } = gitHub(
+        () =>
+          oneIssue(
+            issueNode({ number: 1, labels, extra: { subIssues: conn([]) } }),
+          ),
+        { issue_tracker: { states } },
+      );
+      return (await t.getIssue("#1"))?.state;
+    };
+    expect(
+      await read({ pr_open: "Awaiting Review" }, ["Awaiting Review"]),
+    ).toEqual({ name: "Awaiting Review", type: "started" });
+    expect(await read({ pr_open: "In Review" }, ["In Review"])).toEqual({
+      name: "In Review",
+      type: "started",
+    });
+    // Unset, the label is an ordinary label and the issue reads as todo.
+    expect(await read({}, ["Awaiting Review"])).toEqual({
+      name: "Todo",
+      type: "unstarted",
+    });
+  });
+
+  it("maps a name pr_open shares with in_review back to pr_open, in labels and on a board", () => {
+    const stateOf = (
+      states: Record<string, string>,
+      github: Record<string, unknown>,
+      issue: { labels?: string[]; status?: string | null },
+    ) => {
+      const config = parseTrackerConfig({
+        issue_tracker: { states, github: { repository: "o/r", ...github } },
+      });
+      return gitHubModel(config.states, config.github).stateOf({
+        open: true,
+        stateReason: null,
+        labels: issue.labels ?? [],
+        status: issue.status ?? null,
+      });
+    };
+    const board = {
+      states_from: "project",
+      project: "https://github.com/orgs/o/projects/1",
+    };
+    expect(
+      stateOf({ pr_open: "In Review" }, {}, { labels: ["In Review"] }),
+    ).toBe("pr_open");
+    expect(
+      stateOf(
+        { pr_open: "Review", in_review: "Review", ops_pending: "Review" },
+        {},
+        { labels: ["review"] },
+      ),
+    ).toBe("pr_open");
+    expect(
+      stateOf({ pr_open: "In Review" }, board, { status: "In Review" }),
+    ).toBe("pr_open");
+    expect(
+      stateOf({ pr_open: "Awaiting Review" }, {}, { labels: ["In Review"] }),
+    ).toBe("in_review");
+    expect(stateOf({}, board, { status: "In Review" })).toBe("in_review");
+  });
+
   it("reads open states off the board in project mode", async () => {
     const { t, calls } = gitHub(
       (c) =>
@@ -275,6 +341,31 @@ describe("GitHub adapter: moving an issue between states", () => {
     expect(
       calls.find((c) => c.op === "TrackerRemoveLabels")?.variables.labelIds,
     ).toEqual(["LA_1_In Progress"]);
+  });
+
+  it("moves to pr_open by its label, and refuses pr_open left unset before reading or writing", async () => {
+    const answer = (c: { op: string }) => {
+      if (c.op === "TrackerIssue") return issueWith(["In Progress"]);
+      if (c.op === "TrackerLabels")
+        return repoLabels("In Progress", "Awaiting Review");
+      return {};
+    };
+    const named = gitHub(answer, {
+      issue_tracker: { states: { pr_open: "Awaiting Review" } },
+    });
+    await named.t.transition("#5", "pr_open");
+    expect(writes(named.calls)).toEqual([
+      "TrackerAddLabels",
+      "TrackerRemoveLabels",
+    ]);
+    expect(
+      named.calls.find((c) => c.op === "TrackerAddLabels")?.variables.labelIds,
+    ).toEqual(["LA_1_Awaiting Review"]);
+    const unset = gitHub(answer);
+    await expect(unset.t.transition("#5", "pr_open")).rejects.toThrow(
+      "issue_tracker.states.pr_open is not set, so no item moves to pr_open",
+    );
+    expect(unset.calls).toEqual([]);
   });
 
   it("removes every state label for todo, and reopens a closed issue", async () => {

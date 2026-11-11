@@ -552,7 +552,7 @@ fields:
     repository_only: true
   issue_tracker.states:
     type: map
-    keys: [triage, backlog, todo, in_progress, in_review, ops_pending, done, canceled, duplicate]
+    keys: [triage, backlog, todo, in_progress, pr_open, in_review, ops_pending, done, canceled, duplicate]
     read_by: [do-item, work-batch, dispatch]
   issue_tracker.github.repository:
     type: string
@@ -733,6 +733,16 @@ fields:
     default: auto
     since: 0.102.0
     read_by: [do-item, drive-pr]
+  do_item.post_merge_state:
+    type: enum
+    values: [done, ops_pending, in_review]
+    default: done
+    since: next
+    read_by: [do-item, work-batch]
+  do_item.post_merge_closer:
+    type: string
+    since: next
+    read_by: [do-item, work-batch]
 
   specs.adapters:
     type: list

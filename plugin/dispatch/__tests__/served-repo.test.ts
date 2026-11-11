@@ -42,6 +42,7 @@ function fake(
   const tracker = {
     adapter,
     team: "example/repo",
+    stateName: (s: string) => (s === "pr_open" ? null : s),
     assignedIssues: async (_: string, s: string[]) =>
       s.includes("in_progress") ? [] : roots,
     assignedBy: async () => ({ id: "w", name: "writer", trusted: true }),

@@ -26,9 +26,9 @@ import { openTracker } from "./lib/tracker/index.ts";
 import { type IssueKeys, issueKeysOrNull } from "./lib/tracker/keys.ts";
 import {
   CANONICAL_STATES,
-  type CanonicalState,
   type Issue,
   type IssueState,
+  type StateNames,
   type Tracker,
 } from "./lib/tracker/port.ts";
 
@@ -98,7 +98,7 @@ export function stateNameEquals(
  */
 export function classifyChildState(
   state: Partial<IssueState> | undefined,
-  stateNames?: Readonly<Record<CanonicalState, string>>,
+  stateNames?: Readonly<StateNames>,
 ): "completed" | "abandoned" | "incomplete" {
   const type = (state?.type ?? "").toLowerCase();
   if (KNOWN_STATE_TYPES.has(type)) {
@@ -110,7 +110,10 @@ export function classifyChildState(
   const configured =
     stateNames === undefined
       ? undefined
-      : CANONICAL_STATES.find((s) => stateNameEquals(name, stateNames[s]));
+      : CANONICAL_STATES.find((s) => {
+          const configured = stateNames[s];
+          return configured !== null && stateNameEquals(name, configured);
+        });
   if (configured === "canceled" || configured === "duplicate")
     return "abandoned";
   if (configured === "done") return "completed";
@@ -126,7 +129,7 @@ export function classifyChildState(
  */
 export function issueResult(
   issue: Issue,
-  stateNames?: Readonly<Record<CanonicalState, string>>,
+  stateNames?: Readonly<StateNames>,
 ): Record<string, unknown> {
   // Child labels keep the `{ name }` shape `reconcile_parent_status.ts` reads.
   const children: ChildOut[] = issue.children.map((c) => ({
@@ -245,7 +248,7 @@ export async function getIssue(
   if (issue === null) return notFound(issueId, "", keys);
   const stateNames = Object.fromEntries(
     CANONICAL_STATES.map((s) => [s, tracker.stateName(s)]),
-  ) as Record<CanonicalState, string>;
+  ) as StateNames;
   return issueResult(issue, stateNames);
 }
 
