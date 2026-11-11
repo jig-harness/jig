@@ -11,7 +11,11 @@ import {
   requireTeamKey,
 } from "../scripts/lib/tracker/config.ts";
 import { knownAdapters, openTracker } from "../scripts/lib/tracker/index.ts";
-import { CANONICAL_STATES } from "../scripts/lib/tracker/port.ts";
+import {
+  CANONICAL_STATES,
+  OPTIONAL_STATES,
+  type RequiredState,
+} from "../scripts/lib/tracker/port.ts";
 
 describe("tracker configuration", () => {
   it("defaults the adapter and every canonical state name", () => {
@@ -21,7 +25,58 @@ describe("tracker configuration", () => {
     expect(c.states.in_progress).toBe("In Progress");
     expect(c.states.ops_pending).toBe("Ops Pending");
     for (const s of CANONICAL_STATES)
-      expect(c.states[s]).toBe(defaultStateName(s));
+      expect(c.states[s]).toBe(
+        (OPTIONAL_STATES as readonly string[]).includes(s)
+          ? null
+          : defaultStateName(s as RequiredState),
+      );
+    expect(c.states.pr_open).toBeNull();
+  });
+
+  it("names pr_open on its own, or shared with in_review on a tracker with one review status", () => {
+    expect(
+      parseTrackerConfig({
+        issue_tracker: { states: { pr_open: "Awaiting Review" } },
+      }).states.pr_open,
+    ).toBe("Awaiting Review");
+    const shared = parseTrackerConfig({
+      issue_tracker: { states: { pr_open: "In Review" } },
+    }).states;
+    expect(shared.pr_open).toBe("In Review");
+    expect(shared.in_review).toBe("In Review");
+    expect(
+      parseTrackerConfig({
+        issue_tracker: {
+          states: {
+            pr_open: "Review",
+            in_review: "Review",
+            ops_pending: "Review",
+          },
+        },
+      }).states.ops_pending,
+    ).toBe("Review");
+  });
+
+  it("refuses pr_open named like a state other than in_review", () => {
+    expect(() =>
+      parseTrackerConfig({
+        issue_tracker: { states: { pr_open: "In Progress" } },
+      }),
+    ).toThrow(
+      "issue_tracker.states.in_progress and issue_tracker.states.pr_open both name 'In Progress'",
+    );
+    expect(() =>
+      parseTrackerConfig({
+        issue_tracker: { states: { pr_open: "Ops Pending" } },
+      }),
+    ).toThrow(
+      "issue_tracker.states.pr_open and issue_tracker.states.ops_pending both name 'Ops Pending'",
+    );
+    expect(() =>
+      parseTrackerConfig({
+        issue_tracker: { states: { pr_open: "Done" } },
+      }),
+    ).toThrow("both name 'Done'");
   });
 
   it("reads the team and maps states by canonical key", () => {

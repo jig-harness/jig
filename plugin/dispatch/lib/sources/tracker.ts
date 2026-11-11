@@ -13,10 +13,11 @@
  */
 import type { ServedPerson } from "../serve-config.ts";
 import { readServedPickups } from "./served.ts";
-import type {
-  CanonicalState,
-  PoolIssue,
-  Tracker,
+import {
+  type CanonicalState,
+  type PoolIssue,
+  type Tracker,
+  workingStates,
 } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
 import { failed, ok, type Outcome } from "../../../shared/outcome.ts";
 import { failureText } from "../text.ts";
@@ -47,13 +48,20 @@ export interface TrackerReading {
   claimed: ClaimedItem[] | null;
 }
 
-/** The claimed items: the claim's own assignment needs no assigner check, since nothing is started for them. */
+/**
+ * The claimed items, in `in_progress` or (where the repository names it)
+ * `pr_open`: the claim's own assignment needs no assigner check, since
+ * nothing is started for them.
+ */
 async function readClaimed(
   tracker: Tracker,
   identity: string,
 ): Promise<ClaimedItem[] | Unplaced> {
   try {
-    const issues = await tracker.assignedIssues(identity, ["in_progress"]);
+    const issues = await tracker.assignedIssues(
+      identity,
+      workingStates(tracker),
+    );
     return issues.map((i) => ({
       key: i.identifier,
       title: i.title,
@@ -62,11 +70,18 @@ async function readClaimed(
     }));
   } catch (error) {
     return {
-      target: `items in ${tracker.stateName("in_progress")}`,
+      target: `items in ${workingNames(tracker)}`,
       record: "tracker",
       reason: `the items ${identity} claimed could not be read, so stalls and double claims are not checked: ${failureText(error)}`,
     };
   }
+}
+
+/** The tracker's names for the working states, for messages. */
+function workingNames(tracker: Tracker): string {
+  return [
+    ...new Set(workingStates(tracker).map((s) => tracker.stateName(s))),
+  ].join(" or ");
 }
 
 /** The facet record with the assigned items that lack a facet, where the stores were read. */
@@ -249,7 +264,7 @@ async function readFactoryPickups(
       record: "tracker",
       source,
       ok: true,
-      detail: `${issues.length} item(s) assigned to ${identity} in ${section.states.join(", ")}${Array.isArray(claimed) ? `; ${claimed.length} in ${tracker.stateName("in_progress")}` : ""}${record === undefined ? "" : `; ${facetSummary(record)}`}`,
+      detail: `${issues.length} item(s) assigned to ${identity} in ${section.states.join(", ")}${Array.isArray(claimed) ? `; ${claimed.length} in ${workingNames(tracker)}` : ""}${record === undefined ? "" : `; ${facetSummary(record)}`}`,
       ...(record === undefined ? {} : { facets: record }),
     },
     wanted,
@@ -308,6 +323,8 @@ export async function readPickups(
     manualOps?: string;
     executionPlanBlock?: string;
     repoScope?: import("./served-repo.ts").RepoScope;
+    unlabeled?: import("./served-repo.ts").UnlabeledMode;
+    trackerNamespace?: string;
   },
 ): Promise<TrackerReading> {
   let tracker: Tracker | undefined;
@@ -325,6 +342,10 @@ export async function readPickups(
       ? {}
       : { executionPlanBlock: served.executionPlanBlock }),
     ...(served.repoScope === undefined ? {} : { repoScope: served.repoScope }),
+    ...(served.unlabeled === undefined ? {} : { unlabeled: served.unlabeled }),
+    ...(served.trackerNamespace === undefined
+      ? {}
+      : { trackerNamespace: served.trackerNamespace }),
   });
   const keys = new Set(extra.wanted.map((i) => i.key));
   return {

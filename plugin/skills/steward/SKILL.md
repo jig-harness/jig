@@ -1,7 +1,6 @@
 ---
 name: steward
 description: "Inspect the dispatcher's stopped work and assigned queue during an owner-host steward pass, and submit guarded recovery, missing-facet, queue-order and human-need records. Only for a dispatcher-launched steward pass; use operator for a person's commands and drive-pr for review rounds."
-user-invocable: false
 ---
 
 # Steward: inspect what the rules leave waiting

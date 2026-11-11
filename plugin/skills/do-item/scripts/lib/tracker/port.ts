@@ -15,12 +15,15 @@
 /**
  * The workflow states the skills reason about, by role rather than by the
  * tracker's own name. `issue_tracker.states` maps each to the tracker's name.
+ * `pr_open` is the active work whose pull request is open; `in_review` is
+ * merged and parked.
  */
 export const CANONICAL_STATES = [
   "triage",
   "backlog",
   "todo",
   "in_progress",
+  "pr_open",
   "in_review",
   "ops_pending",
   "done",
@@ -37,6 +40,52 @@ export const OPEN_STATE_TYPES = [
 ] as const;
 
 export type CanonicalState = (typeof CANONICAL_STATES)[number];
+
+/**
+ * The states a repository may leave without a name. An unset one is never
+ * moved to and never read back: an item that would enter it stays where it is.
+ */
+export const OPTIONAL_STATES = [
+  "pr_open",
+] as const satisfies ReadonlyArray<CanonicalState>;
+
+export type OptionalState = (typeof OPTIONAL_STATES)[number];
+
+/** A canonical state that always has a name. */
+export type RequiredState = Exclude<CanonicalState, OptionalState>;
+
+/** Canonical state → the tracker's name; `null` for an optional state left unset. */
+export type StateNames = Record<RequiredState, string> &
+  Record<OptionalState, string | null>;
+
+/** The tracker's name for `state`; `null` only for an optional state left unset. */
+export type StateNameOf = <S extends CanonicalState>(
+  state: S,
+) => S extends OptionalState ? string | null : string;
+
+/** `StateNameOf` over a configured mapping. */
+export function stateNameIn(states: StateNames): StateNameOf {
+  return ((state: CanonicalState) => states[state]) as StateNameOf;
+}
+
+/**
+ * The states an item someone works on is in: `in_progress`, and `pr_open`
+ * when the repository gives it a name of its own. The dispatcher's stall and
+ * double-claim watch reads these. A `pr_open` named like `in_review` is left
+ * out: merged items wait under that name too, and would read as stalled work.
+ */
+export function workingStates(
+  tracker: Pick<Tracker, "stateName">,
+): CanonicalState[] {
+  const prOpen = tracker.stateName("pr_open")?.trim().toLowerCase();
+  const parked = [
+    tracker.stateName("in_review"),
+    tracker.stateName("ops_pending"),
+  ].map((n) => n.trim().toLowerCase());
+  return prOpen === undefined || parked.includes(prOpen)
+    ? ["in_progress"]
+    : ["in_progress", "pr_open"];
+}
 
 /**
  * A workflow state as the tracker reports it: its display name and its
@@ -503,8 +552,8 @@ export interface Tracker {
    * repository (`owner/name`) on GitHub.
    */
   readonly team: string;
-  /** The tracker's own name for a canonical state. */
-  stateName(state: CanonicalState): string;
+  /** The tracker's own name for a canonical state; `null` for an optional state left unset. */
+  stateName: StateNameOf;
   /**
    * Resolves when the tracker answers for this team: the credential works and
    * the team (Linear) or repository (GitHub) exists. Reads no issue. An
@@ -683,4 +732,33 @@ export interface Tracker {
    * stays, and the tracker may close `key`.
    */
   relate(key: string, type: RelationType, target: string): Promise<void>;
+  /**
+   * Convert the relations this adapter once kept as text (GitHub's `related`
+   * comments) into the tracker's own, and mark each text superseded. Only an
+   * adapter that kept a relation as text has it. Safe to run again.
+   */
+  migrateRelations?(
+    opts?: { dryRun?: boolean },
+    signal?: AbortSignal,
+  ): Promise<RelationMigration>;
+}
+
+/** What `migrateRelations` found and did; with `dryRun`, what it would do. */
+export interface RelationMigration {
+  dryRun: boolean;
+  /** Issues whose comments were read. */
+  scanned: number;
+  /** Native links written, one per pair of issues. */
+  links: Array<{ issue: string; related: string }>;
+  /** Comments whose link is native and which are now marked superseded. */
+  converted: Array<{ issue: string; related: string; comment: string }>;
+  /** Comments whose link could not be written, and why; they are read as before and met again. */
+  unresolved: Array<{ issue: string; related: string; why: string }>;
+  /** Comments that could not be edited: their link is native, they still read as one. */
+  unmarked: Array<{
+    issue: string;
+    related: string;
+    comment: string;
+    reason: string;
+  }>;
 }

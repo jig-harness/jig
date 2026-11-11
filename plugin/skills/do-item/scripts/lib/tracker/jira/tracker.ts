@@ -42,7 +42,7 @@ import type {
   Tracker,
 } from "../port.ts";
 import { TrackerRequestError } from "../port.ts";
-import { TrackerConfigError } from "../config-error.ts";
+import { namedState, TrackerConfigError } from "../config-error.ts";
 import { type CoreTracker, withFacets } from "../facets/tracker.ts";
 import {
   checkPatch,
@@ -365,8 +365,8 @@ export function jiraTracker(client: Client): Tracker {
     },
 
     async transition(key, state, signal) {
+      const target = namedState(model.stateName(state), state);
       const issue = await client.mustIssue(key, signal);
-      const target = model.stateName(state);
       const already =
         same(issue.status.name, target) &&
         (!isResolvedState(state) || model.read(issue).canonical === state);

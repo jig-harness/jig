@@ -18,12 +18,15 @@ import { doItemSection } from "./lib/overlay.ts";
 import {
   DEFAULT_BLOCK,
   eligibleIssues,
+  type ExecutionPlan,
   hasExecutionPlanHeading,
   humanGates,
+  planContradictions,
   type LiveIssue,
   readExecutionPlan,
 } from "./lib/execution-plan.ts";
 import { ANY_KEY_SOURCE } from "./lib/tracker/keys.ts";
+import { TrackerRequestError } from "./lib/tracker/port.ts";
 
 /** An issue key of any tracker: the plan is read without the tracker's configuration. */
 const KEY = new RegExp(`^${ANY_KEY_SOURCE}$`);
@@ -57,6 +60,19 @@ function blockName(overlay: Record<string, unknown> | null): string {
       "do_item.execution_plan_block must be a fenced-block name such as execution-plan-v1",
     );
   return block;
+}
+
+/** A plan the tracker's `blocks` contradict is refused, naming both issues of each. */
+function refuseContradictions(
+  plan: ExecutionPlan,
+  live: Record<string, LiveIssue>,
+): void {
+  const contradictions = planContradictions(plan, live);
+  if (contradictions.length > 0)
+    throw new TrackerRequestError(
+      "invalid",
+      `Execution plan contradicts the tracker's blocks: ${contradictions.join("; ")}. Remove the wrong side (the tracker's blocks relation, or re-run the planner), then select again`,
+    );
 }
 
 export function selectExecutionIssue(
@@ -112,6 +128,7 @@ export function selectExecutionIssue(
   }
   if (plan.epic !== input.epic)
     throw new Error("Execution plan belongs to a different epic");
+  refuseContradictions(plan, input.live);
   return {
     present: true,
     eligible: eligibleIssues(plan, input.live, input.mergedConflictEdges),

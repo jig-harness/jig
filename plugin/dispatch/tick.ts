@@ -82,6 +82,7 @@ import { settleFollowups } from "./lib/followup-outcomes.ts";
 import { type ReadRecord, readLaunches } from "./lib/launches.ts";
 import type { MachineConfig } from "./lib/machine-config.ts";
 import { PhaseTimer } from "./lib/phase-timer.ts";
+import { dropRepeatedLabelNeeds } from "./lib/sources/served-repo.ts";
 import { orcaRuntime } from "./lib/runtime/orca.ts";
 import type { SessionRuntime } from "./lib/runtime/port.ts";
 import { applyState } from "./lib/tick-apply.ts";
@@ -372,6 +373,13 @@ async function actAll(
   const { apply, options } = context;
   const order = options.repos;
   const acted: string[] = [];
+  dropRepeatedLabelNeeds(
+    [...new Set(order)].flatMap((path) => {
+      const observed = observe.observed.get(path);
+      if (observed === undefined) return [];
+      return ["report" in observed ? observed.report : observed.opened.report];
+    }),
+  );
   for (const path of new Set(order)) {
     const observed = observe.observed.get(path);
     if (observed === undefined) continue;

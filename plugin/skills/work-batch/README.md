@@ -214,14 +214,19 @@ Every issue the batch closes needs the steps a single issue gets after its
 pull request merges: the closing comment, label reconciliation, and moving
 its epic forward (`do-item`'s `reconcile_parent_status.ts`). The batch's own
 `Closes` table is the list: the skill runs the post-merge steps for each row,
-not once for the pull request.
+not once for the pull request. Each issue stops where `do-item`'s
+post-merge rule says, `do_item.post_merge_state` included, and where the
+repository names a `pr_open` state each issue moves there when the batch's
+pull request opens.
 
 ## Evidence
 
-The skill ends each batch by recording its close-to-open ratio: issues it
-closed, against new follow-up issues its review rounds filed. That ratio is
-the only evidence that batching closes small issues faster than review
-creates them, rather than just feeling faster.
+The skill ends each batch by recording its processed/follow-up ratio: issues
+it processed, against new follow-up issues its review rounds filed, with how
+many processed issues reached `done` and how many stay open under the
+post-merge policy reported separately. That ratio is the only evidence that
+batching completes small issues faster than review creates follow-up work,
+rather than just feeling faster.
 
 ## The eligibility mode
 
@@ -245,4 +250,4 @@ the contract; its format is in [SKILL.md](SKILL.md#the-eligibility-mode).
   `medium` issue usually passes the line count at which a review finding
   that widens scope is deferred rather than fixed in place. Whether that
   rule should change for batches is a separate decision, made from the
-  close-to-open ratios.
+  processed/follow-up ratios.

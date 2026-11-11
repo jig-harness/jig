@@ -713,6 +713,14 @@ describe("Jira adapter: assignments", () => {
     );
   });
 
+  it("returns nothing, with no request, when no asked state is configured", async () => {
+    const { t, calls } = jira(assigned(MEMBER));
+    expect(await t.assignedIssues("factory@example.com", ["pr_open"])).toEqual(
+      [],
+    );
+    expect(calls).toEqual([]);
+  });
+
   it("traces the assignment to the newest change's author and its trust", async () => {
     expect(
       await jira(assigned(MEMBER)).t.assignedBy(
