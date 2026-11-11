@@ -111,6 +111,8 @@ export type ParkAnswersResult =
       disputed: ParkDispute[];
       stale: ParkDispute[];
       responded: ParkedItem[];
+      /** Each item with any answer, with every person's latest answer to it, stale ones included. */
+      responses: ParkDispute[];
       notes: ParkNote[];
     }
   | { unreadable: string };
@@ -160,7 +162,10 @@ function classifyPark(
   answers: PendingAnswer[],
   incomplete: boolean,
 ): void {
-  if (answers.length > 0) result.responded.push(item);
+  if (answers.length > 0) {
+    result.responded.push(item);
+    result.responses.push({ item, answers });
+  }
   const verdict = verdictOf(item, answers);
   const stale = answers.filter((a) => a.stale === true);
   if (stale.length > 0) result.stale.push({ item, answers: stale });
@@ -197,6 +202,7 @@ export async function parkAnswers(
     disputed: [],
     stale: [],
     responded: [],
+    responses: [],
     notes: [],
   };
   for (const item of parked) {

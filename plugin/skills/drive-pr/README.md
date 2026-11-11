@@ -603,7 +603,9 @@ mechanical state rather than on anyone's judgement:
   Answer each parked item on its thread, or in a
   pull-request comment with a line `answer <key>: …`, as an owner, member or
   collaborator; `jig send drive@<owner>/<name>#<PR> answer <key> "<text>"`
-  writes that comment after checking the key is parked and unanswered
+  writes that comment after checking the key is parked, and
+  `answer <key> --approve` or `--choose "<option>"` writes a structured
+  answer bound to the digest you read
   ([the plugin's README](../../README.md#telling-a-station-what-to-do)).
   Use `approve` to choose the recommendation or `choose <option name>` to
   choose an option by name. On a thread, either form can be the whole reply.

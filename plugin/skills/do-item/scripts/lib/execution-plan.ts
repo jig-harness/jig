@@ -299,6 +299,43 @@ export interface LiveIssue {
 }
 
 /**
+ * Where the plan and the tracker's own `blocks` relations disagree about an
+ * order: an issue the tracker says waits for another that the plan puts
+ * after it (a later band, or a dependency edge the other way). Each answer
+ * names both issues. A dependency the plan states and the tracker lacks is
+ * not one: the plan's edge still holds the issue back, and
+ * `plan-blocks.ts` writes it to the tracker.
+ */
+export function planContradictions(
+  plan: ExecutionPlan,
+  live: Record<string, LiveIssue>,
+): string[] {
+  const band = new Map(plan.steps.map((s) => [s.issue, s.band]));
+  const out: string[] = [];
+  const open = (issue: string) =>
+    ["triage", "backlog", "unstarted", "started"].includes(
+      live[issue]?.state ?? "",
+    );
+  for (const step of plan.steps) {
+    // A relation on a finished issue no longer orders anything.
+    if (!open(step.issue)) continue;
+    for (const blocker of live[step.issue]?.blockedBy ?? []) {
+      if (!open(blocker)) continue;
+      const later = (band.get(blocker) ?? 0) > step.band;
+      const reversed = plan.edges.some(
+        (e) =>
+          e.kind === "dependency" && e.from === step.issue && e.to === blocker,
+      );
+      if (later || reversed)
+        out.push(
+          `${step.issue} is blocked by ${blocker} in the tracker, but the plan puts ${step.issue} first`,
+        );
+    }
+  }
+  return out;
+}
+
+/**
  * The plan's issues that may start now, in band order. Live state and
  * explicit evidence win over the rendered plan: an issue is eligible when it
  * is open, every live blocker is completed, and every plan edge into it is

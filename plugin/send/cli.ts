@@ -22,9 +22,14 @@
  * (`JIG_LAUNCH` set) is refused the verbs that are a person's.
  *
  * It exits `0` when it sent (or, with `--dry-run`, would send), `1` when it
- * refused or the write failed, and `2` on a usage error: a malformed
+ * refused or the write failed (an `--all` approval that posted only part of
+ * its comments prints what it sent, wakes their reader, names what it did
+ * not send and exits `1`), and `2` on a usage error: a malformed
  * address, an unknown station or verb, a verb the station does not take,
- * or an answer's text that is not one line within its limit.
+ * an answer that names no option or two forms, or an answer's text or note
+ * that is not one line within its limit. The answer flags (`--approve`,
+ * `--choose`, `--note`, `--all`, `--decision`, `--decision-set`) are the
+ * `answer` verb's alone (`lib/answer-request.ts`).
  */
 import { ExitError } from "../shared/cli.ts";
 import { parseAddress } from "../shared/address.ts";
@@ -48,7 +53,7 @@ import {
 import { readLogin } from "../ask/lib/forge.ts";
 import { machineFile } from "../ask/lib/local.ts";
 import { reading } from "../ask/lib/reading.ts";
-import { planAnswer } from "./lib/answer.ts";
+import { planAnswerRequest } from "./lib/answer.ts";
 import { planAssign } from "./lib/assign.ts";
 import { planLabel } from "./lib/labels.ts";
 import { planMailbox } from "./lib/mailbox.ts";
@@ -58,6 +63,7 @@ import {
   type Planned,
   refused,
   renderPlan,
+  shown,
   renderSent,
   writerLogin,
 } from "./lib/plan.ts";
@@ -77,7 +83,33 @@ export const sendCommand = command(
   object({
     words: multiple(
       argument(string({ metavar: "WORD" }), {
-        description: message`The address (station@owner/name#key, or the address and its key as two words: drive@jig 456), then the verb and its arguments. The verbs: assign (pickup); drive, rearm, answer <key> <text>, pause, resume <hold-push|pause|stop>, stop, hold-push (drive); hold, release (drive, followup).`,
+        description: message`The address (station@owner/name#key, or the address and its key as two words: drive@jig 456), then the verb and its arguments. The verbs: assign (pickup); drive, rearm, answer <key> <text>, answer <key> --approve|--choose <option>, answer --all --approve, pause, resume <hold-push|pause|stop>, stop, hold-push (drive); hold, release (drive, followup).`,
+      }),
+    ),
+    approve: option("--approve", {
+      description: message`answer: choose the option the parked decision recommends.`,
+    }),
+    choose: optional(
+      option("--choose", string({ metavar: "OPTION" }), {
+        description: message`answer: choose the parked decision's option of this name.`,
+      }),
+    ),
+    note: optional(
+      option("--note", string({ metavar: "TEXT" }), {
+        description: message`answer: add one line beside --approve or --choose that narrows the option or sets a condition on it.`,
+      }),
+    ),
+    all: option("--all", {
+      description: message`answer: with --approve, approve every open item whose class the acts table lists as Decide, one comment per item.`,
+    }),
+    decision: optional(
+      option("--decision", string({ metavar: "DIGEST" }), {
+        description: message`answer: the digest of the framing you read, as the dry run printed it; the send refuses when the park's digest is another.`,
+      }),
+    ),
+    decisionSet: optional(
+      option("--decision-set", string({ metavar: "TOKEN" }), {
+        description: message`answer --all: the set token the dry run printed; the send refuses when the eligible items or their digests changed.`,
       }),
     ),
     dryRun: option("--dry-run", {
@@ -98,11 +130,11 @@ export const sendCommand = command(
 export type SendArguments = InferValue<typeof sendCommand>;
 
 function usage(reason: string): never {
-  throw new ExitError(SEND_EXIT.USAGE, `jig send: ${reason}`);
+  throw new ExitError(SEND_EXIT.USAGE, shown(`jig send: ${reason}`));
 }
 
 function refusal(reason: string): number {
-  console.error(`jig send: refused: ${reason}`);
+  console.error(shown(`jig send: refused: ${reason}`));
   return SEND_EXIT.REFUSED;
 }
 
@@ -124,6 +156,7 @@ async function planFor(
   resolved: ResolvedAddress,
   request: Request,
   as: string | undefined,
+  dryRun: boolean,
 ): Promise<Planned> {
   const r = reading();
   if (request.verb === "assign") {
@@ -143,7 +176,12 @@ async function planFor(
     case "release":
       return planLabel(ctx, request.verb, writesAs);
     case "answer":
-      return planAnswer(ctx, request.key, request.text, login.value, writesAs);
+      return planAnswerRequest(ctx, request, {
+        login: login.value,
+        writesAs,
+        dryRun,
+        as,
+      });
     default:
       return planMailbox(ctx, request, login.value, writesAs);
   }
@@ -158,7 +196,14 @@ export async function sendMain(args: SendArguments): Promise<number> {
     text.includes("#") || isVerb(rest[0]) ? undefined : rest.shift();
   const written = parseAddress(text, second);
   if (!written.ok) usage(written.failure.reason);
-  const request = parseRequest(written.value.station, rest, usage);
+  const request = parseRequest(written.value.station, rest, usage, {
+    approve: args.approve,
+    choose: args.choose,
+    note: args.note,
+    all: args.all,
+    decision: args.decision,
+    decisionSet: args.decisionSet,
+  });
   const refusedHere = standing(request);
   if (refusedHere !== null) return refusal(refusedHere);
   const resolved = resolveAddress(
@@ -167,18 +212,29 @@ export async function sendMain(args: SendArguments): Promise<number> {
     usage,
     request.verb === "assign",
   );
-  const planned = await planFor(resolved, request, args.as);
+  const planned = await planFor(resolved, request, args.as, args.dryRun);
   if (!planned.ok) return refusal(planned.failure.reason);
   const plan = planned.value;
   console.log(renderPlan(plan, args.dryRun));
   if (args.dryRun) return SEND_EXIT.SENT;
   const wrote = await plan.write();
   if (!wrote.ok) {
-    console.error(`jig send: not sent: ${wrote.failure.reason}`);
+    console.error(shown(`jig send: not sent: ${wrote.failure.reason}`));
     return SEND_EXIT.REFUSED;
   }
-  console.log(renderSent(plan, wrote.value, wake(resolved, plan)));
-  return SEND_EXIT.SENT;
+  const sent = wrote.value;
+  const part = typeof sent === "string" ? null : sent;
+  // What was posted is read whether or not the rest was: wake its reader either way.
+  console.log(
+    renderSent(plan, part?.sent ?? (sent as string), wake(resolved, plan)),
+  );
+  if (part === null) return SEND_EXIT.SENT;
+  console.error(
+    shown(
+      `jig send: partly sent: ${part.unsent}; run the same command with --dry-run again, which lists what is still open, and send what it prints`,
+    ),
+  );
+  return SEND_EXIT.REFUSED;
 }
 
 /**
@@ -210,7 +266,9 @@ function wake(resolved: ResolvedAddress, plan: Plan): string | null {
   const woke = wakeTick(path, `send: ${plan.verb} ${plan.address}`);
   if (!woke.ok) {
     console.error(
-      `jig send: the tick was not woken, so ${NEXT_TICK} reads the record: ${woke.failure.reason}`,
+      shown(
+        `jig send: the tick was not woken, so ${NEXT_TICK} reads the record: ${woke.failure.reason}`,
+      ),
     );
     return null;
   }

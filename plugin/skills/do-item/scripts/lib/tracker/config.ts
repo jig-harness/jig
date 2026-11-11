@@ -37,7 +37,14 @@ import {
   type TrackerLabels,
 } from "../../../../../shared/tracker-labels.ts";
 import { refuseRenamedSection } from "../overlay.ts";
-import { CANONICAL_STATES, type CanonicalState } from "./port.ts";
+import {
+  CANONICAL_STATES,
+  type CanonicalState,
+  OPTIONAL_STATES,
+  type OptionalState,
+  type RequiredState,
+  type StateNames,
+} from "./port.ts";
 import { TrackerConfigError } from "./config-error.ts";
 import { type GitHubSettings, parseGitHubSettings } from "./github/settings.ts";
 import { gitHubModel } from "./github/model.ts";
@@ -59,8 +66,8 @@ export interface TrackerConfig {
   adapter: string;
   /** `null` when the consumer declares no team. */
   team: string | null;
-  /** canonical state → tracker state name, defaults filled in. */
-  states: Record<CanonicalState, string>;
+  /** canonical state → tracker state name, defaults filled in; an optional state left unset is `null`. */
+  states: StateNames;
   /** The labels the skills act on, by role, defaults filled in. */
   labels: TrackerLabels;
   /** The GitHub adapter's settings, defaults filled in. */
@@ -85,20 +92,40 @@ export function defaultStateName(state: CanonicalState): string {
     .join(" ");
 }
 
+function isOptionalState(state: CanonicalState): state is OptionalState {
+  return (OPTIONAL_STATES as readonly string[]).includes(state);
+}
+
+/** Every state at its default: each required key title-cased, each optional one unset. */
+export function defaultStateNames(): StateNames {
+  return Object.fromEntries(
+    CANONICAL_STATES.map((s) => [
+      s,
+      isOptionalState(s) ? null : defaultStateName(s as RequiredState),
+    ]),
+  ) as StateNames;
+}
+
 /** A team key as issue identifiers carry it. */
 export const TEAM_KEY_PATTERN = /^[A-Z][A-Z0-9]*$/;
 
 /**
  * States that may share one tracker name: each group reads the same way
  * wherever a name is mapped back to a state (all not started; merged and
- * parked; all abandoned), so a tracker without a separate triage, operations
- * or duplicate state loses nothing by aliasing them. Naming `ops_pending`
- * like `in_review` is how a tracker with no operations state holds a merged
- * issue in review, the fallback do-item documents.
+ * parked; waiting for a person's review; all abandoned), so a tracker without
+ * a separate triage, operations or duplicate state loses nothing by aliasing
+ * them. Naming `ops_pending` like `in_review` is how a tracker with no
+ * operations state holds a merged issue in review, the fallback do-item
+ * documents. Naming `pr_open` like `in_review` (and `ops_pending` with it)
+ * is a tracker with one review status, used while the pull request is open
+ * and after the merge; that shared name reads back as `pr_open`, active
+ * work, since the tracker cannot say whether the pull request merged.
+ * `pr_open` shares a name only together with `in_review`.
  */
 const ALIASABLE_STATES: ReadonlyArray<ReadonlyArray<CanonicalState>> = [
   ["triage", "backlog", "todo"],
   ["in_review", "ops_pending"],
+  ["pr_open", "in_review", "ops_pending"],
   ["canceled", "duplicate"],
 ];
 
@@ -120,7 +147,7 @@ const JIRA_CLOSED: ReadonlyArray<CanonicalState> = [
  * active child as parked.
  */
 function refuseAmbiguousStates(
-  states: Record<CanonicalState, string>,
+  states: StateNames,
   adapter: string,
   jira: JiraSettings,
 ): void {
@@ -132,20 +159,22 @@ function refuseAmbiguousStates(
   const groups = resolved
     ? [...ALIASABLE_STATES.filter((g) => !g.includes("canceled")), JIRA_CLOSED]
     : ALIASABLE_STATES;
-  const group = (s: CanonicalState) => groups.findIndex((g) => g.includes(s));
-  const seen = new Map<string, CanonicalState>();
+  const seen = new Map<string, CanonicalState[]>();
   for (const s of CANONICAL_STATES) {
-    const key = states[s].trim().toLowerCase();
-    const other = seen.get(key);
+    const name = states[s];
+    if (name === null) continue;
+    const key = name.trim().toLowerCase();
+    const sharing = [...(seen.get(key) ?? []), s];
     if (
-      other !== undefined &&
-      (group(other) === -1 || group(other) !== group(s))
+      sharing.length > 1 &&
+      (!groups.some((g) => sharing.every((t) => g.includes(t))) ||
+        (sharing.includes("pr_open") && !sharing.includes("in_review")))
     )
       throw new TrackerConfigError(
         `issue_tracker.states.${s}`,
-        `issue_tracker.states.${other} and issue_tracker.states.${s} both name '${states[s]}'; each state needs its own name`,
+        `issue_tracker.states.${sharing[0]} and issue_tracker.states.${s} both name '${name}'; each state needs its own name`,
       );
-    seen.set(key, s);
+    seen.set(key, sharing);
   }
 }
 
@@ -156,7 +185,7 @@ function refuseAmbiguousStates(
  */
 function refuseSharedLabels(
   adapter: string,
-  states: Record<CanonicalState, string>,
+  states: StateNames,
   github: GitHubSettings,
 ): void {
   if (adapter !== "github") return;
@@ -339,9 +368,7 @@ export function parseTrackerConfig(
 
   refuseTeamWithoutAdapter(section.adapter, team);
 
-  const states = Object.fromEntries(
-    CANONICAL_STATES.map((s) => [s, defaultStateName(s)]),
-  ) as Record<CanonicalState, string>;
+  const states = defaultStateNames();
   const rawStates = section.states;
   if (rawStates !== undefined && rawStates !== null) {
     if (!isRecord(rawStates))

@@ -29,8 +29,10 @@ import {
   KNOWN_STATE_TYPES,
   stateNameEquals,
 } from "./get_issue.ts";
-import { defaultStateName, ownTrackerConfig } from "./lib/tracker/config.ts";
-import { CANONICAL_STATES, type CanonicalState } from "./lib/tracker/port.ts";
+import { defaultStateNames, ownTrackerConfig } from "./lib/tracker/config.ts";
+import type { StateNames } from "./lib/tracker/port.ts";
+import { parsePostMerge, type PostMergeState } from "./lib/post-merge.ts";
+import { readOverlay } from "../../../shared/consumer.ts";
 import {
   readJsonInput,
   INVALID_JSON_INPUT,
@@ -86,18 +88,21 @@ export interface ReconcileDecision {
   reason: string;
 }
 
-/** The tracker vocabulary the decision reads: label roles and state names. */
+/**
+ * The tracker vocabulary the decision reads: label roles, state names, and
+ * the state the post-merge rule stops at (`do_item.post_merge_state`).
+ */
 export interface ReconcileVocabulary {
   labels: TrackerLabels;
-  states: Record<CanonicalState, string>;
+  states: StateNames;
+  /** Absent: `done`. */
+  postMergeState?: PostMergeState;
 }
 
 /** Every role and state at its default. */
 export const DEFAULT_VOCABULARY: ReconcileVocabulary = {
   labels: DEFAULT_TRACKER_LABELS,
-  states: Object.fromEntries(
-    CANONICAL_STATES.map((s) => [s, defaultStateName(s)]),
-  ) as Record<CanonicalState, string>,
+  states: defaultStateNames(),
 };
 
 /**
@@ -120,6 +125,10 @@ export const DEFAULT_VOCABULARY: ReconcileVocabulary = {
  * — only the name can. "In Progress" is deliberately absent: a child still
  * there must keep the parent "In Progress" too (route to Step 4b), never let
  * it cap out at a later state.
+ *
+ * A child named like `pr_open` is active work, never parked, even where
+ * `pr_open` shares its name with `in_review`: its pull request may still be
+ * open, so it keeps the parent in progress like an `in_progress` child.
  *
  * This is deliberately NOT the full merged-or-parked set — Done/Canceled/
  * Duplicate are covered by `classifyChildState`'s bucket instead (see
@@ -161,11 +170,49 @@ function labelName(l: LabelLike | undefined): string {
   return typeof l === "string" ? l : (l.name ?? "");
 }
 
+function extractTailReason(
+  tails: string,
+  labels: TrackerLabels,
+  states: StateNames,
+  postMergeState: PostMergeState,
+  parentHasManualOps: boolean,
+): string {
+  const lead = `Every remaining incomplete sub-issue carries an extractable tail label (${tails}) — `;
+  const extract =
+    "verify an ACCEPT/ACCEPT-WITH-FOLLOWUPS verdict from /epic-acceptance-review, or a recorded human waiver; then extract each tail, link and comment it back to this epic, and move it to its standing destination";
+  if (parentHasManualOps)
+    return `${lead}but the PARENT itself carries ${labels.manualOps}. ${extract.replace("verify", "Verify")}. Leave the epic open and transition it to "${states.ops_pending}" until its own operator checklist clears.`;
+  if (postMergeState !== "done")
+    return `${lead}${extract}. Leave the epic open and transition it to do_item.post_merge_state "${states[postMergeState]}".`;
+  return `${lead}${extract}, and close the epic.`;
+}
+
+function allDoneOutcome(
+  labels: TrackerLabels,
+  states: StateNames,
+  postMergeState: PostMergeState,
+  parentHasManualOps: boolean,
+): [ParentState, string] {
+  if (parentHasManualOps)
+    return [
+      "ops_pending",
+      `All sub-issues are Done (or Canceled/Duplicate); the parent carries ${labels.manualOps}, so it is capped at "${states.ops_pending}" until the operator checklist is acknowledged.`,
+    ];
+  if (postMergeState === "done")
+    return ["done", "All sub-issues are Done (or Canceled/Duplicate)."];
+  return [
+    postMergeState,
+    `All sub-issues are Done (or Canceled/Duplicate); do_item.post_merge_state caps the parent at "${states[postMergeState]}", where a person closes it.`,
+  ];
+}
+
 export function reconcileParentStatus(
   input: ReconcileInput,
   vocabulary: ReconcileVocabulary = DEFAULT_VOCABULARY,
 ): ReconcileDecision {
   const { labels, states } = vocabulary;
+  const postMergeState = vocabulary.postMergeState ?? "done";
+  const prOpen = states.pr_open;
   const decide = (
     verdict: ReconcileVerdict,
     parentState: ParentState | null,
@@ -244,17 +291,16 @@ export function reconcileParentStatus(
   // never in MERGED_OR_PARKED), so falling through would route straight back
   // to "keep_in_progress" — the very Step 4b loop this rule exists to break.
   if (allIncompleteAreExtractable) {
-    // sweep-epic.ts's own close guard refuses `--close` outright on an epic
-    // carrying the manual-operations label (do-item § Step 5a caps such an
-    // epic at `ops_pending`, never `done`) — the reason must say so up
-    // front, since the plain reading of this verdict ("run sweep-epic.ts")
-    // would otherwise dispatch a call that guard rejects.
     return decide(
       "extract_and_close_eligible",
       null,
-      parentHasManualOps
-        ? `Every remaining incomplete sub-issue carries an extractable tail label (${tails}) — but the PARENT itself carries ${labels.manualOps}, so sweep-epic.ts refuses \`--close\` on it. Verify an ACCEPT/ACCEPT-WITH-FOLLOWUPS verdict from /epic-acceptance-review, or a recorded human waiver, then run sweep-epic.ts --no-close to move the tails and leave the epic open (capped at "${states.ops_pending}") until its own operator checklist clears.`
-        : `Every remaining incomplete sub-issue carries an extractable tail label (${tails}) — verify an ACCEPT/ACCEPT-WITH-FOLLOWUPS verdict from /epic-acceptance-review, or a recorded human waiver, then run sweep-epic.ts instead of setting a status here.`,
+      extractTailReason(
+        tails,
+        labels,
+        states,
+        postMergeState,
+        parentHasManualOps,
+      ),
     );
   }
 
@@ -277,6 +323,7 @@ export function reconcileParentStatus(
     (c, i) =>
       buckets[i] !== "incomplete" ||
       (nameTrustworthyForParkedCheck(c.state) &&
+        !(prOpen !== null && stateNameEquals(c.state?.name, prOpen)) &&
         PARKED_ACTIVE_STATES.some((key) =>
           stateNameEquals(c.state?.name, states[key]),
         )),
@@ -291,13 +338,13 @@ export function reconcileParentStatus(
   }
 
   if (allDone) {
-    return decide(
-      "set_status",
-      parentHasManualOps ? "ops_pending" : "done",
-      parentHasManualOps
-        ? `All sub-issues are Done (or Canceled/Duplicate); the parent carries ${labels.manualOps}, so it is capped at "${states.ops_pending}" until the operator checklist is acknowledged.`
-        : "All sub-issues are Done (or Canceled/Duplicate).",
+    const [parentState, reason] = allDoneOutcome(
+      labels,
+      states,
+      postMergeState,
+      parentHasManualOps,
     );
+    return decide("set_status", parentState, reason);
   }
 
   // Reached only when every child is merged-or-parked AND not all are
@@ -552,7 +599,11 @@ async function main(): Promise<number> {
   let vocabulary: ReconcileVocabulary;
   try {
     const config = ownTrackerConfig();
-    vocabulary = { labels: config.labels, states: config.states };
+    vocabulary = {
+      labels: config.labels,
+      states: config.states,
+      postMergeState: parsePostMerge(readOverlay()).state,
+    };
   } catch (err) {
     console.error(`ERROR: ${err instanceof Error ? err.message : String(err)}`);
     return 1;

@@ -34,7 +34,7 @@ export type ClaimResult =
       /** Nothing was written: someone already holds the issue. */
       outcome: "refused";
       issue: string;
-      why: "in_progress" | "assigned";
+      why: "in_progress" | "pr_open" | "assigned";
       reason: string;
     }
   | {
@@ -66,6 +66,14 @@ export async function claimIssue(
       issue: key,
       why: "in_progress",
       reason: `${key} is already ${started}: another session holds it`,
+    };
+  const prOpen = tracker.stateName("pr_open");
+  if (prOpen !== null && sameName(before.state.name, prOpen))
+    return {
+      outcome: "refused",
+      issue: key,
+      why: "pr_open",
+      reason: `${key} is ${prOpen}: its pull request is open`,
     };
   const holders = await tracker.assignees(key);
   const others = holders.filter((u) => u.id !== me.id);
