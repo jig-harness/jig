@@ -100,7 +100,8 @@ It checks the repository's `.config/jig.yaml` against the plugin's
 configuration schema (`${CLAUDE_SKILL_DIR}/config-schema.yaml`) and against the
 repository: unknown, refused and deprecated fields, wrong types, what the
 skills' own validation rejects, commands and paths that do not exist, required
-checks that never run, a tracker that cannot be reached, merged titles that
+checks that never run, a tracker that cannot be reached (on Jira, with each
+`issue_tracker.jira.field_labels` entry resolved against the site), merged titles that
 do not follow `pull_requests.title_pattern`, a base `pull_requests.base_rules`
 names that the repository lacks, declared values the
 repository contradicts, tracker labels that the label taxonomy

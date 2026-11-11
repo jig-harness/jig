@@ -11,7 +11,13 @@ release: minor
   to cut the branch from, `pr-plan.ts open` opens against it, names the rule
   that chose it and refuses a base the remote does not have, and do-item
   cuts the branch from it. A label may come from a Jira field through
-  `issue_tracker.jira.field_labels`.
+  `issue_tracker.jira.field_labels`, such as `fixversion:2.4` from Fix
+  versions.
+- `issue_tracker.jira.field_labels` reads a version field (Fix versions,
+  Affects versions, a version picker) as one label per version, by its
+  name, and selects by it in JQL. The audit now resolves every entry
+  against the site, and reports a field it does not name once or whose
+  values do not read as labels.
 - `pull_requests.title_format: pattern` with `pull_requests.title_pattern`
   (`{key}` and `{summary}`, such as `{key}: {summary}`) for a team whose
   tracker key leads every title: `pr-plan.ts open` prints the title rendered
