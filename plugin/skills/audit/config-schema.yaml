@@ -343,13 +343,13 @@ fields:
     type: enum
     values: [sticky, review_object]
     read_by: [drive-pr]
-    since: next
+    since: 0.210.0
   review.draft_skipping_reviewers:
     type: list
     items: string
     distinct: true
     read_by: [drive-pr]
-    since: next
+    since: 0.210.0
   review.sticky_marker:
     type: string
     read_by: [drive-pr]

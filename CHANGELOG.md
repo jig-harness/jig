@@ -391,6 +391,38 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.210.0] - 2026-11-11
+
+### Added
+
+- `drive-pr` reads an AI reviewer that submits pull-request reviews instead of
+  a summary comment with a reviewed-SHA stamp (`review.reviewer_evidence:
+review_object`). A review naming the head, or the reviewer's check run
+  completed on the head with no later review, is a review of the head; a run
+  titled `Review paused…` or `Review skipped…` stops the drive with
+  `REVIEW_SKIPPED` (`22`), the reason naming which and quoting the title. On
+  a draft the reviewer skips, the draft converges on its own work, and the
+  drive marks it Ready and waits for that review
+  ([terminal states](plugin/skills/drive-pr/references/terminal-states.md#a-reviewer-that-submits-pull-request-reviews)).
+- CodeRabbit is a built-in reviewer: `review.reviewer_app: coderabbitai`
+  alone sets its check name (`^CodeRabbit$`) and its evidence, for the drive
+  and for the dispatcher's merge-ready board.
+- `review.draft_skipping_reviewers` names the reviewers that skip drafts; the
+  merge-ready announcement waits (exit `4`) until each has run on the head
+  since the pull request was last marked Ready; the list is read from the base
+  branch's file, never the pull request's own
+  ([fields](plugin/CONFIGURATION.md#review)).
+- `arm-drive.ts` refuses a configuration whose reviewer evidence the drive
+  cannot read (`review_object` without `review.reviewer_app` where a reviewer is expected, or `sticky` for
+  CodeRabbit), and the audit reports it as an error, rather than a drive
+  waiting in `AWAITING_REVIEWER` until its timeout.
+
+### Fixed
+
+- The merge-ready announcement no longer vouches for a head a reviewer that
+  skips drafts has not looked at since the pull request was marked Ready,
+  where `review.draft_skipping_reviewers` names that reviewer.
+
 ## [0.209.0] - 2026-11-11
 
 ### Added
@@ -7203,7 +7235,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.209.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.210.0...HEAD
+[0.210.0]: https://github.com/jig-harness/jig/compare/v0.209.0...v0.210.0
 [0.209.0]: https://github.com/jig-harness/jig/compare/v0.208.0...v0.209.0
 [0.208.0]: https://github.com/jig-harness/jig/compare/v0.207.0...v0.208.0
 [0.207.0]: https://github.com/jig-harness/jig/compare/v0.206.0...v0.207.0
