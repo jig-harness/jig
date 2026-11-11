@@ -69,5 +69,14 @@ describe("the announcement's wording", () => {
     expect(reviewedClaim("comment-marker", HEAD)).toBe(
       "completed its review of this exact head",
     );
+    expect(reviewedClaim("review-object", HEAD)).toBe(
+      "completed its review of this exact head",
+    );
+  });
+
+  it("claims no more than a completed run where no review names the head", () => {
+    expect(reviewedClaim("review-check-run", HEAD)).toBe(
+      "completed its check run on this exact head, with no new review to post",
+    );
   });
 });

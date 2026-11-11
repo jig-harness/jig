@@ -1807,8 +1807,9 @@ Issues, the default, the key is the repository's own
 team is set. A drive does not need an AI reviewer: without one it
 converges on review threads and CI alone. A repository that has one names it
 with `review.reviewer_app` (or `review.reviewer_check_pattern`), and the drive
-then also waits for the check run, sticky comment and reviewed-commit marker
-described in the
+then also waits for the check run, sticky comment and reviewed-commit marker,
+or for a reviewer that submits pull-request reviews (CodeRabbit, named by
+`reviewer_app: coderabbitai` alone) its review of the head, as described in the
 [drive-pr README](skills/drive-pr/README.md#consumer-configuration). Add a
 field only when its default does not fit. The
 [configuration reference](CONFIGURATION.md) lists every field, including the

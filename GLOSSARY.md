@@ -1568,6 +1568,13 @@ make, use the entry's term instead.
   review. The drive reads it to tell a head the reviewer has not reached yet
   from one it will never review
   ([terminal states](plugin/skills/drive-pr/references/terminal-states.md)).
+- **Review object (reviewer evidence)** — a pull-request review the forge
+  records, naming the commit it was submitted against. Some automated
+  reviewers (CodeRabbit among them) record their reviews this way instead of
+  in a *sticky comment*, and post none on a push they have nothing new to say
+  about; the drive then reads the review and the reviewer's check run
+  (`review.reviewer_evidence: review_object`,
+  [terminal states](plugin/skills/drive-pr/references/terminal-states.md#a-reviewer-that-submits-pull-request-reviews)).
 - **Summary-only finding** — a review finding that appears only in the
   reviewer's *sticky comment* because it could not be anchored to a diff line,
   so it creates no thread. A loop that counted only threads would report

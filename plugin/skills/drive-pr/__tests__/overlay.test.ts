@@ -4,7 +4,7 @@
  * the configuration file.
  */
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -16,6 +16,8 @@ import {
   reviewedShaMarker,
   reviewerApp,
   reviewerCheckPattern,
+  reviewerEvidence,
+  reviewerEvidenceProblem,
   reviewerExpected,
   reviewerLabel,
   reviewsDrafts,
@@ -33,6 +35,7 @@ const KEYS = [
   "DRIVE_PR_STICKY_MARKER",
   "DRIVE_PR_SHA_MARKER",
   "DRIVE_PR_SKIP_NOTICE_MARKER",
+  "DRIVE_PR_REVIEWER_EVIDENCE",
 ] as const;
 let saved: Record<string, string | undefined>;
 let dir: string;
@@ -181,6 +184,148 @@ describe("reviewer protocol", () => {
     expect(stickyMarker()).toBe("<!-- env -->");
     expect(reviewedShaMarker()).toBe("env-sha");
     expect(skipNoticeMarker()).toBe("env-skip");
+  });
+
+  it("a known reviewer app brings its check name and evidence", () => {
+    overlay("review:\n  reviewer_app: coderabbitai\n");
+    expect(reviewerCheckPattern()).toBe("^CodeRabbit$");
+    expect(reviewerEvidence()).toBe("review_object");
+    expect(reviewerEvidenceProblem()).toBeNull();
+    expect(isReviewerLogin("coderabbitai[bot]")).toBe(true);
+    overlay(
+      'review:\n  reviewer_app: coderabbitai\n  reviewer_check_pattern: "^Own$"\n',
+    );
+    expect(reviewerCheckPattern()).toBe("^Own$");
+    overlay("review:\n  reviewer_app: rev\n");
+    expect(reviewerCheckPattern()).toBe("^ai[ _-]?review(\\s*\\(.+\\))?$");
+    expect(reviewerEvidence()).toBe("sticky");
+  });
+
+  it("reads review.reviewer_evidence, and the environment overrides it", () => {
+    overlay(
+      "review:\n  reviewer_app: rev\n  reviewer_evidence: review_object\n",
+    );
+    expect(reviewerEvidence()).toBe("review_object");
+    process.env.DRIVE_PR_REVIEWER_EVIDENCE = "sticky";
+    expect(reviewerEvidence()).toBe("sticky");
+    delete process.env.DRIVE_PR_REVIEWER_EVIDENCE;
+    overlay("review:\n  reviewer_app: rev\n  reviewer_evidence: comments\n");
+    expect(() => reviewerEvidence()).toThrow("review.reviewer_evidence");
+  });
+
+  it("names the evidence the drive could not read", () => {
+    overlay(
+      "review:\n  reviewer_app: coderabbitai\n  reviewer_evidence: sticky\n",
+    );
+    expect(reviewerEvidenceProblem()).toContain("submits pull-request reviews");
+    overlay(
+      'review:\n  reviewer_check_pattern: "^Bot$"\n  reviewer_evidence: review_object\n',
+    );
+    expect(reviewerEvidenceProblem()).toContain("no review.reviewer_app");
+    overlay("review:\n  reviewer_evidence: review_object\n");
+    expect(reviewerEvidenceProblem()).toBeNull();
+  });
+
+  /** The list, or the refusal, `draftSkippingReviewers()` gives in a clean subprocess. */
+  function skippers(
+    commits: { base?: string; bound?: string },
+    extra: Record<string, string> = {},
+  ): string {
+    const git = (cwd: string, ...args: string[]) =>
+      Bun.spawnSync(["git", ...args], {
+        cwd,
+        env: {
+          PATH: process.env.PATH ?? "",
+          HOME: dir,
+          GIT_AUTHOR_NAME: "t",
+          GIT_AUTHOR_EMAIL: "t@t",
+          GIT_COMMITTER_NAME: "t",
+          GIT_COMMITTER_EMAIL: "t@t",
+        },
+      })
+        .stdout.toString()
+        .trim();
+    const repo = join(dir, `repo-${Math.random()}`);
+    mkdirSync(repo);
+    git(repo, "init", "-q");
+    const commit = (yaml: string | undefined): string => {
+      mkdirSync(join(repo, ".config"), { recursive: true });
+      if (yaml === undefined)
+        rmSync(join(repo, ".config/jig.yaml"), { force: true });
+      else writeFileSync(join(repo, ".config/jig.yaml"), yaml);
+      git(repo, "add", "-A");
+      git(repo, "commit", "-q", "--allow-empty", "-m", "c");
+      return git(repo, "rev-parse", "HEAD");
+    };
+    const env: Record<string, string> = {
+      PATH: process.env.PATH ?? "",
+      HOME: dir,
+      JIG_CONSUMER_ROOT: repo,
+      ...extra,
+    };
+    if (commits.bound !== undefined)
+      env.DRIVE_PR_POLICY_BOUND = commit(commits.bound);
+    if (commits.base !== undefined)
+      env.DRIVE_PR_POLICY_BASE = commit(commits.base);
+    commit("review:\n  draft_skipping_reviewers: []\n");
+    const r = Bun.spawnSync(
+      [
+        process.execPath,
+        "-e",
+        `import { draftSkippingReviewers } from ${JSON.stringify(join(import.meta.dir, "../scripts/lib/overlay.ts"))};
+try { console.log(JSON.stringify(draftSkippingReviewers())); } catch (e) { console.log(String(e)); }`,
+      ],
+      { cwd: repo, env },
+    );
+    return r.stdout.toString().trim();
+  }
+
+  it("reads review.draft_skipping_reviewers from the base commit, never the checkout's own file", () => {
+    expect(skippers({ base: "review: {}\n" })).toBe("[]");
+    expect(
+      skippers({
+        base: "review:\n  draft_skipping_reviewers: [coderabbitai]\n",
+      }),
+    ).toBe('["coderabbitai"]');
+    expect(
+      skippers({ base: "review:\n  draft_skipping_reviewers: [a, a]\n" }),
+    ).toContain("review.draft_skipping_reviewers");
+  });
+
+  it("ignores the environment and a user layer, standalone or in a driver pass", () => {
+    const base = "review: {}\n";
+    expect(
+      skippers(
+        { base },
+        { JIG__REVIEW__DRAFT_SKIPPING_REVIEWERS: "[coderabbitai]" },
+      ),
+    ).toBe("[]");
+    expect(
+      skippers({ base }, { DRIVE_PR_TARGET: "1", JIG_OVERLAY: join(dir, "x") }),
+    ).toBe("[]");
+  });
+
+  it("refuses when no base commit is named or the base's review section is not a mapping", () => {
+    expect(skippers({})).toContain("the base branch's configuration");
+    expect(skippers({ base: "review: false\n" })).toContain(
+      "must be a mapping",
+    );
+    expect(skippers({ base: "review: []\n" })).toContain("must be a mapping");
+  });
+
+  it("adds a stacked layer's list to the integration branch's, never removing from it", () => {
+    expect(
+      skippers({
+        bound: "review:\n  draft_skipping_reviewers: [coderabbitai]\n",
+        base: "review:\n  draft_skipping_reviewers: []\n",
+      }),
+    ).toBe('["coderabbitai"]');
+    expect(
+      skippers({
+        bound: "review:\n  draft_skipping_reviewers: [coderabbitai]\n",
+        base: "review:\n  draft_skipping_reviewers: [other]\n",
+      }),
+    ).toBe('["coderabbitai","other"]');
   });
 });
 
