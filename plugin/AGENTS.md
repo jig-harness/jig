@@ -143,7 +143,9 @@ part for that moment; the rules and their reasons are
 - **Discovery controls for what they do**: `paths:` for a skill tied to a
   file area; `disable-model-invocation: true` only for a skill the user must
   start (check first that no workflow calls it); `user-invocable: false`
-  hides a menu entry and saves no budget.
+  hides a menu entry, saves no budget and makes Claude Code refuse a
+  `/<name>` prompt, `claude -p` included, so never set it on a skill a
+  dispatched pass or a script starts by slash command.
 
 `bun run quality` counts what a script can see of these rules for every
 skill file (M0's skill-authoring check, as a counter of the ratchet) and
