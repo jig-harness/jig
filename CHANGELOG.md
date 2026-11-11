@@ -391,6 +391,18 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.202.1] - 2026-11-11
+
+### Fixed
+
+- The drive state reaper retires the displaced file-lock quarantine entries of
+  the releases before the database (`<lock>.stale.<generation>`) with
+  `--delete`, instead of only reporting them: once no lock of the earlier
+  layout is present, none of its state, lease, driver or claim files was
+  written in the last 24 hours, and no entry is younger than that. A clone
+  that was never imported is covered too. The README's upgrade section says
+  when they go.
+
 ## [0.202.0] - 2026-11-11
 
 ### Added
@@ -6991,7 +7003,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.202.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.202.1...HEAD
+[0.202.1]: https://github.com/jig-harness/jig/compare/v0.202.0...v0.202.1
 [0.202.0]: https://github.com/jig-harness/jig/compare/v0.201.0...v0.202.0
 [0.201.0]: https://github.com/jig-harness/jig/compare/v0.200.1...v0.201.0
 [0.200.1]: https://github.com/jig-harness/jig/compare/v0.200.0...v0.200.1
