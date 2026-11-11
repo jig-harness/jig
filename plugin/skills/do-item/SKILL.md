@@ -1787,7 +1787,11 @@ record how it ended. In such a pass:
   state), and the tracker refuses every request until the reset, so do not
   re-read the item or finish the transition by hand: the claim run again
   after the reset repeats every start check (sole assignee, holds,
-  blockers, ancestry, `claim_from`) before it writes. After a successful
+  blockers, ancestry, `claim_from`) before it writes. An inherited claim
+  that stopped after it assigned the item, or after it moved it, is refused
+  by those checks on the re-run (the item is no longer unassigned, or no
+  longer in `claim_from`): that refusal is a stop for a person, recorded as
+  `failed`, because no step here finishes a partial claim. After a successful
   claim the item is this pass's: wait for the reset where the deadline
   allows, else record `failed` as for any other stop.
 - **A claim the repository's preflight command refused** (exit `3` with
