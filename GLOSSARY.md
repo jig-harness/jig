@@ -65,6 +65,14 @@ make, use the entry's term instead.
   holds one concrete, tested implementation of it, and what it learns comes
   back as *backflow*. Short form: consumer. *Avoid*: instance, downstream
   repository, target repository, adopting repository.
+- **Tracker claim token** — the marker comment a claim posts on a tracker
+  item (`do_item.claim_marker`) before it writes the item, so two hosts
+  picking the same item can tell their claims apart: of the markers posted
+  within ten minutes of a claim's own, the earliest wins and a later claim
+  stands down. A marker older than that lapses. The tracker offers no
+  conditional create for a comment, so the token narrows a race between
+  hosts and does not exclude it
+  ([plugin/RECORDS.md](plugin/RECORDS.md)).
 - **Tracker namespace** — the stable name of the tracker collection whose
   served assignments a repository reads: `linear:<team>` for Linear, or
   `jira:<site>:<project>` for Jira, where the site is its `https://` address. The adapter and, for Jira, its site keep
@@ -644,10 +652,16 @@ make, use the entry's term instead.
   be reviewed before what it builds on merges. A *native* stack records the
   final target in the *forge*'s own stack metadata; a plain *branch chain*
   records it nowhere, and tools have to walk the chain of bases to find it.
+- **Release line** — a long-lived branch that keeps an earlier version of a
+  product maintained (`release/2.4`) beside the *integration branch*. A fix
+  for that version lands there first, and is carried forward to the newer
+  branches afterwards, often by automation.
 - **Pull-request policy** — a repository's declared rules for how pull
-  requests are shaped: whether they may stack, how branches are named,
-  whether they open as drafts and when they are marked Ready, how a pull
-  request links its issue, and how large it may be.
+  requests are shaped: whether they may stack, which base an item's pull
+  request targets (the *integration branch*, or a *release line* its labels
+  choose), how branches are named, how titles and commit messages carry the
+  issue key, whether they open as drafts and when they are marked Ready, how
+  a pull request links its issue, and how large it may be.
 - **Merge base** — the most recent commit two branches share. A merge
   compares each branch with it to see what each side changed; a pull
   request's own changes are its diff against the merge base with its base

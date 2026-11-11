@@ -453,7 +453,10 @@ waits for the reset within its deadline, else records `failed`): the item is hel
 question for a person, and the first tick after it launches the item again. A pickup
 whose claim the repository's start rules (`do_item.preflight_command`)
 refused records `failed --refused <updated-at> --reason <reason>`, and the dispatcher
-shows the item as held with that reason until the item changes. Every ended
+shows the item as held with that reason until the item changes. A batch
+pickup names each refused member with `--key <item>` beside its `--refused`:
+only those members are held, each until it changes, and the rest of the
+batch is picked up again without them. Every ended
 launch's outcome keeps its next owner: a station address, a person and their
 act, or nobody with a reason. `jig ask` shows this as `last.next`; older
 outcomes that did not keep it say it was not recorded. A converged drive
@@ -463,7 +466,15 @@ slot while the runtime reports its agent working or waiting, and gives it
 back when the agent finishes. `do-item` claims the item itself
 (`tracker.ts claim`: refused when the item is already in progress or
 assigned to someone else, and abandoned when a re-read shows another claim
-landed first), so the tick never writes to the tracker. A claimed item
+landed first), so the tick never writes to the tracker. Hosts that serve
+one person, or pick up from one queue, claim with the same identity, so
+only the claim marker tells their claims apart: with
+`do_item.claim_marker` set, of two hosts claiming one item the one whose
+marker is earliest claims it and the other refuses, usually with nothing
+written (best effort: a lagging listing can let both win, and a later loss
+stands a claim down after its writes)
+([do-item's start rules](skills/do-item/README.md#the-repositorys-own-start-rules)).
+Without it, claims serialize on one host only. A claimed item
 with no running session for longer than `dispatch.stalled_after` is
 reported as stalled and never relaunched (a served person's item only when
 a pickup of the host claimed it: the rest of their work in progress is

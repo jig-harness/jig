@@ -391,6 +391,83 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.207.0] - 2026-11-11
+
+### Added
+
+- A served person's epic children now start on Linear and Jira too. An
+  inherited claim (`claim --for <person> --ancestor <epic>`) assigns the
+  unassigned child, then checks the item's history to confirm the
+  assignment replaced nobody. If it did replace someone, it puts them back
+  and stands down. Neither tracker offers a write that applies only to an
+  unassigned item, so before this the claim refused there.
+
+### Changed
+
+- `do_item.claim_marker` now serializes claims across hosts. The claim
+  posts its marker before it writes the item's assignee or state, then
+  reads the item's markers back. Of the markers posted within 10 minutes of
+  its own, the earliest wins. A claim that finds an earlier marker, or that
+  cannot post or read back its own, removes its marker and refuses (exit 3,
+  `"why": "marker"`), with nothing written to the item. A claim that finds
+  an earlier marker only after writing stands down (exit 4). Turn the
+  setting on wherever more than one host picks up from one queue; left
+  unset, claims serialize on one host only.
+- With `do_item.claim_marker` set, a marker that cannot be posted now
+  refuses the claim, where it used to leave the claim standing. The claim's
+  `"marker"` JSON now reports `confirmed`: whether the read after the write
+  confirmed that the claim still holds the earliest marker.
+- A served batch pickup that the repository's start rules
+  (`do_item.preflight_command`) refused for one member now holds only that
+  member. The pass records `jig dispatch result <record> <token> failed
+  --refused <updated-at> --key <item> --reason <reason>`, repeating
+  `--refused` and `--key` for each member refused. The dispatcher holds each
+  named member until its own `updatedAt` moves, and picks the rest of the
+  batch up again without them. A single-item pickup, and a refusal recorded
+  without `--key`, are held as before: on one time for the whole pickup.
+
+## [0.206.0] - 2026-11-11
+
+### Added
+
+- `pull_requests.base_rules` chooses a pull request's base from the item's
+  labels, for a product whose fixes land on a maintained release line: the
+  first rule one of whose labels the item carries names the base, and the
+  integration branch is the fallback. `pr-plan.ts branch` prints the base
+  to cut the branch from, `pr-plan.ts open` opens against it, names the rule
+  that chose it and refuses a base the remote does not have, and do-item
+  cuts the branch from it. A label may come from a Jira field through
+  `issue_tracker.jira.field_labels`, such as `fixversion:2.4` from Fix
+  versions.
+- `issue_tracker.jira.field_labels` reads a version field (Fix versions,
+  Affects versions, a version picker) as one label per version, by its
+  name, and selects by it in JQL. The audit now resolves every entry
+  against the site, and reports a field it does not name once or whose
+  values do not read as labels.
+- `pull_requests.title_format: pattern` with `pull_requests.title_pattern`
+  (`{key}` and `{summary}`, such as `{key}: {summary}`) for a team whose
+  tracker key leads every title: `pr-plan.ts open` prints the title rendered
+  for the issue, and the audit checks the pattern against the titles of the
+  last thirty merged pull requests.
+- `pull_requests.commit_prefix` (such as `"{key}: "`, the key read from the
+  branch name) for an organisation that refuses commits without a tracker
+  key on its protected branches. `drive-pr/scripts/commit-prefix.ts` rewords
+  each unpushed commit that lacks it, merge commits included, and reports a
+  pushed one. drive-pr's `finish-round.ts` runs it before every round's
+  push, before anything records the head, and refuses the push (exit `9`)
+  when the check cannot run; fix-ci, resolve-conflicts and do-item run it
+  before they push.
+- The audit warns of a base `pull_requests.base_rules` names that the
+  repository does not have.
+
+### Changed
+
+- `pr-plan.ts branch` prints the base on a second line
+  (`base: <branch> (<source>)`), and `--json` adds `base` and `baseSource`;
+  a caller that read its whole output as the branch name reads the first
+  line. With `pull_requests.base_rules` declared, `branch` and `open` need
+  `--issue-json`.
+
 ## [0.205.0] - 2026-11-11
 
 ### Added
@@ -7088,7 +7165,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.205.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.207.0...HEAD
+[0.207.0]: https://github.com/jig-harness/jig/compare/v0.206.0...v0.207.0
+[0.206.0]: https://github.com/jig-harness/jig/compare/v0.205.0...v0.206.0
 [0.205.0]: https://github.com/jig-harness/jig/compare/v0.204.0...v0.205.0
 [0.204.0]: https://github.com/jig-harness/jig/compare/v0.203.0...v0.204.0
 [0.203.0]: https://github.com/jig-harness/jig/compare/v0.202.1...v0.203.0

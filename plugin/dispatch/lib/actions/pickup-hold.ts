@@ -19,7 +19,9 @@
  *   `refusal`) holds the item, with the reason, only until the item's
  *   `updatedAt` moves past the time the rules saw: a person changed the
  *   item, so it is picked up again. An item read without an `updatedAt`
- *   keeps the rule above.
+ *   keeps the rule above. A batch pass that named the members the rules
+ *   refused holds only those, each on its own `updatedAt`; the rest of the
+ *   batch is free to be picked up, and batched, again.
  */
 import {
   holds,
@@ -29,6 +31,7 @@ import {
   type ReadRecord,
   writeRecord,
 } from "../launches.ts";
+import { refusalOf } from "../pickup-refusal.ts";
 import { RUNNING_STATES, type SessionsReport } from "../runtime/port.ts";
 
 export type PickupHold =
@@ -143,7 +146,10 @@ export function pickupHold(
           why: `launch record ${latest.record.id} waits for the tracker's rate limit to reset at ${latest.waitsUntil}; the item starts again after it`,
         }
       : { kind: "none" };
-  const refusal = latest.refusal ?? null;
+  const recorded = latest.refusal ?? null;
+  const refusal = recorded === null ? null : refusalOf(recorded, item);
+  // The pass named the members it refused, and this is not one of them.
+  if (recorded !== null && refusal === null) return { kind: "none" };
   if (refusal !== null && updatedAt !== undefined) {
     if (changedSince(updatedAt, refusal.updatedAt)) return { kind: "none" };
     return {
