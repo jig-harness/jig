@@ -16,6 +16,11 @@ import {
   offsetPages,
   searchPages,
 } from "../scripts/lib/tracker/jira/transport.ts";
+import {
+  budgetGovernor,
+  isRateLimited,
+  memoryBudgetStore,
+} from "../../../shared/tracker-budget.ts";
 import { GATEWAY, SITE, tokenRun } from "./jira-fixtures.ts";
 
 const fieldOf = (f: () => unknown): string | null => {
@@ -474,6 +479,63 @@ describe.each(MODES)("Jira transport: $name", (mode) => {
       true,
       "no Jira credential: set JIRA_BEARER_TOKEN to an OAuth access token, JIRA_TOKEN_COMMAND to a command that prints one, or JIRA_EMAIL and JIRA_API_TOKEN to an Atlassian account's email and API token",
     ]);
+  });
+});
+
+describe("Jira request budget across credential modes", () => {
+  const status = (code: number, headers: Record<string, string> = {}) =>
+    (async () =>
+      new Response(code === 200 ? "{}" : "", {
+        status: code,
+        headers,
+      })) as unknown as typeof fetch;
+  const bearer = (token: string) =>
+    jiraAuthorization({ kind: "bearer", token });
+  const command = (token: string) =>
+    jiraAuthorization(
+      { kind: "command", argv: ["broker", "token"] },
+      { runner: async () => tokenRun(`${token}\n`) },
+    );
+
+  it("shares one budget between a direct Bearer token and a command returning it", async () => {
+    const governor = budgetGovernor(memoryBudgetStore());
+    await httpTransport(
+      GATEWAY,
+      bearer("same-t0ken"),
+      status(429, { "Retry-After": "300" }),
+      governor,
+    )({ method: "GET", path: "x" }).catch(() => undefined);
+
+    let sent = 0;
+    const counting = (async () => {
+      sent += 1;
+      return new Response("{}", { status: 200 });
+    }) as unknown as typeof fetch;
+    const refused = await httpTransport(
+      GATEWAY,
+      command("same-t0ken"),
+      counting,
+      governor,
+    )({ method: "GET", path: "x" }).catch((e: unknown) => e);
+    expect(isRateLimited(refused)).toBe(true);
+    expect(sent).toBe(0);
+  });
+
+  it("keeps a different token independent", async () => {
+    const governor = budgetGovernor(memoryBudgetStore());
+    await httpTransport(
+      GATEWAY,
+      bearer("one"),
+      status(429, { "Retry-After": "300" }),
+      governor,
+    )({ method: "GET", path: "x" }).catch(() => undefined);
+    const answer = await httpTransport(
+      GATEWAY,
+      command("two"),
+      status(200),
+      governor,
+    )({ method: "GET", path: "x" }).catch((e: unknown) => e);
+    expect(isRateLimited(answer)).toBe(false);
   });
 });
 
