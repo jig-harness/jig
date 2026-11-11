@@ -107,6 +107,18 @@ describe("combinedStatuses", () => {
   it("is null for output that is not JSON", () => {
     expect(combinedStatuses("<html>")).toBeNull();
   });
+
+  it("is null for JSON that is not the advertised shape", () => {
+    for (const raw of [
+      "{}",
+      "null",
+      '[{"statuses":null}]',
+      '{"statuses":{}}',
+      '{"statuses":[null]}',
+      '{"statuses":["x"]}',
+    ])
+      expect(combinedStatuses(raw)).toBeNull();
+  });
 });
 
 describe("ciRepairSettings", () => {

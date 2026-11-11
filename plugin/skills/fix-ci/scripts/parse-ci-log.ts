@@ -19,12 +19,14 @@
  *     errors: [{category, job?, step?, raw, file?, line?, column?, code?, rule?,
  *               message}],
  *     infrastructure: {infrastructure, why, jobs: [{job, infrastructure, why}]},
- *     statuses?: [{context, target_url, log, reason?}] }
+ *     statuses?: [{context, target_url, log, reason?, log_tail?}] }
  * `job` and `step` name the job and step that printed the line, when the log
  * line carries gh's prefix; an error from a commit status's log names the
  * status's context as its `job`. `infrastructure` is the shared reading of
  * `shared/ci-infra.ts` over the Actions run's log: true only when every
- * failed job failed on the infrastructure and printed no code diagnostic.
+ * failed job failed on the infrastructure and printed no code diagnostic, and
+ * never when a commit status also failed. A status log read with no known
+ * diagnostic carries its last characters as `log_tail`.
  * With a pull request, `statuses` lists each failing commit status on its
  * head, `log` being `read`, `gone` (`ci.log_command` exited 3; `reason` is
  * the first line it printed) or `unread` (no `ci.log_command` is set).
@@ -95,7 +97,15 @@ function reading(log: string, runId: string): string {
 export interface StatusEntry extends FailingStatus {
   log: "read" | "gone" | "unread";
   reason?: string;
+  /**
+   * The end of a log that was read but held no diagnostic the parser knows,
+   * so the failure is not lost with the parse.
+   */
+  log_tail?: string;
 }
+
+/** Characters of an unparsed status log kept as its `log_tail`. */
+const LOG_TAIL_CHARS = 4000;
 
 /** A failing status's entry, with its log when the command printed one. */
 interface StatusReading {
@@ -113,30 +123,46 @@ function combinedReading(
   runId: string,
   statuses: readonly StatusReading[],
 ): string {
+  const entries: StatusEntry[] = [];
+  const statusErrors = statuses.flatMap(({ entry, log }) => {
+    if (log === null) {
+      entries.push(entry);
+      return [];
+    }
+    const parsed = parseCiErrors(log).errors;
+    entries.push(
+      parsed.length > 0
+        ? entry
+        : {
+            ...entry,
+            log_tail: Array.from(log).slice(-LOG_TAIL_CHARS).join(""),
+          },
+    );
+    return parsed.map((e) => ({ ...e, job: e.job ?? entry.context }));
+  });
   const errors = [
     ...(runLog === null ? [] : parseCiErrors(runLog, runId).errors),
-    ...statuses.flatMap(({ entry, log }) =>
-      log === null
-        ? []
-        : parseCiErrors(log).errors.map((e) => ({
-            ...e,
-            job: e.job ?? entry.context,
-          })),
-    ),
+    ...statusErrors,
   ];
+  const actions: InfraReading | null =
+    runLog === null ? null : readInfrastructure(runLog);
+  // Infrastructure only when every failure source is the Actions run: a
+  // commit status's log is the CI service's own form, which the shared rule
+  // cannot read, so any failing status keeps the verdict at "not
+  // infrastructure" and the repair on the code.
   const infrastructure: InfraReading =
-    runLog === null
+    statuses.length > 0
       ? {
           infrastructure: false,
-          why: "no GitHub Actions run failed; a commit status's log is not read for infrastructure",
-          jobs: [],
+          why: "a failing commit status is present; its log is not read for infrastructure",
+          jobs: actions?.jobs ?? [],
         }
-      : readInfrastructure(runLog);
+      : (actions as InfraReading);
   return JSON.stringify(
     {
       ...summarizeCiErrors(errors, runId),
       infrastructure,
-      statuses: statuses.map((s) => s.entry),
+      statuses: entries,
     },
     null,
     2,

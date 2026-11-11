@@ -69,14 +69,18 @@ export function combinedStatuses(raw: string): CommitStatus[] | null {
   }
   const statuses: CommitStatus[] = [];
   for (const page of Array.isArray(pages) ? pages : [pages]) {
-    const list = (page as { statuses?: unknown[] } | null)?.statuses ?? [];
-    for (const s of list as Array<Record<string, unknown>>) {
+    const list = (page as { statuses?: unknown } | null)?.statuses;
+    if (!Array.isArray(list)) return null;
+    for (const s of list) {
+      if (s === null || typeof s !== "object" || Array.isArray(s)) return null;
+      const status = s as Record<string, unknown>;
       statuses.push({
-        context: String(s.context ?? ""),
-        state: String(s.state ?? ""),
+        context: String(status.context ?? ""),
+        state: String(status.state ?? ""),
         description:
-          s.description === null ? null : String(s.description ?? ""),
-        targetUrl: typeof s.target_url === "string" ? s.target_url : null,
+          status.description === null ? null : String(status.description ?? ""),
+        targetUrl:
+          typeof status.target_url === "string" ? status.target_url : null,
       });
     }
   }

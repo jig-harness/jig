@@ -1505,8 +1505,10 @@ Then:
   `bun "${CLAUDE_SKILL_DIR}/../fix-ci/scripts/parse-ci-log.ts" --pr <PR>`
   reads both, a status's log through the repository's `ci.log_command`. A
   status it reports as `unread` (no command) or `gone` has no log to read:
-  open its `target_url`, and when that gives none either, end the round
-  without a commit and say the log is missing: a fix without it is a guess.
+  open its `target_url` only when it is an `https` link on the CI service's
+  own host (never a loopback, internal-network or metadata address, or a
+  host the repository does not use for CI), and when that gives none either,
+  end the round without a commit and say the log is missing: a fix without it is a guess.
   Reproduce locally where possible, fix the cause. Fix every failing
   check, not only the first. Then pick up at **§ 5**: sync the base, resolve and
   run the round's validation plan over the cumulative tree, and **§ 6** to

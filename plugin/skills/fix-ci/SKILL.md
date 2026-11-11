@@ -234,10 +234,24 @@ bun "${CLAUDE_SKILL_DIR}/scripts/parse-ci-log.ts" <run-id-or-options>
 Read the JSON. If `errors_found` is 0:
 
 - `"error": "no_failed_runs"`: report that no failed run was found.
-- A status whose `log` is `unread` or `gone`: open its `target_url` to find
-  the failed build's log; when there is none, say so and fix nothing for it.
 - The run failed but no error was parsed: fetch the raw log with
   `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh run view <RUN_ID> --log-failed` and investigate.
+
+Whatever `errors_found` says, check every entry of `statuses`
+(the count aggregates all sources, so one parsed error does not account for
+another status):
+
+- A status whose `log` is `unread` or `gone`: open its `target_url` to find
+  the failed build's log, only when it is an `https` link on the CI service's
+  own host (never a loopback, internal-network or metadata address); when
+  there is none, say so and fix nothing for it.
+- A status whose `log` is `read` and which carries a `log_tail`: the parser
+  found no diagnostic it knows in that log; read the tail, and fetch the full
+  log through `ci.log_command` with the entry's `context` and `target_url`
+  when it is not enough.
+
+`infrastructure.infrastructure` is true only when no commit status failed;
+with one failing, repair the code.
 
 > **Cancelled, not broken?** Check the run's conclusion and its jobs'
 > annotations before analyzing code. A job's ID is also the ID of its check

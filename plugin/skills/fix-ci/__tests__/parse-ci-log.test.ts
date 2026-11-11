@@ -635,6 +635,20 @@ describe("a pull request whose CI reports as a commit status", () => {
     expect(calls.some((c) => c.startsWith("gh run view"))).toBe(false);
   });
 
+  it("keeps the tail of a status log the parser knows nothing in", async () => {
+    const { runner } = statusOnly([red]);
+    const { logs } = logCommand({
+      [JENKINS]: { kind: "log", text: "BUILD FAILURE\nsomething opaque\n" },
+    });
+    const r = await capture(["--pr", "12"], runner, {}, logs);
+    const out = JSON.parse(r.out);
+    expect(out.errors_found).toBe(0);
+    expect(out.statuses[0]).toMatchObject({
+      log: "read",
+      log_tail: "BUILD FAILURE\nsomething opaque\n",
+    });
+  });
+
   it("names a status whose log is gone, with the command's reason", async () => {
     const { runner } = statusOnly([red]);
     const { logs } = logCommand({

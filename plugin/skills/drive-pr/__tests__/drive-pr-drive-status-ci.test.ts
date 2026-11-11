@@ -180,8 +180,29 @@ describe("the CI verdict over commit statuses", () => {
       { context: JENKINS, target_url: BUILD_URL },
     ]);
     expect(env.DRIVE_PR_ROUND_REPAIR_SKILL).toBe("ci-support");
-    const review = passEnv();
-    expect(review.DRIVE_PR_ROUND_FAILED_STATUSES).toBeUndefined();
-    expect(review.DRIVE_PR_ROUND_REPAIR_SKILL).toBeUndefined();
+  });
+
+  it("removes inherited repair variables from an ordinary pass", () => {
+    const repair = join(import.meta.dir, "../scripts/lib/driver/repair.ts");
+    const child = Bun.spawnSync(
+      [
+        process.execPath,
+        "-e",
+        `import { passEnv } from ${JSON.stringify(repair)};
+const env = passEnv();
+console.log(JSON.stringify([env.DRIVE_PR_ROUND_FAILED_STATUSES ?? null, env.DRIVE_PR_ROUND_REPAIR_SKILL ?? null]));`,
+      ],
+      {
+        env: {
+          ...process.env,
+          DRIVE_PR_ROUND_FAILED_STATUSES: "[]",
+          DRIVE_PR_ROUND_REPAIR_SKILL: "ci-support",
+        },
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    expectSpawnExit(child, 0);
+    expect(JSON.parse(child.stdout.toString())).toEqual([null, null]);
   });
 });
