@@ -13,7 +13,7 @@
  */
 import { isRecord } from "../../../../shared/guards.ts";
 import { JigError, type Outcome } from "../../../../shared/outcome.ts";
-import { defaultBranchSetting } from "../../../../shared/repo-command.ts";
+import { defaultBranchSettings } from "../../../../shared/repo-command.ts";
 import { doItemSection } from "./overlay.ts";
 import { CANONICAL_STATES, type CanonicalState } from "./tracker/port.ts";
 
@@ -80,27 +80,30 @@ export async function claimSettingsFromDefaultBranch(
   root: string,
   workingTree: Record<string, unknown> | null,
 ): Promise<Outcome<ClaimSettings, "unreadable">> {
-  const from = await defaultBranchSetting(root, "do_item", "claim_from");
-  const marker = from.ok
-    ? await defaultBranchSetting(root, "do_item", "claim_marker")
-    : from;
-  if (from.ok && marker.ok)
+  // One read answers both fields, so a restriction read is never dropped
+  // because a second read failed.
+  const read = await defaultBranchSettings(root, "do_item", [
+    "claim_from",
+    "claim_marker",
+  ]);
+  if (read.ok)
     return {
       ok: true,
       value: claimSettingsOf({
-        do_item: { claim_from: from.value, claim_marker: marker.value },
+        do_item: {
+          claim_from: read.value.claim_from,
+          claim_marker: read.value.claim_marker,
+        },
       }),
     };
   const own = claimSettingsOf(workingTree);
   if (own.claimFrom === null && !own.claimMarker)
     return { ok: true, value: own };
-  const bad = from.ok ? marker : from;
-  const reason = bad.ok ? "unreadable" : bad.failure.reason;
   return {
     ok: false,
     failure: {
       code: "unreadable",
-      reason: `do_item.claim_from and do_item.claim_marker are read from the default branch, which could not be read: ${reason}`,
+      reason: `do_item.claim_from and do_item.claim_marker are read from the default branch, which could not be read: ${read.failure.reason}`,
     },
   };
 }

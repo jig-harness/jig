@@ -175,3 +175,30 @@ describe("defaultBranchSetting", () => {
     expect(out.failure.reason).toContain("does not parse");
   });
 });
+
+describe("defaultBranchSettings", () => {
+  it("reads several fields from one default-branch read, unset ones as null", async () => {
+    const dir = clone(
+      "do_item:\n  claim_from: [todo]\n",
+      "do_item:\n  claim_from: [backlog]\n  claim_marker: true\n",
+    );
+    expect(
+      await runner(["settings", dir, "do_item", "claim_from,claim_marker"]),
+    ).toEqual({
+      ok: true,
+      value: { claim_from: ["todo"], claim_marker: null },
+    });
+  });
+
+  it("fails as a whole when the default branch cannot be read", async () => {
+    const dir = clone("do_item: [unclosed\n");
+    const out = await runner([
+      "settings",
+      dir,
+      "do_item",
+      "claim_from,claim_marker",
+    ]);
+    expect(out.ok).toBe(false);
+    expect(out.value).toBeUndefined();
+  });
+});

@@ -5,10 +5,12 @@
  * Usage:
  *   bun runner.ts run <cwd> <timeout-sec> <command>
  *   bun runner.ts setting <root> <section> <field>
+ *   bun runner.ts settings <root> <section> <field>,<field>...
  * Prints the result as JSON.
  */
 import {
   defaultBranchSetting,
+  defaultBranchSettings,
   runRepoCommand,
 } from "../../../repo-command.ts";
 
@@ -23,6 +25,12 @@ if (mode === "run")
         stdin: "input",
         name: "the command",
       }),
+    ),
+  );
+else if (mode === "settings")
+  console.log(
+    JSON.stringify(
+      await defaultBranchSettings(a ?? ".", b ?? "", (c ?? "").split(",")),
     ),
   );
 else

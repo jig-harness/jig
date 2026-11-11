@@ -199,32 +199,46 @@ async function defaultBranchConfig(
 }
 
 /**
- * One field of `.config/jig.yaml` as the repository's default branch holds
- * it (`section.field`), `null` when that branch does not set it. A clone
- * with no default branch to read (`<remote>/HEAD` unset), or a file there
- * that does not parse, is a failure: the caller decides whether that
+ * Fields of `.config/jig.yaml` as the repository's default branch holds
+ * them (`section.field`), each `null` when that branch does not set it, all
+ * from one fetch and one parse, so they answer together or fail together. A
+ * clone with no default branch to read (`<remote>/HEAD` unset), or a file
+ * there that does not parse, is a failure: the caller decides whether that
  * refuses.
  */
-export async function defaultBranchSetting(
+export async function defaultBranchSettings(
   root: string,
   section: string,
-  field: string,
-): Promise<Outcome<unknown, "unreadable">> {
+  fields: readonly string[],
+): Promise<Outcome<Record<string, unknown>, "unreadable">> {
   const read = await defaultBranchConfig(root);
   if (!read.ok) return read;
   const { ref, config } = read.value;
-  if (config === null || config === undefined) return ok(null);
+  const out: Record<string, unknown> = {};
+  for (const field of fields) out[field] = null;
+  if (config === null || config === undefined) return ok(out);
   if (!isMapping(config))
     return failed(
       "unreadable",
       `${OVERLAY_RELPATH} on ${ref} is not a mapping`,
     );
   const part = config[section];
-  if (part === undefined || part === null) return ok(null);
+  if (part === undefined || part === null) return ok(out);
   if (!isMapping(part))
     return failed(
       "unreadable",
       `${section} in ${OVERLAY_RELPATH} on ${ref} is not a mapping`,
     );
-  return ok(part[field] ?? null);
+  for (const field of fields) out[field] = part[field] ?? null;
+  return ok(out);
+}
+
+/** One field of `.config/jig.yaml` as the default branch holds it; see `defaultBranchSettings`. */
+export async function defaultBranchSetting(
+  root: string,
+  section: string,
+  field: string,
+): Promise<Outcome<unknown, "unreadable">> {
+  const read = await defaultBranchSettings(root, section, [field]);
+  return read.ok ? ok(read.value[field]) : read;
 }
