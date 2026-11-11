@@ -158,13 +158,13 @@ type Fence = { marker: string; quoteDepth: number };
 
 /** Whether a line closes the open fence: the same character, at least as long, and nothing after it. */
 function closesFence(text: string, fence: Fence): boolean {
-  const raw = /^( {0,3})(`{3,}|~{3,})(.*)$/.exec(text);
-  return (
-    raw !== null &&
-    raw[2]?.[0] === fence.marker[0] &&
-    (raw[2]?.length ?? 0) >= fence.marker.length &&
-    (raw[3] ?? "").trim() === ""
-  );
+  let start = 0;
+  while (start < 3 && text[start] === " ") start++;
+  const char = text[start];
+  if (char !== fence.marker[0]) return false;
+  let end = start;
+  while (text[end] === char) end++;
+  return end - start >= fence.marker.length && text.slice(end).trim() === "";
 }
 
 /** Remove blockquote containers before the shared reader sees their Markdown, without changing a quote that is literal text inside a top-level fence or comment. */
