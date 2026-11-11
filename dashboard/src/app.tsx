@@ -22,7 +22,8 @@ import { hostDay } from "./format.ts";
 import { HelpView } from "./help.tsx";
 import { LinePanel } from "./line.tsx";
 import { LogPanel } from "./log-panel.tsx";
-import { type Forges, forgesOf, type RowClock } from "./log-view.ts";
+import { type Forges, forgesOf } from "./links.ts";
+import type { RowClock } from "./log-view.ts";
 import { Strip } from "./marks.tsx";
 import { MergeFlash, MergePanel, useFlash } from "./merge.tsx";
 import { type FlashView, mergeNowCount } from "./merge-view.ts";
@@ -66,7 +67,7 @@ import {
   themeSearch,
   useTheme,
 } from "./theme.ts";
-import { type Clock, timerBanner } from "./view.ts";
+import { type Clock, staleBanners, timerBanner } from "./view.ts";
 import { WindowPanel } from "./window-panel.tsx";
 
 const COMMAND = "jig dispatch dashboard";
@@ -470,7 +471,11 @@ function Banners({ view }: { view: PageView }) {
         />
       ) : view.overdue && line !== null ? (
         <Banner {...timerBanner(line, view.clock)} command={false} />
-      ) : null}
+      ) : line === null ? null : (
+        staleBanners(line, view.clock).map((b) => (
+          <Banner key={b.key} title={b.title} body={b.body} command={false} />
+        ))
+      )}
       {coded === null ? null : (
         <Banner
           title={coded.reason}

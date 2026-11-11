@@ -12,8 +12,8 @@
  *   the comment already carries is recorded as sent without being sent
  *   again. A cause that still stands `dispatch.renotify_after` after it was
  *   last sent is sent again, marked as a repeat, unless the destination is
- *   still unread with it (`0s` sends each cause once). A drift or exhausted no-cause recovery is
- *   sent once for the life of its key. A suppression record is
+ *   still unread with it (`0s` sends each cause once). A drift, an exhausted no-cause recovery or a
+ *   failed re-arm is sent once for the life of its key. A suppression record is
  *   dropped when its cause leaves a tick that read every record whole (the
  *   park was answered, the drive moved on), so a cause that is settled is
  *   never repeated and new facts always notify.
@@ -56,6 +56,7 @@ import { noticeComment } from "../runtime/notice-comment.ts";
 import { stateRoot } from "../../receipts.ts";
 import {
   driveClass,
+  aboutFields,
   insertRow,
   type LogRow,
   type OutcomeClass,
@@ -679,7 +680,7 @@ function classOf(cause: Cause): OutcomeClass | null {
     case "stopped-unknown":
       return "unknown";
     case "needs-person": {
-      const exit = cause.evidence.exit;
+      const exit = cause.evidence.rearmExit ?? cause.evidence.exit;
       return typeof exit === "number"
         ? driveClass(exit, null).class
         : "unknown";
@@ -690,8 +691,14 @@ function classOf(cause: Cause): OutcomeClass | null {
 }
 
 /** The event row for a cause timed at `at`. */
-function eventRow(repo: string, cause: Cause, at: string): LogRow {
+function eventRow(
+  repo: string,
+  cause: Cause,
+  at: string,
+  about: NoticeSettings["about"],
+): LogRow {
   return {
+    ...(about === undefined ? {} : aboutFields(about(cause.target))),
     kind: "event",
     key: `event ${cause.notice.key}`,
     at,
@@ -718,6 +725,8 @@ export interface NoticeSettings {
   branch: string | null;
   /** The failure ledger's book of the repository's actions, with `--apply`. */
   book?: ActionBook | null;
+  /** A target's title and link as this tick's reads gave them, which a cause's outcome-log row carries. */
+  about?: (target: string) => { title: string | null; url: string | null };
 }
 
 /** The failure ledger's key and kind of a cause's delivery. */
@@ -929,10 +938,11 @@ async function sendNotices(
           lasting:
             c.cause === "drifting" ||
             c.cause === "ready" ||
-            (c.cause === "stopped-unknown" && c.evidence.noCause === true),
+            (c.cause === "stopped-unknown" && c.evidence.noCause === true) ||
+            typeof c.evidence.failedRearm === "string",
         },
         // A cause about a stage this machine launched has its ended row instead.
-        c.launched === true ? null : eventRow(repo.slug, c, at),
+        c.launched === true ? null : eventRow(repo.slug, c, at, settings.about),
         root,
         c.repeat === true,
       );

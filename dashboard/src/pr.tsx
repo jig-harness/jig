@@ -28,6 +28,7 @@ import { prStanding, type Standing, type StandingKind } from "./pr-standing.ts";
 import type { Clock } from "./view.ts";
 import type { LineSnapshot } from "../../plugin/dispatch/lib/dashboard-contract.ts";
 import { reconcileNeeds } from "./pr-state.ts";
+import { withDerivedLinks } from "./links.ts";
 import type { DashboardPr } from "../../plugin/dispatch/lib/dashboard-pr.ts";
 import { CopyButton } from "./copy.tsx";
 import { Hint } from "./fold.tsx";
@@ -89,7 +90,12 @@ function useNeedFacts(needs: Array<{ repo: string; target: string }>) {
 
 export function useCurrentLine(line: LineSnapshot | null) {
   const facts = useNeedFacts(line?.needs ?? []);
-  return line === null ? null : reconcileNeeds(line, facts);
+  return line === null ? null : reconcileNeeds(withDerivedLinks(line), facts);
+}
+
+/** A target's title under its key, as text its author wrote; nothing when no read gave one. */
+export function ItemTitle({ title }: { title: string | null }) {
+  return title === null ? null : <q className="sm itemTitle">{title}</q>;
 }
 
 export function RepoLink({ repo, url }: { repo: string; url?: string | null }) {

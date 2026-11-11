@@ -10,9 +10,9 @@ import { CopyButton } from "./copy.tsx";
 import { PanelHelp, Pips, PopupRoot } from "./fold.tsx";
 import { inputOf } from "./format.ts";
 import { LogTable } from "./log-table.tsx";
+import type { Forges } from "./links.ts";
 import {
   activeFilters,
-  type Forges,
   metaLine,
   optionsWith,
   recurringView,

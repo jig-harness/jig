@@ -291,8 +291,9 @@ describe("a need's words", () => {
     );
     expect(view.goLabel).toBeNull();
     expect(view.noLink).toBe(
-      "No tracker link: this repository has no tracker base. Look up WEB-1 in the tracker.",
+      "No link was recorded for WEB-1, and the line holds no other link to example-org/web's tracker to work it out from: look WEB-1 up in that tracker.",
     );
+    expect(view.title).toBe(NEED.title);
     expect(view.keyText).toBe("WEB-1");
     expect(view.answerKeys).toEqual([]);
   });
