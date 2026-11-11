@@ -88,7 +88,15 @@ describe("claimed items read for a served person", () => {
 
   it("does not attribute a later served claim to an ended pickup", () => {
     const record = endedPickup("#7", false);
-    releaseEnded([record], SLUG, new Set(), new Set(["#7"]));
+    releaseEnded(
+      [record],
+      SLUG,
+      new Set(),
+      new Set(["#7"]),
+      new Set(),
+      undefined,
+      new Set(["#7"]),
+    );
     expect(record.record.claimedItems).toBeUndefined();
 
     const plan = planPickups(
@@ -106,7 +114,15 @@ describe("claimed items read for a served person", () => {
   it("does not attribute a served claim to a pickup that is only reserved", () => {
     const record = endedPickup("#7", false);
     record.state = { kind: "pending" };
-    releaseEnded([record], SLUG, new Set(), new Set(["#7"]));
+    releaseEnded(
+      [record],
+      SLUG,
+      new Set(),
+      new Set(["#7"]),
+      new Set(),
+      undefined,
+      new Set(["#7"]),
+    );
     expect(record.record.claimedItems).toBeUndefined();
   });
 

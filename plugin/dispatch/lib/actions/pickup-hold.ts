@@ -171,6 +171,7 @@ export function releaseEnded(
   claimed: ReadonlySet<string> = new Set(),
   returned: ReadonlySet<string> = new Set(),
   root?: string,
+  served: ReadonlySet<string> = new Set(),
 ): void {
   for (const r of records) {
     const { record } = r;
@@ -181,15 +182,18 @@ export function releaseEnded(
     // back among the dispatch states by the time the record ends.
     const members = record.batchItems?.map((i) => i.key) ?? [item];
     const claimedMembers = members.filter((key) => claimed.has(key));
-    // A claimed item observed while this pickup's process runs is the
-    // pickup's claim. A reservation not yet started has claimed nothing, and
-    // once the pickup has ended the same observation may be work its served
-    // person started afterwards; neither becomes pickup provenance.
-    if (
-      (r.state.kind === "alive" || r.state.kind === "unknown") &&
-      claimedMembers.length > 0
-    )
-      noteClaims(record, claimedMembers, root);
+    // The dispatch identity's own claimed item can only be this pickup's
+    // claim, seen while it ran or after it ended. A served person starts their
+    // own work too: their claim counts only while this pickup's process runs,
+    // never from a reservation not yet started or once the pickup has ended.
+    const provable = claimedMembers.filter(
+      (key) =>
+        !served.has(key) ||
+        r.state.kind === "alive" ||
+        r.state.kind === "unknown",
+    );
+    if (provable.length > 0 && r.state.kind !== "pending")
+      noteClaims(record, provable, root);
     if (claimedMembers.length > 0 || holds(r.state)) continue;
     if (keepsWanted(record, members, wanted, returned)) continue;
     record.released = true;
