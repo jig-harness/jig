@@ -258,7 +258,11 @@ describe("announce-merge-ready.ts and the reviewers that skip drafts", () => {
         checkRuns: [ownRun, rabbit("2026-11-11T09:25:00Z", "Review completed")],
       },
       board(converged.head),
-      { timeline: READY, env: SKIPPERS, driverEnv: { DRIVE_PR_TARGET: "1000" } },
+      {
+        timeline: READY,
+        env: SKIPPERS,
+        driverEnv: { DRIVE_PR_TARGET: "1000" },
+      },
     );
     expect(r.stderr).toContain("autonomy policy:");
   });
