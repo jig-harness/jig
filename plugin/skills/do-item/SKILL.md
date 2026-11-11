@@ -130,7 +130,7 @@ The skill reads them at run time from `.config/jig.yaml`:
 | `drive.change_areas_catalog` | Path to the repository's [change-area catalog](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (areas, their agents, validation plan and mandatory review skills) | No catalog: validate with the repository's gate command |
 | `repository.base_branch` | The integration branch pull requests land on | The repository's default branch |
 | `drive.reviews_drafts` | `false` makes new pull requests open Ready, since the reviewer would not review a draft | Pull requests open as drafts |
-| `pull_requests.*` | How pull requests are opened and stacked: `stacking`, `max_stack_depth`, `open_as`, `mark_ready`, `branch_name`, `issue_link`, `size_budget`, `labels`, `title_format` (see [Pull-request policy](#pull-request-policy)) | One pull request per change against the integration branch, branch `{key_lower}-{slug}` (the key as a branch carries it, lowercased: `eng-123`, or `123` for `#123`; then the title as at most 40 lowercase characters), draft, `Closes <KEY>`, marked Ready after the first review round; a human merges |
+| `pull_requests.*` | How pull requests are opened and stacked: `stacking`, `max_stack_depth`, `open_as`, `mark_ready`, `branch_name`, `issue_link`, `size_budget`, `labels`, `title_format`, `title_pattern` (see [Pull-request policy](#pull-request-policy)) | One pull request per change against the integration branch, branch `{key_lower}-{slug}` (the key as a branch carries it, lowercased: `eng-123`, or `123` for `#123`; then the title as at most 40 lowercase characters), draft, `Closes <KEY>`, marked Ready after the first review round; a human merges |
 
 Every field, its type and its default are in the plugin's
 [configuration reference](../../CONFIGURATION.md).
@@ -199,7 +199,9 @@ bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" open --issue "<KEY>" --issue-json i
   pre-PR review gate pass: the `base`, the `gh pr create` arguments the policy
   fixes (`createArgs`: base, `--draft` or not, labels, reviewers), commands to run after
   creating it (`afterCreate`, such as linking a native stack, with
-  `<PR URL>` replaced by the URL `gh pr create` prints), the title convention, the template(s) to fill
+  `<PR URL>` replaced by the URL `gh pr create` prints), the title convention (under a
+  `title_pattern`, the title with the issue key filled in and `<summary>` for
+  the part to write), the template(s) to fill
   in, the issue-link line, the size against its budget, how it will be
   merged, and warnings. Then open it with exactly those arguments:
 

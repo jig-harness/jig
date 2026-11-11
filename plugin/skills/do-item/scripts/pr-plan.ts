@@ -20,7 +20,8 @@
  * the base branch, the git remote to push to (`repository.remote`, else
  * `origin`), the `gh pr create` arguments the policy fixes (base,
  * draft or Ready, labels), the commands to run after it (linking a native
- * stack), the title convention, the template(s) to fill in, the line linking
+ * stack), the title convention (under a `pull_requests.title_pattern`, the
+ * title with the issue key filled in), the template(s) to fill in, the line linking
  * the issue, the size against its budget (leaving out, and naming, the files
  * in `UNCOUNTED` such as the audit record), and warnings. `--stack-on` asks to base the pull request on
  * another open pull request's head branch instead of the trunk; the policy
@@ -68,10 +69,12 @@ import {
   readRepoSettings,
   renderBranchName,
   resolveOpenAs,
+  type TitleFormat,
   walkChain,
 } from "../../drive-pr/scripts/lib/pr-policy.ts";
 import { ghCall, git } from "../../drive-pr/scripts/lib/proc.ts";
 import { uniqueLogins } from "../../../shared/forge-logins.ts";
+import { renderTitle } from "../../../shared/title-pattern.ts";
 import { JigError } from "../../../shared/errors.ts";
 import { isRecord } from "../../../shared/guards.ts";
 import { parseArgs, runEntry } from "./lib/cli.ts";
@@ -133,7 +136,12 @@ export interface OpenPlan {
   /** Run after `gh pr create`, `<PR URL>` replaced by the URL it prints for the new pull request. */
   afterCreate: string[][];
   openAs: { value: "draft" | "ready"; source: string };
-  title: { format: "conventional" | "free"; source: string };
+  title: {
+    format: TitleFormat;
+    source: string;
+    /** Under `pattern`: the pull-request title with the issue key filled in and `<summary>` left for the title. */
+    pattern: string | null;
+  };
   body: { templates: string[]; issueLink: string | null };
   size: {
     changedLines: number;
@@ -583,7 +591,7 @@ async function buildOpenPlan(opts: {
     createArgs,
     afterCreate,
     openAs,
-    title: { format: title.value, source: title.source },
+    title: titlePlan(policy, issue, title),
     body: {
       templates: findPrTemplates(root),
       issueLink: issue === null ? null : issueLinkLine(policy.issueLink, issue),
@@ -598,6 +606,22 @@ async function buildOpenPlan(opts: {
     codeowners: findCodeowners(root),
     signals,
     warnings,
+  };
+}
+
+/** The plan's title: the convention, and under a pattern the title with the key filled in. */
+function titlePlan(
+  policy: PrPolicy,
+  issue: string | null,
+  title: { value: TitleFormat; source: string },
+): OpenPlan["title"] {
+  return {
+    format: title.value,
+    source: title.source,
+    pattern:
+      policy.titlePattern === null
+        ? null
+        : renderTitle(policy.titlePattern, issue ?? "<KEY>", "<summary>"),
   };
 }
 
@@ -621,6 +645,14 @@ function signalLines(signals: OpenPlan["signals"]): string[] {
   ];
 }
 
+/** The title convention as a person reads it: the form the title takes. */
+function titleConvention(title: OpenPlan["title"]): string {
+  if (title.pattern !== null) return title.pattern;
+  return title.format === "conventional"
+    ? "Conventional Commits, type(scope): summary"
+    : "free-form";
+}
+
 /** The plan as the lines a person or agent reads. */
 export function formatOpenPlan(plan: OpenPlan): string {
   const lines: string[] = [];
@@ -640,7 +672,7 @@ export function formatOpenPlan(plan: OpenPlan): string {
   for (const cmd of plan.afterCreate)
     lines.push(`then:        ${cmd.map(shellQuote).join(" ")}`);
   lines.push(
-    `title:       ${plan.title.format === "conventional" ? "Conventional Commits, type(scope): summary" : "free-form"} (${plan.title.source})`,
+    `title:       ${titleConvention(plan.title)} (${plan.title.source})`,
   );
   lines.push(
     `template:    ${plan.body.templates.length === 0 ? "none" : plan.body.templates.join(", ")}`,
