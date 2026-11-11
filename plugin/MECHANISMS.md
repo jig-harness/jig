@@ -399,7 +399,11 @@ development and shipped as a version.
   That answer is the session's own judgement; the script refuses another
   record's token, a drive pass's record and a second answer. Nothing
   else reasoned writes these records. A completed pickup names its pull
-  request with `--pr <number>`, or `--none "<reason>"` when none was needed.
+  request with `--pr <number>`, or `--none "<reason>"` when none was needed;
+  a pickup the tracker's rate limit stopped before it claimed the item
+  records `waits --until <time>`, and the tick starts it again after that
+  time; after the claim the pass waits within its deadline or records
+  `failed`.
   A pickup whose claim the repository's start rules refused records
   `failed --refused <updated-at> --reason <reason>`: the tick holds the item, showing
   the reason, until its `updatedAt` moves past that time.

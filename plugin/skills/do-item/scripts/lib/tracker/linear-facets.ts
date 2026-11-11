@@ -322,6 +322,7 @@ export function estimateStore(
         },
         assignedIssues: async (identity, states, signal) =>
           pools(await core.assignedIssues(identity, states, signal), signal),
+        ...estimatedBatches(core, pool),
         openPopulation: async (signal) =>
           pools(await core.openPopulation(signal), signal),
         async facetReport(options): Promise<CoreFacetReport> {
@@ -363,4 +364,52 @@ export function linearFacets(
   );
   if (usable(facets.size) && facets.size.store === "native") own.add("size");
   return withFacets(estimates?.wrap(core) ?? core, facets, own);
+}
+
+/** The core's batched reads, each issue's estimate read as its size. */
+function estimatedBatches(
+  core: CoreTracker,
+  pool: (
+    issue: WithEstimate<CorePoolIssue>,
+    signal?: AbortSignal,
+  ) => Promise<CorePoolIssue>,
+): Pick<CoreTracker, "poolIssues" | "queueIssues"> {
+  const { poolIssues, queueIssues } = core;
+  return {
+    ...(poolIssues === undefined
+      ? {}
+      : {
+          async poolIssues(keys, signal) {
+            const read = [...(await poolIssues(keys, signal))];
+            return new Map(
+              await Promise.all(
+                read.map(
+                  async ([k, v]) =>
+                    [k, v === null ? null : await pool(v, signal)] as const,
+                ),
+              ),
+            );
+          },
+        }),
+    ...(queueIssues === undefined
+      ? {}
+      : {
+          async queueIssues(identity, states, signal) {
+            const read = await queueIssues(identity, states, signal);
+            return Promise.all(
+              read.map(async (q) => ({
+                ...q,
+                ...(await pool(q, signal)),
+                parent:
+                  q.parent === null
+                    ? null
+                    : {
+                        ...q.parent,
+                        issue: await pool(q.parent.issue, signal),
+                      },
+              })),
+            );
+          },
+        }),
+  };
 }

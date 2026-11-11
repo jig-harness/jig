@@ -732,7 +732,10 @@ implementation. Skip this check for issues about the repository's own code.
    itself; `"marker"` in the JSON says whether it was posted, and a marker
    that was not posted leaves the claim standing (report it). A person
    resuming their own interrupted pickup of an `in_progress` item tells you
-   so, and you go on from here without the claim.
+   so, and you go on from here without the claim. Exit `5` is the tracker's
+   rate limit: stderr names the time it resets
+   (`RATE-LIMITED until <time>`); stop the pickup and report that time, as
+   [Dispatched passes](#dispatched-passes) says for a pass.
 
    (**judgment** — native, Linear: only where none of
    `do_item.preflight_command`, `do_item.claim_from` and
@@ -1775,6 +1778,22 @@ record how it ended. In such a pass:
   person must decide, with no secret or personal data in it. The
   dispatcher keeps that line and notifies it as a need; it does not start
   the item again until the item leaves the dispatch states and comes back.
+- **A tracker's rate limit is a wait, not a question.** A tracker script
+  that exits `5` (`RATE-LIMITED until <time>` on stderr) while the claim
+  has not returned success stops the pass: record `waits` with the time it
+  names, through the command the prompt names, and ask nothing. The
+  dispatcher starts the item again after the reset. The exit does not say
+  how far the claim got (nothing written, assigned, or moved to its working
+  state), and the tracker refuses every request until the reset, so do not
+  re-read the item or finish the transition by hand: the claim run again
+  after the reset repeats every start check (sole assignee, holds,
+  blockers, ancestry, `claim_from`) before it writes. An inherited claim
+  that stopped after it assigned the item, or after it moved it, is refused
+  by those checks on the re-run (the item is no longer unassigned, or no
+  longer in `claim_from`): that refusal is a stop for a person, recorded as
+  `failed`, because no step here finishes a partial claim. After a successful
+  claim the item is this pass's: wait for the reset where the deadline
+  allows, else record `failed` as for any other stop.
 - **A claim the repository's preflight command refused** (exit `3` with
   `"why": "preflight"` and an `"updatedAt"` in the JSON) is not a failure
   of the pass. Nothing was written: record it with the `--refused` command

@@ -32,6 +32,7 @@ import {
 import { forgetMergeRead } from "./merge-reads.ts";
 import { type Pool, pool } from "./pool.ts";
 import type { SessionRuntime, SessionsReader } from "./runtime/port.ts";
+import type { ServedViews } from "./sources/served-reads.ts";
 import { failureText } from "./text.ts";
 import { type TickComments, tickComments } from "./tick-comments.ts";
 import type { SharedReport } from "./types.ts";
@@ -80,6 +81,8 @@ export interface TickReads {
   budget(): Promise<TickBudget>;
   /** The pool every read of the observe phase runs through. */
   pool: Pool;
+  /** The served queues read this tick, one per tracker, team and person, shared by the repositories that name them. */
+  servedViews?: ServedViews;
 }
 
 /**
@@ -178,6 +181,7 @@ export function tickReads(
       return budget;
     },
     pool: reads,
+    servedViews: new Map(),
   };
 }
 
