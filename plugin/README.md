@@ -921,7 +921,9 @@ writes nothing to the host:
   record): a repository's part (its needs, queue, sessions and Ready cards)
   comes from the newest tick that read it, and the rest from the newest tick
   the timer asked for every repository the machine file lists, even when
-  another tick held some of them busy. So the strip says how old that tick
+  another tick held some of them busy; the one exception is the duration
+  history (`longestTickMs`, `recentTicksMs`), to which a woken tick adds its
+  own duration. So the strip says how old that tick
   is, a stopped timer shows as one while wake-ups for one repository still
   run, a repository no tick has read for longer than the timer's interval
   and its longest recent tick gets a banner naming it, since when and why (another tick held it busy),
