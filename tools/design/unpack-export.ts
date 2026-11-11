@@ -307,7 +307,11 @@ function attributesOf(text: string): Map<string, string> {
  */
 export function importsOf(html: string): string[] {
   const names: string[] = [];
-  const markup = html.replace(/<!--[\s\S]*?-->/g, "");
+  let markup = html;
+  for (let before = ""; before !== markup; ) {
+    before = markup;
+    markup = markup.replace(/<!--[\s\S]*?-->/g, "");
+  }
   for (const tag of markup.matchAll(
     /<dc-import\b((?:"[^"]*"|'[^']*'|[^'">])*)>/gi,
   )) {
