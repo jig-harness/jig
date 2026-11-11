@@ -30,7 +30,8 @@
  * `origin`), the `gh pr create` arguments the policy fixes (base,
  * draft or Ready, labels), the commands to run after it (linking a native
  * stack), the title convention (under `title_format: pattern`, the title
- * rendered from the issue's key and title), the template(s) to fill in, the line linking
+ * with the issue's key filled in, and with its title too when the issue is
+ * given), the template(s) to fill in, the line linking
  * the issue, the size against its budget (leaving out, and naming, the files
  * in `UNCOUNTED` such as the audit record), and warnings. `--stack-on` asks to base the pull request on
  * another open pull request's head branch instead of the trunk; the policy
@@ -68,7 +69,6 @@ import {
   type ChosenBase,
   chooseBase,
   detectTitleFormat,
-  renderTitle,
 } from "../../drive-pr/scripts/lib/pr-conventions.ts";
 import {
   findCodeowners,
@@ -89,6 +89,7 @@ import {
 } from "../../drive-pr/scripts/lib/pr-policy.ts";
 import { ghCall, git } from "../../drive-pr/scripts/lib/proc.ts";
 import { uniqueLogins } from "../../../shared/forge-logins.ts";
+import { renderTitle } from "../../../shared/title-pattern.ts";
 import { JigError } from "../../../shared/errors.ts";
 import { isRecord } from "../../../shared/guards.ts";
 import { parseArgs, runEntry } from "./lib/cli.ts";
@@ -161,7 +162,7 @@ export interface OpenPlan {
   title: {
     format: TitleFormat;
     source: string;
-    /** `pull_requests.title_pattern` under `format: pattern`, else `null`. */
+    /** Under `pattern`: the pull-request title with the issue key filled in and `<summary>` left for the title. */
     pattern: string | null;
     /** The pattern rendered for the issue's key and title; `null` without both. */
     rendered: string | null;
@@ -442,11 +443,12 @@ function planTitle(
   return {
     format: title.value,
     source: title.source,
-    pattern: using,
+    pattern:
+      using === null ? null : renderTitle(using, issue ?? "<KEY>", "<summary>"),
     rendered:
       using === null || issue === null || summary === null
         ? null
-        : renderTitle(using, issue, summary),
+        : renderTitle(using, issue, summary.trim()),
   };
 }
 
@@ -456,7 +458,7 @@ function titleLine(title: OpenPlan["title"]): string {
     title.format === "conventional"
       ? "Conventional Commits, type(scope): summary"
       : title.format === "pattern"
-        ? (title.rendered ?? `the pattern ${title.pattern}`)
+        ? (title.rendered ?? title.pattern ?? "a title pattern")
         : "free-form";
   return `title:       ${what} (${title.source})`;
 }

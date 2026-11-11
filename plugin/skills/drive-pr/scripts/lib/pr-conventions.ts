@@ -3,17 +3,16 @@
  * `pr-policy.ts` reads: the base an item's labels choose
  * (`pull_requests.base_rules`), the title convention (declared, or derived
  * from a commitlint configuration or recent history) and its pattern
- * (`pull_requests.title_pattern`), and the prefix every commit message
+ * (`shared/title-pattern.ts`), and the prefix every commit message
  * carries (`pull_requests.commit_prefix`).
  *
  * `pr-policy.ts` parses these fields through `parseConventions`; `do-item`'s
  * `pr-plan.ts` applies the base and the title, and `commit-prefix.ts` the
  * commit prefix.
  */
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
 import { JigError } from "../../../../shared/errors.ts";
 import { isRecord } from "../../../../shared/guards.ts";
+import { conventionalCommitlintConfig } from "./commitlint.ts";
 import type { PrPolicy, TitleFormat } from "./pr-policy.ts";
 import { git } from "./proc.ts";
 
@@ -111,9 +110,6 @@ export function baseSource(chosen: ChosenBase): string {
 // Placeholder patterns: the title pattern and the commit prefix
 // ---------------------------------------------------------------------------
 
-/** The placeholders `pull_requests.title_pattern` may use. */
-export const TITLE_PLACEHOLDERS = ["key", "summary"] as const;
-
 /** The placeholders `pull_requests.commit_prefix` may use. */
 export const COMMIT_PREFIX_PLACEHOLDERS = ["key"] as const;
 
@@ -151,68 +147,22 @@ function oneLineString(field: string, raw: unknown): string | null {
   return raw;
 }
 
-/** The title `pattern` gives an item: `{key}` its key, `{summary}` the summary. */
-export function renderTitle(
-  pattern: string,
-  key: string,
-  summary: string,
-): string {
-  return pattern
-    .replaceAll("{key}", () => key)
-    .replaceAll("{summary}", () => summary.trim());
-}
-
 /** The commit-message prefix `prefix` gives an item's key. */
 export function renderCommitPrefix(prefix: string, key: string): string {
   return prefix.replaceAll("{key}", () => key);
 }
 
-/** A key of any tracker Jig knows, as a title carries it: `ENG-12`, `#12`. */
-const ANY_KEY = "(?:[A-Z][A-Z0-9]*-\\d+|#[1-9]\\d*)";
-
-/** Whether `title` has the shape `pattern` renders, for any key and a nonempty summary. */
-export function matchesTitlePattern(pattern: string, title: string): boolean {
-  const source = pattern
-    .split(/(\{key\}|\{summary\})/)
-    .map((part) =>
-      part === "{key}"
-        ? ANY_KEY
-        : part === "{summary}"
-          ? "\\S.*"
-          : part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
-    )
-    .join("");
-  return new RegExp(`^${source}$`).test(title.trim());
-}
-
 /** The conventions `pull_requests` declares beside the core policy. */
 export interface Conventions {
   baseRules: BaseRule[];
-  /** `null` = not declared; set exactly when `title_format` is `pattern`. */
-  titlePattern: string | null;
   /** `null` = no prefix. */
   commitPrefix: string | null;
 }
 
-/** Parse `base_rules`, `title_pattern` and `commit_prefix`, checked against the declared `title_format`. */
+/** Parse `base_rules` and `commit_prefix`. */
 export function parseConventions(
   section: Record<string, unknown>,
-  titleFormat: TitleFormat | null,
 ): Conventions {
-  const titlePattern = oneLineString("title_pattern", section.title_pattern);
-  if (titlePattern !== null) {
-    if (titlePattern !== titlePattern.trim())
-      throw invalid(
-        "pull_requests.title_pattern must not start or end with whitespace: a title is matched trimmed",
-      );
-    checkPlaceholders("title_pattern", titlePattern, TITLE_PLACEHOLDERS);
-  }
-  if ((titleFormat === "pattern") !== (titlePattern !== null))
-    throw invalid(
-      titlePattern === null
-        ? "pull_requests.title_format is pattern, so pull_requests.title_pattern must say it, such as '{key}: {summary}'"
-        : "pull_requests.title_pattern needs pull_requests.title_format: pattern",
-    );
   const commitPrefix = oneLineString("commit_prefix", section.commit_prefix);
   if (commitPrefix !== null)
     checkPlaceholders(
@@ -220,74 +170,12 @@ export function parseConventions(
       commitPrefix,
       COMMIT_PREFIX_PLACEHOLDERS,
     );
-  return {
-    baseRules: parseBaseRules(section.base_rules),
-    titlePattern,
-    commitPrefix,
-  };
+  return { baseRules: parseBaseRules(section.base_rules), commitPrefix };
 }
 
 // ---------------------------------------------------------------------------
 // The title convention, derived
 // ---------------------------------------------------------------------------
-
-const COMMITLINT_FILES = [
-  ".commitlintrc",
-  ".commitlintrc.json",
-  ".commitlintrc.yaml",
-  ".commitlintrc.yml",
-  ".commitlintrc.js",
-  ".commitlintrc.cjs",
-  ".commitlintrc.mjs",
-  ".commitlintrc.ts",
-  ".commitlintrc.cts",
-  "commitlint.config.js",
-  "commitlint.config.cjs",
-  "commitlint.config.mjs",
-  "commitlint.config.ts",
-  "commitlint.config.cts",
-];
-
-/** A commitlint configuration at the repository root, or `null`. */
-export function findCommitlintConfig(root: string): string | null {
-  const file = COMMITLINT_FILES.find((f) => existsSync(join(root, f)));
-  if (file !== undefined) return file;
-  try {
-    const pkg = JSON.parse(
-      readFileSync(join(root, "package.json"), "utf8"),
-    ) as Record<string, unknown>;
-    if (isRecord(pkg) && pkg.commitlint !== undefined)
-      return "package.json (commitlint)";
-  } catch {
-    // no package.json, or not JSON: no commitlint configuration there
-  }
-  return null;
-}
-
-/**
- * The commitlint configuration when it names the Conventional Commits rules
- * (`@commitlint/config-conventional` or a preset built on it), else `null`.
- * A commitlint configuration alone proves commits are linted, not which
- * convention they follow.
- */
-export function conventionalCommitlintConfig(root: string): string | null {
-  const found = findCommitlintConfig(root);
-  if (found === null) return null;
-  let text: string;
-  try {
-    if (found === "package.json (commitlint)") {
-      const pkg = JSON.parse(
-        readFileSync(join(root, "package.json"), "utf8"),
-      ) as Record<string, unknown>;
-      text = JSON.stringify(pkg.commitlint);
-    } else {
-      text = readFileSync(join(root, found), "utf8");
-    }
-  } catch {
-    return null;
-  }
-  return /conventional/i.test(text) ? found : null;
-}
 
 /** A Conventional Commits subject: `type(scope)!: description`. */
 export const CONVENTIONAL_SUBJECT = /^[a-z]+(\([^()\s][^()]*\))?!?: \S/;

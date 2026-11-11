@@ -1,16 +1,14 @@
 /**
  * The pull-request conventions (`scripts/lib/pr-conventions.ts`): the base an
- * item's labels choose, the title pattern and the commit prefix, as
+ * item's labels choose, and the commit prefix, as
  * `pull_requests` declares them and the policy parser refuses them.
  */
 import { describe, expect, it } from "bun:test";
 import {
   baseSource,
   chooseBase,
-  matchesTitlePattern,
   parseBaseRules,
   renderCommitPrefix,
-  renderTitle,
 } from "../scripts/lib/pr-conventions.ts";
 import { parsePrPolicy } from "../scripts/lib/pr-policy.ts";
 
@@ -97,86 +95,6 @@ describe("base rules", () => {
     ],
   ])("refuses %j", (raw, message) => {
     expect(() => policy({ base_rules: raw })).toThrow(message);
-  });
-});
-
-describe("title pattern", () => {
-  it("is read with title_format: pattern", () => {
-    const p = policy({
-      title_format: "pattern",
-      title_pattern: "{key}: {summary}",
-    });
-    expect(p.titleFormat).toBe("pattern");
-    expect(p.titlePattern).toBe("{key}: {summary}");
-    expect(policy({}).titlePattern).toBeNull();
-  });
-
-  it("renders the key and the summary", () => {
-    expect(renderTitle("{key}: {summary}", "ENG-12", " Fix the export ")).toBe(
-      "ENG-12: Fix the export",
-    );
-    expect(renderTitle("[{key}] {summary}", "#12", "Fix it")).toBe(
-      "[#12] Fix it",
-    );
-  });
-
-  it("renders a summary holding replacement metacharacters literally", () => {
-    expect(renderTitle("{key}: {summary}", "ENG-12", "Fix $& and $' $$")).toBe(
-      "ENG-12: Fix $& and $' $$",
-    );
-  });
-
-  it("refuses a repeated placeholder and boundary whitespace", () => {
-    for (const title_pattern of [
-      "{key}: {summary} ({key})",
-      " {key}: {summary}",
-      "{key}: {summary} ",
-    ])
-      expect(() =>
-        policy({ title_format: "pattern", title_pattern }),
-      ).toThrow();
-  });
-
-  it("matches the titles the pattern renders, for any key", () => {
-    const pattern = "{key}: {summary}";
-    expect(matchesTitlePattern(pattern, "ENG-12: Fix the export")).toBe(true);
-    expect(matchesTitlePattern(pattern, "OPS-3: a")).toBe(true);
-    expect(matchesTitlePattern(pattern, "#41: a")).toBe(true);
-    expect(matchesTitlePattern(pattern, "fix: ENG-12 the export")).toBe(false);
-    expect(matchesTitlePattern(pattern, "ENG-12: ")).toBe(false);
-    expect(matchesTitlePattern("[{key}] {summary}", "[ENG-12] x")).toBe(true);
-    expect(matchesTitlePattern("[{key}] {summary}", "ENG-12 x")).toBe(false);
-  });
-
-  it.each([
-    [{ title_format: "pattern" }, /title_pattern must say it/],
-    [
-      { title_pattern: "{key}: {summary}" },
-      /needs pull_requests.title_format: pattern/,
-    ],
-    [
-      { title_format: "conventional", title_pattern: "{key}: {summary}" },
-      /needs pull_requests.title_format: pattern/,
-    ],
-    [
-      { title_format: "pattern", title_pattern: "{summary}" },
-      /must contain \{key\}/,
-    ],
-    [
-      { title_format: "pattern", title_pattern: "{key}" },
-      /must contain \{summary\}/,
-    ],
-    [
-      { title_format: "pattern", title_pattern: "{key}: {title}" },
-      /unknown placeholder \{title\}/,
-    ],
-    [
-      { title_format: "pattern", title_pattern: "{key}: {summary" },
-      /unknown placeholder|unbalanced brace/,
-    ],
-    [{ title_format: "pattern", title_pattern: "" }, /nonempty string/],
-  ])("refuses %j", (section, message) => {
-    expect(() => policy(section)).toThrow(message);
   });
 });
 

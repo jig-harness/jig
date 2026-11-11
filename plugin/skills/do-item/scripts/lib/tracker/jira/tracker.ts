@@ -308,6 +308,7 @@ export function jiraTracker(client: Client): Tracker {
   const tracker: CoreTracker = {
     adapter: "jira",
     team: project,
+    instance: client.site,
     stateName: (state) => model.stateName(state),
 
     async reach(signal) {

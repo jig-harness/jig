@@ -29,6 +29,7 @@ import { ghCall } from "./proc.ts";
 import { isRecord } from "../../../../shared/guards.ts";
 import { JigError } from "../../../../shared/errors.ts";
 import { REVIEWER, reviewerArg } from "../../../../shared/forge-logins.ts";
+import { parseTitlePattern } from "../../../../shared/title-pattern.ts";
 
 export const STACKING_MODES = ["none", "native", "branch"] as const;
 export type Stacking = (typeof STACKING_MODES)[number];
@@ -69,7 +70,7 @@ export interface PrPolicy {
   reviewersFromIssue: ReadonlyMap<string, string[]>;
   /** `null` = not declared; `detectTitleFormat` derives it. */
   titleFormat: TitleFormat | null;
-  /** The title with `{key}` and `{summary}`; set exactly when `titleFormat` is `pattern`. */
+  /** `pull_requests.title_pattern`; set exactly when `titleFormat` is `pattern`. */
   titlePattern: string | null;
   /** In order; the first one of whose labels the item carries names its base. */
   baseRules: BaseRule[];
@@ -266,7 +267,8 @@ export function parsePrPolicy(overlay: Record<string, unknown>): PrPolicy {
     labelsFromIssue,
     reviewersFromIssue,
     titleFormat,
-    ...parseConventions(section, titleFormat),
+    titlePattern: parseTitlePattern(section, titleFormat),
+    ...parseConventions(section),
   };
 }
 

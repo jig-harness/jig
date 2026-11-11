@@ -246,7 +246,7 @@ describe("pr-plan.ts open: a title pattern", () => {
     expect(JSON.parse(r.stdout).title).toEqual({
       format: "pattern",
       source: "pull_requests.title_format",
-      pattern: "{key}: {summary}",
+      pattern: "ENG-12: <summary>",
       rendered: "ENG-12: Fix the export",
     });
     const text = plan(
@@ -261,11 +261,11 @@ describe("pr-plan.ts open: a title pattern", () => {
     );
   });
 
-  it("names the pattern when the issue's title is unknown", () => {
+  it("leaves the summary to fill when the issue's title is unknown", () => {
     const r = plan("open", "--issue", "ENG-12");
     expectSpawnExit(r, 0);
     expect(r.stdout).toContain(
-      "title:       the pattern {key}: {summary} (pull_requests.title_format)",
+      "title:       ENG-12: <summary> (pull_requests.title_format)",
     );
   });
 });

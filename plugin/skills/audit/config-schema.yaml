@@ -449,7 +449,7 @@ fields:
   pull_requests.title_pattern:
     type: string
     pattern: "\\{key\\}"
-    since: next
+    since: 0.204.0
     read_by: [do-item]
   pull_requests.base_rules:
     type: list
@@ -557,6 +557,16 @@ fields:
   ci.hold_label:
     type: string
     read_by: [drive-pr]
+  ci.log_command:
+    type: command
+    read_by: [fix-ci]
+    repository_only: true
+    since: 0.205.0
+  ci.repair_skill:
+    type: string
+    pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*(?::[A-Za-z0-9][A-Za-z0-9._-]*)?$"
+    read_by: [drive-pr]
+    since: 0.205.0
 
   issue_tracker.adapter:
     type: enum

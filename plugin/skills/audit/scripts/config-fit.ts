@@ -14,7 +14,9 @@
  *     fails its reads and writes;
  *   - declared values the repository contradicts, such as `stacking: none`
  *     with stacked pull requests open, or an AI reviewer named that posted on
- *     no recent pull request (or one that ran while none is named);
+ *     no recent pull request (or one that ran while none is named), or a
+ *     `pull_requests.title_pattern` that most of the integration branch's
+ *     recent commit subjects do not follow;
  *   - the checkout itself: HEAD behind the integration branch, an origin/HEAD
  *     that names another branch than the forge's default, `.context/` not
  *     ignored, and what the former `groundwork` plugin left behind (its
@@ -86,6 +88,10 @@ import { ghCall } from "../../../shared/proc.ts";
 import { type AuditRecord, parseRecord, RECORD_RELPATH } from "./lib/record.ts";
 import { fileFindings } from "./lib/automation-fit.ts";
 import { guidanceFindings } from "./lib/guidance-fit.ts";
+import {
+  behindIntegrationBranch,
+  titlePatternFindings,
+} from "./lib/trunk-fit.ts";
 import { policyFindings } from "./lib/pr-policy-fit.ts";
 import {
   configuredAt,
@@ -981,7 +987,7 @@ async function forgeChecks(
     state,
   );
   const stacking = await stackingFindings(config, root, base, repo, report);
-  const labels = await policyFindings(config, root, slug, base);
+  const labels = await policyFindings(config, root, slug);
   return [
     ...baseFindings,
     ...findings,
@@ -1114,46 +1120,6 @@ function integrationBranch(
     report.facts.integration_branch_source = "origin/HEAD";
   }
   return [];
-}
-
-/**
- * How many commits of the integration branch HEAD lacks, from the clone's
- * own refs as of its last fetch (the audit never fetches). An audit of a
- * checkout behind it describes a commit the team has moved past.
- */
-function behindIntegrationBranch(root: string, report: FitReport): Finding[] {
-  const branch = report.facts.integration_branch;
-  if (branch === undefined) return [];
-  if (run("git", ["remote", "get-url", "origin"], { cwd: root }).code !== 0)
-    return [];
-  const ref = `refs/remotes/origin/${branch}`;
-  const known =
-    run("git", ["rev-parse", "--verify", "--quiet", ref], { cwd: root })
-      .code === 0;
-  if (!known)
-    return report.facts.integration_branch_source === "repository.base_branch"
-      ? []
-      : [
-          {
-            id: "unchecked:behind-integration-branch",
-            severity: "info",
-            message: `this clone has no origin/${branch} (fetch it), so whether HEAD lacks its commits is unchecked`,
-          },
-        ];
-  const count = run("git", ["rev-list", "--count", `HEAD..${ref}`], {
-    cwd: root,
-  });
-  const behind = Number(count.stdout.trim());
-  if (count.code !== 0 || !Number.isInteger(behind)) return [];
-  report.facts.behind_integration_branch = `${behind} commit(s) of origin/${branch} not in HEAD, as of the last fetch`;
-  if (behind === 0) return [];
-  return [
-    {
-      id: "fact:behind-integration-branch",
-      severity: "warning",
-      message: `HEAD lacks ${behind} commit(s) of origin/${branch} (as of the last fetch): the audit would describe a stale commit. Fetch, then check out or rebase onto origin/${branch} before scoring`,
-    },
-  ];
 }
 
 /** The configuration file of the `groundwork` plugin, which Jig's skills do not read. */
@@ -2330,6 +2296,9 @@ export async function configFit(opts: {
   if (report.facts.integration_branch === undefined)
     report.findings.push(unknownIntegrationBranch(opts.root, report));
   else report.findings.push(...behindIntegrationBranch(opts.root, report));
+  report.findings.push(
+    ...titlePatternFindings(config, opts.root, report.facts.integration_branch),
+  );
   report.findings.push(
     ...offer(
       report,
