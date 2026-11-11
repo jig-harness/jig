@@ -182,13 +182,18 @@ labels and reviewers; it stops (exit `1`) naming a mapped label the
 repository does not have.
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" branch --issue "<KEY>" --title "<issue title>"
+bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" branch --issue "<KEY>" --title "<issue title>" --issue-json issue.json
 bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" open --issue "<KEY>" --issue-json issue.json [--stack-on <branch>] [--accept-oversize "<reason>"] [--json]
 ```
 
-- `branch` prints the branch name for the issue, for a **new** pull request.
-  Create the working branch with it from the planned base before the
-  implementing agent writes anything. When the harness has already created
+- `branch` prints the branch name for the issue, for a **new** pull request,
+  on its first line, and on its second the base to cut it from with what
+  chose it (`base: <branch> (<source>)`): the integration branch, or the
+  release line a `pull_requests.base_rules` entry names for one of the
+  issue's labels. Create the working branch with that name from
+  `<remote>/<base>` (fetch the base first) before the implementing agent
+  writes anything; a stacked change is cut from its predecessor's branch
+  instead. When the harness has already created
   the working branch and its instructions forbid renaming it, keep that
   branch and say so in the status message; the issue-link line in the body
   still links the pull request. An item that already has an open pull
@@ -196,7 +201,8 @@ bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" open --issue "<KEY>" --issue-json i
   that pull request, driven with `/jig:drive-pr <PR>`, which places the
   drive in a working tree on the pull request's head (Step 4).
 - `open` prints the plan for the current branch, after validation and the
-  pre-PR review gate pass: the `base`, the `gh pr create` arguments the policy
+  pre-PR review gate pass: the `base` and the rule that chose it (it refuses,
+  exit `3`, a rule's base the remote does not have), the `gh pr create` arguments the policy
   fixes (`createArgs`: base, `--draft` or not, labels, reviewers), commands to run after
   creating it (`afterCreate`, such as linking a native stack, with
   `<PR URL>` replaced by the URL `gh pr create` prints), the title convention (under a
@@ -208,6 +214,10 @@ bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" open --issue "<KEY>" --issue-json i
   ```bash
   bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh pr create <createArgs...> --title "<title in the planned convention>" --body-file <body.md>
   ```
+
+  Under `pull_requests.title_format: pattern` the plan's `title` is the
+  title rendered from `pull_requests.title_pattern` (`ENG-12: <summary>`):
+  use it, shortening only the summary part, never the key.
 
   Fill the body from the planned template when there is one, put the
   issue-link line in it, and repeat every warning in the status message.
@@ -799,7 +809,8 @@ implementation. Skip this check for issues about the repository's own code.
    then `wait_agent` and `send_message` where exposed), or this session,
    following the same prompt, where there is none). First create the working
    branch named by `bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" branch` (**exact**; see
-   [Pull-request policy](#pull-request-policy)), from the integration branch,
+   [Pull-request policy](#pull-request-policy)), from the base it prints (the
+   integration branch, or the release line a base rule names),
    or from the predecessor's branch when this change builds on an unmerged
    pull request and `pull_requests.stacking` allows it. When the item already
    has an open pull request, do not delegate: stop here, create no branch
@@ -935,7 +946,8 @@ implementation. Skip this check for issues about the repository's own code.
    when `drive.change_areas_catalog` is declared, and the repository's gate
    command otherwise; do not substitute a fixed command list. `<base>` below
    is the branch the PR will target, as `<remote>/<base>`: the integration
-   branch, or the predecessor's branch for a stacked PR (the `base` that
+   branch, the release line a base rule names, or the predecessor's branch
+   for a stacked PR (the `base` that
    `bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" open` prints), and `<remote>`
    the git remote it prints (`remote:`: `repository.remote`, else `origin`).
 
@@ -1069,6 +1081,12 @@ implementation. Skip this check for issues about the repository's own code.
      warnings (Tier 3 `⚠️ WARNINGS`) verbatim under `## Review Notes` in the
      PR body, then push.
    - **`APPROVED`**: `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git push -u <remote> "<branch>"`.
+
+   Before that push, when `pull_requests.commit_prefix` is set, run
+   `bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/commit-prefix.ts"`: it rewords
+   every unpushed commit whose message lacks the prefix (exit `0`); exit `3`
+   means the branch name carries no key, so the prefix cannot be rendered:
+   stop and report it.
 
    Then run `bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" open --issue-json issue.json` and open the PR exactly as it plans
    ([Pull-request policy](#pull-request-policy)). An exit `3` is a policy
@@ -1832,6 +1850,6 @@ record how it ended. In such a pass:
 | `select_scout_finding.ts` | Pick the newest Scout Findings comment and judge freshness | Comments JSON (`--input` or stdin), `--git-head` or `--current-hash` | JSON decision (`reuse`/`rerun`/`run`) |
 | `select_execution_issue.ts` | Read an epic's Execution Plan and list eligible sub-issues | Selection JSON (`--input` or stdin) | JSON `{ present, eligible, gates, mergeConflicts }` |
 | `reconcile_parent_status.ts` | Decide a parent's status from its sub-issues | `ReconcileInput` JSON (`--input` or stdin) | JSON decision (`verdict`, `parentState`, `parentStateName`, `reason`) |
-| `pr-plan.ts` | Apply the pull-request policy: a branch name, or the plan for opening the current branch's PR | `branch --issue "<KEY>" --title <title>`, or `open [--issue "<KEY>"] [--stack-on <branch>] [--accept-oversize <reason>]` | Branch name, or the plan (text or `--json`); exit `3` when the policy refuses |
+| `pr-plan.ts` | Apply the pull-request policy: a branch name and the base to cut it from, or the plan for opening the current branch's PR | `branch --issue "<KEY>" --title <title> [--issue-json <file>]`, or `open [--issue "<KEY>"] [--issue-json <file>] [--stack-on <branch>] [--accept-oversize <reason>]` | Branch name and base, or the plan (text or `--json`); exit `3` when the policy refuses |
 | `intent-chain.ts` | Write the Refocus intent-chain snapshot (Step 3.5); `--clear-session` removes this session's copy | `IntentChainInput` JSON (stdin or `--input`); nothing with `--clear-session` | Snapshot files and a JSON summary (`path`, `sessionPath`, `pickupId`, `chars`, `arm`, `truncated`, `pointerErrors`); with `--clear-session`, `{ sessionPath, removed }` |
 | `${CLAUDE_SKILL_DIR}/../../shared/spec/resolve.ts` | Resolve the requirements, acceptance criteria and tasks the issue carries or links (Step 1) | Issue JSON (`--input` or stdin), optional `--summary` | JSON `{ sources, requirements, acceptance, tasks, unresolved }`, or with `--summary` as text: the counts, every requirement, criterion and task with its key and text, the sources and the unresolved references |

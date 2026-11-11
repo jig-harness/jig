@@ -39,8 +39,8 @@ import {
 } from "../../../shared/consumer.ts";
 import { isRecord } from "../../../shared/guards.ts";
 import { baseBranch } from "../../drive-pr/scripts/lib/overlay.ts";
+import { detectTitleFormat } from "../../drive-pr/scripts/lib/pr-conventions.ts";
 import {
-  detectTitleFormat,
   parsePrPolicy,
   type TitleFormat,
 } from "../../drive-pr/scripts/lib/pr-policy.ts";

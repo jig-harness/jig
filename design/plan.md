@@ -565,17 +565,14 @@ Done when a repository on Jira with all of these set runs an item from its
 ready pool to a merged pull request without a hook or script of its own,
 and an item that fails a rule is refused before anything is written.
 
-### 48. Fitting the drive to a repository's reviewer, CI and pull-request conventions
+### 48. Fitting the drive to a repository's reviewer
 
 The drive and `do-item` assume things about a repository that many do
 not hold. Its AI reviewer stamps the commit it reviewed into a summary
 comment; a reviewer that reviews through the forge's own [review
 objects](../GLOSSARY.md) (CodeRabbit, for one) never does, so the drive either waits until it times
-out or converges without that review. Its work lands on one integration branch;
-products with maintained release lines land most fixes on a release branch
-chosen by the item's target version. Its commits carry no tracker key;
-some organisations refuse any commit on a protected branch without one. Each fix is optional configuration, and an unset one
-keeps today's behaviour. What it will build, one pull request per step:
+out or converges without that review. The fix is optional configuration, and an
+unset one keeps today's behaviour. What it will build:
 
 - **The reviewer.** A [reviewer evidence mode](../GLOSSARY.md) that reads the reviewed
   commit from the reviewer's latest review object and its check run on
@@ -583,15 +580,9 @@ keeps today's behaviour. What it will build, one pull request per step:
   review stops as `REVIEW_SKIPPED` with the reason; no merge-ready
   announcement before a draft-skipping reviewer has run on the head marked
   Ready; `arm-drive.ts` refuses a reviewer whose evidence it cannot read.
-- **The conventions.** `pull_requests.base_rules` chooses the base branch
-  from the item's labels, for the branch's start and the pull request
-  alike; `pull_requests.commit_prefix`, checked before every push the
-  drive, `fix-ci` and `resolve-conflicts` make.
 
-Done when a repository whose AI reviewer is CodeRabbit, whose CI is
-Jenkins and whose fixes land on release lines under a key-in-every-commit
-ruleset runs a drive from a release-line item to merge-ready with no bridge
-of its own.
+Done when a repository whose AI reviewer is CodeRabbit runs a drive to
+merge-ready with no bridge of its own.
 
 ### 26. `init`: setting a repository up for Jig
 

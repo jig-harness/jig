@@ -172,17 +172,13 @@ board shows stopped work as blocked, with a reason. The dispatcher can also
 pick up from an unassigned ready pool. Every rule is optional, and a team
 that sets none keeps today's behaviour.
 
-### 48. Fitting the drive to a repository's reviewer, CI and pull-request conventions
+### 48. Fitting the drive to a repository's reviewer
 
-The drive adapts to a repository's reviewer, CI and branch conventions.
-Review evidence, the base branch and the tracker key in commits are read
-from the repository's own settings. A repository whose AI reviewer is CodeRabbit, whose CI is
-Jenkins, or whose fixes land on release lines is one such case. The drive
-waits for CodeRabbit's review of the latest commit and stops when it
-pauses or skips. Work starts on the release line its item
-names, and commits carry the key where the rules require one.
-Every setting is optional, and a team that sets none keeps today's
-behaviour.
+The drive adapts to a repository's AI reviewer. Review evidence is read from
+the repository's own settings. A repository whose AI reviewer is CodeRabbit
+is one such case: the drive waits for its review of the latest commit and
+stops when it pauses or skips. The setting is optional, and a team that sets
+none keeps today's behaviour.
 
 ### 26. `init`: setting a repository up for Jig
 
