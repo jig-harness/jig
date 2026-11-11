@@ -298,6 +298,14 @@ const DISPATCHER: RecordKind[] = [
     "dispatch/lib/steward.ts",
     "steward_records",
   ),
+  {
+    name: "tracker-budget",
+    medium: "machine",
+    owner: "shared/tracker-budget.ts",
+    at: "~/.local/state/jig/tracker/budget.sqlite",
+    table: "tracker_budget",
+    version: 1,
+  },
   plain(
     "machine",
     "dispatch-receipt",

@@ -19,6 +19,8 @@ import { run, tsArgv, helperTimeoutSeconds } from "./../proc.ts";
 
 import { finishDriverPassRegistrations, touchLock } from "./lifecycle.ts";
 
+import type { FailingStatus } from "./../../../../../shared/ci-status.ts";
+
 // `drive.ts` is itself very often launched from inside a live Claude Code
 // session (do-item's "Arm the drive" step spawns it in the background), and
 // a spawned child inherits that session's env by default — including
@@ -28,11 +30,9 @@ import { finishDriverPassRegistrations, touchLock } from "./lifecycle.ts";
 // process has already reported the round as running. The pass is a fresh
 // top-level session, not a continuation of whatever spawned `drive.ts`, so it
 // must not inherit that marker.
-export function passEnv(task?: {
-  task: RepairTask;
-  detail: string;
-  failedRuns?: readonly number[];
-}): NodeJS.ProcessEnv {
+export function passEnv(
+  task?: { task: RepairTask; detail: string } & RepairCi,
+): NodeJS.ProcessEnv {
   const env = { ...process.env };
   delete env.CLAUDECODE;
   // A headless pass has no next turn to receive a background task's result.
@@ -48,6 +48,8 @@ export function passEnv(task?: {
   delete env.DRIVE_PR_ROUND_TASK;
   delete env.DRIVE_PR_ROUND_TASK_DETAIL;
   delete env.DRIVE_PR_ROUND_FAILED_RUNS;
+  delete env.DRIVE_PR_ROUND_FAILED_STATUSES;
+  delete env.DRIVE_PR_ROUND_REPAIR_SKILL;
   // The same for the notice of a recovered stop: only the driver that
   // recovered it may say so, and only to the review pass it spawns next.
   delete env.DRIVE_PR_PASS_NOTICE;
@@ -56,8 +58,24 @@ export function passEnv(task?: {
     env.DRIVE_PR_ROUND_TASK_DETAIL = task.detail;
     if ((task.failedRuns ?? []).length > 0)
       env.DRIVE_PR_ROUND_FAILED_RUNS = (task.failedRuns ?? []).join(" ");
+    // JSON, one `{context, target_url}` per status: the form
+    // `ci.log_command` reads, so a pass can hand an entry on unchanged.
+    if ((task.failedStatuses ?? []).length > 0)
+      env.DRIVE_PR_ROUND_FAILED_STATUSES = JSON.stringify(task.failedStatuses);
+    if (task.repairSkill !== undefined)
+      env.DRIVE_PR_ROUND_REPAIR_SKILL = task.repairSkill;
   }
   return env;
+}
+
+/** What a `ci-repair` pass is told about the failure beside its detail. */
+export interface RepairCi {
+  /** The runs it may re-run: `failed-runs.ts`. */
+  failedRuns?: readonly number[];
+  /** The failing commit statuses and the pages they link to. */
+  failedStatuses?: readonly FailingStatus[];
+  /** The skill it loads first: `ci.repair_skill`. */
+  repairSkill?: string;
 }
 
 /**
@@ -114,8 +132,8 @@ export async function runRepairPass(
   mailboxCheckpoint: (opts?: {
     beforePass?: boolean;
   }) => Promise<"clear" | "resumed" | number>,
-  // The runs a `ci-repair` pass may re-run: `failed-runs.ts`.
-  failedRuns: readonly number[] = [],
+  // What a `ci-repair` pass is told beside its detail.
+  ci: RepairCi = {},
 ): Promise<RepairDispatch> {
   const deadlineSec = passTimeoutSeconds();
   // One more refresh, immediately before THIS spawn — not only at the PRIOR
@@ -161,7 +179,7 @@ export async function runRepairPass(
       stdout: "inherit",
       stderr: "inherit",
       detached: true,
-      env: passEnv({ task, detail, failedRuns }),
+      env: passEnv({ task, detail, ...ci }),
       ...(deadlineSec > 0 ? { timeoutSec: deadlineSec } : {}),
       onSpawn: (h) => {
         driverRuntime.activePass = h;
