@@ -9,7 +9,9 @@
  * `drive-status.ts` must report CONVERGED (posting reviewer completed on this
  * exact head, its recorded reviewed-SHA equal to that head, zero unresolved
  * threads, zero unaddressed summary findings) AND its non-reviewer CI verdict
- * must be exactly `green` AND this worktree must be clean. That verdict
+ * must be exactly `green` AND the reviewers that skip drafts must have run on
+ * the head since it was marked Ready (`lib/announce-draft-skippers.ts`) AND
+ * this worktree must be clean. That verdict
  * accepts a completed `neutral` or `skipped` check run as not-failing, so the
  * posted wording says that rather than claiming every check passed; the
  * clean-tree gate exists because the other two are claims about the remote
@@ -29,6 +31,10 @@
  */
 
 import { checkWorktreeClean } from "./lib/announce-clean.ts";
+import {
+  draftSkippersRan,
+  withdrawIfSkippersPending,
+} from "./lib/announce-draft-skippers.ts";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -51,6 +57,7 @@ import {
 } from "./lib/announce-ready.ts";
 import { parsePrSnapshot } from "./lib/ci-hold.ts";
 import { ciHoldLabelSetting } from "./lib/overlay.ts";
+import { announcePolicyBase } from "./lib/driver/policy-base.ts";
 
 /** How messages name the repository's CI-hold label. */
 const holdName = (): string => ciHoldLabelSetting() ?? "CI hold";
@@ -132,6 +139,34 @@ function withdrawNote(
   return [];
 }
 
+/** The draft-skipper gate's refusal as an exit code, and whether it positively said `not-yet`. */
+async function skippersGate(
+  pr: string,
+  head: string,
+): Promise<{ rc: number; pending: boolean }> {
+  const skippers = await draftSkippersRan(pr, head);
+  if (skippers.ok) return { rc: 0, pending: false };
+  const notYet = skippers.failure.code === "not-yet";
+  console.error(
+    `announce-merge-ready: ${skippers.failure.reason} — refusing to announce${notYet ? "; re-run once it has run on the Ready pull request" : ""}`,
+  );
+  return { rc: notYet ? 4 : 1, pending: notYet };
+}
+
+/** Why a standing announcement is stale, from the positively confirmed live facts; null when none. */
+function staleCause(f: {
+  held: boolean;
+  draft: boolean;
+  skippers: boolean;
+  conflicting: boolean;
+}): string | null {
+  if (f.held) return `${holdName()} was applied`;
+  if (f.draft) return "the PR is a draft again";
+  if (f.skippers)
+    return "the draft-skipping reviewers have not run since it was marked Ready";
+  return f.conflicting ? "mergeability changed" : null;
+}
+
 async function main(): Promise<number> {
   let pr = "";
   let dryRun = false;
@@ -144,6 +179,12 @@ async function main(): Promise<number> {
   if (!isDigits(pr)) {
     fail(2, "announce-merge-ready: could not resolve a PR number");
   }
+
+  // A driver pass inherits its base-branch policy commit, but only for the
+  // pull request it drives; any other announcement resolves its own, so the
+  // draft-skipping reviewers come from the announced PR's base either way.
+  if ((process.env.DRIVE_PR_TARGET ?? "").trim() !== pr)
+    await announcePolicyBase(pr);
 
   // Read stdin BEFORE the status call: a terminal with no redirect would
   // otherwise block here after the network round-trip, looking like a hung
@@ -316,6 +357,18 @@ async function main(): Promise<number> {
     }
   }
 
+  // Skipper staleness is reconciled here, ahead of every refusal below (the
+  // status, CI, verified-SHA and clean-tree exits all precede the live-state
+  // gate that would otherwise see it), so none leaves a same-head "Safe to
+  // merge" standing once a skipper is positively not-yet since the Ready mark.
+  const early = await withdrawIfSkippersPending(pr, live.head, !dryRun);
+  if (early.failed)
+    fail(
+      1,
+      `announce-merge-ready: could not withdraw the standing announcement of ${live.head} while a draft-skipping reviewer has not run since the Ready mark.`,
+    );
+  const skippersPendingEarly = early.pending;
+
   // Bounded, unlike drive.ts's own status spawn: that one forwards `--timeout`
   // and is SUPPOSED to poll for as long as the driver asked. This one passes
   // `--once`, so a single evaluation is the whole contract and an invocation
@@ -357,7 +410,10 @@ async function main(): Promise<number> {
     // decision is taken". Every other read point in this script already
     // answers that condition with 5; a status call that discovered it first
     // must not be the exception.
-    return code === 5 ? 5 : 1;
+    if (code === 5) return 5;
+    // A skipper that has not run since the Ready mark is what an
+    // AWAITING_REVIEWER read is waiting for: the documented waiting exit.
+    return code === 4 && skippersPendingEarly ? 4 : 1;
   }
 
   const convergedHead = String(
@@ -383,7 +439,6 @@ async function main(): Promise<number> {
       `announce-merge-ready: review converged but CI is '${ci}' — refusing to announce`,
     );
   }
-
   // Extracted here — as soon as `status` is parsed — rather than after the
   // up-front clean check below, so that check can compare local HEAD against it
   // too. Pure extraction from data already in hand; no new I/O.
@@ -541,6 +596,9 @@ async function main(): Promise<number> {
   // A positive ci:hold read invalidates an existing same-head announcement
   // just as conclusively as a draft or conflict transition does.
   let liveConfirmedHeld = false;
+  // Set only on a positive `not-yet` from the draft-skipper gate, never on an
+  // unreadable timeline or check-run read.
+  let liveConfirmedSkippersPending = false;
   async function checkLiveState(): Promise<number> {
     // Reset on every call (this function runs several times) so a stale flag
     // from an earlier call never survives into a call that failed for an
@@ -548,6 +606,7 @@ async function main(): Promise<number> {
     liveConfirmedConflicting = false;
     liveConfirmedDraft = false;
     liveConfirmedHeld = false;
+    liveConfirmedSkippersPending = false;
     const r = await ghCall(
       [
         "pr",
@@ -716,6 +775,13 @@ async function main(): Promise<number> {
       );
       return 4;
     }
+    // The reviewers that skip drafts must have run since the Ready mark. It
+    // is asked here, with the other live facts, because a person can convert
+    // the PR to draft and back to Ready on the same head at any point of the
+    // run, and only a read taken after that transition sees it.
+    const skippers = await skippersGate(pr, head);
+    liveConfirmedSkippersPending = skippers.pending;
+    if (skippers.rc !== 0) return skippers.rc;
     return 0;
   }
 
@@ -738,15 +804,15 @@ async function main(): Promise<number> {
     rc: number,
     ids: number[] = existingIds,
   ): Promise<number> {
-    if (
-      !dryRun &&
-      rc === 4 &&
-      (liveConfirmedConflicting || liveConfirmedDraft || liveConfirmedHeld) &&
-      ids.length > 0
-    ) {
+    const cause = staleCause({
+      held: liveConfirmedHeld,
+      draft: liveConfirmedDraft,
+      skippers: liveConfirmedSkippersPending,
+      conflicting: liveConfirmedConflicting,
+    });
+    if (!dryRun && rc === 4 && cause !== null && ids.length > 0) {
       console.error(
-        `announce-merge-ready: withdrawing now-stale announcement(s) on ${head} — ` +
-          `${liveConfirmedHeld ? `${holdName()} was applied` : liveConfirmedDraft ? "the PR is a draft again" : "mergeability changed"} after they were posted.`,
+        `announce-merge-ready: withdrawing now-stale announcement(s) on ${head} — ${cause} after they were posted.`,
       );
       for (const id of ids) if (!(await withdrawAnnouncement(pr, id))) return 1;
     }
