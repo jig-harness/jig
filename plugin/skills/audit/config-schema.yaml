@@ -336,10 +336,21 @@ fields:
     deprecated: "use issue_tracker.labels.epic; the older name is still read while that is unset"
   review.reviewer_app:
     type: string
-    read_by: [drive-pr]
+    read_by: [drive-pr, dispatch]
   review.reviewer_check_pattern:
     type: regex
+    read_by: [drive-pr, dispatch]
+  review.reviewer_evidence:
+    type: enum
+    values: [sticky, review_object]
     read_by: [drive-pr]
+    since: 0.210.0
+  review.draft_skipping_reviewers:
+    type: list
+    items: string
+    distinct: true
+    read_by: [drive-pr]
+    since: 0.210.0
   review.sticky_marker:
     type: string
     read_by: [drive-pr]
