@@ -723,16 +723,14 @@ async function heldReason(
   const held = queueHold(candidate, options);
   if (held === null || open.length === 0) return held;
   if (queueHold({ ...candidate, blockers: [] }, options) !== null) return held;
-  // An item behind its epic's human gate authorizes no work, its blockers' included.
-  if (node.pull === undefined) {
-    const parentHold = await servedParentHold(
-      tracker,
-      node.issue,
-      cache,
-      options.executionPlanBlock,
-    );
-    if (parentHold !== null) return parentHold;
-  }
+  // An item behind its epic's human gate authorizes no work, its blockers' included: the served item and each pulled item between.
+  const parentHold = await servedParentHold(
+    tracker,
+    node.issue,
+    cache,
+    options.executionPlanBlock,
+  );
+  if (parentHold !== null) return parentHold;
   const pull = pullBlockers(node.issue, node.pull, node.ancestor, open, {
     epic: options.epic,
     hitl: options.hitl,
@@ -782,13 +780,23 @@ async function freshPulledAuthority(
   if (originHold !== null) return `${blockingFor}: ${originHold}`;
   const authority = await freshAuthority(tracker, origin, identity, ancestor);
   if (authority !== null) return `${blockingFor}: ${authority}`;
-  const through = async (via: string): Promise<boolean> =>
-    whyNotPulled(await tracker.poolIssue(via), {
-      epic: policy.epic ?? "epic",
-      hitl: policy.hitl,
-      manualOps: policy.manualOps,
-      repoScope: policy.repoScope,
-    }) === null;
+  const through = async (via: string): Promise<boolean> => {
+    const item = await tracker.poolIssue(via);
+    return (
+      whyNotPulled(item, {
+        epic: policy.epic ?? "epic",
+        hitl: policy.hitl,
+        manualOps: policy.manualOps,
+        repoScope: policy.repoScope,
+      }) === null &&
+      (await servedParentHold(
+        tracker,
+        item as PoolIssue,
+        { get: () => null, set: () => undefined },
+        policy.executionPlanBlock,
+      )) === null
+    );
+  };
   return (await blocksWithin(tracker, blockingFor, issue.identifier, through))
     ? null
     : `it no longer blocks ${blockingFor}`;

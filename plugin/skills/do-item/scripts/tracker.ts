@@ -374,7 +374,7 @@ async function claim(
   const read = await claimSettingsFromDefaultBranch(root, overlay);
   if (!read.ok) return unreadablePreflight(normalized, read.failure.reason);
   const settings = read.value;
-  const planBlock = await claimPlanBlockFromDefaultBranch(root, overlay);
+  const planBlock = await claimPlanBlockFromDefaultBranch(root);
   if (!planBlock.ok)
     return unreadablePreflight(normalized, planBlock.failure.reason);
   // Before the lock and before any write: a refusal leaves nothing behind.

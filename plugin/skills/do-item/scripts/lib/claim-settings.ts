@@ -109,37 +109,36 @@ export async function claimSettingsFromDefaultBranch(
   };
 }
 
+function namedBlock(overlay: Record<string, unknown> | null): string {
+  try {
+    return executionPlanBlock(overlay);
+  } catch (err) {
+    throw new ClaimSettingsError(
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+}
+
 /**
  * The execution-plan block name a claim authorizes against: the default
  * branch's, so a branch cannot select a different fenced block than the one
- * that holds the human gates. When the default branch cannot be read, a
- * working tree that names another block than the default refuses the claim.
+ * that holds the human gates. When the default branch cannot be read, the
+ * claim is refused whatever the working tree sets: the trusted selector is
+ * unknown, and the working tree's choice cannot stand in for it.
  */
 export async function claimPlanBlockFromDefaultBranch(
   root: string,
-  workingTree: Record<string, unknown> | null,
 ): Promise<Outcome<string, "unreadable">> {
   const read = await defaultBranchSettings(root, "do_item", [
     "execution_plan_block",
   ]);
-  const named = (overlay: Record<string, unknown> | null): string => {
-    try {
-      return executionPlanBlock(overlay);
-    } catch (err) {
-      throw new ClaimSettingsError(
-        err instanceof Error ? err.message : String(err),
-      );
-    }
-  };
   if (read.ok)
     return {
       ok: true,
-      value: named({
+      value: namedBlock({
         do_item: { execution_plan_block: read.value.execution_plan_block },
       }),
     };
-  const own = named(workingTree);
-  if (own === named(null)) return { ok: true, value: own };
   return {
     ok: false,
     failure: {

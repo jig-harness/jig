@@ -126,21 +126,16 @@ describe("claimSettingsFromDefaultBranch", () => {
 });
 
 describe("claimPlanBlockFromDefaultBranch", () => {
-  it("reads the block the default branch names, whatever the working tree sets", async () => {
+  it("reads the block the default branch names", async () => {
     const dir = clone("do_item:\n  execution_plan_block: gated-plan\n");
-    expect(
-      await claimPlanBlockFromDefaultBranch(dir, {
-        do_item: { execution_plan_block: "permissive-plan" },
-      }),
-    ).toEqual({ ok: true, value: "gated-plan" });
+    expect(await claimPlanBlockFromDefaultBranch(dir)).toEqual({
+      ok: true,
+      value: "gated-plan",
+    });
   });
 
-  it("refuses a working tree that names another block when the default branch cannot be read", async () => {
+  it("refuses when the default branch cannot be read, whatever the working tree sets", async () => {
     const dir = clone("do_item: [unclosed\n");
-    const out = await claimPlanBlockFromDefaultBranch(dir, {
-      do_item: { execution_plan_block: "permissive-plan" },
-    });
-    expect(out.ok).toBe(false);
-    expect((await claimPlanBlockFromDefaultBranch(dir, null)).ok).toBe(true);
+    expect((await claimPlanBlockFromDefaultBranch(dir)).ok).toBe(false);
   });
 });

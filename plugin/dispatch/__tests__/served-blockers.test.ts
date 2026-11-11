@@ -390,6 +390,26 @@ describe("an assigned epic's children", () => {
     ]);
   });
 
+  it("does not pull a blocker through an intermediate behind its epic's human gate", async () => {
+    const description =
+      "## Execution Plan\n" +
+      renderExecutionPlan({
+        epic: "#5",
+        intent: "deliver",
+        steps: [{ issue: "#9", band: 1, lane: "a", gate: "human" }],
+        edges: [],
+        gates: [],
+      });
+    const read = await world({
+      assigned: [issue("#1", ["epic"])],
+      others: [issue("#5", ["epic"], "sam"), issue("#10", [], null)],
+      children: { "#1": kids("#2"), "#5": kids("#9") },
+      descriptions: { "#5": description },
+      waits: { "#2": ["#9"], "#9": ["#10"] },
+    }).read();
+    expect(read.wanted.map((i) => i.key)).not.toContain("#10");
+  });
+
   it("works each nested epic one child at a time on its own", async () => {
     const read = await world({
       assigned: [issue("#1", ["epic"])],
