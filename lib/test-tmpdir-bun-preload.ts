@@ -25,8 +25,25 @@
 // registered collector reports with its owner record. Installing SIGINT/SIGTERM handlers here
 // would change Ctrl-C semantics for every test process to reclaim that
 // remainder, which is not a trade worth making.
+//
+// Bun caches the transpiled output of large source files under the home
+// directory. Many fixtures start a child with a fake home inside the scope,
+// and each such child rebuilt that cache there: hundreds of files per start,
+// most of the dispatch suite's scratch, on a shared /tmp whose inode table
+// runs out. Children that inherit this environment share one cache under the
+// real home instead, set before the scope so a run that already chose a cache
+// keeps it.
 import { afterAll } from "bun:test";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { scopeTestTmpdir } from "./test-tmpdir.ts";
 
+process.env.BUN_RUNTIME_TRANSPILER_CACHE_PATH ??= join(
+  homedir(),
+  ".bun",
+  "install",
+  "cache",
+  "@t@",
+);
 const scope = scopeTestTmpdir();
 afterAll(() => scope.release());
