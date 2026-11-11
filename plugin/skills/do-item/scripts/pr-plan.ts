@@ -8,19 +8,29 @@
  * Type: Decision
  *
  * Usage:
- *     bun pr-plan.ts branch --issue <KEY> --title <issue title> [--json]
+ *     bun pr-plan.ts branch --issue <KEY> --title <issue title>
+ *                           [--issue-json <file>] [--json]
  *     bun pr-plan.ts open [--issue <KEY>] [--issue-json <file>]
  *                         [--stack-on <branch>]
  *                         [--accept-oversize <reason>] [--json]
  *
- * `branch` prints the branch name the policy gives the issue (one line, or
- * `{ "branch": ... }` with `--json`). Run it before the first commit.
+ * `branch` prints the branch name the policy gives the issue on its first
+ * line and, on its second, the base to cut it from with what chose it
+ * (`base: <branch> (<source>)`); `--json` prints
+ * `{ "branch", "base", "baseSource" }`. Run it before the first commit.
+ *
+ * The base is the integration branch unless `pull_requests.base_rules`
+ * names another for one of the issue's labels: the first rule one of whose
+ * labels the issue carries wins. With rules declared, both commands need
+ * `--issue-json` to read the labels.
  *
  * `open` prints the plan for opening the current branch's pull request:
- * the base branch, the git remote to push to (`repository.remote`, else
+ * the base branch and the rule that chose it (refusing a rule's base the
+ * remote does not have), the git remote to push to (`repository.remote`, else
  * `origin`), the `gh pr create` arguments the policy fixes (base,
  * draft or Ready, labels), the commands to run after it (linking a native
- * stack), the title convention, the template(s) to fill in, the line linking
+ * stack), the title convention (under `title_format: pattern`, the title
+ * rendered from the issue's key and title), the template(s) to fill in, the line linking
  * the issue, the size against its budget (leaving out, and naming, the files
  * in `UNCOUNTED` such as the audit record), and warnings. `--stack-on` asks to base the pull request on
  * another open pull request's head branch instead of the trunk; the policy
@@ -54,7 +64,13 @@ import {
   reviewsDrafts,
 } from "../../drive-pr/scripts/lib/overlay.ts";
 import {
+  baseSource,
+  type ChosenBase,
+  chooseBase,
   detectTitleFormat,
+  renderTitle,
+} from "../../drive-pr/scripts/lib/pr-conventions.ts";
+import {
   findCodeowners,
   findPrTemplates,
   issueLinkLine,
@@ -68,6 +84,7 @@ import {
   readRepoSettings,
   renderBranchName,
   resolveOpenAs,
+  type TitleFormat,
   walkChain,
 } from "../../drive-pr/scripts/lib/pr-policy.ts";
 import { ghCall, git } from "../../drive-pr/scripts/lib/proc.ts";
@@ -75,6 +92,11 @@ import { uniqueLogins } from "../../../shared/forge-logins.ts";
 import { JigError } from "../../../shared/errors.ts";
 import { isRecord } from "../../../shared/guards.ts";
 import { parseArgs, runEntry } from "./lib/cli.ts";
+import {
+  measureChange,
+  type Uncounted,
+  uncountedNote,
+} from "./lib/change-size.ts";
 import { prDiffContext, type Signal } from "./lib/pr-diff-context.ts";
 import { trackerConfigFrom } from "./lib/tracker/config.ts";
 import {
@@ -87,7 +109,7 @@ import {
 const PR_PLACEHOLDER = "<PR URL>";
 
 const USAGE = [
-  "usage: pr-plan.ts branch --issue <KEY> --title <issue title> [--json]",
+  "usage: pr-plan.ts branch --issue <KEY> --title <issue title> [--issue-json <file>] [--json]",
   "       pr-plan.ts open [--issue <KEY>] [--issue-json <file>] [--stack-on <branch>] [--accept-oversize <reason>] [--json]",
 ].join("\n");
 
@@ -121,7 +143,10 @@ export interface OpenPlan {
   /** The git remote the branch is pushed to: `repository.remote`, else `origin`. */
   remote: string;
   base: string;
+  /** The branch the pull request, or the stack it joins, lands on. */
   trunk: string;
+  /** What chose `trunk`: a base rule and the label it matched, or the integration branch. */
+  baseSource: string;
   stack: {
     mode: PrPolicy["stacking"];
     on: { branch: string; pr: number } | null;
@@ -133,7 +158,14 @@ export interface OpenPlan {
   /** Run after `gh pr create`, `<PR URL>` replaced by the URL it prints for the new pull request. */
   afterCreate: string[][];
   openAs: { value: "draft" | "ready"; source: string };
-  title: { format: "conventional" | "free"; source: string };
+  title: {
+    format: TitleFormat;
+    source: string;
+    /** `pull_requests.title_pattern` under `format: pattern`, else `null`. */
+    pattern: string | null;
+    /** The pattern rendered for the issue's key and title; `null` without both. */
+    rendered: string | null;
+  };
   body: { templates: string[]; issueLink: string | null };
   size: {
     changedLines: number;
@@ -211,52 +243,6 @@ export function missingLabels(
   existing: ReadonlySet<string>,
 ): Signal[] {
   return signals.filter((s) => !existing.has(s.value.toLowerCase()));
-}
-
-/**
- * Files whose changed lines the size budget does not count, and why: the
- * audit record (`/jig:audit`) is rewritten whole by every audit, so counting
- * it would put any pull request that commits it over a budget its own change
- * fits.
- */
-export const UNCOUNTED: ReadonlyMap<string, string> = new Map([
-  [".config/jig-audit.yaml", "the audit record, rewritten by every audit"],
-]);
-
-/** A file left out of the size, with its changed lines and why. */
-export interface Uncounted {
-  path: string;
-  lines: number;
-  why: string;
-}
-
-/**
- * Changed lines (added plus deleted, binary files ignored) of `git diff
- * --numstat`, and the files in `UNCOUNTED` left out of that total.
- */
-export function measureChange(numstat: string): {
-  changedLines: number;
-  uncounted: Uncounted[];
-} {
-  let changedLines = 0;
-  const uncounted: Uncounted[] = [];
-  for (const line of numstat.split("\n")) {
-    const [added, deleted, path] = line.split("\t");
-    if (added === undefined || deleted === undefined) continue;
-    const lines =
-      (/^\d+$/.test(added) ? Number(added) : 0) +
-      (/^\d+$/.test(deleted) ? Number(deleted) : 0);
-    const why = path === undefined ? undefined : UNCOUNTED.get(path);
-    if (path !== undefined && why !== undefined)
-      uncounted.push({ path, lines, why });
-    else changedLines += lines;
-  }
-  return { changedLines, uncounted };
-}
-
-/** Changed lines between `baseRef` and HEAD, as `measureChange` counts them. */
-export function countChangedLines(numstat: string): number {
-  return measureChange(numstat).changedLines;
 }
 
 async function revParses(root: string, ref: string): Promise<boolean> {
@@ -401,23 +387,100 @@ async function planOpening(
   return { openAs, signals, labels, createArgs };
 }
 
+/** The integration branch, or an error naming how to set it. */
+async function integrationBranch(
+  root: string,
+  remote: string,
+): Promise<string> {
+  const trunk = await baseBranch(root);
+  if (trunk === null)
+    throw new Error(
+      `the integration branch is unknown: set repository.base_branch in .config/jig.yaml, or give this clone a ${remote}/HEAD (git remote set-head ${remote} --auto)`,
+    );
+  return trunk;
+}
+
+/** Refuse a base a rule chose that the remote does not have; an unreadable remote is an error. */
+async function requireRemoteBranch(
+  root: string,
+  remote: string,
+  chosen: ChosenBase,
+): Promise<void> {
+  const r = await git(
+    [
+      "-C",
+      root,
+      "ls-remote",
+      "--exit-code",
+      "--heads",
+      remote,
+      `refs/heads/${chosen.base}`,
+    ],
+    { stderr: "pipe", timeoutSec: 120 },
+  );
+  if (r.code === 2)
+    throw new Refusal(
+      `refused: ${baseSource(chosen)} names the base ${chosen.base}, which ${remote} does not have.`,
+      `Create ${chosen.base} on ${remote}, or correct pull_requests.base_rules, then re-run.`,
+    );
+  if (r.code !== 0)
+    throw new JigError(
+      "remote-unreadable",
+      `could not read whether ${remote} has ${chosen.base} (git ls-remote exited ${r.code}${r.stderrTail.trim() === "" ? "" : `: ${r.stderrTail.trim()}`})`,
+    );
+}
+
+/** The title convention, with the pattern rendered for the issue when both its key and title are known. */
+function planTitle(
+  title: { value: TitleFormat; source: string },
+  pattern: string | null,
+  issue: string | null,
+  issueJson: IssueJson | null,
+): OpenPlan["title"] {
+  const using = title.value === "pattern" ? pattern : null;
+  const summary = issueJson?.title ?? null;
+  return {
+    format: title.value,
+    source: title.source,
+    pattern: using,
+    rendered:
+      using === null || issue === null || summary === null
+        ? null
+        : renderTitle(using, issue, summary),
+  };
+}
+
+/** The title line of the plan. */
+function titleLine(title: OpenPlan["title"]): string {
+  const what =
+    title.format === "conventional"
+      ? "Conventional Commits, type(scope): summary"
+      : title.format === "pattern"
+        ? (title.rendered ?? `the pattern ${title.pattern}`)
+        : "free-form";
+  return `title:       ${what} (${title.source})`;
+}
+
 async function buildOpenPlan(opts: {
   root: string;
   policy: PrPolicy;
   issue: string | null;
   stackOn: string | null;
   acceptOversize: string | null;
-  /** The issue's labels from `--issue-json`; `null` when it was not given. */
-  issueLabels: string[] | null;
+  /** The issue from `--issue-json`; `null` when it was not given. */
+  issueJson: IssueJson | null;
 }): Promise<OpenPlan> {
   const { root, policy, issue, stackOn } = opts;
   const warnings: string[] = [];
   const remote = remoteName(root);
-  const trunk = await baseBranch(root);
-  if (trunk === null)
-    throw new Error(
-      `the integration branch is unknown: set repository.base_branch in .config/jig.yaml, or give this clone a ${remote}/HEAD (git remote set-head ${remote} --auto)`,
-    );
+  const integration = await integrationBranch(root, remote);
+  const chosen = chooseBase(
+    policy.baseRules,
+    opts.issueJson?.labels ?? [],
+    integration,
+  );
+  const trunk = chosen.base;
+  if (chosen.rule !== null) await requireRemoteBranch(root, remote, chosen);
 
   const settings = await readRepoSettings(root);
   if (settings === null)
@@ -564,12 +627,16 @@ async function buildOpenPlan(opts: {
   const context = await prDiffContext(root, baseRef, policy.labels);
   warnings.push(...context.warnings);
   const { openAs, signals, labels, createArgs } = await planOpening(
-    { root, policy, base, issueLabels: opts.issueLabels },
+    { root, policy, base, issueLabels: opts.issueJson?.labels ?? null },
     context,
     warnings,
   );
 
-  const title = await detectTitleFormat(root, policy, `${remote}/${trunk}`);
+  const title = await detectTitleFormat(
+    root,
+    policy,
+    `${remote}/${integration}`,
+  );
   if (labels.length > 0)
     warnings.push(
       `gh pr create fails when a label does not exist in the repository; the labels are ${labels.join(", ")}`,
@@ -579,11 +646,12 @@ async function buildOpenPlan(opts: {
     remote,
     base,
     trunk,
+    baseSource: baseSource(chosen),
     stack: { mode: policy.stacking, on, depth, maxDepth: policy.maxStackDepth },
     createArgs,
     afterCreate,
     openAs,
-    title: { format: title.value, source: title.source },
+    title: planTitle(title, policy.titlePattern, issue, opts.issueJson),
     body: {
       templates: findPrTemplates(root),
       issueLink: issue === null ? null : issueLinkLine(policy.issueLink, issue),
@@ -599,12 +667,6 @@ async function buildOpenPlan(opts: {
     signals,
     warnings,
   };
-}
-
-/** What the size leaves out, as a clause after it: `, not counting <path> (<n> lines, <why>)`. */
-function uncountedNote(uncounted: readonly Uncounted[]): string {
-  if (uncounted.length === 0) return "";
-  return `, not counting ${uncounted.map((u) => `${u.path} (${u.lines} lines, ${u.why})`).join(", ")}`;
 }
 
 /** One argument as POSIX shell text, so a printed command runs as planned. */
@@ -629,7 +691,7 @@ export function formatOpenPlan(plan: OpenPlan): string {
       ? `not stacked (pull_requests.stacking: ${plan.stack.mode})`
       : `layer ${plan.stack.depth} of a ${plan.stack.mode} stack on ${plan.stack.on.branch} (#${plan.stack.on.pr})${plan.stack.maxDepth === null ? "" : `, at most ${plan.stack.maxDepth}`}`;
   lines.push(
-    `base:        ${plan.base}${plan.base === plan.trunk ? "" : ` (lands on ${plan.trunk})`}`,
+    `base:        ${plan.base} (${plan.base === plan.trunk ? "" : `lands on ${plan.trunk}, `}${plan.baseSource})`,
   );
   lines.push(`stack:       ${stack}`);
   lines.push(`remote:      ${plan.remote}`);
@@ -639,9 +701,7 @@ export function formatOpenPlan(plan: OpenPlan): string {
   );
   for (const cmd of plan.afterCreate)
     lines.push(`then:        ${cmd.map(shellQuote).join(" ")}`);
-  lines.push(
-    `title:       ${plan.title.format === "conventional" ? "Conventional Commits, type(scope): summary" : "free-form"} (${plan.title.source})`,
-  );
+  lines.push(titleLine(plan.title));
   lines.push(
     `template:    ${plan.body.templates.length === 0 ? "none" : plan.body.templates.join(", ")}`,
   );
@@ -711,7 +771,7 @@ function issueOf(
   return issue;
 }
 
-/** `branch`: print the branch name the policy gives the issue. */
+/** `branch`: print the branch name the policy gives the issue, and the base to cut it from. */
 async function branchCommand(
   values: Map<string, string>,
   issue: IssueArg | null,
@@ -721,9 +781,10 @@ async function branchCommand(
   const title = values.get("title");
   if (issue === null || title === undefined || title.trim() === "")
     throw new CliExit(2, `branch needs --issue and --title\n${USAGE}`);
-  for (const v of ["stack-on", "accept-oversize", "issue-json"])
+  for (const v of ["stack-on", "accept-oversize"])
     if (values.has(v))
       throw new CliExit(2, `--${v} applies to open, not branch\n${USAGE}`);
+  const issueJson = readIssueJsonFor(values, issue.key, policy);
   const branch = renderBranchName(policy.branchName, issue.branchKey, title);
   const check = await git(["check-ref-format", "--branch", branch], {
     stderr: "ignore",
@@ -733,19 +794,61 @@ async function branchCommand(
       1,
       `ERROR: pull_requests.branch_name (${policy.branchName}) renders ${JSON.stringify(branch)}, which is not a valid branch name`,
     );
-  console.log(json ? JSON.stringify({ branch }) : branch);
+  const root = consumerRoot();
+  let chosen: ChosenBase;
+  try {
+    chosen = chooseBase(
+      policy.baseRules,
+      issueJson?.labels ?? [],
+      await integrationBranch(root, remoteName(root)),
+    );
+  } catch (e) {
+    throw new CliExit(1, `ERROR: ${errorText(e)}`);
+  }
+  const source = baseSource(chosen);
+  console.log(
+    json
+      ? JSON.stringify({ branch, base: chosen.base, baseSource: source })
+      : `${branch}\nbase: ${chosen.base} (${source})`,
+  );
   return 0;
 }
 
 /**
- * The labels of the issue JSON `--issue-json` names; `null` without it.
- * Exit 2 when it cannot be read, is no issue, or is another issue than
- * `--issue` names.
+ * The issue `--issue-json` names, checked against `issue`; exit 2 when
+ * `pull_requests.base_rules` is declared and it is missing, since the base
+ * then depends on the issue's labels.
  */
-export function readIssueLabels(
+function readIssueJsonFor(
+  values: Map<string, string>,
+  issue: string | null,
+  policy: PrPolicy,
+): IssueJson | null {
+  const issueJson = readIssueJson(values.get("issue-json"), issue);
+  if (issueJson === null && policy.baseRules.length > 0)
+    throw new CliExit(
+      2,
+      `pull_requests.base_rules chooses the base from the issue's labels: pass --issue-json <the issue JSON>\n${USAGE}`,
+    );
+  return issueJson;
+}
+
+/** What the plan reads of the issue JSON: its labels and its title. */
+export interface IssueJson {
+  labels: string[];
+  /** `null` when the JSON has no title. */
+  title: string | null;
+}
+
+/**
+ * The labels and title of the issue JSON `--issue-json` names; `null`
+ * without it. Exit 2 when it cannot be read, is no issue, or is another
+ * issue than `--issue` names.
+ */
+export function readIssueJson(
   file: string | undefined,
   issue: string | null,
-): string[] | null {
+): IssueJson | null {
   if (file === undefined) return null;
   let data: unknown;
   try {
@@ -753,10 +856,15 @@ export function readIssueLabels(
   } catch (e) {
     throw new CliExit(2, `--issue-json ${file}: ${errorText(e)}\n${USAGE}`);
   }
-  return issueLabelsOf(data, file, issue);
+  const labels = issueLabelsOf(data, file, issue);
+  const title = isRecord(data) ? data.title : undefined;
+  return {
+    labels,
+    title: typeof title === "string" && title.trim() !== "" ? title : null,
+  };
 }
 
-/** The labels of a parsed issue JSON, checked as `readIssueLabels` says. */
+/** The labels of a parsed issue JSON, checked as `readIssueJson` says. */
 function issueLabelsOf(
   data: unknown,
   file: string,
@@ -798,7 +906,7 @@ async function openCommand(
   if (values.has("title"))
     throw new CliExit(2, `--title applies to branch, not open\n${USAGE}`);
   const acceptOversize = values.get("accept-oversize") ?? null;
-  const issueLabels = readIssueLabels(values.get("issue-json"), issue);
+  const issueJson = readIssueJsonFor(values, issue, policy);
   if (acceptOversize !== null && acceptOversize.trim() === "")
     throw new CliExit(2, `--accept-oversize needs a reason\n${USAGE}`);
   let plan: OpenPlan;
@@ -809,7 +917,7 @@ async function openCommand(
       issue,
       stackOn: values.get("stack-on") ?? null,
       acceptOversize,
-      issueLabels,
+      issueJson,
     });
   } catch (e) {
     if (e instanceof Refusal) throw new CliExit(3, e.lines.join("\n"));

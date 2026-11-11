@@ -231,9 +231,11 @@ file so the worktree stays clean. Keep the `pickupId` the first prints: the pull
 ### 4. Implement, one commit per issue
 
 Name the branch with the pull-request policy, after the highest-priority
-issue in the batch. The `branch` operation of `pr-plan.ts` only prints the
-name; create the
-branch from the planned base and switch to it before the first commit
+issue in the batch. The `branch` operation of `pr-plan.ts` only prints: the
+name on its first line and the base on its second (`base: <base> …`; with
+`pull_requests.base_rules` declared, pass `--issue-json` with that issue's
+JSON so its labels choose the base). Create the
+branch from that base and switch to it before the first commit
 (`<remote>` is the repository's git remote: `repository.remote`, else
 `origin`):
 

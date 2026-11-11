@@ -9,11 +9,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   conventionalCommitlintConfig,
+  findCommitlintConfig,
+  inferTitleFormat,
+} from "../scripts/lib/pr-conventions.ts";
+import {
   DEFAULT_BRANCH_PATTERN,
   findCodeowners,
-  findCommitlintConfig,
   findPrTemplates,
-  inferTitleFormat,
   issueLinkLine,
   MAX_CHAIN_WALK,
   markReadyDueAfterRound,
@@ -49,6 +51,9 @@ describe("parsePrPolicy", () => {
       labelsFromIssue: new Map(),
       reviewersFromIssue: new Map(),
       titleFormat: null,
+      titlePattern: null,
+      baseRules: [],
+      commitPrefix: null,
     });
   });
 
@@ -81,6 +86,9 @@ describe("parsePrPolicy", () => {
         ["kind:db-migration", ["acme/dba", "alice"]],
       ]),
       titleFormat: "free",
+      titlePattern: null,
+      baseRules: [],
+      commitPrefix: null,
     });
   });
 

@@ -494,11 +494,19 @@ checkout. Check `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git status
 bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git add -- <each file this repair changed or regenerated>
 bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git commit -F ci-fix-message.txt
 bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git clean -f -- ci-fix-message.txt
+bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/commit-prefix.ts" [--branch <head branch>]
 bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git push
 ```
 
 Remove the message file only after the commit succeeds, so a refused commit
 can be retried with it; left behind, it makes the worktree dirty.
+
+`commit-prefix.ts` puts the issue key in every unpushed commit where the
+repository sets `pull_requests.commit_prefix`, and does nothing where it
+does not; pass `--branch` with the pull request's head branch on a detached
+tree. Push on exit `0`, and on exit `4` (a commit already pushed lacks the
+prefix) too, naming it in the report. Exit `3` (no key in the branch name,
+or a git operation open) and `1` stop the push: report them.
 
 Add the co-author trailer your repository uses for agent commits, if any.
 

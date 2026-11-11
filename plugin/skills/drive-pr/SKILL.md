@@ -2865,7 +2865,23 @@ Commit the validated tree. If the held batch (`bun "${CLAUDE_SKILL_DIR}/scripts/
 carries an item this pass did not hold — a thread's posted reply or a
 finding's stored reason — re-read it against its own finding first, as
 "Re-running after an interruption" below describes: the finish drains every
-hold and posts each finding's stored reason as it stands. Then:
+hold and posts each finding's stored reason as it stands.
+
+When the repository sets `pull_requests.commit_prefix`, put the issue key in
+every commit before the push, the base-sync merge and a conflict merge
+included: on a detached tree pass the pull request's head branch, whose name
+carries the key.
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/scripts/commit-prefix.ts" [--branch <head branch>]
+```
+
+It rewords each unpushed commit whose message lacks the prefix, keeping its
+tree and author, and moves HEAD to the result. Exit `0`: every commit carries
+it (or no prefix is set). Exit `4`: a commit already pushed lacks it; push
+anyway and say so in the round's report, since rewriting it needs a
+force-push a person decides on. Exit `3`: the branch carries no key or a git
+operation is open; conclude the operation and re-run, or report it. Then:
 
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 

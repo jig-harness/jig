@@ -86,7 +86,7 @@ import { ghCall } from "../../../shared/proc.ts";
 import { type AuditRecord, parseRecord, RECORD_RELPATH } from "./lib/record.ts";
 import { fileFindings } from "./lib/automation-fit.ts";
 import { guidanceFindings } from "./lib/guidance-fit.ts";
-import { labelFindings } from "./lib/label-fit.ts";
+import { policyFindings } from "./lib/pr-policy-fit.ts";
 import {
   configuredAt,
   trackedNeeds,
@@ -981,7 +981,7 @@ async function forgeChecks(
     state,
   );
   const stacking = await stackingFindings(config, root, base, repo, report);
-  const labels = await labelFindings(config, root, slug);
+  const labels = await policyFindings(config, root, slug, base);
   return [
     ...baseFindings,
     ...findings,
