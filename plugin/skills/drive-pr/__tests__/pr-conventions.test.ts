@@ -26,6 +26,11 @@ const RULES = [
 ];
 
 describe("base rules", () => {
+  it("refuses a dot-leading or .lock component anywhere in a base", () => {
+    for (const base of ["release/.hidden", "release.lock/2.4", "a/b.lock"])
+      expect(() => parseBaseRules([{ when: { labels: ["x"] }, base }])).toThrow();
+  });
+
   it("reads the rules in order", () => {
     expect(policy({ base_rules: RULES }).baseRules).toEqual([
       { labels: ["fixversion:2.4", "fixversion:2.4.1"], base: "release/2.4" },
@@ -111,6 +116,19 @@ describe("title pattern", () => {
     expect(renderTitle("[{key}] {summary}", "#12", "Fix it")).toBe(
       "[#12] Fix it",
     );
+  });
+
+  it("renders a summary holding replacement metacharacters literally", () => {
+    expect(renderTitle("{key}: {summary}", "ENG-12", "Fix $& and $' $$")).toBe(
+      "ENG-12: Fix $& and $' $$",
+    );
+  });
+
+  it("refuses a repeated placeholder and boundary whitespace", () => {
+    for (const title_pattern of ["{key}: {summary} ({key})", " {key}: {summary}", "{key}: {summary} "])
+      expect(() =>
+        policy({ title_format: "pattern", title_pattern }),
+      ).toThrow();
   });
 
   it("matches the titles the pattern renders, for any key", () => {

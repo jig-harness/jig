@@ -838,6 +838,8 @@ export interface IssueJson {
   labels: string[];
   /** `null` when the JSON has no title. */
   title: string | null;
+  /** The issue's key as the JSON carries it; `null` when it has none. */
+  identifier: string | null;
 }
 
 /**
@@ -861,6 +863,10 @@ export function readIssueJson(
   return {
     labels,
     title: typeof title === "string" && title.trim() !== "" ? title : null,
+    identifier:
+      isRecord(data) && typeof data.identifier === "string"
+        ? data.identifier
+        : null,
   };
 }
 
@@ -914,7 +920,11 @@ async function openCommand(
     plan = await buildOpenPlan({
       root: consumerRoot(),
       policy,
-      issue,
+      issue:
+        issue ??
+        (issueJson?.identifier == null
+          ? null
+          : (readIssueArg(issueJson.identifier, readKeys())?.key ?? null)),
       stackOn: values.get("stack-on") ?? null,
       acceptOversize,
       issueJson,
