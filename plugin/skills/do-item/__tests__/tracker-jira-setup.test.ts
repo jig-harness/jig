@@ -340,6 +340,32 @@ describe.each(MODES)("Jira transport: $name", (mode) => {
     ).toBeNull();
   });
 
+  it("limits the credential by one key and bounds an absurd Retry-After", async () => {
+    const keys: string[] = [];
+    const limits: number[] = [];
+    const governor = {
+      admit: (_adapter: string, key: string) => void keys.push(key),
+      observe: (key: string, answer: { limitedUntil?: number }) => {
+        keys.push(key);
+        limits.push(answer.limitedUntil ?? 0);
+      },
+    };
+    const call = (retryAfter: string) =>
+      httpTransport(
+        mode.base,
+        credential,
+        fake(429, "", { "Retry-After": retryAfter }).impl,
+        governor,
+      )({ method: "GET", path: "x" }).catch((e: unknown) => e);
+    const before = Date.now();
+    await call("1e13");
+    await call("30");
+    expect(new Set(keys).size).toBe(1);
+    expect(limits[0]).toBeLessThanOrEqual(before + 24 * 3_600_000 + 5_000);
+    expect(() => new Date(limits[0] ?? 0).toISOString()).not.toThrow();
+    expect(limits[1]).toBeLessThan(before + 60_000);
+  });
+
   it("maps statuses and carries Jira's error body", async () => {
     const fail = async (
       status: number,

@@ -152,6 +152,16 @@ function retryAfterOf(headers: Headers): number | null {
   return Number.isFinite(seconds) && seconds >= 0 ? seconds : null;
 }
 
+/** The longest a `Retry-After` may limit a credential; a larger ask is not believed. */
+const MAX_LIMIT_MS = 24 * 3_600_000;
+
+/** When a 429 limits the credential until: the header's wait, bounded, else the fallback. */
+function limitedUntil(now: number, headers: Headers): number {
+  const wait = retryAfterOf(headers);
+  const ms = wait === null ? FALLBACK_LIMIT_MS : wait * 1000;
+  return now + (ms > MAX_LIMIT_MS ? FALLBACK_LIMIT_MS : ms);
+}
+
 /** What an error status means, with Jira's own words. */
 export function httpFailure(
   status: number,
@@ -270,20 +280,21 @@ async function send(
  * refused before the request is acted on, so a write is not doubled. With
  * `governor` (the machine's request budget), a call is refused locally while
  * the credential is rate limited, and an HTTP 429 limits it until its
- * `Retry-After`. `identity` names the credential for the budget; it is hashed,
- * never stored.
+ * `Retry-After`. The budget names the credential by the header it resolves to,
+ * however it was supplied; it is hashed, never stored.
  */
 export function httpTransport(
   base: string,
   authorization: JiraAuthorization,
   fetchImpl: typeof fetch = fetch,
   governor?: BudgetGovernor,
-  identity = "",
 ): JiraTransport {
-  const key = credentialKey("jira", `${base} ${identity}`);
+  // Known once a header has resolved; a token command is not run to find out.
+  let key: string | null = null;
+  const keyOf = (header: string) => credentialKey("jira", `${base} ${header}`);
   return async (request, signal) => {
     if (cancelled(signal)) throw abortedError(signal);
-    governor?.admit("jira", key);
+    if (key !== null) governor?.admit("jira", key);
     const what = `${request.method} ${request.path}`;
     const url = requestUrl(base, request);
     // One deadline for the whole call: the token command, the request, a
@@ -293,6 +304,8 @@ export function httpTransport(
       signal === undefined ? deadline : AbortSignal.any([deadline, signal]);
     const lease = await authorization.lease(bound);
     let header = headerOf(lease.header, signal);
+    key = keyOf(header);
+    governor?.admit("jira", key);
     let res = await send(
       fetchImpl,
       url,
@@ -305,6 +318,7 @@ export function httpTransport(
       if (renewed !== null) {
         await bodyText(res, signal, what);
         header = headerOf(renewed, signal);
+        key = keyOf(header);
         res = await send(
           fetchImpl,
           url,
@@ -316,9 +330,7 @@ export function httpTransport(
     }
     const text = await bodyText(res, signal, what);
     if (res.status === 429 && governor !== undefined) {
-      const wait = retryAfterOf(res.headers);
-      const until =
-        Date.now() + (wait === null ? FALLBACK_LIMIT_MS : wait * 1000);
+      const until = limitedUntil(Date.now(), res.headers);
       const why = `Jira refused ${what} (HTTP 429)`;
       governor.observe(key, { limitedUntil: until, why });
       throw new TrackerRateLimited("jira", until, why);
@@ -349,7 +361,6 @@ export function defaultTransport(
     jiraAuthorization(credential.value),
     fetch,
     defaultGovernor(),
-    JSON.stringify(credential.value),
   );
 }
 
