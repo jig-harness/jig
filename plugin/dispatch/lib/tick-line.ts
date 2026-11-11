@@ -28,12 +28,24 @@ import {
   withLineLocked,
   writeLine,
 } from "./line-store.ts";
-import { mergeLine, readBy } from "./line-merge.ts";
+import {
+  identifiedSlugs,
+  mergeLine,
+  readBy,
+  withLastSlugs,
+} from "./line-merge.ts";
 import { hostTimeZone } from "./host-time.ts";
 import { exportLog } from "./log-export.ts";
 import type { MachineConfig } from "./machine-config.ts";
 import type { SessionsReport } from "./runtime/port.ts";
-import { stateDb } from "./state.ts";
+import { inTransaction, stateDb } from "./state.ts";
+import { insertRow } from "./log.ts";
+import {
+  type ParkOutcomes,
+  parkOutcomes,
+  withUnreadRepos,
+  type ParkRepo,
+} from "./park-events.ts";
 import { failureText } from "./text.ts";
 import { tickHealthOf, withTick } from "./tick-health.ts";
 import { passTimeoutSeconds } from "../../skills/drive-pr/scripts/lib/driver/settings.ts";
@@ -55,6 +67,7 @@ export function copyLog(receipt: TickReceipt): boolean {
 export function lineInputOf(
   drives: DrivenPr[],
   forge: {
+    ok?: boolean;
     open: ReadonlyArray<{ number: number; url: string; title: string }>;
     merged: ReadonlyArray<{ number: number; url: string; title: string }>;
   },
@@ -63,6 +76,7 @@ export function lineInputOf(
 ): RepoLineInput {
   return {
     drives,
+    open: forge.ok === false ? null : forge.open.map((p) => p.number),
     known: [
       ...[...forge.open, ...forge.merged].map((p) => ({
         target: `PR #${p.number}`,
@@ -129,6 +143,45 @@ function accountsOf(
     notAdmitted:
       refused.find((r) => r.account === slots.account.name)?.reason ?? null,
   }));
+}
+
+/** The line with its parks, and the event rows of the parks that left: the rows and the line that records them as ingested land together. */
+function writeWithParks(
+  line: LineSnapshot,
+  parked: ParkOutcomes,
+  receipt: string,
+): void {
+  const db = stateDb();
+  inTransaction(db, () => {
+    for (const row of parked.rows) insertRow(db, row);
+    writeLine(
+      { ...line, parks: parked.parks, ingested: parked.ingested },
+      receipt,
+    );
+  });
+}
+
+/** Each repository the tick read, as the park outcomes compare it: its owner flag, its open pull requests and its drives. */
+function parkRepos(
+  receipt: TickReceipt,
+  machine: MachineConfig,
+  inputs: Map<string, RepoLineInput>,
+): ParkRepo[] {
+  return receipt.repos.flatMap((report) => {
+    const input = inputs.get(report.path);
+    if (report.slug === null) return [];
+    // A repository whose forge was not read keeps the parks it held.
+    return [
+      {
+        slug: report.slug,
+        owner:
+          machine.repositories.find((r) => r.path === report.path)?.owner ??
+          false,
+        open: input?.open ?? null,
+        drives: input?.drives ?? [],
+      },
+    ];
+  });
 }
 
 /** Whether `repos` are every repository the machine file lists, and only those. */
@@ -299,7 +352,7 @@ function writeKept(
         receipt.startedAt,
       );
       // Even a whole tick merges: another tick may have written a newer part since this one read.
-      const line =
+      const line = withLastSlugs(
         before === null
           ? fresh
           : mergeLine(
@@ -307,10 +360,35 @@ function writeKept(
               fresh,
               machine.repositories,
               receiptText === null ? "fresh" : "kept",
-            );
+            ),
+        before,
+      );
       const ticks = withTick(before?.ticks, tickHealthOf(receipt, whole));
-      writeLine(
+      const listedSlugs = identifiedSlugs(line, before, machine.repositories);
+      const slugsOf = (current: boolean): Set<string> =>
+        current
+          ? new Set(
+              line.repos.flatMap((r) =>
+                r.slug === null || r.runId !== receipt.runId ? [] : [r.slug],
+              ),
+            )
+          : listedSlugs;
+      const accepted = slugsOf(true);
+      const parked = withUnreadRepos(
+        parkOutcomes(
+          parkRepos(receipt, machine, tick.inputs).filter((r) =>
+            accepted.has(r.slug),
+          ),
+          before ?? {},
+          receipt.finishedAt,
+        ),
+        accepted,
+        slugsOf(false),
+        before ?? {},
+      );
+      writeWithParks(
         withLoad({ ...line, ticks }, receipt),
+        parked,
         receiptText ?? JSON.stringify(receipt, null, 2),
       );
     },

@@ -672,6 +672,20 @@ in the old form.
   waited; a park the previous line held that left with no receipt is
   counted as removed, not answered. The ledger is on the pull request, so a
   re-arm on any host is counted, as far as the owner's tick ran to see it.
+  The receipts are the ledger's `resolvedParks`, the last 10 (the receipts one re-arm just wrote are all kept, even past 10), which are also
+  the resolved parks the hub's first stage keeps, and the first thing the
+  ledger cuts as it nears its size limit. A receipt keeps each consumed
+  answer without its body, which the kept answers hold for the pass. The
+  comparison runs in every tick, whole or partial, for each repository
+  whose read it accepts, as it writes its line, and its rows and the line
+  land in one transaction. Receipts evicted past the last 10, or cut from
+  a ledger, are remembered as lost (`resolvedParksLost`, the ledger's
+  `cut`), so a park they may have answered stays held. The rows are events `park-answered`, `park-provisional` (a
+  park handed on to be decided provisionally at the `wide` level) and
+  `park-removed`, each keyed by its park occurrence, so none is counted
+  twice. A held park on a ledger the tick could not read stays held for a
+  later tick, and one on a pull request no longer open is not counted. A park unparked by hand leaves no receipt and is counted as
+  removed.
 - **Recommendation acceptance.** `jig dispatch log` reports, per class and
   repository, how many parks were answered, how many with the recommended
   option and no note, and the median wait. That is evidence for a person deciding
