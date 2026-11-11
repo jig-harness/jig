@@ -205,6 +205,8 @@ export function skipNote(report: StatusReport): string {
  * `reviewedShaSource` and `reviewedSha` of a converged report.
  */
 export function reviewedClaim(source: string, reviewedSha: string): string {
+  if (source === "review-check-run")
+    return "completed its check run on this exact head, with no new review to post";
   return source === "skip-notice"
     ? `reviewed \`${reviewedSha.slice(0, 12)}\` and skipped this head, whose pull-request diff is the same`
     : "completed its review of this exact head";
