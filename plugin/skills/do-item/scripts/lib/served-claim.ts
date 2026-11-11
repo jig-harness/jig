@@ -95,9 +95,19 @@ async function readNode(
     return { reason: `${current} needs a person to start` };
   if (!child && !issue.labels.includes(options.epicLabel ?? "epic"))
     return { reason: `${current} is no longer an epic` };
-  const blocked =
-    child && options.blocked ? null : await blockedReason(tracker, current);
+  const blocked = await blockedReasonForNode(tracker, current, child, options);
   return blocked ? { reason: blocked } : { issue };
+}
+
+/** A claimed child already represents its blocker's successful admission. */
+async function blockedReasonForNode(
+  tracker: Tracker,
+  current: string,
+  child: boolean,
+  options: ServedClaim,
+): Promise<string | null> {
+  if (child && options.blocked) return null;
+  return blockedReason(tracker, current);
 }
 
 /** Only the sole served assignee, assigned by a writer, supplies authority. */

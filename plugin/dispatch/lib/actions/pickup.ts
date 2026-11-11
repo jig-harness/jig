@@ -180,17 +180,7 @@ async function launchOne(
   };
   const beforeBatch = await checkBatch();
   if (beforeBatch !== null) return waits(action, beforeBatch);
-  const served = {
-    ...(typeof action.evidence.servedPerson === "string"
-      ? { servedPerson: action.evidence.servedPerson }
-      : {}),
-    ...(typeof action.evidence.ancestorEpic === "string"
-      ? { ancestorEpic: action.evidence.ancestorEpic }
-      : {}),
-    ...(typeof action.evidence.blockingFor === "string"
-      ? { blockingFor: action.evidence.blockingFor }
-      : {}),
-  };
+  const served = servedEvidence(action);
   const before = await changed(state, repo, ctx, action.target, served);
   if ("why" in before) return waits(action, before.why);
   const admitted = await admitAccount(
@@ -263,6 +253,20 @@ async function launchOne(
   };
   const launched = headless(await startRecord(state, record, slots), record);
   return { ...launched, detail: `${launched.detail}; ${route.detail}` };
+}
+
+/** The optional served-item facts which a pickup preserves in its launch record. */
+function servedEvidence(action: Action): {
+  servedPerson?: string;
+  ancestorEpic?: string;
+  blockingFor?: string;
+} {
+  const { ancestorEpic, blockingFor, servedPerson } = action.evidence;
+  return {
+    ...(typeof servedPerson === "string" ? { servedPerson } : {}),
+    ...(typeof ancestorEpic === "string" ? { ancestorEpic } : {}),
+    ...(typeof blockingFor === "string" ? { blockingFor } : {}),
+  };
 }
 
 /** The pickup's own deadline, in whole seconds. */
