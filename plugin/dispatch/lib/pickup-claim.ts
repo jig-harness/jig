@@ -2,14 +2,14 @@
  * A dispatched pickup's claim, recorded where it is made. `tracker.ts claim`
  * calls `notePickupClaim` once its claim has landed; in a pass the dispatcher
  * started, `JIG_LAUNCH` names the pickup's launch record, and the claimed item
- * joins that record's `claimedItems`. The tick then knows the claim is its
+ * joins that record's persisted claim set. The tick then knows the claim is its
  * pickup's however soon the pass ends after it, and whether or not a tick read
  * the item in progress while the pass ran: a served person's item in progress
  * counts as a pickup's only with that evidence (`plan-pickups.ts`).
  *
  * Outside a dispatched pickup it notes nothing: a person's own claim, a
- * drive's pass, a follow-up. The read, the merge and the write run in one
- * transaction, so a tick writing the record at the same time loses neither.
+ * drive's pass, a follow-up. The record and the acknowledgement have separate
+ * writers, so a tick writing a stale record cannot erase a claim.
  */
 import { launchOf } from "../../shared/launched-session.ts";
 import { attempt, failed, ok, type Outcome } from "../../shared/outcome.ts";
@@ -49,14 +49,9 @@ export function notePickupClaim(
           return `launch record ${id} does not read`;
         const why = refusal(record, key);
         if (why !== null) return why;
-        const claimed = new Set(record.claimedItems ?? []);
-        if (claimed.has(key)) return null;
-        claimed.add(key);
-        record.claimedItems = [...claimed];
-        db.query("UPDATE launches SET record = ? WHERE id = ?").run(
-          JSON.stringify(record),
-          id,
-        );
+        db.query(
+          "INSERT OR IGNORE INTO pickup_claims (launch, item) VALUES (?, ?)",
+        ).run(id, key);
         return null;
       });
     },

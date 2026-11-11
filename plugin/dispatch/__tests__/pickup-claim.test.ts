@@ -96,6 +96,22 @@ describe("notePickupClaim", () => {
     expect(readRecord(ID, dir)?.claimedItems).toEqual(["#7", "#8"]);
   });
 
+  it("keeps a claim when a stale tick record is written afterwards", () => {
+    const dir = root();
+    writeRecord(pickup(), dir);
+    notePickupClaim("#7", dispatched, dir);
+    // `callLaunch` can finish with this snapshot after the pickup has claimed.
+    writeRecord(
+      pickup({
+        attempts: [
+          { at: "2026-11-11T06:01:00Z", outcome: "sent", detail: "started" },
+        ],
+      }),
+      dir,
+    );
+    expect(readRecord(ID, dir)?.claimedItems).toEqual(["#7"]);
+  });
+
   it("notes nothing outside a dispatched pass", () => {
     const dir = root();
     writeRecord(pickup(), dir);

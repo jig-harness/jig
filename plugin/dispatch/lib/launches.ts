@@ -483,7 +483,21 @@ export function recordOf(
     control === undefined
       ? controlRows(root, row.id).get(row.id)
       : control.get(row.id);
-  return { ...normalized(value), ...(rows ?? EMPTY) };
+  const record = normalized(value);
+  const claims = pickupClaims(root, row.id);
+  if (claims.length > 0)
+    record.claimedItems = [
+      ...new Set([...(record.claimedItems ?? []), ...claims]),
+    ];
+  return { ...record, ...(rows ?? EMPTY) };
+}
+
+/** Claims written at the tracker boundary, kept apart from tick-owned record JSON. */
+function pickupClaims(root: string, launch: string): string[] {
+  return stateDb(root)
+    .query("SELECT item FROM pickup_claims WHERE launch = ? ORDER BY item")
+    .all(launch)
+    .map((row) => (row as { item: string }).item);
 }
 
 interface EpisodeRow {

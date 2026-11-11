@@ -344,6 +344,19 @@ const MIGRATIONS: readonly Migration[] = [
     additive: true,
     sql: "ALTER TABLE launches ADD COLUMN refusal TEXT;",
   },
+  {
+    // A pickup claim is acknowledged at the tracker boundary. It must not
+    // share the tick-owned record JSON: a tick can still be writing an older
+    // snapshot when the pickup claims its item.
+    additive: true,
+    sql: `
+  CREATE TABLE pickup_claims (
+    launch TEXT NOT NULL REFERENCES launches(id) ON DELETE CASCADE,
+    item TEXT NOT NULL,
+    PRIMARY KEY (launch, item)
+  );
+  `,
+  },
 ];
 
 /** The schema version this plugin writes. */
