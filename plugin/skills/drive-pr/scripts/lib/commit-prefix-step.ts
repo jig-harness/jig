@@ -17,7 +17,14 @@ import { fileURLToPath } from "node:url";
 import { swallow } from "../../../../shared/errors.ts";
 import { isRecord } from "../../../../shared/guards.ts";
 import { prPolicy } from "./pr-policy.ts";
-import { ghCall, git, helperTimeoutSeconds, run, tsArgv } from "./proc.ts";
+import {
+  ghCall,
+  git,
+  helperTimeoutSeconds,
+  type RunHandle,
+  run,
+  tsArgv,
+} from "./proc.ts";
 import { lockHeartbeatMs } from "./state/lock.ts";
 import {
   assertTreeMutationAllowed,
@@ -96,11 +103,38 @@ export async function applyCommitPrefix(
   // The helper can outlive the lock's staleness window (a raised helper
   // timeout, an operator-shortened `$DRIVE_PR_LOCK_STALE_MIN`), and nothing
   // else renews the lock while it runs: heartbeat it, as `guarded-push.ts`
-  // does, so a contender cannot take the tree over mid-rewrite.
+  // does, so a contender cannot take the tree over mid-rewrite. A renewal
+  // that fails means the tree may already be another session's: the helper is
+  // stopped, and the step refuses whatever it answers.
+  const ownership = {
+    lost: false,
+    stop: null as null | (() => Promise<boolean>),
+  };
   const heartbeat =
-    lock === null ? null : setInterval(() => lock.touch(), lockHeartbeatMs());
+    lock === null
+      ? null
+      : setInterval(() => {
+          if (ownership.lost || lock.touch()) return;
+          ownership.lost = true;
+          void ownership.stop?.();
+        }, lockHeartbeatMs());
   try {
-    return await prefixUnderFence(pr, head, branch.branch, gitTimeoutSec);
+    const step = await prefixUnderFence(
+      pr,
+      head,
+      branch.branch,
+      gitTimeoutSec,
+      (handle) => {
+        ownership.stop = () => handle.stop();
+        if (ownership.lost) void ownership.stop();
+      },
+    );
+    if (!ownership.lost) return step;
+    return {
+      ok: false,
+      reason:
+        "lost the tree lock while commit-prefix.ts ran, so another session may be driving this tree; nothing further was written — re-run against a settled tree",
+    };
   } finally {
     if (heartbeat !== null) clearInterval(heartbeat);
     lock?.release();
@@ -113,10 +147,11 @@ async function prefixUnderFence(
   head: string,
   branch: string,
   gitTimeoutSec: number,
+  onSpawn: (handle: RunHandle) => void,
 ): Promise<PrefixStep> {
   const r = await run(
     tsArgv(commitPrefixScript, ["--branch", branch, "--expect-head", head]),
-    { stderr: "pipe", timeoutSec: helperTimeoutSeconds() },
+    { stderr: "pipe", timeoutSec: helperTimeoutSeconds(), onSpawn },
   );
   if (r.code !== 0 && r.code !== PUSHED_WITHOUT_PREFIX_EXIT)
     return {
