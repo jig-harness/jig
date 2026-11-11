@@ -391,6 +391,21 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.197.1] - 2026-11-11
+
+### Added
+
+- The drive status summary shows `[REFLECT DUE]` when the round needs reflection before triage.
+
+### Fixed
+
+- Reset preserves a live Ready-mark lease, preventing a duplicate Ready transition while its outcome is pending. Stale leases can still be cleared by reset.
+- Drive remote checks now require a supported transport on the forge host before fetching or pushing. SSH aliases are resolved through local SSH configuration; local filesystem paths and matching repository names on another host are refused.
+- Drive state writes distinguish published content whose directory durability is still pending from a failed write. Retrying inbox repair flushes the directory even when its content is already repaired.
+- Fleet-health reports unreadable re-arm history even when the pull request contributes no other facts, and stops before sampling when its deadline expires during that ledger read.
+- Remote verification reads each checkout's SSH transport configuration, so a drive cannot validate one checkout and fetch with another checkout's SSH command.
+- Fleet health counts re-arms from the pull request's drive ledger as ceremony, with the configurable `ceremony.weights.drive_rearms` weight (default `1`). Handoffs remain unmeasured because their narratives carry no dated history.
+
 ## [0.197.0] - 2026-11-11
 
 ### Added
@@ -6850,7 +6865,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.197.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.197.1...HEAD
+[0.197.1]: https://github.com/jig-harness/jig/compare/v0.197.0...v0.197.1
 [0.197.0]: https://github.com/jig-harness/jig/compare/v0.196.0...v0.197.0
 [0.196.0]: https://github.com/jig-harness/jig/compare/v0.195.0...v0.196.0
 [0.195.0]: https://github.com/jig-harness/jig/compare/v0.194.2...v0.195.0
