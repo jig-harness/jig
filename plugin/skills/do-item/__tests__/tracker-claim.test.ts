@@ -475,7 +475,7 @@ describe("tracker.ts claim", () => {
 
   it("refuses an item outside do_item.claim_from with exit 3, writing nothing", async () => {
     const out = await cli([], [], undefined, {
-      overlay: "do_item:\n  claim_from: [in_review]\n",
+      committed: "do_item:\n  claim_from: [in_review]\n",
     });
     expectSpawnExit(out, 3);
     expect(JSON.parse(out.stdout)).toMatchObject({
@@ -485,9 +485,18 @@ describe("tracker.ts claim", () => {
     expect(out.writes).toEqual([]);
   });
 
+  it("ignores a do_item.claim_from only the working tree sets", async () => {
+    const out = await cli([], [], undefined, {
+      overlay: "do_item:\n  claim_from: [in_review]\n",
+      committed: "",
+    });
+    expectSpawnExit(out, 0);
+    expect(JSON.parse(out.stdout).outcome).toBe("claimed");
+  });
+
   it("posts the claim marker after a claim with do_item.claim_marker", async () => {
     const out = await cli([], [], undefined, {
-      overlay: "do_item:\n  claim_marker: true\n",
+      committed: "do_item:\n  claim_marker: true\n",
       env: { CLAUDE_CODE_SESSION_ID: "session-1" },
     });
     expectSpawnExit(out, 0);

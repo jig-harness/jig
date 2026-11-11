@@ -102,7 +102,7 @@ import {
   preflightClaim,
   unreadablePreflight,
 } from "./lib/preflight.ts";
-import { claimSettingsOf } from "./lib/claim-settings.ts";
+import { claimSettingsFromDefaultBranch } from "./lib/claim-settings.ts";
 import {
   claimBranch,
   claimMarkerBody,
@@ -366,8 +366,10 @@ async function claim(
   const overlay = readOverlay();
   // A post-merge policy the issue link cannot honour is refused before the claim writes.
   parsePostMerge(overlay);
-  const settings = claimSettingsOf(overlay);
   const root = consumerRoot();
+  const read = await claimSettingsFromDefaultBranch(root, overlay);
+  if (!read.ok) return unreadablePreflight(normalized, read.failure.reason);
+  const settings = read.value;
   // Before the lock and before any write: a refusal leaves nothing behind.
   const command = await claimPreflightCommand(root, overlay);
   if (!command.ok)

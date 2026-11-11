@@ -12,7 +12,8 @@
  * misconfigured repository fails the claim rather than claiming unchecked.
  */
 import { isRecord } from "../../../../shared/guards.ts";
-import { JigError } from "../../../../shared/outcome.ts";
+import { JigError, type Outcome } from "../../../../shared/outcome.ts";
+import { defaultBranchSetting } from "../../../../shared/repo-command.ts";
 import { doItemSection } from "./overlay.ts";
 import { CANONICAL_STATES, type CanonicalState } from "./tracker/port.ts";
 
@@ -65,5 +66,41 @@ export function claimSettingsOf(
   return {
     claimFrom: claimFrom(section.claim_from),
     claimMarker: marker === true,
+  };
+}
+
+/**
+ * The claim settings a claim applies: the default branch's, like
+ * `do_item.preflight_command`, so a branch cannot widen its own allowed
+ * states or switch off the marker. When the default branch cannot be read,
+ * a working tree that sets either refuses the claim; one that sets neither
+ * claims with the defaults.
+ */
+export async function claimSettingsFromDefaultBranch(
+  root: string,
+  workingTree: Record<string, unknown> | null,
+): Promise<Outcome<ClaimSettings, "unreadable">> {
+  const from = await defaultBranchSetting(root, "do_item", "claim_from");
+  const marker = from.ok
+    ? await defaultBranchSetting(root, "do_item", "claim_marker")
+    : from;
+  if (from.ok && marker.ok)
+    return {
+      ok: true,
+      value: claimSettingsOf({
+        do_item: { claim_from: from.value, claim_marker: marker.value },
+      }),
+    };
+  const own = claimSettingsOf(workingTree);
+  if (own.claimFrom === null && !own.claimMarker)
+    return { ok: true, value: own };
+  const bad = from.ok ? marker : from;
+  const reason = bad.ok ? "unreadable" : bad.failure.reason;
+  return {
+    ok: false,
+    failure: {
+      code: "unreadable",
+      reason: `do_item.claim_from and do_item.claim_marker are read from the default branch, which could not be read: ${reason}`,
+    },
   };
 }

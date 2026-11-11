@@ -155,11 +155,11 @@ refuses too. The command text is read from the default branch, so a branch canno
 change the command its own claim runs; the command runs in the current
 checkout, so a program it names inside the repository (`bun
 scripts/start-rules.ts`) is the branch's own copy, and the rules are only as
-trusted as that program. It runs without the tracker and forge tokens. Telling the agent to proceed does not clear a refusal: the
+trusted as that program: a branch can bypass a rule by editing a script the command runs, so name an executable that is trusted independently of the branch, such as one installed on the machine. It runs without the tracker and forge tokens. Telling the agent to proceed does not clear a refusal: the
 item or the command changes. A dispatched pickup the command refused shows
 in the dispatcher's queue as held, with the reason, until the item changes.
 
-More settings narrow a claim. `do_item.claim_from` names the states work
+More settings narrow a claim, read from the default branch like the command, so a branch cannot widen its own allowed states or switch off the marker. `do_item.claim_from` names the states work
 may start from: an item in any other state, or in a status that maps to no
 canonical state, is refused with nothing written, so a side state a team
 uses as its record of why work stopped is never cleared by a claim.
