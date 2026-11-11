@@ -43,7 +43,7 @@ item 33), from `jig ask`, `jig send` and `/jig:operator`
 ([addresses.md](addresses.md), item 39), and from the Jig plugin for Orca
 ([orca-integration.md](orca-integration.md#the-jig-plugin-for-orca),
 item 34). Most of its status per pull request is the
-[dispatch board](dispatch-board.md), item 36, designed and not built, which
+[dispatch board](dispatch-board.md), item 36, partly built, which
 the dashboard builds first. Each of those designs says in its own text what this
 one changes, and so do
 [ADR-0013](../docs/adr/ADR-0013-records-not-a-daemon.md), for a resident

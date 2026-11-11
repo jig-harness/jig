@@ -611,9 +611,9 @@ Each surface's commit:
 
 | Surface | Commit | Waits on |
 | --- | --- | --- |
-| Dashboard | `c` copies, `p` opens the pull request, the person pastes | nothing |
+| Dashboard, today | `c` copies, `p` opens the pull request, the person pastes | nothing |
 | Orca panel | Send runs `jig send` once for each decision's active answer, a free answer with its words | nothing |
-| The dashboard | Commit, behind proof that a person is there | its third stage, item 40 |
+| Dashboard, from stage 3 | Commit, behind proof that a person is there | its third stage, item 40 |
 | Terminal | `jig ask --waiting` numbers the options; `jig send` names one | nothing |
 
 ### Reading answers
