@@ -65,6 +65,7 @@ import {
   isFailingStatus,
 } from "../../../shared/ci-status.ts";
 import { runMain } from "../../../shared/cli.ts";
+import { swallow } from "../../../shared/errors.ts";
 import { detachedTreeRecord } from "../../../shared/driven-tree.ts";
 import { attempt, type Outcome, ok } from "../../../shared/outcome.ts";
 import { gitIdentityEnv, run } from "../../../shared/proc.ts";
@@ -318,6 +319,16 @@ async function latestFailedRun(
 const PR_NOT_FOUND =
   /Could not resolve to a PullRequest|no pull requests found/iu;
 
+/** `text` parsed as JSON, `null` when it is not JSON. */
+function jsonOrNull(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch (err) {
+    swallow(err, "the output is not JSON: the caller reads it as unread");
+    return null;
+  }
+}
+
 /** A pull request's head branch and commit, or why they could not be read. */
 async function pullRequestHead(
   runner: Runner,
@@ -332,12 +343,7 @@ async function pullRequestHead(
     "headRefName,headRefOid",
   ]);
   if (r.code !== 0 && PR_NOT_FOUND.test(r.stderr)) return "not-found";
-  let view: unknown = null;
-  try {
-    view = r.code === 0 ? JSON.parse(r.stdout) : null;
-  } catch {
-    view = null;
-  }
+  const view = r.code === 0 ? jsonOrNull(r.stdout) : null;
   const { headRefName: branch, headRefOid: sha } = (view ?? {}) as Record<
     string,
     unknown

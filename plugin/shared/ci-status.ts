@@ -52,6 +52,19 @@ export function failingStatus(status: CommitStatus): FailingStatus {
   return { context: status.context, target_url: status.targetUrl ?? null };
 }
 
+/** One status of a combined-status page; `null` when it is not an object. */
+function commitStatusOf(s: unknown): CommitStatus | null {
+  if (s === null || typeof s !== "object" || Array.isArray(s)) return null;
+  const status = s as Record<string, unknown>;
+  return {
+    context: String(status.context ?? ""),
+    state: String(status.state ?? ""),
+    description:
+      status.description === null ? null : String(status.description ?? ""),
+    targetUrl: typeof status.target_url === "string" ? status.target_url : null,
+  };
+}
+
 /**
  * The statuses of `gh api --paginate --slurp …/commits/<sha>/status`, every
  * page; `null` when the output is not that shape.
@@ -72,16 +85,9 @@ export function combinedStatuses(raw: string): CommitStatus[] | null {
     const list = (page as { statuses?: unknown } | null)?.statuses;
     if (!Array.isArray(list)) return null;
     for (const s of list) {
-      if (s === null || typeof s !== "object" || Array.isArray(s)) return null;
-      const status = s as Record<string, unknown>;
-      statuses.push({
-        context: String(status.context ?? ""),
-        state: String(status.state ?? ""),
-        description:
-          status.description === null ? null : String(status.description ?? ""),
-        targetUrl:
-          typeof status.target_url === "string" ? status.target_url : null,
-      });
+      const status = commitStatusOf(s);
+      if (status === null) return null;
+      statuses.push(status);
     }
   }
   return statuses;
