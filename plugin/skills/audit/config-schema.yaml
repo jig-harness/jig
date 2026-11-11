@@ -732,7 +732,7 @@ fields:
     nullable: true
     read_by: [do-item, work-batch, dispatch]
     repository_only: true
-    since: next
+    since: 0.198.0
   do_item.claim_from:
     type: list
     items: { type: enum, values: [triage, backlog, todo, in_review, ops_pending, done, canceled, duplicate] }
@@ -740,12 +740,12 @@ fields:
     nonempty: true
     read_by: [do-item, work-batch, dispatch]
     repository_only: true
-    since: next
+    since: 0.198.0
   do_item.claim_marker:
     type: boolean
     read_by: [do-item, work-batch, dispatch]
     repository_only: true
-    since: next
+    since: 0.198.0
   do_item.arm_drive:
     type: enum
     values: [auto, tab, background, print]
