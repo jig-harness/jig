@@ -1473,6 +1473,8 @@ make, use the entry's term instead.
   session currently owns a piece of work, such as a pull request's review
   threads. Other sessions read it and stand back; a lease whose holder died
   expires instead of blocking forever.
+  A lease may also be granted by a *hub* to a host for a launch or an
+  owner duty, renewed by that host's calls and lapsing when they stop.
 - **Process identity** — what a component records so another process can
   later tell whether the recorded one still runs: the machine's **host id**
   (an id that survives a rename and a restart), its host name, the boot it
@@ -2243,6 +2245,16 @@ make, use the entry's term instead.
   one database that enrolled hosts call. Optional: a host that never
   enrolls, or whose hub does not answer, dispatches alone. See
   [design/control-plane.md](design/control-plane.md).
+- **Device grant** — how a host enrolls in a *hub*: the host prints a short
+  code, a person who administers the hub approves it, and the host receives a
+  credential of its own, bound to the repositories and queues that person
+  approved.
+- **Incarnation** — the id a *dispatcher*'s state database got when it was
+  created. A *hub* uses it to tell a host's records from those of an earlier
+  database of the same host.
+- **Capabilities** — named flags a call to the *hub* carries, and the hub
+  answers with its own, so either side adds a feature without changing the
+  other.
 - **Shared control plane** — one service that serves many hosts' *dispatchers*:
   it reads the forge and the tracker once for all of them, puts claims with
   leases in front of the forge and tracker claims, notices a host that

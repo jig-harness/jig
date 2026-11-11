@@ -81,6 +81,14 @@ stays under ADR-0013 alone. ADR-0011's refusal of an inbound route holds
 for every host; the hub, which is not a host, may receive the forge's and
 the tracker's webhooks, as hints that never replace its periodic reads.
 
+[ADR-0012](ADR-0012-failures-as-values.md) reserves reconsidering Jig's
+programming model for a resident process with real concurrency. The hub is
+one: it reads, takes webhooks and renews leases for several hosts at once.
+This decision keeps ADR-0012's values-not-throws model for the hub, since
+its calls are bounded requests whose failures are coded answers, and
+leaves cancellation and supervision of concurrent operations to the hub's
+own stage 1 design, which records its choice here before it starts.
+
 ## Alternatives considered
 
 - **Hosts dispatching alone, as now.** Rejected: reads keep multiplying

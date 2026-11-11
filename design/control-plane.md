@@ -103,8 +103,9 @@ nothing requires it.
   happened to the session is the host's to report.
 - **What the hub stores is rebuildable**, except its enrollments and the
   leases it granted. Its read cache comes back from the forge and
-  the tracker, and its copies of host records come back at each host's
-  next tick. A lost lease lapses on its own, and the fence behind it still
+  the tracker, and its copies of host records come back when each host
+  backfills after its next `hello`
+  ([`report`](#the-host-protocol)). A lost lease lapses on its own, and the fence behind it still
   holds. So deleting the hub's database costs a fresh enrollment of each
   host and nothing that the line depends on.
 - **No relationship store.** Links between items live in the tracker
@@ -122,12 +123,20 @@ nothing requires it.
 - **Every call is bound to its host.** The hub takes the host's identity
   from the credential, never from a field the caller fills in. A host can
   write only its own reports, claims and renewals.
+- **Every host has an approved scope.** The person who approves a host
+  names the repositories and tracker queues it may use, and the hub keeps
+  that scope with the credential. `hello` returns the intersection of the
+  scope with the host's machine file, and `changes`, `read`, `claim`,
+  `report` and `offers` refuse any target outside it with a coded failure.
+  A host cannot reach a repository by asking for it; widening a scope is
+  another approval.
 - **The hub reads with an identity of its own**, which the organization
   creates and the hub's configuration names: a GitHub App installation, or
   for the smallest form a read-only token; a Linear or Jira credential
-  for the tracker. That identity also writes the few records the hub
-  writes on the forge, and the forge's arbitration trusts it like Jig's
-  own login.
+  for the tracker. The hub writes nothing on the forge or the tracker: the
+  forge claim and the tracker claim are written by the hosts, as today, so
+  the read-only form is whole. A hub that is later given a write (a notice
+  on the forge, say) names that write and its permission here first.
 - **A person's act is made with that person's credential.** Merging,
   answering a park and every write a dashboard makes for a person go from
   the person's own machine, as the person, never through the hub. The hub
@@ -144,7 +153,11 @@ A call states its capabilities as named flags, and the hub answers with
 its own, so either side adds a capability without changing the other. An
 older host simply does not use what it does not know. Every answer is a
 value or a coded failure, as everywhere in Jig
-([ADR-0012](../docs/adr/ADR-0012-failures-as-values.md)).
+([ADR-0012](../docs/adr/ADR-0012-failures-as-values.md)). The hub is a
+resident process with concurrent reads, webhook intake and renewals, which
+is the case ADR-0012 reserves for reconsidering its programming model:
+[ADR-0016](../docs/adr/ADR-0016-an-optional-hub-for-hosts-that-keep-authority.md)
+records that reconsideration, and it is settled before stage 1 starts.
 
 - **`hello`**: the host's stable id, its dispatcher's incarnation (the id
   its state database got when it was created), its Jig version, its
@@ -169,10 +182,18 @@ value or a coded failure, as everywhere in Jig
   own budget allows. The observe phase asks with the tick's interval as the
   bound; the check just before an act asks with a bound of seconds, as
   `freshDriveReading` and `freshPickup` do today.
-- **`report(records)`**: the records a tick wrote that the hub serves on:
-  the line, each launch's start and end, outcome rows, the drive ledgers'
-  digests. Each record goes in the envelope Jig already uses, with its key
-  and generation, so a report sent twice counts once.
+- **`report(records)`**: the records the hub serves on: the line, each
+  launch's start and end, outcome rows, the drive ledgers (decisions
+  included), pickup progress, receipts and the correspondence the source
+  feed's bounded calls return, each under the visibility its repository's
+  scope gives it. Each record goes in the envelope Jig already uses, with
+  its key and generation, so a report sent twice counts once. The host
+  keeps a durable checkpoint of what the hub acknowledged, per incarnation,
+  and a tick resends everything after it; after `hello` shows a hub with no
+  memory of the host's incarnation (a deleted database) the host backfills
+  from its records in full. The hub never asks a host for anything, so
+  what the source feed needs on demand is replicated here ahead of the
+  asking.
 - **`claim`, `check`, `renew`, `end`**: the shared records interface
   (`plugin/shared/records/shared.ts`) over HTTP, with a lease on each
   claim. The host renews the claims of the sessions it still holds at each
@@ -228,12 +249,18 @@ The hub's claims sit in front of them:
   from a pull request to a work key, an item's key as well, so two hosts
   dispatching one repository's pickups no longer both open a workspace for
   one item. The tracker claim inside `do-item` stays the fence.
-- **A silent host's claims lapse.** A lease the host stopped renewing
-  lapses, and every enrolled host then reads that host's forge claim as
-  ended, with no write on the silent host's behalf. A takeover of a drive
-  still needs its ledger's heartbeat past the lease window, never a lapsed
-  claim alone. A host that is not enrolled keeps reading the claim as live,
-  as it does today.
+- **A silent host's claims lapse in the hub, not on the forge.** A lease
+  the host stopped renewing lapses, and the hub grants that work to
+  another host. The forge's own marker is not reinterpreted: an unfinished
+  claim still fences a launch for every reader, the skills included, since
+  they never consult the hub. A replacement that holds a hub grant
+  therefore still takes the forge's own path past the old claim: a drive's
+  takeover, which needs its ledger's heartbeat past the lease window, and a
+  follow-up's existing marker arbitration. A lapsed lease alone never
+  releases a forge claim. Making an unfinished claim cease to fence for
+  every reader needs a change to the shared records protocol that every
+  reader understands, and is its own item. A host that is not enrolled
+  reads the claim as live, as it does today.
 - **A host back from an outage replays.** On its first `hello` after the
   hub was unreachable, a host sends the claims its launch records still
   hold, and the hub restores each one no other host has been granted
@@ -257,11 +284,19 @@ Today each host's machine file says whether it owns a repository's
 notices, labels, board, serialization holds, steward and reflection
 findings, and two hosts that both claim a repository are only reported.
 With the hub, `hello` names the owner of each repository: the host that
-claimed it first, until that host goes silent, then the next. A host takes
-an owner's duty only when the hub named it, and while the hub is
-unreachable, only when its own machine file says it owns the repository,
-as today. The duties stay on hosts; moving any of them into the hub itself
-waits until a duty is shown to need it.
+claimed it first, until that host goes silent, then the next. Two hosts
+must never hold a duty at once, since a host cut off from the hub alone
+would otherwise keep its duty while the hub names another. So the owner
+holds its duty under a lease of its own, renewed with each call, and a
+host does an owner's effects (notices, label and board writes, the
+steward, reflection findings) only while its lease is current. The hub
+names a new owner only after the old lease has lapsed, and an owner whose
+renewals fail stops doing the effects when its lease would have lapsed.
+While the hub is unreachable a host does only the effects that are safe
+to repeat, such as reading, and does none of the rest until it reaches
+the hub again, or until a person's machine file says the host owns the
+repository without a hub, as today. The duties stay on hosts; moving any
+of them into the hub itself waits until a duty is shown to need it.
 
 ### Handing out work
 
