@@ -391,6 +391,17 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.197.4] - 2026-11-11
+
+### Fixed
+
+- Opening a workspace for a branch that another checkout holds no longer
+  reports that checkout as in use when the idle check ran out of time. A
+  command that reached its deadline just as it exited could read as having
+  succeeded with no output, so the check took it for a busy checkout and a
+  person was told of it; such a command now reads as cut short, and the open
+  fails as an ordinary refusal that the next open retries.
+
 ## [0.197.3] - 2026-11-11
 
 ### Fixed
@@ -6906,7 +6917,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.197.3...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.197.4...HEAD
+[0.197.4]: https://github.com/jig-harness/jig/compare/v0.197.3...v0.197.4
 [0.197.3]: https://github.com/jig-harness/jig/compare/v0.197.2...v0.197.3
 [0.197.2]: https://github.com/jig-harness/jig/compare/v0.197.1...v0.197.2
 [0.197.1]: https://github.com/jig-harness/jig/compare/v0.197.0...v0.197.1
