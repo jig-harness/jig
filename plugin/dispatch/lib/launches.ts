@@ -76,7 +76,11 @@ import { cancelledBeforeExecution } from "./cancellation.ts";
 import type { StandingAnswer } from "./routine-questions.ts";
 export { cancelledBeforeExecution } from "./cancellation.ts";
 export { UNARMED_FACTS } from "./launch-keep.ts";
-import { latestArms, latestFailedRearms } from "./launch-keep.ts";
+import {
+  latestArms,
+  latestFailedRearms,
+  latestPickups,
+} from "./launch-keep.ts";
 
 /** What a launch starts: a re-arm of a stopped drive, a takeover of a wedged one, a pickup's `do-item` session, or a merge's follow-up pass. */
 export type LaunchAction =
@@ -841,32 +845,6 @@ function latestRedrives(records: ReadRecord[]): Set<string> {
     }
   }
   return new Set([...latest.values()].map((r) => r.record.id));
-}
-
-/**
- * The ids of each item's latest pickup record: while it is unreleased it is
- * the only thing that keeps the item from being picked up again, so it stays
- * until `releaseEnded` has seen the item leave the dispatch states. A batch
- * pickup is the latest record of every member it names, not only its anchor:
- * a later pickup anchored on the same item must not displace the evidence
- * (a refusal) of the members it left out.
- */
-function latestPickups(records: ReadRecord[]): Set<string> {
-  const latest = new Map<string, ReadRecord>();
-  for (const r of records) {
-    if (r.record.action !== "pickup") continue;
-    const members = r.record.batchItems?.map((i) => i.key) ?? [];
-    for (const key of new Set([String(r.record.item), ...members])) {
-      const k = `${r.record.repo}\0${key}`;
-      const seen = latest.get(k);
-      if (seen === undefined || r.record.createdAt >= seen.record.createdAt)
-        latest.set(k, r);
-    }
-  }
-  const ids = new Set<string>();
-  for (const { record } of latest.values())
-    if (!record.released) ids.add(record.id);
-  return ids;
 }
 
 /** When an ended or died record finished; `null` for one still holding its stage. */
