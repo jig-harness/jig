@@ -370,7 +370,7 @@ describe.each(MODES)("Jira transport: $name", (mode) => {
     const admitted: string[] = [];
     const governor = {
       admit: (_adapter: string, key: string) => void admitted.push(key),
-      observe: () => {},
+      observe: () => undefined,
     };
     const transport = httpTransport(
       mode.base,
