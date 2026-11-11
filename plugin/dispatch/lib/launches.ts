@@ -68,10 +68,16 @@ import type { StaleCause } from "./types.ts";
 import { cancelledBeforeExecution } from "./cancellation.ts";
 import type { StandingAnswer } from "./routine-questions.ts";
 export { cancelledBeforeExecution } from "./cancellation.ts";
+export { UNARMED_FACTS } from "./launch-keep.ts";
+import { latestArms, latestFailedRearms } from "./launch-keep.ts";
 
 /** What a launch starts: a re-arm of a stopped drive, a takeover of a wedged one, a pickup's `do-item` session, or a merge's follow-up pass. */
 export type LaunchAction =
-  "rearm" | "takeover" | "pickup" | "followup" | "steward";
+  | "rearm"
+  | "takeover"
+  | "pickup"
+  | "followup"
+  | "steward";
 
 /** Whether a record starts a drive's headless pass, whose exit is its answer. */
 export function isDrive(record: Pick<LaunchRecord, "action">): boolean {
@@ -795,66 +801,6 @@ function latestRedrives(records: ReadRecord[]): Set<string> {
     }
   }
   return new Set([...latest.values()].map((r) => r.record.id));
-}
-
-/** The ids of the latest record under each key `keyOf` gives; a record it gives `null` is not kept. */
-function latestIdsBy(
-  records: ReadRecord[],
-  keyOf: (r: ReadRecord) => string | null,
-): Set<string> {
-  const latest = new Map<string, ReadRecord>();
-  for (const r of records) {
-    const key = keyOf(r);
-    if (key === null) continue;
-    const seen = latest.get(key);
-    if (seen === undefined || r.record.createdAt >= seen.record.createdAt)
-      latest.set(key, r);
-  }
-  return new Set([...latest.values()].map((r) => r.record.id));
-}
-
-/** The facts a launch carries when it armed a pull request that had no drive ledger. */
-export const UNARMED_FACTS = "no ledger, head ";
-
-/**
- * The ids of each pull request's latest re-arm record that carries the heads
- * it launched at: a failed re-arm holds its drive only while that record is
- * the pull request's latest evidence, so it outlives the retention. The
- * latest is chosen as `failedRearm` chooses it, among the pull request's
- * drive records not cancelled before they ran, whatever their action; a
- * newer record that is not such a re-arm supersedes the older failure, which
- * then keeps nothing.
- */
-function latestFailedRearms(records: ReadRecord[]): Set<string> {
-  const latest = latestIdsBy(records, (r) =>
-    isDrive(r.record) && !cancelledBeforeExecution(r)
-      ? `${r.record.repo}#${String(r.record.pr)}`
-      : null,
-  );
-  return new Set(
-    records
-      .filter(
-        (r) =>
-          latest.has(r.record.id) &&
-          isDrive(r.record) &&
-          r.record.action === "rearm" &&
-          r.record.heads != null,
-      )
-      .map((r) => r.record.id),
-  );
-}
-
-/**
- * The ids of each pull request's latest arm record per head commit: an arm
- * is not repeated at the same head, and the record is the only evidence of
- * that when the arm left no ledger, so it outlives the retention.
- */
-function latestArms(records: ReadRecord[]): Set<string> {
-  return latestIdsBy(records, (r) =>
-    isDrive(r.record) && r.record.facts?.startsWith(UNARMED_FACTS)
-      ? `${r.record.repo}#${String(r.record.pr)}\0${r.record.facts}`
-      : null,
-  );
 }
 
 /**
