@@ -526,11 +526,18 @@ death is notified. A pass that cannot finish without a person stops and
 ends its output with a line starting `Question:`; the notification carries
 that question, and the outcome log counts it as parked for a person. A
 question that is only one of the dispatcher's fixed **routine question
-classes** carries the class's tag (`Question: [local-leftover] …`: a local
-branch or worktree the pass may not delete without asking), and such a
-follow-up is run again once, within the same budget, with the class's
-standing answer in its prompt (keep it, list it, finish the rest and record
-done); unlike a death's run again, it has no 6-hour age limit. A follow-up
+classes** carries the class's tag, and such a follow-up is run again once,
+within the same budget, with the class's standing answer in its prompt:
+
+| Tag | The question | The standing answer |
+|---|---|---|
+| `local-leftover` | a local branch or worktree the pass may not delete without asking | keep it, list it |
+| `person-owed` | who takes, authorizes or scopes a step only a person can: a live check, a rollout to another repository, an organization's setting, an operational action, a failed release gate | take none of it; report it as owed and file one item for it in this repository's tracker |
+| `drafted-items` | whether to file the follow-up items the pass drafted itself | file them as drafted |
+
+Each answer ends with finishing the other arms and recording done. A step
+only a person can take is no reason to stop in the first place: the pass
+reports it as owed, files it, and counts the arm settled; unlike a death's run again, it has no 6-hour age limit. A follow-up
 that failed before passes tagged their questions is run again once with
 every class's standing answer; an outcome whose retry evidence the dispatcher
 kept needs no launch record, while an older one needs its record still on the
