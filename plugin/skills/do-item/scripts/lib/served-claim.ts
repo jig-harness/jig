@@ -1,10 +1,16 @@
 /** Served pickups preserve the person's assignment and revalidate inherited authority live. */
 import type { ClaimResult } from "./claim.ts";
+import { blocksWithin } from "./blocker-chain.ts";
 import type { Issue, Tracker, TrackerUser } from "./tracker/port.ts";
 
 export interface ServedClaim {
   person: string;
+  /** The epic the claimed item's authority is inherited through; with `blocking`, the epic of that item. */
   ancestor?: string;
+  /** A served item the claimed one blocks: the claim pulls an unassigned blocker forward on that item's authority. */
+  blocking?: string;
+  /** Set while the `blocking` item itself is validated: it waits on the claimed one by definition. */
+  blocked?: boolean;
   epicLabel?: string;
   hitlLabel?: string;
   manualOpsLabel?: string;
@@ -78,7 +84,8 @@ async function readNode(
     return { reason: `${current} needs a person to start` };
   if (!child && !issue.labels.includes(options.epicLabel ?? "epic"))
     return { reason: `${current} is no longer an epic` };
-  const blocked = await blockedReason(tracker, current);
+  const blocked =
+    child && options.blocked ? null : await blockedReason(tracker, current);
   return blocked ? { reason: blocked } : { issue };
 }
 
@@ -153,6 +160,62 @@ async function validateAssignment(
   }
 }
 
+/**
+ * A pulled blocker carries no assignment of its own: it must be an empty, open,
+ * unheld non-epic that the served item blocks through live relations, and that
+ * item must still hold the person's authority, directly or through its epic.
+ */
+async function validatePulled(
+  tracker: Tracker,
+  key: string,
+  user: TrackerUser,
+  options: ServedClaim,
+  claimed: boolean,
+): Promise<string | null> {
+  const origin = options.blocking as string;
+  const node = await readNode(tracker, key, true, options, claimed);
+  if ("reason" in node) return node.reason;
+  if (node.issue.labels.includes(options.epicLabel ?? "epic"))
+    return `${key} is an epic and is not pulled forward`;
+  const holders = await tracker.assignees(key);
+  if (claimed ? !only(holders, user) : holders.length !== 0)
+    return `${key} no longer has the expected assignment`;
+  if (origin === key) return `${key} cannot block itself`;
+  const authority = await validateAssignment(
+    tracker,
+    origin,
+    user,
+    {
+      person: options.person,
+      ...(options.ancestor ? { ancestor: options.ancestor } : {}),
+      ...(options.epicLabel ? { epicLabel: options.epicLabel } : {}),
+      ...(options.hitlLabel ? { hitlLabel: options.hitlLabel } : {}),
+      ...(options.manualOpsLabel
+        ? { manualOpsLabel: options.manualOpsLabel }
+        : {}),
+      blocked: true,
+    },
+    false,
+  );
+  if (authority) return `${origin}, which ${key} blocks: ${authority}`;
+  return (await blocksWithin(tracker, origin, key))
+    ? null
+    : `${key} no longer blocks ${origin}`;
+}
+
+/** The live links, not a queue snapshot, establish authority: a pulled blocker through the item it blocks. */
+function validateClaim(
+  tracker: Tracker,
+  key: string,
+  user: TrackerUser,
+  options: ServedClaim,
+  claimed = false,
+): Promise<string | null> {
+  return options.blocking
+    ? validatePulled(tracker, key, user, options, claimed)
+    : validateAssignment(tracker, key, user, options, claimed);
+}
+
 /** No cached queue fact authorizes this write. Missing ancestry or provenance refuses it. */
 export async function claimServedIssue(
   tracker: Tracker,
@@ -166,21 +229,18 @@ export async function claimServedIssue(
     why: "assigned",
     reason,
   });
-  let problem = await validateAssignment(tracker, key, user, options);
+  let problem = await validateClaim(tracker, key, user, options);
   if (problem) return refused(problem);
   const assignUnassigned = tracker.assignUnassigned;
-  if (options.ancestor && !assignUnassigned)
+  const inherits = Boolean(options.ancestor || options.blocking);
+  if (inherits && !assignUnassigned)
     return refused(
       "this tracker cannot safely assign an inherited pickup without replacing a concurrent assignee",
     );
   // Re-read the entire authorization immediately before changing the child.
-  problem = await validateAssignment(tracker, key, user, options);
+  problem = await validateClaim(tracker, key, user, options);
   if (problem) return refused(problem);
-  if (
-    options.ancestor &&
-    assignUnassigned &&
-    !(await assignUnassigned(key, user))
-  )
+  if (inherits && assignUnassigned && !(await assignUnassigned(key, user)))
     return {
       outcome: "stood_down",
       issue: key,
@@ -213,7 +273,7 @@ export async function claimServedIssue(
       issue: key,
       reason: `${key} changed during the claim; queue must refresh`,
     };
-  problem = await validateAssignment(tracker, key, user, options, true);
+  problem = await validateClaim(tracker, key, user, options, true);
   if (problem)
     return {
       outcome: "stood_down",

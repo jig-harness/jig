@@ -88,7 +88,11 @@ export async function changed(
   repo: RepoTarget,
   ctx: PickupContext,
   key: string,
-  served?: { servedPerson?: string; ancestorEpic?: string },
+  served?: {
+    servedPerson?: string;
+    ancestorEpic?: string;
+    blockingFor?: string;
+  },
 ): Promise<{ issue: PoolIssue } | { why: string }> {
   const issue =
     served?.servedPerson === undefined
@@ -99,6 +103,7 @@ export async function changed(
           served.servedPerson,
           served.ancestorEpic,
           ctx.servedPolicy,
+          served.blockingFor,
         );
   if (typeof issue === "string") return { why: issue };
   // Item keys repeat across repositories: only this repository's records hold it.
@@ -180,6 +185,9 @@ async function launchOne(
       : {}),
     ...(typeof action.evidence.ancestorEpic === "string"
       ? { ancestorEpic: action.evidence.ancestorEpic }
+      : {}),
+    ...(typeof action.evidence.blockingFor === "string"
+      ? { blockingFor: action.evidence.blockingFor }
       : {}),
   };
   const before = await changed(state, repo, ctx, action.target, served);
@@ -326,6 +334,7 @@ async function retryPending(
             record.servedPerson,
             record.ancestorEpic,
             ctx.servedPolicy,
+            record.blockingFor,
           );
     const batchBlock = await pendingBatchBlock(state, repo, ctx, record);
     const blocked =

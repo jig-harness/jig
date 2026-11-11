@@ -6,6 +6,21 @@ import type {
   Tracker,
 } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
 import { servedParentHold } from "./served-parents.ts";
+import { blocksWithin } from "../../../skills/do-item/scripts/lib/blocker-chain.ts";
+import {
+  closed,
+  openBlockers,
+  pullBlockers,
+  ready,
+  type OpenBlocker,
+  type PullOrigin,
+} from "./served-pull.ts";
+import {
+  serializeEpics,
+  summarizeEpics,
+  type EpicWalk,
+  type Serial,
+} from "./served-epics.ts";
 import { otherRepoLabel, type RepoScope } from "./served-repo.ts";
 import { servedPlan } from "./served-plan.ts";
 import {
@@ -31,6 +46,8 @@ interface Candidate extends QueueItem {
   identity: string;
   by: string;
   ancestor?: string | undefined;
+  blockingFor?: string | undefined;
+  serial?: Serial | undefined;
 }
 export interface ServedReading {
   wanted: WantedItem[];
@@ -50,10 +67,6 @@ export interface ServedOptions extends ServedPolicy {
   nowMs: number;
   headroom: boolean;
 }
-const closed = (i: PoolIssue) =>
-  ["completed", "canceled", "duplicate"].includes(i.state.type);
-const ready = (i: PoolIssue) =>
-  !closed(i) && ["triage", "backlog", "unstarted"].includes(i.state.type);
 
 /** Each identity's list is read with capacity, or on the Queue view's slow cadence. */
 async function assignments(
@@ -106,20 +119,6 @@ async function metadata(
   return value;
 }
 
-/** A failed blocker read holds the item: absence of evidence never means unblocked. */
-async function blockers(
-  tracker: Tracker,
-  relations: IssueRelation[],
-): Promise<string[]> {
-  const open: string[] = [];
-  for (const r of relations)
-    if (r.type === "blocked_by") {
-      const other = await tracker.poolIssue(r.issue);
-      if (other === null || !closed(other)) open.push(r.issue);
-    }
-  return open;
-}
-
 /** Read every served identity for this adapter; an unreadable identity starts nothing. */
 export async function readServedPickups(
   tracker: Tracker,
@@ -129,6 +128,7 @@ export async function readServedPickups(
   const cache = options.cache ?? pickupReads;
   const out: ServedReading = { wanted: [], unplaced: [], claimed: [] };
   const candidates: Candidate[] = [];
+  const walks: EpicWalk[] = [];
   const seen = new Set<string>();
   const refused = options.repoScope?.invalid !== undefined;
   if (refused)
@@ -174,6 +174,7 @@ export async function readServedPickups(
         pending,
         candidates,
         seen,
+        walks,
       };
       for (let n = 0; n < pending.length; n++) {
         const node = pending[n];
@@ -188,7 +189,13 @@ export async function readServedPickups(
       });
     }
   }
-  out.wanted = rankQueue(candidates).map((c) => ({
+  const ranked = serializeEpics(rankQueue(candidates), out.unplaced);
+  summarizeEpics(
+    walks,
+    new Set(ranked.map((c) => c.issue.identifier)),
+    out.unplaced,
+  );
+  out.wanted = ranked.map((c) => ({
     key: c.issue.identifier,
     title: c.issue.title,
     url: c.issue.url,
@@ -202,6 +209,9 @@ export async function readServedPickups(
       ...(c.epicOrder === undefined ? {} : { epicOrder: c.epicOrder }),
     },
     ...(c.ancestor === undefined ? {} : { ancestorEpic: c.ancestor }),
+    ...(c.blockingFor === undefined
+      ? {}
+      : { blockingFor: c.blockingFor, batchAllowed: false }),
   }));
   return out;
 }
@@ -213,6 +223,7 @@ export async function freshServedPickup(
   identity: string,
   ancestor?: string,
   policy: ServedPolicy = {},
+  blockingFor?: string,
 ): Promise<PoolIssue | string> {
   try {
     const issue = await tracker.poolIssue(key);
@@ -233,13 +244,25 @@ export async function freshServedPickup(
     const held = queueHold(
       {
         issue,
-        blockers: await blockers(tracker, await tracker.listRelations(key)),
+        blockers: (
+          await openBlockers(tracker, await tracker.listRelations(key))
+        ).map((b) => b.key),
         unblocks: 0,
       },
       policy,
     );
     if (held !== null) return held;
-    const authority = await freshAuthority(tracker, issue, identity, ancestor);
+    const authority =
+      blockingFor === undefined
+        ? await freshAuthority(tracker, issue, identity, ancestor)
+        : await freshPulledAuthority(
+            tracker,
+            issue,
+            identity,
+            blockingFor,
+            ancestor,
+            policy,
+          );
     if (authority !== null) return authority;
     return issue;
   } catch (error) {
@@ -253,6 +276,9 @@ interface Pending {
   by: string | undefined;
   epicOrder: number | undefined;
   planHold: string | undefined;
+  /** Set for a blocker pulled forward: the item whose authority it is worked on. */
+  pull?: PullOrigin | undefined;
+  serial?: Serial | undefined;
 }
 interface WalkContext {
   tracker: Tracker;
@@ -263,6 +289,7 @@ interface WalkContext {
   pending: Pending[];
   candidates: Candidate[];
   seen: Set<string>;
+  walks: EpicWalk[];
 }
 
 async function enqueueChildren(
@@ -293,11 +320,20 @@ async function enqueueChildren(
     live,
     options.executionPlanBlock,
   );
+  const busy = children.find((c) => c.state.type === "started");
+  ctx.walks.push({
+    key: issue.identifier,
+    children: children.map((c) => c.identifier),
+    working: busy !== undefined,
+  });
   for (const child of children)
     pending.push({
       issue: child,
       ancestor: ancestor ?? issue.identifier,
       by: candidate.by,
+      serial: selection.present
+        ? undefined
+        : { epic: issue.identifier, busy: busy?.identifier },
       epicOrder: selection.present
         ? selection.order.indexOf(child.identifier)
         : undefined,
@@ -331,7 +367,7 @@ function leavesNode(
 }
 
 async function visitNode(ctx: WalkContext, node: Pending): Promise<void> {
-  const { tracker, identity, options, cache, out, candidates, seen } = ctx;
+  const { tracker, identity, options, cache, out, seen } = ctx;
   const { issue, ancestor } = node;
   if (leavesNode(issue, options, seen)) return;
   // A child assigned elsewhere is not inherited. A direct assignment is read in its owner's list.
@@ -348,44 +384,16 @@ async function visitNode(ctx: WalkContext, node: Pending): Promise<void> {
       });
       return;
     }
-    const candidate: Candidate = {
-      issue,
-      identity,
-      by: meta.by?.name ?? node.by ?? "",
-      ancestor,
-      blockers: await blockers(tracker, meta.relations),
-      ...(node.epicOrder === undefined ? {} : { epicOrder: node.epicOrder }),
-      unblocks: meta.relations.filter((r) => r.type === "blocks").length,
-    };
-    const held = queueHold(candidate, options);
-    if (held !== null) {
+    const open = await openBlockers(tracker, meta.relations);
+    const candidate = candidateOf(node, meta, identity, open);
+    const held = heldReason(ctx, node, candidate, open);
+    const placed = held ?? (await placeNode(ctx, node, meta, candidate));
+    if (placed !== null)
       out.unplaced.push({
         target: issue.identifier,
         record: "tracker",
-        reason: held,
+        reason: placed,
       });
-      return;
-    }
-    if (meta.children.length > 0) {
-      await enqueueChildren(ctx, issue, ancestor, meta, candidate);
-    } else if (
-      ready(issue) &&
-      otherRepoLabel(issue.labels, options.repoScope) === null
-    ) {
-      const parentHold = await servedParentHold(
-        tracker,
-        issue,
-        cache,
-        options.executionPlanBlock,
-      );
-      if (parentHold !== null)
-        out.unplaced.push({
-          target: issue.identifier,
-          record: "tracker",
-          reason: parentHold,
-        });
-      else candidates.push(candidate);
-    }
   } catch (error) {
     out.unplaced.push({
       target: issue.identifier,
@@ -412,7 +420,11 @@ function nodeHold(
     )
   )
     return "needs a person to start";
-  if (node.ancestor === undefined && meta.by?.trusted !== true)
+  if (
+    node.ancestor === undefined &&
+    node.pull === undefined &&
+    meta.by?.trusted !== true
+  )
     return `assignment to ${identity} was not made by a repository writer`;
   return meta.description === null
     ? "the epic description cannot be read"
@@ -523,4 +535,105 @@ async function ancestorChanged(
   )
     return "the inherited assignment changed";
   return null;
+}
+
+function candidateOf(
+  node: Pending,
+  meta: Metadata,
+  identity: string,
+  open: readonly OpenBlocker[],
+): Candidate {
+  return {
+    issue: node.issue,
+    identity,
+    by: meta.by?.name ?? node.by ?? "",
+    ancestor: node.ancestor,
+    blockers: open.map((b) => b.key),
+    ...(node.pull === undefined ? {} : { blockingFor: node.pull.root }),
+    ...(node.serial === undefined ? {} : { serial: node.serial }),
+    ...(node.epicOrder === undefined ? {} : { epicOrder: node.epicOrder }),
+    unblocks: meta.relations.filter((r) => r.type === "blocks").length,
+  };
+}
+
+/** An epic's children join the walk, an item with none is a candidate; the reason it is neither, if any. */
+async function placeNode(
+  ctx: WalkContext,
+  node: Pending,
+  meta: Metadata,
+  candidate: Candidate,
+): Promise<string | null> {
+  const { tracker, options, cache, candidates } = ctx;
+  const { issue } = node;
+  if (meta.children.length > 0) {
+    await enqueueChildren(ctx, issue, node.ancestor, meta, candidate);
+    return null;
+  }
+  if (!ready(issue) || otherRepoLabel(issue.labels, options.repoScope) !== null)
+    return null;
+  const parentHold = await servedParentHold(
+    tracker,
+    issue,
+    cache,
+    options.executionPlanBlock,
+  );
+  if (parentHold === null) candidates.push(candidate);
+  return parentHold;
+}
+
+/**
+ * Why a node starts nothing now. A node held only by open blockers queues
+ * the blockers it may pull forward, so the item waits on work that runs.
+ */
+function heldReason(
+  ctx: WalkContext,
+  node: Pending,
+  candidate: Candidate,
+  open: readonly OpenBlocker[],
+): string | null {
+  const { options, pending } = ctx;
+  const held = queueHold(candidate, options);
+  if (held === null || open.length === 0) return held;
+  if (queueHold({ ...candidate, blockers: [] }, options) !== null) return held;
+  const pull = pullBlockers(node.issue, node.pull, node.ancestor, open, {
+    epic: options.epic,
+    hitl: options.hitl,
+    manualOps: options.manualOps,
+    repoScope: options.repoScope,
+  });
+  for (const blocker of pull.pulled)
+    if (!ctx.seen.has(blocker.identifier))
+      pending.push({
+        issue: blocker,
+        ancestor: pull.origin.rootAncestor,
+        by: candidate.by,
+        epicOrder: undefined,
+        planHold: undefined,
+        pull: pull.origin,
+      });
+  return pull.reason;
+}
+
+/** A pulled blocker is empty; the served item it blocks must still hold the person's authority and wait on it. */
+async function freshPulledAuthority(
+  tracker: Tracker,
+  issue: PoolIssue,
+  identity: string,
+  blockingFor: string,
+  ancestor: string | undefined,
+  policy: ServedPolicy,
+): Promise<string | null> {
+  if (issue.assignee !== null)
+    return "the pulled blocker has acquired an assignee";
+  if (issue.hasOpenChildren) return "the pulled blocker has become an epic";
+  const origin = await tracker.poolIssue(blockingFor);
+  if (origin === null || !ready(origin))
+    return `${blockingFor}, which it blocks, is no longer open and not started`;
+  if (queueHold({ issue: origin, blockers: [], unblocks: 0 }, policy) !== null)
+    return `${blockingFor}, which it blocks, needs a person to start`;
+  const authority = await freshAuthority(tracker, origin, identity, ancestor);
+  if (authority !== null) return `${blockingFor}: ${authority}`;
+  return (await blocksWithin(tracker, blockingFor, issue.identifier))
+    ? null
+    : `it no longer blocks ${blockingFor}`;
 }

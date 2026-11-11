@@ -1,0 +1,147 @@
+import { expect, test } from "bun:test";
+import { claimServedIssue } from "../scripts/lib/served-claim.ts";
+import type { Tracker, TrackerUser } from "../scripts/lib/tracker/port.ts";
+
+const person: TrackerUser = { id: "person", name: "dana" };
+
+/** #1 is assigned to the person and waits on #2, which waits on #3, and so on down the chain. */
+function world(chain: string[] = ["#1", "#2", "#3"]) {
+  const holders = new Map<string, TrackerUser[]>([["#1", [person]]]);
+  const labels = new Map<string, string[]>();
+  const started = new Set<string>();
+  const writes: string[] = [];
+  const tracker = {
+    user: async () => person,
+    stateName: () => "In Progress",
+    listRelations: async (key: string) => {
+      const at = chain.indexOf(key);
+      const next = at === -1 ? undefined : chain[at + 1];
+      return next === undefined ? [] : [{ type: "blocked_by", issue: next }];
+    },
+    getIssue: async (key: string) => ({
+      identifier: key,
+      parent: null,
+      labels: labels.get(key) ?? [],
+      state: started.has(key)
+        ? { name: "In Progress", type: "started" }
+        : { name: "Todo", type: "unstarted" },
+    }),
+    poolIssue: async (key: string) => ({
+      identifier: key,
+      labels: labels.get(key) ?? [],
+      truncated: [],
+      state: started.has(key)
+        ? { name: "In Progress", type: "started" }
+        : { name: "Todo", type: "unstarted" },
+    }),
+    assignees: async (key: string) => holders.get(key) ?? [],
+    assignedBy: async () => ({ id: "writer", name: "writer", trusted: true }),
+    assignUnassigned: async (key: string, user: TrackerUser) => {
+      writes.push(`assign ${key}`);
+      holders.set(key, [user]);
+      return true;
+    },
+    transition: async (key: string) => {
+      writes.push(`start ${key}`);
+      started.add(key);
+    },
+  } as unknown as Tracker;
+  return { tracker, holders, labels, writes };
+}
+
+test("pulls the last blocker of a served item forward and assigns it to the person", async () => {
+  const w = world(["#1", "#2"]);
+  const result = await claimServedIssue(w.tracker, "#2", {
+    person: "dana",
+    blocking: "#1",
+  });
+  expect(result.outcome).toBe("claimed");
+  expect(w.writes).toEqual(["assign #2", "start #2"]);
+  expect(w.holders.get("#2")).toEqual([person]);
+});
+
+test("pulls a blocker of a blocker, two links from the served item", async () => {
+  const w = world();
+  expect(
+    (
+      await claimServedIssue(w.tracker, "#3", {
+        person: "dana",
+        blocking: "#1",
+      })
+    ).outcome,
+  ).toBe("claimed");
+});
+
+test("refuses a blocker that itself still waits on another", async () => {
+  const w = world();
+  const result = await claimServedIssue(w.tracker, "#2", {
+    person: "dana",
+    blocking: "#1",
+  });
+  expect(result).toMatchObject({ outcome: "refused", reason: "waiting on #3" });
+  expect(w.writes).toEqual([]);
+});
+
+test("refuses an item more than three links from the served one", async () => {
+  const w = world(["#1", "#2", "#3", "#4", "#5"]);
+  const result = await claimServedIssue(w.tracker, "#5", {
+    person: "dana",
+    blocking: "#1",
+  });
+  expect(result).toMatchObject({
+    outcome: "refused",
+    reason: "#5 no longer blocks #1",
+  });
+  expect(w.writes).toEqual([]);
+});
+
+test("refuses a blocker that has acquired an assignee", async () => {
+  const w = world(["#1", "#2"]);
+  w.holders.set("#2", [{ id: "sam", name: "sam" }]);
+  const result = await claimServedIssue(w.tracker, "#2", {
+    person: "dana",
+    blocking: "#1",
+  });
+  expect(result.outcome).toBe("refused");
+  expect(w.writes).toEqual([]);
+});
+
+test("refuses when the served item is no longer assigned to the person", async () => {
+  const w = world(["#1", "#2"]);
+  w.holders.set("#1", []);
+  const result = await claimServedIssue(w.tracker, "#2", {
+    person: "dana",
+    blocking: "#1",
+  });
+  expect(result.outcome).toBe("refused");
+  expect(result).toMatchObject({ reason: expect.stringContaining("#1") });
+  expect(w.writes).toEqual([]);
+});
+
+test("refuses a blocker that does not block the served item", async () => {
+  const w = world(["#1", "#9"]);
+  const result = await claimServedIssue(w.tracker, "#2", {
+    person: "dana",
+    blocking: "#1",
+  });
+  expect(result).toMatchObject({
+    outcome: "refused",
+    reason: "#2 no longer blocks #1",
+  });
+});
+
+test("refuses an epic and a held blocker", async () => {
+  const w = world(["#1", "#2"]);
+  w.labels.set("#2", ["epic"]);
+  expect(
+    await claimServedIssue(w.tracker, "#2", { person: "dana", blocking: "#1" }),
+  ).toMatchObject({
+    outcome: "refused",
+    reason: "#2 is an epic and is not pulled forward",
+  });
+  w.labels.set("#2", ["jig:hold"]);
+  expect(
+    await claimServedIssue(w.tracker, "#2", { person: "dana", blocking: "#1" }),
+  ).toMatchObject({ outcome: "refused", reason: "#2 needs a person to start" });
+  expect(w.writes).toEqual([]);
+});

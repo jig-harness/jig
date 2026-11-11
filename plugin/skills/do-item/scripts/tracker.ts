@@ -354,21 +354,29 @@ const OPERATIONS: Record<string, Operation> = {
       const ancestorFlags = [...flags].filter((f) =>
         f.startsWith("--ancestor"),
       );
+      const blockingFlags = [...flags].filter((f) =>
+        f.startsWith("--blocking"),
+      );
       if (
         forFlags.some((f) => !f.startsWith("--for=") || f.length === 6) ||
         ancestorFlags.some(
           (f) => !f.startsWith("--ancestor=") || f.length === 11,
         ) ||
+        blockingFlags.some(
+          (f) => !f.startsWith("--blocking=") || f.length === 11,
+        ) ||
         forFlags.length > 1 ||
-        ancestorFlags.length > 1
+        ancestorFlags.length > 1 ||
+        blockingFlags.length > 1
       )
         throw new UsageError(
-          "claim accepts one nonempty --for=PERSON and --ancestor=ISSUE",
+          "claim accepts one nonempty --for=PERSON, --ancestor=ISSUE and --blocking=ISSUE",
         );
       const person = forFlags[0]?.slice(6);
       const ancestor = ancestorFlags[0]?.slice(11);
-      if (ancestor && !person)
-        throw new UsageError("--ancestor requires --for");
+      const blocking = blockingFlags[0]?.slice(11);
+      if ((ancestor || blocking) && !person)
+        throw new UsageError("--ancestor and --blocking require --for");
       const config = ownTrackerConfig();
       const shape = issueKeysOf(config);
       const normalized = shape?.normalize(key as string) ?? (key as string);
@@ -381,6 +389,9 @@ const OPERATIONS: Record<string, Operation> = {
           ? claimServedIssue(tracker, normalized, {
               person,
               ...(ancestorKey ? { ancestor: ancestorKey } : {}),
+              ...(blocking
+                ? { blocking: shape?.normalize(blocking) ?? blocking }
+                : {}),
               epicLabel: config.labels.epic,
               hitlLabel: config.labels.hitl,
               manualOpsLabel: config.labels.manualOps,
@@ -530,7 +541,9 @@ function operationArguments(op: Operation, name: string, rest: string[]) {
       !allowed.has(flag) &&
       !(
         name === "claim" &&
-        (/^--for=.+/.test(flag) || /^--ancestor=.+/.test(flag))
+        (/^--for=.+/.test(flag) ||
+          /^--ancestor=.+/.test(flag) ||
+          /^--blocking=.+/.test(flag))
       ),
   );
   if (unknown.length)
@@ -550,7 +563,7 @@ function reportFailure(error: unknown): number {
 
 /** Normalize valued claim options before generic positional/flag validation. */
 function normalizeClaimOptions(rest: string[]): void {
-  for (const flag of ["--for", "--ancestor"]) {
+  for (const flag of ["--for", "--ancestor", "--blocking"]) {
     const index = rest.indexOf(flag);
     if (index === -1) continue;
     const value = rest[index + 1];
@@ -558,7 +571,7 @@ function normalizeClaimOptions(rest: string[]): void {
       throw new UsageError(`${flag} requires an identity or issue key`);
     rest.splice(index, 2, `${flag}=${value}`);
   }
-  for (const flag of ["--for=", "--ancestor="])
+  for (const flag of ["--for=", "--ancestor=", "--blocking="])
     if (rest.filter((v) => v.startsWith(flag)).length > 1)
       throw new UsageError("duplicate claim option");
 }

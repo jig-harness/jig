@@ -268,6 +268,9 @@ test("claim CLI refuses incomplete and duplicate served options before tracker a
   for (const args of [
     ["--for"],
     ["--ancestor", "#3"],
+    ["--blocking", "#3"],
+    ["--for=dana", "--blocking=#3", "--blocking=#4"],
+    ["--for=dana", "--blocking="],
     ["--for=dana", "--for=other"],
     ["--for="],
   ]) {

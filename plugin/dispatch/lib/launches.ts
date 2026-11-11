@@ -131,6 +131,8 @@ export interface LaunchRecord {
   headless?: boolean;
   servedPerson?: string;
   ancestorEpic?: string;
+  /** For a pickup of a blocker pulled forward: the served item it blocks, whose authority the claim re-reads. */
+  blockingFor?: string;
   batchItems?: import("./queue-batch.ts").BatchItem[];
   /** For a headless pass: whether the tick admitted it on a host opted in to Codex's bypass. A Codex pass carries the bypass only when this is `true`; the wrapper does not read the setting itself, since it can read another user layer from the tick's. */
   codexBypass?: boolean;

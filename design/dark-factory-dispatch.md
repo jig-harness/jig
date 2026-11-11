@@ -609,7 +609,26 @@ tracker identities; a repository's file cannot add to it), and wherever the
 not-started item a person with write access assigned to a
 [served person](../GLOSSARY.md), whatever its state, and each unassigned
 open item under an epic assigned to one, nested epics walked level by
-level, with `jig:hold` and `hitl` keeping an item waiting. Every repository's tick reads the same assigned list from a shared tracker team, so an item that carries another repository's label (one of `review.taxonomy.repos` other than this repository's `review.repo_label`) is left to that repository's checkout, neither wanted nor reported as held, and refused again at the launch recheck; an unlabelled item stays startable by any. Their pull
+level, with `jig:hold` and `hitl` keeping an item waiting.
+
+A served item held only by open blockers does not wait on work nobody
+does. Each blocker that is open, not started, unassigned, free of the
+holds above, an item of this repository's scope and not an epic is wanted in
+its place, on the served item's authority: the pickup's claim carries the
+item it blocks (`claim --blocking`), re-reads that item's assignment by a
+repository writer (or its epic ancestry) and the live `blocked_by` chain at
+the write, refuses a blocker that has acquired an assignee, and assigns it to
+the served person. The walk follows the blockers of a pulled blocker to three
+links from the assigned item and ends at a cycle. A blocker that is assigned
+to someone else, in progress, an epic, held, another repository's or unreadable
+is never started on the strength of the relation, since anyone with write
+access to the tracker can add one: the blocked item waits, and its reason
+names the blocker and why it was left. Epics are worked one child at a time:
+without an execution plan only the top-ranked child of an epic is wanted, and
+none while another child is in progress, as `do-item` works an epic; a plan
+that lists several eligible steps sets its own order and parallelism. An epic
+none of whose open children can start reports one reason of its own, so the
+queue says why the epic is idle. Every repository's tick reads the same assigned list from a shared tracker team, so an item that carries another repository's label (one of `review.taxonomy.repos` other than this repository's `review.repo_label`) is left to that repository's checkout, neither wanted nor reported as held, and refused again at the launch recheck; an unlabelled item stays startable by any. Their pull
 requests are adopted as `dispatch.adopt.authors` adopts a repository's own.
 The tick ranks those items by rules as data, shows each item it holds out
 with its reason, and starts the next within the host's load factor; the

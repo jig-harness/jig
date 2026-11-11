@@ -157,7 +157,10 @@ describe("served pickups", () => {
           target: "#4",
           reason: "needs a person to start",
         }),
-        expect.objectContaining({ target: "#5", reason: "waiting on #9" }),
+        expect.objectContaining({
+          target: "#5",
+          reason: "waiting on #9 (assigned to alex)",
+        }),
       ]),
     );
   });

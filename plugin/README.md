@@ -391,7 +391,19 @@ recheck refuses it too. An item with no repository label, or one that also
 carries this repository's, stays startable here; without both settings nothing
 is left out.
 
-The Queue view names holds: an open blocker reads "waiting on #N";
+A served item held only by open blockers starts its blockers instead of
+waiting on work nobody does: an open, not-started, unassigned blocker of this
+repository's scope, with no `hitl`, `manual-ops` or `jig:hold`, and no epic, is
+picked up first (to three links from the assigned item), claimed with
+`tracker.ts claim --for <person> --blocking <item>` and assigned to the person.
+A blocker assigned to someone else, in progress, held, an epic or another
+repository's is never taken: the item stays waiting and names it with its
+reason. An assigned epic without an execution plan works one child at a time,
+none while a child of it is in progress; an epic none of whose open children
+can start reports one reason.
+
+The Queue view names holds: an open blocker reads "waiting on #N" (with
+"picked up first" or why it was left);
 `hitl`, `hitl:*`, `manual-ops` and `jig:hold` read "needs a person to start".
 Eligible items are ranked by priority, the work they unblock, epic order,
 size and age. Assignment provenance, relations and children are cached

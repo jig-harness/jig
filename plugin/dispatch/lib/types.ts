@@ -99,6 +99,8 @@ export interface WantedItem {
   assignedBy: string;
   servedPerson?: string;
   ancestorEpic?: string;
+  /** For a blocker pulled forward: the served item it blocks, which carries the authority. */
+  blockingFor?: string;
   batchAllowed?: boolean;
   queueIssue?: import("../../skills/do-item/scripts/lib/tracker/port.ts").PoolIssue;
   queueRank?: { unblocks: number; epicOrder?: number };
