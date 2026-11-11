@@ -121,6 +121,8 @@ describe("matchesTitlePattern", () => {
     expect(keyIsAmbiguous("{key}: {summary}", "hash")).toBe(false);
     expect(keyIsAmbiguous("{summary} [{key}]", "hash")).toBe(false);
     expect(keyIsAmbiguous("{summary} {key}", "hash")).toBe(false);
+    expect(keyIsAmbiguous("{summary}-({key})", "hash")).toBe(false);
+    expect(keyIsAmbiguous("{summary} [({key})", "hash")).toBe(false);
   });
 
   it("refuses hash keys that are not positive canonical numbers", () => {
