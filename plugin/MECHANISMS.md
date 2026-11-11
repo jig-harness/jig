@@ -323,8 +323,8 @@ development and shipped as a version.
   machine file names starts nothing (`dispatch/lib/accounts.ts`); a launch
   record already claimed is not started twice (exit 3). A pickup's claim
   is the session's own write (`dispatch/lib/actions/pickup.ts`), not the
-  tick's; the tick's one tracker write is the blocked-state projection
-  below. It names each workspace it creates
+  tick's; the tick also writes steward-approved facets and the
+  blocked-state projection below. It names each workspace it creates
   and each tab it opens as the dispatcher's, and keeps the
   [dispatched mark](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
   in the workspace's comment and on the launch record, by one convention
