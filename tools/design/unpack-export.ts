@@ -283,13 +283,36 @@ function titleOf(template: string, fallback: string): string {
   return /<title>([^<]*)<\/title>/.exec(template)?.[1] ?? fallback;
 }
 
-/** The component names a template or component imports, as the runtime reads them. */
-function importsOf(html: string): string[] {
+/**
+ * The attributes of one tag's attribute text, as HTML parses them: names
+ * compare without case, a value is quoted or bare, and the first of a
+ * repeated name wins.
+ */
+function attributesOf(text: string): Map<string, string> {
+  const attributes = new Map<string, string>();
+  const attribute =
+    /([^\s"'<>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
+  for (const [, name = "", quoted, single, bare] of text.matchAll(attribute)) {
+    const key = name.toLowerCase();
+    if (!attributes.has(key))
+      attributes.set(key, quoted ?? single ?? bare ?? "");
+  }
+  return attributes;
+}
+
+/**
+ * The component names a template or component imports, as the runtime
+ * reads them: the tag's `name`, else its `component`. A quoted value may
+ * hold `>` or text that looks like an attribute.
+ */
+export function importsOf(html: string): string[] {
   const names: string[] = [];
   const markup = html.replace(/<!--[\s\S]*?-->/g, "");
-  for (const tag of markup.match(/<dc-import\b[^>]*>/gi) ?? []) {
-    const name = /\s(?:name|component)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>=]+))/i.exec(tag);
-    names.push(name?.[1] ?? name?.[2] ?? name?.[3] ?? "");
+  for (const tag of markup.matchAll(
+    /<dc-import\b((?:"[^"]*"|'[^']*'|[^'">])*)>/gi,
+  )) {
+    const attributes = attributesOf(tag[1] ?? "");
+    names.push(attributes.get("name") || attributes.get("component") || "");
   }
   return names;
 }

@@ -19,6 +19,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { expectSpawnExit } from "../../lib/test-helpers/expect-spawn-exit.ts";
 
+import { importsOf } from "./unpack-export.ts";
+
 const SCRIPT = resolve(import.meta.dir, "unpack-export.ts");
 const RUNTIME_ID = "11111111-1111-4111-8111-111111111111";
 const REACT_ID = "22222222-2222-4222-8222-222222222222";
@@ -604,5 +606,24 @@ describe("unpack-export", () => {
         expect(existsSync(join(dir, "generated"))).toBe(false);
       },
     );
+  });
+});
+
+describe("importsOf", () => {
+  it("reads the name the way the runtime does, whatever the attributes hold", () => {
+    expect(importsOf('<dc-import title="1 > 0" name="Ident">')).toEqual([
+      "Ident",
+    ]);
+    expect(
+      importsOf(`<dc-import title=" component='Ghost'" name="Ident">`),
+    ).toEqual(["Ident"]);
+    expect(importsOf('<dc-import component="Fallback" name="Ident">')).toEqual([
+      "Ident",
+    ]);
+    expect(importsOf('<dc-import component="Fallback">')).toEqual(["Fallback"]);
+    expect(importsOf("<DC-IMPORT NAME=Bare w='x'>")).toEqual(["Bare"]);
+    expect(
+      importsOf('<!-- <dc-import name="Ghost"> --><dc-import name="Real">'),
+    ).toEqual(["Real"]);
   });
 });
