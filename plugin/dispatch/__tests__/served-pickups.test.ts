@@ -164,6 +164,7 @@ describe("served pickups", () => {
         reason: "the epic description cannot be read",
       }),
     );
+    expect(read.incomplete).toBe(true);
   });
   it("walks nested epic children and reports blocked and human work", async () => {
     const f = fake();

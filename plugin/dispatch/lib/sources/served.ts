@@ -426,6 +426,7 @@ async function enqueueChildren(
         record: "tracker",
         reason: "the child cannot be read completely",
       });
+      found.failed = true;
       return;
     }
     children.push(child);
@@ -486,6 +487,15 @@ async function visitNode(ctx: WalkContext, node: Pending): Promise<Found> {
   // A child assigned elsewhere is not inherited. A direct assignment is read in its owner's list.
   if (ancestor !== undefined && issue.assignee !== null) return found;
   seen.add(issue.identifier);
+  if (issue.truncated.length) {
+    found.failed = true;
+    found.unplaced.push({
+      ...itemOf(issue),
+      record: "tracker",
+      reason: "the item cannot be read completely",
+    });
+    return found;
+  }
   try {
     await placeNode(ctx, node, found);
   } catch (error) {
@@ -524,7 +534,11 @@ async function placeNode(
     () => metadata(tracker, issue, identity, options.epic, cache, carried),
   );
   const initialHold = nodeHold(node, meta, identity, options);
-  if (initialHold !== null) return void unplace(initialHold);
+  if (initialHold !== null) {
+    // An epic whose description is unreadable hides its subtree: the claims below it are unknown.
+    if (meta.description === null) found.failed = true;
+    return void unplace(initialHold);
+  }
   const candidate: Candidate = {
     issue,
     identity,
