@@ -593,6 +593,11 @@ export interface Tracker {
    */
   readonly team: string;
   /**
+   * Which installation `team` belongs to, when the same team key can exist on
+   * more than one (a Jira site). Absent when the adapter has a single one.
+   */
+  readonly instance?: string;
+  /**
    * Identifies the configuration that shapes the issues it returns (facet
    * stores and mappings); two trackers with equal keys and state names read
    * alike. Absent when the adapter applies none.

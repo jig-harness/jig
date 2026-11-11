@@ -219,6 +219,32 @@ describe("served pickups", () => {
       }),
     );
   });
+  it("reports no claims when a served queue fails to read for another reason than the rate limit", async () => {
+    const f = fake();
+    f.tracker.assignedIssues = async () => {
+      throw new Error("queue timed out");
+    };
+    const read = await readServedPickups(f.tracker, people, {
+      cache: f.cache,
+      epic: "epic",
+      nowMs: 1,
+      headroom: true,
+    });
+    expect(read.incomplete).toBe(true);
+  });
+  it("does not share a view between tracker instances with the same team", async () => {
+    const f = fake();
+    const other = fake();
+    other.tracker.assignedIssues = async () => [];
+    const options = { epic: "epic", nowMs: 1, headroom: true };
+    const shared = { cache: f.cache, ...options };
+    (f.tracker as { instance?: string }).instance = "https://a.example";
+    (other.tracker as { instance?: string }).instance = "https://b.example";
+    const first = await readServedPickups(f.tracker, people, shared);
+    const second = await readServedPickups(other.tracker, people, shared);
+    expect(first.wanted.length).toBeGreaterThan(0);
+    expect(second.wanted).toEqual([]);
+  });
   it("keeps metadata at the same updatedAt", async () => {
     const f = fake();
     await readServedPickups(f.tracker, people, {

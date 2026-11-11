@@ -391,7 +391,7 @@ function assemble(
  */
 function configIdentity(tracker: Tracker): string {
   const states = CANONICAL_STATES.map((s) => tracker.stateName(s)).join("|");
-  return `${states}#${tracker.configKey ?? ""}`;
+  return `${tracker.instance ?? ""}|${states}#${tracker.configKey ?? ""}`;
 }
 
 /** The view of one tracker, team and person for this tick. */

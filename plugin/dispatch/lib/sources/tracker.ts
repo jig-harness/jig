@@ -403,10 +403,12 @@ export async function readPickups(
       ...factory.wanted.filter((i) => !keys.has(i.key)),
     ],
     unplaced: onceEach([...factory.unplaced, ...extra.unplaced]),
-    // A queue the rate limit stopped part way was not read whole: its claims
-    // are not known, so no ended pickup is released or judged on it.
+    // A queue the rate limit stopped part way, or one that failed to read,
+    // was not read whole: its claims are not known, so no ended pickup is released or judged on it.
     claimed:
-      factory.claimed === null || extra.limitedUntil !== undefined
+      factory.claimed === null ||
+      extra.limitedUntil !== undefined ||
+      extra.incomplete === true
         ? null
         : [
             ...new Map(

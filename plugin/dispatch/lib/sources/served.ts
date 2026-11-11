@@ -56,6 +56,8 @@ export interface ServedReading {
   claimed: ClaimedItem[];
   /** The tracker refused the reads for its rate limit: until when, in ISO 8601. */
   limitedUntil?: string;
+  /** A served identity's queue failed to read for another reason: the claims are not known. */
+  incomplete?: boolean;
 }
 export interface ServedPolicy {
   hitl?: string;
@@ -185,6 +187,7 @@ interface PersonReading {
   unplaced: Unplaced[];
   candidates: Candidate[];
   limited: { error: TrackerRateLimited; view: ServedView | null } | null;
+  failed: boolean;
 }
 
 /** Read one served identity's queue and walk it; an unreadable one is one unplaced row. */
@@ -200,6 +203,7 @@ async function readPerson(
     unplaced: [],
     candidates: [],
     limited: null,
+    failed: false,
   };
   let view: ServedView | null = null;
   try {
@@ -229,12 +233,14 @@ async function readPerson(
     if (view.limited === null) view.save();
   } catch (error) {
     if (isRateLimited(error)) got.limited ??= { error, view };
-    else
+    else {
+      got.failed = true;
       got.unplaced.push({
         target: identity,
         record: "tracker",
         reason: `the served assignments could not be read: ${failureText(error)}`,
       });
+    }
   }
   return got;
 }
@@ -264,6 +270,7 @@ export async function readServedPickups(
     out.claimed.push(...got.claimed);
     out.unplaced.push(...got.unplaced);
     candidates.push(...got.candidates);
+    if (got.failed) out.incomplete = true;
     limited ??= got.limited;
   }
   if (limited !== null) {
