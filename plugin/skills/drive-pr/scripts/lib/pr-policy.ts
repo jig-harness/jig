@@ -2,9 +2,10 @@
  * The consumer repository's pull-request policy: how agents open and stack
  * pull requests. Declared values come from the `pull_requests`
  * section of `.config/jig.yaml`; the facts a repository already
- * states elsewhere (its default branch, pull-request template, title
- * convention, delete-branch-on-merge setting, code owners) are derived
- * here instead of being asked for twice.
+ * states elsewhere (its default branch, pull-request template,
+ * delete-branch-on-merge setting, code owners) are derived here instead of
+ * being asked for twice; the title convention, a base per item and the commit
+ * prefix are in `pr-conventions.ts`.
  *
  * Every declared field is optional and has a default, so a repository without
  * the section still gets one explicit, conservative policy: no stacking, draft
@@ -22,9 +23,9 @@ import {
   branchPatternAmbiguity,
   tidyBranchName,
 } from "../../../do-item/scripts/lib/tracker/keys.ts";
-import { conventionalCommitlintConfig } from "./commitlint.ts";
 import { readOptionalOverlay } from "./overlay.ts";
-import { ghCall, git } from "./proc.ts";
+import { type BaseRule, parseConventions } from "./pr-conventions.ts";
+import { ghCall } from "./proc.ts";
 import { isRecord } from "../../../../shared/guards.ts";
 import { JigError } from "../../../../shared/errors.ts";
 import { REVIEWER, reviewerArg } from "../../../../shared/forge-logins.ts";
@@ -71,6 +72,10 @@ export interface PrPolicy {
   titleFormat: TitleFormat | null;
   /** `pull_requests.title_pattern`; set exactly when `titleFormat` is `pattern`. */
   titlePattern: string | null;
+  /** In order; the first one of whose labels the item carries names its base. */
+  baseRules: BaseRule[];
+  /** Every commit message's prefix, with `{key}`; `null` = none. */
+  commitPrefix: string | null;
 }
 
 /** The fields `pull_requests` may hold; any other key is refused. */
@@ -87,6 +92,8 @@ export const KNOWN_KEYS = [
   "reviewers_from_issue",
   "title_format",
   "title_pattern",
+  "base_rules",
+  "commit_prefix",
 ] as const;
 
 function oneOf<T extends string>(
@@ -225,6 +232,7 @@ export function parsePrPolicy(overlay: Record<string, unknown>): PrPolicy {
     );
 
   const { labelsFromIssue, reviewersFromIssue } = parseIssueMaps(section);
+  const titleFormat = oneOf(section, "title_format", TITLE_FORMATS);
 
   const stacking = oneOf(section, "stacking", STACKING_MODES) ?? "none";
   const maxStackDepth = positiveInt(section, "max_stack_depth");
@@ -247,7 +255,6 @@ export function parsePrPolicy(overlay: Record<string, unknown>): PrPolicy {
       `pull_requests.mark_ready must be a round number of at least 1, converged or never (got ${JSON.stringify(rawMarkReady)})`,
     );
 
-  const titleFormat = oneOf(section, "title_format", TITLE_FORMATS);
   return {
     stacking,
     maxStackDepth,
@@ -261,6 +268,7 @@ export function parsePrPolicy(overlay: Record<string, unknown>): PrPolicy {
     reviewersFromIssue,
     titleFormat,
     titlePattern: parseTitlePattern(section, titleFormat),
+    ...parseConventions(section),
   };
 }
 
@@ -402,54 +410,6 @@ const CODEOWNERS_PATHS = [
 /** The `CODEOWNERS` file GitHub reads (first match wins), or `null`. */
 export function findCodeowners(root: string): string | null {
   return CODEOWNERS_PATHS.find((p) => existsSync(join(root, p))) ?? null;
-}
-
-/** A Conventional Commits subject: `type(scope)!: description`. */
-export const CONVENTIONAL_SUBJECT = /^[a-z]+(\([^()\s][^()]*\))?!?: \S/;
-
-/** Share of recent trunk subjects that must be conventional to infer the convention. */
-export const CONVENTIONAL_SHARE = 0.8;
-
-/**
- * Which title convention recent trunk history follows. Merge commits are
- * skipped (their subjects are generated); fewer than five remaining subjects
- * is too little history to infer anything, so the answer is `free`.
- */
-export function inferTitleFormat(subjects: string[]): TitleFormat {
-  const own = subjects.filter(
-    (s) =>
-      s.trim() !== "" &&
-      !/^Merge (pull request|branch|remote-tracking)/.test(s),
-  );
-  if (own.length < 5) return "free";
-  const conventional = own.filter((s) => CONVENTIONAL_SUBJECT.test(s)).length;
-  return conventional / own.length >= CONVENTIONAL_SHARE
-    ? "conventional"
-    : "free";
-}
-
-/** The title convention and where it came from. */
-export async function detectTitleFormat(
-  root: string,
-  policy: PrPolicy,
-  trunkRef: string | null,
-): Promise<{ value: TitleFormat; source: string }> {
-  if (policy.titleFormat !== null)
-    return { value: policy.titleFormat, source: "pull_requests.title_format" };
-  const commitlint = conventionalCommitlintConfig(root);
-  if (commitlint !== null)
-    return { value: "conventional", source: `derived: ${commitlint}` };
-  if (trunkRef === null) return { value: "free", source: "default" };
-  const log = await git(
-    ["-C", root, "log", "--no-merges", "--format=%s", "-n", "30", trunkRef],
-    { stderr: "ignore" },
-  );
-  if (log.code !== 0) return { value: "free", source: "default" };
-  const value = inferTitleFormat(log.stdout.split("\n"));
-  return {
-    value,
-    source: `derived: recent subjects on ${trunkRef}`,
-  };
 }
 
 export interface RepoSettings {

@@ -230,10 +230,11 @@ export function fieldValues(v: unknown, where: string): string[] {
   if (Array.isArray(v))
     return v.flatMap((x, i) => fieldValues(x, `${where}[${i}]`));
   if (typeof v === "number") return [numberText(v)];
-  const text = isRecord(v) ? v.value : v;
+  // An option holds its `value`; a version (Fix versions) only its `name`.
+  const text = isRecord(v) ? (v.value ?? v.name) : v;
   if (typeof text === "string") return text.trim() === "" ? [] : [text.trim()];
   throw new JiraApiError(
-    `${where}: expected a string, a number or an option, as issue_tracker.jira.field_labels and a facet's field read`,
+    `${where}: expected a string, a number, an option or a version, as issue_tracker.jira.field_labels and a facet's field read`,
   );
 }
 
