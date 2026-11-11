@@ -4,7 +4,7 @@ type: adr
 status: draft
 description: "Jig's components share registered records on the machine, in the working tree and on the forge and tracker, and each derives what to do from records it does not own; no resident daemon or message bus coordinates them, one resident reader per machine may serve a person's view of them, and the record names the conditions for reopening that"
 lifecycle: permanent
-version: "1.2"
+version: "1.3"
 last_updated: 2026-11-11
 owner: maintainers
 decision_date: 2026-11-04
@@ -133,16 +133,19 @@ Reopen this when one of these holds:
   into its terminal;
 - someone outside a host must be told that a dispatching host has stopped;
 - a second person acts through a host's dashboard, or needs a scope Jig itself
-  keeps rather than one a private-network front's grant carries.
+  keeps rather than one a private-network front's grant carries;
+- hosts that dispatch for one person or one organization read the forge and
+  the tracker several times over, against one credential's limits.
 
 Then build a small control-plane service with a database, which the hosts
 write to and a person reads, not a bus. A service that only keeps the
 hosts' records and serves them to readers fits this decision. The
 [shared control plane](../../GLOSSARY.md)
-([design/dispatch-dashboard.md § Toward a shared control plane](../../design/dispatch-dashboard.md#toward-a-shared-control-plane))
-also hands the hosts their work, which is coordinating them, so it needs a
-decision record of its own that supersedes this one where it declines a
-coordinator.
+([design/control-plane.md](../../design/control-plane.md)) also offers the
+hosts their work, which is coordinating them;
+[ADR-0016](ADR-0016-an-optional-hub-for-hosts-that-keep-authority.md)
+decides it, and supersedes this record where it declines a coordinator for
+enrolled hosts only.
 
 ## Extraction (decisions-become-checks)
 

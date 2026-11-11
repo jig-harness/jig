@@ -1062,54 +1062,12 @@ repository's `.config/jig.yaml`, on unless set to `false`. The capability
 
 ### Toward a shared control plane
 
-The glossary calls each host's dispatcher Jig's first
-[control plane](../GLOSSARY.md). The [shared control plane](../GLOSSARY.md)
-is one service that reads the forge and the tracker once for many hosts,
-hands them work and serves the source feed through connections the hosts
-open, so neither the page nor a host's records change. Handing out work
-goes past ADR-0013, so it needs a decision record of its own, which stages
-1 to 3 do not. These are written down now so nothing before it closes the
-way:
-
-- **A host keeps authority over what it did.** The control plane stores
-  records and derives columns and threads when it reads them, and keeps no
-  phase column of its own: a mirror of a pull request's state drifts from
-  the pull request.
-- **No launch without the winning claim on the one medium that decides.**
-  A tick's plan or the control plane's offer is only a proposal. Which
-  medium decides is a setting on the repository's entry that every host
-  dispatching the repository agrees on. During a migration the control
-  plane posts the forge claim for each grant, and a grant counts only once
-  the forge's read-back shows it winning.
-- **A person's act is made with that person's credential.**
-- **Hosts connect out; nothing connects in.** A host dials out and pulls
-  work when a slot frees, and its reports carry an idempotency key, so one
-  sent twice counts once.
-- **A nudge carries no content and is safe to lose.** Correctness comes
-  from the records and a periodic reconcile.
-- **Seam: the tick's world view apart from its machine view.** The world
-  view is the forge's and the tracker's facts, with
-  `fresh(target, notOlderThan)` for the re-check before each act; the
-  machine view is the runtime's sessions, the launch records and the walls,
-  and is never remote. The tick's observe phase mixes the two and writes
-  records, so the split follows the tick's split into observe, plan and
-  apply.
-- **Seam: pickups get a shared claim before anything hands them out.** A
-  pickup has no claim before its session starts, so it is the stage most
-  likely to launch twice. `SharedTarget` widens to a work key and a pickup
-  claim is added; until then, dispatching one repository's pickups from
-  several hosts is unsupported.
-
-None of this is built before the control plane's own stage: version 1
-carries no field for it alone, and the seams are built just before it, so
-a control plane that takes another shape costs nothing already built. A
-parked decision is then one card that every surface shows. Waiting for the
-decision record: hosting and the database; webhook intake and reconcile;
-host enrollment, a device grant that yields a per-host credential; how
-people sign in; whether it stores references only or comment text too; the
-assignment policy; the owner host's duties (notices, labels) moving to it.
-Its trigger is one of ADR-0013's conditions for reopening, the one this
-design adds among them. Where it lives is a person's decision.
+The [hub](../GLOSSARY.md), the [shared control plane](../GLOSSARY.md) for
+many dispatchers, has a design of its own
+([control-plane.md](control-plane.md), item 49). For this page it is one
+more source: it serves the source feed of every enrolled host, so a
+dashboard that names it shows every host with no change to the page or to
+a host's records. Nothing in this design is built for it alone.
 
 ## Build order
 
@@ -1243,10 +1201,9 @@ card offers its command to copy.
 3. The assistant-ui chat, the `operator-conversation` record and its `jig gc`
    kind.
 
-**The shared control plane, last**: its decision record, once its trigger
-holds. Before it, the tick splits its world view from its machine view,
-after its split into observe, plan and apply, and pickups get a shared
-claim.
+**The hub, apart**: the shared control plane follows its own build order
+([control-plane.md § Build order](control-plane.md#build-order)), which
+starts with seams in the dispatcher that these stages do not need.
 
 ## Left out
 
@@ -1284,8 +1241,8 @@ claim.
   pairing, rotation and revocation, and every token holder sees every
   repository the host dispatches, across organizations.
 - **Funnel.** A front publishes the dashboard to a private network only.
-- **The shared control plane itself.** It waits for its decision record
-  and its trigger.
+- **The shared control plane itself.** It has a design of its own
+  ([control-plane.md](control-plane.md)).
 
 ## Review
 

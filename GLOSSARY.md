@@ -2239,18 +2239,22 @@ make, use the entry's term instead.
   provider, or an *SSH* tunnel, does the same job. A front never publishes
   to the open internet, and it does not let the dashboard write. See
   [design/dispatch-dashboard.md](design/dispatch-dashboard.md#a-front-on-a-private-network).
-- **Shared control plane** — one service that would serve many hosts: it
-  reads the forge and the tracker once for all of them, hands out work that
-  each host pulls when a slot frees, and serves the *source feed* over
-  connections the hosts open, so neither the *dispatch dashboard* nor a host's records
-  change when it joins. Each host's *dispatcher* is Jig's first
-  *control plane*; handing out work goes past
-  [ADR-0013](docs/adr/ADR-0013-records-not-a-daemon.md), so the shared one
-  waits for a decision record of its own. Only the rules it must keep are
-  written down, among them that a host keeps authority over what it did,
-  that nothing launches without the winning claim, and that a person's act
+- **Hub** — Jig's *shared control plane*: `jig hub serve`, one process with
+  one database that enrolled hosts call. Optional: a host that never
+  enrolls, or whose hub does not answer, dispatches alone. See
+  [design/control-plane.md](design/control-plane.md).
+- **Shared control plane** — one service that serves many hosts' *dispatchers*:
+  it reads the forge and the tracker once for all of them, puts claims with
+  leases in front of the forge and tracker claims, notices a host that
+  stopped, serves the *source feed* of every host's work and may offer work
+  to a host with free slots. Each host's *dispatcher* is Jig's first
+  *control plane*; Jig's shared one is the *hub*. The rules it keeps: no
+  level of use requires it, a host keeps authority over what it did, the
+  forge and tracker claims stay the fences, no server timer rewrites a
+  host's work, hosts call it and it calls no host, and a person's act
   carries that person's credential. See
-  [design/dispatch-dashboard.md](design/dispatch-dashboard.md#toward-a-shared-control-plane).
+  [ADR-0016](docs/adr/ADR-0016-an-optional-hub-for-hosts-that-keep-authority.md)
+  and [design/control-plane.md](design/control-plane.md).
 - **Source feed** — the protocol through which one *dispatch dashboard* reads another
   machine's records: a snapshot, then the changes since a cursor, each
   record in its *record envelope* and stamped with the host it came from

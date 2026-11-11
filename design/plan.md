@@ -431,8 +431,7 @@ person who asked for the dashboard decides whether each is built, from the
 waiting loss measured since stage 1 shipped and what they still pieced
 together outside the page; the call is recorded here with its reason
 ([dispatch-dashboard.md § Build order](dispatch-dashboard.md#build-order)). The shared control plane
-waits for a decision record of its own (Later: a control-plane service for
-the shared records).
+is item 49.
 
 Done when, for stage 1, on a headless host running the dispatcher, every
 pull request card shows its round and its unresolved threads, split by bot
@@ -502,9 +501,10 @@ processes the repository.
 ## Next
 
 Next starts with delegated merge, once item 40 holds. Then come what lets a
-second team adopt Jig, work that arrives complete, reviews that catch what
-gates cannot, and doctrine and measurement. Last come the developer machine
-and its runtimes, and the runs a person owes.
+second team adopt Jig, the hub for a team on several hosts, work that
+arrives complete, reviews that catch what gates cannot, and doctrine and
+measurement. Last come the developer machine and its runtimes, and the runs
+a person owes.
 
 ### 9. Delegated merge (`pull_requests.merge: auto-on-converged`)
 
@@ -592,6 +592,47 @@ unset one keeps today's behaviour. What it will build:
 Done when a repository whose AI reviewer is CodeRabbit runs a drive to
 merge-ready with no bridge of its own, and a CI repair command never runs
 program content from the pull request's working tree.
+
+### 49. The hub: a shared control plane for many dispatchers
+
+Every host that dispatches reads the forge and the tracker by itself, so
+hosts that dispatch for one team or one person spend one credential's
+limits several times over. A dead host's launch claims stay on the forge
+until a person deletes them, one repository's pickups are dispatched from
+one host only, nobody outside a host learns that it stopped, and a person
+with several machines has a dashboard per machine.
+[design/control-plane.md](control-plane.md) has how it works and
+[ADR-0016](../docs/adr/ADR-0016-an-optional-hub-for-hosts-that-keep-authority.md)
+the decision. What it will build: the hub, `jig hub serve` in
+`plugin/hub/`, one process with one SQLite database that enrolled hosts call
+over HTTPS and that calls no host; enrollment by device grant, with a
+credential per host; a host protocol of `hello`, `changes`, `read` with a
+`notOlderThan` bound, `report`, claims with leases and, last, `offers`,
+versioned by named capabilities; one read of the forge and the tracker for
+every enrolled host, polling first with conditional requests, webhooks as
+hints where the hub can receive them, and a budget per credential for every
+bucket it spends; claims with leases in front of the forge and tracker
+claims, which stay the fences, so a silent host's claims lapse for every
+enrolled host and a pickup is claimed before its session opens; a silent
+host noticed; the owner of each repository named by the hub; the source
+feed of every host served to the dispatch dashboard; and offers to a host
+with free slots. No level of use requires it: the skills never call it,
+and a host whose hub does not answer reads and claims by itself. Built in
+stages, one pull request per step: seams in the dispatcher first, each
+worth building alone (one shared records implementation chosen by
+`records.shared`, the world view apart from the machine view, a pickup
+claim, the GraphQL budget gated); then the hub that reads once; then claims
+with leases and the silent host; then one view of every host; then offers,
+once ADR-0016 is approved. Each stage after the seams is planned in detail,
+and built or not, by the person who asked for the hub once the stage before
+it is in use. The decisions the design leaves to that person (the name,
+where it lives, the dispatch dashboard's view across machines without a
+hub, what the hub stores of the forge's text, how offers are ranked) are in
+[its list](control-plane.md#decisions-for-a-person).
+
+Done when, for the first stage, two hosts dispatching the same repositories
+through one hub spend together about what one host spends alone, and
+stopping the hub during a tick costs that tick only a note on its receipt.
 
 ### 26. `init`: setting a repository up for Jig
 
@@ -1297,31 +1338,6 @@ conditions for considering a tap without adopting one ahead of that evidence.
     ([CONTRIBUTING.md § Toolchain](../CONTRIBUTING.md#toolchain) records
     the gap), so a Windows host needs those steps in its own shell first,
     and the provider tried there once it has them.
-- **A control-plane service for the shared records.** The hosts that
-  dispatch one repository publish who holds a launch and how it ended on the
-  forge, and each reads the others' at its next tick
-  ([plugin/RECORDS.md](../plugin/RECORDS.md#on-the-forge-and-the-tracker)).
-  A service that keeps those records for many hosts is the
-  [shared control plane](dispatch-dashboard.md#toward-a-shared-control-plane) the dashboard's
-  design describes: one service with a database that reads the forge and
-  the tracker once for many hosts, keeps the hosts' records as a second
-  implementation behind the same interface
-  (`plugin/shared/records/shared.ts`) under its own `records.shared` value,
-  hands the hosts their work and serves the dashboard's source feed through
-  connections the hosts open. Handing out work coordinates the hosts, which
-  ADR-0013 declines, so the service gets a decision record of its own,
-  written when one of
-  [ADR-0013](../docs/adr/ADR-0013-records-not-a-daemon.md#when-to-reopen)'s
-  conditions holds: hosts dispatching one repository must see each other's
-  state within seconds rather than at their next tick, a nudge to a running
-  session needs a connection rather than a terminal keystroke, someone
-  outside a host must be told that a dispatching host has stopped, or a
-  second person acts through a host's dashboard, or needs a scope Jig itself
-  keeps rather than one a private-network front's grant carries. Until then the
-  invariants and seams that
-  [design/dispatch-dashboard.md](dispatch-dashboard.md#toward-a-shared-control-plane) lists keep the way
-  open, among them a shared claim for pickups, without which one
-  repository's pickups are dispatched from one host only.
 - **The mailbox as every session's inbox.** The
   [drive mailbox](../GLOSSARY.md) reaches a drive's driver only, and the
   dispatcher's one nudge, the `continue` it types into a session whose usage
