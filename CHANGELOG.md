@@ -391,6 +391,68 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.202.1] - 2026-11-11
+
+### Fixed
+
+- The drive state reaper retires the displaced file-lock quarantine entries of
+  the releases before the database (`<lock>.stale.<generation>`) with
+  `--delete`, instead of only reporting them: once no lock of the earlier
+  layout is present, none of its state, lease, driver or claim files was
+  written in the last 24 hours, and no entry is younger than that. A clone
+  that was never imported is covered too. The README's upgrade section says
+  when they go.
+
+## [0.202.0] - 2026-11-11
+
+### Added
+
+- A guide for opening the dispatch dashboard from a phone
+  ([plugin/phone-access.md](https://github.com/jig-harness/jig/blob/main/plugin/phone-access.md)):
+  a private HTTPS address through Tailscale Serve, or through an
+  authenticated reverse proxy without Tailscale or Orca, with no token in the
+  address; the private-HTTP fallback and what it costs; the owner-only
+  boundary; how to undo it; and a verification record. The record's rows are
+  marked not yet run until a person runs them on a phone.
+
+## [0.201.0] - 2026-11-11
+
+### Added
+
+- `jig ask … --thread --json` shows what a parked decision offers and what each person chose: a `question` entry from a framed decision carries its `key`, its [decision digest](GLOSSARY.md) and its `options`, each numbered with the recommended option first, and an `answer` entry carries its `key` and the `choice` it made with its `note`, or `free: true` for an answer in the person's own words, or `stale` with the digest of the earlier framing it named. See [plugin/README.md § Asking a station](plugin/README.md#asking-a-station-where-it-stands).
+- The dashboard's Needs you card says what the answers that keep a decision waiting chose, and whether they are stale or [disputed](GLOSSARY.md), with the same options and choices `jig ask` shows for that park.
+- When a re-arm unparks answered items, it leaves a [resolution receipt](GLOSSARY.md) for each in the drive ledger (`resolvedParks`, the last 10, or every one a single re-arm wrote when it unparked more): the park's key, digest and the time it was parked, the answers it consumed, the outcome and the times. `drive-state.ts unpark --stdin` writes them in the same change that removes the parks.
+- The outcome log counts how each park left its ledger, on the host that owns the repository: `park-answered` (with the class, the answers' form, whether the recommended option was chosen, whether a note narrowed it and how long the park waited), `park-provisional`, and `park-removed` for a park that left with no receipt. A park raised and answered between two ticks is counted, and none is counted twice. See [plugin/README.md § The dispatcher](plugin/README.md#the-dispatcher).
+
+## [0.200.1] - 2026-11-11
+
+### Fixed
+
+- The manual-operations label (`manual-ops` by default) is created purple, and
+  a test keeps it apart from the red `jig:parked` and `jig:followup-failed`:
+  a pull request that owes a step outside the code is not stopped or blocked.
+  A repository that created the label in red keeps that color until someone
+  changes it (`gh label edit manual-ops --color 5319e7`).
+
+## [0.200.0] - 2026-11-11
+
+### Changed
+
+- A dispatched follow-up no longer fails on a step only a person can take
+  after the merge (a live check against a real service, a rollout to another
+  repository, an organization's setting, an operational action, a failed
+  release gate): its pass reports the step as owed, files it, and records
+  done. Two routine question classes join `local-leftover`: `person-owed`,
+  answered by reporting and filing the step, and `drafted-items`, answered by
+  filing the follow-up items the pass drafted. A follow-up that stops on
+  either is run again once with that answer instead of waiting for a person.
+
+## [0.199.1] - 2026-11-11
+
+### Fixed
+
+- `jig` launcher stops a plugin lookup cleanly when it receives a termination signal during startup.
+
 ## [0.199.0] - 2026-11-11
 
 ### Added
@@ -6941,7 +7003,13 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.199.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.202.1...HEAD
+[0.202.1]: https://github.com/jig-harness/jig/compare/v0.202.0...v0.202.1
+[0.202.0]: https://github.com/jig-harness/jig/compare/v0.201.0...v0.202.0
+[0.201.0]: https://github.com/jig-harness/jig/compare/v0.200.1...v0.201.0
+[0.200.1]: https://github.com/jig-harness/jig/compare/v0.200.0...v0.200.1
+[0.200.0]: https://github.com/jig-harness/jig/compare/v0.199.1...v0.200.0
+[0.199.1]: https://github.com/jig-harness/jig/compare/v0.199.0...v0.199.1
 [0.199.0]: https://github.com/jig-harness/jig/compare/v0.198.0...v0.199.0
 [0.198.0]: https://github.com/jig-harness/jig/compare/v0.197.4...v0.198.0
 [0.197.4]: https://github.com/jig-harness/jig/compare/v0.197.3...v0.197.4
