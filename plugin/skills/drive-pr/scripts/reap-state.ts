@@ -28,8 +28,11 @@
  *   record without opening the database for writing, so it creates and
  *   imports nothing.
  * - `quarantine:<clone>`: displaced legacy locks and recovery gates, reported
- *   with count and bytes but kept because legacy writers cannot be excluded.
- *   They are kept independently of whether or when the clone was imported.
+ *   with count and bytes. RETIRED once no earlier-release writer shows in the
+ *   clone: no legacy lock or recovery gate is present, none of its state,
+ *   lease, driver or claim files was written in the last 24 hours, and no
+ *   entry (or anything under one) is younger than that. Independent of
+ *   whether or when the clone was imported (`lib/state/quarantine.ts`).
  *
  * A name no family recognises is never removed. Every gate fails
  * CLOSED: an entry that cannot be read keeps its family.
@@ -321,9 +324,18 @@ function reportEntry(v: Verdict) {
   };
 }
 
-/** Remove a family's entries; the names that could not be removed. */
-function retire(stateDir: string, family: Family): string[] {
+/** What deleting a family did: the entries removed, those that failed, or the reason it was kept. */
+export type Deletion = { removed: number; failed: string[]; kept?: string };
+
+/** Remove a family's entries. */
+export function retire(stateDir: string, family: Family): Deletion {
   const failed: string[] = [];
+  if (family.id.startsWith("quarantine:")) {
+    // Revalidate at deletion: the verdict was reached earlier.
+    const again = judgeQuarantine(stateDir, family.names);
+    if (again.action !== "retire")
+      return { removed: 0, failed, kept: again.reason };
+  }
   for (const name of family.names) {
     try {
       rmSync(join(stateDir, name), { recursive: true, force: true });
@@ -331,7 +343,7 @@ function retire(stateDir: string, family: Family): string[] {
       failed.push(`${name}: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
-  return failed;
+  return { removed: family.names.length - failed.length, failed };
 }
 
 /** The report for a clone with no state directory yet; the exit code. */
@@ -409,17 +421,27 @@ async function main(): Promise<number> {
       .map((id) => id.slice("pr:".length));
     const lifecycles = await prLifecycles(prs);
     const minAgeMs = args.minAgeDays * DAY_MS;
-    const verdicts = [...families.values()].map((family) =>
+    let verdicts = [...families.values()].map((family) =>
       judgeFamily(stateDir, family, lifecycles, minAgeMs),
     );
     let removed = 0;
+    if (args.del) {
+      // A family refused at deletion is reported as kept, with its reason.
+      verdicts = verdicts.map((v) => {
+        if (v.action !== "retire") return v;
+        const done = retire(stateDir, v.family);
+        removed += done.removed;
+        failures.push(...done.failed.map((f) => `${v.family.id}: ${f}`));
+        return done.kept === undefined
+          ? v
+          : {
+              ...v,
+              action: "keep",
+              reason: `kept at deletion — ${done.kept}`,
+            };
+      });
+    }
     const retired = verdicts.filter((v) => v.action === "retire");
-    if (args.del)
-      for (const v of retired) {
-        const failed = retire(stateDir, v.family);
-        removed += v.family.names.length - failed.length;
-        failures.push(...failed.map((f) => `${v.family.id}: ${f}`));
-      }
     const report = {
       stateDir,
       exists: true,
@@ -432,7 +454,9 @@ async function main(): Promise<number> {
         .sort(byId),
       untouched: { unrecognised: unrecognised.length },
       applied: args.del,
-      entriesRetirable: retired.reduce((n, v) => n + v.family.names.length, 0),
+      entriesRetirable: verdicts
+        .filter((v) => v.action === "retire")
+        .reduce((n, v) => n + v.family.names.length, 0),
       entriesRemoved: args.del ? removed : 0,
       traceDays: traceDays.days,
       failures,
