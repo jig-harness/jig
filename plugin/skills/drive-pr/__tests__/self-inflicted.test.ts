@@ -30,6 +30,7 @@ import {
   labelRecord,
   labelSummaryFinding,
 } from "../scripts/self-inflicted.ts";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 
 const SCRIPTS = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts");
@@ -49,7 +50,7 @@ elif [ "$#" -eq 7 ] && [ "$1" = pr ] && [ "$2" = view ] &&
      [ "$7" = .baseRefName ]; then
   :
 elif [ "$#" -eq 4 ] && [ "$1" = repo ] && [ "$2" = view ] &&
-     [ "$3" = --json ] && [ "$4" = owner,name ]; then
+     [ "$3" = --json ] && [ "$4" = owner,name,url ]; then
   :
 else
   echo "gh: unsupported command signature: $*" >&2; exit 2
@@ -1773,14 +1774,8 @@ describe("resolveBaseRef — origin verification and fetch failure are UNRESOLVE
     writeFakeProgram(ghPath, GH_FLAG_GUARD + script);
   }
 
-  // A second, local-only "remote" repository — never reached over the network
-  // — for the fetch-failure probe below. Nested two directories deep so its
-  // absolute path's last two segments are `example-org/example-repo`: `repoOfUrl`
-  // (see its own header) extracts `owner/name` from the last two path
-  // segments of ANY git URL form, host-agnostic, so a plain local path
-  // parses exactly like a real `https://…/example-org/example-repo.git` would —
-  // letting verification pass while the fetch itself has nothing to succeed
-  // against (it is never given a `develop` branch, or any commit at all).
+  // Local paths are refused before fetching, even when their final path
+  // segments match the forge repository.
   let fetchFailOrigin: string;
 
   beforeAll(() => {
@@ -1823,7 +1818,7 @@ describe("resolveBaseRef — origin verification and fetch failure are UNRESOLVE
     for (const args of [
       ["repo", "view"],
       ["repo", "view", "--json", "name"],
-      ["repo", "view", "wrong/repo", "--json", "owner,name"],
+      ["repo", "view", "wrong/repo", "--json", "owner,name,url"],
       ["pr", "view", "wrong-pr", "--json", "baseRefName", "-q", ".baseRefName"],
       ["pr", "view", "42 --json", "baseRefName", "-q", ".baseRefName"],
     ]) {
@@ -1834,7 +1829,8 @@ describe("resolveBaseRef — origin verification and fetch failure are UNRESOLVE
       );
     }
     expect(
-      Bun.spawnSync([ghPath, "repo", "view", "--json", "owner,name"]).exitCode,
+      Bun.spawnSync([ghPath, "repo", "view", "--json", "owner,name,url"])
+        .exitCode,
     ).toBe(0);
   });
 
@@ -1920,19 +1916,9 @@ exit 1
   );
 
   it(
-    "refuses to trust the ref — and labels every record null — when the fetch itself fails",
+    "refuses a local remote even when its path names the same repository",
     async () => {
       writeGhStub(GH_STUB);
-      // Verification passes: `fetchFailOrigin`'s path parses to the exact
-      // `owner/name` the stub `gh repo view` reports (see its own comment
-      // above `repoOfUrl` is host-agnostic, so a local path works). It is a
-      // real, local, network-free repository — so the fetch fails fast and
-      // deterministically (no `develop` branch, no commit at all to name
-      // one) rather than depending on network reachability, and that failure
-      // must not be read as "proceed with whatever origin/develop is already
-      // on disk".
-      // Added as a file URL: `repoOfUrl` reads `owner/name` out of git URL
-      // forms, and a Windows drive-letter path is not one.
       execIn(baseRefRepo, [
         "remote",
         "add",
@@ -1941,8 +1927,10 @@ exit 1
       ]);
       try {
         const r = await runWithStub();
-        expect(r.exitCode).toBe(0);
-        expect(r.stderr).toContain("could not refresh origin/develop");
+        expectSpawnExit(r, 0, "self-inflicted rejects a local remote");
+        expect(r.stderr).toContain(
+          "cannot resolve a forge host and owner/name",
+        );
         expect(r.stderr).toContain("NOT MEASURED");
         expect(JSON.parse(r.stdout.trim()).selfInflicted).toBeNull();
       } finally {
