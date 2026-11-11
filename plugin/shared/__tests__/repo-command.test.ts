@@ -83,6 +83,11 @@ describe("scrubbedEnv", () => {
     const env = Object.fromEntries(SCRUBBED_ENV.map((n) => [n, "secret"]));
     expect(scrubbedEnv({ ...env, PATH: "/bin" })).toEqual({ PATH: "/bin" });
   });
+
+  it("names the Jira OAuth token and its broker command", () => {
+    expect(SCRUBBED_ENV).toContain("JIRA_BEARER_TOKEN");
+    expect(SCRUBBED_ENV).toContain("JIRA_TOKEN_COMMAND");
+  });
 });
 
 describe("oneLine", () => {

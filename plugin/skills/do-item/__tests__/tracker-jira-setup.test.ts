@@ -534,8 +534,8 @@ describe("Jira request budget across credential modes", () => {
       command("two"),
       status(200),
       governor,
-    )({ method: "GET", path: "x" }).catch((e: unknown) => e);
-    expect(isRateLimited(answer)).toBe(false);
+    )({ method: "GET", path: "x" });
+    expect(answer).toEqual({});
   });
 });
 

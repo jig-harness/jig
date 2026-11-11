@@ -30,6 +30,8 @@ export const SCRUBBED_ENV: readonly string[] = [
   "GITHUB_TOKEN",
   "JIRA_EMAIL",
   "JIRA_API_TOKEN",
+  "JIRA_BEARER_TOKEN",
+  "JIRA_TOKEN_COMMAND",
   "LINEAR_API_KEY",
   "LINEAR_API_TOKEN",
 ];

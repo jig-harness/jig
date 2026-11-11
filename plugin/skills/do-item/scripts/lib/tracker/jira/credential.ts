@@ -6,7 +6,7 @@
  * 1. `JIRA_BEARER_TOKEN`: an OAuth 2.0 access token, sent as
  *    `Authorization: Bearer`.
  * 2. `JIRA_TOKEN_COMMAND`: a command that prints such a token on standard
- *    output, as a git credential helper or `gh auth token` does, so a
+ *    output, as `gh auth token` does, so a
  *    credential broker holds the secret and the environment holds only the
  *    command. It runs once for the process, under a deadline; after a 401 it
  *    runs once more and the request is sent again once with the new token.
