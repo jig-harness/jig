@@ -1,11 +1,15 @@
 /**
- * `jig dispatch log [--since DATE] [--jsonl]`: the outcome log as text,
+ * `jig dispatch log [--since DATE] [--jsonl] [--acceptance]`: the outcome log as text,
  * read from the state database (`lib/log.ts`), in the order the rows were written. With
  * `--jsonl` it prints each row as the JSON line the month files
  * (`lib/log-export.ts`) hold, the export that outlives the database's
  * schema; without it, one line a row for a person: the time, the class,
  * the stage and its target, the repository, the account and the reason.
+ * With `--acceptance` it prints instead, per repository and decision class,
+ * how often parked decisions followed the recommendation
+ * (`lib/acceptance.ts`), as a line each or, with `--jsonl`, a JSON line each.
  */
+import { acceptanceLine, acceptanceOf } from "./lib/acceptance.ts";
 import { bucket, type LogRow, rowsOf } from "./lib/log.ts";
 import { existingStateDb } from "./lib/state.ts";
 import { stateRoot } from "./receipts.ts";
@@ -14,6 +18,8 @@ export interface LogOptions {
   /** An ISO time; rows timed before it are left out. */
   since?: string;
   jsonl: boolean;
+  /** Report how often each class of parked decision followed the recommendation, not the rows. */
+  acceptance?: boolean;
 }
 
 /** One row as a line for a person. */
@@ -40,6 +46,16 @@ export function logMain(
     options.since === undefined
       ? Number.MIN_SAFE_INTEGER
       : Date.parse(options.since);
+  if (options.acceptance === true) {
+    const parks = db
+      .query(
+        "SELECT row FROM log WHERE at_ms >= ? AND kind = 'event' AND json_extract(row, '$.park') IS NOT NULL ORDER BY seq",
+      )
+      .all(since) as Array<{ row: string }>;
+    for (const group of acceptanceOf(rowsOf(parks)))
+      print(options.jsonl ? JSON.stringify(group) : acceptanceLine(group));
+    return 0;
+  }
   const rows = db
     .query("SELECT row FROM log WHERE at_ms >= ? ORDER BY seq")
     .iterate(since) as IterableIterator<{ row: string }>;
