@@ -9,6 +9,7 @@ import type {
   LineSnapshot,
 } from "../../plugin/dispatch/lib/dashboard-contract.ts";
 import { ago, clock, plural, span, until } from "./format.ts";
+import { noLinkText } from "./links.ts";
 import { type Role, roleOf, stageMark } from "./status.ts";
 
 /** The server's clock and the host's zone. */
@@ -106,6 +107,41 @@ export function timerBanner(
   };
 }
 
+/**
+ * A banner for each repository whose part of the line is past the timer's
+ * next tick and its longest recent one while the line itself is current:
+ * the ticks since ran, and none of them read it. Each names the repository,
+ * when its part was read, and why the ticks since did not read it: another
+ * tick held it busy, or they read other repositories.
+ */
+export function staleBanners(
+  line: LineSnapshot,
+  clockNow: Clock,
+): Array<{ key: string; title: string; body: string }> {
+  const { nowMs, timeZone } = clockNow;
+  return line.repos.flatMap((repo) => {
+    if (repo.readAt === undefined) return [];
+    const read = Date.parse(repo.readAt);
+    if (nowMs <= read + line.intervalMs + line.longestTickMs) return [];
+    const name = repo.slug ?? repo.path;
+    const since = (line.ticks ?? []).filter(
+      (t) => Date.parse(t.startedAt) > read,
+    );
+    const busy = since.filter((t) => t.busy.includes(repo.path)).length;
+    const why =
+      busy === 0
+        ? `None of the ${plural(since.length, "tick")} since read it.`
+        : `Another tick held it busy on ${busy} of the ${plural(since.length, "tick")} since, so none of them read it.`;
+    return [
+      {
+        key: repo.path,
+        title: `${name} has not been read since ${clock(read, timeZone)}, ${ago(read, nowMs)} ago.`,
+        body: `${why} Its needs, queue and sessions below are as of the ${clock(read, timeZone)} tick.`,
+      },
+    ];
+  });
+}
+
 // ---------- sessions ----------
 
 export type SessionKind =
@@ -155,7 +191,10 @@ export interface SlotView {
   account: string;
   repo: string;
   target: string;
+  title: string | null;
   url: string | null;
+  /** What the card says when `url` is null: what is missing and where to look. */
+  noLink: string | null;
   stage: string;
   mark: string;
   role: Role;
@@ -369,7 +408,9 @@ export function slotView(
     account: s.account,
     repo: s.repo,
     target: s.target,
+    title: s.title,
     url: s.url,
+    noLink: s.url === null ? noLinkText(s.repo, s.target) : null,
     stage: s.stage,
     mark: stageMark(s.stage),
     role: roleFor(s, kind),

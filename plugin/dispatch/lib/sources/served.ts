@@ -76,6 +76,12 @@ export interface ServedOptions extends ServedPolicy {
   /** The tick's views, shared by every repository that reads the same tracker, team and person. */
   views?: ServedViews;
 }
+/** An unplaced row's target, with the title and link the listing returned for it. */
+const itemOf = (i: PoolIssue) => ({
+  target: i.identifier,
+  title: i.title,
+  url: i.url,
+});
 const closed = (i: PoolIssue) =>
   ["completed", "canceled", "duplicate"].includes(i.state.type);
 const closedType = (type: string) =>
@@ -203,6 +209,7 @@ async function readPerson(
     got.claimed = progress.map((i) => ({
       key: i.identifier,
       title: i.title,
+      url: i.url,
       state: i.state.name,
     }));
     // Claims are monitored either way; an invalid scope only starts nothing.
@@ -404,7 +411,7 @@ async function enqueueChildren(
     const child = read[i];
     if (child === null || child === undefined || child.truncated.length) {
       found.unplaced.push({
-        target: kept.identifier,
+        ...itemOf(kept),
         record: "tracker",
         reason: "the child cannot be read completely",
       });
@@ -473,7 +480,7 @@ async function visitNode(ctx: WalkContext, node: Pending): Promise<Found> {
   } catch (error) {
     if (isRateLimited(error)) throw error;
     found.unplaced.push({
-      target: issue.identifier,
+      ...itemOf(issue),
       record: "tracker",
       reason: `the queue metadata could not be read: ${failureText(error)}`,
     });
@@ -491,7 +498,7 @@ async function placeNode(
   const { issue, ancestor } = node;
   const unplace = (reason: string, cause?: "needs-repository-label") =>
     found.unplaced.push({
-      target: issue.identifier,
+      ...itemOf(issue),
       record: "tracker",
       reason,
       ...(cause === undefined ? {} : { cause }),

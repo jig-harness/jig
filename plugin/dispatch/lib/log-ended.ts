@@ -11,7 +11,13 @@ import { Defect } from "../../shared/errors.ts";
 import { readNext } from "./next-owner.ts";
 import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { failureText } from "./text.ts";
-import { asResult, isDrive, type ReadRecord, writeRecord } from "./launches.ts";
+import {
+  asResult,
+  isDrive,
+  type ReadRecord,
+  targetOf,
+  writeRecord,
+} from "./launches.ts";
 import { endedRow, endTime, hasEnded, insertRow } from "./log.ts";
 import { inTransaction, stateDb } from "./state.ts";
 import type { DrivenPr } from "./types.ts";
@@ -25,6 +31,8 @@ export interface EndContext {
   merged: (pr: number) => Promise<boolean | null>;
   nowIso: string;
   root?: string;
+  /** A target's title and link as this tick's reads gave them; absent where the repository was not read. */
+  about?: (target: string) => { title: string | null; url: string | null };
 }
 
 /** A drive's ledger round at its end: the ledger this tick read, else the last round a sample recorded. */
@@ -74,6 +82,7 @@ export async function logEnded(
           endedAt,
           { takenOver, merged },
           isDrive(record) ? endRound(r, ctx.drives) : null,
+          ctx.about?.(targetOf(record)),
         );
         writeRecord({ ...record, endedAt }, ctx.root);
         insertRow(db, row);

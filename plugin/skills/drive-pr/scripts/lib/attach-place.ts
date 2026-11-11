@@ -29,6 +29,7 @@ import {
   canonical,
   driveRemote,
   g,
+  headRepository,
   out,
   refuse,
   requireOrigin,
@@ -203,15 +204,7 @@ async function headBranch(
     );
   if (meta.isCrossRepository !== false)
     refuse(2, `PR #${pr} comes from a fork: the drive cannot push its head`);
-  const owner = isRecord(meta.headRepositoryOwner)
-    ? meta.headRepositoryOwner.login
-    : undefined;
-  const name = isRecord(meta.headRepository)
-    ? meta.headRepository.name
-    : undefined;
-  if (typeof owner !== "string" || typeof name !== "string")
-    refuse(1, `PR #${pr} did not report its head repository`);
-  await requireOrigin(cwd, { repo: `${owner}/${name}` }, pr, remote);
+  await requireOrigin(cwd, { repo: headRepository(meta, pr) }, pr, remote);
   return meta.headRefName;
 }
 

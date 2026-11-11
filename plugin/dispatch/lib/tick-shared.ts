@@ -18,6 +18,7 @@ import {
 } from "../../shared/records/shared.ts";
 import { forgeShared } from "../../shared/records/shared-forge.ts";
 import { settleNoCauseStops } from "./no-cause-stops.ts";
+import { settleFailedRearms, withRearmHeads } from "./failed-rearms.ts";
 import { releaseRoutineMarkers } from "./routine-reruns.ts";
 import {
   driveHold,
@@ -203,7 +204,8 @@ function keptEnded(
 }
 
 /**
- * Read the launch claims of every drive the forge gave, and settle each
+ * Read the launch claims of every drive the forge gave, and the heads of
+ * each whose latest re-arm failed (`failed-rearms.ts`), and settle each
  * drive's stop on a conflict by this host's records and then by another
  * host's claims. The claims are read through `reader`, the tick's comment
  * listings where the observe phase passes them, and, with the tick's clock
@@ -221,7 +223,13 @@ export async function readDriveClaims(
     ? await readSharedDrives(reading, forge.drives)
     : new Map();
   if (forge.ok) await addEndedLaunches(reading, forge, records, claims, nowMs);
-  forge.drives = settleDrives(ctx, forge.drives, records, claims);
+  const weighed = await withRearmHeads(
+    ctx.slug,
+    forge.drives,
+    forge.open,
+    records,
+  );
+  forge.drives = settleDrives(ctx, weighed, records, claims);
   return claims;
 }
 
@@ -229,7 +237,8 @@ export async function readDriveClaims(
  * Each drive as the plan reads it once this host's records and every host's
  * claims are read beside it: a re-drive already made for the change it shows
  * now is a person's (by this host's records, then by another host's claims),
- * a silent driver already taken over on its facts is notified, and what is
+ * so is a re-arm that failed at the heads and ledger facts it shows now, a
+ * silent driver already taken over on its facts is notified, and what is
  * left is bounded by the pull request's recovery budget.
  */
 export function settleDrives(
@@ -260,7 +269,10 @@ export function settleOwnDrives(
     host,
   );
   return settleNoCauseStops(
-    settleSharedConflictStops(settleConflictStops(placed, own), claims, host),
+    settleFailedRearms(
+      settleSharedConflictStops(settleConflictStops(placed, own), claims, host),
+      own,
+    ),
     own,
     claims,
     Date.now(),

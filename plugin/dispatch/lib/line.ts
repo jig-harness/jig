@@ -19,6 +19,7 @@ import type {
 } from "./dashboard-contract.ts";
 import type { LaunchAction, ReadRecord } from "./launches.ts";
 import { pullUrl } from "./forge.ts";
+import { itemBases, itemLinkFrom } from "../../shared/item-links.ts";
 import { actOfNeed, NEED_ACTS, type NeedAct } from "../../shared/acts.ts";
 import { decisionOf } from "./line-decision.ts";
 export { decisionOf } from "./line-decision.ts";
@@ -35,6 +36,7 @@ import type {
   Evidence,
   LaunchOutcome,
   RepoReport,
+  Unplaced,
 } from "./types.ts";
 
 /** The recent ticks whose longest decides when the timer reads as stopped: a day of the default interval. */
@@ -181,6 +183,54 @@ function isItemTarget(target: string): boolean {
   return prNumber(target) === null;
 }
 
+/** A target's title and link as the tick's reads gave them; each `null` when none did. */
+export interface TargetAbout {
+  title: string | null;
+  url: string | null;
+}
+
+/**
+ * The title and link of each target one repository's reads named: its
+ * drives, the pull requests and items the forge and the tracker listed, and
+ * the items the walk could not place. An item no read gave a link takes one
+ * worked out from another item link of the repository's tracker
+ * (`shared/item-links.ts`); a pull request takes the forge's address.
+ */
+export function aboutTargets(
+  slug: string,
+  input: RepoLineInput | undefined,
+  unplaced: ReadonlyArray<Unplaced>,
+): (target: string, evidence?: Evidence) => TargetAbout {
+  const known = new Map<string, { title: string | null; url: string | null }>([
+    ...unplaced
+      .filter((u) => u.title !== undefined || u.url != null)
+      .map(
+        (u) =>
+          [u.target, { title: u.title ?? null, url: u.url ?? null }] as const,
+      ),
+    ...(input?.drives ?? []).map(
+      (d) => [`PR #${d.number}`, { title: d.title, url: d.url }] as const,
+    ),
+    ...(input?.known ?? []).map(
+      (k) => [k.target, { title: k.title, url: k.url }] as const,
+    ),
+  ]);
+  const bases = itemBases(
+    [...known].map(([target, k]) => ({ target, url: k.url })),
+  );
+  return (target, evidence = {}) => {
+    const kept = known.get(target);
+    const title = text(evidence, "title") ?? kept?.title ?? null;
+    const read = text(evidence, "url") ?? kept?.url ?? null;
+    if (read !== null) return { title, url: read };
+    const pr = prNumber(target);
+    return {
+      title,
+      url: pr === null ? itemLinkFrom(bases, target) : pullUrl(slug, pr),
+    };
+  };
+}
+
 /** The lookups one repository's lines share. */
 class RepoView {
   readonly slug: string;
@@ -188,7 +238,7 @@ class RepoView {
   readonly input: RepoLineInput | undefined;
   readonly stored: RepoStored;
   readonly records: ReadRecord[];
-  private readonly known: Map<string, { title: string; url: string | null }>;
+  private readonly about: ReturnType<typeof aboutTargets>;
   private readonly drives: Map<number, DrivenPr>;
 
   constructor(
@@ -203,14 +253,7 @@ class RepoView {
     this.input = input;
     this.stored = stored;
     this.records = records;
-    this.known = new Map([
-      ...(input?.drives ?? []).map(
-        (d) => [`PR #${d.number}`, { title: d.title, url: d.url }] as const,
-      ),
-      ...(input?.known ?? []).map(
-        (k) => [k.target, { title: k.title, url: k.url }] as const,
-      ),
-    ]);
+    this.about = aboutTargets(slug, input, report.unplaced);
     this.drives = new Map((input?.drives ?? []).map((d) => [d.number, d]));
   }
 
@@ -219,14 +262,11 @@ class RepoView {
   }
 
   title(target: string, evidence: Evidence = {}): string | null {
-    return text(evidence, "title") ?? this.known.get(target)?.title ?? null;
+    return this.about(target, evidence).title;
   }
 
   url(target: string, evidence: Evidence = {}): string | null {
-    const read = text(evidence, "url") ?? this.known.get(target)?.url ?? null;
-    if (read !== null) return read;
-    const pr = prNumber(target);
-    return pr === null ? null : pullUrl(this.slug, pr);
+    return this.about(target, evidence).url;
   }
 
   launchOf(target: string): LaunchOutcome | undefined {

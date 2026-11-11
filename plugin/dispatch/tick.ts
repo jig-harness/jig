@@ -495,6 +495,7 @@ async function closeTick(
   receipt.phasesMs = { ...timer.ms };
   writeTickLine(receipt, {
     machine,
+    asked: context.options.repos,
     repos: readRepos(receipt, context),
     records: allRecords(context),
     inputs: context.lineInputs,
@@ -504,9 +505,7 @@ async function closeTick(
   finalizeTickFailure(receipt, context);
 }
 
-/**
- * The repositories this tick read: one another tick held was not, and the line is written only by a tick that read every one.
- */
+/** The repositories this tick read: one another tick held was not. */
 function readRepos(receipt: TickReceipt, context: TickContext): string[] {
   const busy = new Set((receipt.busy ?? []).map((b) => b.path));
   return context.options.repos.filter((path) => !busy.has(path));
@@ -533,6 +532,32 @@ function heldReceipt(started: StartedTick, heldBy: string): void {
     lockHeldBy: heldBy,
     repos: [],
     upgrade,
+  });
+}
+
+/** The dashboard's line after a tick that found every repository it was asked for held: its heartbeat and busy history, with each repository's part kept. */
+function lineOfHeldTick(
+  started: StartedTick,
+  observe: ObservedAll,
+  heldBy: string,
+  timer: PhaseTimer<TickPhase>,
+): void {
+  const { receipt, context } = started;
+  // The receipt the line stores says what the invocation did: it held back, and exits as held.
+  receipt.exitStatus = 3;
+  receipt.completed = false;
+  receipt.apply = context.options.apply === true;
+  receipt.lockHeldBy = heldBy;
+  receipt.busy = [...observe.busy].map(([path, heldBy]) => ({ path, heldBy }));
+  receipt.finishedAt = new Date().toISOString();
+  receipt.phasesMs = { ...timer.ms };
+  writeTickLine(receipt, {
+    machine: context.options.machine ?? null,
+    asked: context.options.repos,
+    repos: [],
+    records: allRecords(context),
+    inputs: context.lineInputs,
+    codexOptIn: context.apply?.codexOptIn ?? hostCodexOptIn(),
   });
 }
 
@@ -589,6 +614,13 @@ export async function runTick(options: TickOptions): Promise<TickResult> {
       observe.busy.size === new Set(options.repos).size
     ) {
       const heldBy = [...observe.busy.values()].join("; ");
+      lineOfHeldTick(started, observe, heldBy, timer);
+      // A line that could not be written is the tick's own failure: its receipt says why the dashboard stays stale.
+      if (started.receipt.lineFailed !== undefined)
+        return {
+          receipt: started.receipt,
+          path: writeReceipt(started.receipt),
+        };
       heldReceipt(started, heldBy);
       return { held: heldBy };
     }

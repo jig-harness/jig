@@ -2,7 +2,6 @@
  * What the Window panel and the log show, as pure functions of `GET /rows`.
  */
 import type {
-  LineSnapshot,
   RecurringClass,
   RowsAnswer,
 } from "../../plugin/dispatch/lib/dashboard-contract.ts";
@@ -12,6 +11,7 @@ import type {
   LogRow,
 } from "../../plugin/dispatch/lib/log.ts";
 import { lengthOf, plural, stamp } from "./format.ts";
+import { derivedLink, type Forges, noLinkText } from "./links.ts";
 import type { LogFilter } from "./search.ts";
 import { eventRole, ROLES, type Role, roleOf, stageMark } from "./status.ts";
 import type { EvidenceRow } from "./view.ts";
@@ -23,46 +23,14 @@ export interface RowClock {
   timeZone: string;
 }
 
-/** The forge address a pull request's link starts with, per repository. */
-export type Forges = Map<string, string>;
-
-const PULL_URL = /^(.*\/)([^/]+\/[^/]+)\/pull\/\d+$/;
-
-/**
- * Where each repository's pull requests live, from the links the line holds: a
- * log row carries no link of its own. A repository no link names takes the one
- * forge the line shows, when it shows exactly one.
- */
-export function forgesOf(line: LineSnapshot | null): Forges {
-  const forges: Forges = new Map();
-  if (line === null) return forges;
-  const urls = [...line.sessions, ...line.needs, ...line.queue].map(
-    (x) => x.url,
-  );
-  for (const url of urls) {
-    const found = url === null ? null : PULL_URL.exec(url);
-    if (found?.[1] !== undefined && found[2] !== undefined)
-      forges.set(found[2], found[1]);
-  }
-  return forges;
-}
-
-function pullLink(repo: string, pr: string, forges: Forges): string | null {
-  const known = forges.get(repo);
-  if (known !== undefined) return `${known}${repo}/pull/${pr}`;
-  const bases = new Set(forges.values());
-  const [only] = bases;
-  return bases.size === 1 && only !== undefined
-    ? `${only}${repo}/pull/${pr}`
-    : null;
-}
-
 export interface RowView {
   key: string;
   time: string;
   label: string;
   role: Role;
   target: string;
+  /** The target's title: the row's own, else the one the line holds for it. */
+  title: string | null;
   repo: string;
   stage: string;
   mark: string;
@@ -71,6 +39,8 @@ export interface RowView {
   reason: string;
   evidence: EvidenceRow[];
   url: string | null;
+  /** What its link says: the pull request or the item. */
+  goLabel: string;
   noLink: string | null;
 }
 
@@ -121,27 +91,33 @@ export function rowView(
   forges: Forges,
 ): RowView {
   const pr = /^PR #(\d+)$/.exec(r.target)?.[1] ?? null;
-  const url = pr === null ? null : pullLink(r.repo, pr, forges);
+  const url = r.url ?? derivedLink(r.repo, r.target, forges);
   const numbers = r.kind === "ended" ? endedNumbers(r) : eventNumbers(r);
+  const title = r.title ?? forges.titles.get(`${r.repo} ${r.target}`) ?? null;
+  const evidence = [
+    ...(title === null ? [] : [{ k: "title", v: title }]),
+    ...numbers.evidence,
+    ...(url === null ? [] : [{ k: "link", v: url, copy: url }]),
+  ];
   return {
     key: r.key,
     time: stamp(Date.parse(r.at), clockNow.today, clockNow.timeZone),
     ...classOfRow(r),
     target: r.target,
+    title,
     repo: r.repo,
     stage: r.stage,
     mark: stageMark(r.stage),
     account: r.account ?? "",
     length: numbers.length.join(", "),
     reason: r.reason,
-    evidence:
-      url === null
-        ? numbers.evidence
-        : [...numbers.evidence, { k: "link", v: url, copy: url }],
+    evidence,
     url,
+    goLabel: pr === null ? `Open ${r.target}` : "Open the pull request",
+    // A defect is about a stage, not a target, so it has nothing to link.
     noLink:
-      pr === null
-        ? "No tracker link: this repository has no tracker base."
+      url === null && pr === null && r.target !== ""
+        ? noLinkText(r.repo, r.target)
         : null,
   };
 }

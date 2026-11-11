@@ -391,6 +391,47 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.197.3] - 2026-11-11
+
+### Fixed
+
+- The dispatch dashboard now shows each tracker item's title beside its key
+  and links the key, on every card (Needs you, Running, Queue) and every
+  History row. The dispatcher keeps the link and title the tracker listing
+  returned on items the walk could not place, on claimed items, and on the
+  outcome log's rows. For a record that kept no link, such as a row written
+  by an earlier version, the page works the link out from another item link
+  of the same repository's tracker, and only when it cannot does it say so,
+  naming what is missing and where to look, in place of the old text about
+  a tracker base no setting provides.
+- A tick that finds a repository held by another tick no longer freezes the
+  dashboard's line. Each repository's part of the line (its needs, queue,
+  sessions and Ready cards) now comes from the newest tick that read it, and
+  each tick the timer runs updates the rest, so the page no longer reports
+  that the timer has not ticked while it runs. A repository no tick has read
+  for longer than the timer's interval and its longest recent tick gets a banner naming it, when it was
+  last read and why (another tick held it busy).
+
+## [0.197.2] - 2026-11-11
+
+### Fixed
+
+- `jig dispatch` no longer re-arms a stopped drive at every tick when each
+  re-arm fails before the drive moves its ledger. A re-arm that ended on a
+  failing exit (other than a second driver's refusal or a usage-limit wall)
+  is not started again while the pull request's head, its branch's head and
+  the ledger's generation are the ones it launched at: the receipt shows the
+  drive as needing a person, with why, and a person is notified once rather
+  than at every tick. A change of either head or of the ledger lets the next
+  tick re-arm it. The hold needs the heads recorded at the launch and the
+  branch's head readable now; when either is missing, the next tick launches
+  again.
+- A drive whose pull request is behind its branch (the forge kept an older
+  head after a push) now says so: its attach names the pull request's head
+  and the branch's head and asks for the pull request to be closed and
+  reopened, which makes the forge take the branch's head, and the
+  dispatcher's notification names both commits and that recovery.
+
 ## [0.197.1] - 2026-11-11
 
 ### Added
@@ -6865,7 +6906,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.197.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.197.3...HEAD
+[0.197.3]: https://github.com/jig-harness/jig/compare/v0.197.2...v0.197.3
+[0.197.2]: https://github.com/jig-harness/jig/compare/v0.197.1...v0.197.2
 [0.197.1]: https://github.com/jig-harness/jig/compare/v0.197.0...v0.197.1
 [0.197.0]: https://github.com/jig-harness/jig/compare/v0.196.0...v0.197.0
 [0.196.0]: https://github.com/jig-harness/jig/compare/v0.195.0...v0.196.0
