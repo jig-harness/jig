@@ -13,7 +13,9 @@
  * - A claimed item (in the in-progress state) with no running session for
  *   longer than `dispatch.stalled_after` is a stalled pickup: reported,
  *   never relaunched, since a relaunch would start a second implementer on
- *   a claimed item.
+ *   a claimed item. A served person's item is a claim only while a pickup
+ *   record of this machine holds it: the rest of their work in progress is
+ *   their own, and quiet.
  * - A session this machine launched that the runtime reports waiting for
  *   longer than `dispatch.blocked_after` is reported; it keeps its slot.
  * - An item whose latest pickup pass ended on a question, without recording
@@ -229,6 +231,17 @@ function planClaimed(
       target: item.key,
       class: "claimed",
       why: `in ${item.state}, a session holds it: ${evidence}`,
+    });
+    return;
+  }
+  if (
+    item.served === true &&
+    pickupHold(item.key, input.launches).kind === "none"
+  ) {
+    plan.quiet.push({
+      target: item.key,
+      class: "claimed-by-person",
+      why: `in ${item.state}, started by its served person: no pickup of this machine claimed it`,
     });
     return;
   }

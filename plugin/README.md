@@ -438,7 +438,9 @@ back when the agent finishes. `do-item` claims the item itself
 assigned to someone else, and abandoned when a re-read shows another claim
 landed first), so the tick never writes to the tracker. A claimed item
 with no running session for longer than `dispatch.stalled_after` is
-reported as stalled and never relaunched; an item more than one running
+reported as stalled and never relaunched (a served person's item only when
+a pickup of the host claimed it: the rest of their work in progress is
+their own); an item more than one running
 session joins to is reported as a double claim; a session waiting longer
 than `dispatch.blocked_after` is reported.
 

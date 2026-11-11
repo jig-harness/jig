@@ -162,6 +162,7 @@ export async function readServedPickups(
           key: i.identifier,
           title: i.title,
           state: i.state.name,
+          served: true as const,
         })),
       );
       // Claims are monitored either way; an invalid scope only starts nothing.

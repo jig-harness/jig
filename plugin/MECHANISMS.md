@@ -707,7 +707,8 @@ development and shipped as a version.
   route and the plan the scripts print rather than choosing its own.
 - **If it fails.** The `do-item` session stops on a refused claim and says
   so. A claimed item with no running session is reported by the tick as a
-  stalled pickup and never relaunched; a person settles it.
+  stalled pickup and never relaunched; a person settles it. A served
+  person's item counts only when a pickup of this host claimed it.
 
 ### Conflicts and CI repair
 

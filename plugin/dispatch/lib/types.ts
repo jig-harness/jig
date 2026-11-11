@@ -87,6 +87,8 @@ export interface ClaimedItem {
   key: string;
   title: string;
   state: string;
+  /** Read for a served person rather than `dispatch.identity`: a person starts their own work too, so only this machine's pickup record makes the claim dispatch's. */
+  served?: true;
 }
 
 /** An item the tracker wants picked up, with the evidence for it. */
@@ -108,8 +110,12 @@ export interface WantedItem {
 export type { LedgerClass } from "../../shared/pr-labels/projection.ts";
 import type { LedgerClass } from "../../shared/pr-labels/projection.ts";
 
-/** How a pickup that needs nothing reads: its last session ended, or its claimed item is idle but not yet stalled. */
-export type PickupClass = "pickup-ended" | "claimed-idle" | "claimed";
+/** How a pickup that needs nothing reads: its last session ended, its claimed item is idle but not yet stalled, or a served person started the item themselves. */
+export type PickupClass =
+  | "pickup-ended"
+  | "claimed-idle"
+  | "claimed"
+  | "claimed-by-person";
 
 /** How a merged pull request whose follow-up needs nothing reads: done, or held by a run a person started. */
 export type FollowupClass = "followup-done" | "followup-held";
