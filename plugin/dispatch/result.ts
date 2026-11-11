@@ -140,7 +140,10 @@ function nextForResult(
 
 /** The items a pickup's record covers: its batch's members, else its one item. */
 function itemsOf(record: LaunchRecord): string[] {
-  return record.batchItems?.map((i) => i.key) ?? [record.item ?? ""];
+  return (
+    record.batchItems?.map((i) => i.key) ??
+    (record.item === null ? [] : [record.item])
+  );
 }
 
 function oneLine(reason: string): string {
