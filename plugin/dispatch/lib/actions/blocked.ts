@@ -12,13 +12,19 @@
  */
 import { parkCauses, stopKey } from "../../../shared/pr-labels/blocked.ts";
 import {
-  projectBlocked,
   type BlockedOutcome,
+  type BlockedPr,
+  projectBlocked,
 } from "../../../skills/do-item/scripts/lib/blocked-move.ts";
 import type { IssueKeys } from "../../../skills/do-item/scripts/lib/tracker/keys.ts";
 import type { Tracker } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
 import type { Contention } from "../contention.ts";
-import { type LabelChange, type LabelConfig, stateOf } from "../labels.ts";
+import {
+  type LabelChange,
+  type LabelConfig,
+  type Projected,
+  stateOf,
+} from "../labels.ts";
 import type { BlockedWrite, DrivenPr } from "../types.ts";
 
 export interface BlockedInput {
@@ -47,6 +53,59 @@ export interface BlockedMode {
   current?: (change: LabelChange) => Promise<string | null>;
 }
 
+/** Whether the tick projects this pull request: open, read for a ledger, not merged, and not one serialization holds or cannot place. */
+function projects(input: BlockedInput, pr: number): boolean {
+  return (
+    input.read.has(pr) &&
+    !input.merged.has(pr) &&
+    input.serialized?.held.has(pr) !== true &&
+    input.serialized?.unplaced.has(pr) !== true
+  );
+}
+
+/** The pull request as the writer reads it, from its listing and its ledger. */
+function blockedPr(
+  drive: DrivenPr,
+  pr: BlockedInput["open"][number],
+  projected: Projected,
+): BlockedPr {
+  const { started, round } = drive.evidence;
+  return {
+    pr: drive.number,
+    url: pr.url ?? null,
+    body: pr.body ?? "",
+    labels: pr.labels ?? [],
+    projected,
+    stop: stopKey(
+      typeof started === "string" ? started : null,
+      typeof round === "number" ? round : 0,
+    ),
+    causes: parkCauses(drive.waiting ?? [], {
+      class: drive.class,
+      reason: drive.why,
+    }),
+  };
+}
+
+/** Why this pull request's write waits for a later tick; `null` to write it now. */
+async function waitsFor(mode: BlockedMode, pr: number): Promise<string | null> {
+  return (
+    mode.late() ?? (await mode.current?.({ pr, add: [], remove: [] })) ?? null
+  );
+}
+
+/** The receipt's lines for one pull request's moves: each item written or refused. */
+function receiptLines(target: string, moved: BlockedOutcome[]): BlockedWrite[] {
+  return moved
+    .filter((o) => o.outcome !== "kept")
+    .map((o) => ({
+      target,
+      item: o.item,
+      outcome: o.outcome === "refused" ? "failed" : "written",
+      detail: o.detail,
+    }));
+}
+
 /** Move each managed pull request's linked items as its ledger says; the receipt's lines. */
 export async function writeBlocked(
   input: BlockedInput,
@@ -54,64 +113,28 @@ export async function writeBlocked(
   project: typeof projectBlocked = projectBlocked,
 ): Promise<BlockedWrite[]> {
   const { tracker, keys } = input;
-  if (
-    !mode.apply ||
-    tracker === null ||
-    keys === null ||
-    tracker.stateName("blocked") === null
-  )
-    return [];
+  if (!mode.apply || tracker === null || keys === null) return [];
+  if (tracker.stateName("blocked") === null) return [];
   const out: BlockedWrite[] = [];
   const byNumber = new Map(input.open.map((p) => [p.number, p]));
   for (const drive of [...input.drives].sort((a, b) => a.number - b.number)) {
     const pr = byNumber.get(drive.number);
-    if (
-      pr === undefined ||
-      !input.read.has(drive.number) ||
-      input.merged.has(drive.number) ||
-      input.serialized?.held.has(drive.number) === true ||
-      input.serialized?.unplaced.has(drive.number) === true
-    )
-      continue;
-    const target = `PR #${drive.number}`;
-    const late = mode.late();
-    if (late !== null) {
-      out.push({ target, item: null, outcome: "waits", detail: late });
-      continue;
-    }
     const projected = stateOf(drive);
+    if (pr === undefined || !projects(input, drive.number)) continue;
     if (projected === "unknown" || projected.state === null) continue;
-    const waits =
-      (await mode.current?.({ pr: drive.number, add: [], remove: [] })) ?? null;
+    const target = `PR #${drive.number}`;
+    const waits = await waitsFor(mode, drive.number);
     if (waits !== null) {
       out.push({ target, item: null, outcome: "waits", detail: waits });
       continue;
     }
-    const moved: BlockedOutcome[] = await project(tracker, keys, input.config, {
-      pr: drive.number,
-      url: pr.url ?? null,
-      body: pr.body ?? "",
-      labels: pr.labels ?? [],
-      projected,
-      stop: stopKey(
-        typeof drive.evidence.started === "string"
-          ? drive.evidence.started
-          : null,
-        typeof drive.evidence.round === "number" ? drive.evidence.round : 0,
-      ),
-      causes: parkCauses(drive.waiting ?? [], {
-        class: drive.class,
-        reason: drive.why,
-      }),
-    });
-    for (const o of moved)
-      if (o.outcome !== "kept")
-        out.push({
-          target,
-          item: o.item,
-          outcome: o.outcome === "refused" ? "failed" : "written",
-          detail: o.detail,
-        });
+    const moved = await project(
+      tracker,
+      keys,
+      input.config,
+      blockedPr(drive, pr, projected),
+    );
+    out.push(...receiptLines(target, moved));
   }
   return out;
 }

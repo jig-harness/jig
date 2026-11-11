@@ -9,7 +9,7 @@
 import { TrackerConfigError } from "../config-error.ts";
 import { type BlockedFields, TrackerRequestError } from "../port.ts";
 import { markdownToAdf } from "./adf.ts";
-import type { SiteField } from "./facets.ts";
+import { fieldsNamed, type SiteField } from "./facets.ts";
 import {
   BLOCKED_FIELD_ROLES,
   type BlockedFieldNames,
@@ -24,8 +24,6 @@ export interface BlockedField {
   schema: unknown;
 }
 
-const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
-
 /** Each configured role's field, by id first, then by name; refused unless exactly one matches. */
 export function resolveBlockedFields(
   names: BlockedFieldNames,
@@ -36,9 +34,7 @@ export function resolveBlockedFields(
     const configured = names[role];
     if (configured === null) continue;
     const at = `issue_tracker.jira.blocked_fields.${role}`;
-    const byId = all.filter((f) => f.id === configured);
-    const matches =
-      byId.length > 0 ? byId : all.filter((f) => same(f.name, configured));
+    const matches = fieldsNamed(all, configured);
     if (matches.length !== 1)
       throw new TrackerConfigError(
         at,

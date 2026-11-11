@@ -237,6 +237,38 @@ function stopCause(
   };
 }
 
+/** The checkout's tracker, or `null` when there is nothing to move; a configuration that does not read is said and moves nothing. */
+function openItems(pr: number, source: LabelSource): ItemTracker | null {
+  try {
+    return source.items?.() ?? null;
+  } catch (error) {
+    // The checkout's tracker configuration does not read: nothing to move, and the label stands.
+    console.error(
+      `labels: PR #${pr}'s items are left as they are: the tracker does not open (${error instanceof Error ? error.message : String(error)})`,
+    );
+    return null;
+  }
+}
+
+/** The pull request as the tracker writer reads it, at this moment of its ledger. */
+function blockedInput(
+  pr: number,
+  facts: PullRequestFacts,
+  ledger: LedgerReading,
+  moment: DriveMoment,
+): BlockedPr {
+  const stopped = "stopped" in moment ? moment : null;
+  return {
+    pr,
+    url: facts.url,
+    body: facts.body,
+    labels: facts.labels,
+    projected: ledgerState(ledger, DONE_EXITS),
+    stop: stopped?.stop ?? "",
+    causes: parkCauses(stopped?.parks ?? [], stopCause(ledger, moment)),
+  };
+}
+
 /**
  * Move the items the pull request links as the projection says: to
  * `blocked` on a park, back out of it on the arm. Says what it did on
@@ -250,16 +282,7 @@ async function itemsFollow(
   moment: DriveMoment,
   source: LabelSource,
 ): Promise<void> {
-  let items: ItemTracker | null;
-  try {
-    items = source.items?.() ?? null;
-  } catch (error) {
-    // The checkout's tracker configuration does not read: nothing to move, and the label stands.
-    console.error(
-      `labels: PR #${pr}'s items are left as they are: the tracker does not open (${error instanceof Error ? error.message : String(error)})`,
-    );
-    return;
-  }
+  const items = openItems(pr, source);
   if (items === null || source.pullRequest === undefined) return;
   const facts = await source.pullRequest(slug, pr);
   if (!facts.ok) {
@@ -268,18 +291,7 @@ async function itemsFollow(
     );
     return;
   }
-  const input: BlockedPr = {
-    pr,
-    url: facts.value.url,
-    body: facts.value.body,
-    labels: facts.value.labels,
-    projected: ledgerState(ledger, DONE_EXITS),
-    stop: "stopped" in moment ? (moment.stop ?? "") : "",
-    causes: parkCauses(
-      "stopped" in moment ? (moment.parks ?? []) : [],
-      stopCause(ledger, moment),
-    ),
-  };
+  const input = blockedInput(pr, facts.value, ledger, moment);
   for (const o of await projectBlocked(items, items.keys, config, input)) {
     const line = blockedLine(pr, o);
     if (line !== null) console.error(`labels: ${line}`);

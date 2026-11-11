@@ -113,6 +113,15 @@ function kindOf(
   );
 }
 
+/** The site's fields a configured field names: the one with that id, else each with that name, ignoring case. */
+export function fieldsNamed(
+  all: ReadonlyArray<SiteField>,
+  configured: string,
+): SiteField[] {
+  const byId = all.filter((f) => f.id === configured);
+  return byId.length > 0 ? byId : all.filter((f) => same(f.name, configured));
+}
+
 /**
  * The field of each field store, by id or else by name, ignoring case: a
  * name several fields share is refused, naming each one's id, and so is one
@@ -126,9 +135,7 @@ export function resolveFacetFields(
   for (const s of stores) {
     const configured = s.field ?? "";
     const where = at(s.facet, "field");
-    const byId = all.filter((f) => f.id === configured);
-    const matches =
-      byId.length > 0 ? byId : all.filter((f) => same(f.name, configured));
+    const matches = fieldsNamed(all, configured);
     if (matches.length !== 1)
       throw new TrackerConfigError(
         where,

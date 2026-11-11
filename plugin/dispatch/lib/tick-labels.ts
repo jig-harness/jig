@@ -78,6 +78,26 @@ function freshness(
   );
 }
 
+/** The tracker output's input: the managed open pull requests, as the labels read them, and the tracker the tick opened. */
+function blockedInput(
+  config: LabelConfig,
+  forge: ForgeRead & {
+    serialized: NonNullable<ProjectionInput["serialized"]>;
+  },
+  tracked: Pick<RepoObservation["tracked"], "tracker" | "keys"> | undefined,
+): Parameters<typeof writeBlocked>[0] {
+  return {
+    config,
+    tracker: tracked?.tracker ?? null,
+    keys: tracked?.keys ?? null,
+    open: forge.open.filter((p) => !forge.disputed.has(p.number)),
+    read: forge.read,
+    drives: forge.drives,
+    merged: new Set(forge.merged.map((p) => p.number)),
+    serialized: forge.serialized,
+  };
+}
+
 /**
  * The projection, last in a repository's tick: each managed pull request's
  * state label set from its ledger, written only with `--apply` for a
@@ -160,19 +180,11 @@ async function projectLabels(
     book,
     current,
   });
-  const blocked = await writeBlocked(
-    {
-      config: labels,
-      tracker: tracked?.tracker ?? null,
-      keys: tracked?.keys ?? null,
-      open: forge.open.filter((p) => !forge.disputed.has(p.number)),
-      read: forge.read,
-      drives: forge.drives,
-      merged: new Set(forge.merged.map((p) => p.number)),
-      serialized: forge.serialized,
-    },
-    { apply: writing, late, current },
-  );
+  const blocked = await writeBlocked(blockedInput(labels, forge, tracked), {
+    apply: writing,
+    late,
+    current,
+  });
   if (blocked.length > 0) planned.report.blocked = blocked;
   report.labels = planned.report;
 }

@@ -26,7 +26,7 @@
 import type { Projected } from "./projection.ts";
 
 /** The hidden marker a blocking comment carries. */
-export const BLOCKED_MARKER = "jig:blocked";
+const BLOCKED_MARKER = "jig:blocked";
 
 /** What the marker records: the pull request, the stop it was for, and the state the item left. */
 export interface BlockedMarker {
@@ -38,7 +38,7 @@ export interface BlockedMarker {
 }
 
 /** The states an item may be blocked from and returned to: open, never closed and never `blocked`. */
-export const RETURNABLE = [
+const RETURNABLE = [
   "triage",
   "backlog",
   "todo",
