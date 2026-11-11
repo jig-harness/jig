@@ -199,6 +199,22 @@ describe("the repository query's pull requests", () => {
     expect(unlabelled.ok && unlabelled.value[0]?.labels).toBeUndefined();
   });
 
+  it("carry the issues the forge says each closes, with their repository, and nothing when those do not read", () => {
+    const closing = [
+      { number: 612, repository: { nameWithOwner: "jig-harness/jig" } },
+    ];
+    expect(
+      listed({ ...node, closingIssuesReferences: { nodes: closing } }).closing,
+    ).toEqual([{ number: 612, repository: "jig-harness/jig" }]);
+    expect(listed(node).closing).toBeUndefined();
+    expect(
+      listed({
+        ...node,
+        closingIssuesReferences: { nodes: [{ number: 612 }] },
+      }).closing,
+    ).toBeUndefined();
+  });
+
   it("do not read when one has more labels than one page holds", () => {
     expect(
       refused({

@@ -23,6 +23,12 @@ import type {
 } from "../../skills/drive-pr/scripts/lib/merge-ready.ts";
 import type { NeedAct } from "../../shared/acts.ts";
 
+/** The work a row is linked to: for a pull request, the items it closes or was opened from; for an item, the open pull requests that do. Absent from a line written before it was kept, and when the tick could not tell (`work-links.ts`). */
+export interface LineLinks {
+  items: Array<{ key: string; url: string | null }>;
+  prs: Array<{ number: number; url: string }>;
+}
+
 /** One option of a framed decision, as the drive recorded it. */
 export interface LineOption {
   details?: import("../../shared/decisions/model.ts").OptionDetail[];
@@ -91,6 +97,7 @@ export interface LineNeed {
   /** Where to act on it; `null` when no record gives a link. */
   url: string | null;
   title: string | null;
+  links?: LineLinks;
   /** When the cause began, as far as the records say: a stop's last ledger write, else its first notification, else this tick. */
   since: string;
   /** The tick's reason, verbatim. */
@@ -151,6 +158,7 @@ export interface LineSession {
   item: string | null;
   url: string | null;
   title: string | null;
+  links?: LineLinks;
   createdAt: string;
   /** The launch record's state. `unknown`: its claim is from another boot or does not read; it holds its slot until a person clears it. */
   launch: "pending" | "alive" | "unknown";
@@ -213,6 +221,7 @@ export interface LineQueued {
   item: string | null;
   url: string | null;
   title: string | null;
+  links?: LineLinks;
   /** The record's own reason, verbatim. */
   why: string;
   /** Whether a converged drive went stale: finished well once, and the world moved. */
@@ -236,6 +245,8 @@ export interface LineRepo {
   path: string;
   /** The stages the machine file enables for it. */
   stages: string[];
+  /** Its configured tracker (`issue_tracker.adapter`: `github`, `linear`, `jira`, …; GitHub when the configuration names none); `null` when its tracker configuration does not read; absent from a line written before it was kept, and when the tick could not open the repository. */
+  tracker?: { adapter: string } | null;
   /** Why nothing could be dispatched for it; `null` when it was read. */
   refused: string | null;
   /** The records that did not read at the newest tick. */
@@ -263,6 +274,7 @@ export interface LineReady {
   url: string;
   /** Its title: text the pull request's author wrote, shown as quoted text. */
   title: string;
+  links?: LineLinks;
   /** The head the drive verified. */
   head: string;
   place: Placement;

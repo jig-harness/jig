@@ -23,6 +23,7 @@ import { actObserved } from "./tick-apply.ts";
 import { allRecords, emptyReport, type TickContext } from "./tick-context.ts";
 import { projectObserved } from "./tick-labels.ts";
 import { lineInputOf } from "./tick-line.ts";
+import { branchPattern } from "./section.ts";
 import {
   type OpenedRepo,
   observeRepo,
@@ -86,7 +87,10 @@ export async function observeTurn(
   // Observations belong to the tick even when a later phase fails.
   context.lineInputs.set(
     path,
-    lineInputOf(forge.drives, forge, tracked, sessions),
+    lineInputOf(forge.drives, forge, tracked, sessions, {
+      slug: opened.repo.slug,
+      branchPattern: branchPattern(opened.values),
+    }),
   );
   return { turn, opened, observation };
 }

@@ -9,6 +9,7 @@
  */
 import type {
   LineAccount,
+  LineLinks,
   LineNeed,
   LineQueued,
   LineRepo,
@@ -30,6 +31,7 @@ import { needWorkspace } from "./line-workspace.ts";
 import type { MachineConfig } from "./machine-config.ts";
 import type { SessionsReport } from "./runtime/port.ts";
 import { stuckWhy, type UnclaimedClock } from "./stuck-launches.ts";
+import type { WorkLinks } from "./work-links.ts";
 import type {
   Action,
   DrivenPr,
@@ -48,6 +50,10 @@ export interface RepoLineInput {
   /** Every pull request and item the tick read a title or a link for. */
   known: Array<{ target: string; title: string; url: string | null }>;
   sessions: SessionsReport;
+  /** The repository's configured tracker; `null` when its configuration does not read. */
+  tracker?: LineRepo["tracker"];
+  /** What links its open pull requests to its items; `null` when the tick could not tell. */
+  links?: WorkLinks | null;
 }
 
 /** A nudge and a notice as the state database holds them. */
@@ -269,6 +275,30 @@ class RepoView {
     return this.about(target, evidence).url;
   }
 
+  /**
+   * What a row is linked to: a pull request's items, an item's open pull
+   * requests. Nothing when the tick could not tell, or for a pull request
+   * its read of the open ones did not hold (a merged one).
+   */
+  linksOf(pr: number | null, item: string | null): { links?: LineLinks } {
+    const links = this.input?.links;
+    if (links == null) return {};
+    if (pr !== null) {
+      const keys = links.itemsOf(pr);
+      return keys === null
+        ? {}
+        : {
+            links: {
+              items: keys.map((key) => ({ key, url: this.url(key) })),
+              prs: [],
+            },
+          };
+    }
+    return item === null
+      ? {}
+      : { links: { items: [], prs: links.prsOf(item) } };
+  }
+
   launchOf(target: string): LaunchOutcome | undefined {
     return this.report.launches.find((l) => l.target === target);
   }
@@ -329,6 +359,7 @@ function needsOf(
       item: pr === null ? action.target : null,
       url: view.url(action.target, action.evidence),
       title: view.title(action.target, action.evidence),
+      ...view.linksOf(pr, pr === null ? action.target : null),
       workspace: needWorkspace(
         view.report,
         action.target,
@@ -381,6 +412,7 @@ function needsOf(
         item: u.target,
         url: view.url(u.target),
         title: view.title(u.target),
+        ...view.linksOf(null, u.target),
         workspace: needWorkspace(
           view.report,
           u.target,
@@ -419,6 +451,7 @@ function queued(
     item: pr === null ? fields.target : null,
     url: view.url(fields.target, evidence),
     title: view.title(fields.target, evidence),
+    ...view.linksOf(pr, pr === null ? fields.target : null),
   };
 }
 
@@ -534,12 +567,17 @@ function queueOf(view: RepoView): LineQueued[] {
   return [...planned, ...serial, ...labelled, ...refused];
 }
 
-function repoOf(report: RepoReport, machine: MachineConfig): LineRepo {
+function repoOf(
+  report: RepoReport,
+  machine: MachineConfig,
+  input: RepoLineInput | undefined,
+): LineRepo {
   const entry = machine.repositories.find((r) => r.path === report.path);
   return {
     slug: report.slug,
     path: report.path,
     stages: entry?.stages ?? [],
+    ...(input?.tracker === undefined ? {} : { tracker: input.tracker }),
     refused: report.refused,
     failedReads: report.records
       .filter((r) => !r.ok)
@@ -652,6 +690,7 @@ function sessionOf(
       view?.url(target, evidence) ??
       (record.pr === null ? null : pullUrl(record.repo, record.pr)),
     title: view?.title(target) ?? null,
+    ...view?.linksOf(record.pr, record.item),
     createdAt: record.createdAt,
     launch: state.kind,
     launchReason: state.kind === "unknown" ? state.reason : null,
@@ -725,7 +764,12 @@ export function buildLine(input: LineInput): LineSnapshot {
       needsOf(v, input.finishedAt, input.previousNeeds ?? []),
     ),
     queue: views.flatMap(queueOf),
-    ready: readyOf(input.reports),
-    repos: input.reports.map((r) => repoOf(r, input.machine)),
+    ready: readyOf(input.reports).map((r) => ({
+      ...r,
+      ...bySlug.get(r.repo)?.linksOf(r.pr, null),
+    })),
+    repos: input.reports.map((r) =>
+      repoOf(r, input.machine, input.inputs.get(r.path)),
+    ),
   };
 }

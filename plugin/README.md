@@ -1011,6 +1011,15 @@ workspaces. It is `null` when none is known or the records are ambiguous.
 It never falls back to the notices workspace: `notified.workspace` still
 names where the notification went. This is an additive version-1 field;
 readers treat its absence in an older snapshot as unknown.
+Each entry in `line.repos` carries `tracker`, the adapter its configuration
+names (`{"adapter":"linear"}`), and each row of `needs`, `sessions`, `queue`
+and `ready` carries `links`: for a pull request, the items its branch names,
+its description closes (`Closes`, `Fixes`, `Resolves`) or the forge says it
+closes; for an item, the open pull requests that do. Both are additive
+version-1 fields too, read from the tick's one query of the repository's
+open pull requests with no request of their own. A row has no `links` when
+the tick could not tell, such as when that query did not read in full or
+the pull request is no longer open, so an empty list means none.
 Its exit codes:
 
 - `0`: the answer is printed. Its `line` is `null` when no tick has written

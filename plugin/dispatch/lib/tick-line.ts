@@ -39,6 +39,8 @@ import { tickHealthOf, withTick } from "./tick-health.ts";
 import { passTimeoutSeconds } from "../../skills/drive-pr/scripts/lib/driver/settings.ts";
 import type { TickReceipt } from "../receipts.ts";
 import type { ClaimedItem, DrivenPr, WantedItem } from "./types.ts";
+import { type PrLinkText, workLinks } from "./work-links.ts";
+import type { IssueKeys } from "../../skills/do-item/scripts/lib/tracker/keys.ts";
 
 /** Copy the outcome log's new rows into its month files; false, with the reason on the receipt, when the copy failed. */
 export function copyLog(receipt: TickReceipt): boolean {
@@ -51,16 +53,25 @@ export function copyLog(receipt: TickReceipt): boolean {
   }
 }
 
-/** What a repository's reads add to its report for the line: its drives, and each other target's title and link. */
+/** What a repository's reads add to its report for the line: its drives, each other target's title and link, its tracker, and, where `repo` names how its branches are named, what links its open pull requests to its items. */
 export function lineInputOf(
   drives: DrivenPr[],
   forge: {
     open: ReadonlyArray<{ number: number; url: string; title: string }>;
     merged: ReadonlyArray<{ number: number; url: string; title: string }>;
+    linkTexts?: PrLinkText[];
   },
-  tracked: { pickups: WantedItem[]; claimed: ClaimedItem[] | null },
+  tracked: {
+    pickups: WantedItem[];
+    claimed: ClaimedItem[] | null;
+    keys?: IssueKeys | null;
+    adapter?: string | null;
+    issueRepository?: string | null;
+  },
   sessions: SessionsReport,
+  repo: { slug: string; branchPattern: string } | null = null,
 ): RepoLineInput {
+  const { keys, adapter } = tracked;
   return {
     drives,
     known: [
@@ -81,6 +92,18 @@ export function lineInputOf(
       })),
     ],
     sessions,
+    ...(adapter === undefined
+      ? {}
+      : { tracker: adapter === null ? null : { adapter } }),
+    links:
+      repo === null || keys == null || forge.linkTexts === undefined
+        ? null
+        : workLinks(forge.linkTexts, {
+            keys,
+            branchPattern: repo.branchPattern,
+            repository: repo.slug,
+            issueRepository: tracked.issueRepository ?? null,
+          }),
   };
 }
 
