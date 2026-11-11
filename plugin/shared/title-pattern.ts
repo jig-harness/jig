@@ -28,7 +28,7 @@ export type KeyForm = "prefixed" | "hash";
 
 const KEY_SHAPES: Record<KeyForm, string> = {
   prefixed: String.raw`[A-Za-z][A-Za-z0-9]*-\d+`,
-  hash: String.raw`#\d+`,
+  hash: String.raw`#[1-9]\d*`,
 };
 
 /** The suffix a squash merge appends to a subject: ` (#123)`. */
@@ -45,6 +45,11 @@ export function validateTitlePattern(pattern: string): void {
         "pr-policy-invalid",
         `pull_requests.title_pattern uses an unknown placeholder {${name}}; the placeholders are ${TITLE_PLACEHOLDERS.map((p) => `{${p}}`).join(", ")}`,
       );
+  if (/[\r\n]/.test(pattern))
+    throw new JigError(
+      "pr-policy-invalid",
+      `pull_requests.title_pattern must be a single line (got ${JSON.stringify(pattern)})`,
+    );
   for (const placeholder of TITLE_PLACEHOLDERS)
     if (names.filter((n) => n === placeholder).length !== 1)
       throw new JigError(
@@ -107,11 +112,12 @@ function escapeRegExp(text: string): string {
 }
 
 /**
- * Whether a `hash` key ending the pattern (bare, or inside closing brackets) cannot be told from a squash
- * merge's ` (#n)` suffix, so the pattern cannot be judged from subjects.
+ * Whether a `hash` key in closing parentheses ends the pattern, which cannot
+ * be told from a squash merge's ` (#n)` suffix, so the pattern cannot be
+ * judged from subjects.
  */
 export function keyIsAmbiguous(pattern: string, form: KeyForm): boolean {
-  return form === "hash" && /\{key\}[)\]\s]*$/.test(pattern);
+  return form === "hash" && /\(\{key\}\)$/.test(pattern);
 }
 
 /** Whether `subject` is a title `pattern` renders, ignoring a squash merge's ` (#n)` suffix. */
@@ -132,8 +138,8 @@ export function matchesTitlePattern(
 }
 
 /**
- * How many of `subjects` follow `pattern`. Merge commits are skipped (their
- * subjects are generated). `null` when fewer than `TITLE_MIN_SUBJECTS`
+ * How many of `subjects` follow `pattern`; callers pass non-merge commits
+ * only. `null` when fewer than `TITLE_MIN_SUBJECTS`
  * remain: too little history to judge from.
  */
 export function titlePatternShare(
@@ -141,11 +147,7 @@ export function titlePatternShare(
   subjects: readonly string[],
   form: KeyForm,
 ): { matching: number; total: number } | null {
-  const own = subjects.filter(
-    (s) =>
-      s.trim() !== "" &&
-      !/^Merge (pull request|branch|remote-tracking)/.test(s),
-  );
+  const own = subjects.filter((s) => s.trim() !== "");
   if (own.length < TITLE_MIN_SUBJECTS) return null;
   return {
     matching: own.filter((s) => matchesTitlePattern(pattern, s, form)).length,

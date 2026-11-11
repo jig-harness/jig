@@ -95,7 +95,7 @@ export function titlePatternFindings(
       {
         id: "unchecked:title-pattern",
         severity: "info",
-        message: `pull_requests.title_pattern ${JSON.stringify(pattern)} ends with the key, which a squash merge's (#n) suffix looks like on GitHub Issues: whether recent subjects follow it is unchecked`,
+        message: `pull_requests.title_pattern ${JSON.stringify(pattern)} ends with the key in parentheses, which a squash merge's (#n) suffix looks like on GitHub Issues: whether recent subjects follow it is unchecked`,
       },
     ];
   const ref =
@@ -108,7 +108,15 @@ export function titlePatternFindings(
       },
     ).code === 0
       ? `origin/${branch}`
-      : "HEAD";
+      : null;
+  if (ref === null)
+    return [
+      {
+        id: "unchecked:title-pattern",
+        severity: "info",
+        message: `the integration branch's history is unavailable, so whether recent subjects follow pull_requests.title_pattern ${JSON.stringify(pattern)} is unchecked`,
+      },
+    ];
   const log = run(
     "git",
     [

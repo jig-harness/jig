@@ -13,6 +13,10 @@ import {
 } from "../title-pattern.ts";
 
 describe("validateTitlePattern", () => {
+  it("rejects a line break", () => {
+    expect(() => validateTitlePattern("{key}:\n{summary}")).toThrow();
+  });
+
   it("accepts a pattern with the key and the summary once each", () => {
     expect(() => validateTitlePattern("{key}: {summary}")).not.toThrow();
     expect(() => validateTitlePattern("[{key}] {summary}")).not.toThrow();
@@ -115,6 +119,20 @@ describe("matchesTitlePattern", () => {
     expect(keyIsAmbiguous("{summary} ({key})", "hash")).toBe(true);
     expect(keyIsAmbiguous("{summary} ({key})", "prefixed")).toBe(false);
     expect(keyIsAmbiguous("{key}: {summary}", "hash")).toBe(false);
+    expect(keyIsAmbiguous("{summary} [{key}]", "hash")).toBe(false);
+    expect(keyIsAmbiguous("{summary} {key}", "hash")).toBe(false);
+  });
+
+  it("refuses hash keys that are not positive canonical numbers", () => {
+    expect(matchesTitlePattern("{key}: {summary}", "#0: x", "hash")).toBe(
+      false,
+    );
+    expect(matchesTitlePattern("{key}: {summary}", "#012: x", "hash")).toBe(
+      false,
+    );
+    expect(matchesTitlePattern("{key}: {summary}", "#12: x", "hash")).toBe(
+      true,
+    );
   });
 
   it("escapes the literal parts of the pattern", () => {
@@ -133,21 +151,24 @@ describe("matchesTitlePattern", () => {
 describe("titlePatternShare", () => {
   const pattern = "{key}: {summary}";
 
-  it("counts matching subjects, skipping merge commits", () => {
+  it("counts matching subjects", () => {
     expect(
       titlePatternShare(
         pattern,
-        [
-          "ENG-1: a",
-          "ENG-2: b (#3)",
-          "Merge pull request #4 from x/y",
-          "fix: c",
-          "ENG-5: d",
-          "ENG-6: e",
-        ],
+        ["ENG-1: a", "ENG-2: b (#3)", "fix: c", "ENG-5: d", "ENG-6: e"],
         "prefixed",
       ),
     ).toEqual({ matching: 4, total: 5 });
+  });
+
+  it("keeps subjects that begin like a merge", () => {
+    expect(
+      titlePatternShare(
+        "Merge branch {key}: {summary}",
+        Array.from({ length: 5 }, (_, i) => `Merge branch ENG-${i}: x`),
+        "prefixed",
+      ),
+    ).toEqual({ matching: 5, total: 5 });
   });
 
   it("is null when too little history remains to judge", () => {

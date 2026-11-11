@@ -5,7 +5,7 @@
  */
 import { afterAll, expect, test } from "bun:test";
 import { rmSync } from "node:fs";
-import { commitFiles, runScript, scratchRepo } from "./helpers.ts";
+import { commitFiles, git, runScript, scratchRepo } from "./helpers.ts";
 
 const dirs: string[] = [];
 afterAll(() => {
@@ -19,13 +19,27 @@ const CONFIG =
 function findings(
   config: string,
   subjects: string[],
-): { id: string; message: string }[] {
+  { expectedCode = 0, withOrigin = true } = {},
+): { id: string; severity: string; message: string }[] {
   const dir = scratchRepo({ ".config/jig.yaml": config });
   dirs.push(dir);
   for (const subject of subjects) commitFiles(dir, {}, subject);
+  if (withOrigin) {
+    git(dir, "remote", "add", "origin", "https://example.invalid/web.git");
+    git(dir, "update-ref", "refs/remotes/origin/main", "HEAD");
+    git(
+      dir,
+      "symbolic-ref",
+      "refs/remotes/origin/HEAD",
+      "refs/remotes/origin/main",
+    );
+  }
   const run = runScript("config-fit.ts", ["--offline", "--json"], dir);
+  expect(run.code).toBe(expectedCode);
   return (
-    JSON.parse(run.out) as { findings: { id: string; message: string }[] }
+    JSON.parse(run.out) as {
+      findings: { id: string; severity: string; message: string }[];
+    }
   ).findings;
 }
 
@@ -41,6 +55,7 @@ test("subjects that follow the pattern raise nothing", () => {
   ]);
   expect(found.map((f) => f.id)).not.toContain(CONTRADICTION);
   expect(found.map((f) => f.id)).not.toContain("unchecked:title-pattern");
+  expect(found.filter((f) => f.severity === "error")).toEqual([]);
 });
 
 test("subjects that mostly do not follow the pattern are a warning", () => {
@@ -77,6 +92,7 @@ test("a title pattern without its format is refused", () => {
   const found = findings(
     "pull_requests:\n  title_pattern: '{key}: {summary}'\n",
     [],
+    { expectedCode: 1 },
   );
   expect(found.some((f) => f.message.includes("title_pattern needs"))).toBe(
     true,
@@ -96,7 +112,16 @@ test("a pattern the skills refuse is not judged against the history", () => {
   const found = findings(
     "pull_requests:\n  title_format: pattern\n  title_pattern: '{summary}'\n",
     ["a", "b", "c", "d", "e"],
+    { expectedCode: 1 },
   );
   expect(found.map((f) => f.id)).not.toContain(CONTRADICTION);
   expect(found.some((f) => f.message.includes("exactly once"))).toBe(true);
+});
+
+test("a history the clone cannot establish is left unchecked", () => {
+  const found = findings(CONFIG, ["feat: a", "fix: b", "c", "d", "e"], {
+    withOrigin: false,
+  });
+  expect(found.map((f) => f.id)).toContain("unchecked:title-pattern");
+  expect(found.map((f) => f.id)).not.toContain(CONTRADICTION);
 });
