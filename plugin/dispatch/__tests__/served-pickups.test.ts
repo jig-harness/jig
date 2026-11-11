@@ -185,6 +185,40 @@ describe("served pickups", () => {
       ]),
     );
   });
+  it("keeps the title and link the listing returned on an item it cannot place and on a claimed item", async () => {
+    const f = fake();
+    const held = {
+      ...issue("#4", ["hitl"]),
+      title: "Sign off the copy",
+      url: "https://forge.example/example/repo/issues/4",
+    };
+    const claimed = {
+      ...issue("#8"),
+      title: "Ship the export",
+      url: "https://forge.example/example/repo/issues/8",
+    };
+    f.tracker.assignedIssues = async (_: string, s: readonly string[]) =>
+      s.includes("in_progress") ? [claimed] : [held];
+    const read = await readServedPickups(f.tracker, people, {
+      cache: f.cache,
+      epic: "epic",
+      nowMs: 1,
+      headroom: true,
+    });
+    expect(read.unplaced).toContainEqual({
+      target: "#4",
+      title: "Sign off the copy",
+      url: "https://forge.example/example/repo/issues/4",
+      record: "tracker",
+      reason: "needs a person to start",
+    });
+    expect(read.claimed).toContainEqual(
+      expect.objectContaining({
+        key: "#8",
+        url: "https://forge.example/example/repo/issues/8",
+      }),
+    );
+  });
   it("keeps metadata at the same updatedAt", async () => {
     const f = fake();
     await readServedPickups(f.tracker, people, {

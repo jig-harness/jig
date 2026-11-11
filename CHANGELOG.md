@@ -391,6 +391,27 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.197.3] - 2026-11-11
+
+### Fixed
+
+- The dispatch dashboard now shows each tracker item's title beside its key
+  and links the key, on every card (Needs you, Running, Queue) and every
+  History row. The dispatcher keeps the link and title the tracker listing
+  returned on items the walk could not place, on claimed items, and on the
+  outcome log's rows. For a record that kept no link, such as a row written
+  by an earlier version, the page works the link out from another item link
+  of the same repository's tracker, and only when it cannot does it say so,
+  naming what is missing and where to look, in place of the old text about
+  a tracker base no setting provides.
+- A tick that finds a repository held by another tick no longer freezes the
+  dashboard's line. Each repository's part of the line (its needs, queue,
+  sessions and Ready cards) now comes from the newest tick that read it, and
+  each tick the timer runs updates the rest, so the page no longer reports
+  that the timer has not ticked while it runs. A repository no tick has read
+  for longer than the timer's interval and its longest recent tick gets a banner naming it, when it was
+  last read and why (another tick held it busy).
+
 ## [0.197.2] - 2026-11-11
 
 ### Fixed
@@ -6885,7 +6906,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.197.2...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.197.3...HEAD
+[0.197.3]: https://github.com/jig-harness/jig/compare/v0.197.2...v0.197.3
 [0.197.2]: https://github.com/jig-harness/jig/compare/v0.197.1...v0.197.2
 [0.197.1]: https://github.com/jig-harness/jig/compare/v0.197.0...v0.197.1
 [0.197.0]: https://github.com/jig-harness/jig/compare/v0.196.0...v0.197.0

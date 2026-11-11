@@ -941,12 +941,21 @@ writes nothing to the host:
   **Queue**, what comes next and why. The page opens on Merge while merge now
   holds a pull request, else on Needs you, and while it holds one every other
   view says so at its top until dismissed, which lasts until a pull request
-  reaches merge now at a new head. Each tick that
-  reads every repository the machine file lists writes it to the state database
-  beside its receipt (the `tick_line` record). So the strip says how old that
-  tick is, a stopped timer shows as one, and a host may serve the page from a
-  copy of that database, with no other read. A tick for one repository leaves
-  it as it was.
+  reaches merge now at a new head. Each tick
+  writes it to the state database beside its receipt (the `tick_line`
+  record): a repository's part (its needs, queue, sessions and Ready cards)
+  comes from the newest tick that read it, and the rest from the newest tick
+  the timer asked for every repository the machine file lists, even when
+  another tick held some of them busy; the one exception is the duration
+  history (`longestTickMs`, `recentTicksMs`), to which a woken tick adds its
+  own duration. So the strip says how old that tick
+  is, a stopped timer shows as one while wake-ups for one repository still
+  run, a repository no tick has read for longer than the timer's interval
+  and its longest recent tick gets a banner naming it, since when and why (another tick held it busy),
+  and a host may serve the page from a copy of that database, with no other
+  read. Every card and log row shows its item's title beside its key and
+  links the key: to the link the tracker gave, or, for a row that kept none,
+  to one worked out from another item link of the same repository's tracker.
 - **How the recent ticks ran**, at the top of the History view: one row per
   tick, the newest first, with its length, its phases as a bar, the slowest
   single phase and its repository, the forge's rate budget it read, and a
