@@ -719,8 +719,10 @@ implementation. Skip this check for issues about the repository's own code.
    refusal by the repository's start rules (`state` or `preflight`) is not
    cleared by a person telling you to proceed: the item changes, or the
    repository's rules change and the pickup is retried by hand. The
-   dispatcher releases a held pickup only when the item's own timestamp
-   changes, so a rule change alone does not release it. With
+   dispatcher reconsiders a `preflight` refusal, which records the item's
+   timestamp, only when that timestamp changes, so a rule change alone does
+   not release it; any other refusal (`state` included) stays held until the
+   item leaves the dispatch states or its assignment and returns. With
    `do_item.claim_marker`, the claim posts the claim marker on the item
    itself; `"marker"` in the JSON says whether it was posted, and a marker
    that was not posted leaves the claim standing (report it). A person
