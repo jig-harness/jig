@@ -128,8 +128,9 @@ const HELD = "a person's hold label is on it now";
  * launch does: the pull request's and its branch's may have moved since the
  * record was written, and a failure of the replay is weighed by the heads it
  * launched at. Only a record none of whose launches may have started is
- * refreshed; one an earlier launch answered or lost keeps the heads it was
- * written with, which that launch acted on. Heads that do not read leave the
+ * refreshed; one an earlier launch answered or lost, or whose launch was called
+ * and left no answer, keeps the heads it was written with, which that launch
+ * acted on. Heads that do not read leave the
  * record with none, which a re-arm is held by nothing for; a later tick reads
  * them again for such a record, since it still never started.
  */
@@ -140,6 +141,7 @@ async function refreshHeads(
 ): Promise<void> {
   if (
     record.action !== "rearm" ||
+    record.launchCalled === true ||
     !record.attempts.every((a) => a.outcome === "failed")
   )
     return;

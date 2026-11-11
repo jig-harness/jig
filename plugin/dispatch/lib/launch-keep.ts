@@ -35,8 +35,11 @@ export function latestFailedRearms(records: ReadRecord[]): Set<string> {
       ? `${r.record.repo}#${String(r.record.pr)}`
       : null,
   );
+  // A re-arm that ended with exit 0 can never hold its drive, so its row is left to the retention.
   const failed = (r: ReadRecord) =>
-    r.record.action === "rearm" && r.record.heads != null;
+    r.record.action === "rearm" &&
+    r.record.heads != null &&
+    !(r.state.kind === "ended" && r.state.exit.code === 0);
   return new Set(
     records
       .filter((r) => latest.has(r.record.id) && failed(r))

@@ -166,6 +166,8 @@ export interface LaunchRecord {
   redrive?: StaleCause | null;
   /** For a re-arm of a ledger with a recorded exit: the pull request's head and its branch's head it launched at (`failed-rearms.ts`); absent when they did not read. */
   heads?: string | null;
+  /** The runtime's `launch` was called for this record, so a launch may have started whether or not its answer was kept. Absent on a record never launched. */
+  launchCalled?: boolean;
   /** Explicit re-arm request consumed after a successful launch. */
   rearmLabel?: string | null;
   /** The request label was successfully removed after this launch was accepted. */

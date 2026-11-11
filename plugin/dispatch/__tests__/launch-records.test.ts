@@ -208,6 +208,20 @@ it("retains a pull request's latest re-arm that recorded its heads past retentio
   ]);
 });
 
+it("prunes a latest re-arm that ended with exit 0, which can never hold its drive", () => {
+  const dir = root();
+  const done = record("20260101T000000Z-aaaaaaaa", { heads: "PR head a" });
+  writeRecord(done, dir);
+  expect(
+    pruneLaunches(
+      [ended(done, 0, done.createdAt)],
+      Date.parse("2027-01-01"),
+      7,
+      dir,
+    ),
+  ).toEqual([done.id]);
+});
+
 it("keeps nothing of an older failed re-arm that a newer ended record without heads supersedes", () => {
   const dir = root();
   const older = record("20260101T000000Z-aaaaaaaa", { heads: "PR head a" });
