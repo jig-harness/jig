@@ -1362,10 +1362,10 @@ make, use the entry's term instead.
   dry run is never approved unseen
   ([design](design/structured-answers.md#writing-an-answer)).
 - **Resolution receipt** — the record a re-arm writes into the *drive
-  ledger* when it unparks an item: the park's key and digest, the answer it
-  consumed, the outcome and the times. The dispatcher's tick counts a park
-  as answered from its receipt, and a park that left the ledger with none as
-  removed ([design](design/structured-answers.md#showing-what-was-decided)).
+  ledger* when it unparks an item: the park's key and digest and the time it
+  was parked, the answers it consumed, the outcome and the times. The
+  dispatcher's tick counts a park as answered from its receipt, and a park
+  that left the ledger with none as removed ([design](design/structured-answers.md#showing-what-was-decided)).
 - **Disputed answer** — a parked item whose people's latest answers are not
   all the same option with the same notes (two different choices, the same
   choice with differing notes, or a choice beside another person's free
@@ -1526,6 +1526,19 @@ make, use the entry's term instead.
   resolves, the push re-triggers the reviewers. Because resolving *causes* the
   next round, "no open threads" is not the loop's stop condition; a round that is
   settled — every expected reviewer has reported — with nothing left is.
+- **Review object** — the forge's own record of one review of a pull request
+  (approve, request changes or comment, with its inline comments and the commit
+  it was made on), as opposed to a *sticky comment* an app edits in place. A
+  reviewer that reviews through review objects names the commit in the object,
+  not in a summary comment.
+- **Commit status** — a result a CI service posts against a commit through the
+  forge's older status interface: a state, a description and a link to the
+  service's own page. A *check run* is the richer newer form, tied to an app,
+  with annotations; a CI that posts only statuses has no check run for the
+  drive to read.
+- **Reviewer evidence mode** — which record of the forge the drive reads to
+  learn that the AI reviewer reviewed the head commit: the reviewer's summary
+  comment marker, or its latest *review object* together with its check run.
 - **Convergence (review loop)** — the point where a review loop may stop: the
   reviewer completed on the exact head commit, its recorded reviewed commit
   equals that head, and no unresolved thread or *summary-only finding* remains.
