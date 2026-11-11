@@ -17,7 +17,8 @@ import {
 } from "../scripts/lib/tracker/linear.ts";
 import { type Call, FACTORY, issue, jira, MEMBER } from "./jira-fixtures.ts";
 
-const at = (s: number) => new Date(Date.UTC(2026, 10, 1, 0, 0, s)).toISOString();
+const at = (s: number) =>
+  new Date(Date.UTC(2026, 10, 1, 0, 0, s)).toISOString();
 
 describe("checkAssignment", () => {
   it("accepts a newest change to the user that came from nobody", () => {
@@ -57,7 +58,11 @@ const OTHER = { id: "u-other", name: "other" };
 
 /** Linear issue ENG-4 whose assignee and history the fake keeps; `race` assigns OTHER just before the claim's write. */
 function linearWorld(
-  options: { assignee?: string | null; race?: boolean; noHistory?: boolean } = {},
+  options: {
+    assignee?: string | null;
+    race?: boolean;
+    noHistory?: boolean;
+  } = {},
 ) {
   let assignee: string | null = options.assignee ?? null;
   const history: Array<Record<string, unknown>> = [];
@@ -81,7 +86,8 @@ function linearWorld(
         return {
           issue: {
             id: "uuid-4",
-            assignee: assignee === null ? null : { id: assignee, name: assignee },
+            assignee:
+              assignee === null ? null : { id: assignee, name: assignee },
           },
         };
       case "TrackerAssign": {
@@ -138,9 +144,7 @@ describe("Linear: assigning an unassigned issue", () => {
 });
 
 /** Jira issue ENG-1 whose assignee and changelog the fake keeps; `race` assigns MEMBER just before the claim's write. */
-function jiraWorld(
-  options: { assignee?: string | null; race?: boolean } = {},
-) {
+function jiraWorld(options: { assignee?: string | null; race?: boolean } = {}) {
   let assignee: string | null = options.assignee ?? null;
   const changelog: Array<Record<string, unknown>> = [];
   const writes: string[] = [];

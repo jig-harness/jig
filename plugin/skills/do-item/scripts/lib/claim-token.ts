@@ -61,12 +61,14 @@ export type MarkerFacts = Pick<
 >;
 
 /** What the claim's JSON says of the marker. */
-export type MarkerReport = { posted: true; confirmed: true } | {
-  posted: true;
-  /** The read after the write failed: the read before it, which this claim won, stands. */
-  confirmed: false;
-  reason: string;
-};
+export type MarkerReport =
+  | { posted: true; confirmed: true }
+  | {
+      posted: true;
+      /** The read after the write failed: the read before it, which this claim won, stands. */
+      confirmed: false;
+      reason: string;
+    };
 
 interface Marker {
   id: string | undefined;

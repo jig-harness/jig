@@ -44,9 +44,7 @@ export function checkAssignment(
   const latest = changes
     .map((c, i) => ({ c, i }))
     .filter(({ c }) => c.to === user)
-    .sort(
-      (a, b) => Date.parse(a.c.at) - Date.parse(b.c.at) || a.i - b.i,
-    )
+    .sort((a, b) => Date.parse(a.c.at) - Date.parse(b.c.at) || a.i - b.i)
     .at(-1)?.c;
   if (latest === undefined) return { ok: false, replaced: null };
   return latest.from === null

@@ -37,7 +37,7 @@ import {
 
 const STATES = parseTrackerConfig({}).states;
 /** No waits between read-backs. */
-const CLOCK: Clock = { now: () => Date.now(), sleep: async () => {} };
+const CLOCK: Clock = { now: () => Date.now(), sleep: () => Promise.resolve() };
 const FACTS = { session: "s", branch: "b", claimant: "factory" };
 
 /** A marker another claim posted, `ago` milliseconds before now. */
@@ -456,7 +456,8 @@ describe("two hosts racing for one item", () => {
           throw new Error(`unexpected ${op}`);
       }
     };
-    const make = () => linearTracker({ team: "ENG", states: STATES, transport });
+    const make = () =>
+      linearTracker({ team: "ENG", states: STATES, transport });
     expect(await race(make, "ENG-4")).toEqual(["claimed", "refused"]);
     expect(writes).toEqual(["TrackerAssign", "TrackerUpdate"]);
     expect(comments).toHaveLength(1);
