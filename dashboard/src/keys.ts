@@ -5,7 +5,9 @@
  *
  * A card is any element carrying `data-card` (`cardAttrs`): its pull request,
  * its issue and its primary command ride on it as data, so the keys need
- * nothing from the view that drew it. No key fires inside a text field.
+ * nothing from the view that drew it. A card that answers its own keys (a
+ * parked need's picks, and its Copy, which may take two steps) takes them as
+ * events (`CARD_KEY`, `CARD_COMMIT`). No key fires inside a text field.
  */
 import { type RefObject, useEffect, useRef, useState } from "react";
 import { announce, copyText } from "./copy.tsx";
@@ -25,8 +27,22 @@ export const KEYS: ReadonlyArray<{ keys: string[]; does: string }> = [
   { keys: ["p"], does: "open the card's pull request" },
   { keys: ["i"], does: "open the card's issue" },
   {
+    keys: ["1–9"],
+    does: "on a parked need, pick that option of the current decision (1 is always the recommended one), then move to the next decision with no pick; nothing is sent",
+  },
+  { keys: ["h", "l"], does: "the previous or next decision on the card" },
+  {
+    keys: ["u"],
+    does: "clear the last pick made on the card, and return to that decision",
+  },
+  {
+    keys: ["r"],
+    does: "beside a pick, a one-line note; with no pick, an answer in your own words",
+  },
+  { keys: ["Escape"], does: "leave that field, so the card's keys work again" },
+  {
     keys: ["c"],
-    does: "copy the card's command: the pinned merge command, the answer line, or its jig ask line",
+    does: "copy the card's command: the pinned merge command, the need's answers as one comment, or its jig ask line; a pick that asks for authorization or cannot be undone copies on the second c",
   },
   {
     keys: ["g m", "g n", "g r", "g q", "g h"],
@@ -46,22 +62,57 @@ type KeyAction =
   | { kind: "toggle" }
   | { kind: "open"; what: "pr" | "issue" }
   | { kind: "copy" }
+  | CardKey
   | { kind: "chord" }
   | { kind: "view"; view: ViewId }
   | { kind: "filter" }
   | { kind: "help" };
+
+/** A key a card with decisions answers to itself, sent to it as a `CARD_KEY` event. */
+export type CardKey =
+  | { kind: "pick"; number: number }
+  | { kind: "decision"; by: 1 | -1 }
+  | { kind: "undo" }
+  | { kind: "words" };
+
+/** The event a card's own key is sent as; a card that answers it cancels it. */
+export const CARD_KEY = "jig-card-key";
+/** The event every copy of a card's command starts with; a card that commits by itself cancels it. */
+export const CARD_COMMIT = "jig-card-commit";
+/** The event the palette sends on the document once it closes, naming the card it copied through (`null` for none): every other card's Copy step ends. */
+export const PALETTE_DONE = "jig-palette-done";
 
 interface KeyPress {
   key: string;
   metaKey: boolean;
   ctrlKey: boolean;
   altKey: boolean;
+  /** A key held down, repeating. */
+  repeat?: boolean;
 }
 
 /** The view `g` and then `key` goes to; `null` for a key no view takes. */
 function viewAfterG(key: string): ViewId | null {
   return VIEWS.find((v) => v.key === key)?.id ?? null;
 }
+
+/** What a key alone asks for, with no modifier and not after `g`. */
+const PLAIN_KEYS: Readonly<Record<string, KeyAction>> = {
+  h: { kind: "decision", by: -1 },
+  l: { kind: "decision", by: 1 },
+  u: { kind: "undo" },
+  r: { kind: "words" },
+  j: { kind: "move", by: 1 },
+  k: { kind: "move", by: -1 },
+  Enter: { kind: "toggle" },
+  o: { kind: "toggle" },
+  p: { kind: "open", what: "pr" },
+  i: { kind: "open", what: "issue" },
+  c: { kind: "copy" },
+  g: { kind: "chord" },
+  "/": { kind: "filter" },
+  "?": { kind: "help" },
+};
 
 /**
  * What a key press asks for, or `null` when the page leaves it to the
@@ -80,29 +131,8 @@ export function actionOf(press: KeyPress, chord: boolean): KeyAction | null {
     const view = viewAfterG(key);
     return view === null ? null : { kind: "view", view };
   }
-  switch (key) {
-    case "j":
-      return { kind: "move", by: 1 };
-    case "k":
-      return { kind: "move", by: -1 };
-    case "Enter":
-    case "o":
-      return { kind: "toggle" };
-    case "p":
-      return { kind: "open", what: "pr" };
-    case "i":
-      return { kind: "open", what: "issue" };
-    case "c":
-      return { kind: "copy" };
-    case "g":
-      return { kind: "chord" };
-    case "/":
-      return { kind: "filter" };
-    case "?":
-      return { kind: "help" };
-    default:
-      return null;
-  }
+  if (/^[1-9]$/.test(key)) return { kind: "pick", number: Number(key) };
+  return Object.hasOwn(PLAIN_KEYS, key) ? (PLAIN_KEYS[key] ?? null) : null;
 }
 
 const NOT_TYPED = new Set([
@@ -146,8 +176,17 @@ export function hintsFor(card: {
   command: string | null;
   commandLabel: string;
   details: boolean;
+  /** Whether the card holds decisions to pick. */
+  picks?: boolean;
 }): CardHint[] {
   const hints: CardHint[] = card.details ? [{ key: "o", does: "details" }] : [];
+  if (card.picks === true)
+    hints.push(
+      { key: "1–9", does: "pick" },
+      { key: "h l", does: "decision" },
+      { key: "u", does: "undo" },
+      { key: "r", does: "words" },
+    );
   if (card.url !== null)
     hints.push(
       isPullUrl(card.url)
@@ -167,6 +206,8 @@ export function cardAttrs(card: {
   command: string | null;
   /** What the command is, as the key bar names it. */
   commandLabel?: string;
+  /** Whether the card holds decisions its keys pick. */
+  picks?: boolean;
 }): Record<string, string> {
   // A card is a named group, so j announces what it is rather than a blob of text.
   const attrs: Record<string, string> = {
@@ -180,6 +221,7 @@ export function cardAttrs(card: {
     attrs["data-command"] = card.command;
     attrs["data-command-label"] = card.commandLabel ?? "command";
   }
+  if (card.picks === true) attrs["data-picks"] = "";
   return attrs;
 }
 
@@ -201,6 +243,7 @@ function focusedCardOf(): FocusedCard | null {
       command: card.dataset.command ?? null,
       commandLabel: card.dataset.commandLabel ?? "command",
       details: !onControl(card, active) && toggleOf(card) !== null,
+      picks: card.dataset.picks !== undefined,
     }),
   };
 }
@@ -232,6 +275,7 @@ export function useFocusedCard(): FocusedCard | null {
         "data-issue",
         "data-command",
         "data-command-label",
+        "data-picks",
       ],
     });
     return () => {
@@ -363,16 +407,26 @@ function openFrom(card: HTMLElement, what: "pr" | "issue"): void {
 }
 
 function copyFrom(card: HTMLElement): void {
+  const commit = new CustomEvent(CARD_COMMIT, { cancelable: true });
+  // A card that commits by itself, in one step or two, took it.
+  if (!card.dispatchEvent(commit)) return;
   const command = card.dataset.command;
   if (command === undefined) announce("This card has no command to copy");
   else void copyText(command, card);
 }
 
+/** Sends a card its own key; says so when the card has nothing to pick. */
+function keyTo(card: HTMLElement, key: CardKey): void {
+  const sent = new CustomEvent(CARD_KEY, { cancelable: true, detail: key });
+  if (card.dispatchEvent(sent)) announce("This card has no decision to pick");
+}
+
 /** Runs a card's key on the card focus is on; whether the page took the key. */
 function onCard(
   root: HTMLElement,
-  action: KeyAction & { kind: "toggle" | "open" | "copy" },
+  action: KeyAction & { kind: "toggle" | "open" | "copy" | CardKey["kind"] },
   target: EventTarget | null,
+  repeat: boolean,
 ): boolean {
   // A card's own keys act only on the card a person moved to, never on one focus merely rests on.
   const card = focusedCard(root);
@@ -383,8 +437,13 @@ function onCard(
   if (action.kind === "toggle") {
     if (onControl(card, target)) return false;
     toggleCard(card);
-  } else if (action.kind === "open") openFrom(card, action.what);
-  else copyFrom(card);
+    return true;
+  }
+  // A held key acts once: a held c never takes Copy's second step for the person.
+  if (repeat) return true;
+  if (action.kind === "open") openFrom(card, action.what);
+  else if (action.kind === "copy") copyFrom(card);
+  else keyTo(card, action);
   return true;
 }
 
@@ -409,6 +468,7 @@ function run(
   element: HTMLElement,
   h: KeyHandlers,
   target: EventTarget | null,
+  repeat: boolean,
 ): boolean {
   switch (action.kind) {
     case "palette":
@@ -429,7 +489,7 @@ function run(
       h.setView("help");
       return true;
     default:
-      return onCard(element, action, target);
+      return onCard(element, action, target, repeat);
   }
 }
 
@@ -459,7 +519,8 @@ export function useKeys(
       const action = actionOf(event, chord);
       if (action === null) return;
       if (action.kind === "chord") chordAt = performance.now();
-      if (run(action, element, h, event.target)) event.preventDefault();
+      if (run(action, element, h, event.target, event.repeat))
+        event.preventDefault();
     };
     document.addEventListener("keydown", listen);
     return () => document.removeEventListener("keydown", listen);

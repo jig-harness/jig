@@ -196,18 +196,41 @@ the release in step 4 restores them. Then, for each:
    not perform its guards. Never retry a refusal without those options.
 
    On exit `3` (someone already holds it) or `4` (another claim landed
-   first), stop the batch and report the refused claim. A fixed served batch
-   cannot safely continue after one of its members changes.
+   first), stop the batch, release the issues already claimed in this loop
+   (step 4's release, which preserves concurrent changes) and report the
+   refused claim. A fixed served batch cannot safely continue after one of
+   its members changes.
 
-   (**judgment** — native: read the issue and stop on the same refusals,
-   save its state and assignee through the harness's tracker tool (the
+   The exception is a refusal by the repository's start rules, exit `3` with
+   `"why": "preflight"` (its `do_item.preflight_command`) or `"why": "state"`
+   (a state outside its `do_item.claim_from`) in the JSON on standard output
+   (the reason is on stderr): nothing was written for that issue, so in an ordinary batch drop
+   it, name it and its reason in the report, and go on with the rest; when
+   fewer than two issues remain, release the ones claimed (step 4's release)
+   and stop. A fixed served batch stops too, after releasing the members
+   already claimed by the same release. A person's word to proceed
+   does not clear it: the item or the repository's rules change first.
+
+   Any other way the loop ends without every claim made (a nonzero exit
+   other than `3` or `4`, a thrown error, a transport or configuration
+   failure) also stops the batch: release the issues already claimed in this
+   loop (step 4's release) and report the failure.
+
+   (**judgment** — native, only where none of `do_item.preflight_command`,
+   `do_item.claim_from` and `do_item.claim_marker` is set; with one set, a
+   native write skips the repository's start rules, so claim through the
+   script above. Read the issue and stop on the same
+   refusals, save its state and assignee through the harness's tracker tool (the
    mapped state name, assignee "me"), then read it again and stop the batch
    when it shows another assignee, or is gone or no longer in the mapped
    state.)
 
-2. Comment on it, naming the anchor and every other issue in the batch, so a
-   second agent sees it is spoken for and by which batch
-   (`bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" comment "<KEY>" --body-file body.md`).
+2. Once every claim above is settled, choose the anchor: the original
+   anchor, or when a start-rules refusal dropped it, the highest-ranked issue
+   still claimed. Then comment on each issue you kept claimed, naming that
+   anchor and every other claimed issue in the batch
+   (never one dropped or refused), so a second agent sees it is spoken for
+   and by which batch (`bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" comment "<KEY>" --body-file body.md`).
    Once the last issue is commented on, remove the file
    (`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git clean -f -- body.md`):
    a file left in the worktree keeps the drive from converging.
@@ -216,7 +239,8 @@ Then write the batch form of the
 [intent chain](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), as `/jig:do-item`
 [Step 3.5](../do-item/SKILL.md#step-35-write-the-intent-chain-snapshot-refocus)
 describes, with `"mode":"batch"`, the anchor as `issue` (for an area or path
-anchor, the highest-ranked issue), the anchor's parent as `epic` when it has
+anchor, the highest-ranked issue; when a start-rules refusal dropped the
+anchor, the highest-ranked issue still claimed), the anchor's parent as `epic` when it has
 one, and every claimed issue in `items`. Write that JSON to `batch-intent.json`
 with the file-writing tool:
 

@@ -630,13 +630,34 @@ export function upgradesFirst(rest: readonly string[]): boolean {
 }
 
 async function main(argv: string[]): Promise<number> {
+  const stopped = new AbortController();
+  let received: NodeJS.Signals | undefined;
+  const onSignal = (signal: NodeJS.Signals) => {
+    received ??= signal;
+    stopped.abort();
+  };
+  for (const signal of STOP_SIGNALS) process.on(signal, onSignal);
   try {
     const { programs, rest } = parseLauncherArguments(argv);
     const env = { ...process.env };
     const role = env[ROLE];
     delete env[ROLE];
     delete env[UPGRADE_RESULT];
-    let entry = await installedEntry(programs);
+    let entry = await installedEntry(programs, async (program) => {
+      try {
+        return await listPlugins(
+          program,
+          undefined,
+          undefined,
+          undefined,
+          stopped.signal,
+        );
+      } catch (error) {
+        if (error instanceof LauncherStopped && received)
+          throw new LauncherStopped(`received ${received}`);
+        throw error;
+      }
+    });
     if ((role === undefined || role === "") && upgradesFirst(rest)) {
       const result = await scheduledUpgrade(entry, programs, env);
       env[UPGRADE_RESULT] = result;
@@ -653,6 +674,8 @@ async function main(argv: string[]): Promise<number> {
   } catch (error) {
     console.error(`jig launcher: ${(error as Error).message}`);
     return 1;
+  } finally {
+    for (const signal of STOP_SIGNALS) process.off(signal, onSignal);
   }
 }
 

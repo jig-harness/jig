@@ -3,7 +3,7 @@ import { queued, drive } from "./fixture-line.ts";
  * What a person opens and copies on the page, in a real browser against the
  * real server: folds and log rows by keyboard, hints on hover, tap and focus,
  * long lists closing from either end, the whole decision's Markdown, Copy on
- * plain http with a drafted reply, and a phone with everything open. How the
+ * plain http with an answer in the person's words, and a phone with everything open. How the
  * browser is found and when its absence fails is `browser.test.ts`'s header.
  */
 import { describe, expect } from "bun:test";
@@ -265,7 +265,7 @@ describe("the disclosures", () => {
   );
 
   browserIt(
-    "on plain http, where the browser has no clipboard API, Copy still takes the answer line and a drafted reply",
+    "on plain http, where the browser has no clipboard API, Copy still takes the approval and an answer in the person's words",
     async () => {
       const server = await served("loud");
       // A name that is not loopback makes this a real insecure context.
@@ -290,7 +290,7 @@ describe("the disclosures", () => {
           ]),
         ).toEqual([false, false]);
         const copy = page.getByRole("button", {
-          name: "Copy the answer line for PR #456",
+          name: "Copy the approval for PR #456",
         });
         await copy.click();
         await until(
@@ -298,21 +298,21 @@ describe("the disclosures", () => {
           async () => (await copy.getAttribute("title")) === "Copied",
         );
         expect(await page.locator(".clip").inputValue()).toBe(
-          "answer PRRT_x1: ",
+          "answer PRRT_x1: approve",
         );
         expect(await page.locator(".say").innerText()).toBe("Copied");
         await until(
           "the copy icon is ready again",
           async () =>
             (await copy.getAttribute("title")) ===
-            "Copy the answer line for PR #456",
+            "Copy the approval for PR #456",
         );
 
         const need = page.locator(".need").first();
-        await need.getByRole("button", { name: "Write reply" }).click();
-        await need.locator("textarea").fill("A, keep it small");
+        await need.getByRole("button", { name: "Write an answer" }).click();
+        await need.locator("input[data-field]").fill("A, keep it small");
         const answer = page.getByRole("button", {
-          name: "Copy the answer for PR #456",
+          name: "Copy the answers for PR #456",
         });
         await answer.click();
         await until(
@@ -323,11 +323,15 @@ describe("the disclosures", () => {
           "answer PRRT_x1: A, keep it small",
         );
 
-        // The draft is kept in this browser, so a reload loses none of it.
+        // The answer is kept in this browser, so a reload loses none of it.
         await page.reload();
-        await shows(page, ".need textarea");
+        await shows(page, ".need input[data-field]");
         expect(
-          await page.locator(".need").first().locator("textarea").inputValue(),
+          await page
+            .locator(".need")
+            .first()
+            .locator("input[data-field]")
+            .inputValue(),
         ).toBe("A, keep it small");
       } finally {
         await plain.close();
