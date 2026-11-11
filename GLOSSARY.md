@@ -1272,7 +1272,7 @@ make, use the entry's term instead.
   loop.
 - **Routine question (class)** — a question a follow-up's headless pass may
   stop on that has one safe answer, so the *dispatcher* gives it without a
-  person, in one of three kinds: housekeeping whose safe answer is to keep and
+  person, in one of these kinds: housekeeping whose safe answer is to keep and
   list, such as a local branch or worktree the pass may not delete without
   asking (`local-leftover`); a step after the merge that only a person can take,
   whose safe answer is to report it as owed (`person-owed`); and the
