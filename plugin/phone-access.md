@@ -168,11 +168,22 @@ An example of the shape, for Caddy with an `oauth2-proxy` sign-in on
 `127.0.0.1:4180` (a sketch, not a tested configuration, and not part of the
 [verification record](#verification-record)). Replace `<private-address>` with
 an address of the host's private interface (a Tailscale address, say; `tailscale
-ip -4` prints it), so the site is not bound to every interface:
+ip -4` prints it), so the site is not bound to every interface. A site on a private address
+cannot pass Caddy's default certificate challenges, which need the host
+reachable from the public internet, so the sketch supplies the certificate
+itself: the `tls` line takes a certificate and key you provisioned beforehand,
+or you replace it with a
+[DNS challenge](https://caddyserver.com/docs/automatic-https#dns-challenge),
+which needs a Caddy build with your DNS provider's module and an API token for
+the domain:
 
 ```text
 jig.example.net {
 	bind <private-address>
+
+	# a certificate the phone trusts, provisioned beforehand; or replace this
+	# line with a `tls { dns <provider> ... }` block for a DNS challenge
+	tls /path/to/fullchain.pem /path/to/privkey.pem
 
 	# sign-in start and callback paths go to the sign-in service itself,
 	# unchecked, so a browser without a session can obtain one
