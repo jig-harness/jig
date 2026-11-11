@@ -325,8 +325,11 @@ their own subprocesses; bounding file workers keeps those fixtures within
 their deadlines when several workspaces run checks on one machine.
 
 CI runs the same command on Linux for every pull request
-(`.github/workflows/gates.yml`); the catalog decides which of its jobs and
-steps a pull request needs. macOS and Windows run once a day against `main`
+(`.github/workflows/gates.yml`) as parallel legs, one for every stage but the
+tests and several that split the test files between them
+(`JIG_GATES_PART` and `JIG_GATES_TEST_SHARD`, scripts/gates.ts), so a format or
+lint failure reports in minutes, not after the suite; the catalog decides which
+of its jobs and steps a pull request needs. macOS and Windows run once a day against `main`
 (`.github/workflows/nightly.yml`), and on demand from the Actions tab for a
 branch likely to break on one of them. A new top-level file or directory gets an area in the catalog
 in the same pull request.
@@ -372,7 +375,7 @@ establish the App's access. The workflow never repairs host settings.
 
 Locally, `JIG_GATES_SKIP_SEPARATE_SUITES=1 bun run gates` leaves out the long
 drive-pr suite and the website's tests, which CI runs in the drive-pr job and
-in the gate-set job's website steps; run
+in the gate-set job's website steps (its checks leg); run
 the test files for what you changed, and let CI run the rest. The website's
 tests need `bun install` inside `website/` first.
 
