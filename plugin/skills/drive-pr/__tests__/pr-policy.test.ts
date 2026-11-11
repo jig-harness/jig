@@ -9,9 +9,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   conventionalCommitlintConfig,
+  findCommitlintConfig,
+} from "../scripts/lib/commitlint.ts";
+import {
   DEFAULT_BRANCH_PATTERN,
   findCodeowners,
-  findCommitlintConfig,
   findPrTemplates,
   inferTitleFormat,
   issueLinkLine,
@@ -49,6 +51,7 @@ describe("parsePrPolicy", () => {
       labelsFromIssue: new Map(),
       reviewersFromIssue: new Map(),
       titleFormat: null,
+      titlePattern: null,
     });
   });
 
@@ -81,6 +84,16 @@ describe("parsePrPolicy", () => {
         ["kind:db-migration", ["acme/dba", "alice"]],
       ]),
       titleFormat: "free",
+      titlePattern: null,
+    });
+  });
+
+  it("reads a title pattern with its format", () => {
+    expect(
+      policy({ title_format: "pattern", title_pattern: "{key}: {summary}" }),
+    ).toMatchObject({
+      titleFormat: "pattern",
+      titlePattern: "{key}: {summary}",
     });
   });
 
@@ -95,6 +108,31 @@ describe("parsePrPolicy", () => {
     [{ open_as: "Draft" }, /open_as must be one of draft, ready/],
     [{ issue_link: "fixes" }, /issue_link must be one of/],
     [{ title_format: "angular" }, /title_format must be one of/],
+    [{ title_format: "pattern" }, /needs pull_requests\.title_pattern/],
+    [
+      { title_format: "free", title_pattern: "{key}: {summary}" },
+      /title_pattern needs pull_requests\.title_format set to pattern/,
+    ],
+    [
+      { title_format: "pattern", title_pattern: "  " },
+      /title_pattern must be a nonempty string/,
+    ],
+    [
+      { title_format: "pattern", title_pattern: "{key}: {title}" },
+      /unknown placeholder \{title\}/,
+    ],
+    [
+      { title_format: "pattern", title_pattern: "{summary}" },
+      /must contain \{key\} exactly once/,
+    ],
+    [
+      { title_format: "pattern", title_pattern: "{key} {key}: {summary}" },
+      /must contain \{key\} exactly once/,
+    ],
+    [
+      { title_format: "pattern", title_pattern: "{key}: {summary} }" },
+      /unbalanced brace/,
+    ],
     [{ size_budget: 0 }, /size_budget must be a whole number of at least 1/],
     [{ size_budget: 2.5 }, /size_budget must be a whole number/],
     [{ size_budget: 2 ** 53 }, /size_budget must be a whole number/],

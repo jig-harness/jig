@@ -53,6 +53,7 @@ import {
   PASS_MODEL_PATTERN,
 } from "../../drive-pr/scripts/lib/overlay.ts";
 import { DEFAULT_HOTSPOT_MIN_MERGES } from "../../resolve-conflicts/scripts/lib/classify.ts";
+import { SKILL_NAME_PATTERN } from "../../../shared/ci-status.ts";
 import { DEFAULT_REMOTE } from "../../../shared/consumer.ts";
 import {
   BOARD_CONFIG_KEYS,
@@ -295,6 +296,7 @@ describe("the reading skills", () => {
       ...POST_MERGE_STATES,
     ]);
     expect(field("drive.pass_model")?.pattern).toBe(PASS_MODEL_PATTERN.source);
+    expect(field("ci.repair_skill")?.pattern).toBe(SKILL_NAME_PATTERN.source);
     expect(field("drive.pass_args")?.items).toEqual({
       type: "string",
       pattern: PASS_ARG_PATTERN.source,

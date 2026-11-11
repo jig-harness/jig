@@ -12,6 +12,8 @@ import { definedFields } from "../../../../shared/defined-fields.ts";
  * rather than a silent default.
  */
 import { isAbsolute, join } from "node:path";
+import { ciRepairSettings } from "../../../../shared/ci-status.ts";
+import { attempt, ok, type Outcome } from "../../../../shared/outcome.ts";
 import { layersFingerprint } from "../../../../shared/config-layers.ts";
 import { DecodeError, isDistinctNameList } from "../../../../shared/guards.ts";
 import {
@@ -528,6 +530,20 @@ export function requiredChecksSetting(): string[] | undefined {
  */
 export function ciHoldLabelSetting(): string | undefined {
   return optionalString("ci", "hold_label");
+}
+
+/**
+ * `ci.repair_skill`: the skill a CI-repair pass is told to load before it
+ * repairs, `undefined` when the repository names none; a failure when the
+ * configuration cannot be read or the name is not a skill's.
+ */
+export function ciRepairSkillSetting(): Outcome<string | undefined> {
+  const config = attempt("invalid-config", "the configuration", () =>
+    readOptionalOverlay(),
+  );
+  if (!config.ok) return config;
+  const read = ciRepairSettings(config.value);
+  return read.ok ? ok(read.value.repairSkill) : read;
 }
 
 /**
