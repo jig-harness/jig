@@ -91,7 +91,7 @@ import {
   behindIntegrationBranch,
   titlePatternFindings,
 } from "./lib/trunk-fit.ts";
-import { labelFindings } from "./lib/label-fit.ts";
+import { policyFindings } from "./lib/pr-policy-fit.ts";
 import { reviewerEvidenceRule, reviewerFindings } from "./lib/reviewer-fit.ts";
 import {
   configuredAt,
@@ -988,7 +988,7 @@ async function forgeChecks(
     state,
   );
   const stacking = await stackingFindings(config, root, base, repo, report);
-  const labels = await labelFindings(config, root, slug);
+  const labels = await policyFindings(config, root, slug);
   return [
     ...baseFindings,
     ...findings,

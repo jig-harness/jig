@@ -11,11 +11,11 @@ import {
   conventionalCommitlintConfig,
   findCommitlintConfig,
 } from "../scripts/lib/commitlint.ts";
+import { inferTitleFormat } from "../scripts/lib/pr-conventions.ts";
 import {
   DEFAULT_BRANCH_PATTERN,
   findCodeowners,
   findPrTemplates,
-  inferTitleFormat,
   issueLinkLine,
   MAX_CHAIN_WALK,
   markReadyDueAfterRound,
@@ -52,6 +52,8 @@ describe("parsePrPolicy", () => {
       reviewersFromIssue: new Map(),
       titleFormat: null,
       titlePattern: null,
+      baseRules: [],
+      commitPrefix: null,
     });
   });
 
@@ -85,6 +87,8 @@ describe("parsePrPolicy", () => {
       ]),
       titleFormat: "free",
       titlePattern: null,
+      baseRules: [],
+      commitPrefix: null,
     });
   });
 
