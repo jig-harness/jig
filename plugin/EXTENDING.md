@@ -362,8 +362,11 @@ lists the logins whose threads it resolves, and `review.reviewer_app`,
 `review.reviewer_check_pattern`, `review.sticky_marker`,
 `review.reviewed_sha_marker` and `review.skip_notice_marker` tell the drive
 which check run and summary comment are the reviewer's evidence
-([fields](CONFIGURATION.md#review)). The
-drive expects a reviewer only where `review.reviewer_app` or
+([fields](CONFIGURATION.md#review)). A reviewer that submits pull-request
+reviews instead of a summary comment is read through
+`review.reviewer_evidence: review_object`; CodeRabbit is built in, so
+`review.reviewer_app: coderabbitai` alone sets its check name and evidence.
+The drive expects a reviewer only where `review.reviewer_app` or
 `review.reviewer_check_pattern` is set; a repository with neither converges on
 threads and CI alone.
 

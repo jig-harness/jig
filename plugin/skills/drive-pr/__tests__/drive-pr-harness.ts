@@ -260,6 +260,16 @@ export interface Fixture {
     completed_at?: string;
     /** Links the check to its workflow run in `workflow-runs.json`. */
     check_suite?: { id: number };
+    /** The run's `output.title`; default `No findings`. */
+    title?: string;
+  }>;
+  /** Pull-request reviews (`pulls/{n}/reviews`), as the forge lists them. */
+  reviews?: Array<{
+    id: number;
+    user: { login: string };
+    state: string;
+    commit_id: string;
+    submitted_at?: string;
   }>;
   statuses?: Array<{ context: string; state: string; description: string }>;
   /** Statuses reachable only on a SECOND API page — i.e. only with --paginate. */
@@ -2051,6 +2061,7 @@ for a in "$@"; do
       else emit "$F/issue-comments.json"; fi
       exit 0 ;;
     *pulls/*/comments*)  emit "$F/pull-comments.json"; exit 0 ;;
+    *pulls/*/reviews*)   emit "$F/reviews.json"; exit 0 ;;
   esac
 done
 echo "gh-stub: unhandled api call $*" >&2
@@ -2331,7 +2342,7 @@ export function writeFixture(
       ].map((c, i) => ({
         ...c,
         head_sha: head,
-        output: { title: "No findings" },
+        output: { title: c.title ?? "No findings" },
         app: { slug: c.app },
         // DESCENDING: GitHub lists check-runs newest-first and the newest carries
         // the HIGHEST id, which is what the reduction orders by.
@@ -2342,6 +2353,7 @@ export function writeFixture(
     });
   w("workflow-runs.json", { workflow_runs: [] });
   w("timeline.json", []);
+  w("reviews.json", f.reviews ?? []);
   w("metrics-meta.json", {
     data: {
       repository: {

@@ -24,6 +24,12 @@ import {
   type ReviewBot,
 } from "../../../../shared/consumer.ts";
 import { verifyRemoteIsPrRepo } from "./base-drift.ts";
+import {
+  evidenceProblem,
+  REVIEWER_EVIDENCE,
+  type ReviewerEvidence,
+  reviewerProfile,
+} from "./reviewer-profiles.ts";
 import { attachedTree } from "./driven-branch.ts";
 import { ghCall, git, gitCallTimeoutSeconds } from "./proc.ts";
 
@@ -112,19 +118,74 @@ export function reviewerLabel(): string {
 
 /**
  * The anchored pattern naming the posting reviewer's check run:
- * `DRIVE_PR_REVIEWER_CHECK`, else `review.reviewer_check_pattern`, else
- * `AI review` with an optional parenthesised arm suffix.
+ * `DRIVE_PR_REVIEWER_CHECK`, else `review.reviewer_check_pattern`, else the
+ * reviewer app's built-in profile, else `AI review` with an optional
+ * parenthesised arm suffix.
  */
 export function reviewerCheckPattern(): string {
   return (
     nonEmptyEnv("DRIVE_PR_REVIEWER_CHECK") ??
     optionalString("review", "reviewer_check_pattern") ??
-    DEFAULT_REVIEWER_CHECK
+    defaultReviewerCheckFor(reviewerApp())
   );
 }
 
-/** The posting reviewer's check-run name where the repository names no pattern. */
+/** The posting reviewer's check-run name where the repository names no pattern and no known app. */
 export const DEFAULT_REVIEWER_CHECK = "^ai[ _-]?review(\\s*\\(.+\\))?$";
+
+/** The check-run pattern for the app `app` where the repository names none: its profile's, else the default. */
+export function defaultReviewerCheckFor(app: string | null): string {
+  return reviewerProfile(app ?? "")?.checkPattern ?? DEFAULT_REVIEWER_CHECK;
+}
+
+/**
+ * How the reviewer records the commit it reviewed:
+ * `DRIVE_PR_REVIEWER_EVIDENCE`, else `review.reviewer_evidence`, else the
+ * reviewer app's built-in profile, else `sticky` (`reviewer-profiles.ts`).
+ */
+export function reviewerEvidence(): ReviewerEvidence {
+  const value =
+    nonEmptyEnv("DRIVE_PR_REVIEWER_EVIDENCE") ??
+    optionalString("review", "reviewer_evidence");
+  if (value === undefined)
+    return reviewerProfile(reviewerApp())?.evidence ?? "sticky";
+  if (!(REVIEWER_EVIDENCE as readonly string[]).includes(value))
+    throw new DecodeError(
+      configSource("review.reviewer_evidence"),
+      "$.review.reviewer_evidence",
+      `must be one of ${REVIEWER_EVIDENCE.join(", ")} (got '${value}')`,
+    );
+  return value as ReviewerEvidence;
+}
+
+/**
+ * Why the drive could not read the evidence of the reviewer the repository
+ * names, so that a drive would wait for it until `--timeout`; `null` when it
+ * can, or when no reviewer is expected. A malformed field throws, as every
+ * field here does.
+ */
+export function reviewerEvidenceProblem(): string | null {
+  return reviewerExpected()
+    ? evidenceProblem(reviewerApp(), reviewerEvidence())
+    : null;
+}
+
+/**
+ * `review.draft_skipping_reviewers`: the GitHub Apps whose reviewers skip
+ * draft pull requests and must have run on a head after it was marked Ready
+ * before the merge-ready announcement vouches for it; `[]` when not set.
+ */
+export function draftSkippingReviewers(): string[] {
+  const value = section("review").draft_skipping_reviewers;
+  if (value === undefined || value === null) return [];
+  if (!isDistinctNameList(value))
+    throw new DecodeError(
+      configSource("review.draft_skipping_reviewers"),
+      "$.review.draft_skipping_reviewers",
+      "must be a list of distinct GitHub App slugs",
+    );
+  return value;
+}
 
 /**
  * The marker that identifies the reviewer's sticky summary comment:

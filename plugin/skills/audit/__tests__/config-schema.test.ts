@@ -38,6 +38,7 @@ import {
   GITHUB_STATE_SOURCES,
   PRIORITY_NAMES,
 } from "../../do-item/scripts/lib/tracker/github/settings.ts";
+import { REVIEWER_EVIDENCE } from "../../drive-pr/scripts/lib/reviewer-profiles.ts";
 import {
   ARM_DRIVE_MODES,
   DEFAULT_ARM_DRIVE,
@@ -287,6 +288,9 @@ describe("the reading skills", () => {
     ]);
     expect(field("pull_requests.open_as")?.values).toEqual([...OPEN_AS]);
     expect(field("do_item.arm_drive")?.values).toEqual([...ARM_DRIVE_MODES]);
+    expect(field("review.reviewer_evidence")?.values).toEqual([
+      ...REVIEWER_EVIDENCE,
+    ]);
     expect(field("do_item.post_merge_state")?.values).toEqual([
       ...POST_MERGE_STATES,
     ]);

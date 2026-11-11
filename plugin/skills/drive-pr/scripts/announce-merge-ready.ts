@@ -9,7 +9,9 @@
  * `drive-status.ts` must report CONVERGED (posting reviewer completed on this
  * exact head, its recorded reviewed-SHA equal to that head, zero unresolved
  * threads, zero unaddressed summary findings) AND its non-reviewer CI verdict
- * must be exactly `green` AND this worktree must be clean. That verdict
+ * must be exactly `green` AND the reviewers that skip drafts must have run on
+ * the head since it was marked Ready (`lib/announce-draft-skippers.ts`) AND
+ * this worktree must be clean. That verdict
  * accepts a completed `neutral` or `skipped` check run as not-failing, so the
  * posted wording says that rather than claiming every check passed; the
  * clean-tree gate exists because the other two are claims about the remote
@@ -29,6 +31,7 @@
  */
 
 import { checkWorktreeClean } from "./lib/announce-clean.ts";
+import { draftSkippersRan } from "./lib/announce-draft-skippers.ts";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -381,6 +384,15 @@ async function main(): Promise<number> {
     fail(
       1,
       `announce-merge-ready: review converged but CI is '${ci}' — refusing to announce`,
+    );
+  }
+  // The reviewers that skip drafts must have run since the Ready mark.
+  const skippers = await draftSkippersRan(pr, convergedHead);
+  if (!skippers.ok) {
+    const notYet = skippers.failure.code === "not-yet";
+    fail(
+      notYet ? 4 : 1,
+      `announce-merge-ready: ${skippers.failure.reason} — refusing to announce${notYet ? "; re-run once it has run on the Ready pull request" : ""}`,
     );
   }
 

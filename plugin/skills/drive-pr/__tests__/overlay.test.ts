@@ -11,11 +11,14 @@ import {
   baseBranch,
   changeAreasCatalogPath,
   ciHoldLabelSetting,
+  draftSkippingReviewers,
   isReviewerLogin,
   requiredChecksSetting,
   reviewedShaMarker,
   reviewerApp,
   reviewerCheckPattern,
+  reviewerEvidence,
+  reviewerEvidenceProblem,
   reviewerExpected,
   reviewerLabel,
   reviewsDrafts,
@@ -33,6 +36,7 @@ const KEYS = [
   "DRIVE_PR_STICKY_MARKER",
   "DRIVE_PR_SHA_MARKER",
   "DRIVE_PR_SKIP_NOTICE_MARKER",
+  "DRIVE_PR_REVIEWER_EVIDENCE",
 ] as const;
 let saved: Record<string, string | undefined>;
 let dir: string;
@@ -181,6 +185,57 @@ describe("reviewer protocol", () => {
     expect(stickyMarker()).toBe("<!-- env -->");
     expect(reviewedShaMarker()).toBe("env-sha");
     expect(skipNoticeMarker()).toBe("env-skip");
+  });
+
+  it("a known reviewer app brings its check name and evidence", () => {
+    overlay("review:\n  reviewer_app: coderabbitai\n");
+    expect(reviewerCheckPattern()).toBe("^CodeRabbit$");
+    expect(reviewerEvidence()).toBe("review_object");
+    expect(reviewerEvidenceProblem()).toBeNull();
+    expect(isReviewerLogin("coderabbitai[bot]")).toBe(true);
+    overlay(
+      'review:\n  reviewer_app: coderabbitai\n  reviewer_check_pattern: "^Own$"\n',
+    );
+    expect(reviewerCheckPattern()).toBe("^Own$");
+    overlay("review:\n  reviewer_app: rev\n");
+    expect(reviewerCheckPattern()).toBe("^ai[ _-]?review(\\s*\\(.+\\))?$");
+    expect(reviewerEvidence()).toBe("sticky");
+  });
+
+  it("reads review.reviewer_evidence, and the environment overrides it", () => {
+    overlay(
+      "review:\n  reviewer_app: rev\n  reviewer_evidence: review_object\n",
+    );
+    expect(reviewerEvidence()).toBe("review_object");
+    process.env.DRIVE_PR_REVIEWER_EVIDENCE = "sticky";
+    expect(reviewerEvidence()).toBe("sticky");
+    delete process.env.DRIVE_PR_REVIEWER_EVIDENCE;
+    overlay("review:\n  reviewer_app: rev\n  reviewer_evidence: comments\n");
+    expect(() => reviewerEvidence()).toThrow("review.reviewer_evidence");
+  });
+
+  it("names the evidence the drive could not read", () => {
+    overlay(
+      "review:\n  reviewer_app: coderabbitai\n  reviewer_evidence: sticky\n",
+    );
+    expect(reviewerEvidenceProblem()).toContain("submits pull-request reviews");
+    overlay(
+      'review:\n  reviewer_check_pattern: "^Bot$"\n  reviewer_evidence: review_object\n',
+    );
+    expect(reviewerEvidenceProblem()).toContain("no review.reviewer_app");
+    overlay("review:\n  reviewer_evidence: review_object\n");
+    expect(reviewerEvidenceProblem()).toBeNull();
+  });
+
+  it("reads review.draft_skipping_reviewers", () => {
+    overlay("review: {}\n");
+    expect(draftSkippingReviewers()).toEqual([]);
+    overlay("review:\n  draft_skipping_reviewers: [coderabbitai]\n");
+    expect(draftSkippingReviewers()).toEqual(["coderabbitai"]);
+    overlay("review:\n  draft_skipping_reviewers: [a, a]\n");
+    expect(() => draftSkippingReviewers()).toThrow(
+      "review.draft_skipping_reviewers",
+    );
   });
 });
 

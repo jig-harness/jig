@@ -84,10 +84,16 @@ function board(
 }
 
 /** Run announce-merge-ready.ts with `--dry-run` over a converged fixture whose board query answers `answer`. */
-async function dryRun(f: Fixture & { head: string }, answer: string) {
+async function dryRun(
+  f: Fixture & { head: string },
+  answer: string,
+  more: { timeline?: unknown[]; env?: Record<string, string> } = {},
+) {
   const { dir, stateDir } = writeFixture(f, scratchClean.dir);
   writeVerifiedSha(stateDir, f.head);
   writeFileSync(join(dir, "board.json"), answer);
+  if (more.timeline !== undefined)
+    writeFileSync(join(dir, "timeline.json"), JSON.stringify(more.timeline));
   const proc = Bun.spawn(
     scriptArgv(join(SCRIPTS, "announce-merge-ready.ts"), "999", "--dry-run"),
     {
@@ -100,6 +106,7 @@ async function dryRun(f: Fixture & { head: string }, answer: string) {
         DRIVE_PR_STATE_DIR_IDENTITY: stateDirIdentityToken(stateDir),
         DRIVE_PR_MERGE_MARKER_FIXTURE: `<!-- drive-pr-merge-ready: ${f.head} -->`,
         DRIVE_PR_ANNOUNCE_OPENER_FIXTURE: OPENER,
+        ...more.env,
       },
       stdin: "ignore",
       stdout: "pipe",
@@ -154,5 +161,93 @@ describe("announce-merge-ready.ts and the Ready predicate", () => {
     expect(r.posted).toBe(false);
     expect(r.stdout).toBe("");
     expect(r.stderr).toContain("not witnessed on this head");
+  });
+});
+
+describe("announce-merge-ready.ts and the reviewers that skip drafts", () => {
+  const SKIPPERS = { JIG__REVIEW__DRAFT_SKIPPING_REVIEWERS: "[coderabbitai]" };
+  const READY = [
+    { event: "ready_for_review", created_at: "2026-11-11T09:24:30Z" },
+  ];
+  const ownRun = {
+    name: "AI review (shadow)",
+    status: "completed",
+    conclusion: "neutral",
+    app: "example-review",
+  };
+  const rabbit = (started: string, title: string) => ({
+    name: "CodeRabbit",
+    status: "completed",
+    conclusion: "skipped",
+    app: "coderabbitai",
+    started,
+    title,
+  });
+  let converged: Fixture & { head: string };
+  beforeAll(() => {
+    converged = {
+      threads: [],
+      reviewedSha: scratchClean.head,
+      head: scratchClean.head,
+    };
+  });
+
+  it("refuses while the reviewer has no check run on the head since the Ready mark", async () => {
+    const r = await dryRun(
+      { ...converged, checkRuns: [ownRun] },
+      board(converged.head),
+      { timeline: READY, env: SKIPPERS },
+    );
+    expectSpawnExit(r, 4);
+    expect(r.posted).toBe(false);
+    expect(r.stderr).toContain("coderabbitai has no check run");
+  });
+
+  it("refuses while its newest run is the skip it posted on the draft", async () => {
+    const r = await dryRun(
+      {
+        ...converged,
+        checkRuns: [
+          ownRun,
+          rabbit("2026-11-11T08:58:54Z", "Review skipped: draft pull request"),
+        ],
+      },
+      board(converged.head),
+      { timeline: READY, env: SKIPPERS },
+    );
+    expectSpawnExit(r, 4);
+    expect(r.stderr).toContain("draft skip");
+  });
+
+  it("refuses a run that started before the Ready mark", async () => {
+    const r = await dryRun(
+      {
+        ...converged,
+        checkRuns: [ownRun, rabbit("2026-11-11T09:00:00Z", "Review completed")],
+      },
+      board(converged.head),
+      { timeline: READY, env: SKIPPERS },
+    );
+    expectSpawnExit(r, 4);
+    expect(r.stderr).toContain("before the pull request was marked Ready");
+  });
+
+  it("announces once the reviewer has run on the Ready pull request", async () => {
+    const r = await dryRun(
+      {
+        ...converged,
+        checkRuns: [
+          ownRun,
+          rabbit(
+            "2026-11-11T09:25:00Z",
+            "Review skipped: manual review required for this OSS repository",
+          ),
+        ],
+      },
+      board(converged.head),
+      { timeline: READY, env: SKIPPERS },
+    );
+    expectSpawnExit(r, 0);
+    expect(r.stdout).toContain(OPENER);
   });
 });
