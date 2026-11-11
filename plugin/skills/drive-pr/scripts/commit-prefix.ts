@@ -318,6 +318,25 @@ export async function rewordUnpushed(
   return reworded;
 }
 
+/**
+ * HEAD and its branch, pinned before anything reads the branch or its
+ * commits and carried through to the final update: another session switching
+ * branches or committing meanwhile must refuse the rewrite, never redirect it.
+ * Exit 1 when HEAD is not `expected`.
+ */
+async function pinHead(root: string, expected: string | undefined) {
+  const at: HeadAt = {
+    sha: (await gitOut(root, ["rev-parse", "HEAD"])).trim(),
+    ref: await headRef(root, false),
+  };
+  if (expected !== undefined && expected !== at.sha)
+    return fail(
+      1,
+      `ERROR: HEAD is ${at.sha.slice(0, 12)}, not the ${expected.slice(0, 12)} this run was asked to start from; nothing was rewritten: re-run`,
+    );
+  return at;
+}
+
 /** The branch whose key is read: `--branch`, else HEAD's; exit 2 on a detached HEAD. */
 async function branchOf(root: string, explicit: string | undefined) {
   if (explicit !== undefined && explicit.trim() !== "") return explicit.trim();
@@ -384,19 +403,7 @@ async function main(): Promise<number> {
     return 0;
   }
   const root = consumerRoot();
-  // Pinned before anything below reads the branch or its commits, and carried
-  // through to the final update: another session switching branches or
-  // committing meanwhile must refuse the rewrite, never redirect it.
-  const at: HeadAt = {
-    sha: (await gitOut(root, ["rev-parse", "HEAD"])).trim(),
-    ref: await headRef(root, false),
-  };
-  const expected = values.get("expect-head");
-  if (expected !== undefined && expected !== at.sha)
-    return fail(
-      1,
-      `ERROR: HEAD is ${at.sha.slice(0, 12)}, not the ${expected.slice(0, 12)} this run was asked to start from; nothing was rewritten: re-run`,
-    );
+  const at = await pinHead(root, values.get("expect-head"));
   const branch = await branchOf(root, values.get("branch"));
   const keys = issueKeysOrNull();
   if (keys === null)
