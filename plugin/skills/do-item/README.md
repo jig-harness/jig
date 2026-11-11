@@ -229,6 +229,30 @@ the command, the model, the permission mode, the driver log and the
 commands that list and stop the drive. An issue that waits on a person's
 decision gets the command only.
 
+## Review and finish
+
+A repository whose board separates work being written from work waiting
+for review can name an optional `pr_open` state in `issue_tracker.states`.
+Once the pull request opens, the skill posts the comment linking it on the
+item, then moves the item there, before the drive arms. The parent roll-up
+reads `pr_open` as work still in progress, not as merged: `in_review` keeps
+that meaning. A tracker with one review status, used while the pull request
+is open and after the merge, gives `pr_open` and `in_review` the same name;
+an item in it then reads as `pr_open`, since the tracker cannot say whether
+its pull request merged. Without `pr_open`, nothing moves before the merge.
+
+After the merge, the item moves to `done`, or to `ops_pending` while a
+manual step remains. A team whose `done` means merged and verified by
+someone else sets `do_item.post_merge_state` to `in_review` or
+`ops_pending`: no agent then moves the item further, and the closing comment
+says who closes it (`do_item.post_merge_closer`). That needs
+`pull_requests.issue_link: refs`, since a `Closes` link lets the forge close
+the item on merge whatever the skill does. Every post-merge move passes
+`--post-merge` to the tracker script, which refuses a move to `done` the
+setting forbids; a person's own move without the flag still works. The
+[configuration reference](../../CONFIGURATION.md#do_item) has both
+settings.
+
 ## Continuing work
 
 Invoke the same skill with the issue key again. It refreshes tracker state,

@@ -391,6 +391,103 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.197.0] - 2026-11-11
+
+### Added
+
+- `jig send drive@… answer <key> --approve` takes a parked decision's recommended option, and `--choose '<option>'` the option of that name, matched as the drive's readers match it; `--note '<text>'` adds a condition beside either. The dry run shows the option in full with its [decision digest](GLOSSARY.md) and prints the command to send, which names it with `--decision <digest>` and repeats any `--as`: a real send must name it, and writes nothing when the drive has framed the question again since. The comment carries the digest and the choice in its `drive-answer` record, still version 1. An answer that names no option, or two forms, is a usage error; an option the park does not offer is refused; and a free answer the readers would count as a choice (`approve`, `choose Keep`) is refused and pointed to `--approve` or `--choose`, so no choice is written unbound to the framing you read. See [plugin/README.md § Telling a station what to do](plugin/README.md#telling-a-station-what-to-do).
+- `jig send drive@… answer --all --approve` approves every open parked item whose class Jig's table of [acts](GLOSSARY.md) lists as Decide, one comment per item, and leaves out, saying why, other acts' classes (Authorize, Merge, Reply), a repository's own classes, items another person answered, and items with no recommendation or no digest. Its dry run prints a [decision set token](GLOSSARY.md) of the items and their digests, and the real send, naming it with `--decision-set <token>`, writes nothing when any of them changed. When a post fails part-way, it prints what it sent, wakes the re-arm's tick for those, names what it did not send and exits `1`.
+- The `operator` skill turns "approve 456's parked question", "choose Keep" and "approve them all" into those commands, run with `--dry-run` first.
+
+### Changed
+
+- `jig send … answer` no longer refuses an item someone already answered. A person who answers again replaces their earlier answer, which the send shows first; another person's answer is shown too, with a reminder that differing answers leave the item disputed and that a stale answer keeps it waiting.
+
+## [0.196.0] - 2026-11-11
+
+### Added
+
+- **`tracker.ts migrate-relations [--dry-run]`** converts each legacy GitHub
+  `related` comment into a native related link and marks the comment
+  superseded, then reports what it converted. Run it again after a failure; it
+  only does what is left. Run it once on each repository that used the old
+  form.
+- **`tracker.ts sync-plan-blocks <epic-key> [--dry-run]`** writes the
+  dependency edges of an epic's execution plan as native `blocks` relations the
+  tracker lacks, so a planner states a dependency in both places.
+- The rule behind both is recorded in ADR-0015: parent, blocks, related and
+  duplicate live only in the tracker's own relationships.
+- An optional `pr_open` state in `issue_tracker.states`, for a board that
+  separates work being written from work waiting for review. Once an item's
+  pull request opens, `/jig:do-item` and `/jig:work-batch` post the comment
+  linking it, then move the item to `pr_open`, before the drive arms. The
+  parent roll-up reads it as work in progress, never as merged; a claim
+  refuses an item in it; the dispatcher's stall and double-claim watch counts
+  it as claimed where it has a name of its own; and `dispatch.states` may not list it. It may share its name
+  with `in_review` on a tracker with one review status, and that name then
+  reads back as `pr_open`: with `do_item.post_merge_state: in_review` too,
+  an epic stays `in_progress` after every child has merged, until a person
+  closes the children. Unset, no item moves there and nothing changes.
+- `do_item.post_merge_state` (`done`, the default, `ops_pending` or
+  `in_review`) and `do_item.post_merge_closer`: where the post-merge rule
+  stops, for a team whose `done` means merged and verified by someone else,
+  and who closes the item, for the closing comment. It applies to an item, each
+  sub-issue, an epic's roll-up, `/jig:work-batch after-merge` and the
+  follow-up. A value other than `done` needs `pull_requests.issue_link: refs`,
+  and the configuration reader refuses it otherwise.
+- `tracker.ts transition <key> <state> --post-merge`, which refuses a move to
+  `done` that `do_item.post_merge_state` forbids, and `tracker.ts post-merge`,
+  which prints the policy. A transition to `pr_open` where it is unset prints
+  `skipped` and writes nothing.
+- Parent reconciliation and `/jig:work-batch` now describe the policy-dependent
+  no-close path when `do_item.post_merge_state` stops short of `done`, so
+  extractable tails are moved without claiming that their epic or batch rows
+  automatically close.
+
+### Changed
+
+- **GitHub: `related` is GitHub's own related link.** `tracker.ts relate "#a"
+  related "#b"` now writes GitHub's related link (`addRelatesTo`) and no
+  comment, and `relations` reads it from the issue's `relatesTo`. The comments
+  earlier versions wrote (`<!-- jig:related … -->`) are still read as related
+  links until they are converted.
+- **Execution plans: the tracker's `blocks` may not contradict a plan.** Pickup
+  and the dispatcher refuse an epic's plan when the tracker's `blocks` makes an
+  issue wait for another that the plan puts after it, and name both issues.
+  Remove the wrong side, or re-run the planner. A dependency the plan states
+  and the tracker lacks is not refused.
+
+### Fixed
+
+- The dispatcher's steward pass now runs on a Claude Code account. Its skill
+  was hidden from the `/` menu, and Claude Code refuses a slash-command
+  prompt for a skill hidden that way, so every steward pass on a Claude
+  Code account ended before it read the digest.
+
+## [0.195.0] - 2026-11-11
+
+Served items that no repository label places are no longer started by every repository that shares their tracker team.
+
+### Added
+
+- `serve_defaults` in the host's dispatch machine file names, for each tracker namespace, the one repository that starts served items carrying none of the repository labels. A namespace is `linear:<team>` or `jira:<site>:<project>`, so trackers that reuse a project key remain independent. The other repositories of the namespace leave such an item alone, and the launch-time recheck refuses it there. Documented in [CONFIGURATION.md](plugin/CONFIGURATION.md#the-machines-dispatch-file).
+
+### Fixed
+
+- A served item with no repository label was launched by every pickup repository that read its Linear or Jira tracker, each pass racing the others for the claim. Now only the tracker's default repository starts it; a tracker with no default has the item reported once as needing a repository label, and no pass starts. Items that carry a repository label still go only to that repository, and a GitHub repository reading its own issues is unaffected. A Linear or Jira repository that has `review.repo_label` and `review.taxonomy.repos` set now needs its tracker namespace named in `serve_defaults` for its unlabelled served items to start; until then each is held with that reason in the Queue view.
+
+## [0.194.2] - 2026-11-10
+
+### Fixed
+
+- Parked decisions now carry a decision digest in their ledger and notification answer lines. Answers copied from an earlier framing leave the item parked with a stale-answer explanation; re-arms also wait when the published ledger has not caught up with local framing. Answers without a digest and legacy parks keep their time-based binding.
+
+## [0.194.1] - 2026-11-10
+
+### Fixed
+
+- Dispatch dashboard recommendations render emphasis, code and links instead of displaying raw Markdown, with the same link and image restrictions as the whole decision.
+
 ## [0.194.0] - 2026-11-10
 
 ### Added
@@ -6753,7 +6850,12 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.194.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.197.0...HEAD
+[0.197.0]: https://github.com/jig-harness/jig/compare/v0.196.0...v0.197.0
+[0.196.0]: https://github.com/jig-harness/jig/compare/v0.195.0...v0.196.0
+[0.195.0]: https://github.com/jig-harness/jig/compare/v0.194.2...v0.195.0
+[0.194.2]: https://github.com/jig-harness/jig/compare/v0.194.1...v0.194.2
+[0.194.1]: https://github.com/jig-harness/jig/compare/v0.194.0...v0.194.1
 [0.194.0]: https://github.com/jig-harness/jig/compare/v0.193.0...v0.194.0
 [0.193.0]: https://github.com/jig-harness/jig/compare/v0.192.0...v0.193.0
 [0.192.0]: https://github.com/jig-harness/jig/compare/v0.191.0...v0.192.0

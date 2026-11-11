@@ -1,16 +1,22 @@
 /**
- * A person's answer to a parked question as `jig send … answer <key> <text>`
- * writes it (`drive-answer`): one pull-request comment,
+ * A person's answer to a parked question as `jig send … answer` writes it
+ * (`drive-answer`): one pull-request comment,
  *
  *   answer <key>: <text>
+ *   note <key>: <note>
  *
  *   <!-- jig-send-answer
- *   {"kind":"drive-answer","v":1,"key":"answer:<key>","writer":{…},"at":"…","pr":<PR>}
+ *   {"kind":"drive-answer","v":1,"key":"answer:<key>","writer":{…},"at":"…","pr":<PR>,"decision":"<digest>","choice":{"option":"<name>","form":"approve|choose"}}
  *   -->
  *
  * The first line is what the re-arm reads (`driver/rearm.ts`): an
  * `answer <key>:` line, from an author the forge vouches for, after the
- * park. The hidden marker holds the record envelope, which names the writer
+ * park. A structured answer's text is `approve` or `choose <option>`, ending
+ * with the digest of the framing the person read (`approve [<digest>]`)
+ * when the park has one, and may have a `note <key>:` line beside it; its
+ * record then carries the digest (`decision`) and the option chosen and its
+ * form (`choice`) as payload fields. The record stays at version 1: a reader
+ * that does not know a payload field ignores it. The hidden marker holds the record envelope, which names the writer
  * and its host (as a digest, like every record on the forge). A comment
  * carrying any other hidden marker is a script's and never a person's
  * answer; this record is the one marker an answer may carry, so the readers
@@ -47,7 +53,9 @@ export { ANSWER_TEXT_MAX, answerTextFault };
 
 /** Why `key` cannot be named in an answer line, or `null` when it can. */
 export function answerKeyFault(key: string): string | null {
-  return /^\S+$/.test(key) && !key.includes("<!--")
+  return /^\S+$/.test(key) &&
+    !/[\p{Cc}\u202a-\u202e\u2066-\u2069]/u.test(key) &&
+    !key.includes("<!--")
     ? null
     : `${JSON.stringify(key)} cannot be written in an answer line, which names its key without spaces`;
 }
@@ -57,13 +65,42 @@ export function answerLine(key: string, text: string): string {
   return `answer ${key}: ${text.trim()}`;
 }
 
-/** The comment that answers parked `key` of pull request `pr` with `text`, as `writer` at `at`. */
+/** The option a structured answer chooses, and the form that chose it. */
+export interface WrittenChoice {
+  option: string;
+  form: "approve" | "choose";
+}
+
+/** What a structured answer adds to its comment: the note line and the record's payload fields. */
+export interface StructuredParts {
+  note?: string;
+  /** The digest of the framing the person read; absent on a park from before digests. */
+  decision?: string;
+  choice: WrittenChoice;
+}
+
+/** A structured answer's text: its form, and the framing's digest when there is one. */
+export function structuredAnswerText(
+  choice: WrittenChoice,
+  digest: string | undefined,
+): string {
+  const form =
+    choice.form === "approve" ? "approve" : `choose ${choice.option}`;
+  return digest === undefined ? form : `${form} [${digest}]`;
+}
+
+/**
+ * The comment that answers parked `key` of pull request `pr` with `text`,
+ * as `writer` at `at`; a structured answer's note line and payload fields
+ * from `structured`.
+ */
 export function answerComment(
   key: string,
   text: string,
   pr: number,
   writer: Writer,
   at: string,
+  structured?: StructuredParts,
 ): string {
   const envelope: Envelope = {
     kind: ANSWER_KIND,
@@ -72,7 +109,21 @@ export function answerComment(
     writer,
     at,
   };
-  return `${answerLine(key, text)}\n\n${ANSWER_OPEN}\n${encode(envelope, { pr })}${ANSWER_CLOSE}`;
+  const note =
+    structured?.note === undefined
+      ? ""
+      : `\nnote ${key}: ${structured.note.trim()}`;
+  const payload =
+    structured === undefined
+      ? { pr }
+      : {
+          pr,
+          ...(structured.decision === undefined
+            ? {}
+            : { decision: structured.decision }),
+          choice: structured.choice,
+        };
+  return `${answerLine(key, text)}${note}\n\n${ANSWER_OPEN}\n${encode(envelope, payload)}${ANSWER_CLOSE}`;
 }
 
 /**

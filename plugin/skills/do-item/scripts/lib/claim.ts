@@ -40,7 +40,7 @@ export type ClaimResult =
        */
       outcome: "refused";
       issue: string;
-      why: "in_progress" | "assigned" | "state" | "preflight";
+      why: "in_progress" | "pr_open" | "assigned" | "state" | "preflight";
       reason: string;
       /** A preflight refusal: the item's `updatedAt` as the command saw it. */
       updatedAt?: string;
@@ -63,7 +63,10 @@ export function canonicalStatesOf(
   tracker: Pick<ClaimTracker, "stateName">,
   name: string,
 ): CanonicalState[] {
-  return CANONICAL_STATES.filter((s) => sameName(tracker.stateName(s), name));
+  return CANONICAL_STATES.filter((s) => {
+    const mapped = tracker.stateName(s);
+    return mapped !== null && sameName(mapped, name);
+  });
 }
 
 /**
@@ -126,6 +129,14 @@ export async function claimIssue(
     rules.claimFrom,
   );
   if (outside !== null) return outside;
+  const prOpen = tracker.stateName("pr_open");
+  if (prOpen !== null && sameName(before.state.name, prOpen))
+    return {
+      outcome: "refused",
+      issue: key,
+      why: "pr_open",
+      reason: `${key} is ${prOpen}: its pull request is open`,
+    };
   const holders = await tracker.assignees(key);
   const others = holders.filter((u) => u.id !== me.id);
   if (others.length > 0)

@@ -58,6 +58,18 @@ export function actOfClass(decisionClass: string | null | undefined): NeedAct {
   );
 }
 
+/**
+ * The act the table lists for `decisionClass` by name; `undefined` for a
+ * class it does not list (a repository's own class), which `actOfClass`
+ * reads as Decide only as a fallback. A send that approves several items at
+ * once takes only a class listed as Decide here.
+ */
+export function listedActOfClass(
+  decisionClass: string | null | undefined,
+): NeedAct | undefined {
+  return decisionClass == null ? undefined : ownAct(CLASS_ACTS, decisionClass);
+}
+
 /** The act each cause the dispatcher finds waiting on a person asks for; a park's act is its class's. */
 const CAUSE_ACTS: Readonly<Record<string, NeedAct>> = {
   "needs-person": "Investigate",

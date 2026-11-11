@@ -181,10 +181,13 @@ are named by canonical keys (`in_progress`, `in_review`, …) that
     cached on the machine for an hour; a read it could not make is an error
     naming the read and the credential, never labels;
   - parent and children are sub-issues, `blocks` is GitHub's issue
-    dependency, `duplicate` closes the issue as a duplicate of the other;
-    GitHub has no `related` link, so each issue gets a comment naming the
-    other, with a marker the adapter reads back from comments by people who
-    can write to the repository (the same rule makes a comment trusted);
+    dependency, `duplicate` closes the issue as a duplicate of the other and
+    `related` is GitHub's own related link (`addRelatesTo`, read from
+    `relatesTo`), so no relationship is kept as text. Earlier versions wrote
+    a marked comment for `related`; the adapter still reads those, from
+    comments by people who can write to the repository (the same rule makes a
+    comment trusted), until `tracker.ts migrate-relations` has converted
+    them;
   - the reports read the repository's issue list rather than GitHub's
     search, which returns at most 1,000 matches; text search for duplicates
     uses the search and refuses a result it cannot return in full. GitHub

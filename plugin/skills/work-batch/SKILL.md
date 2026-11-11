@@ -360,6 +360,13 @@ A row per issue is what closes each issue on merge: an issue named only in
 prose stays open. Add the `## Out-of-tree follow-ups` section `/jig:do-item`
 requires, for every issue.
 
+Once the pull request is open, and before the drive arms, move each issue
+to `pr_open` as `/jig:do-item`'s "Move the item to `pr_open`" (Step 4a)
+says: where `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" states`
+names `pr_open`, post the comment linking the pull request on the issue,
+then `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" transition "<KEY>" pr_open`.
+Where it maps `pr_open` to `null`, skip this.
+
 ### 6. Drive it once
 
 Capture the intent chain with the `pickupId` from step 3 (or step 4's
@@ -378,23 +385,31 @@ bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/arm-drive.ts" <PR>
 ## After the merge
 
 When the batch pull request merges, run `/jig:work-batch after-merge <PR>`.
-The batch's own table is the checklist: every `Closes` row gets the steps a
-single issue gets after its pull request merges, not only the first.
+The batch's own table is the issue inventory: every issue-link row gets the
+steps a single issue gets after its pull request merges, not only the first.
 
 1. **List the rows**: `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh pr view <PR> --json "body,mergeCommit,mergedAt"`
-   and take every issue key in the table's issue-link cells.
+   and take every issue key in the table's issue-link cells. A row closes its
+   issue automatically only when the configured issue-link policy uses
+   `Closes`; with `refs`, post-merge policy transitions the issue instead.
 2. **For each row**:
    - **Status**: `/jig:do-item`'s post-merge status rule decides: `done`,
      or `ops_pending` when a manual, operational or legal step remains
-     (always so for an issue carrying the manual-operations label).
+     (always so for an issue carrying the manual-operations label), capped
+     at `do_item.post_merge_state` (`bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" post-merge`).
+     Move it with `--post-merge`:
+     `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" transition "<KEY>" <state> --post-merge`;
+     a refusal (exit 3) leaves the issue where it is, for a person.
    - **Closing comment**: the merge commit, and the pull request's
-     `## Out-of-tree follow-ups` items for that issue as unchecked boxes.
+     `## Out-of-tree follow-ups` items for that issue as unchecked boxes;
+     for an issue left short of `done`, the policy's `closing` sentence on
+     who closes it.
    - **Labels**: compare the issue's labels with the catalog's
      `tracker.labels` and `tracker.flags` for the areas the issue's commits
      touch. A flag the catalog derives that the issue lacks is a gap to
      report (and to settle, if it obliged a step the batch did not take);
      add a missing area label.
-3. **Each parent once**: for every distinct parent of the closed issues,
+3. **Each parent once**: for every distinct parent of the processed rows,
    after its children's statuses moved, run `/jig:do-item`
    [Step 5a](../do-item/SKILL.md#step-5a-all-sub-issues-complete)'s
    reconciliation (`reconcile_parent_status.ts`) and act on its decision.
@@ -404,17 +419,20 @@ single issue gets after its pull request merges, not only the first.
    findings, since a deferred thread resolves the moment its reply posts and
    a summary finding has no thread; check the tracker item behind each
    deferral exists.
-5. **Record the close/open ratio**: the issues the batch closed against the
-   new follow-up issues its review rounds filed. Comment it on the anchor
-   issue (an issue or epic anchor); for an area or path anchor, on the
-   highest-priority issue the batch closed:
+5. **Record the processed/follow-up ratio**: the rows the batch processed
+   against the new follow-up issues its review rounds filed. State separately
+   how many processed rows reached `done` and how many remain open under the
+   post-merge policy. Comment it on the anchor issue (an issue or epic
+   anchor); for an area or path anchor, on the highest-priority processed
+   row:
 
    ```
-   Batch close/open: <PR> closed <n> issues and filed <m> follow-ups (<n>:<m>).
+   Batch processed/follow-up: <PR> processed <n> issues (<d> done, <o> open)
+   and filed <m> follow-ups (<n>:<m>).
    ```
 
-   That ratio is the evidence that batching closes small issues faster than
-   review creates them, not only that it feels faster.
+   That ratio is the evidence that batching completes small units faster than
+   review creates follow-up work, not only that it feels faster.
 
 ## The eligibility mode
 

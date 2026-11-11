@@ -45,4 +45,15 @@ test("execution plans retain human checkpoints and dependency order", () => {
     order: [],
     holds: {},
   });
+  // The tracker says #2 waits for #3, the plan puts #2 first.
+  expect(
+    servedPlan(description, "#1", {
+      "#2": { state: "unstarted", blockedBy: ["#3"] },
+      "#3": { state: "unstarted", blockedBy: [] },
+    }),
+  ).toMatchObject({
+    present: true,
+    order: [],
+    error: expect.stringContaining("#2 is blocked by #3 in the tracker"),
+  });
 });

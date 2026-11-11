@@ -34,6 +34,7 @@ import {
   facetsOf,
   parseTrackerConfig,
 } from "../../../do-item/scripts/lib/tracker/config.ts";
+import { parsePostMerge } from "../../../do-item/scripts/lib/post-merge.ts";
 import { parseWorkTypes } from "../../../do-item/scripts/lib/work-types.ts";
 import { parsePrPolicy } from "../../../drive-pr/scripts/lib/pr-policy.ts";
 import { parseCodeScanningSeverities } from "../../../resolve-review-comments/scripts/lib/code-scanning-severity.ts";
@@ -130,6 +131,7 @@ export function skillValidation(
     }
   };
   attempt("do-item (pull-request policy)", () => parsePrPolicy(config));
+  attempt("do-item (post-merge state)", () => parsePostMerge(config));
   attempt("do-item (tracker)", () => {
     parseWorkTypes(config); // refuses a do_issue section before anything else
     const tracker = parseTrackerConfig(config);

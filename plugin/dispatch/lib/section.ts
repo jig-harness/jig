@@ -98,7 +98,10 @@ function text(value: unknown, field: string): Checked<string | null> {
   return ok(value.trim());
 }
 
-function states(value: unknown): Checked<string[]> {
+function states(
+  value: unknown,
+  tracker: Pick<TrackerConfig, "states">,
+): Checked<string[]> {
   if (value === undefined || value === null) return ok(DEFAULT_STATES);
   if (
     !Array.isArray(value) ||
@@ -114,6 +117,25 @@ function states(value: unknown): Checked<string[]> {
   if (value.includes("in_progress"))
     return invalid(
       "dispatch.states cannot list in_progress, the state do-item's claim moves an item to",
+    );
+  // An item there has a pull request open: it is claimed work, never a pickup.
+  if (value.includes("pr_open"))
+    return invalid(
+      "dispatch.states cannot list pr_open, the state of an item whose pull request is open",
+    );
+  const prOpen = tracker.states.pr_open?.trim().toLowerCase();
+  const alias =
+    prOpen === undefined
+      ? undefined
+      : (value as string[]).find(
+          (state) =>
+            tracker.states[state as keyof TrackerConfig["states"]]
+              ?.trim()
+              .toLowerCase() === prOpen,
+        );
+  if (alias !== undefined)
+    return invalid(
+      `dispatch.states cannot list ${alias}, which shares the '${tracker.states.pr_open}' tracker state name with pr_open; items there have a pull request open and are never pickups`,
     );
   return ok(value as string[]);
 }
@@ -227,10 +249,11 @@ function labelsAndAdopt(
 /** Who picks up work, from which states, and the follow-up's command. */
 function pickup(
   section: Record<string, unknown>,
+  tracker: Pick<TrackerConfig, "states">,
 ): Checked<Pick<DispatchSection, "identity" | "states" | "followupCommand">> {
   const identity = text(section.identity, "identity");
   if (!identity.ok) return identity;
-  const pickupStates = states(section.states);
+  const pickupStates = states(section.states, tracker);
   if (!pickupStates.ok) return pickupStates;
   const followupCommand = text(section.followup_command, "followup_command");
   if (!followupCommand.ok) return followupCommand;
@@ -324,7 +347,13 @@ export function dispatchSection(
     );
   const rules = labelsAndAdopt(section);
   if (!rules.ok) return rules;
-  const picked = pickup(section);
+  let tracker: TrackerConfig;
+  try {
+    tracker = parseTrackerConfig(values);
+  } catch (error) {
+    return invalid(error instanceof Error ? error.message : String(error));
+  }
+  const picked = pickup(section, tracker);
   if (!picked.ok) return picked;
   const waits = timings(section);
   if (!waits.ok) return waits;

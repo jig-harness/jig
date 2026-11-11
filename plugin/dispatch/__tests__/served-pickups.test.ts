@@ -28,6 +28,7 @@ function fake() {
   const tracker = {
     adapter: "github",
     team: "example/repo",
+    stateName: (s: string) => (s === "pr_open" ? null : s),
     assignedIssues: async (_: string, s: string[]) =>
       s.includes("in_progress") ? [] : roots,
     assignedBy: async (k: string) => {
@@ -91,6 +92,29 @@ describe("served pickups", () => {
           reason: "needs a person to start",
         }),
       );
+  });
+  it("carries a tracker namespace through the public reader", async () => {
+    const f = fake();
+    const read = await readPickups(
+      () => f.tracker,
+      { identity: null } as DispatchSection,
+      undefined,
+      {
+        people,
+        cache: f.cache,
+        nowMs: 1,
+        headroom: true,
+        repoScope: { own: "web", others: ["api"] },
+        unlabeled: "hold",
+        trackerNamespace: "linear:eng",
+      },
+    );
+    expect(read.unplaced).toContainEqual(
+      expect.objectContaining({
+        cause: "needs-repository-label",
+        source: "linear:eng",
+      }),
+    );
   });
   it("keeps a directly assigned child behind its parent's human gate", async () => {
     const f = fake();

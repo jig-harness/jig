@@ -23,7 +23,11 @@ import {
   type LinearTransport,
   linearTracker,
 } from "../scripts/lib/tracker/linear.ts";
-import type { TrackerUser } from "../scripts/lib/tracker/port.ts";
+import {
+  type StateNames,
+  stateNameIn,
+  type TrackerUser,
+} from "../scripts/lib/tracker/port.ts";
 import {
   conn,
   gitHub,
@@ -42,11 +46,12 @@ function memory(
   state: string,
   holders: TrackerUser[],
   onWrite?: (issue: { state: string; holders: TrackerUser[] }) => void,
+  states: StateNames = STATES,
 ) {
   const held = { state, holders: [...holders] };
   const log: string[] = [];
   const tracker: ClaimTracker = {
-    stateName: (s) => STATES[s],
+    stateName: stateNameIn(states),
     viewer: async () => ME,
     poolIssue: async (key) => ({
       identifier: key,
@@ -70,7 +75,7 @@ function memory(
     },
     transition: async (_key, s) => {
       log.push(`transition ${s}`);
-      held.state = STATES[s];
+      held.state = states[s] ?? held.state;
       onWrite?.(held);
     },
   };
@@ -78,6 +83,20 @@ function memory(
 }
 
 describe("claimIssue", () => {
+  it("refuses an issue whose pull request is open, writing nothing", async () => {
+    const states = parseTrackerConfig({
+      issue_tracker: { states: { pr_open: "Awaiting Review" } },
+    }).states;
+    const { tracker, log } = memory("Awaiting Review", [], undefined, states);
+    expect(await claimIssue(tracker, "#5")).toEqual({
+      outcome: "refused",
+      issue: "#5",
+      why: "pr_open",
+      reason: "#5 is Awaiting Review: its pull request is open",
+    });
+    expect(log).toEqual([]);
+  });
+
   it("refuses an issue already in progress, writing nothing", async () => {
     const { tracker, log } = memory("In Progress", []);
     expect(await claimIssue(tracker, "#5")).toEqual({

@@ -137,7 +137,7 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
       // and a claim re-check compares ids.
       state: {
         id: state,
-        name: model.stateName(state),
+        name: model.stateName(state) ?? "",
         type: STATE_TYPES[state],
       },
       assignee:

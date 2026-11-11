@@ -27,6 +27,7 @@ const PLACEHOLDERS: Record<string, string> = {
   "<item key>": "12",
   "<key>": "PRRT_kwDOexample",
   "<their words>": "keep the old flag",
+  "<option>": "Keep the flag",
   "<date>": "2026-11-01",
 };
 
@@ -108,8 +109,17 @@ function validateSend(line: string): void {
     ).ok,
     line,
   ).toBe(true);
+  const v = parsed.value;
   expect(
-    () => parseRequest(written.value.station, rest, refuse),
+    () =>
+      parseRequest(written.value.station, rest, refuse, {
+        approve: v.approve,
+        choose: v.choose,
+        note: v.note,
+        all: v.all,
+        decision: v.decision,
+        decisionSet: v.decisionSet,
+      }),
     line,
   ).not.toThrow();
 }
@@ -285,6 +295,8 @@ describe("its rules for sending", () => {
       "**Dry run first.**",
       "**Send only after the person says so.**",
       "**An answer is the person's own words.**",
+      "**A structured answer is bound to what the person read.**",
+      "run exactly the command the dry run printed",
       "readable by whoever can read the pull\n   request",
       "**Relay a refusal as `send` gives it**",
       "not by clearing `JIG_LAUNCH`",

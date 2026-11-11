@@ -6,7 +6,7 @@ import { describe, expect, it } from "bun:test";
 import { Window } from "happy-dom";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { DecisionText } from "./decision-text.tsx";
+import { DecisionText, InlineDecisionText } from "./decision-text.tsx";
 
 function rendered(source: string, lines = false) {
   const window = new Window();
@@ -17,6 +17,33 @@ function rendered(source: string, lines = false) {
 }
 
 describe("the decision's Markdown", () => {
+  it("renders recommendations inline without activating HTML, unsafe links or images", () => {
+    const window = new Window();
+    window.document.body.innerHTML = renderToStaticMarkup(
+      createElement(
+        "p",
+        null,
+        createElement(InlineDecisionText, {
+          source:
+            "**Choose A** and *keep it*, run `gates`, [policy](https://example.com/policy), [unsafe](javascript:alert(1)), ![pixel](https://example.com/pixel), <img src=x onerror=alert(1)>",
+        }),
+      ),
+    );
+    const body = window.document.body;
+    expect(body.querySelectorAll("p").length).toBe(1);
+    expect(body.querySelector("strong")?.textContent).toBe("Choose A");
+    expect(body.querySelector("em")?.textContent).toBe("keep it");
+    expect(body.querySelector("code")?.textContent).toBe("gates");
+    expect(body.querySelectorAll("a").length).toBe(1);
+    expect(body.querySelector("a")?.getAttribute("rel")).toBe(
+      "noreferrer noopener",
+    );
+    expect(body.querySelectorAll("img, script").length).toBe(0);
+    expect(body.textContent).toContain(
+      "unsafe, pixel, <img src=x onerror=alert(1)>",
+    );
+  });
+
   it("renders the shape a drive records", () => {
     const body = rendered(
       [
