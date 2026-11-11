@@ -34,9 +34,11 @@ test("a child that reached its deadline reads as killed, even when it reports ex
     runResult({ status: null, stdout: "", stderr: "", error: timedOut() })
       .status,
   ).toBe(-1);
-  expect(
-    runResult({ status: 3, stdout: "out", stderr: "err" }),
-  ).toEqual({ status: 3, stdout: "out", stderr: "err" });
+  expect(runResult({ status: 3, stdout: "out", stderr: "err" })).toEqual({
+    status: 3,
+    stdout: "out",
+    stderr: "err",
+  });
 });
 
 test("a limited run cuts every call and pause to the time left, then stops", () => {
