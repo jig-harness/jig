@@ -9,6 +9,7 @@ import type {
   ReadRecord,
 } from "../lib/launches.ts";
 import { planPickups } from "../lib/plan-pickups.ts";
+import { pruneLaunches } from "../lib/launches.ts";
 import { readRefusal } from "../lib/pickup-refusal.ts";
 import { pickupPassArgv } from "../lib/session.ts";
 import type { DispatchSection, WantedItem } from "../lib/types.ts";
@@ -200,10 +201,44 @@ describe("readRefusal", () => {
       [{ key: "#2", updatedAt: "not a time", reason: "r" }],
       [{ key: 2, updatedAt: SEEN, reason: "r" }],
       [],
+      [{ key: "", updatedAt: SEEN, reason: "r" }],
+      [{ key: "  ", updatedAt: SEEN, reason: "r" }],
+      [member("#2", SEEN), member("#2", LATER)],
     ])
       expect(
         readRefusal(JSON.stringify({ reason: "r", updatedAt: SEEN, members })),
       ).toBeNull();
+  });
+});
+
+describe("a batch re-batched without its refused member", () => {
+  it("keeps the refusal's record past retention while it is the member's latest", () => {
+    const original = refusedBatch({
+      reason: "#2 is blocked",
+      updatedAt: SEEN,
+      members: [member("#2", SEEN)],
+    });
+    const rebatched = refusedBatch({
+      reason: "#1 is blocked",
+      updatedAt: SEEN,
+      members: [member("#1", SEEN)],
+    });
+    rebatched.record = {
+      ...rebatched.record,
+      id: "2026-11-10T00-00-00-000Z-batch",
+      createdAt: "2026-11-10T00:00:00.000Z",
+      batchItems: [
+        { key: "#1", person: "alex" },
+        { key: "#3", person: "alex" },
+      ],
+    } as unknown as LaunchRecord;
+    const pruned = pruneLaunches(
+      [original, rebatched],
+      Date.parse("2027-06-01"),
+      30,
+      checkout(),
+    );
+    expect(pruned).not.toContain(original.record.id);
   });
 });
 

@@ -33,20 +33,33 @@ function isTime(value: unknown): value is string {
   return typeof value === "string" && Number.isFinite(Date.parse(value));
 }
 
-/** A row's refused members; `undefined` when it names none, `null` when the list does not read. */
+/** One refused member as stored; `null` when it does not read. */
+function readMember(
+  m: unknown,
+  named: ReadonlySet<string>,
+): RefusedMember | null {
+  if (!isMapping(m)) return null;
+  const { key, reason, updatedAt } = m;
+  if (typeof key !== "string" || key.trim() === "" || named.has(key))
+    return null;
+  if (typeof reason !== "string" || !isTime(updatedAt)) return null;
+  return { key, reason, updatedAt };
+}
+
+/**
+ * A row's refused members; `undefined` when it names none, `null` when the
+ * list does not read: each member needs its own non-blank key, named once.
+ */
 function readMembers(value: unknown): RefusedMember[] | null | undefined {
   if (value === undefined) return undefined;
   if (!Array.isArray(value) || value.length === 0) return null;
   const members: RefusedMember[] = [];
+  const named = new Set<string>();
   for (const m of value) {
-    if (
-      !isMapping(m) ||
-      typeof m.key !== "string" ||
-      typeof m.reason !== "string" ||
-      !isTime(m.updatedAt)
-    )
-      return null;
-    members.push({ key: m.key, reason: m.reason, updatedAt: m.updatedAt });
+    const read = readMember(m, named);
+    if (read === null) return null;
+    named.add(read.key);
+    members.push(read);
   }
   return members;
 }
