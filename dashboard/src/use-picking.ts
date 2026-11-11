@@ -19,7 +19,6 @@ import {
   nextOpen,
   type RowAnswer,
   type RowOption,
-  boundToPark,
   rowAnswer,
   withoutPick,
   withPick,
@@ -75,14 +74,6 @@ export function usePicking(
   const [kept, change, saved] = useAnswers(ids);
   const answers = need.rows.map((row, i) => rowAnswer(row, kept[i] ?? null));
   const commit = cardCommit(need.rows, answers);
-  // A pick made before the line kept park times counts for the first park time seen, not for every later one.
-  useEffect(() => {
-    need.rows.forEach((row, i) => {
-      const bound = boundToPark(row, kept[i] ?? null);
-      const id = ids[i];
-      if (bound !== null && id !== undefined) change(id, bound);
-    });
-  });
   const [held, setHeld] = useState<Held | null>(null);
   // Keys can come faster than the card draws, so they read the held decision and the kept answers as they are now.
   const heldNow = useRef<Held | null>(null);

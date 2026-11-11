@@ -336,7 +336,8 @@ function freeFault(row: DecisionRow, text: string): string | null {
       : digestClaims(normalizeAnswerText(text)).find((d) => d !== row.digest);
   if (claimed !== undefined)
     return `your own words name the framing [${claimed}], which is not this decision's; take it out`;
-  // The readers would count these words as a choice, which only a pick (and its second step) may make.
+  // The readers would count these words as a choice, which only a pick (and its second step) may make. A record they read as free text alone has no choice to count.
+  if (!row.structured) return null;
   const read = choiceInLine(text, row.options, (o) => o.recommended);
   return read === null
     ? null

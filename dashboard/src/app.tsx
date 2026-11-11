@@ -47,7 +47,8 @@ import {
 import { Refused } from "./refused.tsx";
 import { type Steering, useSteering, ViewFilter } from "./steering.tsx";
 import { TicksPanel } from "./ticks.tsx";
-import { forgetOldAnswers } from "./answers.ts";
+import { bindAnswersToPark, forgetOldAnswers } from "./answers.ts";
+import { decisionRows } from "./picking.ts";
 import {
   FILTERED_VIEWS,
   type LogFilter,
@@ -309,6 +310,17 @@ function Page({
     line: useCurrentLine(snapshot.line),
   };
   const { line, clock } = view;
+  // A pick made before the line kept park times counts for the first park time seen, in whichever view that line arrives.
+  useEffect(() => {
+    if (line === null) return;
+    bindAnswersToPark(
+      line.needs.map((n) => ({
+        repo: n.repo,
+        target: n.target,
+        rows: decisionRows(n.decisions),
+      })),
+    );
+  }, [line]);
   // The opening view waits for the first answer: a failed first read must not settle it.
   const read = view.answer !== null;
   const [tab, setTabNow] = useView(

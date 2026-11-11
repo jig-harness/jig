@@ -504,6 +504,11 @@ describe("what a review of the card found", () => {
     const [first] = row.options;
     if (first === undefined) throw new Error("no option");
     expect(rowAnswer(row, withPick(row, null, first, T0)).pick).toBeNull();
+    // The readers take its words as free text, so naming an option is not a choice to hold back.
+    expect(
+      rowAnswer(row, withText(row, null, "free", `choose ${first.name}`, T0))
+        .fault,
+    ).toBeNull();
     expect(keep.structured).toBe(true);
   });
 });

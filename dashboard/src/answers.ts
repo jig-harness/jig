@@ -16,6 +16,7 @@ import { keptKeys, readKept, writeKept } from "./kept.ts";
 import {
   type CardCommit,
   cardCommit,
+  boundToPark,
   type DecisionRow,
   type KeptAnswer,
   keptAnswerOf,
@@ -127,6 +128,23 @@ export function useAnswers(
     change,
     ids.every((id) => held.get(id)?.saved !== false),
   ];
+}
+
+/**
+ * Binds the picks made on a line that kept no park times to the park time
+ * `needs` now show, whichever view is mounted: a pick must not wait for its
+ * card to be drawn to count for one occurrence only.
+ */
+export function bindAnswersToPark(
+  needs: { repo: string; target: string; rows: DecisionRow[] }[],
+): void {
+  const nowMs = Date.now();
+  for (const need of needs)
+    for (const row of need.rows) {
+      const id = answerId(need.repo, need.target, row.key);
+      const bound = boundToPark(row, read(id, nowMs));
+      if (bound !== null) keep(id, bound);
+    }
 }
 
 /** What a need's Copy takes, from the answers kept for its decisions now: what the palette offers to copy. */
