@@ -105,7 +105,21 @@ const DECISION_FIELDS: Fields = {
     value === undefined || (Array.isArray(value) && value.every(isString)),
   answers: (value) =>
     value === undefined ||
-    listOf({ author: isString, at: isString, url: isString })(value),
+    listOf({
+      author: isString,
+      at: isString,
+      url: isString,
+      digest: (v) => v === undefined || isString(v),
+      stale: (v) => v === undefined || v === true,
+      choice: (v) =>
+        v === undefined ||
+        hasFields(v, {
+          option: isString,
+          recommended: (r) => typeof r === "boolean",
+          form: (f) => f === "approve" || f === "choose",
+          note: (n) => n === undefined || isString(n),
+        }),
+    })(value),
   answerState: (value) =>
     value === undefined || value === "stale" || value === "disputed",
 };

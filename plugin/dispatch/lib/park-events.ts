@@ -24,7 +24,11 @@ import {
   parkOccurrence,
   type ResolutionReceipt,
 } from "../../skills/drive-pr/scripts/lib/state/resolution-receipt.ts";
-import type { Ledger } from "../../skills/drive-pr/scripts/lib/state/ledger.ts";
+import {
+  OLDER_PARKS_CUT,
+  RESOLVED_PARKS_CUT,
+  type Ledger,
+} from "../../skills/drive-pr/scripts/lib/state/ledger.ts";
 import type { LinePark } from "./dashboard-contract.ts";
 import type { EventRow, ParkFacts } from "./log.ts";
 import type { DrivenPr } from "./types.ts";
@@ -37,6 +41,8 @@ export interface LedgerParks {
     }
   >;
   resolved: ResolutionReceipt[];
+  /** The ledger's size cut dropped receipts, so a park's absence from it says nothing of how it left. */
+  receiptsCut?: boolean;
 }
 
 export function ledgerParks(ledger: Ledger): LedgerParks {
@@ -49,6 +55,11 @@ export function ledgerParks(ledger: Ledger): LedgerParks {
       ...(p.class === undefined ? {} : { class: p.class }),
     })),
     resolved: ledger.resolvedParks ?? [],
+    ...(ledger.cut.some(
+      (c) => c === RESOLVED_PARKS_CUT || c === OLDER_PARKS_CUT,
+    )
+      ? { receiptsCut: true }
+      : {}),
   };
 }
 
@@ -208,16 +219,25 @@ function receiptsOf(
   return out;
 }
 
-/** Why a held park no longer is, as far as this tick can tell; `null` when it cannot. */
-function goneWhy(
+/** How a held park that this tick's ledgers no longer list is accounted for. */
+type Gone =
+  /** Its ledger was read, listed no receipt, and was not cut: it was withdrawn or framed again. */
+  | "withdrawn"
+  /** The tick cannot tell how it left: keep it as held. */
+  | "unknown"
+  /** Its pull request left the open listing; its final receipts are not read, so no row claims how it left. */
+  | "closed";
+
+function goneHow(
   repo: ParkRepo,
   read: ReadonlyMap<number, DrivenPr>,
   pr: number,
-): string | null {
-  if (read.has(pr)) return "it was withdrawn or framed again";
-  return repo.open !== null && !repo.open.includes(pr)
-    ? "its pull request is no longer open"
-    : null;
+): Gone {
+  const d = read.get(pr);
+  if (d !== undefined)
+    // Receipts the size cut dropped may have been the answer to this park.
+    return d.parks?.receiptsCut === true ? "unknown" : "withdrawn";
+  return repo.open !== null && !repo.open.includes(pr) ? "closed" : "unknown";
 }
 
 /** One repository's parks, ingested receipts and rows. */
@@ -248,9 +268,12 @@ function repoOutcomes(
     const identity = p.repo === repo.slug ? identityOf(p) : null;
     if (identity === null || held.has(identity) || receipts.has(identity))
       continue;
-    const why = goneWhy(repo, read, p.pr);
-    if (why === null) parks.push(p);
-    else if (repo.owner) rows.push(removedRow(p, identity, why, nowIso));
+    const how = goneHow(repo, read, p.pr);
+    if (how === "unknown") parks.push(p);
+    else if (how === "withdrawn" && repo.owner)
+      rows.push(
+        removedRow(p, identity, "it was withdrawn or framed again", nowIso),
+      );
   }
   return { parks, ingested, rows };
 }

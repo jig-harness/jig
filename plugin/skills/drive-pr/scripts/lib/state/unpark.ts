@@ -35,11 +35,12 @@ function usageError(
 }
 
 /** Why the set cannot be unparked as named; `null` when it can. */
-function refusal(
+export function refusal(
   parked: readonly ParkedItem[],
   keys: readonly string[],
   parkedAts: readonly string[],
   every: boolean,
+  consumed: readonly ConsumedVerdict[] | null,
 ): string | null {
   const byKey = new Map(parked.map((p) => [p.key, p]));
   const missing = keys.filter((k) => !byKey.has(k));
@@ -49,6 +50,13 @@ function refusal(
   );
   if (changed.length > 0)
     return `parked again since its answers were read: ${changed.join(", ")}`;
+  if (consumed !== null) {
+    const counts = new Map<string, number>();
+    for (const v of consumed) counts.set(v.key, (counts.get(v.key) ?? 0) + 1);
+    const uncovered = keys.filter((k) => counts.get(k) !== 1);
+    if (uncovered.length > 0)
+      return `--stdin must carry exactly one verdict for each key; missing or repeated: ${uncovered.join(", ")}`;
+  }
   const unnamed = every ? parked.filter((p) => !keys.includes(p.key)) : [];
   return unnamed.length > 0
     ? `parked since the answers were read: ${unnamed.map((p) => p.key).join(", ")}`
@@ -86,7 +94,13 @@ export async function unpark(
   // Set inside the locked update; the annotation keeps it from narrowing to `null`.
   let why = null as string | null;
   await store.update((s) => {
-    why = refusal(s.parked, keys, parkedAts, every);
+    why = refusal(
+      s.parked,
+      keys,
+      parkedAts,
+      every,
+      consumedText === null ? null : consumed,
+    );
     return why === null ? withoutParks(s, keys, consumed) : s;
   });
   if (why === null) return 0;

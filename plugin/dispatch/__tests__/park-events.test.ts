@@ -207,13 +207,12 @@ describe("park outcomes", () => {
     });
   });
 
-  it("keeps a held park whose ledger it did not read, and removes one whose pull request closed", () => {
+  it("keeps a held park whose ledger it did not read, and drops one whose pull request closed without claiming how it left", () => {
     const memory: ParkMemory = {
       parks: [linePark("kept", 8), linePark("closed", 9)],
     };
     const got = parkOutcomes([repo([], { open: [8] })], memory, NOW);
-    expect(events(got.rows)).toEqual([["park-removed", "closed"]]);
-    expect(got.rows[0]?.reason).toContain("no longer open");
+    expect(got.rows).toEqual([]);
     expect(got.parks.map((p) => p.key)).toEqual(["kept"]);
     const unread = parkOutcomes([repo([], { open: null })], memory, NOW);
     expect(unread.rows).toEqual([]);

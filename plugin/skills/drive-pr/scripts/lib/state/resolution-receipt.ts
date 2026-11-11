@@ -187,12 +187,13 @@ export function receiptsFor(
   });
 }
 
-/** The kept receipts with `fresh` added, the newest `RESOLVED_PARKS_KEPT`. */
+/** The kept receipts with `fresh` added: the newest `RESOLVED_PARKS_KEPT`, though never fewer than the whole fresh batch, which no reader has seen yet. */
 export function keptReceipts(
   kept: readonly ResolutionReceipt[] | undefined,
   fresh: readonly ResolutionReceipt[],
 ): ResolutionReceipt[] {
-  return [...(kept ?? []), ...fresh].slice(-RESOLVED_PARKS_KEPT);
+  const room = Math.max(0, RESOLVED_PARKS_KEPT - fresh.length);
+  return [...(kept ?? []).slice(room === 0 ? kept?.length : -room), ...fresh];
 }
 
 /** A receipt as the public ledger carries it: its question and notes redacted. */

@@ -337,6 +337,10 @@ function bytes(text: string): number {
   return Buffer.byteLength(text, "utf8");
 }
 
+/** What `cut` names when the size cut dropped receipts: all of them, or the older ones. Readers treat either as an incomplete read of the receipts. */
+export const RESOLVED_PARKS_CUT = "the resolved parks";
+export const OLDER_PARKS_CUT = "the older resolved parks";
+
 /**
  * The comment body for `ledger`, cut to `limit`: the resolved parks' receipts
  * go first, held items' outcomes next, the narrative then, and last the
@@ -360,8 +364,14 @@ export function renderLedger(
   };
   let body = ledgerBody(l, true, writer);
   if (bytes(body) <= limit) return { body, ledger: l };
-  if ((l.resolvedParks ?? []).length > 0) {
-    l = { ...l, resolvedParks: [], cut: ["the resolved parks"] };
+  const receipts = l.resolvedParks ?? [];
+  // The oldest receipts go first: the newest are the ones no tick has read.
+  for (let keep = receipts.length - 1; keep >= 0; keep--) {
+    l = {
+      ...l,
+      resolvedParks: receipts.slice(receipts.length - keep),
+      cut: [keep === 0 ? RESOLVED_PARKS_CUT : OLDER_PARKS_CUT],
+    };
     body = ledgerBody(l, true, writer);
     if (bytes(body) <= limit) return { body, ledger: l };
   }

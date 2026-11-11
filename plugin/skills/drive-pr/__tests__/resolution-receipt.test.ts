@@ -18,6 +18,7 @@ import {
 } from "./drive-pr-harness.ts";
 import { state } from "./drive-loop-harness.ts";
 import { fixtureStateTree } from "./scoped-state-dir.ts";
+import { refusal } from "../scripts/lib/state/unpark.ts";
 import {
   type ConsumedVerdict,
   keptReceipts,
@@ -139,6 +140,23 @@ describe("unpark --stdin leaves a resolution receipt", () => {
     expect((await stored(stateDir)).resolvedParks).toBeUndefined();
   });
 
+  it("refuses a verdict list that leaves a removed park uncovered", () => {
+    const parked = [
+      { key: "a", kind: "thread" as const, round: 1, reason: "q", at: "t" },
+      { key: "b", kind: "thread" as const, round: 1, reason: "q", at: "t" },
+    ];
+    expect(
+      refusal(parked, ["a", "b"], [], false, [{ key: "a", answers: [] }]),
+    ).toContain("b");
+    expect(
+      refusal(parked, ["a", "b"], [], false, [
+        { key: "a", answers: [] },
+        { key: "b", answers: [] },
+      ]),
+    ).toBeNull();
+    expect(refusal(parked, ["a", "b"], [], false, null)).toBeNull();
+  });
+
   it("refuses verdicts that do not read, unparking nothing", async () => {
     expect(parseConsumed("not json")).toBeString();
     expect(parseConsumed(JSON.stringify([{ key: "a" }]))).toBeString();
@@ -172,6 +190,20 @@ describe("receipts", () => {
     const kept = keptReceipts(many.slice(0, 5), many.slice(5));
     expect(kept).toHaveLength(RESOLVED_PARKS_KEPT);
     expect(kept.at(-1)?.key).toBe(`k${RESOLVED_PARKS_KEPT + 2}`);
+  });
+
+  it("keep a whole fresh batch, however many it is", () => {
+    const fresh = Array.from({ length: RESOLVED_PARKS_KEPT + 2 }, (_, i) =>
+      receipt(`f${i}`),
+    );
+    const kept = keptReceipts([receipt("old")], fresh);
+    expect(kept.map((r) => r.key)).toEqual(fresh.map((r) => r.key));
+    const mixed = keptReceipts(
+      Array.from({ length: RESOLVED_PARKS_KEPT }, (_, i) => receipt(`o${i}`)),
+      [receipt("n1"), receipt("n2")],
+    );
+    expect(mixed).toHaveLength(RESOLVED_PARKS_KEPT);
+    expect(mixed.slice(-2).map((r) => r.key)).toEqual(["n1", "n2"]);
   });
 
   it("tell two occurrences of one key apart by the time each was parked", () => {
