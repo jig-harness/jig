@@ -156,7 +156,7 @@ export function planPickups(input: PickupInput): PickupPlan {
       plan.actions.push(doubleClaim(input.slug, item, count, evidence, who));
       continue;
     }
-    const hold = pickupHold(item.key, launches, item.updatedAt);
+    const hold = pickupHold(item.key, launches, item.updatedAt, input.nowMs);
     if (hold.kind === "held") {
       plan.running.push({
         target: item.key,
@@ -314,7 +314,12 @@ function questionAsked(
     )
     .sort((a, b) => a.record.createdAt.localeCompare(b.record.createdAt))
     .at(-1);
-  if (latest === undefined || latest.result === "done") return null;
+  if (
+    latest === undefined ||
+    latest.result === "done" ||
+    latest.result === "waits"
+  )
+    return null;
   const question = questionOf(latest.state);
   if (question === null) return null;
   const { record } = latest;

@@ -18,9 +18,17 @@
  */
 
 import { afterAll, expect, it } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { isAbsolute, join, relative } from "node:path";
 import type { ReadableStreamReadResult } from "node:stream/web";
+import { expectSpawnExit } from "./test-helpers/expect-spawn-exit.ts";
 import { scopeTestTmpdir } from "./test-tmpdir.ts";
 
 const PRELOAD_PATH = join(import.meta.dir, "test-tmpdir-bun-preload.ts");
@@ -210,3 +218,26 @@ it(
   },
   TEST_TIMEOUT_MS,
 );
+
+// Bun caches the transpiled output of a source file over 50 KB under the
+// home directory. A child started with a fake home inside the scope, as many
+// fixtures start one, would rebuild that cache there on every start.
+it("a child with a fake home leaves no Bun transpiler cache in it", () => {
+  const dir = mkdtempSync(join(tmpdir(), "transpiler-cache-"));
+  try {
+    const home = join(dir, "home");
+    mkdirSync(home);
+    const source = join(dir, "large.ts");
+    const filler = `export const filler: string = ${JSON.stringify("x".repeat(60_000))};\n`;
+    writeFileSync(source, `${filler}console.log(filler.length);\n`);
+    const result = Bun.spawnSync([process.execPath, source], {
+      env: { ...process.env, HOME: home, USERPROFILE: home },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    expectSpawnExit(result, 0, "bun large.ts");
+    expect(readdirSync(home)).toEqual([]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

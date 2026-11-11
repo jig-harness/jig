@@ -165,6 +165,7 @@ describe("served pickups", () => {
         reason: "the epic description cannot be read",
       }),
     );
+    expect(read.incomplete).toBe(true);
   });
   it("walks nested epic children and reports blocked and human work", async () => {
     const f = fake();
@@ -222,6 +223,66 @@ describe("served pickups", () => {
         url: "https://forge.example/example/repo/issues/8",
       }),
     );
+  });
+  it("reports no claims when a served queue fails to read for another reason than the rate limit", async () => {
+    const f = fake();
+    f.tracker.assignedIssues = async () => {
+      throw new Error("queue timed out");
+    };
+    const read = await readServedPickups(f.tracker, people, {
+      cache: f.cache,
+      epic: "epic",
+      nowMs: 1,
+      headroom: true,
+    });
+    expect(read.incomplete).toBe(true);
+  });
+  it("does not share a view or cached reads between tracker instances with the same team", async () => {
+    const f = fake();
+    const other = fake();
+    const options = {
+      epic: "epic",
+      nowMs: 1,
+      headroom: true,
+      views: new Map(),
+    };
+    const shared = { cache: f.cache, ...options };
+    (f.tracker as { instance?: string }).instance = "https://a.example";
+    (other.tracker as { instance?: string }).instance = "https://b.example";
+    other.tracker.assignedBy = async () => ({
+      id: "reader",
+      name: "reader",
+      trusted: false,
+    });
+    const first = await readServedPickups(f.tracker, people, shared);
+    const second = await readServedPickups(other.tracker, people, shared);
+    expect(first.wanted.map((w) => w.key)).toContain("#3");
+    expect(second.wanted).toEqual([]);
+    expect(second.unplaced).toContainEqual(
+      expect.objectContaining({
+        target: "#1",
+        reason: expect.stringContaining("not made by a repository writer"),
+      }),
+    );
+  });
+  it("marks the reading incomplete when a node's metadata cannot be read", async () => {
+    const f = fake();
+    f.tracker.openChildren = async () => {
+      throw new Error("children timed out");
+    };
+    const read = await readServedPickups(f.tracker, people, {
+      cache: f.cache,
+      epic: "epic",
+      nowMs: 1,
+      headroom: true,
+    });
+    expect(read.unplaced).toContainEqual(
+      expect.objectContaining({
+        target: "#1",
+        reason: expect.stringContaining("could not be read"),
+      }),
+    );
+    expect(read.incomplete).toBe(true);
   });
   it("keeps metadata at the same updatedAt", async () => {
     const f = fake();

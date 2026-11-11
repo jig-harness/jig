@@ -74,6 +74,15 @@ export function isFormerLock(name: string): boolean {
 }
 
 /**
+ * Whether `name` is a file a running earlier release writes while it drives:
+ * its state, leases, driver record and claims. Nothing of this release writes
+ * one, so a recent write means a legacy driver is still alive here.
+ */
+export function isFormerWriterFile(name: string): boolean {
+  return Object.values(FORMER).some((re) => re.test(name));
+}
+
+/**
  * Every other name an earlier release wrote there and nothing reads now: the
  * mutex directories and their tombstones, staging and compaction leftovers,
  * stop completions, temporary files, markers and the reaper's own files.

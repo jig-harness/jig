@@ -3,13 +3,14 @@ import { PULL_DEPTH } from "../../../skills/do-item/scripts/lib/blocker-chain.ts
 import type {
   IssueRelation,
   PoolIssue,
-  Tracker,
+  QueueRelation,
 } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
 import { queueHold } from "../queue-rank.ts";
 import { otherRepoLabel, type RepoScope } from "./served-repo.ts";
 
-export const closed = (i: PoolIssue) =>
-  ["completed", "canceled", "duplicate"].includes(i.state.type);
+const closedType = (type: string) =>
+  ["completed", "canceled", "duplicate"].includes(type);
+export const closed = (i: PoolIssue) => closedType(i.state.type);
 export const ready = (i: PoolIssue) =>
   !closed(i) && ["triage", "backlog", "unstarted"].includes(i.state.type);
 
@@ -19,18 +20,31 @@ export interface OpenBlocker {
   issue: PoolIssue | null;
 }
 
-/** A failed blocker read holds the item: absence of evidence never means unblocked. */
+/**
+ * The open blockers among `relations`: a relation the queue read carried
+ * with the blocker's state needs no read while that state is closed. A failed
+ * blocker read holds the item: absence of evidence never means unblocked.
+ */
 export async function openBlockers(
-  tracker: Tracker,
-  relations: IssueRelation[],
+  pool: (key: string) => Promise<PoolIssue | null>,
+  relations: ReadonlyArray<IssueRelation | QueueRelation>,
 ): Promise<OpenBlocker[]> {
+  const blocking = relations.filter((r) => r.type === "blocked_by");
+  const read = await Promise.all(
+    blocking.map(async (r) => {
+      const known = "state" in r ? r.state : null;
+      if (known !== null && known !== undefined && closedType(known))
+        return "closed" as const;
+      return pool(r.issue);
+    }),
+  );
   const open: OpenBlocker[] = [];
-  for (const r of relations)
-    if (r.type === "blocked_by") {
-      const other = await tracker.poolIssue(r.issue);
-      if (other === null || !closed(other))
-        open.push({ key: r.issue, issue: other });
-    }
+  blocking.forEach((r, i) => {
+    const other = read[i];
+    if (other === "closed") return;
+    if (other === undefined || other === null || !closed(other))
+      open.push({ key: r.issue, issue: other ?? null });
+  });
   return open;
 }
 
