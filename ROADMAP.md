@@ -172,6 +172,17 @@ board shows stopped work as blocked, with a reason. The dispatcher can also
 pick up from an unassigned ready pool. Every rule is optional, and a team
 that sets none keeps today's behaviour.
 
+### 48. Fitting the drive to a repository's reviewer, CI and pull-request conventions
+
+A repository whose AI reviewer is CodeRabbit, whose CI is Jenkins, or whose
+fixes land on release lines gets a drive that works the way it does. The
+drive waits for CodeRabbit's review of the latest commit and stops when
+CodeRabbit pauses or skips. A failure that the CI reports as a commit status
+reaches the repair step with its log. Work starts on the release line its
+item names. Titles and commits carry the tracker key where the
+repository's rules require one. Every setting is optional, and a team that
+sets none keeps today's behaviour.
+
 ### 26. `init`: setting a repository up for Jig
 
 One command in a fresh clone that derives the values the repository already
