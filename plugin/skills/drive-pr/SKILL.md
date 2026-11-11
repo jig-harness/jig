@@ -677,8 +677,10 @@ outlives the session that spawned it, so its console is not where you look:
   is live on it, and nothing in the family was touched for `--min-age-days`
   (default 7); and the files an earlier release kept there, once the
   database's import of them is 30 days old. Displaced file-lock quarantine
-  entries form a separate family, reported with count and bytes but kept:
-  neither an idle snapshot nor the database mutex excludes legacy writers.
+  entries form a separate family, reported with count and bytes and retired
+  by `--delete` once no `.lock` or `.lock.recovering` of the earlier layout is
+  present, none of its state, lease, driver or claim files was written in the
+  last 24 hours, and no entry was written to in that time.
   This applies whether or not the clone was imported.
   A closed-but-unmerged PR is
   deliberately kept — GitHub permits reopening it with no time limit. A name
