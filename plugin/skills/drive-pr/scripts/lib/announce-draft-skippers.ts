@@ -40,8 +40,7 @@ export function readyMarkedAt(
       unknown
     >;
     if (kind !== "ready_for_review") continue;
-    if (typeof at !== "string" || !Number.isFinite(Date.parse(at)))
-      return null;
+    if (typeof at !== "string" || !Number.isFinite(Date.parse(at))) return null;
     if (newest === null || Date.parse(at) > Date.parse(newest)) newest = at;
   }
   return { readyAt: newest };

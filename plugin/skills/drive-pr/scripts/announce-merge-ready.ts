@@ -135,6 +135,34 @@ function withdrawNote(
   return [];
 }
 
+/** The draft-skipper gate's refusal as an exit code, and whether it positively said `not-yet`. */
+async function skippersGate(
+  pr: string,
+  head: string,
+): Promise<{ rc: number; pending: boolean }> {
+  const skippers = await draftSkippersRan(pr, head);
+  if (skippers.ok) return { rc: 0, pending: false };
+  const notYet = skippers.failure.code === "not-yet";
+  console.error(
+    `announce-merge-ready: ${skippers.failure.reason} — refusing to announce${notYet ? "; re-run once it has run on the Ready pull request" : ""}`,
+  );
+  return { rc: notYet ? 4 : 1, pending: notYet };
+}
+
+/** Why a standing announcement is stale, from the positively confirmed live facts; null when none. */
+function staleCause(f: {
+  held: boolean;
+  draft: boolean;
+  skippers: boolean;
+  conflicting: boolean;
+}): string | null {
+  if (f.held) return `${holdName()} was applied`;
+  if (f.draft) return "the PR is a draft again";
+  if (f.skippers)
+    return "the draft-skipping reviewers have not run since it was marked Ready";
+  return f.conflicting ? "mergeability changed" : null;
+}
+
 async function main(): Promise<number> {
   let pr = "";
   let dryRun = false;
@@ -726,15 +754,9 @@ async function main(): Promise<number> {
     // is asked here, with the other live facts, because a person can convert
     // the PR to draft and back to Ready on the same head at any point of the
     // run, and only a read taken after that transition sees it.
-    const skippers = await draftSkippersRan(pr, head);
-    if (!skippers.ok) {
-      const notYet = skippers.failure.code === "not-yet";
-      if (notYet) liveConfirmedSkippersPending = true;
-      console.error(
-        `announce-merge-ready: ${skippers.failure.reason} — refusing to announce${notYet ? "; re-run once it has run on the Ready pull request" : ""}`,
-      );
-      return notYet ? 4 : 1;
-    }
+    const skippers = await skippersGate(pr, head);
+    liveConfirmedSkippersPending = skippers.pending;
+    if (skippers.rc !== 0) return skippers.rc;
     return 0;
   }
 
@@ -757,18 +779,15 @@ async function main(): Promise<number> {
     rc: number,
     ids: number[] = existingIds,
   ): Promise<number> {
-    if (
-      !dryRun &&
-      rc === 4 &&
-      (liveConfirmedConflicting ||
-        liveConfirmedDraft ||
-        liveConfirmedHeld ||
-        liveConfirmedSkippersPending) &&
-      ids.length > 0
-    ) {
+    const cause = staleCause({
+      held: liveConfirmedHeld,
+      draft: liveConfirmedDraft,
+      skippers: liveConfirmedSkippersPending,
+      conflicting: liveConfirmedConflicting,
+    });
+    if (!dryRun && rc === 4 && cause !== null && ids.length > 0) {
       console.error(
-        `announce-merge-ready: withdrawing now-stale announcement(s) on ${head} — ` +
-          `${liveConfirmedHeld ? `${holdName()} was applied` : liveConfirmedDraft ? "the PR is a draft again" : liveConfirmedSkippersPending ? "the draft-skipping reviewers have not run since it was marked Ready" : "mergeability changed"} after they were posted.`,
+        `announce-merge-ready: withdrawing now-stale announcement(s) on ${head} — ${cause} after they were posted.`,
       );
       for (const id of ids) if (!(await withdrawAnnouncement(pr, id))) return 1;
     }
