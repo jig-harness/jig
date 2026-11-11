@@ -203,6 +203,14 @@ export interface DrivenPr {
   labels?: string[];
   /** For an `unplaced` ledger: its comments or its ledger did not read, as against a state the forge leaves undecided. */
   readFailed?: true;
+  /** The pull request's head commit and its branch's head on the forge, read only where a failed re-arm is weighed (`failed-rearms.ts`). */
+  heads?: RearmHeads;
+}
+
+/** A pull request's head commit, as the forge reports it with the pull request, and its branch's head on the forge. */
+export interface RearmHeads {
+  pr: string;
+  branch: string;
 }
 
 /** One pull request merged since the follow-up stage's start. */

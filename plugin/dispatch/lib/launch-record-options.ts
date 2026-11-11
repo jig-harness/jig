@@ -44,6 +44,7 @@ export function optionalLaunchFields(value: Record<string, unknown>): boolean {
       "ancestorEpic",
       "stewardResume",
       "stewardContext",
+      "heads",
     ].every((k) => optionalText(value[k])) &&
     [value.marker, value.round].every(
       (v) => v === undefined || v === null || typeof v === "number",
@@ -58,6 +59,7 @@ export function optionalLaunchFields(value: Record<string, unknown>): boolean {
       "codexBypass",
       "headless",
       "routineTags",
+      "launchCalled",
     ]) &&
     (value.standing === undefined ||
       value.standing === null ||
