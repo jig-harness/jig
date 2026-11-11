@@ -118,6 +118,17 @@ describe("the label set", () => {
   });
 });
 
+describe("the marker set", () => {
+  it("colors the manual-operations marker purple: a pending step is not a stop", () => {
+    const color = (name: string) =>
+      [...labelSet(ON), ...markerSet("manual-ops")].find((l) => l.name === name)
+        ?.color;
+    expect(color("manual-ops")).toBe("5319e7");
+    expect(color("manual-ops")).not.toBe(color("jig:parked"));
+    expect(color("manual-ops")).not.toBe(color("jig:followup-failed"));
+  });
+});
+
 describe("the label set", () => {
   it("describes each label within the 100 characters the forge takes", () => {
     const tooLong = [...labelSet(ON), ...markerSet("manual-ops")].filter(

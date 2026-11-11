@@ -67,7 +67,6 @@ import {
   type ThreadEntry,
   type WaitsOn,
 } from "./answer.ts";
-import { renderParkedDecision } from "../../shared/decisions/park.ts";
 import { lineParkOf, parkedWait } from "./park-wait.ts";
 import {
   parkReading,
@@ -75,6 +74,7 @@ import {
   parkAnswerEntries,
   parkAnswerSummary,
   type ParkAnswers,
+  questionEntry,
 } from "./park-reading.ts";
 import { keptAnswerEntries } from "./kept-answers.ts";
 import {
@@ -459,16 +459,9 @@ function ledgerEntries(
 ): ThreadEntry[] {
   if (ledger === null) return [];
   const record = { kind: "drive-ledger", url };
-  const entries: ThreadEntry[] = ledger.parked.map((p) => ({
-    at: p.at ?? ledger.driver.heartbeat,
-    kind: "question",
-    from: name,
-    to: "a person",
-    // The decision's question, as the drive framed it.
-    text:
-      p.decision === undefined ? p.reason : renderParkedDecision(p.decision),
-    record,
-  }));
+  const entries: ThreadEntry[] = ledger.parked.map((p) =>
+    questionEntry(p, ledger.driver.heartbeat, name, record),
+  );
   const { state, exit, heartbeat } = ledger.driver;
   if (state === "stopped")
     entries.push({

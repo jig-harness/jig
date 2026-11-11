@@ -33,6 +33,11 @@
   "duplicates": {
     "mode": "mild"
   },
+  // `fallow audit` keeps a snapshot of the base per checkout in the temp
+  // directory and never removes it with the checkout. The `audit` script in
+  // package.json points TMPDIR at node_modules/.cache/fallow so the snapshot
+  // lives and dies with the checkout instead of piling up in a shared /tmp,
+  // where a host running many worktrees ran out of inodes.
   "audit": {
     "gate": "new-only"
   }
