@@ -853,8 +853,10 @@ and decision class over the parked decisions the log counted: how many
 parks, how many were answered, how many of those chose the recommended
 option with no note, and the median wait for an answer (`--jsonl` prints one
 JSON object per line). It counts parks that have left their ledger, so a
-park still waiting is not in it, and `--since` selects by when a park was
-settled, not when it was parked. It is evidence for deciding whether a class should
+park still waiting is not in it, and `--since` selects by when the log
+recorded the park's end, not when it was parked: the resolution time for a
+park answered or handed on, the time a tick noticed the park was withdrawn
+for one removed. It is evidence for deciding whether a class should
 stay a park, and nothing acts on it.
 
 Every run also adds the rows it wrote to a copy, one file per month,

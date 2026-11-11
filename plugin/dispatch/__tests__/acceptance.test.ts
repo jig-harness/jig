@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { acceptanceOf, waitText } from "../lib/acceptance.ts";
 import {
   type EventRow,
@@ -17,6 +18,8 @@ import {
 } from "../lib/log.ts";
 import { closeStateDb } from "../lib/state.ts";
 import { logMain } from "../log-command.ts";
+import { world } from "./fixtures.ts";
+import { dispatchState } from "./launch-fixtures.ts";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -163,12 +166,60 @@ describe("the recommendation report", () => {
     logMain({ jsonl: true, acceptance: true }, root, (l) => json.push(l));
     expect(json.map((l) => JSON.parse(l))).toEqual(acceptanceOf(ROWS));
 
+    // Parked on 11-01 but resolved on 11-06 12:00: the cutoff reads its resolution, not its parking.
+    writeRow(
+      park(
+        "o/c",
+        "2026-11-06T12:00:00.000Z",
+        { class: "scope", parkedAt: "2026-11-01T00:00:00.000Z" },
+        90 * SEC,
+      ),
+      root,
+    );
     const since: string[] = [];
     logMain(
       { jsonl: false, acceptance: true, since: "2026-11-06" },
       root,
       (l) => since.push(l),
     );
-    expect(since).toHaveLength(2);
+    expect(since).toEqual([
+      "o/a\t(no class)\t1 parks\t1 answered\t0 as recommended\tmedian wait -",
+      "o/b\trelease\t1 parks\t1 answered\t1 as recommended\tmedian wait 30s",
+      "o/c\tscope\t1 parks\t1 answered\t1 as recommended\tmedian wait 1m 30s",
+    ]);
+
+    // The cutoff is inclusive: a row exactly at it is in.
+    const exact: string[] = [];
+    logMain(
+      { jsonl: false, acceptance: true, since: "2026-11-06T00:00:00.000Z" },
+      root,
+      (l) => exact.push(l),
+    );
+    expect(exact).toEqual(since);
+  });
+
+  it("is reached through `jig dispatch log --acceptance`", async () => {
+    const w = world();
+    try {
+      const root = dispatchState(w);
+      for (const r of ROWS) writeRow(r, root);
+      const result = await w.dispatch(["log", "--acceptance"]);
+      expectSpawnExit(result, 0);
+      expect(result.stdout.trim().split("\n")).toEqual([
+        "o/a\t(no class)\t1 parks\t1 answered\t0 as recommended\tmedian wait -",
+        "o/a\trelease\t5 parks\t4 answered\t2 as recommended\tmedian wait 2m 30s",
+        "o/b\trelease\t1 parks\t1 answered\t1 as recommended\tmedian wait 30s",
+      ]);
+      const json = await w.dispatch(["log", "--acceptance", "--jsonl"]);
+      expectSpawnExit(json, 0);
+      expect(
+        json.stdout
+          .trim()
+          .split("\n")
+          .map((l) => JSON.parse(l)),
+      ).toEqual(acceptanceOf(ROWS));
+    } finally {
+      w.close();
+    }
   });
 });

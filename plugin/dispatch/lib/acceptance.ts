@@ -35,8 +35,12 @@ function median(values: number[]): number | null {
     : ((sorted[mid - 1] as number) + (sorted[mid] as number)) / 2;
 }
 
-/** Per repository and class, from the park rows among `rows`; other rows are ignored. */
-export function acceptanceOf(rows: readonly LogRow[]): AcceptanceRow[] {
+/**
+ * Per repository and class, from the park rows among `rows`; other rows are
+ * ignored. Rows are read one at a time and only each answered park's wait is
+ * kept, so a long log is never held whole.
+ */
+export function acceptanceOf(rows: Iterable<LogRow>): AcceptanceRow[] {
   const groups = new Map<string, AcceptanceRow & { waits: number[] }>();
   for (const row of rows) {
     if (row.kind !== "event" || row.park === undefined) continue;

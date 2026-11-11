@@ -34,6 +34,11 @@ function textLine(row: LogRow): string {
   ].join("\t");
 }
 
+/** The rows the query selected, read one at a time; one whose text does not read as a row is left out. */
+function* parkRows(selected: Iterable<{ row: string }>): Generator<LogRow> {
+  for (const s of selected) yield* rowsOf([s]);
+}
+
 /** The rows since `since`, in the order they were written, as `print` gets them. */
 export function logMain(
   options: LogOptions,
@@ -51,8 +56,8 @@ export function logMain(
       .query(
         "SELECT row FROM log WHERE at_ms >= ? AND kind = 'event' AND json_extract(row, '$.park') IS NOT NULL ORDER BY seq",
       )
-      .all(since) as Array<{ row: string }>;
-    for (const group of acceptanceOf(rowsOf(parks)))
+      .iterate(since) as IterableIterator<{ row: string }>;
+    for (const group of acceptanceOf(parkRows(parks)))
       print(options.jsonl ? JSON.stringify(group) : acceptanceLine(group));
     return 0;
   }
