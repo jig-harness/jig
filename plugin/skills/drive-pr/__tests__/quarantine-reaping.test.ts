@@ -14,6 +14,7 @@ import { basename, dirname, join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
 import { lockIdentity } from "../../../shared/liveness.ts";
+import { retire } from "../scripts/reap-state.ts";
 import { DB_FILE, driveDb } from "../scripts/lib/state/db.ts";
 import {
   readLockRow,
@@ -227,6 +228,18 @@ describe("obsolete file-lock quarantine", () => {
     expect(reap(root, dir).retire[0]?.entries).toBe(2);
     expect(reap(root, dir, true).entriesRemoved).toBe(2);
     for (const path of paths) expect(existsSync(path)).toBe(false);
+  });
+  it("reports no removals for a family refused at deletion", () => {
+    const { dir } = setup();
+    const paths = quarantine(dir);
+    // The family was judged retirable, then a member was touched.
+    age(paths[1] as string, 0);
+    const names = paths.map((path) => basename(path));
+    const done = retire(dir, { id: "quarantine:x", names });
+    expect(done.removed).toBe(0);
+    expect(done.failed).toEqual([]);
+    expect(done.kept).toBeDefined();
+    for (const path of paths) expect(existsSync(path)).toBe(true);
   });
   it("keeps a family when a fresh member appeared after the initial listing", () => {
     const { dir } = setup();
