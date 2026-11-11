@@ -121,7 +121,7 @@ Command-line flags, where a script has them, override all three.
   all three layers.
 - **Fields only a repository sets.** `gates.command`,
   `repository.base_branch`, `issue_tracker.team`, `issue_tracker.jira.site`, `review.repo_slug`,
-  `review.repo_label`, `ci.required_checks`, `docs.root`, `docs.schema`,
+  `review.repo_label`, `ci.required_checks`, `ci.log_command`, `docs.root`, `docs.schema`,
   `autonomy.max_level`, `autonomy.park_classes`, every `changelog`,
   `code_stats` and `specs` field describe one repository. Set in the user file
   they would apply to every repository on the machine, so the user file
@@ -509,6 +509,8 @@ it. Until then, opt in only to take part in that measurement.
 |-------|------|-------------|---------|--------------|
 | `ci.required_checks` | list of distinct check names; `[]` means none | Derived from the protection and rulesets of the pull request's base, and of the branch its stack lands on; for changelog, of the integration branch | drive-pr, changelog | drive-pr: checks that must complete on the converged head before the drive certifies it. Required, and not empty, when `ci.hold_label` is set. changelog (`tag.ts`, `status.ts`): checks that must pass on a releasing commit before its version is tagged, `[]` tagging without any, read from the integration branch's `.config/jig.yaml` only, never from a person's file or the environment. Set, it wins over the branch's rules for both. Unset, and with no check the integration branch's rules require, tagging fails closed: no required checks known. Name only checks that run on the integration branch: one that runs only on pull requests never reports there, and its versions would wait for their tag forever |
 | `ci.hold_label` | label | No hold: every push runs full CI | drive-pr | A label the repository's workflows honour by skipping expensive jobs on intermediate pushes; the drive removes it once review converges. See the [drive-pr README](skills/drive-pr/README.md); the workflow side is [M13's CI hold](https://github.com/jig-harness/jig/blob/main/modules/M13-pipeline-economy/README.md#7-hold) |
+| `ci.log_command` | shell command | none: a failing commit status's log is read by hand from the page it links to | fix-ci | Prints the failed log of a commit status, for a CI service that reports as commit statuses rather than GitHub Actions runs (Jenkins through its GitHub Branch Source plugin, for one), whose logs only the repository knows how to reach. It is a [command a repository supplies](EXTENDING.md#commands-a-repository-supplies) under the command store's rules, as `do_item.preflight_command` is: it is read from `.config/jig.yaml` as the default branch holds it (fetched first; the last fetched copy when the fetch fails), never from a working tree on another branch, a user file or an environment variable, and runs from the repository root without the tracker and forge tokens in its environment. When the default branch cannot be read, a working tree that sets the command fails the read. It reads one JSON object `{"context": …, "target_url": …}` on stdin (the status's context and the page it links to, `null` when it links to none) and prints the failed log on stdout, at most 64 KiB of it (the failing part, such as its last lines). Exit 3 says the log is gone, and the first line of standard output is the reason. Any other exit, a command that cannot start, more output, or a run past 300 seconds ([`JIG_FIX_CI_LOG_COMMAND_TIMEOUT_SEC`](#environment-variables)) fails the read. `parse-ci-log.ts --pr <n>` runs it for each failing status on the pull request's head, which a drive's CI-repair pass does too, beside any failed Actions run. Repository file only |
+| `ci.repair_skill` | skill name, bare or with its plugin (`ci-support`, `plugin:skill`) | none: the pass repairs with `fix-ci`'s procedure | drive-pr | The skill a drive's CI-repair pass loads before it repairs, such as the repository's own skill for its CI service; the pass receives it in `DRIVE_PR_ROUND_REPAIR_SKILL`. The audit reports a name that resolves to no skill installed for the repository or on the machine |
 
 ## `issue_tracker`
 
@@ -1082,6 +1084,7 @@ These are set per machine or per run, not committed:
 | `JIG_USER_LAYER` | `off` leaves the user layer out (see [configuration layers](#configuration-layers)) |
 | `JIG_AFTER_VERSION_IN_CI` | `1` lets `changelog.after_version` run inside a CI job (`CI`, `GITHUB_ACTIONS`, `GITLAB_CI`, `BUILDKITE`, `CIRCLECI`, `TF_BUILD` or `JENKINS_URL` set); set it only in a job that holds no secret |
 | `JIG_CODE_STATS_COMMAND_TIMEOUT_SEC` | Seconds `code_stats.classify_command` may run before it is stopped and the report fails; 300 by default |
+| `JIG_FIX_CI_LOG_COMMAND_TIMEOUT_SEC` | Seconds `ci.log_command` may run for one commit status before it is stopped and the log read fails; 300 by default |
 | `JIG_DO_ITEM_PREFLIGHT_TIMEOUT_SEC` | Seconds `do_item.preflight_command` may run before it is stopped and the claim is refused; 60 by default |
 | `JIG_AFTER_VERSION_TIMEOUT_SEC` | Seconds `changelog.after_version` may run before it is stopped and the release fails; 1800 by default |
 | `JIG__<SECTION>__<FIELD>` | Sets one field for this run, over every file (see [configuration layers](#configuration-layers)) |
@@ -1742,6 +1745,8 @@ autonomy:
 ci:
   required_checks: [build, test]
   hold_label: ci:hold
+  log_command: bun scripts/ci-log.ts       # {context, target_url} on stdin; prints the failed log, exit 3 when it is gone
+  repair_skill: ci-support                 # the skill a CI-repair pass loads
 issue_tracker:
   adapter: linear                        # or jira, or github, the default
   team: ENG                              # required by the Linear and Jira adapters
