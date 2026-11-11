@@ -68,7 +68,9 @@ const SEP =
 /** Replace inline code spans, including multiline spans and spans with multi-backtick delimiters. */
 function withoutCodeSpans(body: string): string {
   return body
-    .split(/(\n[ \t]*\n)/)
+    .split(
+      /(\n(?=[ \t]*(?:\n|#{1,6}(?:\s|$)|(?:[-*_]\s*){3,}$|[-*+]\s+|\d+[.)]\s+)))/,
+    )
     .map((paragraph) => {
       let result = paragraph;
       for (let start = 0; start < result.length; ) {
@@ -108,7 +110,10 @@ function withoutIndentedCode(body: string): string {
       const indentation =
         /^\s*/.exec(line.replace(/\t/g, "    "))?.[0].length ?? 0;
       if (indentation >= 4 && !paragraph) return " ";
-      paragraph = true;
+      paragraph =
+        !/^ {0,3}(?:#{1,6}(?:\s|$)|(?:[-*_]\s*){3,}$|[-*+]\s+|\d+[.)]\s+)/.test(
+          line,
+        );
       return line;
     })
     .join("\n");
@@ -121,7 +126,7 @@ function assertedText(body: string): string {
   // on a valid closing line; inline spans are then masked within paragraphs.
   return withoutIndentedCode(
     withoutCodeSpans(
-      markdownTextLines(body)
+      markdownTextLines(body.replace(/^(?: {0,3}>[ \t]?)+/gm, ""))
         .map((line) => line.replace(/^\\/, ""))
         .join("\n"),
     ),

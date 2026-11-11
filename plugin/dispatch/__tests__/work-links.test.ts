@@ -128,12 +128,15 @@ describe("a team key", () => {
       "  ~~~",
       "> ~~~",
       "> example",
+      "> ~~~",
       "",
       "Closes ENG-3",
       "",
       "\tCloses ENG-4",
       "Paragraph",
       "    Closes ENG-5",
+      "# Heading",
+      "    Closes ENG-11",
       "<!--",
       "~~~",
       "-->",
@@ -143,6 +146,9 @@ describe("a team key", () => {
       "`unclosed",
       "",
       "Closes ENG-9",
+      "`unclosed",
+      "# Closes ENG-12",
+      "`",
       "",
       "`Closes ENG-10`",
     ].join("\n");
@@ -151,6 +157,7 @@ describe("a team key", () => {
       "ENG-5",
       "ENG-6",
       "ENG-9",
+      "ENG-12",
     ]);
   });
 
