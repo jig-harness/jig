@@ -251,7 +251,11 @@ describe("announce-merge-ready.ts and the reviewers that skip drafts", () => {
     expect(r.stdout).toContain(OPENER);
   });
 
-  it("resolves its own policy rather than another pull request's inherited snapshot", async () => {
+  it("does not reuse the policy snapshot inherited for another pull request", async () => {
+    // The inherited snapshot names the draft-skipping reviewer, so reusing it
+    // would let the run reach the reviewer checks. Resolving its own policy
+    // finds no base for the scratch pull request: the run prints why, drops
+    // the inherited commit, and refuses to read the reviewer list without one.
     const r = await dryRun(
       {
         ...converged,
@@ -264,7 +268,10 @@ describe("announce-merge-ready.ts and the reviewers that skip drafts", () => {
         driverEnv: { DRIVE_PR_TARGET: "1000" },
       },
     );
+    expectSpawnExit(r, 1);
     expect(r.stderr).toContain("autonomy policy:");
+    expect(r.stderr).toContain("the driver named no base-branch commit");
+    expect(r.posted).toBe(false);
   });
 
   it("refuses a fresh run that skipped the head instead of reviewing it", async () => {
