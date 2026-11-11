@@ -300,7 +300,17 @@ does not. Every launch begins with a launch record in the state database,
 so a launch whose answer is lost
 holds its slot and is retried only under its own record. A refusal
 `drive.ts` gives (another driver holds the pull request) is the stage's
-answer and is not launched again on the same ledger facts. A re-drive is
+answer and is not launched again on the same ledger facts. A re-arm that
+ended on any other failing exit (a usage-limit wall excepted) without moving
+its drive ledger (its attach
+refused, say) is not launched again while the pull request's head, its
+branch's head and the ledger's generation are those it launched at (the hold needs those heads recorded at
+the launch and its branch's head readable now; when either is missing, the
+next tick launches again): a person
+is told once, and when the pull request is behind its branch (its head is not
+the branch's), the notice names both commits and the recovery, closing and
+reopening the pull request. A change of either head or of the ledger lets the
+next tick re-arm it. A re-drive is
 launched once per change: the drive merges the base in through its
 conflict-resolve round, or reviews the new head in its ordinary rounds. A
 converged drive's change is its pull request's head, conflicting or not. A
@@ -387,9 +397,19 @@ repositories may share, so each repository's tick sees the same list. A served
 item that carries another repository's label (one of `review.taxonomy.repos`
 other than this repository's `review.repo_label`) is left to that repository's
 checkout: it is not wanted here and not reported as held, and the launch-time
-recheck refuses it too. An item with no repository label, or one that also
-carries this repository's, stays startable here; without both settings nothing
-is left out.
+recheck refuses it too. An item that also carries this repository's label
+stays startable here; without both settings nothing is left out.
+
+An item that carries none of the taxonomy's repository labels belongs to no
+repository yet. On a tracker several repositories share (Linear, Jira) the
+machine file's `serve_defaults` names one repository per tracker namespace to start
+such items; every other repository leaves them alone, and the launch-time
+recheck refuses them there. For a team with no default the item is started by
+none and reported once, with its hold reason, as needing a repository label,
+which a person settles by labelling it; the Queue view shows the hold, and no
+notification goes out. A repository whose tracker team no other repository
+shares still needs a default for it once it has the scope. A GitHub repository
+reading its own issues needs no label, since its tracker is already its own.
 
 A served item held only by open blockers starts its blockers instead of
 waiting on work nobody does: an open, not-started, unassigned blocker of this
@@ -549,7 +569,9 @@ age and whose claim it is, to mark done or delete.
 
 **Notifications** (the `notify` stage) reach a person for each cause: a drive
 parked with a decision unanswered, carrying the drive's framed decision for
-each one; a drive stopped on an exit only a person settles, or with no exit;
+each one; a drive stopped on an exit only a person settles, or with no exit; a
+re-arm that failed without moving its ledger, with the close-and-reopen
+recovery where the pull request is behind its branch;
 a failed follow-up, with the question its pass stopped on; a stalled pickup,
 a double claim, a session waiting past `dispatch.blocked_after`; and a
 pull request that enters Ready to merge. Each message
@@ -1223,7 +1245,7 @@ jig send <station>@<owner>/<name>#<key> <verb> [arguments] [--dry-run] [--as <lo
 | `drive` | `drive` | the `drive` [dispatch label](CONFIGURATION.md#dispatch) | the dispatcher's next tick, which arms a drive |
 | `rearm` | `drive` | the `rearm` dispatch label for a stopped drive | the dispatcher's next tick, which re-arms it on an admitted account in the existing worktree |
 | `hold`, `release` | `drive`, `followup` | the `hold` dispatch label, added or removed | the dispatcher's next tick, which keeps every stage off a held pull request |
-| `answer <key> <text>` | `drive` | a comment on the pull request whose first line is `answer <key>: <text>` | the re-arm, which hands the answer to the drive's passes as your verdict |
+| `answer <key> <text>`, `answer <key> --approve`, `answer <key> --choose <option>`, `answer --all --approve` | `drive` | a comment on the pull request whose first line is `answer <key>: <text>`, or `answer <key>: approve [<digest>]` and `answer <key>: choose <option> [<digest>]` for a structured answer, one comment per item for `--all` | the re-arm, which hands the answer to the drive's passes as your verdict |
 | `pause`, `resume <hold-push\|pause\|stop>`, `stop`, `hold-push` | `drive` | a directive in the [mailbox](skills/drive-pr/README.md) of the working tree that holds the drive on this machine | the driver: `hold-push` before each push, `pause` and `stop` at its next round boundary |
 
 **It checks before it writes.** It reads the address first, through `jig
@@ -1237,8 +1259,10 @@ ask`'s readers, and refuses (exit `1`) a request the station cannot take:
   while a driver or launch still holds it, after a person's recorded stop,
   or while a re-arm request is already pending;
 - `answer` whose key is not a parked question in the pull request's drive
-  ledger, or that a trusted comment after the park already answers (a reply
-  on the parked thread itself is not read);
+  ledger, or when not every place an answer could be (the pull request's
+  comments, a parked thread's replies) was read; a structured answer
+  naming an option the park does not offer, `--approve` on a park with no
+  recommendation, and one whose digest is no longer the park's (below);
 - a mailbox directive already in force, a `resume` with nothing to withdraw,
   a drive no driver on this machine holds, and a drive another host holds,
   which it names: a directive reaches a driver on this machine only, so
@@ -1249,6 +1273,52 @@ control character (no line break, no mark that reorders text) and no hidden
 marker (`<!--`), since it reaches the drive's passes as your verdict; any
 other text is a usage error (exit `2`). Several words after the key are
 joined with a space.
+
+**Structured answers.** `answer <key> --approve` chooses the option the
+parked decision recommends, and `answer <key> --choose '<option>'` the
+option of that name, matched as the drive's readers match it (case,
+typographic quotes and a final full stop do not matter) and written as the
+park spells it. `--note '<text>'` adds a `note <key>:` line beside either,
+checked as an answer's text is. An answer names exactly one of your words,
+`--approve` or `--choose`; one that names none, or two, is a usage error.
+Your words are refused on a framed park when the drive's readers would
+count them as a choice (`approve`, `choose Keep`): send that as `--approve`
+or `--choose`, which binds it to the framing you read.
+A framed park carries a
+[decision digest](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md):
+run the send with `--dry-run` first, which shows the option in full (what it
+changes and what it costs) with the digest, and prints the command to send,
+naming the digest with `--decision <digest>` (and repeating any `--as`). A real structured send must
+name it, and is refused, writing nothing, when the park's digest is another
+(the drive framed the question again since you read it). A park from before
+digests has none: its answer is bound by time alone, and `--decision` is
+refused there. The comment carries the digest and the choice in its record
+too.
+
+**Answering again.** Each person's latest answer is the one the drive
+counts, so you may answer an item you already answered: `send` shows your
+earlier answer first and says the new one replaces it. Another person's
+answer does not stop a send; `send` names it, and when your answers differ
+(another option, another note, or a free answer beside a structured one)
+the item is disputed and waits until you agree. Another person's stale
+answer (one naming an earlier framing) keeps the item waiting until they
+answer again.
+
+**Approving several at once.** `answer --all --approve` approves the
+recommendation of every open item (none answered or disputed) whose class
+Jig's table of acts lists as Decide by name, one comment per item. It
+leaves out, saying why, a class whose act is another (Authorize, Merge,
+Reply), a repository's own class (which the table does not list), an item
+another person answered (stale or not), an item with no framed decision or
+recommendation, and a park from before digests; each of those is approved
+only by its own key. Its `--dry-run` lists each item it would approve with
+its digest and prints one
+[decision set token](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md);
+the real send names it (`--decision-set <token>`) and is refused, writing
+nothing, when the items or any digest changed since. When the forge refuses
+a post part-way, `send` prints the comments it posted, wakes their reader,
+names the items it did not send and exits `1`; run the dry run again for
+the rest.
 
 **It says who writes, and where.** Before it writes it prints the
 repository in full, the login it writes as (the forge login the `gh` client

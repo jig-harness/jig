@@ -1,5 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { TrackerRequestError } from "../scripts/lib/tracker/port.ts";
+import { parseTrackerConfig } from "../scripts/lib/tracker/config.ts";
+import { gitHubModel } from "../scripts/lib/tracker/github/model.ts";
 import { GitHubApiError } from "../scripts/lib/tracker/github/transport.ts";
 import {
   boardAnswer,
@@ -176,6 +178,70 @@ describe("GitHub adapter: reading an issue", () => {
     });
   });
 
+  it("reads pr_open by its label, and a label it shares with in_review as pr_open", async () => {
+    const read = async (states: Record<string, string>, labels: string[]) => {
+      const { t } = gitHub(
+        () =>
+          oneIssue(
+            issueNode({ number: 1, labels, extra: { subIssues: conn([]) } }),
+          ),
+        { issue_tracker: { states } },
+      );
+      return (await t.getIssue("#1"))?.state;
+    };
+    expect(
+      await read({ pr_open: "Awaiting Review" }, ["Awaiting Review"]),
+    ).toEqual({ name: "Awaiting Review", type: "started" });
+    expect(await read({ pr_open: "In Review" }, ["In Review"])).toEqual({
+      name: "In Review",
+      type: "started",
+    });
+    // Unset, the label is an ordinary label and the issue reads as todo.
+    expect(await read({}, ["Awaiting Review"])).toEqual({
+      name: "Todo",
+      type: "unstarted",
+    });
+  });
+
+  it("maps a name pr_open shares with in_review back to pr_open, in labels and on a board", () => {
+    const stateOf = (
+      states: Record<string, string>,
+      github: Record<string, unknown>,
+      issue: { labels?: string[]; status?: string | null },
+    ) => {
+      const config = parseTrackerConfig({
+        issue_tracker: { states, github: { repository: "o/r", ...github } },
+      });
+      return gitHubModel(config.states, config.github).stateOf({
+        open: true,
+        stateReason: null,
+        labels: issue.labels ?? [],
+        status: issue.status ?? null,
+      });
+    };
+    const board = {
+      states_from: "project",
+      project: "https://github.com/orgs/o/projects/1",
+    };
+    expect(
+      stateOf({ pr_open: "In Review" }, {}, { labels: ["In Review"] }),
+    ).toBe("pr_open");
+    expect(
+      stateOf(
+        { pr_open: "Review", in_review: "Review", ops_pending: "Review" },
+        {},
+        { labels: ["review"] },
+      ),
+    ).toBe("pr_open");
+    expect(
+      stateOf({ pr_open: "In Review" }, board, { status: "In Review" }),
+    ).toBe("pr_open");
+    expect(
+      stateOf({ pr_open: "Awaiting Review" }, {}, { labels: ["In Review"] }),
+    ).toBe("in_review");
+    expect(stateOf({}, board, { status: "In Review" })).toBe("in_review");
+  });
+
   it("reads open states off the board in project mode", async () => {
     const { t, calls } = gitHub(
       (c) =>
@@ -275,6 +341,31 @@ describe("GitHub adapter: moving an issue between states", () => {
     expect(
       calls.find((c) => c.op === "TrackerRemoveLabels")?.variables.labelIds,
     ).toEqual(["LA_1_In Progress"]);
+  });
+
+  it("moves to pr_open by its label, and refuses pr_open left unset before reading or writing", async () => {
+    const answer = (c: { op: string }) => {
+      if (c.op === "TrackerIssue") return issueWith(["In Progress"]);
+      if (c.op === "TrackerLabels")
+        return repoLabels("In Progress", "Awaiting Review");
+      return {};
+    };
+    const named = gitHub(answer, {
+      issue_tracker: { states: { pr_open: "Awaiting Review" } },
+    });
+    await named.t.transition("#5", "pr_open");
+    expect(writes(named.calls)).toEqual([
+      "TrackerAddLabels",
+      "TrackerRemoveLabels",
+    ]);
+    expect(
+      named.calls.find((c) => c.op === "TrackerAddLabels")?.variables.labelIds,
+    ).toEqual(["LA_1_Awaiting Review"]);
+    const unset = gitHub(answer);
+    await expect(unset.t.transition("#5", "pr_open")).rejects.toThrow(
+      "issue_tracker.states.pr_open is not set, so no item moves to pr_open",
+    );
+    expect(unset.calls).toEqual([]);
   });
 
   it("removes every state label for todo, and reopens a closed issue", async () => {
@@ -525,13 +616,14 @@ describe("GitHub adapter: relations", () => {
     repository: { nameWithOwner: repo },
   });
 
-  it("reads blockers, duplicates in both directions and related markers by trusted authors", async () => {
+  it("reads blockers, duplicates in both directions, native related links and legacy related markers by trusted authors", async () => {
     const { t } = gitHub((c) => {
       if (c.op === "TrackerIssue")
         return oneIssue(
           issueNode({
             number: 5,
             extra: {
+              relatesTo: conn([ref(3)]),
               blockedBy: conn([ref(1)]),
               blocking: conn([ref(9, "other/lib")]),
               duplicateOf: ref(4),
@@ -576,6 +668,7 @@ describe("GitHub adapter: relations", () => {
       { type: "blocks", issue: "other/lib#9" },
       { type: "duplicate", issue: "#4" },
       { type: "duplicated_by", issue: "#6" },
+      { type: "related", issue: "#3" },
       { type: "related", issue: "#8" },
     ]);
   });
@@ -597,14 +690,19 @@ describe("GitHub adapter: relations", () => {
     });
   });
 
-  /** An adapter whose issues keep the comments written to them. */
-  function commenting(notes: Record<number, string[]>) {
+  /** An adapter whose issues keep their related links, and the comments of an earlier version. */
+  function relating(
+    links: Record<number, number[]>,
+    notes: Record<number, string[]> = {},
+  ) {
     return gitHub((c) => {
-      if (c.op === "TrackerIssue")
+      if (c.op === "TrackerIssue") {
+        const n = c.variables.number as number;
         return oneIssue(
           issueNode({
-            number: c.variables.number as number,
+            number: n,
             extra: {
+              relatesTo: conn((links[n] ?? []).map((m) => ref(m))),
               blockedBy: conn([]),
               blocking: conn([]),
               duplicateOf: null,
@@ -612,6 +710,7 @@ describe("GitHub adapter: relations", () => {
             },
           }),
         );
+      }
       if (c.op === "TrackerComments") {
         const n = c.variables.number as number;
         return {
@@ -630,35 +729,47 @@ describe("GitHub adapter: relations", () => {
           },
         };
       }
-      if (c.op === "TrackerComment") {
-        const n = Number(String(c.variables.subjectId).slice(2));
-        notes[n] = [...(notes[n] ?? []), String(c.variables.body)];
+      if (c.op === "TrackerAddRelatesTo") {
+        const a = Number(String(c.variables.issueId).slice(2));
+        const b = Number(String(c.variables.relatedIssueId).slice(2));
+        links[a] = [...(links[a] ?? []), b];
+        links[b] = [...(links[b] ?? []), a];
       }
       return {};
     });
   }
-  const commentedOn = (
-    calls: { op: string; variables: Record<string, unknown> }[],
-  ) =>
-    calls
-      .filter((c) => c.op === "TrackerComment")
-      .map((c) => c.variables.subjectId);
 
-  it("records related as a marked comment on each side, once", async () => {
-    const { t, calls } = commenting({});
+  it("records related as GitHub's own related link, with no comment, once", async () => {
+    const links: Record<number, number[]> = {};
+    const { t, calls } = relating(links);
     await t.relate("#1", "related", "#2");
-    expect(commentedOn(calls)).toEqual(["I_1", "I_2"]);
+    expect(writes(calls)).toEqual(["TrackerAddRelatesTo"]);
     expect(
-      calls.find((c) => c.op === "TrackerComment")?.variables.body,
-    ).toContain("<!-- jig:related acme/app#2 -->");
-    await t.relate("#1", "related", "#2");
-    expect(commentedOn(calls)).toEqual(["I_1", "I_2"]);
+      calls.find((c) => c.op === "TrackerAddRelatesTo")?.variables,
+    ).toEqual({ issueId: "I_1", relatedIssueId: "I_2" });
+    expect(await t.listRelations("#1")).toEqual([
+      { type: "related", issue: "#2" },
+    ]);
+    expect(await t.listRelations("#2")).toEqual([
+      { type: "related", issue: "#1" },
+    ]);
+    await t.relate("#2", "related", "#1");
+    expect(writes(calls)).toEqual(["TrackerAddRelatesTo"]);
   });
 
-  it("writes only the missing side of a half-written related link", async () => {
-    const { t, calls } = commenting({ 1: ["<!-- jig:related acme/app#2 -->"] });
+  it("writes the native link beside a legacy comment, and reads the pair once", async () => {
+    const { t, calls } = relating(
+      {},
+      { 1: ["<!-- jig:related acme/app#2 -->"] },
+    );
+    expect(await t.listRelations("#1")).toEqual([
+      { type: "related", issue: "#2" },
+    ]);
     await t.relate("#1", "related", "#2");
-    expect(commentedOn(calls)).toEqual(["I_2"]);
+    expect(writes(calls)).toEqual(["TrackerAddRelatesTo"]);
+    expect(await t.listRelations("#1")).toEqual([
+      { type: "related", issue: "#2" },
+    ]);
   });
 
   it("refuses an issue related to itself", async () => {

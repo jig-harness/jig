@@ -924,6 +924,11 @@ latest answer counts. A disputed item stays parked. The
 [structured answer rules](../SKILL.md#picking-up-a-stopped-drive) define when
 choices and notes agree and when answers stay free. A park records when it
 was made; an older park without that time is never read as answered.
+A digest-bearing answer must also name the park's stored decision digest;
+a stale answer keeps the item parked and prevents provisional work. If local
+state and the readable ledger disagree about the framing, the re-arm waits
+for publication to catch up. Parks and answers without a digest keep their
+time-based binding.
 A conflicting PR may be re-armed for
 conflict repair while unanswered items stay parked; the `wide` autonomy
 exception may also unpark `escalated` items nobody has answered. Any person's
@@ -1183,7 +1188,14 @@ classification happens before any deletion, and a mixed set — some stale lease
 plus one live foreign one — deletes nothing at all rather than sweeping the
 stale half behind a refusal that claims otherwise.
 
-The caller's *own* live lease is preserved too but does not trigger the refusal:
+A live Ready-mark claim also refuses reset with exit `9`, regardless of the
+session that owns it: the remote Ready transition may still be in flight or
+its outcome unconfirmed. Confirm the owning mark-ready process has ended
+and reconcile the remote outcome before releasing it with
+`bun "<skill-dir>/scripts/drive-state.ts" release-ready-mark <PR>`, or wait for
+`DRIVE_PR_CLAIM_STALE_MIN` after its last renewal. Reset removes a stale claim.
+
+The caller's *own* live session lease is preserved too but does not trigger the refusal:
 it is taken by the resetting command itself, since `reset` is a leased mutation
 like any other. Only another tree's is news, and only another tree's can be
 mid-dispatch behind this one's back. A human overriding a genuinely live foreign

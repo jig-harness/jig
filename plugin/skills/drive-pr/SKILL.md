@@ -895,6 +895,17 @@ Other prose, code, HTML, duplicate lines or unmatched quotes make the
 answer free. An unknown option or an approval without a recommendation is
 also free. A note alone answers nothing.
 
+**Bind the answer to its framing.** Copy the notification's line including
+its [decision digest](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md),
+for example `answer <key>: approve [3fa9c2d1e0b4]`. A newly framed park stores
+the first 12 hexadecimal characters of its canonical decision's SHA-256
+hash; the ledger publishes that stored digest unchanged. A different digest
+makes an answer stale, including an unknown option or a comment with extra
+prose: the item stays parked and the next notification explains why. A
+disagreement between local and published framing leaves the item parked
+until the ledger catches up. Answers without a digest and legacy parks
+without one retain their time-based binding.
+
 Matching normalizes Unicode, case, phone quotes and dashes, bold marks,
 backticks and whitespace, and drops one final full stop or exclamation mark.
 Every person's latest structured answer must choose the same option with
@@ -2188,7 +2199,7 @@ Then move on to the next thread. This is the
 extra check. For a summary-only finding the same split is mechanical rather
 than remembered — see below.
 
-**If step 1's report says `reflectDue: true`, reflect before triaging — and
+**If step 1's report says `reflectDue: true` (the summary shows `[REFLECT DUE]`), reflect before triaging — and
 record it with `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" set-reflected [PR]` once it completes.**
 Reflecting means stepping back from the findings to ask what their repetition
 says about the repository's scaffolding or the reviewer's configuration, and
@@ -3350,7 +3361,8 @@ clones are coverage limits, never evidence that a PR was clean.
 The scoreboard above asks whether the process as a whole is bending the
 curves. The fleet-health sensor asks a narrower, *per-epic* question
 on a rolling window: are coordination acts (review rounds beyond the configured `free_rounds`,
-`pr-followup` issues minted, process-domain issues opened) outgrowing product
+`pr-followup` issues minted, process-domain issues opened, re-arms recorded in
+the forge ledger) outgrowing product
 progress (merged PRs touching a product change area, issues completed, epics
 accepted)?
 

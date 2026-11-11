@@ -2,11 +2,12 @@
  * A clone with a remote, a pull request's head branch on it, and a fake `gh`
  * answering for that pull request: what `attach-pr.ts` needs to run for real.
  *
- * Real git throughout (a bare repository at `<root>/example/app.git` stands in
- * for the remote, so its URL names `example/app` as a forge URL would), so the
+ * Real git for mutations (a bare repository stands in for the remote), so the
  * attach's checkouts, fetches and worktree listing are git's own behaviour,
- * not a stub's. Only `gh` is faked: it answers `pr view` from `FAKE_GH_PR`,
- * its head commit read from the remote (`FAKE_GH_REMOTE`) as a forge's is,
+ * not a stub's. A git wrapper reports the fixture remote as a forge URL.
+ * `gh` is faked: it answers `pr view` from `FAKE_GH_PR`,
+ * its head commit read from the remote (`FAKE_GH_REMOTE`) as a forge's is
+ * (except once while the file `FAKE_GH_LAG` names exists),
  * and `repo view` from `FAKE_GH_REPOS` (a map of directory to `owner/name`,
  * the longest prefix of its working directory winning), else `FAKE_GH_REPO`.
  */
@@ -25,7 +26,7 @@ const ATTACH = join(SCRIPTS, "attach-pr.ts");
 const SPAWN_TIMEOUT_MS = 120_000;
 
 const FAKE_GH = `#!/usr/bin/env bun
-import { realpathSync } from "node:fs";
+import { existsSync, realpathSync, rmSync } from "node:fs";
 const args = process.argv.slice(2);
 const field = (name) => args[args.indexOf(name) + 1];
 const project = (value) => {
@@ -41,8 +42,13 @@ if (args[0] === "pr" && args[1] === "view") {
     console.error("no pull requests found");
     process.exit(1);
   }
-  // The head is the remote's, as the forge reports it after every push.
-  if (process.env.FAKE_GH_REMOTE) {
+  // The head is the remote's, as the forge reports it after every push; the
+  // first read while FAKE_GH_LAG names a file that exists reports the stale
+  // head instead, and removes the file.
+  const lag = process.env.FAKE_GH_LAG;
+  const lagging = lag !== undefined && existsSync(lag);
+  if (lagging) rmSync(lag);
+  if (process.env.FAKE_GH_REMOTE && !lagging) {
     const tip = Bun.spawnSync(
       ["git", "--git-dir", process.env.FAKE_GH_REMOTE, "rev-parse", "refs/heads/" + pr.headRefName],
       { stdout: "pipe", stderr: "pipe" },
@@ -129,6 +135,24 @@ export function makeClone(): Clone {
   const bin = join(root, "bin");
   mkdirSync(bin);
   writeFakeProgram(join(bin, "gh"), FAKE_GH);
+  const realGit = Bun.which("git");
+  if (!realGit) throw new Error("git is required for attach fixtures");
+  writeFakeProgram(
+    join(bin, "git"),
+    `#!/usr/bin/env bun
+const args = process.argv.slice(2);
+const child = Bun.spawnSync([${JSON.stringify(realGit)}, ...args], {stdout: "pipe", stderr: "pipe"});
+let output = child.stdout.toString();
+// Only the known fixture destination is represented as a forge URL.
+// Fetches and pushes still run against the real bare repository.
+if (args.includes("get-url") && child.exitCode === 0) {
+  output = output.split("\\n").map(line => line === process.env.FAKE_GIT_REMOTE ? "https://github.com/example/app.git" : line).join("\\n");
+}
+process.stdout.write(output);
+process.stderr.write(child.stderr);
+process.exit(child.exitCode);
+`,
+  );
   const env: Record<string, string> = {
     ...cleanEnv(),
     PATH: `${bin}${delimiter}${process.env.PATH ?? ""}`,
@@ -138,6 +162,7 @@ export function makeClone(): Clone {
     DRIVE_PR_STATE_DIR: join(root, "state"),
     GH_CALL_TIMEOUT: "60",
     FAKE_GH_REMOTE: join(root, "example", "app.git"),
+    FAKE_GIT_REMOTE: join(root, "example", "app.git"),
     GIT_CONFIG_NOSYSTEM: "1",
     GIT_AUTHOR_NAME: "probe",
     GIT_AUTHOR_EMAIL: "probe@example.invalid",

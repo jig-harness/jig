@@ -211,8 +211,9 @@ is not the source of truth for what the repository has taken.
 
 ### One check, run in several ways
 
-The check is `jig reconcile`, a component of the `jig` command
-([plan item 35](plan.md)), so the dispatcher can run it without an agent. A
+The check is `jig reconcile`, a component of
+[the `jig` command](../plugin/README.md#the-jig-command), so the dispatcher
+can run it without an agent. A
 skill, `/jig:reconcile`, wraps it for a person in a session, for the steps
 that need judgment: reading a hint's matches in context, wording the items.
 

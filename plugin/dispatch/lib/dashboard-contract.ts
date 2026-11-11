@@ -37,6 +37,7 @@ export interface LineOption {
 
 /** One decision a parked drive waits on, as the drive framed it. */
 export interface LineDecision {
+  digest?: string;
   decision?: import("../../shared/decisions/park.ts").ParkedDecision;
   /** The named person; absent on older parks. Routing does not restrict answers. */
   person?: string;

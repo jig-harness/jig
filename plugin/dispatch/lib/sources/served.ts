@@ -1,9 +1,10 @@
 /** Served assignments, inherited through epics, with metadata kept at updatedAt. */
-import type {
-  Assigner,
-  IssueRelation,
-  PoolIssue,
-  Tracker,
+import {
+  type Assigner,
+  type IssueRelation,
+  type PoolIssue,
+  type Tracker,
+  workingStates,
 } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
 import { servedParentHold } from "./served-parents.ts";
 import { blocksWithin } from "../../../skills/do-item/scripts/lib/blocker-chain.ts";
@@ -21,7 +22,13 @@ import {
   type EpicWalk,
   type Serial,
 } from "./served-epics.ts";
-import { otherRepoLabel, type RepoScope } from "./served-repo.ts";
+import {
+  NEEDS_REPOSITORY_LABEL,
+  otherRepoLabel,
+  type RepoScope,
+  type UnlabeledMode,
+  unlabeledOutcome,
+} from "./served-repo.ts";
 import { servedPlan } from "./served-plan.ts";
 import {
   readExecutionPlan,
@@ -60,6 +67,10 @@ export interface ServedPolicy {
   executionPlanBlock?: string;
   /** This repository's label and the other repositories': an item carrying another's is not this checkout's to start. */
   repoScope?: RepoScope;
+  /** What this checkout does with an item no repository label places; `start` when absent. */
+  unlabeled?: UnlabeledMode;
+  /** Identity of the tracker whose unplaced items this reading reports. */
+  trackerNamespace?: string;
 }
 export interface ServedOptions extends ServedPolicy {
   cache?: PickupReads;
@@ -142,7 +153,10 @@ export async function readServedPickups(
       person.tracker[tracker.adapter as keyof ServedPerson["tracker"]];
     if (identity === undefined) continue;
     try {
-      const progress = await tracker.assignedIssues(identity, ["in_progress"]);
+      const progress = await tracker.assignedIssues(
+        identity,
+        workingStates(tracker),
+      );
       out.claimed.push(
         ...progress.map((i) => ({
           key: i.identifier,
@@ -234,6 +248,14 @@ export async function freshServedPickup(
     const elsewhere = otherRepoLabel(issue.labels, policy.repoScope);
     if (elsewhere !== null)
       return `it carries the repository label ${elsewhere}, which is another repository's`;
+    const unlabeled = unlabeledOutcome(
+      issue.labels,
+      policy.repoScope,
+      policy.unlabeled,
+    );
+    if (unlabeled === "hold") return NEEDS_REPOSITORY_LABEL;
+    if (unlabeled === "leave")
+      return "no repository label places it, and this repository is not its team's default";
     const parentHold = await servedParentHold(
       tracker,
       issue,
@@ -348,7 +370,8 @@ async function enqueueChildren(
 
 /**
  * Whether the walk passes this node by: already seen, nothing to start and no
- * epic to walk, or another repository's item (an epic is still walked, its
+ * epic to walk, another repository's item, or an item no label places that
+ * the team's default repository starts (an epic is still walked, its
  * children carry their own labels).
  */
 function leavesNode(
@@ -362,7 +385,10 @@ function leavesNode(
     !closed(issue);
   if (seen.has(issue.identifier) || (!ready(issue) && !walkedEpic)) return true;
   return (
-    !walkedEpic && otherRepoLabel(issue.labels, options.repoScope) !== null
+    !walkedEpic &&
+    (otherRepoLabel(issue.labels, options.repoScope) !== null ||
+      unlabeledOutcome(issue.labels, options.repoScope, options.unlabeled) ===
+        "leave")
   );
 }
 
@@ -401,6 +427,44 @@ async function visitNode(ctx: WalkContext, node: Pending): Promise<void> {
       reason: `the queue metadata could not be read: ${failureText(error)}`,
     });
   }
+}
+
+/** A startable item with nothing left to walk: a candidate, unless no repository label places it or its parent holds it. */
+async function placeLeaf(
+  ctx: WalkContext,
+  candidate: Candidate,
+): Promise<void> {
+  const { tracker, options, cache, out, candidates } = ctx;
+  const { issue } = candidate;
+  const hold = (reason: string, cause?: "needs-repository-label"): void => {
+    out.unplaced.push({
+      target: issue.identifier,
+      record: "tracker",
+      reason,
+      ...(cause === undefined ? {} : { cause }),
+      ...(options.trackerNamespace === undefined
+        ? {}
+        : { source: options.trackerNamespace }),
+    });
+  };
+  const unlabeled = unlabeledOutcome(
+    issue.labels,
+    options.repoScope,
+    options.unlabeled,
+  );
+  if (unlabeled === "hold") {
+    hold(NEEDS_REPOSITORY_LABEL, "needs-repository-label");
+    return;
+  }
+  if (unlabeled === "leave") return;
+  const parentHold = await servedParentHold(
+    tracker,
+    issue,
+    cache,
+    options.executionPlanBlock,
+  );
+  if (parentHold !== null) hold(parentHold);
+  else candidates.push(candidate);
 }
 
 function nodeHold(
@@ -563,7 +627,7 @@ async function placeNode(
   meta: Metadata,
   candidate: Candidate,
 ): Promise<string | null> {
-  const { tracker, options, cache, candidates } = ctx;
+  const { options } = ctx;
   const { issue } = node;
   if (meta.children.length > 0) {
     await enqueueChildren(ctx, issue, node.ancestor, meta, candidate);
@@ -571,14 +635,8 @@ async function placeNode(
   }
   if (!ready(issue) || otherRepoLabel(issue.labels, options.repoScope) !== null)
     return null;
-  const parentHold = await servedParentHold(
-    tracker,
-    issue,
-    cache,
-    options.executionPlanBlock,
-  );
-  if (parentHold === null) candidates.push(candidate);
-  return parentHold;
+  await placeLeaf(ctx, candidate);
+  return null;
 }
 
 /**

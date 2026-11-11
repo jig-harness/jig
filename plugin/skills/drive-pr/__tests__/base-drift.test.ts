@@ -289,13 +289,13 @@ describe("verifyRemoteIsPrRepo", () => {
     expect(r.ok).toBe(true);
   });
 
-  it("ignores the host — an ssh config alias still matches on owner/name", async () => {
+  it("refuses an SSH name that does not resolve to the forge", async () => {
     const r = await verifyRemoteIsPrRepo(
-      fakeOrigin("git@github-example:example-org/example-repo.git"),
+      fakeOrigin("git@unresolved.invalid:example-org/example-repo.git"),
       "/repo",
       "example-org/example-repo",
     );
-    expect(r.ok).toBe(true);
+    expect(r.ok).toBe(false);
   });
 
   it("refuses when origin fetches a different repository — the fork case", async () => {

@@ -43,6 +43,21 @@ const QUERY_FAKE = resolve(
   "repository-query-fake.ts",
 );
 
+/**
+ * Git as the world's checkouts see it: `remote get-url` names the forge URL of
+ * ${SLUG}, since a local path names no repository, while every other command
+ * runs real Git against the local origin the world cloned.
+ */
+const GIT_SHIM = (realGit: string) => `#!/usr/bin/env bun
+const run = Bun.spawnSync([${JSON.stringify(realGit)}, ...process.argv.slice(2)], { stdin: "inherit" });
+const args = process.argv.slice(2);
+const forgeUrl = "https://github.com/${SLUG}.git";
+const named = run.exitCode === 0 && args.includes("remote") && args.includes("get-url");
+process.stderr.write(run.stderr);
+process.stdout.write(named ? run.stdout.toString().replace(/^.+$/gm, forgeUrl) : run.stdout);
+process.exit(run.exitCode ?? 1);
+`;
+
 const WRAPPER = (driveGh: string) => `#!/usr/bin/env bun
 const fs = require("node:fs");
 const F = process.env.DISPATCH_FAKE_DIR;
@@ -84,7 +99,8 @@ if (args[0] === "pr" && args[1] === "view" && args.some((a) => a.includes("headR
   if (args.some((a) => a.includes("isCrossRepository"))) {
     const head = Bun.spawnSync(["git", "rev-parse", "--verify", "refs/heads/" + listed.headRefName]);
     out({ ...listed, state: "OPEN", headRefOid: head.exitCode === 0 ? head.stdout.toString().trim() : listed.headRefOid,
-      isCrossRepository: false, headRepositoryOwner: { login: "example-org" }, headRepository: { name: "example-repo" } });
+      isCrossRepository: false, headRepositoryOwner: { login: "example-org" }, headRepository: { name: "example-repo" },
+      url: "https://github.com/${SLUG}/pull/" + listed.number });
   }
   out({ ...listed, state: "OPEN" });
 }
@@ -537,6 +553,7 @@ export function world(): World {
   mkdirSync(home, { recursive: true });
   mkdirSync(bin, { recursive: true });
   writeFakeProgram(join(bin, "gh"), WRAPPER(join(dir, "..", "bin", "gh")));
+  writeFakeProgram(join(bin, "git"), GIT_SHIM(Bun.which("git") ?? "git"));
   writeFakeProgram(join(bin, orcaInstalledName()), FAKE_ORCA);
   writeFakeProgram(join(bin, "claude"), FAKE_CLAUDE);
   writeFakeProgram(join(bin, "codex"), FAKE_CODEX);
@@ -627,6 +644,7 @@ export function world(): World {
               : {
                   ...found,
                   parent: null,
+                  relatesTo: conn([]),
                   blockedBy: conn([]),
                   blocking: conn([]),
                   duplicateOf: null,

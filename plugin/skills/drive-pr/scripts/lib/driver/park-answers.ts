@@ -109,7 +109,10 @@ export type ParkAnswersResult =
       waiting: ParkedItem[];
       unread: ParkedItem[];
       disputed: ParkDispute[];
+      stale: ParkDispute[];
       responded: ParkedItem[];
+      /** Each item with any answer, with every person's latest answer to it, stale ones included. */
+      responses: ParkDispute[];
       notes: ParkNote[];
     }
   | { unreadable: string };
@@ -140,6 +143,18 @@ function sourceNotes(
   });
 }
 
+function verdictOf(item: ParkedItem, answers: PendingAnswer[]): PendingVerdict {
+  const decision = answerDecision(item);
+  return {
+    kind: item.kind,
+    key: item.key,
+    reason: item.reason,
+    answers,
+    ...(decision === undefined ? {} : { decision }),
+    ...(item.digest === undefined ? {} : { digest: item.digest }),
+  };
+}
+
 /** Classify one complete or partial history, preserving evidence that blocks provisional work. */
 function classifyPark(
   result: ReadParkAnswers,
@@ -147,29 +162,21 @@ function classifyPark(
   answers: PendingAnswer[],
   incomplete: boolean,
 ): void {
-  if (answers.length > 0) result.responded.push(item);
-  const decision = answerDecision(item);
+  if (answers.length > 0) {
+    result.responded.push(item);
+    result.responses.push({ item, answers });
+  }
+  const verdict = verdictOf(item, answers);
+  const stale = answers.filter((a) => a.stale === true);
+  if (stale.length > 0) result.stale.push({ item, answers: stale });
   const disputed = disputedAnswers(answers);
   if (disputed) result.disputed.push({ item, answers });
   if (incomplete) {
     result.unread.push(item);
-    if (answers.length > 0)
-      result.partial.push({
-        kind: item.kind,
-        key: item.key,
-        reason: item.reason,
-        answers,
-        ...(decision === undefined ? {} : { decision }),
-      });
+    if (answers.length > 0) result.partial.push(verdict);
   }
-  if (answers.length > 0 && !disputed && !incomplete)
-    result.answered.push({
-      kind: item.kind,
-      key: item.key,
-      reason: item.reason,
-      answers,
-      ...(decision === undefined ? {} : { decision }),
-    });
+  if (answers.length > 0 && stale.length === 0 && !disputed && !incomplete)
+    result.answered.push(verdict);
   else result.waiting.push(item);
 }
 
@@ -193,7 +200,9 @@ export async function parkAnswers(
     waiting: [],
     unread: [],
     disputed: [],
+    stale: [],
     responded: [],
+    responses: [],
     notes: [],
   };
   for (const item of parked) {

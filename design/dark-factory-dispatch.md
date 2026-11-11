@@ -628,7 +628,7 @@ without an execution plan only the top-ranked child of an epic is wanted, and
 none while another child is in progress, as `do-item` works an epic; a plan
 that lists several eligible steps sets its own order and parallelism. An epic
 none of whose open children can start reports one reason of its own, so the
-queue says why the epic is idle. Every repository's tick reads the same assigned list from a shared tracker team, so an item that carries another repository's label (one of `review.taxonomy.repos` other than this repository's `review.repo_label`) is left to that repository's checkout, neither wanted nor reported as held, and refused again at the launch recheck; an unlabelled item stays startable by any. Their pull
+queue says why the epic is idle. Every repository's tick reads the same assigned list from a shared tracker namespace, so an item that carries another repository's label (one of `review.taxonomy.repos` other than this repository's `review.repo_label`) is left to that repository's checkout, neither wanted nor reported as held, and refused again at the launch recheck. An item no repository label places is started only by the repository the machine file's `serve_defaults` names for the tracker namespace, and reported once as needing a repository label where none is named, so that several repositories reading one tracker never start it together. Their pull
 requests are adopted as `dispatch.adopt.authors` adopts a repository's own.
 The tick ranks those items by rules as data, shows each item it holds out
 with its reason, and starts the next within the host's load factor; the
@@ -1181,8 +1181,18 @@ drive is cleanup no person needs to do. A refusal (`drive.ts`
 exiting `11`, `13`, `16` or `20`; `do-item` finding the item already
 claimed) is recorded as the stage's own answer and never fought: an action
 whose facts have not changed since the refusal is reported, not launched
-again. A record whose process is gone without an exit is a launch that
-died, reported with its last state.
+again. A re-arm whose record ended on any other failing exit (a usage-limit wall
+excepted) without its drive moving the ledger (an attach that refused, say) records the pull
+request's head and its branch's head it launched at; while both heads and the
+ledger's facts are those, it is not launched again, and a person is told once
+(cause `needs-person`, keyed by that exit, the ledger generation and both
+heads). A pull request whose head is not its branch's is behind its branch,
+which the drive's attach refuses: the notice names both commits and the
+recovery, closing and reopening the pull request so the forge takes the
+branch's head. A change of either head or of the ledger lets the next tick
+re-arm it; a record with no heads, or heads that do not read now, leaves the
+re-arm as it was. A record whose process is gone without an exit is a launch
+that died, reported with its last state.
 
 The wrapper is the command a headless pass runs, a drive's or a
 follow-up's. A drive's exit is its answer. A follow-up pass's exit says
@@ -1627,7 +1637,7 @@ parked questions (the park's framed decision, or the stored
 reason for a park with no decision record); a drive
 stopped on an exit only a person can settle, carrying the exit and the
 drive's handoff; a drive stopped with no exit, carrying its handoff; a
-stalled pickup or a double claim; a failed follow-up, carrying the question its pass stopped on when it stated one; a follow-up claim that went stale again after the tick released one (see Stale follow-up claims); a launch record stuck pending, carrying why no tick launches it again (cause `needs-person`, see Launch records); a launch refused because a checkout the runtime does not list holds its branch and is in use, carrying that checkout's path and what keeps it busy (cause `needs-person`, keyed by the target, the branch and the path, so it is one notice per holder rather than a refusal repeated in the journal every tick; its record stands through a tick whose launch waited before the open); a session waiting past
+stalled pickup or a double claim; a failed follow-up, carrying the question its pass stopped on when it stated one; a follow-up claim that went stale again after the tick released one (see Stale follow-up claims); a launch record stuck pending, carrying why no tick launches it again (cause `needs-person`, see Launch records); a re-arm that failed without moving its ledger, carrying its exit, both heads and, for a pull request behind its branch, the close-and-reopen recovery (cause `needs-person`, sent once for its exit, ledger generation and heads, see Launch records); a launch refused because a checkout the runtime does not list holds its branch and is in use, carrying that checkout's path and what keeps it busy (cause `needs-person`, keyed by the target, the branch and the path, so it is one notice per holder rather than a refusal repeated in the journal every tick; its record stands through a tick whose launch waited before the open); a session waiting past
 `blocked_after`; a running stage drifting from its expectation, and a
 session still waiting on a wall after its one nudge (see Control). Every
 message carries the cause or the question, the pull request's link and
@@ -1660,7 +1670,9 @@ of again. A repeat is skipped while the destination is still unread with the
 message, since sending it again says nothing new, and its clock starts from
 then. `0s` sends each cause once. A drift is an observation rather than
 something a person must do, so it is sent once for the life of its key and
-never repeated. The suppression record keeps the first send, which the
+never repeated; so is a re-arm that failed without moving its ledger, whose
+key carries its exit, the ledger generation and both heads, so any change of
+those is a new notice. The suppression record keeps the first send, which the
 dashboard dates the wait from, and the last, which the repeat is timed from;
 a repeat writes no second event row to the outcome log, since the cause's
 row was written when it was first sent.

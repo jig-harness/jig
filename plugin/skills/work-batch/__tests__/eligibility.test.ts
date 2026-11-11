@@ -8,6 +8,7 @@ import {
   excludeReason,
   partition,
   sanitizeForDisplay,
+  stateStanding,
 } from "../scripts/lib/eligibility.ts";
 import { parseCatalog } from "../../drive-pr/scripts/lib/change-areas-catalog.ts";
 import { issue, policy, relabel } from "./helpers.ts";
@@ -504,5 +505,20 @@ describe("partition and the reasons people read", () => {
     expect(
       describeReason({ kind: "already-assigned", assignee: "x\u001b[1Ay" }, P),
     ).not.toContain("\u001b");
+  });
+});
+
+describe("a pr_open state with no category", () => {
+  it("stands as started work, by its own name or one it shares with in_review", () => {
+    for (const name of ["Awaiting Review", "In Review"]) {
+      const p = policy({
+        issue_tracker: {
+          adapter: "linear",
+          team: "ENG",
+          states: { pr_open: name },
+        },
+      });
+      expect(stateStanding({ name, type: "" }, p)).toBe("started");
+    }
   });
 });
