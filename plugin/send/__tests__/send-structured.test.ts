@@ -341,6 +341,20 @@ describe("--all --approve", () => {
     expect(r.stdout).not.toMatch(/F_.*\(next-item\) \[/);
   });
 
+  it("prints no control character in the refusal when the only eligible park has such a key", async () => {
+    const w = world();
+    pullRequest(
+      w,
+      12,
+      [],
+      [ledgerOn(701, framedLedger(12, [framedPark("F_\u001b[2J", "scope")]))],
+    );
+    const r = await w.send([ADDRESS, "answer", "--all", "--approve"]);
+    expect(r.exitCode).not.toBe(0);
+    expect(r.stderr.includes("\u001b")).toBe(false);
+    expect(r.stderr).toContain("F_ [2J");
+  });
+
   it("refuses a real send without the set token, or when the set changed since, writing nothing", async () => {
     const w = world();
     many(w);

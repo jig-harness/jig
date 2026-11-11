@@ -84,7 +84,7 @@ export function writerLogin(
 }
 
 /** `text` for the terminal: control and direction-changing characters removed, the layout newlines kept. */
-const shown = (text: string) =>
+export const shown = (text: string) =>
   text
     .split("\n")
     .map((line) =>

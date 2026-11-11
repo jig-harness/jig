@@ -63,6 +63,7 @@ import {
   type Planned,
   refused,
   renderPlan,
+  shown,
   renderSent,
   writerLogin,
 } from "./lib/plan.ts";
@@ -129,11 +130,11 @@ export const sendCommand = command(
 export type SendArguments = InferValue<typeof sendCommand>;
 
 function usage(reason: string): never {
-  throw new ExitError(SEND_EXIT.USAGE, `jig send: ${reason}`);
+  throw new ExitError(SEND_EXIT.USAGE, shown(`jig send: ${reason}`));
 }
 
 function refusal(reason: string): number {
-  console.error(`jig send: refused: ${reason}`);
+  console.error(shown(`jig send: refused: ${reason}`));
   return SEND_EXIT.REFUSED;
 }
 
@@ -218,7 +219,7 @@ export async function sendMain(args: SendArguments): Promise<number> {
   if (args.dryRun) return SEND_EXIT.SENT;
   const wrote = await plan.write();
   if (!wrote.ok) {
-    console.error(`jig send: not sent: ${wrote.failure.reason}`);
+    console.error(shown(`jig send: not sent: ${wrote.failure.reason}`));
     return SEND_EXIT.REFUSED;
   }
   const sent = wrote.value;
@@ -229,7 +230,9 @@ export async function sendMain(args: SendArguments): Promise<number> {
   );
   if (part === null) return SEND_EXIT.SENT;
   console.error(
-    `jig send: partly sent: ${part.unsent}; run the same command with --dry-run again, which lists what is still open, and send what it prints`,
+    shown(
+      `jig send: partly sent: ${part.unsent}; run the same command with --dry-run again, which lists what is still open, and send what it prints`,
+    ),
   );
   return SEND_EXIT.REFUSED;
 }
@@ -263,7 +266,9 @@ function wake(resolved: ResolvedAddress, plan: Plan): string | null {
   const woke = wakeTick(path, `send: ${plan.verb} ${plan.address}`);
   if (!woke.ok) {
     console.error(
-      `jig send: the tick was not woken, so ${NEXT_TICK} reads the record: ${woke.failure.reason}`,
+      shown(
+        `jig send: the tick was not woken, so ${NEXT_TICK} reads the record: ${woke.failure.reason}`,
+      ),
     );
     return null;
   }
