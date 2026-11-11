@@ -47,6 +47,14 @@ describe("pullNumbersIn", () => {
 });
 
 describe("hasPullAssociation", () => {
+  it("ignores a marker inside a multiline inline-code example", () => {
+    const marker = `<!-- do-item-pr: https://github.com/${REPO}/pull/9 -->`;
+    expect(
+      hasPullAssociation(`Example: \`first\n${marker}\nlast\``, REPO, 9),
+    ).toBe(false);
+    expect(hasPullAssociation(marker, REPO, 9)).toBe(true);
+  });
+
   it("recognizes only the explicit association marker for that pull request", () => {
     expect(
       hasPullAssociation(
@@ -107,6 +115,16 @@ describe("linksIssue", () => {
       false,
     );
     expect(linksIssue("> Closes ENG-123", "ENG-123", team)).toBe(false);
+  });
+
+  it("masks inline-code spans without joining text across them or across lines", () => {
+    expect(linksIssue("`example`Closes ENG-5", "ENG-5", team)).toBe(false);
+    expect(
+      linksIssue("Example: `first\nCloses ENG-5\nlast`", "ENG-5", team),
+    ).toBe(false);
+    expect(linksIssue("Closes ENG-`1`5", "ENG-15", team)).toBe(false);
+    expect(linksIssue("`unclosed\nCloses ENG-5", "ENG-5", team)).toBe(true);
+    expect(linksIssue("`a`\n\nCloses ENG-5", "ENG-5", team)).toBe(true);
   });
 
   it("reads every eligible table cell but not inline-code examples", () => {

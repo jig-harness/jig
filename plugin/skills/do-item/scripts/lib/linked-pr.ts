@@ -94,9 +94,7 @@ export function hasPullAssociation(
     `^<!-- do-item-pr: https://github\\.com/${escapeRe(repository)}/pull/${number} -->$`,
     "i",
   );
-  return [...markdownLines(text)].some(
-    ({ line, kind, quoted }) => kind === "text" && !quoted && marker.test(line),
-  );
+  return evidenceLines(text).some((line) => marker.test(line));
 }
 
 /** The pull requests an item's comments link, with their explicit association evidence. */
@@ -134,17 +132,42 @@ export function linksIssue(
     `(?:^|\\|)[ \\t]*(?:closes|refs)[ \\t]+(${keySource})`,
     "gim",
   );
-  return [...markdownLines(body)].some(({ line, kind, quoted }) => {
-    if (kind !== "text" || quoted) return false;
-    return [...withoutInlineCode(line).matchAll(re)].some(
+  return evidenceLines(body).some((line) =>
+    [...line.matchAll(re)].some(
       (match) => match[1]?.toUpperCase() === key.toUpperCase(),
-    );
-  });
+    ),
+  );
 }
 
-/** Remove inline-code spans so Markdown examples cannot establish an association. */
-function withoutInlineCode(line: string): string {
-  return line.replace(/(`+)(?:[^`]|`(?!\1))*\1/g, "");
+/**
+ * The lines of `text` that may carry association evidence: real text, not
+ * quoted, and with every inline-code span masked. A span runs across the
+ * lines of its paragraph, and its characters become a placeholder that is
+ * neither whitespace nor a word character, so removing an example can
+ * neither join the text around it nor leave a line start for a matcher.
+ */
+function evidenceLines(text: string): string[] {
+  const out: string[] = [];
+  let paragraph: string[] = [];
+  const flush = () => {
+    const masked = paragraph
+      .join("\n")
+      .replace(/(?<!`)(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)/g, (span) =>
+        span.replace(/[^\n]/g, "\u0000"),
+      );
+    out.push(...masked.split("\n"));
+    paragraph = [];
+  };
+  for (const { line, kind, quoted, depth, boundary } of markdownLines(text)) {
+    if (kind !== "text" || quoted || line.trim() === "") {
+      flush();
+      continue;
+    }
+    if (depth !== undefined || boundary) flush();
+    paragraph.push(line);
+  }
+  flush();
+  return out;
 }
 
 /**
