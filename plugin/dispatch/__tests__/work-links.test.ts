@@ -238,6 +238,16 @@ describe("a team key", () => {
           ["> > ~~~", "> > example", "> Closes ENG-1", "> Closes ENG-2"],
           ["ENG-1", "ENG-2"],
         ],
+        [
+          "does not close a code span on a shorter run inside a longer one",
+          ["`<!--``", "> ~~~", "> -->", "", "Closes ENG-1"],
+          ["ENG-1"],
+        ],
+        [
+          "keeps quote markers literal inside a fence opened in a list item",
+          ["- ~~~", "  > ~~~", "  > Closes ENG-1", "  ~~~"],
+          [],
+        ],
       ] as Array<[string, string[], string[], string?]>
     ).map(([name, lines, expected, newline]) => ({
       name,

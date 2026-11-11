@@ -70,6 +70,14 @@ function backtickRun(line: string, at: number): string {
   return /^`+/.exec(line.slice(at))?.[0] ?? "";
 }
 
+/** The end of the next run of exactly `run.length` backticks at or after `from`, or -1: a longer or shorter run does not close the span. */
+function closingRunEnd(line: string, from: number, run: string): number {
+  for (const m of line.matchAll(/`+/g))
+    if (m.index >= from && m[0].length === run.length)
+      return m.index + run.length;
+  return -1;
+}
+
 /** Whether a code span opened on `at` can close later in its paragraph. */
 function spanContinues(
   lines: readonly string[],
@@ -85,7 +93,7 @@ function spanContinues(
       )
     )
       return false;
-    for (let column = 0; column < line.length; ) {
+    for (let column = 0; column < line.length;) {
       const found = backtickRun(line, column);
       if (found === "") {
         column++;
@@ -134,8 +142,8 @@ function stepText(
   }
   if (line[at] !== "`") return at + 1;
   const run = backtickRun(line, at);
-  const close = line.indexOf(run, at + run.length);
-  if (close !== -1) return close + run.length;
+  const close = closingRunEnd(line, at + run.length, run);
+  if (close !== -1) return close;
   if (spanContinues(lines, lineIndex, run)) state.span = run;
   return at + run.length;
 }
@@ -147,7 +155,7 @@ function commentState(
   state: { comment: boolean; span: string | null },
 ): void {
   const line = lines[lineIndex] ?? "";
-  for (let at = 0; at < line.length; ) {
+  for (let at = 0; at < line.length;) {
     if (state.comment) at = stepComment(line, at, state);
     else if (state.span !== null) at = stepSpan(line, at, state);
     else at = stepText(lines, lineIndex, at, state);
@@ -185,8 +193,10 @@ function closesFence(text: string, fence: Fence): boolean {
 
 /** The fence a line opens, if it does. */
 function openedFence(text: string, quoteDepth: number): Fence | null {
-  const open = /^( {0,3})(`{3,}|~{3,})/.exec(text);
-  return open === null ? null : { marker: open[2] ?? "", quoteDepth };
+  const open = /^ {0,3}(?:(?:[-*+]|\d{1,9}[.)])[ \t]+)?(`{3,}|~{3,})/.exec(
+    text,
+  );
+  return open === null ? null : { marker: open[1] ?? "", quoteDepth };
 }
 
 /** Remove blockquote containers before the shared reader sees their Markdown, without changing a quote that is literal text inside a top-level fence or comment. */
