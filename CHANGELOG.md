@@ -391,6 +391,16 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.200.1] - 2026-11-11
+
+### Fixed
+
+- The manual-operations label (`manual-ops` by default) is created purple, and
+  a test keeps it apart from the red `jig:parked` and `jig:followup-failed`:
+  a pull request that owes a step outside the code is not stopped or blocked.
+  A repository that created the label in red keeps that color until someone
+  changes it (`gh label edit manual-ops --color 5319e7`).
+
 ## [0.200.0] - 2026-11-11
 
 ### Changed
@@ -6960,7 +6970,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.200.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.200.1...HEAD
+[0.200.1]: https://github.com/jig-harness/jig/compare/v0.200.0...v0.200.1
 [0.200.0]: https://github.com/jig-harness/jig/compare/v0.199.1...v0.200.0
 [0.199.1]: https://github.com/jig-harness/jig/compare/v0.199.0...v0.199.1
 [0.199.0]: https://github.com/jig-harness/jig/compare/v0.198.0...v0.199.0
