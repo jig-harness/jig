@@ -132,6 +132,15 @@ describe("linksIssue", () => {
       "| Refs ENG-5 | ` |",
     ];
     expect(linksIssue(table.join("\n"), "ENG-5", team)).toBe(true);
+    for (const marker of ["-", "1.", "- -"]) {
+      const listed = [
+        `${marker} | A | B |`,
+        "  | - | - |",
+        "  | Refs ENG-1 | ` |",
+        "  | Refs ENG-5 | ` |",
+      ];
+      expect(linksIssue(listed.join("\n"), "ENG-5", team)).toBe(true);
+    }
     const bad = "| A | B |\n| - |\nEg: `x\nCloses ENG-5\ny`";
     expect(linksIssue(bad, "ENG-5", team)).toBe(false);
     expect(linksIssue("`a`\n\nCloses ENG-5", "ENG-5", team)).toBe(true);

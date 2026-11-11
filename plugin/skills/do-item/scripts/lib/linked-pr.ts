@@ -204,8 +204,12 @@ function evidenceLines(text: string): string[] {
 /** A GitHub table's delimiter row, which makes the line above its header. */
 const TABLE_DELIMITER = /^\s*\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)*\|?\s*$/;
 
+/** The list markers (bullet or ordered, nested) that open a line inside a list item. */
+const LIST_PREFIX = /^\s*(?:(?:[-+*]|\d{1,9}[.)])\s+)+/;
+
 const tableCells = (row: string) =>
   row
+    .replace(LIST_PREFIX, "")
     .trim()
     .replace(/^\|/, "")
     .replace(/(?<!\\)\|$/, "")
