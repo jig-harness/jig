@@ -68,14 +68,16 @@ const SEP =
 /** Advance an HTML-comment state while leaving delimiters inside complete inline-code spans literal. */
 function commentState(line: string, open: boolean): boolean {
   for (let at = 0; at < line.length; ) {
+    if (open) {
+      if (line.startsWith("-->", at)) {
+        open = false;
+        at += 3;
+      } else at++;
+      continue;
+    }
     if (line.startsWith("<!--", at)) {
       open = true;
       at += 4;
-      continue;
-    }
-    if (open && line.startsWith("-->", at)) {
-      open = false;
-      at += 3;
       continue;
     }
     if (line[at] !== "`") {
