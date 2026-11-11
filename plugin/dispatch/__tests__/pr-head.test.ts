@@ -98,6 +98,16 @@ describe("PR workspace head proof", () => {
     expect(ctx.calls).toContain("git config --get core.sshCommand");
     expect(ctx.calls).toContain("ssh -G -- git@ghe.example");
   });
+  it("turns a transport verification failure into a refusal", async () => {
+    const ctx = context();
+    const run = ctx.run;
+    ctx.run = (argv, opts) =>
+      argv[0] === "git" && argv[1] === "config"
+        ? answer("ssh -i key\n")
+        : run(argv, opts);
+    const proof = await resolvePullRequestHead(ctx, "/repo", 7, "feature");
+    expect(proof.ok).toBe(false);
+  });
   for (const meta of [
     { ...META, isCrossRepository: true },
     { ...META, headRepository: null },

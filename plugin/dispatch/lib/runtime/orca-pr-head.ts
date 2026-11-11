@@ -86,14 +86,23 @@ async function requireOrigin(
         `cannot read origin's URLs (exit ${urls.status}): ${output(urls)}`,
       );
     if (urls.stdout.trim() === "") return refuse("origin reported no URLs");
-    const repositories = await Promise.all(
-      urls.stdout
-        .trim()
-        .split("\n")
-        .map((url) =>
-          repoOfUrl(url, undefined, resolve, head.url, clone, resolve),
-        ),
-    );
+    let repositories: string[];
+    try {
+      repositories = await Promise.all(
+        urls.stdout
+          .trim()
+          .split("\n")
+          .map((url) =>
+            repoOfUrl(url, undefined, resolve, head.url, clone, resolve),
+          ),
+      );
+    } catch (error) {
+      return refuse(
+        `origin's transport could not be verified: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
     if (repositories.some((resolved) => resolved.toLowerCase() !== head.repo))
       return refuse(
         `origin does not point at the head repository ${head.repo}`,
