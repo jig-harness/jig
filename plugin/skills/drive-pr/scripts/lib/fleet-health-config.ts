@@ -196,6 +196,7 @@ export interface FleetHealthConfig {
       roundsBeyondFree: number;
       followupsMinted: number;
       sdlcIssuesOpened: number;
+      driveRearms?: number;
     };
     /** unit name → why it cannot be measured. */
     unmeasured: Record<string, string>;
@@ -414,6 +415,50 @@ function num(
   return v;
 }
 
+/** Validate ceremony weights and the remaining gaps in measurement. */
+function parseCeremony(raw: unknown): FleetHealthConfig["ceremony"] {
+  const ceremony = record(raw, "ceremony");
+  exactKeys(ceremony, "ceremony", ["free_rounds", "weights", "unmeasured"]);
+  const cw = record(ceremony.weights, "ceremony.weights");
+  exactKeys({ drive_rearms: 1, ...cw }, "ceremony.weights", [
+    "rounds_beyond_free",
+    "followups_minted",
+    "sdlc_issues_opened",
+    "drive_rearms",
+  ]);
+  const unmeasuredRaw = record(ceremony.unmeasured, "ceremony.unmeasured");
+  const unmeasured: Record<string, string> = {};
+  for (const [k, v] of Object.entries(unmeasuredRaw)) {
+    if (typeof v !== "string" || v.trim() === "") {
+      bad(`ceremony.unmeasured.${k}`, "must state why it cannot be measured");
+    }
+    if (k !== "drive_rearms") unmeasured[k] = v as string;
+  }
+
+  return {
+    freeRounds: num(ceremony, "free_rounds", "ceremony", {
+      min: 0,
+      integer: true,
+    }),
+    weights: {
+      driveRearms:
+        cw.drive_rearms === undefined
+          ? 1
+          : num(cw, "drive_rearms", "ceremony.weights", { min: 0 }),
+      roundsBeyondFree: num(cw, "rounds_beyond_free", "ceremony.weights", {
+        min: 0,
+      }),
+      followupsMinted: num(cw, "followups_minted", "ceremony.weights", {
+        min: 0,
+      }),
+      sdlcIssuesOpened: num(cw, "sdlc_issues_opened", "ceremony.weights", {
+        min: 0,
+      }),
+    },
+    unmeasured,
+  };
+}
+
 export function parseConfig(
   raw: unknown,
   ctx: ConfigContext = EMPTY_CONTEXT,
@@ -465,22 +510,7 @@ export function parseConfig(
     "epic_accepted",
   ]);
 
-  const ceremony = record(root.ceremony, "ceremony");
-  exactKeys(ceremony, "ceremony", ["free_rounds", "weights", "unmeasured"]);
-  const cw = record(ceremony.weights, "ceremony.weights");
-  exactKeys(cw, "ceremony.weights", [
-    "rounds_beyond_free",
-    "followups_minted",
-    "sdlc_issues_opened",
-  ]);
-  const unmeasuredRaw = record(ceremony.unmeasured, "ceremony.unmeasured");
-  const unmeasured: Record<string, string> = {};
-  for (const [k, v] of Object.entries(unmeasuredRaw)) {
-    if (typeof v !== "string" || v.trim() === "") {
-      bad(`ceremony.unmeasured.${k}`, "must state why it cannot be measured");
-    }
-    unmeasured[k] = v as string;
-  }
+  const ceremony = parseCeremony(root.ceremony);
 
   // `tail_blocked` is optional (its defaults are the epic census's definition),
   // so a file written before the census still loads.
@@ -544,10 +574,7 @@ export function parseConfig(
   }
   // fleet-health.ts skips sampling a PR with at most `free_rounds` reviewed
   // heads, so a carousel threshold at or below it could never be measured.
-  const freeRounds = num(ceremony, "free_rounds", "ceremony", {
-    min: 0,
-    integer: true,
-  });
+  const freeRounds = ceremony.freeRounds;
   if (minRounds <= freeRounds) {
     bad(
       "signals.review_carousel.min_rounds",
@@ -574,24 +601,7 @@ export function parseConfig(
         epicAccepted: num(pw, "epic_accepted", "progress.weights", { min: 0 }),
       },
     },
-    ceremony: {
-      freeRounds: num(ceremony, "free_rounds", "ceremony", {
-        min: 0,
-        integer: true,
-      }),
-      weights: {
-        roundsBeyondFree: num(cw, "rounds_beyond_free", "ceremony.weights", {
-          min: 0,
-        }),
-        followupsMinted: num(cw, "followups_minted", "ceremony.weights", {
-          min: 0,
-        }),
-        sdlcIssuesOpened: num(cw, "sdlc_issues_opened", "ceremony.weights", {
-          min: 0,
-        }),
-      },
-      unmeasured,
-    },
+    ceremony,
     signals: {
       stuckEpic: {
         days: num(stuck, "days", "signals.stuck_epic", {

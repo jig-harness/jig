@@ -1,7 +1,11 @@
 import { describe, expect, it } from "bun:test";
 import { openBranch } from "../../shared/orca-workspace/open.ts";
 import type { OpenPort } from "../../shared/orca-workspace/port.ts";
-import type { Context, RunResult } from "../../shared/orca-workspace/runner.ts";
+import {
+  HerdrError,
+  type Context,
+  type RunResult,
+} from "../../shared/orca-workspace/runner.ts";
 import { ok } from "../../shared/outcome.ts";
 import { resolvePullRequestHead } from "../lib/runtime/orca-pr-head.ts";
 
@@ -13,6 +17,7 @@ const META = {
   isCrossRepository: false,
   headRepositoryOwner: { login: "example-org" },
   headRepository: { name: "example-repo" },
+  url: "https://github.com/example-org/example-repo/pull/7",
 };
 const answer = (stdout = "", status = 0): RunResult => ({
   stdout,
@@ -39,6 +44,9 @@ function context(
       if (argv[0] === "gh") return answer(JSON.stringify(META));
       if (argv.includes("get-url"))
         return answer("git@github.com:example-org/example-repo.git\n");
+      if (argv[0] === "git" && argv[1] === "config") return answer("", 1);
+      if (argv[0] === "ssh" && argv[1] === "-G")
+        return answer("hostname github.com\n");
       if (argv.includes("ls-remote"))
         return answer(`${SHA}\trefs/heads/feature\n`);
       if (argv[0] === "test") return answer("", 1);
@@ -59,10 +67,62 @@ function context(
 }
 
 describe("PR workspace head proof", () => {
-  it("accepts a same-repository remote head at its reported SHA", () => {
-    expect(resolvePullRequestHead(context(), "/repo", 7, "feature")).toEqual(
+  it("accepts a same-repository remote head at its reported SHA", async () => {
+    expect(
+      await resolvePullRequestHead(context(), "/repo", 7, "feature"),
+    ).toEqual(ok(SHA));
+  });
+  it("uses the PR URL's forge host when verifying an Enterprise SSH origin", async () => {
+    const ctx = context({
+      "git -C /repo remote get-url --all origin": answer(
+        "git@ghe.example:example-org/example-repo.git\n",
+      ),
+      "git -C /repo remote get-url --push --all origin": answer(
+        "git@ghe.example:example-org/example-repo.git\n",
+      ),
+    });
+    const run = ctx.run;
+    ctx.run = (argv, options) => {
+      if (argv[0] === "gh")
+        return answer(
+          JSON.stringify({
+            ...META,
+            url: "https://ghe.example/example-org/example-repo/pull/7",
+          }),
+        );
+      if (argv[0] === "ssh") {
+        ctx.calls.push(argv.join(" "));
+        return answer("hostname ghe.example\n");
+      }
+      return run(argv, options);
+    };
+    expect(await resolvePullRequestHead(ctx, "/repo", 7, "feature")).toEqual(
       ok(SHA),
     );
+    expect(ctx.calls).toContain("git config --get core.sshCommand");
+    expect(ctx.calls).toContain("ssh -G -- git@ghe.example");
+  });
+  it("turns a transport verification failure into a refusal", async () => {
+    const ctx = context();
+    const run = ctx.run;
+    ctx.run = (argv, opts) =>
+      argv[0] === "git" && argv[1] === "config"
+        ? answer("ssh -i key\n")
+        : run(argv, opts);
+    const proof = await resolvePullRequestHead(ctx, "/repo", 7, "feature");
+    expect(proof.ok).toBe(false);
+  });
+  it("lets the run's limit reach the caller instead of refusing", async () => {
+    const ctx = context();
+    const run = ctx.run;
+    ctx.run = (argv, opts) => {
+      if (argv[0] === "git" && argv[1] === "config")
+        throw new HerdrError("the run reached its limit");
+      return run(argv, opts);
+    };
+    await expect(
+      resolvePullRequestHead(ctx, "/repo", 7, "feature"),
+    ).rejects.toBeInstanceOf(HerdrError);
   });
   for (const meta of [
     { ...META, isCrossRepository: true },
@@ -71,12 +131,14 @@ describe("PR workspace head proof", () => {
     { ...META, headRefName: "renamed" },
     { ...META, state: "CLOSED" },
   ])
-    it(`refuses an unproven head ${JSON.stringify(meta)}`, () => {
+    it(`refuses an unproven head ${JSON.stringify(meta)}`, async () => {
       const ctx = context();
       const run = ctx.run;
       ctx.run = (argv, opts) =>
         argv[0] === "gh" ? answer(JSON.stringify(meta)) : run(argv, opts);
-      expect(resolvePullRequestHead(ctx, "/repo", 7, "feature").ok).toBe(false);
+      expect(
+        (await resolvePullRequestHead(ctx, "/repo", 7, "feature")).ok,
+      ).toBe(false);
       expect(ctx.calls).toEqual([]);
     });
   for (const remote of [
@@ -84,35 +146,39 @@ describe("PR workspace head proof", () => {
     answer(`${"b".repeat(40)}\trefs/heads/feature\n`),
     answer(`${SHA}\trefs/heads/other\n`),
   ])
-    it("refuses an absent or moved origin branch", () => {
+    it("refuses an absent or moved origin branch", async () => {
       expect(
-        resolvePullRequestHead(
+        (
+          await resolvePullRequestHead(
+            context({
+              "git -C /repo ls-remote --exit-code origin refs/heads/feature":
+                remote,
+            }),
+            "/repo",
+            7,
+            "feature",
+          )
+        ).ok,
+      ).toBe(false);
+    });
+  it("refuses a different push repository even when the fetch URL matches", async () => {
+    expect(
+      (
+        await resolvePullRequestHead(
           context({
-            "git -C /repo ls-remote --exit-code origin refs/heads/feature":
-              remote,
+            "git -C /repo remote get-url --push --all origin": answer(
+              "git@github.com:other/repo.git",
+            ),
           }),
           "/repo",
           7,
           "feature",
-        ).ok,
-      ).toBe(false);
-    });
-  it("refuses a different push repository even when the fetch URL matches", () => {
-    expect(
-      resolvePullRequestHead(
-        context({
-          "git -C /repo remote get-url --push --all origin": answer(
-            "git@github.com:other/repo.git",
-          ),
-        }),
-        "/repo",
-        7,
-        "feature",
+        )
       ).ok,
     ).toBe(false);
   });
-  it("preserves authentication failures in its refusal", () => {
-    const result = resolvePullRequestHead(
+  it("preserves authentication failures in its refusal", async () => {
+    const result = await resolvePullRequestHead(
       context({
         "git -C /repo ls-remote --exit-code origin refs/heads/feature": {
           status: 128,

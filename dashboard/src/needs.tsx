@@ -1,6 +1,6 @@
 import { FollowupBadge } from "./followups.tsx";
 import { runningFollowup } from "./followup-view.ts";
-import { Pr, RepoLink } from "./pr.tsx";
+import { ItemTitle, Pr, RepoLink } from "./pr.tsx";
 /**
  * Needs you: the person's list, one group per act. Each card opens with the
  * act, then, for a parked need, one short row per decision (`decision-rows.tsx`)
@@ -168,6 +168,7 @@ function NeedItem({ need, rest }: { need: NeedView; rest: boolean }) {
           label={need.stage === "followup" ? "Follow-up needs attention" : null}
         />
       </div>
+      <ItemTitle title={need.title} />
       {picks ? (
         <>
           <DecisionRows need={need} picking={picking} />
@@ -220,6 +221,7 @@ function StuckItem({ slot, rest }: { slot: SlotView; rest: boolean }) {
           label={slot.stage === "followup" ? runningFollowup(slot.kind) : null}
         />
       </div>
+      <ItemTitle title={slot.title} />
       <div className="sm">
         <span className="m">{slot.fact}</span>
       </div>
@@ -230,6 +232,9 @@ function StuckItem({ slot, rest }: { slot: SlotView; rest: boolean }) {
               ? "Open the pull request"
               : "Open in the tracker"}
           </a>
+        )}
+        {slot.noLink === null ? null : (
+          <span className="noLink">{slot.noLink}</span>
         )}
         <Fold label="Evidence">
           <Evidence rows={slot.evidence} />

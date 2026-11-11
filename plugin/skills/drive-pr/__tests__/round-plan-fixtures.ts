@@ -24,7 +24,7 @@ export function prBaseGh(): string {
 case "$*" in
   "pr view 999 --json baseRefName -q .baseRefName") echo develop ;;
   "pr view 999 --json baseRefName,url") echo '{"baseRefName":"develop","url":"https://github.com/acme/widgets/pull/999"}' ;;
-  "repo view --json owner,name") echo '{"owner":{"login":"acme"},"name":"widgets"}' ;;
+  "repo view --json owner,name,url") echo '{"owner":{"login":"acme"},"name":"widgets"}' ;;
   *) exec "${binDir}/gh" "$@" ;;
 esac
 `,

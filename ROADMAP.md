@@ -167,13 +167,10 @@ Jig itself keeps a person merging
 
 A team states the rules its agent work follows, and every Jig skill that
 claims, moves or closes an item keeps them. Work starts only when a check
-the team supplies passes and only from the states the team allows. The item
-shows that its pull request waits for review. It stops short of done after
-the merge when a person closes it. The board shows stopped work as blocked,
-with a reason. The issue's labels can put reviewers and labels on the pull
-request, and bring skills and notes to the agent that implements it. The
-dispatcher can also pick up from an unassigned ready pool. Every rule is
-optional, and a team that sets none keeps today's behaviour.
+the team supplies passes and only from the states the team allows. The
+board shows stopped work as blocked, with a reason. The dispatcher can also
+pick up from an unassigned ready pool. Every rule is optional, and a team
+that sets none keeps today's behaviour.
 
 ### 26. `init`: setting a repository up for Jig
 

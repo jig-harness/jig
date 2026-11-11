@@ -65,6 +65,7 @@ const TICK_FACT: Record<ScenarioId, RegExp> = {
   empty: /^No tick yet$/,
   long: /^Updated 2 min ago$/,
   picks: /^Updated 2 min ago$/,
+  partial: /^Updated 2 min ago$/,
 };
 
 /** What each scenario's answer must say first. */
@@ -79,6 +80,7 @@ const ANSWER: Partial<Record<ScenarioId, RegExp>> = {
   empty: /No tick has run on this host\./,
   long: /Nothing needs a person\./,
   picks: /3 need a person\..*First: PR #501, parked for a person\./s,
+  partial: /1 needs a person\..*First: #240, stalled\./s,
 };
 
 const WIDTHS = [

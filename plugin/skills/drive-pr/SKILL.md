@@ -2199,7 +2199,7 @@ Then move on to the next thread. This is the
 extra check. For a summary-only finding the same split is mechanical rather
 than remembered — see below.
 
-**If step 1's report says `reflectDue: true`, reflect before triaging — and
+**If step 1's report says `reflectDue: true` (the summary shows `[REFLECT DUE]`), reflect before triaging — and
 record it with `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" set-reflected [PR]` once it completes.**
 Reflecting means stepping back from the findings to ask what their repetition
 says about the repository's scaffolding or the reviewer's configuration, and
@@ -3361,7 +3361,8 @@ clones are coverage limits, never evidence that a PR was clean.
 The scoreboard above asks whether the process as a whole is bending the
 curves. The fleet-health sensor asks a narrower, *per-epic* question
 on a rolling window: are coordination acts (review rounds beyond the configured `free_rounds`,
-`pr-followup` issues minted, process-domain issues opened) outgrowing product
+`pr-followup` issues minted, process-domain issues opened, re-arms recorded in
+the forge ledger) outgrowing product
 progress (merged PRs touching a product change area, issues completed, epics
 accepted)?
 

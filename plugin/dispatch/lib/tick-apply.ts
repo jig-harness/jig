@@ -58,6 +58,7 @@ import {
   type Tracked,
 } from "./tick-observe.ts";
 import { afterWait } from "./tick-plan.ts";
+import { aboutTargets } from "./line.ts";
 import { endOwnClaims } from "./tick-shared.ts";
 import type { ActionBook } from "./failures.ts";
 import type {
@@ -164,6 +165,11 @@ export async function actObserved(
     shared: ctx,
     unplaced: withheldFromReplay(afterWait(context, observation.serialized)),
     book,
+    about: aboutTargets(
+      repo.slug,
+      context.lineInputs.get(report.path),
+      report.unplaced,
+    ),
   };
   context.pending.push({
     apply: (group) =>
@@ -213,6 +219,8 @@ interface ApplyInputs {
   unplaced: ReadonlyMap<number, string>;
   /** The failure ledger's book of the repository's actions. */
   book: ActionBook | null;
+  /** A target's title and link as this tick's reads gave them (`aboutTargets`). */
+  about: (target: string) => { title: string | null; url: string | null };
 }
 
 /**
@@ -357,6 +365,7 @@ async function applyStages(
         renotifyAfterMs: section.renotifyAfterMs,
         branch: section.noticesBranch,
         book: inputs.book,
+        about: inputs.about,
       });
   });
 }

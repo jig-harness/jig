@@ -117,8 +117,12 @@ stage's answer back to the next tick, and a merged pull request's
 follow-up is guarded by a marker comment on it. A stop only a person can
 settle (a park, a drive stopped on a failure, a stalled pickup) is notified
 once. It never merges, answers a park, re-arms a drive a person stopped,
-takes over a driver another machine started or passes a flag reserved for
-a person, and writes a receipt per tick. Machine values in `~/.jig/dispatch.yaml`, a repository's
+stops a driver that is making progress or passes a flag reserved for a
+person, and writes a receipt per tick. It takes over only a silent driver:
+one a launch started, on this machine or another host; one no launch
+started that ran on this host and whose run the host's drive database shows
+ended; or one no launch started whose holder the clone's drive doctor reads
+dead or wedged. Machine values in `~/.jig/dispatch.yaml`, a repository's
 in a `dispatch` section of `.config/jig.yaml`. Built in the design's order:
 the report, then re-arms within account caps with the timer, then pickups,
 then follow-ups and notifications, then control: a permanent outcome
@@ -550,16 +554,6 @@ step:
   states a claim may start from (`do_item.claim_from`; unset, a claim
   keeps today's rule and is not limited to `dispatch.states`), and a claim
   marker naming the session, host and branch.
-- **Review.** An optional `pr_open` canonical state, entered once the
-  pull request opens and read as active work by the roll-up; it may share
-  a tracker name with `in_review` on a tracker with one review status. The
-  issue's labels carried onto the pull request, and reviewers requested, by
-  label or change area. Implementation guidance (skills and notes) chosen by
-  label, path and change area, in the shape of `do_item.gates`.
-- **Finish.** A post-merge state short of `done`
-  (`do_item.post_merge_state`), applied wherever the post-merge rule
-  applies today, refused unless the pull request links its item without
-  closing it.
 - **Stop.** An optional `blocked` canonical state that the shared
   projection of the drive ledger writes, with the park class and reason,
   when a drive stops on parked work, and clears when the park is answered.

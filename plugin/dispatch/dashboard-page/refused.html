@@ -162,6 +162,8 @@ a.tgt { display: inline-flex; align-items: center; min-height: 44px; }
 .goto { display: flex; flex-wrap: wrap; gap: 0 14px; align-items: center; font-size: var(--small); }
 .goto a { display: inline-flex; align-items: center; min-height: 44px; }
 .goto .noLink { color: var(--muted); padding-block: 4px; }
+.itemTitle { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; overflow-wrap: anywhere; }
+.cell-tgt .itemTitle { display: inline; color: var(--muted); }
 .fold summary, .foldBtn { display: inline-flex; align-items: center; min-height: 44px; padding: 0; background: none; border: 0; cursor: pointer; font: inherit; font-size: var(--small); color: var(--muted); text-align: left; }
 .quote { margin: 4px 0 6px; padding: 8px 10px; background: var(--sunk); border-radius: var(--r); font: 400 14px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 .path { user-select: all; overflow-wrap: anywhere; }

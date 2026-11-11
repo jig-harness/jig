@@ -48,7 +48,7 @@ export function resetRecords(): void {
   recordSerial = 0;
 }
 
-function ended(
+export function ended(
   at: number,
   repo: string,
   stage: EndedRow["stage"],

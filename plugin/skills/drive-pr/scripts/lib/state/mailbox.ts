@@ -1389,16 +1389,14 @@ export async function repairInbox(
         };
       }
       const suffix = appendedSince(before.before.raw, after.raw);
-      // `atomicWrite` (temp-file-then-rename), not a plain `writeFileSync`,
-      // which truncates the live file in place before writing the new content:
-      // a kill, power loss, or write failure between truncation and completion
-      // would leave the inbox empty (or partial) — and an EMPTY file folds as
-      // CLEAR, so an active hold-push directive `repair` was in the middle of
-      // rewriting could vanish and let a push through that should have been
-      // blocked. `renameSync` is atomic on every filesystem this runs on: the
-      // target either has the OLD complete content or the NEW complete content,
-      // never a partial mixture.
+      // Publish complete content atomically: a partial inbox could lose a
+      // hold-push directive and incorrectly clear the push gate.
       atomicWrite(path, kept.map((l) => `${l}\n`).join("") + suffix);
+    } else {
+      // A previous repair may have published content but failed its directory
+      // flush. Repeating it even on a clean inbox survives retries in another
+      // process, without relying on a process-local pending flag.
+      fsyncDirectoryBestEffort(dir);
     }
     return {
       ok: true,

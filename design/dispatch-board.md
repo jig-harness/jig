@@ -710,12 +710,16 @@ repository's part of the line and leaves the rest as the last tick wrote
 it. The part of one repository is its entries in `sessions`, `needs`,
 `queue` and `board`, each of which names its repository, and its entry in
 `repos`, which carries the `runId` and `readAt` of the tick that last read
-it. The rest belongs to the whole machine, and only a tick that read every
-repository the machine file lists writes it: the line's own `version`,
+it. The rest belongs to the whole machine, and only a tick the timer asked
+for every repository the machine file lists writes it, whether or not
+another tick held some of them busy: the line's own `version`,
 `runId`, `startedAt`, `finishedAt` and `exitStatus`, `apply` and
-`applyWithheld`, `intervalMs`, `longestTickMs` and `recentTicksMs`,
-`plugin`, `timeZone`, `minReader`, the accounts with their slots and
-walls, `lastAccount`, and the receipt kept beside the line. So a timer that stopped still shows as
+`applyWithheld`, `intervalMs`, `plugin`, `timeZone`, `minReader`, the accounts with their slots and
+walls, `lastAccount`, and the receipt kept beside the line. The one exception is the
+duration history, `longestTickMs` and `recentTicksMs`: a woken tick adds its
+own duration to it even when the machine's other fields stay the last full
+tick's, so the freshness checks take their maximum over every tick that ran.
+So a timer that stopped still shows as
 overdue while woken ticks run, and a session a woken tick launched shows in
 its repository's sessions at once and in its account's slots at the next
 full tick.

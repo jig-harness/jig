@@ -16,7 +16,8 @@ import {
   tmpRoot,
   useDrivePrSuite,
 } from "./drive-pr-harness.ts";
-import { prBaseGh } from "./round-plan-fixtures.ts";
+import { prBaseGh, realGitForShell } from "./round-plan-fixtures.ts";
+import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 
 useDrivePrSuite();
 
@@ -103,6 +104,18 @@ async function exportIn(dir: string): Promise<{
   line: string;
   stderr: string;
 }> {
+  const bin = join(dir, "bin");
+  mkdirSync(bin, { recursive: true });
+  writeFakeProgram(
+    join(bin, "git"),
+    `#!/usr/bin/env sh
+if [ "\${*#*remote get-url }" = "origin" ]; then
+  echo https://github.com/acme/widgets.git
+  exit 0
+fi
+exec "${realGitForShell()}" "$@"
+`,
+  );
   const proc = Bun.spawn(
     [
       process.execPath,
@@ -122,7 +135,7 @@ async function exportIn(dir: string): Promise<{
       cwd: REPO_ROOT,
       env: {
         ...gitCleanEnv(),
-        PATH: `${prBaseGh()}${delimiter}${process.env.PATH}`,
+        PATH: `${bin}${delimiter}${prBaseGh()}${delimiter}${process.env.PATH}`,
         PB_MODULE: join(SCRIPTS, "lib", "driver", "policy-base.ts"),
         PB_AUTONOMY: join(SCRIPTS, "..", "..", "..", "shared", "autonomy.ts"),
         PB_DIR: dir,
