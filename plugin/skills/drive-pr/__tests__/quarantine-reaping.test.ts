@@ -13,7 +13,13 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
-import { DB_FILE } from "../scripts/lib/state/db.ts";
+import { lockIdentity } from "../../../shared/liveness.ts";
+import { DB_FILE, driveDb } from "../scripts/lib/state/db.ts";
+import {
+  readLockRow,
+  releaseLockRow,
+  takeLockRow,
+} from "../scripts/lib/state/lock.ts";
 import { judgeQuarantine } from "../scripts/lib/state/quarantine.ts";
 import { scopedStateDir } from "./scoped-state-dir.ts";
 
@@ -151,18 +157,18 @@ describe("obsolete file-lock quarantine", () => {
       fs.chmodSync(paths[1] as string, 0o600);
     }
   });
-  it("keeps displaced reaper locks and recovery gates without writer exclusion", () => {
+  it("retires displaced reaper locks and recovery gates", () => {
     const { root, dir } = setup();
-    for (const suffix of [
-      ".stale.owner.generation",
-      ".recovering.stale.owner.generation",
-    ]) {
-      const path = join(dir, `.reap-state-delete.lock${suffix}`);
+    const paths = ["", ".recovering"].map((gate) =>
+      join(dir, `.reap-state-delete.lock${gate}.stale.owner.generation`),
+    );
+    for (const path of paths) {
       mkdirSync(path);
       age(path);
     }
-    expect(reap(root, dir).keep[0]?.bytes).toBeGreaterThan(0);
-    expect(reap(root, dir, true).entriesRemoved).toBe(0);
+    expect(reap(root, dir).retire[0]?.entries).toBe(2);
+    expect(reap(root, dir, true).entriesRemoved).toBe(2);
+    for (const path of paths) expect(existsSync(path)).toBe(false);
   });
   it("keeps a family when a fresh member appeared after the initial listing", () => {
     const { dir } = setup();
@@ -174,19 +180,55 @@ describe("obsolete file-lock quarantine", () => {
     writeFileSync(join(dir, "pr-drive-999.lock.stale.new-generation"), "new");
     expect(judgeQuarantine(dir, initial).action).toBe("keep");
   });
-  it("reports count and bytes without importing and keeps old entries on delete", () => {
+  it("lists old entries as a family of their own, and --delete removes them, for a clone never imported", () => {
     const { root, dir } = setup();
     const paths = quarantine(dir);
     const dry = reap(root, dir);
     expect(existsSync(join(dirname(dir), DB_FILE))).toBe(false);
-    expect(dry.retire).toHaveLength(0);
-    expect(dry.keep[0]?.id).toBe(`quarantine:${basename(dir)}`);
-    expect(dry.keep[0]?.bytes).toBeGreaterThanOrEqual(13);
-    expect(dry.keep[0]?.reason).toContain("writer exclusion");
+    expect(dry.keep).toEqual([]);
+    expect(dry.retire).toHaveLength(1);
+    expect(dry.retire[0]?.id).toBe(`quarantine:${basename(dir)}`);
+    expect(dry.retire[0]?.entries).toBe(2);
+    expect(dry.retire[0]?.bytes).toBeGreaterThanOrEqual(13);
     for (const path of paths) expect(existsSync(path)).toBe(true);
     const wet = reap(root, dir, true);
-    expect(wet.entriesRemoved).toBe(0);
-    for (const path of paths) expect(existsSync(path)).toBe(true);
+    expect(wet.entriesRemoved).toBe(2);
+    for (const path of paths) expect(existsSync(path)).toBe(false);
+  });
+  it("retires them beside earlier-release files that have been idle for a day", () => {
+    const { root, dir } = setup();
+    const paths = quarantine(dir);
+    for (const name of [
+      "drive-pr-999.json",
+      "pr-drive-lease-999-wt-0123456789abcdef.json",
+      "ledger-driver-999.json",
+    ]) {
+      const file = join(dir, name);
+      writeFileSync(file, "{}");
+      age(file);
+    }
+    expect(reap(root, dir, true).entriesRemoved).toBe(2);
+    for (const path of paths) expect(existsSync(path)).toBe(false);
+    expect(existsSync(join(dir, "drive-pr-999.json"))).toBe(true);
+  });
+  it("keeps every entry while a file of the earlier release was written within a day", () => {
+    for (const name of [
+      "drive-pr-999.json",
+      "pr-drive-lease-999-wt-0123456789abcdef.json",
+      "drive-tree-lease-wt-0123456789abcdef.json",
+      "ledger-driver-999.json",
+      "drive-pr-999.ready-claim",
+    ]) {
+      const { root, dir } = setup();
+      const paths = quarantine(dir);
+      writeFileSync(join(dir, name), "{}");
+      const run = reap(root, dir, true);
+      expect(run.retire).toEqual([]);
+      expect(
+        run.keep.find((k) => k.id.startsWith("quarantine:"))?.reason,
+      ).toContain("earlier release");
+      for (const path of paths) expect(existsSync(path)).toBe(true);
+    }
   });
   it("keeps the entire family when a member or a descendant is recent", () => {
     for (const descendant of [false, true]) {
@@ -228,5 +270,34 @@ describe("obsolete file-lock quarantine", () => {
     age(paths[0] as string);
     expect(reap(root, dir, true).retire).toEqual([]);
     for (const path of paths) expect(existsSync(path)).toBe(true);
+  });
+});
+
+describe("database lock displacement", () => {
+  it("displacing a dead holder many times in a row leaves one row, and nothing once released", () => {
+    // Each displacement replaces the holder's row in place: one row while the
+    // lock is held, and no quarantine entry, tombstone or sibling in the
+    // clone's directory, however fast the displacements come.
+    const { dir } = setup();
+    const drive = driveDb(dir);
+    const take = (token: string) =>
+      takeLockRow(drive, "drive-pr-999", readLockRow(drive, "drive-pr-999"), {
+        token,
+        label: "drive.ts",
+        holder: lockIdentity(),
+        detail: null,
+      });
+    const rows = () =>
+      drive.db
+        .query("SELECT name FROM locks WHERE clone = ?")
+        .all(drive.clone) as { name: string }[];
+    expect(take("holder0")).toBe(true);
+    const before = fs.readdirSync(dir).sort();
+    for (let i = 1; i <= 300; i++) expect(take(`holder${i}`)).toBe(true);
+    expect(rows()).toEqual([{ name: "drive-pr-999" }]);
+    expect(fs.readdirSync(dir).sort()).toEqual(before);
+    expect(releaseLockRow(drive, "drive-pr-999", "holder300")).toBe(true);
+    expect(rows()).toEqual([]);
+    expect(fs.readdirSync(dir).sort()).toEqual(before);
   });
 });

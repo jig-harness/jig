@@ -28,8 +28,11 @@
  *   record without opening the database for writing, so it creates and
  *   imports nothing.
  * - `quarantine:<clone>`: displaced legacy locks and recovery gates, reported
- *   with count and bytes but kept because legacy writers cannot be excluded.
- *   They are kept independently of whether or when the clone was imported.
+ *   with count and bytes. RETIRED once no earlier-release writer shows in the
+ *   clone: no legacy lock or recovery gate is present, none of its state,
+ *   lease, driver or claim files was written in the last 24 hours, and no
+ *   entry (or anything under one) is younger than that. Independent of
+ *   whether or when the clone was imported (`lib/state/quarantine.ts`).
  *
  * A name no family recognises is never removed. Every gate fails
  * CLOSED: an entry that cannot be read keeps its family.

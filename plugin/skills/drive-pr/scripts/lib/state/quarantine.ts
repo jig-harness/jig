@@ -4,14 +4,26 @@ import {
   constants,
   lstatSync,
   readdirSync,
+  statSync,
   type Stats,
 } from "node:fs";
 import { join } from "node:path";
 import { swallow } from "../../../../../shared/errors.ts";
-import { FORMER_QUARANTINE, isFormerLock } from "./import.ts";
+import {
+  FORMER_QUARANTINE,
+  isFormerLock,
+  isFormerWriterFile,
+} from "./import.ts";
 
-/** A full day without a write, independent of the clone's import date. */
+/**
+ * A full day in which no earlier-release writer touched the clone's files,
+ * independent of the clone's import date. A legacy driver renews its lease and
+ * rewrites its state every few minutes, so a day of silence means none is alive
+ * to resume into a displaced lock's name.
+ */
 export const QUARANTINE_RETENTION_DAYS = 1;
+
+const DAY_MS = 86_400_000;
 
 interface Measurement {
   bytes: number;
@@ -57,10 +69,46 @@ function measure(
   return { bytes, newest };
 }
 
+/** Whether every measured path still has the metadata and children it was measured with. */
+function unchanged(snapshots: ReadonlyMap<string, Snapshot>): boolean {
+  for (const [path, snapshot] of snapshots)
+    if (
+      metadata(lstatSync(path)) !== snapshot.metadata ||
+      (snapshot.children !== null &&
+        JSON.stringify(readdirSync(path).sort()) !==
+          JSON.stringify(snapshot.children))
+    )
+      return false;
+  return true;
+}
+
+/** Whether a file of a running earlier release was written within the retention. */
+function legacyWriterActive(
+  stateDir: string,
+  current: readonly string[],
+  now: number,
+): boolean {
+  return current.some((name) => {
+    if (!isFormerWriterFile(name)) return false;
+    const { mtimeMs } = statSync(join(stateDir, name));
+    return (
+      !Number.isFinite(mtimeMs) ||
+      now - mtimeMs < QUARANTINE_RETENTION_DAYS * DAY_MS
+    );
+  });
+}
+
 /**
- * Fail closed for every old lock, even an empty or unreadable one: its holder
- * may still resume. Re-read names under the reaper's delete lock rather than
- * relying on the enumeration that happened before acquisition.
+ * Retire the family only when nothing shows an earlier-release writer alive
+ * in this clone: no lock or recovery gate of the earlier layout is present,
+ * none of its state, lease, driver or claim files was written within the
+ * retention, and no entry of the family (nor anything under one) is younger
+ * than that. A displaced lock's name fences a process of the earlier release
+ * that may resume into it; such a process keeps its files fresh, so a day
+ * without any write leaves no one to fence. Anything unreadable or changing
+ * during the sweep keeps the whole family. Names are re-read under the
+ * reaper's delete lock rather than relying on the enumeration that happened
+ * before acquisition.
  */
 export function judgeQuarantine(
   stateDir: string,
@@ -85,25 +133,25 @@ export function judgeQuarantine(
       bytes += entry.bytes;
       newest = Math.max(newest, entry.newest);
     }
-    for (const [path, snapshot] of snapshots) {
-      if (
-        metadata(lstatSync(path)) !== snapshot.metadata ||
-        (snapshot.children !== null &&
-          JSON.stringify(readdirSync(path).sort()) !==
-            JSON.stringify(snapshot.children))
-      )
-        return {
-          action: "keep",
-          bytes,
-          reason: "quarantine descendants changed during the sweep",
-        };
-    }
+    if (!unchanged(snapshots))
+      return {
+        action: "keep",
+        bytes,
+        reason: "quarantine descendants changed during the sweep",
+      };
     const current = readdirSync(stateDir);
+    const now = Date.now();
     if (current.some(isFormerLock))
       return {
         action: "keep",
         bytes,
         reason: "a legacy lock or recovery gate is present",
+      };
+    if (legacyWriterActive(stateDir, current, now))
+      return {
+        action: "keep",
+        bytes,
+        reason: `a file of the earlier release was written within the last ${QUARANTINE_RETENTION_DAYS * 24} hours`,
       };
     const members = current.filter((name) => FORMER_QUARANTINE.test(name));
     const expected = new Set(names);
@@ -116,6 +164,28 @@ export function judgeQuarantine(
         bytes,
         reason: "quarantine membership changed during the sweep",
       };
+    // A second pass, after the clone's own listing, catches a write that
+    // landed behind the first pass's check of its path.
+    if (!unchanged(snapshots))
+      return {
+        action: "keep",
+        bytes,
+        reason: "quarantine descendants changed during the sweep",
+      };
+    if (
+      !Number.isFinite(newest) ||
+      now - newest < QUARANTINE_RETENTION_DAYS * DAY_MS
+    )
+      return {
+        action: "keep",
+        bytes,
+        reason: `quarantine touched within the last ${QUARANTINE_RETENTION_DAYS * 24} hours`,
+      };
+    return {
+      action: "retire",
+      bytes,
+      reason: `no earlier-release writer has written for ${QUARANTINE_RETENTION_DAYS * 24} hours, so no suspended holder can resume into these names`,
+    };
   } catch (error) {
     swallow(error, "unreadable quarantine is kept");
     return {
@@ -124,21 +194,4 @@ export function judgeQuarantine(
       reason: "quarantine or the clone directory could not be read safely",
     };
   }
-  if (
-    !Number.isFinite(newest) ||
-    Date.now() - newest < QUARANTINE_RETENTION_DAYS * 86_400_000
-  )
-    return {
-      action: "keep",
-      bytes,
-      reason: "quarantine touched within the last 24 hours",
-    };
-  return {
-    action: "keep",
-    bytes,
-    // Snapshots detect some writes, but cannot exclude a suspended legacy
-    // writer resuming after its last check. The database mutex does not
-    // coordinate those writers, so even an unchanged old family is kept.
-    reason: "legacy writer exclusion cannot be established for quarantine",
-  };
 }
