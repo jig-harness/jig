@@ -25,6 +25,8 @@
  * reason ever carries a token or the command's standard output.
  */
 
+import { homedir } from "node:os";
+
 import { splitCommandWords } from "../../../../../../shared/command-words.ts";
 import { failed, ok, type Outcome } from "../../../../../../shared/outcome.ts";
 import { run } from "../../../../../drive-pr/scripts/lib/proc.ts";
@@ -39,10 +41,7 @@ export type JiraCredential =
   | { kind: "command"; argv: string[] };
 
 export type CredentialCode =
-  | "no-credential"
-  | "bearer-token"
-  | "token-command"
-  | "cancelled";
+  "no-credential" | "bearer-token" | "token-command" | "cancelled";
 
 const NO_CREDENTIAL =
   "no Jira credential: set JIRA_BEARER_TOKEN to an OAuth access token, JIRA_TOKEN_COMMAND to a command that prints one, or JIRA_EMAIL and JIRA_API_TOKEN to an Atlassian account's email and API token";
@@ -78,17 +77,22 @@ export function resolveJiraCredential(
     : failed("no-credential", NO_CREDENTIAL);
 }
 
-/** The `Authorization` header of each request, and its renewal after a 401. */
-export interface JiraAuthorization {
-  header: (signal?: AbortSignal) => Promise<Outcome<string, CredentialCode>>;
+/** A header and what to do when the site refuses it with a 401. */
+export interface JiraLease {
+  header: Outcome<string, CredentialCode>;
   /**
-   * A fresh header after the site refused `refused` with a 401, to send the
-   * request again once; `null` when this credential cannot be renewed.
+   * A fresh header after the site refused this lease's with a 401, to send
+   * the request again once; `null` when this credential cannot be renewed.
    */
   renew: (
-    refused: string,
     signal?: AbortSignal,
   ) => Promise<Outcome<string, CredentialCode> | null>;
+}
+
+/** The `Authorization` header of each request, and its renewal after a 401. */
+export interface JiraAuthorization {
+  lease: (signal?: AbortSignal) => Promise<JiraLease>;
+  header: (signal?: AbortSignal) => Promise<Outcome<string, CredentialCode>>;
 }
 
 /** What a run of the token command left: its exit, output and deadline. */
@@ -106,11 +110,24 @@ export type TokenRunner = (
   timeoutMs: number,
 ) => Promise<TokenRun>;
 
+// The command runs from the home directory, never the consumer checkout: on
+// Windows a bare program name is looked up in the working directory before
+// `PATH`, and a checkout could then supply the "broker" that runs.
 const runToken: TokenRunner = (argv, timeoutMs) =>
-  runClient(run, argv, { timeoutMs, signal: undefined });
+  runClient((a, o) => run(a, { ...o, cwd: homedir() }), argv, {
+    timeoutMs,
+    signal: undefined,
+  });
 
 /** The token command authorizations of this process, by the command's words. */
 const SHARED = new Map<string, JiraAuthorization>();
+
+/**
+ * How many commands stay shared. The oldest-used is dropped past it; a
+ * tracker holding a dropped one keeps it, and a later tracker runs the
+ * command again.
+ */
+export const SHARED_COMMANDS_MAX = 8;
 
 export interface AuthorizationOptions {
   runner?: TokenRunner;
@@ -129,10 +146,15 @@ export function jiraAuthorization(
     // Every tracker a process opens shares the token, so the command runs
     // once for the process, not once for each tracker.
     const key = JSON.stringify(credential.argv);
-    let shared = SHARED.get(key);
-    if (shared === undefined) {
-      shared = commandAuthorization(credential.argv, runToken, timeoutMs);
-      SHARED.set(key, shared);
+    const known = SHARED.get(key);
+    const shared =
+      known ?? commandAuthorization(credential.argv, runToken, timeoutMs);
+    // Re-inserting keeps the map in order of use.
+    SHARED.delete(key);
+    SHARED.set(key, shared);
+    for (const old of SHARED.keys()) {
+      if (SHARED.size <= SHARED_COMMANDS_MAX) break;
+      SHARED.delete(old);
     }
     return shared;
   }
@@ -140,10 +162,8 @@ export function jiraAuthorization(
     credential.kind === "bearer"
       ? `Bearer ${credential.token}`
       : `Basic ${Buffer.from(`${credential.email}:${credential.token}`).toString("base64")}`;
-  return {
-    header: async () => ok(value),
-    renew: async () => null,
-  };
+  const lease: JiraLease = { header: ok(value), renew: async () => null };
+  return { lease: async () => lease, header: async () => lease.header };
 }
 
 /** The last line of the command's error output, bounded, for its failure. */
@@ -195,17 +215,26 @@ function until<T>(
 
 /**
  * The token command's header. One run serves every request until a 401:
- * concurrent requests wait on the run in flight, and the requests a token
- * was refused for share the one run that replaces it. A failed run is not
- * kept, so the next request runs the command again.
+ * concurrent requests wait on the run in flight. Each run is a generation,
+ * and a lease belongs to the generation it was handed out under: the
+ * requests refused under one generation share the one run that replaces it,
+ * whatever token that run prints and however late their 401s arrive, and a
+ * failed renewal stays the answer of the requests that waited for it. A
+ * failed first run is not kept, so the next request runs the command again.
  */
 function commandAuthorization(
   argv: string[],
   runner: TokenRunner,
   timeoutMs: number,
 ): JiraAuthorization {
-  let current: Promise<Outcome<string, CredentialCode>> | null = null;
-  const start = () => {
+  interface Run {
+    generation: number;
+    header: Promise<Outcome<string, CredentialCode>>;
+    failed: boolean;
+  }
+  let generation = 0;
+  let current: Run | null = null;
+  const start = (): Run => {
     const pending = runner(argv, timeoutMs).then(
       (r) => tokenOf(argv, r, timeoutMs),
       (err: unknown) =>
@@ -214,22 +243,35 @@ function commandAuthorization(
           `JIRA_TOKEN_COMMAND could not be run: ${err instanceof Error ? err.message : String(err)}`,
         ),
     );
-    const header = pending.then((t) => (t.ok ? ok(`Bearer ${t.value}`) : t));
-    current = header;
-    void header.then((h) => {
-      if (!h.ok && current === header) current = null;
+    const run: Run = {
+      generation: ++generation,
+      header: pending.then((t) => (t.ok ? ok(`Bearer ${t.value}`) : t)),
+      failed: false,
+    };
+    current = run;
+    void run.header.then((h) => {
+      run.failed = !h.ok;
     });
-    return header;
+    return run;
   };
-  return {
-    header: (signal) => until(current ?? start(), signal),
-    renew: async (refused, signal) => {
-      const seen = current;
-      if (seen !== null) {
-        const latest = await until(seen, signal);
-        if (!latest.ok || latest.value !== refused) return latest;
-      }
-      return until(current === seen ? start() : (current ?? start()), signal);
+  const leaseOf = async (
+    run: Run,
+    signal?: AbortSignal,
+  ): Promise<JiraLease> => ({
+    header: await until(run.header, signal),
+    renew: (renewSignal) => {
+      // A later generation already replaced the one this lease holds.
+      const next =
+        current !== null && current.generation > run.generation
+          ? current
+          : start();
+      return until(next.header, renewSignal);
     },
+  });
+  const lease = (signal?: AbortSignal) =>
+    leaseOf(current !== null && !current.failed ? current : start(), signal);
+  return {
+    lease,
+    header: async (signal) => (await lease(signal)).header,
   };
 }

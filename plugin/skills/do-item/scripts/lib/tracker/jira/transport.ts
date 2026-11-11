@@ -170,13 +170,12 @@ export function httpFailure(
   );
 }
 
-/** The `fetch` options of a request. */
+/** The `fetch` options of a request, bounded by `bound`, the call's deadline. */
 function requestInit(
   request: JiraRequest,
   authorization: string,
-  signal: AbortSignal | undefined,
+  bound: AbortSignal,
 ): RequestInit {
-  const timeout = AbortSignal.timeout(JIRA_TIMEOUT_MS);
   const headers: Record<string, string> = {
     Accept: "application/json",
     Authorization: authorization,
@@ -186,7 +185,7 @@ function requestInit(
     headers,
     // A redirect would carry the credential to another host.
     redirect: "manual",
-    signal: signal === undefined ? timeout : AbortSignal.any([timeout, signal]),
+    signal: bound,
   };
   if (request.body !== undefined) {
     headers["Content-Type"] = "application/json";
@@ -228,11 +227,10 @@ async function bodyText(
 }
 
 /** The header to send, or the credential's failure as the adapter's error. */
-async function headerOf(
-  pending: Promise<Outcome<string, CredentialCode>>,
+function headerOf(
+  header: Outcome<string, CredentialCode>,
   signal: AbortSignal | undefined,
-): Promise<string> {
-  const header = await pending;
+): string {
   if (cancelled(signal)) throw abortedError(signal);
   if (!header.ok)
     throw new JiraApiError(header.failure.reason, { unavailable: true });
@@ -260,7 +258,7 @@ async function send(
 
 /**
  * HTTPS transport to `base`, the site or its API gateway address; each call
- * bounded by `JIRA_TIMEOUT_MS`. A 401 renews the header once, when the
+ * bounded as a whole by `JIRA_TIMEOUT_MS`. A 401 renews the header once, when the
  * credential can be renewed, and sends the request again with it: a 401 is
  * refused before the request is acted on, so a write is not doubled.
  */
@@ -273,23 +271,29 @@ export function httpTransport(
     if (cancelled(signal)) throw abortedError(signal);
     const what = `${request.method} ${request.path}`;
     const url = requestUrl(base, request);
-    let header = await headerOf(authorization.header(signal), signal);
+    // One deadline for the whole call: the token command, the request, a
+    // renewal and the request sent again all spend the same budget.
+    const deadline = AbortSignal.timeout(JIRA_TIMEOUT_MS);
+    const bound =
+      signal === undefined ? deadline : AbortSignal.any([deadline, signal]);
+    const lease = await authorization.lease(bound);
+    let header = headerOf(lease.header, signal);
     let res = await send(
       fetchImpl,
       url,
-      requestInit(request, header, signal),
+      requestInit(request, header, bound),
       signal,
       what,
     );
     if (res.status === 401) {
-      const renewed = await authorization.renew(header, signal);
+      const renewed = await lease.renew(bound);
       if (renewed !== null) {
         await bodyText(res, signal, what);
-        header = await headerOf(Promise.resolve(renewed), signal);
+        header = headerOf(renewed, signal);
         res = await send(
           fetchImpl,
           url,
-          requestInit(request, header, signal),
+          requestInit(request, header, bound),
           signal,
           what,
         );
@@ -391,7 +395,7 @@ export async function offsetPages(
 ): Promise<Record<string, unknown>[]> {
   const out: Record<string, unknown>[] = [];
   const guard = idGuard(opts.where);
-  for (let startAt = 0; ; ) {
+  for (let startAt = 0; ;) {
     const query = { ...request.query, startAt, maxResults: PAGE };
     const page = await transport({ ...request, query }, opts.signal);
     const items = offsetItems(page, opts);

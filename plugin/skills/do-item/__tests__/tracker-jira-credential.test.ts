@@ -1,12 +1,13 @@
 import { describe, expect, it } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { TrackerConfigError } from "../scripts/lib/tracker/config-error.ts";
 import {
   jiraAuthorization,
   resolveJiraCredential,
+  SHARED_COMMANDS_MAX,
   type TokenRun,
   type TokenRunner,
 } from "../scripts/lib/tracker/jira/credential.ts";
@@ -430,5 +431,104 @@ describe("JIRA_TOKEN_COMMAND", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+/** Waits, polling to a deadline, until `done` holds. */
+async function until(done: () => boolean): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  while (!done() && Date.now() < deadline)
+    await new Promise((r) => setTimeout(r, 5));
+}
+
+/** A fetch whose first two requests wait for a gate each, then answer 401; later ones answer 200. */
+function staggered() {
+  const gates = [Promise.withResolvers<void>(), Promise.withResolvers<void>()];
+  const signals: (AbortSignal | null | undefined)[] = [];
+  const impl = (async (_url: unknown, init?: RequestInit) => {
+    const n = signals.push(init?.signal) - 1;
+    const gate = gates[n];
+    if (gate === undefined) return new Response("{}", { status: 200 });
+    await gate.promise;
+    return new Response("", { status: 401 });
+  }) as typeof fetch;
+  return { gates, signals, impl };
+}
+
+describe("JIRA_TOKEN_COMMAND renewal by generation", () => {
+  it("renews once for staggered 401s even when the broker prints the same token", async () => {
+    const runs: string[][] = [];
+    const runner: TokenRunner = async (argv) => {
+      runs.push(argv);
+      return tokenRun("same\n");
+    };
+    const { gates, signals, impl } = staggered();
+    const t = httpTransport(GATEWAY, command(runner), impl);
+    const both = Promise.all([t(request), t(request)]);
+    await until(() => signals.length === 2);
+    gates[0]?.resolve();
+    await until(() => signals.length === 3);
+    gates[1]?.resolve();
+    await both;
+    expect([runs.length, signals.length]).toEqual([2, 4]);
+  });
+
+  it("keeps a failed renewal as the answer of the requests that waited for it", async () => {
+    const runs: string[][] = [];
+    const runner: TokenRunner = async (argv) => {
+      runs.push(argv);
+      return runs.length === 1
+        ? tokenRun("first\n")
+        : tokenRun("", { code: 1 });
+    };
+    const { gates, signals, impl } = staggered();
+    const t = httpTransport(GATEWAY, command(runner), impl);
+    const both = Promise.all([failure(t(request)), failure(t(request))]);
+    await until(() => signals.length === 2);
+    gates[0]?.resolve();
+    await until(() => runs.length === 2);
+    await new Promise((r) => setTimeout(r, 20));
+    gates[1]?.resolve();
+    const errors = await both;
+    expect(runs.length).toBe(2);
+    expect(errors.map((e) => e.message)).toEqual([
+      "JIRA_TOKEN_COMMAND (broker) exited 1",
+      "JIRA_TOKEN_COMMAND (broker) exited 1",
+    ]);
+  });
+
+  it("spends one deadline on a call and its second attempt", async () => {
+    const { runner } = printing("old", "new");
+    const signals: (AbortSignal | null | undefined)[] = [];
+    const impl = (async (_url: unknown, init?: RequestInit) => {
+      signals.push(init?.signal);
+      return new Response("{}", { status: signals.length === 1 ? 401 : 200 });
+    }) as typeof fetch;
+    await httpTransport(GATEWAY, command(runner), impl)(request);
+    expect(signals).toHaveLength(2);
+    expect(signals[0]).toBe(signals[1]);
+  });
+});
+
+describe("JIRA_TOKEN_COMMAND process state", () => {
+  it("runs from the home directory, not the working directory", async () => {
+    const auth = jiraAuthorization({
+      kind: "command",
+      argv: [
+        process.execPath,
+        "-e",
+        `const fs = require('node:fs'); console.log(fs.realpathSync(process.cwd()) === ${JSON.stringify(realpathSync(homedir()))} ? 'home' : 'other:' + process.cwd().replace(/\\s/g, '_'))`,
+      ],
+    });
+    expect(await auth.header()).toEqual({ ok: true, value: "Bearer home" });
+  });
+
+  it("shares a bounded number of commands", () => {
+    const of = (i: number) =>
+      jiraAuthorization({ kind: "command", argv: ["bounded-broker", `${i}`] });
+    const first = of(0);
+    expect(of(0)).toBe(first);
+    for (let i = 1; i <= SHARED_COMMANDS_MAX; i++) of(i);
+    expect(of(0)).not.toBe(first);
   });
 });
