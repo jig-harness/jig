@@ -164,6 +164,24 @@ describe("mergeLine", () => {
     ]);
   });
 
+  test("a tick that read a repository before another tick did does not replace that tick's newer part", () => {
+    const before = tickLine("2026-11-10T10:05:00.000Z", [
+      { slug: "A", path: "/w/a", n: 2 },
+      { slug: "B", path: "/w/b", n: 2 },
+    ]);
+    const older = tickLine("2026-11-10T10:01:00.000Z", [
+      { slug: "A", path: "/w/a", n: 1 },
+      { slug: "B", path: "/w/b", n: 1 },
+    ]);
+    const line = mergeLine(before, older, LISTED, "kept");
+    expect(line.needs.map((x) => x.target)).toEqual(["A-N2", "B-N2"]);
+    expect(line.repos.map((r) => r.readAt)).toEqual([
+      "2026-11-10T10:05:00.000Z",
+      "2026-11-10T10:05:00.000Z",
+    ]);
+    expect(line.startedAt).toBe(before.startedAt);
+  });
+
   test("keeps the machine's part from the line before for a wake-up, and still replaces the parts it read", () => {
     const before = tickLine("2026-11-10T09:00:00.000Z", [
       { slug: "A", path: "/w/a", n: 0 },

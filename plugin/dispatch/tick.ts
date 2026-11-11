@@ -600,8 +600,14 @@ export async function runTick(options: TickOptions): Promise<TickResult> {
       observe.busy.size === new Set(options.repos).size
     ) {
       const heldBy = [...observe.busy.values()].join("; ");
-      heldReceipt(started, heldBy);
       lineOfHeldTick(started, observe, heldBy, timer);
+      // A line that could not be written is the tick's own failure: its receipt says why the dashboard stays stale.
+      if (started.receipt.lineFailed !== undefined)
+        return {
+          receipt: started.receipt,
+          path: writeReceipt(started.receipt),
+        };
+      heldReceipt(started, heldBy);
       return { held: heldBy };
     }
     const act = await timer.time("wait", () =>

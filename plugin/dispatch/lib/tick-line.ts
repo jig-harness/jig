@@ -140,7 +140,12 @@ function readsTheMachine(machine: MachineConfig, repos: string[]): boolean {
 
 /** Add health to the previous snapshot without replacing its state or receipt. */
 function addTick(receipt: TickReceipt, sweep: boolean): Outcome<void> {
-  return withLineLocked(() => addTickLocked(receipt, sweep));
+  const locked = attempt(
+    "line-unwritten",
+    "the dashboard's recent ticks were not brought up to date",
+    () => withLineLocked(() => addTickLocked(receipt, sweep)),
+  );
+  return locked.ok ? locked.value : locked;
 }
 
 function addTickLocked(receipt: TickReceipt, sweep: boolean): Outcome<void> {
@@ -229,7 +234,14 @@ export function writeTickLine(
     recordTickHealth(receipt, machine);
     return;
   }
-  withLineLocked(() => writeKept(receipt, tick, whole));
+  const locked = attempt(
+    "line-unwritten",
+    "the dashboard's line was not written, so it keeps showing the tick before",
+    () => withLineLocked(() => writeKept(receipt, tick, whole)),
+  );
+  if (locked.ok) return;
+  receipt.lineFailed = locked.failure.reason;
+  receipt.exitStatus = 1;
 }
 
 /** The merge of the line before with this tick's, read and written under the line's write lock. */
@@ -246,6 +258,7 @@ function writeKept(
   const kept = keptMachine(
     whole,
     whole || readsTheMachine(machine, tick.asked),
+    receipt.startedAt,
   );
   if (!kept.ok) {
     receipt.lineFailed = kept.failure.reason;
@@ -285,8 +298,9 @@ function writeKept(
         receipt.runId,
         receipt.startedAt,
       );
+      // Even a whole tick merges: another tick may have written a newer part since this one read.
       const line =
-        whole || before === null
+        before === null
           ? fresh
           : mergeLine(
               before,
@@ -316,12 +330,16 @@ function writeKept(
 function keptMachine(
   whole: boolean,
   writes: boolean,
+  startedAt: string,
 ): Outcome<{ before: LineSnapshot | null; receiptText: string | null }> {
   const previous = readLine();
   if (!previous.ok)
     return whole ? ok({ before: null, receiptText: null }) : previous;
   const before = previous.value;
-  if (writes || before === null) return ok({ before, receiptText: null });
+  // A line whose tick started after this one holds the newer machine part: keep it.
+  const newer = before !== null && before.startedAt > startedAt;
+  if ((writes && !newer) || before === null)
+    return ok({ before, receiptText: null });
   const stored = readLineReceipt();
   if (!stored.ok) return stored;
   if (stored.value?.runId !== before.runId)

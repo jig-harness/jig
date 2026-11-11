@@ -40,12 +40,21 @@ export function mergeLine(
   listed: ReadonlyArray<{ path: string }>,
   machine: "fresh" | "kept",
 ): LineSnapshot {
+  const keptPaths = new Map(previous.repos.map((r) => [r.path, r]));
+  // A repository a newer tick read since this one did keeps that tick's part.
+  const outdated = (r: { path: string; readAt?: string }): boolean => {
+    const before = keptPaths.get(r.path);
+    return (
+      before !== undefined &&
+      (before.readAt ?? previous.startedAt) > (r.readAt ?? fresh.startedAt)
+    );
+  };
+  const current = fresh.repos.filter((r) => !outdated(r));
   const read = new Set(
-    fresh.repos.flatMap((r) => (r.slug === null ? [] : [r.slug])),
+    current.flatMap((r) => (r.slug === null ? [] : [r.slug])),
   );
   const paths = new Set(listed.map((r) => r.path));
-  const freshPaths = new Map(fresh.repos.map((r) => [r.path, r]));
-  const keptPaths = new Map(previous.repos.map((r) => [r.path, r]));
+  const freshPaths = new Map(current.map((r) => [r.path, r]));
   const kept = new Set(
     previous.repos.flatMap((r) =>
       r.slug === null ||
