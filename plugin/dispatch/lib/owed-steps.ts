@@ -271,7 +271,12 @@ function markdownLines(body: string, maskCode: boolean): string[] {
   const fence: Fence = { marker: null, base: 0, itemBase: 0 };
   let paragraphContainer: number | null = null;
   for (const [i, line] of input.entries()) {
-    if (skippedByFence(line, fence, ctx)) continue;
+    if (skippedByFence(line, fence, ctx)) {
+      // A masked fence still ends the paragraph around it.  Consumers that
+      // subsequently classify indented lines must see that boundary.
+      if (maskCode) lines.push("");
+      continue;
+    }
     if (endsParagraph(line, paragraphContainer)) ctx.span = null;
     if (!ctx.comment) fence.base = listColumn(line, fence.base);
     const item = ITEM.exec(line);

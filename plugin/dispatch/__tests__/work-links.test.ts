@@ -172,6 +172,14 @@ describe("a team key", () => {
       "end`",
       "- Intro",
       "    Closes ENG-3",
+      "> ~~~",
+      "> Closes ENG-4",
+      "> ~~~~",
+      "- Intro",
+      "  ~~~",
+      "  example",
+      "  ~~~",
+      "      Closes ENG-5",
     ].join("\n");
     expect(closingKeys(body, TEAM.keys)).toEqual(["ENG-3"]);
   });

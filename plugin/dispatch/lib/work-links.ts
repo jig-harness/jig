@@ -65,6 +65,31 @@ const CLOSING = "(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)";
 const SEP =
   "(?:[ \\t]*,[ \\t]*(?:and[ \\t]+)?|[ \\t]*&[ \\t]*|[ \\t]+and[ \\t]+)";
 
+/** Remove blockquote containers before the shared reader sees their Markdown, without changing a quote that is literal text inside a top-level fence. */
+function withoutBlockquoteContainers(body: string): string {
+  let fence: string | null = null;
+  return body
+    .split("\n")
+    .map((line) => {
+      const raw = /^( {0,3})(`{3,}|~{3,})([ \t]*)$/.exec(line);
+      if (fence !== null) {
+        if (
+          raw !== null &&
+          raw[2]?.[0] === fence[0] &&
+          (raw[2]?.length ?? 0) >= fence.length
+        )
+          fence = null;
+        return line;
+      }
+      if (raw !== null) {
+        fence = raw[2] ?? null;
+        return line;
+      }
+      return line.replace(/^(?: {0,3}>[ \t]?)+/, "");
+    })
+    .join("\n");
+}
+
 /** Mask indented code after the shared reader has established Markdown's container and paragraph boundaries. */
 function withoutIndentedCode(body: string): string {
   let paragraph = false;
@@ -88,7 +113,9 @@ function withoutIndentedCode(body: string): string {
 
 /** A description without what only shows text: code blocks, inline code and HTML comments. */
 function assertedText(body: string): string {
-  return withoutIndentedCode(markdownVisibleTextLines(body).join("\n"));
+  return withoutIndentedCode(
+    markdownVisibleTextLines(withoutBlockquoteContainers(body)).join("\n"),
+  );
 }
 
 function sameRepository(a: string, b: string): boolean {
