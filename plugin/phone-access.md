@@ -35,8 +35,11 @@ let a second person through the front expecting a narrower page.
 
 ## Before you start
 
-1. **The reader runs on its own.** Install the dashboard's retry timer so the
-   page survives logout and reboot, and check it:
+1. **The reader runs on its own.** Install needs a fixed listen port, so the
+   machine file must already set `dashboard.listen` (for example
+   `127.0.0.1:8765`, as the Serve section below does). Set it first if it is
+   absent. Then install the dashboard's retry timer so the page survives
+   logout and reboot, and check it:
 
    ```sh
    jig dispatch dashboard --install --yes
@@ -67,8 +70,9 @@ let a second person through the front expecting a narrower page.
    whichever devices the tailnet's access policy allows to connect to this
    host. On a tailnet with other people or shared devices, confirm in its
    admin console that only your own devices may reach the host's HTTPS port
-   the front will use. Jig reads this policy and never changes it; that
-   choice stays with the person who owns the network.
+   the front will use. Tailscale enforces that policy; Jig neither reads nor
+   changes it, so you verify it yourself, and that choice stays with the
+   person who owns the network.
 
 ## Recommended: Tailscale Serve
 
@@ -104,7 +108,10 @@ without it.
    `--status`.
 
 3. **Publish it on a separate HTTPS port.** Port 443 may already serve
-   something else; Serve's HTTPS ports are 443, 8443 and 10000.
+   something else, so pick an HTTPS port and root path no existing route
+   uses. 8443 below is an example. Read `tailscale serve status` first: serving
+   the same port and path again replaces that route's handler. Use the port
+   you chose in every command below, in the checks and in the undo.
 
    ```sh
    tailscale serve --bg --https=8443 http://127.0.0.1:8765
@@ -127,8 +134,13 @@ without it.
    nothing.
 
 5. **Open it from a second device.** In the phone's ordinary browser, with
-   the phone signed in to the tailnet, open the address. Bookmark it. Then
-   run the [phone checks](#phone-checks).
+   the phone signed in to the tailnet, open the address. Bookmark it. To carry
+   the address to the phone, print it as text and as a QR code of the same
+   token-free address, for example with `qrencode -t ANSIUTF8
+   'https://<host>.<tailnet>.ts.net:8443/'` where `qrencode` is installed.
+   The text is the fallback when scanning fails. Scan it and confirm the
+   phone's browser shows an address with no token in it. Then run the
+   [phone checks](#phone-checks).
 
 ## Without Orca or Tailscale: an authenticated reverse proxy
 
@@ -140,10 +152,12 @@ must do, whatever the product:
   owner controls, and answer an unauthenticated request with a sign-in
   redirect or `401`, never with the page.
 - **Listen only on a private address** and forward to the dashboard's loopback
-  `listen` address. It never publishes to the open internet.
+  `listen` address. It never publishes to the open internet. Many proxies bind
+  every interface by default, so name the private interface explicitly.
 - **Forward the public `Host`**, and put that name in `allowed_hosts` as
   above, or send a `Host` the dashboard already allows.
-- **Drop identity headers a client sends**, and set its own from the sign-in.
+- **Drop identity headers a client sends**, and set its own from the sign-in
+  (copy only fields the sign-in service verified).
   The dashboard ignores them, but a proxy that lets them through teaches the
   next service behind it to trust them.
 - **Use a certificate the phone trusts**, from a public authority through a
@@ -152,14 +166,36 @@ must do, whatever the product:
 
 An example of the shape, for Caddy with an `oauth2-proxy` sign-in on
 `127.0.0.1:4180` (a sketch, not a tested configuration, and not part of the
-[verification record](#verification-record)):
+[verification record](#verification-record)). Replace `<private-address>` with
+an address of the host's private interface (a Tailscale address, say; `tailscale
+ip -4` prints it), so the site is not bound to every interface:
 
 ```text
 jig.example.net {
-	forward_auth 127.0.0.1:4180 {
-		uri /oauth2/auth
+	bind <private-address>
+
+	# sign-in start and callback paths go to the sign-in service itself,
+	# unchecked, so a browser without a session can obtain one
+	handle /oauth2/* {
+		reverse_proxy 127.0.0.1:4180
 	}
-	reverse_proxy 127.0.0.1:8765
+
+	handle {
+		forward_auth 127.0.0.1:4180 {
+			uri /oauth2/auth
+			# a 401 sends the browser to sign in instead of showing an error
+			@unauth status 401
+			handle_response @unauth {
+				redir * /oauth2/sign_in?rd={scheme}://{host}{uri} 302
+			}
+		}
+		reverse_proxy 127.0.0.1:8765 {
+			# never pass through identity headers a client supplied
+			header_up -Tailscale-User-Login
+			header_up -X-Forwarded-User
+			header_up -X-Forwarded-Email
+		}
+	}
 }
 ```
 
@@ -222,8 +258,9 @@ outside the host is [out of scope](https://github.com/jig-harness/jig/blob/main/
 
 Removing the front touches nothing else:
 
-1. `tailscale serve --https=8443 off` removes the HTTPS route this guide
-   added. Run `tailscale serve status` and check every other route is still
+1. `tailscale serve --https=8443 --set-path=/ off` removes only the root
+   route this guide added, on the port you chose; other mounts on that port
+   stay. Run `tailscale serve status` and check every other route is still
    listed. For a reverse proxy, remove its site block and reload it.
 2. In the machine file, delete `require_token: false` and the entry added to
    `allowed_hosts`, and set `listen` back to its earlier private address if
@@ -250,6 +287,7 @@ claims it works until it has.
 | Forged identity header from a refused device | Not yet run |
 | `Host` allowlist: `200` for the front name, `403` for another | Not yet run |
 | Existing Serve routes unchanged after setup and after undo | Not yet run |
+| QR code and text for the token-free address, scanned on the phone | Not yet run |
 | Reading a decision, copying a command and an answer line, opening the forge link | Not yet run |
 | Copy after the clipboard permission is refused | Not yet run |
 | Reverse-proxy path, with its product and version | Not yet run |
