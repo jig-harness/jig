@@ -55,7 +55,8 @@ import { renderCommitPrefix } from "./lib/pr-conventions.ts";
 import { type PrPolicy, prPolicy } from "./lib/pr-policy.ts";
 import { git, unconcludedGitOpMarker } from "./lib/proc.ts";
 
-const USAGE = "usage: commit-prefix.ts [--branch <name>] [--expect-head <sha>] [--check] [--json]";
+const USAGE =
+  "usage: commit-prefix.ts [--branch <name>] [--expect-head <sha>] [--check] [--json]";
 
 /** Deadline of each local git call, in seconds. */
 const GIT_TIMEOUT = 60;
@@ -300,11 +301,7 @@ export async function rewordUnpushed(
   if (newHead !== undefined) {
     // A reword keeps every tree: a result with another tree is a defect.
     const [was, now] = (
-      await gitOut(root, [
-        "rev-parse",
-        `${at.sha}^{tree}`,
-        `${newHead}^{tree}`,
-      ])
+      await gitOut(root, ["rev-parse", `${at.sha}^{tree}`, `${newHead}^{tree}`])
     )
       .trim()
       .split("\n");
