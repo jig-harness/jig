@@ -2,10 +2,10 @@ import { describe, expect, it } from "bun:test";
 import type { RowsAnswer } from "../../plugin/dispatch/lib/dashboard-contract.ts";
 import type { EndedRow, EventRow } from "../../plugin/dispatch/lib/log.ts";
 import { fixture } from "../fixtures.ts";
+import { forgesOf } from "./links.ts";
 import {
   activeFilters,
   classChips,
-  forgesOf,
   metaLine,
   optionsWith,
   recurringView,
@@ -17,7 +17,7 @@ import { readFilter } from "./search.ts";
 import { ROLES } from "./status.ts";
 
 const ROW_CLOCK: RowClock = { today: "2026-11-03", timeZone: "UTC" };
-const NO_FORGES = new Map<string, string>();
+const NO_FORGES = forgesOf(null);
 
 const ENDED: EndedRow = {
   kind: "ended",
@@ -140,7 +140,7 @@ describe("a row's link", () => {
   const forges = forgesOf(line);
 
   it("comes from the links the line holds for that repository", () => {
-    expect(forges.get("example-org/api")).toBe("https://forge.example/");
+    expect(forges.pulls.get("example-org/api")).toBe("https://forge.example/");
     expect(rowView(ENDED, ROW_CLOCK, forges).url).toBe(
       "https://forge.example/example-org/api/pull/1205",
     );
@@ -156,22 +156,74 @@ describe("a row's link", () => {
   });
 
   it("is left out when the line shows two forges and names neither for it", () => {
-    const two = new Map([
-      ["a/b", "https://one.example/"],
-      ["c/d", "https://two.example/"],
-    ]);
+    const two = {
+      ...NO_FORGES,
+      pulls: new Map([
+        ["a/b", "https://one.example/"],
+        ["c/d", "https://two.example/"],
+      ]),
+    };
     const view = rowView({ ...ENDED, repo: "e/f" }, ROW_CLOCK, two);
     expect(view.url).toBeNull();
     expect(view.noLink).toBeNull();
   });
 
-  it("is left out with no line, and says so for an item", () => {
-    expect(forgesOf(null).size).toBe(0);
-    const item = rowView({ ...ENDED, target: "ENG-4" }, ROW_CLOCK, forges);
+  it("is the row's own link and title for an item, when the row keeps them", () => {
+    const view = rowView(
+      {
+        ...ENDED,
+        stage: "pickup",
+        target: "ENG-4",
+        title: "Add the audit export",
+        url: "https://tracker.example/acme/issue/ENG-4/add-the-audit-export",
+      },
+      ROW_CLOCK,
+      NO_FORGES,
+    );
+    expect(view.url).toBe(
+      "https://tracker.example/acme/issue/ENG-4/add-the-audit-export",
+    );
+    expect(view.title).toBe("Add the audit export");
+    expect(view.goLabel).toBe("Open ENG-4");
+    expect(view.noLink).toBeNull();
+  });
+
+  it("is worked out from another item link of the repository's tracker for a row that keeps none", () => {
+    const view = rowView(
+      { ...ENDED, repo: "example-org/api", target: "API-91" },
+      ROW_CLOCK,
+      forges,
+    );
+    expect(view.url).toBe("https://tracker.example/API-91");
+    expect(view.noLink).toBeNull();
+  });
+
+  it("takes the title the line holds for the target when the row keeps none", () => {
+    const view = rowView(
+      { ...ENDED, repo: "example-org/api", target: "API-77" },
+      ROW_CLOCK,
+      forges,
+    );
+    expect(view.title).toBe("Add the audit export");
+  });
+
+  it("is left out with no line, and says what is missing and where to look", () => {
+    expect(forgesOf(null).items.size).toBe(0);
+    const item = rowView({ ...ENDED, target: "ENG-4" }, ROW_CLOCK, NO_FORGES);
     expect(item.url).toBeNull();
     expect(item.noLink).toBe(
-      "No tracker link: this repository has no tracker base.",
+      "No link was recorded for ENG-4, and the line holds no other link to example-org/api's tracker to work it out from: look ENG-4 up in that tracker.",
     );
+    expect(item.noLink).not.toContain("tracker base");
+  });
+
+  it("says nothing of a link for a defect, which names no target", () => {
+    const defect = rowView(
+      { ...EVENT, target: "", event: "defect" },
+      ROW_CLOCK,
+      NO_FORGES,
+    );
+    expect(defect.noLink).toBeNull();
   });
 });
 

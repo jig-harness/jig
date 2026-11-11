@@ -23,6 +23,26 @@ import type { LineSnapshot, StateAnswer } from "./dashboard-contract.ts";
 import { hostTimeZone } from "./host-time.ts";
 import { SCHEMA_VERSION, stateDb, statePath } from "./state.ts";
 
+/**
+ * Run `work`, which reads the stored line and writes a merge of it, under the
+ * database's write lock: no other tick's write lands between the read and
+ * the write, so a merge never overwrites a newer line with a stale one. Where
+ * the connection is already in a transaction, `work` joins it.
+ */
+export function withLineLocked<T>(work: () => T, root = stateRoot()): T {
+  const db = stateDb(root);
+  if (db.inTransaction) return work();
+  db.run("BEGIN IMMEDIATE");
+  try {
+    const result = work();
+    db.run("COMMIT");
+    return result;
+  } catch (error) {
+    db.run("ROLLBACK");
+    throw error;
+  }
+}
+
 /** Replace the stored line with this tick's. */
 export function writeLine(
   line: LineSnapshot,
