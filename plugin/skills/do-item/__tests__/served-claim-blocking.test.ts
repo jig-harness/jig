@@ -30,6 +30,8 @@ function world(chain: string[] = ["#1", "#2", "#3"]) {
       identifier: key,
       labels: labels.get(key) ?? [],
       truncated: [],
+      assignee: holders.get(key)?.[0] ?? null,
+      hasOpenChildren: false,
       state: started.has(key)
         ? { name: "In Progress", type: "started" }
         : { name: "Todo", type: "unstarted" },
@@ -70,6 +72,23 @@ test("pulls a blocker of a blocker, two links from the served item", async () =>
       })
     ).outcome,
   ).toBe("claimed");
+});
+
+test("refuses a blocker whose path runs through an item the queue would not traverse", async () => {
+  for (const middle of [
+    (w: ReturnType<typeof world>) => w.holders.set("#2", [person]),
+    (w: ReturnType<typeof world>) => w.labels.set("#2", ["epic"]),
+    (w: ReturnType<typeof world>) => w.labels.set("#2", ["hitl"]),
+  ]) {
+    const w = world();
+    middle(w);
+    const result = await claimServedIssue(w.tracker, "#3", {
+      person: "dana",
+      blocking: "#1",
+    });
+    expect(result.outcome).toBe("refused");
+    expect(w.writes).toEqual([]);
+  }
 });
 
 test("refuses a blocker that itself still waits on another", async () => {

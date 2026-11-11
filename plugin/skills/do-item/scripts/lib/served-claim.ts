@@ -160,6 +160,36 @@ async function validateAssignment(
   }
 }
 
+/** An epic by its label or by its open children: a queue never pulls one forward. */
+async function isEpic(
+  tracker: Tracker,
+  key: string,
+  options: ServedClaim,
+): Promise<boolean> {
+  const item = await tracker.poolIssue(key);
+  return (
+    item !== null &&
+    (item.hasOpenChildren || item.labels.includes(options.epicLabel ?? "epic"))
+  );
+}
+
+/** Whether a blocker chain may pass through an item, as the queue would traverse it. */
+async function passable(
+  tracker: Tracker,
+  key: string,
+  options: ServedClaim,
+): Promise<boolean> {
+  const item = await tracker.poolIssue(key);
+  return (
+    item !== null &&
+    item.truncated.length === 0 &&
+    item.assignee === null &&
+    waiting(item.state.type) &&
+    !(await isEpic(tracker, key, options)) &&
+    !hold(item.labels, options)
+  );
+}
+
 /**
  * A pulled blocker carries no assignment of its own: it must be an empty, open,
  * unheld non-epic that the served item blocks through live relations, and that
@@ -175,7 +205,7 @@ async function validatePulled(
   const origin = options.blocking as string;
   const node = await readNode(tracker, key, true, options, claimed);
   if ("reason" in node) return node.reason;
-  if (node.issue.labels.includes(options.epicLabel ?? "epic"))
+  if (await isEpic(tracker, key, options))
     return `${key} is an epic and is not pulled forward`;
   const holders = await tracker.assignees(key);
   if (claimed ? !only(holders, user) : holders.length !== 0)
@@ -198,7 +228,8 @@ async function validatePulled(
     false,
   );
   if (authority) return `${origin}, which ${key} blocks: ${authority}`;
-  return (await blocksWithin(tracker, origin, key))
+  const through = (via: string) => passable(tracker, via, options);
+  return (await blocksWithin(tracker, origin, key, through))
     ? null
     : `${key} no longer blocks ${origin}`;
 }

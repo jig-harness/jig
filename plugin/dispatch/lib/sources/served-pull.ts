@@ -47,14 +47,14 @@ export interface PullPolicy {
  * qualifies. `null` when it does. An assigned blocker is its assignee's to
  * start, so it is never taken from them.
  */
-function whyNotPulled(
+export function whyNotPulled(
   blocker: PoolIssue | null,
   policy: PullPolicy,
 ): string | null {
   if (blocker === null) return "cannot be read";
   if (blocker.truncated.length > 0) return "its read is incomplete";
   if (blocker.assignee !== null) return `assigned to ${blocker.assignee.name}`;
-  if (blocker.labels.includes(policy.epic))
+  if (blocker.labels.includes(policy.epic) || blocker.hasOpenChildren)
     return "an epic; assign it to start it";
   if (!ready(blocker)) return `in ${blocker.state.name}`;
   if (otherRepoLabel(blocker.labels, policy.repoScope) !== null)

@@ -280,6 +280,48 @@ describe("an assigned epic's children", () => {
     expect(reasons(read)["#1"]).toBeUndefined();
   });
 
+  it("starts no sibling while a child cannot be read, since it may be the one in progress", async () => {
+    const unread = { ...issue("#3", [], null), truncated: ["labels"] };
+    const read = await world({
+      assigned: [issue("#1", ["epic"])],
+      children: { "#1": [issue("#2", [], null), unread] },
+    }).read();
+    expect(read.wanted).toEqual([]);
+    expect(reasons(read)["#2"]).toContain("#3 cannot be read");
+  });
+
+  it("holds a directly assigned child to its epic's one-at-a-time order", async () => {
+    const read = await world({
+      assigned: [issue("#1", ["epic"]), issue("#2", [], "alex")],
+      children: { "#1": [issue("#2", [], "alex"), started("#5")] },
+    }).read();
+    expect(read.wanted).toEqual([]);
+    expect(reasons(read)["#2"]).toBe(
+      "#1 is working #5; it takes one child at a time",
+    );
+  });
+
+  it("calls an epic working, not idle, while a nested epic's child is in progress", async () => {
+    const read = await world({
+      assigned: [issue("#1", ["epic"])],
+      children: {
+        "#1": [issue("#2", ["epic"], null)],
+        "#2": [started("#3")],
+      },
+    }).read();
+    expect(reasons(read)["#1"]).toBeUndefined();
+  });
+
+  it("names an epic whose every child cannot be read", async () => {
+    const unread = { ...issue("#2", [], null), truncated: ["labels"] };
+    const read = await world({
+      assigned: [issue("#1", ["epic"])],
+      children: { "#1": [unread] },
+    }).read();
+    expect(reasons(read)["#1"]).toContain("none of its 1 open children");
+    expect(reasons(read)["#1"]).not.toContain("undefined");
+  });
+
   it("keeps an execution plan's own order and parallelism", async () => {
     const description =
       "## Execution Plan\n" +
@@ -299,6 +341,28 @@ describe("an assigned epic's children", () => {
       descriptions: { "#1": description },
     }).read();
     expect(read.wanted.map((i) => i.key).sort()).toEqual(["#2", "#3"]);
+  });
+
+  it("pulls the open blocker of a plan child that waits only on work outside the plan", async () => {
+    const description =
+      "## Execution Plan\n" +
+      renderExecutionPlan({
+        epic: "#1",
+        intent: "deliver",
+        steps: [{ issue: "#2", band: 1, lane: "a", gate: "agent" }],
+        edges: [],
+        gates: [],
+      });
+    const read = await world({
+      assigned: [issue("#1", ["epic"])],
+      others: [issue("#9", [], null)],
+      children: { "#1": kids("#2") },
+      descriptions: { "#1": description },
+      waits: { "#2": ["#9"] },
+    }).read();
+    expect(read.wanted.map((i) => [i.key, i.blockingFor])).toEqual([
+      ["#9", "#2"],
+    ]);
   });
 
   it("works each nested epic one child at a time on its own", async () => {

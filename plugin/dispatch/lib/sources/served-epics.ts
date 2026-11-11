@@ -38,6 +38,8 @@ export function serializeEpics<
 export interface EpicWalk {
   key: string;
   children: string[];
+  /** Open children that could not be read; they are reported on their own. */
+  unread: string[];
   /** A child is already in progress: the epic is working, not idle. */
   working: boolean;
 }
@@ -49,24 +51,33 @@ export function summarizeEpics(
   unplaced: Unplaced[],
 ): void {
   const byKey = new Map(walks.map((w) => [w.key, w]));
-  const startable = (key: string, path: ReadonlySet<string>): boolean => {
-    if (wanted.has(key)) return true;
+  const reach = (
+    key: string,
+    path: ReadonlySet<string>,
+    test: (walk: EpicWalk) => boolean,
+  ): boolean => {
     const walk = byKey.get(key);
     if (walk === undefined || path.has(key)) return false;
     const next = new Set(path).add(key);
-    return walk.children.some((c) => startable(c, next));
+    return test(walk) || walk.children.some((c) => reach(c, next, test));
   };
+  const startable = (key: string): boolean =>
+    wanted.has(key) ||
+    reach(key, new Set(), (w) => w.children.some((c) => wanted.has(c)));
   for (const walk of [...walks].reverse()) {
-    if (walk.working || startable(walk.key, new Set())) continue;
-    const held = walk.children
+    // A child in progress anywhere below keeps the epic working, not idle.
+    if (startable(walk.key) || reach(walk.key, new Set(), (w) => w.working))
+      continue;
+    const all = [...walk.children, ...walk.unread];
+    const held = all
       .map((c) => unplaced.find((u) => u.target === c))
       .find((u) => u !== undefined);
-    const first = held?.target ?? walk.children[0];
+    const first = held?.target ?? all[0];
     const why = held?.reason ?? "not ready to start";
     unplaced.push({
       target: walk.key,
       record: "tracker",
-      reason: `none of its ${walk.children.length} open children can start; first, ${first}: ${why}`,
+      reason: `none of its ${all.length} open children can start; first, ${first}: ${why}`,
     });
   }
 }
