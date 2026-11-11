@@ -719,23 +719,30 @@ async function resolveBaseRef(pr: string, repo: string): Promise<string> {
   return `${remote}/${name}`;
 }
 
-/** `owner/name` of the repository `gh` resolves at `repo`, or `""`. */
-async function ghRepository(repo: string): Promise<string> {
-  const view = await cachedRepoView(["--json", "owner,name"], {
+/** The repository name and forge URL gh resolves, with an empty name on failure. */
+async function ghRepository(
+  repo: string,
+): Promise<{ name: string; url?: string }> {
+  const view = await cachedRepoView(["--json", "owner,name,url"], {
     stderr: "ignore",
     cwd: repo,
     env: ghRepoEnv(),
   });
-  let repository = "";
+  let repository: { name: string; url?: string } = { name: "" };
   if (view.code !== 0) return repository;
   try {
     const meta = JSON.parse(view.stdout) as {
       owner?: { login?: string };
       name?: string;
+      url?: string;
     };
     const owner = meta.owner?.login ?? "";
     const repoName = meta.name ?? "";
-    if (owner !== "" && repoName !== "") repository = `${owner}/${repoName}`;
+    if (owner !== "" && repoName !== "")
+      repository = {
+        name: `${owner}/${repoName}`,
+        ...(meta.url ? { url: meta.url } : {}),
+      };
   } catch {
     // Left empty — refused by the caller, as an unreadable `gh repo view` is.
   }
@@ -764,14 +771,15 @@ async function remoteMismatch(
   remote: string,
 ): Promise<string | null> {
   const expectedRepo = await ghRepository(repo);
-  if (expectedRepo === "")
+  if (expectedRepo.name === "")
     return `could not resolve this repository via \`gh repo view\` — refusing to fetch the base branch from an unverified '${remote}'.`;
   const check = await verifyRemoteIsPrRepo(
     git,
     repo,
-    expectedRepo,
+    expectedRepo.name,
     gitIdentityEnv(),
     remote,
+    expectedRepo.url,
   );
   return check.ok ? null : check.why;
 }

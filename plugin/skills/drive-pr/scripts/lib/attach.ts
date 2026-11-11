@@ -124,6 +124,7 @@ interface PrHead {
   head: string;
   /** `owner/name` of the repository the head branch lives in. */
   repo: string;
+  url?: string;
 }
 
 export function refuse(code: 1 | 2 | 5, message: string): never {
@@ -183,7 +184,7 @@ async function readPr(
       "view",
       pr,
       "--json",
-      "state,headRefName,headRefOid,isCrossRepository,headRepository,headRepositoryOwner",
+      "state,headRefName,headRefOid,isCrossRepository,headRepository,headRepositoryOwner,url",
     ],
     { cwd, stderr: "pipe" },
   );
@@ -209,6 +210,19 @@ async function readPr(
   const head = typeof meta.headRefOid === "string" ? meta.headRefOid : "";
   if (branch === "" || !/^[0-9a-f]{40,64}$/.test(head))
     refuse(1, `PR #${pr} did not report its head branch and commit`);
+  return {
+    branch,
+    head,
+    repo: headRepository(meta, pr),
+    ...(typeof meta.url === "string" ? { url: meta.url } : {}),
+  };
+}
+
+/** `owner/name` of the repository a pull request's view says its head branch lives in. */
+export function headRepository(
+  meta: Record<string, unknown>,
+  pr: string,
+): string {
   const owner = isRecord(meta.headRepositoryOwner)
     ? meta.headRepositoryOwner.login
     : undefined;
@@ -217,7 +231,7 @@ async function readPr(
     : undefined;
   if (typeof owner !== "string" || typeof name !== "string")
     refuse(1, `PR #${pr} did not report its head repository`);
-  return { branch, head, repo: `${owner}/${name}` };
+  return `${owner}/${name}`;
 }
 
 /**
@@ -226,11 +240,11 @@ async function readPr(
  * repository shares
  * commit objects, so a fetched head commit proves nothing about which
  * repository it came from. Owner and name are compared, as `guarded-push.ts`
- * compares them, never the host (`lib/repo-url.ts` says why).
+ * compares them, after resolving the transport host to the forge host.
  */
 export async function requireOrigin(
   tree: string,
-  pr: { repo: string },
+  pr: { repo: string; url?: string },
   number: string,
   remote: string,
 ): Promise<void> {
@@ -245,11 +259,11 @@ export async function requireOrigin(
     urls.push(...r.stdout.split("\n").filter((u) => u !== ""));
   }
   for (const url of urls) {
-    const repo = repoOfUrl(url);
+    const repo = await repoOfUrl(url, undefined, undefined, pr.url, tree);
     if (repo.toLowerCase() !== pr.repo.toLowerCase())
       refuse(
         2,
-        `PR #${number}'s head is in ${pr.repo}, but '${remote}' is ${repo === "" ? "a URL with no owner/name" : repo} (${url}) — gh read the pull request from another repository than this clone's (GH_REPO, gh repo set-default); drive it from a clone of ${pr.repo}`,
+        `PR #${number}'s head is in ${pr.repo}, but '${remote}' is ${repo === "" ? "an unresolved forge URL" : repo} (${url}) — gh read the pull request from another repository than this clone's (GH_REPO, gh repo set-default); drive it from a clone of ${pr.repo}`,
       );
   }
 }
@@ -571,6 +585,35 @@ async function staysInPlace(
 }
 
 /**
+ * Why the fetched branch tip is not the pull request's head. When a second
+ * read still reports the same head, the pull request is behind its branch:
+ * the forge has not taken the branch's last push, which it can take about a
+ * minute to show; if it stays behind, closing and reopening the pull request
+ * makes it. Otherwise (the head moved, or does not read
+ * again) the branch was pushed again while attaching.
+ */
+async function tipMismatch(
+  pr: string,
+  tree: string,
+  remote: string,
+  head: PrHead,
+  fetched: { code: number; stdout: string },
+): Promise<string> {
+  const number = String(Number.parseInt(pr, 10));
+  const tip = fetched.code === 0 ? fetched.stdout.trim() : null;
+  const again =
+    tip === null
+      ? null
+      : await readPr(pr, tree, remote).catch((e: unknown) => {
+          if (e instanceof AttachRefusal) return null;
+          throw e;
+        });
+  if (tip !== null && again?.head === head.head)
+    return `PR #${number} is behind its branch '${head.branch}': the pull request's head is ${head.head.slice(0, 12)}, the branch's head on '${remote}' is ${tip.slice(0, 12)} — the forge can take about a minute to show a push, so run the attach again, and if the pull request still shows this head after that, close and reopen it so the forge takes the branch's head`;
+  return `the fetched '${head.branch}' is not PR #${number}'s head ${head.head.slice(0, 12)} (pushed again while attaching?) — run the attach again`;
+}
+
+/**
  * The driver locks a standalone attach takes, in `drive.ts`'s order (the
  * tree's, then the pull request's), so no driver starts on this tree or the
  * pull request while it moves the tree; released by the caller.
@@ -651,10 +694,7 @@ export async function attachPr(
       `refs/remotes/${remote}/${head.branch}^{commit}`,
     ]);
     if (tip.code !== 0 || tip.stdout.trim() !== head.head)
-      refuse(
-        1,
-        `the fetched '${head.branch}' is not PR #${number}'s head ${head.head.slice(0, 12)} (pushed again while attaching?) — run the attach again`,
-      );
+      refuse(1, await tipMismatch(pr, tree, remote, head, tip));
     const fence = await treeFence(number);
     let detached: boolean;
     let created: boolean;

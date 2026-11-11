@@ -43,6 +43,7 @@ import {
   newRecordId,
   newToken,
   redrivenChanges,
+  writeRecord,
 } from "../launches.ts";
 import {
   type Dispatched,
@@ -69,6 +70,7 @@ import type {
   StaleCause,
 } from "../types.ts";
 import { armsUnarmed, factsOf } from "./drive-hold.ts";
+import { launchHeads } from "../failed-rearms.ts";
 import {
   accountBlocked,
   admitAccount,
@@ -120,6 +122,40 @@ async function consumeRequest(
 }
 
 const HELD = "a person's hold label is on it now";
+
+/**
+ * A replay that may start the drive names the heads it starts at, as a first
+ * launch does: the pull request's and its branch's may have moved since the
+ * record was written, and a failure of the replay is weighed by the heads it
+ * launched at. Only a record none of whose launches may have started is
+ * refreshed; one an earlier launch answered or lost, or whose launch was called
+ * and left no answer, keeps the heads it was written with, which that launch
+ * acted on. Heads that do not read leave the
+ * record with none, which a re-arm is held by nothing for; a later tick reads
+ * them again for such a record, since it still never started.
+ */
+async function refreshHeads(
+  state: ApplyState,
+  record: LaunchRecord,
+  read: DrivenPr,
+): Promise<void> {
+  if (
+    record.action !== "rearm" ||
+    record.launchCalled === true ||
+    !record.attempts.every((a) => a.outcome === "failed")
+  )
+    return;
+  const heads = await launchHeads(
+    record.repo,
+    read,
+    undefined,
+    timeLeftMs(state),
+  );
+  if (heads === (record.heads ?? null)) return;
+  if (heads === null) delete record.heads;
+  else record.heads = heads;
+  writeRecord(record, state.root);
+}
 
 /** Retry, once and under its own key, each pending record of `repo` whose launch got no answer. */
 async function retryPending(
@@ -220,8 +256,11 @@ async function retryBlocked(
       ? replayedChange(state, record, read)
       : changedStale(record.redrive, read);
   if (blocked !== null) return blocked;
-  const different = await replayOriginalTree(record, read);
-  return different ?? accountBlocked(state, record);
+  const stopped =
+    (await replayOriginalTree(record, read)) ??
+    (await accountBlocked(state, record));
+  if (stopped === null) await refreshHeads(state, record, read);
+  return stopped;
 }
 
 /** Original-tree recoveries retain their actor and clone check on replay. */
@@ -436,6 +475,7 @@ function driveRecord(
   workspace: { id: string; path: string },
   id: string,
   named: Dispatched,
+  heads: string | null,
 ): LaunchRecord {
   const kind = isTakeover(action) ? "takeover" : "rearm";
   return {
@@ -469,6 +509,7 @@ function driveRecord(
     marker: null,
     round: roundOf(pr),
     redrive: action.redrive ?? null,
+    ...(heads === null ? {} : { heads }),
     rearmLabel:
       typeof pr.evidence.rearmLabel === "string"
         ? pr.evidence.rearmLabel
@@ -520,10 +561,11 @@ async function launchOne(
   const pastDeadline = outOfTime(state);
   if (pastDeadline !== null)
     return waits(action, pastDeadline, slots.account.name);
+  const heads = await launchHeads(repo.slug, pr, undefined, timeLeftMs(state));
   const result = await startCheckedRecovery(
     state,
     action,
-    driveRecord(state, repo, action, pr, slots, workspace, id, named),
+    driveRecord(state, repo, action, pr, slots, workspace, id, named, heads),
     slots,
     drive.claimer,
   );

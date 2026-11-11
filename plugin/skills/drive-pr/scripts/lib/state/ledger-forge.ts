@@ -32,12 +32,18 @@ import {
 
 const WRITE_ATTEMPTS = 3;
 
+const abortReason = (signal: AbortSignal | undefined): string | null =>
+  signal?.aborted ? "the collector deadline passed" : null;
+
 /** One forge call's output, or why it failed: its exit and last error line. `timeoutSec` shortens the call's deadline. */
 export async function forge(
   args: string[],
   stdin?: string,
   timeoutSec?: number,
+  signal?: AbortSignal,
 ): Promise<{ ok: true; stdout: string } | { ok: false; why: string }> {
+  const aborted = abortReason(signal);
+  if (aborted !== null) return { ok: false, why: aborted };
   const r = await ghCall(args, {
     stderr: "pipe",
     ...(stdin === undefined ? {} : { stdin }),
@@ -64,11 +70,13 @@ function json(text: string, what: string): unknown {
 /** The login the forge client is signed in as; `null` when it cannot say. `timeoutSec` shortens the call's deadline. */
 export async function resolveLogin(
   timeoutSec?: number,
+  signal?: AbortSignal,
 ): Promise<string | null> {
   const r = await forge(
     ["api", "user", "--jq", ".login"],
     undefined,
     timeoutSec,
+    signal,
   );
   const login = r.ok ? r.stdout.trim() : "";
   return /^[A-Za-z0-9-]+(\[bot\])?$/.test(login) ? login : null;
@@ -94,13 +102,19 @@ function forgeComment(c: unknown): ForgeComment | null {
 async function listComments(
   pr: string,
   repo = "{owner}/{repo}",
+  signal?: AbortSignal,
 ): Promise<ForgeComment[] | string> {
-  const r = await forge([
-    "api",
-    "--paginate",
-    "--slurp",
-    `repos/${repo}/issues/${pr}/comments?per_page=100`,
-  ]);
+  const r = await forge(
+    [
+      "api",
+      "--paginate",
+      "--slurp",
+      `repos/${repo}/issues/${pr}/comments?per_page=100`,
+    ],
+    undefined,
+    undefined,
+    signal,
+  );
   if (!r.ok) return r.why;
   const pages = json(r.stdout, "the comment listing");
   const out: ForgeComment[] = [];
@@ -134,8 +148,11 @@ export async function readLedgerSnapshot(
   pr: string,
   selfLogin: string | null,
   repo?: string,
+  signal?: AbortSignal,
 ): Promise<LedgerSnapshot | string> {
-  const comments = await listComments(pr, repo);
+  const aborted = abortReason(signal);
+  if (aborted !== null) return aborted;
+  const comments = await listComments(pr, repo, signal);
   return typeof comments === "string"
     ? `the comments could not be read (${comments})`
     : snapshotFrom(comments, selfLogin);

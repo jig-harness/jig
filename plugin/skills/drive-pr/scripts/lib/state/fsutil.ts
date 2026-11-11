@@ -1,6 +1,7 @@
 /** Filesystem helpers shared by the state modules. */
 
 import { renameWithRetry } from "../../../../../shared/rename-with-retry.ts";
+import { JigError } from "../../../../../shared/outcome.ts";
 import { randomBytes } from "node:crypto";
 import {
   closeSync,
@@ -298,6 +299,18 @@ export function createExclusiveDurable(path: string, content: string): void {
   }
 }
 
+/** The rename succeeded, but its directory entry is not confirmed durable. */
+export class AtomicDurabilityUnconfirmed extends JigError<"atomic-durability-pending"> {
+  constructor(cause: unknown) {
+    super(
+      "atomic-durability-pending",
+      `Content published, directory durability pending: ${cause instanceof Error ? cause.message : String(cause)}`,
+      { cause },
+    );
+    this.name = "AtomicDurabilityUnconfirmed";
+  }
+}
+
 /**
  * Write `content` to a UNIQUE temp file in the target's own directory, then
  * rename over the target. The rename is what makes a torn write impossible;
@@ -310,7 +323,8 @@ export function createExclusiveDurable(path: string, content: string): void {
  * fsync-directory-after-rename" pattern for a crash-safe replacement. See
  * those two functions' own doc comments for the write/fsync hardening
  * itself; this function's remaining concern is temp-file OWNERSHIP and
- * cleanup.
+ * cleanup. A failure after publication throws `AtomicDurabilityUnconfirmed`;
+ * earlier failures leave the target unpublished by this call.
  *
  * The ENTIRE create-through-rename sequence is one cleanup region: if any step
  * fails AFTER this invocation is confirmed to own `tmp`, it is unlinked rather
@@ -400,5 +414,9 @@ export function atomicWrite(
       }
     }
   }
-  fsyncDirectoryBestEffort(dirname(target));
+  try {
+    fsyncDirectoryBestEffort(dirname(target));
+  } catch (cause) {
+    throw new AtomicDurabilityUnconfirmed(cause);
+  }
 }
