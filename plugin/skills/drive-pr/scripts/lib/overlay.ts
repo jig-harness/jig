@@ -184,8 +184,10 @@ export function reviewerEvidenceProblem(): string | null {
 export function draftSkippingReviewers(): string[] {
   const snapshot = readPolicySnapshot();
   if (snapshot.from === "unreadable")
-    throw new Error(
-      `review.draft_skipping_reviewers: the base branch's configuration cannot be read (${snapshot.reason})`,
+    throw new DecodeError(
+      configSource("review.draft_skipping_reviewers"),
+      "$.review.draft_skipping_reviewers",
+      `the base branch's configuration cannot be read (${snapshot.reason})`,
     );
   const review = snapshot.from === "base" ? snapshot.values.review : undefined;
   const value =
