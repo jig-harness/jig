@@ -6,7 +6,10 @@
  * the acts table lists as Decide, bound to the set the dry run listed.
  */
 import { afterEach, describe, expect, it } from "bun:test";
-import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
+import {
+  expectSpawnExit,
+  expectSpawnExitNot,
+} from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { decodeMarker } from "../../shared/records/envelope.ts";
 import {
   comment,
@@ -350,7 +353,7 @@ describe("--all --approve", () => {
       [ledgerOn(701, framedLedger(12, [framedPark("F_\u001b[2J", "scope")]))],
     );
     const r = await w.send([ADDRESS, "answer", "--all", "--approve"]);
-    expect(r.exitCode).not.toBe(0);
+    expectSpawnExitNot(r, 0);
     expect(r.stderr.includes("\u001b")).toBe(false);
     expect(r.stderr).toContain("F_ [2J");
   });

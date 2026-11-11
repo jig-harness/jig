@@ -64,7 +64,9 @@ interface Eligible {
 function decisionSetToken(
   eligible: ReadonlyArray<{ key: string; digest: string }>,
 ): string {
-  const lines = eligible.map((e) => `${e.key} ${e.digest}`).sort();
+  const lines = eligible
+    .map((e) => `${e.key} ${e.digest}`)
+    .sort((a, b) => a.localeCompare(b, "en"));
   return createHash("sha256")
     .update(lines.join("\n"))
     .digest("hex")
