@@ -140,35 +140,69 @@ export function linksIssue(
 }
 
 /**
+ * `text` with every inline-code span masked: its characters become a
+ * placeholder that is neither whitespace nor a word character, so removing an
+ * example can neither join the text around it nor leave a line start for a
+ * matcher. A backslash escapes the character after it, so an escaped backtick
+ * opens nothing; a span closes on the next run of the same length, across
+ * lines, and an opening run with no closing run is literal text.
+ */
+function maskInlineCode(text: string): string {
+  const opening = /\\[\s\S]|(`+)/g;
+  let out = "";
+  let done = 0;
+  for (let m = opening.exec(text); m; m = opening.exec(text)) {
+    const ticks = m[1];
+    if (ticks === undefined) continue;
+    const closing = new RegExp(`(?<!\`)\`{${ticks.length}}(?!\`)`, "g");
+    closing.lastIndex = opening.lastIndex;
+    const close = closing.exec(text);
+    if (close === null) continue;
+    const end = close.index + ticks.length;
+    out +=
+      text.slice(done, m.index) +
+      text.slice(m.index, end).replace(/[^\n]/g, "\u0000");
+    done = end;
+    opening.lastIndex = end;
+  }
+  return out + text.slice(done);
+}
+
+/**
  * The lines of `text` that may carry association evidence: real text, not
  * quoted, and with every inline-code span masked. A span runs across the
- * lines of its paragraph, and its characters become a placeholder that is
- * neither whitespace nor a word character, so removing an example can
- * neither join the text around it nor leave a line start for a matcher.
+ * lines of its paragraph but never past a table cell, so a table row is
+ * masked cell by cell on its own.
  */
 function evidenceLines(text: string): string[] {
   const out: string[] = [];
   let paragraph: string[] = [];
+  let inTable = false;
   const flush = () => {
-    const masked = paragraph
-      .join("\n")
-      .replace(/(?<!`)(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)/g, (span) =>
-        span.replace(/[^\n]/g, "\u0000"),
-      );
-    out.push(...masked.split("\n"));
+    out.push(...maskInlineCode(paragraph.join("\n")).split("\n"));
     paragraph = [];
+    inTable = false;
   };
-  for (const { line, kind, quoted, depth, boundary } of markdownLines(text)) {
-    if (kind !== "text" || quoted || line.trim() === "") {
-      flush();
-      continue;
-    }
+  const rows = [...markdownLines(text)];
+  rows.forEach(({ line, kind, quoted, depth, boundary }, index) => {
+    if (kind !== "text" || quoted || line.trim() === "") return flush();
     if (depth !== undefined || boundary) flush();
-    paragraph.push(line);
-  }
+    if (!inTable && paragraph.length === 0 && line.includes("|"))
+      inTable = TABLE_DELIMITER.test(rows[index + 1]?.line ?? "");
+    if (!inTable) return void paragraph.push(line);
+    out.push(
+      line
+        .split(/(?<!\\)\|/)
+        .map(maskInlineCode)
+        .join("|"),
+    );
+  });
   flush();
   return out;
 }
+
+/** A GitHub table's delimiter row, which makes the line above its header. */
+const TABLE_DELIMITER = /^\s*\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)*\|?\s*$/;
 
 /**
  * The reading of an item's linked pull requests: `open` while any is open,

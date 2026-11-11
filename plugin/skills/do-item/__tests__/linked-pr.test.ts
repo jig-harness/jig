@@ -124,6 +124,14 @@ describe("linksIssue", () => {
     ).toBe(false);
     expect(linksIssue("Closes ENG-`1`5", "ENG-15", team)).toBe(false);
     expect(linksIssue("`unclosed\nCloses ENG-5", "ENG-5", team)).toBe(true);
+    expect(linksIssue("a \\`\nCloses ENG-5\nb \\`", "ENG-5", team)).toBe(true);
+    const table = [
+      "| A | B |",
+      "| - | - |",
+      "| Refs ENG-1 | ` |",
+      "| Refs ENG-5 | ` |",
+    ];
+    expect(linksIssue(table.join("\n"), "ENG-5", team)).toBe(true);
     expect(linksIssue("`a`\n\nCloses ENG-5", "ENG-5", team)).toBe(true);
   });
 
