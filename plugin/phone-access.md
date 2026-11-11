@@ -258,7 +258,7 @@ What it costs:
 ## Install it as an app
 
 On the HTTPS path without a token, the page offers itself to the phone's
-browser as an app: it names a web app manifest and its icons, and Chrome on
+browser as an app: it names a [web app manifest](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) and its icons, and Chrome on
 Android then lists **Install app** in its menu. The installed app opens in its
 own window with no browser bar, from the home screen, and shows the same
 read-only page.
@@ -280,7 +280,7 @@ What makes it work, and what it does not:
   leaves the browser reading a page where it expects JSON, and no install is
   offered.
 - **It is a launcher, not a second copy.** The app has no offline mode and no
-  service worker. A window that is already open when the host goes off marks
+  [service worker](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md). A window that is already open when the host goes off marks
   its facts stale and offers Retry; starting the app while the host is off, or
   while the phone is off the private network, shows the browser's own
   connection error.

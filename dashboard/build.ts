@@ -169,7 +169,7 @@ function licences(inputs: string[]): string {
     .join("\n----------------------------------------\n\n")}`;
 }
 
-/** The three files, by name. The bundler runs from the repository root, so its output does not depend on where this was called from. */
+/** The files, by name. The bundler runs from the repository root, so its output does not depend on where this was called from. */
 export async function buildPage(): Promise<Record<string, string>> {
   const built = await Bun.build({
     entrypoints: [join(ROOT, SOURCE, "main.tsx")],
