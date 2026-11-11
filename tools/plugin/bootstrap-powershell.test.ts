@@ -10,6 +10,11 @@ import { writeFakeProgram } from "../../lib/test-helpers/fake-program.ts";
 const pwsh = Bun.which("pwsh");
 const script = join(import.meta.dirname, "bootstrap.ps1");
 
+// The provisioned commands are Bun, which starts in milliseconds, not
+// further PowerShell processes: the runner is the same for any program, and
+// the one PowerShell start left is the slow step a loaded machine stretches.
+// Only the stalled command's limit is short; the run's own budget is wide,
+// since nothing asserted depends on how long PowerShell takes to start.
 test.skipIf(!pwsh)(
   "PowerShell provisioning captures output and terminates a stalled command",
   () => {
@@ -24,27 +29,29 @@ $ast=[System.Management.Automation.Language.Parser]::ParseFile($env:BOOTSTRAP_SC
 $function=$ast.Find({param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Invoke-Provision'},$true)
 if(-not $function) { throw 'Missing provisioning runner' }
 Invoke-Expression $function.Extent.Text
-$env:JIG_SETUP_TIMEOUT_SECONDS='10'
-if((Invoke-Provision $env:TEST_PWSH @('-NoProfile','-NonInteractive','-Command',"Write-Output 'provision-ok'")).Trim() -ne 'provision-ok') { throw 'Output lost' }
+$env:JIG_SETUP_TIMEOUT_SECONDS='60'
+if((Invoke-Provision $env:TEST_CHILD @('-e',$env:TEST_PRINTS)).Trim() -ne 'provision-ok') { throw 'Output lost' }
 $env:JIG_SETUP_TIMEOUT_SECONDS='0.1'
-try { Invoke-Provision $env:TEST_PWSH @('-NoProfile','-NonInteractive','-Command','[Threading.Thread]::Sleep(30000)'); exit 1 }
+try { Invoke-Provision $env:TEST_CHILD @('-e',$env:TEST_STALLS); exit 1 }
 catch { if($_.Exception.Message -notmatch 'Provisioning timed out') { throw }; Write-Output 'timeout confirmed' }`,
       ],
       {
         env: {
           ...process.env,
           BOOTSTRAP_SCRIPT: script,
-          TEST_PWSH: pwsh as string,
+          TEST_CHILD: process.execPath,
+          TEST_PRINTS: "console.log('provision-ok')",
+          TEST_STALLS: "setTimeout(() => {}, 30000)",
         },
         stdout: "pipe",
         stderr: "pipe",
-        timeout: 20_000,
+        timeout: 90_000,
       },
     );
     expectSpawnExit(result, 0);
     expect(result.stdout.toString()).toContain("timeout confirmed");
   },
-  25_000,
+  100_000,
 );
 
 test.skipIf(!pwsh)(
