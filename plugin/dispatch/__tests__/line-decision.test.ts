@@ -43,3 +43,19 @@ it("reads typed parks without interpreting prose as fields", () => {
     details: [{ label: "Obligation", text: "Review coverage" }],
   });
 });
+
+it("carries the framing's digest and the time it was parked, so a page can tell a park made again", () => {
+  const park = {
+    key: "PRRT_a",
+    kind: "thread" as const,
+    lines: ["A sentence from before parks were framed."],
+    digest: "3fa9c2d1e0b4",
+    parkedAt: "2026-11-03T07:05:00.000Z",
+  };
+  expect(decisionOf(park)).toMatchObject({
+    digest: "3fa9c2d1e0b4",
+    parkedAt: "2026-11-03T07:05:00.000Z",
+  });
+  const { parkedAt: _parkedAt, ...older } = park;
+  expect("parkedAt" in decisionOf(older)).toBe(false);
+});

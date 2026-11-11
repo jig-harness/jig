@@ -1084,6 +1084,7 @@ jig dispatch --apply [--repo <path>]...           # start what the machine file 
 jig dispatch install [--interval 5m] --yes        # the timer
 jig dispatch receipts                             # past ticks
 jig dispatch result <record> <token> done|failed  # a session's or a follow-up pass's answer
+jig dispatch result <record> <token> failed --refused <updated-at> --reason <reason>  # a pickup the start rules refused
 ```
 
 A tick without `--apply` prints every action it would take, each with the
@@ -2083,8 +2084,8 @@ and how it went ([the designed page](prototypes/dispatch-dashboard/README.md)),
 in views: Now for the first three, History for the log, and Help for the
 words the page uses. A view is a parameter of the address, like the log's
 filter. It reads two records and writes nothing to the host: what a person
-chooses on the page (the theme, reply drafts beside a decision) stays in that
-browser's own storage.
+chooses on the page (the theme, the picks, notes and own words on a parked
+decision's rows) stays in that browser's own storage.
 
 The first is the **line**, one row of the state database (`tick_line`): the
 needs, the accounts with their slots and walls, the sessions, the queue and the
