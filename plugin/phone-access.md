@@ -226,6 +226,7 @@ passes only when the result is the one in the table.
 | Tap a copy control on a merge command or an answer line | The page confirms the copy, and pasting elsewhere gives the complete line |
 | Refuse the browser's clipboard permission, then tap copy again | The page offers the complete text for selecting by hand |
 | Tap a pull request or issue link | The forge or tracker opens in its own page and its own sign-in |
+| Open the menu in Chrome and choose Install app (tokenless path only) | The offer appears, the installed app opens in its own window with no browser bar, and no token is in any address it shows, and copying a command still works |
 
 Copying only puts text in the clipboard. Neither path sends a command or
 writes anything through Jig.
@@ -254,12 +255,45 @@ What it costs:
   browser one, so the clipboard API is withheld. Reading and links work, and
   selecting the text by hand is the way to copy.
 
-## What HTTPS does not promise
+## Install it as an app
 
-HTTPS gives the page a secure context. It does not by itself make the page
-installable on a phone's home screen, and it does not turn on web push.
-Both need further browser support and page assets that this setup does not
-ship. Use the bookmark.
+On the HTTPS path without a token, the page offers itself to the phone's
+browser as an app: it names a web app manifest and its icons, and Chrome on
+Android then lists **Install app** in its menu. The installed app opens in its
+own window with no browser bar, from the home screen, and shows the same
+read-only page.
+
+What makes it work, and what it does not:
+
+- **It needs the tokenless path.** The installed app always starts at the
+  dashboard's root address, with no token, which is why a server that asks for
+  a token does not offer it: it refuses the manifest as it refuses every
+  request without the token, and the browser shows no install option. The
+  private-HTTP fallback is neither a secure context nor token-free, so it
+  never offers install either.
+- **The front must let the manifest and the icons through.** They are
+  ordinary requests to the same address, and the page asks the browser to send
+  its cookies with the manifest request, so a front that keeps its sign-in in
+  a cookie passes it for a phone that is signed in. A front that answers a
+  request without a session with a sign-in page, and one the phone cannot
+  satisfy for these requests (a sign-in the browser does not repeat on its own),
+  leaves the browser reading a page where it expects JSON, and no install is
+  offered.
+- **It is a launcher, not a second copy.** The app has no offline mode and no
+  service worker. A window that is already open when the host goes off marks
+  its facts stale and offers Retry; starting the app while the host is off, or
+  while the phone is off the private network, shows the browser's own
+  connection error.
+- **It does not turn on web push.** HTTPS gives the page a secure context and
+  nothing more; notifications are a separate feature this setup does not ship.
+
+To install: open the HTTPS address in Chrome on the phone, open the menu and
+choose **Install app**. Remove it the way the phone removes any app; nothing is
+written to the host. Run the install row of the [phone checks](#phone-checks).
+
+Never make a home-screen shortcut from an address that carries a token, such as
+the private-HTTP fallback's. Chrome offers one even where it offers no install,
+and the shortcut keeps the whole address, token included, on the home screen.
 
 A host that is off cannot answer. A phone then gets a connection error, and a
 page that was already open marks its facts stale and offers Retry. A watcher
@@ -301,4 +335,5 @@ claims it works until it has.
 | QR code and text for the token-free address, scanned on the phone | Not yet run |
 | Reading a decision, copying a command and an answer line, opening the forge link | Not yet run |
 | Copy after the clipboard permission is refused | Not yet run |
+| Install app offered in Chrome on the phone; the installed app opens in its own window, reads the page and copies a command | Not yet run |
 | Reverse-proxy path, with its product and version | Not yet run |

@@ -18,6 +18,15 @@ bounded, deadline-protected forge calls. The historical outcome stays unchanged;
 a merged or closed PR no longer presents its drive decision as actionable after
 a successful refresh. Follow-up failures still need a person after merge.
 
+The page also names a web app manifest and icons, so a phone's browser can
+offer to install it (`plugin/phone-access.md`). `build.ts` writes the manifest
+and copies `icons/` beside the page. The icons are PNGs rendered from Jig's
+mark (`website/public/brand/jig-mark-light.*`): `icon-192.png` and
+`icon-512.png` as it is, and `icon-maskable-512.png` from
+`icons/jig-mark-maskable.*`, the mark at 80% on a full-bleed square, so a
+launcher that crops icons to its own shape does not clip it. A new icon is
+rendered again from its drawing, by any tool, and replaces the PNG here.
+
 Why the page looks and reads as it does is the
 [design round](../design/prototypes/dispatch-dashboard/README.md), whose
 scenarios are `fixtures.ts` here.

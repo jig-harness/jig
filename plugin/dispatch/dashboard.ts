@@ -19,6 +19,11 @@
  * A machine file that sets `dashboard.require_token: false` on a loopback
  * address serves without one, for a front on the host (Tailscale Serve, a
  * reverse proxy) that authenticates each person before the request arrives.
+ * The page names a web app manifest and its icons (`GET /manifest.webmanifest`,
+ * `GET /icons/*`), which a phone's browser reads to offer the page as an app.
+ * They are static, and answer under the same checks as the rest: an installed
+ * app starts at `/`, which only a server without a token can open, so one
+ * that asks for a token is not offered for install.
  * The foreground command prints its URL and stops with Ctrl-C. The optional
  * retry timer (`dashboard-install.ts`) serves through the same reader, with
  * its URL in an owner-only access record rather than scheduler output.
@@ -46,6 +51,20 @@ const COMPRESS_FROM_BYTES = 1024;
 
 /** The page's built files, beside this file. */
 const PAGE_DIR = join(import.meta.dir, "dashboard-page");
+
+/** The files that make the page installable, by the path each is served at. */
+const APP_FILES: Record<string, { file: string; type: string }> = {
+  "/manifest.webmanifest": {
+    file: "manifest.webmanifest",
+    type: "application/manifest+json; charset=utf-8",
+  },
+  "/icons/icon-192.png": { file: "icons/icon-192.png", type: "image/png" },
+  "/icons/icon-512.png": { file: "icons/icon-512.png", type: "image/png" },
+  "/icons/icon-maskable-512.png": {
+    file: "icons/icon-maskable-512.png",
+    type: "image/png",
+  },
+};
 
 /** The zone every time is shown in: the host's, as its newest tick recorded it, since this server may run on a copy of its database. */
 function shownTimeZone(root: string): string {
@@ -95,6 +114,7 @@ function contentPolicy(html: string): string {
     // The primitives position their popups with inline styles.
     "style-src 'unsafe-inline'",
     "connect-src 'self'",
+    "manifest-src 'self'",
     "img-src 'self' data:",
     "base-uri 'none'",
     "form-action 'none'",
@@ -143,6 +163,27 @@ function pageResponse(page: Page, request: Request, status = 200): Response {
         headers: { ...page.headers, "content-encoding": "gzip" },
       })
     : new Response(page.body, { status, headers: page.headers });
+}
+
+/** The installable app's files, read once at start, by the path each is served at. */
+function readAppFiles(): Map<
+  string,
+  { body: Uint8Array<ArrayBuffer>; headers: Record<string, string> }
+> {
+  return new Map(
+    Object.entries(APP_FILES).map(([path, { file, type }]) => [
+      path,
+      {
+        body: new Uint8Array(readFileSync(join(PAGE_DIR, file))),
+        headers: {
+          "content-type": type,
+          "cache-control": "no-store",
+          "referrer-policy": "no-referrer",
+          "x-content-type-options": "nosniff",
+        },
+      },
+    ]),
+  );
 }
 
 function jsonResponse(
@@ -246,6 +287,7 @@ export function serveDashboard(options: {
   const now = options.now ?? Date.now;
   const page = readPage("index.html");
   const refused = readPage("refused.html");
+  const appFiles = readAppFiles();
 
   const readPr = options.readPr ?? prReader(root);
 
@@ -267,6 +309,9 @@ export function serveDashboard(options: {
     if (url.pathname === "/rows")
       return readAnswer(dashboardData(url.searchParams, now(), root), request);
     if (url.pathname === "/receipt") return receiptAnswer(url, request, root);
+    const appFile = appFiles.get(url.pathname);
+    if (appFile !== undefined)
+      return new Response(appFile.body, { headers: appFile.headers });
     return answered(
       failed("not-found", `this dashboard has no ${url.pathname}`),
       request,
