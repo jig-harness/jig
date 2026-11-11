@@ -1519,6 +1519,19 @@ make, use the entry's term instead.
   resolves, the push re-triggers the reviewers. Because resolving *causes* the
   next round, "no open threads" is not the loop's stop condition; a round that is
   settled — every expected reviewer has reported — with nothing left is.
+- **Review object** — the forge's own record of one review of a pull request
+  (approve, request changes or comment, with its inline comments and the commit
+  it was made on), as opposed to a *sticky comment* an app edits in place. A
+  reviewer that reviews through review objects names the commit in the object,
+  not in a summary comment.
+- **Commit status** — a result a CI service posts against a commit through the
+  forge's older status interface: a state, a description and a link to the
+  service's own page. A *check run* is the richer newer form, tied to an app,
+  with annotations; a CI that posts only statuses has no check run for the
+  drive to read.
+- **Reviewer evidence mode** — which record of the forge the drive reads to
+  learn that the AI reviewer reviewed the head commit: the reviewer's summary
+  comment marker, or its latest *review object* together with its check run.
 - **Convergence (review loop)** — the point where a review loop may stop: the
   reviewer completed on the exact head commit, its recorded reviewed commit
   equals that head, and no unresolved thread or *summary-only finding* remains.
