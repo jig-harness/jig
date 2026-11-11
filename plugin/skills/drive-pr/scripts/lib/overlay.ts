@@ -25,6 +25,7 @@ import {
   remoteName,
   type ReviewBot,
 } from "../../../../shared/consumer.ts";
+import { readPolicySnapshot } from "../../../../shared/autonomy.ts";
 import { verifyRemoteIsPrRepo } from "./base-drift.ts";
 import {
   evidenceProblem,
@@ -176,9 +177,23 @@ export function reviewerEvidenceProblem(): string | null {
  * `review.draft_skipping_reviewers`: the GitHub Apps whose reviewers skip
  * draft pull requests and must have run on a head after it was marked Ready
  * before the merge-ready announcement vouches for it; `[]` when not set.
+ * In a driver pass the list is the base branch's, never the pull request's
+ * own file, so the change being certified cannot empty its own gate; a base
+ * whose policy cannot be read throws.
  */
 export function draftSkippingReviewers(): string[] {
-  const value = section("review").draft_skipping_reviewers;
+  const snapshot = readPolicySnapshot();
+  if (snapshot.from === "unreadable")
+    throw new Error(
+      `review.draft_skipping_reviewers: the base branch's configuration cannot be read (${snapshot.reason})`,
+    );
+  const review = snapshot.from === "base" ? snapshot.values.review : undefined;
+  const value =
+    snapshot.from === "base"
+      ? review !== null && typeof review === "object"
+        ? (review as Record<string, unknown>).draft_skipping_reviewers
+        : undefined
+      : section("review").draft_skipping_reviewers;
   if (value === undefined || value === null) return [];
   if (!isDistinctNameList(value))
     throw new DecodeError(

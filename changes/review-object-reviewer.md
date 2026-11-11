@@ -21,7 +21,7 @@ release: minor
   since the pull request was last marked Ready
   ([fields](../plugin/CONFIGURATION.md#review)).
 - `arm-drive.ts` refuses a configuration whose reviewer evidence the drive
-  cannot read (`review_object` without `review.reviewer_app`, or `sticky` for
+  cannot read (`review_object` without `review.reviewer_app` where a reviewer is expected, or `sticky` for
   CodeRabbit), and the audit reports it as an error, rather than a drive
   waiting in `AWAITING_REVIEWER` until its timeout.
 

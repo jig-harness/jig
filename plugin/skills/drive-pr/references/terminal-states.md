@@ -1878,7 +1878,7 @@ of a head it found nothing new on: a run on the head with no review object is
 the only trace that review leaves. An unreadable review list is
 `INDETERMINATE`. `arm-drive.ts` refuses a configuration whose reviewer
 evidence the drive cannot read, rather than arm a drive that waits until
-`--timeout`: `review_object` with no `review.reviewer_app` (the reviews are
+`--timeout`: `review_object` with no `review.reviewer_app`, where a reviewer is expected (the reviews are
 read by its bot account), or `sticky` named for an app whose profile submits
 reviews.
 

@@ -173,7 +173,7 @@ built-in case: `review.reviewer_app: coderabbitai` alone sets all of it
 
 `arm-drive.ts` refuses a configuration whose reviewer evidence the drive
 cannot read, rather than arm a drive that waits in `AWAITING_REVIEWER` until
-`--timeout`: `review_object` without `review.reviewer_app`, or `sticky` for
+`--timeout`: `review_object` without `review.reviewer_app` where a reviewer is expected (a check-run pattern names one too), or `sticky` for
 an app known to submit reviews. A reviewer that writes neither, configured as
 one of them, still waits until `--timeout`.
 

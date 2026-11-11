@@ -237,6 +237,23 @@ describe("reviewer protocol", () => {
       "review.draft_skipping_reviewers",
     );
   });
+
+  it("reads review.draft_skipping_reviewers from the base in a driver pass, never the pull request's own file", () => {
+    overlay("review:\n  draft_skipping_reviewers: []\n");
+    const env = Object.fromEntries(
+      Object.entries(process.env).filter(([k]) => !k.startsWith("DRIVE_PR_")),
+    );
+    const r = Bun.spawnSync(
+      [
+        process.execPath,
+        "-e",
+        `import { draftSkippingReviewers } from ${JSON.stringify(join(import.meta.dir, "../scripts/lib/overlay.ts"))};
+try { draftSkippingReviewers(); console.log("read"); } catch (e) { console.log(String(e)); }`,
+      ],
+      { env: { ...env, DRIVE_PR_TARGET: "1", DRIVE_PR_POLICY_BASE: "" } },
+    );
+    expect(r.stdout.toString()).toContain("the base branch's configuration");
+  });
 });
 
 describe("CI policy settings", () => {

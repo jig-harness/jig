@@ -125,24 +125,38 @@ export async function draftSkippersRan(
 }
 
 /**
- * Withdraw the standing announcements of `head` when a skipper is positively
- * not-yet since the Ready mark. Run ahead of any convergence refusal, which
- * would otherwise leave the old "Safe to merge" standing; an unreadable fact
- * withdraws nothing. Returns whether a skipper was positively not-yet, so the
- * caller can report the waiting exit when that explains its refusal.
+ * Reconcile the standing announcements of `head` with the skippers: when one
+ * is positively not-yet since the Ready mark, withdraw them (unless
+ * `withdraw` is false, as in a dry run, which only evaluates). Run ahead of
+ * any convergence refusal, which would otherwise leave the old "Safe to
+ * merge" standing; an unreadable fact withdraws nothing. `pending` says a
+ * skipper was positively not-yet, so the caller can report the waiting exit
+ * when that explains its refusal; `failed` says a withdrawal or the listing
+ * failed, leaving a stale claim standing. Every comment is attempted.
  */
 export async function withdrawIfSkippersPending(
   pr: string,
   head: string,
-): Promise<boolean> {
+  withdraw = true,
+): Promise<{ pending: boolean; failed: boolean }> {
   const ran = await draftSkippersRan(pr, head);
-  if (ran.ok || ran.failure.code !== "not-yet") return false;
+  if (ran.ok || ran.failure.code !== "not-yet")
+    return { pending: false, failed: false };
+  if (!withdraw) return { pending: true, failed: false };
   const standing = await announcements(pr);
-  if (standing === null) return true;
+  if (standing === null) {
+    console.error(
+      `announce-merge-ready: cannot read PR #${pr}'s comments — remove any standing merge-ready announcement by hand.`,
+    );
+    return { pending: true, failed: true };
+  }
+  let failed = false;
   for (const id of announcedIds(standing, head))
-    if (!(await withdrawAnnouncement(pr, id)))
+    if (!(await withdrawAnnouncement(pr, id))) {
+      failed = true;
       console.error(
         `announce-merge-ready: could NOT delete comment ${id} — remove it by hand.`,
       );
-  return true;
+    }
+  return { pending: true, failed };
 }

@@ -354,9 +354,13 @@ async function main(): Promise<number> {
   // status, CI, verified-SHA and clean-tree exits all precede the live-state
   // gate that would otherwise see it), so none leaves a same-head "Safe to
   // merge" standing once a skipper is positively not-yet since the Ready mark.
-  const skippersPendingEarly = dryRun
-    ? false
-    : await withdrawIfSkippersPending(pr, live.head);
+  const early = await withdrawIfSkippersPending(pr, live.head, !dryRun);
+  if (early.failed)
+    fail(
+      1,
+      `announce-merge-ready: could not withdraw the standing announcement of ${live.head} while a draft-skipping reviewer has not run since the Ready mark.`,
+    );
+  const skippersPendingEarly = early.pending;
 
   // Bounded, unlike drive.ts's own status spawn: that one forwards `--timeout`
   // and is SUPPOSED to poll for as long as the driver asked. This one passes
