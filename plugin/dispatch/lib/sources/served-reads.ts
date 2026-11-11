@@ -33,11 +33,13 @@ import {
   isRateLimited,
   type TrackerRateLimited,
 } from "../../../shared/tracker-budget.ts";
-import type {
-  PoolIssue,
-  QueueParent,
-  QueueRelation,
-  Tracker,
+import {
+  CANONICAL_STATES,
+  type PoolIssue,
+  type QueueParent,
+  type QueueRelation,
+  type Tracker,
+  workingStates,
 } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
 import type { PickupReads } from "../pickup-reads.ts";
 
@@ -47,7 +49,6 @@ const REREAD_MS = 15 * 60_000;
 const SKEW_MS = 60_000;
 
 const OPEN = ["triage", "backlog", "todo"] as const;
-const PROGRESS = ["in_progress"] as const;
 
 /** An assigned issue as the queue read holds it; `parent` is `undefined` when the read did not carry it. */
 export interface HeldIssue {
@@ -132,7 +133,10 @@ async function readQueue(
 ): Promise<{ open: HeldIssue[]; progress: PoolIssue[] }> {
   if (tracker.queueIssues === undefined) {
     const open = await tracker.assignedIssues(identity, [...OPEN]);
-    const progress = await tracker.assignedIssues(identity, [...PROGRESS]);
+    const progress = await tracker.assignedIssues(
+      identity,
+      workingStates(tracker),
+    );
     return {
       open: open.map((issue) => ({
         issue,
@@ -142,12 +146,13 @@ async function readQueue(
       progress,
     };
   }
-  const read = await tracker.queueIssues(identity, [...OPEN, ...PROGRESS]);
-  const started = tracker.stateName("in_progress");
+  const working = workingStates(tracker);
+  const read = await tracker.queueIssues(identity, [...OPEN, ...working]);
+  const started = new Set(working.map((s) => tracker.stateName(s)));
   const open: HeldIssue[] = [];
   const progress: PoolIssue[] = [];
   for (const { relations, parent, ...issue } of read)
-    if (issue.state.name === started) progress.push(issue);
+    if (started.has(issue.state.name)) progress.push(issue);
     else open.push({ issue, relations, parent });
   return { open, progress };
 }
@@ -380,6 +385,15 @@ function assemble(
   };
 }
 
+/**
+ * What the tracker's configuration makes of its issues: the state names and
+ * the facet stores. Repositories that differ in either cannot share a reading.
+ */
+function configIdentity(tracker: Tracker): string {
+  const states = CANONICAL_STATES.map((s) => tracker.stateName(s)).join("|");
+  return `${states}#${tracker.configKey ?? ""}`;
+}
+
 /** The view of one tracker, team and person for this tick. */
 async function openView(
   tracker: Tracker,
@@ -387,7 +401,7 @@ async function openView(
   options: { nowMs: number; headroom: boolean },
   cache: PickupReads,
 ): Promise<ServedView> {
-  const key = `${tracker.adapter}:${tracker.team}:queue:${identity}`;
+  const key = `${tracker.adapter}:${tracker.team}:queue:${identity}:${configIdentity(tracker)}`;
   const kept = snapshotOf(cache.get<unknown>(key));
   const save = (s: Snapshot) => cache.set(key, s);
   let p: Plan;
@@ -417,7 +431,7 @@ export function sharedView(
   cache: PickupReads,
 ): Promise<ServedView> {
   if (views === undefined) return openView(tracker, identity, options, cache);
-  const key = `${tracker.adapter}:${tracker.team}:${identity}`;
+  const key = `${tracker.adapter}:${tracker.team}:${identity}:${configIdentity(tracker)}`;
   let view = views.get(key);
   if (view === undefined) {
     view = openView(tracker, identity, options, cache);

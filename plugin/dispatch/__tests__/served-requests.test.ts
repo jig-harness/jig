@@ -221,6 +221,39 @@ describe("a served queue's cost in tracker requests", () => {
     expect((await run(2)).requests).toBeLessThanOrEqual(3);
   });
 
+  it("reads a queue per configuration when repositories map the tracker differently", async () => {
+    const fake = queue();
+    const cache = memoryCache();
+    const views: ServedViews = new Map();
+    const a = { ...fake.tracker(), configKey: "a" };
+    const b = { ...fake.tracker(), configKey: "b" };
+    const mark = fake.count();
+    await Promise.all([tick(a, cache, 0, views), tick(b, cache, 0, views)]);
+    const both = fake.count() - mark;
+    const alone = queue();
+    await tick(alone.tracker(), memoryCache(), 0);
+    expect(both).toBeGreaterThan(alone.count());
+    expect(views.size).toBe(2);
+  });
+
+  it("asks for every working state, a separately named pr_open included", async () => {
+    const fake = queue();
+    const base = fake.tracker();
+    const asked: string[][] = [];
+    const tracker: Tracker = {
+      ...base,
+      stateName: ((s: string) =>
+        s === "pr_open" ? "PR Open" : base.stateName(s as never)) as never,
+      queueIssues: async (identity, states, signal) => {
+        asked.push([...states]);
+        return base.queueIssues!(identity, states, signal);
+      },
+    };
+    await tick(tracker, memoryCache(), 0);
+    expect(asked[0]).toContain("pr_open");
+    expect(asked[0]).toContain("in_progress");
+  });
+
   it("writes one rate-limited row for a repository with a factory identity and served people, and fails no record", async () => {
     const fake = queue();
     const reset = T0 + 30 * 60_000;

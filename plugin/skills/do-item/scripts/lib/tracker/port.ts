@@ -592,6 +592,12 @@ export interface Tracker {
    * repository (`owner/name`) on GitHub.
    */
   readonly team: string;
+  /**
+   * Identifies the configuration that shapes the issues it returns (facet
+   * stores and mappings); two trackers with equal keys and state names read
+   * alike. Absent when the adapter applies none.
+   */
+  readonly configKey?: string;
   /** The tracker's own name for a canonical state; `null` for an optional state left unset. */
   stateName: StateNameOf;
   /**
