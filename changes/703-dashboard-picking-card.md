@@ -1,0 +1,13 @@
+---
+release: minor
+---
+
+### Added
+
+- The dispatch dashboard shows a parked need as one short row per decision: its question, its act where it differs from the card's, how it bears on another decision, the recommended option and the [pick](../GLOSSARY.md), with the other options folded and the count of decisions and picks on the card. On the focused card, `1` to `9` pick an option of the current decision (`1` is always the recommended one) and move to the next decision with no pick, `h` and `l` move between decisions, `u` clears the last pick, `r` writes a note beside a pick or an answer in your own words, and `Escape` leaves that field. On a phone each option is a row to tap, and every key has a button. See [plugin/README.md § The dispatcher](../plugin/README.md#the-dispatcher).
+- The card's Copy, its `c` key and the palette copy one comment that answers every decision picked: `answer <key>: approve [<digest>]` or `choose <option>` with the framing's [decision digest](../GLOSSARY.md), any `note <key>:` line, and an answer in your own words with the digest after it. With nothing picked, a card of one decision under a class Jig's acts table lists as Decide copies its approval; any other card copies the starting `answer <key>:` lines as before. A pick under any other class, or of an option marked as one that cannot be undone, copies only on the second step, which first shows what it changes and costs; that step ends when a pick changes, a digest changes or the card loses focus. An answer that could not be sent (a note past 500 characters, say) holds the copy back and the row says why.
+- Picks, notes and own words are kept in that browser only, for 30 days after their last change, by repository, pull request, decision key, digest and the time the item was parked. A decision framed or parked again drops them and its row says so. The tick's line carries each waiting park's time (`parkedAt`) beside its digest.
+
+### Changed
+
+- The reply drafts beside a parked decision are replaced by the rows' own answers: a draft written before this version is not shown and is forgotten 30 days after it was last edited.

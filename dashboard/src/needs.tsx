@@ -3,13 +3,15 @@ import { runningFollowup } from "./followup-view.ts";
 import { Pr, RepoLink } from "./pr.tsx";
 /**
  * Needs you: the person's list, one group per act. Each card opens with the
- * act, the ask, the recommended option with what it changes and costs, and
- * who it waits on; the other options, the steps and the evidence are folded.
- * Two rows show on a phone; the rest wait behind Show all.
+ * act, then, for a parked need, one short row per decision (`decision-rows.tsx`)
+ * to pick an answer on, and who it waits on; for any other need, the ask and
+ * the recommended option with what it changes and costs. The steps and the
+ * evidence are folded. Two rows show on a phone; the rest wait behind Show all.
  */
-import { useId, useState } from "react";
+import { useRef, useState } from "react";
 import { needCard, slotCard } from "./cards.ts";
 import { CopyButton } from "./copy.tsx";
+import { CommitControls, DecisionRows } from "./decision-rows.tsx";
 import { cardAttrs } from "./keys.ts";
 import { DecisionText, InlineDecisionText } from "./decision-text.tsx";
 import { Evidence, Fold, PanelHelp, StageHint } from "./fold.tsx";
@@ -22,83 +24,9 @@ import {
   needPeopleOf,
   needRows,
 } from "./needs-view.ts";
-import type { LineOption } from "../../plugin/dispatch/lib/dashboard-contract.ts";
-import { answerText, useReplies } from "./replies.ts";
+import { OptionText } from "./option-text.tsx";
+import { usePicking } from "./use-picking.ts";
 import type { Clock, SlotView } from "./view.ts";
-
-/** The drafts beside a decision, kept in this browser, and the Copy that joins them to their keys. */
-function Replies({ need }: { need: NeedView }) {
-  const [replies, setReply, saved] = useReplies(need.repo, need.answerKeys);
-  const drafted = replies.some((r) => r.trim() !== "");
-  const [open, setOpen] = useState(drafted);
-  const id = useId();
-  return (
-    <>
-      <CopyButton
-        text={answerText(need.answerKeys, replies)}
-        idle={drafted ? "Copy answer" : "Copy answer line"}
-        aria={`Copy the answer ${drafted ? "" : "line "}for ${need.target}`}
-      />
-      <button
-        className="foldBtn"
-        type="button"
-        aria-expanded={open}
-        aria-controls={id}
-        onClick={() => setOpen(!open)}
-      >
-        {open ? "Hide reply" : drafted ? "Edit reply" : "Write reply"}
-      </button>
-      {open ? (
-        <div className="replies" id={id}>
-          {need.answerKeys.map((key, i) => (
-            <label className="reply" key={key}>
-              <span className="sm mut">
-                Reply to <span className="m">{key}</span>
-              </span>
-              <textarea
-                rows={2}
-                value={replies[i] ?? ""}
-                placeholder="Your answer, such as an option and why"
-                onChange={(event) => setReply(i, event.currentTarget.value)}
-              />
-            </label>
-          ))}
-          <p className="sm mut">
-            {saved
-              ? "Kept in this browser only."
-              : "Not saved. Kept only while this page stays open; reloading may restore an older draft. Copy your answer before leaving."}{" "}
-            Copy answer takes{" "}
-            <span className="m">answer {need.answerKeys[0]}: …</span> with your
-            reply, to paste as a comment on the pull request.
-          </p>
-        </div>
-      ) : null}
-    </>
-  );
-}
-
-/** A clause without the full stop or semicolon the record ends it with, so two can share one sentence. */
-function clause(text: string): string {
-  return text.replace(/[.;]\s*$/, "");
-}
-
-/** An option as the card reads it: its name in bold, then what it changes and costs. */
-export function OptionText({ option }: { option: LineOption }) {
-  return (
-    <>
-      <strong>{option.name}</strong>
-      {option.changes === null ? null : (
-        <> — changes: {clause(option.changes)}</>
-      )}
-      {option.costs === null ? null : <>; costs: {clause(option.costs)}</>}
-      {(option.details ?? []).map((detail) => (
-        <span key={detail.label}>
-          ; {detail.label}: {detail.text}
-        </span>
-      ))}
-    </>
-  );
-}
 
 /** A step's text with its `code` spans set as code; nothing else in it is read as Markdown. */
 function StepText({ text }: { text: string }) {
@@ -142,7 +70,16 @@ function Steps({ steps, target }: { steps: string[]; target: string }) {
   );
 }
 
-/** What a card says first, after its act: the ask, the recommended option with what it changes and costs, and who it waits on. */
+/** Who a need waits on, as its parks name them. */
+function WaitsOn({ need }: { need: NeedView }) {
+  return need.people.length === 0 ? null : (
+    <p className="sm waitsOn">
+      Waits on <span className="m">{need.people.join(", ")}</span>
+    </p>
+  );
+}
+
+/** What a card with no decision to pick says first, after its act: the ask, the recommended option with what it changes and costs, and who it waits on. */
 function NeedAsk({ need }: { need: NeedView }) {
   return (
     <>
@@ -157,20 +94,16 @@ function NeedAsk({ need }: { need: NeedView }) {
           <InlineDecisionText source={need.recommendation} />
         </p>
       )}
-      {need.people.length === 0 ? null : (
-        <p className="sm waitsOn">
-          Waits on <span className="m">{need.people.join(", ")}</span>
-        </p>
-      )}
+      <WaitsOn need={need} />
     </>
   );
 }
 
-/** What a card folds: the other options, the steps for a person as a checklist, the whole decision and the evidence. */
+/** What a card folds: the other options where no row shows them, the steps for a person as a checklist, the whole decision and the evidence. */
 function NeedFold({ need }: { need: NeedView }) {
   return (
     <Fold label={need.foldLabel}>
-      {need.otherOptions.length === 0 ? null : (
+      {need.rows.length > 0 || need.otherOptions.length === 0 ? null : (
         <div className="options">
           <h3>Other options</h3>
           <ul>
@@ -203,11 +136,25 @@ function NeedFold({ need }: { need: NeedView }) {
 }
 
 function NeedItem({ need, rest }: { need: NeedView; rest: boolean }) {
-  const [replies] = useReplies(need.repo, need.answerKeys);
+  const card = useRef<HTMLElement | null>(null);
+  const picking = usePicking(need, card);
+  const picks = need.rows.length > 0;
   return (
     <article
       className={rest ? "need rest" : "need"}
-      {...cardAttrs(needCard(need, replies))}
+      ref={card}
+      {...cardAttrs({ ...needCard(need, picking.commit), picks })}
+      onBlur={(event) => {
+        // Copy's first step lasts while focus stays on the card, or in the palette that copies it.
+        const to = event.relatedTarget;
+        if (
+          to instanceof Element &&
+          (event.currentTarget.contains(to) ||
+            to.closest(".palette, .clip") !== null)
+        )
+          return;
+        picking.disarm();
+      }}
     >
       <div className="rowTop">
         <span className={`act act${need.act}`}>{need.act}</span>
@@ -221,7 +168,14 @@ function NeedItem({ need, rest }: { need: NeedView; rest: boolean }) {
           label={need.stage === "followup" ? "Follow-up needs attention" : null}
         />
       </div>
-      <NeedAsk need={need} />
+      {picks ? (
+        <>
+          <DecisionRows need={need} picking={picking} />
+          <WaitsOn need={need} />
+        </>
+      ) : (
+        <NeedAsk need={need} />
+      )}
       <div className="sm">
         <span className="m">{need.recorded}</span>
         <span className="mut">{need.classNote}</span>
@@ -235,8 +189,8 @@ function NeedItem({ need, rest }: { need: NeedView; rest: boolean }) {
         {need.noLink === null ? null : (
           <span className="noLink">{need.noLink}</span>
         )}
-        {need.answerKeys.length > 0 ? (
-          <Replies need={need} />
+        {picks ? (
+          <CommitControls need={need} picking={picking} />
         ) : need.keyText !== null ? (
           <CopyButton
             text={need.keyText}

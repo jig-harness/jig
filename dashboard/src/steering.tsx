@@ -3,17 +3,30 @@
  * the palette, the filter over a view's cards, and the focus a view change
  * hands to the card or heading it was for.
  */
-import { type RefObject, useCallback, useEffect, useState } from "react";
+import {
+  type RefObject,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import type { LineSnapshot } from "../../plugin/dispatch/lib/dashboard-contract.ts";
-import { allCards } from "./cards.ts";
+import { keptCommit } from "./answers.ts";
+import { allCards, type CardInfo } from "./cards.ts";
 import { announce, copyText } from "./copy.tsx";
-import { cardsIn, focusCard, focusStart, rove, useKeys } from "./keys.ts";
+import {
+  CARD_COMMIT,
+  cardsIn,
+  focusCard,
+  focusStart,
+  rove,
+  useKeys,
+} from "./keys.ts";
 import {
   type PaletteEntry,
   type PaletteRun,
   paletteEntries,
 } from "./palette.tsx";
-import { currentReplies } from "./replies.ts";
 import type { ViewId } from "./search.ts";
 import type { Clock } from "./view.ts";
 
@@ -144,18 +157,40 @@ function focusPending(element: HTMLElement, pending: string): void {
   }
 }
 
-/** Focuses what a view change was for, in the commit that drew the view, and then forgets it. */
+/** Copies a card's command through the card itself, which may take a second step or hold it back; as the command alone where the card does not. */
+function commitOn(element: HTMLElement, card: CardInfo): void {
+  const commit = new CustomEvent(CARD_COMMIT, { cancelable: true });
+  if (element.dispatchEvent(commit) && card.command !== null)
+    void copyText(card.command, element);
+}
+
+/** Copies through `card` once focus has reached it, a frame or two after the view drew it. */
+function commitOnceFocused(root: HTMLElement, card: CardInfo): void {
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() => {
+      const target = pendingTarget(root, card.key);
+      if (target !== null && document.activeElement === target)
+        commitOn(target, card);
+    }),
+  );
+}
+
+/** Focuses what a view change was for, in the commit that drew the view, and then forgets it; a copy that waited for the card runs there. */
 function useFocusAfterDraw(
   root: RefObject<HTMLElement | null>,
   pending: string | null,
   settle: () => void,
+  commitAfter: RefObject<CardInfo | null>,
 ): void {
   useEffect(() => {
     const element = root.current;
     if (pending === null || element === null) return;
     settle();
     focusPending(element, pending);
-  }, [root, pending, settle]);
+    const card = commitAfter.current;
+    commitAfter.current = null;
+    if (card !== null && card.key === pending) commitOnceFocused(element, card);
+  }, [root, pending, settle, commitAfter]);
 }
 
 function focusFilter(element: HTMLElement | null): void {
@@ -203,7 +238,8 @@ export function useSteering(
   const shown = useCardFilter(main, cardQuery);
   const [pending, setPending] = useState<string | null>(null);
   const settle = useCallback(() => setPending(null), []);
-  useFocusAfterDraw(main, pending, settle);
+  const commitAfter = useRef<CardInfo | null>(null);
+  useFocusAfterDraw(main, pending, settle, commitAfter);
   // Read once as the palette opens, so a read while it is open does not move its list.
   const [entries, setEntries] = useState<PaletteEntry[] | null>(null);
   const [back, setBack] = useState<HTMLElement | null>(null);
@@ -225,7 +261,7 @@ export function useSteering(
       setEntries(
         paletteEntries(
           allCards(o.line, o.clock, (need) =>
-            currentReplies(need.repo, need.answerKeys),
+            keptCommit(need.repo, need.target, need.rows),
           ),
           o.counts,
         ),
@@ -242,9 +278,27 @@ export function useSteering(
       );
       return;
     }
+    const card = run.card;
+    if (card.committedOnCard === true) {
+      // Its second step, or why it is held back, is on the card, so the copy runs there.
+      const element = main.current;
+      const target =
+        element === null ? null : pendingTarget(element, `${card.key}`);
+      if (
+        element !== null &&
+        target !== null &&
+        cardsIn(element).includes(target)
+      ) {
+        focusCard(element, target);
+        commitOn(target, card);
+      } else {
+        commitAfter.current = card;
+        goFocused(card.view, card.key);
+      }
+      return;
+    }
     const to = back ?? main.current;
-    if (run.card.command !== null && to !== null)
-      void copyText(run.card.command, to);
+    if (card.command !== null && to !== null) void copyText(card.command, to);
   };
   const closePalette = () => {
     setEntries(null);

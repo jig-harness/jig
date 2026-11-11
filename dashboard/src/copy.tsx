@@ -91,10 +91,16 @@ export function CopyButton({
   text,
   idle = "Copy",
   aria = idle,
+  label,
+  gate,
 }: {
   text: string;
   idle?: string;
   aria?: string;
+  /** Words shown beside the icon, where the icon alone would not say what it copies. */
+  label?: string | undefined;
+  /** Asked before each copy: `false` holds it back, the gate having said why or what comes first. */
+  gate?: () => boolean;
 }) {
   const [said, setSaid] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -111,6 +117,7 @@ export function CopyButton({
       aria-label={aria}
       title={said ?? aria}
       onClick={(event) => {
+        if (gate !== undefined && !gate()) return;
         void writeClip(text, event.currentTarget).then((copied) => {
           const label = copied ? "Copied" : "Copy failed";
           setSaid(label);
@@ -130,6 +137,7 @@ export function CopyButton({
       ) : (
         <Copy size={14} aria-hidden="true" />
       )}
+      {label === undefined ? null : <span className="copyLabel">{label}</span>}
     </button>
   );
 }

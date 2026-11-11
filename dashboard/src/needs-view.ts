@@ -16,6 +16,7 @@ import {
 } from "../../plugin/shared/acts.ts";
 import { uniqueLogins } from "../../plugin/shared/forge-logins.ts";
 import { ago, clock, plural } from "./format.ts";
+import { type DecisionRow, decisionRows } from "./picking.ts";
 import { ROLES, type Role, stageMark } from "./status.ts";
 import {
   type Clock,
@@ -58,6 +59,8 @@ export interface NeedView {
   noLink: string | null;
   /** The decision keys a person answers, each with a line `answer <key>: …`. */
   answerKeys: string[];
+  /** One row per decision, oldest first, each picked on its own. */
+  rows: DecisionRow[];
   /** What Copy key takes when there is no link. */
   keyText: string | null;
   foldLabel: string;
@@ -184,6 +187,7 @@ export function needView(n: LineNeed, clockNow: Clock): NeedView {
         ? `No tracker link: this repository has no tracker base. Look up ${n.target} in the tracker.`
         : null,
     answerKeys: [...new Set(n.decisions.map((d) => d.key))],
+    rows: decisionRows(n.decisions),
     keyText: n.url === null ? n.target : null,
     foldLabel: decision === null ? "Details" : "The whole decision",
     evidence: needEvidence(n, question !== null, clockNow.timeZone),

@@ -46,7 +46,7 @@ import {
 import { Refused } from "./refused.tsx";
 import { type Steering, useSteering, ViewFilter } from "./steering.tsx";
 import { TicksPanel } from "./ticks.tsx";
-import { forgetOldReplies } from "./replies.ts";
+import { forgetOldAnswers } from "./answers.ts";
 import {
   FILTERED_VIEWS,
   type LogFilter,
@@ -123,8 +123,8 @@ export function App() {
   const scheme = schemeOf(theme);
   const [filter, setFilter] = useFilter();
   useEffect(() => {
-    forgetOldReplies(Date.now());
-    const timer = setInterval(() => forgetOldReplies(Date.now()), AGES_MOVE_MS);
+    forgetOldAnswers(Date.now());
+    const timer = setInterval(() => forgetOldAnswers(Date.now()), AGES_MOVE_MS);
     return () => clearInterval(timer);
   }, []);
   const state = useStateRead(token);
@@ -605,7 +605,7 @@ function Colophon({ view, token }: { view: PageView; token: string }) {
       <span>{readLine(view)}</span>
       <span>
         read-only: this page sends GET requests and writes nothing to the host;
-        your theme and reply drafts stay in this browser
+        your theme and the answers you pick or draft stay in this browser
       </span>
     </div>
   );
