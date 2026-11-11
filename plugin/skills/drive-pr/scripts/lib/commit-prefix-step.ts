@@ -18,6 +18,7 @@ import { swallow } from "../../../../shared/errors.ts";
 import { isRecord } from "../../../../shared/guards.ts";
 import { prPolicy } from "./pr-policy.ts";
 import { ghCall, git, helperTimeoutSeconds, run, tsArgv } from "./proc.ts";
+import { lockHeartbeatMs } from "./state/lock.ts";
 import {
   assertTreeMutationAllowed,
   resolveFenceContext,
@@ -92,9 +93,16 @@ export async function applyCommitPrefix(
     fenceCtx === null
       ? null
       : await assertTreeMutationAllowed(fenceCtx, pr, "finish-round.ts");
+  // The helper can outlive the lock's staleness window (a raised helper
+  // timeout, an operator-shortened `$DRIVE_PR_LOCK_STALE_MIN`), and nothing
+  // else renews the lock while it runs: heartbeat it, as `guarded-push.ts`
+  // does, so a contender cannot take the tree over mid-rewrite.
+  const heartbeat =
+    lock === null ? null : setInterval(() => lock.touch(), lockHeartbeatMs());
   try {
     return await prefixUnderFence(pr, head, branch.branch, gitTimeoutSec);
   } finally {
+    if (heartbeat !== null) clearInterval(heartbeat);
     lock?.release();
     lock?.dispose();
   }
