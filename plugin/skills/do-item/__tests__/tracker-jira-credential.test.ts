@@ -1,4 +1,6 @@
 import { describe, expect, it } from "bun:test";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { TrackerConfigError } from "../scripts/lib/tracker/config-error.ts";
@@ -79,6 +81,35 @@ describe("issue_tracker.jira.api_base", () => {
       ]).toEqual([api_base, "issue_tracker.jira.api_base"]);
   });
 
+  it("opens the adapter on the gateway, and keeps the site for links", () => {
+    const index = join(import.meta.dir, "../scripts/lib/tracker/index.ts");
+    const config = join(import.meta.dir, "../scripts/lib/tracker/config.ts");
+    const script = `
+      const { openTracker } = await import(${JSON.stringify(index)});
+      const { parseTrackerConfig } = await import(${JSON.stringify(config)});
+      const seen = [];
+      globalThis.fetch = async (url, init) => {
+        seen.push([String(url), init.headers.Authorization]);
+        return new Response("{}", { status: 200 });
+      };
+      const t = openTracker(parseTrackerConfig({ issue_tracker: { adapter: "jira", team: "ENG",
+        jira: { site: ${JSON.stringify(SITE)}, api_base: ${JSON.stringify(GATEWAY)} } } }), ".");
+      await t.reach();
+      console.log(JSON.stringify(seen));`;
+    const r = Bun.spawnSync([process.execPath, "-e", script], {
+      env: { PATH: process.env.PATH ?? "", JIRA_BEARER_TOKEN: "oauth-token" },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    expectSpawnExit(r, 0, "the adapter opened on api_base");
+    const seen = JSON.parse(r.stdout.toString().trim()) as [string, string][];
+    expect(seen.length).toBeGreaterThan(0);
+    for (const [url, authorization] of seen) {
+      expect(url.startsWith(`${GATEWAY}/rest/api/3/`)).toBe(true);
+      expect(authorization).toBe("Bearer oauth-token");
+    }
+  });
+
   it("is not widened by JIRA_ALLOWED_HOSTS", () => {
     const settings = join(
       import.meta.dir,
@@ -132,6 +163,17 @@ describe("Jira credential", () => {
       ok: true,
       value: { kind: "basic", email: "a@example.com", token: "t" },
     });
+  });
+
+  it("refuses a Bearer token with a space or a line break, naming the variable", () => {
+    for (const bad of ["a b", "a\nb", "a\u0000b"]) {
+      const r = resolveJiraCredential({ JIRA_BEARER_TOKEN: bad });
+      expect(r.ok).toBe(false);
+      if (!r.ok) {
+        expect(r.failure.reason).toContain("JIRA_BEARER_TOKEN");
+        expect(r.failure.reason).not.toContain(bad);
+      }
+    }
   });
 
   it("refuses a token command it cannot read, without repeating it", () => {
@@ -368,5 +410,25 @@ describe("JIRA_TOKEN_COMMAND", () => {
     expect(r.ok ? r.value : r.failure.reason).toMatch(
       /^JIRA_TOKEN_COMMAND \(.+\) printed no token within 0\.5 seconds$/,
     );
+  });
+
+  it("runs a real command once for every tracker the process opens", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "jira-token-"));
+    try {
+      const counter = join(dir, "runs");
+      const argv = [
+        process.execPath,
+        "-e",
+        `require('node:fs').appendFileSync(${JSON.stringify(counter)}, 'x'); console.log('shared-token')`,
+      ];
+      const first = jiraAuthorization({ kind: "command", argv });
+      const second = jiraAuthorization({ kind: "command", argv });
+      const wanted = { ok: true as const, value: "Bearer shared-token" };
+      expect(await first.header()).toEqual(wanted);
+      expect(await second.header()).toEqual(wanted);
+      expect(readFileSync(counter, "utf8")).toBe("x");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

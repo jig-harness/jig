@@ -38,7 +38,11 @@ export type JiraCredential =
   | { kind: "bearer"; token: string }
   | { kind: "command"; argv: string[] };
 
-export type CredentialCode = "no-credential" | "token-command" | "cancelled";
+export type CredentialCode =
+  | "no-credential"
+  | "bearer-token"
+  | "token-command"
+  | "cancelled";
 
 const NO_CREDENTIAL =
   "no Jira credential: set JIRA_BEARER_TOKEN to an OAuth access token, JIRA_TOKEN_COMMAND to a command that prints one, or JIRA_EMAIL and JIRA_API_TOKEN to an Atlassian account's email and API token";
@@ -48,7 +52,15 @@ export function resolveJiraCredential(
   env: Record<string, string | undefined> = process.env,
 ): Outcome<JiraCredential, CredentialCode> {
   const bearer = env.JIRA_BEARER_TOKEN?.trim();
-  if (bearer) return ok({ kind: "bearer", token: bearer });
+  if (bearer) {
+    // A header holds no line break, and a token holds no space.
+    if (/[\s\p{Cc}]/u.test(bearer))
+      return failed(
+        "bearer-token",
+        "JIRA_BEARER_TOKEN must hold the token alone, without a space or a line break",
+      );
+    return ok({ kind: "bearer", token: bearer });
+  }
   const line = env.JIRA_TOKEN_COMMAND?.trim();
   if (line) {
     const words = splitCommandWords(line);
@@ -97,6 +109,9 @@ export type TokenRunner = (
 const runToken: TokenRunner = (argv, timeoutMs) =>
   runClient(run, argv, { timeoutMs, signal: undefined });
 
+/** The token command authorizations of this process, by the command's words. */
+const SHARED = new Map<string, JiraAuthorization>();
+
 export interface AuthorizationOptions {
   runner?: TokenRunner;
   timeoutMs?: number;
@@ -107,12 +122,20 @@ export function jiraAuthorization(
   credential: JiraCredential,
   opts: AuthorizationOptions = {},
 ): JiraAuthorization {
-  if (credential.kind === "command")
-    return commandAuthorization(
-      credential.argv,
-      opts.runner ?? runToken,
-      opts.timeoutMs ?? JIRA_TOKEN_COMMAND_TIMEOUT_MS,
-    );
+  if (credential.kind === "command") {
+    const timeoutMs = opts.timeoutMs ?? JIRA_TOKEN_COMMAND_TIMEOUT_MS;
+    if (opts.runner !== undefined)
+      return commandAuthorization(credential.argv, opts.runner, timeoutMs);
+    // Every tracker a process opens shares the token, so the command runs
+    // once for the process, not once for each tracker.
+    const key = JSON.stringify(credential.argv);
+    let shared = SHARED.get(key);
+    if (shared === undefined) {
+      shared = commandAuthorization(credential.argv, runToken, timeoutMs);
+      SHARED.set(key, shared);
+    }
+    return shared;
+  }
   const value =
     credential.kind === "bearer"
       ? `Bearer ${credential.token}`
