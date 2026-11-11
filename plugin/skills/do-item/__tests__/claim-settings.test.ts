@@ -1,6 +1,51 @@
 /** The claim settings a repository's `do_item` section sets. */
-import { describe, expect, it } from "bun:test";
-import { claimSettingsOf } from "../scripts/lib/claim-settings.ts";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  claimSettingsFromDefaultBranch,
+  claimSettingsOf,
+} from "../scripts/lib/claim-settings.ts";
+
+const dirs: string[] = [];
+afterAll(() => {
+  for (const d of dirs) rmSync(d, { recursive: true, force: true });
+});
+
+function git(cwd: string, ...args: string[]) {
+  const r = Bun.spawnSync(["git", ...args], {
+    cwd,
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: "t",
+      GIT_AUTHOR_EMAIL: "t@example.com",
+      GIT_COMMITTER_NAME: "t",
+      GIT_COMMITTER_EMAIL: "t@example.com",
+    },
+    stderr: "pipe",
+  });
+  if (r.exitCode !== 0) throw new Error(r.stderr.toString());
+}
+
+/** A clone whose default branch holds `committed` as `.config/jig.yaml`. */
+function clone(committed: string): string {
+  const dir = mkdtempSync(join(tmpdir(), "jig-claim-settings-"));
+  dirs.push(dir);
+  git(dir, "init", "-q", "-b", "main");
+  mkdirSync(join(dir, ".config"));
+  writeFileSync(join(dir, ".config", "jig.yaml"), committed);
+  git(dir, "add", ".");
+  git(dir, "commit", "-q", "-m", "base");
+  git(dir, "update-ref", "refs/remotes/origin/main", "HEAD");
+  git(
+    dir,
+    "symbolic-ref",
+    "refs/remotes/origin/HEAD",
+    "refs/remotes/origin/main",
+  );
+  return dir;
+}
 
 describe("claimSettingsOf", () => {
   it("keeps today's claim when nothing is set", () => {
@@ -37,5 +82,44 @@ describe("claimSettingsOf", () => {
     expect(() => claimSettingsOf({ do_item: { claim_marker: "yes" } })).toThrow(
       "do_item.claim_marker",
     );
+  });
+});
+
+describe("claimSettingsFromDefaultBranch", () => {
+  it("keeps the restriction the default branch sets, whatever the working tree sets", async () => {
+    const dir = clone("do_item:\n  claim_from: [todo]\n");
+    const out = await claimSettingsFromDefaultBranch(dir, {
+      do_item: { claim_from: ["backlog"], claim_marker: true },
+    });
+    expect(out).toEqual({
+      ok: true,
+      value: { claimFrom: ["todo"], claimMarker: false },
+    });
+  });
+
+  it("never drops a restriction when the other field is unset or unusable", async () => {
+    const unset = clone("do_item:\n  claim_from: [todo]\n");
+    expect(await claimSettingsFromDefaultBranch(unset, null)).toEqual({
+      ok: true,
+      value: { claimFrom: ["todo"], claimMarker: false },
+    });
+    const bad = clone("do_item:\n  claim_from: [todo]\n  claim_marker: 3\n");
+    await expect(claimSettingsFromDefaultBranch(bad, null)).rejects.toThrow(
+      "do_item.claim_marker",
+    );
+  });
+
+  it("refuses a working tree that sets either field when the default branch cannot be read", async () => {
+    const dir = clone("do_item: [unclosed\n");
+    for (const section of [{ claim_from: ["todo"] }, { claim_marker: true }]) {
+      const out = await claimSettingsFromDefaultBranch(dir, {
+        do_item: section,
+      });
+      expect(out.ok).toBe(false);
+    }
+    expect(await claimSettingsFromDefaultBranch(dir, null)).toEqual({
+      ok: true,
+      value: { claimFrom: null, claimMarker: false },
+    });
   });
 });
