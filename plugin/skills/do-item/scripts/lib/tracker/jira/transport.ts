@@ -380,7 +380,7 @@ export function defaultTransport(
     jiraAuthorization(credential.value),
     fetchImpl,
     defaultGovernor(),
-    variable === null
+    variable === null || new URL(base).hostname === "api.atlassian.com"
       ? undefined
       : `the Bearer token from ${variable} was refused by ${new URL(base).hostname}; check that this host accepts a Bearer token at its own address`,
   );

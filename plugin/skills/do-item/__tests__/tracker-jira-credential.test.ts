@@ -597,6 +597,18 @@ describe("a Bearer credential at an Atlassian Cloud site", () => {
     expect(urls[0]?.startsWith(`${GATEWAY}/`)).toBe(true);
   });
 
+  it("adds no host advice to a 403 from the gateway", async () => {
+    const err = await failure(
+      defaultTransport(
+        GATEWAY,
+        { JIRA_BEARER_TOKEN: "oauth-token" },
+        statuses(403).impl,
+      )(request),
+    );
+    expect(err.status).toBe(403);
+    expect(err.message).not.toContain("JIRA_BEARER_TOKEN");
+  });
+
   it("leaves Basic authentication at the site alone", async () => {
     const { urls, impl } = sent();
     await defaultTransport(
