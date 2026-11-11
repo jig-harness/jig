@@ -77,7 +77,7 @@ function spanContinues(
   run: string,
 ): boolean {
   for (let i = at + 1; i < lines.length; i++) {
-    const line = lines[i] ?? "";
+    const line = (lines[i] ?? "").replace(/^(?: {0,3}>[ \t]?)+/, "");
     if (
       line.trim() === "" ||
       /^ {0,3}(?:#{1,6}(?:\s|$)|(?:[-*_]\s*){3,}$|`{3,}|~{3,}|(?:[-*+]|0*1[.)])\s)/.test(
