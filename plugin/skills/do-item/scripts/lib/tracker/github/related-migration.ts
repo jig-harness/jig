@@ -181,7 +181,7 @@ export async function migrateRelations(
     otherKey: string,
     native: string[],
   ): Promise<string | null> {
-    const pair = [key, otherKey].sort().join(" ");
+    const pair = [key, otherKey].sort((a, b) => a.localeCompare(b)).join(" ");
     if (linked.has(pair) || native.includes(otherKey)) {
       linked.add(pair);
       return null;
