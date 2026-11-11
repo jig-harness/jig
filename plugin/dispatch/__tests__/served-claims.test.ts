@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import type { Tracker } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import type { LaunchRecord, ReadRecord } from "../lib/launches.ts";
 import { type PickupInput, planPickups } from "../lib/plan-pickups.ts";
+import { releaseEnded } from "../lib/actions/pickup-hold.ts";
 import { readServedPickups } from "../lib/sources/served.ts";
 import type { ClaimedItem, DispatchSection } from "../lib/types.ts";
 import { SLUG } from "./fixtures.ts";
@@ -85,6 +86,23 @@ describe("claimed items read for a served person", () => {
     );
   });
 
+  it("does not attribute a later served claim to an ended pickup", () => {
+    const record = endedPickup("#7", false);
+    releaseEnded([record], SLUG, new Set(), new Set(["#7"]));
+    expect(record.record.claimedItems).toBeUndefined();
+
+    const plan = planPickups(
+      input(
+        [{ key: "#7", title: "task", state: "In Progress", served: true }],
+        [record],
+      ),
+    );
+    expect(plan.actions).toEqual([]);
+    expect(plan.quiet).toContainEqual(
+      expect.objectContaining({ target: "#7", class: "claimed-by-person" }),
+    );
+  });
+
   it("still reports the dispatch identity's own idle claim", () => {
     const plan = planPickups(
       input([{ key: "#7", title: "task", state: "In Progress" }]),
@@ -114,7 +132,13 @@ describe("claimed items read for a served person", () => {
       { epic: "epic", nowMs: NOW, headroom: true },
     );
     expect(read.claimed).toEqual([
-      { key: "#7", title: "#7", state: "In Progress", served: true },
+      {
+        key: "#7",
+        title: "#7",
+        state: "In Progress",
+        served: true,
+        url: null,
+      },
     ]);
   });
 });

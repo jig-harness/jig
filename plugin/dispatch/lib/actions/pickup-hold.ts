@@ -155,7 +155,12 @@ export function releaseEnded(
     // back among the dispatch states by the time the record ends.
     const members = record.batchItems?.map((i) => i.key) ?? [item];
     const claimedMembers = members.filter((key) => claimed.has(key));
-    if (claimedMembers.length > 0) noteClaims(record, claimedMembers, root);
+    // A claimed item observed while this pickup is still live proves that
+    // pickup claimed it. Once it has ended, the same observation may instead
+    // be work its served person started afterwards; do not turn that into
+    // pickup provenance on a later tick.
+    if (holds(r.state) && claimedMembers.length > 0)
+      noteClaims(record, claimedMembers, root);
     if (claimedMembers.length > 0 || holds(r.state)) continue;
     if (keepsWanted(record, members, wanted, returned)) continue;
     record.released = true;
