@@ -97,6 +97,17 @@ describe("checkAssignment", () => {
     });
   });
 
+  it("restores nobody when delayed history shows the user assigned from someone and then cleared", () => {
+    const changes: AssigneeChange[] = [
+      { from: "dana", to: "me", at: at(1) },
+      { from: "me", to: null, at: at(2) },
+    ];
+    expect(checkAssignment("me", changes, "me", [])).toEqual({
+      ok: false,
+      replaced: null,
+    });
+  });
+
   it("refuses, restoring nobody, when the issue is no longer the user's or the history holds no change to it", () => {
     expect(checkAssignment("dana", [], "me")).toEqual({
       ok: false,

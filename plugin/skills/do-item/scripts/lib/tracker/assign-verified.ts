@@ -13,7 +13,9 @@
  * from someone else means another writer assigned the issue between the read
  * and the write, and this write replaced them: the adapter puts them back, if
  * the issue still shows this write, and the claim stands down, whether or not
- * the sequence around that change is complete. A history that holds no such change cannot verify the write, and
+ * the sequence around that change is complete, but only while the newest
+ * change the listing shows is the one that set the user: a listing that ends
+ * elsewhere contradicts it, and nobody is restored. A history that holds no such change cannot verify the write, and
  * stands the claim down too. A writer that changes the assignee after this
  * write leaves the issue assigned to someone else, and the claim stands down
  * without restoring anyone: that writer's assignment stands. The trackers
@@ -108,7 +110,11 @@ export function checkAssignment(
   const fresh = unseen(changes, known);
   const latest = fresh.findLast((c) => c.to === user);
   if (latest === undefined) return { ok: false, replaced: null };
-  if (latest.from !== null) return { ok: false, replaced: latest.from };
+  if (latest.from !== null)
+    return {
+      ok: false,
+      replaced: fresh.at(-1)?.to === user ? latest.from : null,
+    };
   return chainEndsAt(fresh, user)
     ? { ok: true }
     : { ok: false, replaced: null };
