@@ -234,10 +234,8 @@ describe("picking answers on a card", () => {
         await jTo(page, "PR #501");
         await page.keyboard.press("c");
         await until("c copied", async () => (await clipboard(page)) !== BEFORE);
-        // Nothing of the earlier framing is sent with the new digest.
-        expect(await clipboard(page)).toBe(
-          `answer PRRT_one: approve [${reframed}]`,
-        );
+        // Nothing of the earlier framing is sent with the new digest, and no approval of a framing the person never answered.
+        expect(await clipboard(page)).toBe("answer PRRT_one: ");
       } finally {
         await context.close();
       }
@@ -427,6 +425,121 @@ describe("picking answers on a card", () => {
         expect(await clipboard(page)).toBe(
           `answer PRRT_drop: choose Drop [${PICK_DIGESTS.drop}]`,
         );
+      } finally {
+        await context.close();
+      }
+    },
+    TIMEOUT,
+  );
+
+  browserIt(
+    "a held c takes only the first step of a guarded copy",
+    async () => {
+      const { page, context } = await openPicks();
+      const guarded = card(page, "PR #1300");
+      try {
+        await jTo(page, "PR #1300");
+        await page.keyboard.press("1");
+        await resetClipboard(page);
+        await page.keyboard.down("c");
+        await shows(page, ".pNeeds .guard");
+        // The key repeats while it is held: the repeats are not a second press.
+        await page.keyboard.down("c");
+        await page.keyboard.down("c");
+        await page.keyboard.up("c");
+        expect(await guarded.locator(".guard").count()).toBe(1);
+        expect(await said(page)).toContain("Check first");
+        expect(await clipboard(page)).toBe(BEFORE);
+        await page.keyboard.press("c");
+        await until(
+          "the second press copied",
+          async () => (await clipboard(page)) !== BEFORE,
+        );
+        expect(await clipboard(page)).toBe(
+          `answer PRRT_drop: approve [${PICK_DIGESTS.drop}]`,
+        );
+      } finally {
+        await context.close();
+      }
+    },
+    TIMEOUT,
+  );
+
+  browserIt(
+    "the palette ends a card's first step when it runs nothing on that card",
+    async () => {
+      const { page, context } = await openPicks();
+      const guarded = card(page, "PR #1300");
+      try {
+        await jTo(page, "PR #1300");
+        await page.keyboard.press("1");
+        await page.keyboard.press("c");
+        await shows(page, ".pNeeds .guard");
+        // Another card's command, copied from the palette, leaves focus on this card.
+        await page.keyboard.press("Control+k");
+        await page.keyboard.type("answer line #502");
+        await page.keyboard.press("Enter");
+        await until(
+          "the step ended",
+          async () => (await guarded.locator(".guard").count()) === 0,
+        );
+        expect(
+          await page.evaluate(
+            () =>
+              document.activeElement
+                ?.closest("[data-card]")
+                ?.getAttribute("aria-label") ?? "",
+          ),
+        ).toBe("PR #1300");
+        // So one c is a first step again, not a copy.
+        await resetClipboard(page);
+        await page.keyboard.press("c");
+        await shows(page, ".pNeeds .guard");
+        expect(await clipboard(page)).toBe(BEFORE);
+        // A palette closed with nothing run ends it too.
+        await page.keyboard.press("Control+k");
+        await page.keyboard.press("Escape");
+        await until(
+          "the step ended on Escape",
+          async () => (await guarded.locator(".guard").count()) === 0,
+        );
+      } finally {
+        await context.close();
+      }
+    },
+    TIMEOUT,
+  );
+
+  browserIt(
+    "a palette copy whose card is gone by the time its view is drawn says nothing was copied",
+    async () => {
+      const { page, context } = await openPicks();
+      try {
+        await jTo(page, "PR #1300");
+        await page.keyboard.press("1");
+        await page.keyboard.press("g");
+        await page.keyboard.press("q");
+        await shows(page, ".pQueue");
+        await resetClipboard(page);
+        // The palette lists the card; the next read no longer holds it.
+        await page.keyboard.press("Control+k");
+        await page.route("**/state?*", async (route) => {
+          const response = await route.fetch();
+          const body = await response.json();
+          body.value.line.needs = body.value.line.needs.filter(
+            (n: { pr: number }) => n.pr !== 1300,
+          );
+          await route.fulfill({ json: body });
+        });
+        const read = page.waitForResponse((r) => r.url().includes("/state?"));
+        await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+        await read;
+        await page.keyboard.type("answers #1300");
+        await page.keyboard.press("Enter");
+        await until("the page said nothing was copied", async () =>
+          (await said(page)).startsWith("Not copied: PR #1300"),
+        );
+        expect(await clipboard(page)).toBe(BEFORE);
       } finally {
         await context.close();
       }

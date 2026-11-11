@@ -1,8 +1,9 @@
 /**
  * A parked decision as a person picks an answer to it: the number each option
- * carries on a card and in `jig ask`, whether picking an option needs a second
- * step before it is committed, and the answer lines a pick or a person's own
- * words become.
+ * carries on a card, whether picking an option needs a second step before it
+ * is committed, the answer lines a pick or a person's own words become, and
+ * the choice a reader finds in an answer's words. `jig ask` numbers options
+ * with the same function once it shows them.
  *
  * A number is the option's place on the card: the recommended option is
  * always 1 and the others follow in the decision's order, so `1` means "the
@@ -13,6 +14,8 @@
  * Pure functions with no `node:` import: the dashboard's page bundles it.
  */
 import { listedActOfClass } from "./acts.ts";
+import { splitAnswerDigest } from "./decisions/answer-digest.ts";
+import { normalizeAnswerText } from "./decisions/answer-normalize.ts";
 
 /** An option the card numbers: only whether it is the recommended one matters here. */
 export interface NumberableOption {
@@ -141,4 +144,43 @@ export function cardComment(
   return answers
     .map((a) => cardAnswerLines(a.key, a.answer, a.digest).join("\n"))
     .join("\n\n");
+}
+
+/**
+ * The option an answer's text names as a structured form, after its digest
+ * is taken off and it is normalized: `approve` names the recommended option
+ * and `choose <option>` the option of that name. `null` when the text is not
+ * exactly one form, or names no single option, so it reads as free. The
+ * drive's readers and the dashboard read an answer through this one function.
+ */
+export function choiceInText<O extends { name: string }>(
+  text: string,
+  options: readonly O[],
+  isRecommended: (option: O) => boolean,
+): { option: O; form: WrittenChoice["form"] } | null {
+  const normalized = normalizeAnswerText(text);
+  const form =
+    normalized === "approve"
+      ? "approve"
+      : normalized.startsWith("choose ")
+        ? "choose"
+        : null;
+  if (form === null) return null;
+  const matches =
+    form === "approve"
+      ? options.filter(isRecommended)
+      : options.filter(
+          (o) => normalizeAnswerText(o.name) === normalized.slice(7),
+        );
+  const [option] = matches;
+  return matches.length === 1 && option !== undefined ? { option, form } : null;
+}
+
+/** The option an answer line's whole text names, its trailing digest taken off first, as a reader reads it. */
+export function choiceInLine<O extends { name: string }>(
+  text: string,
+  options: readonly O[],
+  isRecommended: (option: O) => boolean,
+): { option: O; form: WrittenChoice["form"] } | null {
+  return choiceInText(splitAnswerDigest(text).text, options, isRecommended);
 }

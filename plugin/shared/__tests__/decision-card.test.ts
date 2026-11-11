@@ -9,6 +9,7 @@ import { describe, expect, it } from "bun:test";
 import {
   cardAnswerLines,
   cardComment,
+  choiceInLine,
   isGuardedPick,
   numberOptions,
 } from "../decision-card.ts";
@@ -134,5 +135,31 @@ describe("the lines a card writes", () => {
     ).toBe(
       "answer PRRT_a: approve [3fa9c2d1e0b4]\nnote PRRT_a: for one release\n\nanswer PRRT_b: choose Drop [0123456789ab]",
     );
+  });
+});
+
+describe("choiceInLine", () => {
+  const keep = opt("Keep", true);
+  const remove = opt("Remove");
+  const options = [keep, remove];
+  const rec = (o: { recommended: boolean }) => o.recommended;
+
+  it("reads approve and choose as the drive's readers do, with the digest taken off first", () => {
+    expect(choiceInLine("Approve. [3fa9c2d1e0b4]", options, rec)).toEqual({
+      option: keep,
+      form: "approve",
+    });
+    expect(choiceInLine("choose `remove`", options, rec)).toEqual({
+      option: remove,
+      form: "choose",
+    });
+  });
+
+  it("reads anything else as free", () => {
+    expect(choiceInLine("approve, but later", options, rec)).toBeNull();
+    expect(choiceInLine("choose Rename", options, rec)).toBeNull();
+    expect(
+      choiceInLine("approve", [opt("A", true), opt("B", true)], rec),
+    ).toBeNull();
   });
 });

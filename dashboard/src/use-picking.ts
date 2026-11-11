@@ -8,7 +8,7 @@
 import { type RefObject, useEffect, useRef, useState } from "react";
 import { answerId, currentAnswers, useAnswers } from "./answers.ts";
 import { announce, copyText } from "./copy.tsx";
-import { CARD_COMMIT, CARD_KEY, type CardKey } from "./keys.ts";
+import { CARD_COMMIT, CARD_KEY, type CardKey, PALETTE_DONE } from "./keys.ts";
 import type { NeedView } from "./needs-view.ts";
 import {
   type CardCommit,
@@ -200,8 +200,11 @@ export function usePicking(
   };
 
   // The card's listeners read the newest render's handlers.
-  const latest = useRef({ onKey, commitNow });
-  latest.current = { onKey, commitNow };
+  const disarm = () => {
+    if (armedNow.current !== null) setArmed(null);
+  };
+  const latest = useRef({ onKey, commitNow, disarm });
+  latest.current = { onKey, commitNow, disarm };
   const picks = need.rows.length > 0;
   useEffect(() => {
     const element = card.current;
@@ -216,11 +219,18 @@ export function usePicking(
       const text = latest.current.commitNow();
       if (text !== null) void copyText(text, element);
     };
+    // The palette ran nothing on this card, or another card's entry: this card's first step ends.
+    const onPaletteDone = (event: Event) => {
+      if (event instanceof CustomEvent && event.detail !== element.dataset.card)
+        latest.current.disarm();
+    };
     element.addEventListener(CARD_KEY, onCardKey);
     element.addEventListener(CARD_COMMIT, onCommit);
+    document.addEventListener(PALETTE_DONE, onPaletteDone);
     return () => {
       element.removeEventListener(CARD_KEY, onCardKey);
       element.removeEventListener(CARD_COMMIT, onCommit);
+      document.removeEventListener(PALETTE_DONE, onPaletteDone);
     };
   }, [card, picks]);
 
@@ -248,8 +258,6 @@ export function usePicking(
     closeField: () => setEditing(null),
     setText,
     gate,
-    disarm: () => {
-      if (armedNow.current !== null) setArmed(null);
-    },
+    disarm,
   };
 }

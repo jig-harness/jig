@@ -385,3 +385,73 @@ describe("what Copy takes", () => {
     expect(commit.free).toBe(1);
   });
 });
+
+describe("what a review of the card found", () => {
+  const [drop] = decisionRows([decision("PRRT_b", DROP)]);
+  const [keep] = decisionRows([decision("PRRT_a", KEEP)]);
+  if (drop === undefined || keep === undefined) throw new Error("no rows");
+  const [keepIt, removeIt] = keep.options;
+  if (keepIt === undefined || removeIt === undefined)
+    throw new Error("no options");
+
+  it("holds back own words the readers would count as approving, and says to pick instead", () => {
+    const read = rowAnswer(drop, withText(drop, null, "free", "Approve.", T0));
+    expect(read.active).toBe("free");
+    expect(read.fault).toBe(
+      "your own words read as approving Do not drop; pick that option on the row instead",
+    );
+    expect(cardCommit([drop], [read]).faults).toHaveLength(1);
+  });
+
+  it("holds back own words the readers would count as choosing an option, in any spelling they fold", () => {
+    const read = rowAnswer(
+      drop,
+      withText(drop, null, "free", "choose **DROP**", T0),
+    );
+    expect(read.fault).toContain("read as choosing Drop");
+    // Words that name no option stay free, and count.
+    expect(
+      rowAnswer(drop, withText(drop, null, "free", "choose whichever", T0))
+        .fault,
+    ).toBeNull();
+  });
+
+  it("never copies an approval for a decision whose pick was dropped by a new framing", () => {
+    const old = withPick(keep, null, removeIt, T0);
+    const reframed = {
+      ...keep,
+      digest: "ffffffffffff",
+      framing: { ...keep.framing, digest: "ffffffffffff" },
+    };
+    const commit = cardCommit([reframed], [rowAnswer(reframed, old)]);
+    expect(commit.label).toBe("answer line");
+    expect(commit.text).toBe("answer PRRT_a: ");
+  });
+
+  it("drops the note when another option is picked, and keeps it when the same one is", () => {
+    const [k, r] = keep.options;
+    if (k === undefined || r === undefined) throw new Error("no options");
+    const noted = withText(
+      keep,
+      withPick(keep, null, k, T0),
+      "note",
+      "for one release",
+      T0,
+    );
+    expect(withPick(keep, noted, k, T0 + 1).note?.text).toBe("for one release");
+    expect(withPick(keep, noted, r, T0 + 1).note).toBeUndefined();
+    expect(rowAnswer(keep, withPick(keep, noted, r, T0 + 1)).note).toBe("");
+  });
+
+  it("keeps a pick made on a line that kept no park time", () => {
+    const older = { ...keep, framing: { ...keep.framing, parkedAt: null } };
+    const kept = withPick(older, null, keepIt, T0);
+    const read = rowAnswer(keep, kept);
+    expect(read.dropped).toBeNull();
+    expect(read.pick?.name).toBe("Keep");
+    // The next change records the park time the line now carries.
+    expect(withText(keep, kept, "note", "x", T0 + 1)?.framing).toEqual(
+      keep.framing,
+    );
+  });
+});

@@ -23,6 +23,7 @@ import {
   answerLine,
   cardAnswerText,
   cardComment,
+  choiceInLine,
   isGuardedPick,
   numberOptions,
 } from "../../plugin/shared/decision-card.ts";
@@ -92,8 +93,16 @@ function framingOf(d: LineDecision): Framing {
   return { digest: d.digest ?? null, parkedAt: d.parkedAt ?? null };
 }
 
+/**
+ * Whether two framings are one: the same digest, and the same park time
+ * where both know it. A line written before it kept park times says nothing
+ * about one, so a pick made on it is not dropped for that alone.
+ */
 function sameFraming(a: Framing, b: Framing): boolean {
-  return a.digest === b.digest && a.parkedAt === b.parkedAt;
+  return (
+    a.digest === b.digest &&
+    (a.parkedAt === null || b.parkedAt === null || a.parkedAt === b.parkedAt)
+  );
 }
 
 // ---------- the rows ----------
@@ -302,8 +311,15 @@ function faultOf(
     active === "pick" && pick !== null
       ? { kind: "pick", option: pick.name, recommended: pick.recommended }
       : { kind: "free", text: free };
-  const line = answerTextFault(cardAnswerText(answer, row.digest));
+  const text = cardAnswerText(answer, row.digest);
+  const line = answerTextFault(text);
   if (line !== null) return line;
+  if (answer.kind === "free") {
+    // The readers would count these words as a choice, which only a pick (and its second step) may make.
+    const read = choiceInLine(text, row.options, (o) => o.recommended);
+    if (read !== null)
+      return `your own words read as ${read.form === "approve" ? "approving" : "choosing"} ${read.option.name}; pick that option on the row instead`;
+  }
   if (active === "pick" && note.trim() !== "") {
     const noted = answerTextFault(note.trim());
     if (noted !== null) return `the note: ${noted}`;
@@ -316,7 +332,7 @@ function faultOf(
 /** What is kept for `row` to build on: `kept` while it is for this framing, else nothing. */
 function base(row: DecisionRow, kept: KeptAnswer | null, nowMs: number) {
   return kept !== null && sameFraming(kept.framing, row.framing)
-    ? { ...kept, at: nowMs }
+    ? { ...kept, framing: row.framing, at: nowMs }
     : { framing: row.framing, at: nowMs };
 }
 
@@ -335,8 +351,12 @@ export function withPick(
   option: RowOption,
   nowMs: number,
 ): KeptAnswer {
+  const { note, ...rest } = base(row, kept, nowMs);
+  // A note narrows the option it was written beside, so it goes when another option is picked.
+  const same = rest.pick?.option === option.name;
   return {
-    ...base(row, kept, nowMs),
+    ...rest,
+    ...(same && note !== undefined ? { note } : {}),
     pick: { option: option.name, at: nowMs },
   };
 }
@@ -447,7 +467,7 @@ function approvable(rows: DecisionRow[]): boolean {
   );
 }
 
-/** The comment the card's Copy takes, what holds it back, and what makes it take two steps. */
+/** The comment the card's Copy takes, what holds it back, and what makes it take two steps. A row whose answer was dropped never copies an approval of a framing the person has not answered. */
 export function cardCommit(
   rows: DecisionRow[],
   answers: RowAnswer[],
@@ -482,7 +502,13 @@ export function cardCommit(
     };
   const [only] = rows;
   const recommended = only?.options.find((o) => o.recommended);
-  if (only !== undefined && recommended !== undefined && approvable(rows))
+  const dropped = answers.some((a) => a.dropped !== null);
+  if (
+    only !== undefined &&
+    recommended !== undefined &&
+    !dropped &&
+    approvable(rows)
+  )
     return {
       ...tally,
       text: cardComment([

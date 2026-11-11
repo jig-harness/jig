@@ -49,12 +49,15 @@ function OptionPick({
 
 /** What a row's answer is now, in words: what counts, what is only a draft, and what was dropped or cannot be sent. */
 function AnswerState({ answer }: { answer: RowAnswer }) {
+  // A row whose answer cannot be sent says only why, never that it counts.
   const draft =
-    answer.active === "pick" && answer.free.trim() !== ""
-      ? "Your pick counts; your own words are kept as a draft."
-      : answer.active === "free" && answer.pick !== null
-        ? "Your own words count; the pick is kept as a draft."
-        : null;
+    answer.fault !== null
+      ? null
+      : answer.active === "pick" && answer.free.trim() !== ""
+        ? "Your pick counts; your own words are kept as a draft."
+        : answer.active === "free" && answer.pick !== null
+          ? "Your own words count; the pick is kept as a draft."
+          : null;
   return (
     <>
       {answer.dropped === null ? null : (

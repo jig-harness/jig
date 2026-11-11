@@ -16,6 +16,7 @@ import { allCards, type CardInfo } from "./cards.ts";
 import { announce, copyText } from "./copy.tsx";
 import {
   CARD_COMMIT,
+  PALETTE_DONE,
   cardsIn,
   focusCard,
   focusStart,
@@ -171,6 +172,11 @@ function commitOnceFocused(root: HTMLElement, card: CardInfo): void {
       const target = pendingTarget(root, card.key);
       if (target !== null && document.activeElement === target)
         commitOn(target, card);
+      // Nothing was copied, so the person must not paste what the clipboard held before.
+      else
+        announce(
+          `Not copied: ${card.target} is not on this view now. Find it and copy again.`,
+        );
     }),
   );
 }
@@ -239,6 +245,8 @@ export function useSteering(
   const [pending, setPending] = useState<string | null>(null);
   const settle = useCallback(() => setPending(null), []);
   const commitAfter = useRef<CardInfo | null>(null);
+  const ranOn = useRef<string | null>(null);
+  const paletteOpen = useRef(false);
   useFocusAfterDraw(main, pending, settle, commitAfter);
   // Read once as the palette opens, so a read while it is open does not move its list.
   const [entries, setEntries] = useState<PaletteEntry[] | null>(null);
@@ -257,6 +265,7 @@ export function useSteering(
   useKeys(main, {
     setView: (view) => goFocused(view, START),
     openPalette: () => {
+      paletteOpen.current = true;
       setBack(activeElement());
       setEntries(
         paletteEntries(
@@ -280,6 +289,7 @@ export function useSteering(
     }
     const card = run.card;
     if (card.committedOnCard === true) {
+      ranOn.current = card.key;
       // Its second step, or why it is held back, is on the card, so the copy runs there.
       const element = main.current;
       const target =
@@ -301,7 +311,17 @@ export function useSteering(
     if (card.command !== null && to !== null) void copyText(card.command, to);
   };
   const closePalette = () => {
+    // Its field's blur closes it a second time as focus leaves; the first close is the one.
+    if (!paletteOpen.current) return;
+    paletteOpen.current = false;
     setEntries(null);
+    // Read once the entry, if any, has run: every card but the one it copied through ends Copy's first step.
+    queueMicrotask(() => {
+      document.dispatchEvent(
+        new CustomEvent(PALETTE_DONE, { detail: ranOn.current }),
+      );
+      ranOn.current = null;
+    });
     const to = back ?? main.current;
     if (to?.isConnected) to.focus();
   };

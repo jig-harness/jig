@@ -79,6 +79,8 @@ export type CardKey =
 export const CARD_KEY = "jig-card-key";
 /** The event every copy of a card's command starts with; a card that commits by itself cancels it. */
 export const CARD_COMMIT = "jig-card-commit";
+/** The event the palette sends on the document once it closes, naming the card it copied through (`null` for none): every other card's Copy step ends. */
+export const PALETTE_DONE = "jig-palette-done";
 
 interface KeyPress {
   key: string;
@@ -414,9 +416,7 @@ function copyFrom(card: HTMLElement): void {
 }
 
 /** Sends a card its own key; says so when the card has nothing to pick. */
-function keyTo(card: HTMLElement, key: CardKey, repeat: boolean): void {
-  // A held digit picks once.
-  if (repeat) return;
+function keyTo(card: HTMLElement, key: CardKey): void {
   const sent = new CustomEvent(CARD_KEY, { cancelable: true, detail: key });
   if (card.dispatchEvent(sent)) announce("This card has no decision to pick");
 }
@@ -437,9 +437,13 @@ function onCard(
   if (action.kind === "toggle") {
     if (onControl(card, target)) return false;
     toggleCard(card);
-  } else if (action.kind === "open") openFrom(card, action.what);
+    return true;
+  }
+  // A held key acts once: a held c never takes Copy's second step for the person.
+  if (repeat) return true;
+  if (action.kind === "open") openFrom(card, action.what);
   else if (action.kind === "copy") copyFrom(card);
-  else keyTo(card, action, repeat);
+  else keyTo(card, action);
   return true;
 }
 
