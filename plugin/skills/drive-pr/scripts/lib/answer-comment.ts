@@ -41,6 +41,12 @@ import { failed, ok, type Outcome } from "../../../../shared/outcome.ts";
 import { ghCall, ghRepoEnv } from "./proc.ts";
 import { ANSWER_TEXT_MAX } from "../../../../shared/decisions/answer-limits.ts";
 import { answerTextFault } from "../../../../shared/decisions/answer-text.ts";
+import {
+  answerLine,
+  noteLine,
+  structuredAnswerText,
+  type WrittenChoice,
+} from "../../../../shared/decision-card.ts";
 
 /** The record's kind in the records registry. */
 export const ANSWER_KIND = "drive-answer";
@@ -50,6 +56,8 @@ const ANSWER_OPEN = `<!-- ${ANSWER_MARKER}`;
 const ANSWER_CLOSE = "\n-->";
 /** The longest answer, in characters: a sentence or two, which every pass's notice carries whole. */
 export { ANSWER_TEXT_MAX, answerTextFault };
+/** The answer line and a structured answer's text are written as the dashboard's card writes them (`shared/decision-card.ts`). */
+export { answerLine, structuredAnswerText, type WrittenChoice };
 
 /** Why `key` cannot be named in an answer line, or `null` when it can. */
 export function answerKeyFault(key: string): string | null {
@@ -60,33 +68,12 @@ export function answerKeyFault(key: string): string | null {
     : `${JSON.stringify(key)} cannot be written in an answer line, which names its key without spaces`;
 }
 
-/** The line the re-arm reads. */
-export function answerLine(key: string, text: string): string {
-  return `answer ${key}: ${text.trim()}`;
-}
-
-/** The option a structured answer chooses, and the form that chose it. */
-export interface WrittenChoice {
-  option: string;
-  form: "approve" | "choose";
-}
-
 /** What a structured answer adds to its comment: the note line and the record's payload fields. */
 export interface StructuredParts {
   note?: string;
   /** The digest of the framing the person read; absent on a park from before digests. */
   decision?: string;
   choice: WrittenChoice;
-}
-
-/** A structured answer's text: its form, and the framing's digest when there is one. */
-export function structuredAnswerText(
-  choice: WrittenChoice,
-  digest: string | undefined,
-): string {
-  const form =
-    choice.form === "approve" ? "approve" : `choose ${choice.option}`;
-  return digest === undefined ? form : `${form} [${digest}]`;
 }
 
 /**
@@ -110,9 +97,7 @@ export function answerComment(
     at,
   };
   const note =
-    structured?.note === undefined
-      ? ""
-      : `\nnote ${key}: ${structured.note.trim()}`;
+    structured?.note === undefined ? "" : `\n${noteLine(key, structured.note)}`;
   const payload =
     structured === undefined
       ? { pr }
