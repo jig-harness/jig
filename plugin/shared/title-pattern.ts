@@ -112,13 +112,14 @@ function escapeRegExp(text: string): string {
 }
 
 /**
- * Whether the pattern ends in a space and a `hash` key in parentheses, which
- * cannot be told from a squash merge's ` (#n)` suffix, so the pattern cannot
- * be judged from subjects. Other literal text before the parenthesis, such as
- * `-` or `[`, is something the suffix cannot supply.
+ * Whether the pattern ends in a `hash` key in parentheses that follows a space
+ * or the summary directly, which cannot be told from a squash merge's ` (#n)`
+ * suffix (the summary absorbs the space), so the pattern cannot be judged from
+ * subjects. Other literal text before the parenthesis, such as `-` or `[`, is
+ * something the suffix cannot supply.
  */
 export function keyIsAmbiguous(pattern: string, form: KeyForm): boolean {
-  return form === "hash" && / \(\{key\}\)$/.test(pattern);
+  return form === "hash" && /(?: |\{summary\})\(\{key\}\)$/.test(pattern);
 }
 
 /** Whether `subject` is a title `pattern` renders, ignoring a squash merge's ` (#n)` suffix. */

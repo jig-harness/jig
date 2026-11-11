@@ -121,6 +121,7 @@ describe("matchesTitlePattern", () => {
     expect(keyIsAmbiguous("{key}: {summary}", "hash")).toBe(false);
     expect(keyIsAmbiguous("{summary} [{key}]", "hash")).toBe(false);
     expect(keyIsAmbiguous("{summary} {key}", "hash")).toBe(false);
+    expect(keyIsAmbiguous("{summary}({key})", "hash")).toBe(true);
     expect(keyIsAmbiguous("{summary}-({key})", "hash")).toBe(false);
     expect(keyIsAmbiguous("{summary} [({key})", "hash")).toBe(false);
   });
