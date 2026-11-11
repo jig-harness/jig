@@ -11,7 +11,9 @@ release: patch
   the ledger's generation are the ones it launched at: the receipt shows the
   drive as needing a person, with why, and a person is notified once rather
   than at every tick. A change of either head or of the ledger lets the next
-  tick re-arm it.
+  tick re-arm it. The hold needs the heads recorded at the launch and the
+  branch's head readable now; when either is missing, the next tick launches
+  again.
 - A drive whose pull request is behind its branch (the forge kept an older
   head after a push) now says so: its attach names the pull request's head
   and the branch's head and asks for the pull request to be closed and
