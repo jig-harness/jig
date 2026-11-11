@@ -64,7 +64,9 @@ it("holds a pickup that waits on the rate limit until the reset, then lets it st
   expect(before.kind === "held" && before.why).toContain(
     `waits for the tracker's rate limit to reset at ${until}`,
   );
-  expect(pickupHold("ENG-4", [ended], undefined, Date.parse(until) + 1)).toEqual({
+  expect(
+    pickupHold("ENG-4", [ended], undefined, Date.parse(until) + 1),
+  ).toEqual({
     kind: "none",
   });
 });

@@ -76,7 +76,11 @@ import { latestArms, latestFailedRearms } from "./launch-keep.ts";
 
 /** What a launch starts: a re-arm of a stopped drive, a takeover of a wedged one, a pickup's `do-item` session, or a merge's follow-up pass. */
 export type LaunchAction =
-  "rearm" | "takeover" | "pickup" | "followup" | "steward";
+  | "rearm"
+  | "takeover"
+  | "pickup"
+  | "followup"
+  | "steward";
 
 /** Whether a record starts a drive's headless pass, whose exit is its answer. */
 export function isDrive(record: Pick<LaunchRecord, "action">): boolean {
