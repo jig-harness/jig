@@ -350,6 +350,14 @@ async function main(): Promise<number> {
     }
   }
 
+  // Skipper staleness is reconciled here, ahead of every refusal below (the
+  // status, CI, verified-SHA and clean-tree exits all precede the live-state
+  // gate that would otherwise see it), so none leaves a same-head "Safe to
+  // merge" standing once a skipper is positively not-yet since the Ready mark.
+  const skippersPendingEarly = dryRun
+    ? false
+    : await withdrawIfSkippersPending(pr, live.head);
+
   // Bounded, unlike drive.ts's own status spawn: that one forwards `--timeout`
   // and is SUPPOSED to poll for as long as the driver asked. This one passes
   // `--once`, so a single evaluation is the whole contract and an invocation
@@ -380,7 +388,6 @@ async function main(): Promise<number> {
 
   const state = String(status.state ?? "");
   if (code !== 3 || state !== "CONVERGED") {
-    if (!dryRun) await withdrawIfSkippersPending(pr, live.head);
     console.error(
       `announce-merge-ready: #${pr} is ${state}, not CONVERGED — refusing to announce`,
     );
@@ -392,7 +399,10 @@ async function main(): Promise<number> {
     // decision is taken". Every other read point in this script already
     // answers that condition with 5; a status call that discovered it first
     // must not be the exception.
-    return code === 5 ? 5 : 1;
+    if (code === 5) return 5;
+    // A skipper that has not run since the Ready mark is what an
+    // AWAITING_REVIEWER read is waiting for: the documented waiting exit.
+    return code === 4 && skippersPendingEarly ? 4 : 1;
   }
 
   const convergedHead = String(

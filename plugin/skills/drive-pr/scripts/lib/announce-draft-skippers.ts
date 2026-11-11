@@ -128,19 +128,21 @@ export async function draftSkippersRan(
  * Withdraw the standing announcements of `head` when a skipper is positively
  * not-yet since the Ready mark. Run ahead of any convergence refusal, which
  * would otherwise leave the old "Safe to merge" standing; an unreadable fact
- * withdraws nothing.
+ * withdraws nothing. Returns whether a skipper was positively not-yet, so the
+ * caller can report the waiting exit when that explains its refusal.
  */
 export async function withdrawIfSkippersPending(
   pr: string,
   head: string,
-): Promise<void> {
+): Promise<boolean> {
   const ran = await draftSkippersRan(pr, head);
-  if (ran.ok || ran.failure.code !== "not-yet") return;
+  if (ran.ok || ran.failure.code !== "not-yet") return false;
   const standing = await announcements(pr);
-  if (standing === null) return;
+  if (standing === null) return true;
   for (const id of announcedIds(standing, head))
     if (!(await withdrawAnnouncement(pr, id)))
       console.error(
         `announce-merge-ready: could NOT delete comment ${id} — remove it by hand.`,
       );
+  return true;
 }
