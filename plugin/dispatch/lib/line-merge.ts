@@ -8,7 +8,8 @@
  * tick reported on replaces its whole part, even a report that found no
  * slug and so brought no cards. The rest belongs
  * to the whole machine (the accounts, the line's own tick and times, the
- * receipt beside it): a tick the timer asked for every repository writes it,
+ * receipt beside it, except the recent tick durations and their maximum,
+ * which every tick that reads adds its own to): a tick the timer asked for every repository writes it,
  * busy ones or not, and a wake-up for a few leaves it as it was, so a timer
  * that stopped still shows as one while woken ticks run.
  */
@@ -73,8 +74,17 @@ export function mergeLine(
     ...now.filter((x) => read.has(x.repo)),
   ];
   const base = machine === "fresh" ? fresh : previous;
+  // Whichever tick's part is kept, this tick's duration stays in the history the freshness checks take their maximum from.
+  const durations =
+    machine === "fresh" || fresh.recentTicksMs === undefined
+      ? {}
+      : {
+          recentTicksMs: fresh.recentTicksMs,
+          longestTickMs: Math.max(...fresh.recentTicksMs),
+        };
   return {
     ...base,
+    ...durations,
     ...(base.load === undefined && previous.load !== undefined
       ? { load: previous.load }
       : {}),

@@ -202,6 +202,26 @@ describe("mergeLine", () => {
     ]);
   });
 
+  test("keeps the machine's part but takes the duration history and its maximum from the tick", () => {
+    const before = {
+      ...tickLine("2026-11-10T09:00:00.000Z", [
+        { slug: "A", path: "/w/a", n: 0 },
+      ]),
+      recentTicksMs: [60_000],
+    };
+    const fresh = {
+      ...tickLine("2026-11-10T08:59:00.000Z", [
+        { slug: "A", path: "/w/a", n: 1 },
+      ]),
+      recentTicksMs: [60_000, 360_000],
+      longestTickMs: 360_000,
+    };
+    const line = mergeLine(before, fresh, LISTED, "kept");
+    expect(line.runId).toBe(before.runId);
+    expect(line.recentTicksMs).toEqual([60_000, 360_000]);
+    expect(line.longestTickMs).toBe(360_000);
+  });
+
   test("marks a kept entry from a line written before entries carried their tick with that line's tick", () => {
     const old = tickLine("2026-11-10T09:00:00.000Z", [
       { slug: "B", path: "/w/b", n: 0 },
