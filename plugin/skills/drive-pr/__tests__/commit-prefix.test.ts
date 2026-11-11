@@ -190,6 +190,23 @@ describe("commit-prefix.ts", () => {
     ).toBe("fix a");
   });
 
+  it("refuses to rewrite from a head other than --expect-head, changing nothing", () => {
+    commit("a.txt", "fix a");
+    const asked = git("rev-parse", "HEAD").trim();
+    commit("b.txt", "fix b");
+    const r = check("--expect-head", asked);
+    expectSpawnExit(r, 1);
+    expect(r.stderr).toContain("nothing was rewritten");
+    expect(subjects()).toEqual(["fix b", "fix a"]);
+  });
+
+  it("rewrites when HEAD is the --expect-head", () => {
+    commit("a.txt", "fix a");
+    const r = check("--expect-head", git("rev-parse", "HEAD").trim());
+    expectSpawnExit(r, 0);
+    expect(subjects()).toEqual(["ENG-12: fix a"]);
+  });
+
   it("cannot check a branch that carries no key", () => {
     git("switch", "-q", "-c", "spike");
     commit("a.txt", "fix a");
