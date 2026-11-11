@@ -210,9 +210,14 @@ are named by canonical keys (`in_progress`, `in_review`, …) that
 - **Jira Cloud** ([`jira/`](skills/do-item/scripts/lib/tracker/jira/tracker.ts)),
   the adapter `issue_tracker.adapter: jira` selects: the issues of one
   project on one site (`issue_tracker.team` is the project key,
-  `issue_tracker.jira.site` the site). It uses Jira's REST API version 3
-  with `JIRA_EMAIL` and `JIRA_API_TOKEN`, an Atlassian account's email
-  address and an API token made for it, and converts text between Markdown
+  `issue_tracker.jira.site` the site). It uses Jira's REST API version 3,
+  at the site or through Atlassian's API gateway
+  (`issue_tracker.jira.api_base`), signed with an OAuth access token
+  (`JIRA_BEARER_TOKEN`, or one `JIRA_TOKEN_COMMAND` prints) or with
+  `JIRA_EMAIL` and `JIRA_API_TOKEN`, an Atlassian account's email address
+  and an API token made for it
+  ([`credential.ts`](skills/do-item/scripts/lib/tracker/jira/credential.ts)),
+  and converts text between Markdown
   and ADF (Atlassian Document Format), the rich-text form Jira stores. Keys
   are `<PROJECT>-<n>`. How the interface's vocabulary maps onto Jira:
   - a state is the status whose name `issue_tracker.states` gives, matched
