@@ -26,6 +26,7 @@ import {
   stateOf,
 } from "./linear-shapes.ts";
 import { cancellableRequest } from "./cancellation.ts";
+import { commentFacts, trustedUser } from "./linear-comments.ts";
 import { type RunResult, run } from "../../../../drive-pr/scripts/lib/proc.ts";
 import { pager, postGraphQL, runClient } from "./graphql.ts";
 import {
@@ -38,7 +39,6 @@ import {
 import * as lf from "./linear-facets.ts";
 import { namedState } from "./config-error.ts";
 import {
-  type CommentFact,
   type FoundComment,
   type IssueComment,
   type IssueComments,
@@ -383,11 +383,6 @@ mutation TrackerUpdate($id: String!, $input: IssueUpdateInput!) {
 const COMMENT_MUTATION = `
 mutation TrackerComment($issueId: String!, $body: String!) {
   commentCreate(input: { issueId: $issueId, body: $body }) { success }
-}`;
-
-const COMMENT_DELETE_MUTATION = `
-mutation TrackerDeleteComment($id: String!) {
-  commentDelete(id: $id) { success }
 }`;
 
 /**
@@ -858,10 +853,6 @@ function isoRange(w: WindowSpec): { gte: string; lt: string } {
   };
 }
 
-function trustedUser(u: unknown): boolean {
-  return isRecord(u) && typeof u.id === "string" && u.guest === false;
-}
-
 export interface LinearTrackerOptions {
   team: string;
   states: StateNames;
@@ -1060,14 +1051,6 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
       assertMutationOk(data.commentCreate, `the comment on ${issue}`);
     },
 
-    async deleteComment(key, id) {
-      const data = record(
-        await transport(COMMENT_DELETE_MUTATION, { id }),
-        "data",
-      );
-      assertMutationOk(data.commentDelete, `deleting a comment on ${key}`);
-    },
-
     async issuesByKeys(keys) {
       const out = new Map<string, IssueFact>();
       const numbers = [
@@ -1227,28 +1210,7 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
         },
         `comments of ${key}`,
       );
-      const comments = nodes.map((c): CommentFact => {
-        // A dropped comment could be the one carrying a marker.
-        if (
-          !isRecord(c) ||
-          typeof c.body !== "string" ||
-          typeof c.createdAt !== "string" ||
-          !Number.isFinite(Date.parse(c.createdAt))
-        )
-          throw new ShapeError(`issue ${key}: an unreadable comment node`);
-        return {
-          ...(typeof c.id === "string" ? { id: c.id } : {}),
-          body: c.body,
-          createdAt: c.createdAt,
-          trusted: trustedUser(c.user),
-        };
-      });
-      // Creation order, the id breaking a tie, so every reader agrees.
-      comments.sort(
-        (a, b) =>
-          Date.parse(a.createdAt) - Date.parse(b.createdAt) ||
-          (a.id ?? "").localeCompare(b.id ?? ""),
-      );
+      const comments = commentFacts(nodes, key);
       return { uuid, comments } satisfies IssueComments;
     },
 

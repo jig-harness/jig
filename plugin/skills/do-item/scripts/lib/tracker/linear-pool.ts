@@ -226,6 +226,7 @@ export function assignedOperations(
   | "assignees"
   | "assign"
   | "assignUnassigned"
+  | "deleteComment"
   | "user"
   | "openPopulation"
 > {

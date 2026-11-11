@@ -3,7 +3,8 @@
  * acts as (`viewer`), the issue's assignee (a Linear issue has at most one),
  * an assignment by user id, the assignment of an unassigned issue verified
  * against the issue's history (`assign-verified.ts`: Linear offers no
- * conditional write), and the one user an email or a display name names. A
+ * conditional write), the deletion of a comment (a claim withdrawing its
+ * marker), and the one user an email or a display name names. A
  * user is named by its id, compared exactly, and its display name.
  */
 
@@ -46,6 +47,11 @@ export type HistoryPager = (
   where: string,
 ) => Promise<unknown[]>;
 
+const COMMENT_DELETE = `
+mutation TrackerDeleteComment($id: String!) {
+  commentDelete(id: $id) { success }
+}`;
+
 const ASSIGN = `
 mutation TrackerAssign($id: String!, $input: IssueUpdateInput!) {
   issueUpdate(id: $id, input: $input) { success }
@@ -74,7 +80,12 @@ export function claimOperations(
   pageAll: HistoryPager,
 ): Pick<
   Tracker,
-  "viewer" | "assignees" | "assign" | "user" | "assignUnassigned"
+  | "viewer"
+  | "assignees"
+  | "assign"
+  | "user"
+  | "assignUnassigned"
+  | "deleteComment"
 > {
   async function read(
     key: string,
@@ -147,6 +158,11 @@ export function claimOperations(
         },
         user.id,
       );
+    },
+    async deleteComment(key, id) {
+      const data = record(await transport(COMMENT_DELETE, { id }), "data");
+      if (record(data.commentDelete, "commentDelete").success !== true)
+        throw new LinearClaimError(`Linear did not delete a comment on ${key}`);
     },
     async user(identity) {
       const who = identity.trim();
