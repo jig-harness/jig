@@ -426,7 +426,10 @@ to its implementer. Its prompt ends by asking the session to record
 how it ended, `jig dispatch result <record> <token> done|failed`, which
 refuses another record's token and a second answer. A completed pickup adds
 `--pr <number>` for the pull request it opened, or `--none "<reason>"` when
-no pull request was needed. A `done` without either is refused. Every ended
+no pull request was needed. A `done` without either is refused. A pickup
+whose claim the repository's start rules (`do_item.preflight_command`)
+refused records `failed --refused <updated-at> --reason <reason>`, and the dispatcher
+shows the item as held with that reason until the item changes. Every ended
 launch's outcome keeps its next owner: a station address, a person and their
 act, or nobody with a reason. `jig ask` shows this as `last.next`; older
 outcomes that did not keep it say it was not recorded. A converged drive
@@ -975,10 +978,14 @@ writes nothing to the host:
 
 Keys reach every card: j and k move between the cards, Enter or o opens
 one, p and i open its pull request or issue, c copies its command (the merge
-command, the answer line or its `jig ask` line), g then m, n, r, q or h goes
-to a view, / filters, ? lists the keys, and ⌘K or Ctrl-K opens a palette that
-goes to a view, jumps to `#N` or an item, or copies a card's command. No key
-fires while a person types in a field.
+command, a parked need's answers or its `jig ask` line), g then m, n, r, q or
+h goes to a view, / filters, ? lists the keys, and ⌘K or Ctrl-K opens a
+palette that goes to a view, jumps to `#N` or an item, or copies a card's
+command. On a parked need, 1 to 9 pick an option of the current decision (1
+is always the recommended one) and move to the next decision with no pick,
+h and l move between its decisions, u clears the last pick, r writes a note
+beside a pick or an answer in the person's own words, and Escape leaves that
+field. No key fires while a person types in a field.
 
 The Help view lists the keys and says what the page's words, stages and marks mean; a chip, a
 dotted word or the `?` beside a heading says it in place, on hover, tap or
@@ -986,11 +993,18 @@ focus. The theme follows the device until the switch in the strip picks light
 or dark.
 
 The page acts on nothing: it links to the pull request a decision is answered on
-and copies what cannot open, such as a workspace path or an answer line. Beside
-a parked decision a person can draft the reply, which stays in that browser
-only; Copy answer then takes `answer <key>: <reply>`, ready to paste as a
-comment on the pull request. When the server stops answering, it keeps what it
-last read and says when that was.
+and copies what cannot open, such as a workspace path or an answer line. A
+parked need shows one short row per decision, and a person picks an option
+with a key or a tap, adds a note or writes an answer in their own words; all
+of it stays in that browser only, can be undone, and is dropped, with the row
+saying so, when the decision is framed or parked again. The card's Copy takes
+one comment answering every decision picked, `answer <key>: approve [<digest>]`
+or `choose <option>` with the framing's digest and any `note <key>:` line,
+ready to paste on the pull request; with nothing picked, a card of one
+decision under a class listed as Decide copies its approval when its recommended option can be undone and no earlier answer was dropped, and otherwise only the starting `answer <key>:` line. A pick under a
+class not listed as Decide, or of an option that cannot be undone, copies only
+on the second step, which first shows what it changes and costs. When the
+server stops answering, it keeps what it last read and says when that was.
 
 **The line as JSON.** A program beside the dispatcher (an editor's plugin, a
 status bar) reads what the newest tick found without opening the state

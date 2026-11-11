@@ -11,7 +11,12 @@
  * - the item's latest record that ended, and has not been released, holds
  *   it too: a session that stopped without claiming the item (a refusal, a
  *   crash, a question) is not launched again until the item leaves the
- *   dispatch states (`releaseEnded`) and comes back; an item claimed meanwhile is released when it returns.
+ *   dispatch states (`releaseEnded`) and comes back; an item claimed meanwhile is released when it returns;
+ * - a record whose claim the repository's start rules refused (its
+ *   `refusal`) holds the item, with the reason, only until the item's
+ *   `updatedAt` moves past the time the rules saw: a person changed the
+ *   item, so it is picked up again. An item read without an `updatedAt`
+ *   keeps the rule above.
  */
 import {
   holds,
@@ -26,7 +31,8 @@ import { RUNNING_STATES, type SessionsReport } from "../runtime/port.ts";
 export type PickupHold =
   | { kind: "none" }
   | { kind: "held"; record: ReadRecord; why: string }
-  | { kind: "ended"; record: ReadRecord; why: string };
+  | { kind: "ended"; record: ReadRecord; why: string }
+  | { kind: "refused"; record: ReadRecord; why: string };
 
 /** The agent the runtime reports under `id`, in any of the repository's workspaces. */
 export function agentOf(sessions: SessionsReport, id: string) {
@@ -106,13 +112,33 @@ function recordsOf(item: string, records: ReadRecord[]): ReadRecord[] {
     .sort((a, b) => a.record.createdAt.localeCompare(b.record.createdAt));
 }
 
-export function pickupHold(item: string, records: ReadRecord[]): PickupHold {
+/** Whether the item changed after its refusal: its `updatedAt` is later than the one the rules saw. */
+function changedSince(updatedAt: string | undefined, seen: string): boolean {
+  if (updatedAt === undefined) return false;
+  const now = Date.parse(updatedAt);
+  return Number.isFinite(now) && now > Date.parse(seen);
+}
+
+export function pickupHold(
+  item: string,
+  records: ReadRecord[],
+  updatedAt?: string,
+): PickupHold {
   const mine = recordsOf(item, records);
   const holding = mine.find((r) => holds(r.state));
   if (holding !== undefined)
     return { kind: "held", record: holding, why: describe(holding) };
   const latest = mine.at(-1);
   if (latest === undefined || latest.record.released) return { kind: "none" };
+  const refusal = latest.refusal ?? null;
+  if (refusal !== null && updatedAt !== undefined) {
+    if (changedSince(updatedAt, refusal.updatedAt)) return { kind: "none" };
+    return {
+      kind: "refused",
+      record: latest,
+      why: `held: the repository's start rules refused its claim (launch record ${latest.record.id}): ${refusal.reason}; it is picked up again once the item changes (updated after ${refusal.updatedAt})`,
+    };
+  }
   return {
     kind: "ended",
     record: latest,

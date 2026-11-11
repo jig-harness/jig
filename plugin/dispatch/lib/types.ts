@@ -106,15 +106,18 @@ export interface WantedItem {
   batchAllowed?: boolean;
   queueIssue?: import("../../skills/do-item/scripts/lib/tracker/port.ts").PoolIssue;
   queueRank?: { unblocks: number; epicOrder?: number };
+  /** When the tracker last saw the item change; absent where the read has none. */
+  updatedAt?: string;
 }
 
 /** How a drive ledger reads, per the design's ledger-to-class table; the state label projection reads it too. */
 export type { LedgerClass } from "../../shared/pr-labels/projection.ts";
 import type { LedgerClass } from "../../shared/pr-labels/projection.ts";
 
-/** How a pickup that needs nothing reads: its last session ended, its claimed item is idle but not yet stalled, or a served person started the item themselves. */
+/** How a pickup that needs nothing reads: its last session ended, the repository's start rules refused its claim, its claimed item is idle but not yet stalled, or a served person started the item themselves. */
 export type PickupClass =
   | "pickup-ended"
+  | "pickup-refused"
   | "claimed-idle"
   | "claimed"
   | "claimed-by-person";
@@ -125,6 +128,8 @@ export type FollowupClass = "followup-done" | "followup-held";
 /** A parked decision still waiting on its answer, as the drive framed it. */
 export interface WaitingPark {
   digest?: string;
+  /** When the item was parked (`ParkedItem.at`); absent on an older park. */
+  parkedAt?: string;
   stale?: import("../../skills/drive-pr/scripts/lib/state/pass-handoff.ts").PendingAnswer[];
   /** The latest answers that disagree, which keep the item waiting. */
   disputed?: import("../../skills/drive-pr/scripts/lib/state/pass-handoff.ts").PendingAnswer[];
