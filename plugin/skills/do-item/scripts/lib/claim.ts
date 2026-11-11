@@ -34,13 +34,21 @@ export type ClaimResult =
     }
   | {
       /**
-       * Nothing was written: someone already holds the issue, its state is
-       * not one `do_item.claim_from` lets work start from, or the
-       * repository's `do_item.preflight_command` refused it.
+       * Nothing was written to the item's assignee or state: someone already
+       * holds the issue, its state is not one `do_item.claim_from` lets work
+       * start from, the repository's `do_item.preflight_command` refused
+       * it, or, with `do_item.claim_marker`, another claim's marker is
+       * earlier or this claim's own could not be posted and read back.
        */
       outcome: "refused";
       issue: string;
-      why: "in_progress" | "pr_open" | "assigned" | "state" | "preflight";
+      why:
+        | "in_progress"
+        | "pr_open"
+        | "assigned"
+        | "state"
+        | "preflight"
+        | "marker";
       reason: string;
       /** A preflight refusal: the item's `updatedAt` as the command saw it. */
       updatedAt?: string;
