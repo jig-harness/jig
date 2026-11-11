@@ -741,7 +741,37 @@ describe("pr-plan.ts open", () => {
     expect(p.title).toEqual({
       format: "conventional",
       source: "derived: commitlint.config.js",
+      pattern: null,
     });
+  });
+
+  it("renders the title pattern with the issue key and leaves the summary to fill", () => {
+    overlay(
+      "pull_requests:\n  title_format: pattern\n  title_pattern: '{key}: {summary}'\n",
+    );
+    const p = JSON.parse(plan("open", "--issue", "ENG-12", "--json").stdout);
+    expect(p.title).toEqual({
+      format: "pattern",
+      source: "pull_requests.title_format",
+      pattern: "ENG-12: <summary>",
+    });
+    expect(plan("open", "--issue", "ENG-12").stdout).toContain(
+      "title:       ENG-12: <summary> (pull_requests.title_format)",
+    );
+  });
+
+  it("renders a key placeholder for the title pattern when no issue is given", () => {
+    overlay(
+      "pull_requests:\n  title_format: pattern\n  title_pattern: '[{key}] {summary}'\n",
+    );
+    expect(plan("open").stdout).toContain("title:       [<KEY>] <summary>");
+  });
+
+  it("refuses a title pattern without its format, naming the field", () => {
+    overlay("pull_requests:\n  title_pattern: '{key}: {summary}'\n");
+    const r = plan("open");
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain("pull_requests.title_pattern needs");
   });
 
   it("falls back to history when the commitlint configuration is not conventional", () => {

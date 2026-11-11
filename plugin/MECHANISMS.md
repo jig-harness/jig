@@ -399,7 +399,11 @@ development and shipped as a version.
   That answer is the session's own judgement; the script refuses another
   record's token, a drive pass's record and a second answer. Nothing
   else reasoned writes these records. A completed pickup names its pull
-  request with `--pr <number>`, or `--none "<reason>"` when none was needed.
+  request with `--pr <number>`, or `--none "<reason>"` when none was needed;
+  a pickup the tracker's rate limit stopped before it claimed the item
+  records `waits --until <time>`, and the tick starts it again after that
+  time; after the claim the pass waits within its deadline or records
+  `failed`.
   A pickup whose claim the repository's start rules refused records
   `failed --refused <updated-at> --reason <reason>`: the tick holds the item, showing
   the reason, until its `updatedAt` moves past that time.
@@ -718,8 +722,9 @@ development and shipped as a version.
   fails a resolution while a path is unmerged or conflict markers remain;
   `skills/resolve-conflicts/scripts/conflict-map.ts` names each side;
   `skills/resolve-conflicts/scripts/record.ts` records the decisions.
-  `skills/fix-ci/scripts/parse-ci-log.ts` fetches a failed run's log and
-  sorts its errors in the order to fix them. `shared/ci-infra.ts` reads the
+  `skills/fix-ci/scripts/parse-ci-log.ts` fetches a failed run's log, and a
+  failing commit status's through the repository's `ci.log_command`, and
+  sorts their errors in the order to fix them. `shared/ci-infra.ts` reads the
   same log for a failure of the infrastructure rather than the code (a lost
   runner, a setup step's network failure, no code diagnostic); the drive
   re-runs such checks, or moves the head to run them again, instead of

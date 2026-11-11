@@ -686,9 +686,10 @@ in the old form.
   twice. A held park on a ledger the tick could not read stays held for a
   later tick, and one on a pull request no longer open is not counted. A park unparked by hand leaves no receipt and is counted as
   removed.
-- **Recommendation acceptance.** `jig dispatch log` reports, per class and
-  repository, how many parks were answered, how many with the recommended
-  option and no note, and the median wait. That is evidence for a person deciding
+- **Recommendation acceptance.** `jig dispatch log --acceptance` reports,
+  per class and repository, how many parks were answered, how many with the
+  recommended option and no note, and the median wait, from the park rows
+  alone. That is evidence for a person deciding
   whether a class should stay a park
   ([ADR-0010](../docs/adr/ADR-0010-parking-is-reserved-for-registry-classes.md)):
   a class approved as recommended almost every time costs a person's

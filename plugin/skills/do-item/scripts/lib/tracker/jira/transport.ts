@@ -16,6 +16,13 @@
  * list moved under it, and a shorter population is never presented as whole.
  */
 
+import {
+  type BudgetGovernor,
+  credentialKey,
+  defaultGovernor,
+  FALLBACK_LIMIT_MS,
+  TrackerRateLimited,
+} from "../../../../../../shared/tracker-budget.ts";
 import { swallow } from "../../../../../../shared/errors.ts";
 import { isRecord } from "../../../../../../shared/guards.ts";
 import type { Outcome } from "../../../../../../shared/outcome.ts";
@@ -260,15 +267,23 @@ async function send(
  * HTTPS transport to `base`, the site or its API gateway address; each call
  * bounded as a whole by `JIRA_TIMEOUT_MS`. A 401 renews the header once, when the
  * credential can be renewed, and sends the request again with it: a 401 is
- * refused before the request is acted on, so a write is not doubled.
+ * refused before the request is acted on, so a write is not doubled. With
+ * `governor` (the machine's request budget), a call is refused locally while
+ * the credential is rate limited, and an HTTP 429 limits it until its
+ * `Retry-After`. `identity` names the credential for the budget; it is hashed,
+ * never stored.
  */
 export function httpTransport(
   base: string,
   authorization: JiraAuthorization,
   fetchImpl: typeof fetch = fetch,
+  governor?: BudgetGovernor,
+  identity = "",
 ): JiraTransport {
+  const key = credentialKey("jira", `${base} ${identity}`);
   return async (request, signal) => {
     if (cancelled(signal)) throw abortedError(signal);
+    governor?.admit("jira", key);
     const what = `${request.method} ${request.path}`;
     const url = requestUrl(base, request);
     // One deadline for the whole call: the token command, the request, a
@@ -300,6 +315,14 @@ export function httpTransport(
       }
     }
     const text = await bodyText(res, signal, what);
+    if (res.status === 429 && governor !== undefined) {
+      const wait = retryAfterOf(res.headers);
+      const until =
+        Date.now() + (wait === null ? FALLBACK_LIMIT_MS : wait * 1000);
+      const why = `Jira refused ${what} (HTTP 429)`;
+      governor.observe(key, { limitedUntil: until, why });
+      throw new TrackerRateLimited("jira", until, why);
+    }
     if (!res.ok) throw httpFailure(res.status, res.headers, text, what);
     return answerBody(text, res.status, what);
   };
@@ -321,7 +344,13 @@ export function defaultTransport(
       throw new JiraApiError(reason, { unavailable: true });
     };
   }
-  return httpTransport(base, jiraAuthorization(credential.value));
+  return httpTransport(
+    base,
+    jiraAuthorization(credential.value),
+    fetch,
+    defaultGovernor(),
+    JSON.stringify(credential.value),
+  );
 }
 
 // ── Pagers ─────────────────────────────────────────────────────────────────

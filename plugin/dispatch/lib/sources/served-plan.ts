@@ -9,6 +9,22 @@ import {
 } from "../../../skills/do-item/scripts/lib/execution-plan.ts";
 import { failureText } from "../text.ts";
 
+/** Every issue a plan names (its steps and its edges' predecessors), after `first`, once each. */
+export function planKeys(
+  description: string,
+  block: string | undefined,
+  first: readonly string[] = [],
+): string[] {
+  const plan = readExecutionPlan(description, block);
+  return [
+    ...new Set([
+      ...first,
+      ...(plan?.steps.map((s) => s.issue) ?? []),
+      ...(plan?.edges.map((e) => e.from) ?? []),
+    ]),
+  ];
+}
+
 export interface ServedPlan {
   present: boolean;
   order: string[];

@@ -41,6 +41,7 @@
  *   shared: forge
  * send: true
  * change_probe: true
+ * tracker_share: 0.5
  * load:
  *   enforce: false          # the gauges' lines and reservations: load-config.ts
  * ```
@@ -54,6 +55,7 @@ import { isAbsolute, join, resolve } from "node:path";
 import { isMapping, jigHome } from "../../shared/config-layers.ts";
 import { OPEN_LIMIT_MS } from "../../shared/orca-workspace/limits.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
+import { DEFAULT_DISPATCHER_SHARE } from "../../shared/tracker-budget.ts";
 import { load } from "../../shared/yaml.ts";
 import { FAILURE_DEFAULTS, type FailureSettings } from "./failures.ts";
 import { isLoopback, type Listen, parseListen } from "./listen.ts";
@@ -148,6 +150,8 @@ export interface MachineConfig {
   changeProbe: boolean;
   /** The host's gauges' lines, the kinds' default reservations and whether the load factor holds launches (`load`). */
   load: LoadSettings;
+  /** The share of each tracker credential's rate-limit window the tick's own reads may use (`tracker_share`); `DEFAULT_DISPATCHER_SHARE` when absent. */
+  trackerShare?: number;
 }
 
 const DEFAULTS = {
@@ -184,6 +188,7 @@ const TOP_KEYS = [
   "send",
   "change_probe",
   "load",
+  "tracker_share",
 ];
 const DASHBOARD_KEYS = ["listen", "require_token", "allowed_hosts"];
 const FAILURES_KEYS = ["backoff", "backoff_max", "notify_after"];
@@ -282,6 +287,15 @@ function count(
   if (value === undefined || value === null) return ok(fallback);
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1)
     return invalid(`${where} must be a positive whole number`);
+  return ok(value);
+}
+
+/** A share of a budget: more than 0, at most 1. */
+function share(value: unknown, where: string): Checked<number> {
+  if (value === undefined || value === null)
+    return ok(DEFAULT_DISPATCHER_SHARE);
+  if (typeof value !== "number" || !(value > 0 && value <= 1))
+    return invalid(`${where} must be a number above 0 and at most 1`);
   return ok(value);
 }
 
@@ -584,7 +598,10 @@ function parseValues(values: unknown, where: string): Checked<MachineConfig> {
   if (!host.ok) return host;
   const steward = stewardSettings(top.steward);
   if (!steward.ok) return steward;
+  const trackerShare = share(top.tracker_share, "tracker_share");
+  if (!trackerShare.ok) return trackerShare;
   return ok({
+    trackerShare: trackerShare.value,
     path: where,
     serve: serve.value,
     serveDefaults: defaults.value,

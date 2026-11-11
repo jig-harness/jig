@@ -14,7 +14,7 @@ A few behaviours worth knowing before you arm one:
 
 - **Drafts.** It works [draft PRs](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) from the start and marks them Ready for review after its first completed round (or the round, or the convergence, `pull_requests.mark_ready` names), so reviewers that skip drafts (often billed per review) see an already-cleaned head.
 - **CI.** Before reporting success it waits for the repository's [required checks](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) in continuous integration (CI) to pass on the exact final commit. A repository whose CI is expensive can opt into a [CI hold](#ci-hold), which skips the heavy jobs between review rounds and runs them in full once at the end.
-- **Repairs.** When that final CI comes back red, or the PR conflicts with its base and no findings are left, it runs a bounded **repair round** (a CI repair, or a base merge with conflict resolution) and checks again, stopping only once that budget is spent. A cancelled check is not red: the drive waits for a replacement and spends no repair pass on it. With no active replacement after a 30-second grace period, it requests one re-run per head, recorded durably across re-arms. A refused request or another cancellation parks with the run and recovery for a person. It never replays a run created under the CI hold, and never counts cancellation as passing.
+- **Repairs.** When that final CI comes back red, or the PR conflicts with its base and no findings are left, it runs a bounded **repair round** (a CI repair, or a base merge with conflict resolution) and checks again, stopping only once that budget is spent. A repair pass is told the failed workflow runs and, for a CI service that reports as commit statuses, each failing status with the page it links to. A cancelled check is not red, nor is a commit status in state `error` whose description says the build was aborted: the drive waits for a replacement and spends no repair pass on it. With no active replacement after a 30-second grace period, it requests one re-run per head, recorded durably across re-arms. A refused request or another cancellation parks with the run and recovery for a person. It never replays a run created under the CI hold, and never counts cancellation as passing. An aborted build has no run for it to request: it waits for a new status for as long as the final-CI witness wait allows (`DRIVE_PR_FINAL_CI_WITNESS_POLLS`), then stops with `4`.
 - **Stops.** It stops on a state it names precisely — convergence verified against the exact commit, a merged or closed PR, a conflict it could not resolve, findings that need a human decision ([HITL](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)) — or on one of the operational stops in [the exit table](#the-exit-states--what-you-do-now).
 - **Limits.** It never approves, never merges, and never bypasses a hook.
 
@@ -94,6 +94,7 @@ the drive reads best-effort and replaces with the default when mistyped.
 | `drive.reviews_drafts` | `true` or `false`: does the AI reviewer review draft PRs. The drive uses it only to explain a draft PR that has no reviewer check run yet (`/jig:do-item` also reads it to decide whether new PRs open as drafts) | Unset: unknown, and no hint is given |
 | `ci.required_checks` | The exact check names that must complete on the converged head before the drive certifies it (and, with a hold, that must run again after the hold is removed). `[]` means none: the drive relies on the overall CI verdict alone, which is green even when no CI has registered on the head. Without a hold, the drive judges each required check as branch protection does: a skipped or neutral result passes, and a legacy commit status of that name can stand in for a check run. With a hold, required checks must be check runs, since only a run's id proves it ran after the hold was removed. Unrelated to `review.required_checks`, which names the review skill's reviewer checks | Derived: the checks the pull request's base branch requires, from classic branch protection and active rulesets together. For a stacked layer, whose base is a feature branch, the checks of the branch the stack's bottom layer targets are added to the base's own. A check that protection pins to a GitHub App counts only when that app publishes it, as a check run or a commit status; a check pinned to several apps (classic protection to one, a ruleset to another) needs a passing result from each. When the base requires none, the drive also waits until some non-reviewer CI has registered on the head; where a reviewer is expected, a commit status named like the reviewer's check does not count. A base branch, integration branch, stack or protection that cannot be read is an error that asks for this field; the drive never falls back to another branch's protection |
 | `ci.hold_label` | A label the repository's workflows honour on intermediate pushes: while it is present they skip their expensive jobs, and removing it runs them in full (see [§ CI hold](#ci-hold)). Requires `ci.required_checks`, listing only checks that run again when the label is removed | Unset: no hold. Every push runs the repository's normal CI and the drive never adds or removes a label |
+| `ci.repair_skill` | The skill a CI-repair pass loads before it repairs, such as the repository's own skill for a CI service that reports as commit statuses; the pass is told it in `DRIVE_PR_ROUND_REPAIR_SKILL`. Such a pass reads a failing status's log with `fix-ci`, through `ci.log_command` ([CONFIGURATION.md](../../CONFIGURATION.md#ci)) | Unset: the pass repairs with [`/jig:fix-ci`](../fix-ci/SKILL.md)'s procedure |
 | `pull_requests.mark_ready` | When the drive marks a draft Ready: a round number N (after round N completes), `converged` (only when the draft-reviewing reviewer has nothing left), or `never`. A draft that converges before round N is marked at convergence | `1`: after the first completed round |
 | `drive.max_rounds` | Whole number ≥ 1: how many rounds a drive runs before it stops unconverged (exit `6`). `--max-rounds N` overrides it for one run; a malformed value stops the drive with exit `1` unless the flag names the budget | `10` |
 | `drive.pass_deadline_retries` | Whole number ≥ 0: how many passes killed at their deadline one drive restarts from before it stops with exit `15` ([restarts](#a-stopped-drive-restarts-itself)); a malformed value stops the drive with exit `1` | `2` |
@@ -897,11 +898,21 @@ Stop every drive before upgrading, or let it reach a terminal state: a drive sti
 Displaced [lock quarantine](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) entries (`<lock>.stale.<generation>` and
 `<lock>.recovering.stale.<generation>`, directories or marker files) are not
 imported state. The reaper reports them as `quarantine:<clone>` with their
-entry count and bytes, and keeps the family even with `--delete`. A suspended
-legacy writer can resume after the last snapshot check; the database mutex
-does not exclude it. Neither 24 hours without a write nor the absence of a
-legacy lock proves exclusion. This applies even when the clone was never
-imported, independently of the other files' 30-day import retention.
+entry count and bytes, whether or not the clone was imported, and retires the
+whole family with `--delete` once nothing shows a release before the database
+still driving in the clone: no `.lock` or `.lock.recovering` of the earlier
+layout is present, none of its state, lease, driver-record or claim files was
+written in the last 24 hours, and no entry (or file under one) is younger than
+24 hours. A driver of the earlier release renews its lease at least every
+6 hours, so a day of silence makes a live one unlikely: retirement is an
+idle-retention policy, not proof that no writer remains. An entry's age is the
+time of its last write. It does not wait for
+the 30-day retention of the other files. Anything it cannot read, or that
+changes while it looks (the family, the clone's listing or the earlier
+release's files), keeps the family, and the check runs again just before the
+deletion. A driver suspended for longer than
+that and resumed afterwards is not detected: it can only move a lock of the
+earlier layout, which nothing of this release reads.
 
 ## Relocating the state dir
 

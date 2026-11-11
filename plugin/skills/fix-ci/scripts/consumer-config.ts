@@ -3,8 +3,9 @@
  * Print the repository values the CI fix loop uses: the package manager and
  * its install commands (detected from the lockfile), the local checks
  * (`gates.command`), the validation plan command
- * (`drive.validation_plan_command`) and the regeneration commands
- * (`fix_ci.regenerate_commands`).
+ * (`drive.validation_plan_command`), the regeneration commands
+ * (`fix_ci.regenerate_commands`) and the command that reads a failing commit
+ * status's log (`ci.log_command`).
  *
  * Usage: bun consumer-config.ts
  *   Run from inside the repository (any directory of it). The repository
@@ -18,6 +19,7 @@
  * Exit codes: 0 values printed; 2 configuration present but invalid.
  */
 
+import { ciRepairSettings } from "../../../shared/ci-status.ts";
 import { fail, runMain } from "../../../shared/cli.ts";
 import {
   configSource,
@@ -57,6 +59,7 @@ export interface FixCiConfig {
   gatesCommand: string | undefined;
   validationPlanCommand: string | undefined;
   regenerateCommands: string[];
+  logCommand: string | undefined;
 }
 
 /** Read the values from every configuration layer; an unset value has its default. */
@@ -78,6 +81,8 @@ export function fixCiConfig(): FixCiConfig {
       2,
       `consumer-config: fix_ci.regenerate_commands must be a list of nonempty commands (${configSource("fix_ci.regenerate_commands")})`,
     );
+  const ci = ciRepairSettings(overlay);
+  if (!ci.ok) fail(2, `consumer-config: ${ci.failure.reason}`);
   return {
     configuration: hasRepositoryConfig() ? overlayPath() : null,
     gatesCommand: optionalText(
@@ -89,6 +94,7 @@ export function fixCiConfig(): FixCiConfig {
       "drive.validation_plan_command",
     ),
     regenerateCommands: (regenerate as string[] | undefined | null) ?? [],
+    logCommand: ci.value.logCommand,
   };
 }
 
@@ -120,6 +126,11 @@ async function main(): Promise<number> {
       "drive.validation_plan_command",
       config.validationPlanCommand ??
         "(not set: the validation plan is gates.command)",
+    ],
+    [
+      "ci.log_command",
+      config.logCommand ??
+        "(not set: a failing commit status's log is read from its target_url by hand)",
     ],
   ];
   for (const [key, value] of lines) console.log(`${key}: ${value}`);
