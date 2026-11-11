@@ -92,6 +92,39 @@ describe("a team key", () => {
     expect(closingKeys(body, TEAM.keys)).toEqual([]);
   });
 
+  it("is not read from indented or container code, including code with comment delimiters", () => {
+    const body = [
+      "    Closes ENG-1",
+      "> ```",
+      "> <!-- Closes ENG-2 -->",
+      "> ```",
+      "`<!-- Closes ENG-3`",
+      "``Closes ENG-4 ` still code``",
+      "Closes ENG-5",
+    ].join("\n");
+    expect(closingKeys(body, TEAM.keys)).toEqual(["ENG-5"]);
+  });
+
+  it("is not read from multiline inline code, and accepts a longer closing fence", () => {
+    const body = [
+      "`Fixes",
+      "ENG-1`",
+      "```",
+      "Closes ENG-2",
+      "````",
+      "Closes ENG-3",
+    ].join("\n");
+    expect(closingKeys(body, TEAM.keys)).toEqual(["ENG-3"]);
+  });
+
+  it("reads every item in an Oxford-comma list", () => {
+    expect(closingKeys("Closes ENG-1, ENG-2, and ENG-3", TEAM.keys)).toEqual([
+      "ENG-1",
+      "ENG-2",
+      "ENG-3",
+    ]);
+  });
+
   it("takes no closing reference from the forge: those are its own issues, not the tracker's", () => {
     const links = workLinks(
       [pr({ number: 7, closing: [{ number: 3, repository: REPO }] })],

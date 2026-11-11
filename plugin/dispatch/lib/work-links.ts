@@ -59,18 +59,65 @@ export interface WorkLinks {
 /** A word that closes what follows it: `close`, `closes`, `closed`, `fix`, `fixes`, `fixed`, `resolve`, `resolves`, `resolved`. */
 const CLOSING = "(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)";
 
-/** Between two keys of a list: a comma or `&`, or `and`, on one line. */
-const SEP = "(?:[ \\t]*[,&][ \\t]*|[ \\t]+and[ \\t]+)";
+/** Between two keys of a list: a comma (optionally followed by `and`), `&`, or `and`, on one line. */
+const SEP =
+  "(?:[ \\t]*,[ \\t]*(?:and[ \\t]+)?|[ \\t]*&[ \\t]*|[ \\t]+and[ \\t]+)";
 
-/** A description without what only shows text: fenced code, inline code and HTML comments. */
+/** Replace text that Markdown renders as a code block, preserving line positions. */
+function withoutCodeBlocks(body: string): string {
+  const lines = body.split("\n");
+  let fence: { marker: "`" | "~"; length: number } | null = null;
+  return lines
+    .map((line) => {
+      const fenceRun = line.match(
+        /^(?:[ \t]{0,3}>[ \t]?)*[ \t]{0,3}(`{3,}|~{3,})/,
+      )?.[1];
+      if (fence !== null) {
+        const closes =
+          fenceRun !== undefined &&
+          fenceRun[0] === fence.marker &&
+          fenceRun.length >= fence.length;
+        if (closes) fence = null;
+        return " ";
+      }
+      if (fenceRun !== undefined) {
+        fence = { marker: fenceRun[0] as "`" | "~", length: fenceRun.length };
+        return " ";
+      }
+      if (/^(?:[ \t]{0,3}>[ \t]?)* {4}/.test(line)) return " ";
+      return line;
+    })
+    .join("\n");
+}
+
+/** Replace inline code spans, including multiline spans and spans with multi-backtick delimiters. */
+function withoutCodeSpans(body: string): string {
+  let result = body;
+  for (let start = 0; start < result.length; ) {
+    if (result[start] !== "`") {
+      start += 1;
+      continue;
+    }
+    let end = start;
+    while (result[end] === "`") end += 1;
+    const delimiter = result.slice(start, end);
+    const close = result.indexOf(delimiter, end);
+    if (close < 0) {
+      start = end;
+      continue;
+    }
+    result = `${result.slice(0, start)}${" ".repeat(close + delimiter.length - start)}${result.slice(close + delimiter.length)}`;
+    start = close + delimiter.length;
+  }
+  return result;
+}
+
+/** A description without what only shows text: code blocks, inline code and HTML comments. */
 function assertedText(body: string): string {
-  return body
-    .replace(/<!--[\s\S]*?(?:-->|$)/g, " ")
-    .replace(
-      /^[ \t]*(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^[ \t]*\1[ \t]*$|(?![\s\S]))/gm,
-      " ",
-    )
-    .replace(/`[^`\n]*`/g, " ");
+  return withoutCodeSpans(withoutCodeBlocks(body)).replace(
+    /<!--[\s\S]*?(?:-->|$)/g,
+    " ",
+  );
 }
 
 function sameRepository(a: string, b: string): boolean {

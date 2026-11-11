@@ -204,13 +204,31 @@ describe("the repository query's pull requests", () => {
       { number: 612, repository: { nameWithOwner: "jig-harness/jig" } },
     ];
     expect(
-      listed({ ...node, closingIssuesReferences: { nodes: closing } }).closing,
+      listed({
+        ...node,
+        closingIssuesReferences: {
+          pageInfo: { hasNextPage: false },
+          nodes: closing,
+        },
+      }).closing,
     ).toEqual([{ number: 612, repository: "jig-harness/jig" }]);
     expect(listed(node).closing).toBeUndefined();
     expect(
       listed({
         ...node,
-        closingIssuesReferences: { nodes: [{ number: 612 }] },
+        closingIssuesReferences: {
+          pageInfo: { hasNextPage: false },
+          nodes: [{ number: 612 }],
+        },
+      }).closing,
+    ).toBeUndefined();
+    expect(
+      listed({
+        ...node,
+        closingIssuesReferences: {
+          pageInfo: { hasNextPage: true },
+          nodes: closing,
+        },
       }).closing,
     ).toBeUndefined();
   });

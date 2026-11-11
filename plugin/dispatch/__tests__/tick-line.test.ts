@@ -332,6 +332,7 @@ describe("the line a tick leaves", () => {
         ...openPr(7, HEAD),
         body: "Fixes #4\n\nFollows #5.",
         closingIssuesReferences: {
+          pageInfo: { hasNextPage: false },
           nodes: [
             { number: 3, repository: { nameWithOwner: SLUG } },
             { number: 9, repository: { nameWithOwner: "example-org/other" } },

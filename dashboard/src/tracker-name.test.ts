@@ -11,6 +11,8 @@ describe("a repository's tracker on the page", () => {
 
   it("keeps an adapter it does not know by the configuration's own word", () => {
     expect(trackerName({ adapter: "notion" })).toBe("notion");
+    expect(trackerName({ adapter: "constructor" })).toBe("constructor");
+    expect(trackerName({ adapter: "__proto__" })).toBe("__proto__");
   });
 
   it("is not named when the line does not say", () => {

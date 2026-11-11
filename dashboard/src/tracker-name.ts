@@ -15,5 +15,8 @@ const NAMES: Readonly<Record<string, string>> = {
 /** A tracker's name for a person; an adapter the page does not know by its own word; `null` when the line does not say. */
 export function trackerName(tracker: LineRepo["tracker"]): string | null {
   if (tracker == null) return null;
-  return NAMES[tracker.adapter.toLowerCase()] ?? tracker.adapter;
+  const adapter = tracker.adapter.toLowerCase();
+  return Object.hasOwn(NAMES, adapter)
+    ? (NAMES[adapter] ?? tracker.adapter)
+    : tracker.adapter;
 }

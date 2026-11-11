@@ -45,7 +45,7 @@ const PAGE = 50;
 /** Comments, labels and review threads read with each pull request: a pull request with more comments is listed on its own. */
 const ITEMS = 100;
 
-/** The issues read as each pull request's closing references: the line's links take no more (`work-links.ts`). */
+/** The issues read as each pull request's closing references; a partial read remains unknown. */
 const CLOSING = 5;
 
 /** The most open pull requests the read takes, as the pull request listing does. */
@@ -74,7 +74,7 @@ const QUERY = `query ${QUERY_NAME}($owner: String!, $name: String!, $first: Int!
         labels(first: ${ITEMS}) { pageInfo { hasNextPage } nodes { name } }
         headRef { target { ... on Commit { statusCheckRollup { contexts(first: ${ITEMS}) { pageInfo { hasNextPage } nodes { __typename ... on CheckRun { conclusion } ... on StatusContext { state } } } } } } }
         reviewThreads(first: ${ITEMS}) { pageInfo { hasNextPage } nodes { isResolved } }
-        closingIssuesReferences(first: ${CLOSING}) { nodes { number repository { nameWithOwner } } }
+        closingIssuesReferences(first: ${CLOSING}) { pageInfo { hasNextPage } nodes { number repository { nameWithOwner } } }
         ${COMMENTS}
       }
     }
@@ -214,6 +214,10 @@ function rollupOf(node: Record<string, unknown>): {
 function closingOf(node: Record<string, unknown>): {
   closing?: Array<{ number: number; repository: string }>;
 } {
+  if (
+    field(node, "closingIssuesReferences", "pageInfo", "hasNextPage") !== false
+  )
+    return {};
   const nodes = field(node, "closingIssuesReferences", "nodes");
   if (!Array.isArray(nodes)) return {};
   const closing = nodes.map((n) => ({
