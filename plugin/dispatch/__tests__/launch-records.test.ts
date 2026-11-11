@@ -577,6 +577,20 @@ describe("reading records", () => {
     expect(read.records.map((r) => r.record.id)).toEqual([good.id]);
     expect(read.unreadable).toHaveLength(3);
   });
+
+  it("reports a record whose launch marker is not a boolean as unreadable", async () => {
+    const dir = root();
+    const id = "20260101T000000Z-aaaaaaaa";
+    stateDb(dir)
+      .query(
+        `INSERT INTO launches (id, repo, action, pr, item, created_at, record)
+         VALUES (?, 'o/a', 'rearm', 7, NULL, '2026-01-01T00:00:00.000Z', ?)`,
+      )
+      .run(id, JSON.stringify({ ...record(id), launchCalled: "true" }));
+    const read = await readLaunches(dir);
+    expect(read.records).toEqual([]);
+    expect(read.unreadable).toHaveLength(1);
+  });
 });
 
 describe("the timer's job", () => {

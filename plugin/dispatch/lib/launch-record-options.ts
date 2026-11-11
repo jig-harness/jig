@@ -59,6 +59,7 @@ export function optionalLaunchFields(value: Record<string, unknown>): boolean {
       "codexBypass",
       "headless",
       "routineTags",
+      "launchCalled",
     ]) &&
     (value.standing === undefined ||
       value.standing === null ||
