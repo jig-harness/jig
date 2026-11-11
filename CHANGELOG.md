@@ -391,6 +391,67 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.196.0] - 2026-11-11
+
+### Added
+
+- **`tracker.ts migrate-relations [--dry-run]`** converts each legacy GitHub
+  `related` comment into a native related link and marks the comment
+  superseded, then reports what it converted. Run it again after a failure; it
+  only does what is left. Run it once on each repository that used the old
+  form.
+- **`tracker.ts sync-plan-blocks <epic-key> [--dry-run]`** writes the
+  dependency edges of an epic's execution plan as native `blocks` relations the
+  tracker lacks, so a planner states a dependency in both places.
+- The rule behind both is recorded in ADR-0015: parent, blocks, related and
+  duplicate live only in the tracker's own relationships.
+- An optional `pr_open` state in `issue_tracker.states`, for a board that
+  separates work being written from work waiting for review. Once an item's
+  pull request opens, `/jig:do-item` and `/jig:work-batch` post the comment
+  linking it, then move the item to `pr_open`, before the drive arms. The
+  parent roll-up reads it as work in progress, never as merged; a claim
+  refuses an item in it; the dispatcher's stall and double-claim watch counts
+  it as claimed where it has a name of its own; and `dispatch.states` may not list it. It may share its name
+  with `in_review` on a tracker with one review status, and that name then
+  reads back as `pr_open`: with `do_item.post_merge_state: in_review` too,
+  an epic stays `in_progress` after every child has merged, until a person
+  closes the children. Unset, no item moves there and nothing changes.
+- `do_item.post_merge_state` (`done`, the default, `ops_pending` or
+  `in_review`) and `do_item.post_merge_closer`: where the post-merge rule
+  stops, for a team whose `done` means merged and verified by someone else,
+  and who closes the item, for the closing comment. It applies to an item, each
+  sub-issue, an epic's roll-up, `/jig:work-batch after-merge` and the
+  follow-up. A value other than `done` needs `pull_requests.issue_link: refs`,
+  and the configuration reader refuses it otherwise.
+- `tracker.ts transition <key> <state> --post-merge`, which refuses a move to
+  `done` that `do_item.post_merge_state` forbids, and `tracker.ts post-merge`,
+  which prints the policy. A transition to `pr_open` where it is unset prints
+  `skipped` and writes nothing.
+- Parent reconciliation and `/jig:work-batch` now describe the policy-dependent
+  no-close path when `do_item.post_merge_state` stops short of `done`, so
+  extractable tails are moved without claiming that their epic or batch rows
+  automatically close.
+
+### Changed
+
+- **GitHub: `related` is GitHub's own related link.** `tracker.ts relate "#a"
+  related "#b"` now writes GitHub's related link (`addRelatesTo`) and no
+  comment, and `relations` reads it from the issue's `relatesTo`. The comments
+  earlier versions wrote (`<!-- jig:related … -->`) are still read as related
+  links until they are converted.
+- **Execution plans: the tracker's `blocks` may not contradict a plan.** Pickup
+  and the dispatcher refuse an epic's plan when the tracker's `blocks` makes an
+  issue wait for another that the plan puts after it, and name both issues.
+  Remove the wrong side, or re-run the planner. A dependency the plan states
+  and the tracker lacks is not refused.
+
+### Fixed
+
+- The dispatcher's steward pass now runs on a Claude Code account. Its skill
+  was hidden from the `/` menu, and Claude Code refuses a slash-command
+  prompt for a skill hidden that way, so every steward pass on a Claude
+  Code account ended before it read the digest.
+
 ## [0.195.0] - 2026-11-11
 
 Served items that no repository label places are no longer started by every repository that shares their tracker team.
@@ -6777,7 +6838,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.195.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.196.0...HEAD
+[0.196.0]: https://github.com/jig-harness/jig/compare/v0.195.0...v0.196.0
 [0.195.0]: https://github.com/jig-harness/jig/compare/v0.194.2...v0.195.0
 [0.194.2]: https://github.com/jig-harness/jig/compare/v0.194.1...v0.194.2
 [0.194.1]: https://github.com/jig-harness/jig/compare/v0.194.0...v0.194.1
