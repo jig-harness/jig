@@ -103,6 +103,13 @@ describe("claimed items read for a served person", () => {
     );
   });
 
+  it("does not attribute a served claim to a pickup that is only reserved", () => {
+    const record = endedPickup("#7", false);
+    record.state = { kind: "pending" };
+    releaseEnded([record], SLUG, new Set(), new Set(["#7"]));
+    expect(record.record.claimedItems).toBeUndefined();
+  });
+
   it("still reports the dispatch identity's own idle claim", () => {
     const plan = planPickups(
       input([{ key: "#7", title: "task", state: "In Progress" }]),
