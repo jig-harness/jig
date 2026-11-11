@@ -418,6 +418,13 @@ export function jiraTracker(client: Client): Tracker {
       );
     },
 
+    async deleteComment(key, id) {
+      await transport({
+        method: "DELETE",
+        path: `${path(key)}/comment/${encodeURIComponent(id)}`,
+      });
+    },
+
     ...reportOperations(client, stores),
     ...assignerOperations(client),
     ...claimOperations(client),
