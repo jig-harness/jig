@@ -1,8 +1,8 @@
 /**
  * What the page keeps in this browser alone: the theme a person chose and the
- * replies they are drafting. Nothing here reaches the host. A browser that
- * refuses storage (a private window, a policy) keeps nothing, and the page
- * works as before.
+ * answers they pick or draft on a card. Nothing here reaches the host. A
+ * browser that refuses storage (a private window, a policy) keeps nothing,
+ * and the page works as before.
  */
 
 const PREFIX = "jig-dispatch-dashboard:";

@@ -47,7 +47,8 @@ import {
 import { Refused } from "./refused.tsx";
 import { type Steering, useSteering, ViewFilter } from "./steering.tsx";
 import { TicksPanel } from "./ticks.tsx";
-import { forgetOldReplies } from "./replies.ts";
+import { bindAnswersToPark, forgetOldAnswers } from "./answers.ts";
+import { decisionRows } from "./picking.ts";
 import {
   FILTERED_VIEWS,
   type LogFilter,
@@ -124,8 +125,8 @@ export function App() {
   const scheme = schemeOf(theme);
   const [filter, setFilter] = useFilter();
   useEffect(() => {
-    forgetOldReplies(Date.now());
-    const timer = setInterval(() => forgetOldReplies(Date.now()), AGES_MOVE_MS);
+    forgetOldAnswers(Date.now());
+    const timer = setInterval(() => forgetOldAnswers(Date.now()), AGES_MOVE_MS);
     return () => clearInterval(timer);
   }, []);
   const state = useStateRead(token);
@@ -309,6 +310,17 @@ function Page({
     line: useCurrentLine(snapshot.line),
   };
   const { line, clock } = view;
+  // A pick made before the line kept park times counts for the first park time seen, in whichever view that line arrives.
+  useEffect(() => {
+    if (line === null) return;
+    bindAnswersToPark(
+      line.needs.map((n) => ({
+        repo: n.repo,
+        target: n.target,
+        rows: decisionRows(n.decisions),
+      })),
+    );
+  }, [line]);
   // The opening view waits for the first answer: a failed first read must not settle it.
   const read = view.answer !== null;
   const [tab, setTabNow] = useView(
@@ -610,7 +622,7 @@ function Colophon({ view, token }: { view: PageView; token: string }) {
       <span>{readLine(view)}</span>
       <span>
         read-only: this page sends GET requests and writes nothing to the host;
-        your theme and reply drafts stay in this browser
+        your theme and the answers you pick or draft stay in this browser
       </span>
     </div>
   );
