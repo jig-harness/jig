@@ -208,7 +208,10 @@ the release in step 4 restores them. Then, for each:
    it, name it and its reason in the report, and go on with the rest; when
    fewer than two issues remain, release the ones claimed (step 4's release)
    and stop. A fixed served batch stops too, after releasing the members
-   already claimed by the same release. A person's word to proceed
+   already claimed by the same release; for a `preflight` refusal that
+   carries an `"updatedAt"`, it records the result command its prompt names
+   with `--refused <that updatedAt> --key <that issue>`, so the dispatcher
+   holds only that member and launches the rest again without it. A person's word to proceed
    does not clear it: the item or the repository's rules change first.
 
    Any other way the loop ends without every claim made (a nonzero exit

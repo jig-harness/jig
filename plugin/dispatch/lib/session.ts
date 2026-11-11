@@ -96,13 +96,17 @@ function pickupPrompt(
 
 /** How a pickup records its end, once. */
 function pickupResultLines(
-  record: Pick<LaunchRecord, "id" | "token">,
+  record: Pick<LaunchRecord, "id" | "token" | "batchItems">,
 ): string[] {
+  const refused =
+    record.batchItems === undefined
+      ? `- the claim was refused by the repository's start rules (exit 3 with "why": "preflight" and an "updatedAt" in its JSON): ${resultCommand(record, "failed")} --refused <its updatedAt> --reason "<its reason>"`
+      : `- a member's claim was refused by the repository's start rules (exit 3 with "why": "preflight" and an "updatedAt" in its JSON): ${resultCommand(record, "failed")} --refused <its updatedAt> --key <its issue> --reason "<its reason>", repeating the three for each member refused; only those members are held`;
   return [
     "When you stop, record how the pickup ended, once:",
     `- its pull request is open and its drive armed: ${resultCommand(record, "done")} --pr <the pull request number>`,
     `- no pull request was needed (a duplicate or work already made): ${resultCommand(record, "done")} --none "<why>"`,
-    `- the claim was refused by the repository's start rules (exit 3 with "why": "preflight" and an "updatedAt" in its JSON): ${resultCommand(record, "failed")} --refused <its updatedAt> --reason "<its reason>"`,
+    refused,
     `- you stopped short of that (another refusal, a question, a failure): ${resultCommand(record, "failed")}`,
   ];
 }

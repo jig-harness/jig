@@ -47,9 +47,13 @@
  */
 import { optionalLaunchFields } from "./launch-record-options.ts";
 import { readNext, type NextOwner } from "./next-owner.ts";
-import { type PickupRefusal, readRefusal } from "./pickup-refusal.ts";
+import {
+  type PickupRefusal,
+  readRefusal,
+  type RefusedMember,
+} from "./pickup-refusal.ts";
 
-export type { PickupRefusal };
+export type { PickupRefusal, RefusedMember };
 import { unsettledStartups } from "./session-startup.ts";
 import type { Database } from "bun:sqlite";
 import { isMapping } from "../../shared/config-layers.ts";

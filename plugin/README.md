@@ -429,7 +429,10 @@ refuses another record's token and a second answer. A completed pickup adds
 no pull request was needed. A `done` without either is refused. A pickup
 whose claim the repository's start rules (`do_item.preflight_command`)
 refused records `failed --refused <updated-at> --reason <reason>`, and the dispatcher
-shows the item as held with that reason until the item changes. Every ended
+shows the item as held with that reason until the item changes. A batch
+pickup names each refused member with `--key <item>` beside its `--refused`:
+only those members are held, each until it changes, and the rest of the
+batch is picked up again without them. Every ended
 launch's outcome keeps its next owner: a station address, a person and their
 act, or nobody with a reason. `jig ask` shows this as `last.next`; older
 outcomes that did not keep it say it was not recorded. A converged drive
