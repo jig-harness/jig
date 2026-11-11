@@ -570,9 +570,9 @@ and an item that fails a rule is refused before anything is written.
 The drive and `do-item` assume things about a repository that many do
 not hold. Its AI reviewer stamps the commit it reviewed into a summary
 comment; a reviewer that reviews through the forge's own [review
-objects](../GLOSSARY.md#review-object) (CodeRabbit, for one) never does, so the drive either waits until it times
+objects](../GLOSSARY.md) (CodeRabbit, for one) never does, so the drive either waits until it times
 out or converges without that review. Its CI runs as GitHub Actions; a CI
-service that reports [commit statuses](../GLOSSARY.md#commit-status) (Jenkins, for one) leaves the repair
+service that reports [commit statuses](../GLOSSARY.md) (Jenkins, for one) leaves the repair
 pass and `fix-ci` with no log. Its work lands on one integration branch;
 products with maintained release lines land most fixes on a release branch
 chosen by the item's target version. Its pull-request titles and commits
@@ -580,7 +580,7 @@ carry no tracker key; some organisations refuse any commit on a protected
 branch without one. Each fix is optional configuration, and an unset one
 keeps today's behaviour. What it will build, one pull request per step:
 
-- **The reviewer.** A [reviewer evidence mode](../GLOSSARY.md#reviewer-evidence-mode) that reads the reviewed
+- **The reviewer.** A [reviewer evidence mode](../GLOSSARY.md) that reads the reviewed
   commit from the reviewer's latest review object and its check run on
   the head, with a built-in CodeRabbit profile; a paused or skipped
   review stops as `REVIEW_SKIPPED` with the reason; no merge-ready
@@ -594,7 +594,9 @@ keeps today's behaviour. What it will build, one pull request per step:
   tree of the pull request being repaired, as the [command
   store](tracker-facets.md#later-the-command-store) does; a status URL is
   fetched only where the configured CI profile authorizes its scheme and
-  host, redirects are validated, and credentials go only to those hosts.
+  host, redirects are validated, credentials go only to those hosts, and the
+  fetch has a deadline whose expiry cancels the command and its descendants,
+  for the drive's repair pass and `fix-ci --pr` alike.
 - **The conventions.** `pull_requests.base_rules` chooses the base branch
   from the item's labels, for the branch's start and the pull request
   alike; `title_format: pattern` with `title_pattern` (`{key}: {summary}`);
