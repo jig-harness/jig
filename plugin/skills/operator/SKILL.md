@@ -270,7 +270,9 @@ person's next attempt after inspecting the handoff.
 3. **Send only after the person says so.** Ask whether to send it, and wait
    for a yes to that dry run. Then run the same command without
    `--dry-run`, changing nothing else, or, for a structured answer, the
-   command the dry run printed. When the person changes anything, run the
+   command the dry run printed (a park from before decision digests prints
+   none: its dry run shows the decision as "none", and the same command
+   without `--dry-run` and without `--decision` is the one to run). When the person changes anything, run the
    dry run again.
 4. **An answer is the person's own words.** Pass exactly what they said
    the answer is, as one argument in single quotes (a single quote inside
@@ -287,7 +289,9 @@ person's next attempt after inspecting the handoff.
    the command to send, which names the digest (`--decision <digest>`, or
    `--decision-set <token>` for `--all`). Show the person the option (or,
    for `--all`, each item it approves and each it leaves out), and on their
-   yes run exactly the command the dry run printed. Never copy a digest from
+   yes run exactly the command the dry run printed, or, when the dry run
+   shows no digest (a park from before digests), the same command without
+   `--dry-run`. Never copy a digest from
    anywhere else. A refusal that the digest or the set changed means the
    drive framed the question again: run the dry run again and show it.
    When the dry run shows the person's own earlier answer, say the new one

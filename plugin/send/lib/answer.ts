@@ -86,7 +86,7 @@ function sendCommand(
       : `--choose ${shellWord(option)}`;
   const note =
     request.note === undefined ? "" : ` --note ${shellWord(request.note)}`;
-  return `jig send ${address} answer ${request.key} ${form}${note} --decision ${digest}${asFlag(sender)}`;
+  return `jig send ${address} answer ${shellWord(request.key)} ${form}${note} --decision ${digest}${asFlag(sender)}`;
 }
 
 type Structured = Extract<OneAnswer["form"], { kind: "approve" | "choose" }>;

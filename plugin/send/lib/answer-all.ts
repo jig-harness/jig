@@ -39,11 +39,12 @@ import {
 import { answerDecision } from "../../skills/drive-pr/scripts/lib/answer-forms.ts";
 import type { ParkedItem } from "../../skills/drive-pr/scripts/lib/state/park-frame.ts";
 import type { AskContext } from "../../ask/lib/station.ts";
-import { type Resolved, resolveChoice } from "./answer-choice.ts";
+import { optionInFull, type Resolved, resolveChoice } from "./answer-choice.ts";
 import {
   ANSWER_READER,
   answersTo,
   asFlag,
+  earlierAnswer,
   type ReadParks,
   type Sender,
   READABLE_NOTICE,
@@ -141,7 +142,7 @@ function allDetail(
 ): Row[] {
   const approves = eligible.map(
     (e) =>
-      `${e.item.key} (${classOf(e.item)}) [${e.digest}]: ${e.resolved.option.name}: ${e.resolved.option.summary}`,
+      `${e.item.key} (${classOf(e.item)}) [${e.digest}]: ${optionInFull(e.resolved.option, e.resolved.recommended).replaceAll("\n", "\n    ")}`,
   );
   const rows: Row[] = [["approves", approves.join("\n")]];
   if (leftOut.length > 0) rows.push(["left out", leftOut.join("\n")]);
@@ -210,17 +211,23 @@ export async function planAnswerAll(
     (e) => `"${answerLine(e.item.key, e.resolved.text)}"`,
   );
   const one = eligible.length === 1;
+  const earlier = eligible.flatMap((e) =>
+    answersTo(found, e.item.key).map((a) =>
+      earlierAnswer(a, `your answer to ${e.item.key}`),
+    ),
+  );
   return ok({
     address: ctx.name,
     repo: ctx.address.repo,
     verb: "answer",
     writesAs,
+    earlier,
     record: `${one ? "a comment" : "one comment per item"} on pull request ${pr}: ${lines.join(", ")}, ${one ? "with" : "each with"} the record envelope naming ${login} and this host (as a digest), the decision's digest and the option chosen in a hidden marker`,
     where: doc.url,
     reader: ANSWER_READER,
     tick: TICK,
     undo: "none once the re-arm has read them; until then, delete a comment, or answer that item again by its key: your latest answer is the one that counts",
-    notice: `${READABLE_NOTICE}; each approves the option the item's decision recommends, as your verdict on it`,
+    notice: `${READABLE_NOTICE}; each approves the option the item's decision recommends, as your verdict on it${earlier.length > 0 ? "; an item with an earlier answer of yours shown above has it replaced, with any note it carried" : ""}`,
     detail: allDetail(
       eligible,
       leftOut,

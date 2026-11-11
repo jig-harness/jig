@@ -9,6 +9,7 @@
  */
 import type { MachineStage } from "../../dispatch/lib/machine-config.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
+import { printable } from "../../ask/lib/render.ts";
 import type { Verb } from "./verbs.ts";
 
 /** The tick a send names as its reader when it woke none. */
@@ -82,6 +83,9 @@ export function writerLogin(
   return ok(login);
 }
 
+/** `text` for the terminal: control characters removed, the layout newlines kept. */
+const shown = (text: string) => text.split("\n").map(printable).join("\n");
+
 const row = (name: string, value: string) => `  ${name.padEnd(11)}${value}`;
 
 /** The plan as it prints before a write, or as a dry run. */
@@ -90,14 +94,14 @@ export function renderPlan(plan: Plan, dryRun: boolean): string {
     `jig send ${plan.address} ${plan.verb}${dryRun ? " (dry run)" : ""}`,
     row("repository", plan.repo),
     row("writes as", plan.writesAs),
-    ...(plan.earlier ?? []).map((e) => row("earlier", e)),
+    ...(plan.earlier ?? []).map((e) => row("earlier", shown(e))),
     row("record", plan.record),
     row("where", plan.where),
     row("read by", plan.reader),
     row("undo", plan.undo),
     ...(plan.notice === null ? [] : [row("note", plan.notice)]),
     ...(plan.detail ?? []).map(([name, value]) =>
-      row(name, value.replaceAll("\n", `\n${" ".repeat(13)}`)),
+      row(name, shown(value).replaceAll("\n", `\n${" ".repeat(13)}`)),
     ),
     ...(dryRun ? ["dry run: nothing was written."] : []),
   ].join("\n");
