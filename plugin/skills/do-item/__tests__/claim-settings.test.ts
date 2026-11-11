@@ -26,6 +26,7 @@ describe("claimSettingsOf", () => {
       ["ready"],
       ["todo", "todo"],
       ["in_progress"],
+      ["todo", "pr_open"],
     ])
       expect(() => claimSettingsOf({ do_item: { claim_from: value } })).toThrow(
         "do_item.claim_from",

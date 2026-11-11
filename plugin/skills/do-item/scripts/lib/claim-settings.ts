@@ -2,7 +2,7 @@
  * What a repository's `do_item` section adds to every claim:
  *
  * - `claim_from`: the canonical states work may start from. Unset, a claim
- *   keeps its own rule (any state but `in_progress`), and is not limited to
+ *   keeps its own restrictions (never `in_progress` or `pr_open`), and is not limited to
  *   `dispatch.states`. Set, an item in any other state, or in a status that
  *   maps to no canonical state, is refused with nothing written.
  * - `claim_marker`: a successful claim posts the claim marker
@@ -40,11 +40,13 @@ function claimFrom(value: unknown): CanonicalState[] | null {
     );
   if (new Set(value).size !== value.length)
     throw new ClaimSettingsError("do_item.claim_from lists a state twice");
-  // The claim moves an item there: an item already in it is someone's.
-  if (value.includes("in_progress"))
-    throw new ClaimSettingsError(
-      "do_item.claim_from cannot list in_progress, the state a claim moves an item to",
-    );
+  // The claim moves an item to in_progress, and an item in pr_open already has
+  // a pull request: either is someone's.
+  for (const s of ["in_progress", "pr_open"])
+    if (value.includes(s))
+      throw new ClaimSettingsError(
+        `do_item.claim_from cannot list ${s}: an item there is already someone's`,
+      );
   return value as CanonicalState[];
 }
 
