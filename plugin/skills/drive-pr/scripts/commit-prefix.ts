@@ -221,25 +221,27 @@ async function recreate(
   return r.stdout.trim();
 }
 
+/** Where HEAD stood when the rewrite started: its commit and the ref it points to. */
+interface HeadAt {
+  sha: string;
+  /** `refs/heads/<name>`, or `null` for a detached HEAD. */
+  ref: string | null;
+}
+
 /**
- * Reword every unpushed commit that lacks `prefix`, re-creating the unpushed
- * commits above it, and move HEAD's branch (or a detached HEAD) to the new
- * head. Returns what was reworded.
+ * Re-create every unpushed commit that lacks `prefix`, and those above it,
+ * oldest first; answers the old-to-new map and what was reworded.
  */
-export async function rewordUnpushed(
+async function rewrite(
   root: string,
   commits: readonly BranchCommit[],
   prefix: string,
-): Promise<PrefixReport["reworded"]> {
+): Promise<{
+  moved: Map<string, string>;
+  reworded: PrefixReport["reworded"];
+}> {
   const moved = new Map<string, string>();
   const reworded: PrefixReport["reworded"] = [];
-  const head = (await gitOut(root, ["rev-parse", "HEAD"])).trim();
-  const ref = await headRef(root, false);
-  if (commits.length > 0 && !commits.some((c) => c.sha === head))
-    throw new JigError(
-      "git-failed",
-      `HEAD moved to ${head.slice(0, 12)} after the branch's commits were read; nothing was rewritten: re-run`,
-    );
   for (const commit of commits) {
     if (commit.pushed) continue;
     const lacks = !commit.message.startsWith(prefix);
@@ -251,11 +253,14 @@ export async function rewordUnpushed(
     if (lacks)
       reworded.push({ from: commit.sha, to, subject: subjectOf(message) });
   }
-  const newHead = moved.get(head);
-  if (newHead === undefined) return reworded;
+  return { moved, reworded };
+}
+
+/** Move HEAD (its branch, or a detached HEAD) from `at` to `newHead`, refusing when it moved meanwhile. */
+async function moveHead(root: string, at: HeadAt, newHead: string) {
   if (
-    (await headRef(root, false)) !== ref ||
-    (await gitOut(root, ["rev-parse", "HEAD"])).trim() !== head
+    (await headRef(root, false)) !== at.ref ||
+    (await gitOut(root, ["rev-parse", "HEAD"])).trim() !== at.sha
   )
     throw new JigError(
       "git-failed",
@@ -263,13 +268,37 @@ export async function rewordUnpushed(
     );
   await gitOut(root, [
     "update-ref",
-    ...(ref === null ? ["--no-deref"] : []),
+    ...(at.ref === null ? ["--no-deref"] : []),
     "-m",
     "commit-prefix: put the issue key before unpushed commit messages",
-    ref ?? "HEAD",
+    at.ref ?? "HEAD",
     newHead,
-    head,
+    at.sha,
   ]);
+}
+
+/**
+ * Reword every unpushed commit that lacks `prefix`, re-creating the unpushed
+ * commits above it, and move HEAD's branch (or a detached HEAD) to the new
+ * head. Returns what was reworded.
+ */
+export async function rewordUnpushed(
+  root: string,
+  commits: readonly BranchCommit[],
+  prefix: string,
+): Promise<PrefixReport["reworded"]> {
+  const at: HeadAt = {
+    sha: (await gitOut(root, ["rev-parse", "HEAD"])).trim(),
+    ref: await headRef(root, false),
+  };
+  if (commits.length > 0 && !commits.some((c) => c.sha === at.sha))
+    throw new JigError(
+      "git-failed",
+      `HEAD moved to ${at.sha.slice(0, 12)} after the branch's commits were read; nothing was rewritten: re-run`,
+    );
+  const { moved, reworded } = await rewrite(root, commits, prefix);
+  const newHead = moved.get(at.sha);
+  if (newHead !== undefined) await moveHead(root, at, newHead);
   return reworded;
 }
 
