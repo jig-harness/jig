@@ -1591,7 +1591,8 @@ retry timer and requires a fixed listen port. Linux systemd requires user
 a reader through logout, so installation refuses them. No Orca install is
 needed. `--status` reports availability and diagnosis; `--access` alone
 prints the installed reader's private URL; `--uninstall --yes` removes it.
-See [the dashboard's availability and host checks](README.md#the-dispatcher).
+See [the dashboard's availability and host checks](README.md#the-dispatcher)
+and [opening it from a phone](phone-access.md).
 
 Durations are a whole number with `s`, `m` or `h`. What a run keeps lives
 under `~/.local/state/jig/dispatch/`. The files there are `receipts/` (one

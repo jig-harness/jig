@@ -912,7 +912,9 @@ installed-copy lookup), and renews at the launcher's
 24-hour deadline even without an update. Transient registry failures keep the
 current reader serving and retry the lookup. Each renewal rotates the token;
 run `--access` again for the new URL. The command does not install a private
-network front or open a public listener.
+network front or open a public listener. To open the page from a phone over
+private HTTPS, or over private HTTP with its limits, follow
+[phone-access.md](phone-access.md).
 
 To verify availability on the configured host, first wait for `--status` to
 report a healthy reader and note its pid. End the terminal session, reconnect
