@@ -55,6 +55,17 @@ export function openClause(blocked: string | null | undefined): string {
 }
 
 /**
+ * The JQL for a started issue: one in the In Progress category, or the
+ * configured blocked status, which the model reads as started whatever
+ * category the site files it under.
+ */
+export function startedClause(blocked: string | null | undefined): string {
+  return blocked === null || blocked === undefined
+    ? 'statusCategory = "In Progress"'
+    : `(statusCategory = "In Progress" OR status = ${quote(blocked)})`;
+}
+
+/**
  * `ms` as a JQL date, `yyyy-MM-dd HH:mm`, in `timeZone` (an IANA name, as
  * Jira's profile gives it).
  */

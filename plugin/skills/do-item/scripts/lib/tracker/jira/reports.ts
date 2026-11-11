@@ -41,6 +41,7 @@ import {
   quote,
   since,
   someLabel,
+  startedClause,
   stringList,
   widened,
 } from "./jql.ts";
@@ -325,7 +326,7 @@ export function reportOperations(
         inProject(
           project,
           await label(l, signal),
-          'statusCategory = "In Progress"',
+          startedClause(model.stateName("blocked")),
         ),
         `started issues labelled '${l}'`,
         signal,
