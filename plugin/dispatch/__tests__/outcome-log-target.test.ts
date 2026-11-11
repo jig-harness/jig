@@ -116,6 +116,7 @@ describe("the outcome log's key column", () => {
     old.run("DROP TABLE reflection_findings");
     old.run("DROP TABLE merge_reads");
     old.run("ALTER TABLE launches DROP COLUMN result_next");
+    old.run("ALTER TABLE launches DROP COLUMN refusal");
     old.run("ALTER TABLE followup_outcomes DROP COLUMN asked");
     old.run("DROP TABLE load_samples");
     old.run("DROP TABLE failures");

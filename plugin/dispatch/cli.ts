@@ -199,6 +199,16 @@ const result = command(
         description: message`Why a completed pickup needs no pull request. Mutually exclusive with --pr.`,
       }),
     ),
+    refused: optional(
+      option("--refused", string({ metavar: "UPDATED-AT" }), {
+        description: message`A failed pickup whose claim the repository's start rules refused: the item's updatedAt the claim printed. Needs --reason.`,
+      }),
+    ),
+    reason: optional(
+      option("--reason", string({ metavar: "REASON" }), {
+        description: message`The reason the refused claim printed.`,
+      }),
+    ),
   }),
   { brief: message`Record how a dispatched interactive session ended.` },
 );
@@ -481,6 +491,26 @@ function repositories(options: Tick, machine: MachineConfig | null): string[] {
 
 type Subcommand = Exclude<DispatchArguments, { action: "tick" }>;
 
+/** Forward a refused pickup's result: `--refused` and `--reason`, and no handoff. */
+function refusedResultMain(
+  args: Extract<Subcommand, { action: "result" }>,
+): number {
+  if (args.pr !== undefined || args.none !== undefined) {
+    console.error(
+      "jig dispatch result: --refused is a failed pickup's; it takes no --pr or --none",
+    );
+    return 2;
+  }
+  return resultMain([
+    args.record,
+    args.token,
+    args.outcome,
+    "--refused",
+    ...(args.refused === undefined ? [] : [args.refused]),
+    ...(args.reason === undefined ? [] : [args.reason]),
+  ]);
+}
+
 /** Forward a session result and its mutually exclusive handoff arguments. */
 function sessionResultMain(
   args: Extract<Subcommand, { action: "result" }>,
@@ -489,6 +519,8 @@ function sessionResultMain(
     console.error("jig dispatch result: pass either --pr or --none, not both");
     return 2;
   }
+  if (args.refused !== undefined || args.reason !== undefined)
+    return refusedResultMain(args);
   return resultMain([
     args.record,
     args.token,

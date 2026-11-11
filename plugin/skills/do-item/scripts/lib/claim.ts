@@ -11,6 +11,8 @@
  */
 
 import {
+  CANONICAL_STATES,
+  type CanonicalState,
   type Tracker,
   TrackerRequestError,
   type TrackerUser,
@@ -31,11 +33,17 @@ export type ClaimResult =
       state: string;
     }
   | {
-      /** Nothing was written: someone already holds the issue. */
+      /**
+       * Nothing was written: someone already holds the issue, its state is
+       * not one `do_item.claim_from` lets work start from, or the
+       * repository's `do_item.preflight_command` refused it.
+       */
       outcome: "refused";
       issue: string;
-      why: "in_progress" | "pr_open" | "assigned";
+      why: "in_progress" | "pr_open" | "assigned" | "state" | "preflight";
       reason: string;
+      /** A preflight refusal: the item's `updatedAt` as the command saw it. */
+      updatedAt?: string;
     }
   | {
       /** The claim was written and the re-read shows another one landed first. */
@@ -50,10 +58,57 @@ function names(users: TrackerUser[]): string {
   return users.map((u) => u.name).join(", ");
 }
 
+/** The canonical states whose tracker name is `name`; empty when none is. */
+export function canonicalStatesOf(
+  tracker: Pick<ClaimTracker, "stateName">,
+  name: string,
+): CanonicalState[] {
+  return CANONICAL_STATES.filter((s) => {
+    const mapped = tracker.stateName(s);
+    return mapped !== null && sameName(mapped, name);
+  });
+}
+
+/**
+ * The refusal of a claim from `stateName` when `claimFrom`
+ * (`do_item.claim_from`) does not list it; `null` when it does, or when the
+ * repository sets no list. A status that maps to no canonical state is
+ * refused: a side state with its own name is never claimable by accident.
+ */
+export function claimFromRefusal(
+  tracker: Pick<ClaimTracker, "stateName">,
+  key: string,
+  stateName: string,
+  claimFrom: readonly CanonicalState[] | null,
+): ClaimResult | null {
+  if (claimFrom === null) return null;
+  const states = canonicalStatesOf(tracker, stateName);
+  if (states.some((s) => claimFrom.includes(s))) return null;
+  const allowed = claimFrom
+    .map((s) => `${s} (${tracker.stateName(s)})`)
+    .join(", ");
+  return {
+    outcome: "refused",
+    issue: key,
+    why: "state",
+    reason:
+      states.length === 0
+        ? `${key} is in ${stateName}, which maps to no canonical state; do_item.claim_from lets work start only from ${allowed}`
+        : `${key} is in ${stateName} (${states.join(", ")}); do_item.claim_from lets work start only from ${allowed}`,
+  };
+}
+
+/** What a repository's configuration adds to a claim's own rules. */
+export interface ClaimRules {
+  /** `do_item.claim_from`: the canonical states work may start from; `null` keeps every open state. */
+  claimFrom: readonly CanonicalState[] | null;
+}
+
 /** Claim `key` for the identity the tracker's credential acts as. */
 export async function claimIssue(
   tracker: ClaimTracker,
   key: string,
+  rules: ClaimRules = { claimFrom: null },
 ): Promise<ClaimResult> {
   const me = await tracker.viewer();
   const before = await tracker.poolIssue(key);
@@ -67,6 +122,13 @@ export async function claimIssue(
       why: "in_progress",
       reason: `${key} is already ${started}: another session holds it`,
     };
+  const outside = claimFromRefusal(
+    tracker,
+    key,
+    before.state.name,
+    rules.claimFrom,
+  );
+  if (outside !== null) return outside;
   const prOpen = tracker.stateName("pr_open");
   if (prOpen !== null && sameName(before.state.name, prOpen))
     return {

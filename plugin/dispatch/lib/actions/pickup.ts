@@ -105,6 +105,7 @@ export async function changed(
   const hold = pickupHold(
     key,
     state.records.filter((r) => r.record.repo === repo.slug),
+    issue.updatedAt,
   );
   if (hold.kind !== "none") return { why: hold.why };
   let sessions: SessionsReport;

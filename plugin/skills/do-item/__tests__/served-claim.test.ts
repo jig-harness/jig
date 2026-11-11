@@ -352,3 +352,116 @@ test("post-write holds, incomplete facts, blockers and lost ancestor authority s
   ).toBe("stood_down");
   expect(ancestor.writes).toEqual(["assign", "start"]);
 });
+test("claim_from refuses a state outside it before any write, inherited claims included", async () => {
+  const names: Record<string, string> = {
+    backlog: "Backlog",
+    todo: "Todo",
+    in_progress: "In Progress",
+  };
+  const named = (w: ReturnType<typeof world>) => {
+    w.tracker.stateName = ((s: string) =>
+      names[s] ?? s) as Tracker["stateName"];
+    return w;
+  };
+  const allowed = named(world());
+  expect(
+    (
+      await claimServedIssue(allowed.tracker, "#1", {
+        person: "dana",
+        claimFrom: ["todo"],
+      })
+    ).outcome,
+  ).toBe("claimed");
+  const inherited = named(world(true));
+  expect(
+    await claimServedIssue(inherited.tracker, "#1", {
+      person: "dana",
+      ancestor: "#3",
+      claimFrom: ["backlog"],
+    }),
+  ).toMatchObject({ outcome: "refused", why: "state" });
+  expect(inherited.writes).toEqual([]);
+});
+test("a state that leaves claim_from after the assignment write stands down", async () => {
+  const w = world(true);
+  const names: Record<string, string> = {
+    backlog: "Backlog",
+    todo: "Todo",
+    in_progress: "In Progress",
+  };
+  w.tracker.stateName = ((s: string) => names[s] ?? s) as Tracker["stateName"];
+  const read = w.tracker.getIssue.bind(w.tracker);
+  w.tracker.getIssue = (async (key: string) => {
+    const issue = await read(key);
+    if (key !== "#1" || !issue || !w.writes.includes("assign")) return issue;
+    return { ...issue, state: { name: "Backlog", type: "backlog" } };
+  }) as Tracker["getIssue"];
+  expect(
+    await claimServedIssue(w.tracker, "#1", {
+      person: "dana",
+      ancestor: "#3",
+      claimFrom: ["todo"],
+    }),
+  ).toMatchObject({ outcome: "stood_down", issue: "#1" });
+  expect(w.writes).toEqual(["assign"]);
+});
+function flipAfter(w: ReturnType<typeof world>, reads: number, to: unknown) {
+  const names: Record<string, string> = {
+    backlog: "Backlog",
+    todo: "Todo",
+    in_progress: "In Progress",
+  };
+  w.tracker.stateName = ((s: string) => names[s] ?? s) as Tracker["stateName"];
+  const read = w.tracker.getIssue.bind(w.tracker);
+  let seen = 0;
+  w.tracker.getIssue = (async (key: string) => {
+    const issue = await read(key);
+    if (key !== "#1" || !issue) return issue;
+    seen += 1;
+    return seen > reads ? to : issue;
+  }) as Tracker["getIssue"];
+}
+test("an unreadable item before the inherited assignment write refuses without writing", async () => {
+  const w = world(true);
+  flipAfter(w, 3, null);
+  expect(
+    await claimServedIssue(w.tracker, "#1", {
+      person: "dana",
+      ancestor: "#3",
+      claimFrom: ["todo"],
+    }),
+  ).toMatchObject({ outcome: "refused", why: "state" });
+  expect(w.writes).toEqual([]);
+});
+test("a direct claim whose state leaves claim_from before any write keeps the state refusal", async () => {
+  const w = world();
+  flipAfter(w, 3, {
+    identifier: "#1",
+    parent: { identifier: "#2" },
+    labels: ["epic"],
+    state: { name: "Backlog", type: "unstarted" },
+  });
+  expect(
+    await claimServedIssue(w.tracker, "#1", {
+      person: "dana",
+      claimFrom: ["todo"],
+    }),
+  ).toMatchObject({ outcome: "refused", why: "state" });
+  expect(w.writes).toEqual([]);
+});
+test("a direct claim whose final state is started but outside claim_from refuses, not stands down", async () => {
+  const w = world();
+  flipAfter(w, 3, {
+    identifier: "#1",
+    parent: { identifier: "#2" },
+    labels: ["epic"],
+    state: { name: "In Review", type: "started" },
+  });
+  expect(
+    await claimServedIssue(w.tracker, "#1", {
+      person: "dana",
+      claimFrom: ["todo"],
+    }),
+  ).toMatchObject({ outcome: "refused", why: "state" });
+  expect(w.writes).toEqual([]);
+});

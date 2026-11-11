@@ -552,42 +552,56 @@ goes, the current decision is the first one left with no pick.
 
 - **An option's number is its place on the card.** The recommended option
   is always 1, the others follow in the decision's order, and one function
-  (`shared/decision-card.ts`) numbers them for the card and for `jig ask`.
-  So `j`, `1` means "the recommendation" on every card. A number never
+  (`shared/decision-card.ts`) numbers them for the card; `jig ask` takes its
+  numbers from the same function with its question fields
+  ([#701](https://github.com/jig-harness/jig/issues/701)). So `j`, `1`
+  means "the recommendation" on every card. A number never
   reaches the comment: a pick is written as `approve` or `choose <option>`
   with the digest, because a number means nothing outside the order it was
   shown in.
 - **A pick, a note and a free answer belong to one framing.** Each is kept
-  like the reply drafts (`dashboard/src/replies.ts`), by repository, pull
-  request, key, digest and the time the item was parked (the park
-  occurrence the receipt names). When a decision is framed again, or the
-  same wording is parked again, all of them are dropped and the row says
-  so; none is carried to the new framing or sent with its digest.
+  in the browser (`dashboard/src/answers.ts`), by repository, pull request,
+  key, digest and the time the item was parked (the park occurrence the
+  receipt names); a line that carries no park time leaves the digest to
+  tell the framings apart. When a decision is framed again, or the same
+  wording is parked again, all of them are dropped and the row says so;
+  none is carried to the new framing or sent with its digest, and until the
+  person answers again the card copies no approval for it.
 - **Notes and free answers are kept apart.** A note and a free answer are
   separate drafts, so clearing a pick never turns its note into an answer
-  and a later pick never turns a draft into a note. A decision has one
+  and a later pick never turns a draft into a note. A note belongs to the
+  option it was written beside, so picking another option drops it. A
+  free answer whose words the readers would count as a choice (`approve`,
+  `choose Drop`, in any spelling the normalizer folds) holds the copy back,
+  and the row says to pick that option instead, as `jig send` refuses such
+  text: a choice is always made by a pick, guarded where its class or
+  option asks. A decision has one
   active answer, the pick or the free answer, whichever was made last; the
   other stays as a draft, is left out of the comment and of every send, and
   the row says which one counts. Both are checked as an
-  answer's text is, by a check that moves from `answer-comment.ts` to
-  `shared/` so the page can run it, and a row that fails holds the copy
-  back and says why. A row with neither a pick nor a free answer is left out
+  answer's text is, by the check `shared/decisions/answer-text.ts` holds
+  for every writer, and the choice the readers would find in the words is
+  read by the function they read it with (`shared/decision-card.ts`); a row
+  that fails holds the copy back and says why. A row with neither a pick nor a free answer is left out
   of the comment.
 - **A digit never commits, on any surface.** A pick is guarded when its
   class is one the acts table does not list as Decide by name, or its
   option is marked `reversible: false`. Committing picks that include a guarded one
   takes two steps, however it is started (the `c` key, the card's Copy
   button, the palette or the panel's Send): the first shows every guarded
-  pick's summary and cost, and the second copies or sends. The first
-  step's effect ends when any pick changes, a digest changes or the card
-  loses focus. A decision whose active answer is a free answer is committed in its
+  pick's summary and cost, and the second copies or sends. A held key acts
+  once, so a held `c` never takes the second step. The first step's effect
+  ends when any pick changes, a digest changes, the card loses focus, or
+  the palette closes having run nothing on that card. A copy the palette
+  sends to a card that is gone by the time its view is drawn copies
+  nothing and says so. A decision whose active answer is a free answer is committed in its
   words, as an `answer <key>:` line carrying the digest, and takes
   precedence over the fallback below. With no pick and no free answer,
   `c` copies an `approve` line for a card of one decision whose class is
   listed as Decide by name and whose recommended option is not marked
-  `reversible: false` (a card whose recommendation is guarded needs a pick, and so
-  the two steps); for any other card it copies the `answer <key>:`
-  starting line, as it does today.
+  `reversible: false` and whose pick was not dropped by a new framing (a
+  card whose recommendation is guarded needs a pick, and so the two steps);
+  for any other card it copies the `answer <key>:` starting line.
 - **Every action has a target for a pointer and a screen reader.** On a
   phone an option's row is what is tapped, digits are not shown, and the
   pick is announced. Keys fire only on the focused card and never inside a
@@ -658,6 +672,20 @@ in the old form.
   waited; a park the previous line held that left with no receipt is
   counted as removed, not answered. The ledger is on the pull request, so a
   re-arm on any host is counted, as far as the owner's tick ran to see it.
+  The receipts are the ledger's `resolvedParks`, the last 10 (the receipts one re-arm just wrote are all kept, even past 10), which are also
+  the resolved parks the hub's first stage keeps, and the first thing the
+  ledger cuts as it nears its size limit. A receipt keeps each consumed
+  answer without its body, which the kept answers hold for the pass. The
+  comparison runs in every tick, whole or partial, for each repository
+  whose read it accepts, as it writes its line, and its rows and the line
+  land in one transaction. Receipts evicted past the last 10, or cut from
+  a ledger, are remembered as lost (`resolvedParksLost`, the ledger's
+  `cut`), so a park they may have answered stays held. The rows are events `park-answered`, `park-provisional` (a
+  park handed on to be decided provisionally at the `wide` level) and
+  `park-removed`, each keyed by its park occurrence, so none is counted
+  twice. A held park on a ledger the tick could not read stays held for a
+  later tick, and one on a pull request no longer open is not counted. A park unparked by hand leaves no receipt and is counted as
+  removed.
 - **Recommendation acceptance.** `jig dispatch log` reports, per class and
   repository, how many parks were answered, how many with the recommended
   option and no note, and the median wait. That is evidence for a person deciding

@@ -104,14 +104,20 @@ export interface WantedItem {
   batchAllowed?: boolean;
   queueIssue?: import("../../skills/do-item/scripts/lib/tracker/port.ts").PoolIssue;
   queueRank?: { unblocks: number; epicOrder?: number };
+  /** When the tracker last saw the item change; absent where the read has none. */
+  updatedAt?: string;
 }
 
 /** How a drive ledger reads, per the design's ledger-to-class table; the state label projection reads it too. */
 export type { LedgerClass } from "../../shared/pr-labels/projection.ts";
 import type { LedgerClass } from "../../shared/pr-labels/projection.ts";
 
-/** How a pickup that needs nothing reads: its last session ended, or its claimed item is idle but not yet stalled. */
-export type PickupClass = "pickup-ended" | "claimed-idle" | "claimed";
+/** How a pickup that needs nothing reads: its last session ended, the repository's start rules refused its claim, or its claimed item is idle but not yet stalled. */
+export type PickupClass =
+  | "pickup-ended"
+  | "pickup-refused"
+  | "claimed-idle"
+  | "claimed";
 
 /** How a merged pull request whose follow-up needs nothing reads: done, or held by a run a person started. */
 export type FollowupClass = "followup-done" | "followup-held";
@@ -119,9 +125,13 @@ export type FollowupClass = "followup-done" | "followup-held";
 /** A parked decision still waiting on its answer, as the drive framed it. */
 export interface WaitingPark {
   digest?: string;
+  /** When the item was parked (`ParkedItem.at`); absent on an older park. */
+  parkedAt?: string;
   stale?: import("../../skills/drive-pr/scripts/lib/state/pass-handoff.ts").PendingAnswer[];
   /** The latest answers that disagree, which keep the item waiting. */
   disputed?: import("../../skills/drive-pr/scripts/lib/state/pass-handoff.ts").PendingAnswer[];
+  /** Every person's latest answer to it, stale ones included; absent when it has none. */
+  answers?: import("../../skills/drive-pr/scripts/lib/state/pass-handoff.ts").PendingAnswer[];
   decision?: import("../../shared/decisions/park.ts").ParkedDecision;
   person?: string;
   key: string;
@@ -197,6 +207,8 @@ export interface DrivenPr {
   evidence: Evidence;
   /** For a `parked` ledger: the decisions still unanswered. */
   waiting?: WaitingPark[];
+  /** For a ledger that read: every park it holds and the receipts of those re-arms unparked (`park-events.ts`). */
+  parks?: import("./park-events.ts").LedgerParks;
   /** For a `stale` ledger: what its stop does not settle. */
   stale?: StaleCause;
   /** Its labels, read only where the repository turns dispatch labels on. */

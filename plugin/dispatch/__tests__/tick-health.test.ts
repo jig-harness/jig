@@ -149,7 +149,10 @@ describe("the stored line's recent ticks", () => {
     root = null;
   });
 
-  function stored(ticks: unknown): ReturnType<typeof readLine> {
+  function stored(
+    ticks: unknown,
+    needs: unknown[] = [],
+  ): ReturnType<typeof readLine> {
     root = mkdtempSync(join(tmpdir(), "tick-health-"));
     const line = {
       version: 1,
@@ -165,7 +168,7 @@ describe("the stored line's recent ticks", () => {
       accounts: [],
       lastAccount: null,
       sessions: [],
-      needs: [],
+      needs,
       queue: [],
       repos: [],
       ticks,
@@ -183,5 +186,37 @@ describe("the stored line's recent ticks", () => {
   it("refuse the line when an entry is not in the strip's form", () => {
     const read = stored([{ runId: "run-1", tookMs: "slow" }]);
     expect(read.ok).toBe(false);
+  });
+
+  it("read back with a stale answer as the card shows it", () => {
+    const need = {
+      cause: "parked",
+      repo: "o/r",
+      target: "#7",
+      since: STARTED,
+      reason: "q",
+      workspaces: [],
+      decisions: [
+        {
+          key: "A",
+          kind: "thread",
+          lines: [],
+          question: "q?",
+          recommendation: null,
+          decisionClass: null,
+          answers: [
+            {
+              author: "alice",
+              at: STARTED,
+              url: "https://example.test/c",
+              stale: { digest: "0123456789ab" },
+            },
+          ],
+          answerState: "stale",
+        },
+      ],
+    };
+    const read = stored([], [need]);
+    expect(read.ok).toBe(true);
   });
 });

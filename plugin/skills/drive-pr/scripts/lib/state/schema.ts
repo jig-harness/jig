@@ -14,26 +14,24 @@
  * The check is the SHAPE, not merely the syntax. `{}` is valid JSON, and under
  * a syntax-only predicate it read as usable state: `.rounds` emitted `null`,
  * drive.ts coerced that to zero, and a resumed drive was handed a fresh round
- * budget with its parked decisions silently gone — the exact outcome the
- * reader exists to refuse, reached by a file that parses. The PR identity is
- * checked too, so a file copied or mis-named cannot lend one PR's budget to
- * another.
+ * budget with its parked decisions silently gone — the exact outcome the reader
+ * exists to refuse, reached by a file that parses. The PR identity is checked
+ * too, so a file copied or mis-named cannot lend one PR's budget to another.
  *
  * The shape check reaches INSIDE `parked`, not just to the container. Checking
- * only that it is an array stops one level short of the thing the array is
- * for: `{"parked":[{}]}` passed, `parked-keys` then emitted `null` for that
- * entry, drive-status matched no thread or fingerprint against it, and the
- * drive re-armed work a human had parked — the re-arm loop the parked set
- * exists to close, reached through the validator that exists to protect it.
- * Every field a consumer reads is required: `key` (the match token), `kind`,
- * `reason` and `round` (rendered into the handoff table). The predicate is
- * deliberately the same one `park` enforces at the write side — non-empty key
- * with no CR or LF in it, one of the two kinds, non-empty reason — so the
- * validator restates the writer's invariant rather than inventing a second,
- * weaker one for it to drift from. The newline ban is load-bearing on BOTH
- * sides: `parked-keys` is a line-delimited channel, so a key containing one is
- * read back as two match tokens, and the phantom second token suppresses live
- * work nobody parked.
+ * only that it is an array stops one level short of the thing the array is for:
+ * `{"parked":[{}]}` passed, `parked-keys` then emitted `null` for that entry,
+ * drive-status matched no thread or fingerprint against it, and the drive
+ * re-armed work a human had parked — the re-arm loop the parked set exists to
+ * close, reached through the validator that exists to protect it. Every field a
+ * consumer reads is required: `key` (the match token), `kind`, `reason` and
+ * `round` (rendered into the handoff table). The predicate is deliberately the
+ * same one `park` enforces at the write side — non-empty key with no CR or LF
+ * in it, one of the two kinds, non-empty reason — so the validator restates the
+ * writer's invariant rather than inventing a second, weaker one for it to drift
+ * from. The newline ban is load-bearing on BOTH sides: `parked-keys` is a
+ * line-delimited channel, so a key containing one is read back as two match
+ * tokens, and the phantom second token suppresses live work nobody parked.
  */
 
 import { isGitSha } from "../cli.ts";
@@ -402,6 +400,8 @@ export interface DriveState {
   /** The review arbiter's ruling per thread (`rulings.ts`). */
   rulings?: ArbiterRuling[];
   ladderVerdicts?: RecordedLadderVerdict[];
+  resolvedParks?: import("./resolution-receipt.ts").ResolutionReceipt[];
+  resolvedParksLost?: boolean; // receipts evicted or cut: absence proves nothing
   [extra: string]: unknown;
 }
 
