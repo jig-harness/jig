@@ -495,7 +495,8 @@ export function endedRow(
     class: placed.class,
     reason,
     next:
-      record.action === "pickup" && r.result === "done"
+      record.action === "pickup" &&
+      (r.result === "done" || r.result === "waits")
         ? (r.next ?? null)
         : derivedNext(record.action, placed.class, reason),
     ...aboutFields(about),

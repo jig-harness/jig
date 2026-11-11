@@ -75,7 +75,7 @@ function reclassifyEnded(
   row.class = placed.class;
   row.reason = placed.reason;
   row.next =
-    row.stage === "pickup" && result === "done"
+    row.stage === "pickup" && (result === "done" || result === "waits")
       ? next
       : derivedNext(row.stage, String(row.class), String(row.reason));
   db.query(

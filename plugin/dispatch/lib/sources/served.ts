@@ -624,7 +624,7 @@ async function childStates(
       child === null || child.truncated.length
         ? null
         : view.once(
-            `metadata ${child.identifier} ${child.updatedAt ?? ""}`,
+            `metadata ${child.identifier} ${child.updatedAt ?? ""} ${options.epic}`,
             () => metadata(tracker, child, identity, options.epic, cache, null),
           ),
     ),

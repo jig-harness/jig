@@ -500,9 +500,13 @@ type Subcommand = Exclude<DispatchArguments, { action: "tick" }>;
 function refusedResultMain(
   args: Extract<Subcommand, { action: "result" }>,
 ): number {
-  if (args.pr !== undefined || args.none !== undefined) {
+  if (
+    args.pr !== undefined ||
+    args.none !== undefined ||
+    args.until !== undefined
+  ) {
     console.error(
-      "jig dispatch result: --refused is a failed pickup's; it takes no --pr or --none",
+      "jig dispatch result: --refused is a failed pickup's; it takes no --pr, --none or --until",
     );
     return 2;
   }
