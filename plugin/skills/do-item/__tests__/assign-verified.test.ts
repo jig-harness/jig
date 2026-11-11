@@ -75,6 +75,28 @@ describe("checkAssignment", () => {
     });
   });
 
+  it("fails closed when a delayed older sequence becomes visible while a racing change stays hidden", () => {
+    const changes: AssigneeChange[] = [
+      { from: null, to: "me", at: at(1) },
+      { from: "me", to: null, at: at(2) },
+    ];
+    expect(checkAssignment("me", changes, "me", [])).toEqual({
+      ok: false,
+      replaced: null,
+    });
+  });
+
+  it("fails closed when the new changes skip one the tracker has not shown", () => {
+    const changes: AssigneeChange[] = [
+      { from: null, to: "dana", at: at(1) },
+      { from: "erin", to: "me", at: at(2) },
+    ];
+    expect(checkAssignment("me", changes, "me", [])).toEqual({
+      ok: false,
+      replaced: null,
+    });
+  });
+
   it("refuses, restoring nobody, when the issue is no longer the user's or the history holds no change to it", () => {
     expect(checkAssignment("dana", [], "me")).toEqual({
       ok: false,

@@ -7,13 +7,17 @@
  * The history is read before the write, and only a change that appeared after
  * that read can verify it: an older assignment of the same account proves
  * nothing about this write. The newest such change that set the assignee to
- * the user must have set it from nobody. A change from someone else means another writer assigned the issue
+ * the user must have set it from nobody, and the changes that appeared must
+ * form one unbroken sequence ending at the user: a broken sequence means the
+ * listing shows events from outside this write, and it fails closed. A change from someone else means another writer assigned the issue
  * between the read and the write, and this write replaced them: the adapter
  * puts them back, if the issue still shows this write, and the claim stands
  * down. A history that holds no such change cannot verify the write, and
  * stands the claim down too. A writer that changes the assignee after this
  * write leaves the issue assigned to someone else, and the claim stands down
- * without restoring anyone: that writer's assignment stands.
+ * without restoring anyone: that writer's assignment stands. The trackers
+ * supply no event ids, so this is best effort: a lone delayed older change to
+ * the user that is consistent with the sequence cannot be told from the write's.
  */
 
 /** One change of an issue's assignee: account ids, `null` for nobody. */
@@ -69,6 +73,25 @@ function unseen(
 }
 
 /**
+ * Whether the changes form one unbroken sequence of assignees (each change
+ * starts from where the one before ended) that ends at `user`. A listing that
+ * also shows a delayed older event, or one that skips a change the tracker
+ * has not yet made visible, breaks the sequence, and then nothing in it is
+ * evidence of this write.
+ */
+function chainEndsAt(
+  changes: readonly AssigneeChange[],
+  user: string,
+): boolean {
+  let end: string | null | undefined;
+  for (const c of changes) {
+    if (end !== undefined && c.from !== end) return false;
+    end = c.to;
+  }
+  return end === user;
+}
+
+/**
  * Read the history after assigning `user`: did the write replace nobody?
  * `known` is the history before the write; only the changes it did not hold
  * count as this write's evidence.
@@ -80,9 +103,9 @@ export function checkAssignment(
   known: readonly AssigneeChange[] = [],
 ): AssignmentCheck {
   if (current !== user) return { ok: false, replaced: null };
-  const latest = unseen(changes, known)
-    .filter((c) => c.to === user)
-    .at(-1);
+  const fresh = unseen(changes, known);
+  if (!chainEndsAt(fresh, user)) return { ok: false, replaced: null };
+  const latest = fresh.at(-1);
   if (latest === undefined) return { ok: false, replaced: null };
   return latest.from === null
     ? { ok: true }
