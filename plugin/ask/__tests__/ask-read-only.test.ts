@@ -32,6 +32,7 @@ import { putLock } from "../../skills/drive-pr/__tests__/state-rows.ts";
 import { stoppedLedger } from "../../dispatch/__tests__/fixtures.ts";
 import { ledgerBody } from "../../skills/drive-pr/__tests__/ledger-forge-fixtures.ts";
 import type { AskAnswer } from "../lib/answer.ts";
+import { launchesWhere } from "../lib/local.ts";
 import {
   type AskWorld,
   askWorld,
@@ -227,6 +228,12 @@ describe("jig ask against the dispatcher's database", () => {
     const before = readFileSync(file);
 
     const answer = await askNine(w);
+    const launches = await launchesWhere(w.state, () => true);
+    expect(launches.ok && launches.value.records).toContainEqual(
+      expect.objectContaining({
+        record: expect.objectContaining({ id: RECORD }),
+      }),
+    );
     expect(answer.sources.records).toContainEqual({
       record: "dispatch-launch",
       read: true,
