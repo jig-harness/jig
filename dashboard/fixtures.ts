@@ -21,10 +21,12 @@ import {
 import { mergingReady, waitingReady } from "./fixture-ready.ts";
 import {
   API,
+  ended,
   generated,
   INF,
   iso,
   loudRows,
+  MOB,
   nightly,
   NOW_MS,
   observed,
@@ -44,6 +46,7 @@ export const SCENARIOS = [
   "token",
   "empty",
   "long",
+  "partial",
 ] as const;
 export type ScenarioId = (typeof SCENARIOS)[number];
 
@@ -543,6 +546,113 @@ function queueFixture(): Fixture {
   };
 }
 
+/** The mobile repository's checkout, which another tick holds busy in the partial scenario. */
+const MOB_PATH = "/srv/work/mobile";
+
+/**
+ * A line kept current while one repository is busy: every tick since 16:05
+ * found the mobile repository held by another tick, so its part is as of
+ * then and the rest as of 16:45. Its items carry their links and titles as
+ * the tracker listing gave them, one queued item and two log rows keep none.
+ */
+function partialFixture(): Fixture {
+  const mobileRead = T(16, 5);
+  const base = line({
+    sessions: workingTwo(),
+    lastAccount: "codex-a",
+    needs: [
+      need({
+        cause: "stalled",
+        stage: "pickup",
+        repo: API,
+        item: "#240",
+        url: "https://forge.example/example-org/api/issues/240",
+        title: "Retry the webhook delivery",
+        since: T(15, 50),
+        reason: "a claimed item with no running session past stalled_after",
+        notified: T(15, 55),
+      }),
+    ],
+    queue: [
+      queued({
+        source: "assigned",
+        group: "never",
+        repo: API,
+        item: "API-80",
+        url: "https://tracker.example/acme/issue/API-80/backfill-the-ledger",
+        title: "Backfill the ledger",
+        why: "the child cannot be read completely",
+      }),
+      queued({
+        source: "assigned",
+        group: "reported",
+        repo: API,
+        item: "API-93",
+        url: null,
+        title: "Archive the old exports",
+        why: "assigned by maintainer-b",
+        assignedBy: "maintainer-b",
+      }),
+      queued({
+        source: "held",
+        group: "held",
+        repo: MOB,
+        pr: 61,
+        title: "Bump the build tools",
+        why: "held: serialized behind #60 in toolchain",
+        hold: { leader: 60, area: "toolchain", waited: 50 },
+      }),
+    ],
+  });
+  return {
+    now: new Date(NOW_MS).toISOString(),
+    line: {
+      ...base,
+      repos: base.repos.map((r) => ({
+        ...r,
+        readAt: r.slug === MOB ? iso(mobileRead) : base.startedAt,
+      })),
+      ticks: (base.ticks ?? []).map((t) =>
+        Date.parse(t.startedAt) > Date.parse(iso(mobileRead))
+          ? {
+              ...t,
+              busy: [...new Set([...t.busy, MOB_PATH])],
+              repos: t.repos.filter((r) => r.repo !== MOB),
+            }
+          : t,
+      ),
+    },
+    rows: [
+      {
+        ...ended(
+          T(14, 10),
+          API,
+          "pickup",
+          "API-77",
+          "work-a",
+          "converged",
+          "result done",
+          38,
+          null,
+        ),
+        title: "Add the audit export",
+        url: "https://tracker.example/acme/issue/API-77/add-the-audit-export",
+      },
+      ended(
+        T(13, 20),
+        API,
+        "pickup",
+        "API-91",
+        "work-b",
+        "died",
+        "no result recorded; its session exited 1",
+        12,
+        null,
+      ),
+    ],
+  };
+}
+
 /** One scenario, as the server would read it. */
 export function fixture(id: ScenarioId): Fixture {
   resetRecords();
@@ -624,5 +734,7 @@ export function fixture(id: ScenarioId): Fixture {
         line: line({ sessions: workingTwo(), lastAccount: "codex-a" }),
         rows: generated(),
       };
+    case "partial":
+      return partialFixture();
   }
 }

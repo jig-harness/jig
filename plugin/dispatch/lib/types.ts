@@ -86,6 +86,8 @@ export interface RepoTarget {
 export interface ClaimedItem {
   key: string;
   title: string;
+  /** Its link as the tracker listing gave it; absent where a reader gives none. */
+  url?: string | null;
   state: string;
   /** Read for a served person rather than `dispatch.identity`: a person starts their own work too, so only this machine's pickup record makes the claim dispatch's. */
   served?: true;
@@ -271,6 +273,9 @@ export interface Unplaced {
   target: string;
   record: RecordName;
   reason: string;
+  /** For an item the tracker listing returned: its title and link, which the line and the outcome log show beside its key. */
+  title?: string;
+  url?: string | null;
   /**
    * Set for an item only a person can settle: assigned by someone who cannot
    * write, or placed in no repository by its labels and no default.

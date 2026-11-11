@@ -19,6 +19,7 @@ import {
   slotSummary,
   slotView,
   freshOf,
+  staleBanners,
   timerBanner,
 } from "./view.ts";
 
@@ -65,6 +66,17 @@ const LINE: LineSnapshot = { ...lineOf("quiet"), sessions: [SESSION] };
 function factOf(change: Partial<LineSession>): string {
   return slotView({ ...SESSION, ...change }, CLOCK, LINE).fact;
 }
+
+describe("slotView link text", () => {
+  it("says what is missing on a card whose link is not known, and nothing on one that has it", () => {
+    expect(slotView({ ...SESSION, url: null }, CLOCK, LINE).noLink).toContain(
+      SESSION.target,
+    );
+    expect(
+      slotView({ ...SESSION, url: "https://x.test/1" }, CLOCK, LINE).noLink,
+    ).toBeNull();
+  });
+});
 
 function evidenceOf(change: Partial<LineSession>): Record<string, string> {
   return Object.fromEntries(
@@ -307,6 +319,34 @@ describe("staleness", () => {
     expect(timerBanner(stopped, CLOCK).body).toContain(
       "Everything below is as of the 16:00 tick",
     );
+  });
+
+  it("names a repository no tick has read since its part, and why", () => {
+    const partial = lineOf("partial");
+    expect(staleBanners(partial, CLOCK)).toEqual([
+      {
+        key: "/srv/work/mobile",
+        title: "example-org/mobile has not been read since 16:05, 42 min ago.",
+        body: expect.stringMatching(
+          /^Another tick held it busy on \d+ of the \d+ ticks since, so none of them read it\. Its needs, queue and sessions below are as of the 16:05 tick\.$/,
+        ),
+      },
+    ]);
+  });
+
+  it("names no repository whose part is within the timer's next tick, or a line that keeps no parts", () => {
+    const partial = lineOf("partial");
+    const read = Date.parse(
+      partial.repos.find((r) => r.slug === "example-org/mobile")?.readAt ?? "",
+    );
+    const edge = read + partial.intervalMs + partial.longestTickMs;
+    expect(staleBanners(partial, { nowMs: edge, timeZone: "UTC" })).toEqual([]);
+    expect(staleBanners(lineOf("loud"), CLOCK)).toEqual([]);
+    const notBusy = {
+      ...partial,
+      ticks: (partial.ticks ?? []).map((t) => ({ ...t, busy: [] })),
+    };
+    expect(staleBanners(notBusy, CLOCK)[0]?.body).toStartWith("None of the ");
   });
 
   it("says when the server is not answering, and alarms", () => {
