@@ -391,6 +391,18 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.202.0] - 2026-11-11
+
+### Added
+
+- A guide for opening the dispatch dashboard from a phone
+  ([plugin/phone-access.md](https://github.com/jig-harness/jig/blob/main/plugin/phone-access.md)):
+  a private HTTPS address through Tailscale Serve, or through an
+  authenticated reverse proxy without Tailscale or Orca, with no token in the
+  address; the private-HTTP fallback and what it costs; the owner-only
+  boundary; how to undo it; and a verification record. The record's rows are
+  marked not yet run until a person runs them on a phone.
+
 ## [0.201.0] - 2026-11-11
 
 ### Added
@@ -6979,7 +6991,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.201.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.202.0...HEAD
+[0.202.0]: https://github.com/jig-harness/jig/compare/v0.201.0...v0.202.0
 [0.201.0]: https://github.com/jig-harness/jig/compare/v0.200.1...v0.201.0
 [0.200.1]: https://github.com/jig-harness/jig/compare/v0.200.0...v0.200.1
 [0.200.0]: https://github.com/jig-harness/jig/compare/v0.199.1...v0.200.0
