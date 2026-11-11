@@ -45,6 +45,7 @@ function world(spec: Spec) {
   const tracker = {
     adapter: "github",
     team: "example/repo",
+    stateName: (state: string) => state,
     assignedIssues: async (_: string, states: string[]) =>
       states.includes("in_progress") ? [] : spec.assigned,
     assignedBy: async () => ({ id: "writer", name: "writer", trusted: true }),
