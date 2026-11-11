@@ -98,6 +98,48 @@ function spanContinues(
   return false;
 }
 
+/** One position inside an HTML comment: the next one, or past its closing marker. */
+function stepComment(
+  line: string,
+  at: number,
+  state: { comment: boolean },
+): number {
+  if (!line.startsWith("-->", at)) return at + 1;
+  state.comment = false;
+  return at + 3;
+}
+
+/** One position inside a multiline inline-code span: past a closing run, or past a run that does not close it. */
+function stepSpan(
+  line: string,
+  at: number,
+  state: { span: string | null },
+): number {
+  const run = backtickRun(line, at);
+  if (run.length === state.span?.length) state.span = null;
+  return at + Math.max(run.length, 1);
+}
+
+/** One position of visible text: it may open a comment or an inline-code span. */
+function stepText(
+  lines: readonly string[],
+  lineIndex: number,
+  at: number,
+  state: { comment: boolean; span: string | null },
+): number {
+  const line = lines[lineIndex] ?? "";
+  if (line.startsWith("<!--", at)) {
+    state.comment = true;
+    return at + 4;
+  }
+  if (line[at] !== "`") return at + 1;
+  const run = backtickRun(line, at);
+  const close = line.indexOf(run, at + run.length);
+  if (close !== -1) return close + run.length;
+  if (spanContinues(lines, lineIndex, run)) state.span = run;
+  return at + run.length;
+}
+
 /** Advance HTML-comment and multiline-inline-code state before normalizing quote containers. */
 function commentState(
   lines: readonly string[],
@@ -106,35 +148,9 @@ function commentState(
 ): void {
   const line = lines[lineIndex] ?? "";
   for (let at = 0; at < line.length; ) {
-    if (state.comment) {
-      if (line.startsWith("-->", at)) {
-        state.comment = false;
-        at += 3;
-      } else at++;
-      continue;
-    }
-    if (state.span !== null) {
-      const run = backtickRun(line, at);
-      if (run.length === state.span.length) state.span = null;
-      at += run === "" ? 1 : run.length;
-      continue;
-    }
-    if (line.startsWith("<!--", at)) {
-      state.comment = true;
-      at += 4;
-      continue;
-    }
-    if (line[at] !== "`") {
-      at++;
-      continue;
-    }
-    const run = backtickRun(line, at);
-    const close = line.indexOf(run, at + run.length);
-    if (close !== -1) at = close + run.length;
-    else {
-      if (spanContinues(lines, lineIndex, run)) state.span = run;
-      at += run.length;
-    }
+    if (state.comment) at = stepComment(line, at, state);
+    else if (state.span !== null) at = stepSpan(line, at, state);
+    else at = stepText(lines, lineIndex, at, state);
   }
 }
 
@@ -167,6 +183,12 @@ function closesFence(text: string, fence: Fence): boolean {
   return end - start >= fence.marker.length && text.slice(end).trim() === "";
 }
 
+/** The fence a line opens, if it does. */
+function openedFence(text: string, quoteDepth: number): Fence | null {
+  const open = /^( {0,3})(`{3,}|~{3,})/.exec(text);
+  return open === null ? null : { marker: open[2] ?? "", quoteDepth };
+}
+
 /** Remove blockquote containers before the shared reader sees their Markdown, without changing a quote that is literal text inside a top-level fence or comment. */
 function withoutBlockquoteContainers(body: string): string {
   let fence = null as Fence | null;
@@ -187,10 +209,8 @@ function withoutBlockquoteContainers(body: string): string {
       continue;
     }
     visible.push(text);
-    const open = state.comment ? null : /^( {0,3})(`{3,}|~{3,})/.exec(text);
-    if (open !== null)
-      fence = { marker: open[2] ?? "", quoteDepth: prefix.depth };
-    else commentState(lines, lineIndex, state);
+    fence = state.comment ? null : openedFence(text, prefix.depth);
+    if (fence === null) commentState(lines, lineIndex, state);
   }
   return visible.join("\n");
 }
