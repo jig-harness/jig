@@ -630,8 +630,10 @@ mechanical state rather than on anyone's judgement:
   [structured answer](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) beside another
   person's free answer leave the question disputed and waiting. The
   dispatcher notifies you of the dispute.
-  Once every item is answered, the re-arm unparks them all and
-  hands your answers to the drive's passes as your verdicts, keeping them in
+  Once every item is answered, the re-arm unparks them all, leaves in the
+  drive ledger a resolution receipt for each (which answers it consumed, and
+  when), from which the dispatcher's outcome log counts the park as
+  answered, and hands your answers to the drive's passes as your verdicts, keeping them in
   the drive's state directory until a pass completes, so a drive that stops
   first still hands them on when it is re-armed. A structured verdict keeps
   the chosen option, its decision and your note. The pass applies the option

@@ -1361,10 +1361,10 @@ make, use the entry's term instead.
   dry run is never approved unseen
   ([design](design/structured-answers.md#writing-an-answer)).
 - **Resolution receipt** — the record a re-arm writes into the *drive
-  ledger* when it unparks an item: the park's key and digest, the answer it
-  consumed, the outcome and the times. The dispatcher's tick counts a park
-  as answered from its receipt, and a park that left the ledger with none as
-  removed ([design](design/structured-answers.md#showing-what-was-decided)).
+  ledger* when it unparks an item: the park's key and digest and the time it
+  was parked, the answers it consumed, the outcome and the times. The
+  dispatcher's tick counts a park as answered from its receipt, and a park
+  that left the ledger with none as removed ([design](design/structured-answers.md#showing-what-was-decided)).
 - **Disputed answer** — a parked item whose people's latest answers are not
   all the same option with the same notes (two different choices, the same
   choice with differing notes, or a choice beside another person's free
