@@ -21,7 +21,7 @@
 
 import { isRecord } from "../../../../../../shared/guards.ts";
 import { TrackerConfigError } from "../config-error.ts";
-import { nonEmpty, settingsSection } from "../settings-fields.ts";
+import { firstRepeat, nonEmpty, settingsSection } from "../settings-fields.ts";
 import { PRIORITY_NAMES, type PriorityName } from "../github/settings.ts";
 
 export { PRIORITY_NAMES, type PriorityName };
@@ -240,9 +240,7 @@ function linkTypesOf(v: unknown): Record<LinkedRelation, LinkTypeEntry[]> {
     );
   }
   const names = LINKED_RELATIONS.flatMap((r) => out[r].map((e) => e.name));
-  const twice = names.find(
-    (n, i) => names.findIndex((m) => m.toLowerCase() === n.toLowerCase()) !== i,
-  );
+  const twice = firstRepeat(names);
   if (twice !== undefined)
     throw new TrackerConfigError(
       at,
