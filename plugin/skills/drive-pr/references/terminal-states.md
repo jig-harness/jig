@@ -56,13 +56,13 @@ path that produces the exit, not because none of them name one.
 |---|---|---|---|
 | `0` | `ROUND_READY` | no | Unresolved threads and/or unaddressed summary-only findings exist. On a mergeable head the reviewer gates below also proved it reviewed that head; on a **conflicting** one they are skipped, so the findings may predate it — the `reason` and `reviewer.reviewedSha` say which (§ 14) |
 | `3` | `CONVERGED` | **yes** | Every convergence condition below holds |
-| `4` | `HEAD_LAG` / `AWAITING_REVIEWER` / `STALE_REVIEW` / `HEAD_MOVED` / `MERGEABILITY_UNKNOWN` | no | Not judgeable yet. With `--once` this returns immediately; otherwise after `--timeout`. `drive.ts` also reuses this code for a case `drive-status.ts` cannot see: the reviewer converged, but the Ready-mark lease is held by another driver — `claimed-by-other` is not proof that driver will finish, and reporting `0` would claim a still-draft PR that the draft-skipping reviewers have never seen is done (§ A draft PR is reviewed, and then marked Ready). And for a second such case: the reviewer converged, nothing is failing, and no fresh exact-head required-check witness arrived within `DRIVE_PR_FINAL_CI_WITNESS_POLLS` polls (default 180 × 10s = 30 min, `0` waits forever) — a required check whose fresh run completed `skipped` is passing to the aggregate verdict and no witness here, and no amount of waiting converts one into the other, so the drive names the rerun and hands back rather than sleeping until a human notices. Cancelled workflows instead use one durable re-run per head after a 30-second grace period; an unsafe or refused re-run, or an unreplaced cancellation after recovery, parks with `8` (§ 9) |
+| `4` | `HEAD_LAG` / `AWAITING_REVIEWER` / `STALE_REVIEW` / `HEAD_MOVED` / `MERGEABILITY_UNKNOWN` | no | Not judgeable yet. With `--once` this returns immediately; otherwise after `--timeout`. `drive.ts` also reuses this code for a case `drive-status.ts` cannot see: the reviewer converged, but the Ready-mark lease is held by another driver — `claimed-by-other` is not proof that driver will finish, and reporting `0` would claim a still-draft PR that the draft-skipping reviewers have never seen is done (§ A draft PR is reviewed, and then marked Ready). And for a second such case: the reviewer converged, nothing is failing, and no fresh exact-head required-check witness arrived within `DRIVE_PR_FINAL_CI_WITNESS_POLLS` polls (default 180 × 10s = 30 min, `0` waits forever) — a required check whose fresh run completed `skipped` is passing to the aggregate verdict and no witness here, and no amount of waiting converts one into the other, so the drive names the rerun and hands back rather than sleeping until a human notices. And for a third: the review converged on a draft the expected reviewer skips (`reviewedShaSource: "draft-skip"`), and the drive leaves the PR a draft (`--keep-draft`, `pull_requests.mark_ready: never`, or a person's earlier return to draft), so that reviewer has reviewed nothing (§ A reviewer that submits pull-request reviews). Cancelled workflows instead use one durable re-run per head after a 30-second grace period; an unsafe or refused re-run, or an unreplaced cancellation after recovery, parks with `8` (§ 9) |
 | `5` | `PR_NOT_OPEN` | **yes** | Merged or closed. Checked first, every pass |
 | `6` | — | **yes** | `drive.ts` only: hit `--max-rounds` without converging |
 | `7` | `REVIEWER_FAILED` | **yes** | The posting reviewer's check-run did not pass |
 | `8` | `HITL_PARKED` | **yes** | Everything still open is parked awaiting a human, each under a registry class with its decision framed, and the exit prints each one in full. The drive never wakes itself up: a re-arm unparks the items, and hands their answers to its passes until one completes, only once **every** one has an answer from an owner, member or collaborator later than the park (§ Picking up a stopped drive); with any unanswered it stops `8` again, unless the PR conflicts with its base: the first gate reports `PR_CONFLICTING` before the park, so the re-arm spends its conflict-repair budget first. Under `jig dispatch` the dispatcher re-drives a parked PR that conflicts with its base, once for each pair of its head and its base branch's head, and tells a person of the conflict when that re-drive leaves it parked or stopped `9` at the same pair |
 | `9` | `PR_CONFLICTING` | **yes**, from `drive.ts` only once its conflict-repair budget is spent | The PR conflicts with its base **and** has no workable findings. A conflict alone does not stop the loop — see mode 14. `drive.ts` first spends `DRIVE_PR_CONFLICT_REPAIR_ROUNDS` (default 1) `conflict-resolve` passes on it (§ Repair rounds), and a merge such a pass did not conclude is aborted before the stop, except one already open when the pass began (kept) or one whose abort failed; finish or abort a merge the stop reports before running its `Fix:` command. Under `jig dispatch` the dispatcher re-drives the stop, once for each pair of the pull request's head and its base branch's head, and tells a person when that re-drive leaves it stopped `9` at the same pair; without it the stop is a person's |
-| `22` | `REVIEW_SKIPPED` | **yes** | The reviewer's skip notice names the PR head as a push it did not review, and its review of an earlier head does not cover this one: the pull request's diff changed since that head (§ The reviewer skips a head). No review of this head will come, so the drive stops rather than wait for one as `STALE_REVIEW`. The `reason` quotes the notice and names both heads. A person reviews the change since the reviewed head and has the reviewer review this head, or pushes a commit it reviews, then re-arms. The stop is a person's: where the pull request state labels are on, the drive labels the pull request parked as it stops, and under `jig dispatch` the dispatcher's line names the skip as the cause. |
+| `22` | `REVIEW_SKIPPED` | **yes** | The reviewer's skip notice names the PR head as a push it did not review, and its review of an earlier head does not cover this one: the pull request's diff changed since that head (§ The reviewer skips a head); or a reviewer that submits pull-request reviews paused or skipped the head, its check run's title reading `Review paused…` or `Review skipped…` (§ A reviewer that submits pull-request reviews). No review of this head will come, so the drive stops rather than wait for one as `STALE_REVIEW`. The `reason` quotes the notice and names both heads. A person reviews the change since the reviewed head and has the reviewer review this head, or pushes a commit it reviews, then re-arms. The stop is a person's: where the pull request state labels are on, the drive labels the pull request parked as it stops, and under `jig dispatch` the dispatcher's line names the skip as the cause. |
 | `10` | — | — | **Reserved**, never emitted. A draft PR is not a stop: drafts are driven — see § A draft PR is reviewed, and then marked Ready. The code is kept unused so it never takes on a second meaning |
 | `12` | `WORKTREE_UNCLEAN` | **yes** | `drive.ts` only: a pass exited `0` with uncommitted edits and this tree's unverified holds from the current round, or review converged over an unclean worktree. The unfinished-pass cause names the held fixes and does not claim convergence: validate, commit and push them, then re-arm in this tree. The convergence cause means the worktree is not clean — uncommitted state, an unconcluded merge/cherry-pick/revert/rebase/am (present even over an otherwise-empty `git status`), local HEAD no longer matching the reviewed head (a commit landed here that was never pushed or reviewed, also invisible to `git status`), or any of those probes being unreadable; every one of them fails closed to the same refusal. For the convergence cause, the convergence is real; the leftovers are edits no round shipped, an unfinished git operation, or an unreviewed local commit. Commit/push/discard as appropriate, or resolve/abort the operation, then re-run. The draft→Ready transition sits **behind** this gate, so a PR still owed that transition when 12 fires stays a draft, and the retry after the cleanup marks it. It never *reverts* one already made: `mark-ready.ts` runs at the end of every completed round from the round `pull_requests.mark_ready` declares (default `1`) and is durably once-only, so a drive that completed that round has already marked the PR and exit 12 leaves it Ready over an unclean tree. The PR is still a draft, then, when no completed round reached the declared one (convergence before it, including at the very first gate), when the repository marks Ready only at convergence (`converged`), or when it never does (`never`, or a drive started with `--keep-draft`, which skips `mark-ready.ts` entirely no matter how many rounds run) — in the last case the draft state is the requested outcome, not a transition still owed — see § A draft PR is reviewed, and then marked Ready |
 | `11` | — | **yes** | `drive.ts` only: a single-instance lock is already held — either this PR's (`pr-drive-<PR>`) or this working tree's (`pr-drive-worktree-<key>`), both rows of the drive's database keyed by the clone, so a driver in another managed worktree of the same clone collides too. The drive is already armed. The refusal names the holder's `drives.ts` `--doctor` verdict and, when that verdict admits a takeover (`WEDGED`), prints the `--take-over` command; do not stop a driver that is making progress (§ Picking up a stopped drive). `drive.ts` with `--take-over` refused for the holder's verdict, or for a dead holder's leftovers, exits `11` too. `drive-state.ts` raises the same code for its own **session lease** over *(working tree, PR)* when a second live agent session in one checkout attempts a state mutation — a different mechanism with the same exit — and for its **tree lease** when that second session is driving a *different* PR from the same tree, which the per-PR lease alone cannot see. `reply-to-thread.ts` and `answer-summary-finding.ts` raise it too, refusing to `POST` rather than refusing to write state — both check **both** fences, the per-PR session lease and the tree lease, so either one can produce this refusal — `reply-to-thread.ts` through the spawned `assert-post-allowed.ts` (it lives in the sibling skill), `answer-summary-finding.ts` through `lib/state/lease.ts` directly (it lives in this one). All of these — a *live* conflicting holder — name that holder's pid; confirm that process is gone before clearing either. One exception, on the tree lease, names no pid because it has no live holder to name: `assertTreeLeaseUnchanged`'s "the lease is simply gone" case (an admitted lease that no longer exists by the time the fence re-checks — `clear-lease` is the common cause but not the only one an operator could have caused, so the message deliberately does not guess which) |
@@ -247,7 +247,9 @@ reviewer, [below](#the-reviewer-is-identified-by-app-slug-not-by-check-name)):
    — or names the head it reviewed before skipping this one, when the pull
    request's diff is the same at both (§ The reviewer skips a head;
    `reviewedShaSource: "skip-notice"`). The check-run fallback below is enough
-   to work a round on; it is not enough to declare one finished.
+   to work a round on; it is not enough to declare one finished. A reviewer
+   that submits pull-request reviews has its own witness instead (§ A reviewer
+   that submits pull-request reviews).
 3. **Zero** unresolved review threads (scoped by `--bots-only` when given).
 4. **Zero** unaddressed summary-only findings.
 
@@ -1792,7 +1794,8 @@ the stale comment. Retract it by hand after a force-push.
 ## When the reviewer will not answer, so `CONVERGED` is unreachable
 
 `CONVERGED` is defined against the posting reviewer publishing a check-run and
-an `ai-reviewed-sha` stamp for the **current** head. Measured conditions stop
+an `ai-reviewed-sha` stamp for the **current** head (for a reviewer that
+submits pull-request reviews, a completed check run on it). Measured conditions stop
 that happening at all, and in each the driver reports `AWAITING_REVIEWER` (or
 `STALE_REVIEW`) until `--timeout` — a wait state for something that is not
 coming — except where the reviewer says so in a skip notice (§ The reviewer
@@ -1845,6 +1848,39 @@ it will not review the head, and nothing the drive's passes can push changes
 that without a new commit. Under `jig dispatch` the stop is classified for a
 person (`needs-person`), so the pull request is labelled parked once, with the
 skip named in the dispatcher's line, rather than re-armed at the same head.
+
+### A reviewer that submits pull-request reviews
+
+Some reviewers write no summary comment and no reviewed-SHA stamp: they
+submit the forge's own pull-request reviews, each recording the commit it was
+submitted against (`commit_id`), and post nothing when a push gives them
+nothing new to say. `review.reviewer_evidence: review_object` names such a
+reviewer, and `review.reviewer_app: coderabbitai` implies it through
+CodeRabbit's built-in profile (its check run named `CodeRabbit`, its reviews
+from `coderabbitai[bot]`). The gate then reads two witnesses, the reviewer's
+newest check run on the head and the newest review its bot account submitted,
+and no sticky comment:
+
+| The check run on the head | The gate |
+|---|---|
+| absent, or not completed | `AWAITING_REVIEWER` |
+| completed, its title `Review paused…` | `REVIEW_SKIPPED` (exit `22`), the reason naming the pause and quoting the title |
+| completed, its title `Review skipped: draft pull request`, on a draft | no wait: the draft converges on its own threads, findings and CI (`reviewedShaSource: "draft-skip"`), and `drive.ts` marks it Ready, which summons the review, and waits for it |
+| the same draft skip, on a pull request already Ready | `AWAITING_REVIEWER`: the skip predates the Ready mark |
+| completed, any other title `Review skipped…` | `REVIEW_SKIPPED`, the reason naming the skip and quoting the title |
+| completed `success` or `neutral`, the newest review naming the head | reviewed (`reviewedShaSource: "review-object"`) |
+| completed `success` or `neutral`, no newer review naming another commit | reviewed, with nothing new to say (`reviewedShaSource: "review-check-run"`) |
+| completed, but a review of another commit was submitted after the run completed | `STALE_REVIEW` |
+| completed `skipped` with another title, or another conclusion | `AWAITING_REVIEWER`, or `REVIEWER_FAILED` (exit `7`) as for any reviewer |
+
+The completed run counts on its own because such a reviewer posts no review
+of a head it found nothing new on: a run on the head with no review object is
+the only trace that review leaves. An unreadable review list is
+`INDETERMINATE`. `arm-drive.ts` refuses a configuration whose reviewer
+evidence the drive cannot read, rather than arm a drive that waits until
+`--timeout`: `review_object` with no `review.reviewer_app`, where a reviewer is expected (the reviews are
+read by its bot account), or `sticky` named for an app whose profile submits
+reviews.
 
 ### A draft PR is reviewed, and then marked Ready
 

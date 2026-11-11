@@ -48,7 +48,8 @@
  *
  * Exit codes: 0 decided (and, for a tab, opened); 1 `tab` could not be
  * honoured, or a setting (`drive.pass_args` among them), the model or the
- * working tree could not be read; 2 usage: a malformed command line prints
+ * working tree could not be read, or the configuration names an AI reviewer
+ * whose evidence the drive cannot read (`reviewerEvidenceProblem`); 2 usage: a malformed command line prints
  * its usage only, a `--pass-model` that names no model or a `--pass-args`
  * that holds a word it cannot (`--model`, `-p`) prints the `failed` report.
  */
@@ -77,6 +78,7 @@ import {
   DEFAULT_PASS_MODEL,
   isArmDriveMode,
   ARM_DRIVE_MODES,
+  reviewerEvidenceProblem,
 } from "./lib/overlay.ts";
 import {
   chosenPassArgs,
@@ -242,10 +244,9 @@ async function readInputs(
   const model = attempt(() => passModel(args.passModel, vendor));
   const passArgs = attempt(() => extraPassArgs(args.passArgs, vendor));
   const codexBypass = attempt(() => vendor === "codex" && codexBypassSetting());
-  const problems = [tree, armDrive, model, passArgs, codexBypass].filter(
-    (v) => v instanceof Error,
-  );
-  const problem = problems[0];
+  const evidence = readableReviewer();
+  const problems = [tree, armDrive, model, passArgs, codexBypass, evidence];
+  const problem = problems.find((v) => v instanceof Error);
   if (
     problem === undefined &&
     !(tree instanceof Error) &&
@@ -289,6 +290,20 @@ async function readInputs(
         ? 2
         : 1,
   };
+}
+
+/**
+ * `true` when the drive can read the evidence of the AI reviewer the
+ * repository names, else the error that refuses the arm: a drive armed on a
+ * reviewer whose evidence it cannot read waits in `AWAITING_REVIEWER` until
+ * its timeout.
+ */
+function readableReviewer(): true | Error {
+  const problem = attempt(reviewerEvidenceProblem);
+  if (problem === null) return true;
+  return problem instanceof Error
+    ? problem
+    : new Error(`the drive cannot read the AI reviewer's evidence: ${problem}`);
 }
 
 function setting(mode: ArmDriveMode | undefined): {

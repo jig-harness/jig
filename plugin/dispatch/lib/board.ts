@@ -38,7 +38,7 @@ import {
   readyOrder,
   type WaitsOn,
 } from "../../skills/drive-pr/scripts/lib/merge-ready.ts";
-import { DEFAULT_REVIEWER_CHECK } from "../../skills/drive-pr/scripts/lib/overlay.ts";
+import { defaultReviewerCheckFor } from "../../skills/drive-pr/scripts/lib/overlay.ts";
 import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { isRecord } from "../../shared/guards.ts";
 import type { Contention } from "./contention.ts";
@@ -137,11 +137,12 @@ function setting(
 
 /** The repository's Ready rules, from its configuration on the default branch. */
 export function rulesOf(values: Record<string, unknown>): ReadyRules {
+  const reviewerApp = setting(values, "review", "reviewer_app");
   return {
-    reviewerApp: setting(values, "review", "reviewer_app"),
+    reviewerApp,
     reviewerCheck: checkPattern(
       setting(values, "review", "reviewer_check_pattern") ??
-        DEFAULT_REVIEWER_CHECK,
+        defaultReviewerCheckFor(reviewerApp),
     ),
     ciHoldLabel: setting(values, "ci", "hold_label"),
   };
