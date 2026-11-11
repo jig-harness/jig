@@ -164,3 +164,28 @@ test("refuses an epic and a held blocker", async () => {
   ).toMatchObject({ outcome: "refused", reason: "#2 needs a person to start" });
   expect(w.writes).toEqual([]);
 });
+
+test("stands down, not refuses, when a blocker leaves claim_from after its assignment was written", async () => {
+  const w = world(["#1", "#2"]);
+  const names: Record<string, string> = {
+    todo: "Todo",
+    in_progress: "In Progress",
+  };
+  const tracker = w.tracker as unknown as Record<string, unknown>;
+  tracker.stateName = (s: string) => names[s] ?? "Backlog";
+  const base = tracker.getIssue as (key: string) => Promise<{ state: object }>;
+  tracker.getIssue = async (key: string) => {
+    const issue = await base(key);
+    const moved = w.writes.includes("assign #2");
+    return moved
+      ? { ...issue, state: { name: "Backlog", type: "unstarted" } }
+      : issue;
+  };
+  const result = await claimServedIssue(w.tracker, "#2", {
+    person: "dana",
+    blocking: "#1",
+    claimFrom: ["todo"],
+  });
+  expect(result.outcome).toBe("stood_down");
+  expect(w.writes).toEqual(["assign #2"]);
+});

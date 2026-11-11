@@ -418,7 +418,9 @@ picked up first (to three links from the assigned item), claimed with
 `tracker.ts claim --for <person> --blocking <item>` and assigned to the person.
 A blocker assigned to someone else, in progress, held, an epic or another
 repository's is never taken: the item stays waiting and names it with its
-reason. An assigned epic without an execution plan works one child at a time,
+reason. Only a tracker that can assign an item without replacing a concurrent
+assignee (GitHub Issues) takes a blocker; on Linear and Jira the claim
+refuses, and the blocker waits for a person to assign it. An assigned epic without an execution plan works one child at a time,
 none while a child of it is in progress; an epic none of whose open children
 can start reports one reason.
 

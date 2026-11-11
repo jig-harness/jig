@@ -6,6 +6,24 @@ import type { Unplaced } from "../types.ts";
 export interface Serial {
   epic: string;
   busy?: string | undefined;
+  /** An open child that could not be read: it may be the one in progress. */
+  unread?: string | undefined;
+}
+
+/** Why a serial item starts nothing now, or null when it may be the epic's one child. */
+function serialHold(
+  serial: Serial,
+  key: string,
+  leader: ReadonlyMap<string, string>,
+): string | null {
+  if (serial.unread !== undefined)
+    return `${serial.unread} cannot be read, so whether a sibling of ${key} is in progress is unknown`;
+  if (serial.busy !== undefined)
+    return `${serial.epic} is working ${serial.busy}; it takes one child at a time`;
+  const first = leader.get(serial.epic);
+  return first === undefined
+    ? null
+    : `waiting on ${first}; ${serial.epic} takes one child at a time`;
 }
 
 /** `ranked` best first: each serial epic keeps its first child, and none while a child is in progress. */
@@ -17,14 +35,7 @@ export function serializeEpics<
   for (const item of ranked) {
     const serial = item.serial;
     const key = item.issue.identifier;
-    const why =
-      serial === undefined
-        ? null
-        : serial.busy !== undefined
-          ? `${serial.epic} is working ${serial.busy}; it takes one child at a time`
-          : leader.has(serial.epic)
-            ? `waiting on ${leader.get(serial.epic)}; ${serial.epic} takes one child at a time`
-            : null;
+    const why = serial === undefined ? null : serialHold(serial, key, leader);
     if (why !== null) {
       unplaced.push({ target: key, record: "tracker", reason: why });
       continue;

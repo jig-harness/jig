@@ -400,7 +400,7 @@ async function enqueueChildren(
   });
   const serial = selection.present
     ? undefined
-    : { epic: issue.identifier, busy: busy?.identifier };
+    : { epic: issue.identifier, busy: busy?.identifier, unread: unread[0] };
   for (const child of children) {
     if (serial !== undefined) ctx.serials.set(child.identifier, serial);
     pending.push({

@@ -316,7 +316,7 @@ function startStateRefusal(
   const outside = options.claimFrom
     ? claimFromRefusal(tracker, key, state, options.claimFrom)
     : null;
-  if (!outside || !options.ancestor) return outside;
+  if (!outside || !(options.ancestor || options.blocking)) return outside;
   return {
     outcome: "stood_down",
     issue: key,
@@ -358,6 +358,43 @@ async function startedStandDown(
   };
 }
 
+/**
+ * An inherited pickup (an ancestor's or a blocker's) assigns the unassigned
+ * item first. Returns the refusal or stand-down that ends the claim, null when
+ * the item is assigned or the claim is direct.
+ */
+async function assignInherited(
+  tracker: Tracker,
+  key: string,
+  user: TrackerUser,
+  options: ServedClaim,
+): Promise<ClaimResult | null> {
+  const refused = (reason: string): ClaimResult => ({
+    outcome: "refused",
+    issue: key,
+    why: "assigned",
+    reason,
+  });
+  const assignUnassigned = tracker.assignUnassigned;
+  const inherits = Boolean(options.ancestor || options.blocking);
+  if (inherits && !assignUnassigned)
+    return refused(
+      "this tracker cannot safely assign an inherited pickup without replacing a concurrent assignee",
+    );
+  // Re-read the entire authorization immediately before changing the child.
+  const problem = await validateClaim(tracker, key, user, options);
+  if (problem) return refused(problem);
+  if (!inherits || !assignUnassigned) return null;
+  const outsideNow = await stateBeforeAssignment(tracker, key, options);
+  if (outsideNow) return outsideNow;
+  if (await assignUnassigned(key, user)) return null;
+  return {
+    outcome: "stood_down",
+    issue: key,
+    reason: `${key}: assignment raced the claim; queue must refresh`,
+  };
+}
+
 /** No cached queue fact authorizes this write. Missing ancestry or provenance refuses it. */
 async function claimServed(
   tracker: Tracker,
@@ -371,27 +408,10 @@ async function claimServed(
     why: "assigned",
     reason,
   });
-  let problem = await validateClaim(tracker, key, user, options);
+  const problem = await validateClaim(tracker, key, user, options);
   if (problem) return refused(problem);
-  const assignUnassigned = tracker.assignUnassigned;
-  const inherits = Boolean(options.ancestor || options.blocking);
-  if (inherits && !assignUnassigned)
-    return refused(
-      "this tracker cannot safely assign an inherited pickup without replacing a concurrent assignee",
-    );
-  // Re-read the entire authorization immediately before changing the child.
-  problem = await validateClaim(tracker, key, user, options);
-  if (problem) return refused(problem);
-  if (inherits && assignUnassigned) {
-    const outsideNow = await stateBeforeAssignment(tracker, key, options);
-    if (outsideNow) return outsideNow;
-  }
-  if (inherits && assignUnassigned && !(await assignUnassigned(key, user)))
-    return {
-      outcome: "stood_down",
-      issue: key,
-      reason: `${key}: assignment raced the claim; queue must refresh`,
-    };
+  const assigned = await assignInherited(tracker, key, user, options);
+  if (assigned) return assigned;
   const before = await tracker.getIssue(key);
   // Before the waiting guard, so a readable state outside claim_from is a
   // refusal for a direct claim whatever its type.

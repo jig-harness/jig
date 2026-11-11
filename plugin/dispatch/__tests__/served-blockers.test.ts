@@ -290,6 +290,16 @@ describe("an assigned epic's children", () => {
     expect(reasons(read)["#2"]).toContain("#3 cannot be read");
   });
 
+  it("holds a directly assigned child while a sibling cannot be read", async () => {
+    const unread = { ...issue("#3", [], null), truncated: ["labels"] };
+    const read = await world({
+      assigned: [issue("#1", ["epic"]), issue("#2", [], "alex")],
+      children: { "#1": [issue("#2", [], "alex"), unread] },
+    }).read();
+    expect(read.wanted).toEqual([]);
+    expect(reasons(read)["#2"]).toContain("#3 cannot be read");
+  });
+
   it("holds a directly assigned child to its epic's one-at-a-time order", async () => {
     const read = await world({
       assigned: [issue("#1", ["epic"]), issue("#2", [], "alex")],

@@ -618,7 +618,8 @@ its place, on the served item's authority: the pickup's claim carries the
 item it blocks (`claim --blocking`), re-reads that item's assignment by a
 repository writer (or its epic ancestry) and the live `blocked_by` chain at
 the write, refuses a blocker that has acquired an assignee, and assigns it to
-the served person. The walk follows the blockers of a pulled blocker to three
+the served person, on a tracker that can assign without replacing a concurrent
+assignee (GitHub Issues); Linear and Jira refuse the claim. The walk follows the blockers of a pulled blocker to three
 links from the assigned item and ends at a cycle. A blocker that is assigned
 to someone else, in progress, an epic, held, another repository's or unreadable
 is never started on the strength of the relation, since anyone with write
