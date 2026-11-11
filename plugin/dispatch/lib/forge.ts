@@ -50,11 +50,13 @@ async function gh<Code extends string>(
   args: string[],
   code: Code,
   cwd?: string,
+  timeoutSec?: number,
 ): Promise<Outcome<string, Code>> {
   const r = await ghCall(args, {
     stderr: "pipe",
     env: ghRepoEnv(),
     ...(cwd === undefined ? {} : { cwd }),
+    ...(timeoutSec === undefined ? {} : { timeoutSec }),
   });
   if (r.code === 0) return ok(r.stdout);
   const tail = r.stderr.trim().split("\n").at(-1) ?? "";
@@ -77,8 +79,9 @@ async function ghJson(
   args: string[],
   what: string,
   cwd?: string,
+  timeoutSec?: number,
 ): Promise<Outcome<unknown, "unreadable">> {
-  const text = await gh(args, "unreadable", cwd);
+  const text = await gh(args, "unreadable", cwd, timeoutSec);
   return text.ok ? parsed(text.value, what) : text;
 }
 
@@ -443,11 +446,14 @@ export async function openPullRequest(
 export async function branchHead(
   slug: string,
   branch: string,
+  timeoutSec?: number,
 ): Promise<Outcome<string, "unreadable">> {
   const ref = branch.split("/").map(encodeURIComponent).join("/");
   const out = await ghJson(
     ["api", `repos/${slug}/git/ref/heads/${ref}`],
     `branch ${branch}'s ref`,
+    undefined,
+    timeoutSec,
   );
   if (!out.ok) return out;
   const sha = field(field(out.value, "object"), "sha");
@@ -473,10 +479,13 @@ export async function pullRequestLabels(
 export async function pullRequestHead(
   slug: string,
   pr: number,
+  timeoutSec?: number,
 ): Promise<Outcome<string, "unreadable">> {
   const out = await ghJson(
     ["pr", "view", String(pr), "--repo", slug, "--json", "headRefOid,state"],
     "the pull request view",
+    undefined,
+    timeoutSec,
   );
   if (!out.ok) return out;
   const state = field(out.value, "state");

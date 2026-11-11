@@ -342,7 +342,7 @@ panel has no network: it asks its worker through `plugin.request` (host
 API 1.2), and the worker runs `jig` as the person. The panel stores
 nothing. It is a small inbox: everything waiting on the person across the
 machine file's repositories, read from the newest tick's line. That is
-parks with their decisions and reply drafts, stalled pickups, double claims
+parks with their decisions and the lines that answer them, stalled pickups, double claims
 and, once the dispatch board's Ready to merge is built, the merge queue.
 Once the hub's server is built, the worker reads the entries through
 `jig ask --waiting --json`, which derives them with the hub's Inbox's own

@@ -38,6 +38,8 @@ export interface LineOption {
 /** One decision a parked drive waits on, as the drive framed it. */
 export interface LineDecision {
   digest?: string;
+  /** When this park of the item was made: a park made again of the same item has another time, so a pick kept for the earlier one is not carried to it. Absent on a park that records none, and from a line written before it was kept. */
+  parkedAt?: string;
   decision?: import("../../shared/decisions/park.ts").ParkedDecision;
   /** The named person; absent on older parks. Routing does not restrict answers. */
   person?: string;
@@ -246,6 +248,10 @@ export interface LineRepo {
   boardUnread?: string | null;
   /** Cards beyond the line's per-repository bound; absent before Ready was read. */
   readyOmitted?: number;
+  /** The tick that last read it: this line's own, or an earlier one whose part of the line (its needs, queue, sessions and Ready cards) the ticks since kept because they did not read it. Absent from a line written before parts were kept. */
+  runId?: string;
+  /** When that tick started. Absent from a line written before parts were kept. */
+  readAt?: string;
 }
 
 /**

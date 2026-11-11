@@ -61,15 +61,33 @@ describe("the palette", () => {
   });
 });
 
-describe("a need's answer line in the palette", () => {
-  it("carries the drafts the page holds, not blank answers", () => {
-    const needs = allCards(lineOf("merge"), CLOCK).filter((c) =>
-      c.command?.startsWith("answer "),
+describe("a need's answers in the palette", () => {
+  it("carries what the card's Copy takes from the answers kept for it", () => {
+    const needs = allCards(lineOf("merge"), CLOCK).filter(
+      (c) => c.view === "needs" && c.command?.startsWith("answer ") === true,
     );
-    const drafted = allCards(lineOf("merge"), CLOCK, () => [
-      "go with B",
-    ]).filter((c) => c.command?.includes("go with B"));
-    expect(drafted.length).toBeGreaterThan(0);
-    expect(needs.length).toBe(drafted.length);
+    const kept = allCards(lineOf("merge"), CLOCK, (need) => ({
+      text: `answer ${need.rows[0]?.key}: go with B`,
+      label: "answers",
+      guarded: [],
+      faults: [],
+      picked: 0,
+      free: 1,
+    })).filter((c) => c.command?.includes("go with B"));
+    expect(kept.length).toBeGreaterThan(0);
+    expect(needs.length).toBe(kept.length);
+    expect(kept.every((c) => c.committedOnCard === false)).toBe(true);
+  });
+
+  it("copies through the card when a guarded pick or a fault holds the copy", () => {
+    const held = allCards(lineOf("merge"), CLOCK, (need) => ({
+      text: `answer ${need.rows[0]?.key}: choose Drop`,
+      label: "answers",
+      guarded: [],
+      faults: [{ key: need.rows[0]?.key ?? "", place: 1, fault: "too long" }],
+      picked: 1,
+      free: 0,
+    })).filter((c) => c.view === "needs" && c.committedOnCard === true);
+    expect(held.length).toBeGreaterThan(0);
   });
 });

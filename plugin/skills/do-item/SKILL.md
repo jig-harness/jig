@@ -120,6 +120,9 @@ The skill reads them at run time from `.config/jig.yaml`:
 | `routing` | The model tier and effort the implementer runs on, as rules (see [Step 4a](#step-4a-standard-start-no-sub-issues)) | Routes are derived and printed, none applied |
 | `do_item.scouts` | Pre-flight [scouts](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) per agent, `{agent: [scouts]}` | No scouts |
 | `do_item.gates` | Mandatory review gates, `[{labels, paths, skill}]` | No gates |
+| `do_item.preflight_command` | The repository's own start rules: a command every claim runs first, read from the default branch, with the item's JSON on standard input (exit 0 goes on, exit 3 refuses with its first output line as the reason, any other exit or a run past its deadline refuses too) | No check beyond the claim's own |
+| `do_item.claim_from` | The canonical states a claim may start from, read from the default branch; any other state, or a status that maps to no canonical state, is refused | None: the claim's own restrictions apply (never an `in_progress` or `pr_open` item; a served claim needs a triage, backlog or unstarted one) |
+| `do_item.claim_marker` | A successful claim posts a marker comment naming the session, host and branch, read from the default branch | No marker |
 | `do_item.post_merge_state`, `do_item.post_merge_closer` | Where the [post-merge status rule](#step-4a-standard-start-no-sub-issues) stops (`done`, `ops_pending` or `in_review`), and who closes an item it leaves short of `done`, for the closing comment | `done`; a sentence saying a person closes the item |
 | `do_item.guidance` | Implementation guidance, `[{labels, paths, skills, notes}]`, matched as gates are (see [Step 4a](#step-4a-standard-start-no-sub-issues)) | No guidance |
 | `do_item.execution_plan_block` | Name of the fenced block holding an epic's machine-readable execution plan | `execution-plan-v1` |
@@ -710,15 +713,32 @@ implementation. Skip this check for issues about the repository's own code.
    host; simultaneous same-person claims on separate hosts remain a race.
 
    Exit `0` is the claim. Exit `3` is a refusal, nothing written: the issue
-   is already `in_progress` or assigned to someone else. Exit `4` is a
+   is already `in_progress` or assigned to someone else; its state is not
+   one `do_item.claim_from` lets work start from (`"why": "state"`); or the
+   repository's `do_item.preflight_command` refused it (`"why": "preflight"`
+   in the JSON, its reason on stderr: that command runs inside `claim`,
+   before the lock, so nothing here calls it). Exit `4` is a
    stand-down: the claim was written, and reading the issue back showed
    another claim landed first. On `3` or `4`, stop the pickup and report the
-   reason it printed; never start the item beside another session. A person
+   reason it printed; never start the item beside another session. A
+   refusal by the repository's start rules (`state` or `preflight`) is not
+   cleared by a person telling you to proceed: the item changes, or the
+   repository's rules change and the pickup is retried by hand. The
+   dispatcher reconsiders a `preflight` refusal, which records the item's
+   timestamp, only when that timestamp changes, so a rule change alone does
+   not release it; any other refusal (`state` included) stays held until the
+   item leaves the dispatch states or its assignment and returns. With
+   `do_item.claim_marker`, the claim posts the claim marker on the item
+   itself; `"marker"` in the JSON says whether it was posted, and a marker
+   that was not posted leaves the claim standing (report it). A person
    resuming their own interrupted pickup of an `in_progress` item tells you
    so, and you go on from here without the claim.
 
-   (**judgment** — native, Linear: read the issue and stop on the same two
-   refusals, then
+   (**judgment** — native, Linear: only where none of
+   `do_item.preflight_command`, `do_item.claim_from` and
+   `do_item.claim_marker` is set; with one set, a native write skips the
+   repository's start rules, so claim through the script above. Read the
+   issue and stop on the same two refusals, then
    `mcp__linear__save_issue({ id: issue.id, state: "<mapped name>", assignee: "me" })`,
    then read it again and stop, as on exit `4`, when it shows another
    assignee, or when the issue is gone or no longer in the mapped state.)
@@ -1779,6 +1799,14 @@ record how it ended. In such a pass:
   person must decide, with no secret or personal data in it. The
   dispatcher keeps that line and notifies it as a need; it does not start
   the item again until the item leaves the dispatch states and comes back.
+- **A claim the repository's preflight command refused** (exit `3` with
+  `"why": "preflight"` and an `"updatedAt"` in the JSON) is not a failure
+  of the pass. Nothing was written: record it with the `--refused` command
+  the prompt names, passing that `updatedAt` and the reason it printed. The
+  dispatcher shows the item as held with that reason and does not launch it
+  again until the item's `updatedAt` moves past it. A preflight refusal
+  with no `updatedAt` (the item could not be read) and a `claim_from`
+  refusal record plain `failed`.
 - **Never pick on the person's behalf** to finish unattended: a question
   the pass cannot settle from the repository's rules is the person's.
 - **The pass has a deadline** (`dispatch.pickup_deadline`, 3 hours by

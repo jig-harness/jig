@@ -64,9 +64,13 @@ export function HelpView({ Fold }: { Fold: FoldComponent }) {
           </p>
           <p>
             The page writes nothing to the host. To answer a parked decision,
-            write a reply beside it (kept in this browser only), copy the
-            answer, and paste it as a comment on the pull request; the next tick
-            re-arms the drive.
+            pick an option on its row (1 is always the recommended one), add a
+            note or write an answer in your own words, copy the card's answers
+            and paste them as one comment on the pull request; the next tick
+            re-arms the drive once every decision is answered. Picks stay in
+            this browser only and can be undone; a decision framed again drops
+            them and says so. A pick that asks for authorization, or of an
+            option that cannot be undone, copies on the second step.
           </p>
         </div>
       </section>

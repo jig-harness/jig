@@ -86,6 +86,8 @@ export interface RepoTarget {
 export interface ClaimedItem {
   key: string;
   title: string;
+  /** Its link as the tracker listing gave it; absent where a reader gives none. */
+  url?: string | null;
   state: string;
 }
 
@@ -102,14 +104,20 @@ export interface WantedItem {
   batchAllowed?: boolean;
   queueIssue?: import("../../skills/do-item/scripts/lib/tracker/port.ts").PoolIssue;
   queueRank?: { unblocks: number; epicOrder?: number };
+  /** When the tracker last saw the item change; absent where the read has none. */
+  updatedAt?: string;
 }
 
 /** How a drive ledger reads, per the design's ledger-to-class table; the state label projection reads it too. */
 export type { LedgerClass } from "../../shared/pr-labels/projection.ts";
 import type { LedgerClass } from "../../shared/pr-labels/projection.ts";
 
-/** How a pickup that needs nothing reads: its last session ended, or its claimed item is idle but not yet stalled. */
-export type PickupClass = "pickup-ended" | "claimed-idle" | "claimed";
+/** How a pickup that needs nothing reads: its last session ended, the repository's start rules refused its claim, or its claimed item is idle but not yet stalled. */
+export type PickupClass =
+  | "pickup-ended"
+  | "pickup-refused"
+  | "claimed-idle"
+  | "claimed";
 
 /** How a merged pull request whose follow-up needs nothing reads: done, or held by a run a person started. */
 export type FollowupClass = "followup-done" | "followup-held";
@@ -117,6 +125,8 @@ export type FollowupClass = "followup-done" | "followup-held";
 /** A parked decision still waiting on its answer, as the drive framed it. */
 export interface WaitingPark {
   digest?: string;
+  /** When the item was parked (`ParkedItem.at`); absent on an older park. */
+  parkedAt?: string;
   stale?: import("../../skills/drive-pr/scripts/lib/state/pass-handoff.ts").PendingAnswer[];
   /** The latest answers that disagree, which keep the item waiting. */
   disputed?: import("../../skills/drive-pr/scripts/lib/state/pass-handoff.ts").PendingAnswer[];
@@ -201,6 +211,14 @@ export interface DrivenPr {
   labels?: string[];
   /** For an `unplaced` ledger: its comments or its ledger did not read, as against a state the forge leaves undecided. */
   readFailed?: true;
+  /** The pull request's head commit and its branch's head on the forge, read only where a failed re-arm is weighed (`failed-rearms.ts`). */
+  heads?: RearmHeads;
+}
+
+/** A pull request's head commit, as the forge reports it with the pull request, and its branch's head on the forge. */
+export interface RearmHeads {
+  pr: string;
+  branch: string;
 }
 
 /** One pull request merged since the follow-up stage's start. */
@@ -257,6 +275,9 @@ export interface Unplaced {
   target: string;
   record: RecordName;
   reason: string;
+  /** For an item the tracker listing returned: its title and link, which the line and the outcome log show beside its key. */
+  title?: string;
+  url?: string | null;
   /**
    * Set for an item only a person can settle: assigned by someone who cannot
    * write, or placed in no repository by its labels and no default.

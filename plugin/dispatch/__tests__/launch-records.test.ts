@@ -22,6 +22,7 @@ import {
   type ReadRecord,
   writeRecord,
 } from "../lib/launches.ts";
+import { launchHeads } from "../lib/failed-rearms.ts";
 import { markedSince } from "../lib/launch-report.ts";
 import { stateDb, closeStateDb } from "../lib/state.ts";
 import type { DrivenPr } from "../lib/types.ts";
@@ -192,6 +193,102 @@ it("retains a delivered rearm acknowledgment past retention even after a non-ref
   expect(pruneLaunches([read], Date.parse("2027-01-01"), 7, dir)).toEqual([
     sent.id,
   ]);
+});
+
+it("retains a pull request's latest re-arm that recorded its heads past retention, and prunes the older ones", () => {
+  const dir = root();
+  const older = record("20260101T000000Z-aaaaaaaa", { heads: "PR head a" });
+  const latest = record("20260102T000000Z-bbbbbbbb", { heads: "PR head b" });
+  const reads = [older, latest].map((r) => {
+    writeRecord(r, dir);
+    return ended(r, 1, r.createdAt);
+  });
+  expect(pruneLaunches(reads, Date.parse("2027-01-01"), 7, dir)).toEqual([
+    older.id,
+  ]);
+});
+
+it("prunes a latest re-arm that ended with exit 0, which can never hold its drive", () => {
+  const dir = root();
+  const done = record("20260101T000000Z-aaaaaaaa", { heads: "PR head a" });
+  writeRecord(done, dir);
+  expect(
+    pruneLaunches(
+      [ended(done, 0, done.createdAt)],
+      Date.parse("2027-01-01"),
+      7,
+      dir,
+    ),
+  ).toEqual([done.id]);
+});
+
+it("keeps nothing of an older failed re-arm that a newer ended record without heads supersedes", () => {
+  const dir = root();
+  const older = record("20260101T000000Z-aaaaaaaa", { heads: "PR head a" });
+  const newer = record("20260102T000000Z-bbbbbbbb");
+  const reads = [older, newer].map((r) => {
+    writeRecord(r, dir);
+    return ended(r, 1, r.createdAt);
+  });
+  expect(pruneLaunches(reads, Date.parse("2027-01-01"), 7, dir)).toEqual([
+    older.id,
+    newer.id,
+  ]);
+});
+
+it("keeps the older failed re-arm when only a newer cancelled record follows it", () => {
+  const dir = root();
+  const older = record("20260101T000000Z-aaaaaaaa", { heads: "PR head a" });
+  const newer = record("20260102T000000Z-bbbbbbbb", {
+    heads: "PR head b",
+    cancelledAt: "2026-01-02T00:00:00.000Z",
+  });
+  writeRecord(older, dir);
+  writeRecord(newer, dir);
+  const reads: ReadRecord[] = [
+    ended(older, 1, older.createdAt),
+    {
+      record: newer,
+      state: { kind: "died", reason: "cancelled", process: { ...WHO, pid: 0 } },
+      result: null,
+    },
+  ];
+  expect(pruneLaunches(reads, Date.parse("2027-01-01"), 7, dir)).not.toContain(
+    older.id,
+  );
+});
+
+describe("the heads a re-arm launches at", () => {
+  const drive = {
+    number: 7,
+    head: "feature/7",
+    class: "re-armable",
+    evidence: {},
+  } as unknown as DrivenPr;
+  const reader = (seen: Array<number | undefined>) => ({
+    pr: async (_slug: string, _pr: number, timeoutSec?: number) => {
+      seen.push(timeoutSec);
+      return ok("a");
+    },
+    branch: async (_slug: string, _branch: string, timeoutSec?: number) => {
+      seen.push(timeoutSec);
+      return ok("b");
+    },
+  });
+
+  it("are read within the time the tick has left", async () => {
+    const seen: Array<number | undefined> = [];
+    expect(await launchHeads("o/r", drive, reader(seen), 7_900)).toBe(
+      "PR head a, branch head b",
+    );
+    expect(seen).toEqual([7, 7]);
+  });
+
+  it("are not read once the tick has no second left", async () => {
+    const seen: Array<number | undefined> = [];
+    expect(await launchHeads("o/r", drive, reader(seen), 400)).toBeNull();
+    expect(seen).toEqual([]);
+  });
 });
 
 describe("a takeover behind a refusal", () => {
@@ -479,6 +576,20 @@ describe("reading records", () => {
     const read = await readLaunches(dir);
     expect(read.records.map((r) => r.record.id)).toEqual([good.id]);
     expect(read.unreadable).toHaveLength(3);
+  });
+
+  it("reports a record whose launch marker is not a boolean as unreadable", async () => {
+    const dir = root();
+    const id = "20260101T000000Z-aaaaaaaa";
+    stateDb(dir)
+      .query(
+        `INSERT INTO launches (id, repo, action, pr, item, created_at, record)
+         VALUES (?, 'o/a', 'rearm', 7, NULL, '2026-01-01T00:00:00.000Z', ?)`,
+      )
+      .run(id, JSON.stringify({ ...record(id), launchCalled: "true" }));
+    const read = await readLaunches(dir);
+    expect(read.records).toEqual([]);
+    expect(read.unreadable).toHaveLength(1);
   });
 });
 

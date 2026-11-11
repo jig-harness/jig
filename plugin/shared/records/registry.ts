@@ -67,6 +67,8 @@ const TAKEOVER_KEY = /^takeover:\d+$/;
 const FOLLOWUP_KEY = /^(?:followup|[1-9]\d*)$/;
 /** A launch claim's key: a launch of the drive of the pull request it is on; its generation is the attempt. */
 const LAUNCH_KEY = /^drive$/;
+/** A claim marker's key: the item the comment is on. */
+const CLAIM_MARKER_KEY = /^claim$/;
 const MERGE_READY_KEY = /^merge-ready:[0-9a-f]{7,64}$/;
 /** A sent answer's key: the parked item it answers, on the pull request its comment is on. */
 const ANSWER_KEY = /^answer:\S+$/;
@@ -83,7 +85,7 @@ const STATE_DIR = "~/.local/state/jig/drive-pr/<clone>/";
 const DRIVE_DB_FILE = "~/.local/state/jig/drive-pr/state.sqlite";
 const DISPATCH_DIR = "~/.local/state/jig/dispatch/";
 /** The dispatcher's database schema version (`dispatch/lib/state.ts`'s `SCHEMA_VERSION`). */
-const DISPATCH_DB = 20;
+const DISPATCH_DB = 21;
 /** The drive's database schema version (`skills/drive-pr/scripts/lib/state/db.ts`'s `DRIVE_DB_VERSION`). */
 const DRIVE_DB = 5;
 const RRC = "skills/resolve-review-comments/scripts/";
@@ -836,6 +838,15 @@ const TRACKER: RecordKind[] = [
     at: "the first line of a batch issue's description",
     markers: ["defer-batch-key"],
     version: 0,
+  },
+  {
+    name: "tracker-claim-marker",
+    medium: "tracker",
+    owner: "skills/do-item/scripts/lib/claim-marker.ts",
+    at: "a comment on an item a claim started, where `do_item.claim_marker` is set",
+    markers: ["jig-claim", "jig-claim-data"],
+    version: 1,
+    key: CLAIM_MARKER_KEY,
   },
   {
     name: "tracker-related",

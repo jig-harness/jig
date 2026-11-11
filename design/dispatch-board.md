@@ -106,8 +106,9 @@ it is an open pull request, and what the column needs said:
   shows as a claim. A
   claimed drive whose heartbeat passes the lease window is the `silent`
   class and is marked so.
-- **Needs you:** what it carries today: the framed decisions with their
-  reply drafts, and the stop's reason as quoted record text.
+- **Needs you:** the framed decisions, one row each to pick an answer on,
+  with the picks, notes and own words kept in the browser, and the stop's
+  reason as quoted record text.
 - **Ready to merge:** the head the drive verified, the merge state as the
   forge reported it at the tick, the pull requests waiting behind it in a
   serialized area, and the act left.
@@ -541,10 +542,15 @@ the closed list in
 [a need's act](../plugin/README.md#the-dispatcher)
 (Merge, Decide, Authorize, Reply, Do, Investigate), then the ask in one
 sentence, then the recommended option with what it changes and what it
-costs. The other options, a park's steps for a person (as a checklist) and
-the evidence are folded under it. A full framed decision is never shown in
-place, since one park would fill a phone; a need with several decisions
-shows a short row for each, which folds the same way.
+costs. A parked need shows a short row for each of its decisions, with the
+count of decisions and of picks: its question, its act where it differs
+from the card's, how it bears on another decision (`interplay`), the
+recommended option and the pick. Each row folds its other options; the
+card folds a park's steps for a person (as a checklist), the whole decision
+and the evidence. A full framed decision is never shown in place, since one
+park would fill a phone. On a phone an option's row is what is tapped and
+no number is shown; every key has a button
+([structured-answers.md](structured-answers.md#picking-an-answer)).
 
 **The keys.** Every view is driven from the keyboard, and the keys never
 fire inside a text field:
@@ -555,8 +561,9 @@ fire inside a text field:
 | j / k | the next or previous card (roving focus, so Tab still works) |
 | Enter or o | expand or collapse the card |
 | p / i | open its pull request or its issue |
-| 1 to 9, h, l, u, r | on a parked need, pick an option of the current decision, move between its decisions, clear a pick, or write a note or an answer ([structured-answers.md](structured-answers.md#picking-an-answer)) |
-| c | copy its primary command: the pinned merge command, or the need's answers as one comment (with no picks, as [picking an answer](structured-answers.md#picking-an-answer) says) |
+| 1 to 9, h, l, u, r | on a parked need, pick an option of the current decision (1 is the recommended one) and move to the next with no pick, move between its decisions, clear the last pick, or write a note beside a pick or an answer in the person's own words ([structured-answers.md](structured-answers.md#picking-an-answer)) |
+| Escape | leave the note or answer field, so the card's keys work again |
+| c | copy its primary command: the pinned merge command, or the need's answers as one comment with their digests (with no picks, as [picking an answer](structured-answers.md#picking-an-answer) says); a guarded pick copies on the second step, from the key, the card's Copy and the palette alike |
 | g, then m, n, r, q or h | go to Merge, Needs you, Running, Queue or History |
 | / and ? | filter the view; list the keys |
 
@@ -566,8 +573,8 @@ design round ([Build order](#build-order)), which starts from these views.
 
 The page stays as it is in what it never does: it holds no merge button
 and opens no write route to the host. Merging is a person's act on the
-forge; the page gives the link and the pinned command, as it gives a reply
-draft and its answer line today. When
+forge; the page gives the link and the pinned command, as it gives the
+answer lines a card's picks make. When
 [delegated merge](plan.md#9-delegated-merge-pull_requestsmerge-auto-on-converged)
 is built, it arms the forge's auto-merge on the same predicate, and a card
 it armed says so.
@@ -688,7 +695,7 @@ and cause of the move (from `board_seen`), its `waitsOn`, its driver, the
 status row's facts for an open pull request, the predicate's answer, and
 for Ready to merge the verified head, the method and the pull requests it
 unblocks. Each card names the need, session or queue entry it was placed
-from, so the decisions and reply drafts the page shows today hang off the
+from, so the decisions and the picks the page keeps for them hang off the
 card unchanged. The list is bounded: 100 cards a column, with the count of
 the rest; 10 failing checks a card, with the count of the rest; the stood
 down group as its count and its 20 newest. A line written by a tick from
@@ -703,12 +710,16 @@ repository's part of the line and leaves the rest as the last tick wrote
 it. The part of one repository is its entries in `sessions`, `needs`,
 `queue` and `board`, each of which names its repository, and its entry in
 `repos`, which carries the `runId` and `readAt` of the tick that last read
-it. The rest belongs to the whole machine, and only a tick that read every
-repository the machine file lists writes it: the line's own `version`,
+it. The rest belongs to the whole machine, and only a tick the timer asked
+for every repository the machine file lists writes it, whether or not
+another tick held some of them busy: the line's own `version`,
 `runId`, `startedAt`, `finishedAt` and `exitStatus`, `apply` and
-`applyWithheld`, `intervalMs`, `longestTickMs` and `recentTicksMs`,
-`plugin`, `timeZone`, `minReader`, the accounts with their slots and
-walls, `lastAccount`, and the receipt kept beside the line. So a timer that stopped still shows as
+`applyWithheld`, `intervalMs`, `plugin`, `timeZone`, `minReader`, the accounts with their slots and
+walls, `lastAccount`, and the receipt kept beside the line. The one exception is the
+duration history, `longestTickMs` and `recentTicksMs`: a woken tick adds its
+own duration to it even when the machine's other fields stay the last full
+tick's, so the freshness checks take their maximum over every tick that ran.
+So a timer that stopped still shows as
 overdue while woken ticks run, and a session a woken tick launched shows in
 its repository's sessions at once and in its account's slots at the next
 full tick.

@@ -58,6 +58,8 @@ describe("retained page choices", () => {
         );
         try {
           await shows(page, ".need");
+          const need = page.locator(".need").first();
+          await need.getByRole("button", { name: "Write an answer" }).click();
           await page.evaluate((kind) => {
             const store = window.localStorage;
             if (kind === "denied")
@@ -67,26 +69,29 @@ describe("retained page choices", () => {
                 },
               });
             else {
+              // An older answer kept before storage filled must not come back in place of the newer one.
               store.setItem(
-                "jig-dispatch-dashboard:reply:example-org/web PRRT_x1",
-                JSON.stringify({ text: "older", at: Date.now() }),
+                "jig-dispatch-dashboard:answer:example-org/web PR #456 PRRT_x1",
+                JSON.stringify({
+                  framing: { digest: null, parkedAt: null },
+                  free: { text: "older", at: Date.now() },
+                  at: Date.now(),
+                }),
               );
               Storage.prototype.setItem = () => {
                 throw new DOMException("Full", "QuotaExceededError");
               };
             }
           }, failure);
-          const need = page.locator(".need").first();
-          await need.getByRole("button", { name: "Write reply" }).click();
-          await need.locator("textarea").fill("A, keep it small");
+          await need.locator("input[data-field]").fill("A, keep it small");
           await until("the storage warning is visible", async () =>
             (await need.innerText()).includes("Not saved"),
           );
           await openView(page, "History");
           await openView(page, "Help");
           await openView(page, "Needs you");
-          await shows(page, ".need textarea");
-          expect(await need.locator("textarea").inputValue()).toBe(
+          await shows(page, ".need input[data-field]");
+          expect(await need.locator("input[data-field]").inputValue()).toBe(
             "A, keep it small",
           );
         } finally {
@@ -112,19 +117,20 @@ describe("retained page choices", () => {
         await page.reload();
         await shows(page, ".need");
         const need = page.locator(".need").first();
-        await need.getByRole("button", { name: "Write reply" }).click();
-        await need.locator("textarea").fill("A");
+        await need.getByRole("button", { name: "Write an answer" }).click();
+        await need.locator("input[data-field]").fill("A");
         await page.clock.setSystemTime(Date.now() + 31 * 24 * 60 * 60 * 1000);
         await page.clock.runFor(20_001);
         await until(
           "the open draft expires",
-          async () => (await need.locator("textarea").inputValue()) === "",
+          async () =>
+            (await need.locator("input[data-field]").inputValue()) === "",
         );
         await openView(page, "Help");
         await openView(page, "Needs you");
         expect(
           await need
-            .getByRole("button", { name: "Copy the answer line for PR #456" })
+            .getByRole("button", { name: "Copy the approval for PR #456" })
             .count(),
         ).toBe(1);
       } finally {
