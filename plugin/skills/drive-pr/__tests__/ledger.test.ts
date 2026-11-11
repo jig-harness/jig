@@ -21,6 +21,7 @@ import {
   snapshotFrom,
 } from "../scripts/lib/state/ledger.ts";
 import { type DriveState, freshState } from "../scripts/lib/state/schema.ts";
+import type { ParkedDecision } from "../../../shared/decisions/park.ts";
 
 const ACTOR_A = "wt-aaaaaaaaaaaaaaaa";
 const SHA = "a91d4f7c05444444444444444444444444444444";
@@ -109,6 +110,49 @@ describe("render and parse", () => {
     expect(parsed.ledger.narrative).toHaveLength(20);
     expect(parsed.ledger.narrative.at(-1)).toBe("narrative line 29");
     expect(parsed.ledger.decisions).toEqual([]);
+  });
+
+  it("renders copyable current answers for a framed parked decision", () => {
+    const decision: ParkedDecision = {
+      schema: "parked-decision/v1",
+      class: "scope",
+      call: {
+        id: "a",
+        question: "Keep it?",
+        options: [
+          { id: "keep", name: "Keep", summary: "Keep it", pay: ["Cost"] },
+          { id: "drop", name: "Drop", summary: "Drop it", pay: ["Cost"] },
+        ],
+        recommended: "keep",
+        why: "It serves readers",
+      },
+      steps: [],
+      alreadyDone: "Read the code",
+    };
+    const state = driveState();
+    const parked = state.parked[0];
+    if (parked === undefined) throw new Error("missing parked fixture");
+    state.parked[0] = { ...parked, decision, digest: "123456abcdef" };
+    const rendered = renderLedger(
+      ledgerFromState(state, {
+        generation: 4,
+        driver: {
+          actor: ACTOR_A,
+          clone: "clone-a",
+          heartbeat: "2026-10-01T11:00:00.000Z",
+          state: "running",
+        },
+        narrative: [],
+        claims: [],
+      }),
+    );
+    if ("error" in rendered) throw new Error(rendered.error);
+    expect(rendered.body).toContain(
+      "answer PRRT_parked: approve [123456abcdef]",
+    );
+    expect(rendered.body).toContain(
+      "answer PRRT_parked: choose Drop [123456abcdef]",
+    );
   });
 
   it("writes authoritative operator stops as version 2 while ordinary ledgers remain version 1", () => {

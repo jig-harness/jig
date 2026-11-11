@@ -109,6 +109,7 @@ export type ParkAnswersResult =
       waiting: ParkedItem[];
       unread: ParkedItem[];
       disputed: ParkDispute[];
+      stale: ParkDispute[];
       responded: ParkedItem[];
       notes: ParkNote[];
     }
@@ -140,6 +141,18 @@ function sourceNotes(
   });
 }
 
+function verdictOf(item: ParkedItem, answers: PendingAnswer[]): PendingVerdict {
+  const decision = answerDecision(item);
+  return {
+    kind: item.kind,
+    key: item.key,
+    reason: item.reason,
+    answers,
+    ...(decision === undefined ? {} : { decision }),
+    ...(item.digest === undefined ? {} : { digest: item.digest }),
+  };
+}
+
 /** Classify one complete or partial history, preserving evidence that blocks provisional work. */
 function classifyPark(
   result: ReadParkAnswers,
@@ -148,28 +161,17 @@ function classifyPark(
   incomplete: boolean,
 ): void {
   if (answers.length > 0) result.responded.push(item);
-  const decision = answerDecision(item);
+  const verdict = verdictOf(item, answers);
+  const stale = answers.filter((a) => a.stale === true);
+  if (stale.length > 0) result.stale.push({ item, answers: stale });
   const disputed = disputedAnswers(answers);
   if (disputed) result.disputed.push({ item, answers });
   if (incomplete) {
     result.unread.push(item);
-    if (answers.length > 0)
-      result.partial.push({
-        kind: item.kind,
-        key: item.key,
-        reason: item.reason,
-        answers,
-        ...(decision === undefined ? {} : { decision }),
-      });
+    if (answers.length > 0) result.partial.push(verdict);
   }
-  if (answers.length > 0 && !disputed && !incomplete)
-    result.answered.push({
-      kind: item.kind,
-      key: item.key,
-      reason: item.reason,
-      answers,
-      ...(decision === undefined ? {} : { decision }),
-    });
+  if (answers.length > 0 && stale.length === 0 && !disputed && !incomplete)
+    result.answered.push(verdict);
   else result.waiting.push(item);
 }
 
@@ -193,6 +195,7 @@ export async function parkAnswers(
     waiting: [],
     unread: [],
     disputed: [],
+    stale: [],
     responded: [],
     notes: [],
   };
