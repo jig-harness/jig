@@ -19,6 +19,7 @@ import {
   nextOpen,
   type RowAnswer,
   type RowOption,
+  boundToPark,
   rowAnswer,
   withoutPick,
   withPick,
@@ -44,8 +45,8 @@ export interface Picking {
   openField: (index: number, field: Field) => void;
   closeField: () => void;
   setText: (index: number, field: Field, text: string) => void;
-  /** Asked before each copy: whether it may copy now, else what it said instead. */
-  gate: () => boolean;
+  /** Asked before each copy: the comment to copy now, else `null` after saying why or what comes first. */
+  gate: () => string | null;
   /** Ends Copy's first step: a pick changed elsewhere, or the card lost focus. */
   disarm: () => void;
 }
@@ -74,6 +75,14 @@ export function usePicking(
   const [kept, change, saved] = useAnswers(ids);
   const answers = need.rows.map((row, i) => rowAnswer(row, kept[i] ?? null));
   const commit = cardCommit(need.rows, answers);
+  // A pick made before the line kept park times counts for the first park time seen, not for every later one.
+  useEffect(() => {
+    need.rows.forEach((row, i) => {
+      const bound = boundToPark(row, kept[i] ?? null);
+      const id = ids[i];
+      if (bound !== null && id !== undefined) change(id, bound);
+    });
+  });
   const [held, setHeld] = useState<Held | null>(null);
   // Keys can come faster than the card draws, so they read the held decision and the kept answers as they are now.
   const heldNow = useRef<Held | null>(null);
@@ -175,7 +184,23 @@ export function usePicking(
     setArmed(null);
     return now.text;
   };
-  const gate = () => commitNow() !== null;
+
+  /** Picks the option the key numbers, or says why it cannot. */
+  const pickNumbered = (index: number, number: number) => {
+    const row = need.rows[index];
+    const option = row?.options.find((o) => o.number === number);
+    if (row !== undefined && !row.structured)
+      announce(
+        `${placeOf(need, index)} takes answers in your own words only; press r to write one`,
+      );
+    else if (option === undefined)
+      announce(
+        row === undefined || row.options.length === 0
+          ? "This decision has no options to pick; press r to answer in your own words"
+          : `${placeOf(need, index)} has no option ${number}`,
+      );
+    else pick(index, option);
+  };
 
   const onKey = (key: CardKey) => {
     const current = currentNow();
@@ -186,17 +211,7 @@ export function usePicking(
     } else if (key.kind === "undo") undo();
     else if (key.kind === "words")
       openField(current, answersNow()[current]?.pick == null ? "free" : "note");
-    else {
-      const row = need.rows[current];
-      const option = row?.options.find((o) => o.number === key.number);
-      if (option === undefined)
-        announce(
-          row === undefined || row.options.length === 0
-            ? "This decision has no options to pick; press r to answer in your own words"
-            : `${placeOf(need, current)} has no option ${key.number}`,
-        );
-      else pick(current, option);
-    }
+    else pickNumbered(current, key.number);
   };
 
   // The card's listeners read the newest render's handlers.
@@ -257,7 +272,7 @@ export function usePicking(
     openField,
     closeField: () => setEditing(null),
     setText,
-    gate,
+    gate: commitNow,
     disarm,
   };
 }

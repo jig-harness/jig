@@ -1,6 +1,9 @@
 /** One interpretation of a person's answer for every reader of parked work. */
 import { createHash } from "node:crypto";
-import { splitAnswerDigest } from "../../../../shared/decisions/digest.ts";
+import {
+  digestClaims,
+  splitAnswerDigest,
+} from "../../../../shared/decisions/digest.ts";
 import { normalizeAnswerText } from "../../../../shared/decisions/answer-normalize.ts";
 import { choiceInText } from "../../../../shared/decision-card.ts";
 import {
@@ -364,9 +367,7 @@ function embeddedDigests(item: ParkedItem, text: string): string[] {
       : `${normalized.slice(0, 7)}${normalized.slice(
           7 + normalizeAnswerText(option.name).length,
         )}`;
-  return [...scan.matchAll(/(?:^|\s)\[([0-9a-f]{12})\](?=\s|$|[.,;:!?])/g)].map(
-    (match) => (match[1] ?? "").toLowerCase(),
-  );
+  return digestClaims(scan);
 }
 
 export function parseAnswerComment(

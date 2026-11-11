@@ -146,6 +146,27 @@ function DecisionHead({ need, row }: { need: NeedView; row: DecisionRow }) {
   );
 }
 
+/** The options of a decision the drive reads every answer to as free: shown, not pickable. */
+function UnpickableOptions({ row }: { row: DecisionRow }) {
+  return (
+    <>
+      <ul className="opts">
+        {row.options.map((o) => (
+          <li key={o.name}>
+            <span className="optText">
+              <OptionText option={o} />
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="sm mut">
+        The drive reads every answer to this decision as your own words, so
+        these options cannot be picked; write the answer.
+      </p>
+    </>
+  );
+}
+
 /** The recommended option and the pick in sight, the other options behind a fold. */
 function RowOptions({ row, index, picking }: Omit<RowProps, "need">) {
   const [open, setOpen] = useState(false);
@@ -154,6 +175,7 @@ function RowOptions({ row, index, picking }: Omit<RowProps, "need">) {
   const [first, ...rest] = row.options;
   const shown = row.options.filter((o) => o === first || o.name === picked);
   const folded = rest.filter((o) => o.name !== picked);
+  if (!row.structured) return <UnpickableOptions row={row} />;
   const list = (options: RowOption[]) =>
     options.map((o) => (
       <OptionPick

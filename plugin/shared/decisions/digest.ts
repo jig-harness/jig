@@ -21,4 +21,8 @@ export function decisionDigest(decision: ParkedDecision): string {
     .slice(0, 12);
 }
 
-export { isDecisionDigest, splitAnswerDigest } from "./answer-digest.ts";
+export {
+  digestClaims,
+  isDecisionDigest,
+  splitAnswerDigest,
+} from "./answer-digest.ts";

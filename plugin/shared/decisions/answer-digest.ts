@@ -25,3 +25,13 @@ export function splitAnswerDigest(text: string): {
         digest: (match[1] ?? "").toLowerCase(),
       };
 }
+
+/**
+ * Every digest-shaped token a normalized answer states as its own, the
+ * framing suffix included: what a reader counts as an identity claim.
+ */
+export function digestClaims(normalized: string): string[] {
+  return [
+    ...normalized.matchAll(/(?:^|\s)\[([0-9a-f]{12})\](?=\s|$|[.,;:!?])/g),
+  ].map((match) => (match[1] ?? "").toLowerCase());
+}

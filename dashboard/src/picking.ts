@@ -27,7 +27,9 @@ import {
   isGuardedPick,
   numberOptions,
 } from "../../plugin/shared/decision-card.ts";
+import { normalizeAnswerText } from "../../plugin/shared/decisions/answer-normalize.ts";
 import { answerTextFault } from "../../plugin/shared/decisions/answer-text.ts";
+import { digestClaims } from "../../plugin/shared/decisions/answer-digest.ts";
 import { isRecord } from "../../plugin/shared/guards.ts";
 
 // ---------- what is kept ----------
@@ -105,6 +107,25 @@ function sameFraming(a: Framing, b: Framing): boolean {
   );
 }
 
+/**
+ * `kept` bound to the park time `row` shows, when it was made on a line that
+ * knew none: it then counts for that occurrence only, so the same decision
+ * parked again later drops it. `null` when there is nothing to bind.
+ */
+export function boundToPark(
+  row: DecisionRow,
+  kept: KeptAnswer | null,
+): KeptAnswer | null {
+  if (
+    kept === null ||
+    kept.framing.parkedAt !== null ||
+    row.framing.parkedAt === null ||
+    !sameFraming(kept.framing, row.framing)
+  )
+    return null;
+  return { ...kept, framing: row.framing };
+}
+
 // ---------- the rows ----------
 
 /** An option as a row shows it: its number, and whether picking it takes two steps to commit. */
@@ -127,6 +148,8 @@ export interface DecisionRow {
   act: NeedAct;
   /** The options in the card's order, the recommended one first as 1. */
   options: RowOption[];
+  /** Whether the readers resolve a `choose` or `approve` for it: a typed decision, or a record with one recommended option. Otherwise every answer to it reads as free. */
+  structured: boolean;
   /** How this decision and another affect each other, as the decisions say. */
   interplay: string[];
   /** The record's recommendation as Markdown, where no option reads as the recommended one; `null` otherwise. */
@@ -177,6 +200,9 @@ export function decisionRows(decisions: LineDecision[]): DecisionRow[] {
     ...(d.digest === undefined ? {} : { digest: d.digest }),
     framing: framingOf(d),
     place: i + 1,
+    structured:
+      d.decision !== undefined ||
+      (d.options ?? []).filter((o) => o.recommended).length === 1,
     question: d.question,
     decisionClass: d.decisionClass,
     act: actOfClass(d.decisionClass),
@@ -267,7 +293,9 @@ export function rowAnswer(
   if (!sameFraming(kept.framing, row.framing))
     return { ...NO_ANSWER, dropped: droppedWords(kept) };
   const option = kept.pick?.option;
-  const pick = row.options.find((o) => o.name === option) ?? null;
+  const pick = row.structured
+    ? (row.options.find((o) => o.name === option) ?? null)
+    : null;
   const note = kept.note?.text ?? "";
   const free = kept.free?.text ?? "";
   const pickedAt = pick === null ? null : (kept.pick?.at ?? null);
@@ -299,6 +327,22 @@ function counted(answer: RowAnswer): CardAnswer | null {
   return null;
 }
 
+/** Why own words, as the answer line will carry them, cannot be sent: they claim another framing, or the readers would count them as a choice. */
+function freeFault(row: DecisionRow, text: string): string | null {
+  // The readers take every digest in the words as a claim about the framing, and a stale one settles nothing.
+  const claimed =
+    row.digest === undefined
+      ? undefined
+      : digestClaims(normalizeAnswerText(text)).find((d) => d !== row.digest);
+  if (claimed !== undefined)
+    return `your own words name the framing [${claimed}], which is not this decision's; take it out`;
+  // The readers would count these words as a choice, which only a pick (and its second step) may make.
+  const read = choiceInLine(text, row.options, (o) => o.recommended);
+  return read === null
+    ? null
+    : `your own words read as ${read.form === "approve" ? "approving" : "choosing"} ${read.option.name}; pick that option on the row instead`;
+}
+
 function faultOf(
   row: DecisionRow,
   active: RowAnswer["active"],
@@ -315,10 +359,8 @@ function faultOf(
   const line = answerTextFault(text);
   if (line !== null) return line;
   if (answer.kind === "free") {
-    // The readers would count these words as a choice, which only a pick (and its second step) may make.
-    const read = choiceInLine(text, row.options, (o) => o.recommended);
-    if (read !== null)
-      return `your own words read as ${read.form === "approve" ? "approving" : "choosing"} ${read.option.name}; pick that option on the row instead`;
+    const words = freeFault(row, text);
+    if (words !== null) return words;
   }
   if (active === "pick" && note.trim() !== "") {
     const noted = answerTextFault(note.trim());

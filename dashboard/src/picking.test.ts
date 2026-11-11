@@ -8,6 +8,7 @@ import { describe, expect, it } from "bun:test";
 import type { LineDecision } from "../../plugin/dispatch/lib/dashboard-contract.ts";
 import type { ParkedDecision } from "../../plugin/shared/decisions/park.ts";
 import {
+  boundToPark,
   cardCommit,
   currentIndex,
   decisionRows,
@@ -453,5 +454,56 @@ describe("what a review of the card found", () => {
     expect(withText(keep, kept, "note", "x", T0 + 1)?.framing).toEqual(
       keep.framing,
     );
+  });
+
+  it("holds back own words that name another framing's digest", () => {
+    const read = rowAnswer(
+      keep,
+      withText(keep, null, "free", "Use the plan [aaaaaaaaaaaa]", T0),
+    );
+    expect(read.fault).toContain("[aaaaaaaaaaaa]");
+    // The row's own digest in the words is no other framing.
+    expect(
+      rowAnswer(
+        keep,
+        withText(keep, null, "free", "Use the plan [3fa9c2d1e0b4]", T0),
+      ).fault,
+    ).toBeNull();
+  });
+
+  it("binds a pick made before park times to the first park time seen, so a later park drops it", () => {
+    const older = { ...keep, framing: { ...keep.framing, parkedAt: null } };
+    const kept = withPick(older, null, keepIt, T0);
+    const bound = boundToPark(keep, kept);
+    expect(bound?.framing).toEqual(keep.framing);
+    const [again] = decisionRows([
+      decision("PRRT_a", KEEP, "3fa9c2d1e0b4", "2026-11-04T07:05:00.000Z"),
+    ]);
+    if (again === undefined) throw new Error("no row");
+    expect(rowAnswer(again, bound).pick).toBeNull();
+    expect(rowAnswer(again, bound).dropped).not.toBeNull();
+    // Nothing to bind once the park time is known, or while the row knows none.
+    expect(boundToPark(keep, bound)).toBeNull();
+    expect(boundToPark(older, kept)).toBeNull();
+  });
+
+  it("takes only own words for a record the readers resolve no choice for", () => {
+    const base = decision("PRRT_a", KEEP);
+    const { decision: _typed, ...legacy } = base;
+    const [row] = decisionRows([
+      {
+        ...legacy,
+        options: (base.options ?? []).map((o) => ({
+          ...o,
+          recommended: false,
+        })),
+      },
+    ]);
+    if (row === undefined) throw new Error("no row");
+    expect(row.structured).toBe(false);
+    const [first] = row.options;
+    if (first === undefined) throw new Error("no option");
+    expect(rowAnswer(row, withPick(row, null, first, T0)).pick).toBeNull();
+    expect(keep.structured).toBe(true);
   });
 });

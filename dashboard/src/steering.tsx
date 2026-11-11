@@ -279,6 +279,24 @@ export function useSteering(
     paletteOpen: () => entries !== null,
     focusFilter: () => focusFilter(main.current),
   });
+  /** Copies through the card itself: its second step, or why it is held back, is on the card. */
+  const copyOnCard = (card: CardInfo) => {
+    ranOn.current = card.key;
+    const element = main.current;
+    const target =
+      element === null ? null : pendingTarget(element, `${card.key}`);
+    if (
+      element !== null &&
+      target !== null &&
+      cardsIn(element).includes(target)
+    ) {
+      focusCard(element, target);
+      commitOn(target, card);
+    } else {
+      commitAfter.current = card;
+      goFocused(card.view, card.key);
+    }
+  };
   const runPalette = (run: PaletteRun) => {
     if (run.kind !== "copy") {
       goFocused(
@@ -287,24 +305,18 @@ export function useSteering(
       );
       return;
     }
-    const card = run.card;
+    // The entry was read when the palette opened; a tick since may have reframed, reparked or removed its decision.
+    const card = allCards(o.line, o.clock, (need) =>
+      keptCommit(need.repo, need.target, need.rows),
+    ).find((c) => c.key === run.card.key);
+    if (card === undefined) {
+      announce(
+        `Not copied: ${run.card.target} is not on the line now. Find it and copy again.`,
+      );
+      return;
+    }
     if (card.committedOnCard === true) {
-      ranOn.current = card.key;
-      // Its second step, or why it is held back, is on the card, so the copy runs there.
-      const element = main.current;
-      const target =
-        element === null ? null : pendingTarget(element, `${card.key}`);
-      if (
-        element !== null &&
-        target !== null &&
-        cardsIn(element).includes(target)
-      ) {
-        focusCard(element, target);
-        commitOn(target, card);
-      } else {
-        commitAfter.current = card;
-        goFocused(card.view, card.key);
-      }
+      copyOnCard(card);
       return;
     }
     const to = back ?? main.current;

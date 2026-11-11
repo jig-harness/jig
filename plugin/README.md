@@ -996,7 +996,7 @@ saying so, when the decision is framed or parked again. The card's Copy takes
 one comment answering every decision picked, `answer <key>: approve [<digest>]`
 or `choose <option>` with the framing's digest and any `note <key>:` line,
 ready to paste on the pull request; with nothing picked, a card of one
-decision under a class listed as Decide copies its approval. A pick under a
+decision under a class listed as Decide copies its approval when its recommended option can be undone and no earlier answer was dropped, and otherwise only the starting `answer <key>:` line. A pick under a
 class not listed as Decide, or of an option that cannot be undone, copies only
 on the second step, which first shows what it changes and costs. When the
 server stops answering, it keeps what it last read and says when that was.
