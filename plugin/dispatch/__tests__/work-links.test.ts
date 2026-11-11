@@ -161,6 +161,21 @@ describe("a team key", () => {
     ]);
   });
 
+  it("uses the shared container and paragraph rules when masking code", () => {
+    const body = [
+      "```",
+      "> ```",
+      "Closes ENG-1",
+      "```",
+      "`example",
+      "2. Closes ENG-2",
+      "end`",
+      "- Intro",
+      "    Closes ENG-3",
+    ].join("\n");
+    expect(closingKeys(body, TEAM.keys)).toEqual(["ENG-3"]);
+  });
+
   it("reads every item in an Oxford-comma list", () => {
     expect(closingKeys("Closes ENG-1, ENG-2, and ENG-3", TEAM.keys)).toEqual([
       "ENG-1",

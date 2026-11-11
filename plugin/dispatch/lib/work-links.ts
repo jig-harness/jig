@@ -25,7 +25,7 @@ import {
   type IssueKeys,
   keyFromBranch,
 } from "../../skills/do-item/scripts/lib/tracker/keys.ts";
-import { markdownTextLines } from "./owed-steps.ts";
+import { markdownVisibleTextLines } from "./owed-steps.ts";
 
 /** What links one open pull request to the items it works on, as the repository's query read it. */
 export interface PrLinkText {
@@ -65,39 +65,7 @@ const CLOSING = "(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)";
 const SEP =
   "(?:[ \\t]*,[ \\t]*(?:and[ \\t]+)?|[ \\t]*&[ \\t]*|[ \\t]+and[ \\t]+)";
 
-/** Replace inline code spans, including multiline spans and spans with multi-backtick delimiters. */
-function withoutCodeSpans(body: string): string {
-  return body
-    .split(
-      /(\n(?=[ \t]*(?:\n|#{1,6}(?:\s|$)|(?:[-*_]\s*){3,}$|[-*+]\s+|\d+[.)]\s+)))/,
-    )
-    .map((paragraph) => {
-      let result = paragraph;
-      for (let start = 0; start < result.length; ) {
-        if (result[start] !== "`") {
-          start += 1;
-          continue;
-        }
-        let end = start;
-        while (result[end] === "`") end += 1;
-        const length = end - start;
-        const closer = new RegExp(`(?<!\`)\`{${length}}(?!\`)`, "g");
-        closer.lastIndex = end;
-        const found = closer.exec(result);
-        if (found === null) {
-          start = end;
-          continue;
-        }
-        const close = found.index;
-        result = `${result.slice(0, start)}${" ".repeat(close + length - start)}${result.slice(close + length)}`;
-        start = close + length;
-      }
-      return result;
-    })
-    .join("");
-}
-
-/** Mask indented code without mistaking a paragraph continuation for a block. */
+/** Mask indented code after the shared reader has established Markdown's container and paragraph boundaries. */
 function withoutIndentedCode(body: string): string {
   let paragraph = false;
   return body
@@ -111,9 +79,8 @@ function withoutIndentedCode(body: string): string {
         /^\s*/.exec(line.replace(/\t/g, "    "))?.[0].length ?? 0;
       if (indentation >= 4 && !paragraph) return " ";
       paragraph =
-        !/^ {0,3}(?:#{1,6}(?:\s|$)|(?:[-*_]\s*){3,}$|[-*+]\s+|\d+[.)]\s+)/.test(
-          line,
-        );
+        /^ {0,3}(?:[-*+]|\d+[.)])\s+\S/.test(line) ||
+        !/^ {0,3}(?:#{1,6}(?:\s|$)|(?:[-*_]\s*){3,}$)/.test(line);
       return line;
     })
     .join("\n");
@@ -121,16 +88,7 @@ function withoutIndentedCode(body: string): string {
 
 /** A description without what only shows text: code blocks, inline code and HTML comments. */
 function assertedText(body: string): string {
-  // `markdownTextLines` is the shared Markdown block reader. It establishes
-  // comments before code, honours fence containers, and only closes a fence
-  // on a valid closing line; inline spans are then masked within paragraphs.
-  return withoutIndentedCode(
-    withoutCodeSpans(
-      markdownTextLines(body.replace(/^(?: {0,3}>[ \t]?)+/gm, ""))
-        .map((line) => line.replace(/^\\/, ""))
-        .join("\n"),
-    ),
-  );
+  return withoutIndentedCode(markdownVisibleTextLines(body).join("\n"));
 }
 
 function sameRepository(a: string, b: string): boolean {

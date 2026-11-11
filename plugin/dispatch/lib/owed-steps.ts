@@ -115,6 +115,7 @@ function inside(
   line: string,
   at: number,
   ctx: Context,
+  maskCode: boolean,
 ): { to: number; kept: string } {
   if (ctx.comment) {
     const close = line.indexOf("-->", at);
@@ -123,18 +124,30 @@ function inside(
     return { to: close + 3, kept: "" };
   }
   const end = findRun(line, at, ctx.span ?? 0);
-  if (end === -1) return { to: line.length, kept: line.slice(at) };
+  if (end === -1)
+    return {
+      to: line.length,
+      kept: maskCode ? " ".repeat(line.length - at) : line.slice(at),
+    };
   ctx.span = null;
-  return { to: end, kept: line.slice(at, end) };
+  return {
+    to: end,
+    kept: maskCode ? " ".repeat(end - at) : line.slice(at, end),
+  };
 }
 
 /** What is left of `line` outside HTML comments; `ahead` looks through the later lines of its paragraph, where an open code span may close. */
-function uncommented(line: string, ctx: Context, ahead: Lookahead): string {
+function uncommented(
+  line: string,
+  ctx: Context,
+  ahead: Lookahead,
+  maskCode: boolean,
+): string {
   let text = "";
   let i = 0;
   while (i < line.length) {
     if (ctx.comment || ctx.span !== null) {
-      const read = inside(line, i, ctx);
+      const read = inside(line, i, ctx, maskCode);
       text += read.kept;
       i = read.to;
       continue;
@@ -150,7 +163,9 @@ function uncommented(line: string, ctx: Context, ahead: Lookahead): string {
       continue;
     }
     const run = codeSpanAt(line, m.index, m[0].length, ahead);
-    text += line.slice(m.index, run.end);
+    text += maskCode
+      ? " ".repeat(run.end - m.index)
+      : line.slice(m.index, run.end);
     i = run.end;
     ctx.span = run.open;
   }
@@ -249,7 +264,7 @@ function paragraphAfter(
  * its paragraph. A comment that never closes runs to the end; a fence closes
  * only on a line of its own marker.
  */
-export function markdownTextLines(body: string): string[] {
+function markdownLines(body: string, maskCode: boolean): string[] {
   const lines: string[] = [];
   const input = body.split(/\r?\n/);
   const ctx: Context = { comment: false, span: null };
@@ -268,10 +283,21 @@ export function markdownTextLines(body: string): string[] {
       line,
       ctx,
       paragraphAfter(input, i, paragraphContainer),
+      maskCode,
     );
     lines.push(continued ? `\\${text}` : text);
   }
   return lines;
+}
+
+/** The description's lines outside fenced code and HTML comments. Inline code remains so section readers can interpret it as ordinary text. */
+function markdownTextLines(body: string): string[] {
+  return markdownLines(body, false);
+}
+
+/** The description's visible lines, with fenced, inline and indented code and HTML comments masked under the shared Markdown block rules. */
+export function markdownVisibleTextLines(body: string): string[] {
+  return markdownLines(body, true);
 }
 
 /** The fence being read: its marker (`null` outside one), the column of the list item holding the line, and the column of the item holding the fence, which a less indented line ends the fence with. */
