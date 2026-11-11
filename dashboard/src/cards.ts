@@ -7,8 +7,8 @@
 import type { LineSnapshot } from "../../plugin/dispatch/lib/dashboard-contract.ts";
 import { mergeCount, mergeLanes, type MergeCardView } from "./merge-view.ts";
 import { type NeedView, needCount, needRows } from "./needs-view.ts";
+import { type CardCommit, cardCommit, rowAnswer } from "./picking.ts";
 import { queueGroups, type QueueItemView } from "./queue-view.ts";
-import { answerText } from "./replies.ts";
 import type { ViewId } from "./search.ts";
 import { type Clock, type SlotView, slotView } from "./view.ts";
 
@@ -23,6 +23,8 @@ export interface CardInfo {
   command: string | null;
   /** What the command is, as the palette names it. */
   commandLabel: string;
+  /** Whether copying it takes the card's own two steps: a guarded pick is among its answers, or a row holds the copy back. */
+  committedOnCard?: boolean;
 }
 
 /** The station whose records a stage leaves (design/addresses.md). */
@@ -49,26 +51,27 @@ export function mergeCard(card: MergeCardView): CardInfo {
   };
 }
 
-export function needCard(need: NeedView, replies: string[]): CardInfo {
-  const [first] = need.answerKeys;
-  const command =
-    first !== undefined
-      ? answerText(need.answerKeys, replies)
-      : (need.keyText ?? askLineOf(need.stage, need.repo, need.target));
-  return {
+/** A need's card; `commit` is what its Copy takes when it holds decisions to pick. */
+export function needCard(need: NeedView, commit: CardCommit): CardInfo {
+  const card = {
     key: `need ${need.rowKey}`,
-    view: "needs",
+    view: "needs" as const,
     target: need.target,
     repo: need.repo,
     title: need.question,
     url: need.url,
-    command,
-    commandLabel:
-      first !== undefined
-        ? "answer line"
-        : need.keyText !== null
-          ? "key"
-          : "jig ask line",
+  };
+  if (need.rows.length > 0)
+    return {
+      ...card,
+      command: commit.text,
+      commandLabel: commit.label,
+      committedOnCard: commit.guarded.length > 0 || commit.faults.length > 0,
+    };
+  return {
+    ...card,
+    command: need.keyText ?? askLineOf(need.stage, need.repo, need.target),
+    commandLabel: need.keyText !== null ? "key" : "jig ask line",
   };
 }
 
@@ -104,11 +107,15 @@ export function queueCard(item: QueueItemView): CardInfo {
   };
 }
 
-/** Every card on the card views, in each view's order; `repliesOf` reads the drafts a need's answer line carries. */
+/** Every card on the card views, in each view's order; `commitOf` reads what a need's Copy takes from the answers kept for it. */
 export function allCards(
   line: LineSnapshot | null,
   clock: Clock,
-  repliesOf: (need: NeedView) => string[] = () => [],
+  commitOf: (need: NeedView) => CardCommit = (need) =>
+    cardCommit(
+      need.rows,
+      need.rows.map((row) => rowAnswer(row, null)),
+    ),
 ): CardInfo[] {
   if (line === null) return [];
   const merge = mergeLanes(line, clock.nowMs).flatMap((lane) =>
@@ -116,7 +123,7 @@ export function allCards(
   );
   const needs = needRows(line, clock).flatMap((row) =>
     row.type === "need"
-      ? [needCard(row.need, repliesOf(row.need))]
+      ? [needCard(row.need, commitOf(row.need))]
       : row.type === "stuck"
         ? [slotCard(row.slot, "needs")]
         : [],

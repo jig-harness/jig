@@ -1,7 +1,11 @@
 /** One interpretation of a person's answer for every reader of parked work. */
 import { createHash } from "node:crypto";
-import { splitAnswerDigest } from "../../../../shared/decisions/digest.ts";
+import {
+  digestClaims,
+  splitAnswerDigest,
+} from "../../../../shared/decisions/digest.ts";
 import { normalizeAnswerText } from "../../../../shared/decisions/answer-normalize.ts";
+import { choiceInText } from "../../../../shared/decision-card.ts";
 import {
   renderParkedDecision,
   type ParkedDecision,
@@ -306,30 +310,20 @@ function choiceFromText(
     call.options.length
   )
     return undefined;
-  const normalized = normalizeAnswerText(text);
-  const form =
-    normalized === "approve"
-      ? "approve"
-      : normalized.startsWith("choose ")
-        ? "choose"
-        : null;
-  if (form === null) return undefined;
-  const options =
-    form === "approve"
-      ? call.options.filter((o) => o.id === call.recommended)
-      : call.options.filter(
-          (o) => normalizeAnswerText(o.name) === normalized.slice(7),
-        );
-  const option = options.length === 1 ? options[0] : undefined;
-  return option === undefined
-    ? undefined
-    : {
-        option: option.name,
-        recommended: option.id === call.recommended,
-        form,
-        ...(digest === undefined ? {} : { digest }),
-        ...(note === undefined ? {} : { note }),
-      };
+  const chosen = choiceInText(
+    text,
+    call.options,
+    (o) => o.id === call.recommended,
+  );
+  if (chosen === null) return undefined;
+  const { option, form } = chosen;
+  return {
+    option: option.name,
+    recommended: option.id === call.recommended,
+    form,
+    ...(digest === undefined ? {} : { digest }),
+    ...(note === undefined ? {} : { note }),
+  };
 }
 
 function choiceOf(
@@ -373,9 +367,7 @@ function embeddedDigests(item: ParkedItem, text: string): string[] {
       : `${normalized.slice(0, 7)}${normalized.slice(
           7 + normalizeAnswerText(option.name).length,
         )}`;
-  return [...scan.matchAll(/(?:^|\s)\[([0-9a-f]{12})\](?=\s|$|[.,;:!?])/g)].map(
-    (match) => (match[1] ?? "").toLowerCase(),
-  );
+  return digestClaims(scan);
 }
 
 export function parseAnswerComment(
