@@ -374,8 +374,9 @@ async function claim(
   const read = await claimSettingsFromDefaultBranch(root, overlay);
   if (!read.ok) return unreadablePreflight(normalized, read.failure.reason);
   const settings = read.value;
-  const planBlock = await claimPlanBlockFromDefaultBranch(root);
-  if (!planBlock.ok)
+  // Only a served claim enforces the epic plan; a plain claim never reads it.
+  const planBlock = person ? await claimPlanBlockFromDefaultBranch(root) : null;
+  if (planBlock !== null && !planBlock.ok)
     return unreadablePreflight(normalized, planBlock.failure.reason);
   // Before the lock and before any write: a refusal leaves nothing behind.
   const command = await claimPreflightCommand(root, overlay);
@@ -402,7 +403,9 @@ async function claim(
           epicLabel: config.labels.epic,
           hitlLabel: config.labels.hitl,
           manualOpsLabel: config.labels.manualOps,
-          executionPlanBlock: planBlock.value,
+          ...(planBlock?.ok && planBlock.value !== undefined
+            ? { executionPlanBlock: planBlock.value }
+            : {}),
           claimFrom: settings.claimFrom,
         })
       : claimIssue(tracker, key, { claimFrom: settings.claimFrom });

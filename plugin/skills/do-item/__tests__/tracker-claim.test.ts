@@ -460,17 +460,15 @@ describe("tracker.ts claim", () => {
   }
 
   it("exits 0 with the claim, 3 on a refusal and 4 on a stand-down, printing the reason", async () => {
-    const claimed = await cli([], [], undefined, { committed: "" });
+    const claimed = await cli([], []);
     expectSpawnExit(claimed, 0);
     expect(JSON.parse(claimed.stdout).outcome).toBe("claimed");
 
-    const refused = await cli(["In Progress"], ["dana"], undefined, {
-      committed: "",
-    });
+    const refused = await cli(["In Progress"], ["dana"]);
     expectSpawnExit(refused, 3);
     expect(refused.stderr).toContain("#5 is already In Progress");
 
-    const stood = await cli([], [], "dana", { committed: "" });
+    const stood = await cli([], [], "dana");
     expectSpawnExit(stood, 4);
     expect(stood.stderr).toContain("another claim landed first");
   });
@@ -520,7 +518,7 @@ describe("tracker.ts claim", () => {
   });
 
   it("posts no marker without do_item.claim_marker", async () => {
-    const out = await cli([], [], undefined, { committed: "" });
+    const out = await cli([], []);
     expectSpawnExit(out, 0);
     expect(JSON.parse(out.stdout).marker).toBeUndefined();
     expect(out.writes.some((w) => w.startsWith("TrackerComment"))).toBe(false);
