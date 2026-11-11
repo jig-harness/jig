@@ -556,13 +556,13 @@ describe("the keys on every view", () => {
   );
 
   browserIt(
-    "a reply being written takes every key as text",
+    "an answer being written takes every key as text",
     async () => {
       const { page, context } = await openOn("needs");
       try {
         const need = page.locator(".need").first();
-        await need.getByRole("button", { name: "Write reply" }).click();
-        const box = need.locator("textarea");
+        await need.getByRole("button", { name: "Write an answer" }).click();
+        const box = need.locator("input[data-field]");
         await box.focus();
         await page.keyboard.type("jk gm c?");
         expect(await box.inputValue()).toBe("jk gm c?");

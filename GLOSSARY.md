@@ -1272,10 +1272,13 @@ make, use the entry's term instead.
   loop.
 - **Routine question (class)** — a question a follow-up's headless pass may
   stop on that has one safe answer, so the *dispatcher* gives it without a
-  person: housekeeping whose safe answer is to keep and list, such as a local
-  branch or worktree the pass may not delete without asking
-  (`local-leftover`). The classes are a fixed list in the dispatcher's code,
-  each with its **standing answer**; the pass tags its own question with the
+  person, in one of these kinds: housekeeping whose safe answer is to keep and
+  list, such as a local branch or worktree the pass may not delete without
+  asking (`local-leftover`); a step after the merge that only a person can take,
+  whose safe answer is to report it as owed (`person-owed`); and the
+  follow-up items the pass drafted itself, whose safe answer is to file them
+  as drafted (`drafted-items`). The classes are a fixed list in the
+  dispatcher's code, each with its **standing answer**; the pass tags its own question with the
   class, and a follow-up that stopped on one is run again once with that
   answer in its prompt. Any other question waits for a person.
 - **Follow-up lane** — the *dispatcher's* own allowance for follow-ups: a
@@ -1337,9 +1340,12 @@ make, use the entry's term instead.
   and a decision sheet share: a **call** is one question with options that
   exclude each other. A park is one call; a sheet is one or more calls, with their
   context ([design](design/structured-answers.md#one-decision-model)).
-- **Pick (of an option)** — the choice of an option on a card, made with a
-  key or a tap, kept in the browser and undoable. Nothing reads a pick until
-  the person commits it as an answer
+- **Pick (of an option), guarded pick** — the choice of an option on a
+  card, made with a key or a tap, kept in the browser and undoable. Nothing
+  reads a pick until the person commits it as an answer. A pick is
+  **guarded** when its decision's class is not one the acts table lists as
+  Decide, or its option cannot be undone: committing it takes two steps, the
+  first showing what it changes and costs
   ([design](design/structured-answers.md#picking-an-answer)).
 - **Decision digest, stale answer** — a short hash of a *framed decision*,
   stored when the decision is parked and published in the drive

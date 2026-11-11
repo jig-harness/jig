@@ -102,3 +102,33 @@ describe("the keys a card tags", () => {
     ).toEqual([]);
   });
 });
+
+describe("the keys a parked need's card takes", () => {
+  it("picks with a digit, moves between decisions with h and l, undoes with u and writes with r", () => {
+    expect(actionOf(press("1"), false)).toEqual({ kind: "pick", number: 1 });
+    expect(actionOf(press("9"), false)).toEqual({ kind: "pick", number: 9 });
+    expect(actionOf(press("0"), false)).toBeNull();
+    expect(actionOf(press("h"), false)).toEqual({ kind: "decision", by: -1 });
+    expect(actionOf(press("l"), false)).toEqual({ kind: "decision", by: 1 });
+    expect(actionOf(press("u"), false)).toEqual({ kind: "undo" });
+    expect(actionOf(press("r"), false)).toEqual({ kind: "words" });
+    expect(actionOf(press("constructor"), false)).toBeNull();
+  });
+
+  it("names the picking keys only on a card that holds decisions", () => {
+    const card = {
+      url: null,
+      command: "answer PRRT_a: approve",
+      commandLabel: "approval",
+      details: false,
+    };
+    expect(hintsFor(card).map((h) => h.key)).toEqual(["c"]);
+    expect(hintsFor({ ...card, picks: true }).map((h) => h.key)).toEqual([
+      "1–9",
+      "h l",
+      "u",
+      "r",
+      "c",
+    ]);
+  });
+});

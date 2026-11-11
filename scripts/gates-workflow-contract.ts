@@ -6,7 +6,8 @@ export type SuiteContract = { if?: string; needs?: string; stepIf?: string };
 // hold is off and the event is not another label's, after the job that
 // resolves the areas; every night it runs unconditionally. The website's suite
 // runs in the gate-set job, which runs whenever the hold is off and the event
-// is not another label's, as a step selected by the website area.
+// is not another label's, as a step selected by the website area and run in
+// the one matrix leg that takes the checks part, so no other leg repeats it.
 export const DRIVE_PR_AREA = `contains(needs.areas.outputs.areas, '"drive-pr"')`;
 const NOT_HELD = `!contains(github.event.pull_request.labels.*.name, 'ci:hold')`;
 const NOT_A_MIRROR = `!(github.event.label.name && github.event.label.name != 'ci:hold')`;
@@ -14,7 +15,7 @@ export const PR_SUITE: SuiteContract = {
   needs: "areas",
   if: `\${{ ${DRIVE_PR_AREA} && ${NOT_HELD} && ${NOT_A_MIRROR} }}`,
 };
-export const WEBSITE_STEP = `\${{ !cancelled() && contains(needs.areas.outputs.areas, '"website"') }}`;
+export const WEBSITE_STEP = `\${{ !cancelled() && contains(needs.areas.outputs.areas, '"website"') && matrix.part == 'checks' }}`;
 export const PR_WEBSITE_SUITE: SuiteContract = {
   needs: "areas",
   if: `\${{ ${NOT_HELD} && ${NOT_A_MIRROR} }}`,

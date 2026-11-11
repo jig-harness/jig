@@ -1,7 +1,7 @@
 import { expect, it } from "bun:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { OptionText } from "./needs.tsx";
+import { OptionText } from "./option-text.tsx";
 
 it("renders option details as labels and text without interpreting markup", () => {
   const html = renderToStaticMarkup(
