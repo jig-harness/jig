@@ -14,8 +14,11 @@ the service that runs the repository's checks on every push; this skill turns
 its red run into a green one without guessing. The checks it repairs are the
 repository's quality gates, the subject of Jig module
 [M1 (gates & enforcement ladder)](https://github.com/jig-harness/jig/blob/main/modules/M1-gates-enforcement-ladder/README.md).
-GitHub Actions is the one CI service it fetches logs from so far; with another
-CI service, save the failed run's log to a file and pass it with `--log`.
+It fetches a GitHub Actions run's log with `gh`. A CI service that reports
+as commit statuses instead (Jenkins through its GitHub Branch Source plugin,
+for one) keeps its logs on its own server: a pull request's failing statuses
+are read through the repository's `ci.log_command`. With any other CI
+service, save the failed log to a file and pass it with `--log`.
 
 Jig maintains this procedure and ships it in the `jig` plugin.
 Each repository supplies its own values in `.config/jig.yaml`
@@ -43,7 +46,8 @@ run the repository's own commands.
 
 - nothing: the latest failed run on the current branch;
 - a run ID, `12345678`: that run;
-- a pull request, `#123` or `--pr 123`: the latest failed run on its branch;
+- a pull request, `#123` or `--pr 123`: the latest failed run on its branch,
+  and every failing commit status on its head;
 - a branch, `feature/x` or `--branch feature/x`: the latest failed run on it.
 
 **Local only, no pull request yet.** There is no failed run to fetch, so skip
@@ -69,6 +73,7 @@ Prints the values this procedure uses:
 | `gates.command` | the overlay: the repository's complete local checks | the checks the repository's instruction file (`AGENTS.md` or equivalent) names |
 | `drive.validation_plan_command` | the overlay: prints the checks a diff needs | the plan is `gates.command` |
 | `fix_ci.regenerate_commands` | the overlay: commands that regenerate committed generated files | none: find the command as Step 2 describes |
+| `ci.log_command` | the overlay: prints a failing commit status's log | a status's log is read by hand from its `target_url` |
 
 Exit 2 means the configuration file exists but is invalid: report the message
 and stop.
@@ -76,7 +81,11 @@ and stop.
 ### `scripts/parse-ci-log.ts`
 
 Fetches the failed run's log with `gh` and sorts its errors into categories,
-in fix-priority order.
+in fix-priority order. With a pull request it also reads every failing commit
+status on the pull request's head and, when `ci.log_command` is set, each
+status's log through it (with a 300-second deadline, or
+`FIX_CI_LOG_COMMAND_TIMEOUT` seconds); a status in state `error` whose
+description says the build was aborted is no failure and is left out.
 
 ```bash
 bun "${CLAUDE_SKILL_DIR}/scripts/parse-ci-log.ts"                # latest failure on the current branch
@@ -129,16 +138,22 @@ code diagnostic. Anything ambiguous is not. The run reads `true` only when
 every failed job does; `why` names the deciding line or step.
 
 `job` and `step` name the job and step that printed the line; the parser
-keeps one entry per step for a line repeated across steps. When there is
+keeps one entry per step for a line repeated across steps. An error from a
+commit status's log names the status's context as its `job`. With a pull
+request the output adds `statuses`, one entry per failing status:
+`{"context", "target_url", "log"}`, `log` being `read`, `gone` (the command
+exited 3; `reason` says why) or `unread` (`ci.log_command` is not set).
+`infrastructure` reads the Actions run's log only. When there is
 nothing to parse it prints `{"error": "no_failed_runs", ...}`
-(`gh` listed no failed run) or `{"error": "PR #<n> not found", ...}` (`gh`
+(`gh` listed no failed run, nor a failing status on the pull request's head) or `{"error": "PR #<n> not found", ...}` (`gh`
 reported no such pull request) with `errors_found: 0` and exits 0.
-Exit 1 means a lookup or the log could not be fetched (or, with `--log`,
+Exit 1 means a lookup or a log could not be fetched (or, with `--log`,
 read), or `gh` answered with something unreadable (for example, an
-authentication failure, a timeout, or a run still in progress); `gh`'s
-message is on stderr. Report it and stop: it says nothing about whether CI
+authentication failure, a timeout, or a run still in progress), or
+`ci.log_command` failed or ran past its deadline; the message is on stderr. Report it and stop: it says nothing about whether CI
 failed. Exit 2 is a usage error, including a detached `HEAD` with no run ID,
-`--pr` or `--branch` to say which run to read.
+`--pr` or `--branch` to say which run to read, or an invalid `ci.log_command`
+or `FIX_CI_LOG_COMMAND_TIMEOUT`.
 
 ### `scripts/probe-base.ts`
 
@@ -216,6 +231,8 @@ bun "${CLAUDE_SKILL_DIR}/scripts/parse-ci-log.ts" <run-id-or-options>
 Read the JSON. If `errors_found` is 0:
 
 - `"error": "no_failed_runs"`: report that no failed run was found.
+- A status whose `log` is `unread` or `gone`: open its `target_url` to find
+  the failed build's log; when there is none, say so and fix nothing for it.
 - The run failed but no error was parsed: fetch the raw log with
   `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh run view <RUN_ID> --log-failed` and investigate.
 

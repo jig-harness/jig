@@ -1475,7 +1475,7 @@ carries the specifics.
 
 | `$DRIVE_PR_ROUND_TASK` | `…_DETAIL` | What this round is |
 |---|---|---|
-| `ci-repair` | the failing check names, as CI reported them; `$DRIVE_PR_ROUND_FAILED_RUNS` holds the ids of the workflow runs behind them, separated by spaces | The reviewer has converged and the exact-head full-CI verdict is red. Repair CI. |
+| `ci-repair` | the failing check names, as CI reported them; `$DRIVE_PR_ROUND_FAILED_RUNS` holds the ids of the workflow runs behind them, separated by spaces; `$DRIVE_PR_ROUND_FAILED_STATUSES` the failing commit statuses, a JSON list of `{context, target_url}`; `$DRIVE_PR_ROUND_REPAIR_SKILL` the repository's CI-repair skill (`ci.repair_skill`) | The reviewer has converged and the exact-head full-CI verdict is red. Repair CI. |
 | `conflict-resolve` | the PR's base ref name | The PR conflicts with its base and has **no** workable finding. Merge the base in and resolve. |
 
 **Expect § 1's gate to answer `CONVERGED` (exit 3) on a `ci-repair` round, and
@@ -1497,16 +1497,25 @@ exit does, so the driver's own next gate read decides what to dispatch next.
 
 Then:
 
-- **`ci-repair`** — repair CI on this PR, with the repository's CI-repair
-  skill if it has one: read the logs of the runs `$DRIVE_PR_ROUND_FAILED_RUNS`
-  names, reproduce locally where possible, fix the cause. Fix every failing
+- **`ci-repair`** — repair CI on this PR. When `$DRIVE_PR_ROUND_REPAIR_SKILL`
+  is set, load that skill first and follow it; otherwise follow
+  [`/jig:fix-ci`](../fix-ci/SKILL.md)'s procedure. Read the logs of the runs
+  `$DRIVE_PR_ROUND_FAILED_RUNS` names and of the statuses
+  `$DRIVE_PR_ROUND_FAILED_STATUSES` names:
+  `bun "${CLAUDE_SKILL_DIR}/../fix-ci/scripts/parse-ci-log.ts" --pr <PR>`
+  reads both, a status's log through the repository's `ci.log_command`. A
+  status it reports as `unread` (no command) or `gone` has no log to read:
+  open its `target_url`, and when that gives none either, end the round
+  without a commit and say the log is missing: a fix without it is a guess.
+  Reproduce locally where possible, fix the cause. Fix every failing
   check, not only the first. Then pick up at **§ 5**: sync the base, resolve and
   run the round's validation plan over the cumulative tree, and **§ 6** to
   commit and push. §§ 2–4 have nothing to enumerate — the review converged
   before you were dispatched.
 
   When the log shows the failure is not in the code (a lost runner, a network
-  error), re-run the failed runs instead of committing:
+  error), re-run the failed workflow runs instead of committing (a commit
+  status's build is re-run only as the repository's CI-repair skill says):
   `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh run rerun <id> --failed`,
   for the ids that variable names and no other run on the head. A run with only
   cancelled checks has no failure to repair; re-running it leaves a sibling

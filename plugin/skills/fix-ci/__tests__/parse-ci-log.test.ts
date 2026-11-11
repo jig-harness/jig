@@ -11,14 +11,19 @@
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import type { FailingStatus } from "../../../shared/ci-status.ts";
+import { failed, ok as okOutcome } from "../../../shared/outcome.ts";
 import {
   type CommandResult,
+  type LogCommand,
   main,
   PRIORITY,
   parseArgs,
   parseCiErrors,
   type Runner,
+  type StatusLogs,
 } from "../scripts/parse-ci-log.ts";
+import type { StatusLog } from "../scripts/status-log.ts";
 
 const FIXTURES = join(import.meta.dir, "fixtures");
 const fixture = (name: string) => readFileSync(join(FIXTURES, name), "utf8");
@@ -356,28 +361,75 @@ function fakeRunner(answers: Record<string, CommandResult>): {
 
 const ok = (stdout: string): CommandResult => ({ code: 0, stdout, stderr: "" });
 
+/** No `ci.log_command`: what a repository without one reads. */
+const NO_LOG_COMMAND: StatusLogs = {
+  settings: () => okOutcome(null),
+  read: async () => failed("unexpected", "no command is set"),
+};
+
+/** A `ci.log_command` answering per status context; `asked` records each call. */
+function logCommand(answers: Record<string, StatusLog | string>): {
+  logs: StatusLogs;
+  asked: FailingStatus[];
+} {
+  const command: LogCommand = { command: "ci-log", seconds: 300 };
+  const asked: FailingStatus[] = [];
+  return {
+    asked,
+    logs: {
+      settings: () => okOutcome(command),
+      async read(given, status) {
+        expect(given).toEqual(command);
+        asked.push(status);
+        const answer = answers[status.context];
+        if (answer === undefined) return failed("unexpected", status.context);
+        return typeof answer === "string"
+          ? failed("log-command-failed", answer)
+          : okOutcome(answer);
+      },
+    },
+  };
+}
+
 async function capture(
   argv: string[],
   runner: Runner,
   files: Record<string, string> = {},
+  logs: StatusLogs = NO_LOG_COMMAND,
 ): Promise<{ code: number; out: string; err: string }> {
   let out = "";
   let err = "";
-  const code = await main(argv, runner, {
-    out: (t) => {
-      out += `${t}\n`;
+  const code = await main(
+    argv,
+    runner,
+    {
+      out: (t) => {
+        out += `${t}\n`;
+      },
+      err: (t) => {
+        err += `${t}\n`;
+      },
+      readFile: (path) => {
+        const text = files[path];
+        if (text === undefined) throw new Error("ENOENT");
+        return text;
+      },
     },
-    err: (t) => {
-      err += `${t}\n`;
-    },
-    readFile: (path) => {
-      const text = files[path];
-      if (text === undefined) throw new Error("ENOENT");
-      return text;
-    },
-  });
+    logs,
+  );
   return { code, out, err };
 }
+
+/** `gh pr view --json headRefName,headRefOid`'s answer. */
+const prView = (branch: string, sha = "c0ffee") =>
+  ok(JSON.stringify({ headRefName: branch, headRefOid: sha }));
+
+/** The combined-status pages of a head carrying these statuses. */
+const statusPages = (statuses: Array<Record<string, unknown>>) =>
+  ok(JSON.stringify([{ state: "failure", statuses }]));
+
+const JENKINS = "continuous-integration/jenkins/pr-merge";
+const BUILD_URL = "https://ci.example/job/project/PR-12/3/display/redirect";
 
 describe("run resolution", () => {
   const log = ok(gh("FAIL src/a.test.ts"));
@@ -395,13 +447,20 @@ describe("run resolution", () => {
   });
 
   it("--pr: the PR branch's latest failed run", async () => {
-    const { runner } = fakeRunner({
-      "gh pr view 12": ok("feature/pay\n"),
+    const { runner, calls } = fakeRunner({
+      "gh pr view 12 --json headRefName,headRefOid": prView("feature/pay"),
+      "gh api --paginate --slurp repos/{owner}/{repo}/commits/c0ffee/status":
+        statusPages([]),
       "gh run list --branch feature/pay": ok('[{"databaseId":77}]'),
       "gh run view 77 --log-failed": log,
     });
     const r = await capture(["--pr", "12"], runner);
-    expect(JSON.parse(r.out)).toMatchObject({ run_id: "77", errors_found: 1 });
+    expect(JSON.parse(r.out)).toMatchObject({
+      run_id: "77",
+      errors_found: 1,
+      statuses: [],
+    });
+    expect(calls).toHaveLength(4);
   });
 
   it("an explicit run ID skips the lookup", async () => {
@@ -527,5 +586,183 @@ describe("run resolution", () => {
   it("--log on a missing file exits 1", async () => {
     const { runner } = fakeRunner({});
     expect((await capture(["--log", "nope.log"], runner)).code).toBe(1);
+  });
+});
+
+describe("a pull request whose CI reports as a commit status", () => {
+  /** A head with no failed Actions run, carrying these statuses. */
+  const statusOnly = (statuses: Array<Record<string, unknown>>) =>
+    fakeRunner({
+      "gh pr view 12 --json headRefName,headRefOid": prView("feature/pay"),
+      "gh api --paginate --slurp repos/{owner}/{repo}/commits/c0ffee/status":
+        statusPages(statuses),
+      "gh run list --branch feature/pay": ok("[]"),
+    });
+
+  const red = {
+    context: JENKINS,
+    state: "failure",
+    description: "This commit cannot be built",
+    target_url: BUILD_URL,
+  };
+
+  it("reads the failing status's log through ci.log_command", async () => {
+    const { runner, calls } = statusOnly([
+      red,
+      { context: "lint", state: "success", description: "ok" },
+    ]);
+    const { logs, asked } = logCommand({
+      [JENKINS]: {
+        kind: "log",
+        text: "[Pipeline] sh\nFAIL src/cart/total.test.ts\nERROR: script returned exit code 1\n",
+      },
+    });
+    const r = await capture(["--pr", "12"], runner, {}, logs);
+    expect(r.code).toBe(0);
+    expect(asked).toEqual([{ context: JENKINS, target_url: BUILD_URL }]);
+    const out = JSON.parse(r.out);
+    expect(out).toMatchObject({
+      run_id: "",
+      files_affected: ["src/cart/total.test.ts"],
+      statuses: [{ context: JENKINS, target_url: BUILD_URL, log: "read" }],
+    });
+    expect(out.errors[0]).toMatchObject({
+      category: "test_failure",
+      job: JENKINS,
+      file: "src/cart/total.test.ts",
+    });
+    expect(out.infrastructure.infrastructure).toBe(false);
+    expect(calls.some((c) => c.startsWith("gh run view"))).toBe(false);
+  });
+
+  it("names a status whose log is gone, with the command's reason", async () => {
+    const { runner } = statusOnly([red]);
+    const { logs } = logCommand({
+      [JENKINS]: { kind: "gone", reason: "build 3 was discarded" },
+    });
+    const r = await capture(["--pr", "12"], runner, {}, logs);
+    expect(r.code).toBe(0);
+    expect(JSON.parse(r.out)).toMatchObject({
+      errors_found: 0,
+      statuses: [
+        {
+          context: JENKINS,
+          target_url: BUILD_URL,
+          log: "gone",
+          reason: "build 3 was discarded",
+        },
+      ],
+    });
+  });
+
+  it("names the failing status without ci.log_command, unread", async () => {
+    const { runner } = statusOnly([red]);
+    const r = await capture(["--pr", "12"], runner);
+    expect(r.code).toBe(0);
+    expect(JSON.parse(r.out)).toMatchObject({
+      errors_found: 0,
+      statuses: [
+        {
+          context: JENKINS,
+          target_url: BUILD_URL,
+          log: "unread",
+          reason: "ci.log_command is not set",
+        },
+      ],
+    });
+  });
+
+  it("reads an aborted build as no failure", async () => {
+    const { runner } = statusOnly([
+      {
+        context: JENKINS,
+        state: "error",
+        description: "The build of this commit was aborted",
+        target_url: BUILD_URL,
+      },
+    ]);
+    const { logs, asked } = logCommand({});
+    const r = await capture(["--pr", "12"], runner, {}, logs);
+    expect(r.code).toBe(0);
+    expect(JSON.parse(r.out)).toEqual({
+      error: "no_failed_runs",
+      errors_found: 0,
+      errors: [],
+    });
+    expect(asked).toEqual([]);
+  });
+
+  it("reads the Actions run and the status together", async () => {
+    const { runner } = fakeRunner({
+      "gh pr view 12 --json headRefName,headRefOid": prView("feature/pay"),
+      "gh api --paginate --slurp repos/{owner}/{repo}/commits/c0ffee/status":
+        statusPages([red]),
+      "gh run list --branch feature/pay": ok('[{"databaseId":77}]'),
+      "gh run view 77 --log-failed": ok(
+        gh("src/a.ts(3,5): error TS2322: Type 'string' is not assignable."),
+      ),
+    });
+    const { logs } = logCommand({
+      [JENKINS]: { kind: "log", text: "FAIL src/b.test.ts\n" },
+    });
+    const r = await capture(["--pr", "12"], runner, {}, logs);
+    const out = JSON.parse(r.out);
+    expect(out).toMatchObject({
+      run_id: "77",
+      errors_found: 2,
+      summary: { typescript: 1, test_failure: 1 },
+      files_affected: ["src/a.ts", "src/b.test.ts"],
+    });
+    expect(out.errors.map((e: { job: string }) => e.job)).toEqual([
+      "job",
+      JENKINS,
+    ]);
+  });
+
+  it("exits 1 when ci.log_command fails", async () => {
+    const { runner } = statusOnly([red]);
+    const { logs } = logCommand({
+      [JENKINS]: `ci.log_command for status '${JENKINS}' ran past 300s`,
+    });
+    const r = await capture(["--pr", "12"], runner, {}, logs);
+    expect(r.code).toBe(1);
+    expect(r.out).toBe("");
+    expect(r.err).toContain("ran past 300s");
+  });
+
+  it("exits 1 when the statuses cannot be read", async () => {
+    const { runner } = fakeRunner({
+      "gh pr view 12 --json headRefName,headRefOid": prView("feature/pay"),
+      "gh api --paginate --slurp": {
+        code: 1,
+        stdout: "",
+        stderr: "HTTP 502",
+      },
+    });
+    const r = await capture(["--pr", "12"], runner);
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("HTTP 502");
+  });
+
+  it("exits 2 on an invalid ci.log_command, before reading the statuses", async () => {
+    const { runner, calls } = fakeRunner({
+      "gh pr view 12 --json headRefName,headRefOid": prView("feature/pay"),
+    });
+    const r = await capture(
+      ["--pr", "12"],
+      runner,
+      {},
+      {
+        settings: () =>
+          failed(
+            "invalid-config",
+            "ci.log_command must be a nonempty shell command",
+          ),
+        read: async () => failed("unexpected", "read"),
+      },
+    );
+    expect(r.code).toBe(2);
+    expect(r.err).toContain("ci.log_command must be");
+    expect(calls).toHaveLength(1);
   });
 });

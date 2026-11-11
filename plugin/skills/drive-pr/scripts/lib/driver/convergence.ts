@@ -76,6 +76,7 @@ export async function runConvergencePhase(
         checkRunNames: finalFailingCheckRunNames,
         statusNames: finalFailingStatusNames,
         runs: finalStatus.failingRuns,
+        statuses: finalStatus.failingStatuses,
       },
     );
     if (stage !== null) return stage;

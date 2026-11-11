@@ -6,7 +6,9 @@
  * Usage (from inside the repository whose CI failed):
  *   bun parse-ci-log.ts                  latest failed run on the current branch
  *   bun parse-ci-log.ts <run_id>         that run
- *   bun parse-ci-log.ts --pr <number>    latest failed run on the PR's branch
+ *   bun parse-ci-log.ts --pr <number>    latest failed run on the PR's branch,
+ *                                        and the failing commit statuses on
+ *                                        its head (logs via ci.log_command)
  *   bun parse-ci-log.ts '#<number>'      the same, PR written as #<number>
  *   bun parse-ci-log.ts --branch <name>  latest failed run on that branch
  *   bun parse-ci-log.ts --log <file> [run_id]
@@ -16,29 +18,57 @@
  *   { run_id, errors_found, summary: {category: count}, files_affected,
  *     errors: [{category, job?, step?, raw, file?, line?, column?, code?, rule?,
  *               message}],
- *     infrastructure: {infrastructure, why, jobs: [{job, infrastructure, why}]} }
+ *     infrastructure: {infrastructure, why, jobs: [{job, infrastructure, why}]},
+ *     statuses?: [{context, target_url, log, reason?}] }
  * `job` and `step` name the job and step that printed the line, when the log
- * line carries gh's prefix. `infrastructure` is the shared reading of
- * `shared/ci-infra.ts`: true only when every failed job failed on the
- * infrastructure and printed no code diagnostic.
- * or, when there is nothing to parse, { error, errors_found: 0, errors: [] }
- * with `error` set to `no_failed_runs` (gh listed no failed run) or
- * `PR #<n> not found` (gh reported no such pull request).
+ * line carries gh's prefix; an error from a commit status's log names the
+ * status's context as its `job`. `infrastructure` is the shared reading of
+ * `shared/ci-infra.ts` over the Actions run's log: true only when every
+ * failed job failed on the infrastructure and printed no code diagnostic.
+ * With a pull request, `statuses` lists each failing commit status on its
+ * head, `log` being `read`, `gone` (`ci.log_command` exited 3; `reason` is
+ * its message) or `unread` (no `ci.log_command` is set).
+ * When there is nothing to parse it prints { error, errors_found: 0, errors: [] }
+ * with `error` set to `no_failed_runs` (gh listed no failed run, and the pull
+ * request's head has no failing status) or `PR #<n> not found` (gh reported
+ * no such pull request).
  *
- * Exit codes: 0 parsed (or nothing to parse, see `error`); 1 a lookup or the
- * log could not be fetched or read, or gh answered with something unreadable;
- * 2 usage error.
+ * Exit codes: 0 parsed (or nothing to parse, see `error`); 1 a lookup or a
+ * log could not be fetched or read (`ci.log_command` failing or running past
+ * its deadline included), or gh answered with something unreadable; 2 usage
+ * error, or an invalid `ci.log_command` or `FIX_CI_LOG_COMMAND_TIMEOUT`.
  *
- * `gh` and `git` are reached only through the `Runner` passed to `main`, so
- * tests feed saved log text without a network or a repository.
+ * `gh` and `git` are reached only through the `Runner` passed to `main`, and
+ * `ci.log_command` only through its `StatusLogs`, so tests feed saved log
+ * text without a network or a repository.
  */
 
 import { readFileSync } from "node:fs";
-import { readInfrastructure } from "../../../shared/ci-infra.ts";
-import { head, parseCiErrors } from "../../../shared/ci-log.ts";
+import {
+  type InfraReading,
+  readInfrastructure,
+} from "../../../shared/ci-infra.ts";
+import {
+  head,
+  parseCiErrors,
+  summarizeCiErrors,
+} from "../../../shared/ci-log.ts";
+import {
+  ciRepairSettings,
+  combinedStatuses,
+  type FailingStatus,
+  failingStatus,
+  isFailingStatus,
+} from "../../../shared/ci-status.ts";
 import { runMain } from "../../../shared/cli.ts";
 import { detachedTreeRecord } from "../../../shared/driven-tree.ts";
+import { attempt, type Outcome, ok } from "../../../shared/outcome.ts";
 import { gitIdentityEnv, run } from "../../../shared/proc.ts";
+import {
+  logCommandSeconds,
+  readStatusLog,
+  type StatusLog,
+} from "./status-log.ts";
 
 export {
   type Category,
@@ -53,6 +83,58 @@ function reading(log: string, runId: string): string {
   const parsed = parseCiErrors(log, runId);
   return JSON.stringify(
     { ...parsed, infrastructure: readInfrastructure(log) },
+    null,
+    2,
+  );
+}
+
+/** One failing commit status as printed, with what became of its log. */
+export interface StatusEntry extends FailingStatus {
+  log: "read" | "gone" | "unread";
+  reason?: string;
+}
+
+/** A failing status's entry, with its log when the command printed one. */
+interface StatusReading {
+  entry: StatusEntry;
+  log: string | null;
+}
+
+/**
+ * The Actions run's log (when one failed) and the failing statuses' logs as
+ * one reading. The infrastructure reading is the run's alone: a status's log
+ * is the CI service's own form, which the shared rule does not read.
+ */
+function combinedReading(
+  runLog: string | null,
+  runId: string,
+  statuses: readonly StatusReading[],
+): string {
+  const errors = [
+    ...(runLog === null ? [] : parseCiErrors(runLog, runId).errors),
+    ...statuses.flatMap(({ entry, log }) =>
+      log === null
+        ? []
+        : parseCiErrors(log).errors.map((e) => ({
+            ...e,
+            job: e.job ?? entry.context,
+          })),
+    ),
+  ];
+  const infrastructure: InfraReading =
+    runLog === null
+      ? {
+          infrastructure: false,
+          why: "no GitHub Actions run failed; a commit status's log is not read for infrastructure",
+          jobs: [],
+        }
+      : readInfrastructure(runLog);
+  return JSON.stringify(
+    {
+      ...summarizeCiErrors(errors, runId),
+      infrastructure,
+      statuses: statuses.map((s) => s.entry),
+    },
     null,
     2,
   );
@@ -75,6 +157,36 @@ export const defaultRunner: Runner = (argv) =>
     timeoutSec: argv[1] === "run" && argv[2] === "view" ? 300 : 30,
     ...(argv[0] === "git" ? { env: gitIdentityEnv() } : {}),
   });
+
+/** `ci.log_command` and the deadline each of its runs gets. */
+export interface LogCommand {
+  command: string;
+  seconds: number;
+}
+
+/** How `main` reaches `ci.log_command`; tests replace it. */
+export interface StatusLogs {
+  /** The command, `null` when none is set; a failure when it or its deadline is invalid. */
+  settings(): Outcome<LogCommand | null>;
+  /** One failing status's log, or why the command could not give one. */
+  read(command: LogCommand, status: FailingStatus): Promise<Outcome<StatusLog>>;
+}
+
+export const defaultStatusLogs: StatusLogs = {
+  settings() {
+    const config = attempt("invalid-config", "the configuration", () =>
+      ciRepairSettings(),
+    );
+    if (!config.ok) return config;
+    if (!config.value.ok) return config.value;
+    const command = config.value.value.logCommand;
+    if (command === undefined) return ok(null);
+    const seconds = logCommandSeconds();
+    return seconds.ok ? ok({ command, seconds: seconds.value }) : seconds;
+  },
+  read: ({ command, seconds }, status) =>
+    readStatusLog(command, status, seconds),
+};
 
 export interface Args {
   runId: string;
@@ -166,6 +278,85 @@ async function latestFailedRun(
 const PR_NOT_FOUND =
   /Could not resolve to a PullRequest|no pull requests found/iu;
 
+/** A pull request's head branch and commit, or why they could not be read. */
+async function pullRequestHead(
+  runner: Runner,
+  pr: string,
+): Promise<{ branch: string; sha: string } | "not-found" | { error: string }> {
+  const r = await runner([
+    "gh",
+    "pr",
+    "view",
+    pr,
+    "--json",
+    "headRefName,headRefOid",
+  ]);
+  if (r.code !== 0 && PR_NOT_FOUND.test(r.stderr)) return "not-found";
+  let view: unknown = null;
+  try {
+    view = r.code === 0 ? JSON.parse(r.stdout) : null;
+  } catch {
+    view = null;
+  }
+  const { headRefName: branch, headRefOid: sha } = (view ?? {}) as Record<
+    string,
+    unknown
+  >;
+  if (typeof branch !== "string" || branch === "" || typeof sha !== "string")
+    return {
+      error: `gh pr view ${pr} exited ${r.code} without a branch: ${r.stderr.trim() || head(r.stdout, 200)}`,
+    };
+  return { branch, sha };
+}
+
+/** The failing commit statuses on `sha`, an aborted build left out. */
+async function failingStatusesOn(
+  runner: Runner,
+  sha: string,
+): Promise<FailingStatus[] | { error: string }> {
+  const path = `repos/{owner}/{repo}/commits/${sha}/status?per_page=100`;
+  const r = await runner(["gh", "api", "--paginate", "--slurp", path]);
+  if (r.code !== 0)
+    return { error: `gh api ${path} exited ${r.code}: ${r.stderr.trim()}` };
+  const statuses = combinedStatuses(r.stdout);
+  if (statuses === null)
+    return { error: `gh api ${path} printed malformed JSON` };
+  return statuses.filter(isFailingStatus).map(failingStatus);
+}
+
+/** Each status's log through `ci.log_command`; a failure stops the reading. */
+async function readStatuses(
+  statuses: readonly FailingStatus[],
+  command: LogCommand | null,
+  logs: StatusLogs,
+): Promise<Outcome<StatusReading[]>> {
+  const read: StatusReading[] = [];
+  for (const status of statuses) {
+    if (command === null) {
+      read.push({
+        entry: {
+          ...status,
+          log: "unread",
+          reason: "ci.log_command is not set",
+        },
+        log: null,
+      });
+      continue;
+    }
+    const answer = await logs.read(command, status);
+    if (!answer.ok) return answer;
+    read.push(
+      answer.value.kind === "log"
+        ? { entry: { ...status, log: "read" }, log: answer.value.text }
+        : {
+            entry: { ...status, log: "gone", reason: answer.value.reason },
+            log: null,
+          },
+    );
+  }
+  return ok(read);
+}
+
 export interface Io {
   out: (text: string) => void;
   err: (text: string) => void;
@@ -189,85 +380,147 @@ async function currentBranch(runner: Runner): Promise<string> {
   return (await detachedTreeRecord((a) => runner(["git", ...a])))?.branch ?? "";
 }
 
+/**
+ * A pull request's failing statuses, each with its log; the exit code, its
+ * reason printed, when they could not be read.
+ */
+async function pullRequestStatuses(
+  runner: Runner,
+  logs: StatusLogs,
+  io: Io,
+  sha: string,
+): Promise<StatusReading[] | number> {
+  const command = logs.settings();
+  if (!command.ok) {
+    io.err(`parse-ci-log: ${command.failure.reason}`);
+    return 2;
+  }
+  const failing = await failingStatusesOn(runner, sha);
+  if (!Array.isArray(failing)) {
+    io.err(`parse-ci-log: ${failing.error}`);
+    return 1;
+  }
+  const read = await readStatuses(failing, command.value, logs);
+  if (!read.ok) {
+    io.err(`parse-ci-log: ${read.failure.reason}`);
+    return 1;
+  }
+  return read.value;
+}
+
+/** What to read: the failed run (`""` for none), and a pull request's statuses. */
+interface Failure {
+  runId: string;
+  /** Read only for a pull request: its head names the commit whose statuses count. */
+  statuses: StatusReading[] | null;
+}
+
+/**
+ * The branch whose latest failed run to read and, for a pull request, its
+ * failing statuses; an exit code, its reason printed, when there is none.
+ */
+async function branchToRead(
+  args: Args,
+  runner: Runner,
+  io: Io,
+  logs: StatusLogs,
+): Promise<{ branch: string; statuses: StatusReading[] | null } | number> {
+  if (args.pr !== "") {
+    const pr = await pullRequestHead(runner, args.pr);
+    if (pr === "not-found") {
+      io.out(nothingToParse(`PR #${args.pr} not found`));
+      return 0;
+    }
+    if ("error" in pr) {
+      io.err(`parse-ci-log: ${pr.error}`);
+      return 1;
+    }
+    const read = await pullRequestStatuses(runner, logs, io, pr.sha);
+    return typeof read === "number"
+      ? read
+      : { branch: pr.branch, statuses: read };
+  }
+  const branch = args.branch || (await currentBranch(runner));
+  if (branch !== "") return { branch, statuses: null };
+  io.err(
+    "parse-ci-log: no current branch (detached HEAD?); pass a run ID, --pr or --branch",
+  );
+  return 2;
+}
+
+/** The run named, or the latest failed one, with the statuses beside it. */
+async function failureToRead(
+  args: Args,
+  runner: Runner,
+  io: Io,
+  logs: StatusLogs,
+): Promise<Failure | number> {
+  if (args.runId !== "") return { runId: args.runId, statuses: null };
+  const target = await branchToRead(args, runner, io, logs);
+  if (typeof target === "number") return target;
+  const latest = await latestFailedRun(runner, target.branch);
+  if (typeof latest === "string")
+    return { runId: latest, statuses: target.statuses };
+  io.err(`parse-ci-log: ${latest.error}`);
+  return 1;
+}
+
+/** A failed run's log; `null`, its reason printed, when gh cannot give it. */
+async function runLogOf(
+  runner: Runner,
+  io: Io,
+  runId: string,
+): Promise<string | null> {
+  const log = await runner(["gh", "run", "view", runId, "--log-failed"]);
+  if (log.code === 0) return log.stdout;
+  io.err(
+    `parse-ci-log: gh run view ${runId} --log-failed exited ${log.code}: ${log.stderr.trim()}`,
+  );
+  return null;
+}
+
+/** A saved log, parsed; `--log` reads no forge. */
+function savedLog(args: Args, io: Io): number {
+  let text: string;
+  try {
+    text = io.readFile(args.logFile);
+  } catch (e) {
+    io.err(
+      `parse-ci-log: cannot read ${args.logFile}: ${e instanceof Error ? e.message : e}`,
+    );
+    return 1;
+  }
+  io.out(reading(text, args.runId));
+  return 0;
+}
+
 export async function main(
   argv: string[],
   runner: Runner = defaultRunner,
   io: Io = defaultIo,
+  logs: StatusLogs = defaultStatusLogs,
 ): Promise<number> {
   const args = parseArgs(argv);
   if (typeof args === "string") {
     io.err(args);
     return args === USAGE ? 0 : 2;
   }
+  if (args.logFile !== "") return savedLog(args, io);
 
-  if (args.logFile !== "") {
-    let text: string;
-    try {
-      text = io.readFile(args.logFile);
-    } catch (e) {
-      io.err(
-        `parse-ci-log: cannot read ${args.logFile}: ${e instanceof Error ? e.message : e}`,
-      );
-      return 1;
-    }
-    io.out(reading(text, args.runId));
-    return 0;
-  }
-
-  let runId = args.runId;
-  if (runId === "") {
-    let branch = args.branch;
-    if (args.pr !== "") {
-      const r = await runner([
-        "gh",
-        "pr",
-        "view",
-        args.pr,
-        "--json",
-        "headRefName",
-        "-q",
-        ".headRefName",
-      ]);
-      if (r.code !== 0 && PR_NOT_FOUND.test(r.stderr)) {
-        io.out(nothingToParse(`PR #${args.pr} not found`));
-        return 0;
-      }
-      branch = r.code === 0 ? r.stdout.trim() : "";
-      if (branch === "") {
-        io.err(
-          `parse-ci-log: gh pr view ${args.pr} exited ${r.code} without a branch: ${r.stderr.trim()}`,
-        );
-        return 1;
-      }
-    } else if (branch === "") {
-      branch = await currentBranch(runner);
-      if (branch === "") {
-        io.err(
-          "parse-ci-log: no current branch (detached HEAD?); pass a run ID, --pr or --branch",
-        );
-        return 2;
-      }
-    }
-    const latest = await latestFailedRun(runner, branch);
-    if (typeof latest !== "string") {
-      io.err(`parse-ci-log: ${latest.error}`);
-      return 1;
-    }
-    runId = latest;
-  }
-  if (runId === "") {
+  const failure = await failureToRead(args, runner, io, logs);
+  if (typeof failure === "number") return failure;
+  const { runId, statuses } = failure;
+  if (runId === "" && (statuses ?? []).length === 0) {
     io.out(nothingToParse("no_failed_runs"));
     return 0;
   }
-
-  const log = await runner(["gh", "run", "view", runId, "--log-failed"]);
-  if (log.code !== 0) {
-    io.err(
-      `parse-ci-log: gh run view ${runId} --log-failed exited ${log.code}: ${log.stderr.trim()}`,
-    );
-    return 1;
-  }
-  io.out(reading(log.stdout, runId));
+  const runLog = runId === "" ? null : await runLogOf(runner, io, runId);
+  if (runId !== "" && runLog === null) return 1;
+  io.out(
+    statuses === null
+      ? reading(runLog ?? "", runId)
+      : combinedReading(runLog, runId, statuses),
+  );
   return 0;
 }
 

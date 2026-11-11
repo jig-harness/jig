@@ -28,6 +28,14 @@ import {
   workflowRunsBehind,
 } from "./workflow-runs.ts";
 import { type SkipNotice, skipNoticeIn } from "./skip-notice.ts";
+import {
+  type CommitStatus,
+  combinedStatuses,
+  type FailingStatus,
+  failingStatus,
+  isAbortedStatus,
+  isFailingStatus,
+} from "../../../../../shared/ci-status.ts";
 
 // ── Reviewer identity ────────────────────────────────────────────────────────
 // Identify the posting reviewer by its GitHub APP SLUG, not by check-run name.
@@ -87,11 +95,7 @@ export interface CheckRun {
   suiteId?: number | null;
 }
 
-export interface CommitStatus {
-  context: string;
-  state: string;
-  description: string | null;
-}
+export type { CommitStatus, FailingStatus };
 
 function parsePages(raw: string): unknown[] | null {
   try {
@@ -184,21 +188,7 @@ export async function commitStatusesFor(
     { stderr: "ignore" },
   );
   if (r.code !== 0) return null;
-  const pages = parsePages(r.stdout);
-  if (pages === null) return null;
-  const statuses: CommitStatus[] = [];
-  for (const page of pages) {
-    const list = (page as { statuses?: unknown[] } | null)?.statuses ?? [];
-    for (const s of list as Array<Record<string, unknown>>) {
-      statuses.push({
-        context: String(s.context ?? ""),
-        state: String(s.state ?? ""),
-        description:
-          s.description === null ? null : String(s.description ?? ""),
-      });
-    }
-  }
-  return statuses;
+  return combinedStatuses(r.stdout);
 }
 
 /**
@@ -316,6 +306,8 @@ export async function statusesByPublisher(
             state,
             description:
               typeof raw?.description === "string" ? raw.description : null,
+            targetUrl:
+              typeof raw?.target_url === "string" ? raw.target_url : null,
           },
         });
     }
@@ -480,7 +472,9 @@ function readChecks(
  * not a pass — grouped with pending, which is the conservative bucket
  * (announce-merge-ready requires exactly `green`).
  *
- * `cancelled:` is an absence of evidence, waited for and never green. It ranks
+ * `cancelled:` is an absence of evidence, waited for and never green: a
+ * cancelled check run, or a commit status in state `error` whose description
+ * says the build was aborted (`isAbortedStatus`). It ranks
  * below `failing:` so a real failure is not hidden behind one, and below
  * `pending:` because a job still running may yet replace it.
  */
@@ -505,7 +499,7 @@ export function ciVerdictOf(
     return `unknown: could not read commit statuses for ${head}`;
   }
   const failingStatuses = statuses
-    .filter((s) => s.state !== "success" && s.state !== "pending")
+    .filter(isFailingStatus)
     .map((s) => s.context)
     .join(", ");
   // `pending` is excluded from the FAILING set, so it has to be picked up here
@@ -523,8 +517,13 @@ export function ciVerdictOf(
   if (pendingChecks !== "" || pendingStatuses !== "") {
     return `pending: ${joined(pendingChecks, pendingStatuses)}`;
   }
-  if (reading.cancelled.length > 0) {
-    return `cancelled: ${namesOf(reading.cancelled)}`;
+  // A status whose build was aborted is cancelled as a check run is.
+  const cancelledStatuses = statuses
+    .filter(isAbortedStatus)
+    .map((s) => s.context)
+    .join(", ");
+  if (reading.cancelled.length > 0 || cancelledStatuses !== "") {
+    return `cancelled: ${joined(namesOf(reading.cancelled), cancelledStatuses)}`;
   }
   return "green";
 }
@@ -590,9 +589,20 @@ export function failingStatusNames(
   statuses: CommitStatus[] | null,
 ): string[] | null {
   if (statuses === null) return null;
-  return statuses
-    .filter((s) => s.state !== "success" && s.state !== "pending")
-    .map((s) => s.context);
+  return statuses.filter(isFailingStatus).map((s) => s.context);
+}
+
+/**
+ * The failing commit statuses with the page each links to, for a CI-repair
+ * pass: a CI service that posts statuses has no workflow run to name, so its
+ * status's URL is what leads to the failed build's log (`ci.log_command`).
+ * `null` when the statuses could not be read.
+ */
+export function failingStatusesOf(
+  statuses: CommitStatus[] | null,
+): FailingStatus[] | null {
+  if (statuses === null) return null;
+  return statuses.filter(isFailingStatus).map(failingStatus);
 }
 
 /**
@@ -661,6 +671,8 @@ export interface CiReport {
   failingStatusNames: string[] | null;
   /** The workflow runs behind the failing check-runs: `failingRunsOf`. */
   failingRuns: FailedRun[] | null;
+  /** The failing commit statuses and their URLs: `failingStatusesOf`. */
+  failingStatuses?: FailingStatus[] | null;
 }
 
 /**
@@ -695,6 +707,7 @@ export async function ciReportFor(
     ),
     failingStatusNames: failingStatusNames(statuses),
     failingRuns: failingRunsOf(runs, workflowRuns),
+    failingStatuses: failingStatusesOf(statuses),
   };
 }
 

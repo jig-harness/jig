@@ -508,6 +508,8 @@ it. Until then, opt in only to take part in that measurement.
 |-------|------|-------------|---------|--------------|
 | `ci.required_checks` | list of distinct check names; `[]` means none | Derived from the protection and rulesets of the pull request's base, and of the branch its stack lands on; for changelog, of the integration branch | drive-pr, changelog | drive-pr: checks that must complete on the converged head before the drive certifies it. Required, and not empty, when `ci.hold_label` is set. changelog (`tag.ts`, `status.ts`): checks that must pass on a releasing commit before its version is tagged, `[]` tagging without any, read from the integration branch's `.config/jig.yaml` only, never from a person's file or the environment. Set, it wins over the branch's rules for both. Unset, and with no check the integration branch's rules require, tagging fails closed: no required checks known. Name only checks that run on the integration branch: one that runs only on pull requests never reports there, and its versions would wait for their tag forever |
 | `ci.hold_label` | label | No hold: every push runs full CI | drive-pr | A label the repository's workflows honour by skipping expensive jobs on intermediate pushes; the drive removes it once review converges. See the [drive-pr README](skills/drive-pr/README.md); the workflow side is [M13's CI hold](https://github.com/jig-harness/jig/blob/main/modules/M13-pipeline-economy/README.md#7-hold) |
+| `ci.log_command` | shell command | none: a failing commit status's log is read by hand from the page it links to | fix-ci | Prints the failed log of a commit status, for a CI service that reports as commit statuses rather than GitHub Actions runs (Jenkins through its GitHub Branch Source plugin, for one), whose logs only the repository knows how to reach. It runs from the repository root through the shell, reads one JSON object `{"context": …, "target_url": …}` on stdin (the status's context and the page it links to, `null` when it links to none) and prints the log on stdout; it exits 3, with the reason on stderr, when the log is gone. Any other exit fails the read. Each run has a 300-second deadline, overridden by the positive whole-second `FIX_CI_LOG_COMMAND_TIMEOUT` environment variable. `parse-ci-log.ts --pr <n>` runs it for each failing status on the pull request's head, which a drive's CI-repair pass does too, beside any failed Actions run |
+| `ci.repair_skill` | skill name, bare or with its plugin (`ci-support`, `plugin:skill`) | none: the pass repairs with `fix-ci`'s procedure | drive-pr | The skill a drive's CI-repair pass loads before it repairs, such as the repository's own skill for its CI service; the pass receives it in `DRIVE_PR_ROUND_REPAIR_SKILL`. The audit reports a name that resolves to no skill installed for the repository or on the machine |
 
 ## `issue_tracker`
 
@@ -1737,6 +1739,8 @@ autonomy:
 ci:
   required_checks: [build, test]
   hold_label: ci:hold
+  log_command: bun scripts/ci-log.ts       # a commit status's failed log, for a CI service outside GitHub Actions
+  repair_skill: ci-support                 # the skill a CI-repair pass loads
 issue_tracker:
   adapter: linear                        # or jira, or github, the default
   team: ENG                              # required by the Linear and Jira adapters
