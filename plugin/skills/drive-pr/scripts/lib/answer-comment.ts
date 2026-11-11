@@ -53,7 +53,9 @@ export { ANSWER_TEXT_MAX, answerTextFault };
 
 /** Why `key` cannot be named in an answer line, or `null` when it can. */
 export function answerKeyFault(key: string): string | null {
-  return /^\S+$/.test(key) && !key.includes("<!--")
+  return /^\S+$/.test(key) &&
+    !/[\p{Cc}\u202a-\u202e\u2066-\u2069]/u.test(key) &&
+    !key.includes("<!--")
     ? null
     : `${JSON.stringify(key)} cannot be written in an answer line, which names its key without spaces`;
 }

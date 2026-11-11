@@ -5,7 +5,7 @@
  * parser would not read back as that option is refused rather than written.
  */
 import { describe, expect, it } from "bun:test";
-import { resolveChoice } from "../lib/answer-choice.ts";
+import { resolveChoice, shellWord } from "../lib/answer-choice.ts";
 import { legacyParkRecord } from "../../skills/drive-pr/__tests__/park-record-fixture.ts";
 import type { ParkedItem } from "../../skills/drive-pr/scripts/lib/state/park-frame.ts";
 import { framedPark } from "./send-fixtures.ts";
@@ -73,5 +73,12 @@ describe("resolveChoice", () => {
     expect(reason(r)).toContain(
       "would not read this answer as choosing Notify <redacted>",
     );
+  });
+});
+
+describe("shellWord", () => {
+  it("quotes a leading # that a shell reads as a comment, and leaves a later one", () => {
+    expect(shellWord("#scope")).toBe("'#scope'");
+    expect(shellWord("scope#1")).toBe("scope#1");
   });
 });

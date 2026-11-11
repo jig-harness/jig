@@ -180,9 +180,9 @@ export function optionInFull(
   ].join("\n");
 }
 
-/** `word` as one shell argument. */
+/** `word` as one shell argument; a leading `#` is quoted, since a shell reads it as a comment. */
 export function shellWord(word: string): string {
-  return /^[\w@#%+=:,./-]+$/.test(word)
+  return /^[\w@%+=:,./-][\w@#%+=:,./-]*$/.test(word)
     ? word
     : `'${word.replaceAll("'", `'\\''`)}'`;
 }

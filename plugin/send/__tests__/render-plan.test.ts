@@ -32,3 +32,12 @@ test("a dry run prints no terminal control from a detail or an earlier answer, a
   expect(out).toContain("Keep [2J\n");
   expect(out).toContain("Costs:");
 });
+
+test("a dry run prints no direction-changing character from a detail", () => {
+  const out = renderPlan(
+    plan({ detail: [["option", "Costs: a ‮b‬ c ⁦d⁩"]] }),
+    true,
+  );
+  expect(/[‪-‮⁦-⁩]/.test(out)).toBe(false);
+  expect(out).toContain("Costs: a  b  c  d ");
+});

@@ -49,6 +49,8 @@ describe("answerTextFault", () => {
     );
     expect(answerKeyFault("PRRT_k1")).toBeNull();
     expect(answerKeyFault("two words")).toContain("without spaces");
+    expect(answerKeyFault("a\u007fb")).toContain("cannot be written");
+    expect(answerKeyFault("a\u202eb")).toContain("cannot be written");
   });
 });
 

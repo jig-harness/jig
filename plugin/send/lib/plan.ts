@@ -83,8 +83,14 @@ export function writerLogin(
   return ok(login);
 }
 
-/** `text` for the terminal: control characters removed, the layout newlines kept. */
-const shown = (text: string) => text.split("\n").map(printable).join("\n");
+/** `text` for the terminal: control and direction-changing characters removed, the layout newlines kept. */
+const shown = (text: string) =>
+  text
+    .split("\n")
+    .map((line) =>
+      printable(line).replace(/[\u202a-\u202e\u2066-\u2069]/gu, " "),
+    )
+    .join("\n");
 
 const row = (name: string, value: string) => `  ${name.padEnd(11)}${value}`;
 
