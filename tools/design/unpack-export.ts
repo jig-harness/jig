@@ -189,7 +189,9 @@ const HOOK = `(function () {
         if (!value || !prop || typeof prop !== "object") return;
         if (prop.options) {
           if (prop.options.indexOf(value) >= 0) prop.default = value;
-        } else if (prop.editor === "boolean") prop.default = value === "true";
+        } else if (prop.editor === "boolean") {
+          if (value === "true" || value === "false") prop.default = value === "true";
+        }
       });
       if (query.get("switch") === "off" && props.showSwitch) props.showSwitch.default = false;
       script.setAttribute("data-props", JSON.stringify(props));
@@ -284,9 +286,10 @@ function titleOf(template: string, fallback: string): string {
 /** The component names a template or component imports, as the runtime reads them. */
 function importsOf(html: string): string[] {
   const names: string[] = [];
-  for (const tag of html.match(/<dc-import\b[^>]*>/g) ?? []) {
-    const name = /\s(?:name|component)="([^"]*)"/.exec(tag)?.[1];
-    names.push(name ?? "");
+  const markup = html.replace(/<!--[\s\S]*?-->/g, "");
+  for (const tag of markup.match(/<dc-import\b[^>]*>/gi) ?? []) {
+    const name = /\s(?:name|component)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>=]+))/i.exec(tag);
+    names.push(name?.[1] ?? name?.[2] ?? name?.[3] ?? "");
   }
   return names;
 }

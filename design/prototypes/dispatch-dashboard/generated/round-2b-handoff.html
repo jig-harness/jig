@@ -121,7 +121,9 @@ class Component extends DCLogic {
         if (!value || !prop || typeof prop !== "object") return;
         if (prop.options) {
           if (prop.options.indexOf(value) >= 0) prop.default = value;
-        } else if (prop.editor === "boolean") prop.default = value === "true";
+        } else if (prop.editor === "boolean") {
+          if (value === "true" || value === "false") prop.default = value === "true";
+        }
       });
       if (query.get("switch") === "off" && props.showSwitch) props.showSwitch.default = false;
       script.setAttribute("data-props", JSON.stringify(props));

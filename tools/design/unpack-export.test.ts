@@ -146,7 +146,7 @@ function componentsExport(): string {
   const cards = bundle(
     pageTemplate(
       "Cards page",
-      '<x-dc><div class="dd"><dc-import name="Ident" w="{{r.ident}}" hint-size="120px,28px"></dc-import></div></x-dc>',
+      `<x-dc><!-- <dc-import name="Ghost"></dc-import> --><div class="dd"><DC-IMPORT name='Ident' w="{{r.ident}}" hint-size="120px,28px"></DC-IMPORT></div></x-dc>`,
     ),
     {
       ...shared,
@@ -385,13 +385,14 @@ describe("unpack-export", () => {
       view: { editor: "enum", default: "auto", options: ["auto", "running"] },
       theme: { editor: "enum", default: "system", options: ["light", "dark"] },
       openFirst: { editor: "boolean", default: false },
+      pinned: { editor: "boolean", default: true },
       showSwitch: { editor: "boolean", default: true },
     };
     let attribute = JSON.stringify(props);
     const marks: string[] = [];
     runHook(
       html,
-      "?scenario=quiet&view=running&theme=sepia&openFirst=true&switch=off",
+      "?scenario=quiet&view=running&theme=sepia&openFirst=true&pinned=TRUE&switch=off",
       {
         querySelector: (selector: string) =>
           selector === "script[data-dc-script]"
@@ -411,6 +412,7 @@ describe("unpack-export", () => {
     expect(parsed.view.default).toBe("running");
     expect(parsed.theme.default).toBe("system");
     expect(parsed.openFirst.default).toBe(true);
+    expect(parsed.pinned.default).toBe(true);
     expect(parsed.showSwitch.default).toBe(false);
     expect(marks).toEqual(["data-scenario-ready"]);
   });
