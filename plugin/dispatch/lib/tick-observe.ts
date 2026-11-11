@@ -77,7 +77,11 @@ import { readPickups } from "./sources/tracker.ts";
 import { facetBound } from "./sources/tracker-facets.ts";
 import { emptyReport, type TickOptions } from "./tick-context.ts";
 import { type ForgeRead, readForge } from "./tick-forge.ts";
-import { scopeOf } from "./sources/served-repo.ts";
+import {
+  scopeOf,
+  trackerDefaultKey,
+  unlabeledModeOf,
+} from "./sources/served-repo.ts";
 import { lowBudget, type TickReads } from "./tick-reads.ts";
 import { openShared, readDriveClaims, type TickShared } from "./tick-shared.ts";
 import { failureText } from "./text.ts";
@@ -284,6 +288,7 @@ export async function observeRepo(
             opened.stages.has("pickup")
               ? (context.options.machine?.serve ?? [])
               : [],
+            context.options.machine?.serveDefaults,
             nowMs,
             context.options.machine == null ||
               slotTable(context.options.machine.accounts, records, nowMs).some(
@@ -499,6 +504,7 @@ async function readTracker(
   where: string,
   deadline: number | undefined,
   people: readonly ServedPerson[],
+  serveDefaults: Readonly<Record<string, string>> | undefined,
   nowMs: number,
   headroom: boolean,
   budget: TickReads["budget"],
@@ -523,6 +529,19 @@ async function readTracker(
         ? { executionPlanBlock: item.execution_plan_block }
         : {}),
       ...(scope === undefined ? {} : { repoScope: scope }),
+      unlabeled: unlabeledModeOf({
+        scope,
+        adapter: config.adapter,
+        team: config.team ?? "",
+        site: config.jira.site,
+        defaults: serveDefaults,
+        repoPath: repo.path,
+      }),
+      trackerNamespace: trackerDefaultKey(
+        config.adapter,
+        config.team ?? "",
+        config.jira.site,
+      ),
     };
     const reading = await readPickups(
       () => {
