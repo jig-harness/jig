@@ -1,7 +1,11 @@
 # Every pull request and every push to main runs the gate set on Linux. The
-# drive-pr suite is long, so it runs in its own job, split into parallel
-# shards (see SEPARATE_SUITES in scripts/gates.ts); the website's checks, tests
-# and build run in the gate-set job after the gate set, so they cost no job of
+# gate set is the bulk of the minutes and is mostly one test stage, so the
+# gate-set job is a matrix of parts (JIG_GATES_PART in scripts/gates.ts): one
+# `checks` leg runs every stage but the tests, which reports in a couple of
+# minutes, and the `tests` legs run the test stage split into parallel shards.
+# The drive-pr suite is long too, so it runs in its own job, split the same way
+# (see SEPARATE_SUITES in scripts/gates.ts); the website's checks, tests and
+# build run in the `checks` leg after the gate set, so they cost no job of
 # their own.
 #
 # Which jobs a pull request runs comes from Jig's change-area catalog
@@ -33,9 +37,9 @@
 # than one, as on a fork's or on a commit that heads two, is not taken, and the
 # mirror fails.
 #
-# Jobs are split no further than their work needs: the drive-pr suite has as
-# many shards as keep each under two minutes and no more, since each shard
-# repeats the checkout and install.
+# Jobs are split no further than their work needs: each suite has as many
+# shards as keep each to a few minutes and no more, since each shard repeats the
+# checkout and install.
 # Every `bun run test`, including the gate set's test stage, writes a fresh
 # JUnit report and checks that the suite executed tests (scripts/test.ts).
 #
@@ -100,36 +104,53 @@ jobs:
           fi
 
   gate-set:
-    name: gates (linux)
+    name: gates (linux, ${{ matrix.part }}${{ matrix.shard && format(' {0}', matrix.shard) || '' }})
     needs: areas
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'ci:hold') && !(github.event.label.name && github.event.label.name != 'ci:hold') }}
+    strategy:
+      # Every leg reports, so one run shows a failing format check and a
+      # failing test together.
+      fail-fast: false
+      matrix:
+        include:
+          - { part: checks }
+          - { part: tests, shard: 1/4 }
+          - { part: tests, shard: 2/4 }
+          - { part: tests, shard: 3/4 }
+          - { part: tests, shard: 4/4 }
     runs-on: ubuntu-latest
-    # The gate set's 20 minutes and the website steps' 10.
-    timeout-minutes: 30
+    # A tests leg takes a few minutes; the checks leg takes two for the gates
+    # and about one for the website steps.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The ratchet and fallow's audit compare against the merge base
-          # with main, which a shallow checkout does not have.
+          # with main, and some tests position themselves against real
+          # commits, which a shallow checkout does not have.
           fetch-depth: 0
       - uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
       # Built-ins only, so it runs before the install: an over-budget
       # instruction chain or skill listing fails in seconds, and a broken
-      # install cannot keep the check from running.
+      # install cannot keep the check from running. The test legs leave it
+      # to the checks leg, which runs it again as a stage.
       - name: Check the always-loaded context budget
+        if: matrix.part == 'checks'
         run: bun scripts/check-context-budget.ts
       # Also built-ins only, and before the install on purpose: it judges
       # which packages may run install scripts, so it runs before any could.
       - name: Check the supply-chain policy lockstep
+        if: matrix.part == 'checks'
         run: bun scripts/check-supply-chain-lockstep.ts
       - name: Install locked dependencies, scripts off
         run: bun install --frozen-lockfile --ignore-scripts
       # Claude Code's validator checks the plugin as the tools install it
-      # (scripts/check-plugin.ts). The native binary comes from its platform
-      # package, which has no install script, rather than as a dependency,
-      # which would add hundreds of megabytes to every contributor's install.
-      # npm checks the tarball against the registry's integrity record for the
-      # pinned version; no hash of it is kept here.
+      # (scripts/check-plugin.ts, and the tests of that check). The native
+      # binary comes from its platform package, which has no install script,
+      # rather than as a dependency, which would add hundreds of megabytes to
+      # every contributor's install. npm checks the tarball against the
+      # registry's integrity record for the pinned version; no hash of it is
+      # kept here.
       - name: Fetch Claude Code for the plugin check
         env:
           # renovate: datasource=npm depName=@anthropic-ai/claude-code-linux-x64
@@ -151,8 +172,9 @@ jobs:
       # Exactly one profile may attach to the executable: two that match it
       # equally deny its execution. So Ubuntu's shipped `chrome` profile is
       # loaded and used when the image has it, and a profile of our own is
-      # added only when it does not.
+      # added only when it does not. Only the tests launch a browser.
       - name: Allow Chrome's user-namespace sandbox
+        if: matrix.part == 'tests'
         run: |
           set -euo pipefail
           shipped=/etc/apparmor.d/chrome
@@ -174,6 +196,11 @@ jobs:
           sudo apparmor_parser -r /etc/apparmor.d/jig-chrome
       - name: Run gate set
         env:
+          # The leg's part of the gate set, and for a tests leg its share of
+          # the test files (scripts/gates.ts). Together the legs run every
+          # stage once.
+          JIG_GATES_PART: ${{ matrix.part }}
+          JIG_GATES_TEST_SHARD: ${{ matrix.shard }}
           # The drive-pr-suite job and the website steps below run the
           # separate suites.
           JIG_GATES_SKIP_SEPARATE_SUITES: "1"
@@ -192,35 +219,35 @@ jobs:
       # The website steps run after a failed gate set too, so one run reports
       # both. The build renders the live audit example with the audit skill's
       # renderer, which needs the repository's own dependencies installed
-      # above.
+      # above. They run in the checks leg alone.
       - name: Install the website's locked dependencies, scripts off
-        if: ${{ !cancelled() && contains(needs.areas.outputs.areas, '"website"') }}
+        if: ${{ !cancelled() && contains(needs.areas.outputs.areas, '"website"') && matrix.part == 'checks' }}
         working-directory: website
         run: bun install --frozen-lockfile --ignore-scripts
       - name: Check the website's types
-        if: ${{ !cancelled() && contains(needs.areas.outputs.areas, '"website"') }}
+        if: ${{ !cancelled() && contains(needs.areas.outputs.areas, '"website"') && matrix.part == 'checks' }}
         working-directory: website
         run: bun run check
       # The gate set leaves these out (scripts/gates.ts SEPARATE_SUITES):
       # they need the website's dependencies installed above.
       - name: Test the document parsers
-        if: ${{ !cancelled() && contains(needs.areas.outputs.areas, '"website"') }}
+        if: ${{ !cancelled() && contains(needs.areas.outputs.areas, '"website"') && matrix.part == 'checks' }}
         run: bun run test ./website/
       - name: Build the site and check its links
-        if: ${{ !cancelled() && contains(needs.areas.outputs.areas, '"website"') }}
+        if: ${{ !cancelled() && contains(needs.areas.outputs.areas, '"website"') && matrix.part == 'checks' }}
         working-directory: website
         run: bun run build
 
   drive-pr-suite:
-    name: drive-pr suite (linux, ${{ matrix.shard }}/3)
+    name: drive-pr suite (linux, ${{ matrix.shard }}/4)
     needs: areas
     if: ${{ contains(needs.areas.outputs.areas, '"drive-pr"') && !contains(github.event.pull_request.labels.*.name, 'ci:hold') && !(github.event.label.name && github.event.label.name != 'ci:hold') }}
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: [1, 2, 3, 4]
     runs-on: ubuntu-latest
-    # A shard takes about a minute and a half.
+    # A shard takes a few minutes.
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -235,7 +262,7 @@ jobs:
         if: matrix.shard == 1
         run: bun plugin/skills/drive-pr/__tests__/terminal-states-consistency.ts
       - name: Run this shard of the drive-pr suite
-        run: bun run test --shard=${{ matrix.shard }}/3 ./plugin/skills/drive-pr/
+        run: bun run test --shard=${{ matrix.shard }}/4 ./plugin/skills/drive-pr/
 
   # Branch protection requires a check named `gates`; this job reports it,
   # passing only when the areas resolved, the gate set passed, and the
