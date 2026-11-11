@@ -221,7 +221,17 @@ describe("served pickups", () => {
   });
   it("walks the ready children of a blocked epic without offering the epic", async () => {
     const f = fake();
-    const epic = { ...issue("#1", ["epic"]), hasOpenChildren: true };
+    const epic = {
+      ...issue("#1", ["epic"]),
+      hasOpenChildren: true,
+      state: { id: "b", name: "Blocked", type: "started" },
+    };
+    f.tracker.stateName = ((s: string) =>
+      s === "blocked"
+        ? "Blocked"
+        : s === "pr_open"
+          ? null
+          : s) as Tracker["stateName"];
     f.tracker.assignedIssues = async (_: string, s: readonly string[]) =>
       s.includes("blocked") ? [epic] : [];
     const read = await readServedPickups(f.tracker, people, {
@@ -230,8 +240,7 @@ describe("served pickups", () => {
       nowMs: 1,
       headroom: true,
     });
-    expect(read.wanted.map((w) => w.key)).not.toContain("#1");
-    expect(read.wanted.length).toBeGreaterThan(0);
+    expect(read.wanted.map((w) => w.key)).toEqual(["#3"]);
   });
   it("keeps metadata at the same updatedAt", async () => {
     const f = fake();
