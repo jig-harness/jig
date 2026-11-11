@@ -246,7 +246,11 @@ describe("a served queue's cost in tracker requests", () => {
         s === "pr_open" ? "PR Open" : base.stateName(s as never)) as never,
       queueIssues: async (identity, states, signal) => {
         asked.push([...states]);
-        return base.queueIssues!(identity, states, signal);
+        return (base.queueIssues as NonNullable<Tracker["queueIssues"]>)(
+          identity,
+          states,
+          signal,
+        );
       },
     };
     await tick(tracker, memoryCache(), 0);
