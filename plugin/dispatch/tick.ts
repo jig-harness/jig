@@ -74,6 +74,10 @@
  * repository (`owner` in the machine file) notifies, writes the labels and
  * the history rows of what it did not launch.
  */
+import {
+  DEFAULT_DISPATCHER_SHARE,
+  setDispatcherShare,
+} from "../shared/tracker-budget.ts";
 import { hostCodexOptIn } from "./lib/accounts.ts";
 import { defectOf, logDefect } from "./lib/defect.ts";
 import { accountsReport, timeLeftMs } from "./lib/actions/launch.ts";
@@ -176,6 +180,8 @@ async function startTick(options: TickOptions): Promise<StartedTick> {
   const startedMs = Date.now();
   const now = options.now ?? new Date();
   const machine = options.machine ?? null;
+  // The tick's tracker reads keep to their share of each credential's budget.
+  setDispatcherShare(machine?.trackerShare ?? DEFAULT_DISPATCHER_SHARE);
   const runtime = options.runtime ?? defaultRuntime(machine);
   const read = await readLaunches();
   const receipt: TickReceipt = {

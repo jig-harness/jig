@@ -38,7 +38,8 @@ export interface VerifiedAssignOps {
 
 /** The assignee this write replaced, when the history shows it replaced one. */
 export type AssignmentCheck =
-  { ok: true } | { ok: false; replaced: string | null };
+  | { ok: true }
+  | { ok: false; replaced: string | null };
 
 /** The changes in the order the tracker recorded them. */
 function ordered(changes: readonly AssigneeChange[]): AssigneeChange[] {
