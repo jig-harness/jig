@@ -186,8 +186,8 @@ const result = command(
     token: argument(string({ metavar: "TOKEN" }), {
       description: message`The record's token, named in the session's prompt.`,
     }),
-    outcome: argument(string({ metavar: "done|failed" }), {
-      description: message`How the session ended.`,
+    outcome: argument(string({ metavar: "done|failed|waits" }), {
+      description: message`How the session ended; waits is a pickup the tracker's rate limit stopped.`,
     }),
     pr: optional(
       option("--pr", countValue("PR"), {
@@ -212,6 +212,11 @@ const result = command(
     reasons: multiple(
       option("--reason", string({ metavar: "REASON" }), {
         description: message`The reason the refused claim printed: once, or once per --key.`,
+      }),
+    ),
+    until: optional(
+      option("--until", string({ metavar: "TIME" }), {
+        description: message`With waits: when the tracker's rate limit resets (ISO 8601); the item starts again after it.`,
       }),
     ),
   }),
@@ -275,10 +280,13 @@ const log = command(
     jsonl: option("--jsonl", {
       description: message`Print each row as the JSON line the month files hold.`,
     }),
+    acceptance: option("--acceptance", {
+      description: message`Report, per repository and decision class, how many parks were answered, how many with the recommended option and no note, and the median wait, instead of the rows.`,
+    }),
   }),
   {
     brief: message`Print the outcome log as text, in the order the rows were written.`,
-    description: message`Reads the state database and prints one line a row; --jsonl prints the rows as the log-<year>-<month>.jsonl files hold them.`,
+    description: message`Reads the state database and prints one line a row; --jsonl prints the rows as the log-<year>-<month>.jsonl files hold them. --acceptance prints one line per repository and decision class (or one JSON line with --jsonl) over the parked decisions the log counted; it acts on nothing.`,
   },
 );
 
@@ -500,9 +508,13 @@ type Subcommand = Exclude<DispatchArguments, { action: "tick" }>;
 function refusedResult(
   args: Extract<Subcommand, { action: "result" }>,
 ): number {
-  if (args.pr !== undefined || args.none !== undefined) {
+  if (
+    args.pr !== undefined ||
+    args.none !== undefined ||
+    args.until !== undefined
+  ) {
     console.error(
-      "jig dispatch result: --refused is a failed pickup's; it takes no --pr or --none",
+      "jig dispatch result: --refused is a failed pickup's; it takes no --pr, --none or --until",
     );
     return 2;
   }
@@ -517,8 +529,12 @@ function refusedResult(
 function sessionResultMain(
   args: Extract<Subcommand, { action: "result" }>,
 ): number {
-  if (args.pr !== undefined && args.none !== undefined) {
-    console.error("jig dispatch result: pass either --pr or --none, not both");
+  if (
+    [args.pr, args.none, args.until].filter((v) => v !== undefined).length > 1
+  ) {
+    console.error(
+      "jig dispatch result: pass one of --pr, --none and --until, not several",
+    );
     return 2;
   }
   if (
@@ -533,6 +549,7 @@ function sessionResultMain(
     args.outcome,
     ...(args.pr === undefined ? [] : ["--pr", String(args.pr)]),
     ...(args.none === undefined ? [] : ["--none", args.none]),
+    ...(args.until === undefined ? [] : ["--until", args.until]),
   ]);
 }
 
@@ -610,6 +627,7 @@ function subcommandMain(
   if (args.action === "log")
     return logMain({
       jsonl: args.jsonl,
+      acceptance: args.acceptance,
       ...(args.since === undefined ? {} : { since: args.since }),
     });
   if (args.action === "line") return lineMain();

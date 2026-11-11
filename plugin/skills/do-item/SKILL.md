@@ -130,7 +130,7 @@ The skill reads them at run time from `.config/jig.yaml`:
 | `drive.change_areas_catalog` | Path to the repository's [change-area catalog](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (areas, their agents, validation plan and mandatory review skills) | No catalog: validate with the repository's gate command |
 | `repository.base_branch` | The integration branch pull requests land on | The repository's default branch |
 | `drive.reviews_drafts` | `false` makes new pull requests open Ready, since the reviewer would not review a draft | Pull requests open as drafts |
-| `pull_requests.*` | How pull requests are opened and stacked: `stacking`, `max_stack_depth`, `open_as`, `mark_ready`, `branch_name`, `issue_link`, `size_budget`, `labels`, `title_format` (see [Pull-request policy](#pull-request-policy)) | One pull request per change against the integration branch, branch `{key_lower}-{slug}` (the key as a branch carries it, lowercased: `eng-123`, or `123` for `#123`; then the title as at most 40 lowercase characters), draft, `Closes <KEY>`, marked Ready after the first review round; a human merges |
+| `pull_requests.*` | How pull requests are opened and stacked: `stacking`, `max_stack_depth`, `open_as`, `mark_ready`, `branch_name`, `issue_link`, `size_budget`, `labels`, `title_format`, `title_pattern` (see [Pull-request policy](#pull-request-policy)) | One pull request per change against the integration branch, branch `{key_lower}-{slug}` (the key as a branch carries it, lowercased: `eng-123`, or `123` for `#123`; then the title as at most 40 lowercase characters), draft, `Closes <KEY>`, marked Ready after the first review round; a human merges |
 
 Every field, its type and its default are in the plugin's
 [configuration reference](../../CONFIGURATION.md).
@@ -199,7 +199,9 @@ bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" open --issue "<KEY>" --issue-json i
   pre-PR review gate pass: the `base`, the `gh pr create` arguments the policy
   fixes (`createArgs`: base, `--draft` or not, labels, reviewers), commands to run after
   creating it (`afterCreate`, such as linking a native stack, with
-  `<PR URL>` replaced by the URL `gh pr create` prints), the title convention, the template(s) to fill
+  `<PR URL>` replaced by the URL `gh pr create` prints), the title convention (under a
+  `title_pattern`, the title with the issue key filled in and `<summary>` for
+  the part to write), the template(s) to fill
   in, the issue-link line, the size against its budget, how it will be
   merged, and warnings. Then open it with exactly those arguments:
 
@@ -732,7 +734,10 @@ implementation. Skip this check for issues about the repository's own code.
    itself; `"marker"` in the JSON says whether it was posted, and a marker
    that was not posted leaves the claim standing (report it). A person
    resuming their own interrupted pickup of an `in_progress` item tells you
-   so, and you go on from here without the claim.
+   so, and you go on from here without the claim. Exit `5` is the tracker's
+   rate limit: stderr names the time it resets
+   (`RATE-LIMITED until <time>`); stop the pickup and report that time, as
+   [Dispatched passes](#dispatched-passes) says for a pass.
 
    (**judgment** — native, Linear: only where none of
    `do_item.preflight_command`, `do_item.claim_from` and
@@ -1775,6 +1780,22 @@ record how it ended. In such a pass:
   person must decide, with no secret or personal data in it. The
   dispatcher keeps that line and notifies it as a need; it does not start
   the item again until the item leaves the dispatch states and comes back.
+- **A tracker's rate limit is a wait, not a question.** A tracker script
+  that exits `5` (`RATE-LIMITED until <time>` on stderr) while the claim
+  has not returned success stops the pass: record `waits` with the time it
+  names, through the command the prompt names, and ask nothing. The
+  dispatcher starts the item again after the reset. The exit does not say
+  how far the claim got (nothing written, assigned, or moved to its working
+  state), and the tracker refuses every request until the reset, so do not
+  re-read the item or finish the transition by hand: the claim run again
+  after the reset repeats every start check (sole assignee, holds,
+  blockers, ancestry, `claim_from`) before it writes. An inherited claim
+  that stopped after it assigned the item, or after it moved it, is refused
+  by those checks on the re-run (the item is no longer unassigned, or no
+  longer in `claim_from`): that refusal is a stop for a person, recorded as
+  `failed`, because no step here finishes a partial claim. After a successful
+  claim the item is this pass's: wait for the reset where the deadline
+  allows, else record `failed` as for any other stop.
 - **A claim the repository's preflight command refused** (exit `3` with
   `"why": "preflight"` and an `"updatedAt"` in the JSON) is not a failure
   of the pass. Nothing was written: record it with the `--refused` command

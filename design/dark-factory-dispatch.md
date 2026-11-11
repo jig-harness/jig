@@ -2045,7 +2045,9 @@ falls in, unless the file already holds a row with that key: the file is
 written whole with them and renamed into place, so a tick that stops
 mid-copy leaves the copy as it was and the next adds the same rows once.
 `jig dispatch log [--since <date>] [--jsonl]` prints the log as text,
-`--jsonl` as the lines the month files hold. The follow-up's outcome record (see Receipts) stays
+`--jsonl` as the lines the month files hold; `--acceptance` reports instead,
+per repository and class, how often parked decisions followed the
+recommendation ([structured-answers.md](structured-answers.md#showing-what-was-decided)). The follow-up's outcome record (see Receipts) stays
 what it is: it settles whether a merged pull request still wants a
 follow-up, and the tick reads it; the ended row for the same launch is the
 analysis record, read only by people and the dashboard, and the tick never

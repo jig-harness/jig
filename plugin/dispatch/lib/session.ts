@@ -107,6 +107,7 @@ function pickupResultLines(
     `- its pull request is open and its drive armed: ${resultCommand(record, "done")} --pr <the pull request number>`,
     `- no pull request was needed (a duplicate or work already made): ${resultCommand(record, "done")} --none "<why>"`,
     refused,
+    `- the tracker refused a request for its rate limit (a tracker script exited 5, naming the time it resets) before your claim of the item succeeded: ${resultCommand(record, "waits")} --until <that time>; ask no question, the dispatcher starts the item again after the reset`,
     `- you stopped short of that (another refusal, a question, a failure): ${resultCommand(record, "failed")}`,
   ];
 }

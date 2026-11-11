@@ -12,6 +12,9 @@
  *   it too: a session that stopped without claiming the item (a refusal, a
  *   crash, a question) is not launched again until the item leaves the
  *   dispatch states (`releaseEnded`) and comes back; an item claimed meanwhile is released when it returns;
+ * - except a record whose pass recorded `waits` (the tracker's rate limit
+ *   stopped it): it holds the item until the time it names, and the item is
+ *   launched again after it, with no person asked;
  * - a record whose claim the repository's start rules refused (its
  *   `refusal`) holds the item, with the reason, only until the item's
  *   `updatedAt` moves past the time the rules saw: a person changed the
@@ -126,6 +129,7 @@ export function pickupHold(
   item: string,
   records: ReadRecord[],
   updatedAt?: string,
+  nowMs = Date.now(),
 ): PickupHold {
   const mine = recordsOf(item, records);
   const holding = mine.find((r) => holds(r.state));
@@ -133,6 +137,15 @@ export function pickupHold(
     return { kind: "held", record: holding, why: describe(holding) };
   const latest = mine.at(-1);
   if (latest === undefined || latest.record.released) return { kind: "none" };
+  // A pass the tracker's rate limit stopped waits for the reset, then starts again.
+  if (latest.result === "waits" && latest.waitsUntil !== undefined)
+    return Date.parse(latest.waitsUntil) > nowMs
+      ? {
+          kind: "held",
+          record: latest,
+          why: `launch record ${latest.record.id} waits for the tracker's rate limit to reset at ${latest.waitsUntil}; the item starts again after it`,
+        }
+      : { kind: "none" };
   const recorded = latest.refusal ?? null;
   const refusal = recorded === null ? null : refusalOf(recorded, item);
   // The pass named the members it refused, and this is not one of them.

@@ -391,6 +391,115 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.205.0] - 2026-11-11
+
+### Added
+
+- A drive repairs CI that reports as GitHub commit statuses rather than
+  GitHub Actions runs (Jenkins through its GitHub Branch Source plugin, for
+  one). Its CI-repair pass is told each failing status with the page it
+  links to (`DRIVE_PR_ROUND_FAILED_STATUSES`, beside the failed runs), and
+  `/jig:fix-ci --pr <n>` reads every failing status on the pull request's
+  head. Two `ci` fields serve such a repository: `ci.log_command` prints a
+  status's failed log (it reads `{context, target_url}` on stdin, and exits 3
+  when the log is gone), a command the repository supplies, run as its
+  default branch sets it, and `ci.repair_skill` names the skill the repair
+  pass loads first. The audit reports a `ci.repair_skill` that resolves to no
+  installed skill. See [CONFIGURATION.md](plugin/CONFIGURATION.md#ci).
+- `jig dispatch log --acceptance` reports, per repository and decision class,
+  how many parked decisions the outcome log counted, how many were answered,
+  how many of those took the recommended option with no note, and the median
+  wait for an answer, over the parks that have been settled (`--jsonl` prints
+  one JSON object a line, `--since` limits the period by the time the log recorded the park's end: its
+  resolution, or for a withdrawn park the tick that noticed it) It is evidence for deciding whether a class should stay a
+  person's; nothing acts on it.
+
+### Changed
+
+- A commit status in state `error` whose description says the build was
+  aborted reads as cancelled, as a cancelled check run does: the drive waits
+  for a new status and spends no CI-repair pass on it, and `fix-ci` leaves it
+  out of the failures it reports.
+
+## [0.204.0] - 2026-11-11
+
+### Added
+
+- `pull_requests.title_format: pattern` with `pull_requests.title_pattern`
+  states a pull-request title that leads with the tracker key, for
+  repositories whose protected branches refuse a commit without one. The
+  pattern has the placeholders `{key}` and `{summary}`, each once, such as
+  `{key}: {summary}`. `pr-plan.ts open --issue ENG-12` prints the title as
+  `ENG-12: <summary>`, and the audit warns when fewer than 80% of the
+  integration branch's last 30 commit subjects follow the pattern. Leaving
+  `title_format` unset keeps today's derived convention.
+
+## [0.203.0] - 2026-11-11
+
+The dispatcher stays within a tracker's rate limit: a served queue costs a
+handful of requests a tick instead of one per blocker and parent, and a
+spent limit stops every request on the host until the reset.
+
+### Added
+
+- A request budget per tracker credential, shared by every process on the
+  host (`~/.local/state/jig/tracker/budget.sqlite`, keyed by a hash of the
+  credential). The Linear transport reads the request and complexity
+  windows from every answer; Linear's `RATELIMITED` refusal, and a Jira
+  HTTP 429, mark the credential limited until the reset, and no request
+  leaves the host before it: the call fails at once with the reset time.
+- `tracker_share` in the machine's dispatch file: the share of each
+  window the tick's own tracker reads may use (default `0.5`), leaving the
+  rest to the passes it starts and to people.
+- One query per served queue on Linear: the assignments with their
+  relations (and each related issue's state) and their parent (with its
+  description), and one batched lookup by key for the rest, such as an
+  execution plan's steps.
+- A tracker change probe on Linear: one request asks whether any issue the
+  last reading depended on, a child of one, or a new assignment changed;
+  when nothing did the reading is reused whole, and it is taken whole again
+  every 15 minutes. Every repository naming the same tracker, team and
+  person shares one reading per tick. A served queue of 50 assignments with
+  blockers and parents costs one request on a quiet tick and two or three
+  when an issue changed, where it cost about a hundred per repository.
+- `jig dispatch result <record> <token> waits --until <time>`: a pickup
+  pass the tracker's rate limit stopped before it claimed the item records
+  it (after the claim it waits within its deadline or records `failed`),
+  and the item starts
+  again after the reset with no question for a person. Tracker scripts exit
+  `5` (`RATE-LIMITED until <time>` on stderr) when the limit refuses them.
+
+### Fixed
+
+- A tick that meets a rate-limited tracker reports the tracker once as
+  limited until the reset, keeps showing the queue it last read, and its
+  pickups wait, where every served item was reported unplaced and every
+  tick kept sending the refused requests.
+
+## [0.202.1] - 2026-11-11
+
+### Fixed
+
+- The drive state reaper retires the displaced file-lock quarantine entries of
+  the releases before the database (`<lock>.stale.<generation>`) with
+  `--delete`, instead of only reporting them: once no lock of the earlier
+  layout is present, none of its state, lease, driver or claim files was
+  written in the last 24 hours, and no entry is younger than that. A clone
+  that was never imported is covered too. The README's upgrade section says
+  when they go.
+
+## [0.202.0] - 2026-11-11
+
+### Added
+
+- A guide for opening the dispatch dashboard from a phone
+  ([plugin/phone-access.md](https://github.com/jig-harness/jig/blob/main/plugin/phone-access.md)):
+  a private HTTPS address through Tailscale Serve, or through an
+  authenticated reverse proxy without Tailscale or Orca, with no token in the
+  address; the private-HTTP fallback and what it costs; the owner-only
+  boundary; how to undo it; and a verification record. The record's rows are
+  marked not yet run until a person runs them on a phone.
+
 ## [0.201.0] - 2026-11-11
 
 ### Added
@@ -6979,7 +7088,12 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.201.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.205.0...HEAD
+[0.205.0]: https://github.com/jig-harness/jig/compare/v0.204.0...v0.205.0
+[0.204.0]: https://github.com/jig-harness/jig/compare/v0.203.0...v0.204.0
+[0.203.0]: https://github.com/jig-harness/jig/compare/v0.202.1...v0.203.0
+[0.202.1]: https://github.com/jig-harness/jig/compare/v0.202.0...v0.202.1
+[0.202.0]: https://github.com/jig-harness/jig/compare/v0.201.0...v0.202.0
 [0.201.0]: https://github.com/jig-harness/jig/compare/v0.200.1...v0.201.0
 [0.200.1]: https://github.com/jig-harness/jig/compare/v0.200.0...v0.200.1
 [0.200.0]: https://github.com/jig-harness/jig/compare/v0.199.1...v0.200.0
