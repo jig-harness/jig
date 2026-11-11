@@ -1,14 +1,15 @@
 /**
- * The claim marker (`do_item.claim_marker`): a comment a successful claim
- * posts on the item, so another tool reading the tracker can tell which
- * session holds it, and the dispatcher can join the claim to its session.
- * It is a shared record (`shared/records/envelope.ts`), written in the
- * records codec's marker form the dispatcher's launch claims use, so it can
- * later serve as a claim token across hosts:
+ * The claim marker (`do_item.claim_marker`): a comment a claim posts on the
+ * item before it writes the item's assignee or state, so another tool
+ * reading the tracker can tell which session holds it, the dispatcher can
+ * join the claim to its session, and two hosts claiming one item at once
+ * agree on which of them holds it (`claim-token.ts`). It is a shared record
+ * (`shared/records/envelope.ts`), written in the records codec's marker form
+ * the dispatcher's launch claims use:
  *
  *   <!-- jig-claim -->
  *   <!-- jig-claim-data
- *   {"kind":"tracker-claim-marker","v":1,"key":"claim","writer":{…},"at":"…","session":"…","branch":"…","claimant":"…"}
+ *   {"kind":"tracker-claim-marker","v":1,"key":"claim","writer":{…},"at":"…","attempt":"…","session":"…","branch":"…","claimant":"…"}
  *   -->
  *   Claimed by <claimant> · session <id> · branch <branch>
  *
@@ -30,6 +31,12 @@ export const CLAIM_MARKER_VERSION = 1;
 export const CLAIM_MARKER_KEY = "claim";
 
 export interface ClaimMarkerFacts {
+  /**
+   * The claim attempt the marker stands for, unique to it, so the claim
+   * finds its own comment when it reads the item's markers back; absent on
+   * a marker written before markers named their attempt.
+   */
+  attempt?: string;
   /** The agent session that claimed: Claude Code's or Codex's id, `unknown` when neither is set. */
   session: string;
   /** The branch checked out where the claim ran; `HEAD` when detached. */
@@ -67,7 +74,12 @@ export function claimMarkerBody(facts: ClaimMarkerFacts): string {
       writer: localWriter("tracker"),
       at: facts.at,
     },
-    { session: facts.session, branch: facts.branch, claimant: facts.claimant },
+    {
+      ...(facts.attempt === undefined ? {} : { attempt: facts.attempt }),
+      session: facts.session,
+      branch: facts.branch,
+      claimant: facts.claimant,
+    },
   );
   const line = `Claimed by ${facts.claimant} · session ${facts.session} · branch ${facts.branch}`;
   return `${CLAIM_MARKER}\n${data}\n${line}\n`;
@@ -82,12 +94,18 @@ export function readClaimMarker(body: string): ClaimMarkerFacts | null {
   if (!body.includes(`<!-- ${CLAIM_DATA}`)) return null;
   const read = decodeMarker(body, CLAIM_DATA, CLAIM_MARKER_KIND);
   if (!read.ok) return null;
-  const { session, branch, claimant } = read.value.payload;
+  const { attempt, session, branch, claimant } = read.value.payload;
   if (
     typeof session !== "string" ||
     typeof branch !== "string" ||
     typeof claimant !== "string"
   )
     return null;
-  return { session, branch, claimant, at: read.value.envelope.at };
+  return {
+    ...(typeof attempt === "string" ? { attempt } : {}),
+    session,
+    branch,
+    claimant,
+    at: read.value.envelope.at,
+  };
 }

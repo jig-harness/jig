@@ -219,6 +219,7 @@ export function fakeTracker(
     startedIssueActivity: unsupported("startedIssueActivity"),
     commentsContaining: unsupported("commentsContaining"),
     issueComments: unsupported("issueComments"),
+    deleteComment: unsupported("deleteComment"),
     ledger: unsupported("ledger"),
     labelledIssues: unsupported("labelledIssues"),
     createIssue: unsupported("createIssue"),
