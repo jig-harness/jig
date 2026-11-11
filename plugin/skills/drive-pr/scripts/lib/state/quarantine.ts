@@ -17,9 +17,9 @@ import {
 
 /**
  * A full day in which no earlier-release writer touched the clone's files,
- * independent of the clone's import date. A legacy driver renews its lease and
- * rewrites its state every few minutes, so a day of silence means none is alive
- * to resume into a displaced lock's name.
+ * independent of the clone's import date. A legacy driver renews its lease at
+ * least every `SESSION_LEASE_MIN` (6 hours), so a day of silence means none is
+ * alive to resume into a displaced lock's name. An entry's age is its last write.
  */
 export const QUARANTINE_RETENTION_DAYS = 1;
 

@@ -274,7 +274,7 @@ describe("obsolete file-lock quarantine", () => {
 });
 
 describe("database lock displacement", () => {
-  it("displacing a dead holder many times in a row leaves one row, and nothing once released", () => {
+  it("displacing a lock's holder many times in a row leaves one row, and nothing once released", () => {
     // Each displacement replaces the holder's row in place: one row while the
     // lock is held, and no quarantine entry, tombstone or sibling in the
     // clone's directory, however fast the displacements come.

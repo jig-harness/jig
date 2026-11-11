@@ -74,9 +74,9 @@ export function isFormerLock(name: string): boolean {
 }
 
 /**
- * Whether `name` is a file a running earlier release rewrites for as long as it
- * drives: its state, leases, driver record and claims. Nothing of this release
- * writes one, so a recent write means a legacy driver is still alive here.
+ * Whether `name` is a file a running earlier release writes while it drives:
+ * its state, leases, driver record and claims. Nothing of this release writes
+ * one, so a recent write means a legacy driver is still alive here.
  */
 export function isFormerWriterFile(name: string): boolean {
   return Object.values(FORMER).some((re) => re.test(name));

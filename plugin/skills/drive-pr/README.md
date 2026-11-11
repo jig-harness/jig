@@ -900,12 +900,13 @@ whole family with `--delete` once nothing shows a release before the database
 still driving in the clone: no `.lock` or `.lock.recovering` of the earlier
 layout is present, none of its state, lease, driver-record or claim files was
 written in the last 24 hours, and no entry (or file under one) is younger than
-24 hours. A driver of the earlier release rewrites those files every few
-minutes, so a day of silence leaves no process to fence. It does not wait for
+24 hours. A driver of the earlier release renews its lease at least every
+6 hours, so a day of silence leaves no process to fence. An entry's age is the
+time of its last write. It does not wait for
 the 30-day retention of the other files. Anything it cannot read, or that
 changes while it looks, keeps the family. A driver suspended for longer than
 that and resumed afterwards is not detected: it can only move a lock of the
-earlier layout, which nothing reads any more.
+earlier layout, which nothing of this release reads.
 
 ## Relocating the state dir
 
