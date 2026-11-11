@@ -124,6 +124,7 @@ interface PrHead {
   head: string;
   /** `owner/name` of the repository the head branch lives in. */
   repo: string;
+  url?: string;
 }
 
 export function refuse(code: 1 | 2 | 5, message: string): never {
@@ -183,7 +184,7 @@ async function readPr(
       "view",
       pr,
       "--json",
-      "state,headRefName,headRefOid,isCrossRepository,headRepository,headRepositoryOwner",
+      "state,headRefName,headRefOid,isCrossRepository,headRepository,headRepositoryOwner,url",
     ],
     { cwd, stderr: "pipe" },
   );
@@ -209,7 +210,12 @@ async function readPr(
   const head = typeof meta.headRefOid === "string" ? meta.headRefOid : "";
   if (branch === "" || !/^[0-9a-f]{40,64}$/.test(head))
     refuse(1, `PR #${pr} did not report its head branch and commit`);
-  return { branch, head, repo: headRepository(meta, pr) };
+  return {
+    branch,
+    head,
+    repo: headRepository(meta, pr),
+    ...(typeof meta.url === "string" ? { url: meta.url } : {}),
+  };
 }
 
 /** `owner/name` of the repository a pull request's view says its head branch lives in. */
@@ -234,11 +240,11 @@ export function headRepository(
  * repository shares
  * commit objects, so a fetched head commit proves nothing about which
  * repository it came from. Owner and name are compared, as `guarded-push.ts`
- * compares them, never the host (`lib/repo-url.ts` says why).
+ * compares them, after resolving the transport host to the forge host.
  */
 export async function requireOrigin(
   tree: string,
-  pr: { repo: string },
+  pr: { repo: string; url?: string },
   number: string,
   remote: string,
 ): Promise<void> {
@@ -253,11 +259,11 @@ export async function requireOrigin(
     urls.push(...r.stdout.split("\n").filter((u) => u !== ""));
   }
   for (const url of urls) {
-    const repo = repoOfUrl(url);
+    const repo = await repoOfUrl(url, undefined, undefined, pr.url, tree);
     if (repo.toLowerCase() !== pr.repo.toLowerCase())
       refuse(
         2,
-        `PR #${number}'s head is in ${pr.repo}, but '${remote}' is ${repo === "" ? "a URL with no owner/name" : repo} (${url}) — gh read the pull request from another repository than this clone's (GH_REPO, gh repo set-default); drive it from a clone of ${pr.repo}`,
+        `PR #${number}'s head is in ${pr.repo}, but '${remote}' is ${repo === "" ? "an unresolved forge URL" : repo} (${url}) — gh read the pull request from another repository than this clone's (GH_REPO, gh repo set-default); drive it from a clone of ${pr.repo}`,
       );
   }
 }

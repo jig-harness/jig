@@ -59,8 +59,7 @@ the park, is either any reply on the item's review thread or a pull-request
 comment with a line `answer <key>: <text>` outside any code block. `jig send
 drive@<repo>#<PR> answer <key> '<text>'` writes the second kind, with a
 [record envelope](../GLOSSARY.md) naming the writer and its host in a hidden
-marker, and refuses to send a second answer to an item already answered.
-Once every parked item is answered, the re-arm unparks them all and hands
+marker. Once every parked item is answered, the re-arm unparks them all and hands
 each answer's whole body to every pass as a human verdict
 (`$DRIVE_PR_PASS_NOTICE`, kept in `drive-pr-<PR>.answers.json` until a pass
 completes). The [tick](../GLOSSARY.md) reads the same answers to decide
@@ -429,8 +428,18 @@ to read.
   version 1: a reader that does not know a payload field ignores it, while
   a newer version would make an older plugin refuse the comment as an
   answer. A person who already answered may answer again, which replaces
-  their earlier answer; the send shows the earlier one first. `--approve`
-  is refused on a park that names no recommendation. `--all
+  their earlier answer; the send shows the earlier one first. Another
+  person's answer does not refuse a send: the send names it and says that
+  differing answers leave the item disputed; another person's stale
+  answer keeps the item waiting until they answer again. A free text the
+  readers would count as a choice (`approve`, `choose Keep`) is refused
+  and pointed to `--approve` or `--choose` with `--decision`, so no send
+  writes a choice unbound to the framing the person read. The command a
+  dry run prints repeats its `--as`. `--approve`
+  is refused on a park that names no recommendation. A park from before
+  digests has none: its structured answer is written without one, bound
+  by time alone, and `--decision` is refused there rather than written as
+  a binding that is not one. `--all
   --approve` takes no single digest: its `--dry-run` lists each eligible
   item with its digest and prints one set token (the hash of the sorted
   key and digest pairs), and the real send names that token
@@ -442,7 +451,13 @@ to read.
   open item of the pull request whose class the shared acts table
   (`shared/acts.ts`) lists as Decide by name; a class the table does not
   list (a repository's own class, which reads Decide only as a fallback)
-  and a class whose act is Authorize are approved only by their own key.
+  and a class whose act is Authorize are approved only by their own key,
+  as are an item with no framed decision or no recommendation and a park
+  from before digests, which no set token can bind, and an item another
+  person answered, stale or not. An `--all` send whose post fails part-way
+  prints what it sent, wakes the re-arm's reader for those, names what it
+  did not send and exits `1`; its dry run, run again, lists what is still
+  open.
 - **The operator.** "approve 456's parked question" becomes that command,
   run with `--dry-run` first, as every send the operator makes is.
 - **The dashboard and the Orca panel** pick and commit as [Picking an

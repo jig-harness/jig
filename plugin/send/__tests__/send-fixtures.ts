@@ -20,6 +20,9 @@ import {
 import { ledgerBody } from "../../skills/drive-pr/__tests__/ledger-forge-fixtures.ts";
 import { stoppedLedger } from "../../dispatch/__tests__/fixtures.ts";
 import type { Ledger } from "../../skills/drive-pr/scripts/lib/state/ledger.ts";
+import type { ParkedItem } from "../../skills/drive-pr/scripts/lib/state/park-frame.ts";
+import type { ParkedDecision } from "../../shared/decisions/park.ts";
+import { decisionDigest } from "../../shared/decisions/digest.ts";
 
 export { comment, REPO };
 
@@ -144,3 +147,62 @@ export function pullRequest(
 
 export const ledgerOn = (id: number, ledger: Ledger) =>
   comment(id, ledgerBody(ledger));
+
+/** A framed decision of `decisionClass` with options Keep (recommended) and Remove. */
+function framedDecision(decisionClass: string): ParkedDecision {
+  return {
+    schema: "parked-decision/v1",
+    class: decisionClass,
+    call: {
+      id: "a",
+      question: "Keep the old flag for one release?",
+      recommended: "keep",
+      why: "Readers still pass the flag today",
+      options: [
+        {
+          id: "keep",
+          name: "Keep",
+          summary: "The flag stays for one more release.",
+          pay: ["One more release of the old path."],
+        },
+        {
+          id: "drop",
+          name: "Remove",
+          summary: "The flag goes now.",
+          pay: ["Scripts that pass it fail."],
+          reversible: true,
+        },
+      ],
+    },
+    steps: [],
+    alreadyDone: "Read every caller of the flag.",
+  };
+}
+
+/** A framed park of `decisionClass` under `key`, with its digest unless `digest` is false. */
+export function framedPark(
+  key: string,
+  decisionClass: string,
+  digest = true,
+): ParkedItem {
+  const decision = framedDecision(decisionClass);
+  return {
+    key,
+    kind: "finding",
+    reason: decision.call.question,
+    round: 2,
+    at: PARKED_AT,
+    class: decisionClass,
+    decision,
+    ...(digest ? { digest: decisionDigest(decision) } : {}),
+  };
+}
+
+/** A ledger stopped parked on `parked`. */
+export function framedLedger(pr: number, parked: ParkedItem[]): Ledger {
+  return stoppedLedger(pr, 8, { parked });
+}
+
+/** The digest every framed park of `decisionClass` carries. */
+export const digestOf = (decisionClass: string) =>
+  decisionDigest(framedDecision(decisionClass));

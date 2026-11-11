@@ -2,10 +2,10 @@
  * A clone with a remote, a pull request's head branch on it, and a fake `gh`
  * answering for that pull request: what `attach-pr.ts` needs to run for real.
  *
- * Real git throughout (a bare repository at `<root>/example/app.git` stands in
- * for the remote, so its URL names `example/app` as a forge URL would), so the
+ * Real git for mutations (a bare repository stands in for the remote), so the
  * attach's checkouts, fetches and worktree listing are git's own behaviour,
- * not a stub's. Only `gh` is faked: it answers `pr view` from `FAKE_GH_PR`,
+ * not a stub's. A git wrapper reports the fixture remote as a forge URL.
+ * `gh` is faked: it answers `pr view` from `FAKE_GH_PR`,
  * its head commit read from the remote (`FAKE_GH_REMOTE`) as a forge's is
  * (except once while the file `FAKE_GH_LAG` names exists),
  * and `repo view` from `FAKE_GH_REPOS` (a map of directory to `owner/name`,
@@ -135,6 +135,24 @@ export function makeClone(): Clone {
   const bin = join(root, "bin");
   mkdirSync(bin);
   writeFakeProgram(join(bin, "gh"), FAKE_GH);
+  const realGit = Bun.which("git");
+  if (!realGit) throw new Error("git is required for attach fixtures");
+  writeFakeProgram(
+    join(bin, "git"),
+    `#!/usr/bin/env bun
+const args = process.argv.slice(2);
+const child = Bun.spawnSync([${JSON.stringify(realGit)}, ...args], {stdout: "pipe", stderr: "pipe"});
+let output = child.stdout.toString();
+// Only the known fixture destination is represented as a forge URL.
+// Fetches and pushes still run against the real bare repository.
+if (args.includes("get-url") && child.exitCode === 0) {
+  output = output.split("\\n").map(line => line === process.env.FAKE_GIT_REMOTE ? "https://github.com/example/app.git" : line).join("\\n");
+}
+process.stdout.write(output);
+process.stderr.write(child.stderr);
+process.exit(child.exitCode);
+`,
+  );
   const env: Record<string, string> = {
     ...cleanEnv(),
     PATH: `${bin}${delimiter}${process.env.PATH ?? ""}`,
@@ -144,6 +162,7 @@ export function makeClone(): Clone {
     DRIVE_PR_STATE_DIR: join(root, "state"),
     GH_CALL_TIMEOUT: "60",
     FAKE_GH_REMOTE: join(root, "example", "app.git"),
+    FAKE_GIT_REMOTE: join(root, "example", "app.git"),
     GIT_CONFIG_NOSYSTEM: "1",
     GIT_AUTHOR_NAME: "probe",
     GIT_AUTHOR_EMAIL: "probe@example.invalid",

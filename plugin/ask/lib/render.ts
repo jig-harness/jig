@@ -15,7 +15,7 @@ import type {
 import type { WaitingAnswer } from "./waiting.ts";
 
 /** `text` with every control character replaced by a space. */
-function printable(text: string): string {
+export function printable(text: string): string {
   let out = "";
   for (const ch of text) {
     const c = ch.codePointAt(0) ?? 0;

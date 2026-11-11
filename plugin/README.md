@@ -1233,7 +1233,7 @@ jig send <station>@<owner>/<name>#<key> <verb> [arguments] [--dry-run] [--as <lo
 | `drive` | `drive` | the `drive` [dispatch label](CONFIGURATION.md#dispatch) | the dispatcher's next tick, which arms a drive |
 | `rearm` | `drive` | the `rearm` dispatch label for a stopped drive | the dispatcher's next tick, which re-arms it on an admitted account in the existing worktree |
 | `hold`, `release` | `drive`, `followup` | the `hold` dispatch label, added or removed | the dispatcher's next tick, which keeps every stage off a held pull request |
-| `answer <key> <text>` | `drive` | a comment on the pull request whose first line is `answer <key>: <text>` | the re-arm, which hands the answer to the drive's passes as your verdict |
+| `answer <key> <text>`, `answer <key> --approve`, `answer <key> --choose <option>`, `answer --all --approve` | `drive` | a comment on the pull request whose first line is `answer <key>: <text>`, or `answer <key>: approve [<digest>]` and `answer <key>: choose <option> [<digest>]` for a structured answer, one comment per item for `--all` | the re-arm, which hands the answer to the drive's passes as your verdict |
 | `pause`, `resume <hold-push\|pause\|stop>`, `stop`, `hold-push` | `drive` | a directive in the [mailbox](skills/drive-pr/README.md) of the working tree that holds the drive on this machine | the driver: `hold-push` before each push, `pause` and `stop` at its next round boundary |
 
 **It checks before it writes.** It reads the address first, through `jig
@@ -1247,8 +1247,10 @@ ask`'s readers, and refuses (exit `1`) a request the station cannot take:
   while a driver or launch still holds it, after a person's recorded stop,
   or while a re-arm request is already pending;
 - `answer` whose key is not a parked question in the pull request's drive
-  ledger, or that a trusted comment after the park already answers (a reply
-  on the parked thread itself is not read);
+  ledger, or when not every place an answer could be (the pull request's
+  comments, a parked thread's replies) was read; a structured answer
+  naming an option the park does not offer, `--approve` on a park with no
+  recommendation, and one whose digest is no longer the park's (below);
 - a mailbox directive already in force, a `resume` with nothing to withdraw,
   a drive no driver on this machine holds, and a drive another host holds,
   which it names: a directive reaches a driver on this machine only, so
@@ -1259,6 +1261,52 @@ control character (no line break, no mark that reorders text) and no hidden
 marker (`<!--`), since it reaches the drive's passes as your verdict; any
 other text is a usage error (exit `2`). Several words after the key are
 joined with a space.
+
+**Structured answers.** `answer <key> --approve` chooses the option the
+parked decision recommends, and `answer <key> --choose '<option>'` the
+option of that name, matched as the drive's readers match it (case,
+typographic quotes and a final full stop do not matter) and written as the
+park spells it. `--note '<text>'` adds a `note <key>:` line beside either,
+checked as an answer's text is. An answer names exactly one of your words,
+`--approve` or `--choose`; one that names none, or two, is a usage error.
+Your words are refused on a framed park when the drive's readers would
+count them as a choice (`approve`, `choose Keep`): send that as `--approve`
+or `--choose`, which binds it to the framing you read.
+A framed park carries a
+[decision digest](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md):
+run the send with `--dry-run` first, which shows the option in full (what it
+changes and what it costs) with the digest, and prints the command to send,
+naming the digest with `--decision <digest>` (and repeating any `--as`). A real structured send must
+name it, and is refused, writing nothing, when the park's digest is another
+(the drive framed the question again since you read it). A park from before
+digests has none: its answer is bound by time alone, and `--decision` is
+refused there. The comment carries the digest and the choice in its record
+too.
+
+**Answering again.** Each person's latest answer is the one the drive
+counts, so you may answer an item you already answered: `send` shows your
+earlier answer first and says the new one replaces it. Another person's
+answer does not stop a send; `send` names it, and when your answers differ
+(another option, another note, or a free answer beside a structured one)
+the item is disputed and waits until you agree. Another person's stale
+answer (one naming an earlier framing) keeps the item waiting until they
+answer again.
+
+**Approving several at once.** `answer --all --approve` approves the
+recommendation of every open item (none answered or disputed) whose class
+Jig's table of acts lists as Decide by name, one comment per item. It
+leaves out, saying why, a class whose act is another (Authorize, Merge,
+Reply), a repository's own class (which the table does not list), an item
+another person answered (stale or not), an item with no framed decision or
+recommendation, and a park from before digests; each of those is approved
+only by its own key. Its `--dry-run` lists each item it would approve with
+its digest and prints one
+[decision set token](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md);
+the real send names it (`--decision-set <token>`) and is refused, writing
+nothing, when the items or any digest changed since. When the forge refuses
+a post part-way, `send` prints the comments it posted, wakes their reader,
+names the items it did not send and exits `1`; run the dry run again for
+the rest.
 
 **It says who writes, and where.** Before it writes it prints the
 repository in full, the login it writes as (the forge login the `gh` client

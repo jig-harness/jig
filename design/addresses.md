@@ -306,7 +306,7 @@ it starts is a wake of the tick that reads its record (below).
 | `assign` | `pickup` | the item assigned to the factory identity, in a dispatch state | the tick, which starts the pick-up |
 | `drive` | `drive` | the `drive` command label on a pull request with no ledger | the tick, which arms a drive |
 | `hold`, `release` | `drive`, `followup` | the `hold` label, added or removed | the tick, which keeps every stage off a held pull request |
-| `answer <key> <text>` | `drive` | a comment on the pull request with the line `answer <key>: <text>` | the re-arm, which hands the answer to the drive's passes as the person's verdict |
+| `answer <key> <text>`, `answer <key> --approve\|--choose <option>`, `answer --all --approve` | `drive` | a comment on the pull request with the line `answer <key>: <text>`, or a structured answer with its digest ([structured-answers.md § Writing an answer](structured-answers.md#writing-an-answer)) | the re-arm, which hands the answer to the drive's passes as the person's verdict |
 | `pause`, `resume`, `stop`, `hold-push` | `drive` | a directive in the mailbox of the working tree that holds the drive: a `stop` addressed to its driver generation; a `pause` or a `hold-push` for the pull request in that tree until a `resume` names it, since the mailbox lets only a `stop` name a generation and every driver holds its pushes on a directive of any other shape | the driver, where it reads directives today: `hold-push` before each push |
 
 Each of these gestures exists today, each with its own command and its own
@@ -319,8 +319,8 @@ checks:
   cannot drift from its reader.
 - **`send` checks before it writes.** It reads the address first and
   refuses a request the station cannot take: a `drive` on a pull request
-  that has a ledger, an `answer` whose key is not a parked, unanswered
-  question of that pull request, a second `hold`. The text of an `answer`
+  that has a ledger, an `answer` whose key is not a parked question of that
+  pull request, a second `hold`. The text of an `answer`
   is one line within a length limit, with no control characters and no
   hidden marker, since it reaches the drive's passes as a verdict.
 - **`send` says who writes, and where.** Before it writes, it prints the
