@@ -28,7 +28,9 @@ const RULES = [
 describe("base rules", () => {
   it("refuses a dot-leading or .lock component anywhere in a base", () => {
     for (const base of ["release/.hidden", "release.lock/2.4", "a/b.lock"])
-      expect(() => parseBaseRules([{ when: { labels: ["x"] }, base }])).toThrow();
+      expect(() =>
+        parseBaseRules([{ when: { labels: ["x"] }, base }]),
+      ).toThrow();
   });
 
   it("reads the rules in order", () => {
@@ -125,7 +127,11 @@ describe("title pattern", () => {
   });
 
   it("refuses a repeated placeholder and boundary whitespace", () => {
-    for (const title_pattern of ["{key}: {summary} ({key})", " {key}: {summary}", "{key}: {summary} "])
+    for (const title_pattern of [
+      "{key}: {summary} ({key})",
+      " {key}: {summary}",
+      "{key}: {summary} ",
+    ])
       expect(() =>
         policy({ title_format: "pattern", title_pattern }),
       ).toThrow();
