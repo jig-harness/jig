@@ -129,7 +129,7 @@ describe("jig send --dry-run", () => {
 });
 
 describe("jig send refuses before it writes", () => {
-  it("an answer to a key that is not parked, and to one already answered", async () => {
+  it("an answer to a key that is not parked, naming the ones that are", async () => {
     const w = world();
     pullRequest(w, 12, [], [ledgerOn(701, parkedLedger(12))]);
     const unknown = await w.send([ADDRESS, "answer", "PRRT_other", "yes"]);
@@ -137,24 +137,6 @@ describe("jig send refuses before it writes", () => {
     expect(unknown.stderr).toContain(
       `PRRT_other is not a parked question of pull request 12; its parked questions are ${PARK_KEY}`,
     );
-    pullRequest(
-      w,
-      12,
-      [],
-      [
-        ledgerOn(701, parkedLedger(12)),
-        comment(
-          702,
-          `answer ${PARK_KEY}: drop it`,
-          "owner",
-          "OWNER",
-          "2026-11-02T10:00:00Z",
-        ),
-      ],
-    );
-    const answered = await w.send([ADDRESS, "answer", PARK_KEY, "keep it"]);
-    expectSpawnExit(answered, 1);
-    expect(answered.stderr).toContain("already answered");
     expect(w.writes()).toEqual([]);
   });
 

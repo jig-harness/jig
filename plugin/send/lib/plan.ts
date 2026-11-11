@@ -1,12 +1,15 @@
 /**
  * What a send would write, before it writes: the repository in full, the
- * login it writes as, the record and where it goes, the reader that acts on
- * it and how to take it back. `--dry-run` prints this and stops; a real send
+ * login it writes as, what the person already answered (for an answer), the
+ * record and where it goes, the reader that acts on it and how to take it
+ * back, then what the record decides in full (an answer's option and the
+ * framing's digest). `--dry-run` prints this and stops; a real send
  * prints it, writes, and ends with the link to (or the path of) what it
  * wrote and the reader again.
  */
 import type { MachineStage } from "../../dispatch/lib/machine-config.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
+import { printable } from "../../ask/lib/render.ts";
 import type { Verb } from "./verbs.ts";
 
 /** The tick a send names as its reader when it woke none. */
@@ -41,8 +44,18 @@ export interface Plan {
   undo: string;
   /** What a person must know before it is written; `null` for nothing. */
   notice: string | null;
-  /** Write it: the link to or path of what was written, or why it was not. */
-  write(): Promise<Outcome<string, "refused">>;
+  /** What was answered before, shown before the record: one entry per earlier answer. */
+  earlier?: string[];
+  /** Named lines that follow the plan's rows: what the record decides, in full. */
+  detail?: Array<[name: string, value: string]>;
+  /** Write it: the link to or path of what was written (or, of several records, what was and what was not), or why nothing was. */
+  write(): Promise<Outcome<string | PartSent, "refused">>;
+}
+
+/** A write of several records that stopped part-way: the links of those sent, and which were not and why. */
+export interface PartSent {
+  sent: string;
+  unsent: string;
 }
 
 /** A refusal: a request the station cannot take, or one this machine will not write. */
@@ -70,19 +83,32 @@ export function writerLogin(
   return ok(login);
 }
 
-const row = (name: string, value: string) => `  ${name.padEnd(11)}${value}`;
+/** `text` for the terminal: control and direction-changing characters removed, the layout newlines kept. */
+export const shown = (text: string) =>
+  text
+    .split("\n")
+    .map((line) =>
+      printable(line).replace(/[\u202a-\u202e\u2066-\u2069]/gu, " "),
+    )
+    .join("\n");
+
+/** One plan row: every value passes `shown`, whichever field it came from. */
+const row = (name: string, value: string) =>
+  `  ${name.padEnd(11)}${shown(value).replaceAll("\n", `\n${" ".repeat(13)}`)}`;
 
 /** The plan as it prints before a write, or as a dry run. */
 export function renderPlan(plan: Plan, dryRun: boolean): string {
   return [
-    `jig send ${plan.address} ${plan.verb}${dryRun ? " (dry run)" : ""}`,
+    shown(`jig send ${plan.address} ${plan.verb}${dryRun ? " (dry run)" : ""}`),
     row("repository", plan.repo),
     row("writes as", plan.writesAs),
+    ...(plan.earlier ?? []).map((e) => row("earlier", e)),
     row("record", plan.record),
     row("where", plan.where),
     row("read by", plan.reader),
     row("undo", plan.undo),
     ...(plan.notice === null ? [] : [row("note", plan.notice)]),
+    ...(plan.detail ?? []).map(([name, value]) => row(name, value)),
     ...(dryRun ? ["dry run: nothing was written."] : []),
   ].join("\n");
 }

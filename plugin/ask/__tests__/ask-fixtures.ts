@@ -65,6 +65,13 @@ if (args[0] === "pr" && args[1] === "edit") {
   process.exit(0);
 }
 if (args[0] === "api" && args[1] === "--method" && args[2] === "POST") {
+  // post-fail-at: the forge refuses the post of that number (1 for the first), as a failure mid-way would.
+  const posts = (fs.existsSync(F + "/post-count") ? Number(fs.readFileSync(F + "/post-count", "utf8")) : 0) + 1;
+  fs.writeFileSync(F + "/post-count", String(posts));
+  if (fs.existsSync(F + "/post-fail-at") && Number(fs.readFileSync(F + "/post-fail-at", "utf8")) === posts) {
+    process.stderr.write("gh: HTTP 502: Bad Gateway\\n");
+    process.exit(1);
+  }
   fs.appendFileSync(F + "/gh-writes.log", JSON.stringify(args) + "\\n");
   const pr = (args[3].match(/issues\\/(\\d+)\\/comments/) || [])[1];
   process.stdout.write(JSON.stringify({ id: 901, html_url: "https://github.com/" + process.env.ASK_FAKE_REPO + "/pull/" + pr + "#issuecomment-901" }));

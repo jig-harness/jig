@@ -1348,6 +1348,12 @@ make, use the entry's term instead.
   that is no longer the park's is a **stale answer** and does not count, so
   an approval of an earlier framing never settles the one that replaced it
   ([design](design/structured-answers.md#binding-an-answer-to-its-framing)).
+- **Decision set token** — what binds `jig send … answer --all --approve`
+  to the items its dry run listed: a short hash of each listed item's key
+  and *decision digest*. The real send names it and is refused when the
+  items or a digest changed since, so a park added or framed again after the
+  dry run is never approved unseen
+  ([design](design/structured-answers.md#writing-an-answer)).
 - **Resolution receipt** — the record a re-arm writes into the *drive
   ledger* when it unparks an item: the park's key and digest, the answer it
   consumed, the outcome and the times. The dispatcher's tick counts a park

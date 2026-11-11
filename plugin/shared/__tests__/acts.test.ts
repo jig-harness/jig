@@ -4,7 +4,7 @@
  * whatever no table names, so no need is ever hidden.
  */
 import { describe, expect, it } from "bun:test";
-import { actOfClass, actOfNeed, NEED_ACTS } from "../acts.ts";
+import { actOfClass, actOfNeed, listedActOfClass, NEED_ACTS } from "../acts.ts";
 
 describe("actOfClass", () => {
   it("names each registry class's act", () => {
@@ -36,6 +36,14 @@ describe("actOfClass", () => {
     expect(actOfClass("pricing")).toBe("Decide");
     expect(actOfClass(null)).toBe("Decide");
     expect(actOfClass(undefined)).toBe("Decide");
+  });
+
+  it("names by listedActOfClass only the classes the table lists, so a repository's own class is not Decide by name", () => {
+    expect(listedActOfClass("scope")).toBe("Decide");
+    expect(listedActOfClass("release")).toBe("Authorize");
+    expect(listedActOfClass("pricing")).toBeUndefined();
+    expect(listedActOfClass("constructor")).toBeUndefined();
+    expect(listedActOfClass(null)).toBeUndefined();
   });
 
   it("reads a name every object inherits as a class of a repository's own", () => {
