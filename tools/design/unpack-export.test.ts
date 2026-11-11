@@ -202,6 +202,25 @@ function scriptAfter(html: string, marker: string): string {
   return html.slice(body, html.indexOf("</script>", body));
 }
 
+/** Run a generated page's scenario hook over fakes of the browser globals it reads; returns its `window`. */
+function runHook(
+  html: string,
+  search: string,
+  document: Record<string, unknown>,
+): Record<string, unknown> {
+  const window: Record<string, unknown> = {};
+  new Function(
+    "window",
+    "location",
+    "document",
+    scriptAfter(
+      html,
+      "/* Landing-check hook, not part of the design (tools/design/unpack-export.ts). */\n",
+    ),
+  )(window, { search }, document);
+  return window;
+}
+
 interface Run {
   exitCode: number | null;
   stdout: string;
@@ -370,29 +389,22 @@ describe("unpack-export", () => {
     };
     let attribute = JSON.stringify(props);
     const marks: string[] = [];
-    const document = {
-      querySelector: () => ({
-        getAttribute: () => attribute,
-        setAttribute: (_: string, value: string) => {
-          attribute = value;
-        },
-      }),
-      getElementById: () => ({ firstElementChild: {} }),
-      documentElement: { setAttribute: (name: string) => marks.push(name) },
-    };
-    new Function(
-      "location",
-      "document",
-      scriptAfter(
-        html,
-        "/* Landing-check hook, not part of the design (tools/design/unpack-export.ts). */\n",
-      ),
-    )(
+    runHook(
+      html,
+      "?scenario=quiet&view=running&theme=sepia&openFirst=true&switch=off",
       {
-        search:
-          "?scenario=quiet&view=running&theme=sepia&openFirst=true&switch=off",
+        querySelector: (selector: string) =>
+          selector === "script[data-dc-script]"
+            ? {
+                getAttribute: () => attribute,
+                setAttribute: (_: string, value: string) => {
+                  attribute = value;
+                },
+              }
+            : null,
+        getElementById: () => ({ firstElementChild: {} }),
+        documentElement: { setAttribute: (name: string) => marks.push(name) },
       },
-      document,
     );
     const parsed = JSON.parse(attribute);
     expect(parsed.scenario.default).toBe("quiet");
@@ -401,6 +413,46 @@ describe("unpack-export", () => {
     expect(parsed.openFirst.default).toBe(true);
     expect(parsed.showSwitch.default).toBe(false);
     expect(marks).toEqual(["data-scenario-ready"]);
+  });
+
+  it("carries the template inert and hands it to the runtime as an x-dc element", () => {
+    let html = "";
+    withExport(syntheticExport(), (dir, result) => {
+      expectSpawnExit(result, 0);
+      html = read(dir, "generated", "sample-page.html");
+    });
+    expect(html).toContain(
+      '<template data-dc-source><x-dc><div class="dd">hello</div></x-dc></template>',
+    );
+    const parsedTemplate = {
+      attributes: [{ name: "data-x", value: "1" }],
+      innerHTML: '<svg><use href="{{r.icon}}"></use></svg>',
+    };
+    const attributes: Record<string, string> = {};
+    const host = {
+      setAttribute: (name: string, value: string) => {
+        attributes[name] = value;
+      },
+    } as { setAttribute: (n: string, v: string) => void; innerHTML?: string };
+    let replacement: unknown = null;
+    const window = runHook(html, "", {
+      querySelector: (selector: string) =>
+        selector === "template[data-dc-source]"
+          ? {
+              content: { querySelector: () => parsedTemplate },
+              replaceWith: (node: unknown) => {
+                replacement = node;
+              },
+            }
+          : null,
+      createElement: () => host,
+      getElementById: () => ({ firstElementChild: {} }),
+      documentElement: { setAttribute: () => undefined },
+    });
+    expect(replacement).toBe(host);
+    expect(host.innerHTML).toBe(parsedTemplate.innerHTML);
+    expect(attributes).toEqual({ "data-x": "1" });
+    expect(window.__resources).toEqual({});
   });
 
   it("adds no component script to a page that imports nothing", () => {

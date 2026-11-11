@@ -154,8 +154,30 @@ function reactFile(text: string): string | undefined {
   );
 }
 
-/** The scenario hook, inlined into every generated page before the runtime. */
+/**
+ * The scenario hook, inlined into every generated page before the runtime.
+ * It first gives the runtime the page's template as the export's own
+ * loader does: a resource map, so the runtime never re-reads the page's
+ * text, and an `x-dc` element whose markup is read from the inert
+ * `<template data-dc-source>` the page carries it in, so the browser never
+ * requests an address the template has yet to fill in (`href="{{x.icon}}"`).
+ */
 const HOOK = `(function () {
+  window.__resources = window.__resources || {};
+  var source = document.querySelector("template[data-dc-source]");
+  var parsed = source && source.content && source.content.querySelector("x-dc");
+  if (parsed) {
+    var host = document.createElement("x-dc");
+    for (var i = 0; i < parsed.attributes.length; i++)
+      host.setAttribute(parsed.attributes[i].name, parsed.attributes[i].value);
+    Object.defineProperty(host, "innerHTML", {
+      configurable: true,
+      get: function () {
+        return parsed.innerHTML;
+      },
+    });
+    source.replaceWith(host);
+  }
   var query = new URLSearchParams(location.search);
   var script = document.querySelector("script[data-dc-script]");
   if (script) {
@@ -346,6 +368,20 @@ function withViewport(title: string, html: string): string {
   return `${html.slice(0, at)}\n${VIEWPORT}${html.slice(at)}`;
 }
 
+/**
+ * The page with its `<x-dc>` block inside an inert `<template
+ * data-dc-source>`, which the scenario hook hands to the runtime. The block
+ * ends at the template's last `</x-dc>`, as the runtime reads it.
+ */
+function withInertTemplate(title: string, html: string): string {
+  const open = /<x-dc(?:\s[^>]*)?>/.exec(html);
+  const close = html.lastIndexOf("</x-dc>");
+  if (open === null || close < open.index)
+    throw new UnpackError(`${title}: no <x-dc> block`);
+  const end = close + "</x-dc>".length;
+  return `${html.slice(0, open.index)}<template data-dc-source>${html.slice(open.index, end)}</template>${html.slice(end)}`;
+}
+
 /** The page with the scripts it needs appended to its body. */
 function withScripts(
   title: string,
@@ -382,7 +418,7 @@ function unpackPage(
   const resolved = resolveAssets(title, inner.template, inner.manifest, shared);
   const html = withScripts(
     title,
-    withViewport(title, resolved),
+    withInertTemplate(title, withViewport(title, resolved)),
     shared.runtime,
     components,
   );
