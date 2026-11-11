@@ -5,6 +5,7 @@ import { servedParentHold } from "../../../../dispatch/lib/sources/served-parent
 import type {
   CanonicalState,
   Issue,
+  PoolIssue,
   Tracker,
   TrackerUser,
 } from "./tracker/port.ts";
@@ -183,6 +184,20 @@ async function isEpic(
   );
 }
 
+/** The reason an item's epic plans hold it, else null; an unreadable plan holds. */
+async function planHold(
+  tracker: Tracker,
+  item: PoolIssue,
+  options: ServedClaim,
+): Promise<string | null> {
+  return servedParentHold(
+    tracker,
+    item,
+    { get: () => null, set: () => undefined },
+    options.executionPlanBlock,
+  );
+}
+
 /** Whether a blocker chain may pass through an item, as the queue would traverse it. */
 async function passable(
   tracker: Tracker,
@@ -196,7 +211,8 @@ async function passable(
     item.assignee === null &&
     waiting(item.state.type) &&
     !(await isEpic(tracker, key, options)) &&
-    !hold(item.labels, options)
+    !hold(item.labels, options) &&
+    (await planHold(tracker, item, options)) === null
   );
 }
 
@@ -238,17 +254,17 @@ async function validatePulled(
     false,
   );
   if (authority) return `${origin}, which ${key} blocks: ${authority}`;
-  // The origin's epic plans gate it at the write too, not only at enqueue and launch.
+  // Every item that authorizes the work is gated by its epic plans at the write: the origin, the target and each item between.
   const originItem = await tracker.poolIssue(origin);
   if (originItem === null)
     return `${origin}, which ${key} blocks, cannot be read`;
-  const planHold = await servedParentHold(
-    tracker,
-    originItem,
-    { get: () => null, set: () => undefined },
-    options.executionPlanBlock,
-  );
-  if (planHold !== null) return `${origin}, which ${key} blocks: ${planHold}`;
+  const originHold = await planHold(tracker, originItem, options);
+  if (originHold !== null)
+    return `${origin}, which ${key} blocks: ${originHold}`;
+  const targetItem = await tracker.poolIssue(key);
+  if (targetItem === null) return `${key} cannot be read`;
+  const targetHold = await planHold(tracker, targetItem, options);
+  if (targetHold !== null) return `${key}: ${targetHold}`;
   const through = (via: string) => passable(tracker, via, options);
   return (await blocksWithin(tracker, origin, key, through))
     ? null

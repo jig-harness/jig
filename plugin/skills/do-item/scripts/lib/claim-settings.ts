@@ -16,6 +16,7 @@ import { JigError, type Outcome } from "../../../../shared/outcome.ts";
 import { defaultBranchSettings } from "../../../../shared/repo-command.ts";
 import { doItemSection } from "./overlay.ts";
 import { CANONICAL_STATES, type CanonicalState } from "./tracker/port.ts";
+import { executionPlanBlock } from "../select_execution_issue.ts";
 
 /** The `do_item` section holds a claim setting the claim cannot use. */
 export class ClaimSettingsError extends JigError<"invalid-claim-setting"> {
@@ -104,6 +105,46 @@ export async function claimSettingsFromDefaultBranch(
     failure: {
       code: "unreadable",
       reason: `do_item.claim_from and do_item.claim_marker are read from the default branch, which could not be read: ${read.failure.reason}`,
+    },
+  };
+}
+
+/**
+ * The execution-plan block name a claim authorizes against: the default
+ * branch's, so a branch cannot select a different fenced block than the one
+ * that holds the human gates. When the default branch cannot be read, a
+ * working tree that names another block than the default refuses the claim.
+ */
+export async function claimPlanBlockFromDefaultBranch(
+  root: string,
+  workingTree: Record<string, unknown> | null,
+): Promise<Outcome<string, "unreadable">> {
+  const read = await defaultBranchSettings(root, "do_item", [
+    "execution_plan_block",
+  ]);
+  const named = (overlay: Record<string, unknown> | null): string => {
+    try {
+      return executionPlanBlock(overlay);
+    } catch (err) {
+      throw new ClaimSettingsError(
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  };
+  if (read.ok)
+    return {
+      ok: true,
+      value: named({
+        do_item: { execution_plan_block: read.value.execution_plan_block },
+      }),
+    };
+  const own = named(workingTree);
+  if (own === named(null)) return { ok: true, value: own };
+  return {
+    ok: false,
+    failure: {
+      code: "unreadable",
+      reason: `do_item.execution_plan_block is read from the default branch, which could not be read: ${read.failure.reason}`,
     },
   };
 }

@@ -733,15 +733,15 @@ async function heldReason(
     );
     if (parentHold !== null) return parentHold;
   }
-  // A tracker that cannot assign without replacing a concurrent assignee refuses the claim, so no launch is spent on it.
-  if (tracker.assignUnassigned === undefined)
-    return `${held}; this tracker cannot assign a blocker on its own, so a person assigns it`;
   const pull = pullBlockers(node.issue, node.pull, node.ancestor, open, {
     epic: options.epic,
     hitl: options.hitl,
     manualOps: options.manualOps,
     repoScope: options.repoScope,
   });
+  // A tracker that cannot assign without replacing a concurrent assignee refuses the claim, so no launch is spent on it; each blocker is still explained.
+  if (tracker.assignUnassigned === undefined)
+    return `${pull.reason}; this tracker cannot assign a blocker on its own, so a person assigns it`;
   for (const blocker of pull.pulled)
     if (!ctx.seen.has(blocker.identifier))
       pending.push({

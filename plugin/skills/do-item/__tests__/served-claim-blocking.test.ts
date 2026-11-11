@@ -209,3 +209,39 @@ test("refuses a pulled blocker, before any write, when the served item's epic ca
   expect(result).toMatchObject({ outcome: "refused" });
   expect(w.writes).toEqual([]);
 });
+
+/** Gives `child` a parent whose plan cannot be read. */
+function unreadableParentOf(w: ReturnType<typeof world>, child: string) {
+  const tracker = w.tracker as unknown as Record<string, unknown>;
+  const getIssue = tracker.getIssue as (key: string) => Promise<object>;
+  const poolIssue = tracker.poolIssue as (key: string) => Promise<object>;
+  tracker.getIssue = async (key: string) => ({
+    ...(await getIssue(key)),
+    description: "",
+    parent: key === child ? { identifier: "#0" } : null,
+  });
+  tracker.poolIssue = async (key: string) =>
+    key === "#0" ? null : poolIssue(key);
+}
+
+test("refuses a pulled blocker, before any write, when its own epic cannot be read", async () => {
+  const w = world(["#1", "#2"]);
+  unreadableParentOf(w, "#2");
+  const result = await claimServedIssue(w.tracker, "#2", {
+    person: "dana",
+    blocking: "#1",
+  });
+  expect(result).toMatchObject({ outcome: "refused" });
+  expect(w.writes).toEqual([]);
+});
+
+test("refuses a pulled blocker, before any write, when an item between cannot be read through its epic", async () => {
+  const w = world(["#1", "#2", "#3"]);
+  unreadableParentOf(w, "#2");
+  const result = await claimServedIssue(w.tracker, "#3", {
+    person: "dana",
+    blocking: "#1",
+  });
+  expect(result).toMatchObject({ outcome: "refused" });
+  expect(w.writes).toEqual([]);
+});

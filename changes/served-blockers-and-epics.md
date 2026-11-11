@@ -13,3 +13,4 @@ A served person's blocked items and assigned epics now keep the line moving.
 
 - An assigned epic without an execution plan works one child at a time, the top-ranked one, and none while a child of it is in progress, as `do-item` works an epic. An execution plan that lists several eligible steps keeps its parallelism.
 - A served item held by an open blocker names the blocker's assignee or state in the Queue view instead of only its key.
+- A pulled blocker's claim re-reads the epic execution plans of the item it blocks, the blocker itself and every item between, with the plan block named by the default branch's configuration. A tracker that cannot assign still names each blocker's own reason.

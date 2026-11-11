@@ -102,7 +102,10 @@ import {
   preflightClaim,
   unreadablePreflight,
 } from "./lib/preflight.ts";
-import { claimSettingsFromDefaultBranch } from "./lib/claim-settings.ts";
+import {
+  claimPlanBlockFromDefaultBranch,
+  claimSettingsFromDefaultBranch,
+} from "./lib/claim-settings.ts";
 import {
   claimBranch,
   claimMarkerBody,
@@ -371,6 +374,9 @@ async function claim(
   const read = await claimSettingsFromDefaultBranch(root, overlay);
   if (!read.ok) return unreadablePreflight(normalized, read.failure.reason);
   const settings = read.value;
+  const planBlock = await claimPlanBlockFromDefaultBranch(root, overlay);
+  if (!planBlock.ok)
+    return unreadablePreflight(normalized, planBlock.failure.reason);
   // Before the lock and before any write: a refusal leaves nothing behind.
   const command = await claimPreflightCommand(root, overlay);
   if (!command.ok)
@@ -396,7 +402,7 @@ async function claim(
           epicLabel: config.labels.epic,
           hitlLabel: config.labels.hitl,
           manualOpsLabel: config.labels.manualOps,
-          executionPlanBlock: executionPlanBlock(overlay),
+          executionPlanBlock: planBlock.value,
           claimFrom: settings.claimFrom,
         })
       : claimIssue(tracker, key, { claimFrom: settings.claimFrom });
