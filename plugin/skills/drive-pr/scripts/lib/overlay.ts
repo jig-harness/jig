@@ -643,7 +643,7 @@ async function pullRequestBase(
   root: string,
   pr: string,
   timeoutSec?: number,
-): Promise<{ branch: string; repo: string } | null> {
+): Promise<{ branch: string; repo: string; url: string } | null> {
   const selector = pr === "" ? [] : [pr];
   const view = await ghCall(
     ["pr", "view", ...selector, "--json", "baseRefName,url"],
@@ -664,7 +664,7 @@ async function pullRequestBase(
   const url = typeof meta.url === "string" ? meta.url : "";
   const repo = /^https?:\/\/[^/]+\/([^/\s]+\/[^/\s]+)\/pull\/\d+\/?$/.exec(url);
   if (repo === null || !/^[^\s~^:?*[\\]+$/.test(branch)) return null;
-  return { branch, repo: repo[1] as string };
+  return { branch, repo: repo[1] as string, url };
 }
 
 const prBaseRefCache = new Map<string, { ref: string } | { error: string }>();
@@ -681,8 +681,7 @@ const prBaseRefCache = new Map<string, { ref: string } | { error: string }>();
  * Fails closed, with the reason, when the pull request's base cannot be
  * established: the pull request cannot be read (including on a detached
  * HEAD no attach recorded, where `pr` must be given), the remote is not the repository the pull
- * request lives in (compared by owner and name; `repo-url.ts` says why hosts
- * are not), or the base has no remote-tracking ref in this clone. No
+ * request lives in (compared by owner, name and resolved forge host), or the base has no remote-tracking ref in this clone. No
  * other branch stands in for it: the integration branch can cover fewer files
  * than the real base (a file a lower layer changed and this layer changed
  * back, or a backport whose commit the integration branch already holds).
@@ -770,6 +769,7 @@ async function resolvePrBaseRef(
     base.repo,
     undefined,
     remote,
+    base.url,
   );
   if (!check.ok)
     return {

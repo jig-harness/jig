@@ -1095,6 +1095,7 @@ function deps(over: Partial<RunDeps> = {}): RunDeps {
     },
     prFiles: async () => [],
     prBody: async () => "",
+    driveRearms: async () => [],
     classifier: {
       classify: () => ({
         productPr: true,
@@ -2366,6 +2367,34 @@ describe("bounded reads must not read as complete", () => {
     );
     expect(r.report.gaps.join("\n")).toMatch(/collector deadline passed/);
     expect(r.report.gaps.join("\n")).toMatch(/602/);
+  });
+
+  it("samples no PR when the deadline fires while its re-arm ledger is read", async () => {
+    const ac = new AbortController();
+    let sampled = 0;
+    const r = await runFleetHealth(
+      OPTS,
+      deps({
+        signal: ac.signal,
+        listCandidates: async () => ({
+          prs: [listing(603)],
+          capped: false,
+        }),
+        reviewedHeads: async () => ROUND_FREE + 5,
+        driveRearms: async (_pr, signal) => {
+          expect(signal).toBe(ac.signal);
+          ac.abort();
+          return [];
+        },
+        samplePr: async () => {
+          sampled++;
+          throw new Error("must not be sampled");
+        },
+      }),
+    );
+    expect(sampled).toBe(0);
+    expect(r.report.gaps.join("\n")).toMatch(/collector deadline passed/);
+    expect(r.report.gaps.join("\n")).toMatch(/603/);
   });
 
   it("keeps a PR created in the window but closed after it (low-head path)", async () => {

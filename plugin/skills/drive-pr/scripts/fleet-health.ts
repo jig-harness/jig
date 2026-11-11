@@ -2,13 +2,6 @@
 /**
  * fleet-health.ts — the ceremony-versus-progress sensor.
  *
- * One command, every signal, for a window:
- *
- *   ceremony ratio          per epic: ceremony units ÷ progress units
- *   follow-up depth         per PR: how many review-follow-up links deep it sits
- *   review carousel         per PR: many bot-reviewed heads, most churn after review began
- *   delivery-system share   organization-wide: merged change in delivery-system areas
- *
  * Definitions and thresholds are the consumer's fleet-health configuration
  * (`fleet_health.config`, see `lib/fleet-health-config.ts`). This file holds
  * neither. It EXTENDS the scoreboard (`fractal-metrics.ts`) rather than
@@ -45,6 +38,10 @@
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import {
+  forgeRearmReader,
+  readRearmsWithReason,
+} from "./lib/fleet-health-rearms.ts";
 import { calendarDate } from "./defect-escape.ts";
 import { fail, positiveIntArg, runMain } from "./lib/cli.ts";
 import {
@@ -136,6 +133,11 @@ export interface RunDeps {
   samplePr(pr: number, asOf: string | undefined): Promise<PrSample>;
   prFiles(pr: number): Promise<PrFileStat[]>;
   prBody(pr: number): Promise<string | null>;
+  /** A diagnostic string explains an unreadable ledger; `null` is a legacy reader refusal. */
+  driveRearms(
+    pr: number,
+    signal?: AbortSignal,
+  ): Promise<string[] | string | null>;
   /** `null` + a reason when the catalog could not be loaded. */
   classifier: Classifier | null;
   classifierError: string | null;
@@ -155,6 +157,18 @@ export interface RunDeps {
    * per-call timeout; nothing further is started after the abort.
    */
   signal?: AbortSignal;
+}
+
+function usableRearms(
+  rearms: string[] | string,
+  pr: number,
+  gaps: Map<number, string>,
+): string[] {
+  if (typeof rearms === "string") {
+    gaps.set(pr, rearms);
+    return [];
+  }
+  return rearms;
 }
 
 /** The run refused to start: its cost would not fit the shared GitHub budget. */
@@ -254,6 +268,7 @@ export async function runFleetHealth(
   const failed: number[] = [];
   const pastEndPrs: number[] = [];
   const failureReasons = new Set<string>();
+  const rearmGaps = new Map<number, string>();
   const recentAttempts: boolean[] = [];
   let breakerTripped = false;
   const listings = new Map<number, PrListing>(
@@ -282,6 +297,19 @@ export async function runFleetHealth(
           failed.push(l.number);
           return null;
         }
+        const rearms = await readRearmsWithReason(
+          deps.driveRearms,
+          l.number,
+          deps.signal,
+        );
+        const driveRearms = usableRearms(rearms, l.number, rearmGaps);
+        // The ledger read is another outbound operation. Do not retain or
+        // sample a PR after the collector deadline fired while it was pending.
+        if (deadlineFired()) {
+          aborted = true;
+          failed.push(l.number);
+          return null;
+        }
         if (heads !== null && heads <= cfg.ceremony.freeRounds) {
           // No rounds to charge and no carousel possible, so no sample. The listing
           // still decides whether the PR matters: merged in the window (progress,
@@ -291,7 +319,8 @@ export async function runFleetHealth(
             !inWindow(l.mergedAt, win) &&
             !inWindow(l.closedAt, win) &&
             !inWindow(l.createdAt, win) &&
-            (l.state !== "OPEN" || !inWindow(l.updatedAt, win))
+            (l.state !== "OPEN" || !inWindow(l.updatedAt, win)) &&
+            !driveRearms.some((at) => inWindow(at, win))
           )
             return null;
           return {
@@ -306,6 +335,7 @@ export async function runFleetHealth(
             openingAdditions: 0,
             threads: { total: 0, answered: 0, accepted: 0 },
             productPr: null,
+            driveRearms,
           };
         }
         if (breakerTripped) {
@@ -337,6 +367,7 @@ export async function runFleetHealth(
           inWindow(l.mergedAt, win) ||
           inWindow(l.closedAt, win) ||
           allRounds.some((at) => inWindow(at, win)) ||
+          driveRearms.some((at) => inWindow(at, win)) ||
           inWindow(l.createdAt, win) ||
           (l.state === "OPEN" && inWindow(l.updatedAt, win));
         if (!activeInWindow) return null;
@@ -372,10 +403,15 @@ export async function runFleetHealth(
               .length,
           },
           productPr: null,
+          driveRearms,
         };
       },
     )
   ).filter((f): f is PrFact => f !== null);
+  for (const [pr, gap] of rearmGaps)
+    gaps.push(
+      `#${pr}: drive re-arms could not be read from the forge ledger (${gap})`,
+    );
   if (failed.length > 0) {
     const why = [
       ...(failureReasons.size > 0
@@ -602,11 +638,15 @@ export async function runFleetHealth(
       epicsOfPr(f, issueCache, cfg.labels.epic).length === 0,
   ).length;
   caveats.push(
-    `Ceremony is a LOWER BOUND: not measured — ${Object.entries(
-      cfg.ceremony.unmeasured,
-    )
-      .map(([k, why]) => `${k} (${why})`)
-      .join("; ")}.`,
+    ...(Object.keys(cfg.ceremony.unmeasured).length === 0
+      ? []
+      : [
+          `Ceremony is a LOWER BOUND: not measured — ${Object.entries(
+            cfg.ceremony.unmeasured,
+          )
+            .map(([k, why]) => `${k} (${why})`)
+            .join("; ")}.`,
+        ]),
     "Criteria closed is counted as issues in the epic tree reaching `completed` in the window: the tracker keeps no description history, so a checkbox flip cannot be dated.",
     "Post-review churn share is TEMPORAL, not causal (`lib/metrics.ts` § What the split does NOT establish); sibling-branch imports are not excluded here, which can only raise it.",
     "The stuck-epic signal is CURRENT state, not a reconstruction of the window: child `updatedAt` includes prose edits (an edit postpones a suspicion without proving delivery) and the clock starts no earlier than the epic `startedAt`.",
@@ -885,6 +925,7 @@ export async function realDeps(
       samplePr(n, repo, asOf === undefined ? {} : { asOf }),
     prFiles: (n) => fetchPrFiles(repo, n),
     prBody: (n) => fetchPrBody(repo, n),
+    driveRearms: forgeRearmReader(`${repo.owner}/${repo.name}`),
     classifier,
     classifierError,
     tracker,
