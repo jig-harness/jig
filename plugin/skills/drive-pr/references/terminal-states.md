@@ -1882,6 +1882,21 @@ evidence the drive cannot read, rather than arm a drive that waits until
 read by its bot account), or `sticky` named for an app whose profile submits
 reviews.
 
+Such a reviewer also puts findings in the review's body that become no
+thread: CodeRabbit's "Outside diff range comments", "Nitpick comments",
+"Duplicate comments" and "Follow-up". `summary-findings.ts` reads them from
+every review the reviewer submitted on the pull request, since a later review
+does not repeat an earlier one's entries: one summary-only finding per entry,
+keyed by a fingerprint of its path, lines and text, and dated against the
+newest review that carries it. The gate counts them as it counts a sticky's
+bullets: the drive does not converge until each is answered with
+`answer-summary-finding.ts`, and an answer that names a fix holds until the
+reviewer raises the finding again on or after that fix. A section whose
+heading declares more entries than the parser reads, or an entry id the
+body carries that no entry read took, is reported as an `unaccounted`
+finding. A body is read only in a format the reviewer's built-in profile
+names (CodeRabbit's); another review-object reviewer's body is not read.
+
 ### A draft PR is reviewed, and then marked Ready
 
 Whether a draft is reviewed at all is a property of the reviewer's deployment.

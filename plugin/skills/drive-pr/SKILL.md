@@ -1837,7 +1837,11 @@ publishes no findings, including any partial output.
 Both are open work. A finding the reviewer could not anchor to a diff line
 creates **no thread** — thread count reads zero while it sits live, so a
 thread count alone reports such a PR converged. It also has no `threadId`, so
-`reply-to-thread.ts` cannot answer it.
+`reply-to-thread.ts` cannot answer it. For a review-object reviewer
+(`review.reviewer_evidence: review_object`) these are the entries in its
+reviews' bodies (`source: "review-body"`; CodeRabbit's outside-diff,
+nitpick, duplicate and follow-up comments), read from every review it
+submitted on the pull request.
 
 `--configured-reviewer-only` keeps this enumeration in step with § 1's gate,
 which passes the same flag: where the repository names no AI reviewer, neither
