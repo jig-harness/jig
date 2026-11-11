@@ -2,6 +2,12 @@
 import type { LineDecision } from "./dashboard-contract.ts";
 import { optionDetails } from "../../shared/decisions/model.ts";
 import {
+  type AnswerState,
+  answerView,
+  optionNumbers,
+  type ReadAnswer,
+} from "../../shared/decision-card.ts";
+import {
   renderParkedDecision,
   type ParkedDecision,
 } from "../../shared/decisions/park.ts";
@@ -44,6 +50,9 @@ export function decisionOf(park: {
   key: string;
   kind: "thread" | "finding";
   lines: string[];
+  answers?: ReadAnswer[];
+  stale?: ReadAnswer[];
+  disputed?: ReadAnswer[];
 }): LineDecision {
   const identity = {
     key: park.key,
@@ -51,6 +60,7 @@ export function decisionOf(park: {
     ...(park.digest === undefined ? {} : { digest: park.digest }),
     ...(park.parkedAt === undefined ? {} : { parkedAt: park.parkedAt }),
     ...(park.person === undefined ? {} : { person: park.person }),
+    ...answersOf(park),
   };
   if (park.decision !== undefined) {
     const decision = park.decision;
@@ -64,13 +74,15 @@ export function decisionOf(park: {
       recommendation:
         chosen === undefined ? null : `${chosen.name}: ${call.why ?? ""}`,
       decisionClass: decision.class,
-      options: call.options.map((o) => ({
-        name: o.name,
-        changes: o.summary,
-        costs: o.pay.join("\n"),
-        recommended: o.id === call.recommended,
-        details: optionDetails(o),
-      })),
+      options: optionNumbers(
+        call.options.map((o) => ({
+          name: o.name,
+          changes: o.summary,
+          costs: o.pay.join("\n"),
+          recommended: o.id === call.recommended,
+          details: optionDetails(o),
+        })),
+      ),
       steps: decision.steps,
     };
   }
@@ -89,10 +101,39 @@ export function decisionOf(park: {
     recommendation,
     decisionClass:
       named === undefined || named === "(none recorded)" ? null : named,
-    options: recordOptions(
-      (sectionLines(lines, "Options") ?? []).join("\n"),
-      recommendation,
+    options: optionNumbers(
+      recordOptions(
+        (sectionLines(lines, "Options") ?? []).join("\n"),
+        recommendation,
+      ),
     ),
     steps: steps === null ? [] : recordSteps(steps.join("\n")),
   };
+}
+
+/**
+ * The answers a waiting decision has, each as every reader shows it, and
+ * why they do not settle it: disputed before stale, since a dispute needs
+ * the people to agree whatever framing they read.
+ */
+function answersOf(park: {
+  answers?: ReadAnswer[];
+  stale?: ReadAnswer[];
+  disputed?: ReadAnswer[];
+}): Pick<LineDecision, "answers" | "answerState"> {
+  const read = park.answers ?? park.disputed ?? park.stale ?? [];
+  if (read.length === 0) return {};
+  const state = answerStateOf(park);
+  return {
+    answers: read.map(answerView),
+    ...(state === undefined ? {} : { answerState: state }),
+  };
+}
+
+function answerStateOf(park: {
+  stale?: ReadAnswer[];
+  disputed?: ReadAnswer[];
+}): AnswerState | undefined {
+  if ((park.disputed ?? []).length > 0) return "disputed";
+  return (park.stale ?? []).length > 0 ? "stale" : undefined;
 }
