@@ -979,6 +979,13 @@ whole-cohort bounds must agree too. Missing heads, rewritten branches and
 resolutions in other clones limit coverage. A capped forge cohort has no
 verdict. The report includes coverage and bounds in JSON and terminal output.
 
+When reflection is due, the `drive-status.ts` summary starts with
+`[REFLECT DUE]`; reflect before triaging the round.
+
+Fleet health counts re-arms recorded in the pull request’s drive ledger as
+ceremony, weighted by `ceremony.weights.drive_rearms` (default `1`). Handoffs
+remain unmeasured because their narratives carry no dated history.
+
 ### The decision a park carries
 
 A new park takes checked `ParkedDecision` JSON on standard input, with its

@@ -178,7 +178,12 @@ async function open(
     const resolved =
       options.pr === undefined
         ? null
-        : resolvePullRequestHead(ctx, repo.path, options.pr, options.branch);
+        : await resolvePullRequestHead(
+            ctx,
+            repo.path,
+            options.pr,
+            options.branch,
+          );
     if (resolved !== null && !resolved.ok)
       return { ok: false, detail: resolved.failure.reason };
     const opened = openBranch(portOn(ctx), {

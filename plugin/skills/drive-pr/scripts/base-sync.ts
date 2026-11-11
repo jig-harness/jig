@@ -580,14 +580,17 @@ async function main(): Promise<number> {
   // `$GH_REPO`, `gh repo set-default`). `gh repo view` answers that same
   // resolution, the identical read `drive-status.ts` already makes for its
   // own copy of this check.
-  const repoView = await cachedRepoView(["--json", "owner,name"]);
+  const repoView = await cachedRepoView(["--json", "owner,name,url"]);
   let baseRepo = "";
+  let baseRepoUrl: string | undefined;
   if (repoView.code === 0) {
     try {
       const repoMeta = JSON.parse(repoView.stdout) as {
         owner?: { login?: string };
         name?: string;
+        url?: string;
       };
+      baseRepoUrl = repoMeta.url;
       const repoOwner = repoMeta.owner?.login ?? "";
       const repoName = repoMeta.name ?? "";
       if (repoOwner !== "" && repoName !== "") {
@@ -724,6 +727,7 @@ async function main(): Promise<number> {
     baseRepo,
     identityEnv,
     remote,
+    baseRepoUrl,
   );
   if (!remoteCheck.ok) {
     fail(1, `base-sync: ${remoteCheck.why}`);

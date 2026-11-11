@@ -88,6 +88,9 @@ export interface EndedRow {
   reason: string;
   /** Absent on rows written before handoffs were kept. */
   next?: NextOwner | null;
+  /** The target's title and link as the tick's reads gave them; absent on rows written before they were kept, and when no read gave one. */
+  title?: string;
+  url?: string;
 }
 
 /** One cause the tick observed. */
@@ -110,6 +113,9 @@ export interface EventRow {
   durationMs?: number;
   /** For a park that left its ledger (`park-events.ts`): what it was and how it was settled. */
   park?: ParkFacts;
+  /** The target's title and link as the tick's reads gave them; absent on rows written before they were kept, and when no read gave one. */
+  title?: string;
+  url?: string;
 }
 
 /** How one park occurrence left its ledger, as its event row records it. */
@@ -144,6 +150,17 @@ export function monthOf(at: string): string {
 
 function isClass(value: unknown): value is OutcomeClass {
   return (OUTCOME_CLASSES as readonly unknown[]).includes(value);
+}
+
+/** A target's title and link, as a row carries them: each field only when a read gave it. */
+export function aboutFields(about: {
+  title: string | null;
+  url: string | null;
+}): { title?: string; url?: string } {
+  return {
+    ...(about.title === null ? {} : { title: about.title }),
+    ...(about.url === null ? {} : { url: about.url }),
+  };
 }
 
 /** The text fields every row carries. */
@@ -463,6 +480,10 @@ export function endedRow(
   endedAt: string,
   facts: EndFacts,
   endRound: number | null,
+  about: { title: string | null; url: string | null } = {
+    title: null,
+    url: null,
+  },
 ): EndedRow {
   const { record } = r;
   const placed = classifyEnded(r, endedAt, facts);
@@ -499,5 +520,6 @@ export function endedRow(
       record.action === "pickup" && r.result === "done"
         ? (r.next ?? null)
         : derivedNext(record.action, placed.class, reason),
+    ...aboutFields(about),
   };
 }

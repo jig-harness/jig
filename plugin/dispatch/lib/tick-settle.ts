@@ -26,6 +26,7 @@ import { failureSettings, type MachineConfig } from "./machine-config.ts";
 import { failureText } from "./text.ts";
 import { mergedNotClosed } from "./forge.ts";
 import { logEnded } from "./log-ended.ts";
+import { aboutTargets } from "./line.ts";
 import { hasEnded } from "./log.ts";
 import { pruneLaunches, type ReadRecord } from "./launches.ts";
 import type { readDrives } from "./sources/ledgers.ts";
@@ -65,6 +66,11 @@ export async function logRepo(
           },
         ),
       nowIso: new Date(context.nowMs).toISOString(),
+      about: aboutTargets(
+        slug,
+        context.lineInputs.get(report.path),
+        report.unplaced,
+      ),
     },
   );
   for (const reason of failed)

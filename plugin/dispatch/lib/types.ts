@@ -86,6 +86,8 @@ export interface RepoTarget {
 export interface ClaimedItem {
   key: string;
   title: string;
+  /** Its link as the tracker listing gave it; absent where a reader gives none. */
+  url?: string | null;
   state: string;
 }
 
@@ -205,6 +207,14 @@ export interface DrivenPr {
   labels?: string[];
   /** For an `unplaced` ledger: its comments or its ledger did not read, as against a state the forge leaves undecided. */
   readFailed?: true;
+  /** The pull request's head commit and its branch's head on the forge, read only where a failed re-arm is weighed (`failed-rearms.ts`). */
+  heads?: RearmHeads;
+}
+
+/** A pull request's head commit, as the forge reports it with the pull request, and its branch's head on the forge. */
+export interface RearmHeads {
+  pr: string;
+  branch: string;
 }
 
 /** One pull request merged since the follow-up stage's start. */
@@ -261,6 +271,9 @@ export interface Unplaced {
   target: string;
   record: RecordName;
   reason: string;
+  /** For an item the tracker listing returned: its title and link, which the line and the outcome log show beside its key. */
+  title?: string;
+  url?: string | null;
   /**
    * Set for an item only a person can settle: assigned by someone who cannot
    * write, or placed in no repository by its labels and no default.
