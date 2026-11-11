@@ -394,6 +394,8 @@ export function stateDb(root = stateRoot()): Database {
   const opened = openDatabase({ path, migrations: MIGRATIONS });
   if (opened.ok) return opened.value;
   const { code, reason, cause } = opened.failure;
+  if (code === "migration-history" || code === "source-state")
+    throw new ExitError(USAGE_EXIT, reason, { cause });
   if (code === "newer-schema")
     throw new ExitError(USAGE_EXIT, reason, {
       cause: new StateVersionError(path, schemaVersion(path) ?? 0, reason),

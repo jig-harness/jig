@@ -94,6 +94,26 @@ newer reader, naming both versions. The instance id is random, so a
 database deleted and created again at the same path is told apart from the
 one before it.
 
+Each database also records migration SQL and compatibility declarations as
+SHA-256 digests in `db_migrations` (`db-migration`). A different digest at
+the same version refuses the open, including cached and read-only opens.
+New migration SQL and its digest commit together under the write lock.
+Databases predating these records first have their complete structural
+schema compared with a scratch replay of the known migrations. Missing or
+extra structures refuse the open without repairing or stamping the database.
+A matching legacy schema receives a baseline marked `schema`; this verifies
+the current structure, not the SQL or data changes historically executed.
+Later migrations are marked `applied`. A legacy database newer than the
+reader must first be opened by a plugin that knows its full schema; a newer
+database with complete migration records retains additive-reader compatibility.
+
+The shared openers running from a development checkout refuse databases beneath the
+operating-system user's live `~/.local/state/jig/`, including symlink aliases.
+Development runs and tests must use an isolated home or explicit database
+path. Installed plugin copies retain access to live state. Schema refusals
+require an operator to reconcile the histories; opening never repairs a
+divergent database or fills in lost dispatch results.
+
 ## On the machine
 
 Records only this machine reads, under the user's home or the temporary
