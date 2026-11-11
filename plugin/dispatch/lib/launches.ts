@@ -811,14 +811,21 @@ function latestRedrives(records: ReadRecord[]): Set<string> {
  * until `releaseEnded` has seen the item leave the dispatch states.
  */
 function latestPickups(records: ReadRecord[]): Set<string> {
-  const latest = latestBy(
-    records,
-    (r) => r.action === "pickup",
-    (r) => `${r.repo}\0${String(r.item)}`,
-  );
+  const latest = new Map<string, ReadRecord>();
+  for (const read of records) {
+    const { record } = read;
+    if (record.action !== "pickup" || record.released) continue;
+    const members = record.batchItems?.map((item) => item.key) ?? [record.item];
+    for (const member of members) {
+      if (member === null) continue;
+      const key = `${record.repo}\0${member}`;
+      const seen = latest.get(key);
+      if (seen === undefined || record.createdAt >= seen.record.createdAt)
+        latest.set(key, read);
+    }
+  }
   const ids = new Set<string>();
-  for (const { record } of latest.values())
-    if (!record.released) ids.add(record.id);
+  for (const { record } of latest.values()) ids.add(record.id);
   return ids;
 }
 

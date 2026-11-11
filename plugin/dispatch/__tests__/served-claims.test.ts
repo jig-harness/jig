@@ -26,8 +26,8 @@ function input(claimed: ClaimedItem[], launches: ReadRecord[] = []) {
   } satisfies PickupInput;
 }
 
-/** A pickup of `item` that ended without a question while the item stayed claimed. */
-function endedPickup(item: string): ReadRecord {
+/** A pickup of `item` that ended without a question, optionally after claiming it. */
+function endedPickup(item: string, claimed = true): ReadRecord {
   return {
     record: {
       id: "2026-11-11T06-00-00-000Z-test",
@@ -36,7 +36,7 @@ function endedPickup(item: string): ReadRecord {
       item,
       pr: null,
       released: false,
-      claimedItems: [item],
+      ...(claimed ? { claimedItems: [item] } : {}),
     } as unknown as LaunchRecord,
     state: {
       kind: "ended",
@@ -69,6 +69,20 @@ describe("claimed items read for a served person", () => {
     expect(plan.actions).toEqual([
       expect.objectContaining({ target: "#7", cause: "stalled" }),
     ]);
+  });
+
+  it("leaves a served person's claim quiet when the pickup ended before claiming it", () => {
+    const plan = planPickups(
+      input(
+        [{ key: "#7", title: "task", state: "In Progress", served: true }],
+        [endedPickup("#7", false)],
+      ),
+    );
+    expect(plan.actions).toEqual([]);
+    expect(plan.idleNow).toEqual([]);
+    expect(plan.quiet).toContainEqual(
+      expect.objectContaining({ target: "#7", class: "claimed-by-person" }),
+    );
   });
 
   it("still reports the dispatch identity's own idle claim", () => {

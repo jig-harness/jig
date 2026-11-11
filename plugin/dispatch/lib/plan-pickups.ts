@@ -26,7 +26,12 @@
  * that suppresses a repeat (`notices.ts`); `actions/notify.ts` sends it.
  */
 import { batchPickups } from "./queue-batch.ts";
-import { agentOf, holdingRecords, pickupHold } from "./actions/pickup-hold.ts";
+import {
+  agentOf,
+  holdingRecords,
+  pickupClaimed,
+  pickupHold,
+} from "./actions/pickup-hold.ts";
 import { type Holding, holding, liveAgents } from "./holding.ts";
 import {
   isInteractive,
@@ -234,9 +239,12 @@ function planClaimed(
     });
     return;
   }
+  const pickup = pickupHold(item.key, input.launches);
   if (
     item.served === true &&
-    pickupHold(item.key, input.launches).kind === "none"
+    (pickup.kind === "none" ||
+      (pickup.kind === "ended" &&
+        !pickupClaimed(pickup.record.record, item.key)))
   ) {
     plan.quiet.push({
       target: item.key,

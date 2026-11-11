@@ -179,6 +179,11 @@ function wasClaimed(record: LaunchRecord, item: string): boolean {
   return record.claimedItems?.includes(item) ?? record.claimedSeen === true;
 }
 
+/** Whether this ended pickup actually claimed this item, rather than merely attempting it. */
+export function pickupClaimed(record: LaunchRecord, item: string): boolean {
+  return wasClaimed(record, item);
+}
+
 /** Remember the batch members seen claimed, without marking their siblings. */
 function noteClaims(
   record: LaunchRecord,
