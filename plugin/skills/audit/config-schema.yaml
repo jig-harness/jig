@@ -542,6 +542,7 @@ fields:
   ci.log_command:
     type: command
     read_by: [fix-ci]
+    repository_only: true
     since: next
   ci.repair_skill:
     type: string

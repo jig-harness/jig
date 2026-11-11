@@ -363,7 +363,7 @@ const ok = (stdout: string): CommandResult => ({ code: 0, stdout, stderr: "" });
 
 /** No `ci.log_command`: what a repository without one reads. */
 const NO_LOG_COMMAND: StatusLogs = {
-  settings: () => okOutcome(null),
+  settings: async () => okOutcome(null),
   read: async () => failed("unexpected", "no command is set"),
 };
 
@@ -372,12 +372,12 @@ function logCommand(answers: Record<string, StatusLog | string>): {
   logs: StatusLogs;
   asked: FailingStatus[];
 } {
-  const command: LogCommand = { command: "ci-log", seconds: 300 };
+  const command: LogCommand = { command: "ci-log", seconds: 300, root: "." };
   const asked: FailingStatus[] = [];
   return {
     asked,
     logs: {
-      settings: () => okOutcome(command),
+      settings: async () => okOutcome(command),
       async read(given, status) {
         expect(given).toEqual(command);
         asked.push(status);
@@ -753,7 +753,7 @@ describe("a pull request whose CI reports as a commit status", () => {
       runner,
       {},
       {
-        settings: () =>
+        settings: async () =>
           failed(
             "invalid-config",
             "ci.log_command must be a nonempty shell command",
@@ -764,5 +764,26 @@ describe("a pull request whose CI reports as a commit status", () => {
     expect(r.code).toBe(2);
     expect(r.err).toContain("ci.log_command must be");
     expect(calls).toHaveLength(1);
+  });
+
+  it("exits 1 when the default branch that sets ci.log_command cannot be read", async () => {
+    const { runner } = fakeRunner({
+      "gh pr view 12 --json headRefName,headRefOid": prView("feature/pay"),
+    });
+    const r = await capture(
+      ["--pr", "12"],
+      runner,
+      {},
+      {
+        settings: async () =>
+          failed(
+            "unreadable",
+            "ci.log_command is read from the default branch, which could not be read",
+          ),
+        read: async () => failed("unexpected", "read"),
+      },
+    );
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("default branch");
   });
 });

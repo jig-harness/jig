@@ -3,13 +3,14 @@
  * repository root, reads the failing status on stdin and prints its log; exit
  * 3 says the log is gone, any other failure and a run past the deadline is a
  * failure to read. Each case runs a real command, a script the test writes.
+ * The command is the default branch's; a working tree's alone never runs.
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { readStatusLog } from "../scripts/status-log.ts";
+import { logCommandOf, readStatusLog } from "../scripts/status-log.ts";
 
 const STATUS = {
   context: "continuous-integration/jenkins/pr-merge",
@@ -27,7 +28,7 @@ if (mode === "log") {
   console.log("log of " + status.context + " at " + status.target_url);
   console.log("cwd " + process.cwd());
 } else if (mode === "gone") {
-  console.error("build 3 was discarded");
+  console.log("build 3 was discarded\\nmore detail");
   process.exit(3);
 } else if (mode === "broken") {
   console.error("401 Unauthorized");
@@ -61,7 +62,7 @@ describe("readStatusLog", () => {
     } else expect(read).toMatchObject({ value: { kind: "log" } });
   });
 
-  it("reads exit 3 as a log that is gone, with the command's reason", async () => {
+  it("reads exit 3 as a log that is gone, the first line it prints the reason", async () => {
     expect(await readStatusLog(command("gone"), STATUS, 60, repo)).toEqual({
       ok: true,
       value: { kind: "gone", reason: "build 3 was discarded" },
@@ -74,7 +75,7 @@ describe("readStatusLog", () => {
     if (!read.ok) {
       expect(read.failure.code).toBe("log-command-failed");
       expect(read.failure.reason).toContain(STATUS.context);
-      expect(read.failure.reason).toContain("exited 5");
+      expect(read.failure.reason).toContain("exit 5");
       expect(read.failure.reason).toContain("401 Unauthorized");
     }
   });
@@ -83,7 +84,30 @@ describe("readStatusLog", () => {
     const started = Date.now();
     const read = await readStatusLog(command("hang"), STATUS, 2, repo);
     expect(read.ok).toBe(false);
-    if (!read.ok) expect(read.failure.reason).toContain("ran past 2s");
+    if (!read.ok) {
+      expect(read.failure.reason).toContain("still running after 2s");
+      expect(read.failure.reason).toContain(
+        "JIG_FIX_CI_LOG_COMMAND_TIMEOUT_SEC",
+      );
+    }
     expect(Date.now() - started).toBeLessThan(25_000);
+  });
+});
+
+describe("logCommandOf", () => {
+  it("runs no command where the default branch cannot be read and the working tree sets none", async () => {
+    expect(await logCommandOf(repo, undefined)).toEqual({
+      ok: true,
+      value: null,
+    });
+  });
+
+  it("refuses a working tree's command when the default branch cannot be read", async () => {
+    const read = await logCommandOf(repo, "bun scripts/ci-log.ts");
+    expect(read.ok).toBe(false);
+    if (!read.ok) {
+      expect(read.failure.code).toBe("unreadable");
+      expect(read.failure.reason).toContain("default branch");
+    }
   });
 });

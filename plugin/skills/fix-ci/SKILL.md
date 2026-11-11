@@ -82,10 +82,11 @@ and stop.
 
 Fetches the failed run's log with `gh` and sorts its errors into categories,
 in fix-priority order. With a pull request it also reads every failing commit
-status on the pull request's head and, when `ci.log_command` is set, each
-status's log through it (with a 300-second deadline, or
-`FIX_CI_LOG_COMMAND_TIMEOUT` seconds); a status in state `error` whose
-description says the build was aborted is no failure and is left out.
+status on the pull request's head and, when the default branch's
+`.config/jig.yaml` sets `ci.log_command`, each status's log through it (with
+a 300-second deadline, or `JIG_FIX_CI_LOG_COMMAND_TIMEOUT_SEC` seconds); a
+status in state `error` whose description says the build was aborted is no
+failure and is left out.
 
 ```bash
 bun "${CLAUDE_SKILL_DIR}/scripts/parse-ci-log.ts"                # latest failure on the current branch
@@ -142,7 +143,8 @@ keeps one entry per step for a line repeated across steps. An error from a
 commit status's log names the status's context as its `job`. With a pull
 request the output adds `statuses`, one entry per failing status:
 `{"context", "target_url", "log"}`, `log` being `read`, `gone` (the command
-exited 3; `reason` says why) or `unread` (`ci.log_command` is not set).
+exited 3; `reason` is the first line it printed) or `unread`
+(`ci.log_command` is not set).
 `infrastructure` reads the Actions run's log only. When there is
 nothing to parse it prints `{"error": "no_failed_runs", ...}`
 (`gh` listed no failed run, nor a failing status on the pull request's head) or `{"error": "PR #<n> not found", ...}` (`gh`
@@ -150,10 +152,11 @@ reported no such pull request) with `errors_found: 0` and exits 0.
 Exit 1 means a lookup or a log could not be fetched (or, with `--log`,
 read), or `gh` answered with something unreadable (for example, an
 authentication failure, a timeout, or a run still in progress), or
-`ci.log_command` failed or ran past its deadline; the message is on stderr. Report it and stop: it says nothing about whether CI
+`ci.log_command` failed or ran past its deadline, or the default branch that
+sets it could not be read; the message is on stderr. Report it and stop: it says nothing about whether CI
 failed. Exit 2 is a usage error, including a detached `HEAD` with no run ID,
 `--pr` or `--branch` to say which run to read, or an invalid `ci.log_command`
-or `FIX_CI_LOG_COMMAND_TIMEOUT`.
+or `JIG_FIX_CI_LOG_COMMAND_TIMEOUT_SEC`.
 
 ### `scripts/probe-base.ts`
 

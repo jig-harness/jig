@@ -27,7 +27,7 @@
  * failed job failed on the infrastructure and printed no code diagnostic.
  * With a pull request, `statuses` lists each failing commit status on its
  * head, `log` being `read`, `gone` (`ci.log_command` exited 3; `reason` is
- * its message) or `unread` (no `ci.log_command` is set).
+ * the first line it printed) or `unread` (no `ci.log_command` is set).
  * When there is nothing to parse it prints { error, errors_found: 0, errors: [] }
  * with `error` set to `no_failed_runs` (gh listed no failed run, and the pull
  * request's head has no failing status) or `PR #<n> not found` (gh reported
@@ -35,8 +35,9 @@
  *
  * Exit codes: 0 parsed (or nothing to parse, see `error`); 1 a lookup or a
  * log could not be fetched or read (`ci.log_command` failing or running past
- * its deadline included), or gh answered with something unreadable; 2 usage
- * error, or an invalid `ci.log_command` or `FIX_CI_LOG_COMMAND_TIMEOUT`.
+ * its deadline, or the default branch that sets it unreadable, included), or
+ * gh answered with something unreadable; 2 usage error, or an invalid
+ * `ci.log_command` or `JIG_FIX_CI_LOG_COMMAND_TIMEOUT_SEC`.
  *
  * `gh` and `git` are reached only through the `Runner` passed to `main`, and
  * `ci.log_command` only through its `StatusLogs`, so tests feed saved log
@@ -64,7 +65,9 @@ import { runMain } from "../../../shared/cli.ts";
 import { detachedTreeRecord } from "../../../shared/driven-tree.ts";
 import { attempt, type Outcome, ok } from "../../../shared/outcome.ts";
 import { gitIdentityEnv, run } from "../../../shared/proc.ts";
+import { consumerRoot } from "../../../shared/consumer.ts";
 import {
+  logCommandOf,
   logCommandSeconds,
   readStatusLog,
   type StatusLog,
@@ -158,34 +161,45 @@ export const defaultRunner: Runner = (argv) =>
     ...(argv[0] === "git" ? { env: gitIdentityEnv() } : {}),
   });
 
-/** `ci.log_command` and the deadline each of its runs gets. */
+/** `ci.log_command`, the deadline each of its runs gets, and where it runs. */
 export interface LogCommand {
   command: string;
   seconds: number;
+  root: string;
 }
 
 /** How `main` reaches `ci.log_command`; tests replace it. */
 export interface StatusLogs {
-  /** The command, `null` when none is set; a failure when it or its deadline is invalid. */
-  settings(): Outcome<LogCommand | null>;
+  /**
+   * The command, `null` when none is set; an `invalid-config` failure when
+   * it or its deadline is invalid, an `unreadable` one when the default
+   * branch that sets it cannot be read.
+   */
+  settings(): Promise<Outcome<LogCommand | null>>;
   /** One failing status's log, or why the command could not give one. */
   read(command: LogCommand, status: FailingStatus): Promise<Outcome<StatusLog>>;
 }
 
 export const defaultStatusLogs: StatusLogs = {
-  settings() {
+  async settings() {
+    // The working tree's file says only whether a command is set at all:
+    // the one that runs is the default branch's.
     const config = attempt("invalid-config", "the configuration", () =>
       ciRepairSettings(),
     );
     if (!config.ok) return config;
     if (!config.value.ok) return config.value;
-    const command = config.value.value.logCommand;
-    if (command === undefined) return ok(null);
+    const root = consumerRoot();
+    const command = await logCommandOf(root, config.value.value.logCommand);
+    if (!command.ok) return command;
+    if (command.value === null) return ok(null);
     const seconds = logCommandSeconds();
-    return seconds.ok ? ok({ command, seconds: seconds.value }) : seconds;
+    return seconds.ok
+      ? ok({ command: command.value, seconds: seconds.value, root })
+      : seconds;
   },
-  read: ({ command, seconds }, status) =>
-    readStatusLog(command, status, seconds),
+  read: ({ command, seconds, root }, status) =>
+    readStatusLog(command, status, seconds, root),
 };
 
 export interface Args {
@@ -390,10 +404,10 @@ async function pullRequestStatuses(
   io: Io,
   sha: string,
 ): Promise<StatusReading[] | number> {
-  const command = logs.settings();
+  const command = await logs.settings();
   if (!command.ok) {
     io.err(`parse-ci-log: ${command.failure.reason}`);
-    return 2;
+    return command.failure.code === "invalid-config" ? 2 : 1;
   }
   const failing = await failingStatusesOn(runner, sha);
   if (!Array.isArray(failing)) {
