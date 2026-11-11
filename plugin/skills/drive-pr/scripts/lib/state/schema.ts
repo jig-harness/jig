@@ -401,6 +401,7 @@ export interface DriveState {
   rulings?: ArbiterRuling[];
   ladderVerdicts?: RecordedLadderVerdict[];
   resolvedParks?: import("./resolution-receipt.ts").ResolutionReceipt[];
+  resolvedParksLost?: boolean; // receipts evicted or cut: absence proves nothing
   [extra: string]: unknown;
 }
 

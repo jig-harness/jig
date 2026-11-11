@@ -662,9 +662,11 @@ in the old form.
   the resolved parks the hub's first stage keeps, and the first thing the
   ledger cuts as it nears its size limit. A receipt keeps each consumed
   answer without its body, which the kept answers hold for the pass. The
-  comparison runs in the tick that reads every repository the machine file
-  lists, as it writes its line, and its rows and the line land in one
-  transaction. The rows are events `park-answered`, `park-provisional` (a
+  comparison runs in every tick, whole or partial, for each repository
+  whose read it accepts, as it writes its line, and its rows and the line
+  land in one transaction. Receipts evicted past the last 10, or cut from
+  a ledger, are remembered as lost (`resolvedParksLost`, the ledger's
+  `cut`), so a park they may have answered stays held. The rows are events `park-answered`, `park-provisional` (a
   park handed on to be decided provisionally at the `wide` level) and
   `park-removed`, each keyed by its park occurrence, so none is counted
   twice. A held park on a ledger the tick could not read stays held for a

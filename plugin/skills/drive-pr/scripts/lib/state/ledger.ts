@@ -237,7 +237,7 @@ export function ledgerFromState(
     resolvedParks: (s.resolvedParks ?? []).map(redactedReceipt),
     driver: opts.driver,
     narrative: opts.narrative.slice(-NARRATIVE_LINES).map(redact),
-    cut: [],
+    cut: s.resolvedParksLost === true ? [OLDER_PARKS_CUT] : [],
   };
 }
 
@@ -360,7 +360,10 @@ export function renderLedger(
       ledger.driver.personStop === undefined
         ? ledger.ledgerVersion
         : OPERATOR_STOP_LEDGER_VERSION,
-    cut: [],
+    // A receipt loss the state already carries stays named, whatever this render drops.
+    cut: ledger.cut.filter(
+      (c) => c === RESOLVED_PARKS_CUT || c === OLDER_PARKS_CUT,
+    ),
   };
   let body = ledgerBody(l, true, writer);
   if (bytes(body) <= limit) return { body, ledger: l };
@@ -968,6 +971,9 @@ export function seedFromLedger(
     ...(l.resolvedParks === undefined
       ? {}
       : { resolvedParks: l.resolvedParks }),
+    ...(l.cut.some((c) => c === RESOLVED_PARKS_CUT || c === OLDER_PARKS_CUT)
+      ? { resolvedParksLost: true }
+      : {}),
     ledgerGeneration: l.generation,
   };
   if (!isUsableState(state, local.pr))

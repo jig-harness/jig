@@ -18,6 +18,8 @@ export function hasUsableOptionalFields(s: Record<string, unknown>): boolean {
     isOptionalRulings(s.rulings),
     isOptionalLadderVerdicts(s.ladderVerdicts),
     isOptionalResolvedParks(s.resolvedParks),
+    s.resolvedParksLost === undefined ||
+      typeof s.resolvedParksLost === "boolean",
     s.ledgerGeneration === undefined ||
       (typeof s.ledgerGeneration === "number" &&
         Number.isInteger(s.ledgerGeneration) &&

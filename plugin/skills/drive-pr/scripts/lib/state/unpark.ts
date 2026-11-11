@@ -71,12 +71,13 @@ function withoutParks(
 ): DriveState {
   const removed = s.parked.filter((p) => keys.includes(p.key));
   const fresh = receiptsFor(removed, consumed, new Date().toISOString());
+  const kept = fresh.length === 0 ? [] : keptReceipts(s.resolvedParks, fresh);
+  const evicted = (s.resolvedParks?.length ?? 0) + fresh.length > kept.length;
   return {
     ...s,
     parked: s.parked.filter((p) => !keys.includes(p.key)),
-    ...(fresh.length === 0
-      ? {}
-      : { resolvedParks: keptReceipts(s.resolvedParks, fresh) }),
+    ...(fresh.length === 0 ? {} : { resolvedParks: kept }),
+    ...(evicted ? { resolvedParksLost: true } : {}),
   };
 }
 

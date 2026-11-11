@@ -108,3 +108,29 @@ export function mergeLine(
     }),
   };
 }
+
+/**
+ * The slugs of the line's repositories, with the identity the line before
+ * held for a configured path whose report found none: a report that found no
+ * slug replaces the entry, not the parks and receipts kept under it.
+ */
+export function identifiedSlugs(
+  line: LineSnapshot,
+  before: LineSnapshot | null,
+  listed: ReadonlyArray<{ path: string }>,
+): Set<string> {
+  const slugs = new Set(
+    line.repos.flatMap((r) => (r.slug === null ? [] : [r.slug])),
+  );
+  for (const old of before?.repos ?? []) {
+    const now = line.repos.find((r) => r.path === old.path);
+    if (
+      old.slug !== null &&
+      now !== undefined &&
+      now.slug === null &&
+      listed.some((m) => m.path === old.path)
+    )
+      slugs.add(old.slug);
+  }
+  return slugs;
+}

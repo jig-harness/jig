@@ -10,7 +10,7 @@ import type {
   LineSession,
   LineSnapshot,
 } from "../lib/dashboard-contract.ts";
-import { mergeLine, readBy } from "../lib/line-merge.ts";
+import { identifiedSlugs, mergeLine, readBy } from "../lib/line-merge.ts";
 
 const LISTED = [{ path: "/w/a" }, { path: "/w/b" }];
 
@@ -137,6 +137,30 @@ describe("mergeLine", () => {
     const line = mergeLine(before, failed, LISTED, "fresh");
     expect(line.needs.map((x) => x.repo)).toEqual(["A"]);
     expect(line.sessions.map((x) => x.repo)).toEqual(["A"]);
+  });
+
+  test("a repository the tick could not identify keeps the identity the line before held for its path", () => {
+    const before = tickLine("2026-11-10T10:00:00.000Z", [
+      { slug: "A", path: "/w/a", n: 0 },
+      { slug: "B", path: "/w/b", n: 0 },
+    ]);
+    const failed = readBy(
+      {
+        ...tickLine("2026-11-10T10:02:00.000Z", []),
+        repos: [{ ...repo("B", "/w/b"), slug: null }],
+      },
+      "2026-11-10T10:02:00.000Z",
+      "2026-11-10T10:02:00.000Z",
+    );
+    const line = mergeLine(before, failed, LISTED, "fresh");
+    expect([...identifiedSlugs(line, before, LISTED)].sort()).toEqual([
+      "A",
+      "B",
+    ]);
+    // Only the unidentified entry's old slug is added: a path the machine no longer lists adds none.
+    expect([...identifiedSlugs(line, before, [{ path: "/w/a" }])]).toEqual([
+      "A",
+    ]);
   });
 
   test("keeps the busy repository's part from the tick that last read it while the other stays current", () => {

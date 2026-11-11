@@ -280,4 +280,36 @@ describe("the ledger carries the receipts", () => {
     expect(cut.ledger.cut).toEqual(["the resolved parks"]);
     expect(cut.ledger.resolvedParks).toEqual([]);
   });
+
+  it("remembers a receipt loss through reseeding and the next render", () => {
+    const lost: DriveState = {
+      ...withReceipts([receipt("PRRT_a")]),
+      resolvedParksLost: true,
+    };
+    const ledger = ledgerFromState(lost, {
+      generation: 3,
+      driver,
+      narrative: [],
+      claims: [],
+    });
+    expect(ledger.cut).toEqual(["the older resolved parks"]);
+    const rendered = renderLedger(ledger);
+    if ("error" in rendered) throw new Error(rendered.error);
+    expect(rendered.ledger.cut).toEqual(["the older resolved parks"]);
+    const parsed = parseLedger(rendered.body);
+    if (parsed?.kind !== "ledger") throw new Error("the ledger did not read");
+    const seeded = seedFromLedger(freshState(999), parsed.ledger);
+    if ("error" in seeded) throw new Error(seeded.error);
+    expect(seeded.state.resolvedParksLost).toBe(true);
+    const again = renderLedger(
+      ledgerFromState(seeded.state, {
+        generation: 4,
+        driver,
+        narrative: [],
+        claims: [],
+      }),
+    );
+    if ("error" in again) throw new Error(again.error);
+    expect(again.ledger.cut).toEqual(["the older resolved parks"]);
+  });
 });

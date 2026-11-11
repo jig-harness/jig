@@ -28,7 +28,7 @@ import {
   withLineLocked,
   writeLine,
 } from "./line-store.ts";
-import { mergeLine, readBy } from "./line-merge.ts";
+import { identifiedSlugs, mergeLine, readBy } from "./line-merge.ts";
 import { hostTimeZone } from "./host-time.ts";
 import { exportLog } from "./log-export.ts";
 import type { MachineConfig } from "./machine-config.ts";
@@ -357,14 +357,15 @@ function writeKept(
               receiptText === null ? "fresh" : "kept",
             );
       const ticks = withTick(before?.ticks, tickHealthOf(receipt, whole));
+      const listedSlugs = identifiedSlugs(line, before, machine.repositories);
       const slugsOf = (current: boolean): Set<string> =>
-        new Set(
-          line.repos.flatMap((r) =>
-            r.slug === null || (current && r.runId !== receipt.runId)
-              ? []
-              : [r.slug],
-          ),
-        );
+        current
+          ? new Set(
+              line.repos.flatMap((r) =>
+                r.slug === null || r.runId !== receipt.runId ? [] : [r.slug],
+              ),
+            )
+          : listedSlugs;
       const accepted = slugsOf(true);
       const parked = withUnreadRepos(
         parkOutcomes(
