@@ -626,4 +626,24 @@ describe("importsOf", () => {
       importsOf('<!-- <dc-import name="Ghost"> --><dc-import name="Real">'),
     ).toEqual(["Real"]);
   });
+
+  it("decodes character references in attribute values", () => {
+    expect(importsOf('<dc-import name="Id&#101;nt">')).toEqual(["Ident"]);
+    expect(importsOf('<dc-import name="Id&#x65;nt&amp;">')).toEqual(["Ident&"]);
+  });
+
+  it("reads only elements: not comments, raw text or other tag names, and a bogus comment ends at its first `>`", () => {
+    expect(
+      importsOf(
+        [
+          '<textarea><dc-import name="A"></dc-import></textarea>',
+          "<script>var s = '<dc-import name=\"B\">';</script>",
+          '<dc-import-preview name="C">',
+          '<!<!-- -->-- <dc-import name="D"> -->',
+          '<!-- <dc-import name="E"> -->',
+          '<dc-import name="Real">',
+        ].join("\n"),
+      ),
+    ).toEqual(["D", "Real"]);
+  });
 });
