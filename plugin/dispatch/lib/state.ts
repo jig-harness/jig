@@ -345,6 +345,10 @@ const MIGRATIONS: readonly Migration[] = [
     sql: "ALTER TABLE launches ADD COLUMN refusal TEXT;",
   },
   {
+    additive: true,
+    sql: "ALTER TABLE launches ADD COLUMN result_until TEXT;",
+  },
+  {
     // A pickup claim is acknowledged at the tracker boundary. It must not
     // share the tick-owned record JSON: a tick can still be writing an older
     // snapshot when the pickup claims its item.
@@ -356,10 +360,6 @@ const MIGRATIONS: readonly Migration[] = [
     PRIMARY KEY (launch, item)
   );
   `,
-  },
-  {
-    additive: true,
-    sql: "ALTER TABLE launches ADD COLUMN result_until TEXT;",
   },
 ];
 
