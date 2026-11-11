@@ -26,34 +26,49 @@ export interface PlanBlocks {
   existing: Array<{ from: string; to: string }>;
 }
 
-export async function syncPlanBlocks(
-  tracker: Pick<Tracker, "getIssue" | "listRelations" | "relate">,
+type Edge = { from: string; to: string };
+
+/** The plan's dependency edges, or `null` when the epic has no plan block. */
+async function planDependencies(
+  tracker: Pick<Tracker, "getIssue">,
   epic: string,
-  opts: { block?: string; dryRun?: boolean } = {},
-): Promise<PlanBlocks> {
+  block: string | undefined,
+): Promise<Edge[] | null> {
   const issue = await tracker.getIssue(epic);
   if (issue === null)
     throw new TrackerRequestError("unresolved", `issue ${epic} does not exist`);
-  const plan = readExecutionPlan(issue.description ?? "", opts.block);
-  const report: PlanBlocks = {
-    present: plan !== null,
-    written: [],
-    existing: [],
-  };
+  const plan = readExecutionPlan(issue.description ?? "", block);
   if (plan === null) {
     if (hasExecutionPlanHeading(issue.description ?? ""))
       throw new TrackerRequestError(
         "invalid",
-        `Execution Plan lacks a ${opts.block ?? DEFAULT_BLOCK} block; re-run the planner that wrote it`,
+        `Execution Plan lacks a ${block ?? DEFAULT_BLOCK} block; re-run the planner that wrote it`,
       );
-    return report;
+    return null;
   }
   if (plan.epic !== issue.identifier)
     throw new TrackerRequestError(
       "invalid",
       "Execution plan belongs to a different epic",
     );
-  const edges = plan.edges.filter((e) => e.kind === "dependency");
+  return plan.edges.filter((e) => e.kind === "dependency");
+}
+
+export async function syncPlanBlocks(
+  tracker: Pick<Tracker, "getIssue" | "listRelations" | "relate">,
+  epic: string,
+  opts: { block?: string; dryRun?: boolean } = {},
+): Promise<PlanBlocks> {
+  const edges = await planDependencies(tracker, epic, opts.block);
+  const report: PlanBlocks = {
+    present: edges !== null,
+    written: [],
+    existing: [],
+  };
+  if (edges === null) return report;
+  // Refuse every contradiction before the first write, so a rejected request
+  // leaves the tracker as it was.
+  const missing: Edge[] = [];
   for (const { from, to } of edges) {
     const own = await tracker.listRelations(from);
     if (own.some((r) => r.type === "blocked_by" && r.issue === to))
@@ -61,11 +76,11 @@ export async function syncPlanBlocks(
         "invalid",
         `the plan says ${from} blocks ${to}, but the tracker says ${to} blocks ${from}; remove the wrong side first`,
       );
-    const has = own.some((r) => r.type === "blocks" && r.issue === to);
-    if (has) {
+    if (own.some((r) => r.type === "blocks" && r.issue === to))
       report.existing.push({ from, to });
-      continue;
-    }
+    else missing.push({ from, to });
+  }
+  for (const { from, to } of missing) {
     if (opts.dryRun !== true) await tracker.relate(from, "blocks", to);
     report.written.push({ from, to });
   }

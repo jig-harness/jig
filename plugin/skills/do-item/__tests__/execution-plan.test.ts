@@ -377,7 +377,16 @@ describe("writing a plan's dependency edges to the tracker", () => {
   };
   it("writes each dependency edge as blocks once, and no conflict edge", async () => {
     const written: string[] = [];
-    const t = tracker(written) as never;
+    const t = {
+      ...tracker(written),
+      getIssue: async () => ({
+        identifier: "ENG-100",
+        description: fixture("linear-issue").replace(
+          '"edges": [',
+          '"edges": [\n    {"from": "ENG-2", "to": "ENG-3", "kind": "conflict", "reason": "same file", "completion": "done"},',
+        ),
+      }),
+    } as never;
     const first = await syncPlanBlocks(t, "ENG-100");
     expect(first.present).toBe(true);
     expect(written).toEqual(["ENG-1 blocks ENG-3"]);
@@ -411,6 +420,25 @@ describe("writing a plan's dependency edges to the tracker", () => {
     await expect(syncPlanBlocks(t as never, "ENG-100")).rejects.toThrow(
       "lacks a",
     );
+  });
+  it("writes nothing when a later edge contradicts the tracker", async () => {
+    const written: string[] = [];
+    const description = fixture("linear-issue").replace(
+      '"edges": [',
+      '"edges": [\n    {"from": "ENG-2", "to": "ENG-3", "kind": "dependency", "reason": "copy first", "completion": "done"},',
+    );
+    const t = {
+      getIssue: async () => ({ identifier: "ENG-100", description }),
+      listRelations: async (key: string) =>
+        key === "ENG-1" ? [{ type: "blocked_by", issue: "ENG-3" }] : [],
+      relate: async (from: string, type: string, to: string) => {
+        written.push(`${from} ${type} ${to}`);
+      },
+    };
+    await expect(syncPlanBlocks(t as never, "ENG-100")).rejects.toThrow(
+      "ENG-3 blocks ENG-1",
+    );
+    expect(written).toEqual([]);
   });
   it("refuses to write a blocks the tracker already has the other way", async () => {
     const t = {
