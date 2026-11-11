@@ -6,7 +6,7 @@ const isDrive = (action: string): boolean =>
   action === "rearm" || action === "takeover";
 
 /** The ids of the latest record under each key `keyOf` gives; a record it gives `null` is not kept. */
-export function latestIdsBy(
+function latestIdsBy(
   records: ReadRecord[],
   keyOf: (r: ReadRecord) => string | null,
 ): Set<string> {
