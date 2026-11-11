@@ -396,17 +396,36 @@ describe("attach-pr.ts refuses", () => {
     expect(branchOf(c, c.primary)).toBe("main");
   });
 
-  test("a reported head the fetched branch no longer has, though the clone holds it", () => {
+  test("a pull request behind its branch, naming both heads and the recovery", () => {
     const c = fresh();
     const tree = c.tree("wt1");
     const stale = c.git(tree, "rev-parse", "HEAD");
-    // gh reports a commit the clone holds but the branch was pushed past.
+    // gh keeps reporting a commit the clone holds but the branch was pushed past.
     c.env.FAKE_GH_REMOTE = "";
     c.pr({ headRefOid: stale });
     const r = c.attach(tree, "42");
     expectSpawnExit(r, 1, "attach");
-    expect(r.stderr).toContain("pushed again while attaching");
+    expect(r.stderr).toContain(
+      `PR #42 is behind its branch 'feature': the pull request's head is ${stale.slice(0, 12)}, the branch's head on 'origin' is ${c.head.slice(0, 12)}`,
+    );
+    expect(r.stderr).toContain("close and reopen it");
     expect(branchOf(c, tree)).toBe("");
+    expect(c.git(tree, "rev-parse", "HEAD")).toBe(stale);
+  });
+
+  test("a reported head the branch was pushed past while attaching", () => {
+    const c = fresh();
+    const tree = c.tree("wt1");
+    const stale = c.git(tree, "rev-parse", "HEAD");
+    // The first read reports the older commit; the read again reports the branch's tip.
+    const lag = join(c.root, "gh-lag");
+    writeFileSync(lag, "");
+    c.env.FAKE_GH_LAG = lag;
+    c.pr({ headRefOid: stale });
+    const r = c.attach(tree, "42");
+    expectSpawnExit(r, 1, "attach");
+    expect(r.stderr).toContain("pushed again while attaching");
+    expect(r.stderr).not.toContain("behind its branch");
     expect(c.git(tree, "rev-parse", "HEAD")).toBe(stale);
   });
 
