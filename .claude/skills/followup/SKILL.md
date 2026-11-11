@@ -324,7 +324,11 @@ tracker are where this arm's work goes.
   decided in its own pull request.
 
 Anything that would name a consumer, or bring its content into Jig, is a
-decision for a person (AGENTS.md, HITL decisions): flag it.
+decision for a person (AGENTS.md, HITL decisions): flag it. When this
+repository's configuration does not say which consumers a change affects,
+file one item here that states what a consumer owes, naming none, report
+it as a person's step, and go on: who takes it is not a question this pass
+stops on.
 
 ### F. Active scaffolding
 
@@ -397,7 +401,12 @@ again:
 bun --cwd "<that worktree>" "$PWD/plugin/shared/orca-board.ts" completed --comment "$(cat "$PWD/.context/card-comment.md")"
 ```
 
-Close with what is left for a person, by name. When every arm is NOT OWED,
+Close with what is left for a person, by name. A step only a person can
+take (a live check against a real service, a rollout to a consumer, an
+organization's setting, an operational action, a failed release gate) is
+reported here as owed, and filed where no item tracks it; it settles its
+arm and never makes the follow-up fail. Stop on a question only when an arm
+this pass may carry out cannot go on without the answer. When every arm is NOT OWED,
 say so in one line: an honest "nothing is owed" is a result. Routine local
 leftovers do not prevent this result or a done marker; do not turn them into a
 question for a person or a failed dispatch result. Then settle the
