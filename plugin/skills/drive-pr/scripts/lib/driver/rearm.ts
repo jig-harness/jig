@@ -54,6 +54,7 @@ import { resolveStateDir } from "./../state/store.ts";
 import { swallow } from "../../../../../shared/errors.ts";
 
 import { parkAnswers } from "./park-answers.ts";
+import { laggingAnswerPublication } from "./answer-publication.ts";
 
 import { pinsEmptyPassArgs } from "./../pass-args.ts";
 
@@ -206,6 +207,26 @@ async function answeredParks(
     return null;
   }
   const { answered, waiting, unread, responded } = found;
+  const lagging = await laggingAnswerPublication(
+    state.pr,
+    state.parked,
+    (key) => [
+      ...(answered.find((v) => v.key === key)?.answers ?? []),
+      ...(found.stale.find((v) => v.item.key === key)?.answers ?? []),
+      ...(found.disputed.find((v) => v.item.key === key)?.answers ?? []),
+      ...(found.partial.find((v) => v.key === key)?.answers ?? []),
+    ],
+  );
+  if (lagging.length > 0) {
+    console.error(
+      `re-arm: the ledger has not yet caught up with the local decision framing for ${lagging.join(", ")}; every item stays parked until the driver's next write publishes it again.`,
+    );
+    return null;
+  }
+  if (found.stale.length > 0)
+    console.error(
+      `re-arm: stale answers name an earlier decision framing for ${found.stale.map((v) => v.item.key).join(", ")}; copy a current answer line with its digest. Every item stays parked.`,
+    );
   if (waiting.length === 0 && unread.length === 0) return answered;
   // At the wide level, the unanswered items a provisional decision may take:
   // only once every place a person's answer could be was read, since an

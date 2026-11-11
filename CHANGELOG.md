@@ -391,6 +391,54 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.194.2] - 2026-11-10
+
+### Fixed
+
+- Parked decisions now carry a decision digest in their ledger and notification answer lines. Answers copied from an earlier framing leave the item parked with a stale-answer explanation; re-arms also wait when the published ledger has not caught up with local framing. Answers without a digest and legacy parks keep their time-based binding.
+
+## [0.194.1] - 2026-11-10
+
+### Fixed
+
+- Dispatch dashboard recommendations render emphasis, code and links instead of displaying raw Markdown, with the same link and image restrictions as the whole decision.
+
+## [0.194.0] - 2026-11-10
+
+### Added
+
+- **Implementation guidance in `do-item`.** `do_item.guidance` lists skills
+  and notes by issue label and path, in the shape of `do_item.gates`, and a
+  change area's new `implementation: { skills, notes }` adds the same per
+  area. `determine_agent.ts` prints the union of what matches, with the
+  matched areas' own notes, and `do-item` hands it to the implementing agent
+  under `## Implementation guidance`. A guidance skill that resolves to
+  nothing installed is named in the status message, and `/jig:audit`
+  refuses it.
+- **Issue labels and reviewers on the pull request.**
+  `pull_requests.labels_from_issue` and `pull_requests.reviewers_from_issue`
+  map the issue's labels, in any case, to pull-request labels and to
+  reviewers (logins or `org/team`); a change area's new
+  `pr: { labels, reviewers }` does the same for the pull requests that touch
+  it. `pr-plan.ts open --issue-json <file>` adds them to the plan, shows
+  where each came from, and stops naming a mapped label the repository does
+  not have; the audit reports a missing `labels_from_issue` label too.
+  Reviewers requested on a draft are notified once it is marked Ready.
+
+## [0.193.0] - 2026-11-10
+
+### Added
+
+- A drive labels its own pull request whenever it writes its ledger, with no dispatcher needed: `jig:driving` once it arms, before its first round (removing `jig:drive` in the same write), and at its stop the state one exit table gives both the drive and the dispatcher: `jig:converged` while the head is the one it verified, `jig:parked` for a park, a stop a person settles or made, and a stop the dispatcher re-drives (which a dispatcher turns into `jig:stale`). The write is best effort: a refused write is reported on the drive's output and never changes its exit, and a pull request carrying `jig:hold` or `jig:held` is left as it is. See [CONFIGURATION.md § dispatch](plugin/CONFIGURATION.md#dispatch).
+- A follow-up sets `jig:followed-up` or `jig:followup-failed` when it ends, whether the dispatcher ran it or a person did: the dispatcher's wrapper writes it once the pass's exit is recorded, `jig dispatch marker done` writes `jig:followed-up`, and the new `jig dispatch marker failed <PR> --comment <id>` writes `jig:followup-failed`, leaves the run's marker claiming the follow-up, and exits `1` when that label is not written.
+- `jig dispatch labels [--repo <path>]... [--yes]` creates the state labels, with the manual-operations label and `automation`, once, without installing the dispatcher's job, and says which labels it created and which a person must create, each with its command.
+- An optional workflow template, drive-pr's `templates/github/state-labels.yml`, replaces `jig:converged` with `jig:stale` on a push to the pull request, without waiting for the dispatcher.
+
+### Changed
+
+- The pull request state labels are one projection in the plugin's shared code, which the drive, the follow-up and the dispatcher all write through; each of them reads `dispatch.labels` from the repository's default branch, so a repository that only drives pull requests can turn the labels on, and every writer uses one prefix. With `only_labeled` on, a drive armed by hand now comes into the dispatcher's scope through its own `jig:driving` label.
+- The dispatcher reads a pull request's drive ledger again just before it writes its state label, and leaves the pull request to a later run when the ledger changed since it read it, so a drive's label for a newer ledger is not replaced from the older one the run planned from.
+
 ## [0.192.0] - 2026-11-10
 
 ### Added
@@ -6717,7 +6765,11 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.192.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.194.2...HEAD
+[0.194.2]: https://github.com/jig-harness/jig/compare/v0.194.1...v0.194.2
+[0.194.1]: https://github.com/jig-harness/jig/compare/v0.194.0...v0.194.1
+[0.194.0]: https://github.com/jig-harness/jig/compare/v0.193.0...v0.194.0
+[0.193.0]: https://github.com/jig-harness/jig/compare/v0.192.0...v0.193.0
 [0.192.0]: https://github.com/jig-harness/jig/compare/v0.191.0...v0.192.0
 [0.191.0]: https://github.com/jig-harness/jig/compare/v0.190.2...v0.191.0
 [0.190.2]: https://github.com/jig-harness/jig/compare/v0.190.1...v0.190.2

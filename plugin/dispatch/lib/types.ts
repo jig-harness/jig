@@ -104,20 +104,9 @@ export interface WantedItem {
   queueRank?: { unblocks: number; epicOrder?: number };
 }
 
-/** How a drive ledger reads, per the design's ledger-to-class table. */
-export type LedgerClass =
-  | "driven"
-  | "silent"
-  | "stale"
-  | "done"
-  | "stopped-by-person"
-  | "stopped-unknown"
-  | "re-armable"
-  | "parked"
-  | "refused"
-  | "needs-person"
-  | "unarmed"
-  | "unplaced";
+/** How a drive ledger reads, per the design's ledger-to-class table; the state label projection reads it too. */
+export type { LedgerClass } from "../../shared/pr-labels/projection.ts";
+import type { LedgerClass } from "../../shared/pr-labels/projection.ts";
 
 /** How a pickup that needs nothing reads: its last session ended, or its claimed item is idle but not yet stalled. */
 export type PickupClass = "pickup-ended" | "claimed-idle" | "claimed";
@@ -127,6 +116,8 @@ export type FollowupClass = "followup-done" | "followup-held";
 
 /** A parked decision still waiting on its answer, as the drive framed it. */
 export interface WaitingPark {
+  digest?: string;
+  stale?: import("../../skills/drive-pr/scripts/lib/state/pass-handoff.ts").PendingAnswer[];
   /** The latest answers that disagree, which keep the item waiting. */
   disputed?: import("../../skills/drive-pr/scripts/lib/state/pass-handoff.ts").PendingAnswer[];
   decision?: import("../../shared/decisions/park.ts").ParkedDecision;

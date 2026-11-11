@@ -224,7 +224,7 @@ import {
 import { isActorId, resolveActor } from "./lib/state/actor.ts";
 import { recordTakeover } from "./lib/state/takeover.ts";
 import {
-  LEDGER_NOT_WRITTEN_EXIT,
+  handoffExit,
   mirrorLedger,
   removeStateKeepingLedgerGeneration,
   seedLedgerCommand,
@@ -3456,9 +3456,7 @@ async function handoff(pr: string, store: StateStore): Promise<number> {
   });
   // A ledger write that was attempted and did not land is told apart
   // from success: a stop's last write keeps its recovery record on it.
-  return (await mirrorLedger(pr, store)) === "failed"
-    ? LEDGER_NOT_WRITTEN_EXIT
-    : 0;
+  return handoffExit(await mirrorLedger(pr, store));
 }
 
 /** A review round verb (`review-rounds.ts`), a command whose record arrives on standard input, or the usage refusal. */

@@ -1,4 +1,5 @@
 import type { ParkedDecision } from "../../../../../shared/decisions/park.ts";
+import { decisionDigest } from "../../../../../shared/decisions/digest.ts";
 import {
   parkAdmissionContext,
   parkAdmissionProblem,
@@ -274,6 +275,7 @@ function parkedWith(
         reason: decision.call.question,
         class: a.parkClass,
         decision,
+        digest: decisionDigest(decision),
         round: s.rounds,
         at: new Date().toISOString(),
       },

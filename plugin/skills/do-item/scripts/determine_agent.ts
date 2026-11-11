@@ -14,6 +14,7 @@
  *       labels: {<label>: <agent>}              # label → agent
  *       title_keywords: {<word>: <agent>}       # optional title heuristics
  *     scouts: {<agent>: [<scout>, ...]}         # agent → pre-flight scouts
+ *     guidance: [{labels, paths, skills, notes}] # implementation guidance
  *   drive:
  *     change_areas_catalog: <path>    # change-area catalog (YAML with `areas:`)
  *
@@ -25,6 +26,12 @@
  *   4. `default`.
  * More than two agents → `integrator` coordinates.
  *
+ * It also prints the implementation guidance (`lib/guidance.ts`): the
+ * skills and notes of the matching `do_item.guidance` entries and of the
+ * areas the item reaches, and the guidance skills nothing installed
+ * answers (`missing_skills`). `--paths <file>` names the files the change
+ * plans to touch, one per line, so path entries and areas match on them.
+ *
  * Type: Discovery
  * Input: JSON with the issue's `labels` and `title` (from get_issue.ts)
  * Output: JSON with the agent recommendation and scouts
@@ -33,6 +40,7 @@
  *     bun determine_agent.ts <issue-json-file>
  *     bun get_issue.ts <issue-key> | bun determine_agent.ts -
  *     bun determine_agent.ts - --catalog /path/to/catalog.yaml
+ *     bun determine_agent.ts issue.json --paths planned-paths.txt
  *
  * The catalog is read through the plugin's one change-area catalog reader
  * (drive-pr's `change-areas-catalog.ts`).
@@ -50,7 +58,19 @@ import {
   type ChangeAreaCatalog,
   loadCatalogFile,
 } from "../../drive-pr/scripts/lib/change-areas-catalog.ts";
+import {
+  missingSkills,
+  type SkillSearch,
+  skillSearch,
+} from "../../../shared/skill-resolve.ts";
 import { parseArgs, runEntry } from "./lib/cli.ts";
+import {
+  type Guidance,
+  type GuidanceEntry,
+  matchedAreas,
+  parseGuidance,
+  resolveGuidance,
+} from "./lib/guidance.ts";
 import { doItemSection } from "./lib/overlay.ts";
 import { isRecord } from "../../../shared/guards.ts";
 
@@ -65,6 +85,7 @@ export interface AgentRouting {
   labels: Record<string, string>;
   titleKeywords: Record<string, string>;
   scouts: Record<string, string[]>;
+  guidance: GuidanceEntry[];
 }
 
 function stringMap(v: unknown, where: string): Record<string, string> {
@@ -124,6 +145,7 @@ export function parseAgentRouting(
       "do_item.agents.title_keywords",
     ),
     scouts,
+    guidance: parseGuidance(section),
   };
 }
 
@@ -140,6 +162,7 @@ function lookup<T>(table: Record<string, T>, key: string): T | undefined {
 /** The catalog path the consumer declares (`drive.change_areas_catalog`), or `null`. */
 export function catalogPathFromOverlay(
   overlay: Record<string, unknown>,
+  root: string = consumerRoot(),
 ): string | null {
   const drive = overlay.drive;
   if (drive === undefined || drive === null) return null;
@@ -148,7 +171,7 @@ export function catalogPathFromOverlay(
   if (p === undefined || p === null) return null;
   if (typeof p !== "string" || p.trim() === "")
     throw new Error("drive.change_areas_catalog must be a path");
-  return isAbsolute(p) ? p : join(consumerRoot(), p);
+  return isAbsolute(p) ? p : join(root, p);
 }
 
 /**
@@ -271,6 +294,71 @@ export function determineAgents(
   return result;
 }
 
+/**
+ * The guidance for an issue, as printed: the matched skills and notes, the
+ * sources they came from, the path-conditional entries, and the guidance
+ * skills that resolve to nothing installed.
+ */
+export function guidanceFor(
+  labels: string[],
+  paths: string[] | null,
+  catalog: ChangeAreaCatalog | null,
+  routing: AgentRouting,
+  search: SkillSearch,
+): Record<string, unknown> {
+  const areas =
+    catalog === null
+      ? []
+      : matchedAreas(labels, routing.codeareaAreas, catalog, paths);
+  const g: Guidance = resolveGuidance(
+    routing.guidance,
+    labels,
+    paths,
+    areas,
+    catalog,
+  );
+  return {
+    skills: g.skills,
+    notes: g.notes,
+    sources: g.sources,
+    by_path: g.byPath,
+    missing_skills: missingSkills(
+      [...g.skills, ...g.byPath.flatMap((b) => b.skills)],
+      search,
+    ),
+  };
+}
+
+/** The guidance for the CLI, each skill nothing installed answers named on stderr. */
+function reportedGuidance(
+  labels: string[],
+  parsed: { args: { values: Map<string, string> } },
+  catalog: ChangeAreaCatalog | null,
+  routing: AgentRouting,
+): Record<string, unknown> {
+  const guidance = guidanceFor(
+    labels,
+    readPlannedPaths(parsed.args.values.get("paths") ?? null),
+    catalog,
+    routing,
+    skillSearch(consumerRoot()),
+  );
+  for (const name of guidance.missing_skills as string[])
+    console.error(
+      `Guidance skill not installed: ${name} (nothing installed answers it; name it in the status message)`,
+    );
+  return guidance;
+}
+
+/** The planned paths `--paths` names, one per line; `null` without it. */
+function readPlannedPaths(file: string | null): string[] | null {
+  if (file === null) return null;
+  return readFileSync(file, "utf8")
+    .split(/\r?\n/)
+    .map((l) => l.trim().replace(/^\.\//, ""))
+    .filter((l) => l !== "");
+}
+
 async function readAllStdin(): Promise<string> {
   process.stdin.setEncoding("utf8");
   let s = "";
@@ -321,11 +409,11 @@ function configuredCatalog(
 async function main(): Promise<number> {
   const parsed = parseArgs(process.argv.slice(2), {
     flags: ["verbose"],
-    values: ["catalog"],
+    values: ["catalog", "paths"],
     // A bare invocation reads stdin.
     defaultPositional: "-",
     usage:
-      "usage: determine_agent.ts [issue-json-file|-] [--verbose] [--catalog PATH]",
+      "usage: determine_agent.ts [issue-json-file|-] [--verbose] [--catalog PATH] [--paths FILE]",
   });
   if (!parsed.ok) {
     console.error(parsed.message);
@@ -380,6 +468,7 @@ async function main(): Promise<number> {
     const catalog = configuredCatalog(catalogPath, verbose);
 
     const result = determineAgents(labels, title, catalog, routing);
+    result.guidance = reportedGuidance(labels, parsed, catalog, routing);
 
     if (verbose) {
       console.error(`Primary agent: ${String(result.primary_agent)}`);

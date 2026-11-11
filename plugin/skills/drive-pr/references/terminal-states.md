@@ -62,7 +62,7 @@ path that produces the exit, not because none of them name one.
 | `7` | `REVIEWER_FAILED` | **yes** | The posting reviewer's check-run did not pass |
 | `8` | `HITL_PARKED` | **yes** | Everything still open is parked awaiting a human, each under a registry class with its decision framed, and the exit prints each one in full. The drive never wakes itself up: a re-arm unparks the items, and hands their answers to its passes until one completes, only once **every** one has an answer from an owner, member or collaborator later than the park (§ Picking up a stopped drive); with any unanswered it stops `8` again, unless the PR conflicts with its base: the first gate reports `PR_CONFLICTING` before the park, so the re-arm spends its conflict-repair budget first. Under `jig dispatch` the dispatcher re-drives a parked PR that conflicts with its base, once for each pair of its head and its base branch's head, and tells a person of the conflict when that re-drive leaves it parked or stopped `9` at the same pair |
 | `9` | `PR_CONFLICTING` | **yes**, from `drive.ts` only once its conflict-repair budget is spent | The PR conflicts with its base **and** has no workable findings. A conflict alone does not stop the loop — see mode 14. `drive.ts` first spends `DRIVE_PR_CONFLICT_REPAIR_ROUNDS` (default 1) `conflict-resolve` passes on it (§ Repair rounds), and a merge such a pass did not conclude is aborted before the stop, except one already open when the pass began (kept) or one whose abort failed; finish or abort a merge the stop reports before running its `Fix:` command. Under `jig dispatch` the dispatcher re-drives the stop, once for each pair of the pull request's head and its base branch's head, and tells a person when that re-drive leaves it stopped `9` at the same pair; without it the stop is a person's |
-| `22` | `REVIEW_SKIPPED` | **yes** | The reviewer's skip notice names the PR head as a push it did not review, and its review of an earlier head does not cover this one: the pull request's diff changed since that head (§ The reviewer skips a head). No review of this head will come, so the drive stops rather than wait for one as `STALE_REVIEW`. The `reason` quotes the notice and names both heads. A person reviews the change since the reviewed head and has the reviewer review this head, or pushes a commit it reviews, then re-arms. Under `jig dispatch` the stop is a person's: where dispatch labels are enabled the pull request is labelled parked, and the dispatcher's line names the skip as the cause |
+| `22` | `REVIEW_SKIPPED` | **yes** | The reviewer's skip notice names the PR head as a push it did not review, and its review of an earlier head does not cover this one: the pull request's diff changed since that head (§ The reviewer skips a head). No review of this head will come, so the drive stops rather than wait for one as `STALE_REVIEW`. The `reason` quotes the notice and names both heads. A person reviews the change since the reviewed head and has the reviewer review this head, or pushes a commit it reviews, then re-arms. The stop is a person's: where the pull request state labels are on, the drive labels the pull request parked as it stops, and under `jig dispatch` the dispatcher's line names the skip as the cause. |
 | `10` | — | — | **Reserved**, never emitted. A draft PR is not a stop: drafts are driven — see § A draft PR is reviewed, and then marked Ready. The code is kept unused so it never takes on a second meaning |
 | `12` | `WORKTREE_UNCLEAN` | **yes** | `drive.ts` only: a pass exited `0` with uncommitted edits and this tree's unverified holds from the current round, or review converged over an unclean worktree. The unfinished-pass cause names the held fixes and does not claim convergence: validate, commit and push them, then re-arm in this tree. The convergence cause means the worktree is not clean — uncommitted state, an unconcluded merge/cherry-pick/revert/rebase/am (present even over an otherwise-empty `git status`), local HEAD no longer matching the reviewed head (a commit landed here that was never pushed or reviewed, also invisible to `git status`), or any of those probes being unreadable; every one of them fails closed to the same refusal. For the convergence cause, the convergence is real; the leftovers are edits no round shipped, an unfinished git operation, or an unreviewed local commit. Commit/push/discard as appropriate, or resolve/abort the operation, then re-run. The draft→Ready transition sits **behind** this gate, so a PR still owed that transition when 12 fires stays a draft, and the retry after the cleanup marks it. It never *reverts* one already made: `mark-ready.ts` runs at the end of every completed round from the round `pull_requests.mark_ready` declares (default `1`) and is durably once-only, so a drive that completed that round has already marked the PR and exit 12 leaves it Ready over an unclean tree. The PR is still a draft, then, when no completed round reached the declared one (convergence before it, including at the very first gate), when the repository marks Ready only at convergence (`converged`), or when it never does (`never`, or a drive started with `--keep-draft`, which skips `mark-ready.ts` entirely no matter how many rounds run) — in the last case the draft state is the requested outcome, not a transition still owed — see § A draft PR is reviewed, and then marked Ready |
 | `11` | — | **yes** | `drive.ts` only: a single-instance lock is already held — either this PR's (`pr-drive-<PR>`) or this working tree's (`pr-drive-worktree-<key>`), both rows of the drive's database keyed by the clone, so a driver in another managed worktree of the same clone collides too. The drive is already armed. The refusal names the holder's `drives.ts` `--doctor` verdict and, when that verdict admits a takeover (`WEDGED`), prints the `--take-over` command; do not stop a driver that is making progress (§ Picking up a stopped drive). `drive.ts` with `--take-over` refused for the holder's verdict, or for a dead holder's leftovers, exits `11` too. `drive-state.ts` raises the same code for its own **session lease** over *(working tree, PR)* when a second live agent session in one checkout attempts a state mutation — a different mechanism with the same exit — and for its **tree lease** when that second session is driving a *different* PR from the same tree, which the per-PR lease alone cannot see. `reply-to-thread.ts` and `answer-summary-finding.ts` raise it too, refusing to `POST` rather than refusing to write state — both check **both** fences, the per-PR session lease and the tree lease, so either one can produce this refusal — `reply-to-thread.ts` through the spawned `assert-post-allowed.ts` (it lives in the sibling skill), `answer-summary-finding.ts` through `lib/state/lease.ts` directly (it lives in this one). All of these — a *live* conflicting holder — name that holder's pid; confirm that process is gone before clearing either. One exception, on the tree lease, names no pid because it has no live holder to name: `assertTreeLeaseUnchanged`'s "the lease is simply gone" case (an admitted lease that no longer exists by the time the fence re-checks — `clear-lease` is the common cause but not the only one an operator could have caused, so the message deliberately does not guess which) |
@@ -120,6 +120,25 @@ local head ahead without a push witness (run `guarded-push.ts`), a pushed head
 whose API snapshot still lags (wait), a local head behind (update the tree),
 and diverged history (inspect and reconcile). An unreadable ancestry or push
 probe is reported as unknown rather than asserted as lag.
+
+Where the pull request state labels are on, each stop's label follows one
+table of exits, [`exit-classes.ts`](../scripts/lib/status/exit-classes.ts),
+which the dispatcher's ledger classifier reads too. A recorded person's
+stop is parked whatever its exit, so it takes precedence over the mapping
+below; for the rest:
+
+- `0` is labelled converged, while the head is still the verified head;
+- parked: the park `8`; a stop only a person settles (`1`, `2`, `6`, `7`,
+  `22` and any code the registry does not name); a person's stop (`18`,
+  `19`, and a recorded stop through `drives.ts`, which names no exit); and a
+  stop the dispatcher re-drives (`9`, `12`, `14`, `15`, `21`, `23`), which a
+  dispatcher's tick turns into stale where one runs;
+- driving: `4` and `16`, which the dispatcher re-arms, and `11` and `13`, a
+  second driver refused while another drives;
+- nothing: `5`, a pull request no longer open; `20`, whose ledger is the
+  successor's; and a stop with no exit and no person's stop recorded.
+
+
 
 ## Repair rounds
 
@@ -637,7 +656,12 @@ heartbeat, and the handoff narrative's last twenty lines, as JSON inside a
 second HTML comment with every `<` and `>` escaped. A driver publishes itself
 in `$DRIVE_PR_LEDGER_DRIVER` once it holds its locks, and `drive-state.ts`'s `handoff` (every round boundary, after a takeover, and as the driver stops)
 and its `park` write the ledger from the state they hold, so a
-session that is not a drive's child never writes one. Each write is a
+session that is not a drive's child never writes one. `handoff` exits `0`
+when it wrote the ledger or had nothing to write, `75`
+(`LEDGER_NOT_WRITTEN_EXIT`) when a write was attempted and did not land, and,
+for a caller that sets `DRIVE_PR_HANDOFF_TELLS_REFUSED=1`, `76`
+(`LEDGER_REFUSED_EXIT`) when its guards refused the write: the drive then
+labels no state, since the ledger is not its own. Each write is a
 read-modify-write against the canonical comment: the comments are read, the
 body built, and the comments read again just before the `PATCH`; a ledger
 whose `updated_at` or body moved (the stamp has one-second precision, so the
@@ -900,6 +924,11 @@ latest answer counts. A disputed item stays parked. The
 [structured answer rules](../SKILL.md#picking-up-a-stopped-drive) define when
 choices and notes agree and when answers stay free. A park records when it
 was made; an older park without that time is never read as answered.
+A digest-bearing answer must also name the park's stored decision digest;
+a stale answer keeps the item parked and prevents provisional work. If local
+state and the readable ledger disagree about the framing, the re-arm waits
+for publication to catch up. Parks and answers without a digest keep their
+time-based binding.
 A conflicting PR may be re-armed for
 conflict repair while unanswered items stay parked; the `wide` autonomy
 exception may also unpark `escalated` items nobody has answered. Any person's

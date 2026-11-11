@@ -752,6 +752,27 @@ outlives the session that spawned it, so its console is not where you look:
   Missing, foreign, surviving or uncertain evidence leaves the ledger running;
   dispatch notifies once and includes it in the waiting list. See
   [terminal states](references/terminal-states.md) for the recovery guards.
+- **The pull request's state label** — where `dispatch.labels.enabled` is
+  on on the default branch (`dispatch/lib/label-config.ts`, as the
+  dispatcher reads it), `drive.ts` labels the pull request through the
+  shared projection (`shared/pr-labels/`, `lib/driver/state-labels.ts`)
+  after each ledger write of its own that lands (`handoff` tells a write
+  its guards refused apart, and none is labelled): `driving` once the arm
+  publishes the running ledger, before round one, removing the `drive`
+  command in the same write; at the stop, the class the exit table gives
+  (`lib/status/exit-classes.ts`, which the dispatcher's classifier reads
+  too): `converged` on `CONVERGED` only while the head is the verified
+  head, `parked` for a park, a person's stop, a stop only a person settles
+  and a stop the dispatcher re-drives (where it would read `stale`),
+  `driving` for one it re-arms or a second driver refused, nothing for
+  `PR_NOT_OPEN` or `TAKEN_OVER` (the full list:
+  [terminal states](references/terminal-states.md#exit-codes)). A person's
+  stop through `drives.ts` names no exit and is labelled `parked` once it
+  marks the ledger stopped. Never `stale`
+  or `held`, nothing on a pull request carrying `hold` or `held`, and never
+  a new label. Best effort: `gh` calls under `ghCall`'s deadline, the edit
+  only when the labels disagree; a refusal is one `labels:` line on stderr
+  and never changes the exit. A pass never writes a state label.
 - **Relocating the state dir** — `$DRIVE_PR_STATE_DIR` relocates the state
   root: the database and one `<clone-key>/` directory per clone (the hash of
   its persisted [universally unique identifier](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (UUID); linked worktrees share it). The driver exports its resolved
@@ -873,6 +894,17 @@ blank lines, the `jig send` record and identifiable notification quotes.
 Other prose, code, HTML, duplicate lines or unmatched quotes make the
 answer free. An unknown option or an approval without a recommendation is
 also free. A note alone answers nothing.
+
+**Bind the answer to its framing.** Copy the notification's line including
+its [decision digest](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md),
+for example `answer <key>: approve [3fa9c2d1e0b4]`. A newly framed park stores
+the first 12 hexadecimal characters of its canonical decision's SHA-256
+hash; the ledger publishes that stored digest unchanged. A different digest
+makes an answer stale, including an unknown option or a comment with extra
+prose: the item stays parked and the next notification explains why. A
+disagreement between local and published framing leaves the item parked
+until the ledger catches up. Answers without a digest and legacy parks
+without one retain their time-based binding.
 
 Matching normalizes Unicode, case, phone quotes and dashes, bold marks,
 backticks and whitespace, and drops one final full stop or exclamation mark.

@@ -2,6 +2,7 @@ import {
   isParkedDecision,
   renderParkedDecision,
 } from "../../../../../shared/decisions/park.ts";
+import { isDecisionDigest } from "../../../../../shared/decisions/digest.ts";
 /**
  * The framing a stored parked item carries (`framed-park.ts`), the decision
  * class and the decision record, and how a framed decision is printed. Kept
@@ -23,6 +24,7 @@ export interface ParkedItem {
   class?: string;
   record?: string;
   decision?: ParkedDecision;
+  digest?: string;
 }
 
 /** A forge login, excluding whitespace and mention syntax. */
@@ -60,6 +62,7 @@ export function isOptionalFrame(e: Record<string, unknown>): boolean {
     (e.class === undefined ||
       (typeof e.class === "string" && /^[a-z][a-z0-9-]*$/.test(e.class))) &&
     (e.decision === undefined || isParkedDecision(e.decision)) &&
+    (e.digest === undefined || isDecisionDigest(e.digest)) &&
     (e.record === undefined ||
       (typeof e.record === "string" && e.record.trim() !== ""))
   );
@@ -71,11 +74,27 @@ export function isOptionalFrame(e: Record<string, unknown>): boolean {
  * before parks were framed prints its reason.
  */
 export function framedDecisionLines(p: ParkedItem): string[] {
-  const head = `[${p.kind}] ${p.key} · class ${p.class ?? "(none recorded)"} · parked at round ${p.round}`;
+  const head = `[${p.kind}] ${p.key} · class ${p.class ?? "(none recorded)"} · parked at round ${p.round}${p.digest === undefined ? "" : ` · framing ${p.digest}`}`;
   const record =
     p.decision === undefined ? p.record : renderParkedDecision(p.decision);
   if (record === undefined) return [head, `  ${p.reason}`];
-  return [head, ...record.split("\n").map((l) => (l === "" ? "" : `  ${l}`))];
+  return [
+    head,
+    ...record.split("\n").map((l) => (l === "" ? "" : `  ${l}`)),
+    ...decisionAnswerLines(p),
+  ];
+}
+
+/** Copyable lines always carry the identity of the framing being displayed. */
+export function decisionAnswerLines(p: ParkedItem): string[] {
+  if (p.decision === undefined || p.digest === undefined) return [];
+  return [
+    `answer ${p.key}: approve [${p.digest}]`,
+    ...p.decision.call.options.map(
+      (o) => `answer ${p.key}: choose ${o.name} [${p.digest}]`,
+    ),
+    "Copy one line with its framing digest; an answer without it is bound by time alone.",
+  ];
 }
 
 /** `- ` items of a record's section, each with its continuation lines joined. */
