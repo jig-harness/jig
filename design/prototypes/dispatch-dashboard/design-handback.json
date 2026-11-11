@@ -1,0 +1,143 @@
+{
+  "version": 1,
+  "scenarios": [
+    {
+      "name": "loud",
+      "url": "generated/dispatch-dashboard-round-2.html?scenario=loud&switch=off",
+      "ready": "html[data-scenario-ready]",
+      "screenshot": "screenshots/loud.png"
+    },
+    {
+      "name": "quiet",
+      "url": "generated/dispatch-dashboard-round-2.html?scenario=quiet&switch=off",
+      "ready": "html[data-scenario-ready]",
+      "screenshot": "screenshots/quiet.png"
+    },
+    {
+      "name": "empty",
+      "url": "generated/dispatch-dashboard-round-2.html?scenario=empty&switch=off",
+      "ready": "html[data-scenario-ready]",
+      "screenshot": "screenshots/empty.png"
+    },
+    {
+      "name": "repos",
+      "url": "generated/dispatch-dashboard-round-2.html?scenario=repos&switch=off",
+      "ready": "html[data-scenario-ready]",
+      "screenshot": "screenshots/repos.png"
+    },
+    {
+      "name": "volume",
+      "url": "generated/dispatch-dashboard-round-2.html?scenario=volume&switch=off",
+      "ready": "html[data-scenario-ready]",
+      "screenshot": "screenshots/volume.png"
+    },
+    {
+      "name": "linked",
+      "url": "generated/dispatch-dashboard-round-2.html?scenario=linked&switch=off",
+      "ready": "html[data-scenario-ready]",
+      "screenshot": "screenshots/linked.png"
+    },
+    {
+      "name": "unknown",
+      "url": "generated/dispatch-dashboard-round-2.html?scenario=unknown&switch=off",
+      "ready": "html[data-scenario-ready]",
+      "screenshot": "screenshots/unknown.png"
+    },
+    {
+      "name": "overload",
+      "url": "generated/dispatch-dashboard-round-2.html?scenario=overload&switch=off",
+      "ready": "html[data-scenario-ready]",
+      "screenshot": "screenshots/overload.png"
+    },
+    {
+      "name": "offline",
+      "url": "generated/dispatch-dashboard-round-2.html?scenario=offline&switch=off",
+      "ready": "html[data-scenario-ready]",
+      "screenshot": "screenshots/offline.png"
+    },
+    {
+      "name": "loud-running",
+      "url": "generated/dispatch-dashboard-round-2.html?scenario=loud&view=running&switch=off",
+      "ready": "html[data-scenario-ready]",
+      "screenshot": "screenshots/loud-running.png"
+    },
+    {
+      "name": "overload-running",
+      "url": "generated/dispatch-dashboard-round-2.html?scenario=overload&view=running&switch=off",
+      "ready": "html[data-scenario-ready]",
+      "screenshot": "screenshots/overload-running.png"
+    },
+    {
+      "name": "repos-queue",
+      "url": "generated/dispatch-dashboard-round-2.html?scenario=repos&view=queue&switch=off",
+      "ready": "html[data-scenario-ready]",
+      "screenshot": "screenshots/repos-queue.png"
+    },
+    {
+      "name": "loud-dark",
+      "url": "generated/dispatch-dashboard-round-2.html?scenario=loud&theme=dark&switch=off",
+      "ready": "html[data-scenario-ready]",
+      "screenshot": "screenshots/loud-dark.png"
+    },
+    {
+      "name": "answers-all",
+      "url": "generated/needs-you-round-2b.html?scenario=all&switch=off",
+      "ready": "html[data-scenario-ready]",
+      "screenshot": "screenshots/answers-all.png"
+    },
+    {
+      "name": "answers-one",
+      "url": "generated/needs-you-round-2b.html?scenario=one&switch=off",
+      "ready": "html[data-scenario-ready]",
+      "screenshot": "screenshots/answers-one.png"
+    },
+    {
+      "name": "answers-one-picked",
+      "url": "generated/needs-you-round-2b.html?scenario=onePicked&switch=off",
+      "ready": "html[data-scenario-ready]",
+      "screenshot": "screenshots/answers-one-picked.png"
+    },
+    {
+      "name": "answers-two",
+      "url": "generated/needs-you-round-2b.html?scenario=two&switch=off",
+      "ready": "html[data-scenario-ready]",
+      "screenshot": "screenshots/answers-two.png"
+    },
+    {
+      "name": "answers-guard",
+      "url": "generated/needs-you-round-2b.html?scenario=guard&switch=off",
+      "ready": "html[data-scenario-ready]",
+      "screenshot": "screenshots/answers-guard.png"
+    },
+    {
+      "name": "answers-dropped",
+      "url": "generated/needs-you-round-2b.html?scenario=dropped&switch=off",
+      "ready": "html[data-scenario-ready]",
+      "screenshot": "screenshots/answers-dropped.png"
+    },
+    {
+      "name": "answers-stale",
+      "url": "generated/needs-you-round-2b.html?scenario=stale&switch=off",
+      "ready": "html[data-scenario-ready]",
+      "screenshot": "screenshots/answers-stale.png"
+    },
+    {
+      "name": "answers-disputed",
+      "url": "generated/needs-you-round-2b.html?scenario=disputed&switch=off",
+      "ready": "html[data-scenario-ready]",
+      "screenshot": "screenshots/answers-disputed.png"
+    },
+    {
+      "name": "answers-volume",
+      "url": "generated/needs-you-round-2b.html?scenario=volume&switch=off",
+      "ready": "html[data-scenario-ready]",
+      "screenshot": "screenshots/answers-volume.png"
+    },
+    {
+      "name": "answers-two-dark",
+      "url": "generated/needs-you-round-2b.html?scenario=two&theme=dark&switch=off",
+      "ready": "html[data-scenario-ready]",
+      "screenshot": "screenshots/answers-two-dark.png"
+    }
+  ]
+}

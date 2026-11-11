@@ -1,0 +1,1168 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset="utf-8">
+<title>Dispatch dashboard, round 2</title>
+<style>/* Dispatch dashboard, round 2: the card system. Tokens are the built page's (reference-specs/tokens.md); nothing else is a colour. */
+:root, .dd {
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", "URW Palladio L", Georgia, serif;
+  --sans: system-ui, -apple-system, "Segoe UI", Ubuntu, Cantarell, "Noto Sans", sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, "Liberation Mono", monospace;
+  --r-tag: 4px; --r: 8px; --r-card: 12px; --r-panel: 14px; --tap: 44px;
+  --outer: light-dark(#e8e4dd, #0d0b09);
+  --bg: light-dark(#f9f6f1, #1a1713);
+  --card: light-dark(#fffdfa, #23201c);
+  --sunk: light-dark(#f0ece5, #13100d);
+  --ink: light-dark(#251e18, #ebe7e0);
+  --muted: light-dark(#59514a, #b8b3ac);
+  --line: light-dark(#d5d0c8, #433f3a);
+  --line-strong: light-dark(#867f77, #847f78);
+  --accent: light-dark(#1a6444, #82d2a8);
+  --accent-hover: light-dark(#005031, #9fe7c0);
+  --on-accent: light-dark(#fcfaf6, #0e1913);
+  --accent-soft: light-dark(#dbf2e4, #1b3427);
+  --hl: light-dark(#f7e8af, #4e3e09);
+  --hl-line: light-dark(#815b1f, #ddc276);
+  --focus: light-dark(#0267c7, #7dbaff);
+  --focus-soft: light-dark(#e3eefb, #1b2a3c);
+  --bad: light-dark(#a8201a, #ff9e94);
+  --wait: light-dark(#6a3a9e, #cdb4f5);
+  --small: 14px;
+  --gut: 30px;
+}
+.dd { container: page / inline-size; min-height: 100vh; box-sizing: border-box; background: var(--bg); color: var(--ink); font: 400 15px/1.45 var(--sans); -webkit-text-size-adjust: 100%; }
+.dd *, .dd *::before, .dd *::after { box-sizing: border-box; }
+.dd a { color: var(--accent); text-underline-offset: 2px; }
+.dd a:hover { color: var(--accent-hover); }
+.dd :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 3px; }
+.dd h1, .dd h2, .dd h3, .dd p, .dd ul, .dd ol, .dd dl, .dd dd { margin: 0; }
+.dd button { font: inherit; color: inherit; }
+.m { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.mut { color: var(--muted); }
+.sm { font-size: var(--small); }
+.nowrap { white-space: nowrap; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.ic { width: 16px; height: 16px; flex: none; display: inline-block; vertical-align: -3px; }
+.ic.s14 { width: 14px; height: 14px; vertical-align: -2px; }
+.ic.dashed { stroke-dasharray: 2.5 2.5; }
+
+/* prototype switch, not part of the page */
+.proto { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; padding: 6px 16px; background: var(--outer); font-size: 14px; color: var(--muted); }
+.proto label { display: flex; gap: 6px; align-items: center; }
+.proto select { min-height: 32px; }
+
+/* strip */
+.strip { position: sticky; top: 0; z-index: 20; background: var(--bg); border-bottom: 1px solid var(--line); }
+.stripIn { display: flex; align-items: center; gap: 4px 16px; max-width: 1200px; margin: 0 auto; padding: 0 16px; min-height: 48px; }
+.brand { display: flex; align-items: center; gap: 6px; flex: none; font: 600 18px/1 var(--serif); }
+.brand svg { width: 24px; height: 24px; display: block; }
+.brand span { display: none; }
+.tabs { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; flex: 1 1 auto; min-width: 0; }
+.tab { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 8px; border: 0; border-bottom: 2px solid transparent; background: none; cursor: pointer; white-space: nowrap; color: var(--ink); font-size: 15px; }
+.tab[aria-current="page"] { border-bottom-color: var(--accent); font-weight: 600; }
+.count { font: 400 12px/1 var(--mono); min-width: 20px; padding: 3px 5px; border: 1px solid var(--line-strong); border-radius: 10px; text-align: center; color: var(--muted); }
+.count.need { background: var(--hl); border-color: var(--hl-line); color: var(--ink); }
+.fresh { flex: none; font-size: 14px; color: var(--muted); display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+/* the logo is the menu */
+.brandWrap { position: relative; flex: none; }
+.dd .brand { min-height: 44px; min-width: 44px; padding: 0 4px; border: 0; background: none; color: var(--ink); cursor: pointer; border-radius: var(--r); }
+.brand .caret { color: var(--muted); }
+.menu { position: absolute; z-index: 40; top: calc(100% + 4px); left: 0; width: min(300px, calc(100vw - 24px)); display: flex; flex-direction: column; padding: 6px; background: var(--card); border: 1px solid var(--line-strong); border-radius: var(--r-card); box-shadow: 0 6px 20px light-dark(rgba(37,30,24,.16), rgba(0,0,0,.55)); }
+.mi { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 10px; border: 0; background: none; border-radius: var(--r); cursor: pointer; text-align: left; font: 400 15px var(--sans); color: var(--ink); }
+.mi:hover { background: var(--sunk); }
+.mi span:first-of-type { flex: 1; }
+.sw { position: relative; width: 34px; height: 20px; border-radius: 10px; border: 1px solid var(--line-strong); background: var(--sunk); flex: none; }
+.sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--muted); }
+.sw.on { background: var(--ink); border-color: var(--ink); }
+.sw.on::after { left: 16px; background: var(--bg); }
+.minfo { margin: 4px 0 0 !important; padding: 8px 10px 4px; border-top: 1px solid var(--line); font: 400 13px/1.5 var(--mono); color: var(--muted); }
+/* one-line banner, compact flash, compact band */
+.bline { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 14px; }
+.bline .btn { min-height: 44px; }
+.banner { padding: 6px 12px; }
+.flash a { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; min-width: 44px; }
+.flash { padding: 2px 10px; gap: 4px 10px; }
+.band { padding: 6px 12px; gap: 2px; }
+.band .facet { order: -1; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+.bline > span { flex: 1 1 200px; }
+.band .metrics a, .bandline a { display: inline-flex; align-items: center; min-height: 44px; }
+.fresh.stale { color: var(--bad); }
+
+.main { max-width: 1200px; margin: 0 auto; padding: 12px 16px 24px; display: flex; flex-direction: column; gap: 12px; }
+.flash { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: var(--small); padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--r); background: var(--card); }
+.banner { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border: 2px solid var(--line-strong); border-radius: var(--r-card); background: var(--sunk); }
+.banner h2 { font: 600 18px/1.25 var(--serif); display: flex; gap: 8px; align-items: center; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; padding: 4px 14px; border: 1px solid var(--line-strong); border-radius: var(--r); background: var(--card); cursor: pointer; font-size: 15px; }
+
+/* view heading and the count line */
+.vhead { display: flex; flex-direction: column; gap: 8px; }
+.vtitle { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.vtitle h1 { font: 600 24px/1.2 var(--serif); }
+.vtitle .sub { font-size: var(--small); color: var(--muted); }
+.band { background: var(--hl); border: 1px solid var(--hl-line); border-radius: var(--r-panel); padding: 10px 14px; display: flex; flex-direction: column; gap: 8px; }
+.band h1 { font: 600 24px/1.2 var(--serif); }
+.metrics { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: var(--small); }
+
+/* filters: the text filter, then facet rows */
+.filters { display: flex; flex-direction: column; gap: 8px; }
+.textf { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: var(--r); background: var(--card); max-width: 420px; }
+.textf input { flex: 1; min-width: 0; border: 0; background: transparent; color: var(--ink); font: 400 15px var(--sans); min-height: 40px; outline: none; }
+.facet { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.facet .fl { font-size: var(--small); color: var(--muted); min-width: 84px; }
+.fchip { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 2px 10px; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--card); cursor: pointer; font-size: 14px; color: var(--ink); white-space: nowrap; }
+.fchip .n { font-family: var(--mono); color: var(--muted); }
+.fchip[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); font-weight: 600; }
+.fchip[aria-pressed="true"] .n { color: var(--bg); }
+.band .fchip { background: transparent; border-color: var(--hl-line); }
+.band .fchip[aria-pressed="true"] { background: var(--ink); }
+.sel { min-height: 44px; padding: 4px 8px; border: 1px solid var(--line-strong); border-radius: var(--r); background: var(--card); color: var(--ink); font: 400 15px var(--sans); max-width: 100%; }
+.active { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; font-size: var(--small); color: var(--muted); }
+.linkbtn { border: 0; background: none; color: var(--accent); text-decoration: underline; cursor: pointer; min-height: 44px; padding: 0 4px; font-size: var(--small); }
+.seg { display: inline-flex; flex-wrap: wrap; gap: 0; border: 1px solid var(--line-strong); border-radius: var(--r); overflow: hidden; }
+.seg button { min-height: 36px; padding: 2px 10px; border: 0; border-left: 1px solid var(--line); background: var(--card); cursor: pointer; font-size: 14px; }
+.seg button:first-child { border-left: 0; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); font-weight: 600; }
+.deskOnly { display: none !important; }
+
+/* a panel of cards: one column */
+.list { display: flex; flex-direction: column; gap: 8px; }
+
+/* group heading: same gutter, same chevron */
+.ghead { display: grid; grid-template-columns: var(--gut) minmax(0, 1fr); align-items: center; padding: 6px 0 2px; margin-top: 8px; border-top: 2px solid var(--line-strong); cursor: pointer; user-select: none; }
+.ghead:first-child { margin-top: 0; }
+.ghead h2, .ghead h3 { font: 600 18px/1.3 var(--serif); display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
+.ghead .gsub { font: 400 14px/1.3 var(--sans); color: var(--muted); }
+.gnote { font-size: var(--small); color: var(--muted); padding-left: var(--gut); }
+
+/* the disclosure: a bare chevron in the gutter */
+.disc { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; margin: -10px 0 0 -12px; padding: 0; border: 0; background: transparent; color: var(--muted); cursor: pointer; border-radius: 6px; }
+.disc .ic { transition: transform 150ms ease; }
+.disc[aria-expanded="true"] .ic { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .disc .ic { transition: none; } }
+.ghead .disc { margin: -8px 0 -8px -12px; }
+
+/* the card */
+.card { position: relative; display: grid; grid-template-columns: var(--gut) minmax(0, 1fr); padding: 10px 12px 10px 8px; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-card); cursor: pointer; }
+.card.open { border-color: var(--line-strong); }
+@media (hover: hover) { .card:hover, .ghead:hover { background: var(--sunk); } .ghead:hover { background: transparent; } .ghead:hover .disc { color: var(--ink); } .card:hover .disc { color: var(--ink); } }
+.gutter { display: flex; flex-direction: column; align-items: flex-start; }
+.spine { flex: 1; width: 0; margin: 4px 0 0 7px; border-left: 2px solid var(--line-strong); }
+.cbody { min-width: 0; display: flex; flex-direction: column; gap: 3px; cursor: auto; }
+.card .cbody { cursor: pointer; }
+.r1 { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-height: 24px; }
+.r1 .end { margin-left: auto; font: 400 14px var(--mono); color: var(--muted); white-space: nowrap; }
+.meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; font-size: var(--small); color: var(--muted); }
+.meta .repo { font-family: var(--mono); }
+.q { font-size: 15px; }
+.q::before { content: "\201C"; } .q::after { content: "\201D"; }
+.ask { font-size: 15px; }
+.rec { font-size: var(--small); }
+.rec b { font-weight: 600; }
+.cmd { display: flex; gap: 6px; align-items: flex-start; margin-top: 2px; }
+.cmd code { flex: 1; min-width: 0; font: 400 13px/1.5 var(--mono); padding: 6px 8px; background: var(--sunk); border-radius: var(--r); overflow-x: auto; white-space: nowrap; }
+.detail { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); cursor: auto; }
+.quote { padding: 8px 10px; background: var(--sunk); border-radius: var(--r); font: 400 14px/1.5 var(--mono); overflow-wrap: anywhere; }
+.kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 3px 12px; font-size: 14px; }
+.kv dt { color: var(--muted); }
+.kv dd { overflow-wrap: anywhere; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
+.tools { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: var(--small); }
+.tools a { display: inline-flex; align-items: center; min-height: 44px; }
+.opt { padding: 6px 0; border-top: 1px solid var(--line); font-size: 14px; }
+.opt b { font-weight: 600; }
+.more { align-self: flex-start; }
+
+/* families of marks: told apart by their container */
+.act { display: inline-flex; align-items: center; gap: 5px; padding: 1px 9px 1px 7px; border-radius: 999px; background: var(--ink); color: var(--bg); font: 600 13px/1.5 var(--sans); white-space: nowrap; }
+.act.Decide, .act.Authorize { background: var(--hl-line); color: var(--card); }
+.stage { display: inline-flex; align-items: center; gap: 4px; padding: 0 6px; border: 1px solid var(--line-strong); border-radius: var(--r-tag); font: 400 13px/1.6 var(--mono); color: var(--ink); white-space: nowrap; }
+.src { display: inline-flex; align-items: center; gap: 4px; padding: 0 6px; border: 1px dashed var(--line-strong); border-radius: var(--r-tag); font: 400 13px/1.6 var(--sans); color: var(--ink); white-space: nowrap; }
+.cause { display: inline-flex; align-items: center; gap: 4px; color: var(--ink); }
+.who { font-family: var(--mono); }
+.mk { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 20px; height: 20px; border: 1px solid currentColor; border-radius: 3px; font: 700 14px/1 var(--mono); }
+.r-needs { color: var(--hl-line); }
+.mk.r-needs { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.mk.r-needs::before { content: ""; width: 12px; height: 13px; background: radial-gradient(circle at 50% 26%, currentColor 0 24%, transparent 26%), radial-gradient(ellipse 50% 44% at 50% 100%, currentColor 0 98%, transparent 100%); }
+.r-working, .r-well { color: var(--accent); }
+.r-waiting { color: var(--wait); }
+.r-held, .r-stale, .r-unknown { color: var(--muted); }
+.r-badly { color: var(--bad); }
+
+/* the work identity: icon, key, copy, popover */
+.wid { position: static; display: inline-flex; align-items: center; gap: 2px; white-space: nowrap; }
+.wtrig { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: 0; background: transparent; color: var(--ink); cursor: pointer; border-radius: 6px; }
+.wid .key { font: 600 15px/1.3 var(--mono); display: inline-flex; align-items: center; min-height: 28px; }
+.wid.lk .key { font-weight: 400; font-size: 14px; }
+.wid.lk .wtrig { width: 24px; }
+.st-merged { color: var(--wait); } .st-closed { color: var(--bad); } .st-open { color: var(--accent); } .st-draft, .st-unknown, .st-item { color: var(--muted); }
+.links { display: inline-flex; align-items: center; gap: 2px 6px; flex-wrap: wrap; color: var(--muted); font-size: var(--small); }
+.cbtn { display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-width: 28px; height: 28px; padding: 0 4px; border: 1px solid var(--line); border-radius: var(--r-tag); background: transparent; cursor: pointer; color: var(--ink); font-size: 13px; }
+.cbtn.ok { color: var(--accent); border-color: var(--accent); }
+.cfield { width: 100%; font: 400 13px var(--mono); padding: 6px 8px; border: 2px solid var(--focus); border-radius: var(--r); background: var(--card); color: var(--ink); }
+.pop { position: absolute; z-index: 30; top: auto; margin-top: 46px; left: 8px; right: 8px; max-width: 400px; white-space: normal; display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; background: var(--card); border: 1px solid var(--line-strong); border-radius: var(--r); box-shadow: 0 4px 16px light-dark(rgba(37,30,24,.14), rgba(0,0,0,.5)); font: 400 14px/1.4 var(--sans); color: var(--ink); cursor: auto; }
+.pop .kind { color: var(--muted); }
+.pop .kv { font-size: 13px; }
+
+/* running: the load and the accounts */
+.load { display: flex; flex-direction: column; gap: 6px; padding: 12px; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-card); }
+.loadHead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.loadHead b { font: 600 20px/1.2 var(--serif); }
+.gauges { display: flex; flex-direction: column; gap: 4px; }
+.g { display: grid; grid-template-columns: 22px minmax(0, 1fr) 58px; grid-template-areas: "i n p" "b b b" "r r r"; align-items: center; gap: 2px 8px; padding: 4px 0; border-top: 1px solid var(--line); font-size: 14px; }
+.g .gi { grid-area: i; } .g .gn { grid-area: n; } .g .gp { grid-area: p; text-align: right; font-family: var(--mono); } .g .gb { grid-area: b; } .g .gr { grid-area: r; color: var(--muted); }
+.g.binds .gn { font-weight: 700; }
+.bar { position: relative; height: 10px; border-radius: 3px; background: var(--sunk); border: 1px solid var(--line); overflow: hidden; }
+.bar .fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); }
+.bar .over { position: absolute; top: 0; bottom: 0; background: repeating-linear-gradient(135deg, var(--bad) 0 3px, transparent 3px 6px); }
+.bar .lineMark { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--ink); }
+.bar.unread { border-style: dashed; background: transparent; }
+.tagb { display: inline-flex; align-items: center; gap: 3px; padding: 0 5px; border: 1px solid var(--ink); border-radius: var(--r-tag); font: 600 12px/1.5 var(--sans); }
+.tagb.over { border-color: var(--bad); color: var(--bad); }
+.acct { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 6px 0; border-top: 1px solid var(--line); font-size: 14px; }
+.pips { display: inline-flex; gap: 3px; }
+.pip { width: 10px; height: 10px; border: 1px solid var(--line-strong); border-radius: 2px; }
+.pip.on { background: var(--ink); border-color: var(--ink); }
+
+.legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap: 12px 24px; }
+.legend h3 { font: 600 16px var(--serif); margin-bottom: 4px; }
+.legend li { list-style: none; display: flex; gap: 8px; align-items: center; min-height: 26px; font-size: 14px; }
+.legend ul { padding: 0; }
+.foot { max-width: 1200px; margin: 0 auto; padding: 8px 16px 32px; font: 400 13px/1.6 var(--mono); color: var(--muted); }
+.empty { padding: 14px; border: 1px dashed var(--line-strong); border-radius: var(--r-card); color: var(--muted); font-size: var(--small); }
+.hist { display: grid; grid-template-columns: minmax(0, 1fr); }
+
+/* phone: tap targets and 14 px type */
+.wtrig, .cbtn { min-width: 44px; min-height: 44px; }
+.wid.lk .wtrig { width: 44px; }
+.wid .key { min-height: 44px; min-width: 44px; justify-content: center; }
+.r1 { min-height: 44px; }
+.meta a.repo { display: inline-flex; align-items: center; min-height: 44px; }
+.count, .act, .stage, .src, .tagb, .cmd code, .foot { font-size: 14px; }
+.tools .cbtn { min-height: 44px; }
+
+@container page (min-width: 700px) {
+  .brand span { display: inline; }
+  .fresh { display: inline-flex; }
+  .flash a, .band .metrics a, .bandline a { min-height: 0; min-width: 0; }
+  .bline .btn { min-height: 30px; }
+  .filters { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 8px 22px; }
+  .filters .active { flex-basis: 100%; }
+  .mi { min-height: 36px; }
+  .band .facet { flex-wrap: wrap; overflow: visible; }
+  .deskOnly { display: revert !important; }
+  .phoneOnly { display: none !important; }
+  .facet { flex-wrap: wrap; }
+  .fchip { min-height: 30px; padding: 1px 9px; font-size: 13px; }
+  .sel { min-height: 32px; font-size: 14px; }
+  .textf { min-height: 36px; }
+  .textf input { min-height: 32px; }
+  .linkbtn { min-height: 28px; }
+  .tab { min-height: 46px; }
+  .btn { min-height: 34px; }
+  .wtrig, .cbtn { min-width: 0; min-height: 0; }
+  .wtrig { width: 26px; height: 26px; }
+  .wid.lk .wtrig { width: 22px; }
+  .cbtn { width: 26px; height: 26px; }
+  .wid .key { min-height: 0; min-width: 0; }
+  .r1 { min-height: 26px; }
+  .meta a.repo { min-height: 0; }
+  .pop { margin-top: 30px; left: 38px; right: auto; width: 380px; }
+  .count { font-size: 12px; }
+  .act, .stage, .src, .tagb, .cmd code, .foot { font-size: 13px; }
+  .tools .cbtn { min-height: 26px; }
+  .disc { width: 30px; height: 30px; margin: -3px 0 0 -6px; }
+  .ghead .disc { margin: -4px 0 -4px -6px; }
+  .tools a { min-height: 26px; }
+  .card { padding: 8px 14px 8px 8px; }
+  .g { grid-template-columns: 22px 130px minmax(0, 1fr) 72px minmax(0, 1.2fr); grid-template-areas: "i n b p r"; padding: 3px 0; }
+  .vtitle h1, .band h1 { font-size: 24px; }
+  .ask { -webkit-line-clamp: unset; }
+}
+@container page (max-width: 699px) {
+  .q, .ask, .rec { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+  .card.open .q, .card.open .ask, .card.open .rec { -webkit-line-clamp: unset; }
+  .vtitle h1, .band h1 { font-size: 22px; }
+  .main { padding: 10px 12px 20px; }
+  .card { padding: 8px 10px 8px 6px; }
+  .tab { padding: 0 6px; }
+}
+@media (forced-colors: active) { .mk, .act, .stage, .src, .fchip, .bar .fill { forced-color-adjust: auto; border: 1px solid CanvasText; } }
+</style>
+</head>
+<body>
+<template data-dc-source><x-dc>
+<helmet>
+<style>
+body { margin: 0; }
+</style>
+</helmet>
+<div class="dd" style="color-scheme: {{scheme}}" sc-camel-on-key-down="{{keys}}">
+<svg class="sprite" width="0" height="0" style="position: absolute; width: 0; height: 0; overflow: hidden" aria-hidden="true" focusable="false">
+<symbol id="git-pull-request" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="3"></circle> <circle cx="6" cy="6" r="3"></circle> <path d="M13 6h3a2 2 0 0 1 2 2v7"></path> <line x1="6" x2="6" y1="9" y2="21"></line></symbol>
+<symbol id="git-pull-request-draft" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="3"></circle> <circle cx="6" cy="6" r="3"></circle> <path d="M18 6V5"></path> <path d="M18 11v-1"></path> <line x1="6" x2="6" y1="9" y2="21"></line></symbol>
+<symbol id="git-merge" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="3"></circle> <circle cx="6" cy="6" r="3"></circle> <path d="M6 21V9a9 9 0 0 0 9 9"></path></symbol>
+<symbol id="git-pull-request-closed" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15.5 3.5 5 5"></path> <path d="m15.5 8.5 5-5"></path> <path d="M18 11.62V15"></path> <path d="M6 9v12"></path> <circle cx="18" cy="18" r="3"></circle> <circle cx="6" cy="6" r="3"></circle></symbol>
+<symbol id="circle-dot" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"></circle> <circle cx="12" cy="12" r="10"></circle></symbol>
+<symbol id="merge" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m8 6 4-4 4 4"></path> <path d="M12 2v10.3a4 4 0 0 1-1.172 2.872L4 22"></path> <path d="m20 22-5-5"></path></symbol>
+<symbol id="scale" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"></path> <path d="m19 8 3 8a5 5 0 0 1-6 0zV7"></path> <path d="M3 7h1a17 17 0 0 0 8-2 17 17 0 0 0 8 2h1"></path> <path d="m5 8 3 8a5 5 0 0 1-6 0zV7"></path> <path d="M7 21h10"></path></symbol>
+<symbol id="key-round" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z"></path> <circle cx="16.5" cy="7.5" r=".5" fill="currentColor"></circle></symbol>
+<symbol id="reply" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 18v-2a4 4 0 0 0-4-4H4"></path> <path d="m9 17-5-5 5-5"></path></symbol>
+<symbol id="wrench" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"></path></symbol>
+<symbol id="search" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 21-4.34-4.34"></path> <circle cx="11" cy="11" r="8"></circle></symbol>
+<symbol id="rotate-cw" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"></path> <path d="M21 3v5h-5"></path></symbol>
+<symbol id="arrow-left-right" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3 4 7l4 4"></path> <path d="M4 7h16"></path> <path d="m16 21 4-4-4-4"></path> <path d="M20 17H4"></path></symbol>
+<symbol id="chevrons-right" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 17 5-5-5-5"></path> <path d="m13 17 5-5-5-5"></path></symbol>
+<symbol id="circle-plus" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle> <path d="M8 12h8"></path> <path d="M12 8v8"></path></symbol>
+<symbol id="bell" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.268 21a2 2 0 0 0 3.464 0"></path> <path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"></path></symbol>
+<symbol id="navigation" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 11 22 2 13 21 11 13 3 11"></polygon></symbol>
+<symbol id="hammer" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 12-9.373 9.373a1 1 0 0 1-3.001-3L12 9"></path> <path d="m18 15 4-4"></path> <path d="m21.5 11.5-1.914-1.914A2 2 0 0 1 19 8.172v-.344a2 2 0 0 0-.586-1.414l-1.657-1.657A6 6 0 0 0 12.516 3H9l1.243 1.243A6 6 0 0 1 12 8.485V10l2 2h1.172a2 2 0 0 1 1.414.586L18.5 14.5"></path></symbol>
+<symbol id="tag" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"></path> <circle cx="7.5" cy="7.5" r=".5" fill="currentColor"></circle></symbol>
+<symbol id="pause" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="14" y="3" width="5" height="18" rx="1"></rect> <rect x="5" y="3" width="5" height="18" rx="1"></rect></symbol>
+<symbol id="user-round-check" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 21a8 8 0 0 1 13.292-6"></path> <circle cx="10" cy="8" r="5"></circle> <path d="m16 19 2 2 4-4"></path></symbol>
+<symbol id="play" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z"></path></symbol>
+<symbol id="flag" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 22V4a1 1 0 0 1 .4-.8A6 6 0 0 1 8 2c3 0 5 2 7.333 2q2 0 3.067-.8A1 1 0 0 1 20 4v10a1 1 0 0 1-.4.8A6 6 0 0 1 16 16c-3 0-5-2-8-2a6 6 0 0 0-4 1.528"></path></symbol>
+<symbol id="ban" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle> <path d="M4.929 4.929 19.07 19.071"></path></symbol>
+<symbol id="circle-check-big" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.801 10A10 10 0 1 1 17 3.335"></path> <path d="m9 11 3 3L22 4"></path></symbol>
+<symbol id="stamp" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 13V8.5C14 7 15 7 15 5a3 3 0 0 0-6 0c0 2 1 2 1 3.5V13"></path> <path d="M20 15.5a2.5 2.5 0 0 0-2.5-2.5h-11A2.5 2.5 0 0 0 4 15.5V17a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1z"></path> <path d="M5 22h14"></path></symbol>
+<symbol id="git-branch" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6a9 9 0 0 0-9 9V3"></path> <circle cx="18" cy="6" r="3"></circle> <circle cx="6" cy="18" r="3"></circle></symbol>
+<symbol id="memory-stick" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 12v-2"></path> <path d="M12 18v-2"></path> <path d="M16 12v-2"></path> <path d="M16 18v-2"></path> <path d="M2 11h1.5"></path> <path d="M20 18v-2"></path> <path d="M20.5 11H22"></path> <path d="M4 18v-2"></path> <path d="M8 12v-2"></path> <path d="M8 18v-2"></path> <rect x="2" y="6" width="20" height="10" rx="2"></rect></symbol>
+<symbol id="cpu" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20v2"></path> <path d="M12 2v2"></path> <path d="M17 20v2"></path> <path d="M17 2v2"></path> <path d="M2 12h2"></path> <path d="M2 17h2"></path> <path d="M2 7h2"></path> <path d="M20 12h2"></path> <path d="M20 17h2"></path> <path d="M20 7h2"></path> <path d="M7 20v2"></path> <path d="M7 2v2"></path> <rect x="4" y="4" width="16" height="16" rx="2"></rect> <rect x="8" y="8" width="8" height="8" rx="1"></rect></symbol>
+<symbol id="lock" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"></rect> <path d="M7 11V7a5 5 0 0 1 10 0v4"></path></symbol>
+<symbol id="hard-drive" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 16h.01"></path> <path d="M2.212 11.577a2 2 0 0 0-.212.896V18a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-5.527a2 2 0 0 0-.212-.896L18.55 5.11A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path> <path d="M21.946 12.013H2.054"></path> <path d="M6 16h.01"></path></symbol>
+<symbol id="gauge" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 14 4-4"></path> <path d="M3.34 19a10 10 0 1 1 17.32 0"></path></symbol>
+<symbol id="users" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path> <path d="M16 3.128a4 4 0 0 1 0 7.744"></path> <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path> <circle cx="9" cy="7" r="4"></circle></symbol>
+<symbol id="brick-wall" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"></rect> <path d="M12 9v6"></path> <path d="M16 15v6"></path> <path d="M16 3v6"></path> <path d="M3 15h18"></path> <path d="M3 9h18"></path> <path d="M8 15v6"></path> <path d="M8 3v6"></path></symbol>
+<symbol id="shield-ban" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"></path> <path d="m4.243 5.21 14.39 12.472"></path></symbol>
+<symbol id="shield-question" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"></path> <path d="M9.1 9a3 3 0 0 1 5.82 1c0 2-3 3-3 3"></path> <path d="M12 17h.01"></path></symbol>
+<symbol id="chevron-right" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"></path></symbol>
+<symbol id="copy" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect> <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></symbol>
+<symbol id="check" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></symbol>
+<symbol id="x" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"></path> <path d="m6 6 12 12"></path></symbol>
+<symbol id="link" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path> <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></symbol>
+<symbol id="list-filter" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 5h20"></path> <path d="M6 12h12"></path> <path d="M9 19h6"></path></symbol>
+<symbol id="refresh-cw" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path> <path d="M21 3v5h-5"></path> <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path> <path d="M8 16H3v5"></path></symbol>
+<symbol id="wifi-off" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h.01"></path> <path d="M8.5 16.429a5 5 0 0 1 7 0"></path> <path d="M5 12.859a10 10 0 0 1 5.17-2.69"></path> <path d="M19 12.859a10 10 0 0 0-2.007-1.523"></path> <path d="M2 8.82a15 15 0 0 1 4.177-2.643"></path> <path d="M22 8.82a15 15 0 0 0-11.288-3.764"></path> <path d="m2 2 20 20"></path></symbol>
+<symbol id="circle-slash-2" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle> <path d="M22 2 2 22"></path></symbol>
+<symbol id="triangle-alert" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"></path> <path d="M12 9v4"></path> <path d="M12 17h.01"></path></symbol>
+<symbol id="circle-pause" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle> <line x1="10" x2="10" y1="15" y2="9"></line> <line x1="14" x2="14" y1="15" y2="9"></line></symbol>
+<symbol id="timer-off" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2h4"></path> <path d="M4.6 11a8 8 0 0 0 1.7 8.7 8 8 0 0 0 8.7 1.7"></path> <path d="M7.4 7.4a8 8 0 0 1 10.3 1 8 8 0 0 1 .9 10.2"></path> <path d="m2 2 20 20"></path> <path d="M12 12v-2"></path></symbol>
+<symbol id="user-round" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="5"></circle> <path d="M20 21a8 8 0 0 0-16 0"></path></symbol>
+<symbol id="circle-help" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle> <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path> <path d="M12 17h.01"></path></symbol>
+<symbol id="list-x" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 5H3"></path> <path d="M11 12H3"></path> <path d="M16 19H3"></path> <path d="m15.5 9.5 5 5"></path> <path d="m20.5 9.5-5 5"></path></symbol>
+<symbol id="clock-alert" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6v6l4 2"></path> <path d="M20 12v5"></path> <path d="M20 21h.01"></path> <path d="M21.25 8.2A10 10 0 1 0 16 21.16"></path></symbol>
+<symbol id="bell-off" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.268 21a2 2 0 0 0 3.464 0"></path> <path d="M17 17H4a1 1 0 0 1-.74-1.673C4.59 13.956 6 12.499 6 8a6 6 0 0 1 .258-1.742"></path> <path d="m2 2 20 20"></path> <path d="M8.668 3.01A6 6 0 0 1 18 8c0 2.687.77 4.653 1.707 6.05"></path></symbol>
+<symbol id="message-square-more" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z"></path> <path d="M12 11h.01"></path> <path d="M16 11h.01"></path> <path d="M8 11h.01"></path></symbol>
+<symbol id="copy-x" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2"></path> <rect x="8" y="8" width="14" height="14" rx="2"></rect> <path d="m12.5 12.5 5 5"></path> <path d="m12.5 17.5 5-5"></path></symbol>
+<symbol id="user-round-x" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16.5 16.5 5 5"></path> <path d="M2 21a8 8 0 0 1 11.531-7.18"></path> <path d="m21.5 16.5-5 5"></path> <circle cx="10" cy="8" r="5"></circle></symbol>
+<symbol id="moon" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"></path></symbol>
+<symbol id="sun" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"></circle> <path d="M12 2v2"></path> <path d="M12 20v2"></path> <path d="m4.93 4.93 1.41 1.41"></path> <path d="m17.66 17.66 1.41 1.41"></path> <path d="M2 12h2"></path> <path d="M20 12h2"></path> <path d="m6.34 17.66-1.41 1.41"></path> <path d="m19.07 4.93-1.41 1.41"></path></symbol>
+<symbol id="chevron-down" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></symbol>
+</svg>
+
+<sc-if value="{{showSwitch}}" hint-placeholder-val="{{ true }}">
+<div class="proto">
+  <label>Prototype scenario
+    <sc-raw-select value="{{scenario}}" sc-camel-on-change="{{onScenario}}"><sc-for list="{{scenarios}}" as="o" hint-placeholder-count="9"><option value="{{o.id}}">{{o.label}}</option></sc-for></sc-raw-select>
+  </label>
+  <label>Theme
+    <sc-raw-select value="{{theme}}" sc-camel-on-change="{{onTheme}}"><option value="system">system</option><option value="light">light</option><option value="dark">dark</option></sc-raw-select>
+  </label>
+</div>
+</sc-if>
+
+<header class="strip">
+  <div class="stripIn">
+    <div class="brandWrap" sc-camel-on-blur="{{menuBlur}}" sc-camel-on-key-down="{{menuKeys}}">
+      <button class="brand" type="button" aria-haspopup="menu" aria-expanded="{{menuOpen}}" aria-label="Dispatch menu: theme, help, version" sc-camel-on-click="{{toggleMenu}}">
+        <svg sc-camel-view-box="-3.15 16.8 46 46" role="img" aria-label="Jig"><path fill="var(--ink)" d="m18.67 26.33v4.99c0 0.23-0.19 0.41-0.42 0.41h-5.2c-0.6 0-1.07 0.42-1.07 0.99v5.21c0 0.29-0.22 0.51-0.51 0.51h-5.57c-0.25 0-0.43-0.18-0.43-0.43v-8.99c0-0.5 0.18-0.95 0.53-1.28l1.25-1.22c0.36-0.35 0.86-0.57 1.38-0.57h9.62c0.23 0 0.42 0.16 0.42 0.38z"></path><path fill="var(--ink)" d="m21.03 26.33v4.99c0 0.23 0.19 0.41 0.42 0.41h5.16c0.6 0 1.09 0.42 1.09 0.99v5.15c0 0.32 0.23 0.57 0.55 0.57h5.55c0.24 0 0.41-0.15 0.41-0.39v-9.03c0-0.5-0.18-0.95-0.53-1.28l-1.25-1.22c-0.36-0.35-0.86-0.57-1.38-0.57h-9.6c-0.23 0-0.42 0.16-0.42 0.38z"></path><path fill="var(--ink)" d="m18.67 53.29v-4.92c0-0.24-0.19-0.42-0.42-0.42h-5.17c-0.61 0-1.1-0.49-1.1-1.1v-5.07c0-0.26-0.2-0.44-0.45-0.44h-5.61c-0.25 0-0.45 0.18-0.45 0.44v8.76c0 0.52 0.21 1.02 0.58 1.39l1.2 1.18c0.38 0.37 0.93 0.6 1.48 0.6h9.52c0.23 0 0.42-0.19 0.42-0.42z"></path><path fill="var(--ink)" d="m21.03 53.29v-4.92c0-0.24 0.19-0.42 0.42-0.42h5.16c0.62 0 1.11-0.46 1.11-1.07v-5.07c0-0.26 0.19-0.47 0.45-0.47h5.62c0.24 0 0.42 0.15 0.42 0.4v8.8c0 0.52-0.21 1.02-0.58 1.39l-1.2 1.21c-0.36 0.37-0.88 0.57-1.4 0.57h-9.58c-0.23 0-0.42-0.19-0.42-0.42z"></path><rect fill="var(--accent)" x="14.16" y="34.07" width="11.42" height="11.52" rx=".6523"></rect></svg>
+        <span>Dispatch</span>
+        <svg class="ic s14 caret" aria-hidden="true"><use href="#chevron-down"></use></svg>
+      </button>
+      <sc-if value="{{menu}}" hint-placeholder-val="{{ false }}">
+        <div class="menu" role="menu" aria-label="Dispatch">
+          <button class="mi" type="button" role="menuitemcheckbox" aria-checked="{{menu.dark}}" sc-camel-on-click="{{menu.toggleTheme}}"><svg class="ic" aria-hidden="true"><use href="{{menu.themeIcon}}"></use></svg><span>Dark theme</span><span class="sw {{menu.swCls}}" aria-hidden="true"></span></button>
+          <button class="mi" type="button" role="menuitem" sc-camel-on-click="{{menu.help}}"><svg class="ic" aria-hidden="true"><use href="#circle-help"></use></svg><span>Help: every icon and its word</span></button>
+          <p class="minfo" role="none">{{menu.fresh}}<br>plugin 0.198.0 · schema 20 · this page reads and never writes</p>
+        </div>
+      </sc-if>
+    </div>
+    <nav class="tabs" aria-label="Views">
+      <sc-for list="{{tabs}}" as="t" hint-placeholder-count="6"><button class="tab" type="button" aria-current="{{t.cur}}" sc-camel-on-click="{{t.go}}">{{t.label}}<sc-if value="{{t.hasCount}}" hint-placeholder-val="{{ true }}"><span class="count {{t.cls}}">{{t.count}}</span></sc-if></button></sc-for>
+    </nav>
+    <span class="fresh {{freshCls}}" aria-live="polite"><svg class="ic s14" aria-hidden="true"><use href="{{freshIcon}}"></use></svg><span class="deskOnly">{{freshPre}}</span>{{fresh}}</span>
+  </div>
+</header>
+
+<main class="main">
+
+<sc-if value="{{banner}}" hint-placeholder-val="{{ false }}">
+<section class="banner" role="status" aria-live="polite">
+  <p class="bline"><svg class="ic" aria-hidden="true"><use href="{{banner.icon}}"></use></svg><span>{{banner.title}}</span><sc-if value="{{banner.retry}}" hint-placeholder-val="{{ false }}"><button class="btn" type="button" sc-camel-on-click="{{banner.retry}}"><svg class="ic" aria-hidden="true"><use href="#refresh-cw"></use></svg>Retry</button></sc-if></p>
+</section>
+</sc-if>
+
+<sc-if value="{{flash}}" hint-placeholder-val="{{ false }}">
+<p class="flash"><svg class="ic" aria-hidden="true"><use href="#circle-check-big"></use></svg><span>Safe to merge:</span><sc-for list="{{flash}}" as="fl" hint-placeholder-count="1"><a class="m" href="{{fl.url}}" target="_blank" rel="noopener">{{fl.label}}</a></sc-for><button class="linkbtn" type="button" sc-camel-on-click="{{goMerge}}">Merge view</button></p>
+</sc-if>
+
+<section class="vhead" aria-labelledby="vh">
+  <sc-if value="{{band}}" hint-placeholder-val="{{ false }}">
+  <div class="band">
+    <h1 id="vh" class="vh">{{band.title}}</h1>
+    <div class="metrics">
+      <span class="sm">{{band.lead}}</span><sc-if value="{{band.oldUrl}}" hint-placeholder-val="{{ true }}"><a class="m sm" href="{{band.oldUrl}}" target="_blank" rel="noopener">{{band.oldLabel}}</a></sc-if>
+    </div>
+    <div class="facet" role="group" aria-label="Acts">
+      <sc-for list="{{band.acts}}" as="c" hint-placeholder-count="3"><button class="fchip deskOnly" type="button" aria-pressed="{{c.on}}" sc-camel-on-click="{{c.pick}}"><svg class="ic s14" aria-hidden="true"><use href="{{c.icon}}"></use></svg>{{c.word}} <span class="n">{{c.n}}</span></button><a class="fchip phoneOnly" href="#{{c.anchor}}" sc-camel-on-click="{{c.jump}}"><svg class="ic s14" aria-hidden="true"><use href="{{c.icon}}"></use></svg>{{c.word}} <span class="n">{{c.n}}</span></a></sc-for>
+    </div>
+  </div>
+  </sc-if>
+  <sc-if value="{{plainTitle}}" hint-placeholder-val="{{ true }}">
+  <div class="vtitle"><h1 id="vh">{{plainTitle}}</h1><span class="sub">{{plainSub}}</span></div>
+  </sc-if>
+
+  <sc-if value="{{showFilters}}" hint-placeholder-val="{{ true }}">
+  <div class="filters">
+    <sc-if value="{{filterOpen}}" hint-placeholder-val="{{ false }}"><label class="textf deskOnly"><svg class="ic" aria-hidden="true"><use href="#list-filter"></use></svg><span class="vh">Filter this view</span><input type="search" placeholder="Filter this view" value="{{f.q}}" sc-camel-on-change="{{onQ}}" sc-camel-auto-focus="{{filterFocus}}" data-filter="1"></label></sc-if>
+    <sc-if value="{{filterClosed}}" hint-placeholder-val="{{ true }}"><button class="fchip deskOnly" type="button" sc-camel-on-click="{{openFilter}}"><svg class="ic s14" aria-hidden="true"><use href="#list-filter"></use></svg>Filter <span class="n">/</span></button></sc-if>
+    <sc-for list="{{facets}}" as="fa" hint-placeholder-count="2">
+      <div class="facet {{fa.cls}}" role="group" aria-label="{{fa.label}}">
+        <span class="fl">{{fa.label}}</span>
+        <sc-if value="{{fa.chips}}" hint-placeholder-val="{{ true }}"><sc-for list="{{fa.chips}}" as="c" hint-placeholder-count="3"><button class="fchip" type="button" aria-pressed="{{c.on}}" sc-camel-on-click="{{c.pick}}"><sc-if value="{{c.icon}}" hint-placeholder-val="{{ false }}"><svg class="ic s14 {{c.icCls}}" aria-hidden="true"><use href="{{c.icon}}"></use></svg></sc-if>{{c.word}} <span class="n">{{c.n}}</span></button></sc-for></sc-if>
+        <sc-if value="{{fa.select}}" hint-placeholder-val="{{ false }}"><sc-raw-select class="sel" aria-label="{{fa.label}}" value="{{fa.value}}" sc-camel-on-change="{{fa.onSel}}"><option value="">{{fa.allWord}}</option><sc-for list="{{fa.select}}" as="o" hint-placeholder-count="3"><option value="{{o.v}}">{{o.t}}</option></sc-for></sc-raw-select></sc-if>
+      </div>
+    </sc-for>
+    <sc-if value="{{grouping}}" hint-placeholder-val="{{ false }}">
+      <div class="facet deskOnly" role="group" aria-label="Group by"><span class="fl">Group by</span><span class="seg"><sc-for list="{{grouping}}" as="g" hint-placeholder-count="4"><button type="button" aria-pressed="{{g.on}}" sc-camel-on-click="{{g.pick}}">{{g.word}}</button></sc-for></span></div>
+    </sc-if>
+    <sc-if value="{{active}}" hint-placeholder-val="{{ false }}">
+      <p class="active deskOnly">{{active.text}} <button class="linkbtn" type="button" sc-camel-on-click="{{clearAll}}">Clear</button> <span class="m">{{address}}</span></p>
+      <p class="active phoneOnly">{{active.phone}} <button class="linkbtn" type="button" sc-camel-on-click="{{clearAll}}">Clear</button></p>
+    </sc-if>
+  </div>
+  </sc-if>
+</section>
+
+<sc-if value="{{load}}" hint-placeholder-val="{{ false }}">
+<section class="load" aria-labelledby="loadh">
+  <div class="loadHead"><b id="loadh">{{load.head}}</b><span class="sm">{{load.binds}}</span></div>
+  <p class="sm mut">The fullest gauge against its own line, not a sum. 100% is a gauge at its line.</p>
+  <sc-if value="{{load.note}}" hint-placeholder-val="{{ false }}"><p class="sm">{{load.note}}</p></sc-if>
+  <div class="gauges" role="list">
+    <sc-for list="{{load.gauges}}" as="g" hint-placeholder-count="6">
+      <div class="g {{g.cls}}" role="listitem">
+        <svg class="ic gi" aria-hidden="true"><use href="{{g.icon}}"></use></svg>
+        <span class="gn">{{g.name}} <sc-if value="{{g.bindsTag}}" hint-placeholder-val="{{ false }}"><span class="tagb">binds</span></sc-if> <sc-if value="{{g.overTag}}" hint-placeholder-val="{{ false }}"><span class="tagb over"><svg class="ic s14" aria-hidden="true"><use href="#triangle-alert"></use></svg>over its line</span></sc-if></span>
+        <span class="bar gb {{g.barCls}}" role="img" aria-label="{{g.aria}}"><span class="fill" style="width: {{g.w}}%"></span><span class="over" style="left: 66.667%; width: {{g.ow}}%"></span><span class="lineMark" style="left: 66.667%"></span></span>
+        <span class="gp">{{g.pct}}</span>
+        <span class="gr">{{g.reads}}</span>
+      </div>
+    </sc-for>
+  </div>
+</section>
+</sc-if>
+
+<div class="list" role="list">
+  <sc-for list="{{rows}}" as="r" hint-placeholder-count="5">
+    <sc-if value="{{r.isHead}}" hint-placeholder-val="{{ false }}">
+      <div class="ghead" id="{{r.anchor}}" sc-camel-on-click="{{r.toggle}}" role="listitem">
+        <span><button class="disc" type="button" aria-expanded="{{r.expanded}}" aria-label="{{r.discLabel}}" sc-camel-on-click="{{r.toggleBtn}}"><svg class="ic" aria-hidden="true"><use href="#chevron-right"></use></svg></button></span>
+        <h2><sc-if value="{{r.icon}}" hint-placeholder-val="{{ true }}"><svg class="ic" aria-hidden="true"><use href="{{r.icon}}"></use></svg></sc-if>{{r.title}} <span class="m gsub">{{r.count}}</span><span class="gsub">{{r.sub}}</span></h2>
+      </div>
+      <sc-if value="{{r.note}}" hint-placeholder-val="{{ false }}"><p class="gnote {{r.noteCls}}">{{r.note}}</p></sc-if>
+    </sc-if>
+    <sc-if value="{{r.isAcct}}" hint-placeholder-val="{{ false }}">
+      <div class="acct" role="listitem" style="margin-left: var(--gut)">
+        <span class="m" style="font-weight: 600">{{r.name}}</span><span class="stage">{{r.vendor}}</span>
+        <span class="pips" aria-hidden="true"><sc-for list="{{r.pips}}" as="p" hint-placeholder-count="2"><span class="pip {{p}}"></span></sc-for></span>
+        <span class="m">{{r.held}}</span>
+        <sc-if value="{{r.state}}" hint-placeholder-val="{{ false }}"><span class="cause"><svg class="ic s14" aria-hidden="true"><use href="{{r.stateIcon}}"></use></svg>{{r.state}}</span></sc-if>
+      </div>
+    </sc-if>
+    <sc-if value="{{r.isCard}}" hint-placeholder-val="{{ true }}">
+      <article class="card {{r.cls}}" role="listitem" sc-camel-on-click="{{r.onCard}}" data-card="{{r.id}}">
+        <div class="gutter">
+          <button class="disc" type="button" aria-expanded="{{r.expanded}}" aria-controls="{{r.detailId}}" aria-label="{{r.discLabel}}" sc-camel-on-click="{{r.toggleBtn}}"><svg class="ic" aria-hidden="true"><use href="#chevron-right"></use></svg></button>
+          <sc-if value="{{r.open}}" hint-placeholder-val="{{ false }}"><span class="spine" aria-hidden="true"></span></sc-if>
+        </div>
+        <div class="cbody">
+          <div class="r1">
+            <sc-if value="{{r.act}}" hint-placeholder-val="{{ false }}"><span class="act {{r.act.word}}"><svg class="ic s14" aria-hidden="true"><use href="{{r.act.icon}}"></use></svg>{{r.act.word}}</span></sc-if>
+            <sc-if value="{{r.mark}}" hint-placeholder-val="{{ false }}"><span class="mk {{r.mark.rc}}" role="img" aria-label="{{r.mark.word}}" title="{{r.mark.word}}">{{r.mark.rg}}</span></sc-if>
+            <sc-if value="{{r.lane}}" hint-placeholder-val="{{ false }}"><span class="cause"><svg class="ic" aria-hidden="true"><use href="{{r.lane.icon}}"></use></svg><span class="sm">{{r.lane.word}}</span></span></sc-if>
+            <dc-import name="Ident" w="{{r.ident}}" fail-copy="{{failCopy}}" hint-size="120px,28px"></dc-import>
+            <sc-if value="{{r.linked}}" hint-placeholder-val="{{ false }}"><span class="links"><svg class="ic s14" role="img" aria-label="linked to"><use href="#link"></use></svg><sc-for list="{{r.linked}}" as="l" hint-placeholder-count="1"><dc-import name="Ident" w="{{l}}" hint-size="80px,24px"></dc-import></sc-for><sc-if value="{{r.linkMore}}" hint-placeholder-val="{{ false }}"><span>{{r.linkMore}}</span></sc-if></span></sc-if>
+            <span class="end">{{r.end}}</span>
+          </div>
+          <div class="meta">
+            <sc-for list="{{r.meta}}" as="x" hint-placeholder-count="3">
+              <sc-if value="{{x.repo}}" hint-placeholder-val="{{ true }}"><a class="repo" href="{{x.url}}" target="_blank" rel="noopener">{{x.repo}}</a></sc-if>
+              <sc-if value="{{x.stage}}" hint-placeholder-val="{{ false }}"><span class="stage" title="{{x.hint}}"><svg class="ic s14" aria-hidden="true"><use href="{{x.icon}}"></use></svg>{{x.stage}}</span></sc-if>
+              <sc-if value="{{x.src}}" hint-placeholder-val="{{ false }}"><span class="src" title="{{x.hint}}"><svg class="ic s14" aria-hidden="true"><use href="{{x.icon}}"></use></svg>{{x.src}}</span></sc-if>
+              <sc-if value="{{x.word}}" hint-placeholder-val="{{ false }}"><span class="cause"><sc-if value="{{x.icon}}" hint-placeholder-val="{{ false }}"><svg class="ic s14" aria-hidden="true"><use href="{{x.icon}}"></use></svg></sc-if>{{x.word}}</span></sc-if>
+              <sc-if value="{{x.who}}" hint-placeholder-val="{{ false }}"><span>waits on <span class="who">{{x.who}}</span></span></sc-if>
+            </sc-for>
+          </div>
+          <sc-if value="{{r.title}}" hint-placeholder-val="{{ true }}"><p class="q">{{r.title}}</p></sc-if>
+          <sc-if value="{{r.ask}}" hint-placeholder-val="{{ true }}"><p class="ask">{{r.ask}}</p></sc-if>
+          <sc-if value="{{r.rec}}" hint-placeholder-val="{{ false }}"><p class="rec"><b>Recommended:</b> {{r.rec}}</p></sc-if>
+          <sc-if value="{{r.cmd}}" hint-placeholder-val="{{ false }}">
+            <div class="cmd"><code>{{r.cmd.text}}</code><button class="cbtn {{r.cmd.cp.cls}}" type="button" aria-label="{{r.cmd.cp.aria}}" sc-camel-on-click="{{r.cmd.cp.on}}"><svg class="ic s14" aria-hidden="true"><use href="{{r.cmd.cp.icon}}"></use></svg></button></div>
+            <sc-if value="{{r.cmd.cp.failed}}" hint-placeholder-val="{{ false }}"><input class="cfield" readonly="{{ true }}" sc-camel-auto-focus="{{ true }}" sc-camel-on-focus="{{selectAll}}" aria-label="Copy refused by the browser: the full command is selected" value="{{r.cmd.text}}"></sc-if>
+          </sc-if>
+          <sc-if value="{{r.open}}" hint-placeholder-val="{{ false }}">
+            <div class="detail" id="{{r.detailId}}">
+              <sc-for list="{{r.detail}}" as="d" hint-placeholder-count="2">
+                <sc-if value="{{d.head}}" hint-placeholder-val="{{ false }}"><h3 class="sm">{{d.head}}</h3></sc-if>
+                <sc-if value="{{d.quote}}" hint-placeholder-val="{{ false }}"><div class="quote">{{d.quote}}</div></sc-if>
+                <sc-if value="{{d.text}}" hint-placeholder-val="{{ false }}"><p class="sm">{{d.text}}</p></sc-if>
+                <sc-if value="{{d.opts}}" hint-placeholder-val="{{ false }}"><div><sc-for list="{{d.opts}}" as="o" hint-placeholder-count="2"><p class="opt"><b>{{o.name}}</b>{{o.mark}}<br><span class="mut">Changes: {{o.changes}} · Costs: {{o.costs}}</span></p></sc-for></div></sc-if>
+                <sc-if value="{{d.kv}}" hint-placeholder-val="{{ false }}"><dl class="kv"><sc-for list="{{d.kv}}" as="e" hint-placeholder-count="3"><dt>{{e.k}}</dt><dd class="m"><span>{{e.v}}</span></dd></sc-for></dl></sc-if>
+                <sc-if value="{{d.tools}}" hint-placeholder-val="{{ false }}"><div class="tools"><sc-for list="{{d.tools}}" as="t" hint-placeholder-count="2"><sc-if value="{{t.href}}" hint-placeholder-val="{{ false }}"><a href="{{t.href}}" target="_blank" rel="noopener">{{t.word}}</a></sc-if><sc-if value="{{t.cp}}" hint-placeholder-val="{{ false }}"><button class="cbtn {{t.cp.cls}}" type="button" aria-label="{{t.cp.aria}}" sc-camel-on-click="{{t.cp.on}}" style="width: auto; padding: 0 8px"><svg class="ic s14" aria-hidden="true"><use href="{{t.cp.icon}}"></use></svg> {{t.cp.word}}</button><sc-if value="{{t.cp.failed}}" hint-placeholder-val="{{ false }}"><input class="cfield" readonly="{{ true }}" sc-camel-auto-focus="{{ true }}" sc-camel-on-focus="{{selectAll}}" aria-label="Copy refused by the browser: the text is selected" value="{{t.cp.text}}"></sc-if></sc-if><sc-if value="{{t.na}}" hint-placeholder-val="{{ false }}"><span class="mut">{{t.na}}</span></sc-if></sc-for></div></sc-if>
+              </sc-for>
+            </div>
+          </sc-if>
+        </div>
+      </article>
+    </sc-if>
+    <sc-if value="{{r.isMore}}" hint-placeholder-val="{{ false }}"><button class="btn more" type="button" sc-camel-on-click="{{r.more}}" style="margin-left: var(--gut)">{{r.label}}</button></sc-if>
+    <sc-if value="{{r.isEmpty}}" hint-placeholder-val="{{ false }}"><p class="empty">{{r.text}}</p></sc-if>
+  </sc-for>
+</div>
+
+<sc-if value="{{help}}" hint-placeholder-val="{{ false }}">
+<section aria-label="The icons and their words">
+  <div class="legend">
+    <sc-for list="{{help}}" as="h" hint-placeholder-count="6">
+      <div><h3>{{h.set}}</h3><ul><sc-for list="{{h.items}}" as="i" hint-placeholder-count="4"><li><sc-if value="{{i.icon}}" hint-placeholder-val="{{ true }}"><svg class="ic {{i.cls}}" aria-hidden="true"><use href="{{i.icon}}"></use></svg></sc-if><sc-if value="{{i.glyph}}" hint-placeholder-val="{{ false }}"><span class="mk {{i.rc}}" aria-hidden="true">{{i.glyph}}</span></sc-if><span>{{i.word}}</span></li></sc-for></ul></div>
+    </sc-for>
+  </div>
+</section>
+</sc-if>
+
+</main>
+<footer class="foot">this host · plugin 0.198.0 · database schema 20 · read {{readAt}} host time · read-only: this page sends GET requests and writes nothing to the host</footer>
+</div>
+</x-dc></template>
+<script type="text/x-dc" data-dc-script="" data-props="{&quot;scenario&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;loud&quot;,&quot;options&quot;:[&quot;loud&quot;,&quot;quiet&quot;,&quot;empty&quot;,&quot;repos&quot;,&quot;volume&quot;,&quot;linked&quot;,&quot;unknown&quot;,&quot;overload&quot;,&quot;offline&quot;],&quot;section&quot;:&quot;Scenario&quot;},&quot;view&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;auto&quot;,&quot;options&quot;:[&quot;auto&quot;,&quot;merge&quot;,&quot;needs&quot;,&quot;running&quot;,&quot;queue&quot;,&quot;history&quot;,&quot;help&quot;],&quot;section&quot;:&quot;Scenario&quot;},&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;system&quot;,&quot;options&quot;:[&quot;system&quot;,&quot;light&quot;,&quot;dark&quot;],&quot;section&quot;:&quot;Scenario&quot;},&quot;openFirst&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;section&quot;:&quot;Scenario&quot;},&quot;showSwitch&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;section&quot;:&quot;Scenario&quot;},&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:1800}}">
+/* ---- vocabulary: one icon per recorded word (Handoff has the table) ---- */
+function I(n) { return '#' + n; }
+var ACTS = ['Merge', 'Decide', 'Authorize', 'Reply', 'Do', 'Investigate'];
+var ACT_ICON = { Merge: 'merge', Decide: 'scale', Authorize: 'key-round', Reply: 'reply', Do: 'wrench', Investigate: 'search' };
+var STAGE_ICON = { pickup: 'circle-plus', rearm: 'rotate-cw', takeover: 'arrow-left-right', followup: 'chevrons-right', notify: 'bell', steer: 'navigation', steward: 'hammer' };
+var STAGE_HINT = { pickup: 'starts work on an assigned issue', rearm: 'restarts a stopped review loop (a drive)', takeover: 'replaces a wedged driver', followup: 'the session after a merge', notify: 'tells a person once', steer: 'the one fixed nudge', steward: 'host upkeep' };
+var SRC_ICON = { 're-armable': 'rotate-cw', 'label drive': 'tag', held: 'pause', assigned: 'user-round-check', merged: 'git-merge' };
+var SRC_HINT = { 're-armable': 'a drive the dispatcher may restart by itself', 'label drive': 'a person added the drive label', held: 'a hold label or a serialized leader keeps it off', assigned: 'an issue assigned to the factory identity', merged: 'a merged pull request waiting for its follow-up' };
+var GROUPS = ['starts', 'held', 'reported', 'never'];
+var GROUP_ICON = { starts: 'play', held: 'pause', reported: 'flag', never: 'ban' };
+var GROUP_TITLE = { starts: 'Starts next', held: 'Held', reported: 'Reported, not started', never: 'Will not start' };
+var GROUP_NOTE = { starts: 'When a tick finds a free slot, in this order.', held: 'Behind a serialized leader or a hold label.', reported: 'A pickup does not start on today’s runtime; waiting for a tick will not start these.', never: 'Refused by a check it will fail again.' };
+var CAUSE = { parked: 'Parked: waiting on a decision', stalled: 'Stalled: the drive stopped', 'needs-person': 'Needs a person', 'stopped-unknown': 'Stopped, cause unknown', 'followup-failed': 'Follow-up failed', 'followup-stale': 'Follow-up claim went stale', 'nudge-unanswered': 'Nudge unanswered', 'pickup-question': 'Pickup stopped on a question', 'double-claim': 'Claimed twice', 'assigner-cannot-write': 'Assigned by someone who cannot write' };
+var CAUSE_ICON = { parked: 'circle-pause', stalled: 'timer-off', 'needs-person': 'user-round', 'stopped-unknown': 'circle-help', 'followup-failed': 'list-x', 'followup-stale': 'clock-alert', 'nudge-unanswered': 'bell-off', 'pickup-question': 'message-square-more', 'double-claim': 'copy-x', 'assigner-cannot-write': 'user-round-x' };
+var LANES = ['merge now', 'approve first', 'update next'];
+var LANE_ICON = { 'merge now': 'circle-check-big', 'approve first': 'stamp', 'update next': 'git-branch' };
+var GAUGE = { memory: ['memory-stick', 'Memory'], processors: ['cpu', 'Processors'], 'test-lock': ['lock', 'Test lock'], disk: ['hard-drive', 'Disk'], forge: ['gauge', 'Forge budget'], accounts: ['users', 'Accounts'] };
+var ROLE = { needs: ['', 'r-needs', 'needs a person'], working: ['~', 'r-working', 'working'], waiting: ['…', 'r-waiting', 'waiting'], held: ['=', 'r-held', 'held back'], well: ['✓', 'r-well', 'finished well'], badly: ['×', 'r-badly', 'finished badly'], stale: ['≠', 'r-stale', 'stale'], unknown: ['?', 'r-unknown', 'unknown'] };
+var TRACKER = { github: 'GitHub Issues', linear: 'Linear', jira: 'Jira' };
+
+/* ---- data: neutral sample lines, one per scenario ---- */
+var NOW = Date.UTC(2026, 10, 11, 9, 40);
+function ago(min) { return NOW - min * 60000; }
+function pad(n) { return (n < 10 ? '0' : '') + n; }
+function clock(t) { var d = new Date(t); return pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes()); }
+function span(ms) { var m = Math.round(ms / 60000); if (m < 60) return m + ' min'; var h = Math.floor(m / 60); if (h < 48) return h + ' h' + (m % 60 ? ' ' + (m % 60) + ' min' : ''); return Math.floor(h / 24) + ' d'; }
+function plural(n, a, b) { return n + ' ' + (n === 1 ? a : (b || a + 's')); }
+
+function repoSet(n, trackers) {
+  var names = ['web', 'api', 'infra', 'mobile', 'docs', 'billing', 'search', 'auth', 'mail', 'ops'];
+  var pre = { web: '', api: 'API', infra: 'INF', mobile: 'MOB', docs: '', billing: 'BIL', search: 'SRC', auth: '', mail: 'MAIL', ops: 'OPS' };
+  return names.slice(0, n).map(function (x, i) { return { slug: 'example-org/' + x, tracker: trackers[i], pre: pre[x] }; });
+}
+function repoUrl(slug) { return 'https://github.com/' + slug; }
+function trackerOf(L, slug) { var r = L.repos.filter(function (x) { return x.slug === slug; })[0]; return r ? r.tracker : undefined; }
+function itemUrl(tracker, slug, key) {
+  if (tracker === 'github') return repoUrl(slug) + '/issues/' + key.slice(1);
+  if (tracker === 'linear') return 'https://linear.app/example/issue/' + key;
+  if (tracker === 'jira') return 'https://example.atlassian.net/browse/' + key;
+  return null;
+}
+function itemKey(r, n) { return r.pre ? r.pre + '-' + n : '#' + n; }
+function prRef(L, slug, n, standing, title, links) { return { kind: 'pr', repo: slug, num: n, url: repoUrl(slug) + '/pull/' + n, standing: standing || 'open', title: title, links: links }; }
+function itemRef(L, slug, key, title, links, noUrl) { var t = trackerOf(L, slug); return { kind: 'item', repo: slug, key: key, url: noUrl ? null : itemUrl(t, slug, key), tracker: t, title: title, links: links }; }
+function lItems(L, slug, keys) { var t = trackerOf(L, slug); return { items: keys.map(function (k) { return { key: k, url: itemUrl(t, slug, k) }; }), prs: [] }; }
+function lPrs(slug, nums) { return { items: [], prs: nums.map(function (n) { return { number: n, url: repoUrl(slug) + '/pull/' + n }; }) }; }
+var NONE = { items: [], prs: [] };
+
+var RETRY = { question: 'Should the retry cover 4xx responses too?', cls: 'scope', person: 'maintainer-a', key: 'PRRT_x1', options: [{ name: 'A: retry 5xx only', changes: 'the retry helper', costs: 'leaves 429 unhandled', rec: true }, { name: 'B: retry 5xx and 429', changes: 'one more test', costs: 'needs a backoff cap', rec: false }], rec: 'A: retry 5xx only. Changes the retry helper; costs: leaves 429 unhandled.', steps: ['Comment answer PRRT_x1: A on the pull request'] };
+var MIG = { question: 'Drop the old invoice column in this pull request?', cls: 'destructive', person: 'maintainer-b', key: 'PRRT_x7', options: [{ name: 'A: drop it here', changes: 'one migration', costs: 'cannot be rolled back after deploy', rec: false }, { name: 'B: drop it in a later release', changes: 'two migrations', costs: 'the column stays for a release', rec: true }], rec: 'B: drop it in a later release. Changes: two migrations; costs: the column stays for a release.', steps: ['Comment answer PRRT_x7: B on the pull request', 'Run the backfill check after the merge'] };
+
+function baseLoud(withLinks) {
+  var L = { repos: repoSet(5, ['github', 'linear', 'jira', null, 'github']), tickAt: ago(2) };
+  var W = 'example-org/web', A = 'example-org/api', F = 'example-org/infra';
+  var lk = function (x) { return withLinks ? x : undefined; };
+  L.ready = [
+    { lane: 'merge now', ref: prRef(L, W, 461, 'open', 'Cache the price list for an hour', lk(lItems(L, W, ['#402']))), since: ago(122), says: 'converged, witnessed and mergeable at the verified head', act: 'merge', command: 'gh pr merge 461 --repo example-org/web --match-head-commit 3f2a91c0d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9 --squash', unblocks: [463], conditions: [['review witnessed at the verified head', true], ['mergeable', true], ['required checks pass', true]] },
+    { lane: 'approve first', ref: prRef(L, A, 1201, 'open', 'Document the retry budget', lk(NONE)), since: ago(157), says: 'waits on an approval; requested from maintainer-a', act: 'approve', command: 'jig ask drive@example-org/api#1201', unblocks: [], conditions: [['an approval', false], ['required checks pass', true]] }
+  ];
+  L.needs = [
+    { act: 'Decide', cause: 'parked', stage: 'rearm', ref: prRef(L, W, 456, 'open', 'Retry the webhook on a 5xx', lk(lItems(L, W, ['#231', '#244']))), since: ago(582), d: [RETRY], reason: 'drive ledger parked: stopped 8 (parked), waiting on thread PRRT_x1: a person answers' },
+    { act: 'Decide', cause: 'parked', stage: 'rearm', ref: prRef(L, W, 475, 'open', 'Move the release notes to the docs site', lk(NONE)), since: ago(332), d: [{ question: null, cls: 'scope', person: null, key: 'PRRT_x2', options: [], rec: null, steps: [] }], reason: 'drive ledger parked: stopped 8 (parked), waiting on thread PRRT_x1, thread PRRT_x2: a person answers' },
+    { act: 'Decide', cause: 'parked', stage: 'rearm', ref: prRef(L, F, 95, 'draft', 'Raise the runner disk quota', lk(lItems(L, F, ['INF-12']))), since: ago(197), d: [{ question: 'Raise the quota to 200 GiB or prune the cache first?', cls: 'scope', person: 'maintainer-a', key: 'PRRT_x4', options: [], rec: 'prune the cache first; the quota stays.', steps: [] }], reason: 'drive ledger parked: stopped 8 (parked), waiting on thread PRRT_x4: a person answers' },
+    { act: 'Authorize', cause: 'parked', stage: 'rearm', ref: prRef(L, A, 1210, 'open', 'Split the invoice table migration', lk(lItems(L, A, ['API-77']))), since: ago(427), d: [MIG], reason: 'drive ledger parked: stopped 8 (parked), waiting on finding PRRT_x7: a person answers' },
+    { act: 'Investigate', cause: 'needs-person', stage: 'rearm', ref: prRef(L, W, 479, 'open', 'Cache the session lookup', lk(NONE)), since: ago(357), d: [], reason: 'drive ledger needs-person: stopped 14: only a person settles it (see the drive’s handoff)', handoff: repoUrl(W) + '/pull/479#issuecomment-9001' },
+    { act: 'Investigate', cause: 'stalled', stage: 'pickup', ref: itemRef(L, A, 'API-81', 'Add the audit export', lk(lPrs(A, [1215]))), since: ago(262), d: [], reason: 'a claimed item with no running session past stalled_after' },
+    { act: 'Investigate', cause: 'followup-failed', stage: 'followup', ref: prRef(L, W, 461, 'merged', 'Trim the checkout bundle', undefined), since: ago(165), d: [], reason: 'a follow-up claimed it 17h ago (comment 456) and has not marked it done' },
+    { act: 'Investigate', cause: 'double-claim', stage: 'pickup', ref: itemRef(L, W, '#418', 'Fix the login redirect', lk(lPrs(W, [482, 483]))), since: ago(87), d: [], reason: '#418 joins to 2 running sessions', workspaces: ['/srv/work/web/web-418', '/srv/work/web/web-418-b'] }
+  ];
+  L.accounts = [{ name: 'work-a', vendor: 'claude', cap: 2, held: 2 }, { name: 'work-b', vendor: 'claude', cap: 2, held: 2 }, { name: 'work-c', vendor: 'claude', cap: 2, held: 0, wall: ago(-75) }, { name: 'codex-a', vendor: 'codex', cap: 2, held: 0 }, { name: 'codex-b', vendor: 'codex', cap: 2, held: 0, notAdmitted: 'this vendor runs no drive passes' }];
+  L.sessions = [
+    { account: 'work-a', stage: 'rearm', role: 'working', ref: prRef(L, A, 1207, 'open', 'Retry the webhook on a 5xx', lk(lItems(L, A, ['API-70']))), created: ago(77), fact: 'working, round 3', round: 3, samples: '9 7 5', heartbeat: 6 },
+    { account: 'work-a', stage: 'rearm', role: 'working', ref: prRef(L, W, 468, 'open', 'Split the invoice table migration', lk(NONE)), created: ago(47), fact: 'working, round 1', round: 1, samples: '11', heartbeat: 4 },
+    { account: 'work-b', stage: 'pickup', role: 'working', ref: itemRef(L, F, 'INF-14', 'Pin the mobile build image', lk(lPrs(F, [96]))), created: ago(122), fact: 'working: validating, 6 min ago', heartbeat: null },
+    { account: 'work-b', stage: 'rearm', role: 'waiting', ref: prRef(L, A, 1219, 'open', 'Rotate the signing key', lk(NONE)), created: ago(2), fact: 'pending: launched this tick, not claimed yet', heartbeat: null }
+  ];
+  L.queue = [
+    { group: 'starts', source: 're-armable', ref: prRef(L, A, 1209, 'open', 'Drop the unused billing flag', lk(NONE)), why: 'drive ledger stale: stopped 0 (converged), and now conflicting with its base: re-drive on any account', role: 'stale', since: ago(40) },
+    { group: 'starts', source: 'label drive', ref: prRef(L, W, 480, 'open', 'Add the health endpoint', lk(lItems(L, W, ['#250']))), why: 'a person added the drive label', role: 'held', since: ago(25) },
+    { group: 'held', source: 'held', ref: prRef(L, A, 1218, 'open', 'Rename the ledger table', lk(NONE)), why: 'held: serialized behind #1203 in migrations', role: 'held', since: ago(180) },
+    { group: 'reported', source: 'assigned', ref: itemRef(L, W, '#412', 'Paginate the audit list', lk(NONE)), why: 'assigned by maintainer-a', role: 'held', since: ago(300) },
+    { group: 'never', source: 'assigned', ref: itemRef(L, A, 'API-90', 'Document the export format', lk(NONE)), why: 'assigned by contractor-c, who cannot write: never starts', role: 'needs', since: ago(900) }
+  ];
+  L.load = { factor: 0.82, binds: 'memory', enforce: false, gauges: [['memory', 0.82, '13.5 GiB available of 62.5 GiB', '15% of memory kept free'], ['processors', 0.61, 'load 8.8 on 16 cores', '0.9 per core'], ['test-lock', 0.5, '2 holding, 1 waiting', '2 waiting'], ['disk', 0.44, '412 GiB free', '10 GiB free'], ['forge', 0.27, '3770 of 5000 left', '10% of the budget kept'], ['accounts', 0.4, '4 of 10 slots held', 'no free slot']], holds: [{ target: 'example-org/web #5521', kind: 'pickup', gauge: 'memory', detail: 'would hold the pickup: 3.1 GiB is left above the 9.4 GiB kept free, and the pickup reserves 2.6 GiB', held: false }], reservations: [['pickup', '2.6 GiB, measured over 12 samples'], ['drive', '1.4 GiB, measured over 20 samples'], ['followup', '1.0 GiB, default (3 of 5 samples)'], ['steward', '1.0 GiB, default (0 of 5 samples)']] };
+  L.history = [
+    { at: ago(140), cls: 'converged', role: 'well', ref: prRef(L, A, 1205, 'merged', 'Add the export endpoint', undefined), reason: 'exit 0 (converged)', stage: 'rearm' },
+    { at: ago(290), cls: 'gates failed', role: 'badly', ref: prRef(L, W, 462, 'open', 'Bump the lint config', undefined), reason: 'exit 1 (failed); re-drive of a stale converged pull request: conflicting with its base', stage: 'rearm' },
+    { at: ago(400), cls: 'quota wall', role: 'badly', ref: prRef(L, F, 92, 'open', 'Add the staging smoke test', undefined), reason: 'exit 16 (quota-parked)', stage: 'rearm' }
+  ];
+  return L;
+}
+function scenarioLine(id) {
+  var L;
+  if (id === 'loud' || id === 'offline' || id === 'linked') L = baseLoud(true);
+  if (id === 'unknown') { L = baseLoud(false); L.repos[1].tracker = undefined; [L.needs, L.queue, L.sessions].forEach(function (a) { a.forEach(function (x) { if (x.ref.kind === 'item' && x.ref.repo === 'example-org/api') { x.ref.tracker = undefined; x.ref.url = null; } }); }); }
+  if (id === 'linked') {
+    var W = 'example-org/web', A = 'example-org/api';
+    L.needs[0].ref.links = lItems(L, W, ['#231', '#244']);
+    L.needs[5].ref = itemRef(L, A, 'API-81', 'Add the audit export', lPrs(A, [1215]));
+    L.needs[7].ref = itemRef(L, W, '#418', 'Fix the login redirect', lPrs(W, [482, 483]));
+    L.needs[1].ref.links = NONE;
+    L.queue[3].ref.links = NONE;
+  }
+  if (id === 'quiet') {
+    L = { repos: repoSet(2, ['github', 'linear']), tickAt: ago(1), ready: [], needs: [], queue: [], history: [] };
+    L.accounts = [{ name: 'work-a', vendor: 'claude', cap: 2, held: 1 }, { name: 'work-b', vendor: 'claude', cap: 2, held: 0 }];
+    L.sessions = [{ account: 'work-a', stage: 'rearm', role: 'working', ref: prRef(L, 'example-org/api', 1207, 'open', 'Retry the webhook on a 5xx', lItems(L, 'example-org/api', ['API-70'])), created: ago(40), fact: 'working, round 2', round: 2, samples: '6 3', heartbeat: 3 }];
+    L.load = { factor: 0.24, binds: 'accounts', enforce: true, gauges: [['memory', 0.21, '49 GiB available of 62.5 GiB', '15% of memory kept free'], ['processors', 0.18, 'load 2.6 on 16 cores', '0.9 per core'], ['test-lock', 0, 'none holding', '2 waiting'], ['disk', 0.2, '512 GiB free', '10 GiB free'], ['forge', 0.1, '4600 of 5000 left', '10% of the budget kept'], ['accounts', 0.24, '1 of 4 slots held', 'no free slot']], holds: [], reservations: [] };
+  }
+  if (id === 'empty') { L = null; }
+  if (id === 'repos') {
+    L = baseLoud(true);
+    L.repos = repoSet(10, ['github', 'linear', 'jira', null, 'github', 'github', undefined, undefined, undefined, undefined]);
+    var q = [], seed = 3;
+    function rnd(n) { seed = (seed * 48271) % 2147483647; return seed % n; }
+    var starts = [['example-org/api', 're-armable', 1209], ['example-org/web', 'label drive', 480], ['example-org/billing', 're-armable', 77], ['example-org/infra', 'merged', 101]];
+    starts.forEach(function (s, i) { q.push({ group: 'starts', source: s[1], ref: prRef(L, s[0], s[2], s[1] === 'merged' ? 'merged' : 'open', ['Drop the unused billing flag', 'Add the health endpoint', 'Round invoice totals once', 'Pin the base image'][i], s[1] === 'merged' ? undefined : lItems(L, s[0], [itemKey(L.repos.filter(function (r) { return r.slug === s[0]; })[0], 300 + i)])), why: ['drive ledger stale: stopped 0 (converged), and now conflicting with its base', 'a person added the drive label', 'stopped with no recorded cause; re-arming within its budget', 'merged 08:12 with no follow-up marker'][i], role: 'held', since: ago(20 + i * 9) }); });
+    q.push({ group: 'held', source: 'held', ref: prRef(L, 'example-org/api', 1218, 'open', 'Rename the ledger table', NONE), why: 'held: serialized behind #1203 in migrations', role: 'held', since: ago(180) });
+    q.push({ group: 'held', source: 'held', ref: prRef(L, 'example-org/search', 33, 'draft', 'Reindex the catalog nightly', NONE), why: 'a person added the hold label', role: 'held', since: ago(1500) });
+    q.push({ group: 'reported', source: 'assigned', ref: itemRef(L, 'example-org/web', '#412', 'Paginate the audit list', NONE), why: 'assigned by maintainer-a', role: 'held', since: ago(300) });
+    q.push({ group: 'reported', source: 'assigned', ref: itemRef(L, 'example-org/mail', 'MAIL-9', 'Retry bounced digests', NONE), why: 'assigned by maintainer-b', role: 'held', since: ago(420) });
+    var titles = ['Document the export format', 'Add a dark logo variant', 'Translate the settings page', 'Trim unused fixtures', 'Explain the retry budget', 'Rename the billing enum', 'Add an alt text check', 'Split the long test file'];
+    for (var i = 0; i < 72; i++) {
+      var r = L.repos[i < 60 ? 1 : 2 + rnd(8)];
+      var cannot = i % 12 !== 5;
+      q.push({ group: 'never', source: 'assigned', ref: itemRef(L, r.slug, itemKey(r, 500 + i), titles[i % titles.length], NONE), why: cannot ? 'assigned by contractor-c, who cannot write: never starts' : 'no dispatch.identity: this repository has no pickups', role: cannot ? 'needs' : 'held', since: ago(600 + i * 37) });
+    }
+    L.queue = q;
+  }
+  if (id === 'volume') {
+    L = { repos: repoSet(2, ['github', 'linear']), tickAt: ago(2), ready: [], queue: [], history: [], sessions: [], load: null };
+    L.accounts = [{ name: 'work-a', vendor: 'claude', cap: 2, held: 0 }];
+    var n = [], s2 = 11;
+    function r2(k) { s2 = (s2 * 48271) % 2147483647; return s2 % k; }
+    var causes = ['stalled', 'needs-person', 'stopped-unknown', 'followup-stale', 'pickup-question'];
+    var ttl = ['Add the audit export', 'Fix the login redirect', 'Retry bounced digests', 'Cache the session lookup', 'Rename the billing enum', 'Trim the checkout bundle', 'Paginate the audit list'];
+    for (var k = 0; k < 160; k++) {
+      var act = k < 14 ? 'Decide' : k === 14 ? 'Authorize' : k < 18 ? 'Reply' : 'Investigate';
+      var repo = k % 6 === 0 ? 'example-org/web' : 'example-org/api';
+      var isItem = act === 'Investigate' && k % 6 !== 0;
+      var ref = isItem ? itemRef(L, repo, 'API-' + (100 + k), ttl[k % 7], NONE) : prRef(L, repo, 600 + k, 'open', ttl[k % 7], NONE);
+      var cause = act === 'Investigate' ? causes[r2(5)] : act === 'Reply' ? 'pickup-question' : 'parked';
+      n.push({ act: act, cause: cause, stage: isItem ? 'pickup' : cause === 'pickup-question' ? 'pickup' : 'rearm', ref: ref, since: ago(30 + r2(5800)), d: act === 'Decide' || act === 'Authorize' ? [k % 2 ? RETRY : MIG] : [], reason: cause === 'stalled' ? 'a claimed item with no running session past stalled_after' : cause === 'parked' ? 'drive ledger parked: stopped 8 (parked): a person answers' : cause === 'pickup-question' ? 'the pickup asked: which locale is the default?' : cause === 'followup-stale' ? 'a follow-up claimed it and has not marked it done' : 'drive ledger stopped with no exit, which may be a person’s stop', question: cause === 'pickup-question' ? 'Which locale is the default?' : null });
+    }
+    n[3].since = ago(4300);
+    L.needs = n;
+  }
+  if (id === 'overload') {
+    L = baseLoud(true);
+    L.load = { factor: 1.5, binds: 'processors', enforce: false, gauges: [['memory', 0.96, '3.1 GiB available above the 9.4 GiB kept free', '15% of memory kept free'], ['processors', 1.5, 'load 21.6 on 16 cores', '0.9 per core'], ['test-lock', 0.5, '2 holding, 1 waiting', '2 waiting'], ['disk', null, 'not read: df did not answer within 2 s', '10 GiB free'], ['forge', 0.31, '3450 of 5000 left', '10% of the budget kept'], ['accounts', 0.4, '4 of 10 slots held', 'no free slot']], holds: [{ target: 'example-org/web #5521', kind: 'pickup', gauge: 'processors', detail: 'would hold the pickup: load 21.6 is over 14.4', held: false }, { target: 'example-org/api PR #1209', kind: 'drive', gauge: 'processors', detail: 'would hold the drive: load 21.6 is over 14.4', held: false }], reservations: [['pickup', '2.6 GiB, measured over 12 samples'], ['drive', '1.4 GiB, measured over 20 samples']] };
+  }
+  return L;
+}
+var SCENARIOS = [{ id: 'loud', label: '1 Loud morning' }, { id: 'quiet', label: '2 Quiet' }, { id: 'empty', label: '3 Empty' }, { id: 'repos', label: '4 Many repositories, long queue' }, { id: 'volume', label: '5 Needs you at volume' }, { id: 'linked', label: '6 Linked work' }, { id: 'unknown', label: '7 Links unknown' }, { id: 'overload', label: '8 Load over its line' }, { id: 'offline', label: '9 Host unreachable' }];
+var VIEWS = [['merge', 'Merge', 'm'], ['needs', 'Needs you', 'n'], ['running', 'Running', 'r'], ['queue', 'Queue', 'q'], ['history', 'History', 'h'], ['help', 'Help', null]];
+
+/* ---- the page ---- */
+function role(k) { var r = ROLE[k] || ROLE.unknown; return { rg: r[0], rc: r[1], word: r[2] }; }
+function linkedFace(ref) {
+  var L = ref.links; if (!L) return { linked: null, more: null };
+  var arr = ref.kind === 'pr' ? L.items.map(function (i) { return { kind: 'item', repo: ref.repo, key: i.key, url: i.url, tracker: ref.trackerOfRepo, lead: false, links: { items: [], prs: [{ number: ref.num, url: ref.url }] } }; }) : L.prs.map(function (p) { return { kind: 'pr', repo: ref.repo, num: p.number, url: p.url, standing: 'open', lead: false, links: { items: [{ key: ref.key, url: ref.url }], prs: [] } }; });
+  if (!arr.length) return { linked: null, more: null };
+  return { linked: arr.slice(0, 2), more: arr.length > 2 ? '+' + (arr.length - 2) + ' more' : null };
+}
+function linkWords(ref) {
+  var L = ref.links;
+  if (!L) return 'not known for this read';
+  var n = ref.kind === 'pr' ? L.items.map(function (i) { return i.key; }) : L.prs.map(function (p) { return 'PR #' + p.number; });
+  return n.length ? n.join(', ') : (ref.kind === 'pr' ? 'none found' : 'no open pull request found');
+}
+function matchQ(q, parts) { if (!q) return true; q = q.toLowerCase(); return parts.join(' ').toLowerCase().indexOf(q) >= 0; }
+
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { sc: null, th: null, view: null, open: {}, fold: {}, shown: {}, f: {}, copied: {}, conn: 'down', gPending: false };
+  }
+  componentDidUpdate(prev) {
+    if (prev.scenario !== this.props.scenario || prev.view !== this.props.view) this.setState({ sc: null, view: null, open: {}, fold: {}, shown: {}, f: {}, conn: 'down' });
+  }
+  componentWillUnmount() { clearTimeout(this.rt); }
+  cp(key, text, word) {
+    var self = this, st = this.state.copied[key];
+    var fail = this.failCopy;
+    return {
+      word: st === 'ok' ? 'Copied' : st === 'no' ? 'Select and copy' : word, aria: st === 'ok' ? 'Copied' : word, cls: st === 'ok' ? 'ok' : '', icon: I(st === 'ok' ? 'check' : st === 'no' ? 'x' : 'copy'), failed: st === 'no', text: text,
+      on: function () {
+        var p = (!fail && navigator.clipboard && window.isSecureContext) ? navigator.clipboard.writeText(text).then(function () { return true; }, function () { return false; }) : Promise.resolve(false);
+        p.then(function (ok) { var c = Object.assign({}, self.state.copied); c[key] = ok ? 'ok' : 'no'; self.setState({ copied: c }); });
+      }
+    };
+  }
+  setF(view, patch) { var f = Object.assign({}, this.state.f); f[view] = Object.assign({}, f[view] || {}, patch); this.setState({ f: f, shown: {} }); }
+  toggleIn(view, key, val) { var cur = (this.state.f[view] || {})[key] || []; var next = cur.indexOf(val) >= 0 ? cur.filter(function (x) { return x !== val; }) : cur.concat([val]); var p = {}; p[key] = next; this.setF(view, p); }
+  renderVals() {
+    var self = this;
+    var sc = this.state.sc || this.props.scenario || 'loud';
+    var theme = this.state.th || this.props.theme || 'system';
+    var L = scenarioLine(sc);
+    this.failCopy = sc === 'offline';
+    var v = { scenarios: SCENARIOS, scenario: sc, theme: theme, showSwitch: this.props.showSwitch !== false, scheme: theme === 'system' ? 'light dark' : theme, failCopy: sc === 'offline' };
+    v.onScenario = function (e) { self.setState({ sc: e.target.value, view: null, open: {}, fold: {}, shown: {}, f: {}, conn: 'down' }); };
+    v.onTheme = function (e) { self.setState({ th: e.target.value }); };
+    v.selectAll = function (e) { e.target.select(); };
+    v.readAt = clock(NOW);
+    /* the logo is the menu: a theme toggle (system is only the starting point), Help, the facts */
+    var effDark = theme === 'dark' || (theme === 'system' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    v.menuOpen = this.state.menuOpen ? 'true' : 'false';
+    v.toggleMenu = function () { self.setState({ menuOpen: !self.state.menuOpen }); };
+    v.menuBlur = function (e) { if (!e.currentTarget.contains(e.relatedTarget)) self.setState({ menuOpen: false }); };
+    v.menuKeys = function (e) { if (e.key === 'Escape' && self.state.menuOpen) { e.stopPropagation(); self.setState({ menuOpen: false }); var b = e.currentTarget.querySelector('.brand'); if (b) b.focus(); } };
+    v.menu = this.state.menuOpen ? { dark: effDark ? 'true' : 'false', swCls: effDark ? 'on' : '', themeIcon: effDark ? '#moon' : '#sun', toggleTheme: function () { self.setState({ th: effDark ? 'light' : 'dark' }); }, help: function () { self.setState({ view: 'help', menuOpen: false }); }, fresh: L ? 'Last tick ' + clock(L.tickAt) + ' host time, ' + span(NOW - L.tickAt) + ' ago' : 'No tick yet' } : null;
+
+    if (L) L.repos.forEach(function (r) { [L.needs, L.queue, L.sessions, L.ready].forEach(function (a) { (a || []).forEach(function (x) { if (x.ref && x.ref.repo === r.slug) x.ref.trackerOfRepo = r.tracker; }); }); });
+
+    var counts = { merge: L ? L.ready.filter(function (x) { return x.lane === 'merge now'; }).length : 0, needs: L ? L.needs.length : 0, running: L ? L.sessions.length : 0, queue: L ? L.queue.length : 0, history: L ? L.history.length : 0 };
+    var view = this.state.view || (this.props.view && this.props.view !== 'auto' ? this.props.view : (counts.merge ? 'merge' : 'needs'));
+    if (sc === 'loud' && !this.state.view && (!this.props.view || this.props.view === 'auto')) view = 'needs';
+    if (sc === 'repos' && !this.state.view && (!this.props.view || this.props.view === 'auto')) view = 'queue';
+    if (sc === 'overload' && !this.state.view && (!this.props.view || this.props.view === 'auto')) view = 'running';
+    v.view = view;
+    v.tabs = VIEWS.map(function (t) { return { label: t[1], cur: t[0] === view ? 'page' : 'false', hasCount: t[0] !== 'help', count: counts[t[0]], cls: t[0] === 'needs' && counts.needs ? 'need' : '', go: function () { self.setState({ view: t[0] }); } }; });
+    v.goMerge = function () { self.setState({ view: 'merge' }); };
+    v.flash = L && view !== 'merge' && counts.merge ? L.ready.filter(function (x) { return x.lane === 'merge now'; }).map(function (x) { return { label: '#' + x.ref.num, url: x.ref.url }; }) : null;
+
+    /* freshness and the unreachable host */
+    v.freshPre = L ? 'Updated ' : ''; v.fresh = L ? span(NOW - L.tickAt) + ' ago' : 'No tick yet';
+    v.freshIcon = I('check'); v.freshCls = '';
+    v.banner = null;
+    if (sc === 'offline') {
+      var conn = this.state.conn;
+      if (conn === 'down') { v.freshPre = 'Last read '; v.fresh = '12 min ago'; v.freshIcon = I('wifi-off'); v.freshCls = 'stale'; v.banner = { icon: I('wifi-off'), title: 'Host not answering since 09:31. This is the 09:28 read; nothing here is current.', retry: function () { self.setState({ conn: 'reading' }); clearTimeout(self.rt); self.rt = setTimeout(function () { self.setState({ conn: 'back' }); }, 1400); } }; }
+      if (conn === 'reading') { v.freshPre = ''; v.fresh = 'reading again…'; v.freshIcon = I('refresh-cw'); v.freshCls = 'stale'; v.banner = { icon: I('refresh-cw'), title: 'The host answers again. Reading before showing anything as current.', retry: null }; }
+      if (conn === 'back') { v.freshPre = 'Updated '; v.fresh = 'just now'; v.banner = null; }
+    }
+
+    v.band = null; v.plainTitle = null; v.plainSub = ''; v.showFilters = false; v.facets = []; v.grouping = null; v.active = null; v.address = ''; v.load = null; v.rows = []; v.help = null; v.f = {};
+    var rows = [];
+    var openFirst = this.props.openFirst;
+    var firstCardSeen = false;
+    function isOpen(id) { var o = self.state.open[id]; if (o === undefined && openFirst && !firstCardSeen) { return true; } return !!o; }
+    function card(id, base) {
+      var open = isOpen(id); firstCardSeen = true;
+      var t = function () { var o = Object.assign({}, self.state.open); o[id] = !open; self.setState({ open: o }); };
+      base.isCard = true; base.id = id; base.open = open; base.cls = open ? 'open' : ''; base.expanded = open ? 'true' : 'false'; base.detailId = 'd-' + id.replace(/[^a-z0-9]/gi, '');
+      base.discLabel = (open ? 'Hide' : 'Show') + ' details for ' + (base.ident.kind === 'pr' ? 'PR #' + base.ident.num : base.ident.key);
+      base.toggleBtn = function (e) { e.stopPropagation(); t(); };
+      base.onCard = function (e) { if (e.target.closest('a,button,input,select,textarea,label,.pop,.detail')) return; var s = window.getSelection ? String(window.getSelection()) : ''; if (s) return; t(); };
+      var lf = linkedFace(base.ident); base.linked = lf.linked; base.linkMore = lf.more;
+      base.ident = Object.assign({ lead: true, tracker: base.ident.trackerOfRepo }, base.ident);
+      return base;
+    }
+    function head(view, key, o, defaultOpen) {
+      var fk = view + ':' + key; var st = self.state.fold[fk]; var open = st === undefined ? defaultOpen : st;
+      var t = function () { var f = Object.assign({}, self.state.fold); f[fk] = !open; self.setState({ fold: f }); };
+      o.isHead = true; o.noteCls = o.keep ? '' : 'deskOnly'; o.expanded = open ? 'true' : 'false'; o.discLabel = (open ? 'Fold ' : 'Open ') + o.title; o.toggle = t; o.toggleBtn = function (e) { e.stopPropagation(); t(); }; o.anchor = 'g-' + key.replace(/[^a-z]/gi, '');
+      rows.push(o); return open;
+    }
+    function page(key, list, size, mk) {
+      var n = self.state.shown[key] || size;
+      list.slice(0, n).forEach(function (x, i) { rows.push(mk(x, i)); });
+      if (list.length > n) rows.push({ isMore: true, label: 'Show ' + Math.min(10, list.length - n) + ' more of ' + list.length, more: function () { var s = Object.assign({}, self.state.shown); s[key] = n + 10; self.setState({ shown: s }); } });
+    }
+    function repoMeta(slug) { return { repo: slug, url: repoUrl(slug) }; }
+    function linkDetail(ref) { return { kv: [{ k: 'linked work', v: linkWords(ref) }] }; }
+    function repoFacet(view, list, f) {
+      var c = {}; list.forEach(function (x) { c[x.ref.repo] = (c[x.ref.repo] || 0) + 1; });
+      var keys = Object.keys(c).sort(function (a, b) { return c[b] - c[a]; });
+      if (keys.length < 2) return null;
+      return { label: 'Repository', cls: '', select: keys.map(function (k) { return { v: k, t: k + ' (' + c[k] + ')' }; }), value: (f.repo || [])[0] || '', allWord: 'all ' + keys.length + ' repositories', onSel: function (e) { self.setF(view, { repo: e.target.value ? [e.target.value] : [] }); }, chips: null };
+    }
+    function chipFacet(view, key, label, list, get, icons, order, cls) {
+      var c = {}; list.forEach(function (x) { var k = get(x); c[k] = (c[k] || 0) + 1; });
+      var keys = (order || Object.keys(c)).filter(function (k) { return c[k]; });
+      if (keys.length < 2) return null;
+      var on = (self.state.f[view] || {})[key] || [];
+      return { label: label, cls: cls || 'deskOnly', select: null, chips: keys.map(function (k) { return { word: k, n: c[k], icon: icons && icons[k] ? I(icons[k]) : null, on: on.indexOf(k) >= 0 ? 'true' : 'false', pick: function () { self.toggleIn(view, key, k); } }; }) };
+    }
+    function activeLine(view, f, shown, total, names) {
+      var parts = [];
+      Object.keys(names).forEach(function (k) { var x = f[k]; if (x && x.length) parts.push(names[k] + ': ' + (Array.isArray(x) ? x.join(', ') : x)); });
+      if (f.q) parts.push('text: “' + f.q + '”');
+      if (!parts.length) return null;
+      var phoneParts = parts.filter(function (p) { return p.indexOf('Repository') !== 0; });
+      v.address = '?view=' + view + Object.keys(names).map(function (k) { var x = f[k]; return x && x.length ? '&' + k + '=' + (Array.isArray(x) ? x.join(',') : x) : ''; }).join('') + (f.q ? '&q=' + f.q : '');
+      return { text: 'Showing ' + shown + ' of ' + total + '. ' + parts.join(' · ') + '.', phone: 'Showing ' + shown + ' of ' + total + (phoneParts.length ? '. Also filtered by link: ' + phoneParts.join(' · ') : '') };
+    }
+    v.onQ = function (e) { self.setF(view, { q: e.target.value }); };
+    v.filterOpen = !!this.state.fOpen || !!((this.state.f[view] || {}).q); v.filterClosed = !v.filterOpen; v.filterFocus = !!this.state.fOpen;
+    v.openFilter = function () { self.setState({ fOpen: true }); };
+    v.clearAll = function () { var f = Object.assign({}, self.state.f); f[view] = {}; self.setState({ f: f }); };
+
+    if (!L && view !== 'help') {
+      v.plainTitle = { merge: 'Ready to merge', needs: 'What needs you', running: 'What is running', queue: 'What is coming', history: 'How it went' }[view];
+      v.plainSub = 'No line yet.';
+      rows.push({ isEmpty: true, text: 'No tick has written a line on this host yet, so there is nothing to show. One repository is configured: example-org/web, with GitHub Issues. The first tick reads it within 5 min of the timer starting.' });
+    }
+
+    /* Merge */
+    if (L && view === 'merge') {
+      v.plainTitle = 'Ready to merge'; v.plainSub = plural(L.ready.length, 'converged pull request') + ', in the order to act' + (sc === 'offline' && this.state.conn !== 'back' ? '; as of the 09:28 read, not current' : '');
+      LANES.forEach(function (lane) {
+        var list = L.ready.filter(function (x) { return x.lane === lane; });
+        if (!list.length) return;
+        var open = head('merge', lane, { icon: I(LANE_ICON[lane]), title: lane.charAt(0).toUpperCase() + lane.slice(1), count: list.length, sub: '', note: { 'merge now': 'Converged, its review witnessed at the verified head, and mergeable. The command merges that head only.', 'approve first': 'An approval is owed before the forge allows a merge.', 'update next': 'The branch must be brought up to date, which costs a re-drive.' }[lane] }, true);
+        if (!open) return;
+        list.forEach(function (x) {
+          rows.push(card('r' + x.ref.num, { lane: null, ident: x.ref, end: 'ready ' + span(NOW - x.since), meta: [repoMeta(x.ref.repo), { word: x.act, icon: null }], title: x.ref.title, ask: x.says, rec: null, cmd: { text: x.command, cp: self.cp('cmd' + x.ref.num, x.command, 'Copy the command') }, detail: [{ head: 'Conditions' }, { kv: x.conditions.map(function (c) { return { k: c[1] ? 'met' : 'not met', v: c[0] }; }) }, linkDetail(x.ref)].concat(x.unblocks.length ? [{ text: 'Unblocks #' + x.unblocks.join(', #') + ' in its serialized area.' }] : []) }));
+        });
+      });
+      if (!L.ready.length) rows.push({ isEmpty: true, text: 'No converged pull request is ready. Ready to merge fills when a drive converges and its review is witnessed.' });
+    }
+
+    /* Needs you */
+    if (L && view === 'needs') {
+      var fN = this.state.f.needs || {};
+      v.f = fN;
+      var all = L.needs.map(function (x, i) { x.i = i; return x; });
+      var keptAnyAct = all.filter(function (x) {
+        if (fN.repo && fN.repo.length && fN.repo.indexOf(x.ref.repo) < 0) return false;
+        if (fN.stage && fN.stage.length && fN.stage.indexOf(x.stage) < 0) return false;
+        if (fN.who && fN.who.length && fN.who.indexOf((x.d[0] && x.d[0].person) || '') < 0) return false;
+        if (fN.old && fN.old.length && NOW - x.since < 86400000) return false;
+        return matchQ(fN.q, [x.ref.title, x.reason, x.ref.repo, x.ref.key || '', 'PR #' + x.ref.num, x.act, CAUSE[x.cause]]);
+      });
+      var kept = keptAnyAct.filter(function (x) { return !(fN.act && fN.act.length) || fN.act.indexOf(x.act) >= 0; });
+      var oldest = kept.reduce(function (m, x) { return !m || x.since < m.since ? x : m; }, null);
+      var byAct = {}; kept.forEach(function (x) { byAct[x.act] = (byAct[x.act] || 0) + 1; });
+      var byRepo = {}; kept.forEach(function (x) { byRepo[x.ref.repo] = (byRepo[x.ref.repo] || 0) + 1; });
+      if (L.needs.length) {
+        v.band = {
+          title: (kept.length === 1 ? '1 needs' : kept.length + ' need') + ' a person.',
+          lead: oldest ? 'Oldest ' + span(NOW - oldest.since) + ': ' : '', oldLabel: oldest ? (oldest.ref.kind === 'pr' ? 'PR #' + oldest.ref.num : oldest.ref.key) : '', oldUrl: oldest ? oldest.ref.url : null,
+          acts: ACTS.filter(function (a) { return all.some(function (x) { return x.act === a; }); }).map(function (a) { var on = (fN.act || []).indexOf(a) >= 0; return { word: a, n: keptAnyAct.filter(function (x) { return x.act === a; }).length, icon: I(ACT_ICON[a]), on: on ? 'true' : 'false', anchor: 'g-' + a, pick: function () { self.toggleIn('needs', 'act', a); }, jump: function (e) { var f = Object.assign({}, self.state.fold); f['needs:' + a] = true; self.setState({ fold: f }); } }; })
+        };
+        v.showFilters = true;
+        var persons = {}; all.forEach(function (x) { var p = x.d[0] && x.d[0].person; if (p) persons[p] = (persons[p] || 0) + 1; });
+        var who = Object.keys(persons).length > 1 ? { label: 'Waits on', cls: 'deskOnly', chips: null, select: Object.keys(persons).map(function (p) { return { v: p, t: p + ' (' + persons[p] + ')' }; }), value: (fN.who || [])[0] || '', allWord: 'anyone', onSel: function (e) { self.setF('needs', { who: e.target.value ? [e.target.value] : [] }); } } : null;
+        var olderN = all.filter(function (x) { return NOW - x.since >= 86400000; }).length;
+        var age = olderN && olderN < all.length ? { label: 'Age', cls: 'deskOnly', select: null, chips: [{ word: 'waiting over a day', n: olderN, icon: null, on: (fN.old || []).length ? 'true' : 'false', pick: function () { self.setF('needs', { old: (fN.old || []).length ? [] : ['1d'] }); } }] } : null;
+        v.facets = [repoFacet('needs', all, fN), chipFacet('needs', 'stage', 'Stage', all, function (x) { return x.stage; }, STAGE_ICON), who, age].filter(Boolean);
+        v.active = activeLine('needs', fN, kept.length, all.length, { repo: 'Repository', act: 'Act', stage: 'Stage', who: 'Waits on', old: 'Age' });
+      } else {
+        v.plainTitle = 'Nothing needs a person.'; v.plainSub = plural(L.sessions.length, 'session') + ' running; ' + (L.queue.length ? plural(L.queue.length, 'target') + ' queued' : 'queue empty') + '.';
+      }
+      var hasAnswer = kept.some(function (x) { return x.act === 'Decide' || x.act === 'Authorize'; });
+      ACTS.forEach(function (a) {
+        var list = kept.filter(function (x) { return x.act === a; }).sort(function (p, q) { return p.since - q.since; });
+        if (!list.length) return;
+        var defOpen = !(a === 'Investigate' && hasAnswer && list.length > 20);
+        var open = head('needs', a, { icon: I(ACT_ICON[a]), title: a, count: String(list.length), sub: 'oldest ' + span(NOW - list[0].since) }, defOpen);
+        if (!open) return;
+        page('needs:' + a, list, 10, function (x) {
+          var d0 = x.d[0] || {};
+          var ask = d0.question || x.question || x.reason;
+          var detail = [];
+          if (d0.question && x.reason) detail.push({ head: 'The record says' }, { quote: x.reason });
+          if (d0.options && d0.options.length) detail.push({ head: 'Options' }, { opts: d0.options.map(function (o) { return { name: o.name, mark: o.rec ? ' · recommended' : '', changes: o.changes, costs: o.costs }; }) });
+          if (d0.steps && d0.steps.length) detail.push({ head: 'Steps for a person' }, { text: d0.steps.join('; ') });
+          var kv = [{ k: 'cause', v: CAUSE[x.cause] }];
+          if (d0.cls) kv.push({ k: 'decision class', v: d0.cls });
+          kv.push({ k: 'waiting since', v: clock(x.since) + ', ' + span(NOW - x.since) });
+          kv.push({ k: 'linked work', v: linkWords(x.ref) });
+          if (x.workspaces) kv.push({ k: 'workspaces', v: x.workspaces.join(', ') });
+          detail.push({ kv: kv });
+          var tools = [];
+          if (d0.key) tools.push({ cp: self.cp('ans' + x.i, 'answer ' + d0.key + ': ', 'Copy answer line') });
+          if (d0.key) tools.push({ na: 'Write reply: on a larger screen' });
+          if (x.handoff) tools.push({ href: x.handoff, word: 'Read the handoff comment' });
+          if (tools.length) detail.push({ tools: tools });
+          var meta = [repoMeta(x.ref.repo), { stage: x.stage, icon: I(STAGE_ICON[x.stage]), hint: STAGE_HINT[x.stage] }, { word: CAUSE[x.cause], icon: I(CAUSE_ICON[x.cause]) }];
+          if (d0.person) meta.push({ who: d0.person });
+          return card('n' + x.i, { act: { word: x.act, icon: I(ACT_ICON[x.act]) }, ident: x.ref, end: span(NOW - x.since), meta: meta, title: x.ref.title, ask: ask, rec: d0.rec || null, cmd: null, detail: detail });
+        });
+      });
+      if (L.needs.length && !kept.length) rows.push({ isEmpty: true, text: 'No need matches this filter. ' + L.needs.length + ' need a person in all.' });
+    }
+
+    /* Running */
+    if (L && view === 'running') {
+      var held = L.accounts.reduce(function (s, a) { return s + a.held; }, 0), cap = L.accounts.reduce(function (s, a) { return s + a.cap; }, 0);
+      v.plainTitle = 'What is running'; v.plainSub = held + ' of ' + cap + ' slots held';
+      if (L.load) {
+        var ld = L.load;
+        v.load = {
+          head: 'Load ' + Math.round(ld.factor * 100) + '%', binds: ld.binds ? GAUGE[ld.binds][1].toLowerCase() + ' binds' : 'no gauge read',
+          note: ld.holds.length ? (ld.enforce ? 'Held ' : 'Reporting only: would have held ') + plural(ld.holds.length, 'launch', 'launches') + ' this tick.' : null,
+          gauges: ld.gauges.map(function (g) {
+            var fill = g[1], unread = fill === null;
+            var over = !unread && fill > 1;
+            return { icon: I(GAUGE[g[0]][0]), name: GAUGE[g[0]][1], bindsTag: g[0] === ld.binds, overTag: over, cls: g[0] === ld.binds ? 'binds' : '', barCls: unread ? 'unread' : '', w: unread ? 0 : (Math.min(fill, 1) / 1.5 * 100).toFixed(1), ow: over ? ((Math.min(fill, 1.5) - 1) / 1.5 * 100).toFixed(1) : 0, pct: unread ? 'not read' : Math.round(fill * 100) + '%', reads: g[2] + ' · line: ' + g[3], aria: GAUGE[g[0]][1] + (unread ? ' not read' : ' at ' + Math.round(fill * 100) + '% of its line') };
+          })
+        };
+        if (ld.holds.length || ld.reservations.length) {
+          var lopen = head('running', 'holds', { icon: null, title: (ld.holds.length ? (ld.enforce ? 'Held ' : 'Would have held ') + plural(ld.holds.length, 'launch', 'launches') + ' · ' : '') + 'reservations', count: '', sub: '' }, false);
+          if (lopen) {
+            ld.holds.forEach(function (h) { rows.push({ isEmpty: true, text: h.target + ' (' + h.kind + ', ' + GAUGE[h.gauge][1].toLowerCase() + '): ' + h.detail }); });
+            ld.reservations.forEach(function (r) { rows.push({ isEmpty: true, text: 'Reserves for a ' + r[0] + ': ' + r[1] }); });
+          }
+        }
+      }
+      var aopen = head('running', 'accounts', { icon: I('users'), title: 'Accounts', count: plural(L.accounts.length, 'account'), sub: held + ' of ' + cap + ' slots held' }, true);
+      if (aopen) L.accounts.forEach(function (a) {
+        var st = null, ic = null;
+        if (a.wall && a.wall > NOW) { st = 'behind a wall, lifts ' + clock(a.wall); ic = 'brick-wall'; }
+        else if (a.notAdmitted) { st = 'not admitted: ' + a.notAdmitted; ic = 'shield-ban'; }
+        else if (a.held >= a.cap) { st = 'at cap'; ic = 'circle-slash-2'; }
+        var pips = []; for (var p = 0; p < a.cap; p++) pips.push(p < a.held ? 'on' : '');
+        rows.push({ isAcct: true, name: a.name, vendor: a.vendor, pips: pips, held: a.held + ' of ' + a.cap, state: st, stateIcon: ic ? I(ic) : null });
+      });
+      var sopen = head('running', 'sessions', { icon: null, title: 'Sessions', count: String(L.sessions.length), sub: '' }, true);
+      if (sopen) L.sessions.forEach(function (s, i) {
+        rows.push(card('s' + i, { mark: role(s.role), ident: s.ref, end: span(NOW - s.created), meta: [repoMeta(s.ref.repo), { stage: s.stage, icon: I(STAGE_ICON[s.stage]), hint: STAGE_HINT[s.stage] }, { word: s.account, icon: null }], title: s.ref.title, ask: s.fact, rec: null, cmd: null, detail: [{ kv: [{ k: 'launched', v: clock(s.created) + ', ' + span(NOW - s.created) + ' ago' }].concat(s.samples ? [{ k: 'threads by round', v: s.samples }] : []).concat(s.heartbeat ? [{ k: 'heartbeat', v: s.heartbeat + ' min old' }] : []).concat([{ k: 'account', v: s.account }, { k: 'linked work', v: linkWords(s.ref) }]) }] }));
+      });
+      if (!L.sessions.length) rows.push({ isEmpty: true, text: 'No session holds a slot.' });
+    }
+
+    /* Queue */
+    if (L && view === 'queue') {
+      var fQ = this.state.f.queue || {};
+      v.f = fQ;
+      var by = fQ.by || 'group';
+      var allQ = L.queue.map(function (x, i) { x.i = i; x.kind = x.ref.kind === 'pr' ? 'pull request' : 'issue'; return x; });
+      var keptQ = allQ.filter(function (x) {
+        if (fQ.repo && fQ.repo.length && fQ.repo.indexOf(x.ref.repo) < 0) return false;
+        if (fQ.source && fQ.source.length && fQ.source.indexOf(x.source) < 0) return false;
+        if (fQ.group && fQ.group.length && fQ.group.indexOf(x.group) < 0) return false;
+        if (fQ.kind && fQ.kind.length && fQ.kind.indexOf(x.kind) < 0) return false;
+        return matchQ(fQ.q, [x.ref.title, x.why, x.ref.repo, x.ref.key || '', 'PR #' + x.ref.num]);
+      });
+      var nStart = allQ.filter(function (x) { return x.group === 'starts'; }).length;
+      v.plainTitle = 'What is coming';
+      v.plainSub = L.queue.length ? plural(L.queue.length, 'target') + ': ' + nStart + ' start next, ' + allQ.filter(function (x) { return x.group === 'never'; }).length + ' will not start.' : '';
+      if (L.queue.length) {
+        v.showFilters = true;
+        v.facets = [repoFacet('queue', allQ, fQ), chipFacet('queue', 'group', 'Group', allQ, function (x) { return x.group; }, GROUP_ICON, GROUPS), chipFacet('queue', 'source', 'Source', allQ, function (x) { return x.source; }, SRC_ICON), chipFacet('queue', 'kind', 'Kind', allQ, function (x) { return x.kind; }, { 'pull request': 'git-pull-request', issue: 'circle-dot' })].filter(Boolean);
+        v.grouping = [['group', 'what happens'], ['repo', 'repository'], ['source', 'source'], ['none', 'none']].map(function (g) { return { word: g[1], on: by === g[0] ? 'true' : 'false', pick: function () { self.setF('queue', { by: g[0] }); } }; });
+        v.active = activeLine('queue', fQ, keptQ.length, allQ.length, { repo: 'Repository', group: 'Group', source: 'Source', kind: 'Kind' });
+        if (by !== 'group' && v.active) v.active.text += ' Grouped by ' + by + '.';
+      }
+      function qcard(x) {
+        return card('q' + x.i, { mark: role(x.role), ident: x.ref, end: span(NOW - x.since), meta: [repoMeta(x.ref.repo), { src: x.source, icon: I(SRC_ICON[x.source]), hint: SRC_HINT[x.source] }, { word: GROUP_TITLE[x.group].toLowerCase(), icon: I(GROUP_ICON[x.group]) }], title: x.ref.title, ask: x.why, rec: null, cmd: null, detail: [{ kv: [{ k: 'source', v: x.source + ': ' + SRC_HINT[x.source] }, { k: 'waiting', v: span(NOW - x.since) }, { k: 'linked work', v: linkWords(x.ref) }] }] });
+      }
+      var buckets, order, titleOf, iconOf, noteOf;
+      if (by === 'group') { order = GROUPS; titleOf = function (k) { return GROUP_TITLE[k]; }; iconOf = function (k) { return I(GROUP_ICON[k]); }; noteOf = function (k, list) { if (k === 'never') { var c = {}; list.forEach(function (x) { var w = x.why.split(':')[0]; c[w] = (c[w] || 0) + 1; }); return GROUP_NOTE[k] + ' ' + Object.keys(c).sort(function (a, b) { return c[b] - c[a]; }).map(function (w) { return c[w] + ' “' + w + '”'; }).join('; ') + '.'; } return GROUP_NOTE[k]; }; }
+      else if (by === 'repo') { order = Object.keys(keptQ.reduce(function (o, x) { o[x.ref.repo] = 1; return o; }, {})).sort(); titleOf = function (k) { return k; }; iconOf = function () { return null; }; noteOf = function (k) { var t = trackerOf(L, k); return 'Issues in ' + (TRACKER[t] || (t === null ? 'an issue tracker whose setting does not read' : 'an issue tracker not known for this read')) + '.'; }; }
+      else if (by === 'source') { order = Object.keys(SRC_ICON); titleOf = function (k) { return k; }; iconOf = function (k) { return I(SRC_ICON[k]); }; noteOf = function (k) { return SRC_HINT[k] + '.'; }; }
+      else order = ['all'];
+      order.forEach(function (k) {
+        var list = by === 'none' ? keptQ : keptQ.filter(function (x) { return (by === 'group' ? x.group : by === 'repo' ? x.ref.repo : x.source) === k; });
+        if (!list.length) return;
+        if (by === 'none') { page('queue:none', list, 20, qcard); return; }
+        var defOpen = by !== 'group' || k !== 'never' || list.length <= 5;
+        var gstarts = by === 'group' && k === 'starts';
+        var gopen = head('queue', by + ':' + k, { icon: iconOf(k), title: titleOf(k), count: String(list.length), sub: '', note: noteOf(k, list), keep: by === 'group' && (k === 'reported' || k === 'never') }, defOpen);
+        if (!gopen) return;
+        page('queue:' + by + ':' + k, list, gstarts ? 50 : 10, qcard);
+      });
+      if (!L.queue.length) rows.push({ isEmpty: true, text: 'Nothing queued. No issue is assigned to the factory identity, and no pull request is re-armable, labelled drive or held.' });
+      else if (!keptQ.length) rows.push({ isEmpty: true, text: 'No queued target matches this filter.' });
+      rows.push({ isEmpty: true, text: 'Added by hand: not available. Targets enter from an assignment in GitHub Issues, Linear or Jira, or from the drive label; this page writes nothing.' });
+    }
+
+    /* History */
+    if (L && view === 'history') {
+      v.plainTitle = 'How it went'; v.plainSub = 'Today, newest first. The time window is the phone’s filter here.';
+      L.history.forEach(function (h, i) { rows.push(card('h' + i, { mark: role(h.role), ident: h.ref, end: clock(h.at), meta: [repoMeta(h.ref.repo), { stage: h.stage, icon: I(STAGE_ICON[h.stage]), hint: STAGE_HINT[h.stage] }, { word: h.cls, icon: null }], title: h.ref.title, ask: h.reason, rec: null, cmd: null, detail: [{ quote: h.reason }] })); });
+    }
+
+    /* Help: the vocabulary, drawn from the same maps */
+    if (view === 'help') {
+      v.plainTitle = 'Help'; v.plainSub = 'Every icon on the page and its word.';
+      var set = function (name, map, words) { return { set: name, items: (words || Object.keys(map)).map(function (k) { return { word: k, icon: I(map[k]), cls: '', glyph: null }; }) }; };
+      v.help = [
+        { set: 'Work', items: [{ word: 'pull request, open', icon: I('git-pull-request'), cls: 'st-open' }, { word: 'pull request, draft', icon: I('git-pull-request-draft'), cls: 'st-draft' }, { word: 'pull request, merged', icon: I('git-merge'), cls: 'st-merged' }, { word: 'pull request, closed', icon: I('git-pull-request-closed'), cls: 'st-closed' }, { word: 'pull request, standing not read', icon: I('git-pull-request'), cls: 'dashed st-unknown' }, { word: 'issue (GitHub Issues, Linear, Jira)', icon: I('circle-dot'), cls: 'st-item' }, { word: 'linked to', icon: I('link'), cls: '' }] },
+        set('Acts', ACT_ICON, ACTS), { set: 'Why it needs you', items: Object.keys(CAUSE).map(function (k) { return { word: CAUSE[k], icon: I(CAUSE_ICON[k]), cls: '' }; }) }, set('Stages', STAGE_ICON), set('Queue sources', SRC_ICON),
+        { set: 'Queue groups', items: GROUPS.map(function (g) { return { word: GROUP_TITLE[g], icon: I(GROUP_ICON[g]), cls: '' }; }) },
+        set('Ready to merge lanes', LANE_ICON), { set: 'Load gauges', items: Object.keys(GAUGE).map(function (g) { return { word: GAUGE[g][1], icon: I(GAUGE[g][0]), cls: '' }; }) },
+        { set: 'Account states', items: [{ word: 'at cap', icon: I('circle-slash-2') }, { word: 'behind a wall', icon: I('brick-wall') }, { word: 'not admitted', icon: I('shield-ban') }, { word: 'wall not recorded', icon: I('shield-question') }] },
+        { set: 'Status roles (key caps)', items: Object.keys(ROLE).map(function (k) { return { word: ROLE[k][2], icon: null, glyph: ROLE[k][0] || ' ', rc: ROLE[k][1] }; }) }
+      ];
+    }
+
+    v.rows = rows;
+    /* keys: j/k, Enter/o, g + letter, /; never inside a text field */
+    v.keys = function (e) {
+      var t = e.target; if (t.closest && t.closest('input,select,textarea')) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      var root = e.currentTarget;
+      if (self.state.gPending) { var to = VIEWS.filter(function (x) { return x[2] === e.key; })[0]; self.setState({ gPending: false }); if (to) { e.preventDefault(); self.setState({ view: to[0] }); } return; }
+      if (e.key === 'g') { self.setState({ gPending: true }); return; }
+      if (e.key === '/') { e.preventDefault(); var inp = root.querySelector('[data-filter]'); if (inp) inp.focus(); else self.setState({ fOpen: true }); return; }
+      var discs = Array.prototype.slice.call(root.querySelectorAll('.card .disc'));
+      var cur = t.closest ? t.closest('.card') : null; var idx = cur ? discs.indexOf(cur.querySelector('.disc')) : -1;
+      if (e.key === 'j' || e.key === 'k') { e.preventDefault(); var n = discs[Math.max(0, Math.min(discs.length - 1, idx + (e.key === 'j' ? 1 : -1)))]; if (n) n.focus(); }
+      if (e.key === 'o' && cur) { e.preventDefault(); cur.querySelector('.disc').click(); }
+    };
+    return v;
+  }
+}
+</script>
+
+
+<script>
+/* The components this page imports, as exported, for the runtime to read. */
+(function () {
+  var components = {"./Ident.dc.html":"<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>Work identity</title>\n<script src=\"./support.js\"><\/script>\n<link rel=\"stylesheet\" href=\"./dash.css\">\n</head>\n<body>\n<x-dc>\n<helmet>\n<style>\nbody { margin: 0; }\n</style>\n</helmet>\n<sc-if value=\"{{solo}}\" hint-placeholder-val=\"{{ false }}\"><svg class=\"sprite\" width=\"0\" height=\"0\" style=\"position: absolute; width: 0; height: 0; overflow: hidden\" aria-hidden=\"true\" focusable=\"false\"><symbol id=\"git-pull-request\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"18\" cy=\"18\" r=\"3\"></circle> <circle cx=\"6\" cy=\"6\" r=\"3\"></circle> <path d=\"M13 6h3a2 2 0 0 1 2 2v7\"></path> <line x1=\"6\" x2=\"6\" y1=\"9\" y2=\"21\"></line></symbol><symbol id=\"git-pull-request-draft\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"18\" cy=\"18\" r=\"3\"></circle> <circle cx=\"6\" cy=\"6\" r=\"3\"></circle> <path d=\"M18 6V5\"></path> <path d=\"M18 11v-1\"></path> <line x1=\"6\" x2=\"6\" y1=\"9\" y2=\"21\"></line></symbol><symbol id=\"git-merge\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"18\" cy=\"18\" r=\"3\"></circle> <circle cx=\"6\" cy=\"6\" r=\"3\"></circle> <path d=\"M6 21V9a9 9 0 0 0 9 9\"></path></symbol><symbol id=\"git-pull-request-closed\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"m15.5 3.5 5 5\"></path> <path d=\"m15.5 8.5 5-5\"></path> <path d=\"M18 11.62V15\"></path> <path d=\"M6 9v12\"></path> <circle cx=\"18\" cy=\"18\" r=\"3\"></circle> <circle cx=\"6\" cy=\"6\" r=\"3\"></circle></symbol><symbol id=\"circle-dot\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"1\"></circle> <circle cx=\"12\" cy=\"12\" r=\"10\"></circle></symbol><symbol id=\"merge\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"m8 6 4-4 4 4\"></path> <path d=\"M12 2v10.3a4 4 0 0 1-1.172 2.872L4 22\"></path> <path d=\"m20 22-5-5\"></path></symbol><symbol id=\"scale\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 3v18\"></path> <path d=\"m19 8 3 8a5 5 0 0 1-6 0zV7\"></path> <path d=\"M3 7h1a17 17 0 0 0 8-2 17 17 0 0 0 8 2h1\"></path> <path d=\"m5 8 3 8a5 5 0 0 1-6 0zV7\"></path> <path d=\"M7 21h10\"></path></symbol><symbol id=\"key-round\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z\"></path> <circle cx=\"16.5\" cy=\"7.5\" r=\".5\" fill=\"currentColor\"></circle></symbol><symbol id=\"reply\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M20 18v-2a4 4 0 0 0-4-4H4\"></path> <path d=\"m9 17-5-5 5-5\"></path></symbol><symbol id=\"wrench\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z\"></path></symbol><symbol id=\"search\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"m21 21-4.34-4.34\"></path> <circle cx=\"11\" cy=\"11\" r=\"8\"></circle></symbol><symbol id=\"rotate-cw\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8\"></path> <path d=\"M21 3v5h-5\"></path></symbol><symbol id=\"arrow-left-right\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M8 3 4 7l4 4\"></path> <path d=\"M4 7h16\"></path> <path d=\"m16 21 4-4-4-4\"></path> <path d=\"M20 17H4\"></path></symbol><symbol id=\"chevrons-right\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"m6 17 5-5-5-5\"></path> <path d=\"m13 17 5-5-5-5\"></path></symbol><symbol id=\"circle-plus\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"10\"></circle> <path d=\"M8 12h8\"></path> <path d=\"M12 8v8\"></path></symbol><symbol id=\"bell\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M10.268 21a2 2 0 0 0 3.464 0\"></path> <path d=\"M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326\"></path></symbol><symbol id=\"navigation\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><polygon points=\"3 11 22 2 13 21 11 13 3 11\"></polygon></symbol><symbol id=\"hammer\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"m15 12-9.373 9.373a1 1 0 0 1-3.001-3L12 9\"></path> <path d=\"m18 15 4-4\"></path> <path d=\"m21.5 11.5-1.914-1.914A2 2 0 0 1 19 8.172v-.344a2 2 0 0 0-.586-1.414l-1.657-1.657A6 6 0 0 0 12.516 3H9l1.243 1.243A6 6 0 0 1 12 8.485V10l2 2h1.172a2 2 0 0 1 1.414.586L18.5 14.5\"></path></symbol><symbol id=\"tag\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z\"></path> <circle cx=\"7.5\" cy=\"7.5\" r=\".5\" fill=\"currentColor\"></circle></symbol><symbol id=\"pause\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"14\" y=\"3\" width=\"5\" height=\"18\" rx=\"1\"></rect> <rect x=\"5\" y=\"3\" width=\"5\" height=\"18\" rx=\"1\"></rect></symbol><symbol id=\"user-round-check\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M2 21a8 8 0 0 1 13.292-6\"></path> <circle cx=\"10\" cy=\"8\" r=\"5\"></circle> <path d=\"m16 19 2 2 4-4\"></path></symbol><symbol id=\"play\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z\"></path></symbol><symbol id=\"flag\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M4 22V4a1 1 0 0 1 .4-.8A6 6 0 0 1 8 2c3 0 5 2 7.333 2q2 0 3.067-.8A1 1 0 0 1 20 4v10a1 1 0 0 1-.4.8A6 6 0 0 1 16 16c-3 0-5-2-8-2a6 6 0 0 0-4 1.528\"></path></symbol><symbol id=\"ban\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"10\"></circle> <path d=\"M4.929 4.929 19.07 19.071\"></path></symbol><symbol id=\"circle-check-big\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M21.801 10A10 10 0 1 1 17 3.335\"></path> <path d=\"m9 11 3 3L22 4\"></path></symbol><symbol id=\"stamp\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M14 13V8.5C14 7 15 7 15 5a3 3 0 0 0-6 0c0 2 1 2 1 3.5V13\"></path> <path d=\"M20 15.5a2.5 2.5 0 0 0-2.5-2.5h-11A2.5 2.5 0 0 0 4 15.5V17a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1z\"></path> <path d=\"M5 22h14\"></path></symbol><symbol id=\"git-branch\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M15 6a9 9 0 0 0-9 9V3\"></path> <circle cx=\"18\" cy=\"6\" r=\"3\"></circle> <circle cx=\"6\" cy=\"18\" r=\"3\"></circle></symbol><symbol id=\"memory-stick\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 12v-2\"></path> <path d=\"M12 18v-2\"></path> <path d=\"M16 12v-2\"></path> <path d=\"M16 18v-2\"></path> <path d=\"M2 11h1.5\"></path> <path d=\"M20 18v-2\"></path> <path d=\"M20.5 11H22\"></path> <path d=\"M4 18v-2\"></path> <path d=\"M8 12v-2\"></path> <path d=\"M8 18v-2\"></path> <rect x=\"2\" y=\"6\" width=\"20\" height=\"10\" rx=\"2\"></rect></symbol><symbol id=\"cpu\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 20v2\"></path> <path d=\"M12 2v2\"></path> <path d=\"M17 20v2\"></path> <path d=\"M17 2v2\"></path> <path d=\"M2 12h2\"></path> <path d=\"M2 17h2\"></path> <path d=\"M2 7h2\"></path> <path d=\"M20 12h2\"></path> <path d=\"M20 17h2\"></path> <path d=\"M20 7h2\"></path> <path d=\"M7 20v2\"></path> <path d=\"M7 2v2\"></path> <rect x=\"4\" y=\"4\" width=\"16\" height=\"16\" rx=\"2\"></rect> <rect x=\"8\" y=\"8\" width=\"8\" height=\"8\" rx=\"1\"></rect></symbol><symbol id=\"lock\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect width=\"18\" height=\"11\" x=\"3\" y=\"11\" rx=\"2\" ry=\"2\"></rect> <path d=\"M7 11V7a5 5 0 0 1 10 0v4\"></path></symbol><symbol id=\"hard-drive\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M10 16h.01\"></path> <path d=\"M2.212 11.577a2 2 0 0 0-.212.896V18a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-5.527a2 2 0 0 0-.212-.896L18.55 5.11A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z\"></path> <path d=\"M21.946 12.013H2.054\"></path> <path d=\"M6 16h.01\"></path></symbol><symbol id=\"gauge\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"m12 14 4-4\"></path> <path d=\"M3.34 19a10 10 0 1 1 17.32 0\"></path></symbol><symbol id=\"users\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2\"></path> <path d=\"M16 3.128a4 4 0 0 1 0 7.744\"></path> <path d=\"M22 21v-2a4 4 0 0 0-3-3.87\"></path> <circle cx=\"9\" cy=\"7\" r=\"4\"></circle></symbol><symbol id=\"brick-wall\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\"></rect> <path d=\"M12 9v6\"></path> <path d=\"M16 15v6\"></path> <path d=\"M16 3v6\"></path> <path d=\"M3 15h18\"></path> <path d=\"M3 9h18\"></path> <path d=\"M8 15v6\"></path> <path d=\"M8 3v6\"></path></symbol><symbol id=\"shield-ban\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z\"></path> <path d=\"m4.243 5.21 14.39 12.472\"></path></symbol><symbol id=\"shield-question\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z\"></path> <path d=\"M9.1 9a3 3 0 0 1 5.82 1c0 2-3 3-3 3\"></path> <path d=\"M12 17h.01\"></path></symbol><symbol id=\"chevron-right\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"m9 18 6-6-6-6\"></path></symbol><symbol id=\"copy\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect width=\"14\" height=\"14\" x=\"8\" y=\"8\" rx=\"2\" ry=\"2\"></rect> <path d=\"M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2\"></path></symbol><symbol id=\"check\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M20 6 9 17l-5-5\"></path></symbol><symbol id=\"x\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M18 6 6 18\"></path> <path d=\"m6 6 12 12\"></path></symbol><symbol id=\"link\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71\"></path> <path d=\"M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71\"></path></symbol><symbol id=\"list-filter\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M2 5h20\"></path> <path d=\"M6 12h12\"></path> <path d=\"M9 19h6\"></path></symbol><symbol id=\"refresh-cw\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8\"></path> <path d=\"M21 3v5h-5\"></path> <path d=\"M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16\"></path> <path d=\"M8 16H3v5\"></path></symbol><symbol id=\"wifi-off\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 20h.01\"></path> <path d=\"M8.5 16.429a5 5 0 0 1 7 0\"></path> <path d=\"M5 12.859a10 10 0 0 1 5.17-2.69\"></path> <path d=\"M19 12.859a10 10 0 0 0-2.007-1.523\"></path> <path d=\"M2 8.82a15 15 0 0 1 4.177-2.643\"></path> <path d=\"M22 8.82a15 15 0 0 0-11.288-3.764\"></path> <path d=\"m2 2 20 20\"></path></symbol><symbol id=\"circle-slash-2\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"10\"></circle> <path d=\"M22 2 2 22\"></path></symbol><symbol id=\"triangle-alert\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3\"></path> <path d=\"M12 9v4\"></path> <path d=\"M12 17h.01\"></path></symbol></svg></sc-if>\n<span class=\"wid {{cls}}\" onMouseEnter=\"{{enter}}\" onMouseLeave=\"{{leave}}\" onKeyDown=\"{{keys}}\" onBlur=\"{{blur}}\">\n  <button class=\"wtrig {{stCls}}\" type=\"button\" aria-expanded=\"{{expanded}}\" aria-label=\"{{trigLabel}}\" onClick=\"{{toggle}}\" onFocus=\"{{focusOpen}}\">\n    <svg class=\"ic {{icCls}}\" aria-hidden=\"true\"><use href=\"{{icon}}\"></use></svg>\n  </button>\n  <sc-if value=\"{{url}}\" hint-placeholder-val=\"{{ true }}\"><a class=\"key\" href=\"{{url}}\" target=\"_blank\" rel=\"noopener\" aria-label=\"{{keyLabel}}\">{{label}}</a></sc-if>\n  <sc-if value=\"{{noUrl}}\" hint-placeholder-val=\"{{ false }}\"><span class=\"key\">{{label}}</span></sc-if>\n  <sc-if value=\"{{lead}}\" hint-placeholder-val=\"{{ true }}\"><button class=\"cbtn {{copyCls}}\" type=\"button\" aria-label=\"{{copyLabel}}\" onClick=\"{{copy}}\"><svg class=\"ic s14\" aria-hidden=\"true\"><use href=\"{{copyIcon}}\"></use></svg></button></sc-if>\n  <sc-if value=\"{{open}}\" hint-placeholder-val=\"{{ false }}\">\n    <span class=\"pop\" role=\"group\" aria-label=\"{{popLabel}}\" onMouseEnter=\"{{enter}}\" onMouseLeave=\"{{leave}}\">\n      <span class=\"kind\">{{kindWord}}</span>\n      <sc-if value=\"{{title}}\" hint-placeholder-val=\"{{ true }}\"><span class=\"q\">{{title}}</span></sc-if>\n      <sc-if value=\"{{noTitle}}\" hint-placeholder-val=\"{{ false }}\"><span class=\"mut\">{{noTitle}}</span></sc-if>\n      <dl class=\"kv\">\n        <sc-for list=\"{{facts}}\" as=\"f\" hint-placeholder-count=\"3\"><dt>{{f.k}}</dt><dd class=\"m\">{{f.v}}</dd></sc-for>\n      </dl>\n      <span class=\"sm\"><b>Linked work:</b> {{linkSentence}}</span>\n      <sc-if value=\"{{linked}}\" hint-placeholder-val=\"{{ false }}\"><span class=\"links\"><sc-for list=\"{{linked}}\" as=\"l\" hint-placeholder-count=\"2\"><span class=\"nowrap\"><svg class=\"ic s14 {{l.cls}}\" aria-hidden=\"true\"><use href=\"{{l.icon}}\"></use></svg> <sc-if value=\"{{l.url}}\" hint-placeholder-val=\"{{ true }}\"><a class=\"m\" href=\"{{l.url}}\" target=\"_blank\" rel=\"noopener\">{{l.label}}</a></sc-if><sc-if value=\"{{l.noUrl}}\" hint-placeholder-val=\"{{ false }}\"><span class=\"m\">{{l.label}}</span></sc-if></span></sc-for></span></sc-if>\n      <span class=\"tools\">\n        <sc-if value=\"{{url}}\" hint-placeholder-val=\"{{ true }}\"><a href=\"{{url}}\" target=\"_blank\" rel=\"noopener\">{{openLabel}}</a></sc-if>\n        <sc-if value=\"{{noUrl}}\" hint-placeholder-val=\"{{ false }}\"><span class=\"mut\">{{noLinkWords}}</span></sc-if>\n        <button class=\"cbtn {{copyCls}}\" type=\"button\" aria-label=\"{{copyLabel}}\" onClick=\"{{copy}}\"><svg class=\"ic s14\" aria-hidden=\"true\"><use href=\"{{copyIcon}}\"></use></svg> {{copyWord}}</button>\n      </span>\n    </span>\n  </sc-if>\n  <sc-if value=\"{{failed}}\" hint-placeholder-val=\"{{ false }}\"><input class=\"cfield\" readonly=\"{{ true }}\" aria-label=\"Copy refused by the browser: the text is selected\" value=\"{{copyText}}\" ref=\"{{fieldRef}}\"></sc-if>\n</span>\n</x-dc>\n<script type=\"text/x-dc\" data-dc-script data-props='{\"w\":{\"editor\":null},\"failCopy\":{\"editor\":\"boolean\",\"default\":false},\"$preview\":{\"width\":420,\"height\":260}}'>\nvar STAND = {\n  open: ['git-pull-request', 'open', 'st-open', ''],\n  draft: ['git-pull-request-draft', 'draft', 'st-draft', ''],\n  merged: ['git-merge', 'merged', 'st-merged', ''],\n  closed: ['git-pull-request-closed', 'closed', 'st-closed', ''],\n  unknown: ['git-pull-request', 'not read yet', 'st-unknown', 'dashed']\n};\nvar ITEM_WORD = { github: 'GitHub issue', linear: 'Linear issue', jira: 'Jira issue' };\nvar OPEN_WORD = { github: 'Open on GitHub', linear: 'Open in Linear', jira: 'Open in Jira' };\nvar SAMPLE = { kind: 'pr', repo: 'example-org/web', num: 456, url: 'https://github.com/example-org/web/pull/456', title: 'Retry the webhook on a 5xx', standing: 'open', tracker: 'linear', lead: true, links: { items: [{ key: 'API-77', url: 'https://linear.app/example/issue/API-77' }, { key: 'API-81', url: null }], prs: [] } };\nfunction iconUrl(n) { return '#' + n; }\n\nclass Component extends DCLogic {\n  constructor(props) {\n    super(props);\n    this.state = { open: false, copied: null, failed: false };\n    this.fieldRef = React.createRef();\n  }\n  componentWillUnmount() { clearTimeout(this.t); clearTimeout(this.ct); }\n  componentDidUpdate(prev, prevState) {\n    if (this.state.failed && !prevState.failed && this.fieldRef.current) { this.fieldRef.current.focus(); this.fieldRef.current.select(); }\n  }\n  renderVals() {\n    var self = this;\n    var w = this.props.w || SAMPLE;\n    var isPr = w.kind === 'pr';\n    var st = STAND[w.standing] || STAND.unknown;\n    var label = isPr ? 'PR #' + w.num : w.key;\n    var product = ITEM_WORD[w.tracker] || 'Issue';\n    var kindWord = isPr ? 'GitHub pull request, ' + st[1] : product + (w.tracker === null ? ' (this repository’s issue tracker setting does not read)' : w.tracker === undefined ? ' (the tracker for this repository is not known)' : '');\n    var copyText = w.url || label;\n    var linked = [], sentence;\n    var L = w.links;\n    if (L === undefined || L === null) sentence = 'not known for this read.';\n    else {\n      var arr = isPr ? L.items.map(function (i) { return { label: i.key, url: i.url, icon: iconUrl('circle-dot'), cls: 'st-item' }; }) : L.prs.map(function (p) { return { label: 'PR #' + p.number, url: p.url, icon: iconUrl('git-pull-request'), cls: 'st-open' }; });\n      arr.forEach(function (a) { a.noUrl = !a.url; });\n      linked = arr;\n      sentence = arr.length ? '' : (isPr ? 'none found.' : 'no open pull request found in ' + w.repo + '.');\n    }\n    var facts = [{ k: 'repository', v: w.repo }, { k: isPr ? 'number' : 'key', v: isPr ? '#' + w.num : w.key }];\n    if (isPr) facts.splice(1, 0, { k: 'standing', v: st[1] });\n    var c = this.state.copied;\n    function close() { self.setState({ open: false }); }\n    return {\n      solo: !this.props.w,\n      cls: w.lead === false ? 'lk' : '',\n      lead: w.lead !== false,\n      icon: iconUrl(isPr ? st[0] : 'circle-dot'),\n      icCls: isPr ? st[3] : '',\n      stCls: isPr ? st[2] : 'st-item',\n      label: label,\n      url: w.url || null,\n      noUrl: !w.url,\n      keyLabel: label + ', ' + (isPr ? 'open on GitHub' : (OPEN_WORD[w.tracker] || 'open the issue').toLowerCase()),\n      trigLabel: (isPr ? 'Pull request ' + label + ', ' + st[1] : product + ' ' + label) + ': details',\n      expanded: this.state.open ? 'true' : 'false',\n      open: this.state.open,\n      popLabel: label + ' details',\n      kindWord: kindWord,\n      title: w.title || null,\n      noTitle: w.title ? null : 'Its title is not in this read.',\n      facts: facts,\n      linkSentence: sentence,\n      linked: linked.length ? linked : null,\n      openLabel: isPr ? 'Open on GitHub' : (OPEN_WORD[w.tracker] || 'Open the issue'),\n      noLinkWords: 'No link: ' + (ITEM_WORD[w.tracker] ? ITEM_WORD[w.tracker].replace(' issue', '') : 'the issue tracker') + ' gave none.',\n      copyIcon: iconUrl(c === 'ok' ? 'check' : c === 'no' ? 'x' : 'copy'),\n      copyCls: c === 'ok' ? 'ok' : '',\n      copyWord: c === 'ok' ? 'Copied' : c === 'no' ? 'Select and copy' : 'Copy',\n      copyLabel: c === 'ok' ? 'Copied' : 'Copy ' + (w.url ? 'link to ' : '') + label,\n      copyText: copyText,\n      failed: this.state.failed,\n      fieldRef: this.fieldRef,\n      toggle: function () { if (Date.now() - (self.openedAt || 0) < 400) return; self.setState({ open: !self.state.open }); },\n      focusOpen: function () { if (!self.state.open) { self.openedAt = Date.now(); self.setState({ open: true }); } },\n      enter: function () { if (!window.matchMedia('(hover: hover)').matches) return; clearTimeout(self.t); self.t = setTimeout(function () { self.setState({ open: true }); }, 200); },\n      leave: function () { if (!window.matchMedia('(hover: hover)').matches) return; clearTimeout(self.t); self.t = setTimeout(close, 180); },\n      blur: function (e) { if (!e.currentTarget.contains(e.relatedTarget)) { clearTimeout(self.t); close(); } },\n      keys: function (e) { if (e.key === 'Escape' && self.state.open) { e.stopPropagation(); close(); } },\n      copy: function () {\n        var ok = Promise.resolve(false);\n        if (!self.props.failCopy && navigator.clipboard && window.isSecureContext) ok = navigator.clipboard.writeText(copyText).then(function () { return true; }, function () { return false; });\n        ok.then(function (yes) {\n          self.setState({ copied: yes ? 'ok' : 'no', failed: !yes });\n          clearTimeout(self.ct);\n          if (yes) self.ct = setTimeout(function () { self.setState({ copied: null }); }, 2000);\n        });\n      }\n    };\n  }\n}\n<\/script>\n</body>\n</html>\n"};
+  var resources = (window.__resources = window.__resources || {});
+  var blobs = (window.__resourceBlobs = window.__resourceBlobs || {});
+  Object.keys(components).forEach(function (path) {
+    var key = "inline:" + path;
+    blobs[key] = new Blob([components[path]], { type: "text/html" });
+    resources[path] = key;
+  });
+})();
+</script>
+<script>
+/* Landing-check hook, not part of the design (tools/design/unpack-export.ts). */
+(function () {
+  window.__resources = window.__resources || {};
+  var source = document.querySelector("template[data-dc-source]");
+  var parsed = source && source.content && source.content.querySelector("x-dc");
+  if (parsed) {
+    var host = document.createElement("x-dc");
+    for (var i = 0; i < parsed.attributes.length; i++)
+      host.setAttribute(parsed.attributes[i].name, parsed.attributes[i].value);
+    Object.defineProperty(host, "innerHTML", {
+      configurable: true,
+      get: function () {
+        return parsed.innerHTML;
+      },
+    });
+    source.replaceWith(host);
+  }
+  var query = new URLSearchParams(location.search);
+  var script = document.querySelector("script[data-dc-script]");
+  if (script) {
+    try {
+      var props = JSON.parse(script.getAttribute("data-props") || "{}");
+      Object.keys(props).forEach(function (name) {
+        var value = query.get(name);
+        var prop = props[name];
+        if (!value || !prop || typeof prop !== "object") return;
+        if (prop.options) {
+          if (prop.options.indexOf(value) >= 0) prop.default = value;
+        } else if (prop.editor === "boolean") prop.default = value === "true";
+      });
+      if (query.get("switch") === "off" && props.showSwitch) props.showSwitch.default = false;
+      script.setAttribute("data-props", JSON.stringify(props));
+    } catch (error) {
+      // A page without props is rendered as it is.
+    }
+  }
+  var mark = function () {
+    var root = document.getElementById("dc-root");
+    if (!root || !root.firstElementChild) return false;
+    document.documentElement.setAttribute("data-scenario-ready", "");
+    return true;
+  };
+  if (!mark()) {
+    var observer = new MutationObserver(function () {
+      if (mark()) observer.disconnect();
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+  }
+})();
+</script>
+<script src="../vendor/react.production.min.js"></script>
+<script src="../vendor/react-dom.production.min.js"></script>
+<script>
+/* The design tool's page runtime, as exported. */
+// GENERATED from dc-runtime/src/*.ts - do not edit. Rebuild with `bun build.ts` (see the package README for the source-only recipe).
+"use strict";(()=>{var Mt=Object.defineProperty,Tt=(t,n,e)=>n in t?Mt(t,n,{enumerable:!0,configurable:!0,writable:!0,value:e}):t[n]=e,T=(t,n,e)=>Tt(t,typeof n!="symbol"?n+"":n,e);function L(){const t=window.React;if(!t)throw new Error("dc-runtime: window.React is not available yet");return t}function Lt(){const t=window.ReactDOM;if(!t)throw new Error("dc-runtime: window.ReactDOM is not available yet");return t}var A=((...t)=>L().createElement(...t));function Ot(t){const n=t.querySelector("x-dc");if(!n)return null;const e=t.querySelector("script[data-dc-script]"),{props:o,preview:r}=B(e?.getAttribute("data-props")??null);return{template:n.innerHTML,js:e&&e.textContent||"",props:o,preview:r}}function tt(t){const n=/<x-dc(?:\s[^>]*)?>/.exec(t);if(!n)return null;const e=t.lastIndexOf("</x-dc>");if(e===-1||e<n.index)return null;const o=t.slice(n.index+n[0].length,e),s=new DOMParser().parseFromString(t,"text/html").querySelector("script[data-dc-script]"),{props:i,preview:a}=B(s?.getAttribute("data-props")??null);return{template:o,js:s&&s.textContent||"",props:i,preview:a}}function B(t){if(!t)return{props:null,preview:null};let n;try{n=JSON.parse(t)}catch{return{props:null,preview:null}}if(!n||typeof n!="object"||Array.isArray(n))return{props:null,preview:null};const e=n,o=e.$preview&&typeof e.$preview=="object"?e.$preview:null,r={};for(const s of Object.keys(e))s[0]!=="$"&&(r[s]=e[s]);return{props:Object.keys(r).length?r:null,preview:o}}function Pt(t){let n=t||"";try{n=decodeURIComponent(n)}catch{}return(n.split("/").pop()||"Root").replace(/\.dc\.html$|\.html?$/,"")||"Root"}var Dt=`
+    .sc-placeholder{background:color-mix(in srgb,currentColor 8%,transparent);
+      border:1px solid color-mix(in srgb,currentColor 50%,transparent);
+      border-radius:2px;box-sizing:border-box;overflow:hidden}
+    @keyframes sc-shine{0%{background-position:100% 50%}100%{background-position:0% 50%}}
+    html.sc-dc-streaming .sc-placeholder,
+    html.sc-dc-streaming .sc-interp.sc-missing{position:relative;
+      background:color-mix(in srgb,currentColor 5%,transparent);
+      border-color:transparent}
+    html.sc-dc-streaming .sc-placeholder::before,
+    html.sc-dc-streaming .sc-interp.sc-missing::before{content:'';
+      position:absolute;inset:0;pointer-events:none;
+      background:linear-gradient(90deg,rgba(217,119,87,0) 25%,rgba(247,225,211,.95) 37%,rgba(217,119,87,0) 63%);
+      background-size:400% 100%;animation:sc-shine 1.4s ease infinite}
+    html.sc-dc-streaming .sc-placeholder:nth-child(n+9 of .sc-placeholder)::before,
+    html.sc-dc-streaming .sc-interp.sc-missing:nth-child(n+9 of .sc-interp.sc-missing)::before{animation:none;
+      background:color-mix(in srgb,currentColor 8%,transparent)}
+    .sc-placeholder-error{padding:4px 8px;font:11px/1.4 ui-monospace,monospace;
+      color:color-mix(in srgb,currentColor 70%,transparent);word-break:break-word}
+    .sc-interp.sc-missing{display:inline-block;width:2em;height:1em;overflow:hidden;
+      vertical-align:text-bottom;background:rgba(255,255,255,.3);border:1px solid rgba(0,0,0,.5);
+      border-radius:2px;box-sizing:border-box;color:transparent;
+      user-select:none}
+    .sc-interp.sc-unresolved{font-family:ui-monospace,monospace;font-size:.85em;
+      color:color-mix(in srgb,currentColor 50%,transparent);
+      background:color-mix(in srgb,currentColor 10%,transparent);border-radius:3px;
+      padding:0 3px}
+    .sc-host.sc-has-error{position:relative}
+    .sc-logic-error{position:absolute;top:8px;left:8px;z-index:2147483647;max-width:60ch;
+      padding:6px 10px;background:#b00020;color:#fff;font:12px/1.4 ui-monospace,monospace;
+      border-radius:4px;white-space:pre-wrap;pointer-events:none}
+    /* Mirrors PRINT_BASELINE_CSS in apps/web deck-stage-export.ts \u2014 keep both
+       in sync until dc-runtime regains a build step. */
+    @media print {
+      @page { margin: 0.5cm; }
+      figure, table { break-inside: avoid; }
+      #dc-root, #dc-root > .sc-host { height: auto; }
+      *, *::before, *::after {
+        print-color-adjust: exact; -webkit-print-color-adjust: exact;
+        backdrop-filter: none !important; -webkit-backdrop-filter: none !important;
+        animation-delay: -99s !important; animation-duration: .001s !important;
+        animation-iteration-count: 1 !important; animation-fill-mode: both !important;
+        animation-play-state: running !important; transition-duration: 0s !important;
+      }
+    }
+  `,jt="html,body{height:100%;margin:0}#dc-root,#dc-root>.sc-host{height:100%}";function It(t,n){let e=n.pathname||"";if(!/\.dc\.html?$/i.test(zt(e)))try{e=new URL(t.baseURI||"/").pathname}catch{}return Pt(e)}function zt(t){try{return decodeURIComponent(t)}catch{return t}}function Ut(t,n=document){const e=Ot(n);if(!e)return null;const o=L(),r=It(n,location);t.markFetched(r),t.setRootName(r),t.adoptParsed(r,e),window.__resources||fetch(location.href).then(_=>_.ok?_.text():"").then(_=>{const u=_?tt(_):null;u?.template&&t.updateHtml(r,u.template)}).catch(()=>{});const s=n.querySelector("x-dc"),i=n.createElement("div");if(i.id="dc-root",s.replaceWith(i),!e.preview){const _=n.createElement("style");_.textContent=jt,n.head.appendChild(_)}const a=t.getDC(r),f=t.registry.get(r);function l(){const[,_]=o.useState(0);o.useEffect(()=>{const d=()=>_(g=>g+1);return f.subs.add(d),()=>{f.subs.delete(d)}},[]);const u=o.useMemo(()=>{const d={};for(const g in f.propsMeta||{}){const m=f.propsMeta?.[g]?.default;m!==void 0&&(d[g]=m)}return d},[f.propsMeta]);return A(a,{...u,...f.propOverrides||{}})}const c=Lt();return c.createRoot?c.createRoot(i).render(A(l)):c.render(A(l),i),r}var et=/^[A-Za-z_$][A-Za-z0-9_$]*/,Gt=/^-?\d+(\.\d+)?$/;function P(t,n){const e=String(n).trim();if(!e)return;if(e[0]==="("&&e[e.length-1]===")"&&Ft(e))return P(t,e.slice(1,-1));const o=Bt(e);if(o){const r=P(t,e.slice(0,o.index)),s=P(t,e.slice(o.index+o.op.length));switch(o.op){case"===":return r===s;case"!==":return r!==s;case"==":return r==s;default:return r!=s}}if(e[0]==="!")return!P(t,e.slice(1));if(e==="true")return!0;if(e==="false")return!1;if(e==="null")return null;if(e!=="undefined")return Gt.test(e)?Number(e):e.length>=2&&(e[0]==='"'||e[0]==="'")&&e[e.length-1]===e[0]?e.slice(1,-1):Wt(t,e)}function Ft(t){let n=0;for(let e=0;e<t.length-1;e++)if(t[e]==="(")n++;else if(t[e]===")"&&(n--,n===0))return!1;return!0}function Bt(t){let n=0;for(let e=0;e<t.length;e++){const o=t[e];if(o==="["||o==="(")n++;else if(o==="]"||o===")")n--;else if(n===0&&(o==="="||o==="!")&&t[e+1]==="="){if(e>0&&(t[e-1]==="="||t[e-1]==="!")||!t.slice(0,e).trim())continue;const r=t[e+2]==="="?o+"==":o+"=";return{index:e,op:r}}}return null}function Wt(t,n){const e=n.match(et);if(!e)return;let o=t?.[e[0]],r=e[0].length;for(;r<n.length;)if(n[r]==="."){const s=n.slice(r+1).match(et)||n.slice(r+1).match(/^\d+/);if(!s)return;o=o?.[s[0]],r+=1+s[0].length}else if(n[r]==="["){let s=1,i=r+1;for(;i<n.length&&s>0;){if(n[i]==="[")s++;else if(n[i]==="]"&&(s--,s===0))break;i++}if(s!==0)return;const a=P(t,n.slice(r+1,i));o=o?.[a],r=i+1}else return;return o}var W="sc-camel-",$t=new Set("a abbr b bdi bdo br cite code del dfn em i ins kbd mark q s samp small span strike strong sub sup u var wbr".split(" ")),nt={select:"sc-raw-select",table:"sc-raw-table",tbody:"sc-raw-tbody",thead:"sc-raw-thead",tfoot:"sc-raw-tfoot",tr:"sc-raw-tr",td:"sc-raw-td",th:"sc-raw-th",caption:"sc-raw-caption"},ot=Object.fromEntries(Object.entries(nt).map(([t,n])=>[n,t])),qt=new Set("allowFullScreen async autoFocus autoPlay checked controls default defer disabled disablePictureInPicture disableRemotePlayback formNoValidate hidden itemScope loop multiple muted noModule noValidate open playsInline readOnly required reversed scoped seamless selected".split(" ")),Ht={onclick:"onClick",onchange:"onChange",oninput:"onInput",onsubmit:"onSubmit",onkeydown:"onKeyDown",onkeyup:"onKeyUp",onkeypress:"onKeyPress",onmousedown:"onMouseDown",onmouseup:"onMouseUp",onmouseenter:"onMouseEnter",onmouseleave:"onMouseLeave",onfocus:"onFocus",onblur:"onBlur",ondoubleclick:"onDoubleClick",oncontextmenu:"onContextMenu",onmousemove:"onMouseMove",onmouseover:"onMouseOver",onmouseout:"onMouseOut",onpointerdown:"onPointerDown",onpointerup:"onPointerUp",onpointermove:"onPointerMove",onpointerenter:"onPointerEnter",onpointerleave:"onPointerLeave",onpointercancel:"onPointerCancel",onpointerover:"onPointerOver",onpointerout:"onPointerOut",ongotpointercapture:"onGotPointerCapture",onlostpointercapture:"onLostPointerCapture",ontouchstart:"onTouchStart",ontouchend:"onTouchEnd",ontouchmove:"onTouchMove",ontouchcancel:"onTouchCancel",ondragstart:"onDragStart",ondragend:"onDragEnd",ondragenter:"onDragEnter",ondragleave:"onDragLeave",ondragover:"onDragOver",onanimationstart:"onAnimationStart",onanimationend:"onAnimationEnd",onanimationiteration:"onAnimationIteration",ontransitionend:"onTransitionEnd"},Vt=`(?:[^>"']|"[^"]*"|'[^']*')*`,Kt=new RegExp("<(x-import|dc-import)("+Vt+")/>","gi"),rt=`(?:=\\s*"[^"]*"|=\\s*'[^']*'|=(?!\\s*["'])|[^>=])*`,Zt=new RegExp("(<\!---?>|<\!--[\\s\\S]*?--!?>)|(<(script|style|textarea|title)(?=[\\s/>])"+rt+">)([\\s\\S]*?<\\/\\3(?=[\\s/>])[^>]*>)|<[a-zA-Z][^\\s/>]*(?=[\\s/>])"+rt+">","gi"),Jt=/=\s*"[^"]*"|=\s*'[^']*'|(\s)([a-z]+[A-Z][A-Za-z0-9]*)(?=\s*=)/g;function Xt(t){const n=e=>e.replace(Jt,(o,r,s)=>s===void 0?o:r+W+s.replace(/[A-Z]/g,i=>"-"+i.toLowerCase()));return t.replace(Zt,(e,o,r,s,i)=>o!==void 0?e:r?n(r)+i:n(e))}function Yt(t){t=t.replace(Kt,(n,e,o)=>"<"+e+o+"></"+e+">"),t=t.replace(/<helmet(\s|>)/gi,"<sc-helmet$1"),t=t.replace(/<\/helmet\s*>/gi,"</sc-helmet>"),t=Xt(t);for(const[n,e]of Object.entries(nt))t=t.replace(new RegExp("(</?)"+n+"(?=[\\s>])","gi"),"$1"+e);return t}function U(t){return t.replace(/-([a-z])/g,(n,e)=>e.toUpperCase())}function Qt(t){if(t.startsWith("--")||!/[a-z][A-Z]/.test(t))return t;if(t==="cssFloat")return"float";const n=t.replace(/[A-Z]/g,e=>"-"+e.toLowerCase());return/^(webkit|moz|ms|o)-/.test(n)?"-"+n:n}function st(t){const n={};for(const e of t.split(";")){const o=e.indexOf(":");if(o<0)continue;const r=e.slice(0,o).trim();n[r.startsWith("--")?r:U(r)]=e.slice(o+1).trim()}return n}function O(t){const n=t.match(/^\s*\{\{([\s\S]+?)\}\}\s*$/);if(n){const e=n[1];return o=>P(o,e)}if(t.includes("{{")){const e=t.split(/\{\{([\s\S]+?)\}\}/g);return o=>e.map((r,s)=>s&1?P(o,r)??"":r).join("")}return()=>t}function te(t){return t==="constructor"||t==="prototype"?!1:/^(?:--[a-zA-Z0-9_-]+|[a-z][a-z0-9-]*)$/.test(t)}var ee=/^data-keyframes-(css|attr)-(.+)$/;function ne(t){const n=ee.exec(t);return n?{kind:n[1],prop:n[2]}:null}var oe=new Set(["script","style","link","meta","base","iframe","frame","embed","object","portal","template","head","html","body","animate","set","animatemotion","applet","frameset","noembed","xmp"]);function re(t){return!oe.has(t.toLowerCase())}function se(t){return!(!/^[a-z][a-z0-9-]*$/.test(t)||t.startsWith("on")||t==="srcdoc"||t==="style"||t==="class"||t==="id"||t==="is"||t==="contenteditable"||t==="key"||t==="ref"||t==="children"||t==="dangerouslysetinnerhtml"||t.startsWith("data-dc-")||t.startsWith("data-om-")||t.startsWith("data-dm-")||t.startsWith("data-react-")||t.startsWith("data-keyframes-")||t.startsWith("sc-camel-"))}var ie=new Set(["href","action","formaction","cite","ping","longdesc"]),ce=new Set(["src","srcset","poster","data","background"]);function ae(t,n){const e=String(n),o=ie.has(t);if(!o&&!ce.has(t))return e;const r=t==="srcset"?e.split(",").map(s=>s.trim().split(/\s+/)[0]??""):t==="ping"?e.trim().split(/\s+/):[e];for(const s of r)if(!le(s,o))return null;return e}function le(t,n){const e=t.replace(/[\t\n\r]/g,"").trim();if(!e)return!0;try{const o=new URL(e,"https://dc-keyframes-base.invalid/").protocol;return o==="http:"||o==="https:"||n&&(o==="mailto:"||o==="tel:")?!0:!n&&o==="data:"&&/^data:image\/(?!svg)/i.test(e.replace(/\s+/g,""))}catch{return!1}}function ue(t){let n=t;if(typeof n=="string"){const e=n.trim();if(!e)return null;const o=z.get(e);if(o!==void 0)return o;let r;try{r=JSON.parse(e)}catch{return z.set(e,null),null}const s=it(r);return z.size>512&&z.clear(),z.set(e,s),s}return it(n)}var z=new Map;function it(t){if(!Array.isArray(t))return null;const n=[];for(const e of t){if(!e||typeof e!="object"||Array.isArray(e))continue;const{t:o,v:r}=e;typeof o!="number"||!Number.isFinite(o)||(typeof r=="number"?!Number.isFinite(r):typeof r!="string")||n.push(e)}return n.length?n.sort((e,o)=>e.t-o.t):null}function fe(t,n){const e=t[0];if(n<=e.t)return e.v;const o=t[t.length-1];if(n>=o.t)return o.v;let r=0;for(;r<t.length-1&&t[r+1].t<=n;)r++;const s=t[r],i=t[r+1];if(i.t===s.t)return i.v;const a=(n-s.t)/(i.t-s.t);return me(s.v,i.v,pe(s.ease,a),a)}var ct={in:[.42,0,1,1],out:[0,0,.58,1],inOut:[.42,0,.58,1],ease:[.25,.1,.25,1],"ease-in":[.42,0,1,1],"ease-out":[0,0,.58,1],"ease-in-out":[.42,0,.58,1]},de=/^cubic-bezier\(\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*\)$/i;function pe(t,n){if(n<=0)return 0;if(n>=1)return 1;if(typeof t!="string"||!t||t==="linear")return n;const e=Object.hasOwn(ct,t)?ct[t]:void 0;if(e)return at(e,n);const o=de.exec(t.trim());if(o){const r=$(Number(o[1])),s=Number(o[2]),i=$(Number(o[3])),a=Number(o[4]);if([r,s,i,a].every(Number.isFinite))return at([r,s,i,a],n)}return n}function $(t){return t<0?0:t>1?1:t}function at([t,n,e,o],r){const s=3*t,i=3*(e-t)-s,a=1-s-i,f=3*n,l=3*(o-n)-f,c=1-f-l,_=v=>((a*v+i)*v+s)*v,u=v=>((c*v+l)*v+f)*v,d=v=>(3*a*v+2*i)*v+s;let g=r;for(let v=0;v<8;v++){const b=_(g)-r;if(Math.abs(b)<1e-6)return u(g);const k=d(g);if(Math.abs(k)<1e-6)break;g-=b/k}let m=0,S=1;for(g=r;S-m>1e-6;)_(g)<r?m=g:S=g,g=(m+S)/2;return u(g)}var lt=/^(-?\d*\.?\d+(?:e[-+]?\d+)?)([a-z%]*)$/i,ut=/^#([0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i,G=/-?\d*\.?\d+(?:e[-+]?\d+)?/g;function me(t,n,e,o=e){if(typeof t=="number"&&typeof n=="number")return t+(n-t)*e;const r=String(t),s=String(n),i=lt.exec(r),a=lt.exec(s);if(i&&a){const u=i[2].toLowerCase(),d=a[2].toLowerCase();if(u===d||!u||!d){const g=q(Number(i[1]),Number(a[1]),e);return ft(g)+(u||d)}return o<1?t:n}const f=ut.exec(r),l=ut.exec(s);if(f&&l)return he(f[1],l[1],e);const c=r.match(G),_=s.match(G);if(c&&_&&c.length===_.length){const u=r.split(G),d=s.split(G);if(u.length===d.length&&u.every((g,m)=>g===d[m])){let g="";for(let m=0;m<u.length;m++)if(g+=u[m],m<c.length){const S=c[m],v=_[m],b=/^-?0\d/.test(S)||/^-?0\d/.test(v);g+=b?o<1?S:v:ft(q(Number(S),Number(v),e))}return g}}return o<1?t:n}function q(t,n,e){return t+(n-t)*e}function ft(t){return String(Math.round(t*1e4)/1e4)}function he(t,n,e){const o=dt(t),r=dt(n),s=f=>Math.round($(f/255)*255).toString(16).padStart(2,"0"),i=o.length===4||r.length===4?4:3;let a="#";for(let f=0;f<i;f++)a+=s(q(o[f]??255,r[f]??255,e));return a}function dt(t){return(t.length<=4?t.split("").map(e=>e+e):t.match(/../g)??[]).map(e=>parseInt(e,16))}function H(t,n,e){const o=[],r=[];let s=!1;const i=[];let a=null;for(const{name:f,value:l}of[...t.attributes]){if(f==="sc-name"||f==="data-dc-tpl")continue;if(n==="dom"){const _=ne(f),u=!_||_.kind==="css"||re(ot[t.localName]||t.localName);_&&u&&(_.kind==="css"?te(_.prop):se(_.prop))&&i.push({kind:_.kind,prop:_.prop,getter:O(l)})}let c=f;if(c.startsWith(W)&&(c=U(c.slice(W.length))),c==="hint-size"){a=l;continue}if(c.startsWith("style-")){r.push(e.pseudoClass(c.slice(6),l));continue}if(n!=="dom")c.includes("-")&&!(n==="x-import"&&(c.startsWith("aria-")||c.startsWith("data-")))&&(c=U(c));else if(c==="class")c="className";else if(c==="for")c="htmlFor";else if(c.startsWith("on"))c=Ht[c]||"on"+c[2].toUpperCase()+c.slice(3);else if(c==="checked"&&t.localName==="input"&&!l.includes("{{")&&!e.omelette){o.push(["defaultChecked",()=>!0]),s=!0;continue}else if(l===""&&qt.has(c)&&!e.omelette){o.push([c,()=>!0]);continue}o.push([c,O(l)])}return{propGetters:o,pseudoClasses:r,hintSize:a,kfTracks:i,initialChecked:s}}var ge=new Set(["position","left","right","top","bottom","inset","width","height","z-index","transform"]),pt=t=>t.startsWith("--")?t:t.replace(/[A-Z]/g,n=>"-"+n.toLowerCase());function mt(t){const n=typeof t=="string"?st(t):t!=null&&typeof t=="object"?t:null;if(!n)return;const e={};for(const[o,r]of Object.entries(n))ge.has(pt(o))&&(e[o]=r);return Object.keys(e).length?e:void 0}function _e(t,n){const e=document.createElement("template");e.innerHTML=Yt(t);let o=0;(function i(a){a.nodeType===Node.ELEMENT_NODE&&a.setAttribute("data-dc-tpl",String(o++));for(const f of a.childNodes)i(f)})(e.content);const r=j(e.content,n),s=((i,a)=>r.map((f,l)=>f(i||{},a,l)));return s.__annotated=e.innerHTML,s}function j(t,n){return[...t.childNodes].map(e=>be(e,n)).filter(e=>e!=null)}function be(t,n){if(t.nodeType===Node.TEXT_NODE)return ye(t);if(t.nodeType!==Node.ELEMENT_NODE)return null;const e=t,o=e.tagName.toLowerCase();return o==="sc-for"?we(e,n):o==="sc-if"?ve(e,n):o==="x-import"?Se(e,n):o==="sc-helmet"?n.helmet(e):o==="dc-import"?Ee(e,n):Oe(e,n)}var ht=new Set;function gt(t,n){const e=(t?.__name||"?")+"\0"+n;ht.has(e)||(ht.add(e),console.warn("[dc-runtime] "+(t?.__name||"template")+": "+n))}function ye(t){const n=t.nodeValue??"";if(!n.includes("{{"))return!n.trim()&&!n.includes(" ")?null:()=>n;const e=n.split(/\{\{([\s\S]+?)\}\}/g);return(o,r,s)=>A(L().Fragment,{key:s},...e.map((i,a)=>{if(!(a&1))return i;const f=P(o,i);return f===void 0?r?.__streamingNow?A("span",{key:a,className:"sc-interp sc-missing"},i.trim()):document.body?.hasAttribute("data-dc-editor-on")?A("span",{key:a,className:"sc-interp sc-unresolved"},"{{ "+i.trim()+" }}"):(gt(r,"{{ "+i.trim()+" }} never resolved \u2014 rendered as empty"),null):L().isValidElement(f)||Array.isArray(f)?A(L().Fragment,{key:a},f):f===null||typeof f=="boolean"?null:A("span",{key:a,className:"sc-interp"},String(f))}))}function we(t,n){const e=O(t.getAttribute("list")||""),o=t.getAttribute("as")||"item",r=parseInt(t.getAttribute("hint-placeholder-count")||"0",10),s=j(t,n),i=t.getAttribute("list")||"";return(a,f,l)=>{let c=e(a);return Array.isArray(c)||(f?.__streamingNow?c=r>0?Array(r).fill(void 0):[]:(c!=null&&gt(f,'sc-for list="'+i+'" is not an array ('+typeof c+")"),c=[])),A(L().Fragment,{key:l},c.map((_,u)=>{const d={...a,[o]:_,$index:u};return A(L().Fragment,{key:u},s.map((g,m)=>g(d,f,m)))}))}}function ve(t,n){const e=O(t.getAttribute("value")||""),o=t.getAttribute("hint-placeholder-val"),r=o!=null?O(o):null,s=j(t,n);return(i,a,f)=>{let l=e(i);return l===void 0&&r&&a?.__streamingNow&&(l=r(i)),l?A(L().Fragment,{key:f},s.map((c,_)=>c(i,a,_))):null}}function Ee(t,n){const e=t.getAttribute("name")||t.getAttribute("component")||"";t.removeAttribute("name"),t.removeAttribute("component");const o=t.getAttribute("data-dc-tpl"),r=t.getAttribute("style");t.removeAttribute("style");const s=r!=null?O(r):null,{propGetters:i,hintSize:a}=H(t,"dc-import",n),f=j(t,n);return(l,c,_)=>{const u={key:_,__hintSize:a,__tplId:o,__hostStyle:s?mt(s(l)):void 0};for(const[d,g]of i){const m=g(l);if(d==="dcProps"){m&&typeof m=="object"&&Object.assign(u,m);continue}u[d]=m}return f.length&&(u.children=f.map((d,g)=>d(l,c,g))),A(n.component(e),u)}}function Se(t,n){const e=O(t.getAttribute("component-from-global-scope")||""),o=O(t.getAttribute("component")||t.getAttribute("name")||""),r=t.getAttribute("from")||(t.getAttribute("component-from-global-scope")?"":t.getAttribute("src")||t.getAttribute("import")||""),s=r.trim()?r.trim().split(/\s+/):[],i=s.length?s[s.length-1]:"",a=b=>/\.(jsx|tsx)(\?|#|$)/i.test(b)?"jsx":"js",f=t.getAttribute("data-dc-tpl"),l=t.getAttribute("style");t.removeAttribute("style");const c=l!=null?O(l):null,_=f!=null||c!=null,{propGetters:u,hintSize:d}=H(t,"x-import",n),m=t.children.length>0||!!(t.textContent||"").trim()?j(t,n):[],S=r.includes("{{");if(s.length&&!S){let b;for(const k of s)b=n.loadExternal(a(k),k,b)}const v=(b,k)=>{const w=b(k),p=w==null?"":String(w);return p.includes("{{")?"":p};return(b,k,w)=>{const p=v(e,b),h=p||v(o,b),y=!h||S?null:p?n.resolveExternalGlobal(i,p):n.resolveExternal(i,h),E=c?mt(c(b)):void 0,x=_?{key:w,className:"sc-host-x","data-dc-tpl":f,style:E||{display:"contents"}}:null;if(!y){const C=S?"x-import `from` cannot contain {{ \u2026 }} \u2014 module URLs are resolved at parse time; use a literal URL":n.resolveExternalError(i,h),N=n.placeholder({key:x?void 0:w,name:h,hintSize:d,error:C});return x?A("div",x,N):N}const R=x?{}:{key:w};let M=!1;for(const[C,N]of u){if(C==="component"||C==="componentFromGlobalScope"||C==="from")continue;const D=N(b);if(D===void 0&&(M=!0),C==="dcProps"){D&&typeof D=="object"&&Object.assign(R,D);continue}R[C]=D}if(M&&k?.__htmlStreamingNow){const C=n.placeholder({key:x?void 0:w,name:h,hintSize:d,error:null});return x?A("div",x,C):C}return m.length&&(R.children=m.map((C,N)=>C(b,k,N))),x?A("div",x,A(y,R)):A(y,R)}}function xe(t){const n=t.cloneNode(!0);for(const r of n.querySelectorAll("*"))for(;r.attributes.length;)r.removeAttribute(r.attributes[0].name);const e=n.innerHTML;let o=5381;for(let r=0;r<e.length;r++)o=(o<<5)+o+e.charCodeAt(r)|0;return e.length+"."+(o>>>0).toString(36)}var ke=new Set("script style textarea option title select canvas iframe video audio".split(" ")),Ae=":not("+[...$t].join(",")+")",_t=/-{0,2}[A-Za-z_][A-Za-z0-9_-]*/y,Ce=/^(?:behavior|-moz-binding)$/i,bt=/[ \t\n\r\f]/;function Ne(t){let n="",e=0,o=0,r=!0;const s=t.length;for(;e<s;){if(r){let a=e;for(;a<s&&bt.test(t[a]);)a++;if(t[a]==="/"&&t[a+1]==="*"){const l=t.indexOf("*/",a+2),c=l<0?s:l+2;n+=t.slice(e,c),e=c;continue}r=!1,_t.lastIndex=a;const f=_t.exec(t);if(f){let l=a+f[0].length;for(;;){for(;l<s&&bt.test(t[l]);)l++;if(t[l]!=="/"||t[l+1]!=="*")break;const c=t.indexOf("*/",l+2);l=c<0?s:c+2}if(t[l]===":"){const c=Qt(f[0]);n+=t.slice(e,a)+(Ce.test(c)?f[0]:c),e=a+f[0].length;continue}}}const i=t[e];if(i==='"'||i==="'"){let a=e+1;for(;a<s&&t[a]!==i;)a+=t[a]==="\\"?2:1;n+=t.slice(e,a+1),e=a+1;continue}if(i==="/"&&t[e+1]==="*"){const a=t.indexOf("*/",e+2),f=a<0?s:a+2;n+=t.slice(e,f),e=f;continue}if(i==="\\"){n+=t.slice(e,e+2),e+=2;continue}i==="("||i==="{"||i==="["?o++:i===")"||i==="}"||i==="]"?o=Math.max(0,o-1):i===";"&&o===0&&(r=!0),n+=i,e++}return n}function Re(t,n){return t==null?void 0:t+"\0"+n.join(";")}function Me(t,n){const e=Re(t,n);return o=>{if(!o||o.__dcCss===e)return;o.__dcCss=e;const r=o.style,s=n.map(i=>[i,r.getPropertyValue(i)]);r.cssText=t?Ne(t):"";for(let i=r.length;i-- >0;){const a=r[i];if(!r.getPropertyPriority(a))continue;const f=r.getPropertyValue(a);f&&r.setProperty(a,f),r.getPropertyPriority(a)&&r.removeProperty(a)}for(const[i,a]of s)a&&r.setProperty(i,a)}}function Te(t,n){typeof t=="function"?t(n):t.current=n}function yt(t,n,e,o){let r=t.get(e);return r||(t.size>=n&&t.delete(t.keys().next().value),t.set(e,r=o())),r}var wt=new WeakMap;function Le(){const t=new Map;return(n,e,o)=>{const r=(n==null?"none":"css:"+n)+"\0"+e.join(";"),s=()=>Me(n,e);if(o==null||typeof o!="function"&&typeof o!="object")return yt(t,64,r,s);let i=wt.get(o);return i||wt.set(o,i=new Map),yt(i,1024,r,()=>{const a=s();return f=>{a(f),Te(o,f)}})}}function Oe(t,n){const e=ot[t.localName]||t.localName,o=t.getAttribute("data-dc-tpl"),r=t.childNodes.length>0&&!ke.has(e)&&t.querySelector(Ae)===null,{propGetters:s,pseudoClasses:i,kfTracks:a,initialChecked:f}=H(t,"dom",n),l=(r?"|"+xe(t):"")+(f?"|checked":""),c=j(t,n),_=n.omelette?null:Le();return(u,d,g)=>{const m={key:g+l,"data-dc-tpl":o};let S=null;for(const[b,k]of s){let w=k(u);b==="style"&&typeof w=="string"&&(S=w,w=st(w)),(b==="value"||b==="checked")&&w===void 0&&(w=b==="checked"?!1:""),m[b]=w}i.length&&(m.className=[m.className,...i].filter(Boolean).join(" "));const v=[];if(a.length){const b=n.keyframesPlayhead?n.keyframesPlayhead():0;let k=null;for(const w of a){const p=ue(w.getter(u));if(!p)continue;const h=fe(p,b);if(w.kind==="css")v.push(w.prop),k||(k=m.style&&typeof m.style=="object"?{...m.style}:{},m.style=k),k[w.prop.startsWith("--")?w.prop:U(w.prop)]=h;else{const y=ae(w.prop,h);y!=null&&(m[w.prop]=y)}}}if(_){const b=S==null&&m.style&&typeof m.style=="object"?Object.keys(m.style).map(pt):v;m.ref=_(S,b.sort(),m.ref)}return A(e,m,...c.map((b,k)=>b(u,d,k)))}}var Pe=10,vt=300,De=t=>t.length>vt?t.slice(0,vt-1)+"\u2026":t;function je(t,n,e){const o=new Map;let r=null,s=!1;const i=()=>{if(e()){n(i);return}s=!1;const f=[...new Set(o.values())].slice(0,Pe).map(c=>({message:De(c)})),l=JSON.stringify(f);l!==r&&(r=l,t(f))},a=()=>{s||(s=!0,n(i))};return{show(f){const l={};return o.set(l,f),a(),()=>{o.delete(l),a()}},begin:a}}var V=null;function Ie(t){V=t}function Et(t){return V?.show(t)}function ze(){V?.begin()}var I=class{constructor(t){T(this,"props"),T(this,"state",{}),T(this,"__host"),this.props=t||{}}setState(t,n){this.__host&&this.__host.__setLogicState(t,n)}forceUpdate(){this.__host&&this.__host.forceUpdate()}componentDidMount(){}componentDidUpdate(t){}componentWillUnmount(){}renderVals(){return{}}};function Ue(t){return new Function("DCLogic","StreamableLogic","React",t+`
+;return (typeof Component!=="undefined"&&Component)||undefined;`)(I,I,L())}function Ge(t,n){if(!n)return!1;const e=Object.keys(t).filter(r=>r!=="children"),o=Object.keys(n).filter(r=>r!=="children");if(e.length!==o.length)return!1;for(const r of e)if(t[r]!==n[r])return!1;return!0}var K,St=t=>t.chrome?{className:t.className,"data-omelette-chrome":""}:{className:t.className};function Z(t){return K?A(K,t):A("div",St(t),t.message)}function F({name:t,hintSize:n,streaming:e,error:o}){const[r,s]=(n||"100%,60px").split(","),i=o?(t?t+": ":"")+o:null;return A("div",{className:"sc-placeholder"+(e?" sc-streaming":""),style:{width:r.trim(),height:s&&s.trim()},title:t},i?Z({className:"sc-placeholder-error",message:i}):null)}function Fe(t){if(!t)return;const[n,e]=t.split(",");return{minWidth:n.trim(),minHeight:e&&e.trim()}}function Be(t,n,e=()=>{}){const o=L();K=class extends o.Component{constructor(){super(...arguments),T(this,"off")}componentDidMount(){this.off=Et(this.props.message)}componentDidUpdate(f){f.message!==this.props.message&&(this.off?.(),this.off=Et(this.props.message))}componentWillUnmount(){this.off?.()}render(){return A("div",St(this.props),this.props.message)}};const r=o.createContext([]);class s extends o.Component{constructor(l){super(l),T(this,"__name"),T(this,"__sub"),T(this,"__needsDidMount",!1),T(this,"__streamingNow",!1),T(this,"__htmlStreamingNow",!1),T(this,"__failedLogic",null),T(this,"__failedUserProps",null),T(this,"__failedVer",-1),T(this,"__ctorError",null),T(this,"logic"),this.__name=l.__name,this.state={__v:0,__err:null},this.__sub=()=>{this.state.__err&&this.setState({__err:null}),this.forceUpdate()},this.__makeLogic(t.get(this.__name).Logic,null),n(this.__name)}static getDerivedStateFromError(l){return{__err:l instanceof Error&&l.message?l.message:String(l)}}componentDidCatch(l,c){console.error("[dc-runtime] render error in <"+this.__name+">:",l,c?.componentStack||"")}__makeLogic(l,c){const _=l||I;try{this.logic=new _(this.__userProps()),this.__failedLogic=null,this.__failedUserProps=null,this.__ctorError=null}catch(u){console.error(u),this.__failedLogic=l,this.__failedUserProps=this.__userProps(),this.__failedVer=t.get(this.__name).ver,this.__ctorError=this.__name+": "+(u instanceof Error&&u.message?u.message:String(u)),this.logic=new I(this.__userProps())}this.logic.__host=this,c&&(this.logic.state={...this.logic.state||{},...c})}__userProps(){const{__name:l,__hintSize:c,__tplId:_,__hostStyle:u,...d}=this.props;return d}__setLogicState(l,c){const _=this.logic.state,u=typeof l=="function"?l(_):l;this.logic.state={..._,...u},this.setState(d=>({__v:d.__v+1}),c)}__reconcileLogic(){const l=t.get(this.__name),c=l.Logic,_=this.logic.constructor;if(!(c===_||!c&&_===I||c===this.__failedLogic&&l.ver===this.__failedVer&&Ge(this.__userProps(),this.__failedUserProps))){if(!this.__needsDidMount)try{this.logic.componentWillUnmount()}catch(u){console.error(u)}this.__makeLogic(c,this.logic.state),this.__needsDidMount=!0}}componentDidMount(){t.get(this.__name).subs.add(this.__sub);try{this.logic.componentDidMount()}catch(l){console.error(l)}}componentDidUpdate(l){if(this.logic.props=this.__userProps(),this.__needsDidMount){if(this.state.__err||!t.get(this.__name).tpl)return;this.__needsDidMount=!1;try{this.logic.componentDidMount()}catch(c){console.error(c)}}else try{this.logic.componentDidUpdate(l)}catch(c){console.error(c)}}componentWillUnmount(){if(t.get(this.__name).subs.delete(this.__sub),!this.__needsDidMount)try{this.logic.componentWillUnmount()}catch(l){console.error(l)}}render(){e(this.__name);const l=t.get(this.__name),c="sc-host"+(l.htmlStreaming?" sc-streaming-html":"")+(l.jsStreaming?" sc-streaming-js":""),_=l.htmlStreaming?Fe(this.props.__hintSize):void 0,u=this.props.__hostStyle||_?{..._||{},...this.props.__hostStyle||{}}:void 0,d={className:c,style:u,"data-sc-name":this.__name,"data-dc-tpl":this.props.__tplId},g=Array.isArray(this.context)?this.context:[];if(g.includes(this.__name)){const b=[...g.slice(g.indexOf(this.__name)),this.__name].join(" \u2192 ");return A("div",{...d,className:c+" sc-has-error"},A(F,{name:this.__name,hintSize:this.props.__hintSize,error:"circular import: "+b}))}if(this.state.__err)return A("div",{...d,className:c+" sc-has-error"},Z({className:"sc-logic-error",message:this.__name+": "+this.state.__err,chrome:!0}),A(F,{name:this.__name,hintSize:this.props.__hintSize,error:this.state.__err}));if(this.__reconcileLogic(),!l.tpl)return A("div",d,A(F,{name:this.__name,hintSize:this.props.__hintSize}));const m=this.__userProps();this.logic.props=m;let S=m,v=l.logicError||this.__ctorError;try{S={...m,...this.logic.renderVals()||{}}}catch(b){console.error(b),v=this.__name+".renderVals(): "+(b instanceof Error&&b.message?b.message:String(b))}return this.__streamingNow=!!(l.htmlStreaming||l.jsStreaming),this.__htmlStreamingNow=!!l.htmlStreaming,A("div",{...d,className:c+(v?" sc-has-error":"")},v&&Z({className:"sc-logic-error",message:v,chrome:!0}),A(r.Provider,{value:[...g,this.__name]},l.tpl(S,this)))}}T(s,"contextType",r);const i=new Map;function a(f){const l=i.get(f);if(l)return l;function c(_){const[,u]=o.useState(0);return o.useEffect(()=>{const d=()=>u(g=>g+1);return t.get(f).subs.add(d),()=>{t.get(f).subs.delete(d)}},[]),n(f),A(s,{..._,__name:f})}return c.displayName=f,i.set(f,c),c}return{getDC:a,StreamableComponent:s}}function J(t){const n=window.__resourceBlobs,e=n?n[t.split("#")[0]]:void 0;return e instanceof Blob?e:null}var We="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js",$e="sha384-DGyLxAyjq0f9SPpVevD6IgztCFlnMF6oW/XQGmfe+IsZ8TqEiDrcHkMLKI6fiB/Z",qe="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js",He="sha384-gTGxhz21lVGYNMcdJOyq01Edg0jhn/c22nsx0kyqP0TxaV5WVdsSH1fSDUf5YJj1",Ve="https://cdn.jsdelivr.net/npm/@babel/standalone@7.29.0/babel.min.js",Ke="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y";function X(t,n){const e=window.__resources,o=e?e[t]:void 0;return typeof o=="string"&&o?{src:o}:{src:t,integrity:n}}var xt=t=>!t.includes(".")&&t.includes("-");function Y(t){return typeof t=="function"?!Je(t):typeof t=="object"&&t!==null&&typeof t.$$typeof=="symbol"}function Q(t,n){let e=t;for(const o of n.split(".")){if(e==null)return;e=e[o]}return e}var kt=50,At=3e4;function Ze(t){const n=new Map;let e=null;const o=new Map,r=new Set;function s(){if(window.Babel)return Promise.resolve();if(e)return e;const u=X(Ve,Ke);return e=new Promise((d,g)=>{const m=document.createElement("script");m.src=u.src,u.integrity&&(m.integrity=u.integrity,m.crossOrigin="anonymous"),m.onload=()=>d(),m.onerror=g,document.head.appendChild(m)}),e}const i=new Map;function a(u,d,g){const m=i.get(d);if(m)return m;n.set(d,null),console.info("[dc-runtime] x-import: loading",d,"("+u+")");const v=Promise.all([u==="jsx"?s():Promise.resolve(),g??Promise.resolve()]).then(()=>{const b=J(d);return b?b.text():fetch(d).then(k=>{if(!k.ok)throw new Error("HTTP "+k.status);return k.text()})}).then(b=>{const k=u==="jsx"?window.Babel.transform(b,{filename:d,presets:["react","typescript"]}).code:b,w={exports:{}},p=new Set(Object.keys(window));new Function("React","module","exports","require",k)(L(),w,w.exports,()=>({}));const h={};for(const y of Object.keys(window))!p.has(y)&&typeof window[y]=="function"&&(h[y]=window[y]);n.set(d,{mod:w.exports,globals:h}),console.info("[dc-runtime] x-import: loaded",d,"\u2014 exports:",Object.keys(w.exports),"window globals:",Object.keys(h)),t()}).catch(b=>{n.set(d,{mod:{},globals:{},error:"failed to load: "+(b instanceof Error&&b.message?b.message:String(b))}),console.error("[dc-runtime] x-import: FAILED to load",d,"("+u+")",b),t()});return i.set(d,v),v}function f(u,d){const g=n.get(u);if(!g)return null;const{mod:m,globals:S}=g,v=m&&m[d]||S&&S[d]||typeof window<"u"&&window[d]||m&&m.default;if(typeof v=="function")return v;const b=u+"\0"+d;return o.has(b)||(o.set(b,g.error||'no export named "'+d+'" (has: '+Object.keys(m).join(", ")+")"),console.error("[dc-runtime] x-import: module",u,"loaded but has no component named",JSON.stringify(d),"\u2014 available exports:",Object.keys(m),"window globals:",Object.keys(S),". The module must `module.exports = {"+d+"}` or set `window."+d+"`.")),null}function l(u){if(r.has(u))return;r.add(u);const d=Date.now(),g=xt(u),m=()=>{if(g?customElements.get(u):Y(Q(window,u))){r.delete(u),t();return}if(Date.now()-d>=At){console.warn("[dc-runtime] x-import: global",JSON.stringify(u),"never appeared on window after "+At+"ms");return}setTimeout(m,kt)};setTimeout(m,kt)}function c(u,d){const g=xt(d);if(!u){if(g)return customElements.get(d)?d:(l(d),null);const b=Q(window,d);return Y(b)?b:(l(d),null)}const m=n.get(u);if(!m)return null;if(g&&customElements.get(d))return d;const S=m.globals[d]??Q(window,d);if(Y(S))return S;if(d.includes("."))return null;const v=u+"\0global\0"+d;return o.has(v)||(o.set(v,null),g&&!customElements.get(d)&&console.warn("[dc-runtime] x-import:",u,"loaded but no custom element",JSON.stringify(d),"is registered and window."+d+" is not a function \u2014 rendering <"+d+"> as an unknown element.")),d}function _(u,d){const g=n.get(u);return g?.error?g.error:o.get(u+"\0"+d)||null}return{load:a,resolve:f,resolveGlobal:c,getError:_}}function Je(t){try{return typeof t=="function"&&typeof HTMLElement<"u"&&t.prototype instanceof HTMLElement}catch{return!1}}var Xe=".fx{display:flex}.col{display:flex;flex-direction:column}.grid{display:grid}.ac{align-items:center}.jc{justify-content:center}.jb{justify-content:space-between}.f1{flex:1}.noshrink{flex-shrink:0}.wrap{flex-wrap:wrap}.fw5{font-weight:500}.fw6{font-weight:600}.fw7{font-weight:700}.fw8{font-weight:800}.fs11{font-size:11px}.fs12{font-size:12px}.fs13{font-size:13px}.fs14{font-size:14px}.fs15{font-size:15px}.fs16{font-size:16px}.fs20{font-size:20px}.fs22{font-size:22px}.upper{text-transform:uppercase}.tc{text-align:center}.nowrap{white-space:nowrap}.gap8{gap:8px}.gap10{gap:10px}.gap12{gap:12px}.gap16{gap:16px}.gap24{gap:24px}.m0{margin:0}.mt8{margin-top:8px}.mt12{margin-top:12px}.mt16{margin-top:16px}.mb8{margin-bottom:8px}.mb12{margin-bottom:12px}.mb16{margin-bottom:16px}.posrel{position:relative}.posabs{position:absolute}.round{border-radius:50%}.ohide{overflow:hidden}.bbox{box-sizing:border-box}.pointer{cursor:pointer}.w100{width:100%}.b0{border:none}",Ye=/<meta\b[^>]*\bname\s*=\s*["']design_doc_mode["'][^>]*\b(?:content|value)\s*=\s*["'](\w+)["']/i,Qe="#ededeb",tn="#171717",en="#f0eee6",nn="#2e2c26";function on(t,n,e={}){const o=new Set,r=new Map;let s=null,i=null,a="light";try{const u=t.documentElement.dataset.theme;a=u==="dark"||u==="light"?u:new URLSearchParams(t.defaultView?.location.search??"").get("theme")==="dark"?"dark":"light"}catch{}function f(){if(!i)return;const u=e.omelette?a==="dark"?nn:en:a==="dark"?tn:Qe;i.textContent=`html,body{background:${u}}#dc-root>.sc-host{position:relative}`}function l(u){if(window.parent!==window)try{window.parent.postMessage({type:"__dc_design_mode",mode:u},"*")}catch{}}function c(u){u!==s&&(s=u,l(u),u==="canvas"?(t.documentElement.setAttribute("data-dc-canvas",""),i=t.createElement("style"),i.setAttribute("data-dc-canvas",""),f(),t.head.appendChild(i)):(t.documentElement.removeAttribute("data-dc-canvas"),i?.remove(),i=null))}window.addEventListener("message",u=>{const d=u.data&&u.data.type;if(d==="__dc_theme"){const g=u.data.theme;(g==="light"||g==="dark")&&(a=g,f());return}!s||d!=="__dc_probe"||l(s)});function _(u){const d=[...u.children],g=u.nextSibling!=null||u.parentNode?.nextSibling!=null;if(u.hasAttribute("data-dc-atomics")&&!o.has("__dc-atomics")){o.add("__dc-atomics");const m=t.createElement("style");m.id="__dc-atomics",m.textContent=Xe,t.head.appendChild(m)}return(m,S)=>{const v=S&&S.__name||"",b=!!(v&&n(v));for(let k=0;k<d.length;k++){const w=d[k],p=w.tagName,h=b&&!g&&k===d.length-1;if(p==="SCRIPT"){if(h)continue;const y="SCRIPT|"+(w.getAttribute("src")||w.textContent||"");if(o.has(y))continue;o.add(y);const E=t.createElement("script");for(const{name:x,value:R}of[...w.attributes])E.setAttribute(x,R);w.textContent&&(E.textContent=w.textContent),t.head.appendChild(E)}else if(p==="LINK"||p==="META"){if(h)continue;const y=p+"|"+(w.getAttribute("href")||w.getAttribute("src")||w.outerHTML);if(o.has(y))continue;if(o.add(y),p==="LINK"){const E=(w.getAttribute("rel")||"").toLowerCase().split(/\s+/),x=(w.getAttribute("href")||"").trim(),R=window.__resources,M=R&&E.includes("stylesheet")&&!E.includes("alternate")?R[x]:void 0,C=typeof M=="string"&&M?J(M):null;if(C){const N=t.createElement("style");w.hasAttribute("disabled")?N.setAttribute("media","not all"):w.getAttribute("media")&&N.setAttribute("media",w.getAttribute("media")),w.getAttribute("title")&&N.setAttribute("title",w.getAttribute("title")),C.text().then(D=>{N.textContent=D}),t.head.appendChild(N);continue}}t.head.appendChild(w.cloneNode(!0))}else{const y=v+"|"+k;let E=r.get(y);(!E||E.tagName!==p)&&(E&&E.remove(),E=t.createElement(p.toLowerCase()),r.set(y,E),t.head.appendChild(E));for(const{name:x,value:R}of[...w.attributes])E.getAttribute(x)!==R&&E.setAttribute(x,R);E.textContent!==w.textContent&&(E.textContent=w.textContent)}}return null}}return{compile:_,setDesignDocMode:c}}function Ct(t,n){if(t[n]!=="u"&&t[n]!=="U"||t.slice(n,n+4).toLowerCase()!=="url("||/[a-z0-9_-]/i.test(t[n-1]??""))return-1;let e=n+4;for(;e<t.length&&/\s/.test(t[e]);)e++;if(t[e]==='"'||t[e]==="'")return-1;for(;e<t.length&&t[e]!==")";)t[e]==="\\"&&e++,e++;return e<t.length?e+1:t.length}function rn(t){let n="",e="";for(let o=0;o<t.length;o++){const r=t[o];if(e){if(r==="\\"){n+=r+(t[o+1]??""),o++;continue}r===e&&(e=""),n+=r}else if(r==="'"||r==='"')e=r,n+=r;else if(r==="/"&&t[o+1]==="*"){const s=t.indexOf("*/",o+2);o=s===-1?t.length:s+1,n+=" "}else{const s=Ct(t,o);s===-1?n+=r:(n+=t.slice(o,s),o=s-1)}}return n}function sn(t){t=rn(t);const n=[];let e=0,o=0,r="";for(let s=0;s<t.length;s++){const i=t[s];if(r)i==="\\"?s++:i===r&&(r="");else if(i==="'"||i==='"')r=i;else if(i==="(")o++;else if(i===")")o=Math.max(0,o-1);else if(i===";"&&o===0)n.push(t.slice(e,s)),e=s+1;else{const a=Ct(t,s);a!==-1&&(s=a-1)}}return n.push(t.slice(e)),n.map(s=>s.trim()).filter(Boolean).map(s=>/!\s*important$/i.test(s)?s:s+" !important").join(";")}function cn(t){let n=null;const e=new Map;let o=0;return(r,s)=>{const i=r+"|"+s,a=e.get(i);if(a)return a;n||(n=t.createElement("style"),t.head.appendChild(n));const f="scp"+(o++).toString(36),l=r==="before"||r==="after",c=l?"."+f+"::"+r:"."+f+":"+r;return n.sheet.insertRule(c+"{"+(l?s:sn(s))+"}",n.sheet.cssRules.length),e.set(i,f),f}}function an(){const t=Object.create(null);function n(o){return t[o]||(t[o]={html:"",tpl:null,Logic:null,jsStreaming:!1,htmlStreaming:!1,ver:0,subs:new Set,fetched:!1})}function e(o){const r=n(o);r.ver++;for(const s of r.subs)s()}return{entries:t,get:n,bump:e,bumpAll(){for(const o in t)e(o)}}}var ln=".";function un(t=document,n={}){const e=n.omelette===!0,o=an(),r=cn(t),s=on(t,p=>o.get(p).htmlStreaming,{omelette:e}),i=Ze(()=>o.bumpAll()),a=Be(o,_,g),f={component:p=>a.getDC(p),placeholder:p=>A(F,p),helmet:p=>s.compile(p),loadExternal:(p,h,y)=>i.load(p,h,y),resolveExternal:(p,h)=>i.resolve(p,h),resolveExternalGlobal:(p,h)=>i.resolveGlobal(p,h),resolveExternalError:(p,h)=>i.getError(p,h),pseudoClass:r,keyframesPlayhead:()=>l,omelette:e};let l=0;function c(p){const h=typeof p=="number"&&Number.isFinite(p)?Math.max(0,p):0;h!==l&&(l=h,o.bumpAll())}function _(p){const h=o.get(p);if(h.fetched)return;h.fetched=!0;const y=ln+"/"+encodeURIComponent(p)+".dc.html",E=window.__resources,x=E?E[y]:void 0,R=typeof x=="string"&&x?x:y,M=J(R);(M?M.text():fetch(R).then(C=>C.ok?C.text():(console.error('[dc-runtime] sibling fetch for "'+p+'" failed:',y,"returned",C.status,"\u2014 the reference renders as an empty placeholder."),""))).then(C=>{if(!C)return;const N=tt(C);if(!N){console.error('[dc-runtime] sibling fetch for "'+p+'":',y,"has no <x-dc> block \u2014 not a Design Component.");return}N.props&&(h.propsMeta=N.props),N.preview&&(h.preview=N.preview),N.template&&!h.html&&m(p,N.template),N.js&&!h.Logic&&S(p,N.js)}).catch(C=>console.error('[dc-runtime] sibling fetch for "'+p+'" threw:',y,C))}let u=null;function d(p,h){h.tplStale=!1;try{h.tpl=_e(h.html,f)}catch(y){console.error("[dc-runtime] template compile FAILED for",p,y)}}function g(p){const h=o.get(p);h.tplStale&&d(p,h)}function m(p,h){const y=o.get(p);if(y.html=h,p===u){const E=Ye.exec(h)?.[1]??null;(E||!y.htmlStreaming)&&s.setDesignDocMode(E)}y.subs.size===0?y.tplStale=!0:d(p,y),o.bump(p)}function S(p,h){const y=o.get(p),E=y.jsSeq=(y.jsSeq||0)+1;try{const x=Ue(h);if(y.jsSeq!==E)return;typeof x!="function"?y.logicError=p+".dc.html: <script data-dc-script> must define `class Component extends DCLogic`":(y.logicError=null,y.Logic=x)}catch(x){if(y.jsSeq!==E)return;console.error("[dc-runtime] logic class eval FAILED for",p,"\u2014 the template renders with props only.",x),y.logicError=p+": "+(x instanceof Error&&x.message?x.message:String(x))}o.bump(p)}function v(p,h,y){const E=o.get(p);h==="html"?E.htmlStreaming=!!y:E.jsStreaming=!!y;let x=!1;for(const R in o.entries){const M=o.entries[R];if(M&&(M.htmlStreaming||M.jsStreaming)){x=!0;break}}t.documentElement.classList.toggle("sc-dc-streaming",x),o.bump(p)}function b(p,h,y,E){if(E&&(o.get(p).fetched=!0),h==="html")v(p,"html",!!E),m(p,y);else if(h==="js")v(p,"js",!!E),E||S(p,y);else if(h==="props"){const{props:x,preview:R}=B(y),M=o.get(p);M.propsMeta=x??void 0,M.preview=R,o.bump(p)}}function k(p,h){o.get(p).propOverrides=h&&typeof h=="object"?{...h}:null,o.bump(p)}function w(p,h){if(!h)return;const y=o.get(p);h.props&&(y.propsMeta=h.props),h.preview&&(y.preview=h.preview),h.template&&m(p,h.template),h.js&&S(p,h.js)}return{registry:o,getDC:a.getDC,updateHtml:m,updateJs:S,dcUpdate:b,setProps:k,seekKeyframes:c,keyframesPlayhead:()=>l,adoptParsed:w,setRootName:p=>{u=p},markFetched:p=>{o.get(p).fetched=!0},annotatedTemplate:p=>{g(p);const h=o.get(p);return h.tpl&&h.tpl.__annotated||null},templateSource:p=>o.get(p).html||null,StreamableLogic:I}}function fn(t=6e4,n=Date.now){const e=new Map,o=r=>{const s=e.get(r);return s===void 0?!1:n()-s>t?(e.delete(r),!1):!0};return{push(r,s,i){i!=="dc-model"&&(s?e.set(r,n()):e.delete(r))},live(r){if(r!==void 0)return o(r);for(const s of[...e.keys()])if(o(s))return!0;return!1}}}var Nt="[dc] Something in this page tried to replace one of the Design runtime's functions, most likely a second copy of the runtime. It was stopped so that edits keep showing here. If the page loads support.js or a copy of it a second time, remove the extra script tag or <x-import>.";function dn(t){const n=t.__dcHostRuntime===!0;try{delete t.__dcHostRuntime}catch{}return n}function pn(t,n,e,o=()=>!1){for(const[r,s]of Object.entries(n)){if(e&&r.startsWith("__dc")){let i=s;const a=()=>i;try{Object.defineProperty(t,r,{configurable:!1,enumerable:!0,get:a,set:f=>{if(!o())throw new TypeError(Nt);i=f}})}catch{}if(Object.getOwnPropertyDescriptor(t,r)?.get===a)continue}Object.assign(t,{[r]:s})}}function mn(){const t=document.createElement("style");t.textContent="x-dc{display:none!important}",document.head.appendChild(t)}function Rt(t,n){return new Promise((e,o)=>{const r=document.createElement("script");r.src=t,n&&(r.integrity=n,r.crossOrigin="anonymous"),r.async=!1,r.onload=()=>e(),r.onerror=()=>o(new Error(`failed to load ${t}`)),document.head.appendChild(r)})}function hn(){const t=window;if(t.React&&t.ReactDOM)return Promise.resolve();const n=X(We,$e),e=X(qe,He);return Promise.all([Rt(n.src,n.integrity),Rt(e.src,e.integrity)]).then(()=>{})}var gn=dn(window);function _n(){const t=window.__dcRuntimeMode==="omelette",n=un(document,{omelette:t});let e="Root",o=!1,r=!1;const s=document.createElement("style");s.textContent=Dt,document.head.prepend(s);const i=()=>{if(window.parent===window)return;const c=n.registry.entries[e];try{window.parent.postMessage({type:"__dc_booted",rootName:e,mounted:o,propsMeta:c&&c.propsMeta||null,preview:c&&c.preview||null,tellsErrors:!0},"*")}catch{}},a=fn();window.parent!==window&&Ie(je(c=>{try{const _={type:"__dc_render_errors",errors:c};window.parent.postMessage(_,"*")}catch{}},c=>{setTimeout(c,200)},()=>a.live()));const f={__dcUpdate:(c,_,u,d,g)=>{a.push(c,d,g),n.dcUpdate(c,_,u,d),c===e&&!d&&_==="props"&&i()},__dcStreaming:c=>a.live(c),__dcSetProps:(c,_)=>n.setProps(c,_),__dcSeekKeyframes:c=>n.seekKeyframes(c),__dcKeyframesPlayhead:()=>n.keyframesPlayhead(),__dcRootName:()=>e,__dcAnnotatedTemplate:c=>n.annotatedTemplate(c),__dcTemplateSource:c=>n.templateSource(c),__dcBoot:()=>{const c=Ut(n,document);c!=null&&(e=c,o=!0),i(),ze()},__dcRegistry:n.registry.entries,getDC:c=>n.getDC(c),DCLogic:n.StreamableLogic,StreamableLogic:n.StreamableLogic};pn(window,{...f,__dcContentKeyed:!0},gn,()=>r&&!o);const l=()=>{try{f.__dcBoot()}finally{r=!0}};document.readyState!=="loading"?l():document.addEventListener("DOMContentLoaded",l)}mn(),hn().then(_n).catch(t=>{throw t instanceof Error&&t.message===Nt?console.error(t.message):console.error("[dc] failed to load React or boot:",t),t})})();
+
+</script>
+</body></html>

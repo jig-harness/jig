@@ -564,12 +564,26 @@ areas:
     deployTier: none
     generated:
       - outputs:
-          - "design/prototypes/dispatch-dashboard/generated/*.html"
+          - "design/prototypes/dispatch-dashboard/generated/dispatch-dashboard-round-2.html"
+          - "design/prototypes/dispatch-dashboard/generated/dispatch-phone-320.html"
+          - "design/prototypes/dispatch-dashboard/generated/dispatch-phone-390.html"
+          - "design/prototypes/dispatch-dashboard/generated/needs-you-2b-phone-320.html"
+          - "design/prototypes/dispatch-dashboard/generated/needs-you-2b-phone-390.html"
+          - "design/prototypes/dispatch-dashboard/generated/needs-you-round-2b.html"
+          - "design/prototypes/dispatch-dashboard/generated/round-2-decisions.html"
+          - "design/prototypes/dispatch-dashboard/generated/round-2-handoff.html"
+          - "design/prototypes/dispatch-dashboard/generated/round-2-scenarios-dark.html"
+          - "design/prototypes/dispatch-dashboard/generated/round-2-scenarios-light.html"
+          - "design/prototypes/dispatch-dashboard/generated/round-2b-decisions.html"
+          - "design/prototypes/dispatch-dashboard/generated/round-2b-handoff.html"
+          - "design/prototypes/dispatch-dashboard/generated/round-2b-scenarios-dark.html"
+          - "design/prototypes/dispatch-dashboard/generated/round-2b-scenarios-light.html"
+          - "design/prototypes/dispatch-dashboard/generated/work-identity.html"
           - "design/prototypes/dispatch-dashboard/vendor/react.production.min.js"
           - "design/prototypes/dispatch-dashboard/vendor/react-dom.production.min.js"
         source:
           - "design/prototypes/dispatch-dashboard/export.html"
-          - "design/prototypes/dispatch-dashboard/export-*.html"
+          - "design/prototypes/dispatch-dashboard/export-2b.html"
           - "tools/design/unpack-export.ts"
         command: "bun tools/design/unpack-export.ts design/prototypes/dispatch-dashboard"
         check: "bun tools/design/unpack-export.ts --check design/prototypes/dispatch-dashboard"
