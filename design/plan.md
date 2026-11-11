@@ -566,16 +566,14 @@ Done when a repository on Jira with all of these set runs an item from its
 ready pool to a merged pull request without a hook or script of its own,
 and an item that fails a rule is refused before anything is written.
 
-### 48. Fitting the drive to a repository's reviewer, CI and pull-request conventions
+### 48. Fitting the drive to a repository's reviewer
 
 The drive and `do-item` assume things about a repository that many do
 not hold. Its AI reviewer stamps the commit it reviewed into a summary
 comment; a reviewer that reviews through the forge's own [review
 objects](../GLOSSARY.md) (CodeRabbit, for one) never does, so the drive either waits until it times
-out or converges without that review. Its CI runs as GitHub Actions; a CI
-service that reports [commit statuses](../GLOSSARY.md) (Jenkins, for one) leaves the repair
-pass and `fix-ci` with no log. Each fix is optional configuration, and an unset one
-keeps today's behaviour. What it will build, one pull request per step:
+out or converges without that review. The fix is optional configuration, and an
+unset one keeps today's behaviour. What it will build:
 
 - **The reviewer.** A [reviewer evidence mode](../GLOSSARY.md) that reads the reviewed
   commit from the reviewer's latest review object and its check run on
@@ -583,22 +581,17 @@ keeps today's behaviour. What it will build, one pull request per step:
   review stops as `REVIEW_SKIPPED` with the reason; no merge-ready
   announcement before a draft-skipping reviewer has run on the head marked
   Ready; `arm-drive.ts` refuses a reviewer whose evidence it cannot read.
-- **The CI.** Failing commit statuses keep their URL into the repair
-  round; `ci.log_command` fetches a status's failed log and
-  `ci.repair_skill` names the repair skill; `fix-ci --pr` uses both; an
-  aborted build reads as cancelled. Both settings are read from the
-  default branch and run program content from it, never from the working
-  tree of the pull request being repaired, as the [command
-  store](tracker-facets.md#later-the-command-store) does; a status URL is
-  fetched only where the configured CI profile authorizes its scheme and
-  host, redirects are validated, credentials go only to those hosts, and the
-  fetch has a deadline whose expiry cancels the command and its descendants,
-  for the drive's repair pass and `fix-ci --pr` alike.
+- **The CI repair command's trust boundary.** The repair step reads
+  `ci.log_command` from the default branch, but `runRepoCommand` runs it
+  with the pull request's checkout as its working directory, so a
+  configured repository script executes the pull request's editable
+  content. The command's program content is to come from the default
+  branch, never from the working tree of the pull request being repaired,
+  as the [command store](tracker-facets.md#later-the-command-store) does.
 
-Done when a repository whose AI reviewer is CodeRabbit, whose CI is
-Jenkins and whose fixes land on release lines under a key-in-every-commit
-ruleset runs a drive from a release-line item to merge-ready with no bridge
-of its own.
+Done when a repository whose AI reviewer is CodeRabbit runs a drive to
+merge-ready with no bridge of its own, and a CI repair command never runs
+program content from the pull request's working tree.
 
 ### 26. `init`: setting a repository up for Jig
 
