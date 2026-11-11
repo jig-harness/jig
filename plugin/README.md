@@ -415,9 +415,29 @@ The Queue view names holds: an open blocker reads "waiting on #N";
 `hitl`, `hitl:*`, `manual-ops` and `jig:hold` read "needs a person to start".
 Eligible items are ranked by priority, the work they unblock, epic order,
 size and age. Assignment provenance, relations and children are cached
-until the item's update time changes. Assignment lists refresh with
-headroom and at least every 15 minutes. Served forge logins also join the
+until the item's update time changes. Served forge logins also join the
 pull-request adoption authors.
+
+A served queue costs the tracker a handful of requests a tick. On Linear,
+one paged query reads a person's assignments with each one's relations
+(and the related issue's state) and its parent (with its description); the
+issues the walk still needs by key, such as an execution plan's steps,
+leave together in one lookup. The reading is kept between ticks, and a
+tick first asks the tracker, in one request, whether any issue it depended
+on, any child of one, or any issue newly assigned to the person changed
+since: when nothing did, the tick reuses the reading whole, and when
+something did, it reads the queue again and only the issues that changed.
+The reading is taken whole every 15 minutes regardless, and a tick with no
+free slot reuses one younger than that without asking. Every repository of
+the machine file that names the same tracker, team and person shares one
+reading per tick.
+
+Every process on the host shares each tracker credential's request budget
+(`tracker_share` in [the machine's dispatch file](CONFIGURATION.md#the-machines-dispatch-file)).
+While the tracker refuses the credential for its rate limit, no request
+leaves the host before the reset it named: a tick reports the tracker once
+as rate limited until then, the queue it shows is the last reading, and
+the pickups it would launch wait.
 
 Before launching, the tick rechecks the item and admits an account. The
 pass runs through the account-bound wrapper under `dispatch.pickup_deadline`;
@@ -426,7 +446,11 @@ to its implementer. Its prompt ends by asking the session to record
 how it ended, `jig dispatch result <record> <token> done|failed`, which
 refuses another record's token and a second answer. A completed pickup adds
 `--pr <number>` for the pull request it opened, or `--none "<reason>"` when
-no pull request was needed. A `done` without either is refused. A pickup
+no pull request was needed. A `done` without either is refused. A pickup the
+tracker's rate limit stopped before it claimed the item (a tracker script
+exits `5`) records `waits --until <time>` instead (after the claim the pass
+waits for the reset within its deadline, else records `failed`): the item is held until that time, with no
+question for a person, and the first tick after it launches the item again. A pickup
 whose claim the repository's start rules (`do_item.preflight_command`)
 refused records `failed --refused <updated-at> --reason <reason>`, and the dispatcher
 shows the item as held with that reason until the item changes. Every ended
@@ -453,6 +477,7 @@ until the runtime can bind it to an account.
 
 ```sh
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> done|failed [--pr <number> | --none <reason>]
+bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> waits --until <time>
 ```
 
 **The steward** (the `steward` stage, with `steward.enabled: true` in the
@@ -845,8 +870,19 @@ those rows is what a new class is made from.
 `--jsonl` as JSON lines:
 
 ```sh
-bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch log [--since <date>] [--jsonl]
+bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch log [--since <date>] [--jsonl] [--acceptance]
 ```
+
+With `--acceptance` it prints, instead of the rows, one line per repository
+and decision class over the parked decisions the log counted: how many
+parks, how many were answered, how many of those chose the recommended
+option with no note, and the median wait for an answer (`--jsonl` prints one
+JSON object per line). It counts parks that have left their ledger, so a
+park still waiting is not in it, and `--since` selects by when the log
+recorded the park's end, not when it was parked: the resolution time for a
+park answered or handed on, the time a tick noticed the park was withdrawn
+for one removed. It is evidence for deciding whether a class should
+stay a park, and nothing acts on it.
 
 Every run also adds the rows it wrote to a copy, one file per month,
 `~/.local/state/jig/dispatch/log-<year>-<month>.jsonl`, which never
@@ -934,7 +970,9 @@ installed-copy lookup), and renews at the launcher's
 24-hour deadline even without an update. Transient registry failures keep the
 current reader serving and retry the lookup. Each renewal rotates the token;
 run `--access` again for the new URL. The command does not install a private
-network front or open a public listener.
+network front or open a public listener. To open the page from a phone over
+private HTTPS, or over private HTTP with its limits, follow
+[phone-access.md](phone-access.md).
 
 To verify availability on the configured host, first wait for `--status` to
 report a healthy reader and note its pid. End the terminal session, reconnect
