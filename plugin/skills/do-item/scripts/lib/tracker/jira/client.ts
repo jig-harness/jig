@@ -36,7 +36,7 @@ import {
 } from "./read.ts";
 
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
-import { KEY, ORDER, OPEN, quote } from "./jql.ts";
+import { KEY, ORDER, openClause, quote } from "./jql.ts";
 import type { JiraModel } from "./model.ts";
 import type { JiraSettings, LinkedRelation } from "./settings.ts";
 import {
@@ -572,7 +572,7 @@ export function jiraClient(opts: ClientOptions): Client {
         );
       // No project clause: an Epic's children may live in other projects.
       return client.search(
-        `${[`parent = ${key}`, ...(open ? [OPEN] : [])].join(" AND ")}${ORDER}`,
+        `${[`parent = ${key}`, ...(open ? [openClause(model.stateName("blocked"))] : [])].join(" AND ")}${ORDER}`,
         `children of ${key}`,
         signal,
       );

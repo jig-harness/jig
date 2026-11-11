@@ -132,6 +132,22 @@ describe("a tracker with a blocked state", () => {
     expect(fake.states.get("ENG-123")).toBe("In Progress");
   });
 
+  test("a ledger lost during the tracker reads moves nothing", async () => {
+    const fake = fresh({ "ENG-123": "In Progress" });
+    let asked = 0;
+    const out = await projectBlocked(
+      fakeTracker(fake, NAMES),
+      KEYS,
+      LABELS,
+      parked(),
+      NOW,
+      async () => ++asked < 2,
+    );
+    expect(out.map((o) => o.outcome)).toEqual(["refused"]);
+    expect(fake.states.get("ENG-123")).toBe("In Progress");
+    expect(fake.calls.some((c) => c.startsWith("move"))).toBe(false);
+  });
+
   test("the round trip: answering the park and re-arming returns the item to the state it left", async () => {
     const fake = fresh({ "ENG-123": "In Review" });
     const tracker = fakeTracker(fake, NAMES);

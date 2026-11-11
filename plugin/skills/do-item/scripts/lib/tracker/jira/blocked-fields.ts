@@ -69,28 +69,37 @@ function jiraDateTime(iso: string): string {
   return new Date(iso).toISOString().replace("Z", "+0000");
 }
 
+/** Refuse a field whose type the role cannot be written to, or cleared from. */
+function checkType(field: BlockedField, type: string): void {
+  const dated =
+    field.role === "since" && (type === "date" || type === "datetime");
+  if (type === "string" || dated) return;
+  throw new TrackerRequestError(
+    "invalid",
+    `issue_tracker.jira.blocked_fields.${field.role} names '${field.name}', a ${type || "untyped"} field; the ${field.role} needs a text${field.role === "since" ? ", date or date-time" : ""} field`,
+  );
+}
+
+/** A text field's form of `text`: ADF for a rich field, else one line cut to the field's length. */
+function textValue(custom: string, text: string): unknown {
+  if (custom.endsWith(":textarea")) return markdownToAdf(text);
+  return text.length > TEXT_MAX ? `${text.slice(0, TEXT_MAX - 1)}…` : text;
+}
+
 /** The value `field` is given: `value`'s part for its role in the form its type takes, or `null` to clear it. */
 export function blockedFieldValue(
   field: BlockedField,
   value: BlockedFields | null,
 ): unknown {
-  if (value === null) return null;
   const { type, custom } = kindOf(field.schema);
-  const text = field.role === "reason" ? value.reason : value.since;
+  checkType(field, type);
+  if (value === null) return null;
   if (type === "string")
-    return custom.endsWith(":textarea")
-      ? markdownToAdf(text)
-      : text.length > TEXT_MAX
-        ? `${text.slice(0, TEXT_MAX - 1)}…`
-        : text;
-  if (field.role === "since" && type === "date")
-    return value.since.slice(0, 10);
-  if (field.role === "since" && type === "datetime")
-    return jiraDateTime(value.since);
-  throw new TrackerRequestError(
-    "invalid",
-    `issue_tracker.jira.blocked_fields.${field.role} names '${field.name}', a ${type || "untyped"} field; the ${field.role} needs a text${field.role === "since" ? ", date or date-time" : ""} field`,
-  );
+    return textValue(
+      custom,
+      field.role === "reason" ? value.reason : value.since,
+    );
+  return type === "date" ? value.since.slice(0, 10) : jiraDateTime(value.since);
 }
 
 /** The fields of one write: each resolved field's value. */

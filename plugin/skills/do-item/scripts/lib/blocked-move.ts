@@ -133,7 +133,7 @@ export async function projectBlocked(
       });
       break;
     }
-    out.push(await projectItem(tracker, pr, want, key, now));
+    out.push(await projectItem(tracker, pr, want, key, now, stillOurs));
   }
   return out;
 }
@@ -144,6 +144,7 @@ async function projectItem(
   want: ReturnType<typeof wantOf>,
   key: string,
   now: () => Date,
+  stillOurs: () => Promise<boolean>,
 ): Promise<BlockedOutcome> {
   try {
     const issue = await tracker.getIssue(key);
@@ -177,6 +178,13 @@ async function projectItem(
     });
     if (decision.move === "none")
       return { item: key, outcome: "kept", detail: decision.why };
+    // The reads above took time: a successor may hold the ledger by now.
+    if (!(await stillOurs()))
+      return {
+        item: key,
+        outcome: "refused",
+        detail: "its drive ledger no longer belongs to this driver",
+      };
     if (decision.move === "block")
       return await block(
         tracker,

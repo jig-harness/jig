@@ -11,6 +11,7 @@ import {
   blockedFieldValue,
   resolveBlockedFields,
 } from "../scripts/lib/tracker/jira/blocked-fields.ts";
+import { openClause } from "../scripts/lib/tracker/jira/jql.ts";
 import { parseJiraSettings } from "../scripts/lib/tracker/jira/settings.ts";
 import { blockedClaimRefusal } from "../scripts/lib/blocked-claim.ts";
 import type { PoolIssue } from "../scripts/lib/tracker/port.ts";
@@ -232,6 +233,10 @@ describe("issue_tracker.jira.blocked_fields", () => {
     expect(() => blockedFieldValue(points as never, VALUE)).toThrow(
       "needs a text field",
     );
+    // Clearing is held to the same type check as writing.
+    expect(() => blockedFieldValue(points as never, null)).toThrow(
+      "needs a text field",
+    );
   });
 
   it("the adapter writes the configured fields in one request, and nothing without them", async () => {
@@ -260,5 +265,14 @@ describe("issue_tracker.jira.blocked_fields", () => {
     const bare = jira(routes({}));
     expect(await bare.t.writeBlockedFields?.("ENG-1", VALUE)).toBe(false);
     expect(bare.calls).toEqual([]);
+  });
+});
+
+describe("Jira's open-issue query", () => {
+  it("keeps a blocked status the site files as Done in the open population", () => {
+    expect(openClause(null)).toBe("statusCategory != Done");
+    expect(openClause("Blocked")).toBe(
+      '(statusCategory != Done OR status = "Blocked")',
+    );
   });
 });
