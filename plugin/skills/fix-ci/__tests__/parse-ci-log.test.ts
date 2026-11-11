@@ -724,6 +724,7 @@ describe("a pull request whose CI reports as a commit status", () => {
     expect(out).toMatchObject({
       run_id: "77",
       errors_found: 2,
+      run_errors_found: 1,
       summary: { typescript: 1, test_failure: 1 },
       files_affected: ["src/a.ts", "src/b.test.ts"],
     });
@@ -731,6 +732,25 @@ describe("a pull request whose CI reports as a commit status", () => {
       "job",
       JENKINS,
     ]);
+  });
+
+  it("counts no run errors for an opaque Actions failure beside a status that parsed one", async () => {
+    const { runner } = fakeRunner({
+      "gh pr view 12 --json headRefName,headRefOid": prView("feature/pay"),
+      "gh api --paginate --slurp repos/{owner}/{repo}/commits/c0ffee/status":
+        statusPages([red]),
+      "gh run list --branch feature/pay": ok('[{"databaseId":77}]'),
+      "gh run view 77 --log-failed": ok(gh("something opaque happened")),
+    });
+    const { logs } = logCommand({
+      [JENKINS]: { kind: "log", text: "FAIL src/b.test.ts\n" },
+    });
+    const r = await capture(["--pr", "12"], runner, {}, logs);
+    expect(JSON.parse(r.out)).toMatchObject({
+      run_id: "77",
+      errors_found: 1,
+      run_errors_found: 0,
+    });
   });
 
   it("keeps the verdict at not-infrastructure when an infrastructure-only run fails beside a status", async () => {

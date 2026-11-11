@@ -18,14 +18,15 @@
  *   { run_id, errors_found, summary: {category: count}, files_affected,
  *     errors: [{category, job?, step?, raw, file?, line?, column?, code?, rule?,
  *               message}],
- *     infrastructure: {infrastructure, why, jobs: [{job, infrastructure, why}]},
+ *     run_errors_found?, infrastructure: {infrastructure, why, jobs: [{job, infrastructure, why}]},
  *     statuses?: [{context, target_url, log, reason?, log_tail?}] }
  * `job` and `step` name the job and step that printed the line, when the log
  * line carries gh's prefix; an error from a commit status's log names the
  * status's context as its `job`. `infrastructure` is the shared reading of
  * `shared/ci-infra.ts` over the Actions run's log: true only when every
  * failed job failed on the infrastructure and printed no code diagnostic, and
- * never when a commit status also failed. A status log read with no known
+ * never when a commit status also failed. `run_errors_found`, present with
+ * `statuses`, counts the errors parsed from the Actions run's own log alone. A status log read with no known
  * diagnostic carries its last characters as `log_tail`.
  * With a pull request, `statuses` lists each failing commit status on its
  * head, `log` being `read`, `gone` (`ci.log_command` exited 3; `reason` is
@@ -140,10 +141,8 @@ function combinedReading(
     );
     return parsed.map((e) => ({ ...e, job: e.job ?? entry.context }));
   });
-  const errors = [
-    ...(runLog === null ? [] : parseCiErrors(runLog, runId).errors),
-    ...statusErrors,
-  ];
+  const runErrors = runLog === null ? [] : parseCiErrors(runLog, runId).errors;
+  const errors = [...runErrors, ...statusErrors];
   const actions: InfraReading | null =
     runLog === null ? null : readInfrastructure(runLog);
   // Infrastructure only when every failure source is the Actions run: a
@@ -161,6 +160,7 @@ function combinedReading(
   return JSON.stringify(
     {
       ...summarizeCiErrors(errors, runId),
+      run_errors_found: runErrors.length,
       infrastructure,
       statuses: entries,
     },

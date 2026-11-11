@@ -237,6 +237,11 @@ Read the JSON. If `errors_found` is 0:
 - `run_id` is nonempty and no error was parsed from that run: fetch its raw log with
   `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh run view <RUN_ID> --log-failed` and investigate.
 
+When `statuses` is present, `errors_found` also counts the statuses' errors, so
+judge the run by `run_errors_found` instead: if `run_id` is nonempty and
+`run_errors_found` is 0, fetch the run's raw log as above, however many errors
+the statuses supplied.
+
 Whatever `errors_found` says, check every entry of `statuses`
 (the count aggregates all sources, so one parsed error does not account for
 another status):
