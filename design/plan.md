@@ -550,16 +550,6 @@ step:
   states a claim may start from (`do_item.claim_from`; unset, a claim
   keeps today's rule and is not limited to `dispatch.states`), and a claim
   marker naming the session, host and branch.
-- **Review.** An optional `pr_open` canonical state, entered once the
-  pull request opens and read as active work by the roll-up; it may share
-  a tracker name with `in_review` on a tracker with one review status. The
-  issue's labels carried onto the pull request, and reviewers requested, by
-  label or change area. Implementation guidance (skills and notes) chosen by
-  label, path and change area, in the shape of `do_item.gates`.
-- **Finish.** A post-merge state short of `done`
-  (`do_item.post_merge_state`), applied wherever the post-merge rule
-  applies today, refused unless the pull request links its item without
-  closing it.
 - **Stop.** An optional `blocked` canonical state that the shared
   projection of the drive ledger writes, with the park class and reason,
   when a drive stops on parked work, and clears when the park is answered.
