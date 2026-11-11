@@ -1,7 +1,11 @@
 import { describe, expect, it } from "bun:test";
 import { openBranch } from "../../shared/orca-workspace/open.ts";
 import type { OpenPort } from "../../shared/orca-workspace/port.ts";
-import type { Context, RunResult } from "../../shared/orca-workspace/runner.ts";
+import {
+  HerdrError,
+  type Context,
+  type RunResult,
+} from "../../shared/orca-workspace/runner.ts";
 import { ok } from "../../shared/outcome.ts";
 import { resolvePullRequestHead } from "../lib/runtime/orca-pr-head.ts";
 
@@ -107,6 +111,18 @@ describe("PR workspace head proof", () => {
         : run(argv, opts);
     const proof = await resolvePullRequestHead(ctx, "/repo", 7, "feature");
     expect(proof.ok).toBe(false);
+  });
+  it("lets the run's limit reach the caller instead of refusing", async () => {
+    const ctx = context();
+    const run = ctx.run;
+    ctx.run = (argv, opts) => {
+      if (argv[0] === "git" && argv[1] === "config")
+        throw new HerdrError("the run reached its limit");
+      return run(argv, opts);
+    };
+    await expect(
+      resolvePullRequestHead(ctx, "/repo", 7, "feature"),
+    ).rejects.toBeInstanceOf(HerdrError);
   });
   for (const meta of [
     { ...META, isCrossRepository: true },

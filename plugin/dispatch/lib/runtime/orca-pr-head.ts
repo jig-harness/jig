@@ -1,7 +1,11 @@
 /** Prove the PR's repository and remote head before opening its checkout. */
 import { isRecord } from "../../../shared/guards.ts";
 import { failed, ok, type Outcome } from "../../../shared/outcome.ts";
-import { type Context, output } from "../../../shared/orca-workspace/runner.ts";
+import {
+  type Context,
+  HerdrError,
+  output,
+} from "../../../shared/orca-workspace/runner.ts";
 import { repoOfUrl } from "../../../skills/drive-pr/scripts/lib/repo-url.ts";
 
 type Proof<T> = Outcome<T, "pr-head-unverified">;
@@ -97,6 +101,8 @@ async function requireOrigin(
           ),
       );
     } catch (error) {
+      // The run's own limit is the caller's to classify as lost time.
+      if (error instanceof HerdrError) throw error;
       return refuse(
         `origin's transport could not be verified: ${
           error instanceof Error ? error.message : String(error)
