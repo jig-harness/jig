@@ -352,7 +352,8 @@ function namesTarget(value: Record<string, unknown>): boolean {
   );
 }
 
-function isLaunchRecord(value: unknown): value is LaunchRecord {
+/** Whether a parsed value reads as a launch record (the tick's part, as stored). */
+export function isLaunchRecord(value: unknown): value is LaunchRecord {
   return (
     isMapping(value) &&
     value.version === 1 &&

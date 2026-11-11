@@ -33,7 +33,9 @@
  * else (exit 3, nothing written), assigns it to that identity and moves it
  * to `in_progress`, then reads it again and stands down (exit 4) when
  * another claim landed first. The reason is printed on stderr and in the
- * JSON on stdout.
+ * JSON on stdout. In a pickup the dispatcher started (`JIG_LAUNCH` names
+ * its launch record), a claim that landed is noted on that record, so the
+ * dispatcher counts the item as its pickup's however soon the pass ends.
  *
  * Where the repository's default branch sets `do_item.preflight_command`,
  * `claim` first runs it, before the claim lock and any write, with the
@@ -131,6 +133,10 @@ import {
   TrackerRequestError,
 } from "./lib/tracker/port.ts";
 import { labelsAsConfig } from "../../../shared/tracker-labels.ts";
+import {
+  NOT_DISPATCHED,
+  notePickupClaim,
+} from "../../../dispatch/lib/pickup-claim.ts";
 
 const USAGE = `usage:
   tracker.ts children <issue-key>
@@ -396,8 +402,27 @@ async function claim(
         })
       : claimIssue(tracker, key, { claimFrom: settings.claimFrom });
   });
-  if (result.outcome !== "claimed" || !settings.claimMarker) return result;
+  if (result.outcome !== "claimed") return result;
+  noteDispatchedClaim(result.issue);
+  if (!settings.claimMarker) return result;
   return { ...result, marker: await postClaimMarker(tracker, result, root) };
+}
+
+/**
+ * In a pickup the dispatcher started, note the claim on its launch record, so
+ * the dispatcher counts the item as its pickup's however soon the pass ends.
+ * A failed note leaves the claim standing: it is reported beside it.
+ */
+function noteDispatchedClaim(issue: string): void {
+  const noted = notePickupClaim(issue);
+  if (!noted.ok)
+    console.error(
+      `the claim of ${issue} was not noted for the dispatcher: ${noted.failure.reason}`,
+    );
+  else if (!noted.value.noted && noted.value.why !== NOT_DISPATCHED)
+    console.error(
+      `the claim of ${issue} was not noted for the dispatcher: ${noted.value.why}`,
+    );
 }
 
 /**

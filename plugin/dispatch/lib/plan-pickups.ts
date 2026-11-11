@@ -13,9 +13,10 @@
  * - A claimed item (in the in-progress state) with no running session for
  *   longer than `dispatch.stalled_after` is a stalled pickup: reported,
  *   never relaunched, since a relaunch would start a second implementer on
- *   a claimed item. A served person's item is a claim only while a pickup
- *   record of this machine holds it: the rest of their work in progress is
- *   their own, and quiet.
+ *   a claimed item. A served person's item is a pickup's claim only when a
+ *   pickup of this machine claimed it: its claim, noted on its launch record
+ *   where `tracker.ts claim` made it (`pickup-claim.ts`), or seen while it
+ *   ran. The rest of their work in progress is their own, and quiet.
  * - A session this machine launched that the runtime reports waiting for
  *   longer than `dispatch.blocked_after` is reported; it keeps its slot.
  * - An item whose latest pickup pass ended on a question, without recording
