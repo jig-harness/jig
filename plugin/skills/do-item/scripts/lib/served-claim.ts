@@ -1,6 +1,7 @@
 /** Served pickups preserve the person's assignment and revalidate inherited authority live. */
 import { type ClaimResult, claimFromRefusal } from "./claim.ts";
 import { blocksWithin } from "./blocker-chain.ts";
+import { servedParentHold } from "../../../../dispatch/lib/sources/served-parents.ts";
 import type {
   CanonicalState,
   Issue,
@@ -19,6 +20,8 @@ export interface ServedClaim {
   epicLabel?: string;
   hitlLabel?: string;
   manualOpsLabel?: string;
+  /** `do_item.execution_plan_block`: the fenced block the origin's ancestor plans are read from. */
+  executionPlanBlock?: string;
   /** `do_item.claim_from`; `null` or absent keeps the not-started states alone. */
   claimFrom?: readonly CanonicalState[] | null;
 }
@@ -235,6 +238,17 @@ async function validatePulled(
     false,
   );
   if (authority) return `${origin}, which ${key} blocks: ${authority}`;
+  // The origin's epic plans gate it at the write too, not only at enqueue and launch.
+  const originItem = await tracker.poolIssue(origin);
+  if (originItem === null)
+    return `${origin}, which ${key} blocks, cannot be read`;
+  const planHold = await servedParentHold(
+    tracker,
+    originItem,
+    { get: () => null, set: () => undefined },
+    options.executionPlanBlock,
+  );
+  if (planHold !== null) return `${origin}, which ${key} blocks: ${planHold}`;
   const through = (via: string) => passable(tracker, via, options);
   return (await blocksWithin(tracker, origin, key, through))
     ? null

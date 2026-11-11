@@ -396,6 +396,7 @@ async function claim(
           epicLabel: config.labels.epic,
           hitlLabel: config.labels.hitl,
           manualOpsLabel: config.labels.manualOps,
+          executionPlanBlock: executionPlanBlock(overlay),
           claimFrom: settings.claimFrom,
         })
       : claimIssue(tracker, key, { claimFrom: settings.claimFrom });

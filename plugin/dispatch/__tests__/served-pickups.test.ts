@@ -29,6 +29,7 @@ function fake() {
     adapter: "github",
     team: "example/repo",
     stateName: (s: string) => (s === "pr_open" ? null : s),
+    assignUnassigned: async () => true,
     assignedIssues: async (_: string, s: string[]) =>
       s.includes("in_progress") ? [] : roots,
     assignedBy: async (k: string) => {

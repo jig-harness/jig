@@ -344,13 +344,22 @@ async function readChildren(
   const children: PoolIssue[] = [];
   const unread: string[] = [];
   for (const kept of meta.children) {
-    const child = await tracker.poolIssue(kept.identifier);
+    let child: PoolIssue | null = null;
+    let failure: string | undefined;
+    try {
+      child = await tracker.poolIssue(kept.identifier);
+    } catch (error) {
+      failure = failureText(error);
+    }
     if (child === null || child.truncated.length) {
       unread.push(kept.identifier);
       out.unplaced.push({
         ...itemOf(kept),
         record: "tracker",
-        reason: "the child cannot be read completely",
+        reason:
+          failure === undefined
+            ? "the child cannot be read completely"
+            : `the child cannot be read: ${failure}`,
       });
     } else children.push(child);
   }
@@ -384,23 +393,36 @@ async function enqueueChildren(
 ): Promise<void> {
   const { options, pending } = ctx;
   const { children, unread } = await readChildren(ctx, meta);
-  const live = await childStates(ctx, children, meta);
-  const selection = servedPlan(
-    meta.description ?? "",
-    issue.identifier,
-    live,
-    options.executionPlanBlock,
-  );
-  const busy = children.find((c) => c.state.type === "started");
-  ctx.walks.push({
-    key: issue.identifier,
-    children: children.map((c) => c.identifier),
-    unread,
-    working: busy !== undefined,
-  });
-  const serial = selection.present
-    ? undefined
-    : { epic: issue.identifier, busy: busy?.identifier, unread: unread[0] };
+  let serial: Serial | undefined;
+  let selection: ServedPlan;
+  try {
+    const live = await childStates(ctx, children, meta);
+    selection = servedPlan(
+      meta.description ?? "",
+      issue.identifier,
+      live,
+      options.executionPlanBlock,
+    );
+    const busy = children.find((c) => c.state.type === "started");
+    ctx.walks.push({
+      key: issue.identifier,
+      children: children.map((c) => c.identifier),
+      unread,
+      working: busy !== undefined,
+    });
+    serial = selection.present
+      ? undefined
+      : { epic: issue.identifier, busy: busy?.identifier, unread: unread[0] };
+  } catch (error) {
+    // Setup failed: no sibling starts on a guess, and a directly assigned child is held too.
+    for (const kept of meta.children)
+      ctx.serials.set(kept.identifier, {
+        epic: issue.identifier,
+        busy: undefined,
+        unread: meta.children[0]?.identifier ?? issue.identifier,
+      });
+    throw error;
+  }
   for (const child of children) {
     if (serial !== undefined) ctx.serials.set(child.identifier, serial);
     pending.push({
@@ -711,6 +733,9 @@ async function heldReason(
     );
     if (parentHold !== null) return parentHold;
   }
+  // A tracker that cannot assign without replacing a concurrent assignee refuses the claim, so no launch is spent on it.
+  if (tracker.assignUnassigned === undefined)
+    return `${held}; this tracker cannot assign a blocker on its own, so a person assigns it`;
   const pull = pullBlockers(node.issue, node.pull, node.ancestor, open, {
     epic: options.epic,
     hitl: options.hitl,

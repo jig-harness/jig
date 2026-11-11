@@ -46,6 +46,7 @@ function world(spec: Spec) {
     adapter: "github",
     team: "example/repo",
     stateName: (state: string) => state,
+    assignUnassigned: async () => true,
     assignedIssues: async (_: string, states: string[]) =>
       states.includes("in_progress") ? [] : spec.assigned,
     assignedBy: async () => ({ id: "writer", name: "writer", trusted: true }),
@@ -92,6 +93,19 @@ describe("served items blocked by open work", () => {
       servedPerson: "alex",
     });
     expect(reasons(read)["#1"]).toBe("waiting on #2 (picked up first)");
+  });
+
+  it("leaves a blocker to a person when the tracker cannot assign without replacing an assignee", async () => {
+    const w = world({
+      assigned: [issue("#1")],
+      others: [issue("#2", [], null)],
+      waits: { "#1": ["#2"] },
+    });
+    (w.tracker as unknown as Record<string, unknown>).assignUnassigned =
+      undefined;
+    const read = await w.read();
+    expect(read.wanted).toEqual([]);
+    expect(reasons(read)["#1"]).toContain("a person assigns it");
   });
 
   it("follows blockers of blockers, working the deepest first, to three links", async () => {

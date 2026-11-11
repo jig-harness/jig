@@ -189,3 +189,23 @@ test("stands down, not refuses, when a blocker leaves claim_from after its assig
   expect(result.outcome).toBe("stood_down");
   expect(w.writes).toEqual(["assign #2"]);
 });
+
+test("refuses a pulled blocker, before any write, when the served item's epic cannot be read", async () => {
+  const w = world(["#1", "#2"]);
+  const tracker = w.tracker as unknown as Record<string, unknown>;
+  const getIssue = tracker.getIssue as (key: string) => Promise<object>;
+  const poolIssue = tracker.poolIssue as (key: string) => Promise<object>;
+  tracker.getIssue = async (key: string) => ({
+    ...(await getIssue(key)),
+    description: "",
+    parent: key === "#1" ? { identifier: "#0" } : null,
+  });
+  tracker.poolIssue = async (key: string) =>
+    key === "#0" ? null : poolIssue(key);
+  const result = await claimServedIssue(w.tracker, "#2", {
+    person: "dana",
+    blocking: "#1",
+  });
+  expect(result).toMatchObject({ outcome: "refused" });
+  expect(w.writes).toEqual([]);
+});
