@@ -70,8 +70,11 @@ export interface RepoCommand {
 export function scrubbedEnv(
   env: Record<string, string | undefined> = process.env,
 ): Record<string, string | undefined> {
-  const out = { ...env };
-  for (const name of SCRUBBED_ENV) delete out[name];
+  // Windows reads environment names case-insensitively, so match likewise.
+  const out: Record<string, string | undefined> = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (!SCRUBBED_ENV.includes(key.toUpperCase())) out[key] = value;
+  }
   return out;
 }
 
