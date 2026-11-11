@@ -11,6 +11,12 @@
  * line (`Closes <KEY>` or `Refs <KEY>`, alone on a line or in a batch's
  * table cell).
  *
+ * A pull request found through a comment counts only when its own body
+ * carries the item's issue-link line too, so an incidental URL in a comment
+ * is no evidence. On a GitHub tracker whose issues live in another
+ * repository than the code, the issue-link line names the issue qualified
+ * (`Closes owner/name#5`); a bare `#5` would be the code repository's issue.
+ *
  * The reading fails closed: an open pull request wins over a merged one
  * (later work on the same item is still active), a pull request merged into
  * a branch other than the integration branch has not landed, and any read
@@ -49,8 +55,8 @@ export interface LinkedPrReads {
   comments(key: string): Promise<string[] | null>;
   /** The pull requests whose body mentions `term`, each with its body. */
   search(term: string): Promise<Array<PullFact & { body: string }> | null>;
-  /** One pull request by number. */
-  view(number: number): Promise<PullFact | null>;
+  /** One pull request by number, with its body. */
+  view(number: number): Promise<(PullFact & { body: string }) | null>;
 }
 
 function escapeRe(s: string): string {
@@ -124,9 +130,19 @@ export async function readLinkedPr(
     repository: string;
     keySource: string;
     trunk: string;
+    /** The tracker's `owner/name` on a GitHub tracker. */
+    trackerRepository?: string | undefined;
   },
 ): Promise<LinkedPr> {
-  const { reads, repository, keySource, trunk } = opts;
+  const { reads, repository, trunk, trackerRepository } = opts;
+  const elsewhere =
+    trackerRepository !== undefined &&
+    /^#[1-9]\d*$/.test(key) &&
+    trackerRepository.toLowerCase() !== repository.toLowerCase();
+  const linkKey = elsewhere ? `${trackerRepository}${key}` : key;
+  const keySource = elsewhere
+    ? `${escapeRe(trackerRepository)}#[1-9]\\d*`
+    : opts.keySource;
   const comments = await reads.comments(key);
   if (comments === null)
     return unreadable(`the comments of ${key} could not be read`);
@@ -135,7 +151,7 @@ export async function readLinkedPr(
     return unreadable(`the pull requests naming ${key} could not be searched`);
   const pulls = new Map<number, PullFact>();
   for (const p of searched)
-    if (linksIssue(p.body, key, keySource)) pulls.set(p.number, p);
+    if (linksIssue(p.body, linkKey, keySource)) pulls.set(p.number, p);
   for (const n of new Set(
     comments.flatMap((c) => pullNumbersIn(c, repository)),
   )) {
@@ -145,7 +161,7 @@ export async function readLinkedPr(
       return unreadable(
         `pull request #${n}, linked from ${key}, could not be read`,
       );
-    pulls.set(n, viewed);
+    if (linksIssue(viewed.body, linkKey, keySource)) pulls.set(n, viewed);
   }
   const facts = [...pulls.values()].sort((a, b) => a.number - b.number);
   const pullRequest = linkedPrState(facts, trunk);

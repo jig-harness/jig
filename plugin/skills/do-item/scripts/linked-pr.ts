@@ -18,7 +18,7 @@
  * cannot be read, so no item can be.
  */
 
-import { consumerRoot } from "../../../shared/consumer.ts";
+import { consumerRoot, readConfig } from "../../../shared/consumer.ts";
 import { baseBranch } from "../../drive-pr/scripts/lib/overlay.ts";
 import { ghCall, type RunResult } from "../../drive-pr/scripts/lib/proc.ts";
 import { swallow } from "../../../shared/errors.ts";
@@ -29,7 +29,13 @@ import {
   type PullFact,
   readLinkedPr,
 } from "./lib/linked-pr.ts";
-import { remoteUrl, repoFromRemote, slug } from "./lib/tracker/github/refs.ts";
+import { trackerConfigFrom } from "./lib/tracker/config.ts";
+import {
+  homeRepo,
+  remoteUrl,
+  repoFromRemote,
+  slug,
+} from "./lib/tracker/github/refs.ts";
 import { openTracker } from "./lib/tracker/index.ts";
 import { issueKeysOrNull } from "./lib/tracker/keys.ts";
 import type { Tracker } from "./lib/tracker/port.ts";
@@ -39,13 +45,22 @@ export const SEARCH_LIMIT = 100;
 
 const PULL_FIELDS = "number,url,state,baseRefName";
 
-function pullFact(v: unknown): PullFact | null {
+const PULL_STATES = new Set(["OPEN", "MERGED", "CLOSED"]);
+
+function pullFact(v: unknown, repository: string): PullFact | null {
   if (typeof v !== "object" || v === null) return null;
   const p = v as Record<string, unknown>;
   return typeof p.number === "number" &&
+    Number.isInteger(p.number) &&
+    p.number > 0 &&
     typeof p.url === "string" &&
+    p.url
+      .toLowerCase()
+      .startsWith(`https://github.com/${repository.toLowerCase()}/pull/`) &&
     typeof p.state === "string" &&
-    typeof p.baseRefName === "string"
+    PULL_STATES.has(p.state.toUpperCase()) &&
+    typeof p.baseRefName === "string" &&
+    p.baseRefName !== ""
     ? {
         number: p.number,
         url: p.url,
@@ -72,7 +87,11 @@ function ghJson(r: RunResult, what: string): unknown {
 }
 
 /** The reads through the tracker and the `gh` command, from `root`. */
-function forgeReads(tracker: Tracker, root: string): LinkedPrReads {
+function forgeReads(
+  tracker: Tracker,
+  root: string,
+  repository: string,
+): LinkedPrReads {
   return {
     async comments(key) {
       try {
@@ -89,6 +108,8 @@ function forgeReads(tracker: Tracker, root: string): LinkedPrReads {
         [
           "pr",
           "list",
+          "--repo",
+          repository,
           "--state",
           "all",
           "--search",
@@ -109,7 +130,7 @@ function forgeReads(tracker: Tracker, root: string): LinkedPrReads {
         return null;
       }
       const pulls = list.map((v) => {
-        const fact = pullFact(v);
+        const fact = pullFact(v, repository);
         const body = (v as Record<string, unknown> | null)?.body;
         return fact === null || typeof body !== "string"
           ? null
@@ -119,10 +140,23 @@ function forgeReads(tracker: Tracker, root: string): LinkedPrReads {
     },
     async view(number) {
       const r = await ghCall(
-        ["pr", "view", String(number), "--json", PULL_FIELDS],
+        [
+          "pr",
+          "view",
+          String(number),
+          "--repo",
+          repository,
+          "--json",
+          `${PULL_FIELDS},body`,
+        ],
         { cwd: root },
       );
-      return pullFact(ghJson(r, `reading pull request #${number}`));
+      const json = ghJson(r, `reading pull request #${number}`);
+      const fact = pullFact(json, repository);
+      const body = (json as Record<string, unknown> | null)?.body;
+      return fact === null || typeof body !== "string"
+        ? null
+        : { ...fact, body };
     },
   };
 }
@@ -172,7 +206,16 @@ async function main(): Promise<number> {
     console.error(`ERROR: ${err instanceof Error ? err.message : String(err)}`);
     return 1;
   }
-  const reads = forgeReads(tracker, root);
+  let trackerRepository: string | undefined;
+  try {
+    const config = trackerConfigFrom(readConfig());
+    if (config.adapter === "github")
+      trackerRepository = slug(homeRepo(config.github.repository, () => url));
+  } catch (err) {
+    console.error(`ERROR: ${err instanceof Error ? err.message : String(err)}`);
+    return 1;
+  }
+  const reads = forgeReads(tracker, root, slug(repo));
   const out: Record<string, LinkedPr> = {};
   for (const key of items)
     out[key] = await readLinkedPr(key, {
@@ -180,6 +223,7 @@ async function main(): Promise<number> {
       repository: slug(repo),
       keySource: keys.source,
       trunk,
+      trackerRepository,
     });
   console.log(JSON.stringify(out));
   return 0;

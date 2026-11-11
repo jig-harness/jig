@@ -136,12 +136,39 @@ describe("readLinkedPr", () => {
         comments: async () => [`Opened https://github.com/${REPO}/pull/4`],
         view: async (n) => {
           viewed.push(n);
-          return pull(n, "OPEN");
+          return { ...pull(n, "OPEN"), body: "Closes ENG-5" };
         },
       }),
     );
     expect(viewed).toEqual([4]);
     expect(r.pullRequest).toBe("open");
+  });
+
+  it("ignores a pull request a comment mentions whose body does not link the item", async () => {
+    const r = await read(
+      reads({
+        comments: async () => [`Related: https://github.com/${REPO}/pull/12`],
+        view: async (n) => ({ ...pull(n, "MERGED"), body: "Unrelated" }),
+      }),
+    );
+    expect(r.pullRequest).toBe("none");
+  });
+
+  it("matches a qualified issue-link line when the tracker is another repository", async () => {
+    const readFor = (body: string) =>
+      readLinkedPr("#5", {
+        reads: reads({
+          search: async () => [{ ...pull(9, "MERGED"), body }],
+        }),
+        repository: REPO,
+        keySource: "#[1-9]\\d*",
+        trunk: TRUNK,
+        trackerRepository: "example-org/tracker",
+      });
+    expect((await readFor("Closes example-org/tracker#5")).pullRequest).toBe(
+      "merged",
+    );
+    expect((await readFor("Closes #5")).pullRequest).toBe("none");
   });
 
   it("reads an item with no linked pull request as none", async () => {
