@@ -79,6 +79,19 @@ function WaitsOn({ need }: { need: NeedView }) {
   );
 }
 
+/** What the cards say of the answers received: stale or disputed answers read on every card, whether or not it has rows to pick. */
+function AnswerNotes({ need }: { need: NeedView }) {
+  return (
+    <>
+      {need.answerNotes.map((note) => (
+        <p className="sm answers" key={note}>
+          {note}
+        </p>
+      ))}
+    </>
+  );
+}
+
 /** What a card with no decision to pick says first, after its act: the ask, the recommended option with what it changes and costs, and who it waits on. */
 function NeedAsk({ need }: { need: NeedView }) {
   return (
@@ -94,11 +107,7 @@ function NeedAsk({ need }: { need: NeedView }) {
           <InlineDecisionText source={need.recommendation} />
         </p>
       )}
-      {need.answerNotes.map((note) => (
-        <p className="sm answers" key={note}>
-          {note}
-        </p>
-      ))}
+      <AnswerNotes need={need} />
       <WaitsOn need={need} />
     </>
   );
@@ -177,6 +186,7 @@ function NeedItem({ need, rest }: { need: NeedView; rest: boolean }) {
       {picks ? (
         <>
           <DecisionRows need={need} picking={picking} />
+          <AnswerNotes need={need} />
           <WaitsOn need={need} />
         </>
       ) : (

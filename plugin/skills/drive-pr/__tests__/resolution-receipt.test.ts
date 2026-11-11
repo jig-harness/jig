@@ -140,6 +140,24 @@ describe("unpark --stdin leaves a resolution receipt", () => {
     expect((await stored(stateDir)).resolvedParks).toBeUndefined();
   });
 
+  it("keeps existing receipts whole, marking none lost, on a hand unpark", async () => {
+    const { stateDir } = writeFixture({}, scratchClean.dir);
+    await park(stateDir, "PRRT_a", "thread");
+    await unparkWith(
+      stateDir,
+      ["PRRT_a"],
+      [{ key: "PRRT_a", provisional: true, answers: [] }],
+    );
+    await park(stateDir, "PRRT_b", "thread");
+    const before = (await stored(stateDir)).resolvedParks;
+    expect(before).toHaveLength(1);
+    const done = await state(stateDir, ["unpark", "999", "--key", "PRRT_b"]);
+    expectSpawnExit({ ...done, stderr: null }, 0);
+    const after = await stored(stateDir);
+    expect(after.resolvedParks).toEqual(before);
+    expect(after.resolvedParksLost).toBeUndefined();
+  });
+
   it("refuses a verdict list that leaves a removed park uncovered", () => {
     const parked = [
       { key: "a", kind: "thread" as const, round: 1, reason: "q", at: "t" },

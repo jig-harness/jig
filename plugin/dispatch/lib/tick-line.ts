@@ -28,7 +28,12 @@ import {
   withLineLocked,
   writeLine,
 } from "./line-store.ts";
-import { identifiedSlugs, mergeLine, readBy } from "./line-merge.ts";
+import {
+  identifiedSlugs,
+  mergeLine,
+  readBy,
+  withLastSlugs,
+} from "./line-merge.ts";
 import { hostTimeZone } from "./host-time.ts";
 import { exportLog } from "./log-export.ts";
 import type { MachineConfig } from "./machine-config.ts";
@@ -347,7 +352,7 @@ function writeKept(
         receipt.startedAt,
       );
       // Even a whole tick merges: another tick may have written a newer part since this one read.
-      const line =
+      const line = withLastSlugs(
         before === null
           ? fresh
           : mergeLine(
@@ -355,7 +360,9 @@ function writeKept(
               fresh,
               machine.repositories,
               receiptText === null ? "fresh" : "kept",
-            );
+            ),
+        before,
+      );
       const ticks = withTick(before?.ticks, tickHealthOf(receipt, whole));
       const listedSlugs = identifiedSlugs(line, before, machine.repositories);
       const slugsOf = (current: boolean): Set<string> =>

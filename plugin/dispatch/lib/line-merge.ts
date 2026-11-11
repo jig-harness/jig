@@ -124,13 +124,30 @@ export function identifiedSlugs(
   );
   for (const old of before?.repos ?? []) {
     const now = line.repos.find((r) => r.path === old.path);
+    const known = old.slug ?? old.lastSlug;
     if (
-      old.slug !== null &&
+      known !== undefined &&
       now !== undefined &&
       now.slug === null &&
       listed.some((m) => m.path === old.path)
     )
-      slugs.add(old.slug);
+      slugs.add(known);
   }
   return slugs;
+}
+
+/** The line with each unidentified repository carrying the slug its path last had, across repeated failures. */
+export function withLastSlugs(
+  line: LineSnapshot,
+  before: LineSnapshot | null,
+): LineSnapshot {
+  return {
+    ...line,
+    repos: line.repos.map((r) => {
+      if (r.slug !== null) return r;
+      const old = before?.repos.find((b) => b.path === r.path);
+      const known = old?.slug ?? old?.lastSlug;
+      return known === undefined ? r : { ...r, lastSlug: known };
+    }),
+  };
 }
