@@ -184,19 +184,28 @@ function evidenceLines(text: string): string[] {
     inTable = false;
   };
   const rows = [...markdownLines(text)];
-  rows.forEach(({ line, kind, quoted, depth, boundary }, index) => {
-    if (kind !== "text" || quoted || line.trim() === "") return flush();
+  for (const [
+    index,
+    { line, kind, quoted, depth, boundary },
+  ] of rows.entries()) {
+    if (kind !== "text" || quoted || line.trim() === "") {
+      flush();
+      continue;
+    }
     if (depth !== undefined || boundary) flush();
     if (!inTable && paragraph.length === 0 && line.includes("|"))
       inTable = startsTable(line, rows[index + 1]?.line ?? "");
-    if (!inTable) return void paragraph.push(line);
+    if (!inTable) {
+      paragraph.push(line);
+      continue;
+    }
     out.push(
       line
         .split(/(?<!\\)\|/)
         .map(maskInlineCode)
         .join("|"),
     );
-  });
+  }
   flush();
   return out;
 }
@@ -209,7 +218,6 @@ const LIST_PREFIX = /^\s*(?:(?:[-+*]|\d{1,9}[.)])\s+)+/;
 
 const tableCells = (row: string) =>
   row
-    .replace(LIST_PREFIX, "")
     .trim()
     .replace(/^\|/, "")
     .replace(/(?<!\\)\|$/, "")
@@ -219,7 +227,7 @@ const tableCells = (row: string) =>
 function startsTable(header: string, delimiter: string): boolean {
   return (
     TABLE_DELIMITER.test(delimiter) &&
-    tableCells(header) === tableCells(delimiter)
+    tableCells(header.replace(LIST_PREFIX, "")) === tableCells(delimiter)
   );
 }
 
