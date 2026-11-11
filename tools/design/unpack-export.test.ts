@@ -134,8 +134,8 @@ const MARK =
  * An export whose pages import components (`<dc-import>`), the way the
  * design tool carries them: in the page's own manifest, mapped from the
  * path the runtime asks for by the page's `ext_resources`. One page carries
- * everything it imports, one imports another page, one lacks a component
- * its component imports.
+ * everything it imports, one draws another page carried as a component, one
+ * lacks a component its component imports.
  */
 function componentsExport(): string {
   const shared = {
@@ -273,19 +273,20 @@ describe("unpack-export", () => {
     });
   });
 
-  it("inlines the components a page carries and skips one that imports another page or a missing component", async () => {
+  it("inlines the components a page carries and skips one that imports a missing component", async () => {
     let html = "";
+    let phone = "";
     withExport(componentsExport(), (dir, result) => {
       expectSpawnExit(result, 0);
       expect(result.stdout).toContain("generated/cards-page.html");
-      expect(result.stdout).toContain(
-        "skipped (imports another page): Cards page, phone",
-      );
+      expect(result.stdout).toContain("generated/cards-page-phone.html");
       expect(result.stdout).toContain(
         "skipped (imports another page): Half page",
       );
       html = read(dir, "generated", "cards-page.html");
+      phone = read(dir, "generated", "cards-page-phone.html");
     });
+    expect(phone).toContain('"./Cards.dc.html"');
     expect(html).not.toContain(IDENT_ID);
     expect(html).not.toContain('"</script>"');
     const marker =
@@ -307,6 +308,99 @@ describe("unpack-export", () => {
     expect(await blobs[resources["./Mark.dc.html"] as string]?.text()).toBe(
       MARK,
     );
+  });
+
+  it("unpacks each addendum export beside export.html into the same pages", () => {
+    withExport(
+      syntheticExport(),
+      (dir, result) => {
+        expectSpawnExit(result, 0);
+        expect(result.stdout).toContain("generated/sample-page.html");
+        expect(result.stdout).toContain("generated/addendum-page.html");
+        expect(read(dir, "generated", "addendum-page.html")).toContain(
+          "data-scenario-ready",
+        );
+        expect(existsSync(join(dir, "generated", "ignored-page.html"))).toBe(
+          false,
+        );
+      },
+      [],
+      (dir) => {
+        writeFileSync(
+          join(dir, "export-2b.html"),
+          pagesExport([{ id: HALF_ID, title: "Addendum page" }]),
+        );
+        writeFileSync(
+          join(dir, "exported.html"),
+          pagesExport([{ id: MARK_ID, title: "Ignored page" }]),
+        );
+      },
+    );
+  });
+
+  it("refuses an addendum whose page shares a file name with the main export's", () => {
+    withExport(
+      syntheticExport(),
+      (dir, result) => {
+        expectSpawnExit(result, 2);
+        expect(result.stderr).toContain("already named sample-page.html");
+        expect(existsSync(join(dir, "generated"))).toBe(false);
+      },
+      [],
+      (dir) =>
+        writeFileSync(
+          join(dir, "export-2b.html"),
+          pagesExport([{ id: HALF_ID, title: "Sample page" }]),
+        ),
+    );
+  });
+
+  it("reads every listed or boolean prop from the URL, and ?switch=off", () => {
+    let html = "";
+    withExport(syntheticExport(), (dir, result) => {
+      expectSpawnExit(result, 0);
+      html = read(dir, "generated", "sample-page.html");
+    });
+    const props: Record<string, Record<string, unknown>> = {
+      scenario: { editor: "enum", default: "loud", options: ["loud", "quiet"] },
+      view: { editor: "enum", default: "auto", options: ["auto", "running"] },
+      theme: { editor: "enum", default: "system", options: ["light", "dark"] },
+      openFirst: { editor: "boolean", default: false },
+      showSwitch: { editor: "boolean", default: true },
+    };
+    let attribute = JSON.stringify(props);
+    const marks: string[] = [];
+    const document = {
+      querySelector: () => ({
+        getAttribute: () => attribute,
+        setAttribute: (_: string, value: string) => {
+          attribute = value;
+        },
+      }),
+      getElementById: () => ({ firstElementChild: {} }),
+      documentElement: { setAttribute: (name: string) => marks.push(name) },
+    };
+    new Function(
+      "location",
+      "document",
+      scriptAfter(
+        html,
+        "/* Landing-check hook, not part of the design (tools/design/unpack-export.ts). */\n",
+      ),
+    )(
+      {
+        search:
+          "?scenario=quiet&view=running&theme=sepia&openFirst=true&switch=off",
+      },
+      document,
+    );
+    const parsed = JSON.parse(attribute);
+    expect(parsed.scenario.default).toBe("quiet");
+    expect(parsed.view.default).toBe("running");
+    expect(parsed.theme.default).toBe("system");
+    expect(parsed.openFirst.default).toBe(true);
+    expect(parsed.showSwitch.default).toBe(false);
+    expect(marks).toEqual(["data-scenario-ready"]);
   });
 
   it("adds no component script to a page that imports nothing", () => {

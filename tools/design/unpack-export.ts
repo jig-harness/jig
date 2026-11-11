@@ -2,21 +2,24 @@
 /**
  * Unpack a design round's export into pages a browser renders on its own.
  *
- * The design tool exports one self-extracting HTML file: a board of nested
- * pages, each a gzip-compressed, base64-encoded document in a manifest, each
- * loading the tool's page runtime and React from the same manifest at run
- * time. Nothing in it renders without that unpacker, and the landing check
- * (`design-brief-builder`) refuses frames and network requests, so this
- * script writes, beside the export:
+ * The design tool exports one self-extracting HTML file per canvas page: a
+ * board of nested pages, each a gzip-compressed, base64-encoded document in
+ * a manifest, each loading the tool's page runtime and React from the same
+ * manifest at run time. Nothing in it renders without that unpacker, and
+ * the landing check (`design-brief-builder`) refuses frames and network
+ * requests, so this script reads the bundle's exports, `export.html` and
+ * then each addendum `export-<name>.html` beside it in name order, and
+ * writes, beside them:
  *
  * - `generated/<title-slug>.html` for every page that stands on its own
  *   (holds an `<x-dc>` template, and every component it imports with
  *   `<dc-import name="X">`, directly or through another component, is
  *   carried in its own manifest as `./X.dc.html`), with the runtime's
- *   manifest reference replaced by three scripts at the end of its body:
- *   the scenario hook below, inline, with the imported components' sources
- *   inline before it; the React builds, by path; and the page runtime as
- *   exported, inline; every page's React builds must be the same bytes;
+ *   manifest reference replaced by scripts at the end of its body: the
+ *   imported components' sources, inline; the scenario hook below, inline;
+ *   the React builds, by path; and the page runtime as exported, inline;
+ *   every page of every export must carry the same React builds and
+ *   runtime, and no two pages may share a file name;
  * - `vendor/react.production.min.js` and `vendor/react-dom.production.min.js`,
  *   the React builds as exported (their licence stays in `vendor/LICENSE`).
  *
@@ -25,19 +28,20 @@
  * maps it there, and over the network otherwise; the generated page maps
  * each one to its inline source, so it still loads nothing.
  *
- * The scenario hook, which is not part of the design, reads `?scenario=`,
- * `?theme=` and `?switch=off` from the URL into the page's props before the
- * runtime boots, and marks the document ready (`html[data-scenario-ready]`)
- * once the page has rendered, so the landing check opens one scenario per
- * URL and waits for it.
+ * The scenario hook, which is not part of the design, reads the page's
+ * props from the URL before the runtime boots (`?<prop>=<value>` for a prop
+ * with listed options, `?<prop>=true|false` for a boolean, and `?switch=off`
+ * to hide the prototype's own switch), and marks the document ready
+ * (`html[data-scenario-ready]`) once the page has rendered, so the landing
+ * check opens one scenario per URL and waits for it.
  *
  * Every generated page also gets a viewport declaration, which the export's
  * pages lack, so a phone lays them out at its own width.
  *
  * Usage: `bun tools/design/unpack-export.ts [--check] <bundle-dir>`, where
  * the bundle holds `export.html`. `generated/` is replaced whole, and only
- * after the whole export has unpacked; `--check` writes nothing and exits 1
- * naming each file that differs from a fresh unpacking. Exit 2 when the file
+ * after every export has unpacked; `--check` writes nothing and exits 1
+ * naming each file that differs from a fresh unpacking. Exit 2 when a file
  * is not such an export.
  */
 import {
@@ -157,11 +161,13 @@ const HOOK = `(function () {
   if (script) {
     try {
       var props = JSON.parse(script.getAttribute("data-props") || "{}");
-      ["scenario", "theme"].forEach(function (name) {
+      Object.keys(props).forEach(function (name) {
         var value = query.get(name);
         var prop = props[name];
-        if (value && prop && (!prop.options || prop.options.indexOf(value) >= 0))
-          prop.default = value;
+        if (!value || !prop || typeof prop !== "object") return;
+        if (prop.options) {
+          if (prop.options.indexOf(value) >= 0) prop.default = value;
+        } else if (prop.editor === "boolean") prop.default = value === "true";
       });
       if (query.get("switch") === "off" && props.showSwitch) props.showSwitch.default = false;
       script.setAttribute("data-props", JSON.stringify(props));
@@ -266,13 +272,10 @@ function importsOf(html: string): string[] {
 /**
  * The components a page imports, by the path the runtime asks for
  * (`./X.dc.html`), with their sources, following imports inside them;
- * `null` when one is not carried in the page's own manifest, or is itself
- * one of the export's pages (`pages`, by title), so the page draws another.
+ * `null` when one is not carried in the page's own manifest, so the page
+ * needs another to render.
  */
-function componentsOf(
-  inner: Bundle,
-  pages: Set<string>,
-): Map<string, string> | null {
+function componentsOf(inner: Bundle): Map<string, string> | null {
   const uuids = new Map(inner.resources.map((r) => [r.id, r.uuid]));
   const found = new Map<string, string>();
   const pending = importsOf(inner.template);
@@ -284,7 +287,6 @@ function componentsOf(
     const asset = uuid === undefined ? undefined : inner.manifest[uuid];
     if (asset === undefined) return null;
     const source = assetText(asset);
-    if (pages.has(titleOf(source, ""))) return null;
     found.set(path, source);
     pending.push(...importsOf(source));
   }
@@ -361,17 +363,18 @@ function withScripts(
 /** A file name that cannot leave the directory it is written to. */
 const SAFE_STEM = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 
-/** Add one page's file to `files`; a page that imports another page, or a component it does not carry, is skipped. */
+/** Add one page's file to `files`; a page that imports a component it does not carry is skipped. */
 function unpackPage(
   id: string,
-  inner: Bundle,
-  pages: Set<string>,
+  page: Asset,
   shared: Shared,
   files: Map<string, string>,
   out: Unpacked,
 ): void {
+  const inner = parseBundle(assetText(page));
+  if (inner === null) return;
   const title = titleOf(inner.template, id);
-  const components = componentsOf(inner, pages);
+  const components = componentsOf(inner);
   if (!inner.template.includes("<x-dc") || components === null) {
     out.skipped.push(title);
     return;
@@ -393,41 +396,57 @@ function unpackPage(
   out.pages.push(name);
 }
 
-/** Every file the export yields, by path under the bundle directory; nothing is written. */
-export function build(dir: string): {
-  files: Map<string, string>;
-  out: Unpacked;
-} {
-  const exportPath = join(dir, "export.html");
-  if (!existsSync(exportPath))
-    throw new UnpackError(`${exportPath} does not exist`);
+/** An addendum export beside `export.html`: `export-<name>.html`. */
+const ADDENDUM = /^export-[A-Za-z0-9][A-Za-z0-9_-]*\.html$/;
+
+/** The bundle's exports, `export.html` first, then each addendum in name order. */
+export function exportsOf(dir: string): string[] {
+  const main = join(dir, "export.html");
+  if (!existsSync(main)) throw new UnpackError(`${main} does not exist`);
+  const addenda = readdirSync(dir)
+    .filter((name) => ADDENDUM.test(name))
+    .sort();
+  return [main, ...addenda.map((name) => join(dir, name))];
+}
+
+/** Add one export's self-standing pages to `files`. */
+function unpackExport(
+  exportPath: string,
+  shared: Shared,
+  files: Map<string, string>,
+  out: Unpacked,
+): void {
   const outer = parseBundle(readFileSync(exportPath, "utf8"));
   if (outer === null)
     throw new UnpackError(`${exportPath} is not a design export`);
-  const shared: Shared = { runtime: null, react: new Map() };
-  const files = new Map<string, string>();
-  const out: Unpacked = { pages: [], skipped: [], react: [] };
-  const inners = outer.pageOrder.map((id) => {
+  const before = out.pages.length;
+  for (const id of outer.pageOrder) {
     const page = outer.manifest[id];
     if (page === undefined)
       throw new UnpackError(
         `${exportPath} lists page ${id} but does not carry it`,
       );
-    return [id, parseBundle(assetText(page))] as const;
-  });
-  const titles = new Set(
-    inners.flatMap(([id, inner]) =>
-      inner === null ? [] : [titleOf(inner.template, id)],
-    ),
-  );
-  for (const [id, inner] of inners)
-    if (inner !== null) unpackPage(id, inner, titles, shared, files, out);
-  if (out.pages.length === 0)
+    unpackPage(id, page, shared, files, out);
+  }
+  if (out.pages.length === before)
     throw new UnpackError(`${exportPath} holds no self-standing page`);
+}
+
+/** Every file the exports yield, by path under the bundle directory; nothing is written. */
+export function build(dir: string): {
+  files: Map<string, string>;
+  out: Unpacked;
+} {
+  const exports = exportsOf(dir);
+  const shared: Shared = { runtime: null, react: new Map() };
+  const files = new Map<string, string>();
+  const out: Unpacked = { pages: [], skipped: [], react: [] };
+  for (const exportPath of exports)
+    unpackExport(exportPath, shared, files, out);
   for (const name of REACT_FILES) {
     const text = shared.react.get(name);
     if (text === undefined)
-      throw new UnpackError(`${exportPath} carries no ${name}`);
+      throw new UnpackError(`${exports.join(", ")}: carries no ${name}`);
     files.set(`vendor/${name}`, text);
     out.react.push(name);
   }
