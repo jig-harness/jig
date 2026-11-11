@@ -366,6 +366,23 @@ describe.each(MODES)("Jira transport: $name", (mode) => {
     expect(limits[1]).toBeLessThan(before + 60_000);
   });
 
+  it("admits once per request sent", async () => {
+    const admitted: string[] = [];
+    const governor = {
+      admit: (_adapter: string, key: string) => void admitted.push(key),
+      observe: () => {},
+    };
+    const transport = httpTransport(
+      mode.base,
+      credential,
+      fake(200, "{}").impl,
+      governor,
+    );
+    await transport({ method: "GET", path: "x" });
+    await transport({ method: "GET", path: "x" });
+    expect(admitted.length).toBe(2);
+  });
+
   it("maps statuses and carries Jira's error body", async () => {
     const fail = async (
       status: number,

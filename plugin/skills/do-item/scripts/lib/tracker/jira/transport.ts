@@ -289,12 +289,9 @@ export function httpTransport(
   fetchImpl: typeof fetch = fetch,
   governor?: BudgetGovernor,
 ): JiraTransport {
-  // Known once a header has resolved; a token command is not run to find out.
-  let key: string | null = null;
   const keyOf = (header: string) => credentialKey("jira", `${base} ${header}`);
   return async (request, signal) => {
     if (cancelled(signal)) throw abortedError(signal);
-    if (key !== null) governor?.admit("jira", key);
     const what = `${request.method} ${request.path}`;
     const url = requestUrl(base, request);
     // One deadline for the whole call: the token command, the request, a
@@ -304,7 +301,9 @@ export function httpTransport(
       signal === undefined ? deadline : AbortSignal.any([deadline, signal]);
     const lease = await authorization.lease(bound);
     let header = headerOf(lease.header, signal);
-    key = keyOf(header);
+    // The key belongs to this call's own attempt: a shared one would record a
+    // refusal against whichever credential a concurrent call resolved last.
+    let key = keyOf(header);
     governor?.admit("jira", key);
     let res = await send(
       fetchImpl,
@@ -319,6 +318,7 @@ export function httpTransport(
         await bodyText(res, signal, what);
         header = headerOf(renewed, signal);
         key = keyOf(header);
+        governor?.admit("jira", key);
         res = await send(
           fetchImpl,
           url,
