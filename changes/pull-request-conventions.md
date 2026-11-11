@@ -21,8 +21,10 @@ release: minor
   branch name) for an organisation that refuses commits without a tracker
   key on its protected branches. `drive-pr/scripts/commit-prefix.ts` rewords
   each unpushed commit that lacks it, merge commits included, and reports a
-  pushed one; drive-pr, fix-ci, resolve-conflicts and do-item run it before
-  they push.
+  pushed one. drive-pr's `finish-round.ts` runs it before every round's
+  push, before anything records the head, and refuses the push (exit `9`)
+  when the check cannot run; fix-ci, resolve-conflicts and do-item run it
+  before they push.
 - The audit warns of a base `pull_requests.base_rules` names that the
   repository does not have.
 

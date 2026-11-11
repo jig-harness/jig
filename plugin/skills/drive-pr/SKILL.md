@@ -2865,23 +2865,7 @@ Commit the validated tree. If the held batch (`bun "${CLAUDE_SKILL_DIR}/scripts/
 carries an item this pass did not hold — a thread's posted reply or a
 finding's stored reason — re-read it against its own finding first, as
 "Re-running after an interruption" below describes: the finish drains every
-hold and posts each finding's stored reason as it stands.
-
-When the repository sets `pull_requests.commit_prefix`, put the issue key in
-every commit before the push, the base-sync merge and a conflict merge
-included: on a detached tree pass the pull request's head branch, whose name
-carries the key.
-
-```bash
-bun "${CLAUDE_SKILL_DIR}/scripts/commit-prefix.ts" [--branch <head branch>]
-```
-
-It rewords each unpushed commit whose message lacks the prefix, keeping its
-tree and author, and moves HEAD to the result. Exit `0`: every commit carries
-it (or no prefix is set). Exit `4`: a commit already pushed lacks it; push
-anyway and say so in the round's report, since rewriting it needs a
-force-push a person decides on. Exit `3`: the branch carries no key or a git
-operation is open; conclude the operation and re-run, or report it. Then:
+hold and posts each finding's stored reason as it stands. Then:
 
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
@@ -2919,7 +2903,13 @@ explicitly scoped to never act on human threads.
 That is the whole of step 6. It performs, in this exact order:
 
 1. **refuses** on a dirty worktree or an unconcluded git operation — before
-   the one irreversible act, not after it; then **refuses** again when at
+   the one irreversible act, not after it; then, where the repository sets
+   `pull_requests.commit_prefix`, runs `bun "${CLAUDE_SKILL_DIR}/scripts/commit-prefix.ts"` on the pull
+   request's head branch, which rewords each unpushed commit lacking the
+   prefix (the base-sync merge and a conflict merge included) and moves
+   HEAD, so every later step holds, pushes, stamps and syncs the reworded
+   head; a commit already pushed without the prefix is reported on stderr
+   and the push goes ahead, and a check that cannot run refuses (`9`); then **refuses** again when at
    least one unresolved review thread anchors a file this round's own
    *non-merge* commits touch (a base-sync merge's own imported files do not
    count) with *incomplete or stale* triage state — not just "no qualifying
@@ -2985,6 +2975,7 @@ returned, which is the case this rule covers.
 | `11` | Another live **session in your tree** holds the drive lease | Almost always stop. `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" clear-lease [PR]` only if you know that session is gone |
 | `13` | Another live **working tree** is driving this PR | Stop. It names the tree, and its session pid when it has one |
 | `7` | Refused *before* pushing: an unresolved, unparked thread anchors a file this round's own non-merge commits touch, and its triage state isn't complete and current — never triaged at all, a current accepted/fix-dependent-moot reply with no hold recorded (a crash between `reply-to-thread.ts` and the hold), an unmarked merit reply on a thread that was never actually resolved (the identical crash, on the resolve side), or an existing hold that's gone stale (a newer comment superseded it, or the *same* comment was edited in place to a different outcome) | Each offending thread is named (id, path, url) in the reason **with its own remedy** — the cases above are not interchangeable, and the command names which one applies to each thread rather than leaving that for you to work out. Follow the printed remedy (re-run `bun "${CLAUDE_SKILL_DIR}/scripts/triage-thread.ts"` with no new post for a stale/crash-recovered hold or resolve, post a fresh reply first for a genuinely superseded one), or park it (§ 4) if `triage-thread.ts` itself refuses, then re-run |
+| `9` | Refused *before* pushing (`REFUSED_COMMIT_PREFIX`): `pull_requests.commit_prefix` is set and the commit-prefix check could not put it on the unpushed commits: the head branch carries no key, a git operation is open, or the configuration, the repository or the pull request could not be read. Nothing was reworded or pushed | Fix what the reason names (conclude or abort the git operation, correct the configuration), then re-run. A head branch that carries no key needs a person: the prefix cannot be rendered for it |
 | `1` | A step failed: the push, the stamp, the head-sync wait, an unreadable batch, or the untriaged-thread check's own infra reads (`TRIAGE_CHECK_FAILED` — an unusable round base, an unreadable `held` batch, an unreadable `parked-keys` set, or a failed `list-unresolved-threads.ts` call) | If the failure is the push, the stamp, or the head-sync wait, nothing downstream ran. An unreadable batch can instead be a **re-read** after a stale item mid-drain — in that case earlier items in the same drain may already be dispatched; the report's `items` list is the record of what actually happened, not the summary line. A `TRIAGE_CHECK_FAILED` means nothing was pushed either — the check fails closed rather than guessing at whether a thread is triaged. Read the step's own diagnostic and re-run once it is addressed |
 
 If you are refused by `11` or `13`, the right response is almost never to clear
