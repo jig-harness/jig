@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import {
   environmentLayer,
   isMapping,
@@ -8,6 +9,7 @@ import {
   userLayerEnabled,
 } from "../../../shared/config-layers.ts";
 import { failureText } from "../text.ts";
+import type { Unplaced } from "../types.ts";
 
 /**
  * Whose repository a served item is. A served person's assignments are read
@@ -86,6 +88,77 @@ export function otherRepoLabel(
   return other ?? null;
 }
 
+/** Whether the item carries a repository label of the taxonomy, this repository's own or another's. */
+function carriesRepoLabel(
+  labels: readonly string[],
+  scope: RepoScope,
+): boolean {
+  const carried = labels.map(named);
+  return [scope.own, ...scope.others].some((label) =>
+    carried.includes(named(label)),
+  );
+}
+
+/**
+ * What this checkout does with a served item that no repository label places:
+ * `start` it, leave it to the repository that is its team's default
+ * (`leave`), or report that it needs a repository label (`hold`).
+ */
+export type UnlabeledMode = "start" | "leave" | "hold";
+
+/**
+ * The mode of this checkout, from the machine file's default repository of
+ * each tracker team (`serve_defaults`). Only a tracker shared by several
+ * repositories has unlabelled items that are not this checkout's already, so
+ * a GitHub repository's own issues, and a checkout without a repository
+ * scope, always `start`.
+ */
+export function unlabeledModeOf(input: {
+  scope: RepoScope | undefined;
+  adapter: string;
+  team: string;
+  /** The Jira site distinguishes projects with the same team key on different sites. */
+  site?: string | null;
+  defaults: Readonly<Record<string, string>> | undefined;
+  repoPath: string;
+}): UnlabeledMode {
+  const { scope, adapter, team, site, defaults, repoPath } = input;
+  if (scope === undefined || scope.invalid !== undefined) return "start";
+  if (adapter === "github") return "start";
+  const key = trackerDefaultKey(adapter, team, site);
+  const chosen =
+    defaults !== undefined && Object.hasOwn(defaults, key)
+      ? defaults[key]
+      : undefined;
+  if (chosen === undefined) return "hold";
+  return chosen === resolve(repoPath) ? "start" : "leave";
+}
+
+/** A served tracker namespace, rather than just an issue-key team. */
+export function trackerDefaultKey(
+  adapter: string,
+  team: string,
+  site?: string | null,
+): string {
+  return adapter === "jira" && site !== null && site !== undefined
+    ? `${adapter}:${site.toLowerCase()}:${team.toLowerCase()}`
+    : `${adapter}:${team.toLowerCase()}`;
+}
+
+/** The mode that applies to an item: only an item no repository label places is held back. */
+export function unlabeledOutcome(
+  labels: readonly string[],
+  scope: RepoScope | undefined,
+  mode: UnlabeledMode | undefined,
+): UnlabeledMode {
+  if (scope === undefined || scope.invalid !== undefined) return "start";
+  return carriesRepoLabel(labels, scope) ? "start" : (mode ?? "start");
+}
+
+/** What a person does about an unplaced item: it names the repository, so the next tick places it. */
+export const NEEDS_REPOSITORY_LABEL =
+  "no repository label places it and no default repository is stated for its team: add one of the repository labels, or name a default in the machine file's serve_defaults";
+
 /**
  * The scope the repository's default-branch values declare under the permitted
  * layers: the user file below them, the environment above. The pull request's
@@ -110,4 +183,23 @@ export function scopeOf(
       invalid: `a configuration layer could not be read: ${failureText(error)}`,
     };
   }
+}
+
+/**
+ * Keeps one report of each item that needs a repository label: repositories
+ * sharing a tracker team all read the same unplaced item, and the first
+ * report of it (in the order given) is the one a person sees.
+ */
+export function dropRepeatedLabelNeeds(
+  reports: readonly { unplaced: Unplaced[] }[],
+): void {
+  const seen = new Set<string>();
+  for (const report of reports)
+    report.unplaced = report.unplaced.filter((u) => {
+      if (u.cause !== "needs-repository-label") return true;
+      const key = `${u.source ?? ""}:${u.target}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 }

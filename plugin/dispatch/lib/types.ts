@@ -265,10 +265,15 @@ export interface Unplaced {
   target: string;
   record: RecordName;
   reason: string;
-  /** Set for an item assigned by someone who cannot write: only a person can settle it. */
-  cause?: "assigner-cannot-write";
+  /**
+   * Set for an item only a person can settle: assigned by someone who cannot
+   * write, or placed in no repository by its labels and no default.
+   */
+  cause?: "assigner-cannot-write" | "needs-repository-label";
   /** Set when reading the record failed (a comment listing, an unreadable ledger), as against a state the record legitimately leaves unplaced. */
   readFailed?: true;
+  /** Internal tracker namespace used to keep identical issue keys distinct across trackers. */
+  source?: string;
 }
 
 /** What a notification is about. */

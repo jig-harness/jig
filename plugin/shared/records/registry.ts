@@ -831,9 +831,9 @@ const TRACKER: RecordKind[] = [
   {
     name: "tracker-related",
     medium: "tracker",
-    owner: "skills/do-item/scripts/lib/tracker/github/tracker.ts",
-    at: "a comment on a GitHub issue relating it to another",
-    markers: ["jig:related"],
+    owner: "skills/do-item/scripts/lib/tracker/github/related-migration.ts",
+    at: "a legacy comment on a GitHub issue relating it to another, read until the migration marks it superseded",
+    markers: ["jig:related", "jig:related-superseded"],
     version: 0,
   },
   {
