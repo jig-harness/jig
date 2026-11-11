@@ -71,6 +71,8 @@ import type { StaleCause } from "./types.ts";
 import { cancelledBeforeExecution } from "./cancellation.ts";
 import type { StandingAnswer } from "./routine-questions.ts";
 export { cancelledBeforeExecution } from "./cancellation.ts";
+export { UNARMED_FACTS } from "./launch-keep.ts";
+import { latestArms, latestFailedRearms } from "./launch-keep.ts";
 
 /** What a launch starts: a re-arm of a stopped drive, a takeover of a wedged one, a pickup's `do-item` session, or a merge's follow-up pass. */
 export type LaunchAction =
@@ -165,6 +167,10 @@ export interface LaunchRecord {
   round?: number | null;
   /** For a re-drive: why it was launched, for its outcome row, and the change it re-drove, which is never re-driven twice; `null` for any other record. */
   redrive?: StaleCause | null;
+  /** For a re-arm of a ledger with a recorded exit: the pull request's head and its branch's head it launched at (`failed-rearms.ts`); absent when they did not read. */
+  heads?: string | null;
+  /** The runtime's `launch` was called for this record, so a launch may have started whether or not its answer was kept. Absent on a record never launched. */
+  launchCalled?: boolean;
   /** Explicit re-arm request consumed after a successful launch. */
   rearmLabel?: string | null;
   /** The request label was successfully removed after this launch was accepted. */
@@ -807,38 +813,6 @@ function latestRedrives(records: ReadRecord[]): Set<string> {
   return new Set([...latest.values()].map((r) => r.record.id));
 }
 
-/** The ids of the latest record under each key `keyOf` gives; a record it gives `null` is not kept. */
-function latestIdsBy(
-  records: ReadRecord[],
-  keyOf: (r: ReadRecord) => string | null,
-): Set<string> {
-  const latest = new Map<string, ReadRecord>();
-  for (const r of records) {
-    const key = keyOf(r);
-    if (key === null) continue;
-    const seen = latest.get(key);
-    if (seen === undefined || r.record.createdAt >= seen.record.createdAt)
-      latest.set(key, r);
-  }
-  return new Set([...latest.values()].map((r) => r.record.id));
-}
-
-/** The facts a launch carries when it armed a pull request that had no drive ledger. */
-export const UNARMED_FACTS = "no ledger, head ";
-
-/**
- * The ids of each pull request's latest arm record per head commit: an arm
- * is not repeated at the same head, and the record is the only evidence of
- * that when the arm left no ledger, so it outlives the retention.
- */
-function latestArms(records: ReadRecord[]): Set<string> {
-  return latestIdsBy(records, (r) =>
-    isDrive(r.record) && r.record.facts?.startsWith(UNARMED_FACTS)
-      ? `${r.record.repo}#${String(r.record.pr)}\0${r.record.facts}`
-      : null,
-  );
-}
-
 /**
  * The ids of each item's latest pickup record: while it is unreleased it is
  * the only thing that keeps the item from being picked up again, so it stays
@@ -873,7 +847,12 @@ export function pruneLaunches(
   const kept = latestRefusals(records);
   const settled = settledEnds(root);
   for (const id of unsettledStartups(records, settled)) kept.add(id);
-  for (const latest of [latestPickups, latestRedrives, latestArms])
+  for (const latest of [
+    latestPickups,
+    latestRedrives,
+    latestArms,
+    latestFailedRearms,
+  ])
     for (const id of latest(records)) kept.add(id);
   for (const r of records)
     if (
