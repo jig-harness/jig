@@ -6,7 +6,7 @@ import type {
 } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
 import type { LiveIssue } from "../../../skills/do-item/scripts/lib/execution-plan.ts";
 import type { PickupReads } from "../pickup-reads.ts";
-import type { HeldIssue } from "./served-reads.ts";
+import { trackerScope, type HeldIssue } from "./served-reads.ts";
 import { planKeys, servedPlan } from "./served-plan.ts";
 
 /**
@@ -46,7 +46,7 @@ async function body(
       description: carried.description,
       parent: carried.parent,
     };
-  const key = `${tracker.adapter}:${tracker.team}:parent-plan:${issue.identifier}`;
+  const key = `${trackerScope(tracker)}:parent-plan:${issue.identifier}`;
   const kept = cache.get<Body>(key);
   if (issue.updatedAt && kept?.updatedAt === issue.updatedAt) return kept;
   const read = () => tracker.getIssue(issue.identifier);

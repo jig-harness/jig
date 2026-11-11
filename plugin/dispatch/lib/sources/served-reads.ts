@@ -385,6 +385,11 @@ function assemble(
   };
 }
 
+/** Names the tracker an issue key belongs to: the adapter, its instance and its team. */
+export function trackerScope(tracker: Tracker): string {
+  return `${tracker.adapter}:${tracker.instance ?? ""}:${tracker.team}`;
+}
+
 /**
  * What the tracker's configuration makes of its issues: the state names and
  * the facet stores. Repositories that differ in either cannot share a reading.

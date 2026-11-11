@@ -28,6 +28,7 @@ import {
 import { planKeys, servedPlan } from "./served-plan.ts";
 import {
   type ServedView,
+  trackerScope,
   type ServedViews,
   sharedView,
 } from "./served-reads.ts";
@@ -100,7 +101,7 @@ async function metadata(
   cache: PickupReads,
   carried: QueueRelation[] | null,
 ): Promise<Metadata> {
-  const key = `${tracker.adapter}:${tracker.team}:item:${issue.identifier}:${identity}:${epic}`;
+  const key = `${trackerScope(tracker)}:item:${issue.identifier}:${identity}:${epic}`;
   const kept = cache.get<Metadata>(key);
   if (issue.updatedAt && kept?.updatedAt === issue.updatedAt)
     return carried === null
@@ -367,6 +368,8 @@ interface Found {
   unplaced: Unplaced[];
   candidates: Candidate[];
   pending: Pending[];
+  /** A read of this node failed, so the reading is incomplete. */
+  failed?: boolean;
 }
 
 /**
@@ -395,6 +398,7 @@ async function walk(
     for (const f of found) {
       all.unplaced.push(...f.unplaced);
       all.candidates.push(...f.candidates);
+      if (f.failed) all.failed = true;
       generation.push(...f.pending);
     }
   }
@@ -486,6 +490,7 @@ async function visitNode(ctx: WalkContext, node: Pending): Promise<Found> {
     await placeNode(ctx, node, found);
   } catch (error) {
     if (isRateLimited(error)) throw error;
+    found.failed = true;
     found.unplaced.push({
       ...itemOf(issue),
       record: "tracker",
