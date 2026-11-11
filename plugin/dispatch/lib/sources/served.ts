@@ -384,7 +384,7 @@ interface Found {
 async function walk(
   ctx: WalkContext,
   roots: PoolIssue[],
-  all: Omit<Found, "pending"> = { unplaced: [], candidates: [] },
+  all: Omit<Found, "pending">,
 ): Promise<Omit<Found, "pending">> {
   let generation: Pending[] = roots.map((issue) => ({
     issue,

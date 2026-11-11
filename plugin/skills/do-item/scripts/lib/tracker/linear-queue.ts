@@ -284,14 +284,18 @@ export function queueOperations(opts: QueueOptions) {
       )
         throw new ShapeError("changed issues: unreadable");
       const changed = nodes.map((n, i) => record(n, `changed issues[${i}]`));
-      const times = changed
+      // ISO 8601 UTC timestamps order by code unit, so the latest is the max.
+      const latest = changed
         .map((n) => n.updatedAt)
         .filter((t): t is string => typeof t === "string")
-        .sort();
+        .reduce<string | null>(
+          (max, t) => (max === null || t > max ? t : max),
+          null,
+        );
       return {
         keys: changed.map((n, i) => str(n.identifier, `changed issues[${i}]`)),
         complete: !conn.pageInfo.hasNextPage,
-        latest: times.at(-1) ?? null,
+        latest,
       };
     },
   };
