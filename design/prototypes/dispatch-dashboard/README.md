@@ -50,7 +50,11 @@ drawn at a fixed 1200px width and are not scenarios.
 The scorecard that reviewed rounds 2 and 2b is
 `../dispatch-dashboard.scorecard.md`.
 
-Bar outcome: pass
+Bar outcome: fail
+
+The scorecard scores Truth as a failure: round 2b's Merge, Running, Queue and
+History tab counts are fixed sample figures that do not follow the scenario.
+The failed acceptance stays recorded until a later round fixes those counts.
 
 Export base: 11abc0f661aebc39edda38ac804fcd55803eaab4
 Export base provenance: raw export
