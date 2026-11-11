@@ -188,7 +188,7 @@ function evidenceLines(text: string): string[] {
     if (kind !== "text" || quoted || line.trim() === "") return flush();
     if (depth !== undefined || boundary) flush();
     if (!inTable && paragraph.length === 0 && line.includes("|"))
-      inTable = TABLE_DELIMITER.test(rows[index + 1]?.line ?? "");
+      inTable = startsTable(line, rows[index + 1]?.line ?? "");
     if (!inTable) return void paragraph.push(line);
     out.push(
       line
@@ -203,6 +203,21 @@ function evidenceLines(text: string): string[] {
 
 /** A GitHub table's delimiter row, which makes the line above its header. */
 const TABLE_DELIMITER = /^\s*\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)*\|?\s*$/;
+
+const tableCells = (row: string) =>
+  row
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/(?<!\\)\|$/, "")
+    .split(/(?<!\\)\|/).length;
+
+/** Whether `header` and the `delimiter` row after it open a GitHub table: the delimiter row has the header's cell count. */
+function startsTable(header: string, delimiter: string): boolean {
+  return (
+    TABLE_DELIMITER.test(delimiter) &&
+    tableCells(header) === tableCells(delimiter)
+  );
+}
 
 /**
  * The reading of an item's linked pull requests: `open` while any is open,
