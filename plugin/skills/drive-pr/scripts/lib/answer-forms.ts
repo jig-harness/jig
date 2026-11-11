@@ -452,12 +452,24 @@ export function noteWithoutAnswer(
     : null;
 }
 
-/** Old framed records use the same checked legacy reader as their original park. */
-export function answerDecision(item: ParkedItem): ParkedDecision | undefined {
-  if (item.decision !== undefined) return item.decision;
-  if (item.record === undefined || item.class === undefined) return undefined;
+/**
+ * The decision an answer to `item` is read against, or why there is none:
+ * the item was parked before framing, its legacy decision record does not
+ * read (with what is wrong with it), or the record names no single
+ * recommended option. Old framed records use the same checked legacy reader
+ * as their original park.
+ */
+export function decisionReading(
+  item: ParkedItem,
+):
+  | { decision: ParkedDecision }
+  | { none: "unframed" | "no-recommendation" }
+  | { problems: string[] } {
+  if (item.decision !== undefined) return { decision: item.decision };
+  if (item.record === undefined || item.class === undefined)
+    return { none: "unframed" };
   const parsed = parseDecisionRecord(item.record, item.class);
-  if ("problems" in parsed) return undefined;
+  if ("problems" in parsed) return { problems: parsed.problems };
   const r = parsed.record;
   const options = recordOptions(r.Options, r.Recommended).map((o, i) => ({
     id: `o${i + 1}`,
@@ -468,20 +480,28 @@ export function answerDecision(item: ParkedItem): ParkedDecision | undefined {
   }));
   const recommended = options.filter((o) => o.recommended);
   const chosen = recommended.length === 1 ? recommended[0] : undefined;
-  if (chosen === undefined) return undefined;
+  if (chosen === undefined) return { none: "no-recommendation" };
   return {
-    schema: "parked-decision/v1",
-    class: item.class,
-    call: {
-      id: "a",
-      question: r.Question,
-      options: options.map(({ recommended: _recommended, ...o }) => o),
-      recommended: chosen.id,
-      why: r.Recommended,
+    decision: {
+      schema: "parked-decision/v1",
+      class: item.class,
+      call: {
+        id: "a",
+        question: r.Question,
+        options: options.map(({ recommended: _recommended, ...o }) => o),
+        recommended: chosen.id,
+        why: r.Recommended,
+      },
+      steps: recordSteps(r["Steps for a person"]),
+      alreadyDone: r["Already done"],
     },
-    steps: recordSteps(r["Steps for a person"]),
-    alreadyDone: r["Already done"],
   };
+}
+
+/** The decision an answer to `item` is read against; `undefined` when `decisionReading` finds none. */
+export function answerDecision(item: ParkedItem): ParkedDecision | undefined {
+  const read = decisionReading(item);
+  return "decision" in read ? read.decision : undefined;
 }
 
 /** Each person's last word, with deterministic ordering across readers. */

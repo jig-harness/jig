@@ -4,8 +4,9 @@
  * acts under: a detached waiter runs `dispatch --apply --repo <path>` (here
  * a stand-in that records its arguments, named by `JIG_WAKE_COMMAND`) and
  * exits, and sends made while that tick runs start no second one before the
- * minute is up. A mailbox directive, a dry run and a repository whose stage
- * this machine does not enable wake nothing.
+ * minute is up. An `--all` approval that posted only part of its comments
+ * still wakes it for those it posted. A mailbox directive, a dry run and a
+ * repository whose stage this machine does not enable wake nothing.
  */
 import { afterEach, describe, expect, it } from "bun:test";
 import {
@@ -21,6 +22,8 @@ import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts"
 import { waitFor } from "../../dispatch/__tests__/launch-fixtures.ts";
 import { tickWakeDir } from "../../dispatch/lib/wake-tick.ts";
 import {
+  framedLedger,
+  framedPark,
   ledgerOn,
   pullRequest,
   REPO,
@@ -174,6 +177,46 @@ describe("jig send wakes the tick that reads its record", () => {
       () => !answers(waiter as number),
     );
   }, 15_000);
+});
+
+describe("a partly sent --all approval", () => {
+  it("wakes the re-arm's tick for the comments it posted", async () => {
+    const w = world();
+    pullRequest(
+      w,
+      12,
+      [],
+      [
+        ledgerOn(
+          701,
+          framedLedger(12, [
+            framedPark("F_scope", "scope"),
+            framedPark("F_next", "next-item"),
+          ]),
+        ),
+      ],
+    );
+    const dry = await w.send([
+      ADDRESS,
+      "answer",
+      "--all",
+      "--approve",
+      "--dry-run",
+    ]);
+    const set = /--decision-set ([0-9a-f]{12})/.exec(dry.stdout)?.[1] ?? "";
+    writeFileSync(join(w.dir, "post-fail-at"), "2");
+    const r = await w.send([
+      ADDRESS,
+      "answer",
+      "--all",
+      "--approve",
+      "--decision-set",
+      set,
+    ]);
+    expectSpawnExit(r, 1);
+    expect(r.stdout).toContain(`the dispatcher's tick for ${REPO}, woken now`);
+    await waitFor("the woken tick", () => w.ticks().length === 1);
+  });
 });
 
 describe("jig send wakes no tick", () => {

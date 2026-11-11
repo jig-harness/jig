@@ -319,8 +319,8 @@ checks:
   cannot drift from its reader.
 - **`send` checks before it writes.** It reads the address first and
   refuses a request the station cannot take: a `drive` on a pull request
-  that has a ledger, an `answer` whose key is not a parked, unanswered
-  question of that pull request, a second `hold`. The text of an `answer`
+  that has a ledger, an `answer` whose key is not a parked question of that
+  pull request, a second `hold`. The text of an `answer`
   is one line within a length limit, with no control characters and no
   hidden marker, since it reaches the drive's passes as a verdict.
 - **`send` says who writes, and where.** Before it writes, it prints the

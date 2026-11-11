@@ -1247,11 +1247,14 @@ typographic quotes and a final full stop do not matter) and written as the
 park spells it. `--note '<text>'` adds a `note <key>:` line beside either,
 checked as an answer's text is. An answer names exactly one of your words,
 `--approve` or `--choose`; one that names none, or two, is a usage error.
+Your words are refused on a framed park when the drive's readers would
+count them as a choice (`approve`, `choose Keep`): send that as `--approve`
+or `--choose`, which binds it to the framing you read.
 A framed park carries a
 [decision digest](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md):
 run the send with `--dry-run` first, which shows the option in full (what it
 changes and what it costs) with the digest, and prints the command to send,
-naming the digest with `--decision <digest>`. A real structured send must
+naming the digest with `--decision <digest>` (and repeating any `--as`). A real structured send must
 name it, and is refused, writing nothing, when the park's digest is another
 (the drive framed the question again since you read it). A park from before
 digests has none: its answer is bound by time alone, and `--decision` is
@@ -1263,19 +1266,25 @@ counts, so you may answer an item you already answered: `send` shows your
 earlier answer first and says the new one replaces it. Another person's
 answer does not stop a send; `send` names it, and when your answers differ
 (another option, another note, or a free answer beside a structured one)
-the item is disputed and waits until you agree.
+the item is disputed and waits until you agree. Another person's stale
+answer (one naming an earlier framing) keeps the item waiting until they
+answer again.
 
 **Approving several at once.** `answer --all --approve` approves the
 recommendation of every open item (none answered or disputed) whose class
 Jig's table of acts lists as Decide by name, one comment per item. It
-leaves out, saying why, a class whose act is Authorize, a repository's own
-class (which the table does not list), an item with no framed decision or
+leaves out, saying why, a class whose act is another (Authorize, Merge,
+Reply), a repository's own class (which the table does not list), an item
+another person answered (stale or not), an item with no framed decision or
 recommendation, and a park from before digests; each of those is approved
 only by its own key. Its `--dry-run` lists each item it would approve with
 its digest and prints one
 [decision set token](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md);
 the real send names it (`--decision-set <token>`) and is refused, writing
-nothing, when the items or any digest changed since.
+nothing, when the items or any digest changed since. When the forge refuses
+a post part-way, `send` prints the comments it posted, wakes their reader,
+names the items it did not send and exits `1`; run the dry run again for
+the rest.
 
 **It says who writes, and where.** Before it writes it prints the
 repository in full, the login it writes as (the forge login the `gh` client

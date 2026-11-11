@@ -14,6 +14,9 @@
  * Checked before the write: the pull request is open, its drive ledger
  * reads, every place an answer could be was read, and the key is one of its
  * parked questions. A structured form must name an option the park offers.
+ * On a framed park, the person's own words are refused when the readers
+ * would count them as a choice (`approve`, `choose <option>`): a choice is
+ * written only through `--approve` or `--choose`, bound to its framing.
  * A park with a digest binds a structured answer to the framing the person
  * read: `--dry-run` prints the digest and the command that names it, a real
  * send must name it (`--decision`), and a digest that is no longer the
@@ -25,7 +28,9 @@
  * answer is the one the readers count, so the plan shows the earlier answer
  * first and says this one replaces it. Another person's answer does not
  * refuse the send; the plan names it and says that differing answers leave
- * the item disputed, which the two settle between them.
+ * the item disputed, which the two settle between them, and that another
+ * person's stale answer keeps the item waiting until they answer again. The
+ * command a dry run prints repeats the `--as` it was given.
  */
 import { ok } from "../../shared/outcome.ts";
 import { localWriter } from "../../shared/records/writer.ts";
@@ -39,13 +44,21 @@ import { parkedQuestions } from "../../ask/lib/park-reading.ts";
 import type { AskContext } from "../../ask/lib/station.ts";
 import type { ParkedItem } from "../../skills/drive-pr/scripts/lib/state/park-frame.ts";
 import type { AnswerRequest } from "./answer-request.ts";
-import { optionInFull, resolveChoice, shellWord } from "./answer-choice.ts";
+import {
+  freeChoiceFault,
+  optionInFull,
+  resolveChoice,
+  shellWord,
+} from "./answer-choice.ts";
+import type { PendingAnswer } from "../../skills/drive-pr/scripts/lib/state/pass-handoff.ts";
 import {
   ANSWER_READER,
   answersTo,
+  asFlag,
   earlierAnswer,
   READABLE_NOTICE,
   readParks,
+  type Sender,
   TICK,
 } from "./answer-parks.ts";
 import { type Planned, refused } from "./plan.ts";
@@ -59,12 +72,13 @@ interface Written {
   detail: Array<[string, string]>;
 }
 
-/** The command a person sends after reading the dry run: the request, the option as the park spells it, and the digest. */
+/** The command a person sends after reading the dry run: the request, the option as the park spells it, the digest and the `--as` it was given. */
 function sendCommand(
   address: string,
   request: OneAnswer,
   option: string,
   digest: string,
+  sender: Sender,
 ): string {
   const form =
     request.form.kind === "approve"
@@ -72,7 +86,7 @@ function sendCommand(
       : `--choose ${shellWord(option)}`;
   const note =
     request.note === undefined ? "" : ` --note ${shellWord(request.note)}`;
-  return `jig send ${address} answer ${request.key} ${form}${note} --decision ${digest}`;
+  return `jig send ${address} answer ${request.key} ${form}${note} --decision ${digest}${asFlag(sender)}`;
 }
 
 type Structured = Extract<OneAnswer["form"], { kind: "approve" | "choose" }>;
@@ -100,19 +114,23 @@ function bindingFault(
 function structured(
   item: ParkedItem,
   request: OneAnswer & { form: Structured },
-  login: string,
   address: string,
-  dryRun: boolean,
+  sender: Sender,
 ): Planned | Written {
-  const fault = bindingFault(item, request.decision, dryRun);
+  const fault = bindingFault(item, request.decision, sender.dryRun);
   if (fault !== null) return refused(fault);
-  const resolved = resolveChoice(item, request.form, request.note, login);
+  const resolved = resolveChoice(
+    item,
+    request.form,
+    request.note,
+    sender.login,
+  );
   if (!resolved.ok) return resolved;
   const { option, recommended, text, parts } = resolved.value;
   const digest = item.digest;
   const send: Row[] =
-    digest !== undefined && dryRun
-      ? [["send", sendCommand(address, request, option.name, digest)]]
+    digest !== undefined && sender.dryRun
+      ? [["send", sendCommand(address, request, option.name, digest, sender)]]
       : [];
   return {
     text,
@@ -133,18 +151,20 @@ function structured(
 function writtenFor(
   item: ParkedItem,
   request: OneAnswer,
-  login: string,
   address: string,
-  dryRun: boolean,
+  sender: Sender,
 ): Planned | Written {
   const { form } = request;
-  return form.kind === "free"
-    ? { text: form.text, detail: [] }
-    : structured(item, { ...request, form }, login, address, dryRun);
+  if (form.kind !== "free")
+    return structured(item, { ...request, form }, address, sender);
+  const fault = freeChoiceFault(item, form.text, sender.login);
+  return fault === null ? { text: form.text, detail: [] } : refused(fault);
 }
 
-/** The notice of an answer: who can read it, and what it does to earlier answers. */
-function noticeOf(replaces: boolean, beside: boolean): string {
+/** The notice of an answer: who can read it, and what it does to earlier answers, `others` being other people's latest answers. */
+function noticeOf(replaces: boolean, others: readonly PendingAnswer[]): string {
+  const stale = others.filter((a) => a.stale === true).map((a) => a.author);
+  const beside = others.length > 0;
   return [
     READABLE_NOTICE,
     ...(replaces
@@ -157,6 +177,10 @@ function noticeOf(replaces: boolean, beside: boolean): string {
           "when this answer and another person's differ (another option, another note, or a free answer beside a structured one), the item is disputed and waits until you agree",
         ]
       : []),
+    ...stale.map(
+      (who) =>
+        `${who}'s stale answer keeps the item waiting until ${who} answers again`,
+    ),
   ].join("; ");
 }
 
@@ -164,10 +188,9 @@ function noticeOf(replaces: boolean, beside: boolean): string {
 async function planAnswer(
   ctx: AskContext,
   request: OneAnswer,
-  login: string,
-  writesAs: string,
-  dryRun: boolean,
+  sender: Sender,
 ): Promise<Planned> {
+  const { login, writesAs } = sender;
   const read = await readParks(ctx);
   if (!read.ok) return read;
   const { pr, doc, ledger, found } = read.value;
@@ -183,7 +206,7 @@ async function planAnswer(
       }`,
     );
   }
-  const written = writtenFor(item, request, login, ctx.name, dryRun);
+  const written = writtenFor(item, request, ctx.name, sender);
   if ("ok" in written) return written;
   const answers = answersTo(found, key);
   const mine = answers.filter(
@@ -210,7 +233,7 @@ async function planAnswer(
     reader: ANSWER_READER,
     tick: TICK,
     undo: "none once the re-arm has read it; until then, delete the comment, or answer again: your latest answer is the one that counts",
-    notice: noticeOf(mine.length > 0, others.length > 0),
+    notice: noticeOf(mine.length > 0, others),
     detail: written.detail,
     write: async () => {
       const body = answerComment(
@@ -231,11 +254,9 @@ async function planAnswer(
 export function planAnswerRequest(
   ctx: AskContext,
   request: AnswerRequest,
-  login: string,
-  writesAs: string,
-  dryRun: boolean,
+  sender: Sender,
 ): Promise<Planned> {
   return request.all
-    ? planAnswerAll(ctx, request.decisionSet, login, writesAs, dryRun)
-    : planAnswer(ctx, request, login, writesAs, dryRun);
+    ? planAnswerAll(ctx, request.decisionSet, sender)
+    : planAnswer(ctx, request, sender);
 }

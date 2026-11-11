@@ -292,7 +292,10 @@ person's next attempt after inspecting the handoff.
    drive framed the question again: run the dry run again and show it.
    When the dry run shows the person's own earlier answer, say the new one
    replaces it; when it shows someone else's, say differing answers leave
-   the item disputed.
+   the item disputed. When the person's own words are refused because the
+   drive would read them as a choice ("approve"), use `--approve` or
+   `--choose` instead. An `--all` send reported as `partly sent` names what
+   it did not send: run its dry run again and show what is still open.
 6. **The question's key** is in its framed decision, as `answer <key>: …`:
    in the drive ledger comment a `question` entry of `--thread` links, and
    in the dispatcher's notification. `jig ask` does not print it; when the

@@ -47,8 +47,14 @@ export interface Plan {
   earlier?: string[];
   /** Named lines that follow the plan's rows: what the record decides, in full. */
   detail?: Array<[name: string, value: string]>;
-  /** Write it: the link to or path of what was written, or why it was not. */
-  write(): Promise<Outcome<string, "refused">>;
+  /** Write it: the link to or path of what was written (or, of several records, what was and what was not), or why nothing was. */
+  write(): Promise<Outcome<string | PartSent, "refused">>;
+}
+
+/** A write of several records that stopped part-way: the links of those sent, and which were not and why. */
+export interface PartSent {
+  sent: string;
+  unsent: string;
 }
 
 /** A refusal: a request the station cannot take, or one this machine will not write. */

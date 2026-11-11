@@ -268,7 +268,7 @@ describe("answering again", () => {
 });
 
 describe("--all --approve", () => {
-  /** Open Decide items, an Authorize one, a repository's own class, one before digests, and one answered. */
+  /** Open Decide items, Authorize, Merge and Reply ones, a repository's own class, one before digests, and one answered. */
   function many(w: SendWorld, nextItem = framedPark("F_next", "next-item")) {
     pullRequest(
       w,
@@ -281,6 +281,8 @@ describe("--all --approve", () => {
             framedPark(KEY, "scope"),
             nextItem,
             framedPark("F_release", "release"),
+            framedPark("F_merge", "merge"),
+            framedPark("F_reply", "human-thread"),
             framedPark("F_own", "house-style"),
             framedPark("F_old", "escalated", false),
             framedPark("F_done", "scope"),
@@ -314,6 +316,8 @@ describe("--all --approve", () => {
     expect(r.stdout).toContain(`${KEY} (scope) [${SCOPE}]: Keep`);
     expect(r.stdout).toContain(`F_next (next-item) [${digestOf("next-item")}]`);
     expect(r.stdout).toMatch(/F_release \(release\): .*Authorize/);
+    expect(r.stdout).toMatch(/F_merge \(merge\): .*to Merge/);
+    expect(r.stdout).toMatch(/F_reply \(human-thread\): .*to Reply/);
     expect(r.stdout).toMatch(/F_own \(house-style\): .*does not list/);
     expect(r.stdout).toMatch(/F_old \(escalated\): .*no decision digest/);
     expect(r.stdout).toMatch(/F_done \(scope\): .*answered/);

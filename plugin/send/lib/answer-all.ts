@@ -6,7 +6,9 @@
  * Eligible is an open item (no answer the readers count, and none disputed)
  * whose class the shared acts table (`shared/acts.ts`) lists as Decide by
  * name, with a framed decision that recommends an option and a decision
- * digest. Left out, and named with why: an answered or disputed item; a
+ * digest. Left out, and named with why: an answered or disputed item; an
+ * item another person answered, stale or not, whose answer the person
+ * should see by its key first; a
  * class whose act is Authorize (or Merge, or Reply); a class the table does
  * not list, a repository's own, which reads Decide only as a fallback; an
  * item with no framed decision or no recommendation; and a park from before
@@ -19,6 +21,11 @@
  * (`--decision-set`); it reads the items again and refuses, writing
  * nothing, when the token it computes differs, so an item added or framed
  * again since the dry run is never approved unseen.
+ *
+ * The comments are posted in order. When the forge refuses one after
+ * others were posted, the write reports a partial send (`PartSent`): the
+ * links posted, and the items not sent and why, so the command prints what
+ * it sent, wakes its reader and points to the dry run for the rest.
  */
 import { createHash } from "node:crypto";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
@@ -35,12 +42,15 @@ import type { AskContext } from "../../ask/lib/station.ts";
 import { type Resolved, resolveChoice } from "./answer-choice.ts";
 import {
   ANSWER_READER,
+  answersTo,
+  asFlag,
   type ReadParks,
+  type Sender,
   READABLE_NOTICE,
   readParks,
   TICK,
 } from "./answer-parks.ts";
-import { type Planned, refused } from "./plan.ts";
+import { type PartSent, type Planned, refused } from "./plan.ts";
 
 interface Eligible {
   item: ParkedItem;
@@ -72,6 +82,11 @@ function eligibility(
     return "already answered; answer it by its key to change your answer";
   if (found.disputed.some((v) => v.item.key === item.key))
     return "its answers are disputed; answer it by its key";
+  const others = answersTo(found, item.key)
+    .filter((a) => a.author.toLowerCase() !== login.toLowerCase())
+    .map((a) => `${a.author}${a.stale === true ? " (stale)" : ""}`);
+  if (others.length > 0)
+    return `another person answered it (${others.join(", ")}); answer it by its key, where the send shows their answer`;
   const cls = classOf(item);
   const act = listedActOfClass(cls);
   if (act === undefined)
@@ -142,7 +157,7 @@ async function postAll(
   fallback: string,
   eligible: readonly Eligible[],
   login: string,
-): Promise<Outcome<string, "refused">> {
+): Promise<Outcome<string | PartSent, "refused">> {
   const links: string[] = [];
   for (const e of eligible) {
     const body = answerComment(
@@ -155,14 +170,14 @@ async function postAll(
     );
     const posted = await postAnswerComment(repo, pr, body);
     if (!posted.ok) {
-      const before =
-        links.length === 0
-          ? "nothing was posted"
-          : `posted ${links.length} of ${eligible.length} (${links.join(", ")})`;
-      return failed(
-        "refused",
-        `${before}, then ${e.item.key}: ${posted.failure.reason}`,
-      );
+      const unsent = eligible
+        .slice(links.length)
+        .map((u) => u.item.key)
+        .join(", ");
+      const why = `${e.item.key}: ${posted.failure.reason}; not sent: ${unsent}`;
+      return links.length === 0
+        ? failed("refused", why)
+        : ok({ sent: links.join("\n"), unsent: why });
     }
     links.push(posted.value ?? fallback);
   }
@@ -173,10 +188,9 @@ async function postAll(
 export async function planAnswerAll(
   ctx: AskContext,
   decisionSet: string | undefined,
-  login: string,
-  writesAs: string,
-  dryRun: boolean,
+  sender: Sender,
 ): Promise<Planned> {
+  const { login, writesAs, dryRun } = sender;
   const read = await readParks(ctx);
   if (!read.ok) return read;
   const { pr, doc, ledger, found } = read.value;
@@ -212,7 +226,7 @@ export async function planAnswerAll(
       leftOut,
       token,
       dryRun
-        ? `jig send ${ctx.name} answer --all --approve --decision-set ${token}`
+        ? `jig send ${ctx.name} answer --all --approve --decision-set ${token}${asFlag(sender)}`
         : null,
     ),
     write: () => postAll(ctx.address.repo, pr, doc.url, eligible, login),

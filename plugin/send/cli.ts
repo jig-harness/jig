@@ -22,7 +22,9 @@
  * (`JIG_LAUNCH` set) is refused the verbs that are a person's.
  *
  * It exits `0` when it sent (or, with `--dry-run`, would send), `1` when it
- * refused or the write failed, and `2` on a usage error: a malformed
+ * refused or the write failed (an `--all` approval that posted only part of
+ * its comments prints what it sent, wakes their reader, names what it did
+ * not send and exits `1`), and `2` on a usage error: a malformed
  * address, an unknown station or verb, a verb the station does not take,
  * an answer that names no option or two forms, or an answer's text or note
  * that is not one line within its limit. The answer flags (`--approve`,
@@ -173,7 +175,12 @@ async function planFor(
     case "release":
       return planLabel(ctx, request.verb, writesAs);
     case "answer":
-      return planAnswerRequest(ctx, request, login.value, writesAs, dryRun);
+      return planAnswerRequest(ctx, request, {
+        login: login.value,
+        writesAs,
+        dryRun,
+        as,
+      });
     default:
       return planMailbox(ctx, request, login.value, writesAs);
   }
@@ -214,8 +221,17 @@ export async function sendMain(args: SendArguments): Promise<number> {
     console.error(`jig send: not sent: ${wrote.failure.reason}`);
     return SEND_EXIT.REFUSED;
   }
-  console.log(renderSent(plan, wrote.value, wake(resolved, plan)));
-  return SEND_EXIT.SENT;
+  const sent = wrote.value;
+  const part = typeof sent === "string" ? null : sent;
+  // What was posted is read whether or not the rest was: wake its reader either way.
+  console.log(
+    renderSent(plan, part?.sent ?? (sent as string), wake(resolved, plan)),
+  );
+  if (part === null) return SEND_EXIT.SENT;
+  console.error(
+    `jig send: partly sent: ${part.unsent}; run the same command with --dry-run again, which lists what is still open, and send what it prints`,
+  );
+  return SEND_EXIT.REFUSED;
 }
 
 /**

@@ -12,11 +12,22 @@ import { answerText } from "../../ask/lib/park-reading.ts";
 import type { PullDoc } from "../../ask/lib/forge.ts";
 import type { AskContext } from "../../ask/lib/station.ts";
 import type { ParkAnswersResult } from "../../skills/drive-pr/scripts/lib/driver/park-answers.ts";
-import { latestAnswers } from "../../skills/drive-pr/scripts/lib/answer-forms.ts";
 import type { Ledger } from "../../skills/drive-pr/scripts/lib/state/ledger.ts";
 import type { PendingAnswer } from "../../skills/drive-pr/scripts/lib/state/pass-handoff.ts";
 import { NEXT_TICK, refused, type TickReader } from "./plan.ts";
 import { openDrive } from "./open-drive.ts";
+
+/** Who sends an answer, and how: the login it writes as, whether this is a dry run, and the `--as` it was given. */
+export interface Sender {
+  login: string;
+  writesAs: string;
+  dryRun: boolean;
+  as?: string | undefined;
+}
+
+/** The `--as` a printed command repeats, so it is the command the person ran. */
+export const asFlag = (sender: Sender) =>
+  sender.as === undefined ? "" : ` --as ${sender.as}`;
 
 /** Every place an answer could be, read whole. */
 export type ReadParks = Exclude<ParkAnswersResult, { unreadable: string }>;
@@ -68,22 +79,7 @@ export async function readParks(
 
 /** Each person's latest answer to `key` that the readers found, stale ones included. */
 export function answersTo(found: ReadParks, key: string): PendingAnswer[] {
-  const all = [
-    ...found.answered.filter((v) => v.key === key).flatMap((v) => v.answers),
-    ...found.disputed
-      .filter((v) => v.item.key === key)
-      .flatMap((v) => v.answers),
-    ...found.stale.filter((v) => v.item.key === key).flatMap((v) => v.answers),
-  ];
-  const seen = new Set<string>();
-  return latestAnswers(
-    all.filter((a) => {
-      const id = `${a.url}\n${a.bodyHash ?? ""}`;
-      if (seen.has(id)) return false;
-      seen.add(id);
-      return true;
-    }),
-  );
+  return found.responses.find((r) => r.item.key === key)?.answers ?? [];
 }
 
 const ANSWER_SHOWN_MAX = 200;
