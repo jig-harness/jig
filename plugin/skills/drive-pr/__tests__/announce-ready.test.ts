@@ -175,10 +175,10 @@ describe("announce-merge-ready.ts and the reviewers that skip drafts", () => {
     conclusion: "neutral",
     app: "example-review",
   };
-  const rabbit = (started: string, title: string) => ({
+  const rabbit = (started: string, title: string, conclusion = "success") => ({
     name: "CodeRabbit",
     status: "completed",
-    conclusion: "skipped",
+    conclusion,
     app: "coderabbitai",
     started,
     title,
@@ -262,6 +262,32 @@ describe("announce-merge-ready.ts and the reviewers that skip drafts", () => {
     );
     expectSpawnExit(r, 4);
     expect(r.stderr).toContain("did not review it");
+  });
+
+  it("refuses a skipped run whose title says nothing", async () => {
+    const r = await dryRun(
+      {
+        ...converged,
+        checkRuns: [ownRun, rabbit("2026-11-11T09:25:00Z", "", "skipped")],
+      },
+      board(converged.head),
+      { timeline: READY, env: SKIPPERS },
+    );
+    expectSpawnExit(r, 4);
+    expect(r.stderr).toContain("has not completed successfully");
+  });
+
+  it("refuses a timeline entry that is not an event", async () => {
+    const r = await dryRun(
+      {
+        ...converged,
+        checkRuns: [ownRun, rabbit("2026-11-11T09:25:00Z", "Review completed")],
+      },
+      board(converged.head),
+      { timeline: [{}], env: SKIPPERS },
+    );
+    expectSpawnExit(r, 1);
+    expect(r.stderr).toContain("no readable");
   });
 
   it("refuses a Ready event with no readable time", async () => {

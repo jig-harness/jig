@@ -164,8 +164,9 @@ A review naming the head is a review of it, and so is a run that completed on
 the head with no later review, since such a reviewer posts nothing on a push
 it has nothing new to say about. A run titled `Review paused…` or `Review
 skipped…` stops the drive with `REVIEW_SKIPPED` (`22`), naming which, except
-a draft skip on a draft: the draft converges on its own work, and the drive
-marks it Ready and waits for the review that summons. CodeRabbit is the
+a draft skip, which on a draft converges on its own work (the drive marks it
+Ready and waits for the review that summons) and on a Ready PR waits for the
+review. CodeRabbit is the
 built-in case: `review.reviewer_app: coderabbitai` alone sets all of it
 ([terminal-states.md § A reviewer that submits pull-request reviews](references/terminal-states.md#a-reviewer-that-submits-pull-request-reviews)).
 

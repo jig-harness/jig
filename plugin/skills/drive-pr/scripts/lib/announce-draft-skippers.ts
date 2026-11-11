@@ -19,6 +19,11 @@
  * run of each reviewer on the head.
  */
 import { failed, ok, type Outcome } from "../../../../shared/outcome.ts";
+import {
+  announcedIds,
+  announcements,
+  withdrawAnnouncement,
+} from "./announce.ts";
 import { checkPattern } from "./merge-ready.ts";
 import { draftSkippingReviewers } from "./overlay.ts";
 import { readTimeline } from "./pr-timeline.ts";
@@ -27,18 +32,21 @@ import { type CheckRun, checkRunsFor } from "./status/evidence.ts";
 
 /**
  * The newest `ready_for_review` event's time on `events`: `{ readyAt: null }`
- * when there is none, `null` when one carries no readable time, since a
- * transition whose time is unknown cannot stand for "never marked Ready".
+ * when there is none, `null` when an entry is not an event or one carries no
+ * readable time, since an unknown history cannot stand for "never marked
+ * Ready".
  */
 export function readyMarkedAt(
   events: readonly unknown[],
 ): { readyAt: string | null } | null {
   let newest: string | null = null;
   for (const event of events) {
-    const { event: kind, created_at: at } = (event ?? {}) as Record<
-      string,
-      unknown
-    >;
+    // An entry that is not an event cannot say the pull request was never
+    // marked Ready, so the history is unreadable.
+    if (typeof event !== "object" || event === null || Array.isArray(event))
+      return null;
+    const { event: kind, created_at: at } = event as Record<string, unknown>;
+    if (typeof kind !== "string") return null;
     if (kind !== "ready_for_review") continue;
     if (typeof at !== "string" || !Number.isFinite(Date.parse(at))) return null;
     if (newest === null || Date.parse(at) > Date.parse(newest)) newest = at;
@@ -71,6 +79,13 @@ export function draftSkipperPending(
   // A skip or a pause is a run that did not review the head, however recent.
   if (says !== null)
     return `${app}'s newest check run on ${head} did not review it ("${newest.title}")`;
+  // A run that did not complete successfully reviewed nothing, whatever its
+  // title and start time say.
+  if (
+    newest.status !== "completed" ||
+    !["success", "neutral"].includes(newest.conclusion ?? "")
+  )
+    return `${app}'s newest check run on ${head} has not completed successfully (${newest.status}, ${newest.conclusion ?? "no conclusion"})`;
   if (readyAt === null) return null;
   const started = Date.parse(newest.started ?? "");
   return Number.isFinite(started) && started >= Date.parse(readyAt)
@@ -107,4 +122,25 @@ export async function draftSkippersRan(
     if (pending !== null) return failed("not-yet", pending);
   }
   return ok(true);
+}
+
+/**
+ * Withdraw the standing announcements of `head` when a skipper is positively
+ * not-yet since the Ready mark. Run ahead of any convergence refusal, which
+ * would otherwise leave the old "Safe to merge" standing; an unreadable fact
+ * withdraws nothing.
+ */
+export async function withdrawIfSkippersPending(
+  pr: string,
+  head: string,
+): Promise<void> {
+  const ran = await draftSkippersRan(pr, head);
+  if (ran.ok || ran.failure.code !== "not-yet") return;
+  const standing = await announcements(pr);
+  if (standing === null) return;
+  for (const id of announcedIds(standing, head))
+    if (!(await withdrawAnnouncement(pr, id)))
+      console.error(
+        `announce-merge-ready: could NOT delete comment ${id} — remove it by hand.`,
+      );
 }

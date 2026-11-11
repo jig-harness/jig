@@ -31,7 +31,10 @@
  */
 
 import { checkWorktreeClean } from "./lib/announce-clean.ts";
-import { draftSkippersRan } from "./lib/announce-draft-skippers.ts";
+import {
+  draftSkippersRan,
+  withdrawIfSkippersPending,
+} from "./lib/announce-draft-skippers.ts";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -377,6 +380,7 @@ async function main(): Promise<number> {
 
   const state = String(status.state ?? "");
   if (code !== 3 || state !== "CONVERGED") {
+    if (!dryRun) await withdrawIfSkippersPending(pr, live.head);
     console.error(
       `announce-merge-ready: #${pr} is ${state}, not CONVERGED — refusing to announce`,
     );
