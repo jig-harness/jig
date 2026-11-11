@@ -901,10 +901,13 @@ still driving in the clone: no `.lock` or `.lock.recovering` of the earlier
 layout is present, none of its state, lease, driver-record or claim files was
 written in the last 24 hours, and no entry (or file under one) is younger than
 24 hours. A driver of the earlier release renews its lease at least every
-6 hours, so a day of silence leaves no process to fence. An entry's age is the
+6 hours, so a day of silence makes a live one unlikely: retirement is an
+idle-retention policy, not proof that no writer remains. An entry's age is the
 time of its last write. It does not wait for
 the 30-day retention of the other files. Anything it cannot read, or that
-changes while it looks, keeps the family. A driver suspended for longer than
+changes while it looks (the family, the clone's listing or the earlier
+release's files), keeps the family, and the check runs again just before the
+deletion. A driver suspended for longer than
 that and resumed afterwards is not detected: it can only move a lock of the
 earlier layout, which nothing of this release reads.
 

@@ -157,6 +157,64 @@ describe("obsolete file-lock quarantine", () => {
       fs.chmodSync(paths[1] as string, 0o600);
     }
   });
+  it("keeps a family when a lease is renewed or a legacy lock appears during the second pass", () => {
+    for (const change of ["renew", "lock"]) {
+      const { dir } = setup();
+      const paths = quarantine(dir);
+      const lease = join(dir, "drive-pr-12.json");
+      writeFileSync(lease, "{}");
+      age(lease, 3);
+      const list = fs.readdirSync;
+      let calls = 0;
+      const probe = spyOn(fs, "readdirSync").mockImplementation(((
+        path: fs.PathLike,
+        options?: unknown,
+      ) => {
+        if (String(path) === dir && ++calls === 2) {
+          if (change === "renew") age(lease, 0);
+          else writeFileSync(join(dir, "drive-pr-12.json.lock"), "");
+        }
+        return (list as (p: fs.PathLike, o?: unknown) => unknown)(
+          path,
+          options,
+        );
+      }) as typeof fs.readdirSync);
+      try {
+        expect(
+          judgeQuarantine(
+            dir,
+            paths.map((path) => basename(path)),
+          ).action,
+        ).toBe("keep");
+        expect(calls).toBeGreaterThanOrEqual(2);
+      } finally {
+        probe.mockRestore();
+      }
+    }
+  });
+  it.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "Windows chmod cannot remove all POSIX read bits",
+    ),
+  )("keeps a family beside an unreadable old lease", () => {
+    const { dir } = setup();
+    const paths = quarantine(dir);
+    const lease = join(dir, "drive-pr-12.json");
+    writeFileSync(lease, "{}");
+    age(lease, 3);
+    fs.chmodSync(lease, 0);
+    try {
+      expect(
+        judgeQuarantine(
+          dir,
+          paths.map((path) => basename(path)),
+        ).action,
+      ).toBe("keep");
+    } finally {
+      fs.chmodSync(lease, 0o600);
+    }
+  });
   it("retires displaced reaper locks and recovery gates", () => {
     const { root, dir } = setup();
     const paths = ["", ".recovering"].map((gate) =>

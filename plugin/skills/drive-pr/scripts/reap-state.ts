@@ -327,6 +327,12 @@ function reportEntry(v: Verdict) {
 /** Remove a family's entries; the names that could not be removed. */
 function retire(stateDir: string, family: Family): string[] {
   const failed: string[] = [];
+  if (family.id.startsWith("quarantine:")) {
+    // Revalidate at deletion: the verdict was reached earlier.
+    const again = judgeQuarantine(stateDir, family.names);
+    if (again.action !== "retire")
+      return [`${family.id}: kept at deletion — ${again.reason}`];
+  }
   for (const name of family.names) {
     try {
       rmSync(join(stateDir, name), { recursive: true, force: true });
