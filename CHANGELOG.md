@@ -391,6 +391,18 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.195.0] - 2026-11-11
+
+Served items that no repository label places are no longer started by every repository that shares their tracker team.
+
+### Added
+
+- `serve_defaults` in the host's dispatch machine file names, for each tracker namespace, the one repository that starts served items carrying none of the repository labels. A namespace is `linear:<team>` or `jira:<site>:<project>`, so trackers that reuse a project key remain independent. The other repositories of the namespace leave such an item alone, and the launch-time recheck refuses it there. Documented in [CONFIGURATION.md](plugin/CONFIGURATION.md#the-machines-dispatch-file).
+
+### Fixed
+
+- A served item with no repository label was launched by every pickup repository that read its Linear or Jira tracker, each pass racing the others for the claim. Now only the tracker's default repository starts it; a tracker with no default has the item reported once as needing a repository label, and no pass starts. Items that carry a repository label still go only to that repository, and a GitHub repository reading its own issues is unaffected. A Linear or Jira repository that has `review.repo_label` and `review.taxonomy.repos` set now needs its tracker namespace named in `serve_defaults` for its unlabelled served items to start; until then each is held with that reason in the Queue view.
+
 ## [0.194.2] - 2026-11-10
 
 ### Fixed
@@ -6765,7 +6777,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.194.2...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.195.0...HEAD
+[0.195.0]: https://github.com/jig-harness/jig/compare/v0.194.2...v0.195.0
 [0.194.2]: https://github.com/jig-harness/jig/compare/v0.194.1...v0.194.2
 [0.194.1]: https://github.com/jig-harness/jig/compare/v0.194.0...v0.194.1
 [0.194.0]: https://github.com/jig-harness/jig/compare/v0.193.0...v0.194.0
