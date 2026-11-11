@@ -170,10 +170,12 @@ export async function claimWithMarker(
       `the claim marker on ${key} could not be read back, so the claim was not made: ${reasonOf(error)}`,
     );
   }
-  if (found === "missing")
+  if (found === "missing") {
+    await withdraw();
     return refused(
       `the claim marker posted on ${key} did not show among its trusted comments when it was read back, so the claim was not made`,
     );
+  }
   if (found !== null) {
     await withdraw(first);
     return refused(
@@ -181,7 +183,13 @@ export async function claimWithMarker(
     );
   }
 
-  const result = await claim();
+  let result: ClaimResult;
+  try {
+    result = await claim();
+  } catch (error) {
+    await withdraw();
+    throw error;
+  }
   if (result.outcome !== "claimed") {
     await withdraw();
     return result;

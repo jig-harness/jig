@@ -125,8 +125,14 @@ export function claimOperations(
     return nodes.flatMap((n, i) => {
       const where = `history of ${key}[${i}]`;
       const node = record(n, where);
-      if (typeof node.createdAt !== "string")
-        throw new LinearClaimError(`${where}.createdAt: expected a string`);
+      if (
+        typeof node.createdAt !== "string" ||
+        Number.isNaN(Date.parse(node.createdAt))
+      )
+        throw new LinearClaimError(`${where}.createdAt: expected a time`);
+      for (const side of ["fromAssignee", "toAssignee"])
+        if (!(side in node))
+          throw new LinearClaimError(`${where}.${side}: missing`);
       const from = sideId(node.fromAssignee, `${where}.fromAssignee`);
       const to = sideId(node.toAssignee, `${where}.toAssignee`);
       return from === null && to === null

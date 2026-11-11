@@ -219,7 +219,24 @@ describe("the claim marker as the claim's token", () => {
       CLOCK,
     );
     expect(out).toMatchObject({ outcome: "refused", why: "marker" });
-    expect(reads).toBe(3);
+    // Three read-backs, then the withdrawal's own listing.
+    expect(reads).toBe(4);
+  });
+
+  it("withdraws its marker when the claim itself throws", async () => {
+    const s = store();
+    await expect(
+      claimWithMarker(
+        s.tracker(),
+        "#5",
+        FACTS,
+        async () => {
+          throw new Error("tracker down");
+        },
+        CLOCK,
+      ),
+    ).rejects.toThrow("tracker down");
+    expect((await s.tracker().issueComments("#5")).comments).toEqual([]);
   });
 
   it("stands down when an earlier marker shows only after the claim wrote", async () => {

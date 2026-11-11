@@ -41,6 +41,25 @@ describe("checkAssignment", () => {
     });
   });
 
+  it("ignores an older assignment of the same account when the write left no change of its own", () => {
+    const changes: AssigneeChange[] = [
+      { from: null, to: "me", at: at(1) },
+      { from: "me", to: null, at: at(2) },
+    ];
+    expect(checkAssignment("me", changes, "me", 2)).toEqual({
+      ok: false,
+      replaced: null,
+    });
+    expect(
+      checkAssignment(
+        "me",
+        [...changes, { from: null, to: "me", at: at(3) }],
+        "me",
+        2,
+      ),
+    ).toEqual({ ok: true });
+  });
+
   it("refuses, restoring nobody, when the issue is no longer the user's or the history holds no change to it", () => {
     expect(checkAssignment("dana", [], "me")).toEqual({
       ok: false,
