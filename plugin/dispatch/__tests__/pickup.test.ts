@@ -385,6 +385,45 @@ describe("jig dispatch --apply picks up assigned items", () => {
     expect(orcaCalls(w, "terminal", "create")).toHaveLength(1);
   });
 
+  it("holds a pickup its start rules refused, with the reason, until the item changes", async () => {
+    const w = fixture();
+    const id = String(launches(await applyTick(w, false))[0]?.record);
+    const token = readRecord(id, dispatchState(w))?.token ?? "";
+    await waitFor("the pass", () => claudeRuns(w).length === 1);
+    const refused = await w.dispatch([
+      "result",
+      id,
+      token,
+      "failed",
+      "--refused",
+      "2026-01-02T00:00:00Z",
+      "--reason",
+      "#12 names another repository",
+    ]);
+    expectSpawnExit(refused, 0);
+    writeFileSync(join(w.dir, "claude-exit"), "1");
+    await waitFor("the exit", () => exitWritten(w, id));
+    const held = await applyTick(w, false);
+    expect(launches(held)).toEqual([]);
+    expect(held.repos[0]?.quiet).toContainEqual(
+      expect.objectContaining({
+        target: "#12",
+        class: "pickup-refused",
+        why: expect.stringContaining("#12 names another repository"),
+      }),
+    );
+    // A person changes the item: it is picked up again.
+    w.setIssues([
+      {
+        ...assignedIssue(12, "factory-bot", []),
+        updatedAt: "2026-02-01T00:00:00Z",
+      },
+    ]);
+    const again = await applyTick(w, false);
+    expect(launches(again)).toHaveLength(1);
+    expect(launches(again)[0]?.record).not.toBe(id);
+  });
+
   it("launches nothing for an item unassigned between the report and the launch", async () => {
     const w = fixture();
     // The plan's two listings (dispatch states, then in progress) see it; the fresh read does not.
@@ -488,6 +527,46 @@ describe("jig dispatch result", () => {
       none: "duplicate",
     });
   });
+  it("takes --refused only on a pickup's failed, with a time and a reason", async () => {
+    const w = fixture();
+    const id = String(launches(await applyTick(w, false))[0]?.record);
+    const token = readRecord(id, dispatchState(w))?.token ?? "";
+    for (const args of [
+      ["done", "--refused", "2026-01-02T00:00:00Z", "--reason", "why"],
+      ["failed", "--refused", "not a time", "--reason", "why"],
+      ["failed", "--refused", "2026-01-02T00:00:00Z", "--reason", " "],
+      ["failed", "--refused", "2026-01-02T00:00:00Z"],
+      [
+        "failed",
+        "--refused",
+        "2026-01-02T00:00:00Z",
+        "--reason",
+        "why",
+        "--none",
+        "x",
+      ],
+    ]) {
+      expectSpawnExit(await w.dispatch(["result", id, token, ...args]), 2);
+      expect(readResult(id, dispatchState(w))).toBeNull();
+    }
+    const r = await w.dispatch([
+      "result",
+      id,
+      token,
+      "failed",
+      "--refused",
+      "2026-01-02T00:00:00Z",
+      "--reason",
+      "other  repository",
+    ]);
+    expectSpawnExit(r, 0);
+    expect(JSON.parse(r.stdout).refused).toEqual({
+      reason: "other repository",
+      updatedAt: "2026-01-02T00:00:00Z",
+    });
+    expect(readResult(id, dispatchState(w))).toBe("failed");
+  });
+
   it("records a session's answer once, under its own record's token only", async () => {
     const w = fixture();
     const id = String(launches(await applyTick(w, false))[0]?.record);
