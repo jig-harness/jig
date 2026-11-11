@@ -47,6 +47,7 @@ export async function readPark(
             key: p.key,
             kind: p.kind,
             ...(p.digest === undefined ? {} : { digest: p.digest }),
+            ...(p.at === undefined ? {} : { parkedAt: p.at }),
             ...(stale === undefined ? {} : { stale: stale.answers }),
             lines: framedDecisionLines(p),
             ...(p.decision === undefined ? {} : { decision: p.decision }),

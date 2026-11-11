@@ -1337,9 +1337,12 @@ make, use the entry's term instead.
   and a decision sheet share: a **call** is one question with options that
   exclude each other. A park is one call; a sheet is one or more calls, with their
   context ([design](design/structured-answers.md#one-decision-model)).
-- **Pick (of an option)** — the choice of an option on a card, made with a
-  key or a tap, kept in the browser and undoable. Nothing reads a pick until
-  the person commits it as an answer
+- **Pick (of an option), guarded pick** — the choice of an option on a
+  card, made with a key or a tap, kept in the browser and undoable. Nothing
+  reads a pick until the person commits it as an answer. A pick is
+  **guarded** when its decision's class is not one the acts table lists as
+  Decide, or its option cannot be undone: committing it takes two steps, the
+  first showing what it changes and costs
   ([design](design/structured-answers.md#picking-an-answer)).
 - **Decision digest, stale answer** — a short hash of a *framed decision*,
   stored when the decision is parked and published in the drive

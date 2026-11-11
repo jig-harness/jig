@@ -44,6 +44,7 @@ function section(lines: string[], heading: string): string | null {
  */
 export function decisionOf(park: {
   digest?: string;
+  parkedAt?: string;
   decision?: ParkedDecision;
   person?: string;
   key: string;
@@ -57,6 +58,7 @@ export function decisionOf(park: {
     key: park.key,
     kind: park.kind,
     ...(park.digest === undefined ? {} : { digest: park.digest }),
+    ...(park.parkedAt === undefined ? {} : { parkedAt: park.parkedAt }),
     ...(park.person === undefined ? {} : { person: park.person }),
     ...answersOf(park),
   };

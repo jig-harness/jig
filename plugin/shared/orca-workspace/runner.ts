@@ -10,6 +10,7 @@
  * a check that reads one exit status as "absent" can never read a failure to
  * run as that answer.
  */
+import type { SpawnSyncReturns } from "node:child_process";
 import { join } from "node:path";
 import { jigHome } from "../config-layers.ts";
 import { spawnSync, withoutLeakyGitEnv } from "../guarded-git-spawn.ts";
@@ -67,14 +68,30 @@ export const localRunner: Runner = (argv, options) => {
     maxBuffer: MAX_OUTPUT_BYTES,
     ...(options?.cwd === undefined ? {} : { cwd: options.cwd }),
   });
+  return runResult(result);
+};
+
+/**
+ * What one `spawnSync` call returned, as a `RunResult`. A spawn error is
+ * status -1 whatever exit status came with it: a child that reached its
+ * deadline as it exited can report exit 0 together with `ETIMEDOUT`, and its
+ * output may then be cut short, so the call reads as killed, never as a
+ * success.
+ */
+export function runResult(
+  result: Pick<
+    SpawnSyncReturns<string>,
+    "status" | "stdout" | "stderr" | "error"
+  >,
+): RunResult {
   return {
-    status: result.status ?? -1,
+    status: result.error ? -1 : (result.status ?? -1),
     stdout: result.stdout ?? "",
     stderr:
       result.stderr ||
       (result.error ? `spawn error: ${result.error.message}` : ""),
   };
-};
+}
 
 /** What every step needs: the runner, where its lines go, and how it waits. */
 export interface Context {

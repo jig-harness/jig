@@ -1,6 +1,11 @@
 /** Served pickups preserve the person's assignment and revalidate inherited authority live. */
-import type { ClaimResult } from "./claim.ts";
-import type { Issue, Tracker, TrackerUser } from "./tracker/port.ts";
+import { type ClaimResult, claimFromRefusal } from "./claim.ts";
+import type {
+  CanonicalState,
+  Issue,
+  Tracker,
+  TrackerUser,
+} from "./tracker/port.ts";
 
 export interface ServedClaim {
   person: string;
@@ -8,6 +13,8 @@ export interface ServedClaim {
   epicLabel?: string;
   hitlLabel?: string;
   manualOpsLabel?: string;
+  /** `do_item.claim_from`; `null` or absent keeps the not-started states alone. */
+  claimFrom?: readonly CanonicalState[] | null;
 }
 const only = (holders: TrackerUser[], user: TrackerUser) =>
   holders.length === 1 && holders[0]?.id === user.id;
@@ -153,8 +160,112 @@ async function validateAssignment(
   }
 }
 
-/** No cached queue fact authorizes this write. Missing ancestry or provenance refuses it. */
+/**
+ * A served claim: refused before any write when the item's state is
+ * outside `claim_from`, else `claimServed`.
+ */
 export async function claimServedIssue(
+  tracker: Tracker,
+  key: string,
+  options: ServedClaim,
+): Promise<ClaimResult> {
+  const claimFrom = options.claimFrom ?? null;
+  if (claimFrom === null) return claimServed(tracker, key, options);
+  const start = await tracker.getIssue(key);
+  if (start === null)
+    return {
+      outcome: "refused",
+      issue: key,
+      why: "state",
+      reason: `${key} could not be read, so its state is not known to be in claim_from`,
+    };
+  return (
+    claimFromRefusal(tracker, key, start.state.name, claimFrom) ??
+    claimServed(tracker, key, options)
+  );
+}
+
+/**
+ * The state is checked again before an inherited assignment write, so a
+ * refusal for it never follows a write; an unreadable item is not known to be
+ * in `claim_from`.
+ */
+async function stateBeforeAssignment(
+  tracker: Tracker,
+  key: string,
+  options: ServedClaim,
+): Promise<ClaimResult | null> {
+  if (!options.claimFrom) return null;
+  const current = await tracker.getIssue(key);
+  if (current === null)
+    return {
+      outcome: "refused",
+      issue: key,
+      why: "state",
+      reason: `${key} could not be read, so its state is not known to be in claim_from`,
+    };
+  return claimFromRefusal(tracker, key, current.state.name, options.claimFrom);
+}
+
+/**
+ * The state the start write begins from is the one just read, not the first
+ * read's. A direct claim has written nothing yet, so it keeps the state
+ * refusal; an inherited one may already have written the assignment, so it
+ * stands down.
+ */
+function startStateRefusal(
+  tracker: Tracker,
+  key: string,
+  state: string,
+  options: ServedClaim,
+): ClaimResult | null {
+  const outside = options.claimFrom
+    ? claimFromRefusal(tracker, key, state, options.claimFrom)
+    : null;
+  if (!outside || !options.ancestor) return outside;
+  return {
+    outcome: "stood_down",
+    issue: key,
+    reason: `${key} changed before it could be started: ${
+      outside.outcome === "refused"
+        ? outside.reason
+        : "its state left claim_from"
+    }; queue must refresh`,
+  };
+}
+
+/** What the claim re-reads after the start write: any change stands it down. */
+async function startedStandDown(
+  tracker: Tracker,
+  key: string,
+  user: TrackerUser,
+  options: ServedClaim,
+): Promise<ClaimResult | null> {
+  const after = await tracker.poolIssue(key);
+  if (
+    !after ||
+    after.truncated.length > 0 ||
+    hold(after.labels, options) ||
+    after.state.name.toLowerCase() !==
+      tracker.stateName("in_progress").toLowerCase() ||
+    !only(await tracker.assignees(key), user)
+  )
+    return {
+      outcome: "stood_down",
+      issue: key,
+      reason: `${key} changed during the claim; queue must refresh`,
+    };
+  const problem = await validateAssignment(tracker, key, user, options, true);
+  if (!problem) return null;
+  return {
+    outcome: "stood_down",
+    issue: key,
+    reason: `${key} changed during the claim: ${problem}; queue must refresh`,
+  };
+}
+
+/** No cached queue fact authorizes this write. Missing ancestry or provenance refuses it. */
+async function claimServed(
   tracker: Tracker,
   key: string,
   options: ServedClaim,
@@ -176,6 +287,10 @@ export async function claimServedIssue(
   // Re-read the entire authorization immediately before changing the child.
   problem = await validateAssignment(tracker, key, user, options);
   if (problem) return refused(problem);
+  if (options.ancestor && assignUnassigned) {
+    const outsideNow = await stateBeforeAssignment(tracker, key, options);
+    if (outsideNow) return outsideNow;
+  }
   if (
     options.ancestor &&
     assignUnassigned &&
@@ -187,6 +302,12 @@ export async function claimServedIssue(
       reason: `${key}: assignment raced the claim; queue must refresh`,
     };
   const before = await tracker.getIssue(key);
+  // Before the waiting guard, so a readable state outside claim_from is a
+  // refusal for a direct claim whatever its type.
+  const outside = before
+    ? startStateRefusal(tracker, key, before.state.name, options)
+    : null;
+  if (outside) return outside;
   if (
     !before ||
     !waiting(before.state.type) ||
@@ -199,27 +320,8 @@ export async function claimServedIssue(
       reason: `${key} changed before it could be started; queue must refresh`,
     };
   await tracker.transition(key, "in_progress");
-  const after = await tracker.poolIssue(key);
-  if (
-    !after ||
-    after.truncated.length > 0 ||
-    hold(after.labels, options) ||
-    after.state.name.toLowerCase() !==
-      tracker.stateName("in_progress").toLowerCase() ||
-    !only(await tracker.assignees(key), user)
-  )
-    return {
-      outcome: "stood_down",
-      issue: key,
-      reason: `${key} changed during the claim; queue must refresh`,
-    };
-  problem = await validateAssignment(tracker, key, user, options, true);
-  if (problem)
-    return {
-      outcome: "stood_down",
-      issue: key,
-      reason: `${key} changed during the claim: ${problem}; queue must refresh`,
-    };
+  const standDown = await startedStandDown(tracker, key, user, options);
+  if (standDown) return standDown;
   return {
     outcome: "claimed",
     issue: key,
