@@ -43,6 +43,14 @@ const ISSUES: LinkRules = {
   issueRepository: REPO,
 };
 
+function expectTeamClosingKeys(
+  lines: readonly string[],
+  expected: readonly string[],
+  newline = "\n",
+): void {
+  expect(closingKeys(lines.join(newline), TEAM.keys)).toEqual([...expected]);
+}
+
 describe("a team key", () => {
   it("is read from a branch do-item named, in canonical form", () => {
     const links = workLinks(
@@ -79,189 +87,166 @@ describe("a team key", () => {
     ]);
   });
 
-  it("is not read from code, an HTML comment or another team's key", () => {
-    const body = [
-      "<!-- Closes ENG-1 -->",
-      "```",
-      "Closes ENG-2",
-      "```",
-      "Write `Fixes ENG-3` to close one.",
-      "Closes OPS-4",
-      "prefix ENG-5",
-    ].join("\n");
-    expect(closingKeys(body, TEAM.keys)).toEqual([]);
-  });
-
-  it("is not read from indented or container code, including code with comment delimiters", () => {
-    const body = [
-      "    Closes ENG-1",
-      "> ```",
-      "> <!-- Closes ENG-2 -->",
-      "> ```",
-      "`<!-- Closes ENG-3`",
-      "``Closes ENG-4 ` still code``",
-      "Closes ENG-5",
-    ].join("\n");
-    expect(closingKeys(body, TEAM.keys)).toEqual(["ENG-5"]);
-  });
-
-  it("is not read from multiline inline code, and accepts a longer closing fence", () => {
-    const body = [
-      "`Fixes",
-      "ENG-1`",
-      "```",
-      "Closes ENG-2",
-      "````",
-      "Closes ENG-3",
-    ].join("\n");
-    expect(closingKeys(body, TEAM.keys)).toEqual(["ENG-3"]);
-  });
-
-  it("follows Markdown block boundaries when masking code", () => {
-    const body = [
-      "~~~",
-      "~~~not-a-closing-fence",
-      "Closes ENG-1",
-      "~~~",
-      "- ~~~",
-      "  Closes ENG-2",
-      "  ~~~",
-      "> ~~~",
-      "> example",
-      "> ~~~",
-      "",
-      "Closes ENG-3",
-      "",
-      "\tCloses ENG-4",
-      "Paragraph",
-      "    Closes ENG-5",
-      "# Heading",
-      "    Closes ENG-11",
-      "<!--",
-      "~~~",
-      "-->",
-      "Closes ENG-6",
-      "`Closes ENG-7``",
-      "``Closes ENG-8```",
-      "`unclosed",
-      "",
-      "Closes ENG-9",
-      "`unclosed",
-      "# Closes ENG-12",
-      "`",
-      "",
-      "`Closes ENG-10`",
-    ].join("\n");
-    expect(closingKeys(body, TEAM.keys)).toEqual([
-      "ENG-3",
-      "ENG-5",
-      "ENG-6",
-      "ENG-9",
-      "ENG-12",
-    ]);
-  });
-
-  it("uses the shared container and paragraph rules when masking code", () => {
-    const body = [
-      "```",
-      "> ```",
-      "Closes ENG-1",
-      "```",
-      "`example",
-      "2. Closes ENG-2",
-      "end`",
-      "- Intro",
-      "    Closes ENG-3",
-      "> ~~~",
-      "> Closes ENG-4",
-      "> ~~~~",
-      "- Intro",
-      "  ~~~",
-      "  example",
-      "  ~~~",
-      "      Closes ENG-5",
-    ].join("\n");
-    expect(closingKeys(body, TEAM.keys)).toEqual(["ENG-3"]);
-  });
-
-  it("preserves quote-container boundaries before using the shared reader", () => {
-    const body = [
-      "```markdown",
-      "> ```",
-      "Closes ENG-1",
-      "```",
-      "> ```",
-      "> example",
-      "",
-      "Closes ENG-2",
-      "<!--",
-      "```",
-      "-->",
-      "> ```",
-      "> Closes ENG-3",
-      "> ```",
-      "Closes ENG-4",
-    ].join("\r\n");
-    expect(closingKeys(body, TEAM.keys)).toEqual(["ENG-2", "ENG-4"]);
-  });
-
-  it("does not treat inline-code comment delimiters as comments while normalizing quotes", () => {
-    const body = [
-      "`<!--`",
-      "> ~~~",
-      "> Closes ENG-1",
-      "> ~~~",
-      "Closes ENG-2",
-    ].join("\n");
-    expect(closingKeys(body, TEAM.keys)).toEqual(["ENG-2"]);
-  });
-
-  it("carries multiline inline-code state while normalizing quotes", () => {
-    const body = [
-      "`example",
-      "<!--",
-      "`",
-      "> ~~~",
-      "> example",
-      "",
-      "Closes ENG-1",
-    ].join("\n");
-    expect(closingKeys(body, TEAM.keys)).toEqual(["ENG-1"]);
-  });
-
-  it("ends a multiline inline-code span at a quoted blank paragraph", () => {
-    const body = [
-      "> `example",
-      ">",
-      "> <!--",
-      "> `",
-      "> ~~~",
-      "> -->",
-      "",
-      "Closes ENG-1",
-    ].join("\n");
-    expect(closingKeys(body, TEAM.keys)).toEqual(["ENG-1"]);
-  });
-
-  it("keeps backticks ordinary inside an HTML comment while normalizing quotes", () => {
-    const body = [
-      "<!-- ` --> `",
-      "> ~~~",
-      "> example",
-      "",
-      "Closes ENG-1",
-    ].join("\n");
-    expect(closingKeys(body, TEAM.keys)).toEqual(["ENG-1"]);
-  });
-
-  it("ends a nested quoted fence when its quote container ends", () => {
-    const body = [
-      "> > ~~~",
-      "> > example",
-      "> Closes ENG-1",
-      "> Closes ENG-2",
-    ].join("\n");
-    expect(closingKeys(body, TEAM.keys)).toEqual(["ENG-1", "ENG-2"]);
+  it.each(
+    (
+      [
+        [
+          "is not read from code, an HTML comment or another team's key",
+          [
+            "<!-- Closes ENG-1 -->",
+            "```",
+            "Closes ENG-2",
+            "```",
+            "Write `Fixes ENG-3` to close one.",
+            "Closes OPS-4",
+            "prefix ENG-5",
+          ],
+          [],
+        ],
+        [
+          "is not read from indented or container code, including code with comment delimiters",
+          [
+            "    Closes ENG-1",
+            "> ```",
+            "> <!-- Closes ENG-2 -->",
+            "> ```",
+            "`<!-- Closes ENG-3`",
+            "``Closes ENG-4 ` still code``",
+            "Closes ENG-5",
+          ],
+          ["ENG-5"],
+        ],
+        [
+          "is not read from multiline inline code, and accepts a longer closing fence",
+          ["`Fixes", "ENG-1`", "```", "Closes ENG-2", "````", "Closes ENG-3"],
+          ["ENG-3"],
+        ],
+        [
+          "follows Markdown block boundaries when masking code",
+          [
+            "~~~",
+            "~~~not-a-closing-fence",
+            "Closes ENG-1",
+            "~~~",
+            "- ~~~",
+            "  Closes ENG-2",
+            "  ~~~",
+            "> ~~~",
+            "> example",
+            "> ~~~",
+            "",
+            "Closes ENG-3",
+            "",
+            "\tCloses ENG-4",
+            "Paragraph",
+            "    Closes ENG-5",
+            "# Heading",
+            "    Closes ENG-11",
+            "<!--",
+            "~~~",
+            "-->",
+            "Closes ENG-6",
+            "`Closes ENG-7``",
+            "``Closes ENG-8```",
+            "`unclosed",
+            "",
+            "Closes ENG-9",
+            "`unclosed",
+            "# Closes ENG-12",
+            "`",
+            "",
+            "`Closes ENG-10`",
+          ],
+          ["ENG-3", "ENG-5", "ENG-6", "ENG-9", "ENG-12"],
+        ],
+        [
+          "uses the shared container and paragraph rules when masking code",
+          [
+            "```",
+            "> ```",
+            "Closes ENG-1",
+            "```",
+            "`example",
+            "2. Closes ENG-2",
+            "end`",
+            "- Intro",
+            "    Closes ENG-3",
+            "> ~~~",
+            "> Closes ENG-4",
+            "> ~~~~",
+            "- Intro",
+            "  ~~~",
+            "  example",
+            "  ~~~",
+            "      Closes ENG-5",
+          ],
+          ["ENG-3"],
+        ],
+        [
+          "preserves quote-container boundaries before using the shared reader",
+          [
+            "```markdown",
+            "> ```",
+            "Closes ENG-1",
+            "```",
+            "> ```",
+            "> example",
+            "",
+            "Closes ENG-2",
+            "<!--",
+            "```",
+            "-->",
+            "> ```",
+            "> Closes ENG-3",
+            "> ```",
+            "Closes ENG-4",
+          ],
+          ["ENG-2", "ENG-4"],
+          "\r\n",
+        ],
+        [
+          "does not treat inline-code comment delimiters as comments while normalizing quotes",
+          ["`<!--`", "> ~~~", "> Closes ENG-1", "> ~~~", "Closes ENG-2"],
+          ["ENG-2"],
+        ],
+        [
+          "carries multiline inline-code state while normalizing quotes",
+          ["`example", "<!--", "`", "> ~~~", "> example", "", "Closes ENG-1"],
+          ["ENG-1"],
+        ],
+        [
+          "ends a multiline inline-code span at a quoted blank paragraph",
+          [
+            "> `example",
+            ">",
+            "> <!--",
+            "> `",
+            "> ~~~",
+            "> -->",
+            "",
+            "Closes ENG-1",
+          ],
+          ["ENG-1"],
+        ],
+        [
+          "keeps backticks ordinary inside an HTML comment while normalizing quotes",
+          ["<!-- ` --> `", "> ~~~", "> example", "", "Closes ENG-1"],
+          ["ENG-1"],
+        ],
+        [
+          "ends a nested quoted fence when its quote container ends",
+          ["> > ~~~", "> > example", "> Closes ENG-1", "> Closes ENG-2"],
+          ["ENG-1", "ENG-2"],
+        ],
+      ] as Array<[string, string[], string[], string?]>
+    ).map(([name, lines, expected, newline]) => ({
+      name,
+      lines,
+      expected,
+      newline,
+    })),
+  )("$name", ({ lines, expected, newline }) => {
+    expectTeamClosingKeys(lines, expected, newline);
   });
 
   it("reads every item in an Oxford-comma list", () => {
