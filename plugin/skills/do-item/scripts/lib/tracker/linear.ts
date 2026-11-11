@@ -385,6 +385,11 @@ mutation TrackerComment($issueId: String!, $body: String!) {
   commentCreate(input: { issueId: $issueId, body: $body }) { success }
 }`;
 
+const COMMENT_DELETE_MUTATION = `
+mutation TrackerDeleteComment($id: String!) {
+  commentDelete(id: $id) { success }
+}`;
+
 /**
  * Linear reports `success: false` without a GraphQL error, so an unchecked
  * payload would report a write that did not happen.
@@ -1055,6 +1060,14 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
       assertMutationOk(data.commentCreate, `the comment on ${issue}`);
     },
 
+    async deleteComment(key, id) {
+      const data = record(
+        await transport(COMMENT_DELETE_MUTATION, { id }),
+        "data",
+      );
+      assertMutationOk(data.commentDelete, `deleting a comment on ${key}`);
+    },
+
     async issuesByKeys(keys) {
       const out = new Map<string, IssueFact>();
       const numbers = [
@@ -1224,11 +1237,18 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
         )
           throw new ShapeError(`issue ${key}: an unreadable comment node`);
         return {
+          ...(typeof c.id === "string" ? { id: c.id } : {}),
           body: c.body,
           createdAt: c.createdAt,
           trusted: trustedUser(c.user),
         };
       });
+      // Creation order, the id breaking a tie, so every reader agrees.
+      comments.sort(
+        (a, b) =>
+          Date.parse(a.createdAt) - Date.parse(b.createdAt) ||
+          (a.id ?? "").localeCompare(b.id ?? ""),
+      );
       return { uuid, comments } satisfies IssueComments;
     },
 

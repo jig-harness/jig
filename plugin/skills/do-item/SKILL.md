@@ -122,7 +122,7 @@ The skill reads them at run time from `.config/jig.yaml`:
 | `do_item.gates` | Mandatory review gates, `[{labels, paths, skill}]` | No gates |
 | `do_item.preflight_command` | The repository's own start rules: a command every claim runs first, read from the default branch, with the item's JSON on standard input (exit 0 goes on, exit 3 refuses with its first output line as the reason, any other exit or a run past its deadline refuses too) | No check beyond the claim's own |
 | `do_item.claim_from` | The canonical states a claim may start from, read from the default branch; any other state, or a status that maps to no canonical state, is refused | None: the claim's own restrictions apply (never an `in_progress` or `pr_open` item; a served claim needs a triage, backlog or unstarted one) |
-| `do_item.claim_marker` | A successful claim posts a marker comment naming the session, host and branch, read from the default branch | No marker |
+| `do_item.claim_marker` | A claim posts a marker comment naming the session, host and branch before it writes, and the earliest marker on the item wins, so two hosts never both claim it; read from the default branch | No marker; claims serialize on one host only |
 | `do_item.post_merge_state`, `do_item.post_merge_closer` | Where the [post-merge status rule](#step-4a-standard-start-no-sub-issues) stops (`done`, `ops_pending` or `in_review`), and who closes an item it leaves short of `done`, for the closing comment | `done`; a sentence saying a person closes the item |
 | `do_item.guidance` | Implementation guidance, `[{labels, paths, skills, notes}]`, matched as gates are (see [Step 4a](#step-4a-standard-start-no-sub-issues)) | No guidance |
 | `do_item.execution_plan_block` | Name of the fenced block holding an epic's machine-readable execution plan | `execution-plan-v1` |
@@ -707,19 +707,20 @@ implementation. Skip this check for issues about the repository's own code.
    Keep these as separate quoted arguments. The claim keeps that person as
    sole assignee, checks writer authority and live ancestry, and refuses
    changed holds or assignment. A refusal or stand-down requires a fresh
-   queue read; never retry without the served-person options. GitHub supports
-   inherited claims; Linear and Jira refuse them because their assignment
-   APIs cannot preserve a concurrent assignee. Claims serialize on this
-   host; simultaneous same-person claims on separate hosts remain a race.
+   queue read; never retry without the served-person options. Every
+   adapter supports inherited claims. Claims serialize on this host;
+   between hosts, only `do_item.claim_marker` serializes same-person claims.
 
    Exit `0` is the claim. Exit `3` is a refusal, nothing written: the issue
    is already `in_progress` or assigned to someone else; its state is not
-   one `do_item.claim_from` lets work start from (`"why": "state"`); or the
+   one `do_item.claim_from` lets work start from (`"why": "state"`); the
    repository's `do_item.preflight_command` refused it (`"why": "preflight"`
    in the JSON, its reason on stderr: that command runs inside `claim`,
-   before the lock, so nothing here calls it). Exit `4` is a
-   stand-down: the claim was written, and reading the issue back showed
-   another claim landed first. On `3` or `4`, stop the pickup and report the
+   before the lock, so nothing here calls it); or, with
+   `do_item.claim_marker`, another claim's marker is earlier, or this
+   claim's own could not be posted and read back (`"why": "marker"`). Exit
+   `4` is a stand-down: the claim was written, and reading the issue back
+   showed another claim landed first. On `3` or `4`, stop the pickup and report the
    reason it printed; never start the item beside another session. A
    refusal by the repository's start rules (`state` or `preflight`) is not
    cleared by a person telling you to proceed: the item changes, or the
@@ -729,8 +730,9 @@ implementation. Skip this check for issues about the repository's own code.
    not release it; any other refusal (`state` included) stays held until the
    item leaves the dispatch states or its assignment and returns. With
    `do_item.claim_marker`, the claim posts the claim marker on the item
-   itself; `"marker"` in the JSON says whether it was posted, and a marker
-   that was not posted leaves the claim standing (report it). A person
+   before it writes; `"marker"` in the JSON says whether the read after the
+   write confirmed it, and an unconfirmed one leaves the claim standing
+   (report it). A person
    resuming their own interrupted pickup of an `in_progress` item tells you
    so, and you go on from here without the claim.
 

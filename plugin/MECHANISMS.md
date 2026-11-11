@@ -687,12 +687,20 @@ development and shipped as a version.
   concurrent claims on this host share a file mutex across worktrees.
   `claim --for <identity>` preserves the served person's sole assignment
   and checks writer provenance, holds, blockers and inherited ancestry live.
-  GitHub adds an inherited assignee without replacing another one and
-  reports a detected race; adapters without a safe non-replacing assignment
-  refuse inherited claims. The mutex is machine-local: two hosts claiming
-  for the same person can both succeed because the tracker supplies no
-  conditional state transition. The re-read detects conflicting assignees,
-  but cannot establish exclusive ownership between those same-person claims.
+  GitHub adds an inherited assignee without replacing another one; Linear
+  and Jira, which hold one assignee and offer no conditional write, assign
+  and then verify through the issue's history that the assignment replaced
+  nobody, putting back anyone it did replace
+  (`skills/do-item/scripts/lib/tracker/assign-verified.ts`); either way a
+  detected race stands down. The mutex is machine-local, and two hosts
+  claiming with the same identity write the same assignee and state, which
+  the re-read cannot tell apart. With `do_item.claim_marker`, the claim
+  marker is the token between hosts
+  (`skills/do-item/scripts/lib/claim-token.ts`): posted before the claim
+  writes, read back, and of the live markers on the item the earliest wins;
+  the other claim withdraws its marker and refuses with nothing written to
+  the item. Two read-backs that each lag past the other's post can still
+  both win.
   `work-batch` claims each issue of its
   batch with the same command. `skills/do-item/scripts/determine_route.ts`
   derives the implementer's agent, complexity tier, model and effort from
