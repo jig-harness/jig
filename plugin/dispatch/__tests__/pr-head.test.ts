@@ -13,6 +13,7 @@ const META = {
   isCrossRepository: false,
   headRepositoryOwner: { login: "example-org" },
   headRepository: { name: "example-repo" },
+  url: "https://github.com/example-org/example-repo/pull/7",
 };
 const answer = (stdout = "", status = 0): RunResult => ({
   stdout,
@@ -39,6 +40,9 @@ function context(
       if (argv[0] === "gh") return answer(JSON.stringify(META));
       if (argv.includes("get-url"))
         return answer("git@github.com:example-org/example-repo.git\n");
+      if (argv[0] === "git" && argv[1] === "config") return answer("", 1);
+      if (argv[0] === "ssh" && argv[1] === "-G")
+        return answer("hostname github.com\n");
       if (argv.includes("ls-remote"))
         return answer(`${SHA}\trefs/heads/feature\n`);
       if (argv[0] === "test") return answer("", 1);
@@ -63,6 +67,36 @@ describe("PR workspace head proof", () => {
     expect(
       await resolvePullRequestHead(context(), "/repo", 7, "feature"),
     ).toEqual(ok(SHA));
+  });
+  it("uses the PR URL's forge host when verifying an Enterprise SSH origin", async () => {
+    const ctx = context({
+      "git -C /repo remote get-url --all origin": answer(
+        "git@ghe.example:example-org/example-repo.git\n",
+      ),
+      "git -C /repo remote get-url --push --all origin": answer(
+        "git@ghe.example:example-org/example-repo.git\n",
+      ),
+    });
+    const run = ctx.run;
+    ctx.run = (argv, options) => {
+      if (argv[0] === "gh")
+        return answer(
+          JSON.stringify({
+            ...META,
+            url: "https://ghe.example/example-org/example-repo/pull/7",
+          }),
+        );
+      if (argv[0] === "ssh") {
+        ctx.calls.push(argv.join(" "));
+        return answer("hostname ghe.example\n");
+      }
+      return run(argv, options);
+    };
+    expect(await resolvePullRequestHead(ctx, "/repo", 7, "feature")).toEqual(
+      ok(SHA),
+    );
+    expect(ctx.calls).toContain("git config --get core.sshCommand");
+    expect(ctx.calls).toContain("ssh -G -- git@ghe.example");
   });
   for (const meta of [
     { ...META, isCrossRepository: true },

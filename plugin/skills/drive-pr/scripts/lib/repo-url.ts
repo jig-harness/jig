@@ -4,7 +4,11 @@ import { gitCallTimeoutSeconds, run } from "./proc.ts";
 
 type SshResolver = (
   args: string[],
-  options: { timeoutSec: number; env?: Record<string, string | undefined> },
+  options: {
+    timeoutSec: number;
+    env?: Record<string, string | undefined>;
+    cwd?: string;
+  },
 ) => Promise<{ code: number; stdout: string; stderr?: string }>;
 
 /** The same forge selection gh accepts, including an explicit GH_REPO host. */
@@ -77,6 +81,7 @@ async function resolvedSshHost(
   env: Record<string, string | undefined>,
   resolveSsh: SshResolver,
   cwd?: string,
+  resolveConfig: SshResolver = run,
 ): Promise<string> {
   const { host, port, user } = remote;
   if (!/^[a-zA-Z0-9][a-zA-Z0-9.-]*$/.test(host)) return "";
@@ -93,14 +98,17 @@ async function resolvedSshHost(
       `Cannot verify SSH host ${host}: ${override} overrides Git's SSH transport.`,
     );
   }
-  const configured = await run(["git", "config", "--get", "core.sshCommand"], {
-    timeoutSec: gitCallTimeoutSeconds(),
-    env,
-    // The repository root is supplied by production callers. Test seams use
-    // synthetic roots, so preserve the previous ambient read for a path that
-    // does not exist rather than turning a mocked URL check into a spawn error.
-    ...existingCwd(cwd),
-  });
+  const configured = await resolveConfig(
+    ["git", "config", "--get", "core.sshCommand"],
+    {
+      timeoutSec: gitCallTimeoutSeconds(),
+      env,
+      // The repository root is supplied by production callers. Test seams use
+      // synthetic roots, so preserve the previous ambient read for a path that
+      // does not exist rather than turning a mocked URL check into a spawn error.
+      ...existingCwd(cwd),
+    },
+  );
   if (configured.code === 0 && configured.stdout.trim() !== "") {
     throw new JigError(
       "SSH_TRANSPORT_OVERRIDE",
@@ -148,6 +156,7 @@ export async function repoOfUrl(
   resolveSsh: SshResolver = run,
   forgeUrl?: string,
   cwd?: string,
+  resolveConfig?: SshResolver,
 ): Promise<string> {
   const remote = parseRemote(url);
   if (!remote) return "";
@@ -159,7 +168,7 @@ export async function repoOfUrl(
       : forgeHost(env);
   if (!allowedHost) return "";
   const host = remote.ssh
-    ? await resolvedSshHost(remote, env, resolveSsh, cwd)
+    ? await resolvedSshHost(remote, env, resolveSsh, cwd, resolveConfig)
     : remote.host;
   return host.toLowerCase() === allowedHost ? repo : "";
 }
