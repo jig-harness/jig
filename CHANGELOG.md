@@ -391,6 +391,18 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.197.0] - 2026-11-11
+
+### Added
+
+- `jig send drive@… answer <key> --approve` takes a parked decision's recommended option, and `--choose '<option>'` the option of that name, matched as the drive's readers match it; `--note '<text>'` adds a condition beside either. The dry run shows the option in full with its [decision digest](GLOSSARY.md) and prints the command to send, which names it with `--decision <digest>` and repeats any `--as`: a real send must name it, and writes nothing when the drive has framed the question again since. The comment carries the digest and the choice in its `drive-answer` record, still version 1. An answer that names no option, or two forms, is a usage error; an option the park does not offer is refused; and a free answer the readers would count as a choice (`approve`, `choose Keep`) is refused and pointed to `--approve` or `--choose`, so no choice is written unbound to the framing you read. See [plugin/README.md § Telling a station what to do](plugin/README.md#telling-a-station-what-to-do).
+- `jig send drive@… answer --all --approve` approves every open parked item whose class Jig's table of [acts](GLOSSARY.md) lists as Decide, one comment per item, and leaves out, saying why, other acts' classes (Authorize, Merge, Reply), a repository's own classes, items another person answered, and items with no recommendation or no digest. Its dry run prints a [decision set token](GLOSSARY.md) of the items and their digests, and the real send, naming it with `--decision-set <token>`, writes nothing when any of them changed. When a post fails part-way, it prints what it sent, wakes the re-arm's tick for those, names what it did not send and exits `1`.
+- The `operator` skill turns "approve 456's parked question", "choose Keep" and "approve them all" into those commands, run with `--dry-run` first.
+
+### Changed
+
+- `jig send … answer` no longer refuses an item someone already answered. A person who answers again replaces their earlier answer, which the send shows first; another person's answer is shown too, with a reminder that differing answers leave the item disputed and that a stale answer keeps it waiting.
+
 ## [0.196.0] - 2026-11-11
 
 ### Added
@@ -6838,7 +6850,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.196.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.197.0...HEAD
+[0.197.0]: https://github.com/jig-harness/jig/compare/v0.196.0...v0.197.0
 [0.196.0]: https://github.com/jig-harness/jig/compare/v0.195.0...v0.196.0
 [0.195.0]: https://github.com/jig-harness/jig/compare/v0.194.2...v0.195.0
 [0.194.2]: https://github.com/jig-harness/jig/compare/v0.194.1...v0.194.2
