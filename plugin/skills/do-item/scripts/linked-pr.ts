@@ -20,6 +20,7 @@
 
 import { consumerRoot, readConfig } from "../../../shared/consumer.ts";
 import { baseBranch } from "../../drive-pr/scripts/lib/overlay.ts";
+import { prPolicy } from "../../drive-pr/scripts/lib/pr-policy.ts";
 import { ghCall, type RunResult } from "../../drive-pr/scripts/lib/proc.ts";
 import { swallow } from "../../../shared/errors.ts";
 import { runEntry } from "./lib/cli.ts";
@@ -215,6 +216,7 @@ async function main(): Promise<number> {
     console.error(`ERROR: ${err instanceof Error ? err.message : String(err)}`);
     return 1;
   }
+  const policy = prPolicy();
   const reads = forgeReads(tracker, root, slug(repo));
   const out: Record<string, LinkedPr> = {};
   for (const key of items)
@@ -224,6 +226,7 @@ async function main(): Promise<number> {
       keySource: keys.source,
       trunk,
       trackerRepository,
+      bodyLinkRequired: policy.issueLink !== "none",
     });
   console.log(JSON.stringify(out));
   return 0;

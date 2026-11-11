@@ -114,6 +114,23 @@ export function linkedPrState(
   return pulls.some((p) => state(p) === "MERGED") ? "merged" : "none";
 }
 
+/**
+ * The key as an issue-link line names it: qualified (`owner/name#5`) when a
+ * GitHub tracker's issues live in another repository than the code's, since
+ * a bare `#5` would be the code repository's own issue; otherwise as given.
+ */
+export function linkLineKey(
+  key: string,
+  trackerRepository: string | undefined,
+  repository: string,
+): string {
+  return trackerRepository !== undefined &&
+    /^#[1-9]\d*$/.test(key) &&
+    trackerRepository.toLowerCase() !== repository.toLowerCase()
+    ? `${trackerRepository}${key}`
+    : key;
+}
+
 function unreadable(reason: string): LinkedPr {
   return { pullRequest: "unreadable", pulls: [], reason };
 }
@@ -132,17 +149,22 @@ export async function readLinkedPr(
     trunk: string;
     /** The tracker's `owner/name` on a GitHub tracker. */
     trackerRepository?: string | undefined;
+    /**
+     * Whether a pull request found through a comment must link the item in
+     * its own body. False where `pull_requests.issue_link` is `none`: the
+     * pull request then carries no link line, and the item's comment is the
+     * only record of it.
+     */
+    bodyLinkRequired?: boolean;
   },
 ): Promise<LinkedPr> {
   const { reads, repository, trunk, trackerRepository } = opts;
-  const elsewhere =
-    trackerRepository !== undefined &&
-    /^#[1-9]\d*$/.test(key) &&
-    trackerRepository.toLowerCase() !== repository.toLowerCase();
-  const linkKey = elsewhere ? `${trackerRepository}${key}` : key;
-  const keySource = elsewhere
-    ? `${escapeRe(trackerRepository)}#[1-9]\\d*`
-    : opts.keySource;
+  const bodyLinkRequired = opts.bodyLinkRequired ?? true;
+  const linkKey = linkLineKey(key, trackerRepository, repository);
+  const keySource =
+    linkKey === key
+      ? opts.keySource
+      : `${escapeRe(linkKey.slice(0, linkKey.lastIndexOf("#")))}#[1-9]\\d*(?!\\w)`;
   const comments = await reads.comments(key);
   if (comments === null)
     return unreadable(`the comments of ${key} could not be read`);
@@ -161,7 +183,8 @@ export async function readLinkedPr(
       return unreadable(
         `pull request #${n}, linked from ${key}, could not be read`,
       );
-    if (linksIssue(viewed.body, linkKey, keySource)) pulls.set(n, viewed);
+    if (!bodyLinkRequired || linksIssue(viewed.body, linkKey, keySource))
+      pulls.set(n, viewed);
   }
   const facts = [...pulls.values()].sort((a, b) => a.number - b.number);
   const pullRequest = linkedPrState(facts, trunk);

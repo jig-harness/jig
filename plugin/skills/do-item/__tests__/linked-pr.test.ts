@@ -11,6 +11,7 @@ import {
   type LinkedPrReads,
   type PullFact,
   pullNumbersIn,
+  linkLineKey,
   readLinkedPr,
 } from "../scripts/lib/linked-pr.ts";
 import { numberKeys, teamKeys } from "../scripts/lib/tracker/keys.ts";
@@ -169,6 +170,23 @@ describe("readLinkedPr", () => {
       "merged",
     );
     expect((await readFor("Closes #5")).pullRequest).toBe("none");
+    expect((await readFor("Refs example-org/tracker#5abc")).pullRequest).toBe(
+      "none",
+    );
+  });
+
+  it("accepts a comment-linked pull request without a body link when none is required", async () => {
+    const r = await readLinkedPr("ENG-1", {
+      reads: reads({
+        comments: async () => [`https://github.com/${REPO}/pull/9`],
+        view: async () => ({ ...pull(9, "MERGED"), body: "no link line" }),
+      }),
+      repository: REPO,
+      keySource: "ENG-\\d+(?!\\w)",
+      trunk: TRUNK,
+      bodyLinkRequired: false,
+    });
+    expect(r.pullRequest).toBe("merged");
   });
 
   it("reads an item with no linked pull request as none", async () => {
@@ -194,5 +212,16 @@ describe("readLinkedPr", () => {
         )
       ).pullRequest,
     ).toBe("unreadable");
+  });
+});
+
+describe("linkLineKey", () => {
+  it("qualifies a bare number only when the tracker is another repository", () => {
+    expect(linkLineKey("#5", "example-org/tracker", REPO)).toBe(
+      "example-org/tracker#5",
+    );
+    expect(linkLineKey("#5", REPO, REPO)).toBe("#5");
+    expect(linkLineKey("#5", undefined, REPO)).toBe("#5");
+    expect(linkLineKey("ENG-1", "example-org/tracker", REPO)).toBe("ENG-1");
   });
 });

@@ -76,7 +76,14 @@ import { JigError } from "../../../shared/errors.ts";
 import { isRecord } from "../../../shared/guards.ts";
 import { parseArgs, runEntry } from "./lib/cli.ts";
 import { prDiffContext, type Signal } from "./lib/pr-diff-context.ts";
+import { linkLineKey } from "./lib/linked-pr.ts";
 import { trackerConfigFrom } from "./lib/tracker/config.ts";
+import {
+  homeRepo,
+  remoteUrl,
+  repoFromRemote,
+  slug,
+} from "./lib/tracker/github/refs.ts";
 import {
   ANY_TEAM_KEY,
   type IssueKeys,
@@ -401,6 +408,21 @@ async function planOpening(
   return { openAs, signals, labels, createArgs };
 }
 
+/** The issue as the link line names it: qualified when the tracker is another repository. */
+function linkKeyFor(root: string, issue: string): string {
+  try {
+    const config = trackerConfigFrom(readConfig());
+    if (config.adapter !== "github") return issue;
+    const url = remoteUrl(root);
+    const repo = url === null ? null : repoFromRemote(url);
+    if (repo === null) return issue;
+    const tracker = slug(homeRepo(config.github.repository, () => url));
+    return linkLineKey(issue, tracker, slug(repo));
+  } catch {
+    return issue;
+  }
+}
+
 async function buildOpenPlan(opts: {
   root: string;
   policy: PrPolicy;
@@ -586,7 +608,10 @@ async function buildOpenPlan(opts: {
     title: { format: title.value, source: title.source },
     body: {
       templates: findPrTemplates(root),
-      issueLink: issue === null ? null : issueLinkLine(policy.issueLink, issue),
+      issueLink:
+        issue === null
+          ? null
+          : issueLinkLine(policy.issueLink, linkKeyFor(root, issue)),
     },
     size: {
       changedLines,
