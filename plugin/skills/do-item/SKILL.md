@@ -1823,7 +1823,11 @@ record how it ended. In such a pass:
   of the pass. Nothing was written: record it with the `--refused` command
   the prompt names, passing that `updatedAt` and the reason it printed. The
   dispatcher shows the item as held with that reason and does not launch it
-  again until the item's `updatedAt` moves past it. A preflight refusal
+  again until the item's `updatedAt` moves past it. A batch pass (the
+  prompt names a fixed served batch) adds `--key <the refused issue>` beside
+  its `--refused`, the `"issue"` and `"updatedAt"` from that claim's JSON,
+  repeated for each member refused: only those members are held, and the
+  rest of the batch is launched again without them. A preflight refusal
   with no `updatedAt` (the item could not be read) and a `claim_from`
   refusal record plain `failed`.
 - **Never pick on the person's behalf** to finish unattended: a question

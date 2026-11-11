@@ -65,7 +65,7 @@ import { markerMain } from "./marker.ts";
 import { probeMain } from "./probe-command.ts";
 import { readReceipt, receiptPaths, type TickReceipt } from "./receipts.ts";
 import { upgradeLine } from "../runtime/upgrade-record.ts";
-import { resultMain } from "./result.ts";
+import { refusedResultMain, resultMain } from "./result.ts";
 import { runTick } from "./tick.ts";
 
 /** Exit when another tick holds the lock. */
@@ -199,14 +199,19 @@ const result = command(
         description: message`Why a completed pickup needs no pull request. Mutually exclusive with --pr.`,
       }),
     ),
-    refused: optional(
+    refused: multiple(
       option("--refused", string({ metavar: "UPDATED-AT" }), {
-        description: message`A failed pickup whose claim the repository's start rules refused: the item's updatedAt the claim printed. Needs --reason.`,
+        description: message`A failed pickup whose claim the repository's start rules refused: the item's updatedAt the claim printed. Needs --reason. Repeat it with --key for each batch member refused.`,
       }),
     ),
-    reason: optional(
+    keys: multiple(
+      option("--key", string({ metavar: "ITEM" }), {
+        description: message`The batch member the --refused in the same place belongs to; only the members named are held. Without it, the one --refused holds the whole pickup.`,
+      }),
+    ),
+    reasons: multiple(
       option("--reason", string({ metavar: "REASON" }), {
-        description: message`The reason the refused claim printed.`,
+        description: message`The reason the refused claim printed: once, or once per --key.`,
       }),
     ),
     until: optional(
@@ -499,8 +504,8 @@ function repositories(options: Tick, machine: MachineConfig | null): string[] {
 
 type Subcommand = Exclude<DispatchArguments, { action: "tick" }>;
 
-/** Forward a refused pickup's result: `--refused` and `--reason`, and no handoff. */
-function refusedResultMain(
+/** Forward a refused pickup's result: `--refused`, `--key` and `--reason`, and no handoff. */
+function refusedResult(
   args: Extract<Subcommand, { action: "result" }>,
 ): number {
   if (
@@ -513,14 +518,11 @@ function refusedResultMain(
     );
     return 2;
   }
-  return resultMain([
-    args.record,
-    args.token,
-    args.outcome,
-    "--refused",
-    ...(args.refused === undefined ? [] : [args.refused]),
-    ...(args.reason === undefined ? [] : [args.reason]),
-  ]);
+  return refusedResultMain(args.record, args.token, args.outcome, {
+    refused: args.refused,
+    keys: args.keys,
+    reasons: args.reasons,
+  });
 }
 
 /** Forward a session result and its mutually exclusive handoff arguments. */
@@ -535,8 +537,12 @@ function sessionResultMain(
     );
     return 2;
   }
-  if (args.refused !== undefined || args.reason !== undefined)
-    return refusedResultMain(args);
+  if (
+    args.refused.length > 0 ||
+    args.keys.length > 0 ||
+    args.reasons.length > 0
+  )
+    return refusedResult(args);
   return resultMain([
     args.record,
     args.token,

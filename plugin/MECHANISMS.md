@@ -406,7 +406,10 @@ development and shipped as a version.
   `failed`.
   A pickup whose claim the repository's start rules refused records
   `failed --refused <updated-at> --reason <reason>`: the tick holds the item, showing
-  the reason, until its `updatedAt` moves past that time.
+  the reason, until its `updatedAt` moves past that time. A batch pickup adds
+  `--key <item>` beside each `--refused`, once per refused member: only those
+  members are held, each on its own `updatedAt`, and the rest of the batch is
+  picked up again without them.
   The answer and its next owner are written together. An ended launch's
   outcome keeps that handoff, deriving it where the line fixes it; `jig ask`
   prints it as `last.next`.

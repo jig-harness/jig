@@ -47,9 +47,13 @@
  */
 import { optionalLaunchFields } from "./launch-record-options.ts";
 import { readNext, type NextOwner } from "./next-owner.ts";
-import { type PickupRefusal, readRefusal } from "./pickup-refusal.ts";
+import {
+  type PickupRefusal,
+  readRefusal,
+  type RefusedMember,
+} from "./pickup-refusal.ts";
 
-export type { PickupRefusal };
+export type { PickupRefusal, RefusedMember };
 import { unsettledStartups } from "./session-startup.ts";
 import type { Database } from "bun:sqlite";
 import { isMapping } from "../../shared/config-layers.ts";
@@ -72,7 +76,11 @@ import { cancelledBeforeExecution } from "./cancellation.ts";
 import type { StandingAnswer } from "./routine-questions.ts";
 export { cancelledBeforeExecution } from "./cancellation.ts";
 export { UNARMED_FACTS } from "./launch-keep.ts";
-import { latestArms, latestFailedRearms } from "./launch-keep.ts";
+import {
+  latestArms,
+  latestFailedRearms,
+  latestPickups,
+} from "./launch-keep.ts";
 
 /** What a launch starts: a re-arm of a stopped drive, a takeover of a wedged one, a pickup's `do-item` session, or a merge's follow-up pass. */
 export type LaunchAction =
@@ -837,23 +845,6 @@ function latestRedrives(records: ReadRecord[]): Set<string> {
     }
   }
   return new Set([...latest.values()].map((r) => r.record.id));
-}
-
-/**
- * The ids of each item's latest pickup record: while it is unreleased it is
- * the only thing that keeps the item from being picked up again, so it stays
- * until `releaseEnded` has seen the item leave the dispatch states.
- */
-function latestPickups(records: ReadRecord[]): Set<string> {
-  const latest = latestBy(
-    records,
-    (r) => r.action === "pickup",
-    (r) => `${r.repo}\0${String(r.item)}`,
-  );
-  const ids = new Set<string>();
-  for (const { record } of latest.values())
-    if (!record.released) ids.add(record.id);
-  return ids;
 }
 
 /** When an ended or died record finished; `null` for one still holding its stage. */
