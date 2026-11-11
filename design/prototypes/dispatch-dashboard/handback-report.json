@@ -1,9 +1,0 @@
-{
-  "version": 1,
-  "ours": "d892b94d549f53b4a5048a7d59da010e3371e5bf",
-  "exportBase": "d892b94d549f53b4a5048a7d59da010e3371e5bf",
-  "previousExportBase": "d892b94d549f53b4a5048a7d59da010e3371e5bf",
-  "provenance": "first-added fallback (no recorded raw export)",
-  "conflicts": [],
-  "regressions": []
-}
