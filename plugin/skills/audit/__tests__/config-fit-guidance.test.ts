@@ -71,6 +71,23 @@ describe("guidanceFindings", () => {
     ]);
   });
 
+  test("refuses a CI-repair skill that resolves to nothing", () => {
+    expect(
+      guidanceFindings({ ci: { repair_skill: "ci-support" } }, root, env),
+    ).toEqual([
+      {
+        id: "derivation:ci.repair_skill:ci-support",
+        severity: "error",
+        message:
+          "ci.repair_skill names ci-support, which resolves to no skill installed for this repository or on this machine: install it, or name a skill that exists",
+      },
+    ]);
+    for (const skill of ["migration-safety", "jig:fix-ci"])
+      expect(
+        guidanceFindings({ ci: { repair_skill: skill } }, root, env),
+      ).toEqual([]);
+  });
+
   test("reports a malformed list, and checks every area after a malformed one", () => {
     writeFileSync(
       join(root, "bad-areas.yaml"),

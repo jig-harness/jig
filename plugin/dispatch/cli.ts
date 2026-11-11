@@ -275,10 +275,13 @@ const log = command(
     jsonl: option("--jsonl", {
       description: message`Print each row as the JSON line the month files hold.`,
     }),
+    acceptance: option("--acceptance", {
+      description: message`Report, per repository and decision class, how many parks were answered, how many with the recommended option and no note, and the median wait, instead of the rows.`,
+    }),
   }),
   {
     brief: message`Print the outcome log as text, in the order the rows were written.`,
-    description: message`Reads the state database and prints one line a row; --jsonl prints the rows as the log-<year>-<month>.jsonl files hold them.`,
+    description: message`Reads the state database and prints one line a row; --jsonl prints the rows as the log-<year>-<month>.jsonl files hold them. --acceptance prints one line per repository and decision class (or one JSON line with --jsonl) over the parked decisions the log counted; it acts on nothing.`,
   },
 );
 
@@ -618,6 +621,7 @@ function subcommandMain(
   if (args.action === "log")
     return logMain({
       jsonl: args.jsonl,
+      acceptance: args.acceptance,
       ...(args.since === undefined ? {} : { since: args.since }),
     });
   if (args.action === "line") return lineMain();

@@ -1,10 +1,11 @@
 /**
- * Whether the implementation guidance a repository configures names skills
- * an agent can find: every skill of `do_item.guidance` and of the change-area
- * catalog's `implementation` blocks must resolve to a skill installed for the
- * repository (its project skills, this plugin's) or on this machine. A name
- * that resolves to nothing is refused: do-item would tell the implementing
- * agent to use a skill it cannot run.
+ * Whether the skills a repository configures for an agent are skills it can
+ * find: every skill of `do_item.guidance`, of the change-area catalog's
+ * `implementation` blocks and `ci.repair_skill` must resolve to a skill
+ * installed for the repository (its project skills, this plugin's) or on this
+ * machine. A name that resolves to nothing is refused: do-item would tell the
+ * implementing agent, and a drive its CI-repair pass, to use a skill it
+ * cannot run.
  *
  * A malformed guidance list or `implementation` block is an error here, since
  * do-item refuses it at pickup; a catalog that cannot be read is the
@@ -26,7 +27,10 @@ import type { Finding } from "./schema.ts";
 
 type Config = Record<string, unknown>;
 
-type Named = Array<[string, string]>;
+/** Each skill named, with the field that names it and the field its finding is keyed by. */
+type Named = Array<[string, string, string]>;
+
+const GUIDANCE = "do_item.guidance.skills";
 
 /** An error for a malformed block, which do-item refuses at pickup. */
 function invalid(id: string, e: unknown): Finding {
@@ -44,7 +48,7 @@ function entrySkills(config: Config, named: Named, problems: Finding[]): void {
   try {
     parseGuidance(section).forEach((entry, i) => {
       for (const s of entry.skills)
-        named.push([s, `do_item.guidance[${i}].skills`]);
+        named.push([s, `do_item.guidance[${i}].skills`, GUIDANCE]);
     });
   } catch (e) {
     problems.push(invalid("do_item.guidance", e));
@@ -73,11 +77,15 @@ function namedSkills(
   for (const [key, area] of readCatalog(config, root) ?? []) {
     try {
       for (const s of areaImplementation(key, area.fields)?.skills ?? [])
-        named.push([s, `area ${key} implementation.skills`]);
+        named.push([s, `area ${key} implementation.skills`, GUIDANCE]);
     } catch (e) {
       problems.push(invalid(`area.${key}.implementation`, e));
     }
   }
+  const ci = config.ci;
+  const repairSkill = isMapping(ci) ? ci.repair_skill : undefined;
+  if (typeof repairSkill === "string")
+    named.push([repairSkill, "ci.repair_skill", "ci.repair_skill"]);
   return { named, problems };
 }
 
@@ -99,8 +107,8 @@ export function guidanceFindings(
     ...named
       .filter(([s]) => missing.has(s))
       .map(
-        ([skill, field]): Finding => ({
-          id: `derivation:do_item.guidance.skills:${skill}`,
+        ([skill, field, key]): Finding => ({
+          id: `derivation:${key}:${skill}`,
           severity: "error",
           message: `${field} names ${skill}, which resolves to no skill installed for this repository or on this machine: install it, or name a skill that exists`,
         }),

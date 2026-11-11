@@ -39,9 +39,10 @@ import {
 } from "../../../shared/consumer.ts";
 import { isRecord } from "../../../shared/guards.ts";
 import { baseBranch } from "../../drive-pr/scripts/lib/overlay.ts";
+import { detectTitleFormat } from "../../drive-pr/scripts/lib/pr-conventions.ts";
 import {
-  detectTitleFormat,
   parsePrPolicy,
+  type TitleFormat,
 } from "../../drive-pr/scripts/lib/pr-policy.ts";
 import { parseArgs, runEntry } from "./lib/cli.ts";
 import {
@@ -97,7 +98,7 @@ export interface IssueFacts {
 
 /** The repository's title convention, and where it came from. */
 export interface TitleConvention {
-  value: "conventional" | "free";
+  value: TitleFormat;
   source: string;
 }
 
@@ -153,7 +154,7 @@ async function byTitlePrefix(
   const convention = await titleConvention();
   if (convention.value !== "conventional")
     return {
-      unanswered: `the title starts with ${prefix}:, but the title convention is free (${convention.source})`,
+      unanswered: `the title starts with ${prefix}:, but the title convention is ${convention.value} (${convention.source})`,
     };
   const type = Object.hasOwn(PREFIX_TYPES, prefix)
     ? PREFIX_TYPES[prefix]
