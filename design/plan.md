@@ -580,9 +580,17 @@ unset one keeps today's behaviour. What it will build:
   review stops as `REVIEW_SKIPPED` with the reason; no merge-ready
   announcement before a draft-skipping reviewer has run on the head marked
   Ready; `arm-drive.ts` refuses a reviewer whose evidence it cannot read.
+- **The CI repair command's trust boundary.** The repair step reads
+  `ci.log_command` from the default branch, but `runRepoCommand` runs it
+  with the pull request's checkout as its working directory, so a
+  configured repository script executes the pull request's editable
+  content. The command's program content is to come from the default
+  branch, never from the working tree of the pull request being repaired,
+  as the [command store](tracker-facets.md#later-the-command-store) does.
 
 Done when a repository whose AI reviewer is CodeRabbit runs a drive to
-merge-ready with no bridge of its own.
+merge-ready with no bridge of its own, and a CI repair command never runs
+program content from the pull request's working tree.
 
 ### 26. `init`: setting a repository up for Jig
 
