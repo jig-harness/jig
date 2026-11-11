@@ -208,7 +208,7 @@ when it fails. The phase names are the ones a receipt times.
 | `plan` | `tick-plan.ts` | everything above, the follow-up outcomes, the idle clock, the nudges | the idle clock, released pickups, settled nudges, the follow-up outcomes it settles | a write the database refuses is a defect: it stops this repository in phase `plan` |
 | `log` | `tick-settle.ts` | the ended launch records, the ledgers | one outcome row per ended record, with its end | reported; the record is kept until its row lands |
 | `apply` | `tick-apply.ts` | each target read again just before its launch, the failure ledger | the launch record, the forge claim or marker, the runtime's launch, nudges, notices, the failure ledger | per action: refused, reported, tried again next tick; a nudge, notice, claim end or marker answer that keeps failing backs off (see Failures) |
-| `labels` | `tick-labels.ts` | the ledgers, each written pull request's ledger read again just before its write, the failure ledger | the state labels on pull requests, the failure ledger | per write, reported; one whose ledger changed since the tick read it waits for a later tick; one that keeps failing backs off (see Failures) |
+| `labels` | `tick-labels.ts` | the ledgers, each written pull request's ledger read again just before its write, the failure ledger | the state labels on pull requests, the linked items' `blocked` state where the repository names it, the failure ledger | per write, reported; one whose ledger changed since the tick read it waits for a later tick; one that keeps failing backs off (see Failures) |
 | `shared` | `tick-shared.ts` | the shared records' reads and writes this turn | none | none |
 | Close (`close`) | `tick.ts`, `tick-settle.ts`, `tick-reads.ts`, `tick-line.ts` | the receipt, the launch records, the forge's rate limit as the tick started (put on every repository's report) | outcome rows for repositories not read and not held by another tick, the failure ledger's rows for each repository read and for the tick, the month files, the line (only by a tick that read every repository of the machine file), the receipt | a part that reports its failure is said on the receipt, which stays complete; exit status 1; a budget that does not read is reported as unreadable. A defect in a closing step marks the receipt not completed |
 
@@ -921,6 +921,15 @@ confirms or corrects.
   killed drive left behind, is corrected at the next tick. A ledger the tick cannot read leaves the labels as they are.
   Only the states listed here are kept by this projection, so a state a
   later stage owns, which no ledger produces, is never touched by it.
+  Where the repository names `issue_tracker.states.blocked`, the projection
+  has one tracker output beside the label: each item an open managed pull
+  request links (`Closes`/`Refs <KEY>`) goes to `blocked` while its state is
+  parked, with a comment naming each park's class and reason and a marker
+  recording the state it left, and back to that state once its state is
+  driving, converged or stale. The tick writes it after the labels, under
+  the same `--apply`, ownership and ledger re-read rules, and leaves a pull
+  request serialization holds; the drive writes it with its own label. A
+  stop blocks an item once, so an item a person moved out stays out.
 - **Commands**, written by a person and read by the tick: `drive` on an
   open pull request with no ledger asks for one, and the plan arms a drive
   on it as a re-arm (`drive.ts <PR> -- <pass>` on an admitted account),

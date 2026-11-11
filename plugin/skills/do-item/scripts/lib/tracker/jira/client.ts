@@ -17,6 +17,7 @@ import { TrackerConfigError } from "../config-error.ts";
 import { defaultFacets, type Facets } from "../facets/config.ts";
 import { TrackerRequestError } from "../port.ts";
 import { adfToMarkdown } from "./adf.ts";
+import { type BlockedField, resolveBlockedFields } from "./blocked-fields.ts";
 import {
   type FacetField,
   facetFieldStores,
@@ -142,6 +143,12 @@ export interface Client {
    * no facet is kept in one.
    */
   facetFields(signal?: AbortSignal): Promise<FacetField[]>;
+  /**
+   * The fields `issue_tracker.jira.blocked_fields` names, each resolved to
+   * exactly one field of the site; read once, and without a request when
+   * none is configured.
+   */
+  blockedFields(): Promise<BlockedField[]>;
   /**
    * The fields on the create screen of an issue type of the project, each
    * with the values it allows (`null` where it lists none); read once per
@@ -400,6 +407,7 @@ export function jiraClient(opts: ClientOptions): Client {
   let labelFields: Promise<FieldLabel[]> | undefined;
   let allFields: Promise<SiteField[]> | undefined;
   let storeFields: Promise<FacetField[]> | undefined;
+  let stateFields: Promise<BlockedField[]> | undefined;
   const readTypes = sharedRead(async (own): Promise<IssueTypeMeta[]> => {
     const values = await offsetPages(
       transport,
@@ -748,6 +756,18 @@ export function jiraClient(opts: ClientOptions): Client {
         storeFields = undefined;
       });
       return signal === undefined ? storeFields : until(storeFields, signal);
+    },
+
+    blockedFields() {
+      const names = settings.blockedFields;
+      if (names.reason === null && names.since === null)
+        return Promise.resolve([]);
+      stateFields ??= (async () =>
+        resolveBlockedFields(names, await siteFields()))();
+      stateFields.catch(() => {
+        stateFields = undefined;
+      });
+      return stateFields;
     },
 
     createMeta(issueTypeId, signal) {

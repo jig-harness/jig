@@ -16,7 +16,9 @@
  * The workflow states the skills reason about, by role rather than by the
  * tracker's own name. `issue_tracker.states` maps each to the tracker's name.
  * `pr_open` is the active work whose pull request is open; `in_review` is
- * merged and parked.
+ * merged and parked. `blocked` is started work whose drive stopped on parked
+ * work: only the drive-ledger projection or a person moves an item into or
+ * out of it, and a claim never starts from it.
  */
 export const CANONICAL_STATES = [
   "triage",
@@ -24,6 +26,7 @@ export const CANONICAL_STATES = [
   "todo",
   "in_progress",
   "pr_open",
+  "blocked",
   "in_review",
   "ops_pending",
   "done",
@@ -47,6 +50,7 @@ export type CanonicalState = (typeof CANONICAL_STATES)[number];
  */
 export const OPTIONAL_STATES = [
   "pr_open",
+  "blocked",
 ] as const satisfies ReadonlyArray<CanonicalState>;
 
 export type OptionalState = (typeof OPTIONAL_STATES)[number];
@@ -154,6 +158,14 @@ export interface Issue extends FacetValues {
   children: IssueSummary[];
   assignee: string | null;
   project: string | null;
+}
+
+/** Why and since when an item is blocked, as the blocked fields carry it. */
+export interface BlockedFields {
+  /** One line: the park class and its reason. */
+  reason: string;
+  /** ISO 8601, UTC. */
+  since: string;
 }
 
 export interface IssueComment {
@@ -579,6 +591,17 @@ export interface Tracker {
    * `signal` ends the request in flight and starts no further one.
    */
   postComment(issue: string, body: string, signal?: AbortSignal): Promise<void>;
+  /**
+   * Write the fields a repository names for a blocked item
+   * (`issue_tracker.jira.blocked_fields`), or clear them with `null`.
+   * Absent on an adapter with no such fields; `false` when the repository
+   * names none, so nothing was written.
+   */
+  writeBlockedFields?(
+    key: string,
+    value: BlockedFields | null,
+    signal?: AbortSignal,
+  ): Promise<boolean>;
 
   // ── Fleet metrics ──
   /** Issues of this team named by key; a key that resolves to nothing is absent. */

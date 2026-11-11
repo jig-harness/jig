@@ -1,7 +1,8 @@
 /**
  * The label projection, last in a repository's turn: each managed pull
  * request's state label set from its ledger, and each pull request's marker
- * labels from its description and author (actions/labels.ts). The labels
+ * labels from its description and author (actions/labels.ts), and the items
+ * each links moved to or out of `blocked` (actions/blocked.ts). The labels
  * are the owner's to write, as its board, notifications and history rows
  * are, and only with `--apply` for a repository the machine file lists.
  * Each write is counted in the failure ledger (failures.ts): one that keeps
@@ -15,6 +16,7 @@ import {
   type ProjectionInput,
   writeLabels,
 } from "./actions/labels.ts";
+import { writeBlocked } from "./actions/blocked.ts";
 import { adoptionOf, ownAuthors } from "./adopt.ts";
 import type { LabelConfig } from "./labels.ts";
 import { forgeReread, ledgerStillCurrent } from "./label-freshness.ts";
@@ -31,7 +33,7 @@ export async function projectObserved(
   context: TickContext,
   observation: RepoObservation,
 ): Promise<void> {
-  const { opened, labels, forge, ctx, serialized } = observation;
+  const { opened, labels, forge, ctx, serialized, tracked } = observation;
   await projectLabels(
     context,
     opened.repo.slug,
@@ -43,6 +45,7 @@ export async function projectObserved(
       serialized,
     },
     opened,
+    tracked,
   );
 }
 
@@ -91,6 +94,7 @@ async function projectLabels(
     serialized: NonNullable<ProjectionInput["serialized"]>;
   },
   { values, section }: Pick<RepoObservation["opened"], "values" | "section">,
+  tracked?: Pick<RepoObservation["tracked"], "tracker" | "keys">,
 ): Promise<void> {
   if (!forge.ok) return;
   const apply = context.apply;
@@ -148,11 +152,27 @@ async function projectLabels(
       unobservedTarget(report, target) ||
       [...forge.disputed].some((n) => target === `PR #${n}`),
   );
+  const late = () => (apply === null ? null : outOfTime(apply));
+  const current = freshness(slug, forge);
   planned.report.writes = await writeLabels(slug, planned.changes, {
     apply: writing,
-    late: () => (apply === null ? null : outOfTime(apply)),
+    late,
     book,
-    current: freshness(slug, forge),
+    current,
   });
+  const blocked = await writeBlocked(
+    {
+      config: labels,
+      tracker: tracked?.tracker ?? null,
+      keys: tracked?.keys ?? null,
+      open: forge.open.filter((p) => !forge.disputed.has(p.number)),
+      read: forge.read,
+      drives: forge.drives,
+      merged: new Set(forge.merged.map((p) => p.number)),
+      serialized: forge.serialized,
+    },
+    { apply: writing, late, current },
+  );
+  if (blocked.length > 0) planned.report.blocked = blocked;
   report.labels = planned.report;
 }

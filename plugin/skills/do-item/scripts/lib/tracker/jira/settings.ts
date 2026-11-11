@@ -10,6 +10,7 @@
  *     link_types: { blocks: Blocks, related: Relates, duplicate: Duplicate }
  *     field_labels: { Size: "size:" }   # a field's values read as labels
  *     pool_issue_types: [Task, Bug]     # default: every type
+ *     blocked_fields: { reason: "Blocked Reason", since: "Blocked Since" }
  *
  * A relation in `link_types` may name several link types, each a name or
  * `{ name, inverted }`: `[Blocks, { name: "Depends", inverted: true }]`.
@@ -54,7 +55,14 @@ export interface JiraSettings {
   fieldLabels: Record<string, string>;
   /** The issue types every pool and population is limited to; empty = every type. */
   poolIssueTypes: string[];
+  /** The fields, by name or id, a blocked item's reason and start are written to; each `null` = not written. */
+  blockedFields: BlockedFieldNames;
 }
+
+/** What a blocked item's fields say: its reason, and since when. */
+export const BLOCKED_FIELD_ROLES = ["reason", "since"] as const;
+export type BlockedFieldRole = (typeof BLOCKED_FIELD_ROLES)[number];
+export type BlockedFieldNames = Record<BlockedFieldRole, string | null>;
 
 const FIELDS = [
   "site",
@@ -65,6 +73,7 @@ const FIELDS = [
   "link_types",
   "field_labels",
   "pool_issue_types",
+  "blocked_fields",
 ];
 
 /** The issue type a new issue gets when none is configured. */
@@ -308,6 +317,41 @@ function fieldLabelsOf(v: unknown): Record<string, string> {
   return out;
 }
 
+/**
+ * `blocked_fields`: the field each role is written to when the drive-ledger
+ * projection moves an item to `blocked`, by name or id; a role left out is
+ * not written. Both naming one field is refused.
+ */
+function blockedFieldsOf(v: unknown): BlockedFieldNames {
+  const at = field("blocked_fields");
+  const out: BlockedFieldNames = { reason: null, since: null };
+  if (v === undefined || v === null) return out;
+  if (!isRecord(v))
+    throw new TrackerConfigError(
+      at,
+      `${at} must be a mapping of reason and since to a field's name or id`,
+    );
+  for (const [key, value] of Object.entries(v)) {
+    const where = `${at}.${key}`;
+    if (!(BLOCKED_FIELD_ROLES as readonly string[]).includes(key))
+      throw new TrackerConfigError(
+        where,
+        `${where} is not one of ${BLOCKED_FIELD_ROLES.join(", ")}`,
+      );
+    out[key as BlockedFieldRole] = nonEmpty(value, where).trim();
+  }
+  if (
+    out.reason !== null &&
+    out.since !== null &&
+    out.reason.toLowerCase() === out.since.toLowerCase()
+  )
+    throw new TrackerConfigError(
+      at,
+      `${at} names '${out.reason}' for both reason and since; each needs its own field`,
+    );
+  return out;
+}
+
 /** Validate `issue_tracker.jira`. */
 export function parseJiraSettings(raw: unknown): JiraSettings {
   const section = sectionOf(raw);
@@ -336,6 +380,7 @@ export function parseJiraSettings(raw: unknown): JiraSettings {
     linkTypes: linkTypesOf(section.link_types),
     fieldLabels: fieldLabelsOf(section.field_labels),
     poolIssueTypes: poolIssueTypesOf(section.pool_issue_types),
+    blockedFields: blockedFieldsOf(section.blocked_fields),
   };
 }
 

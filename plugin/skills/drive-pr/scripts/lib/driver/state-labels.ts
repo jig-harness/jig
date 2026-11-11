@@ -22,8 +22,20 @@
  * changes its exit, and a defect is reported with its stack, never thrown. It
  * leaves a pull request carrying `hold` or `held` as it is, and never creates
  * a label: the one-time label setup does (`jig dispatch labels`).
+ *
+ * The same write carries the projection's tracker output where the
+ * repository names `issue_tracker.states.blocked`: a stop with only parked
+ * work left moves the items the pull request links to `blocked`, and the
+ * arm returns them to the state they left (`do-item/scripts/lib/blocked-move.ts`),
+ * under the same rules: best effort, only where the tracker disagrees,
+ * never on a pull request carrying `hold` or `held`.
  */
-import { attempt, failed, ok } from "../../../../../shared/outcome.ts";
+import {
+  attempt,
+  failed,
+  ok,
+  type Outcome,
+} from "../../../../../shared/outcome.ts";
 import {
   type DoneExits,
   type LedgerReading,
@@ -36,9 +48,22 @@ import {
   writeOwnState,
 } from "../../../../../shared/pr-labels/write.ts";
 import { defaultBranchLabels } from "../../../../../dispatch/lib/label-config.ts";
+import {
+  type ParkLike,
+  parkCauses,
+} from "../../../../../shared/pr-labels/blocked.ts";
+import type { LabelConfig } from "../../../../../shared/pr-labels/projection.ts";
+import {
+  type BlockedPr,
+  blockedLine,
+  projectBlocked,
+} from "../../../../do-item/scripts/lib/blocked-move.ts";
+import { issueKeysOf } from "../../../../do-item/scripts/lib/tracker/keys.ts";
+import { openTracker } from "../../../../do-item/scripts/lib/tracker/index.ts";
+import { ownTrackerConfig } from "../../../../do-item/scripts/lib/tracker/config.ts";
 import { forge } from "../state/ledger-forge.ts";
 import { driveStopClass } from "../status/exit-classes.ts";
-import { DRIVE_EXIT } from "../status/terminal-states.ts";
+import { DRIVE_EXIT, driveExitName } from "../status/terminal-states.ts";
 
 const DONE_EXITS: DoneExits = {
   converged: DRIVE_EXIT.CONVERGED,
@@ -48,11 +73,18 @@ const DONE_EXITS: DoneExits = {
 /**
  * The ledger write a label follows: the arm's running ledger, or a stop with
  * its exit (`null` when unknown), whether a person's stop is recorded for it,
- * and the head the drive verified.
+ * and the head the drive verified; for the tracker's `blocked` output, which
+ * stop it is (`stopKey`) and the parks it left.
  */
 export type DriveMoment =
   | { armed: true }
-  | { stopped: number | null; byPerson: boolean; verifiedSha: string };
+  | {
+      stopped: number | null;
+      byPerson: boolean;
+      verifiedSha: string;
+      stop?: string;
+      parks?: ParkLike[];
+    };
 
 /** How the dispatcher will read the ledger this moment writes, as the drive labels it; `null` for a stop with no exit and no person's stop. */
 export function ledgerAt(moment: DriveMoment): LedgerReading | null {
@@ -115,16 +147,144 @@ export function driveLabelForge(slug: string): OwnForge {
   };
 }
 
+/** What the tracker output reads of the pull request: its description, labels and address. */
+export interface PullRequestFacts {
+  body: string;
+  labels: string[];
+  url: string | null;
+}
+
+/** The tracker the `blocked` output writes through, and the shape of its keys. */
+export type ItemTracker = Parameters<typeof projectBlocked>[0] & {
+  keys: Parameters<typeof projectBlocked>[1];
+};
+
 /** Where the label calls go: the repository's setting and its forge; by default the checkout's repository on the forge. */
 export interface LabelSource {
   settings(): ReturnType<typeof defaultBranchLabels>;
   forge(slug: string): OwnForge;
+  /** The tracker, when the repository names `issue_tracker.states.blocked`; `null` otherwise. */
+  items?(): ItemTracker | null;
+  /** The pull request's description, labels and address. */
+  pullRequest?(slug: string, pr: number): Promise<Outcome<PullRequestFacts>>;
+}
+
+/** The checkout's tracker, opened only where `blocked` is named. */
+function checkoutItems(): ItemTracker | null {
+  const config = ownTrackerConfig();
+  if (config.states.blocked === null) return null;
+  const keys = issueKeysOf(config);
+  if (keys === null) return null;
+  return Object.assign(openTracker(config), { keys });
+}
+
+/** The pull request's description, labels and address, through the drive's own `gh` chokepoint. */
+async function pullRequestFacts(
+  slug: string,
+  pr: number,
+): Promise<Outcome<PullRequestFacts>> {
+  const r = await forge([
+    "pr",
+    "view",
+    String(pr),
+    "--repo",
+    slug,
+    "--json",
+    "body,labels,url",
+  ]);
+  if (!r.ok)
+    return failed("unreadable", `the pull request did not read: ${r.why}`);
+  const parsed = attempt("unreadable", "the pull request did not read", () =>
+    JSON.parse(r.stdout),
+  );
+  if (!parsed.ok) return parsed;
+  const v = parsed.value as { body?: unknown; labels?: unknown; url?: unknown };
+  const labels = Array.isArray(v.labels)
+    ? v.labels.map((l) => (l as { name?: unknown } | null)?.name)
+    : null;
+  if (
+    labels === null ||
+    !labels.every((n): n is string => typeof n === "string")
+  )
+    return failed("unreadable", "the pull request's labels did not read");
+  return ok({
+    body: typeof v.body === "string" ? v.body : "",
+    labels,
+    url: typeof v.url === "string" ? v.url : null,
+  });
 }
 
 const FORGE_SOURCE: LabelSource = {
   settings: () => defaultBranchLabels(process.cwd()),
   forge: driveLabelForge,
+  items: checkoutItems,
+  pullRequest: pullRequestFacts,
 };
+
+/** The stop's own cause, for a stop no park framed. */
+function stopCause(
+  ledger: LedgerReading,
+  moment: DriveMoment,
+): { class: string; reason: string } {
+  if (!("stopped" in moment) || moment.stopped === null)
+    return { class: ledger.class, reason: "a person stopped the drive" };
+  const name = driveExitName(moment.stopped);
+  return {
+    class: ledger.class,
+    reason: moment.byPerson
+      ? "a person stopped the drive"
+      : `the drive stopped with exit ${moment.stopped}${name === null ? "" : ` (${name})`}`,
+  };
+}
+
+/**
+ * Move the items the pull request links as the projection says: to
+ * `blocked` on a park, back out of it on the arm. Says what it did on
+ * stderr; never throws.
+ */
+async function itemsFollow(
+  pr: number,
+  slug: string,
+  config: LabelConfig,
+  ledger: LedgerReading,
+  moment: DriveMoment,
+  source: LabelSource,
+): Promise<void> {
+  let items: ItemTracker | null;
+  try {
+    items = source.items?.() ?? null;
+  } catch (error) {
+    // The checkout's tracker configuration does not read: nothing to move, and the label stands.
+    console.error(
+      `labels: PR #${pr}'s items are left as they are: the tracker does not open (${error instanceof Error ? error.message : String(error)})`,
+    );
+    return;
+  }
+  if (items === null || source.pullRequest === undefined) return;
+  const facts = await source.pullRequest(slug, pr);
+  if (!facts.ok) {
+    console.error(
+      `labels: PR #${pr}'s items are left as they are: ${facts.failure.reason}`,
+    );
+    return;
+  }
+  const input: BlockedPr = {
+    pr,
+    url: facts.value.url,
+    body: facts.value.body,
+    labels: facts.value.labels,
+    projected: ledgerState(ledger, DONE_EXITS),
+    stop: "stopped" in moment ? (moment.stop ?? "") : "",
+    causes: parkCauses(
+      "stopped" in moment ? (moment.parks ?? []) : [],
+      stopCause(ledger, moment),
+    ),
+  };
+  for (const o of await projectBlocked(items, items.keys, config, input)) {
+    const line = blockedLine(pr, o);
+    if (line !== null) console.error(`labels: ${line}`);
+  }
+}
 
 /**
  * Write the label `momentOf` gives pull request `pr` (the moment, or how to
@@ -182,6 +342,15 @@ export async function labelDrive(
     });
     const line = ownWriteLine(Number(pr), written);
     if (line !== null) console.error(`labels: ${line}`);
+    if (settings.value.config.enabled && written.outcome !== "held")
+      await itemsFollow(
+        Number(pr),
+        settings.value.slug,
+        settings.value.config,
+        ledger,
+        moment,
+        source,
+      );
   } catch (error) {
     console.error(`labels: ${defectLine(`PR #${pr}`, error)}`);
   }

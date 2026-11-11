@@ -29,16 +29,16 @@
  * (triage, backlog, unstarted, started) nor closed, is an error, never `open`.
  *
  * `claim` starts an issue for the identity the tracker's credential acts
- * as: it refuses an issue already in `in_progress` or assigned to anyone
- * else (exit 3, nothing written), assigns it to that identity and moves it
+ * as: it refuses an issue already in `in_progress`, in `pr_open` or
+ * `blocked`, or assigned to anyone else (exit 3, nothing written), assigns it to that identity and moves it
  * to `in_progress`, then reads it again and stands down (exit 4) when
  * another claim landed first. The reason is printed on stderr and in the
  * JSON on stdout.
  *
  * Canonical states: backlog, todo, in_progress, in_review, done, canceled,
- * and where the consumer uses them triage, pr_open, ops_pending, duplicate.
- * A transition to an optional state the consumer leaves unset (`pr_open`)
- * writes nothing and prints `skipped` with the reason.
+ * and where the consumer uses them triage, pr_open, blocked, ops_pending,
+ * duplicate. A transition to an optional state the consumer leaves unset
+ * (`pr_open`, `blocked`) writes nothing and prints `skipped` with the reason.
  *
  * `transition … --post-merge` marks the post-merge rule's move: a move to
  * `done` is refused (exit 3, nothing written) when `do_item.post_merge_state`
@@ -85,6 +85,7 @@ import { readFile } from "node:fs/promises";
 import { claimServedIssue } from "./lib/served-claim.ts";
 import { withClaimLock } from "./lib/claim-lock.ts";
 import { claimIssue } from "./lib/claim.ts";
+import { blockedClaimRefusal } from "./lib/blocked-claim.ts";
 import { syncPlanBlocks } from "./lib/plan-blocks.ts";
 import { executionPlanBlock } from "./select_execution_issue.ts";
 import { runEntry } from "./lib/cli.ts";
@@ -400,7 +401,7 @@ const OPERATIONS: Record<string, Operation> = {
   claim: {
     arity: 1,
     takes: "one issue key",
-    run: ([key], flags) => {
+    run: async ([key], flags) => {
       const forFlags = [...flags].filter((f) => f.startsWith("--for"));
       const ancestorFlags = [...flags].filter((f) =>
         f.startsWith("--ancestor"),
@@ -426,6 +427,8 @@ const OPERATIONS: Record<string, Operation> = {
       const shape = issueKeysOf(config);
       const normalized = shape?.normalize(key as string) ?? (key as string);
       const tracker = openTracker();
+      const blocked = await blockedClaimRefusal(tracker, normalized);
+      if (blocked !== null) return blocked;
       return withClaimLock(claimLockKey(tracker, normalized), () => {
         const ancestorKey = ancestor
           ? (shape?.normalize(ancestor) ?? ancestor)

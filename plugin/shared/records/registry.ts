@@ -837,6 +837,14 @@ const TRACKER: RecordKind[] = [
     version: 0,
   },
   {
+    name: "tracker-blocked",
+    medium: "tracker",
+    owner: "skills/do-item/scripts/lib/blocked-move.ts",
+    at: "a comment on an item the drive-ledger projection moved to blocked, naming its pull request, the stop and the state it left",
+    markers: ["jig:blocked"],
+    version: 0,
+  },
+  {
     name: "issue-fields-sweep",
     medium: "tracker",
     owner: "skills/file-issue/scripts/lib/sweep.ts",

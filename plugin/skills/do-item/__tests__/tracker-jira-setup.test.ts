@@ -50,6 +50,7 @@ describe("issue_tracker.jira", () => {
       },
       fieldLabels: {},
       poolIssueTypes: [],
+      blockedFields: { reason: null, since: null },
     });
   });
 

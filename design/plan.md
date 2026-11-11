@@ -554,9 +554,6 @@ step:
   states a claim may start from (`do_item.claim_from`; unset, a claim
   keeps today's rule and is not limited to `dispatch.states`), and a claim
   marker naming the session, host and branch.
-- **Stop.** An optional `blocked` canonical state that the shared
-  projection of the drive ledger writes, with the park class and reason,
-  when a drive stops on parked work, and clears when the park is answered.
 - **Pool pickup.** The dispatcher picks up unassigned items in a ready
   pool as a served lane, trusting who made an item ready. It waits on an
   inherited claim on Linear and Jira and on claims across hosts.

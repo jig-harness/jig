@@ -54,6 +54,7 @@ import {
 } from "../requests.ts";
 import { markdownToAdf } from "./adf.ts";
 import { assignerOperations } from "./assigner.ts";
+import { blockedFieldsBody } from "./blocked-fields.ts";
 import { claimOperations } from "./claim.ts";
 import type { Client, IssueTypeMeta, RelationLink } from "./client.ts";
 import { jiraFacetStores } from "./facets.ts";
@@ -505,6 +506,21 @@ export function jiraTracker(client: Client): Tracker {
       if (Object.keys(body).length === 0) return;
       signal?.throwIfAborted();
       await transport({ method: "PUT", path: path(issue.key), body }, signal);
+    },
+
+    async writeBlockedFields(key, value, signal) {
+      const fields = await client.blockedFields();
+      if (fields.length === 0) return false;
+      signal?.throwIfAborted();
+      await transport(
+        {
+          method: "PUT",
+          path: path(key),
+          body: { fields: blockedFieldsBody(fields, value) },
+        },
+        signal,
+      );
+      return true;
     },
 
     async listLabels() {
