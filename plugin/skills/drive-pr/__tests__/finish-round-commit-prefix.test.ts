@@ -7,6 +7,7 @@
 
 import { describe, expect, it } from "bun:test";
 import { spawnSync } from "node:child_process";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { useDrivePrSuite, gitCleanEnv } from "./drive-pr-harness.ts";
 import { createFindingsFinishRoundFixtures } from "./drive-pr-findings-finish-round-fixtures.ts";
 
@@ -75,7 +76,7 @@ describe("finish-round.ts: the commit prefix", () => {
       repo: { dir: repo.dir, head: reworded },
       env: { ...PREFIX_ENV, GIT_COMMITTER_DATE: COMMITTER_DATE },
     });
-    expect(r.exitCode).toBe(0);
+    expectSpawnExit(r, 0);
     expect(r.report.state).toBe("FINISHED");
     expect(gitIn(repo.dir, "rev-parse", "HEAD")).toBe(reworded);
     expect(gitIn(repo.dir, "log", "-1", "--format=%s")).toStartWith(
@@ -95,7 +96,7 @@ describe("finish-round.ts: the commit prefix", () => {
         JIG__PULL_REQUESTS__COMMIT_PREFIX: '"{key}: "',
       },
     });
-    expect(r.exitCode).toBe(9);
+    expectSpawnExit(r, 9);
     expect(r.report.state).toBe("REFUSED_COMMIT_PREFIX");
     expect(String(r.report.reason)).toContain("commit-prefix.ts exited 3");
     expect(r.pushed).toBe("");
