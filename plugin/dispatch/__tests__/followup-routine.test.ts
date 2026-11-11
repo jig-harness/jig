@@ -137,6 +137,11 @@ const EVERY_CLASS = ROUTINE_QUESTIONS.map((q) => q.id).join(", ");
 const STANDING =
   "keep it, list it in the result, finish every other arm and record done";
 
+/** Every class's standing answer: a prompt that names every class gives each of them. */
+function expectEveryAnswer(prompt: string): void {
+  for (const q of ROUTINE_QUESTIONS) expect(prompt).toContain(q.answer);
+}
+
 it("runs a follow-up that stopped on a routine question again once, with the standing answer, and it ends done", async () => {
   const w = fixture();
   const first = await stops(w, TAGGED);
@@ -293,7 +298,7 @@ it("runs a follow-up whose launch record failed before passes tagged their quest
   const { prompt } = await rerun(w, EVERY_CLASS);
   expect(prompt).toContain("keep the branch feature/9-done?");
   expect(prompt).toContain("Where it stopped on one of these classes");
-  expect(prompt).toContain(STANDING);
+  expectEveryAnswer(prompt);
 }, 120_000);
 
 /** A person's notice of PR #9's failed follow-up, from a tick that starts nothing and keeps the marker. */
@@ -390,7 +395,7 @@ it("keeps what an earlier release's outcome row lacks before releasing the marke
   removeRecord(OLD, dispatchState(w));
   expect(readRecord(OLD, dispatchState(w))).toBeNull();
   const { prompt } = await rerun(w, EVERY_CLASS);
-  expect(prompt).toContain(STANDING);
+  expectEveryAnswer(prompt);
 }, 120_000);
 
 it("hands a follow-up whose outcome record's question does not read to a person even while its launch record from before the tags is on the host", async () => {
