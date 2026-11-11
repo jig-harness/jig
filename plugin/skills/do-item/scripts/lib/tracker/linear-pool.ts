@@ -225,12 +225,14 @@ export function assignedOperations(
   | "viewer"
   | "assignees"
   | "assign"
+  | "assignUnassigned"
+  | "deleteComment"
   | "user"
   | "openPopulation"
 > {
   const { team, states, transport, pageAll } = opts;
   return {
-    ...claimOperations(transport),
+    ...claimOperations(transport, pageAll),
     async openPopulation(signal) {
       const filter = { and: [{ team: { key: { eq: team } } }, OPEN] };
       const nodes = await pageAll(
