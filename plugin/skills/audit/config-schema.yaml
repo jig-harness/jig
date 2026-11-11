@@ -444,7 +444,12 @@ fields:
     read_by: [do-item]
   pull_requests.title_format:
     type: enum
-    values: [conventional, free]
+    values: [conventional, free, pattern]
+    read_by: [do-item]
+  pull_requests.title_pattern:
+    type: string
+    pattern: "\\{key\\}"
+    since: next
     read_by: [do-item]
 
   drive.validation_plan_command:

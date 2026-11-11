@@ -278,7 +278,8 @@ issue on merge, merged by a human.
 | `pull_requests.labels` | list of label names | none | Fixed labels added when the pull request opens, such as `agent-authored`. With `drive.change_areas_catalog`, `pr-plan.ts` also adds `tracker.labels` and `tracker.flags` from the areas the diff directly touches (including generated sources), deduplicated with this list; implied areas add none. Each label must already exist in the repository |
 | `pull_requests.labels_from_issue` | map from an issue label to a label name | none | Labels the pull request carries for the issue's own labels, so branch protection, CODEOWNERS or a merge rule can enforce what the issue's kind of change needs, such as `{ "kind:db-migration": needs-dba-review }`. `pr-plan.ts open --issue-json <file>` reads the issue's labels from the issue JSON do-item writes when it picks the item up, matches them ignoring case and adds the mapped labels; a touched change area's `pr.labels` add theirs. Each label must already exist in the repository: `pr-plan.ts` stops naming a missing one, and the audit reports it |
 | `pull_requests.reviewers_from_issue` | map from an issue label to a list of reviewers | none | Reviewers requested for the issue's own labels (`gh pr create --reviewer`), matched as `labels_from_issue` is, beside a touched change area's `pr.reviewers`. A reviewer is a login or `org/team`, with or without `@`. See [reviewers on a draft](#reviewers-on-a-draft) |
-| `pull_requests.title_format` | `conventional`, `free` | Derived (see [above](#what-is-derived-not-declared)) | Whether titles follow Conventional Commits. With squash merges the title becomes the trunk commit, so it matters |
+| `pull_requests.title_format` | `conventional`, `free`, `pattern` | Derived (see [above](#what-is-derived-not-declared)) | Whether titles follow Conventional Commits, a pattern of your own, or no convention. With squash merges the title becomes the trunk commit, so it matters. `pattern` needs `pull_requests.title_pattern`, and is never derived |
+| `pull_requests.title_pattern` | pattern | none | The title a pull request takes under `title_format: pattern`, for a repository whose protected branches require the tracker key in every commit. The pattern is one line. Placeholders: `{key}` (the issue key as the tracker writes it: `ENG-12`, or `#12` on GitHub Issues) and `{summary}`, each exactly once, such as `{key}: {summary}`. `pr-plan.ts open` prints the title with the key filled in and `<summary>` left for the title (`ENG-12: <summary>`), and the audit checks the pattern against the integration branch's last 30 commit subjects, a squash merge's ` (#n)` suffix aside, warning when fewer than 80% follow it (a pattern ending in a GitHub `(#n)` key is left unchecked, as is a history the clone cannot establish, since a squash merge's suffix looks the same). Set only with `title_format: pattern` |
 
 Before opening, `pr-plan.ts` warns when a merge commit brings in commits from
 a parent outside the planned base, naming those commits. Merges of the base
@@ -1720,7 +1721,8 @@ pull_requests:
   labels: [agent-authored]
   labels_from_issue: { "kind:db-migration": needs-dba-review }
   reviewers_from_issue: { "kind:db-migration": ["@org/dba"] }
-  title_format: conventional             # conventional | free
+  title_format: pattern                  # conventional | free | pattern
+  title_pattern: "{key}: {summary}"      # with title_format: pattern
 drive:
   validation_plan_command: "<your plan command>"   # changed files on stdin, JSON plan on stdout
   load_guard_command: "<your load-guard command>"  # returns once the machine can take heavy checks

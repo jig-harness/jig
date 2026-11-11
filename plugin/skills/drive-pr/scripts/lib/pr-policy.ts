@@ -15,18 +15,20 @@
  *
  * `do-item`'s `pr-plan.ts` applies the policy when a pull request is opened.
  */
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { withSource } from "../../../../shared/consumer.ts";
 import {
   branchPatternAmbiguity,
   tidyBranchName,
 } from "../../../do-item/scripts/lib/tracker/keys.ts";
+import { conventionalCommitlintConfig } from "./commitlint.ts";
 import { readOptionalOverlay } from "./overlay.ts";
 import { ghCall, git } from "./proc.ts";
 import { isRecord } from "../../../../shared/guards.ts";
 import { JigError } from "../../../../shared/errors.ts";
 import { REVIEWER, reviewerArg } from "../../../../shared/forge-logins.ts";
+import { parseTitlePattern } from "../../../../shared/title-pattern.ts";
 
 export const STACKING_MODES = ["none", "native", "branch"] as const;
 export type Stacking = (typeof STACKING_MODES)[number];
@@ -34,7 +36,7 @@ export const OPEN_AS = ["draft", "ready"] as const;
 export type OpenAs = (typeof OPEN_AS)[number];
 export const ISSUE_LINKS = ["closes", "refs", "none"] as const;
 export type IssueLink = (typeof ISSUE_LINKS)[number];
-export const TITLE_FORMATS = ["conventional", "free"] as const;
+export const TITLE_FORMATS = ["conventional", "free", "pattern"] as const;
 /** When the drive marks a draft Ready: after round N, at convergence, or never. */
 export type MarkReady = number | "converged" | "never";
 export type TitleFormat = (typeof TITLE_FORMATS)[number];
@@ -67,6 +69,8 @@ export interface PrPolicy {
   reviewersFromIssue: ReadonlyMap<string, string[]>;
   /** `null` = not declared; `detectTitleFormat` derives it. */
   titleFormat: TitleFormat | null;
+  /** `pull_requests.title_pattern`; set exactly when `titleFormat` is `pattern`. */
+  titlePattern: string | null;
 }
 
 /** The fields `pull_requests` may hold; any other key is refused. */
@@ -82,6 +86,7 @@ export const KNOWN_KEYS = [
   "labels_from_issue",
   "reviewers_from_issue",
   "title_format",
+  "title_pattern",
 ] as const;
 
 function oneOf<T extends string>(
@@ -242,6 +247,7 @@ export function parsePrPolicy(overlay: Record<string, unknown>): PrPolicy {
       `pull_requests.mark_ready must be a round number of at least 1, converged or never (got ${JSON.stringify(rawMarkReady)})`,
     );
 
+  const titleFormat = oneOf(section, "title_format", TITLE_FORMATS);
   return {
     stacking,
     maxStackDepth,
@@ -253,7 +259,8 @@ export function parsePrPolicy(overlay: Record<string, unknown>): PrPolicy {
     labels: labels as string[],
     labelsFromIssue,
     reviewersFromIssue,
-    titleFormat: oneOf(section, "title_format", TITLE_FORMATS),
+    titleFormat,
+    titlePattern: parseTitlePattern(section, titleFormat),
   };
 }
 
@@ -395,64 +402,6 @@ const CODEOWNERS_PATHS = [
 /** The `CODEOWNERS` file GitHub reads (first match wins), or `null`. */
 export function findCodeowners(root: string): string | null {
   return CODEOWNERS_PATHS.find((p) => existsSync(join(root, p))) ?? null;
-}
-
-const COMMITLINT_FILES = [
-  ".commitlintrc",
-  ".commitlintrc.json",
-  ".commitlintrc.yaml",
-  ".commitlintrc.yml",
-  ".commitlintrc.js",
-  ".commitlintrc.cjs",
-  ".commitlintrc.mjs",
-  ".commitlintrc.ts",
-  ".commitlintrc.cts",
-  "commitlint.config.js",
-  "commitlint.config.cjs",
-  "commitlint.config.mjs",
-  "commitlint.config.ts",
-  "commitlint.config.cts",
-];
-
-/** A commitlint configuration at the repository root, or `null`. */
-export function findCommitlintConfig(root: string): string | null {
-  const file = COMMITLINT_FILES.find((f) => existsSync(join(root, f)));
-  if (file !== undefined) return file;
-  try {
-    const pkg = JSON.parse(
-      readFileSync(join(root, "package.json"), "utf8"),
-    ) as Record<string, unknown>;
-    if (isRecord(pkg) && pkg.commitlint !== undefined)
-      return "package.json (commitlint)";
-  } catch {
-    // no package.json, or not JSON: no commitlint configuration there
-  }
-  return null;
-}
-
-/**
- * The commitlint configuration when it names the Conventional Commits rules
- * (`@commitlint/config-conventional` or a preset built on it), else `null`.
- * A commitlint configuration alone proves commits are linted, not which
- * convention they follow.
- */
-export function conventionalCommitlintConfig(root: string): string | null {
-  const found = findCommitlintConfig(root);
-  if (found === null) return null;
-  let text: string;
-  try {
-    if (found === "package.json (commitlint)") {
-      const pkg = JSON.parse(
-        readFileSync(join(root, "package.json"), "utf8"),
-      ) as Record<string, unknown>;
-      text = JSON.stringify(pkg.commitlint);
-    } else {
-      text = readFileSync(join(root, found), "utf8");
-    }
-  } catch {
-    return null;
-  }
-  return /conventional/i.test(text) ? found : null;
 }
 
 /** A Conventional Commits subject: `type(scope)!: description`. */
