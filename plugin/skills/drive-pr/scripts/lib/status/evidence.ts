@@ -106,6 +106,25 @@ function parsePages(raw: string): unknown[] | null {
   }
 }
 
+/** Every page of a commit's `check-runs` or `statuses` listing; `null` when unreadable. */
+async function commitPages(
+  owner: string,
+  repo: string,
+  sha: string,
+  listing: "check-runs" | "statuses",
+): Promise<unknown[] | null> {
+  const r = await ghCall(
+    [
+      "api",
+      "--paginate",
+      "--slurp",
+      `repos/${owner}/${repo}/commits/${sha}/${listing}?per_page=100`,
+    ],
+    { stderr: "ignore" },
+  );
+  return r.code === 0 ? parsePages(r.stdout) : null;
+}
+
 /** What ties a check-run to its workflow run and to when it ended. */
 function jobTiming(c: Record<string, unknown>) {
   return {
@@ -126,17 +145,7 @@ export async function checkRunsFor(
   repo: string,
   sha: string,
 ): Promise<CheckRun[] | null> {
-  const r = await ghCall(
-    [
-      "api",
-      "--paginate",
-      "--slurp",
-      `repos/${owner}/${repo}/commits/${sha}/check-runs?per_page=100`,
-    ],
-    { stderr: "ignore" },
-  );
-  if (r.code !== 0) return null;
-  const pages = parsePages(r.stdout);
+  const pages = await commitPages(owner, repo, sha, "check-runs");
   if (pages === null) return null;
   const runs: CheckRun[] = [];
   for (const page of pages) {
@@ -261,17 +270,7 @@ export async function statusesByPublisher(
   contexts: readonly string[],
 ): Promise<(CommitStatus & { appId: number | null })[] | null> {
   const wanted = new Set(contexts.map((context) => context.toLowerCase()));
-  const r = await ghCall(
-    [
-      "api",
-      "--paginate",
-      "--slurp",
-      `repos/${owner}/${repo}/commits/${sha}/statuses?per_page=100`,
-    ],
-    { stderr: "ignore" },
-  );
-  if (r.code !== 0) return null;
-  const pages = parsePages(r.stdout);
+  const pages = await commitPages(owner, repo, sha, "statuses");
   if (pages === null) return null;
   const newest = new Map<
     string,
