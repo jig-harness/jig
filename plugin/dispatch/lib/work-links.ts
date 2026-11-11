@@ -65,29 +65,43 @@ const CLOSING = "(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)";
 const SEP =
   "(?:[ \\t]*,[ \\t]*(?:and[ \\t]+)?|[ \\t]*&[ \\t]*|[ \\t]+and[ \\t]+)";
 
-/** Remove blockquote containers before the shared reader sees their Markdown, without changing a quote that is literal text inside a top-level fence. */
+/** Remove blockquote containers before the shared reader sees their Markdown, without changing a quote that is literal text inside a top-level fence or comment. */
 function withoutBlockquoteContainers(body: string): string {
-  let fence: string | null = null;
-  return body
-    .split("\n")
-    .map((line) => {
-      const raw = /^( {0,3})(`{3,}|~{3,})([ \t]*)$/.exec(line);
-      if (fence !== null) {
-        if (
-          raw !== null &&
-          raw[2]?.[0] === fence[0] &&
-          (raw[2]?.length ?? 0) >= fence.length
-        )
-          fence = null;
-        return line;
-      }
-      if (raw !== null) {
-        fence = raw[2] ?? null;
-        return line;
-      }
-      return line.replace(/^(?: {0,3}>[ \t]?)+/, "");
-    })
-    .join("\n");
+  let fence: { marker: string; quote: boolean } | null = null;
+  let comment = false;
+  const visible: string[] = [];
+  for (const line of body.split(/\r?\n/)) {
+    const quote = /^(?: {0,3}>[ \t]?)+/.test(line);
+    if (fence?.quote && !quote) {
+      visible.push(fence.marker);
+      fence = null;
+    }
+    const text =
+      (fence === null && !comment) || fence?.quote
+        ? line.replace(/^(?: {0,3}>[ \t]?)+/, "")
+        : line;
+    const raw = /^( {0,3})(`{3,}|~{3,})(.*)$/.exec(text);
+    if (fence !== null) {
+      if (
+        raw !== null &&
+        raw[2]?.[0] === fence.marker[0] &&
+        (raw[2]?.length ?? 0) >= fence.marker.length &&
+        (raw[3] ?? "").trim() === ""
+      )
+        fence = null;
+      visible.push(text);
+      continue;
+    }
+    if (!comment && raw !== null) {
+      fence = { marker: raw[2] ?? "", quote };
+      visible.push(text);
+      continue;
+    }
+    visible.push(text);
+    if (line.includes("<!--")) comment = true;
+    if (comment && line.includes("-->")) comment = false;
+  }
+  return visible.join("\n");
 }
 
 /** Mask indented code after the shared reader has established Markdown's container and paragraph boundaries. */

@@ -184,6 +184,27 @@ describe("a team key", () => {
     expect(closingKeys(body, TEAM.keys)).toEqual(["ENG-3"]);
   });
 
+  it("preserves quote-container boundaries before using the shared reader", () => {
+    const body = [
+      "```markdown",
+      "> ```",
+      "Closes ENG-1",
+      "```",
+      "> ```",
+      "> example",
+      "",
+      "Closes ENG-2",
+      "<!--",
+      "```",
+      "-->",
+      "> ```",
+      "> Closes ENG-3",
+      "> ```",
+      "Closes ENG-4",
+    ].join("\r\n");
+    expect(closingKeys(body, TEAM.keys)).toEqual(["ENG-2", "ENG-4"]);
+  });
+
   it("reads every item in an Oxford-comma list", () => {
     expect(closingKeys("Closes ENG-1, ENG-2, and ENG-3", TEAM.keys)).toEqual([
       "ENG-1",
