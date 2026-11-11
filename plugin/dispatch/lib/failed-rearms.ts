@@ -34,10 +34,22 @@ import {
 import { sameFacts } from "./recovery-facts.ts";
 import type { DrivenPr, RearmHeads } from "./types.ts";
 
-/** Reads the heads a failed re-arm is weighed by. */
+/**
+ * Reads the heads a failed re-arm is weighed by. A read given `timeoutSec`
+ * ends within it, so a caller holding a deadline bounds the read by what it
+ * has left.
+ */
 export interface HeadReader {
-  pr(slug: string, pr: number): Promise<Outcome<string, "unreadable">>;
-  branch(slug: string, branch: string): Promise<Outcome<string, "unreadable">>;
+  pr(
+    slug: string,
+    pr: number,
+    timeoutSec?: number,
+  ): Promise<Outcome<string, "unreadable">>;
+  branch(
+    slug: string,
+    branch: string,
+    timeoutSec?: number,
+  ): Promise<Outcome<string, "unreadable">>;
 }
 
 const FORGE_HEADS: HeadReader = { pr: pullRequestHead, branch: branchHead };
@@ -86,16 +98,22 @@ function failedRearm(
   return { record: latest, exit, heads: latest.record.heads };
 }
 
-/** The heads a re-arm of `pr` launches at, read now; `null` when either does not read, or the drive does not weigh them. */
+/**
+ * The heads a re-arm of `pr` launches at, read now; `null` when either does
+ * not read, the drive does not weigh them, or `leftMs`, the time the caller
+ * has left (`null` for no deadline), is spent. Each read ends within it.
+ */
 export async function launchHeads(
   slug: string,
   pr: DrivenPr,
   read: HeadReader = FORGE_HEADS,
+  leftMs: number | null = null,
 ): Promise<string | null> {
-  if (!weighsHeads(pr)) return null;
+  if (!weighsHeads(pr) || (leftMs !== null && leftMs < 1000)) return null;
+  const timeoutSec = leftMs === null ? undefined : Math.floor(leftMs / 1000);
   const [head, branch] = await Promise.all([
-    read.pr(slug, pr.number),
-    read.branch(slug, pr.head),
+    read.pr(slug, pr.number, timeoutSec),
+    read.branch(slug, pr.head, timeoutSec),
   ]);
   return head.ok && branch.ok
     ? headsText({ pr: head.value, branch: branch.value })

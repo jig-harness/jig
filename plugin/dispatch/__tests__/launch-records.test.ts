@@ -22,6 +22,7 @@ import {
   type ReadRecord,
   writeRecord,
 } from "../lib/launches.ts";
+import { launchHeads } from "../lib/failed-rearms.ts";
 import { markedSince } from "../lib/launch-report.ts";
 import { stateDb, closeStateDb } from "../lib/state.ts";
 import type { DrivenPr } from "../lib/types.ts";
@@ -192,6 +193,52 @@ it("retains a delivered rearm acknowledgment past retention even after a non-ref
   expect(pruneLaunches([read], Date.parse("2027-01-01"), 7, dir)).toEqual([
     sent.id,
   ]);
+});
+
+it("retains a pull request's latest re-arm that recorded its heads past retention, and prunes the older ones", () => {
+  const dir = root();
+  const older = record("20260101T000000Z-aaaaaaaa", { heads: "PR head a" });
+  const latest = record("20260102T000000Z-bbbbbbbb", { heads: "PR head b" });
+  const reads = [older, latest].map((r) => {
+    writeRecord(r, dir);
+    return ended(r, 1, r.createdAt);
+  });
+  expect(pruneLaunches(reads, Date.parse("2027-01-01"), 7, dir)).toEqual([
+    older.id,
+  ]);
+});
+
+describe("the heads a re-arm launches at", () => {
+  const drive = {
+    number: 7,
+    head: "feature/7",
+    class: "re-armable",
+    evidence: {},
+  } as unknown as DrivenPr;
+  const reader = (seen: Array<number | undefined>) => ({
+    pr: async (_slug: string, _pr: number, timeoutSec?: number) => {
+      seen.push(timeoutSec);
+      return ok("a");
+    },
+    branch: async (_slug: string, _branch: string, timeoutSec?: number) => {
+      seen.push(timeoutSec);
+      return ok("b");
+    },
+  });
+
+  it("are read within the time the tick has left", async () => {
+    const seen: Array<number | undefined> = [];
+    expect(await launchHeads("o/r", drive, reader(seen), 7_900)).toBe(
+      "PR head a, branch head b",
+    );
+    expect(seen).toEqual([7, 7]);
+  });
+
+  it("are not read once the tick has no second left", async () => {
+    const seen: Array<number | undefined> = [];
+    expect(await launchHeads("o/r", drive, reader(seen), 400)).toBeNull();
+    expect(seen).toEqual([]);
+  });
 });
 
 describe("a takeover behind a refusal", () => {

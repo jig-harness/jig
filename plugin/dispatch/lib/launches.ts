@@ -821,6 +821,19 @@ function latestIdsBy(
 export const UNARMED_FACTS = "no ledger, head ";
 
 /**
+ * The ids of each pull request's latest re-arm record that carries the heads
+ * it launched at: a failed re-arm holds its drive only while that record is
+ * the pull request's latest evidence, so it outlives the retention.
+ */
+function latestFailedRearms(records: ReadRecord[]): Set<string> {
+  return latestIdsBy(records, (r) =>
+    isDrive(r.record) && r.record.action === "rearm" && r.record.heads != null
+      ? `${r.record.repo}#${String(r.record.pr)}`
+      : null,
+  );
+}
+
+/**
  * The ids of each pull request's latest arm record per head commit: an arm
  * is not repeated at the same head, and the record is the only evidence of
  * that when the arm left no ledger, so it outlives the retention.
@@ -867,7 +880,12 @@ export function pruneLaunches(
   const kept = latestRefusals(records);
   const settled = settledEnds(root);
   for (const id of unsettledStartups(records, settled)) kept.add(id);
-  for (const latest of [latestPickups, latestRedrives, latestArms])
+  for (const latest of [
+    latestPickups,
+    latestRedrives,
+    latestArms,
+    latestFailedRearms,
+  ])
     for (const id of latest(records)) kept.add(id);
   for (const r of records)
     if (
