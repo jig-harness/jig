@@ -391,6 +391,19 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.204.0] - 2026-11-11
+
+### Added
+
+- `pull_requests.title_format: pattern` with `pull_requests.title_pattern`
+  states a pull-request title that leads with the tracker key, for
+  repositories whose protected branches refuse a commit without one. The
+  pattern has the placeholders `{key}` and `{summary}`, each once, such as
+  `{key}: {summary}`. `pr-plan.ts open --issue ENG-12` prints the title as
+  `ENG-12: <summary>`, and the audit warns when fewer than 80% of the
+  integration branch's last 30 commit subjects follow the pattern. Leaving
+  `title_format` unset keeps today's derived convention.
+
 ## [0.203.0] - 2026-11-11
 
 The dispatcher stays within a tracker's rate limit: a served queue costs a
@@ -7045,7 +7058,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.203.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.204.0...HEAD
+[0.204.0]: https://github.com/jig-harness/jig/compare/v0.203.0...v0.204.0
 [0.203.0]: https://github.com/jig-harness/jig/compare/v0.202.1...v0.203.0
 [0.202.1]: https://github.com/jig-harness/jig/compare/v0.202.0...v0.202.1
 [0.202.0]: https://github.com/jig-harness/jig/compare/v0.201.0...v0.202.0
