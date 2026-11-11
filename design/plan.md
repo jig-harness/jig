@@ -571,9 +571,7 @@ The drive and `do-item` assume things about a repository that many do
 not hold. Its AI reviewer stamps the commit it reviewed into a summary
 comment; a reviewer that reviews through the forge's own [review
 objects](../GLOSSARY.md) (CodeRabbit, for one) never does, so the drive either waits until it times
-out or converges without that review. Its CI runs as GitHub Actions; a CI
-service that reports [commit statuses](../GLOSSARY.md) (Jenkins, for one) leaves the repair
-pass and `fix-ci` with no log. Its work lands on one integration branch;
+out or converges without that review. Its work lands on one integration branch;
 products with maintained release lines land most fixes on a release branch
 chosen by the item's target version. Its commits carry no tracker key;
 some organisations refuse any commit on a protected branch without one. Each fix is optional configuration, and an unset one
@@ -585,17 +583,6 @@ keeps today's behaviour. What it will build, one pull request per step:
   review stops as `REVIEW_SKIPPED` with the reason; no merge-ready
   announcement before a draft-skipping reviewer has run on the head marked
   Ready; `arm-drive.ts` refuses a reviewer whose evidence it cannot read.
-- **The CI.** Failing commit statuses keep their URL into the repair
-  round; `ci.log_command` fetches a status's failed log and
-  `ci.repair_skill` names the repair skill; `fix-ci --pr` uses both; an
-  aborted build reads as cancelled. Both settings are read from the
-  default branch and run program content from it, never from the working
-  tree of the pull request being repaired, as the [command
-  store](tracker-facets.md#later-the-command-store) does; a status URL is
-  fetched only where the configured CI profile authorizes its scheme and
-  host, redirects are validated, credentials go only to those hosts, and the
-  fetch has a deadline whose expiry cancels the command and its descendants,
-  for the drive's repair pass and `fix-ci --pr` alike.
 - **The conventions.** `pull_requests.base_rules` chooses the base branch
   from the item's labels, for the branch's start and the pull request
   alike; `pull_requests.commit_prefix`, checked before every push the
