@@ -9,10 +9,11 @@
  * nothing about this write. The newest such change that set the assignee to
  * the user must have set it from nobody, and the changes that appeared must
  * form one unbroken sequence ending at the user: a broken sequence means the
- * listing shows events from outside this write, and it fails closed. A change from someone else means another writer assigned the issue
- * between the read and the write, and this write replaced them: the adapter
- * puts them back, if the issue still shows this write, and the claim stands
- * down. A history that holds no such change cannot verify the write, and
+ * listing shows events from outside this write, and it fails closed. A change
+ * from someone else means another writer assigned the issue between the read
+ * and the write, and this write replaced them: the adapter puts them back, if
+ * the issue still shows this write, and the claim stands down, whether or not
+ * the sequence around that change is complete. A history that holds no such change cannot verify the write, and
  * stands the claim down too. A writer that changes the assignee after this
  * write leaves the issue assigned to someone else, and the claim stands down
  * without restoring anyone: that writer's assignment stands. The trackers
@@ -104,12 +105,12 @@ export function checkAssignment(
 ): AssignmentCheck {
   if (current !== user) return { ok: false, replaced: null };
   const fresh = unseen(changes, known);
-  if (!chainEndsAt(fresh, user)) return { ok: false, replaced: null };
-  const latest = fresh.at(-1);
+  const latest = fresh.findLast((c) => c.to === user);
   if (latest === undefined) return { ok: false, replaced: null };
-  return latest.from === null
+  if (latest.from !== null) return { ok: false, replaced: latest.from };
+  return chainEndsAt(fresh, user)
     ? { ok: true }
-    : { ok: false, replaced: latest.from };
+    : { ok: false, replaced: null };
 }
 
 /** Assign `user` to an unassigned issue, verified; false means refresh the queue. */

@@ -86,14 +86,14 @@ describe("checkAssignment", () => {
     });
   });
 
-  it("fails closed when the new changes skip one the tracker has not shown", () => {
+  it("fails closed but names the replaced assignee when the new changes skip one the tracker has not shown", () => {
     const changes: AssigneeChange[] = [
       { from: null, to: "dana", at: at(1) },
       { from: "erin", to: "me", at: at(2) },
     ];
     expect(checkAssignment("me", changes, "me", [])).toEqual({
       ok: false,
-      replaced: null,
+      replaced: "erin",
     });
   });
 
