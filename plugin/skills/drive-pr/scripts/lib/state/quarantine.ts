@@ -24,6 +24,8 @@ export const QUARANTINE_RETENTION_DAYS = 1;
 
 const DAY_MS = 86_400_000;
 
+const byName = (a: string, b: string): number => a.localeCompare(b);
+
 interface Measurement {
   bytes: number;
   newest: number;
@@ -93,7 +95,7 @@ function writerFiles(
 ): { fingerprint: string; active: boolean } | null {
   const parts: string[] = [];
   let active = false;
-  for (const name of current.filter(isFormerWriterFile).sort()) {
+  for (const name of current.filter(isFormerWriterFile).sort(byName)) {
     const path = join(stateDir, name);
     const stat = lstatSync(path);
     if (!stat.isFile()) return null;
@@ -194,7 +196,8 @@ export function judgeQuarantine(
       writersAfter === null ||
       writersAfter.fingerprint !== writers.fingerprint ||
       after.some(isFormerLock) ||
-      JSON.stringify([...after].sort()) !== JSON.stringify([...current].sort())
+      JSON.stringify([...after].sort(byName)) !==
+        JSON.stringify([...current].sort(byName))
     )
       return {
         action: "keep",
