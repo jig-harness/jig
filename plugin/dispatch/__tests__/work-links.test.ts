@@ -117,6 +117,43 @@ describe("a team key", () => {
     expect(closingKeys(body, TEAM.keys)).toEqual(["ENG-3"]);
   });
 
+  it("follows Markdown block boundaries when masking code", () => {
+    const body = [
+      "~~~",
+      "~~~not-a-closing-fence",
+      "Closes ENG-1",
+      "~~~",
+      "- ~~~",
+      "  Closes ENG-2",
+      "  ~~~",
+      "> ~~~",
+      "> example",
+      "",
+      "Closes ENG-3",
+      "",
+      "\tCloses ENG-4",
+      "Paragraph",
+      "    Closes ENG-5",
+      "<!--",
+      "~~~",
+      "-->",
+      "Closes ENG-6",
+      "`Closes ENG-7``",
+      "``Closes ENG-8```",
+      "`unclosed",
+      "",
+      "Closes ENG-9",
+      "",
+      "`Closes ENG-10`",
+    ].join("\n");
+    expect(closingKeys(body, TEAM.keys)).toEqual([
+      "ENG-3",
+      "ENG-5",
+      "ENG-6",
+      "ENG-9",
+    ]);
+  });
+
   it("reads every item in an Oxford-comma list", () => {
     expect(closingKeys("Closes ENG-1, ENG-2, and ENG-3", TEAM.keys)).toEqual([
       "ENG-1",
@@ -175,6 +212,12 @@ describe("a GitHub issue number, which pull requests share", () => {
     );
     expect(links.itemsOf(9)).toEqual(["#20"]);
   });
+
+  it("leaves both directions unknown when the forge truncates closing references", () => {
+    const links = workLinks([pr({ number: 9, closing: null })], ISSUES);
+    expect(links.itemsOf(9)).toBeNull();
+    expect(links.prsOf("#12")).toBeNull();
+  });
 });
 
 describe("the reverse map", () => {
@@ -191,7 +234,7 @@ describe("the reverse map", () => {
       { number: 21, url: `https://github.com/${REPO}/pull/21` },
       { number: 30, url: `https://github.com/${REPO}/pull/30` },
     ]);
-    expect(links.prsOf("eng-2").map((p) => p.number)).toEqual([25]);
+    expect(links.prsOf("eng-2")?.map((p) => p.number)).toEqual([25]);
     expect(links.prsOf("ENG-3")).toEqual([]);
   });
 

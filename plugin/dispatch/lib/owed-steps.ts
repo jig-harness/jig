@@ -249,7 +249,7 @@ function paragraphAfter(
  * its paragraph. A comment that never closes runs to the end; a fence closes
  * only on a line of its own marker.
  */
-function readLines(body: string): string[] {
+export function markdownTextLines(body: string): string[] {
   const lines: string[] = [];
   const input = body.split(/\r?\n/);
   const ctx: Context = { comment: false, span: null };
@@ -324,7 +324,7 @@ function setextOf(
 function sections(body: string): string[][] {
   const found: string[][] = [];
   let current: string[] | null = null;
-  const lines = readLines(body);
+  const lines = markdownTextLines(body);
   for (const [i, line] of lines.entries()) {
     const setext = setextOf(line, lines[i - 1]);
     // The underlined line was read as the section's text: it is the heading.

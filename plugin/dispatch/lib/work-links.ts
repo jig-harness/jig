@@ -25,6 +25,7 @@ import {
   type IssueKeys,
   keyFromBranch,
 } from "../../skills/do-item/scripts/lib/tracker/keys.ts";
+import { markdownTextLines } from "./owed-steps.ts";
 
 /** What links one open pull request to the items it works on, as the repository's query read it. */
 export interface PrLinkText {
@@ -34,7 +35,8 @@ export interface PrLinkText {
   /** Its description; empty when it has none. */
   body: string;
   /** The issues the forge says it closes, each with its repository (`owner/name`). */
-  closing: ReadonlyArray<{ number: number; repository: string }>;
+  /** `null` when the forge returned only part of its closing-reference connection. */
+  closing: ReadonlyArray<{ number: number; repository: string }> | null;
 }
 
 /** How a repository's keys are read. */
@@ -53,7 +55,7 @@ export interface WorkLinks {
   /** The keys a pull request is linked to, in canonical form; `null` when it is not one the read held, so nothing is known of it. */
   itemsOf(pr: number): string[] | null;
   /** The open pull requests linked to an item, by number. */
-  prsOf(key: string): Array<{ number: number; url: string }>;
+  prsOf(key: string): Array<{ number: number; url: string }> | null;
 }
 
 /** A word that closes what follows it: `close`, `closes`, `closed`, `fix`, `fixes`, `fixed`, `resolve`, `resolves`, `resolved`. */
@@ -63,60 +65,66 @@ const CLOSING = "(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)";
 const SEP =
   "(?:[ \\t]*,[ \\t]*(?:and[ \\t]+)?|[ \\t]*&[ \\t]*|[ \\t]+and[ \\t]+)";
 
-/** Replace text that Markdown renders as a code block, preserving line positions. */
-function withoutCodeBlocks(body: string): string {
-  const lines = body.split("\n");
-  let fence: { marker: "`" | "~"; length: number } | null = null;
-  return lines
+/** Replace inline code spans, including multiline spans and spans with multi-backtick delimiters. */
+function withoutCodeSpans(body: string): string {
+  return body
+    .split(/(\n[ \t]*\n)/)
+    .map((paragraph) => {
+      let result = paragraph;
+      for (let start = 0; start < result.length; ) {
+        if (result[start] !== "`") {
+          start += 1;
+          continue;
+        }
+        let end = start;
+        while (result[end] === "`") end += 1;
+        const length = end - start;
+        const closer = new RegExp(`(?<!\`)\`{${length}}(?!\`)`, "g");
+        closer.lastIndex = end;
+        const found = closer.exec(result);
+        if (found === null) {
+          start = end;
+          continue;
+        }
+        const close = found.index;
+        result = `${result.slice(0, start)}${" ".repeat(close + length - start)}${result.slice(close + length)}`;
+        start = close + length;
+      }
+      return result;
+    })
+    .join("");
+}
+
+/** Mask indented code without mistaking a paragraph continuation for a block. */
+function withoutIndentedCode(body: string): string {
+  let paragraph = false;
+  return body
+    .split("\n")
     .map((line) => {
-      const fenceRun = line.match(
-        /^(?:[ \t]{0,3}>[ \t]?)*[ \t]{0,3}(`{3,}|~{3,})/,
-      )?.[1];
-      if (fence !== null) {
-        const closes =
-          fenceRun !== undefined &&
-          fenceRun[0] === fence.marker &&
-          fenceRun.length >= fence.length;
-        if (closes) fence = null;
-        return " ";
+      if (line.trim() === "") {
+        paragraph = false;
+        return line;
       }
-      if (fenceRun !== undefined) {
-        fence = { marker: fenceRun[0] as "`" | "~", length: fenceRun.length };
-        return " ";
-      }
-      if (/^(?:[ \t]{0,3}>[ \t]?)* {4}/.test(line)) return " ";
+      const indentation =
+        /^\s*/.exec(line.replace(/\t/g, "    "))?.[0].length ?? 0;
+      if (indentation >= 4 && !paragraph) return " ";
+      paragraph = true;
       return line;
     })
     .join("\n");
 }
 
-/** Replace inline code spans, including multiline spans and spans with multi-backtick delimiters. */
-function withoutCodeSpans(body: string): string {
-  let result = body;
-  for (let start = 0; start < result.length; ) {
-    if (result[start] !== "`") {
-      start += 1;
-      continue;
-    }
-    let end = start;
-    while (result[end] === "`") end += 1;
-    const delimiter = result.slice(start, end);
-    const close = result.indexOf(delimiter, end);
-    if (close < 0) {
-      start = end;
-      continue;
-    }
-    result = `${result.slice(0, start)}${" ".repeat(close + delimiter.length - start)}${result.slice(close + delimiter.length)}`;
-    start = close + delimiter.length;
-  }
-  return result;
-}
-
 /** A description without what only shows text: code blocks, inline code and HTML comments. */
 function assertedText(body: string): string {
-  return withoutCodeSpans(withoutCodeBlocks(body)).replace(
-    /<!--[\s\S]*?(?:-->|$)/g,
-    " ",
+  // `markdownTextLines` is the shared Markdown block reader. It establishes
+  // comments before code, honours fence containers, and only closes a fence
+  // on a valid closing line; inline spans are then masked within paragraphs.
+  return withoutIndentedCode(
+    withoutCodeSpans(
+      markdownTextLines(body)
+        .map((line) => line.replace(/^\\/, ""))
+        .join("\n"),
+    ),
   );
 }
 
@@ -142,7 +150,7 @@ export function closingKeys(body: string, keys: IssueKeys): string[] {
 }
 
 /** The keys one pull request is linked to, each once: its branch's first, then its description's, then the forge's closing references. */
-function itemsOfPr(pr: PrLinkText, rules: LinkRules): string[] {
+function itemsOfPr(pr: PrLinkText, rules: LinkRules): string[] | null {
   const { keys } = rules;
   const found: string[] = [];
   const add = (key: string | null) => {
@@ -154,10 +162,12 @@ function itemsOfPr(pr: PrLinkText, rules: LinkRules): string[] {
     (rules.issueRepository !== null &&
       sameRepository(rules.issueRepository, rules.repository));
   if (ownIssues) for (const key of closingKeys(pr.body, keys)) add(key);
-  if (keys.sharesPullRequestNumbers && rules.issueRepository !== null)
+  if (keys.sharesPullRequestNumbers && rules.issueRepository !== null) {
+    if (pr.closing === null) return null;
     for (const ref of pr.closing)
       if (sameRepository(ref.repository, rules.issueRepository))
         add(keys.normalize(String(ref.number)));
+  }
   return found;
 }
 
@@ -168,8 +178,13 @@ export function workLinks(
 ): WorkLinks {
   const items = new Map<number, string[]>();
   const reverse = new Map<string, Array<{ number: number; url: string }>>();
+  let unknownReverse = false;
   for (const pr of [...prs].sort((a, b) => a.number - b.number)) {
     const keys = itemsOfPr(pr, rules);
+    if (keys === null) {
+      unknownReverse = true;
+      continue;
+    }
     items.set(pr.number, keys);
     for (const key of keys) {
       const linked = reverse.get(key) ?? [];
@@ -180,6 +195,9 @@ export function workLinks(
   }
   return {
     itemsOf: (pr) => items.get(pr) ?? null,
-    prsOf: (key) => [...(reverse.get(rules.keys.normalize(key) ?? key) ?? [])],
+    prsOf: (key) =>
+      unknownReverse
+        ? null
+        : [...(reverse.get(rules.keys.normalize(key) ?? key) ?? [])],
   };
 }

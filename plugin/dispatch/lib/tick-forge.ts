@@ -212,16 +212,18 @@ export async function readForge(
   return out;
 }
 
-/** What the query read of one open pull request that links it to its items; `null` when its closing references did not read. */
+/** What the query read of one open pull request that links it to its items. */
 function linkText(raw: unknown): PrLinkText | null {
   const p = (raw ?? {}) as Record<string, unknown>;
-  if (typeof p.number !== "number" || !Array.isArray(p.closing)) return null;
+  if (typeof p.number !== "number") return null;
   return {
     number: p.number,
     url: typeof p.url === "string" ? p.url : "",
     headRefName: typeof p.headRefName === "string" ? p.headRefName : "",
     body: typeof p.body === "string" ? p.body : "",
-    closing: p.closing as PrLinkText["closing"],
+    closing: Array.isArray(p.closing)
+      ? (p.closing as Exclude<PrLinkText["closing"], null>)
+      : null,
   };
 }
 

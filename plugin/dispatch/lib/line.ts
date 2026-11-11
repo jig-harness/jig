@@ -294,9 +294,9 @@ class RepoView {
             },
           };
     }
-    return item === null
-      ? {}
-      : { links: { items: [], prs: links.prsOf(item) } };
+    if (item === null) return {};
+    const prs = links.prsOf(item);
+    return prs === null ? {} : { links: { items: [], prs } };
   }
 
   launchOf(target: string): LaunchOutcome | undefined {
