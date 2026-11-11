@@ -474,6 +474,7 @@ export function recordOf(
   row: LaunchRow,
   root: string,
   control?: Map<string, ControlRows>,
+  db: Database = stateDb(root),
 ): LaunchRecord | null {
   const value = parseJson(row.record, `launch record ${row.id}`);
   // A record whose embedded id names another row would read that row's claim and exit.
@@ -484,7 +485,7 @@ export function recordOf(
       ? controlRows(root, row.id).get(row.id)
       : control.get(row.id);
   const record = normalized(value);
-  const claims = pickupClaims(root, row.id);
+  const claims = pickupClaims(row.id, db);
   if (claims.length > 0)
     record.claimedItems = [
       ...new Set([...(record.claimedItems ?? []), ...claims]),
@@ -493,8 +494,14 @@ export function recordOf(
 }
 
 /** Claims written at the tracker boundary, kept apart from tick-owned record JSON. */
-function pickupClaims(root: string, launch: string): string[] {
-  return stateDb(root)
+function pickupClaims(launch: string, db: Database): string[] {
+  const table = db
+    .query(
+      "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'pickup_claims'",
+    )
+    .get();
+  if (table === null) return [];
+  return db
     .query("SELECT item FROM pickup_claims WHERE launch = ? ORDER BY item")
     .all(launch)
     .map((row) => (row as { item: string }).item);
@@ -743,7 +750,7 @@ export async function readLaunches(
   const records: ReadRecord[] = [];
   const unreadable: string[] = [];
   for (const row of all) {
-    const record = recordOf(row, root, control);
+    const record = recordOf(row, root, control, db);
     if (record === null) {
       unreadable.push(`launch record ${row.id} in ${statePath(root)}`);
       continue;

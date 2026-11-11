@@ -17,7 +17,11 @@ import {
   writeRecord,
 } from "../../dispatch/lib/launches.ts";
 import { writeRow } from "../../dispatch/lib/log.ts";
-import { closeStateDb, statePath } from "../../dispatch/lib/state.ts";
+import {
+  closeStateDb,
+  SCHEMA_VERSION,
+  statePath,
+} from "../../dispatch/lib/state.ts";
 import { closeDatabase } from "../../shared/records/db.ts";
 import {
   DRIVE_DB_VERSION,
@@ -209,6 +213,27 @@ describe("jig ask against the dispatcher's database", () => {
     );
     expect(answer.last).toBeNull();
     expect(readFileSync(file).equals(before)).toBe(true);
+  });
+
+  it("reads launch records from a pre-pickup-claims schema without migrating it", async () => {
+    const w = world();
+    seed(w);
+    const file = statePath(w.state);
+    edit(
+      file,
+      "DROP TABLE pickup_claims",
+      `PRAGMA user_version = ${SCHEMA_VERSION - 1}`,
+    );
+    const before = readFileSync(file);
+
+    const answer = await askNine(w);
+    expect(answer.sources.records).toContainEqual({
+      record: "dispatch-launch",
+      read: true,
+      local: true,
+    });
+    expect(readFileSync(file).equals(before)).toBe(true);
+    expect(userVersion(file)).toBe(SCHEMA_VERSION - 1);
   });
 });
 
