@@ -115,6 +115,8 @@ export async function projectBlocked(
   labels: LabelConfig,
   pr: BlockedPr,
   now: () => Date = () => new Date(),
+  /** Asked before each item's reads and writes: `false` when the caller's ledger is no longer the current one. */
+  stillOurs: () => Promise<boolean> = async () => true,
 ): Promise<BlockedOutcome[]> {
   if (standsAside(tracker, labels, pr) !== null) return [];
   const want = wantOf(pr.projected);
@@ -122,8 +124,17 @@ export async function projectBlocked(
     (k) => keys.normalize(k) ?? k,
   );
   const out: BlockedOutcome[] = [];
-  for (const key of items)
+  for (const key of items) {
+    if (!(await stillOurs())) {
+      out.push({
+        item: key,
+        outcome: "refused",
+        detail: "its drive ledger no longer belongs to this driver",
+      });
+      break;
+    }
     out.push(await projectItem(tracker, pr, want, key, now));
+  }
   return out;
 }
 

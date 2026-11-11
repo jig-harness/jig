@@ -429,7 +429,10 @@ const OPERATIONS: Record<string, Operation> = {
       const tracker = openTracker();
       const blocked = await blockedClaimRefusal(tracker, normalized);
       if (blocked !== null) return blocked;
-      return withClaimLock(claimLockKey(tracker, normalized), () => {
+      return withClaimLock(claimLockKey(tracker, normalized), async () => {
+        // The projection may have blocked the item while the claim waited for the lock.
+        const stale = await blockedClaimRefusal(tracker, normalized);
+        if (stale !== null) return stale;
         const ancestorKey = ancestor
           ? (shape?.normalize(ancestor) ?? ancestor)
           : undefined;

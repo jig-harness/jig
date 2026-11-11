@@ -136,6 +136,18 @@ export function jiraModel(
     stateName: stateNameIn(states),
     closedState,
     read(issue) {
+      // A status configured as blocked stays blocked whatever category the site files it under.
+      const blocked = states.blocked;
+      if (
+        issue.status.category === "done" &&
+        blocked !== null &&
+        blocked !== undefined &&
+        same(blocked, issue.status.name)
+      )
+        return {
+          canonical: "blocked",
+          state: { name: blocked, type: STATE_TYPES.blocked },
+        };
       if (issue.status.category === "done") {
         const s = closedState(issue);
         return {

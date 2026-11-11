@@ -73,7 +73,7 @@ describe("reading an item in blocked", () => {
       issue_tracker: { states: { blocked: "Blocked" } },
     });
     const model = jiraModel(config.states, config.jira);
-    for (const category of ["new", "indeterminate"])
+    for (const category of ["new", "indeterminate", "done"])
       expect(
         model.read({
           status: { id: "9", name: "Blocked", category },
@@ -207,6 +207,15 @@ describe("issue_tracker.jira.blocked_fields", () => {
     expect(blockedFieldValue(area as never, VALUE)).toMatchObject({
       type: "doc",
     });
+  });
+
+  it("refuses two roles that resolve to the same field", () => {
+    expect(() =>
+      resolveBlockedFields(
+        { reason: "Blocked Reason", since: "customfield_1" },
+        SITE_FIELDS,
+      ),
+    ).toThrow("need different fields");
   });
 
   it("refuses a name matching several fields, none, or a field of another type", () => {

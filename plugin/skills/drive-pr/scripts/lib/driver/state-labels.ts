@@ -281,6 +281,7 @@ async function itemsFollow(
   ledger: LedgerReading,
   moment: DriveMoment,
   source: LabelSource,
+  stillOurs: () => Promise<boolean>,
 ): Promise<void> {
   const items = openItems(pr, source);
   if (items === null || source.pullRequest === undefined) return;
@@ -292,7 +293,14 @@ async function itemsFollow(
     return;
   }
   const input = blockedInput(pr, facts.value, ledger, moment);
-  for (const o of await projectBlocked(items, items.keys, config, input)) {
+  for (const o of await projectBlocked(
+    items,
+    items.keys,
+    config,
+    input,
+    undefined,
+    stillOurs,
+  )) {
     const line = blockedLine(pr, o);
     if (line !== null) console.error(`labels: ${line}`);
   }
@@ -362,6 +370,7 @@ export async function labelDrive(
         ledger,
         moment,
         source,
+        stillOurs,
       );
   } catch (error) {
     console.error(`labels: ${defectLine(`PR #${pr}`, error)}`);

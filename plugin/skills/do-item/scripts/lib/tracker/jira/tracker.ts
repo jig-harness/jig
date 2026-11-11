@@ -509,7 +509,18 @@ export function jiraTracker(client: Client): Tracker {
     },
 
     async writeBlockedFields(key, value, signal) {
-      const fields = await client.blockedFields();
+      signal?.throwIfAborted();
+      const discovery = client.blockedFields();
+      const fields = await (signal === undefined
+        ? discovery
+        : Promise.race([
+            discovery,
+            new Promise<never>((_, reject) => {
+              signal.addEventListener("abort", () => reject(signal.reason), {
+                once: true,
+              });
+            }),
+          ]));
       if (fields.length === 0) return false;
       signal?.throwIfAborted();
       await transport(

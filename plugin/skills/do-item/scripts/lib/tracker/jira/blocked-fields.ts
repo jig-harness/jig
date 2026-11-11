@@ -41,6 +41,12 @@ export function resolveBlockedFields(
         `${at}: '${configured}' matches ${matches.length} fields of the site${matches.length > 1 ? ` (${matches.map((f) => f.id).join(", ")}); name the field by its id` : ""}, expected exactly 1`,
       );
     const f = matches[0] as SiteField;
+    const same = out.find((o) => o.id === f.id);
+    if (same !== undefined)
+      throw new TrackerConfigError(
+        at,
+        `${at}: '${configured}' is field ${f.id}, which issue_tracker.jira.blocked_fields.${same.role} names too; the reason and the start need different fields`,
+      );
     out.push({ role, id: f.id, name: f.name, schema: f.schema });
   }
   return out;

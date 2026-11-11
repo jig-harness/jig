@@ -118,6 +118,20 @@ describe("a tracker with a blocked state", () => {
     });
   });
 
+  test("a ledger that is no longer the caller's moves nothing", async () => {
+    const fake = fresh({ "ENG-123": "In Progress" });
+    const out = await projectBlocked(
+      fakeTracker(fake, NAMES),
+      KEYS,
+      LABELS,
+      parked(),
+      NOW,
+      async () => false,
+    );
+    expect(out.map((o) => o.outcome)).toEqual(["refused"]);
+    expect(fake.states.get("ENG-123")).toBe("In Progress");
+  });
+
   test("the round trip: answering the park and re-arming returns the item to the state it left", async () => {
     const fake = fresh({ "ENG-123": "In Review" });
     const tracker = fakeTracker(fake, NAMES);
