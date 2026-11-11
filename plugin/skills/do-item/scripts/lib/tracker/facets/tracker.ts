@@ -36,6 +36,7 @@ import {
   type NewIssue,
   type PoolIssue,
   type PoolQuery,
+  type QueueIssue,
   type Tracker,
   TrackerRequestError,
 } from "../port.ts";
@@ -68,6 +69,16 @@ export type CoreIssue = Omit<Issue, "type" | "size"> &
 export type CorePoolIssue = Omit<PoolIssue, "type" | "size"> &
   Partial<Pick<PoolIssue, "type" | "size">> & { hiddenLabels?: string[] };
 
+/** A queue issue as an adapter's core reads it: its parent in core form too. */
+export type CoreQueueIssue = CorePoolIssue &
+  Pick<QueueIssue, "relations"> & {
+    parent: {
+      issue: CorePoolIssue;
+      description: string;
+      parent: string | null;
+    } | null;
+  };
+
 /** The adapter's own part of `facetStores`. */
 export interface CoreFacetReport {
   facets: Partial<
@@ -84,6 +95,8 @@ export interface CoreTracker
     | "openIssues"
     | "openChildren"
     | "poolIssue"
+    | "poolIssues"
+    | "queueIssues"
     | "assignedIssues"
     | "incompleteIssues"
     | "openPopulation"
@@ -93,6 +106,15 @@ export interface CoreTracker
   openIssues(query: PoolQuery): Promise<CorePoolIssue[]>;
   openChildren(key: string): Promise<CorePoolIssue[]>;
   poolIssue(key: string, signal?: AbortSignal): Promise<CorePoolIssue | null>;
+  poolIssues?(
+    keys: ReadonlyArray<string>,
+    signal?: AbortSignal,
+  ): Promise<Map<string, CorePoolIssue | null>>;
+  queueIssues?(
+    identity: string,
+    states: ReadonlyArray<CanonicalState>,
+    signal?: AbortSignal,
+  ): Promise<CoreQueueIssue[]>;
   assignedIssues(
     identity: string,
     states: ReadonlyArray<CanonicalState>,
@@ -145,7 +167,13 @@ export function withFacets(
   facets: Facets,
   coreFacets: ReadonlySet<Facet>,
 ): Tracker {
-  const { openPopulation, facetReport, ...rest } = core;
+  const {
+    openPopulation,
+    facetReport,
+    poolIssues: _batch,
+    queueIssues: _queue,
+    ...rest
+  } = core;
   const codecs = new Map<Facet, LabelCodec>();
   for (const f of FACETS) {
     const slot = facets[f];
@@ -440,6 +468,7 @@ export function withFacets(
 
   return {
     ...rest,
+    configKey: JSON.stringify(facets),
     async getIssue(key) {
       const issue = await rest.getIssue(key);
       return issue === null ? null : withValues(issue);
@@ -465,6 +494,7 @@ export function withFacets(
         withValues,
       );
     },
+    ...batchedReads(core, withValues),
     async ledger(query, onPage) {
       const issues = await rest.ledger(query, onPage);
       const codec = codecs.get("priority");
@@ -506,5 +536,40 @@ export function withFacets(
         discovery: extra.discovery,
       };
     },
+  };
+}
+
+/** The batched reads of a core that has them, each issue given its facet values. */
+function batchedReads(
+  core: CoreTracker,
+  withValues: <T extends CorePoolIssue>(issue: T) => T & FacetValues,
+): Pick<Tracker, "poolIssues" | "queueIssues"> {
+  const { poolIssues, queueIssues } = core;
+  return {
+    ...(poolIssues === undefined
+      ? {}
+      : {
+          async poolIssues(keys, signal) {
+            const read = await poolIssues(keys, signal);
+            return new Map(
+              [...read].map(([k, v]) => [k, v === null ? null : withValues(v)]),
+            );
+          },
+        }),
+    ...(queueIssues === undefined
+      ? {}
+      : {
+          async queueIssues(identity, states, options) {
+            const signal = readSignal(options);
+            refuseStopped(signal);
+            return (await queueIssues(identity, states, signal)).map((q) => ({
+              ...withValues(q),
+              parent:
+                q.parent === null
+                  ? null
+                  : { ...q.parent, issue: withValues(q.parent.issue) },
+            }));
+          },
+        }),
   };
 }

@@ -23,9 +23,10 @@ import { span } from "./../../../../../shared/trace.ts";
 
 import { ciPolicy } from "./../ci-policy.ts";
 
-import { failedRunsToTell } from "./failed-runs.ts";
+import { failedRunsToTell, failedStatusesToTell } from "./failed-runs.ts";
+import { ciRepairSkillSetting } from "./../overlay.ts";
 
-import { runRepairPass } from "./repair.ts";
+import { type RepairCi, runRepairPass } from "./repair.ts";
 import { announcePolicyBase } from "./policy-base.ts";
 
 import {
@@ -353,15 +354,58 @@ export async function requiredFailureMayBeStale(
   return { staleRequiredFailure };
 }
 
+/**
+ * What a CI-repair pass is told beside its detail: the failed runs, the
+ * failing commit statuses and the repository's CI-repair skill. `null` once
+ * an invalid `ci.repair_skill` has been reported: the drive stops.
+ */
+async function repairChannel(
+  pr: string,
+  failing: FailingChecks,
+): Promise<RepairCi | null> {
+  const skill = ciRepairSkillSetting();
+  if (!skill.ok) {
+    console.error(
+      `could not read the CI-repair skill: ${skill.failure.reason}`,
+    );
+    return null;
+  }
+  if (skill.value !== undefined)
+    console.error(`  The pass loads the CI-repair skill ${skill.value}.`);
+  return {
+    failedRuns: await failedRunsToTell(pr, failing.runs),
+    failedStatuses: failedStatusesToTell(failing.statuses),
+    ...(skill.value === undefined ? {} : { repairSkill: skill.value }),
+  };
+}
+
+/**
+ * A lock takeover ended the repair pass. Re-join the SAME witness the
+ * ordinary-pass path joins on its own `compromised` branch: the takeover
+ * stopped this repair pass from a TIMER callback, which could not wait, so
+ * `passStopWitness` is the only place that wait is still live. Clearing
+ * `held` on an unwitnessed termination is what keeps the loop-top
+ * `compromised` check from releasing a lock over a repair descendant that
+ * may still be running.
+ */
+async function afterTakeover(context: DriveRoundContext): Promise<"continue"> {
+  if (
+    driverRuntime.passStopWitness !== null &&
+    !(await driverRuntime.passStopWitness)
+  )
+    context.held.length = 0;
+  return "continue";
+}
+
 async function repairConvergedCi(
   finalVerdict: string,
   context: DriveRoundContext,
-  failingRuns: unknown,
+  failing: FailingChecks,
 ): Promise<number | "continue"> {
-  const failing = finalVerdict.slice("failing:".length).trim();
+  const failingNames = finalVerdict.slice("failing:".length).trim();
   if (context.dryRun || context.agent.length === 0) {
     console.error(
-      `(dry-run) would run a CI-repair pass for: ${failing || "<unnamed checks>"}`,
+      `(dry-run) would run a CI-repair pass for: ${failingNames || "<unnamed checks>"}`,
     );
     return 1;
   }
@@ -386,13 +430,15 @@ async function repairConvergedCi(
   // The repair dispatches ahead of the round's own refresh: resolve the
   // policy base again, for a pull request retargeted since.
   await announcePolicyBase(context.pr);
+  const told = await repairChannel(context.pr, failing);
+  if (told === null) return 1;
   const repair = await runRepairPass(
     context.agent,
     context.held,
     "ci-repair",
-    failing,
+    failingNames,
     context.mailboxCheckpoint,
-    await failedRunsToTell(context.pr, failingRuns),
+    told,
   );
   if (!repair.dispatched) {
     // The repair pass's OWN pre-spawn checkpoint (inside
@@ -411,25 +457,10 @@ async function repairConvergedCi(
   // Confirmed dispatch — NOW commit the charge.
   context.ciRepairs += 1;
   const repairCode = repair.code;
-  if (driverRuntime.compromised !== "") {
-    // Checked before `postPassMailboxExit` — a lock takeover means
-    // this driver has already lost authority over the PR, which
-    // outranks any exit code the mailbox checkpoint might report.
-    // Re-join the SAME witness the ordinary-pass path joins on its
-    // own `compromised` branch: the takeover stopped this repair
-    // pass from a TIMER callback, which could not wait, so
-    // `passStopWitness` is the only place that wait is still live.
-    // Clearing `held` on an unwitnessed termination is what keeps
-    // the loop-top `compromised` check below from releasing a lock
-    // over a repair descendant that may still be running.
-    if (
-      driverRuntime.passStopWitness !== null &&
-      !(await driverRuntime.passStopWitness)
-    ) {
-      context.held.length = 0;
-    }
-    return "continue";
-  }
+  // Checked before `postPassMailboxExit` — a lock takeover means
+  // this driver has already lost authority over the PR, which
+  // outranks any exit code the mailbox checkpoint might report.
+  if (driverRuntime.compromised !== "") return await afterTakeover(context);
   // A directive observed immediately after this pass completed —
   // outranks reporting the pass's own result, same as the
   // ordinary-pass path's own post-pass checkpoint. The charge above
@@ -516,7 +547,7 @@ async function waitForReplacement(
       `review converged, but the verdict has stayed '${finalVerdict}': no run replaced the cancelled check(s) in ${Math.round((context.witnessWaitLimit * FINAL_CI_POLL_SECONDS) / 60)} minute(s).`,
     );
     console.error(
-      "  A cancelled check is unknown: not a failure to repair, and not a pass. Run the workflow",
+      "  A cancelled check is unknown: not a failure to repair, and not a pass. Run the workflow or build",
     );
     console.error(
       `  again on this head (the CI hold's release does; 'gh run rerun' of a run started under the hold replays its label),`,
@@ -621,7 +652,7 @@ export async function evaluateFinalCi(
     !staleRequiredFailure &&
     context.ciRepairs < context.ciRepairBudget
   ) {
-    return await repairConvergedCi(finalVerdict, context, failing.runs);
+    return await repairConvergedCi(finalVerdict, context, failing);
   }
   // A `pending:` verdict is never a stop condition: it reaches here
   // only when `finalCi.code === 4` (the branch above let it through

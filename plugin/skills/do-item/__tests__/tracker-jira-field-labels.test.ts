@@ -63,6 +63,21 @@ const SITE_FIELDS = [
     name: "customfield_10050",
     schema: { type: "option" },
   },
+  // A system field JQL names otherwise than its id.
+  {
+    id: "fixVersions",
+    name: "Fix versions",
+    schema: { type: "array", items: "version", system: "fixVersions" },
+    clauseNames: ["fixVersion"],
+  },
+  {
+    id: "customfield_10130",
+    name: "Target version",
+    schema: {
+      type: "version",
+      custom: "com.atlassian.jira.plugin.system.customfieldtypes:version",
+    },
+  },
 ];
 
 const FIELD_LABELS = {
@@ -195,6 +210,63 @@ describe("Jira adapter: fields read as labels", () => {
     const err = await rejection(t.getIssue("ENG-1"));
     expect(err).toBeInstanceOf(TrackerConfigError);
     expect(String(err)).toContain('of type "user"');
+  });
+
+  it("reads each version of a version field as a label, by its name", async () => {
+    const { t } = jira(
+      routes({
+        "POST search/jql": page(),
+        "GET field": SITE_FIELDS,
+        "GET issue/ENG-1": issue({
+          key: "ENG-1",
+          fields: {
+            fixVersions: [
+              { id: "10001", name: "2.4", released: false },
+              { id: "10002", name: " 2.4.1" },
+            ],
+            customfield_10130: { id: "10003", name: "3.0" },
+          },
+        }),
+      }),
+      overlay({ "Fix versions": "fixversion:", "Target version": "target:" }),
+    );
+    expect((await t.getIssue("ENG-1"))?.labels).toEqual([
+      "fixversion:2.4",
+      "fixversion:2.4.1",
+      "target:3.0",
+    ]);
+  });
+
+  it("selects by a version in JQL on the name JQL knows the field by", async () => {
+    const { t, calls } = jira(
+      routes({ "GET field": SITE_FIELDS, "POST search/jql": page() }),
+      overlay({ fixVersions: "fixversion:", "Target version": "target:" }),
+    );
+    await t.labelledIssues("fixversion:2.4");
+    await t.labelledIssues("target:3.0");
+    expect(
+      calls.filter((c) => c.path === "search/jql").map((c) => jqlOf(c)),
+    ).toEqual([
+      'project = ENG AND fixVersion = "2.4" ORDER BY created ASC',
+      'project = ENG AND cf[10130] = "3.0" ORDER BY created ASC',
+    ]);
+  });
+
+  it("resolves the fields when the tracker is reached, as the audit reaches it", async () => {
+    const reach = (fieldLabels: Record<string, string>) =>
+      jira(
+        routes({ "GET project/ENG": { key: "ENG" }, "GET field": SITE_FIELDS }),
+        overlay(fieldLabels),
+      ).t.reach();
+    await reach({ "Fix versions": "fixversion:", Size: "size:" });
+    for (const [fieldLabels, said] of [
+      [{ Driver: "driver:" }, 'of type "user"'],
+      [{ Sise: "size:" }, "matches 0 fields"],
+    ] as const) {
+      const err = await rejection(reach(fieldLabels));
+      expect(err).toBeInstanceOf(TrackerConfigError);
+      expect(String(err)).toContain(said);
+    }
   });
 
   it("refuses a rich-text field, whose values are not strings", async () => {

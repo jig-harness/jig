@@ -644,10 +644,16 @@ make, use the entry's term instead.
   be reviewed before what it builds on merges. A *native* stack records the
   final target in the *forge*'s own stack metadata; a plain *branch chain*
   records it nowhere, and tools have to walk the chain of bases to find it.
+- **Release line** — a long-lived branch that keeps an earlier version of a
+  product maintained (`release/2.4`) beside the *integration branch*. A fix
+  for that version lands there first, and is carried forward to the newer
+  branches afterwards, often by automation.
 - **Pull-request policy** — a repository's declared rules for how pull
-  requests are shaped: whether they may stack, how branches are named,
-  whether they open as drafts and when they are marked Ready, how a pull
-  request links its issue, and how large it may be.
+  requests are shaped: whether they may stack, which base an item's pull
+  request targets (the *integration branch*, or a *release line* its labels
+  choose), how branches are named, how titles and commit messages carry the
+  issue key, whether they open as drafts and when they are marked Ready, how
+  a pull request links its issue, and how large it may be.
 - **Merge base** — the most recent commit two branches share. A merge
   compares each branch with it to see what each side changed; a pull
   request's own changes are its diff against the merge base with its base
@@ -1041,8 +1047,9 @@ make, use the entry's term instead.
   same code, because of timing, shared state or an unreliable dependency.
 - **Lock quarantine** — displaced lock directories or recovery marker files
   kept under a distinct name so a later lock holder cannot mistake them for
-  the current lock. The drive's state reaper reports these entries but keeps
-  them because it cannot exclude legacy writers. This stores old lock artifacts;
+  the current lock. The drive's state reaper reports these entries and retires
+  them once a day has passed with no earlier-release driver writing in the
+  clone. This stores old lock artifacts;
   *flaky-test quarantine* sets aside unreliable tests.
 - **Flaky-test quarantine** — setting a *flaky test* aside so its failures
   stop blocking merges while it is fixed, without hiding them: the test keeps

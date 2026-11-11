@@ -13,6 +13,13 @@
  * list moved under it, and a shorter population is never presented as whole.
  */
 
+import {
+  type BudgetGovernor,
+  credentialKey,
+  defaultGovernor,
+  FALLBACK_LIMIT_MS,
+  TrackerRateLimited,
+} from "../../../../../../shared/tracker-budget.ts";
 import { swallow } from "../../../../../../shared/errors.ts";
 import { isRecord } from "../../../../../../shared/guards.ts";
 
@@ -226,16 +233,24 @@ async function bodyText(
   }
 }
 
-/** HTTPS transport to `site`; each call bounded by `JIRA_TIMEOUT_MS`. */
+/**
+ * HTTPS transport to `site`; each call bounded by `JIRA_TIMEOUT_MS`. With
+ * `governor` (the machine's request budget), a call is refused locally while
+ * the credential is rate limited, and an HTTP 429 limits it until its
+ * `Retry-After`.
+ */
 export function httpTransport(
   site: string,
   credential: { email: string; token: string },
   fetchImpl: typeof fetch = fetch,
+  governor?: BudgetGovernor,
 ): JiraTransport {
   const basic = Buffer.from(`${credential.email}:${credential.token}`);
   const authorization = `Basic ${basic.toString("base64")}`;
+  const key = credentialKey("jira", `${site} ${authorization}`);
   return async (request, signal) => {
     if (cancelled(signal)) throw abortedError(signal);
+    governor?.admit("jira", key);
     const what = `${request.method} ${request.path}`;
     let res: Response;
     try {
@@ -251,6 +266,14 @@ export function httpTransport(
       );
     }
     const text = await bodyText(res, signal, what);
+    if (res.status === 429 && governor !== undefined) {
+      const wait = retryAfterOf(res.headers);
+      const until =
+        Date.now() + (wait === null ? FALLBACK_LIMIT_MS : wait * 1000);
+      const why = `Jira refused ${what} (HTTP 429)`;
+      governor.observe(key, { limitedUntil: until, why });
+      throw new TrackerRateLimited("jira", until, why);
+    }
     if (!res.ok) throw httpFailure(res.status, res.headers, text, what);
     return answerBody(text, res.status, what);
   };
@@ -272,7 +295,7 @@ export function defaultTransport(
         { unavailable: true },
       );
     };
-  return httpTransport(site, credential);
+  return httpTransport(site, credential, fetch, defaultGovernor());
 }
 
 // ── Pagers ─────────────────────────────────────────────────────────────────

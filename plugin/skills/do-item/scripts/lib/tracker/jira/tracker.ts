@@ -308,6 +308,7 @@ export function jiraTracker(client: Client): Tracker {
   const tracker: CoreTracker = {
     adapter: "jira",
     team: project,
+    instance: client.site,
     stateName: (state) => model.stateName(state),
 
     async reach(signal) {
@@ -322,6 +323,10 @@ export function jiraTracker(client: Client): Tracker {
         throw err;
       }
       await client.poolScope(signal);
+      // Each `field_labels` entry resolved against the site: a field it does
+      // not name once, or whose values do not read as labels, is refused here
+      // rather than at the first issue read.
+      await client.fieldLabels(signal);
     },
 
     async getIssue(key) {
