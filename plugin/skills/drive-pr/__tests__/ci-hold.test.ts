@@ -1548,6 +1548,7 @@ case "$1" in
   api)
     case "$*" in
       *timeline*) printf '%s\\n' '[[]]' ;;
+      *'/status?'*) printf '%s\\n' '[{"statuses":[]}]' ;;
       *) printf '%s\\n' '${checkRunsJson}' ;;
     esac ;;
   *) exit 1 ;;
@@ -1894,10 +1895,9 @@ esac
     checkRunsJson: string,
     secondHead: string,
   ): { bin: string; stateDir: string } {
-    // `pr view` answers HEAD on its first call (the entry snapshot) and
-    // secondHead on every later call (the final re-check) — modeling a push
-    // that lands in the window finalReady spends reading check-runs and the
-    // label timeline.
+    // `pr view` answers HEAD first (the entry snapshot) and secondHead after
+    // (the final re-check): a push landing while finalReady reads check-runs
+    // and the label timeline.
     const root = mkdtempSync(join(tmpdir(), "drive-pr-ci-hold-race-"));
     const bin = join(root, "bin");
     const stateDir = scopedStateDir(join(root, "state"));
