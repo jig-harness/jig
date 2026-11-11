@@ -108,3 +108,46 @@ export function mergeLine(
     }),
   };
 }
+
+/**
+ * The slugs of the line's repositories, with the identity the line before
+ * held for a configured path whose report found none: a report that found no
+ * slug replaces the entry, not the parks and receipts kept under it.
+ */
+export function identifiedSlugs(
+  line: LineSnapshot,
+  before: LineSnapshot | null,
+  listed: ReadonlyArray<{ path: string }>,
+): Set<string> {
+  const slugs = new Set(
+    line.repos.flatMap((r) => (r.slug === null ? [] : [r.slug])),
+  );
+  for (const old of before?.repos ?? []) {
+    const now = line.repos.find((r) => r.path === old.path);
+    const known = old.slug ?? old.lastSlug;
+    if (
+      known !== undefined &&
+      now !== undefined &&
+      now.slug === null &&
+      listed.some((m) => m.path === old.path)
+    )
+      slugs.add(known);
+  }
+  return slugs;
+}
+
+/** The line with each unidentified repository carrying the slug its path last had, across repeated failures. */
+export function withLastSlugs(
+  line: LineSnapshot,
+  before: LineSnapshot | null,
+): LineSnapshot {
+  return {
+    ...line,
+    repos: line.repos.map((r) => {
+      if (r.slug !== null) return r;
+      const old = before?.repos.find((b) => b.path === r.path);
+      const known = old?.slug ?? old?.lastSlug;
+      return known === undefined ? r : { ...r, lastSlug: known };
+    }),
+  };
+}
