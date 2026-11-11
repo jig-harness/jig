@@ -24,7 +24,8 @@ export const QUARANTINE_RETENTION_DAYS = 1;
 
 const DAY_MS = 86_400_000;
 
-const byName = (a: string, b: string): number => a.localeCompare(b);
+// Code-unit order: a total order over distinct names, independent of locale.
+const byName = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
 interface Measurement {
   bytes: number;
