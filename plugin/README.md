@@ -878,8 +878,19 @@ those rows is what a new class is made from.
 `--jsonl` as JSON lines:
 
 ```sh
-bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch log [--since <date>] [--jsonl]
+bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch log [--since <date>] [--jsonl] [--acceptance]
 ```
+
+With `--acceptance` it prints, instead of the rows, one line per repository
+and decision class over the parked decisions the log counted: how many
+parks, how many were answered, how many of those chose the recommended
+option with no note, and the median wait for an answer (`--jsonl` prints one
+JSON object per line). It counts parks that have left their ledger, so a
+park still waiting is not in it, and `--since` selects by when the log
+recorded the park's end, not when it was parked: the resolution time for a
+park answered or handed on, the time a tick noticed the park was withdrawn
+for one removed. It is evidence for deciding whether a class should
+stay a park, and nothing acts on it.
 
 Every run also adds the rows it wrote to a copy, one file per month,
 `~/.local/state/jig/dispatch/log-<year>-<month>.jsonl`, which never
