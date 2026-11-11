@@ -850,7 +850,19 @@ launch, each nudge with whether it arrived, and a
 stopped one stage of a repository's `--apply` (event `defect`, with no
 class), which stops that stage only: the repository's other stages launch
 in the same tick, the receipt lists it under the repository's
-`stageDefects`, and its stack goes to the tick's error output. A stop the classifier cannot
+`stageDefects`, and its stack goes to the tick's error output. On the host
+that owns the repository, each park that leaves its drive ledger is an
+event row too, read from the
+[resolution receipt](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+the re-arm left beside it, never from the park's disappearance alone:
+`park-answered` with the class, the form of the answers (`approve`,
+`choose` or `free`), whether the option chosen was the recommended one,
+whether a note narrowed it and how long the park waited for its answer;
+`park-provisional` for a park handed on to be decided provisionally; and
+`park-removed` for a park the line held that left with no receipt
+(withdrawn or framed again; a park on a pull request no longer open is not counted). A park
+raised and answered between two ticks is counted from its receipt, and no
+park is counted twice. A stop the classifier cannot
 place is logged as `unknown`, never dropped, so a reason that recurs among
 those rows is what a new class is made from.
 
@@ -947,7 +959,9 @@ installed-copy lookup), and renews at the launcher's
 24-hour deadline even without an update. Transient registry failures keep the
 current reader serving and retry the lookup. Each renewal rotates the token;
 run `--access` again for the new URL. The command does not install a private
-network front or open a public listener.
+network front or open a public listener. To open the page from a phone over
+private HTTPS, or over private HTTP with its limits, follow
+[phone-access.md](phone-access.md).
 
 To verify availability on the configured host, first wait for `--status` to
 report a healthy reader and note its pid. End the terminal session, reconnect
@@ -968,7 +982,8 @@ writes nothing to the host:
   (merge now, approve first, update next), each merge now card with its
   merge command pinned to the verified head; **Needs you**, the parks, stops
   and stalled pickups waiting on a person, with the question and the
-  recommendation in place and the whole decision one tap away; **Running**,
+  recommendation in place, what any stale or disputed answer that keeps a
+  decision waiting chose, and the whole decision one tap away; **Running**,
   each account's slots and the sessions in them, with their evidence; and
   **Queue**, what comes next and why. The page opens on Merge while merge now
   holds a pull request, else on Needs you, and while it holds one every other
@@ -1240,7 +1255,15 @@ decision in the drive ledger), an `answer` (an `answer <key>:` line from an
 author the forge vouches for), a `launch` and an `outcome`. Every entry has
 `at`, `kind`, `from`, `to`, `text` (the record's own words) and `record`
 (its kind and a link or a path); one read only from this machine's records
-says so. It prints the newest 20 entries, oldest first, and says how many
+says so. A `question` from a framed decision also carries its `key`, its
+`digest` and its `options`, each with its `number` (the recommended option
+is 1, the rest follow in the decision's order), its `name`, whether it is
+`recommended`, what it `changes` and `costs` and its `details`; an `answer`
+carries its `key` and, read through the same rule as the re-arm, the
+`choice` it made (the option, whether it is the recommended one, and the
+form) with its `note`, or `free: true` for an answer in the person's own
+words, or `stale` with the digest of the earlier framing it named. The
+dashboard shows the same options and choices for the same park. It prints the newest 20 entries, oldest first, and says how many
 it left out; `--since <date>` keeps every entry from that date on and
 `--all` every entry. Printed for a person, `text` has its control
 characters removed; in JSON it is a string like any other, and nothing in a
