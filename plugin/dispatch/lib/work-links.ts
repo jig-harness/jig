@@ -65,18 +65,62 @@ const CLOSING = "(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)";
 const SEP =
   "(?:[ \\t]*,[ \\t]*(?:and[ \\t]+)?|[ \\t]*&[ \\t]*|[ \\t]+and[ \\t]+)";
 
-/** Advance an HTML-comment state while leaving delimiters inside complete inline-code spans literal. */
-function commentState(line: string, open: boolean): boolean {
+/** A run of backticks at `at`, or an empty string when none starts there. */
+function backtickRun(line: string, at: number): string {
+  return /^`+/.exec(line.slice(at))?.[0] ?? "";
+}
+
+/** Whether a code span opened on `at` can close later in its paragraph. */
+function spanContinues(
+  lines: readonly string[],
+  at: number,
+  run: string,
+): boolean {
+  for (let i = at + 1; i < lines.length; i++) {
+    const line = lines[i] ?? "";
+    if (
+      line.trim() === "" ||
+      /^ {0,3}(?:#{1,6}(?:\s|$)|(?:[-*_]\s*){3,}$|`{3,}|~{3,}|(?:[-*+]|0*1[.)])\s)/.test(
+        line,
+      )
+    )
+      return false;
+    for (let column = 0; column < line.length; ) {
+      const found = backtickRun(line, column);
+      if (found === "") {
+        column++;
+        continue;
+      }
+      if (found.length === run.length) return true;
+      column += found.length;
+    }
+  }
+  return false;
+}
+
+/** Advance HTML-comment and multiline-inline-code state before normalizing quote containers. */
+function commentState(
+  lines: readonly string[],
+  lineIndex: number,
+  state: { comment: boolean; span: string | null },
+): void {
+  const line = lines[lineIndex] ?? "";
   for (let at = 0; at < line.length; ) {
-    if (open) {
+    if (state.comment) {
       if (line.startsWith("-->", at)) {
-        open = false;
+        state.comment = false;
         at += 3;
       } else at++;
       continue;
     }
+    if (state.span !== null) {
+      const run = backtickRun(line, at);
+      if (run.length === state.span.length) state.span = null;
+      at += run === "" ? 1 : run.length;
+      continue;
+    }
     if (line.startsWith("<!--", at)) {
-      open = true;
+      state.comment = true;
       at += 4;
       continue;
     }
@@ -84,19 +128,23 @@ function commentState(line: string, open: boolean): boolean {
       at++;
       continue;
     }
-    const run = /^`+/.exec(line.slice(at))?.[0] ?? "";
+    const run = backtickRun(line, at);
     const close = line.indexOf(run, at + run.length);
-    at = close === -1 ? at + run.length : close + run.length;
+    if (close !== -1) at = close + run.length;
+    else {
+      if (spanContinues(lines, lineIndex, run)) state.span = run;
+      at += run.length;
+    }
   }
-  return open;
 }
 
 /** Remove blockquote containers before the shared reader sees their Markdown, without changing a quote that is literal text inside a top-level fence or comment. */
 function withoutBlockquoteContainers(body: string): string {
   let fence: { marker: string; quoteDepth: number } | null = null;
-  let comment = false;
+  const state = { comment: false, span: null as string | null };
   const visible: string[] = [];
-  for (const line of body.split(/\r?\n/)) {
+  const lines = body.split(/\r?\n/);
+  for (const [lineIndex, line] of lines.entries()) {
     const quotePrefix = /^(?: {0,3}>[ \t]?)+/.exec(line)?.[0] ?? "";
     const quoteDepth = (quotePrefix.match(/>/g) ?? []).length;
     if (fence !== null && quoteDepth < fence.quoteDepth) {
@@ -104,7 +152,7 @@ function withoutBlockquoteContainers(body: string): string {
       fence = null;
     }
     const text =
-      (fence === null && !comment) || fence?.quoteDepth !== 0
+      (fence === null && !state.comment) || fence?.quoteDepth !== 0
         ? line.replace(/^(?: {0,3}>[ \t]?)+/, "")
         : line;
     const raw = /^( {0,3})(`{3,}|~{3,})(.*)$/.exec(text);
@@ -119,13 +167,13 @@ function withoutBlockquoteContainers(body: string): string {
       visible.push(text);
       continue;
     }
-    if (!comment && raw !== null) {
+    if (!state.comment && raw !== null) {
       fence = { marker: raw[2] ?? "", quoteDepth };
       visible.push(text);
       continue;
     }
     visible.push(text);
-    comment = commentState(text, comment);
+    commentState(lines, lineIndex, state);
   }
   return visible.join("\n");
 }

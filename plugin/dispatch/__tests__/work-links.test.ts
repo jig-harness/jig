@@ -216,6 +216,19 @@ describe("a team key", () => {
     expect(closingKeys(body, TEAM.keys)).toEqual(["ENG-2"]);
   });
 
+  it("carries multiline inline-code state while normalizing quotes", () => {
+    const body = [
+      "`example",
+      "<!--",
+      "`",
+      "> ~~~",
+      "> example",
+      "",
+      "Closes ENG-1",
+    ].join("\n");
+    expect(closingKeys(body, TEAM.keys)).toEqual(["ENG-1"]);
+  });
+
   it("keeps backticks ordinary inside an HTML comment while normalizing quotes", () => {
     const body = [
       "<!-- ` --> `",
