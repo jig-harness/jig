@@ -47,6 +47,9 @@
  */
 import { optionalLaunchFields } from "./launch-record-options.ts";
 import { readNext, type NextOwner } from "./next-owner.ts";
+import { type PickupRefusal, readRefusal } from "./pickup-refusal.ts";
+
+export type { PickupRefusal };
 import { unsettledStartups } from "./session-startup.ts";
 import type { Database } from "bun:sqlite";
 import { isMapping } from "../../shared/config-layers.ts";
@@ -73,11 +76,7 @@ import { latestArms, latestFailedRearms } from "./launch-keep.ts";
 
 /** What a launch starts: a re-arm of a stopped drive, a takeover of a wedged one, a pickup's `do-item` session, or a merge's follow-up pass. */
 export type LaunchAction =
-  | "rearm"
-  | "takeover"
-  | "pickup"
-  | "followup"
-  | "steward";
+  "rearm" | "takeover" | "pickup" | "followup" | "steward";
 
 /** Whether a record starts a drive's headless pass, whose exit is its answer. */
 export function isDrive(record: Pick<LaunchRecord, "action">): boolean {
@@ -270,6 +269,8 @@ export interface ReadRecord {
   next?: NextOwner | null;
   /** For a `waits` result, when the pickup may start again (ISO 8601). */
   waitsUntil?: string;
+  /** A pickup the repository's start rules refused, recorded with its `failed` result; absent otherwise. */
+  refusal?: PickupRefusal | null;
 }
 
 /** A launch record id: the time it was made, and a random suffix. */
@@ -468,6 +469,7 @@ export interface LaunchRow {
   result_next?: string | null;
   /** A pickup that waits on a tracker's rate limit: when it may start again. */
   result_until?: string | null;
+  refusal?: string | null;
 }
 
 /** The tick's part of a row, with its samples and episodes; `null` when it does not read as a record. */
@@ -571,6 +573,7 @@ export function readEnded(id: string, root = stateRoot()): ReadRecord | null {
     result: asResult(row.result, row.result_until ?? null),
     next: readNext(row.result_next),
     ...waitsOf(row),
+    refusal: readRefusal(row.refusal),
   };
 }
 
@@ -757,6 +760,7 @@ export async function readLaunches(
       result: asResult(row.result, row.result_until ?? null),
       next: readNext(row.result_next),
       ...waitsOf(row),
+      refusal: readRefusal(row.refusal),
     });
   }
   return { records, unreadable };

@@ -150,6 +150,7 @@ async function byTrustedAssigner(
       state: issue.state.name,
       assignee: issue.assignee?.name ?? identity,
       assignedBy: by.name,
+      ...(issue.updatedAt === undefined ? {} : { updatedAt: issue.updatedAt }),
     });
   }
   return { wanted, unplaced };

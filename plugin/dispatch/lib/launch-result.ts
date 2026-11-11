@@ -1,7 +1,7 @@
 /** A session owns its result and handoff; one conditional write settles both. */
 import { Defect } from "../../shared/errors.ts";
 import { stateRoot } from "../receipts.ts";
-import type { SessionResult } from "./launches.ts";
+import type { PickupRefusal, SessionResult } from "./launches.ts";
 import { isMapping } from "../../shared/config-layers.ts";
 import { derivedNext, type NextOwner } from "./next-owner.ts";
 import { sessionResultClass } from "./session-result-class.ts";
@@ -11,28 +11,32 @@ import { inTransaction, stateDb } from "./state.ts";
  * Record a session's or a follow-up pass's answer: true when this call wrote it,
  * false when the record already had one, which stands. A `waits` result
  * carries `until`: it is kept as `failed` with `until` beside it
- * (`asResult`).
+ * (`asResult`). A pickup the repository's start rules refused carries its
+ * `refusal`, written with it.
  */
 export function recordResult(
   id: string,
   result: SessionResult,
   root = stateRoot(),
   next: NextOwner | null = null,
+  refusal: PickupRefusal | null = null,
   until?: string,
 ): boolean {
   if (result === "waits" && until === undefined)
     throw new Defect("a waits result needs the time it waits until");
   const db = stateDb(root);
+  const refused = refusal === null ? null : JSON.stringify(refusal);
   return inTransaction(db, () => {
     const done = db
       .query(
-        "UPDATE launches SET result = ?, result_at = ?, result_next = ?, result_until = ? WHERE id = ? AND result IS NULL",
+        "UPDATE launches SET result = ?, result_at = ?, result_next = ?, result_until = ?, refusal = ? WHERE id = ? AND result IS NULL",
       )
       .run(
         result === "waits" ? "failed" : result,
         new Date().toISOString(),
         next === null ? null : JSON.stringify(next),
         until ?? null,
+        refused,
         id,
       );
     if (done.changes !== 1) return false;

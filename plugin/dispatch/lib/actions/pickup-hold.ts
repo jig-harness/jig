@@ -14,7 +14,12 @@
  *   dispatch states (`releaseEnded`) and comes back; an item claimed meanwhile is released when it returns;
  * - except a record whose pass recorded `waits` (the tracker's rate limit
  *   stopped it): it holds the item until the time it names, and the item is
- *   launched again after it, with no person asked.
+ *   launched again after it, with no person asked;
+ * - a record whose claim the repository's start rules refused (its
+ *   `refusal`) holds the item, with the reason, only until the item's
+ *   `updatedAt` moves past the time the rules saw: a person changed the
+ *   item, so it is picked up again. An item read without an `updatedAt`
+ *   keeps the rule above.
  */
 import {
   holds,
@@ -29,7 +34,8 @@ import { RUNNING_STATES, type SessionsReport } from "../runtime/port.ts";
 export type PickupHold =
   | { kind: "none" }
   | { kind: "held"; record: ReadRecord; why: string }
-  | { kind: "ended"; record: ReadRecord; why: string };
+  | { kind: "ended"; record: ReadRecord; why: string }
+  | { kind: "refused"; record: ReadRecord; why: string };
 
 /** The agent the runtime reports under `id`, in any of the repository's workspaces. */
 export function agentOf(sessions: SessionsReport, id: string) {
@@ -109,9 +115,17 @@ function recordsOf(item: string, records: ReadRecord[]): ReadRecord[] {
     .sort((a, b) => a.record.createdAt.localeCompare(b.record.createdAt));
 }
 
+/** Whether the item changed after its refusal: its `updatedAt` is later than the one the rules saw. */
+function changedSince(updatedAt: string | undefined, seen: string): boolean {
+  if (updatedAt === undefined) return false;
+  const now = Date.parse(updatedAt);
+  return Number.isFinite(now) && now > Date.parse(seen);
+}
+
 export function pickupHold(
   item: string,
   records: ReadRecord[],
+  updatedAt?: string,
   nowMs = Date.now(),
 ): PickupHold {
   const mine = recordsOf(item, records);
@@ -129,6 +143,15 @@ export function pickupHold(
           why: `launch record ${latest.record.id} waits for the tracker's rate limit to reset at ${latest.waitsUntil}; the item starts again after it`,
         }
       : { kind: "none" };
+  const refusal = latest.refusal ?? null;
+  if (refusal !== null && updatedAt !== undefined) {
+    if (changedSince(updatedAt, refusal.updatedAt)) return { kind: "none" };
+    return {
+      kind: "refused",
+      record: latest,
+      why: `held: the repository's start rules refused its claim (launch record ${latest.record.id}): ${refusal.reason}; it is picked up again once the item changes (updated after ${refusal.updatedAt})`,
+    };
+  }
   return {
     kind: "ended",
     record: latest,

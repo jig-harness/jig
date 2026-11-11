@@ -1084,6 +1084,7 @@ jig dispatch --apply [--repo <path>]...           # start what the machine file 
 jig dispatch install [--interval 5m] --yes        # the timer
 jig dispatch receipts                             # past ticks
 jig dispatch result <record> <token> done|failed  # a session's or a follow-up pass's answer
+jig dispatch result <record> <token> failed --refused <updated-at> --reason <reason>  # a pickup the start rules refused
 ```
 
 A tick without `--apply` prints every action it would take, each with the

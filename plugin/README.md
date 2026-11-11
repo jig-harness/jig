@@ -450,7 +450,10 @@ no pull request was needed. A `done` without either is refused. A pickup the
 tracker's rate limit stopped before it claimed the item (a tracker script
 exits `5`) records `waits --until <time>` instead (after the claim the pass
 waits for the reset within its deadline, else records `failed`): the item is held until that time, with no
-question for a person, and the first tick after it launches the item again. Every ended
+question for a person, and the first tick after it launches the item again. A pickup
+whose claim the repository's start rules (`do_item.preflight_command`)
+refused records `failed --refused <updated-at> --reason <reason>`, and the dispatcher
+shows the item as held with that reason until the item changes. Every ended
 launch's outcome keeps its next owner: a station address, a person and their
 act, or nobody with a reason. `jig ask` shows this as `last.next`; older
 outcomes that did not keep it say it was not recorded. A converged drive
