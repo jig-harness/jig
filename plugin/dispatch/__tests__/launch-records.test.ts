@@ -208,6 +208,42 @@ it("retains a pull request's latest re-arm that recorded its heads past retentio
   ]);
 });
 
+it("keeps nothing of an older failed re-arm that a newer ended record without heads supersedes", () => {
+  const dir = root();
+  const older = record("20260101T000000Z-aaaaaaaa", { heads: "PR head a" });
+  const newer = record("20260102T000000Z-bbbbbbbb");
+  const reads = [older, newer].map((r) => {
+    writeRecord(r, dir);
+    return ended(r, 1, r.createdAt);
+  });
+  expect(pruneLaunches(reads, Date.parse("2027-01-01"), 7, dir)).toEqual([
+    older.id,
+    newer.id,
+  ]);
+});
+
+it("keeps the older failed re-arm when only a newer cancelled record follows it", () => {
+  const dir = root();
+  const older = record("20260101T000000Z-aaaaaaaa", { heads: "PR head a" });
+  const newer = record("20260102T000000Z-bbbbbbbb", {
+    heads: "PR head b",
+    cancelledAt: "2026-01-02T00:00:00.000Z",
+  });
+  writeRecord(older, dir);
+  writeRecord(newer, dir);
+  const reads: ReadRecord[] = [
+    ended(older, 1, older.createdAt),
+    {
+      record: newer,
+      state: { kind: "died", reason: "cancelled", process: { ...WHO, pid: 0 } },
+      result: null,
+    },
+  ];
+  expect(pruneLaunches(reads, Date.parse("2027-01-01"), 7, dir)).not.toContain(
+    older.id,
+  );
+});
+
 describe("the heads a re-arm launches at", () => {
   const drive = {
     number: 7,

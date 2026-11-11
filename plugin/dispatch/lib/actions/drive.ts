@@ -130,7 +130,8 @@ const HELD = "a person's hold label is on it now";
  * launched at. Only a record none of whose launches may have started is
  * refreshed; one an earlier launch answered or lost keeps the heads it was
  * written with, which that launch acted on. Heads that do not read leave the
- * record with none, which a re-arm is held by nothing for.
+ * record with none, which a re-arm is held by nothing for; a later tick reads
+ * them again for such a record, since it still never started.
  */
 async function refreshHeads(
   state: ApplyState,
@@ -139,7 +140,6 @@ async function refreshHeads(
 ): Promise<void> {
   if (
     record.action !== "rearm" ||
-    record.heads == null ||
     !record.attempts.every((a) => a.outcome === "failed")
   )
     return;
@@ -149,7 +149,7 @@ async function refreshHeads(
     undefined,
     timeLeftMs(state),
   );
-  if (heads === record.heads) return;
+  if (heads === (record.heads ?? null)) return;
   if (heads === null) delete record.heads;
   else record.heads = heads;
   writeRecord(record, state.root);

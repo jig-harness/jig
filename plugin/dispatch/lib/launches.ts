@@ -71,11 +71,7 @@ export { cancelledBeforeExecution } from "./cancellation.ts";
 
 /** What a launch starts: a re-arm of a stopped drive, a takeover of a wedged one, a pickup's `do-item` session, or a merge's follow-up pass. */
 export type LaunchAction =
-  | "rearm"
-  | "takeover"
-  | "pickup"
-  | "followup"
-  | "steward";
+  "rearm" | "takeover" | "pickup" | "followup" | "steward";
 
 /** Whether a record starts a drive's headless pass, whose exit is its answer. */
 export function isDrive(record: Pick<LaunchRecord, "action">): boolean {
@@ -823,13 +819,28 @@ export const UNARMED_FACTS = "no ledger, head ";
 /**
  * The ids of each pull request's latest re-arm record that carries the heads
  * it launched at: a failed re-arm holds its drive only while that record is
- * the pull request's latest evidence, so it outlives the retention.
+ * the pull request's latest evidence, so it outlives the retention. The
+ * latest is chosen as `failedRearm` chooses it, among the pull request's
+ * drive records not cancelled before they ran, whatever their action; a
+ * newer record that is not such a re-arm supersedes the older failure, which
+ * then keeps nothing.
  */
 function latestFailedRearms(records: ReadRecord[]): Set<string> {
-  return latestIdsBy(records, (r) =>
-    isDrive(r.record) && r.record.action === "rearm" && r.record.heads != null
+  const latest = latestIdsBy(records, (r) =>
+    isDrive(r.record) && !cancelledBeforeExecution(r)
       ? `${r.record.repo}#${String(r.record.pr)}`
       : null,
+  );
+  return new Set(
+    records
+      .filter(
+        (r) =>
+          latest.has(r.record.id) &&
+          isDrive(r.record) &&
+          r.record.action === "rearm" &&
+          r.record.heads != null,
+      )
+      .map((r) => r.record.id),
   );
 }
 
