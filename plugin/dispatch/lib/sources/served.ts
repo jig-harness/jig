@@ -222,6 +222,9 @@ export async function readServedPickups(
     assignedBy: c.by,
     servedPerson: c.identity,
     queueIssue: c.issue,
+    ...(c.issue.updatedAt === undefined
+      ? {}
+      : { updatedAt: c.issue.updatedAt }),
     queueRank: {
       unblocks: c.unblocks,
       ...(c.epicOrder === undefined ? {} : { epicOrder: c.epicOrder }),

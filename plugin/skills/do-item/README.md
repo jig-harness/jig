@@ -141,6 +141,33 @@ separate hosts: simultaneous claims for the same person can still both
 pass. A tracker state transition is not a cross-host lease; the dispatcher's
 double-claim watch remains necessary.
 
+### The repository's own start rules
+
+A team whose items carry their own start rules (the item names this
+repository, its driver is an agent, every blocker is finished) states them as
+one command, `do_item.preflight_command`. Every claim runs it first, before
+the claim lock and before anything is written, so `do-item`, `work-batch` and
+a dispatched pickup all honour it without any of them remembering to call it.
+It reads the item's JSON on standard input. Exit 0 lets the claim go on. Exit
+3 refuses it: the claim exits 3, nothing is written, and the first line the
+command printed is the reason. Any other exit, or a run past 60 seconds,
+refuses too. The command text is read from the default branch, so a branch cannot
+change the command its own claim runs; the command runs in the current
+checkout, so a program it names inside the repository (`bun
+scripts/start-rules.ts`) is the branch's own copy, and the rules are only as
+trusted as that program: a branch can bypass a rule by editing a script the command runs, so name an executable that is trusted independently of the branch, such as one installed on the machine. It runs without the tracker and forge tokens. Telling the agent to proceed does not clear a refusal: the
+item or the command changes. A dispatched pickup the command refused shows
+in the dispatcher's queue as held, with the reason, until the item changes.
+
+More settings narrow a claim, read from the default branch like the command, so a branch cannot widen its own allowed states or switch off the marker. `do_item.claim_from` names the states work
+may start from: an item in any other state, or in a status that maps to no
+canonical state, is refused with nothing written, so a side state a team
+uses as its record of why work stopped is never cleared by a claim.
+`do_item.claim_marker` posts a marker comment on each claimed item naming
+the session, the host and the branch, so other tools reading the tracker
+can tell which session holds it. The settings are in the
+[configuration](../../CONFIGURATION.md#do_item).
+
 ## Requirements and platforms
 
 Install the [plugin requirements](../../README.md#requirements), and name the
