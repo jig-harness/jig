@@ -41,7 +41,7 @@ class AssignmentError extends Error {}
  * What a pool reads of each issue: its open children read one deep, as a
  * flag, and `extra` (the estimate, where size is kept in it).
  */
-const poolFields = (extra: string) => `
+export const poolFields = (extra: string) => `
   identifier title url priority${extra} createdAt updatedAt
   state { id name type }
   assignee { id name }
@@ -225,12 +225,14 @@ export function assignedOperations(
   | "viewer"
   | "assignees"
   | "assign"
+  | "assignUnassigned"
+  | "deleteComment"
   | "user"
   | "openPopulation"
 > {
   const { team, states, transport, pageAll } = opts;
   return {
-    ...claimOperations(transport),
+    ...claimOperations(transport, pageAll),
     async openPopulation(signal) {
       const filter = { and: [{ team: { key: { eq: team } } }, OPEN] };
       const nodes = await pageAll(

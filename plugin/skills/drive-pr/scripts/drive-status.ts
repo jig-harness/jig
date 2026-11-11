@@ -962,11 +962,11 @@ async function main(): Promise<number> {
           // payload; a field left out here never reaches them.
           failingCheckNames: report.failingCheckNames,
           failingCheckRunNames: report.failingCheckRunNames,
-          // The commit-status-only complement — `drive.ts` needs this to tell a
-          // purely check-run sourced failure from one that ALSO has a fresh
-          // commit-status occurrence under the same name.
+          // The commit-status complement, and the statuses with the URLs a
+          // CI-repair pass is told beside the runs: see `CiReport`.
           failingStatusNames: report.failingStatusNames,
           failingRuns: report.failingRuns,
+          failingStatuses: report.failingStatuses ?? null,
         })}\n`,
       );
     } else {

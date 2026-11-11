@@ -159,6 +159,14 @@ confirm what the script cannot:
   are one issue: merge them in the tracker or drop one.
 - **None is larger than its size label says.** A size label is an estimate;
   drop one you doubt.
+- **The issues share one base.** With `pull_requests.base_rules` declared,
+  run `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/pr-plan.ts" branch --issue "<KEY>" --title "<title>" --issue-json <that issue's JSON file>`
+  for each issue, add `--json`, and compare only the `base` value it prints,
+  never the rule or label that chose it. Issues whose bases differ cannot
+  share a pull request: keep the group with the explicit anchor issue (the
+  highest-priority issue when the anchor is an area, path or epic) and leave
+  the rest for their own pull requests. Repeat the comparison whenever you
+  trim the batch or re-anchor it.
 - **One area is preferred.** An epic anchor may span two; a mixed batch takes
   the union of both areas' validation and mandatory reviews. Split unless
   the anchor is why the areas mix.
@@ -208,7 +216,10 @@ the release in step 4 restores them. Then, for each:
    it, name it and its reason in the report, and go on with the rest; when
    fewer than two issues remain, release the ones claimed (step 4's release)
    and stop. A fixed served batch stops too, after releasing the members
-   already claimed by the same release. A person's word to proceed
+   already claimed by the same release; for a `preflight` refusal that
+   carries an `"updatedAt"`, it records the result command its prompt names
+   with `--refused <that updatedAt> --key <that issue>`, so the dispatcher
+   holds only that member and launches the rest again without it. A person's word to proceed
    does not clear it: the item or the repository's rules change first.
 
    Any other way the loop ends without every claim made (a nonzero exit
@@ -255,14 +266,16 @@ file so the worktree stays clean. Keep the `pickupId` the first prints: the pull
 ### 4. Implement, one commit per issue
 
 Name the branch with the pull-request policy, after the highest-priority
-issue in the batch. The `branch` operation of `pr-plan.ts` only prints the
-name; create the
-branch from the planned base and switch to it before the first commit
+issue in the batch. The `branch` operation of `pr-plan.ts` only prints: the
+name on its first line and the base on its second (`base: <base> …`; with
+`pull_requests.base_rules` declared, pass `--issue-json` with that issue's
+JSON so its labels choose the base). Create the
+branch from that base and switch to it before the first commit
 (`<remote>` is the repository's git remote: `repository.remote`, else
 `origin`):
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/pr-plan.ts" branch --issue "<highest-priority KEY>" --title "<that issue's title>"
+bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/pr-plan.ts" branch --issue "<highest-priority KEY>" --title "<that issue's title>" --issue-json <that issue's JSON file>
 bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git switch -c <printed-branch-name> <remote>/<base>
 ```
 
@@ -333,7 +346,7 @@ pre-PR code review gate (Step 4a) once over the union, with every mandatory
 review gate any issue's labels or paths name. Then plan the pull request:
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/pr-plan.ts" open --issue "<highest-priority KEY>" [--json]
+bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/pr-plan.ts" open --issue "<highest-priority KEY>" --issue-json <that issue's JSON file> [--json]
 ```
 
 Follow the plan as `/jig:do-item`'s

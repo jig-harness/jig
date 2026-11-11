@@ -32,7 +32,7 @@
     "test": "bun scripts/test.ts",
     "typecheck": "bun check && bun check -p dashboard",
     "deadcode": "fallow dead-code -q",
-    "audit": "fallow audit -q",
+    "audit": "mkdir -p node_modules/.cache/fallow && TMPDIR=\"$PWD/node_modules/.cache/fallow\" fallow audit -q",
     "lint": "biome lint .",
     "format": "biome format --write .",
     "format:check": "biome format .",

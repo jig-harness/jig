@@ -558,8 +558,9 @@ step:
   projection of the drive ledger writes, with the park class and reason,
   when a drive stops on parked work, and clears when the park is answered.
 - **Pool pickup.** The dispatcher picks up unassigned items in a ready
-  pool as a served lane, trusting who made an item ready. It waits on an
-  inherited claim on Linear and Jira and on claims across hosts.
+  pool as a served lane, trusting who made an item ready. A pool requires
+  the claim marker, which arbitrates, best effort, between the hosts that pick up from it
+  ([claims across hosts](dark-factory-dispatch.md#the-records-it-reads)).
 
 Done when a repository on Jira with all of these set runs an item from its
 ready pool to a merged pull request without a hook or script of its own,
@@ -573,11 +574,7 @@ comment; a reviewer that reviews through the forge's own [review
 objects](../GLOSSARY.md) (CodeRabbit, for one) never does, so the drive either waits until it times
 out or converges without that review. Its CI runs as GitHub Actions; a CI
 service that reports [commit statuses](../GLOSSARY.md) (Jenkins, for one) leaves the repair
-pass and `fix-ci` with no log. Its work lands on one integration branch;
-products with maintained release lines land most fixes on a release branch
-chosen by the item's target version. Its pull-request titles and commits
-carry no tracker key; some organisations refuse any commit on a protected
-branch without one. Each fix is optional configuration, and an unset one
+pass and `fix-ci` with no log. Each fix is optional configuration, and an unset one
 keeps today's behaviour. What it will build, one pull request per step:
 
 - **The reviewer.** A [reviewer evidence mode](../GLOSSARY.md) that reads the reviewed
@@ -597,11 +594,6 @@ keeps today's behaviour. What it will build, one pull request per step:
   host, redirects are validated, credentials go only to those hosts, and the
   fetch has a deadline whose expiry cancels the command and its descendants,
   for the drive's repair pass and `fix-ci --pr` alike.
-- **The conventions.** `pull_requests.base_rules` chooses the base branch
-  from the item's labels, for the branch's start and the pull request
-  alike; `title_format: pattern` with `title_pattern` (`{key}: {summary}`);
-  `pull_requests.commit_prefix`, checked before every push the drive,
-  `fix-ci` and `resolve-conflicts` make.
 
 Done when a repository whose AI reviewer is CodeRabbit, whose CI is
 Jenkins and whose fixes land on release lines under a key-in-every-commit
