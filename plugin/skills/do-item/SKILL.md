@@ -1124,9 +1124,12 @@ implementation. Skip this check for issues about the repository's own code.
    posted once, after the arm check, as below. Otherwise:
 
    1. Post the tracker comment that links the pull request now, through
-      the tracker's comment operation: the pull request's link, how it
-      covers the item's acceptance criteria, and the `## Out-of-tree
-      follow-ups` section.
+      the tracker's comment operation: first add
+      `<!-- do-item-pr: <PR URL> -->` on a line of its own, then the pull
+      request's link, how it covers the item's acceptance criteria, and the
+      `## Out-of-tree follow-ups` section. The marker is the durable
+      association when `pull_requests.issue_link` is `none`; a URL or an
+      item-key mention in another comment is not enough.
    2. Then move the item:
       `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" transition "<KEY>" pr_open`
       (Linear native: `mcp__linear__save_issue` with the mapped name). A

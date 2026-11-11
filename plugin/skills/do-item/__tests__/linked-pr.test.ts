@@ -8,6 +8,7 @@ import { describe, expect, it } from "bun:test";
 import {
   linkedPrState,
   linksIssue,
+  hasPullAssociation,
   type LinkedPrReads,
   type PullFact,
   pullNumbersIn,
@@ -42,6 +43,25 @@ describe("pullNumbersIn", () => {
       `and https://github.com/${REPO}/pull/15#discussion`,
     ].join("\n");
     expect(pullNumbersIn(text, REPO)).toEqual([12, 15]);
+  });
+});
+
+describe("hasPullAssociation", () => {
+  it("recognizes only the explicit association marker for that pull request", () => {
+    expect(
+      hasPullAssociation(
+        `<!-- do-item-pr: https://github.com/${REPO}/pull/12 -->`,
+        REPO,
+        12,
+      ),
+    ).toBe(true);
+    expect(
+      hasPullAssociation(
+        `<!-- do-item-pr: https://github.com/${REPO}/pull/13 -->`,
+        REPO,
+        12,
+      ),
+    ).toBe(false);
   });
 });
 
@@ -175,11 +195,13 @@ describe("readLinkedPr", () => {
     );
   });
 
-  it("accepts a comment-linked pull request that names the item when no link line is required", async () => {
+  it("accepts an explicitly associated comment-linked pull request when no link line is required", async () => {
     const readFor = (body: string) =>
       readLinkedPr("ENG-1", {
         reads: reads({
-          comments: async () => [`https://github.com/${REPO}/pull/9`],
+          comments: async () => [
+            `<!-- do-item-pr: https://github.com/${REPO}/pull/9 -->\nhttps://github.com/${REPO}/pull/9`,
+          ],
           view: async () => ({ ...pull(9, "MERGED"), body }),
         }),
         repository: REPO,
@@ -187,11 +209,26 @@ describe("readLinkedPr", () => {
         trunk: TRUNK,
         bodyLinkRequired: false,
       });
-    expect((await readFor("Implements ENG-1 per the plan")).pullRequest).toBe(
-      "merged",
-    );
-    expect((await readFor("An unrelated change")).pullRequest).toBe("none");
-    expect((await readFor("Touches ENG-12 only")).pullRequest).toBe("none");
+    expect(
+      (await readFor("Implement the requested validation")).pullRequest,
+    ).toBe("merged");
+  });
+
+  it("rejects a comment-linked pull request whose generic body mentions the item", async () => {
+    const r = await readLinkedPr("ENG-1", {
+      reads: reads({
+        comments: async () => [`https://github.com/${REPO}/pull/9`],
+        view: async () => ({
+          ...pull(9, "MERGED"),
+          body: "Remaining validation is deferred to ENG-1",
+        }),
+      }),
+      repository: REPO,
+      keySource: "ENG-\\d+(?!\\w)",
+      trunk: TRUNK,
+      bodyLinkRequired: false,
+    });
+    expect(r.pullRequest).toBe("none");
   });
 
   it("matches a same-repository qualified issue-link line beside the bare one", async () => {

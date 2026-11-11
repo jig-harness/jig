@@ -12,8 +12,10 @@
  * table cell).
  *
  * A pull request found through a comment counts only when its own body
- * carries the item's issue-link line too, so an incidental URL in a comment
- * is no evidence. On a GitHub tracker whose issues live in another
+ * carries the item's issue-link line too. Where no issue-link line is
+ * required, the opening tracker comment instead carries an explicit
+ * association marker for that pull request. An incidental URL in another
+ * comment is no evidence. On a GitHub tracker whose issues live in another
  * repository than the code, the issue-link line names the issue qualified
  * (`Closes owner/name#5`); a bare `#5` would be the code repository's issue.
  *
@@ -72,6 +74,33 @@ export function pullNumbersIn(text: string, repository: string): number[] {
   return [...text.matchAll(re)].map((m) => Number(m[1]));
 }
 
+/** Whether a tracker comment explicitly associates `number` with this item. */
+export function hasPullAssociation(
+  text: string,
+  repository: string,
+  number: number,
+): boolean {
+  return text.includes(
+    `<!-- do-item-pr: https://github.com/${repository}/pull/${number} -->`,
+  );
+}
+
+/** The pull requests an item's comments link, with their explicit association evidence. */
+function commentPulls(
+  comments: readonly string[],
+  repository: string,
+): ReadonlyMap<number, boolean> {
+  const pulls = new Map<number, boolean>();
+  for (const comment of comments)
+    for (const number of pullNumbersIn(comment, repository))
+      pulls.set(
+        number,
+        (pulls.get(number) ?? false) ||
+          hasPullAssociation(comment, repository, number),
+      );
+  return pulls;
+}
+
 /**
  * Whether `body` carries the issue-link line for `key`: `Closes <KEY>` or
  * `Refs <KEY>`, at the start of a line or of a table cell. `keySource` is
@@ -87,22 +116,6 @@ export function linksIssue(
     `(?:^|\\|)[ \\t]*(?:closes|refs)[ \\t]+(${keySource})`,
     "gim",
   );
-  return [...body.matchAll(re)].some(
-    (m) => m[1]?.toUpperCase() === key.toUpperCase(),
-  );
-}
-
-/**
- * Whether `body` mentions `key` anywhere, not only in an issue-link line.
- * `keySource` keeps `ENG-12` from matching inside `ENG-123`, and a leading
- * word, slash or `#` character keeps `#5` from matching inside `x#5`.
- */
-export function mentionsIssue(
-  body: string,
-  key: string,
-  keySource: string,
-): boolean {
-  const re = new RegExp(`(?:^|[^\\w/#-])(${keySource})`, "gim");
   return [...body.matchAll(re)].some(
     (m) => m[1]?.toUpperCase() === key.toUpperCase(),
   );
@@ -168,9 +181,8 @@ export async function readLinkedPr(
     /**
      * Whether a pull request found through a comment must link the item in
      * its own body. False where `pull_requests.issue_link` is `none`: the
-     * pull request then carries no link line, so its body need only name the
-     * item somewhere, which an unrelated pull request that a comment happens
-     * to cite does not.
+     * opening tracker comment then carries the explicit association marker
+     * written by `do-item`, because the pull request has no link line.
      */
     bodyLinkRequired?: boolean;
   },
@@ -192,9 +204,6 @@ export async function readLinkedPr(
   const linked = (body: string) =>
     linksIssue(body, linkKey, keySource) ||
     (sameRepoNumber && linksIssue(body, qualifiedKey, qualifiedSource));
-  const mentioned = (body: string) =>
-    mentionsIssue(body, linkKey, keySource) ||
-    (sameRepoNumber && mentionsIssue(body, qualifiedKey, qualifiedSource));
   const comments = await reads.comments(key);
   if (comments === null)
     return unreadable(`the comments of ${key} could not be read`);
@@ -203,16 +212,14 @@ export async function readLinkedPr(
     return unreadable(`the pull requests naming ${key} could not be searched`);
   const pulls = new Map<number, PullFact>();
   for (const p of searched) if (linked(p.body)) pulls.set(p.number, p);
-  for (const n of new Set(
-    comments.flatMap((c) => pullNumbersIn(c, repository)),
-  )) {
+  for (const [n, associated] of commentPulls(comments, repository)) {
     if (pulls.has(n)) continue;
     const viewed = await reads.view(n);
     if (viewed === null)
       return unreadable(
         `pull request #${n}, linked from ${key}, could not be read`,
       );
-    if (bodyLinkRequired ? linked(viewed.body) : mentioned(viewed.body))
+    if (bodyLinkRequired ? linked(viewed.body) : associated)
       pulls.set(n, viewed);
   }
   const facts = [...pulls.values()].sort((a, b) => a.number - b.number);

@@ -799,6 +799,15 @@ const FORGE: RecordKind[] = [
 ];
 
 const TRACKER: RecordKind[] = [
+  {
+    name: "do-item-pr-association",
+    medium: "tracker",
+    owner: "skills/do-item/scripts/lib/linked-pr.ts",
+    foreign: "the session following the do-item skill",
+    at: "the opening comment on an item",
+    markers: ["do-item-pr"],
+    version: 0,
+  },
   plain(
     "tracker",
     "tracker-claim",
