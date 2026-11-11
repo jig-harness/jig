@@ -330,30 +330,34 @@ describe("--all --approve", () => {
 
   it("names the same set token whatever order canonically equivalent keys arrive in", async () => {
     const tokenFor = async (keys: string[]) => {
-      const w = world();
-      pullRequest(
-        w,
-        12,
-        [],
-        [
-          ledgerOn(
-            701,
-            framedLedger(
-              12,
-              keys.map((k) => framedPark(k, "scope")),
+      const w = sendWorld();
+      try {
+        pullRequest(
+          w,
+          12,
+          [],
+          [
+            ledgerOn(
+              701,
+              framedLedger(
+                12,
+                keys.map((k) => framedPark(k, "scope")),
+              ),
             ),
-          ),
-        ],
-      );
-      const r = await w.send([
-        ADDRESS,
-        "answer",
-        "--all",
-        "--approve",
-        "--dry-run",
-      ]);
-      expectSpawnExit(r, 0);
-      return token(r.stdout);
+          ],
+        );
+        const r = await w.send([
+          ADDRESS,
+          "answer",
+          "--all",
+          "--approve",
+          "--dry-run",
+        ]);
+        expectSpawnExit(r, 0);
+        return token(r.stdout);
+      } finally {
+        w.close();
+      }
     };
     const composed = "F_\u00e9";
     const decomposed = "F_e\u0301";
