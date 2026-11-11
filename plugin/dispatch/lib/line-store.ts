@@ -11,6 +11,7 @@
  */
 import { ACTS } from "../../skills/drive-pr/scripts/lib/merge-ready.ts";
 import { NEED_ACTS } from "../../shared/acts.ts";
+import { isDecisionDigest } from "../../shared/decisions/digest.ts";
 import { Database } from "bun:sqlite";
 import { existsSync } from "node:fs";
 import { isMapping } from "../../shared/config-layers.ts";
@@ -63,6 +64,7 @@ function listOf(fields: Fields): (value: unknown) => boolean {
 
 /** What the needs view reads of each decision. */
 const DECISION_FIELDS: Fields = {
+  digest: (value) => value === undefined || isDecisionDigest(value),
   person: (value) => value === undefined || isString(value),
   key: isString,
   kind: (value) => value === "thread" || value === "finding",

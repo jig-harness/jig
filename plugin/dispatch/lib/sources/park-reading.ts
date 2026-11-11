@@ -39,10 +39,13 @@ export async function readPark(
         waiting: found.waiting.map((p) => `${p.kind} ${p.key}`),
         parks: found.waiting.map((p) => {
           const disputed = found.disputed.find((d) => d.item.key === p.key);
+          const stale = found.stale.find((d) => d.item.key === p.key);
           return {
             ...(p.person === undefined ? {} : { person: p.person }),
             key: p.key,
             kind: p.kind,
+            ...(p.digest === undefined ? {} : { digest: p.digest }),
+            ...(stale === undefined ? {} : { stale: stale.answers }),
             lines: framedDecisionLines(p),
             ...(p.decision === undefined ? {} : { decision: p.decision }),
             ...(disputed === undefined ? {} : { disputed: disputed.answers }),

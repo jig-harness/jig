@@ -7,7 +7,9 @@
 import {
   Markdown,
   type MarkdownComponentProps,
+  renderInlineReact,
 } from "@tanstack/markdown/react";
+import { parseInline } from "@tanstack/markdown";
 
 const LINKABLE = /^(?:https?:\/\/|mailto:)/i;
 
@@ -26,6 +28,13 @@ function DecisionImage({ alt }: MarkdownComponentProps<"img">) {
 }
 
 const COMPONENTS = { a: DecisionLink, img: DecisionImage };
+
+/** A recommendation within a paragraph, with the decision's link and image restrictions. */
+export function InlineDecisionText({ source }: { source: string }) {
+  return parseInline(source).map((node, i) =>
+    renderInlineReact(node, { components: COMPONENTS }, `recommendation:${i}`),
+  );
+}
 
 export function DecisionText({
   source,

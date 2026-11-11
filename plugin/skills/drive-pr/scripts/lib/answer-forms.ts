@@ -1,5 +1,6 @@
 /** One interpretation of a person's answer for every reader of parked work. */
 import { createHash } from "node:crypto";
+import { splitAnswerDigest } from "../../../../shared/decisions/digest.ts";
 import { normalizeAnswerText } from "../../../../shared/decisions/answer-normalize.ts";
 import {
   renderParkedDecision,
@@ -282,9 +283,10 @@ function structuredText(
     : { text, ...(note === undefined ? {} : { note }) };
 }
 
-function choiceOf(
+function choiceFromText(
   item: ParkedItem,
   text: string,
+  digest?: string,
   note?: string,
 ): AnswerChoice | undefined {
   const call = answerDecision(item)?.call;
@@ -325,8 +327,55 @@ function choiceOf(
         option: option.name,
         recommended: option.id === call.recommended,
         form,
+        ...(digest === undefined ? {} : { digest }),
         ...(note === undefined ? {} : { note }),
       };
+}
+
+function choiceOf(
+  item: ParkedItem,
+  text: string,
+  note?: string,
+): AnswerChoice | undefined {
+  const suffix = splitAnswerDigest(text);
+  return choiceFromText(item, suffix.text, suffix.digest, note);
+}
+
+/**
+ * Return digest-like identity claims from an answer which is not a complete
+ * framing suffix. A chosen option may itself contain a digest-shaped token;
+ * that text is option content, not an identity claim.
+ */
+function embeddedDigests(item: ParkedItem, text: string): string[] {
+  const normalized = normalizeAnswerText(text);
+  const call = answerDecision(item)?.call;
+  const option =
+    normalized.startsWith("choose ") && call !== undefined
+      ? call.options.reduce<(typeof call.options)[number] | undefined>(
+          (matched, candidate) => {
+            const name = normalizeAnswerText(candidate.name);
+            const rest = normalized.slice(7 + name.length);
+            const matches =
+              normalized.startsWith(`choose ${name}`) &&
+              (rest.length === 0 || /^\s/.test(rest));
+            return matches &&
+              (matched === undefined ||
+                name.length > normalizeAnswerText(matched.name).length)
+              ? candidate
+              : matched;
+          },
+          undefined,
+        )
+      : undefined;
+  const scan =
+    option === undefined
+      ? normalized
+      : `${normalized.slice(0, 7)}${normalized.slice(
+          7 + normalizeAnswerText(option.name).length,
+        )}`;
+  return [...scan.matchAll(/(?:^|\s)\[([0-9a-f]{12})\](?=\s|$|[.,;:!?])/g)].map(
+    (match) => (match[1] ?? "").toLowerCase(),
+  );
 }
 
 export function parseAnswerComment(
@@ -346,8 +395,33 @@ export function parseAnswerComment(
   )
     return null;
   const structured = structuredText(lines, item.key, place);
+  // Inspect this item's lines before whole-comment grammar or option lookup:
+  // an obsolete option or added prose must never turn a stale answer free.
+  const digests = linesOutsideFences(lines.join("\n")).flatMap((raw) => {
+    if (indented(raw)) return [];
+    const keyed = addressedLine(raw, item.key);
+    const text =
+      keyed?.kind === "answer" && keyed.key === item.key.toLowerCase()
+        ? keyed.text
+        : place === "thread" && keyed === null
+          ? raw.trim()
+          : "";
+    const suffix = splitAnswerDigest(text);
+    // A terminal digest belongs to the framing only when what precedes it is
+    // an actual structured choice. Otherwise every digest-looking token is an
+    // identity claim: an obsolete framing must not fall through as free prose.
+    if (
+      suffix.digest !== undefined &&
+      choiceFromText(item, suffix.text) !== undefined
+    )
+      return [suffix.digest];
+    return embeddedDigests(item, text);
+  });
+  const stale =
+    item.digest !== undefined && digests.some((d) => d !== item.digest);
+  const digest = digests.find((d) => d !== item.digest) ?? digests[0];
   const choice =
-    structured === null
+    stale || structured === null
       ? undefined
       : choiceOf(item, structured.text, structured.note);
   return {
@@ -356,6 +430,8 @@ export function parseAnswerComment(
     url: c.url,
     body: withoutAnswerRecord(c.body),
     bodyHash: createHash("sha256").update(c.body).digest("hex"),
+    ...(digest === undefined ? {} : { digest }),
+    ...(stale ? { stale: true as const } : {}),
     ...(choice === undefined ? {} : { choice }),
   };
 }
