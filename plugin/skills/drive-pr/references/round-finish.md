@@ -26,6 +26,22 @@ makes every later check's premise false while every one of them still
 passes: everything below treats a successful push as evidence that the
 validated tree is on the PR.
 
+**The commit prefix.** Where the repository sets
+`pull_requests.commit_prefix`, an organisation refuses any commit on its
+protected branches whose message lacks the issue key, and one commit
+without it gets the merge refused. So right after the refusal above,
+`finish-round.ts` runs `bun "<skill-dir>/scripts/commit-prefix.ts" --branch <the PR's head branch>`
+(`lib/commit-prefix-step.ts`), which rewords each unpushed commit lacking
+the prefix, merge commits included, keeping trees, parents and authors, and
+moves HEAD to the result. It runs before anything records a head: the CI
+hold's `--expect-head`, the push, `stamp-held` and the head-sync wait all
+read the reworded HEAD. A commit already pushed without the prefix is named
+on stderr and the push goes ahead, since rewording it needs a force-push a
+person decides on. When the check cannot run (the head branch carries no
+key, a git operation is open, an unreadable configuration, repository or
+pull request) `finish-round.ts` refuses with exit `9` (`REFUSED_COMMIT_PREFIX`)
+and pushes nothing. Without the setting the step does nothing.
+
 **The untriaged-thread refusal.** SKILL.md's documented round loop
 is gate → enumerate → triage *each* thread via `bun "<skill-dir>/scripts/triage-thread.ts"` → validate →
 commit → `finish-round.ts`. A driver commonly fixes every finding's

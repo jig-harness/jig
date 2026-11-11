@@ -14,9 +14,8 @@ import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.
 import {
   countChangedLines,
   measureChange,
-  readIssueArg,
-  shellQuote,
-} from "../scripts/pr-plan.ts";
+} from "../scripts/lib/change-size.ts";
+import { readIssueArg, shellQuote } from "../scripts/pr-plan.ts";
 import { numberKeys, teamKeys } from "../scripts/lib/tracker/keys.ts";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 
@@ -217,7 +216,9 @@ describe("pr-plan.ts branch", () => {
   it("renders the default pattern", () => {
     const r = plan("branch", "--issue", "ENG-7", "--title", "Add the export");
     expect(r.code).toBe(0);
-    expect(r.stdout.trim()).toBe("eng-7-add-the-export");
+    expect(r.stdout).toBe(
+      "eng-7-add-the-export\nbase: main (the integration branch)\n",
+    );
   });
 
   it("renders a declared pattern, as JSON on request", () => {
@@ -232,6 +233,8 @@ describe("pr-plan.ts branch", () => {
     );
     expect(JSON.parse(r.stdout)).toEqual({
       branch: "feature/ENG-7-add-the-export",
+      base: "main",
+      baseSource: "the integration branch",
     });
   });
 
@@ -249,9 +252,9 @@ describe("pr-plan.ts branch", () => {
 
   it("reads a key of the configured team in any case", () => {
     overlay("issue_tracker:\n  adapter: linear\n  team: ENG\n");
-    expect(plan("branch", "--issue", "eng-7", "--title", "x").stdout).toBe(
-      "eng-7-x\n",
-    );
+    expect(
+      plan("branch", "--issue", "eng-7", "--title", "x").stdout.split("\n")[0],
+    ).toBe("eng-7-x");
     const r = plan("branch", "--issue", "OPS-7", "--title", "x");
     expect(r.code).toBe(2);
     expect(r.stderr).toContain("such as ENG-123");
@@ -266,9 +269,11 @@ describe("pr-plan.ts branch", () => {
       "#12",
       "https://github.com/owner/name/issues/12",
     ])
-      expect(plan("branch", "--issue", issue, "--title", "Add it").stdout).toBe(
-        "feature/12-add-it\n",
-      );
+      expect(
+        plan("branch", "--issue", issue, "--title", "Add it").stdout.split(
+          "\n",
+        )[0],
+      ).toBe("feature/12-add-it");
     const r = plan("branch", "--issue", "ENG-7", "--title", "x");
     expect(r.code).toBe(2);
     expect(r.stderr).toContain("such as #123");
@@ -742,6 +747,7 @@ describe("pr-plan.ts open", () => {
       format: "conventional",
       source: "derived: commitlint.config.js",
       pattern: null,
+      rendered: null,
     });
   });
 
@@ -754,6 +760,7 @@ describe("pr-plan.ts open", () => {
       format: "pattern",
       source: "pull_requests.title_format",
       pattern: "ENG-12: <summary>",
+      rendered: null,
     });
     expect(plan("open", "--issue", "ENG-12").stdout).toContain(
       "title:       ENG-12: <summary> (pull_requests.title_format)",
