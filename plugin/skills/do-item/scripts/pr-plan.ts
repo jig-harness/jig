@@ -826,7 +826,11 @@ function readIssueJsonFor(
   issue: string | null,
   policy: PrPolicy,
 ): IssueJson | null {
-  const issueJson = readIssueJson(values.get("issue-json"), issue);
+  const issueJson = readIssueJson(
+    values.get("issue-json"),
+    issue,
+    policy.baseRules.length > 0,
+  );
   if (issueJson === null && policy.baseRules.length > 0)
     throw new CliExit(
       2,
@@ -852,6 +856,7 @@ export interface IssueJson {
 export function readIssueJson(
   file: string | undefined,
   issue: string | null,
+  labelsRequired = false,
 ): IssueJson | null {
   if (file === undefined) return null;
   let data: unknown;
@@ -860,7 +865,7 @@ export function readIssueJson(
   } catch (e) {
     throw new CliExit(2, `--issue-json ${file}: ${errorText(e)}\n${USAGE}`);
   }
-  const labels = issueLabelsOf(data, file, issue);
+  const labels = issueLabelsOf(data, file, issue, labelsRequired);
   const title = isRecord(data) ? data.title : undefined;
   return {
     labels,
@@ -877,11 +882,17 @@ function issueLabelsOf(
   data: unknown,
   file: string,
   issue: string | null,
+  labelsRequired: boolean,
 ): string[] {
   if (!isRecord(data))
     throw new CliExit(
       2,
       `--issue-json ${file}: not an issue (expected a JSON object)`,
+    );
+  if (labelsRequired && !Array.isArray(data.labels))
+    throw new CliExit(
+      2,
+      `--issue-json ${file}: pull_requests.base_rules chooses the base from the labels, so \`labels\` must be an array of strings (an empty array for none)`,
     );
   const labels = data.labels ?? [];
   if (!Array.isArray(labels) || labels.some((l) => typeof l !== "string"))
@@ -917,16 +928,21 @@ async function openCommand(
   const issueJson = readIssueJsonFor(values, issue, policy);
   if (acceptOversize !== null && acceptOversize.trim() === "")
     throw new CliExit(2, `--accept-oversize needs a reason\n${USAGE}`);
+  const fromJson =
+    issue === null && issueJson !== null
+      ? readIssueArg(issueJson.identifier ?? "", readKeys())
+      : null;
+  if (issue === null && issueJson !== null && fromJson === null)
+    throw new CliExit(
+      2,
+      `--issue-json: \`identifier\` ${JSON.stringify(issueJson.identifier)} is not a key of the configured tracker\n${USAGE}`,
+    );
   let plan: OpenPlan;
   try {
     plan = await buildOpenPlan({
       root: consumerRoot(),
       policy,
-      issue:
-        issue ??
-        (issueJson?.identifier == null
-          ? null
-          : (readIssueArg(issueJson.identifier, readKeys())?.key ?? null)),
+      issue: issue ?? fromJson?.key ?? null,
       stackOn: values.get("stack-on") ?? null,
       acceptOversize,
       issueJson,

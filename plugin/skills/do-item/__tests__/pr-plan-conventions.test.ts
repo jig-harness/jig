@@ -149,6 +149,38 @@ describe("pr-plan.ts branch: the base to cut from", () => {
     expectSpawnExit(r, 2);
     expect(r.stderr).toContain("pass --issue-json");
   });
+
+  it("refuses labels that are null or missing when rules are declared", () => {
+    for (const body of [
+      { identifier: "ENG-12", labels: null },
+      { identifier: "ENG-12" },
+    ]) {
+      const file = join(dir, "nolabels.json");
+      writeFileSync(file, JSON.stringify(body));
+      const r = plan(
+        "branch",
+        "--issue",
+        "ENG-12",
+        "--title",
+        "x",
+        "--issue-json",
+        file,
+      );
+      expectSpawnExit(r, 2);
+      expect(r.stderr).toContain("`labels` must be an array of strings");
+    }
+  });
+
+  it("refuses an issue JSON naming another team's key when open has no --issue", () => {
+    const file = join(dir, "ops.json");
+    writeFileSync(
+      file,
+      JSON.stringify({ identifier: "OPS-12", title: "x", labels: [] }),
+    );
+    const r = plan("open", "--issue-json", file);
+    expectSpawnExit(r, 2);
+    expect(r.stderr).toContain("is not a key of the configured tracker");
+  });
 });
 
 describe("pr-plan.ts open: the base a rule chooses", () => {
