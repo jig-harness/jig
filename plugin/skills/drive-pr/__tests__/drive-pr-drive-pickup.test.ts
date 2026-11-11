@@ -378,8 +378,16 @@ describe("drive.ts re-arms a HITL-parked drive once every item is answered", () 
     expect(r.stderr).toContain("every parked item on PR #999 is answered");
     expect(r.stderr).toContain("HUMAN_VERDICTS");
     expect(r.stderr).toContain("ANSWER_SEEN");
-    const after = await state(stateDir, ["get", "999"]);
-    expect(JSON.parse(after.stdout).parked).toEqual([]);
+    const after = JSON.parse((await state(stateDir, ["get", "999"])).stdout);
+    expect(after.parked).toEqual([]);
+    // The unpark leaves the park's resolution receipt, with the answer it consumed.
+    expect(
+      after.resolvedParks.map((p: { key: string; outcome: string }) => [
+        p.key,
+        p.outcome,
+      ]),
+    ).toEqual([["PRRT_p", "answered"]]);
+    expect(after.resolvedParks[0].answers[0].author).toBe("maintainer");
   });
 
   it("keeps the answers for the next pass when the first one is killed at its deadline", async () => {

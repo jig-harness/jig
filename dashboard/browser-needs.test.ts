@@ -86,11 +86,14 @@ describe("Needs you", () => {
         expect(await card.locator(".waitsOn").textContent()).toBe(
           "Waits on maintainer-a",
         );
-        await card.getByRole("button", { name: "The whole decision" }).click();
+        // The other options fold under the decision's row.
+        await card.getByRole("button", { name: "1 other option" }).click();
         await shows(page, ".pNeeds .need .options");
         expect(await card.locator(".options li").textContent()).toContain(
           "B: retry 5xx and 429",
         );
+        await card.getByRole("button", { name: "The whole decision" }).click();
+        await shows(page, ".pNeeds .need .steps");
         expect(await card.locator(".steps input[type=checkbox]").count()).toBe(
           1,
         );

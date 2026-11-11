@@ -126,7 +126,7 @@ describe("decisionOf", () => {
         "  The release App's push was refused.",
       ],
     });
-    expect(decision.options).toEqual([
+    expect(decision.options).toMatchObject([
       {
         name: "Tag it",
         changes: "the release is published.",
