@@ -33,6 +33,8 @@ export interface LineOption {
   costs: string | null;
   /** Whether the record's `## Recommended` names it. */
   recommended: boolean;
+  /** Its place on a card, the recommended option first (`shared/decision-card.ts`); absent from a line written before it was kept. */
+  number?: number;
 }
 
 /** One decision a parked drive waits on, as the drive framed it. */
@@ -56,6 +58,25 @@ export interface LineDecision {
   options?: LineOption[];
   /** The record's steps for a person, each a command or a named action; empty for `None.`. Absent from a line written before it was kept. */
   steps?: string[];
+  /** The answers that keep it waiting, each person's latest (`shared/decision-card.ts`); absent when it has none. */
+  answers?: import("../../shared/decision-card.ts").ShownAnswer[];
+  /** Why those answers do not settle it; absent when it has none. */
+  answerState?: import("../../shared/decision-card.ts").AnswerState;
+}
+
+/** A park on a ledger the tick read, kept so the next tick can tell how it left (`park-events.ts`). */
+export interface LinePark {
+  repo: string;
+  pr: number;
+  key: string;
+  kind: "thread" | "finding";
+  digest?: string;
+  /** When it was parked: with the key and digest, the occurrence's identity; absent on a park from before parks were timed. */
+  parkedAt?: string;
+  /** The class it was parked under; `null` when it names none. */
+  class: string | null;
+  /** The answers the tick read for it, each person's latest; absent when it read none. */
+  answers?: import("../../shared/decision-card.ts").ShownAnswer[];
 }
 
 /** How a cause's notification went, at the newest tick. */
@@ -409,6 +430,10 @@ export interface LineSnapshot {
   /** The host's load as the tick read it, and what it held or would hold; absent from a line written before the load factor. */
   load?: LineLoad;
   repos: LineRepo[];
+  /** Every park on the ledgers the tick read, and those it held before whose ledger it could not read; absent from a line written before parks were kept. */
+  parks?: LinePark[];
+  /** The resolution receipts the tick has written to the outcome log, by park occurrence, while a ledger it read still lists them. */
+  ingested?: string[];
 }
 
 /** `GET /state`. */

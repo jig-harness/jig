@@ -9,10 +9,19 @@
  * answers were read is a different question, and refuses the whole set too.
  * With `--every`, the named keys must be every park there is: a park added
  * since the answers were read has none, and refuses the whole set.
+ * With `--stdin`, the verdicts the re-arm consumed are read on stdin, and
+ * each park removed gets its resolution receipt in the same mutation
+ * (`resolution-receipt.ts`).
  */
-import { fail } from "../cli.ts";
-import type { ParkedItem } from "./schema.ts";
+import { fail, readStdinAll } from "../cli.ts";
+import type { DriveState, ParkedItem } from "./schema.ts";
 import type { StateStore } from "./store.ts";
+import {
+  type ConsumedVerdict,
+  keptReceipts,
+  parseConsumed,
+  receiptsFor,
+} from "./resolution-receipt.ts";
 
 /** What is wrong with the flags themselves; `null` when nothing is. */
 function usageError(
@@ -46,25 +55,52 @@ function refusal(
     : null;
 }
 
+/** The state with the named parks removed, and a receipt for each the re-arm consumed a verdict for. */
+function withoutParks(
+  s: DriveState,
+  keys: readonly string[],
+  consumed: readonly ConsumedVerdict[],
+): DriveState {
+  const removed = s.parked.filter((p) => keys.includes(p.key));
+  const fresh = receiptsFor(removed, consumed, new Date().toISOString());
+  return {
+    ...s,
+    parked: s.parked.filter((p) => !keys.includes(p.key)),
+    ...(fresh.length === 0
+      ? {}
+      : { resolvedParks: keptReceipts(s.resolvedParks, fresh) }),
+  };
+}
+
 export async function unpark(
   store: StateStore,
   keys: readonly string[],
   parkedAts: readonly string[] = [],
   every = false,
+  consumedText: string | null = null,
 ): Promise<number> {
   const misuse = usageError(keys, parkedAts);
   if (misuse !== null) return fail(2, misuse);
+  const consumed = consumedText === null ? [] : parseConsumed(consumedText);
+  if (typeof consumed === "string") return fail(2, consumed);
   // Set inside the locked update; the annotation keeps it from narrowing to `null`.
   let why = null as string | null;
   await store.update((s) => {
     why = refusal(s.parked, keys, parkedAts, every);
-    return why === null
-      ? { ...s, parked: s.parked.filter((p) => !keys.includes(p.key)) }
-      : s;
+    return why === null ? withoutParks(s, keys, consumed) : s;
   });
   if (why === null) return 0;
   return fail(
     1,
     `unpark: PR #${String(store.read().state.pr)}: ${why}; nothing was unparked.`,
   );
+}
+
+/** `unpark` as `drive-state.ts` parsed it, with `--stdin`'s verdicts read. */
+export async function unparkCommand(
+  store: StateStore,
+  a: { keys: string[]; parkedAts: string[]; every: boolean; stdin: boolean },
+): Promise<number> {
+  const consumed = a.stdin ? await readStdinAll() : null;
+  return unpark(store, a.keys, a.parkedAts, a.every, consumed);
 }

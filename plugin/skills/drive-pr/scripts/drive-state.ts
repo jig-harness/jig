@@ -56,7 +56,7 @@
  *   drive-state.ts record-event [PR]     < {"kind","cause"}
  *   drive-state.ts rule         [PR]  < {"key","verdict","class"?,"humanDecision"?}
  *                                     # the review arbiter's ruling on a thread
- *   drive-state.ts unpark       [PR] --key K [--key K …]   # all, or none
+ *   drive-state.ts unpark       [PR] --key K [--key K …] [--stdin]  # all, or none; --stdin: receipts
  *   drive-state.ts parked-keys  [PR]  # newline-delimited keys (reversal-parked-keys: reversed provisional decisions')
  *   drive-state.ts hold         [PR] --key K --kind thread|finding --outcome accepted|moot
  *                                     [--comment-url URL] [--unconfirmed]
@@ -240,7 +240,7 @@ import {
 } from "./lib/state/ladder-verdicts.ts";
 import { setReflected } from "./lib/state/reflected.ts";
 import { deadlineRetries } from "./lib/state/deadline-retries.ts";
-import { unpark } from "./lib/state/unpark.ts";
+import { unparkCommand } from "./lib/state/unpark.ts";
 import { clearPendingVerdicts } from "./lib/state/pass-handoff.ts";
 import {
   breakStaleClaimLocked,
@@ -375,7 +375,7 @@ function usage(): void {
   reverse-decision [PR]             a person's reversal of a provisional decision, JSON on stdin
   record-event [PR]                 a self-restart or re-arm, JSON on stdin
   rule         [PR]                 the arbiter's ruling on a thread, JSON on stdin
-  unpark       [PR] --key K [--key K …]  every key, or none when one is not parked
+  unpark       [PR] --key K [--key K …] [--stdin]  every key, or none when one is not parked (--stdin: the consumed verdicts, JSON, for receipts)
   parked-keys  [PR]                 newline-delimited keys (reversal-parked-keys: reversed provisional decisions')
   hold        [PR] --key K --kind thread|finding --outcome accepted|moot
                [--comment-url URL] [--unconfirmed]
@@ -2135,7 +2135,7 @@ async function main(): Promise<number> {
     }
 
     case "unpark":
-      return unpark(store, a.keys, a.parkedAts, a.every);
+      return unparkCommand(store, a);
 
     case "parked-keys":
     case "reversal-parked-keys":

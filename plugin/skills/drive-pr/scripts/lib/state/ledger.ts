@@ -68,6 +68,11 @@ import {
 } from "./decisions.ts";
 import { type DriveEvent, isOptionalEvents } from "./events.ts";
 import { type ArbiterRuling, isOptionalRulings } from "./rulings.ts";
+import {
+  isOptionalResolvedParks,
+  redactedReceipt,
+  type ResolutionReceipt,
+} from "./resolution-receipt.ts";
 import { decisionAnswerLines } from "./park-frame.ts";
 
 export const LEDGER_MARKER = "<!-- drive-pr-ledger -->";
@@ -159,6 +164,8 @@ export interface Ledger {
    * before they were carried, which seeds none over the local ones.
    */
   rulings?: ArbiterRuling[];
+  /** The resolution receipts of the parks re-arms unparked (`resolution-receipt.ts`); absent in a ledger written before them. */
+  resolvedParks?: ResolutionReceipt[];
   driver: LedgerDriver;
   /** The handoff narrative's last lines. */
   narrative: string[];
@@ -227,6 +234,7 @@ export function ledgerFromState(
     })),
     events: s.events ?? [],
     rulings: s.rulings ?? [],
+    resolvedParks: (s.resolvedParks ?? []).map(redactedReceipt),
     driver: opts.driver,
     narrative: opts.narrative.slice(-NARRATIVE_LINES).map(redact),
     cut: [],
@@ -330,8 +338,9 @@ function bytes(text: string): number {
 }
 
 /**
- * The comment body for `ledger`, cut to `limit`: held items' outcomes go
- * first, the narrative second, then the visible list of parked decisions
+ * The comment body for `ledger`, cut to `limit`: the resolved parks' receipts
+ * go first, held items' outcomes next, the narrative then, and last the
+ * visible list of parked decisions
  * (the data keeps every one). A parked decision is never dropped, so a body
  * that still does not fit is an error, not a smaller ledger. `writer` is the
  * envelope's: this process, with the forge login where the caller knows it.
@@ -351,10 +360,15 @@ export function renderLedger(
   };
   let body = ledgerBody(l, true, writer);
   if (bytes(body) <= limit) return { body, ledger: l };
+  if ((l.resolvedParks ?? []).length > 0) {
+    l = { ...l, resolvedParks: [], cut: ["the resolved parks"] };
+    body = ledgerBody(l, true, writer);
+    if (bytes(body) <= limit) return { body, ledger: l };
+  }
   l = {
     ...l,
     held: l.held.map(({ outcome: _dropped, reason: _answer, ...rest }) => rest),
-    cut: ["held items' outcomes"],
+    cut: [...l.cut, "held items' outcomes"],
   };
   body = ledgerBody(l, true, writer);
   if (bytes(body) <= limit) return { body, ledger: l };
@@ -468,6 +482,7 @@ function ledgerFault(v: Record<string, unknown>): string {
     ],
     ["events", isOptionalEvents(v.events)],
     ["rulings", isOptionalRulings(v.rulings)],
+    ["resolvedParks", isOptionalResolvedParks(v.resolvedParks)],
     ["driver", isLedgerDriver(v.driver)],
     ["narrative", Array.isArray(v.narrative) && v.narrative.every(isText)],
     ["cut", Array.isArray(v.cut) && v.cut.every(isText)],
@@ -940,6 +955,9 @@ export function seedFromLedger(
     decisions: l.decisions,
     events: l.events ?? local.events ?? [],
     ...(l.rulings === undefined ? {} : { rulings: l.rulings }),
+    ...(l.resolvedParks === undefined
+      ? {}
+      : { resolvedParks: l.resolvedParks }),
     ledgerGeneration: l.generation,
   };
   if (!isUsableState(state, local.pr))

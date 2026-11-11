@@ -79,9 +79,15 @@ const DECISION_FIELDS: Fields = {
       changes: nullOr(isString),
       costs: nullOr(isString),
       recommended: (v) => typeof v === "boolean",
+      number: (v) => v === undefined || isNumber(v),
     })(value),
   steps: (value) =>
     value === undefined || (Array.isArray(value) && value.every(isString)),
+  answers: (value) =>
+    value === undefined ||
+    listOf({ author: isString, at: isString, url: isString })(value),
+  answerState: (value) =>
+    value === undefined || value === "stale" || value === "disputed",
 };
 
 /** What the sessions view reads of each thread sample. */
@@ -256,6 +262,18 @@ const LINE_FIELDS: Fields = {
     })(value),
   load: (value) => value === undefined || hasFields(value, LOAD_FIELDS),
   repos: listOf(ENTRY_FIELDS.repos),
+  parks: (value) =>
+    value === undefined ||
+    listOf({
+      repo: isString,
+      pr: isNumber,
+      key: isString,
+      kind: (v) => v === "thread" || v === "finding",
+      parkedAt: (v) => v === undefined || isTime(v),
+      class: nullOr(isString),
+    })(value),
+  ingested: (value) =>
+    value === undefined || (Array.isArray(value) && value.every(isString)),
 };
 
 /** Whether the spans the page adds to the tick's start (and to each other) stay times it can show; `value` has passed `LINE_FIELDS`. */

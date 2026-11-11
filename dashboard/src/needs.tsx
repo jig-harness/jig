@@ -157,6 +157,11 @@ function NeedAsk({ need }: { need: NeedView }) {
           <InlineDecisionText source={need.recommendation} />
         </p>
       )}
+      {need.answerNotes.map((note) => (
+        <p className="sm answers" key={note}>
+          {note}
+        </p>
+      ))}
       {need.people.length === 0 ? null : (
         <p className="sm waitsOn">
           Waits on <span className="m">{need.people.join(", ")}</span>

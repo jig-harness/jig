@@ -27,7 +27,13 @@ import { hostTimeZone } from "./host-time.ts";
 import { exportLog } from "./log-export.ts";
 import type { MachineConfig } from "./machine-config.ts";
 import type { SessionsReport } from "./runtime/port.ts";
-import { stateDb } from "./state.ts";
+import { inTransaction, stateDb } from "./state.ts";
+import { insertRow } from "./log.ts";
+import {
+  type ParkOutcomes,
+  parkOutcomes,
+  type ParkRepo,
+} from "./park-events.ts";
 import { failureText } from "./text.ts";
 import { tickHealthOf, withTick } from "./tick-health.ts";
 import { passTimeoutSeconds } from "../../skills/drive-pr/scripts/lib/driver/settings.ts";
@@ -49,6 +55,7 @@ export function copyLog(receipt: TickReceipt): boolean {
 export function lineInputOf(
   drives: DrivenPr[],
   forge: {
+    ok?: boolean;
     open: ReadonlyArray<{ number: number; url: string; title: string }>;
     merged: ReadonlyArray<{ number: number; url: string; title: string }>;
   },
@@ -57,6 +64,7 @@ export function lineInputOf(
 ): RepoLineInput {
   return {
     drives,
+    open: forge.ok === false ? null : forge.open.map((p) => p.number),
     known: [
       ...[...forge.open, ...forge.merged].map((p) => ({
         target: `PR #${p.number}`,
@@ -123,6 +131,45 @@ function accountsOf(
     notAdmitted:
       refused.find((r) => r.account === slots.account.name)?.reason ?? null,
   }));
+}
+
+/** The line with its parks, and the event rows of the parks that left: the rows and the line that records them as ingested land together. */
+function writeWithParks(
+  line: LineSnapshot,
+  parked: ParkOutcomes,
+  receipt: string,
+): void {
+  const db = stateDb();
+  inTransaction(db, () => {
+    for (const row of parked.rows) insertRow(db, row);
+    writeLine(
+      { ...line, parks: parked.parks, ingested: parked.ingested },
+      receipt,
+    );
+  });
+}
+
+/** Each repository the tick read, as the park outcomes compare it: its owner flag, its open pull requests and its drives. */
+function parkRepos(
+  receipt: TickReceipt,
+  machine: MachineConfig,
+  inputs: Map<string, RepoLineInput>,
+): ParkRepo[] {
+  return receipt.repos.flatMap((report) => {
+    const input = inputs.get(report.path);
+    if (report.slug === null) return [];
+    // A repository whose forge was not read keeps the parks it held.
+    return [
+      {
+        slug: report.slug,
+        owner:
+          machine.repositories.find((r) => r.path === report.path)?.owner ??
+          false,
+        open: input?.open ?? null,
+        drives: input?.drives ?? [],
+      },
+    ];
+  });
 }
 
 /** Whether a tick read every repository the machine file lists, and only those: a tick for one repository would replace the whole line with that one. */
@@ -238,8 +285,14 @@ export function writeTickLine(
         previous.ok ? previous.value?.ticks : undefined,
         tickHealthOf(receipt, true),
       );
-      writeLine(
+      const parked = parkOutcomes(
+        parkRepos(receipt, machine, tick.inputs),
+        previous.ok ? (previous.value ?? {}) : {},
+        receipt.finishedAt,
+      );
+      writeWithParks(
         withLoad({ ...line, ticks }, receipt),
+        parked,
         JSON.stringify(receipt, null, 2),
       );
     },
