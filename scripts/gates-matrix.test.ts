@@ -7,7 +7,12 @@ const root = join(import.meta.dir, "..");
 test("the gate-set job's matrix runs every part of the gate set, every test shard once, with nothing to suppress a leg", async () => {
   const { PART_ENV, TEST_SHARD_ENV, PARTS } = await import("./gates.ts");
   const { load } = await import("js-yaml");
-  type Step = { name?: string; run?: string; env?: Record<string, string> };
+  type Step = {
+    name?: string;
+    run?: string;
+    if?: unknown;
+    env?: Record<string, string>;
+  };
   const { jobs } = load(
     readFileSync(join(root, ".github/workflows/gates.yml"), "utf8"),
   ) as {
@@ -46,6 +51,9 @@ test("the gate-set job's matrix runs every part of the gate set, every test shar
   // The leg's part and share reach the gate script from its matrix row.
   const gates = job.steps.filter((step) => step.run === "bun run gates");
   expect(gates.length).toBe(1);
+  // The gate stage must execute in every matrix leg. A condition here could
+  // silently skip every tests leg while leaving the matrix itself intact.
+  expect(gates[0]?.if).toBeUndefined();
   expect(gates[0]?.env?.[PART_ENV]).toBe(`\${{ matrix.part }}`);
   expect(gates[0]?.env?.[TEST_SHARD_ENV]).toBe(`\${{ matrix.shard }}`);
 });
