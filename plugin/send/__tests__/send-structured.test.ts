@@ -328,6 +328,41 @@ describe("--all --approve", () => {
     expect(w.writes()).toEqual([]);
   });
 
+  it("names the same set token whatever order canonically equivalent keys arrive in", async () => {
+    const tokenFor = async (keys: string[]) => {
+      const w = world();
+      pullRequest(
+        w,
+        12,
+        [],
+        [
+          ledgerOn(
+            701,
+            framedLedger(
+              12,
+              keys.map((k) => framedPark(k, "scope")),
+            ),
+          ),
+        ],
+      );
+      const r = await w.send([
+        ADDRESS,
+        "answer",
+        "--all",
+        "--approve",
+        "--dry-run",
+      ]);
+      expectSpawnExit(r, 0);
+      return token(r.stdout);
+    };
+    const composed = "F_\u00e9";
+    const decomposed = "F_e\u0301";
+    const a = await tokenFor([composed, decomposed]);
+    const b = await tokenFor([decomposed, composed]);
+    expect(a).toMatch(/^[0-9a-f]{12}$/);
+    expect(b).toBe(a);
+  });
+
   it("leaves out a park whose key the answer line cannot carry, and prints no control character", async () => {
     const w = world();
     many(w, framedPark("F_\u001b[2J", "next-item"));

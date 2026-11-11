@@ -60,13 +60,14 @@ interface Eligible {
   resolved: Resolved;
 }
 
-/** The set token of `eligible`: what the person saw, as one value to name. */
+/**
+ * The set token of `eligible`: what the person saw, as one value to name.
+ * Sorted by code unit, a total order, so it depends only on the set.
+ */
 function decisionSetToken(
   eligible: ReadonlyArray<{ key: string; digest: string }>,
 ): string {
-  const lines = eligible
-    .map((e) => `${e.key} ${e.digest}`)
-    .sort((a, b) => a.localeCompare(b, "en"));
+  const lines = eligible.map((e) => `${e.key} ${e.digest}`).sort();
   return createHash("sha256")
     .update(lines.join("\n"))
     .digest("hex")
