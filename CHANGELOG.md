@@ -391,6 +391,41 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.199.0] - 2026-11-11
+
+### Added
+
+- The dispatch dashboard shows a parked need as one short row per decision: its question, its act where it differs from the card's, how it bears on another decision, the recommended option and the [pick](GLOSSARY.md), with the other options folded and the count of decisions and picks on the card. On the focused card, `1` to `9` pick an option of the current decision (`1` is always the recommended one) and move to the next decision with no pick, `h` and `l` move between decisions, `u` clears the last pick, `r` writes a note beside a pick or an answer in your own words, and `Escape` leaves that field. On a phone each option is a row to tap, and every key has a button. See [plugin/README.md § The dispatcher](plugin/README.md#the-dispatcher).
+- The card's Copy, its `c` key and the palette copy one comment that answers every decision picked: `answer <key>: approve [<digest>]` or `choose <option>` with the framing's [decision digest](GLOSSARY.md), any `note <key>:` line, and an answer in your own words with the digest after it. With nothing picked, a card of one decision under a class Jig's acts table lists as Decide copies its approval when its recommended option can be undone and no earlier answer of it was dropped; any other card copies the starting `answer <key>:` lines as before. A pick under any other class, or of an option marked as one that cannot be undone, copies only on the second step, which first shows what it changes and costs; that step ends when a pick changes, a digest changes or the card loses focus. A held `c` takes only the first step, and a palette that closes having run nothing on the card ends it too. An answer that could not be sent (a note past 500 characters, say) holds the copy back and the row says why, as do your own words when the drive's readers would count them as a choice (`approve`, `choose Drop`): the row says to pick that option instead, as `jig send` refuses such text.
+- A decision whose record names no single recommended option takes answers in your own words only, since the drive reads every answer to it as free. Picks, notes and own words are kept in that browser only, for 30 days after their last change, by repository, pull request, decision key, digest and the time the item was parked. A note goes when you pick another option. A decision framed or parked again drops them and its row says so, and the card then copies no approval for it until you answer again. The tick's line carries each waiting park's time (`parkedAt`) beside its digest.
+
+### Changed
+
+- The reply drafts beside a parked decision are replaced by the rows' own answers: a draft written before this version is not shown and is forgotten 30 days after it was last edited.
+
+## [0.198.0] - 2026-11-11
+
+A repository can now state its own rules for starting work, and every claim honours them.
+
+### Added
+
+- `do_item.preflight_command`: a command `tracker.ts claim` runs before it takes the claim lock or writes anything, from the repository root, with the item's `get_issue.ts` JSON on standard input. Exit 0 goes on; exit 3 refuses the claim with the command's first line of output as the reason; any other exit, more than 64 KiB of output, or a run past 60 seconds (`JIG_DO_ITEM_PREFLIGHT_TIMEOUT_SEC` sets the bound), refuses too. The claim reads the command from the default branch, never from a working tree on another branch, and runs it without the tracker and forge tokens. `do-item` (each selected sub-issue included), `work-batch` (which drops a refused member and names it) and a dispatched pickup all claim through it, so none has to remember to call it. See [the configuration](plugin/CONFIGURATION.md#do_item).
+- The dispatcher holds a pickup the preflight command refused, showing the reason, until the item's `updatedAt` moves past the one the command saw; the pass records it with `jig dispatch result <record> <token> failed --refused <updated-at> --reason <reason>`.
+- `do_item.claim_from`: the canonical states a claim may start work from. An item in any other state, or in a status that maps to no canonical state, is refused with nothing written (`claim` exits 3 with `"why": "state"`), in `do-item`, `work-batch` and served claims alike. Read from the default branch, like the command. Unset, a claim keeps its rule and is not limited to `dispatch.states`; `/jig:audit` warns when both are set and differ.
+- `do_item.claim_marker`: a successful claim posts a marker comment on the item, a `tracker-claim-marker` record naming the session, the host (as a digest) and the branch, so other tools reading the tracker can tell which session holds it. Read from the default branch as well.
+- The repository-command runner (`plugin/shared/repo-command.ts`) these use: a setting read from the default branch, a scrubbed environment, a deadline, bounded output and a one-line reason for any failure, for the facets command store to reuse.
+
+## [0.197.4] - 2026-11-11
+
+### Fixed
+
+- Opening a workspace for a branch that another checkout holds no longer
+  reports that checkout as in use when the idle check ran out of time. A
+  command that reached its deadline just as it exited could read as having
+  succeeded with no output, so the check took it for a busy checkout and a
+  person was told of it; such a command now reads as cut short, and the open
+  fails as an ordinary refusal that the next open retries.
+
 ## [0.197.3] - 2026-11-11
 
 ### Fixed
@@ -6906,7 +6941,10 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.197.3...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.199.0...HEAD
+[0.199.0]: https://github.com/jig-harness/jig/compare/v0.198.0...v0.199.0
+[0.198.0]: https://github.com/jig-harness/jig/compare/v0.197.4...v0.198.0
+[0.197.4]: https://github.com/jig-harness/jig/compare/v0.197.3...v0.197.4
 [0.197.3]: https://github.com/jig-harness/jig/compare/v0.197.2...v0.197.3
 [0.197.2]: https://github.com/jig-harness/jig/compare/v0.197.1...v0.197.2
 [0.197.1]: https://github.com/jig-harness/jig/compare/v0.197.0...v0.197.1

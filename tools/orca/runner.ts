@@ -36,7 +36,7 @@ import {
   type Log,
   type RunOptions,
   type Runner,
-  type RunResult,
+  runResult,
   stderrLog,
 } from "../herdr/runner.ts";
 
@@ -77,16 +77,6 @@ export function orcaStateDir(): string {
   return join(jigHome(), "orca");
 }
 
-function completed(result: ReturnType<typeof spawnSync>): RunResult {
-  return {
-    status: result.status ?? -1,
-    stdout: result.stdout ?? "",
-    stderr:
-      result.stderr ||
-      (result.error ? `spawn error: ${result.error.message}` : ""),
-  };
-}
-
 /**
  * Run on this machine with `env`: the caller's environment without the
  * variables that would point git at another repository, and untranslated
@@ -97,7 +87,7 @@ export function localRunnerWith(env: NodeJS.ProcessEnv): Runner {
   return (argv, options) => {
     const [command, ...args] = argv;
     if (command === undefined) throw new OrcaError("empty command");
-    return completed(
+    return runResult(
       spawnSync(command, args, {
         env: clean,
         timeout: options?.timeoutMs ?? COMMAND_TIMEOUT_MS,
@@ -131,7 +121,7 @@ export function remoteRunner(
   assertHost(host);
   return (argv, options) => {
     if (argv.length === 0) throw new OrcaError("empty command");
-    return completed(
+    return runResult(
       spawn("ssh", [...SSH_OPTIONS, host, remoteCommand(argv, options)], {
         env: withoutLeakyGitEnv(),
         timeout: options?.timeoutMs ?? COMMAND_TIMEOUT_MS,

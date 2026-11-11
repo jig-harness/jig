@@ -18,6 +18,7 @@ import {
   need,
   queued,
 } from "./fixture-line.ts";
+import { picksNeeds } from "./fixture-picks.ts";
 import { mergingReady, waitingReady } from "./fixture-ready.ts";
 import {
   API,
@@ -46,6 +47,7 @@ export const SCENARIOS = [
   "token",
   "empty",
   "long",
+  "picks",
   "partial",
 ] as const;
 export type ScenarioId = (typeof SCENARIOS)[number];
@@ -728,6 +730,16 @@ export function fixture(id: ScenarioId): Fixture {
       return { now, line: line({}), rows: [] };
     case "empty":
       return { now, line: null, rows: [] };
+    case "picks":
+      return {
+        now,
+        line: line({
+          sessions: workingTwo(),
+          needs: picksNeeds(),
+          lastAccount: "codex-a",
+        }),
+        rows: nightly(),
+      };
     case "long":
       return {
         now,
