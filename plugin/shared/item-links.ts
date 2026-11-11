@@ -21,25 +21,24 @@ function keyOf(key: string): { family: string; segment: string } | null {
     : { family: prefixed[1].toUpperCase(), segment: key };
 }
 
-function escaped(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-/** The base a link of `key` gives (everything up to the key's segment), or `null` when the link does not name the key exactly once. */
+/** The base a link of `key` gives (everything up to the key's segment of its path), or `null` when the path does not name the key exactly once. */
 export function itemBaseOf(
   url: string,
   key: string,
 ): { family: string; base: string } | null {
   const of = keyOf(key);
-  if (of === null || !/^https?:\/\//.test(url)) return null;
-  const found = [
-    ...url.matchAll(new RegExp(`/${escaped(of.segment)}(?=$|[/?#])`, "g")),
-  ];
+  if (of === null) return null;
+  const parsed = URL.parse(url);
+  if (parsed === null || !/^https?:$/.test(parsed.protocol)) return null;
+  // Only the path names the item: a query or fragment that repeats the key says nothing about it.
+  const segments = parsed.pathname.split("/");
+  const at = segments.indexOf(of.segment);
   // A key repeated in the path (a namespace named like the item) leaves its segment unestablished.
-  const [only] = found;
-  return found.length !== 1 || only === undefined
-    ? null
-    : { family: of.family, base: url.slice(0, only.index + 1) };
+  if (at < 0 || segments.indexOf(of.segment, at + 1) >= 0) return null;
+  return {
+    family: of.family,
+    base: `${parsed.origin}${segments.slice(0, at).join("/")}/`,
+  };
 }
 
 /** The tracker bases known links give, by key family. */

@@ -30,6 +30,23 @@ describe("itemBaseOf", () => {
   });
 });
 
+describe("itemBaseOf: the path alone names the item", () => {
+  test("a key in the query or fragment establishes nothing", () => {
+    expect(
+      itemBaseOf("https://tracker.example/search?next=/ENG-4", "ENG-4"),
+    ).toBeNull();
+    expect(
+      itemBaseOf("https://tracker.example/search#/ENG-4", "ENG-4"),
+    ).toBeNull();
+  });
+
+  test("a key repeated only in the query leaves the path's one segment", () => {
+    expect(
+      itemBaseOf("https://tracker.example/issue/ENG-4?next=/ENG-4", "ENG-4"),
+    ).toEqual({ family: "ENG", base: "https://tracker.example/issue/" });
+  });
+});
+
 describe("itemLinkFrom", () => {
   const bases = itemBases([
     { target: "#3", url: "https://github.com/o/r/issues/3" },

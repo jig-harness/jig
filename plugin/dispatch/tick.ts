@@ -525,9 +525,15 @@ function heldReceipt(started: StartedTick, heldBy: string): void {
 function lineOfHeldTick(
   started: StartedTick,
   observe: ObservedAll,
+  heldBy: string,
   timer: PhaseTimer<TickPhase>,
 ): void {
   const { receipt, context } = started;
+  // The receipt the line stores says what the invocation did: it held back, and exits as held.
+  receipt.exitStatus = 3;
+  receipt.completed = false;
+  receipt.apply = context.options.apply === true;
+  receipt.lockHeldBy = heldBy;
   receipt.busy = [...observe.busy].map(([path, heldBy]) => ({ path, heldBy }));
   receipt.finishedAt = new Date().toISOString();
   receipt.phasesMs = { ...timer.ms };
@@ -595,7 +601,7 @@ export async function runTick(options: TickOptions): Promise<TickResult> {
     ) {
       const heldBy = [...observe.busy.values()].join("; ");
       heldReceipt(started, heldBy);
-      lineOfHeldTick(started, observe, timer);
+      lineOfHeldTick(started, observe, heldBy, timer);
       return { held: heldBy };
     }
     const act = await timer.time("wait", () =>

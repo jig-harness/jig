@@ -22,7 +22,12 @@ import {
   type RepoLineInput,
   type RepoStored,
 } from "./line.ts";
-import { readLine, readLineReceipt, writeLine } from "./line-store.ts";
+import {
+  readLine,
+  readLineReceipt,
+  withLineLocked,
+  writeLine,
+} from "./line-store.ts";
 import { mergeLine, readBy } from "./line-merge.ts";
 import { hostTimeZone } from "./host-time.ts";
 import { exportLog } from "./log-export.ts";
@@ -135,6 +140,10 @@ function readsTheMachine(machine: MachineConfig, repos: string[]): boolean {
 
 /** Add health to the previous snapshot without replacing its state or receipt. */
 function addTick(receipt: TickReceipt, sweep: boolean): Outcome<void> {
+  return withLineLocked(() => addTickLocked(receipt, sweep));
+}
+
+function addTickLocked(receipt: TickReceipt, sweep: boolean): Outcome<void> {
   const previous = readLine();
   if (!previous.ok) return previous;
   if (previous.value === null) return ok(undefined);
@@ -210,7 +219,7 @@ export function writeTickLine(
     codexOptIn: CodexOptIn;
   },
 ): void {
-  const { machine, records } = tick;
+  const { machine } = tick;
   if (machine === null) return;
   const listed = new Set(machine.repositories.map((r) => r.path));
   const reports = receipt.repos.filter((r) => listed.has(r.path));
@@ -220,6 +229,20 @@ export function writeTickLine(
     recordTickHealth(receipt, machine);
     return;
   }
+  withLineLocked(() => writeKept(receipt, tick, whole));
+}
+
+/** The merge of the line before with this tick's, read and written under the line's write lock. */
+function writeKept(
+  receipt: TickReceipt,
+  tick: Parameters<typeof writeTickLine>[1],
+  whole: boolean,
+): void {
+  const { machine, records } = tick;
+  if (machine === null) return;
+  const reports = receipt.repos.filter((r) =>
+    machine.repositories.some((m) => m.path === r.path),
+  );
   const kept = keptMachine(
     whole,
     whole || readsTheMachine(machine, tick.asked),
