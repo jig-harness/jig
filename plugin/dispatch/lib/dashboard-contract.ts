@@ -38,6 +38,8 @@ export interface LineOption {
 /** One decision a parked drive waits on, as the drive framed it. */
 export interface LineDecision {
   digest?: string;
+  /** When this park of the item was made: a park made again of the same item has another time, so a pick kept for the earlier one is not carried to it. Absent on a park that records none, and from a line written before it was kept. */
+  parkedAt?: string;
   decision?: import("../../shared/decisions/park.ts").ParkedDecision;
   /** The named person; absent on older parks. Routing does not restrict answers. */
   person?: string;
