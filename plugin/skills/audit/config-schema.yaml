@@ -621,7 +621,7 @@ fields:
     pattern: "^https://api\\.atlassian\\.com/ex/jira/[A-Za-z0-9][A-Za-z0-9-]{0,63}/?$"
     read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
     repository_only: true
-    since: next
+    since: 0.209.0
   issue_tracker.jira.issue_type:
     type: string
     default: Task

@@ -391,6 +391,28 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.209.0] - 2026-11-11
+
+### Added
+
+- The Jira adapter signs in with more than an account's email and API
+  token. `JIRA_BEARER_TOKEN` sends an OAuth access token as
+  `Authorization: Bearer`, and `JIRA_TOKEN_COMMAND` names a command that
+  prints one, as `gh auth token` does, so a credential broker or vault holds
+  the token and the environment holds only the command: the adapter runs it
+  once per process under a deadline, runs it once more when Jira answers
+  401, and names the variable when it fails. The first set wins:
+  `JIRA_BEARER_TOKEN`, then `JIRA_TOKEN_COMMAND`, then `JIRA_EMAIL` with
+  `JIRA_API_TOKEN`
+  ([environment variables](plugin/CONFIGURATION.md#environment-variables)).
+- `issue_tracker.jira.api_base` sends the Jira adapter's requests through
+  Atlassian's API gateway, `https://api.atlassian.com/ex/jira/<cloud id>`,
+  which OAuth access tokens and API tokens with scopes require; a token with
+  scopes goes in `JIRA_API_TOKEN` beside `JIRA_EMAIL`. Only that address
+  shape is accepted, redirects are still never followed, and `site` still
+  builds every issue's link
+  ([`issue_tracker`](plugin/CONFIGURATION.md#issue_tracker)).
+
 ## [0.208.0] - 2026-11-11
 
 The dispatch dashboard can be installed on a phone as an app.
@@ -7181,7 +7203,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.208.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.209.0...HEAD
+[0.209.0]: https://github.com/jig-harness/jig/compare/v0.208.0...v0.209.0
 [0.208.0]: https://github.com/jig-harness/jig/compare/v0.207.0...v0.208.0
 [0.207.0]: https://github.com/jig-harness/jig/compare/v0.206.0...v0.207.0
 [0.206.0]: https://github.com/jig-harness/jig/compare/v0.205.0...v0.206.0
