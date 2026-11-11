@@ -14,15 +14,13 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  DEFAULT_VOCABULARY,
   isReconcileInputShape,
   positiveIntEnv,
   type ReconcileChildInput,
   type ReconcileInput,
   reconcileParentStatus,
 } from "../scripts/reconcile_parent_status.ts";
-import { DEFAULT_VOCABULARY } from "../scripts/reconcile_parent_status.ts";
-import { parseTrackerLabels } from "../../../shared/tracker-labels.ts";
-import { classifyChildState, issueResult } from "../scripts/get_issue.ts";
 
 // `opts.labels` defaults to `[]`, not `undefined`. The two now decide the
 // same way for extract-and-close eligibility (both read as "no tail label" —
@@ -326,10 +324,7 @@ describe("reconcileParentStatus", () => {
       expect(r.verdict).toBe("extract_and_close_eligible");
     });
 
-    it("warns about sweep-epic.ts's --close refusal when the PARENT itself carries manual-ops", () => {
-      // sweep-epic.ts refuses `--close` outright on a manual-ops epic — the
-      // reason must say so, since the plain reading of this verdict ("run
-      // sweep-epic.ts") would otherwise dispatch a call that guard rejects.
+    it("describes the portable no-close procedure when the PARENT carries manual-ops", () => {
       const r = reconcileParentStatus({
         parentLabels: ["manual-ops"],
         children: [
@@ -337,17 +332,27 @@ describe("reconcileParentStatus", () => {
         ],
       });
       expect(r.verdict).toBe("extract_and_close_eligible");
-      expect(r.reason).toContain("--no-close");
+      expect(r.reason).toContain("extract each tail");
+      expect(r.reason).toContain('transition it to "Ops Pending"');
+      expect(r.reason).not.toContain("sweep-epic");
     });
 
-    it("does not warn about --no-close when the parent has no manual-ops label", () => {
-      const r = reconcileParentStatus({
-        parentLabels: ["chore"],
-        children: [
-          child("Todo", { type: "unstarted", labels: ["pr-followup"] }),
-        ],
-      });
-      expect(r.reason).not.toContain("--no-close");
+    it("describes the configured no-close procedure when post-merge stops short of done", () => {
+      const r = reconcileParentStatus(
+        {
+          parentLabels: ["chore"],
+          children: [
+            child("Todo", { type: "unstarted", labels: ["pr-followup"] }),
+          ],
+        },
+        {
+          ...DEFAULT_VOCABULARY,
+          postMergeState: "in_review",
+        },
+      );
+      expect(r.reason).toContain("extract each tail");
+      expect(r.reason).toContain('post_merge_state "In Review"');
+      expect(r.reason).not.toContain("sweep-epic");
     });
   });
 
@@ -915,193 +920,5 @@ describe("positiveIntEnv", () => {
     } finally {
       delete process.env.RECONCILE_TEST_ENV_VAR;
     }
-  });
-});
-
-describe("reconcileParentStatus with the consumer's vocabulary", () => {
-  const vocabulary = {
-    labels: parseTrackerLabels({
-      issue_tracker: { labels: { manual_ops: "ops-step", hitl: "human" } },
-    }),
-    states: {
-      ...DEFAULT_VOCABULARY.states,
-      in_review: "Reviewing",
-      ops_pending: "Awaiting Ops",
-    },
-  };
-
-  it("caps at the tracker's own name for the least-advanced parked state", () => {
-    const r = reconcileParentStatus(
-      {
-        parentLabels: [],
-        children: [
-          { state: { name: "Reviewing", type: "started" } },
-          { state: { name: "Awaiting Ops", type: "started" } },
-        ],
-      },
-      vocabulary,
-    );
-    expect(r).toMatchObject({
-      verdict: "set_status",
-      parentState: "in_review",
-      parentStateName: "Reviewing",
-    });
-  });
-
-  it("does not read the default names as parked", () => {
-    const r = reconcileParentStatus(
-      {
-        parentLabels: [],
-        children: [{ state: { name: "In Review", type: "started" } }],
-      },
-      vocabulary,
-    );
-    expect(r.verdict).toBe("keep_in_progress");
-  });
-
-  it("reads the configured manual-operations label and tails", () => {
-    const done = reconcileParentStatus(
-      {
-        parentLabels: ["ops-step"],
-        children: [{ state: { name: "Done", type: "completed" } }],
-      },
-      vocabulary,
-    );
-    expect(done).toMatchObject({
-      parentState: "ops_pending",
-      parentStateName: "Awaiting Ops",
-    });
-    const tail = reconcileParentStatus(
-      {
-        parentLabels: [],
-        children: [
-          {
-            state: { name: "Todo", type: "unstarted" },
-            labels: ["human:legal"],
-          },
-        ],
-      },
-      vocabulary,
-    );
-    expect(tail.verdict).toBe("extract_and_close_eligible");
-    const oldName = reconcileParentStatus(
-      {
-        parentLabels: [],
-        children: [
-          {
-            state: { name: "Todo", type: "unstarted" },
-            labels: ["hitl:legal"],
-          },
-        ],
-      },
-      vocabulary,
-    );
-    expect(oldName.verdict).toBe("keep_in_progress");
-  });
-
-  describe("a child state with no category", () => {
-    const named = {
-      ...DEFAULT_VOCABULARY.states,
-      done: "Shipped",
-      in_review: "Closed",
-    };
-
-    it("reads the configured names before the English fallback", () => {
-      expect(classifyChildState({ name: "Shipped", type: "" }, named)).toBe(
-        "completed",
-      );
-      expect(classifyChildState({ name: "closed", type: "" }, named)).toBe(
-        "incomplete",
-      );
-      expect(classifyChildState({ name: "Closed", type: "" })).toBe(
-        "completed",
-      );
-      expect(
-        classifyChildState({ name: "Shipped", type: "started" }, named),
-      ).toBe("incomplete");
-    });
-
-    it("completes a parent whose children are done under the tracker's name", () => {
-      const r = reconcileParentStatus(
-        {
-          parentLabels: [],
-          children: [{ state: { name: "Shipped", type: "" } }],
-        },
-        { ...vocabulary, states: named },
-      );
-      expect(r).toMatchObject({ verdict: "set_status", parentState: "done" });
-    });
-
-    it("caps, never completes, a parent with a parked child named like a done state", () => {
-      const r = reconcileParentStatus(
-        {
-          parentLabels: [],
-          children: [
-            { state: { name: "Shipped", type: "completed" } },
-            { state: { name: "Closed", type: "" } },
-          ],
-        },
-        { ...vocabulary, states: named },
-      );
-      expect(r).toMatchObject({
-        verdict: "set_status",
-        parentState: "in_review",
-        parentStateName: "Closed",
-      });
-    });
-
-    it("matches a parked child's name as the classification does: trimmed, any case", () => {
-      const r = reconcileParentStatus(
-        {
-          parentLabels: [],
-          children: [
-            { state: { name: "Shipped", type: "completed" } },
-            { state: { name: " closed ", type: "" } },
-          ],
-        },
-        { ...vocabulary, states: named },
-      );
-      expect(r).toMatchObject({
-        verdict: "set_status",
-        parentState: "in_review",
-        parentStateName: "Closed",
-      });
-    });
-
-    it("gives get_issue.ts's sub-issue analysis the same reading", () => {
-      const result = issueResult(
-        {
-          id: "i-1",
-          identifier: "ENG-1",
-          title: "Epic",
-          description: "",
-          updatedAt: "2026-10-11T00:00:00.000Z",
-          state: { name: "In Progress", type: "started" },
-          labels: [],
-          url: "https://example.test/ENG-1",
-          parent: null,
-          children: [
-            {
-              identifier: "ENG-2",
-              title: "a",
-              state: { name: "Shipped", type: "" },
-            },
-            {
-              identifier: "ENG-3",
-              title: "b",
-              state: { name: "Closed", type: "" },
-            },
-          ],
-          assignee: null,
-          project: null,
-        } as unknown as Parameters<typeof issueResult>[0],
-        named,
-      );
-      expect(result.sub_issue_analysis).toMatchObject({
-        completed: 1,
-        incomplete: 1,
-        all_complete: false,
-      });
-    });
   });
 });

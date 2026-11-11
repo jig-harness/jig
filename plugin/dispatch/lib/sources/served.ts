@@ -18,7 +18,13 @@ import {
   type TrackerRateLimited,
 } from "../../../shared/tracker-budget.ts";
 import { servedParentHold } from "./served-parents.ts";
-import { otherRepoLabel, type RepoScope } from "./served-repo.ts";
+import {
+  NEEDS_REPOSITORY_LABEL,
+  otherRepoLabel,
+  type RepoScope,
+  type UnlabeledMode,
+  unlabeledOutcome,
+} from "./served-repo.ts";
 import { planKeys, servedPlan } from "./served-plan.ts";
 import {
   type ServedView,
@@ -57,6 +63,10 @@ export interface ServedPolicy {
   executionPlanBlock?: string;
   /** This repository's label and the other repositories': an item carrying another's is not this checkout's to start. */
   repoScope?: RepoScope;
+  /** What this checkout does with an item no repository label places; `start` when absent. */
+  unlabeled?: UnlabeledMode;
+  /** Identity of the tracker whose unplaced items this reading reports. */
+  trackerNamespace?: string;
 }
 export interface ServedOptions extends ServedPolicy {
   cache?: PickupReads;
@@ -288,6 +298,14 @@ export async function freshServedPickup(
     const elsewhere = otherRepoLabel(issue.labels, policy.repoScope);
     if (elsewhere !== null)
       return `it carries the repository label ${elsewhere}, which is another repository's`;
+    const unlabeled = unlabeledOutcome(
+      issue.labels,
+      policy.repoScope,
+      policy.unlabeled,
+    );
+    if (unlabeled === "hold") return NEEDS_REPOSITORY_LABEL;
+    if (unlabeled === "leave")
+      return "no repository label places it, and this repository is not its team's default";
     const parentHold = await servedParentHold(
       tracker,
       issue,
@@ -420,7 +438,8 @@ async function enqueueChildren(
 
 /**
  * Whether the walk passes this node by: already seen, nothing to start and no
- * epic to walk, or another repository's item (an epic is still walked, its
+ * epic to walk, another repository's item, or an item no label places that
+ * the team's default repository starts (an epic is still walked, its
  * children carry their own labels).
  */
 function leavesNode(
@@ -434,7 +453,10 @@ function leavesNode(
     !closed(issue);
   if (seen.has(issue.identifier) || (!ready(issue) && !walkedEpic)) return true;
   return (
-    !walkedEpic && otherRepoLabel(issue.labels, options.repoScope) !== null
+    !walkedEpic &&
+    (otherRepoLabel(issue.labels, options.repoScope) !== null ||
+      unlabeledOutcome(issue.labels, options.repoScope, options.unlabeled) ===
+        "leave")
   );
 }
 
@@ -467,11 +489,15 @@ async function placeNode(
 ): Promise<void> {
   const { tracker, identity, options, cache, view } = ctx;
   const { issue, ancestor } = node;
-  const unplace = (reason: string) =>
+  const unplace = (reason: string, cause?: "needs-repository-label") =>
     found.unplaced.push({
       target: issue.identifier,
       record: "tracker",
       reason,
+      ...(cause === undefined ? {} : { cause }),
+      ...(options.trackerNamespace === undefined
+        ? {}
+        : { source: options.trackerNamespace }),
     });
   const carried = view.held(issue.identifier)?.relations ?? null;
   const meta = await view.once(
@@ -495,6 +521,14 @@ async function placeNode(
     return enqueueChildren(ctx, issue, ancestor, meta, candidate, found);
   if (!ready(issue) || otherRepoLabel(issue.labels, options.repoScope) !== null)
     return;
+  const unlabeled = unlabeledOutcome(
+    issue.labels,
+    options.repoScope,
+    options.unlabeled,
+  );
+  if (unlabeled === "hold")
+    return void unplace(NEEDS_REPOSITORY_LABEL, "needs-repository-label");
+  if (unlabeled === "leave") return;
   const parentHold = await servedParentHold(
     tracker,
     issue,

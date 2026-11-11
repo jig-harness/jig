@@ -63,6 +63,10 @@ import { dispatchSection } from "../../../dispatch/lib/section.ts";
 import { DEFAULT_SCANNER_APPS } from "../../resolve-review-comments/scripts/lib/scanner-annotations.ts";
 import { DEFAULT_BLOCK } from "../../do-item/scripts/lib/execution-plan.ts";
 import { parseWorkTypes } from "../../do-item/scripts/lib/work-types.ts";
+import {
+  DEFAULT_POST_MERGE,
+  POST_MERGE_STATES,
+} from "../../do-item/scripts/lib/post-merge.ts";
 import { DEFAULT_TEMPLATE as DEFAULT_WORKSPACE_TEMPLATE } from "../../do-item/scripts/workspace-name.ts";
 import {
   parseRouting,
@@ -283,6 +287,9 @@ describe("the reading skills", () => {
     ]);
     expect(field("pull_requests.open_as")?.values).toEqual([...OPEN_AS]);
     expect(field("do_item.arm_drive")?.values).toEqual([...ARM_DRIVE_MODES]);
+    expect(field("do_item.post_merge_state")?.values).toEqual([
+      ...POST_MERGE_STATES,
+    ]);
     expect(field("drive.pass_model")?.pattern).toBe(PASS_MODEL_PATTERN.source);
     expect(field("drive.pass_args")?.items).toEqual({
       type: "string",
@@ -395,6 +402,7 @@ describe("the reading skills", () => {
       "drive.pass_args": DEFAULT_PASS_ARGS,
       "drive.codex_bypass": DEFAULT_CODEX_BYPASS,
       "do_item.arm_drive": DEFAULT_ARM_DRIVE,
+      "do_item.post_merge_state": DEFAULT_POST_MERGE.state,
       "issue_tracker.adapter": DEFAULT_ADAPTER,
       "issue_tracker.github.states_from": DEFAULT_STATES_FROM,
       "issue_tracker.github.status_field": DEFAULT_STATUS_FIELD,

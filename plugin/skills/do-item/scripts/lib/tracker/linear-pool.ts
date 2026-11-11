@@ -17,9 +17,9 @@ import type { LinearTransport } from "./linear.ts";
 import { claimOperations } from "./linear-claim.ts";
 import {
   type Assigner,
-  type CanonicalState,
   CLOSED_STATE_TYPES,
   type PoolQuery,
+  type StateNames,
   TrackerRequestError,
 } from "./port.ts";
 import type { CorePoolIssue, CoreTracker } from "./facets/tracker.ts";
@@ -162,7 +162,7 @@ type Pager = (
 
 export interface AssignedOptions {
   team: string;
-  states: Record<CanonicalState, string>;
+  states: StateNames;
   transport: LinearTransport;
   pageAll: Pager;
   poolQuery: string;
@@ -260,7 +260,15 @@ export function assignedOperations(
               ],
             },
           },
-          { state: { name: { in: wanted.map((s) => states[s]) } } },
+          {
+            state: {
+              name: {
+                in: wanted
+                  .map((s) => states[s])
+                  .filter((n): n is string => n !== null),
+              },
+            },
+          },
         ],
       };
       const nodes = await pageAll(

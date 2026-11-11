@@ -1720,6 +1720,10 @@ describe("guarded-push.ts", () => {
     const gitStub = join(dir, "bin");
     mkdirSync(gitStub, { recursive: true });
     const p = join(gitStub, "git");
+    writeFakeProgram(
+      join(gitStub, "ssh"),
+      '#!/usr/bin/env sh\nprintf "hostname github.com\\n"\n',
+    );
     // Exactly the root `ACTOR` was derived from, in git's own spelling.
     const toplevel = shellPath(await worktreeRoot());
     const hookFile = join(dir, "pre-push-hook.sh");
@@ -1730,6 +1734,7 @@ describe("guarded-push.ts", () => {
         "#!/usr/bin/env bash",
         'case "$1" in',
         '  rev-parse) case "$*" in "rev-parse HEAD"|"rev-parse --git-dir"|"rev-parse --git-common-dir"|"rev-parse --show-toplevel") ;; *) echo "git rev-parse: unknown argument: $*" >&2; exit 2 ;; esac ;;',
+        '  config) [ "$*" = "config --get core.sshCommand" ] || { echo "git config: unknown argument: $*" >&2; exit 2; }; exit 1 ;;',
         `  remote) [ "$*" = "remote get-url --push --all ${opts.remote ?? "origin"}" ] || { echo "git remote: unknown argument: $*" >&2; exit 2; } ;;`,
         `  push) ${GIT_PUSH_FLAG_GUARD} ;;`,
         '  *) echo "unexpected fake git command: $*" >&2; exit 2 ;;',

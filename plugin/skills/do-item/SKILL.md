@@ -111,7 +111,7 @@ The skill reads them at run time from `.config/jig.yaml`:
 |-------|--------------|-------------|
 | `issue_tracker.adapter` | Which tracker adapter the scripts use: `github` for GitHub Issues (the logged-in `gh` command-line client; its settings are under `issue_tracker.github`, [configuration reference](../../CONFIGURATION.md#issue_tracker)) `linear` (credentials from `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, else a logged-in `linear` command-line client), or `jira` for Jira Cloud (credentials from `JIRA_EMAIL` and `JIRA_API_TOKEN`; its settings are under `issue_tracker.jira`, `site` required). A plan file kept in the repository is planned, [ROADMAP item 12](https://github.com/jig-harness/jig/blob/main/ROADMAP.md#12-more-tracker-adapters) | `github` |
 | `issue_tracker.team` | Linear and Jira: the team (Linear) or project (Jira) the repository files into, as the prefix its issue keys carry (`ENG` for `ENG-123`) | Required on Linear and Jira: the tracker scripts stop with a message naming this field. Not used on GitHub Issues. A file that sets it without naming `issue_tracker.adapter` is refused, since the default adapter has no team: add `adapter: linear` or `adapter: jira` |
-| `issue_tracker.states` | Map from canonical state keys to the tracker's own state names | Each key title-cased, e.g. `in_progress` → "In Progress" |
+| `issue_tracker.states` | Map from canonical state keys to the tracker's own state names | Each key title-cased, e.g. `in_progress` → "In Progress"; `pr_open` stays unset, and nothing moves an item there |
 | `issue_tracker.file_command` | How to file a new issue (e.g. a slash command) | Ask the user to file it |
 | `issue_tracker.labels` | The repository's label for each role the skill acts on (see the table below) | The default names below |
 | `issue_tracker.types` | The repository's work types and the types and labels that mark each (see [Step 1](#step-1-fetch-the-issue)) | `bug`, `feature`, `improvement`, `task`, `spike`; `bug` marked by `issue_tracker.labels.bug`, the others by `<type>` and `type:<type>` |
@@ -120,6 +120,7 @@ The skill reads them at run time from `.config/jig.yaml`:
 | `routing` | The model tier and effort the implementer runs on, as rules (see [Step 4a](#step-4a-standard-start-no-sub-issues)) | Routes are derived and printed, none applied |
 | `do_item.scouts` | Pre-flight [scouts](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) per agent, `{agent: [scouts]}` | No scouts |
 | `do_item.gates` | Mandatory review gates, `[{labels, paths, skill}]` | No gates |
+| `do_item.post_merge_state`, `do_item.post_merge_closer` | Where the [post-merge status rule](#step-4a-standard-start-no-sub-issues) stops (`done`, `ops_pending` or `in_review`), and who closes an item it leaves short of `done`, for the closing comment | `done`; a sentence saying a person closes the item |
 | `do_item.guidance` | Implementation guidance, `[{labels, paths, skills, notes}]`, matched as gates are (see [Step 4a](#step-4a-standard-start-no-sub-issues)) | No guidance |
 | `do_item.execution_plan_block` | Name of the fenced block holding an epic's machine-readable execution plan | `execution-plan-v1` |
 | `specs.adapters`, `specs.body_section` | Which spec adapters the resolver runs, in order, and the heading of the body section that names the item's spec ([Step 1](#step-1-fetch-the-issue)) | Every adapter whose layout the repository holds, then `body`; the heading `Spec` |
@@ -132,7 +133,11 @@ Every field, its type and its default are in the plugin's
 [configuration reference](../../CONFIGURATION.md).
 
 Canonical state keys are `backlog`, `todo`, `in_progress`, `in_review`,
-`done`, `canceled`, and optionally `triage`, `ops_pending` and `duplicate`.
+`done`, `canceled`, and optionally `triage`, `pr_open`, `ops_pending` and
+`duplicate`. `pr_open` is active work whose pull request is open; `in_review`
+is merged and parked. `pr_open` alone has no default name: unset, nothing
+moves an item there, and a transition to `pr_open` prints `skipped` and
+writes nothing.
 This document names states by key; read "`in_progress`" as "the tracker's
 name for it from `issue_tracker.states`".
 
@@ -246,7 +251,7 @@ form is the row of this table it belongs to, and on Jira its script form.
 | Get issue (labels, state, parent, children, sub-issue analysis) | `bun "${CLAUDE_SKILL_DIR}/scripts/get_issue.ts" "<KEY>"` | `mcp__linear__get_issue` (no children field) | `gh issue view` with its JSON fields `number`, `title`, `body`, `labels`, `state`, `stateReason`, `url` and, where the `gh` client offers it, `issueType` (no sub-issues field; `issueType.name` is the `nativeType`, `null` when the issue has none or the client lacks the field) |
 | List comments | `bun "${CLAUDE_SKILL_DIR}/scripts/list_comments.ts" "<KEY>"` | `mcp__linear__list_comments` | `gh issue view` with the JSON field `comments` |
 | List children | `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" children "<KEY>"` | `mcp__linear__list_issues` with a parent filter | `gh api` on the issue's `sub_issues` endpoint |
-| Transition state | `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" transition "<KEY>" <canonical-state>` | `mcp__linear__save_issue` with `state: <mapped name>` | The script form: a state is a label or a board option plus open or closed, which only the script maps |
+| Transition state | `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" transition "<KEY>" <canonical-state>`, with `--post-merge` for the post-merge rule's moves | `mcp__linear__save_issue` with `state: <mapped name>` | The script form: a state is a label or a board option plus open or closed, which only the script maps |
 | Post comment | `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" comment "<KEY>" --body-file body.md` | `mcp__linear__save_comment` | `gh issue comment` with the body from a file |
 | File a new issue | The consumer's `issue_tracker.file_command` | — | — |
 
@@ -1116,6 +1121,27 @@ implementation. Skip this check for issues about the repository's own code.
    run that flow as well: it would post a second comment and move the ticket
    twice.
 
+   **Move the item to `pr_open` (exact; Step 4a and 4b), before arming the
+   drive.** Read `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" states`. When
+   it maps `pr_open` to `null`, skip this block: the tracker comment is
+   posted once, after the arm check, as below. Otherwise:
+
+   1. Post the tracker comment that links the pull request now, through
+      the tracker's comment operation: the pull request's link, how it
+      covers the item's acceptance criteria, and the `## Out-of-tree
+      follow-ups` section.
+   2. Then move the item:
+      `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" transition "<KEY>" pr_open`
+      (Linear native: `mcp__linear__save_issue` with the mapped name). A
+      failed move is reported, and does not stop the arm.
+   3. After the arm check, post the arm outcome and the observability
+      handles as a second comment, instead of the prepared one below.
+
+   The item stays in `pr_open` while the drive runs, through a pull request
+   returned to draft or a drive that reopens work. A claim refuses an item
+   in `pr_open`, and the dispatcher's stall and double-claim watch counts it
+   as claimed.
+
    **Release the implementer's isolated worktree:** After the branch is
    pushed and the PR is open, stop the delegate. When it used a separate
    worktree, run from this session's tree:
@@ -1314,6 +1340,22 @@ implementation. Skip this check for issues about the repository's own code.
    closing authorization in Step 5a; without one, transition it to
    `in_review` and report that it waits for an accepting verdict or a waiver.
 
+   The repository's `do_item.post_merge_state` caps this rule:
+   `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" post-merge` prints
+   `{ state, closer, closing }`. With `state` other than `done`, move the
+   issue to that state instead of `done` and no further (a manual step
+   still parks it at `ops_pending`), and put `closing`, the sentence on who
+   closes it, in the closing comment. Every post-merge move passes
+   `--post-merge`
+   (`bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" transition "<KEY>" <state> --post-merge`),
+   so the script refuses a move to `done` the setting forbids (exit 3,
+   nothing written): report the refusal and leave the issue where it is.
+   On the Linear native transport (`mcp__linear__save_issue`), move it to
+   `done` only when that output's `state` is `done`.
+   A person's own `transition` without the flag still works. This applies
+   to each sub-issue, to the follow-up after the merge, and to
+   `/jig:work-batch after-merge`; Step 5a applies it to the epic.
+
    **`manual-ops` — surface the operator checklist and park in `ops_pending`,
    not `done` (Step 4a and 4b):** when the issue carries `manual-ops`, the
    orchestrator must:
@@ -1402,13 +1444,18 @@ snapshot mapping are **exact**.
       Ambiguous or unreadable evidence keeps the pair out; `ops_pending`,
       `todo` or the absence of a tracker blocker alone proves nothing.
       Re-run the selector with the verified pairs.
-   c. `eligible` lists incomplete, eligible issues in band order, each
+   c. A plan the tracker contradicts is an error too: the selector refuses
+      an issue the tracker's `blocks` makes wait for another that the plan
+      puts after it, and names both issues. Remove the wrong side (the
+      relation, or re-run the planner). A dependency edge the tracker lacks
+      is no contradiction; `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" sync-plan-blocks "<EPIC>"` writes it as a native `blocks`.
+   d. `eligible` lists incomplete, eligible issues in band order, each
       checked against its own plan predecessors and live blockers. Bands are
       precedence depth, never whole-group barriers. Honour human checkpoints
       from `gates` and live `hitl` labels before delegating.
-   d. If several issues are eligible, ask the user to choose. If none are,
+   e. If several issues are eligible, ask the user to choose. If none are,
       report the blockers and the missing evidence.
-   e. Only when no Execution Plan exists at all (`present: false`), fall
+   f. Only when no Execution Plan exists at all (`present: false`), fall
       back to `sub_issue_analysis.next_issue`.
 
    **Epic-level snapshot fallback.** Whenever this issue carries the `epic`
@@ -1481,9 +1528,13 @@ data flow, not an executable harness API.
 >
 > | Condition | Parent status |
 > |-----------|---------------|
-> | Every sub-issue is `done`, or `canceled`/`duplicate` (abandoned, never completing) | `done` — capped at `ops_pending` if the **parent itself** carries `manual-ops` |
+> | Every sub-issue is `done`, or `canceled`/`duplicate` (abandoned, never completing) | `done` — capped at `ops_pending` if the **parent itself** carries `manual-ops`, and at `do_item.post_merge_state` when that is not `done` |
 > | Every sub-issue is merged-and-parked (`done`, `ops_pending`, `in_review`) or abandoned | The least advanced of those (any sub-issue in `in_review` → `in_review`; otherwise `ops_pending`) |
-> | Any sub-issue still in progress, to do or blocked | Keep `in_progress`; continue with Step 4b |
+> | Any sub-issue still in progress, with its pull request open (`pr_open`), to do or blocked | Keep `in_progress`; continue with Step 4b |
+>
+> A sub-issue in the tracker's name for `pr_open` is active work even where
+> that name is shared with `in_review`: the tracker cannot say whether its
+> pull request merged, so it never counts as merged and parked.
 >
 > `reconcile_parent_status.ts` implements and tests this table; do not
 > re-derive it by hand.
@@ -1628,7 +1679,7 @@ data flow, not an executable harness API.
    | `listing_failed` | **Stop**: report that the tracker refresh failed or was incomplete; do not change the parent's status |
    | `keep_in_progress` | Go to Step 4b |
    | `extract_and_close_eligible` | Verify the epic's closing authorization (below); if it has one, extract and close per the rule above (see the `manual-ops` note below when the parent carries that label). Otherwise **stop**: report that every remaining sub-issue is an extractable tail but the epic has no accepting verdict or waiver yet |
-   | `set_status` | When `decision.parentState` is `done` and the parent is an epic (`listing.parentLabels` carries the configured epic label), verify its closing authorization (below) first; without one, transition it to `in_review` instead and report that it waits for an accepting verdict or a waiver. Transition the parent: `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" transition "<KEY>" <canonical-state>` on the script transport; Linear native: `mcp__linear__save_issue({ id: issue.id, state: <mapped name> })` |
+   | `set_status` | When `decision.parentState` is `done` and the parent is an epic (`listing.parentLabels` carries the configured epic label), verify its closing authorization (below) first; without one, transition it to `in_review` instead and report that it waits for an accepting verdict or a waiver. Transition the parent: `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" transition "<KEY>" <canonical-state> --post-merge` on the script transport; Linear native: `mcp__linear__save_issue({ id: issue.id, state: <mapped name> })`, only after `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" post-merge` shows that its `state` allows it. A parent the reconciler capped at `do_item.post_merge_state` gets that output's `closing` sentence in its closing comment |
 
    **Closing authorization.** An epic may close only when its newest verdict
    from the repository's epic acceptance review accepts it, or when a person
@@ -1652,9 +1703,13 @@ data flow, not an executable harness API.
    `manual-ops` can never reach `done`, only `ops_pending`. Check
    `listing.parentLabels` before acting: if `manual-ops` is present, extract
    the tails but do not close the epic (a sweep tool's "no close" mode, if it
-   has one). Then explicitly transition the parent to `ops_pending` (or
-   `in_review` without that state) and post the operator-checklist comment
-   above. Leaving the epic at its old status (e.g. still `in_progress`) after
+   has one). The same holds when `do_item.post_merge_state` is not `done`:
+   extract the tails without closing, and move the epic to that state with
+   `--post-merge`. These are exclusive branches: when `manual-ops` is present,
+   transition the parent to `ops_pending` (or `in_review` without that state)
+   and post the operator-checklist comment above; when it is absent, the
+   configured `do_item.post_merge_state` is the final state, with no
+   `ops_pending` move and no checklist comment. Leaving the epic at its old status (e.g. still `in_progress`) after
    its tails moved would violate the status rule. `decision.reason` states
    this distinction when it applies.
 
@@ -1731,7 +1786,7 @@ record how it ended. In such a pass:
 |--------|---------|-------|--------|
 | `get_issue.ts` | Fetch an issue | Issue key | JSON with details and sub-issue analysis |
 | `list_comments.ts` | Fetch an issue's comments | Issue key | JSON array of `{ body, createdAt }` |
-| `tracker.ts` | Tracker operations: `children`, `transition`, `comment`, and the configured `states` and `labels` | Operation, issue key, and a canonical state or a body from `--body-file` (stdin also supported) | Operation result |
+| `tracker.ts` | Tracker operations: `children`, `transition` (`--post-merge` for the post-merge rule), `comment`, the configured `states` and `labels`, and the `post-merge` policy | Operation, issue key, and a canonical state or a body from `--body-file` (stdin also supported) | Operation result |
 | `determine_type.ts` | Derive an issue's work type and its depth-table row | Issue JSON (path or `-`) | JSON `{ type, evidence, depth }` |
 | `determine_agent.ts` | Route an issue to an agent and its scouts | Issue JSON (path or `-`) | JSON with agent and scouts |
 | `determine_route.ts` | Derive the implementer's route: agent, complexity tier (from type, size and complex flags), effort, the runtime's model, and the reasons | Issue JSON (path or `-`) | JSON `{ agent, type, size, tier, effort, model, runtime_model, runtime_effort, runtime, declared, fields, reasons }` |

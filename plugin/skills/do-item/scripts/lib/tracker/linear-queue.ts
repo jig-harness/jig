@@ -27,6 +27,7 @@ import type {
   ChangeQuery,
   IssueRelation,
   QueueRelation,
+  StateNames,
 } from "./port.ts";
 
 type Pager = (
@@ -40,7 +41,7 @@ type Pager = (
 
 export interface QueueOptions {
   team: string;
-  states: Record<CanonicalState, string>;
+  states: StateNames;
   transport: LinearTransport;
   pageAll: Pager;
   /** The estimate field, where size is kept in it. */

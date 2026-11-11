@@ -36,8 +36,8 @@ import {
 } from "./linear-pool.ts";
 import * as lf from "./linear-facets.ts";
 import { queueOperations } from "./linear-queue.ts";
+import { namedState } from "./config-error.ts";
 import {
-  type CanonicalState,
   type CommentFact,
   type FoundComment,
   type IssueComment,
@@ -48,6 +48,8 @@ import {
   type IssueSummary,
   type LabelledIssueState,
   type LedgerIssue,
+  type StateNames,
+  stateNameIn,
   type StartedIssueActivity,
   type Tracker,
   type TrackerLabel,
@@ -682,7 +684,7 @@ function trustedUser(u: unknown): boolean {
 
 export interface LinearTrackerOptions {
   team: string;
-  states: Record<CanonicalState, string>;
+  states: StateNames;
   transport: LinearTransport;
   facets?: lf.Facets; // default: every facet at the adapter's default
 }
@@ -792,7 +794,7 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
   const tracker: lf.CoreTracker = {
     adapter: "linear",
     team,
-    stateName: (state) => states[state],
+    stateName: stateNameIn(states),
 
     async reach(signal) {
       await teamId(signal);
@@ -845,7 +847,7 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
     },
 
     async transition(key, state, signal) {
-      const name = states[state];
+      const name = namedState(states[state], state);
       const { id, teamId } = await issueIdAndTeam(key, signal);
       const data = record(
         await transport(STATES_QUERY, { teamId }, signal),

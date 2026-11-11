@@ -7,6 +7,8 @@
  * repository holds can widen it.
  *
  * ```yaml
+ * serve_defaults:          # a tracker namespace's repository for items no repository label places
+ *   linear:ENG: /home/me/dev/web
  * repositories:
  *   - path: /home/me/dev/web
  *     stages: [rearm]
@@ -111,6 +113,12 @@ export interface MachineConfig {
   path: string;
   /** People authorized by this host, never by a repository overlay. */
   serve?: ServedPerson[];
+  /**
+   * The repository that starts the served items no repository label places,
+   * by tracker namespace (lower case) to checkout path: one per namespace,
+   * so two repositories sharing a tracker never both start such an item.
+   */
+  serveDefaults?: Record<string, string>;
   repositories: MachineRepository[];
   accounts: MachineAccount[];
   intervalMs: number;
@@ -162,6 +170,7 @@ const DEFAULTS = {
 const TOP_KEYS = [
   "steward",
   "serve",
+  "serve_defaults",
   "repositories",
   "accounts",
   "interval",
@@ -500,6 +509,53 @@ function repositories(value: unknown): Checked<MachineRepository[]> {
   return distinct(read.value, (r) => r.path, "a repository");
 }
 
+/** `linear:<team>`, or `jira:<site>:<project>` where the site is the https hostname the Jira settings accept (no port), its scheme colon kept. */
+function isTrackerNamespace(key: string): boolean {
+  if (/\s/.test(key)) return false;
+  if (key.startsWith("linear:")) {
+    const team = key.slice("linear:".length);
+    return team !== "" && !team.includes(":");
+  }
+  if (!key.startsWith("jira:")) return false;
+  const rest = key.slice("jira:".length);
+  const split = rest.lastIndexOf(":");
+  if (split < 0) return false;
+  const site = rest.slice(0, split);
+  const project = rest.slice(split + 1);
+  return /^https:\/\/[a-z0-9.-]+$/.test(site) && project !== "";
+}
+
+/**
+ * `serve_defaults`: each tracker namespace's default repository, a checkout
+ * listed under `repositories`. A namespace is written once, whatever its case.
+ */
+function serveDefaults(
+  value: unknown,
+  listed: readonly MachineRepository[],
+): Checked<Record<string, string>> {
+  if (value === undefined || value === null) return ok({});
+  if (!isMapping(value)) return invalid("serve_defaults must be a mapping");
+  const out: Record<string, string> = {};
+  for (const [team, raw] of Object.entries(value)) {
+    const where = `serve_defaults.${team}`;
+    const checkout = path(raw, where);
+    if (!checkout.ok) return checkout;
+    if (!listed.some((r) => r.path === checkout.value))
+      return invalid(
+        `${where} must be a repository listed under repositories: ${checkout.value}`,
+      );
+    const key = team.trim().toLowerCase();
+    if (!isTrackerNamespace(key))
+      return invalid(
+        `${where} must name a tracker namespace as linear:<team> or jira:<site>:<project>`,
+      );
+    if (key in out)
+      return invalid(`serve_defaults lists a tracker namespace twice: ${team}`);
+    out[key] = checkout.value;
+  }
+  return ok(out);
+}
+
 /** The accounts, each name, identity and configuration directory listed once. */
 function accounts(value: unknown): Checked<MachineAccount[]> {
   const raw = list(value, "accounts");
@@ -530,6 +586,8 @@ function parseValues(values: unknown, where: string): Checked<MachineConfig> {
   if (!serve.ok) return serve;
   const repos = repositories(top.repositories);
   if (!repos.ok) return repos;
+  const defaults = serveDefaults(top.serve_defaults, repos.value);
+  if (!defaults.ok) return defaults;
   const accountList = accounts(top.accounts);
   if (!accountList.ok) return accountList;
   const timing = limits(top);
@@ -546,6 +604,7 @@ function parseValues(values: unknown, where: string): Checked<MachineConfig> {
     trackerShare: trackerShare.value,
     path: where,
     serve: serve.value,
+    serveDefaults: defaults.value,
     repositories: repos.value,
     accounts: accountList.value,
     ...timing.value,

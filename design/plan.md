@@ -117,8 +117,12 @@ stage's answer back to the next tick, and a merged pull request's
 follow-up is guarded by a marker comment on it. A stop only a person can
 settle (a park, a drive stopped on a failure, a stalled pickup) is notified
 once. It never merges, answers a park, re-arms a drive a person stopped,
-takes over a driver another machine started or passes a flag reserved for
-a person, and writes a receipt per tick. Machine values in `~/.jig/dispatch.yaml`, a repository's
+stops a driver that is making progress or passes a flag reserved for a
+person, and writes a receipt per tick. It takes over only a silent driver:
+one a launch started, on this machine or another host; one no launch
+started that ran on this host and whose run the host's drive database shows
+ended; or one no launch started whose holder the clone's drive doctor reads
+dead or wedged. Machine values in `~/.jig/dispatch.yaml`, a repository's
 in a `dispatch` section of `.config/jig.yaml`. Built in the design's order:
 the report, then re-arms within account caps with the timer, then pickups,
 then follow-ups and notifications, then control: a permanent outcome
@@ -550,16 +554,6 @@ step:
   states a claim may start from (`do_item.claim_from`; unset, a claim
   keeps today's rule and is not limited to `dispatch.states`), and a claim
   marker naming the session, host and branch.
-- **Review.** An optional `pr_open` canonical state, entered once the
-  pull request opens and read as active work by the roll-up; it may share
-  a tracker name with `in_review` on a tracker with one review status. The
-  issue's labels carried onto the pull request, and reviewers requested, by
-  label or change area. Implementation guidance (skills and notes) chosen by
-  label, path and change area, in the shape of `do_item.gates`.
-- **Finish.** A post-merge state short of `done`
-  (`do_item.post_merge_state`), applied wherever the post-merge rule
-  applies today, refused unless the pull request links its item without
-  closing it.
 - **Stop.** An optional `blocked` canonical state that the shared
   projection of the drive ledger writes, with the park class and reason,
   when a drive stops on parked work, and clears when the park is answered.
@@ -701,16 +695,18 @@ labels, with a documented default per adapter:
 
 GitHub detects an unnamed store, keeps a facet's existing labels and refuses
 conflicting label and field evidence. A named store never waits on detection.
-Jig names label stores for its facets. The issue forms and `report-bug.ts`,
+Jig keeps type and priority in GitHub's issue type and Priority field, and
+size in its Effort field. The issue forms and `report-bug.ts`,
 which file around the interface, set the type and leave priority and size
-to triage.
+to triage; `report-bug.ts` still also applies the `bug` label.
 
 Jira's issue-type and custom-field stores and Linear's estimate store are
-built. What remains is their live runs. Jig's own move to GitHub's fields still needs the
-organization's default Task issue type retired, then the checked move,
-the configuration and issue forms switched, the source labels retired and
-the weekly workflow dispatched to verify its token's reads. These are the remaining
-steps of [the design's build order](tracker-facets.md#build-order).
+built. What remains is their live runs, one issue opened from the bug form
+to confirm it is filed as a Bug, `report-bug.ts` no longer applying the
+`bug` label, and a person's step on Jig's own
+organization: retiring GitHub's default Task issue type, so the web
+interface offers no type that names nothing. These are the remaining steps
+of [the design's build order](tracker-facets.md#build-order).
 A store kept by the repository's own command waits until a repository names
 a facet that needs it.
 
