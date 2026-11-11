@@ -238,6 +238,22 @@ describe("announce-merge-ready.ts and the reviewers that skip drafts", () => {
         ...converged,
         checkRuns: [
           ownRun,
+          rabbit("2026-11-11T09:25:00Z", "Review completed"),
+        ],
+      },
+      board(converged.head),
+      { timeline: READY, env: SKIPPERS },
+    );
+    expectSpawnExit(r, 0);
+    expect(r.stdout).toContain(OPENER);
+  });
+
+  it("refuses a fresh run that skipped the head instead of reviewing it", async () => {
+    const r = await dryRun(
+      {
+        ...converged,
+        checkRuns: [
+          ownRun,
           rabbit(
             "2026-11-11T09:25:00Z",
             "Review skipped: manual review required for this OSS repository",
@@ -247,7 +263,20 @@ describe("announce-merge-ready.ts and the reviewers that skip drafts", () => {
       board(converged.head),
       { timeline: READY, env: SKIPPERS },
     );
-    expectSpawnExit(r, 0);
-    expect(r.stdout).toContain(OPENER);
+    expectSpawnExit(r, 4);
+    expect(r.stderr).toContain("did not review it");
+  });
+
+  it("refuses a Ready event with no readable time", async () => {
+    const r = await dryRun(
+      {
+        ...converged,
+        checkRuns: [ownRun, rabbit("2026-11-11T09:25:00Z", "Review completed")],
+      },
+      board(converged.head),
+      { timeline: [{ event: "ready_for_review" }], env: SKIPPERS },
+    );
+    expectSpawnExit(r, 1);
+    expect(r.stderr).toContain("no readable time");
   });
 });

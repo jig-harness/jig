@@ -25,18 +25,26 @@ import { readTimeline } from "./pr-timeline.ts";
 import { runTitleSays, reviewerProfile } from "./reviewer-profiles.ts";
 import { type CheckRun, checkRunsFor } from "./status/evidence.ts";
 
-/** The newest `ready_for_review` event's time on `events`; `null` when there is none. */
-export function readyMarkedAt(events: readonly unknown[]): string | null {
+/**
+ * The newest `ready_for_review` event's time on `events`: `{ readyAt: null }`
+ * when there is none, `null` when one carries no readable time, since a
+ * transition whose time is unknown cannot stand for "never marked Ready".
+ */
+export function readyMarkedAt(
+  events: readonly unknown[],
+): { readyAt: string | null } | null {
   let newest: string | null = null;
   for (const event of events) {
     const { event: kind, created_at: at } = (event ?? {}) as Record<
       string,
       unknown
     >;
-    if (kind !== "ready_for_review" || typeof at !== "string") continue;
+    if (kind !== "ready_for_review") continue;
+    if (typeof at !== "string" || !Number.isFinite(Date.parse(at)))
+      return null;
     if (newest === null || Date.parse(at) > Date.parse(newest)) newest = at;
   }
-  return newest;
+  return { readyAt: newest };
 }
 
 /**
@@ -58,8 +66,12 @@ export function draftSkipperPending(
     .at(-1);
   if (newest === undefined)
     return `${app} has no check run on ${head} yet, so it has not looked at this head`;
-  if (runTitleSays(newest.title) === "draft-skip")
+  const says = runTitleSays(newest.title);
+  if (says === "draft-skip")
     return `${app}'s newest check run on ${head} is its draft skip ("${newest.title}")`;
+  // A skip or a pause is a run that did not review the head, however recent.
+  if (says !== null)
+    return `${app}'s newest check run on ${head} did not review it ("${newest.title}")`;
   if (readyAt === null) return null;
   const started = Date.parse(newest.started ?? "");
   return Number.isFinite(started) && started >= Date.parse(readyAt)
@@ -84,7 +96,13 @@ export async function draftSkippersRan(
   const runs = await checkRunsFor("{owner}", "{repo}", head);
   if (runs === null)
     return failed("unreadable", `cannot read the check runs on ${head}`);
-  const readyAt = readyMarkedAt(timeline.value);
+  const marked = readyMarkedAt(timeline.value);
+  if (marked === null)
+    return failed(
+      "unreadable",
+      "a ready_for_review event on the timeline carries no readable time",
+    );
+  const { readyAt } = marked;
   for (const app of apps) {
     const pending = draftSkipperPending(runs, app, head, readyAt);
     if (pending !== null) return failed("not-yet", pending);

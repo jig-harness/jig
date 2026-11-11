@@ -152,11 +152,21 @@ export function judgeReviewObject(
     };
   if (review?.commit === head)
     return { state: "witnessed", source: "review-object" };
-  const completed = Date.parse(run.completed ?? "");
-  if (review !== null && Date.parse(review.submittedAt) > completed)
-    return {
-      state: "STALE_REVIEW",
-      reason: `${label} last reviewed ${review.commit}, after its ${run.name} check run on ${head} completed, so that run does not stand for a review of this head`,
-    };
+  if (review !== null) {
+    const completed = Date.parse(run.completed ?? "");
+    const submitted = Date.parse(review.submittedAt);
+    // An unreadable time cannot order the two, and an unordered pair must not
+    // certify the run as the review of this head.
+    if (!Number.isFinite(completed) || !Number.isFinite(submitted))
+      return {
+        state: "AWAITING_REVIEWER",
+        reason: `${label} last reviewed ${review.commit}, not ${head}, and the times of that review and of its ${run.name} check run on ${head} do not both read, so the order of the two is unknown`,
+      };
+    if (submitted > completed)
+      return {
+        state: "STALE_REVIEW",
+        reason: `${label} last reviewed ${review.commit}, after its ${run.name} check run on ${head} completed, so that run does not stand for a review of this head`,
+      };
+  }
   return { state: "witnessed", source: "review-check-run" };
 }

@@ -386,16 +386,6 @@ async function main(): Promise<number> {
       `announce-merge-ready: review converged but CI is '${ci}' — refusing to announce`,
     );
   }
-  // The reviewers that skip drafts must have run since the Ready mark.
-  const skippers = await draftSkippersRan(pr, convergedHead);
-  if (!skippers.ok) {
-    const notYet = skippers.failure.code === "not-yet";
-    fail(
-      notYet ? 4 : 1,
-      `announce-merge-ready: ${skippers.failure.reason} — refusing to announce${notYet ? "; re-run once it has run on the Ready pull request" : ""}`,
-    );
-  }
-
   // Extracted here — as soon as `status` is parsed — rather than after the
   // up-front clean check below, so that check can compare local HEAD against it
   // too. Pure extraction from data already in hand; no new I/O.
@@ -553,6 +543,9 @@ async function main(): Promise<number> {
   // A positive ci:hold read invalidates an existing same-head announcement
   // just as conclusively as a draft or conflict transition does.
   let liveConfirmedHeld = false;
+  // Set only on a positive `not-yet` from the draft-skipper gate, never on an
+  // unreadable timeline or check-run read.
+  let liveConfirmedSkippersPending = false;
   async function checkLiveState(): Promise<number> {
     // Reset on every call (this function runs several times) so a stale flag
     // from an earlier call never survives into a call that failed for an
@@ -560,6 +553,7 @@ async function main(): Promise<number> {
     liveConfirmedConflicting = false;
     liveConfirmedDraft = false;
     liveConfirmedHeld = false;
+    liveConfirmedSkippersPending = false;
     const r = await ghCall(
       [
         "pr",
@@ -728,6 +722,19 @@ async function main(): Promise<number> {
       );
       return 4;
     }
+    // The reviewers that skip drafts must have run since the Ready mark. It
+    // is asked here, with the other live facts, because a person can convert
+    // the PR to draft and back to Ready on the same head at any point of the
+    // run, and only a read taken after that transition sees it.
+    const skippers = await draftSkippersRan(pr, head);
+    if (!skippers.ok) {
+      const notYet = skippers.failure.code === "not-yet";
+      if (notYet) liveConfirmedSkippersPending = true;
+      console.error(
+        `announce-merge-ready: ${skippers.failure.reason} — refusing to announce${notYet ? "; re-run once it has run on the Ready pull request" : ""}`,
+      );
+      return notYet ? 4 : 1;
+    }
     return 0;
   }
 
@@ -753,12 +760,15 @@ async function main(): Promise<number> {
     if (
       !dryRun &&
       rc === 4 &&
-      (liveConfirmedConflicting || liveConfirmedDraft || liveConfirmedHeld) &&
+      (liveConfirmedConflicting ||
+        liveConfirmedDraft ||
+        liveConfirmedHeld ||
+        liveConfirmedSkippersPending) &&
       ids.length > 0
     ) {
       console.error(
         `announce-merge-ready: withdrawing now-stale announcement(s) on ${head} — ` +
-          `${liveConfirmedHeld ? `${holdName()} was applied` : liveConfirmedDraft ? "the PR is a draft again" : "mergeability changed"} after they were posted.`,
+          `${liveConfirmedHeld ? `${holdName()} was applied` : liveConfirmedDraft ? "the PR is a draft again" : liveConfirmedSkippersPending ? "the draft-skipping reviewers have not run since it was marked Ready" : "mergeability changed"} after they were posted.`,
       );
       for (const id of ids) if (!(await withdrawAnnouncement(pr, id))) return 1;
     }

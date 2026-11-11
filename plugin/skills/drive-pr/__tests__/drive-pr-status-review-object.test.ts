@@ -87,6 +87,15 @@ describe("a review-object reviewer (CodeRabbit's profile)", () => {
     expectSpawnExit(r, 4);
   });
 
+  it("does not converge on a run when the order of a review and the run is unreadable", async () => {
+    const r = await gate({
+      checkRuns: [rabbit()],
+      reviews: [review(PREV, 3, "")],
+    });
+    expect(r.state).toBe("AWAITING_REVIEWER");
+    expect(r.reason).toContain("order of the two is unknown");
+  });
+
   it("waits for a run that has not completed, and for an absent one", async () => {
     const running = await gate({
       checkRuns: [rabbit({ status: "in_progress", conclusion: null })],
