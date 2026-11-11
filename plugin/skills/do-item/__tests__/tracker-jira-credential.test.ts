@@ -645,4 +645,21 @@ describe("a Bearer credential at an Atlassian Cloud site", () => {
     expect(later.status).toBe(403);
     expect(later.message).not.toContain("JIRA_BEARER_TOKEN");
   });
+
+  it("keeps Retry-After on the first 403's advice", async () => {
+    const impl = (async () =>
+      new Response("", {
+        status: 403,
+        headers: { "Retry-After": "7" },
+      })) as unknown as typeof fetch;
+    const refused = await failure(
+      defaultTransport(
+        "https://jira.example.com",
+        { JIRA_BEARER_TOKEN: "pat", JIRA_ALLOWED_HOSTS: "jira.example.com" },
+        impl,
+      )(request),
+    );
+    expect(refused.message).toContain("JIRA_BEARER_TOKEN");
+    expect(refused.retryAfterSec).toBe(7);
+  });
 });

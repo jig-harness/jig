@@ -346,6 +346,7 @@ export function httpTransport(
         throw failure;
       throw new JiraApiError(`${failure.message} (${firstRefusal})`, {
         status: failure.status,
+        retryAfterSec: failure.retryAfterSec,
         errorMessages: failure.errorMessages,
         errors: failure.errors,
       });
