@@ -14,7 +14,6 @@
  * that stopped still shows as one while woken ticks run.
  */
 import type { LineSnapshot } from "./dashboard-contract.ts";
-import { NEEDS_REPOSITORY_LABEL } from "./sources/served-repo.ts";
 
 /** The line with each repository's entry marked as read by the tick `runId` that started at `at`. */
 export function readBy(
@@ -74,14 +73,6 @@ export function mergeLine(
     ...before.filter((x) => kept.has(x.repo)),
     ...now.filter((x) => read.has(x.repo)),
   ];
-  // Repositories sharing a tracker team read the same unlabelled item; a kept part's report of it stands against a wake-up's.
-  const reported = new Set<string>();
-  const queue = part(previous.queue, fresh.queue).filter((q) => {
-    if (q.why !== NEEDS_REPOSITORY_LABEL) return true;
-    if (reported.has(q.target)) return false;
-    reported.add(q.target);
-    return true;
-  });
   const base = machine === "fresh" ? fresh : previous;
   // Whichever tick's part is kept, this tick's duration stays in the history the freshness checks take their maximum from.
   const durations =
@@ -99,7 +90,7 @@ export function mergeLine(
       : {}),
     sessions: part(previous.sessions, fresh.sessions),
     needs: part(previous.needs, fresh.needs),
-    queue,
+    queue: part(previous.queue, fresh.queue),
     ready: part(previous.ready ?? [], fresh.ready ?? []),
     repos: listed.flatMap(({ path }) => {
       const now = freshPaths.get(path);

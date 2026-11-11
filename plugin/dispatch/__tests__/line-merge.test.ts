@@ -11,7 +11,6 @@ import type {
   LineSnapshot,
 } from "../lib/dashboard-contract.ts";
 import { mergeLine, readBy } from "../lib/line-merge.ts";
-import { NEEDS_REPOSITORY_LABEL } from "../lib/sources/served-repo.ts";
 
 const LISTED = [{ path: "/w/a" }, { path: "/w/b" }];
 
@@ -122,24 +121,6 @@ function tickLine(
 }
 
 describe("mergeLine", () => {
-  test("a wake-up for one repository does not repeat a repository-label card another's kept part shows", () => {
-    const labelCard = (slug: string): LineQueued => ({
-      ...queued(slug, "ENG-1"),
-      why: NEEDS_REPOSITORY_LABEL,
-    });
-    const before = tickLine("2026-11-10T10:00:00.000Z", [
-      { slug: "A", path: "/w/a", n: 0 },
-      { slug: "B", path: "/w/b", n: 0 },
-    ]);
-    before.queue = [labelCard("A")];
-    const wake = tickLine("2026-11-10T10:02:00.000Z", [
-      { slug: "B", path: "/w/b", n: 1 },
-    ]);
-    wake.queue = [labelCard("B")];
-    const line = mergeLine(before, wake, LISTED, "kept");
-    expect(line.queue.map((x) => [x.repo, x.target])).toEqual([["A", "ENG-1"]]);
-  });
-
   test("a repository the tick reported on without a slug loses its old cards with its old entry", () => {
     const before = tickLine("2026-11-10T10:00:00.000Z", [
       { slug: "A", path: "/w/a", n: 0 },
