@@ -679,7 +679,9 @@ fallback does not complete the phone's secure-context requirement.
 provides an HTTPS (HTTP with transport encryption) address and authenticates
 the reader before the hub sees the request. Tailscale Serve is the first
 implementation; a reverse proxy with an identity provider is the browser
-path without Tailscale or Orca. Setup must:
+path without Tailscale or Orca. The
+[phone-access guide](../plugin/phone-access.md) is the setup, with its
+verification record. Setup must:
 
 1. Install the Stage 1 dashboard retry timer before installing the front,
    using `jig dispatch dashboard --install --yes` on a supported Linux
