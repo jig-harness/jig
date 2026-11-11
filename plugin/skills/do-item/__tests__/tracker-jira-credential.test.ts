@@ -1,0 +1,372 @@
+import { describe, expect, it } from "bun:test";
+import { join } from "node:path";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import { TrackerConfigError } from "../scripts/lib/tracker/config-error.ts";
+import {
+  jiraAuthorization,
+  resolveJiraCredential,
+  type TokenRun,
+  type TokenRunner,
+} from "../scripts/lib/tracker/jira/credential.ts";
+import {
+  parseJiraSettings,
+  requestBase,
+} from "../scripts/lib/tracker/jira/settings.ts";
+import {
+  httpTransport,
+  type JiraApiError,
+} from "../scripts/lib/tracker/jira/transport.ts";
+import { GATEWAY, SITE, tokenRun } from "./jira-fixtures.ts";
+
+const fieldOf = (f: () => unknown): string | null => {
+  try {
+    f();
+    return null;
+  } catch (e) {
+    return e instanceof TrackerConfigError
+      ? e.field
+      : `not a config error: ${String(e)}`;
+  }
+};
+
+describe("issue_tracker.jira.api_base", () => {
+  it("sends requests to the gateway, and keeps the site for links", () => {
+    const s = parseJiraSettings({ site: SITE, api_base: `${GATEWAY}/` });
+    expect([s.site, s.apiBase, requestBase(s)]).toEqual([
+      SITE,
+      GATEWAY,
+      GATEWAY,
+    ]);
+    expect(requestBase(parseJiraSettings({ site: SITE }))).toBe(SITE);
+    expect(fieldOf(() => requestBase(parseJiraSettings({})))).toBe(
+      "issue_tracker.jira.site",
+    );
+    expect(
+      fieldOf(() =>
+        parseJiraSettings({
+          site: "https://attacker.example",
+          api_base: GATEWAY,
+        }),
+      ),
+    ).toBe("issue_tracker.jira.site");
+  });
+
+  it("refuses any other host or path shape", () => {
+    const id = "11223344-a1b2-c3d4-e5f6-001122334455";
+    for (const api_base of [
+      `http://api.atlassian.com/ex/jira/${id}`,
+      `https://api.atlassian.com:443/ex/jira/${id}`,
+      `https://user@api.atlassian.com/ex/jira/${id}`,
+      `https://api.atlassian.com.example.com/ex/jira/${id}`,
+      `https://evil.example/ex/jira/${id}`,
+      `${SITE}/ex/jira/${id}`,
+      `https://api.atlassian.com/ex/confluence/${id}`,
+      `https://api.atlassian.com/ex/jira/${id}/rest`,
+      `https://api.atlassian.com/ex/jira/${id}//`,
+      `https://api.atlassian.com/ex/jira/${id}?x=1`,
+      `https://api.atlassian.com/ex/jira/${id}#x`,
+      `https://api.atlassian.com/ex/jira/${id}\n`,
+      `https://api.atlassian.com/ex/jira/../${id}`,
+      "https://api.atlassian.com/ex/jira/",
+      "https://api.atlassian.com/ex/jira/-x",
+      ` https://api.atlassian.com/ex/jira/${id}`,
+      "",
+      3,
+    ])
+      expect([
+        api_base,
+        fieldOf(() => parseJiraSettings({ site: SITE, api_base })),
+      ]).toEqual([api_base, "issue_tracker.jira.api_base"]);
+  });
+
+  it("is not widened by JIRA_ALLOWED_HOSTS", () => {
+    const settings = join(
+      import.meta.dir,
+      "../scripts/lib/tracker/jira/settings.ts",
+    );
+    const script = `
+      const { parseJiraSettings } = await import(${JSON.stringify(settings)});
+      const site = parseJiraSettings({ site: "https://jira.example.com" }).site;
+      try {
+        parseJiraSettings({ site, api_base: "https://jira.example.com/ex/jira/abc" });
+        console.log("accepted");
+      } catch (e) {
+        console.log("refused " + e.field);
+      }`;
+    const r = Bun.spawnSync([process.execPath, "-e", script], {
+      env: { ...process.env, JIRA_ALLOWED_HOSTS: "jira.example.com" },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    expectSpawnExit(r, 0, "settings under JIRA_ALLOWED_HOSTS");
+    expect(r.stdout.toString().trim()).toBe(
+      "refused issue_tracker.jira.api_base",
+    );
+  });
+});
+
+describe("Jira credential", () => {
+  const basic = { JIRA_EMAIL: "a@example.com", JIRA_API_TOKEN: "t" };
+
+  it("takes a Bearer token first, then the token command, then the Basic pair", () => {
+    expect(
+      resolveJiraCredential({
+        ...basic,
+        JIRA_TOKEN_COMMAND: "broker token",
+        JIRA_BEARER_TOKEN: " b ",
+      }),
+    ).toEqual({ ok: true, value: { kind: "bearer", token: "b" } });
+    expect(
+      resolveJiraCredential({
+        ...basic,
+        JIRA_BEARER_TOKEN: "  ",
+        JIRA_TOKEN_COMMAND: `broker "jira token"`,
+      }),
+    ).toEqual({
+      ok: true,
+      value: { kind: "command", argv: ["broker", "jira token"] },
+    });
+    expect(
+      resolveJiraCredential({ ...basic, JIRA_TOKEN_COMMAND: " " }),
+    ).toEqual({
+      ok: true,
+      value: { kind: "basic", email: "a@example.com", token: "t" },
+    });
+  });
+
+  it("refuses a token command it cannot read, without repeating it", () => {
+    const r = resolveJiraCredential({
+      JIRA_TOKEN_COMMAND: `broker --secret "s3cret`,
+    });
+    expect(r).toEqual({
+      ok: false,
+      failure: {
+        code: "token-command",
+        reason: 'JIRA_TOKEN_COMMAND cannot be read as a command: unclosed "',
+      },
+    });
+  });
+
+  it("signs with the Bearer token over the Basic pair", async () => {
+    const r = resolveJiraCredential({ ...basic, JIRA_BEARER_TOKEN: "b" });
+    if (!r.ok) throw new Error(r.failure.reason);
+    expect(await jiraAuthorization(r.value).header()).toEqual({
+      ok: true,
+      value: "Bearer b",
+    });
+  });
+});
+
+/** The `Authorization` header a request carried, `""` when none. */
+const authorizationOf = (init: RequestInit | undefined): string =>
+  (init?.headers as Record<string, string> | undefined)?.Authorization ?? "";
+
+/** A fetch that answers each request with the next status, recording the headers sent. */
+function statuses(...codes: number[]) {
+  const sent: string[] = [];
+  const impl = (async (_url: unknown, init?: RequestInit) => {
+    sent.push(authorizationOf(init));
+    const status = codes[Math.min(sent.length - 1, codes.length - 1)] ?? 200;
+    return new Response(status === 200 ? '{"ok":true}' : "", { status });
+  }) as typeof fetch;
+  return { sent, impl };
+}
+
+/** A runner that prints each of `tokens` in turn, counting its runs. */
+function printing(...tokens: string[]) {
+  const runs: string[][] = [];
+  const runner: TokenRunner = async (argv) => {
+    runs.push(argv);
+    return tokenRun(`${tokens[runs.length - 1] ?? "spent"}\n`);
+  };
+  return { runs, runner };
+}
+
+const command = (runner: TokenRunner, timeoutMs?: number) =>
+  jiraAuthorization(
+    { kind: "command", argv: ["/opt/broker/bin/broker", "jira"] },
+    { runner, ...(timeoutMs === undefined ? {} : { timeoutMs }) },
+  );
+
+const request = { method: "GET", path: "myself" } as const;
+
+const failure = async (p: Promise<unknown>) =>
+  (await p.then(
+    () => new Error("resolved"),
+    (e: unknown) => e,
+  )) as JiraApiError;
+
+describe("JIRA_TOKEN_COMMAND", () => {
+  it("runs once for every request of the process", async () => {
+    const { runs, runner } = printing("one");
+    const { sent, impl } = statuses(200);
+    const t = httpTransport(GATEWAY, command(runner), impl);
+    await t(request);
+    await t(request);
+    await Promise.all([t(request), t(request)]);
+    expect(runs).toEqual([["/opt/broker/bin/broker", "jira"]]);
+    expect(sent).toEqual(Array(4).fill("Bearer one"));
+  });
+
+  it("runs once more after a 401 and sends the request again with the new token", async () => {
+    const { runs, runner } = printing("old", "new");
+    const { sent, impl } = statuses(401, 200);
+    const t = httpTransport(GATEWAY, command(runner), impl);
+    expect(await t(request)).toEqual({ ok: true });
+    expect([runs.length, sent]).toEqual([2, ["Bearer old", "Bearer new"]]);
+    await t(request);
+    expect([runs.length, sent.at(-1)]).toEqual([2, "Bearer new"]);
+  });
+
+  it("fails a request refused again after the renewal, without a third try", async () => {
+    const { runs, runner } = printing("old", "new");
+    const { sent, impl } = statuses(401);
+    const err = await failure(
+      httpTransport(GATEWAY, command(runner), impl)(request),
+    );
+    expect([err.status, err.unavailable]).toEqual([401, true]);
+    expect([runs.length, sent]).toEqual([2, ["Bearer old", "Bearer new"]]);
+  });
+
+  it("shares one renewal among the requests a token was refused for", async () => {
+    const { runs, runner } = printing("old", "new");
+    const sent: string[] = [];
+    const gate = Promise.withResolvers<void>();
+    const impl = (async (_url: unknown, init?: RequestInit) => {
+      const auth = authorizationOf(init);
+      sent.push(auth);
+      if (auth === "Bearer old") {
+        await gate.promise;
+        return new Response("", { status: 401 });
+      }
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch;
+    const t = httpTransport(GATEWAY, command(runner), impl);
+    const all = Promise.all([t(request), t(request), t(request)]);
+    const deadline = Date.now() + 5_000;
+    while (sent.length < 3 && Date.now() < deadline)
+      await new Promise((r) => setTimeout(r, 5));
+    gate.resolve();
+    await all;
+    expect(runs.length).toBe(2);
+    expect(sent.filter((h) => h === "Bearer new")).toHaveLength(3);
+  });
+
+  it("does not renew a Basic pair or a Bearer token after a 401", async () => {
+    for (const auth of [
+      jiraAuthorization({ kind: "bearer", token: "b" }),
+      jiraAuthorization({ kind: "basic", email: "a@example.com", token: "t" }),
+    ]) {
+      const { sent, impl } = statuses(401, 200);
+      const err = await failure(httpTransport(SITE, auth, impl)(request));
+      expect([err.status, sent.length]).toEqual([401, 1]);
+    }
+  });
+
+  it("names the variable when the command fails, never what it printed", async () => {
+    const cases: [Partial<TokenRun> & { stdout?: string }, string][] = [
+      [
+        { code: 3, stdout: "s3cret", stderr: "warming up\nnot signed in\n" },
+        "JIRA_TOKEN_COMMAND (broker) exited 3: not signed in",
+      ],
+      [{ stdout: "  \n" }, "JIRA_TOKEN_COMMAND (broker) printed no token"],
+      [
+        { stdout: "s3cret\nmore" },
+        "JIRA_TOKEN_COMMAND (broker) printed more than a token; it must print the token alone",
+      ],
+      [
+        { timedOut: true, code: 124, stdout: "s3cret" },
+        "JIRA_TOKEN_COMMAND (broker) printed no token within 30 seconds",
+      ],
+      [
+        { spawnFailed: true, code: 127 },
+        "JIRA_TOKEN_COMMAND (broker) could not start",
+      ],
+    ];
+    for (const [over, message] of cases) {
+      const runner: TokenRunner = async () => tokenRun(over.stdout ?? "", over);
+      const { sent, impl } = statuses(200);
+      const err = await failure(
+        httpTransport(GATEWAY, command(runner), impl)(request),
+      );
+      expect([err.message, err.unavailable, sent]).toEqual([message, true, []]);
+      expect(err.message).not.toContain("s3cret");
+    }
+    const thrown = await failure(
+      httpTransport(
+        GATEWAY,
+        command(async () => {
+          throw new Error("spawn refused");
+        }),
+        statuses(200).impl,
+      )(request),
+    );
+    expect(thrown.message).toBe(
+      "JIRA_TOKEN_COMMAND could not be run: spawn refused",
+    );
+  });
+
+  it("runs again for the next request after a failed run", async () => {
+    let n = 0;
+    const runner: TokenRunner = async () =>
+      ++n === 1 ? tokenRun("", { code: 1 }) : tokenRun("later\n");
+    const { sent, impl } = statuses(200);
+    const t = httpTransport(GATEWAY, command(runner), impl);
+    await failure(t(request));
+    await t(request);
+    expect([n, sent]).toEqual([2, ["Bearer later"]]);
+  });
+
+  it("stops waiting for a token when the request is cancelled", async () => {
+    // The run finishes only when the test says so, after the request ended.
+    const late = Promise.withResolvers<TokenRun>();
+    const runner: TokenRunner = () => late.promise;
+    let alive: ReturnType<typeof setTimeout> | undefined;
+    const { sent, impl } = statuses(200);
+    const stop = new AbortController();
+    const pending = httpTransport(
+      GATEWAY,
+      command(runner),
+      impl,
+    )(request, stop.signal).then(
+      () => "resolved",
+      (e: unknown) => (e instanceof Error ? e.message : String(e)),
+    );
+    stop.abort(new Error("deadline"));
+    try {
+      const ended = await Promise.race([
+        pending,
+        new Promise<string>((r) => {
+          alive = setTimeout(() => r("still waiting"), 2_000);
+        }),
+      ]);
+      expect(ended).toBe("Jira request cancelled: deadline");
+      expect(sent).toEqual([]);
+    } finally {
+      late.resolve(tokenRun("late\n"));
+      clearTimeout(alive);
+    }
+  });
+
+  it("runs a real command, and stops one that overruns its deadline", async () => {
+    const real = jiraAuthorization({
+      kind: "command",
+      argv: [process.execPath, "-e", "console.log('real-token')"],
+    });
+    expect(await real.header()).toEqual({
+      ok: true,
+      value: "Bearer real-token",
+    });
+    const slow = jiraAuthorization(
+      {
+        kind: "command",
+        argv: [process.execPath, "-e", "setTimeout(() => {}, 30000)"],
+      },
+      { timeoutMs: 500 },
+    );
+    const r = await slow.header();
+    expect(r.ok ? r.value : r.failure.reason).toMatch(
+      /^JIRA_TOKEN_COMMAND \(.+\) printed no token within 0\.5 seconds$/,
+    );
+  });
+});

@@ -95,6 +95,7 @@ export const REPOSITORY_ONLY_FIELDS: readonly string[] = [
   "issue_tracker.github.repository",
   "issue_tracker.github.project",
   "issue_tracker.jira.site",
+  "issue_tracker.jira.api_base",
   "review.repo_slug",
   "review.repo_label",
   "ci.required_checks",

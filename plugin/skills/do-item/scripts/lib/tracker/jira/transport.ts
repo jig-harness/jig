@@ -1,9 +1,12 @@
 /**
  * Jira Cloud's REST API (version 3), for the Jira tracker adapter.
  *
- * Every request goes to `<site>/rest/api/3/<path>` over HTTPS with Basic
- * authentication from an Atlassian account's email and API token
- * (`JIRA_EMAIL`, `JIRA_API_TOKEN`), and is bounded by `JIRA_TIMEOUT_MS`.
+ * Every request goes to `<base>/rest/api/3/<path>` over HTTPS, where the
+ * base is the site, or the Atlassian API gateway's address for it
+ * (`issue_tracker.jira.api_base`); it carries the header the credential in
+ * the environment gives (`credential.ts`), never follows a redirect, and is
+ * bounded by `JIRA_TIMEOUT_MS`. A 401 is answered by sending the request
+ * once more, with a renewed header, when the credential can be renewed.
  * Tests of the adapter pass a fake transport.
  *
  * Two pagers read a listing to its end: Jira's offset pages (`startAt`,
@@ -15,6 +18,13 @@
 
 import { swallow } from "../../../../../../shared/errors.ts";
 import { isRecord } from "../../../../../../shared/guards.ts";
+import type { Outcome } from "../../../../../../shared/outcome.ts";
+import {
+  type CredentialCode,
+  type JiraAuthorization,
+  jiraAuthorization,
+  resolveJiraCredential,
+} from "./credential.ts";
 
 export const JIRA_TIMEOUT_MS = 30_000;
 
@@ -96,8 +106,8 @@ export function abortedError(signal: AbortSignal): JiraApiError {
 }
 
 /** The address of a request, its query encoded. */
-export function requestUrl(site: string, request: JiraRequest): string {
-  const url = new URL(`${site}/rest/api/3/${request.path}`);
+export function requestUrl(base: string, request: JiraRequest): string {
+  const url = new URL(`${base}/rest/api/3/${request.path}`);
   for (const [k, v] of Object.entries(request.query ?? {}))
     url.searchParams.set(k, String(v));
   return url.toString();
@@ -160,15 +170,6 @@ export function httpFailure(
   );
 }
 
-/** The credential from the environment, or `null` when either half is missing. */
-export function resolveJiraCredential(
-  env = process.env,
-): { email: string; token: string } | null {
-  const email = env.JIRA_EMAIL?.trim();
-  const token = env.JIRA_API_TOKEN?.trim();
-  return email && token ? { email, token } : null;
-}
-
 /** The `fetch` options of a request. */
 function requestInit(
   request: JiraRequest,
@@ -226,29 +227,73 @@ async function bodyText(
   }
 }
 
-/** HTTPS transport to `site`; each call bounded by `JIRA_TIMEOUT_MS`. */
+/** The header to send, or the credential's failure as the adapter's error. */
+async function headerOf(
+  pending: Promise<Outcome<string, CredentialCode>>,
+  signal: AbortSignal | undefined,
+): Promise<string> {
+  const header = await pending;
+  if (cancelled(signal)) throw abortedError(signal);
+  if (!header.ok)
+    throw new JiraApiError(header.failure.reason, { unavailable: true });
+  return header.value;
+}
+
+/** Sends one request; a request that could not be made fails as unreachable. */
+async function send(
+  fetchImpl: typeof fetch,
+  url: string,
+  init: RequestInit,
+  signal: AbortSignal | undefined,
+  what: string,
+): Promise<Response> {
+  try {
+    return await fetchImpl(url, init);
+  } catch (err) {
+    if (cancelled(signal)) throw abortedError(signal);
+    throw new JiraApiError(
+      `Jira API unreachable on ${what}: ${err instanceof Error ? err.message : String(err)}`,
+      { unavailable: true, answerLost: true },
+    );
+  }
+}
+
+/**
+ * HTTPS transport to `base`, the site or its API gateway address; each call
+ * bounded by `JIRA_TIMEOUT_MS`. A 401 renews the header once, when the
+ * credential can be renewed, and sends the request again with it: a 401 is
+ * refused before the request is acted on, so a write is not doubled.
+ */
 export function httpTransport(
-  site: string,
-  credential: { email: string; token: string },
+  base: string,
+  authorization: JiraAuthorization,
   fetchImpl: typeof fetch = fetch,
 ): JiraTransport {
-  const basic = Buffer.from(`${credential.email}:${credential.token}`);
-  const authorization = `Basic ${basic.toString("base64")}`;
   return async (request, signal) => {
     if (cancelled(signal)) throw abortedError(signal);
     const what = `${request.method} ${request.path}`;
-    let res: Response;
-    try {
-      res = await fetchImpl(
-        requestUrl(site, request),
-        requestInit(request, authorization, signal),
-      );
-    } catch (err) {
-      if (cancelled(signal)) throw abortedError(signal);
-      throw new JiraApiError(
-        `Jira API unreachable on ${what}: ${err instanceof Error ? err.message : String(err)}`,
-        { unavailable: true, answerLost: true },
-      );
+    const url = requestUrl(base, request);
+    let header = await headerOf(authorization.header(signal), signal);
+    let res = await send(
+      fetchImpl,
+      url,
+      requestInit(request, header, signal),
+      signal,
+      what,
+    );
+    if (res.status === 401) {
+      const renewed = await authorization.renew(header, signal);
+      if (renewed !== null) {
+        await bodyText(res, signal, what);
+        header = await headerOf(Promise.resolve(renewed), signal);
+        res = await send(
+          fetchImpl,
+          url,
+          requestInit(request, header, signal),
+          signal,
+          what,
+        );
+      }
     }
     const text = await bodyText(res, signal, what);
     if (!res.ok) throw httpFailure(res.status, res.headers, text, what);
@@ -257,22 +302,22 @@ export function httpTransport(
 }
 
 /**
- * The transport the environment supports. A missing credential fails the
- * first request rather than the opening, so reading keys works offline.
+ * The transport the environment's credential supports, to `base`. A missing
+ * or unreadable credential fails the first request rather than the opening,
+ * so reading keys works offline.
  */
 export function defaultTransport(
-  site: string,
-  env = process.env,
+  base: string,
+  env: Record<string, string | undefined> = process.env,
 ): JiraTransport {
   const credential = resolveJiraCredential(env);
-  if (credential === null)
+  if (!credential.ok) {
+    const { reason } = credential.failure;
     return async () => {
-      throw new JiraApiError(
-        "JIRA_EMAIL and JIRA_API_TOKEN must hold an Atlassian account's email and API token",
-        { unavailable: true },
-      );
+      throw new JiraApiError(reason, { unavailable: true });
     };
-  return httpTransport(site, credential);
+  }
+  return httpTransport(base, jiraAuthorization(credential.value));
 }
 
 // ── Pagers ─────────────────────────────────────────────────────────────────

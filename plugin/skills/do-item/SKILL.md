@@ -109,7 +109,7 @@ The skill reads them at run time from `.config/jig.yaml`:
 
 | Field | What it sets | When absent |
 |-------|--------------|-------------|
-| `issue_tracker.adapter` | Which tracker adapter the scripts use: `github` for GitHub Issues (the logged-in `gh` command-line client; its settings are under `issue_tracker.github`, [configuration reference](../../CONFIGURATION.md#issue_tracker)) `linear` (credentials from `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, else a logged-in `linear` command-line client), or `jira` for Jira Cloud (credentials from `JIRA_EMAIL` and `JIRA_API_TOKEN`; its settings are under `issue_tracker.jira`, `site` required). A plan file kept in the repository is planned, [ROADMAP item 12](https://github.com/jig-harness/jig/blob/main/ROADMAP.md#12-more-tracker-adapters) | `github` |
+| `issue_tracker.adapter` | Which tracker adapter the scripts use: `github` for GitHub Issues (the logged-in `gh` command-line client; its settings are under `issue_tracker.github`, [configuration reference](../../CONFIGURATION.md#issue_tracker)) `linear` (credentials from `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, else a logged-in `linear` command-line client), or `jira` for Jira Cloud (credentials from `JIRA_BEARER_TOKEN`, else `JIRA_TOKEN_COMMAND`, else `JIRA_EMAIL` and `JIRA_API_TOKEN`; its settings are under `issue_tracker.jira`, `site` required, `api_base` for Atlassian's API gateway). A plan file kept in the repository is planned, [ROADMAP item 12](https://github.com/jig-harness/jig/blob/main/ROADMAP.md#12-more-tracker-adapters) | `github` |
 | `issue_tracker.team` | Linear and Jira: the team (Linear) or project (Jira) the repository files into, as the prefix its issue keys carry (`ENG` for `ENG-123`) | Required on Linear and Jira: the tracker scripts stop with a message naming this field. Not used on GitHub Issues. A file that sets it without naming `issue_tracker.adapter` is refused, since the default adapter has no team: add `adapter: linear` or `adapter: jira` |
 | `issue_tracker.states` | Map from canonical state keys to the tracker's own state names | Each key title-cased, e.g. `in_progress` → "In Progress"; `pr_open` stays unset, and nothing moves an item there |
 | `issue_tracker.file_command` | How to file a new issue (e.g. a slash command) | Ask the user to file it |
@@ -1768,7 +1768,7 @@ record how it ended. In such a pass:
 |-------|----------|
 | Issue not found | Check the key against the tracker's form ([Tracker operations](#tracker-operations)); list the tracker's issues (Linear: `linear issue list --team <issue_tracker.team>`; GitHub Issues: `gh issue list` on the configured repository) |
 | Tracker unreachable on one transport | Use the other transport recorded in Step 1 |
-| Missing tracker credential | Set the adapter's credential (Linear: `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, or log in to the `linear` command-line client; GitHub Issues: sign in with `gh auth login`, and add the `project` scope with `gh auth refresh` when the states are on a board), or use the harness's native integration |
+| Missing tracker credential | Set the adapter's credential (Linear: `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, or log in to the `linear` command-line client; GitHub Issues: sign in with `gh auth login`, and add the `project` scope with `gh auth refresh` when the states are on a board; Jira: `JIRA_BEARER_TOKEN`, `JIRA_TOKEN_COMMAND`, or `JIRA_EMAIL` and `JIRA_API_TOKEN`, an error naming `JIRA_TOKEN_COMMAND` meaning that command failed), or use the harness's native integration |
 
 ## Scripts reference
 
