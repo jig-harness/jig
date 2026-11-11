@@ -521,16 +521,7 @@ async function placeNode(
 ): Promise<void> {
   const { tracker, identity, options, cache, view } = ctx;
   const { issue, ancestor } = node;
-  const unplace = (reason: string, cause?: "needs-repository-label") =>
-    found.unplaced.push({
-      ...itemOf(issue),
-      record: "tracker",
-      reason,
-      ...(cause === undefined ? {} : { cause }),
-      ...(options.trackerNamespace === undefined
-        ? {}
-        : { source: options.trackerNamespace }),
-    });
+  const unplace = unplacer(issue, options.trackerNamespace, found);
   const carried = view.held(issue.identifier)?.relations ?? null;
   const meta = await view.once(
     `metadata ${issue.identifier} ${issue.updatedAt ?? ""} ${options.epic}`,
@@ -555,6 +546,37 @@ async function placeNode(
   if (held !== null) return void unplace(held);
   if (meta.children.length > 0)
     return enqueueChildren(ctx, issue, ancestor, meta, candidate, found);
+  await placeLeaf(ctx, candidate, found, unplace);
+}
+
+type Unplace = (reason: string, cause?: "needs-repository-label") => void;
+
+/** Records an item the walk could not place, with the namespace it was read from. */
+function unplacer(
+  issue: PoolIssue,
+  namespace: string | undefined,
+  found: Found,
+): Unplace {
+  return (reason, cause) => {
+    found.unplaced.push({
+      ...itemOf(issue),
+      record: "tracker",
+      reason,
+      ...(cause === undefined ? {} : { cause }),
+      ...(namespace === undefined ? {} : { source: namespace }),
+    });
+  };
+}
+
+/** A node with no children: left out, held for its repository label or parent, or a candidate. */
+async function placeLeaf(
+  ctx: WalkContext,
+  candidate: Candidate,
+  found: Found,
+  unplace: Unplace,
+): Promise<void> {
+  const { tracker, options, cache, view } = ctx;
+  const { issue } = candidate;
   if (!ready(issue) || otherRepoLabel(issue.labels, options.repoScope) !== null)
     return;
   const unlabeled = unlabeledOutcome(
