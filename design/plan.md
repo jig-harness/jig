@@ -119,8 +119,10 @@ settle (a park, a drive stopped on a failure, a stalled pickup) is notified
 once. It never merges, answers a park, re-arms a drive a person stopped,
 stops a driver that is making progress or passes a flag reserved for a
 person, and writes a receipt per tick. It takes over only a silent driver:
-one a launch started, on this machine or another host, or one no launch
-started whose holder the clone's drive doctor reads dead or wedged. Machine values in `~/.jig/dispatch.yaml`, a repository's
+one a launch started, on this machine or another host; one no launch
+started that ran on this host and whose run the host's drive database shows
+ended; or one no launch started whose holder the clone's drive doctor reads
+dead or wedged. Machine values in `~/.jig/dispatch.yaml`, a repository's
 in a `dispatch` section of `.config/jig.yaml`. Built in the design's order:
 the report, then re-arms within account caps with the timer, then pickups,
 then follow-ups and notifications, then control: a permanent outcome
@@ -703,7 +705,7 @@ labels, with a documented default per adapter:
 
 GitHub detects an unnamed store, keeps a facet's existing labels and refuses
 conflicting label and field evidence. A named store never waits on detection.
-Jig's own repository keeps all three in GitHub's fields: the issue type,
+Jig's own repository keeps type, priority and size in GitHub's fields: the issue type,
 the Priority field and the Effort field. The issue forms and `report-bug.ts`,
 which file around the interface, set the type and leave priority and size
 to triage.
