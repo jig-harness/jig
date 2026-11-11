@@ -391,6 +391,25 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.200.0] - 2026-11-11
+
+### Changed
+
+- A dispatched follow-up no longer fails on a step only a person can take
+  after the merge (a live check against a real service, a rollout to another
+  repository, an organization's setting, an operational action, a failed
+  release gate): its pass reports the step as owed, files it, and records
+  done. Two routine question classes join `local-leftover`: `person-owed`,
+  answered by reporting and filing the step, and `drafted-items`, answered by
+  filing the follow-up items the pass drafted. A follow-up that stops on
+  either is run again once with that answer instead of waiting for a person.
+
+## [0.199.1] - 2026-11-11
+
+### Fixed
+
+- `jig` launcher stops a plugin lookup cleanly when it receives a termination signal during startup.
+
 ## [0.199.0] - 2026-11-11
 
 ### Added
@@ -6941,7 +6960,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.199.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.200.0...HEAD
+[0.200.0]: https://github.com/jig-harness/jig/compare/v0.199.1...v0.200.0
+[0.199.1]: https://github.com/jig-harness/jig/compare/v0.199.0...v0.199.1
 [0.199.0]: https://github.com/jig-harness/jig/compare/v0.198.0...v0.199.0
 [0.198.0]: https://github.com/jig-harness/jig/compare/v0.197.4...v0.198.0
 [0.197.4]: https://github.com/jig-harness/jig/compare/v0.197.3...v0.197.4
