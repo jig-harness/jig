@@ -43,8 +43,13 @@
  * exit, or a run past its deadline, refuses too. Where the repository sets
  * `do_item.claim_from`, an item in a state outside it, or in a status that
  * maps to no canonical state, is refused (exit 3, `"why": "state"`). With
- * `do_item.claim_marker`, a successful claim posts the claim marker
- * (`lib/claim-marker.ts`); `"marker"` in the JSON says whether it was posted.
+ * `do_item.claim_marker`, the claim posts the claim marker
+ * (`lib/claim-marker.ts`) before it writes, and of the markers on the item
+ * the earliest wins (`lib/claim-token.ts`): a claim that finds an earlier
+ * one, or cannot post and read back its own, refuses (exit 3,
+ * `"why": "marker"`, nothing written to the item), and one that finds an
+ * earlier one after it wrote stands down (exit 4). `"marker"` in the JSON
+ * says whether the read after the write confirmed it.
  *
  * Canonical states: backlog, todo, in_progress, in_review, done, canceled,
  * and where the consumer uses them triage, pr_open, ops_pending, duplicate.
@@ -111,11 +116,8 @@ import {
   claimPlanBlockFromDefaultBranch,
   claimSettingsFromDefaultBranch,
 } from "./lib/claim-settings.ts";
-import {
-  claimBranch,
-  claimMarkerBody,
-  claimSession,
-} from "./lib/claim-marker.ts";
+import { claimBranch, claimSession } from "./lib/claim-marker.ts";
+import { claimWithMarker } from "./lib/claim-token.ts";
 import { consumerRoot, readOverlay } from "../../../shared/consumer.ts";
 import { syncPlanBlocks } from "./lib/plan-blocks.ts";
 import { executionPlanBlock } from "./select_execution_issue.ts";
@@ -395,56 +397,39 @@ async function claim(
           getIssue(normalized, tracker, shape),
         );
   if (refusal !== null) return refusal;
-  const result = await withClaimLock(claimLockKey(tracker, normalized), () => {
+  return withClaimLock(claimLockKey(tracker, normalized), async () => {
     const ancestorKey = ancestor
       ? (shape?.normalize(ancestor) ?? ancestor)
       : undefined;
-    return person
-      ? claimServedIssue(tracker, normalized, {
-          person,
-          ...(ancestorKey ? { ancestor: ancestorKey } : {}),
-          ...(blocking
-            ? { blocking: shape?.normalize(blocking) ?? blocking }
-            : {}),
-          epicLabel: config.labels.epic,
-          hitlLabel: config.labels.hitl,
-          manualOpsLabel: config.labels.manualOps,
-          ...(planBlock?.ok && planBlock.value !== undefined
-            ? { executionPlanBlock: planBlock.value }
-            : {}),
-          claimFrom: settings.claimFrom,
-        })
-      : claimIssue(tracker, key, { claimFrom: settings.claimFrom });
-  });
-  if (result.outcome !== "claimed" || !settings.claimMarker) return result;
-  return { ...result, marker: await postClaimMarker(tracker, result, root) };
-}
-
-/**
- * Post the claim marker on a claimed item. A failed post leaves the claim
- * standing: it is reported, with the reason, beside the claim.
- */
-async function postClaimMarker(
-  tracker: ReturnType<typeof openTracker>,
-  claim: { issue: string; claimant: { name: string } },
-  root: string,
-): Promise<{ posted: true } | { posted: false; reason: string }> {
-  const body = claimMarkerBody({
-    session: claimSession(),
-    branch: await claimBranch(root),
-    claimant: claim.claimant.name,
-    at: new Date().toISOString(),
-  });
-  try {
-    await tracker.postComment(claim.issue, body);
-    return { posted: true };
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
-    console.error(
-      `the claim marker was not posted on ${claim.issue}: ${reason}`,
+    const body = () =>
+      person
+        ? claimServedIssue(tracker, normalized, {
+            person,
+            ...(ancestorKey ? { ancestor: ancestorKey } : {}),
+            ...(blocking
+              ? { blocking: shape?.normalize(blocking) ?? blocking }
+              : {}),
+            epicLabel: config.labels.epic,
+            hitlLabel: config.labels.hitl,
+            manualOpsLabel: config.labels.manualOps,
+            ...(planBlock?.ok && planBlock.value !== undefined
+              ? { executionPlanBlock: planBlock.value }
+              : {}),
+            claimFrom: settings.claimFrom,
+          })
+        : claimIssue(tracker, key, { claimFrom: settings.claimFrom });
+    if (!settings.claimMarker) return body();
+    // The marker names who the item will be assigned to, before it is.
+    const claimant = person
+      ? (await tracker.user(person)).name
+      : (await tracker.viewer()).name;
+    return claimWithMarker(
+      tracker,
+      normalized,
+      { session: claimSession(), branch: await claimBranch(root), claimant },
+      body,
     );
-    return { posted: false, reason };
-  }
+  });
 }
 
 /** `claim`'s exit codes: refused before any write, stood down after the re-read. */

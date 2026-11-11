@@ -323,6 +323,10 @@ export function jiraTracker(client: Client): Tracker {
         throw err;
       }
       await client.poolScope(signal);
+      // Each `field_labels` entry resolved against the site: a field it does
+      // not name once, or whose values do not read as labels, is refused here
+      // rather than at the first issue read.
+      await client.fieldLabels(signal);
     },
 
     async getIssue(key) {
@@ -412,6 +416,13 @@ export function jiraTracker(client: Client): Tracker {
         },
         signal,
       );
+    },
+
+    async deleteComment(key, id) {
+      await transport({
+        method: "DELETE",
+        path: `${path(key)}/comment/${encodeURIComponent(id)}`,
+      });
     },
 
     ...reportOperations(client, stores),

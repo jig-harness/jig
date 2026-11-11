@@ -212,6 +212,8 @@ export function createFindingsFinishRoundFixtures() {
       cwd: string;
     }) => Promise<void>;
     args?: string[];
+    /** Extra variables for the finish-round child, such as `JIG__*` configuration. */
+    env?: Record<string, string>;
   }
 
   async function finishRound(opts: FinishOpts = {}) {
@@ -246,6 +248,7 @@ export function createFindingsFinishRoundFixtures() {
           ...stateEnv(stateDir, dir),
           PATH: `${gitBin}${delimiter}${binDir}${delimiter}${process.env.PATH}`,
           DRIVE_PR_FIXTURES: dir,
+          ...(opts.env ?? {}),
         },
         stdout: "pipe",
         stderr: "pipe",

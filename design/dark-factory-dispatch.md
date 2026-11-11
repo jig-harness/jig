@@ -639,6 +639,31 @@ people's in-progress items as they read the factory identity's. How the
 ranking, the cheap reads and the claim work is in
 [served pickups](../plugin/README.md#the-dispatcher).
 
+**Claims across hosts.** The claim lock serializes the claims of one
+machine only. Two hosts that serve one person claim an item with the same
+identity, so their tracker writes are identical, and the claim's re-read
+cannot tell which one holds it. The tracker offers no conditional write
+for an assignment, a state or a comment, so no tracker write can be the
+lease either. The claim marker (`do_item.claim_marker`) is the token
+between hosts instead, ruled by the earliest-wins rule the forge's claim
+records already use. A claim posts its marker before it writes the item,
+reads the item's markers back, and of the trusted markers posted within
+ten minutes of its own the earliest wins. A claim that finds an earlier
+one, or cannot post or read back its own, withdraws its marker and
+refuses, with nothing written to the item. After writing, it reads the
+markers again and stands down if an earlier one has appeared. The marker
+stays optional: a repository whose queue only one host picks up from
+needs none, and unset, claims serialize on one host only. Two claims whose
+read-backs each miss the other's marker can still both win; the read after
+the write narrows that to the claims' own length, and the dispatcher's
+double-claim watch stays as the backstop. The pool pickup (plan item 47),
+where several hosts take unassigned items from one ready pool, will
+require the marker: a pool configured without `do_item.claim_marker` will
+be refused. Inherited claims on Linear and Jira, whose issues hold one
+assignee, assign and then verify through the item's history that the
+assignment replaced nobody, putting back anyone it did replace
+([served pickups](../plugin/README.md#the-dispatcher)).
+
 **The forge.** The tick lists the repository's open pull requests and reads
 each one's comments for the ledger's marker, as the drive itself does; it
 does not rely on the forge's search to find the marker. It trusts only a
@@ -1105,6 +1130,7 @@ jig dispatch install [--interval 5m] --yes        # the timer
 jig dispatch receipts                             # past ticks
 jig dispatch result <record> <token> done|failed  # a session's or a follow-up pass's answer
 jig dispatch result <record> <token> failed --refused <updated-at> --reason <reason>  # a pickup the start rules refused
+jig dispatch result <record> <token> failed --refused <updated-at> --key <item> --reason <reason>  # one refused batch member; repeat --refused and --key per member
 ```
 
 A tick without `--apply` prints every action it would take, each with the
@@ -1922,7 +1948,9 @@ cannot close, is in
   it; that host writes the follow-up's answer onto it once its launch record
   ends, as it writes a launch's end.
 - **A pickup's claim** is the tracker claim `do-item` makes, which every
-  host already reads; nothing is published for it here.
+  host already reads; nothing is published for it here. Between hosts that
+  claim with one identity, its claim marker on the item decides which holds
+  it ([claims across hosts](#the-records-it-reads)).
 - **A launch's end** is written by the host that made the claim, onto the
   claim's own comment: its exit, or why it died. The wrapper writes it right
   after it records the stage's exit, so other hosts read it when the launch

@@ -122,7 +122,7 @@ The skill reads them at run time from `.config/jig.yaml`:
 | `do_item.gates` | Mandatory review gates, `[{labels, paths, skill}]` | No gates |
 | `do_item.preflight_command` | The repository's own start rules: a command every claim runs first, read from the default branch, with the item's JSON on standard input (exit 0 goes on, exit 3 refuses with its first output line as the reason, any other exit or a run past its deadline refuses too) | No check beyond the claim's own |
 | `do_item.claim_from` | The canonical states a claim may start from, read from the default branch; any other state, or a status that maps to no canonical state, is refused | None: the claim's own restrictions apply (never an `in_progress` or `pr_open` item; a served claim needs a triage, backlog or unstarted one) |
-| `do_item.claim_marker` | A successful claim posts a marker comment naming the session, host and branch, read from the default branch | No marker |
+| `do_item.claim_marker` | A claim posts a marker comment naming the session, host and branch before it writes, and the earliest marker on the item wins, so two hosts rarely both claim it (best effort: a lagging listing can let both win); read from the default branch | No marker; claims serialize on one host only |
 | `do_item.post_merge_state`, `do_item.post_merge_closer` | Where the [post-merge status rule](#step-4a-standard-start-no-sub-issues) stops (`done`, `ops_pending` or `in_review`), and who closes an item it leaves short of `done`, for the closing comment | `done`; a sentence saying a person closes the item |
 | `do_item.guidance` | Implementation guidance, `[{labels, paths, skills, notes}]`, matched as gates are (see [Step 4a](#step-4a-standard-start-no-sub-issues)) | No guidance |
 | `do_item.execution_plan_block` | Name of the fenced block holding an epic's machine-readable execution plan | `execution-plan-v1` |
@@ -182,13 +182,18 @@ labels and reviewers; it stops (exit `1`) naming a mapped label the
 repository does not have.
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" branch --issue "<KEY>" --title "<issue title>"
+bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" branch --issue "<KEY>" --title "<issue title>" --issue-json issue.json
 bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" open --issue "<KEY>" --issue-json issue.json [--stack-on <branch>] [--accept-oversize "<reason>"] [--json]
 ```
 
-- `branch` prints the branch name for the issue, for a **new** pull request.
-  Create the working branch with it from the planned base before the
-  implementing agent writes anything. When the harness has already created
+- `branch` prints the branch name for the issue, for a **new** pull request,
+  on its first line, and on its second the base to cut it from with what
+  chose it (`base: <branch> (<source>)`): the integration branch, or the
+  release line a `pull_requests.base_rules` entry names for one of the
+  issue's labels. Create the working branch with that name from
+  `<remote>/<base>` (fetch the base first) before the implementing agent
+  writes anything; a stacked change is cut from its predecessor's branch
+  instead. When the harness has already created
   the working branch and its instructions forbid renaming it, keep that
   branch and say so in the status message; the issue-link line in the body
   still links the pull request. An item that already has an open pull
@@ -196,7 +201,8 @@ bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" open --issue "<KEY>" --issue-json i
   that pull request, driven with `/jig:drive-pr <PR>`, which places the
   drive in a working tree on the pull request's head (Step 4).
 - `open` prints the plan for the current branch, after validation and the
-  pre-PR review gate pass: the `base`, the `gh pr create` arguments the policy
+  pre-PR review gate pass: the `base` and the rule that chose it (it refuses,
+  exit `3`, a rule's base the remote does not have), the `gh pr create` arguments the policy
   fixes (`createArgs`: base, `--draft` or not, labels, reviewers), commands to run after
   creating it (`afterCreate`, such as linking a native stack, with
   `<PR URL>` replaced by the URL `gh pr create` prints), the title convention (under a
@@ -208,6 +214,10 @@ bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" open --issue "<KEY>" --issue-json i
   ```bash
   bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh pr create <createArgs...> --title "<title in the planned convention>" --body-file <body.md>
   ```
+
+  Under `pull_requests.title_format: pattern` the plan's `title` is the
+  title rendered from `pull_requests.title_pattern` (`ENG-12: <summary>`):
+  use it, shortening only the summary part, never the key.
 
   Fill the body from the planned template when there is one, put the
   issue-link line in it, and repeat every warning in the status message.
@@ -709,19 +719,22 @@ implementation. Skip this check for issues about the repository's own code.
    Keep these as separate quoted arguments. The claim keeps that person as
    sole assignee, checks writer authority and live ancestry, and refuses
    changed holds or assignment. A refusal or stand-down requires a fresh
-   queue read; never retry without the served-person options. GitHub supports
-   inherited claims; Linear and Jira refuse them because their assignment
-   APIs cannot preserve a concurrent assignee. Claims serialize on this
-   host; simultaneous same-person claims on separate hosts remain a race.
+   queue read; never retry without the served-person options. Every
+   adapter supports inherited claims. Claims serialize on this host;
+   between hosts, only `do_item.claim_marker` arbitrates same-person claims,
+   best effort: a lagging listing can let two claims both win, and a later
+   loss stands the claim down after its writes.
 
    Exit `0` is the claim. Exit `3` is a refusal, nothing written: the issue
    is already `in_progress` or assigned to someone else; its state is not
-   one `do_item.claim_from` lets work start from (`"why": "state"`); or the
+   one `do_item.claim_from` lets work start from (`"why": "state"`); the
    repository's `do_item.preflight_command` refused it (`"why": "preflight"`
    in the JSON, its reason on stderr: that command runs inside `claim`,
-   before the lock, so nothing here calls it). Exit `4` is a
-   stand-down: the claim was written, and reading the issue back showed
-   another claim landed first. On `3` or `4`, stop the pickup and report the
+   before the lock, so nothing here calls it); or, with
+   `do_item.claim_marker`, another claim's marker is earlier, or this
+   claim's own could not be posted and read back (`"why": "marker"`). Exit
+   `4` is a stand-down: the claim was written, and reading the issue back
+   showed another claim landed first. On `3` or `4`, stop the pickup and report the
    reason it printed; never start the item beside another session. A
    refusal by the repository's start rules (`state` or `preflight`) is not
    cleared by a person telling you to proceed: the item changes, or the
@@ -731,8 +744,9 @@ implementation. Skip this check for issues about the repository's own code.
    not release it; any other refusal (`state` included) stays held until the
    item leaves the dispatch states or its assignment and returns. With
    `do_item.claim_marker`, the claim posts the claim marker on the item
-   itself; `"marker"` in the JSON says whether it was posted, and a marker
-   that was not posted leaves the claim standing (report it). A person
+   before it writes; `"marker"` in the JSON says whether the read after the
+   write confirmed it, and an unconfirmed one leaves the claim standing
+   (report it). A person
    resuming their own interrupted pickup of an `in_progress` item tells you
    so, and you go on from here without the claim. Exit `5` is the tracker's
    rate limit: stderr names the time it resets
@@ -799,7 +813,8 @@ implementation. Skip this check for issues about the repository's own code.
    then `wait_agent` and `send_message` where exposed), or this session,
    following the same prompt, where there is none). First create the working
    branch named by `bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" branch` (**exact**; see
-   [Pull-request policy](#pull-request-policy)), from the integration branch,
+   [Pull-request policy](#pull-request-policy)), from the base it prints (the
+   integration branch, or the release line a base rule names),
    or from the predecessor's branch when this change builds on an unmerged
    pull request and `pull_requests.stacking` allows it. When the item already
    has an open pull request, do not delegate: stop here, create no branch
@@ -935,7 +950,8 @@ implementation. Skip this check for issues about the repository's own code.
    when `drive.change_areas_catalog` is declared, and the repository's gate
    command otherwise; do not substitute a fixed command list. `<base>` below
    is the branch the PR will target, as `<remote>/<base>`: the integration
-   branch, or the predecessor's branch for a stacked PR (the `base` that
+   branch, the release line a base rule names, or the predecessor's branch
+   for a stacked PR (the `base` that
    `bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" open` prints), and `<remote>`
    the git remote it prints (`remote:`: `repository.remote`, else `origin`).
 
@@ -1069,6 +1085,12 @@ implementation. Skip this check for issues about the repository's own code.
      warnings (Tier 3 `⚠️ WARNINGS`) verbatim under `## Review Notes` in the
      PR body, then push.
    - **`APPROVED`**: `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git push -u <remote> "<branch>"`.
+
+   Before that push, when `pull_requests.commit_prefix` is set, run
+   `bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/commit-prefix.ts"`: it rewords
+   every unpushed commit whose message lacks the prefix (exit `0`); exit `3`
+   means the branch name carries no key, so the prefix cannot be rendered:
+   stop and report it.
 
    Then run `bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" open --issue-json issue.json` and open the PR exactly as it plans
    ([Pull-request policy](#pull-request-policy)). An exit `3` is a policy
@@ -1801,7 +1823,11 @@ record how it ended. In such a pass:
   of the pass. Nothing was written: record it with the `--refused` command
   the prompt names, passing that `updatedAt` and the reason it printed. The
   dispatcher shows the item as held with that reason and does not launch it
-  again until the item's `updatedAt` moves past it. A preflight refusal
+  again until the item's `updatedAt` moves past it. A batch pass (the
+  prompt names a fixed served batch) adds `--key <the refused issue>` beside
+  its `--refused`, the `"issue"` and `"updatedAt"` from that claim's JSON,
+  repeated for each member refused: only those members are held, and the
+  rest of the batch is launched again without them. A preflight refusal
   with no `updatedAt` (the item could not be read) and a `claim_from`
   refusal record plain `failed`.
 - **Never pick on the person's behalf** to finish unattended: a question
@@ -1832,6 +1858,6 @@ record how it ended. In such a pass:
 | `select_scout_finding.ts` | Pick the newest Scout Findings comment and judge freshness | Comments JSON (`--input` or stdin), `--git-head` or `--current-hash` | JSON decision (`reuse`/`rerun`/`run`) |
 | `select_execution_issue.ts` | Read an epic's Execution Plan and list eligible sub-issues | Selection JSON (`--input` or stdin) | JSON `{ present, eligible, gates, mergeConflicts }` |
 | `reconcile_parent_status.ts` | Decide a parent's status from its sub-issues | `ReconcileInput` JSON (`--input` or stdin) | JSON decision (`verdict`, `parentState`, `parentStateName`, `reason`) |
-| `pr-plan.ts` | Apply the pull-request policy: a branch name, or the plan for opening the current branch's PR | `branch --issue "<KEY>" --title <title>`, or `open [--issue "<KEY>"] [--stack-on <branch>] [--accept-oversize <reason>]` | Branch name, or the plan (text or `--json`); exit `3` when the policy refuses |
+| `pr-plan.ts` | Apply the pull-request policy: a branch name and the base to cut it from, or the plan for opening the current branch's PR | `branch --issue "<KEY>" --title <title> [--issue-json <file>]`, or `open [--issue "<KEY>"] [--issue-json <file>] [--stack-on <branch>] [--accept-oversize <reason>]` | Branch name and base, or the plan (text or `--json`); exit `3` when the policy refuses |
 | `intent-chain.ts` | Write the Refocus intent-chain snapshot (Step 3.5); `--clear-session` removes this session's copy | `IntentChainInput` JSON (stdin or `--input`); nothing with `--clear-session` | Snapshot files and a JSON summary (`path`, `sessionPath`, `pickupId`, `chars`, `arm`, `truncated`, `pointerErrors`); with `--clear-session`, `{ sessionPath, removed }` |
 | `${CLAUDE_SKILL_DIR}/../../shared/spec/resolve.ts` | Resolve the requirements, acceptance criteria and tasks the issue carries or links (Step 1) | Issue JSON (`--input` or stdin), optional `--summary` | JSON `{ sources, requirements, acceptance, tasks, unresolved }`, or with `--summary` as text: the counts, every requirement, criterion and task with its key and text, the sources and the unresolved references |

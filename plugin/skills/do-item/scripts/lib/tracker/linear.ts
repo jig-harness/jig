@@ -26,6 +26,7 @@ import {
   stateOf,
 } from "./linear-shapes.ts";
 import { cancellableRequest } from "./cancellation.ts";
+import { commentFacts, trustedUser } from "./linear-comments.ts";
 import { pager } from "./graphql.ts";
 import {
   assignedOperations,
@@ -38,7 +39,6 @@ import * as lf from "./linear-facets.ts";
 import { queueOperations } from "./linear-queue.ts";
 import { namedState } from "./config-error.ts";
 import {
-  type CommentFact,
   type FoundComment,
   type IssueComment,
   type IssueComments,
@@ -678,10 +678,6 @@ function isoRange(w: WindowSpec): { gte: string; lt: string } {
   };
 }
 
-function trustedUser(u: unknown): boolean {
-  return isRecord(u) && typeof u.id === "string" && u.guest === false;
-}
-
 export interface LinearTrackerOptions {
   team: string;
   states: StateNames;
@@ -1039,21 +1035,7 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
         },
         `comments of ${key}`,
       );
-      const comments = nodes.map((c): CommentFact => {
-        // A dropped comment could be the one carrying a marker.
-        if (
-          !isRecord(c) ||
-          typeof c.body !== "string" ||
-          typeof c.createdAt !== "string" ||
-          !Number.isFinite(Date.parse(c.createdAt))
-        )
-          throw new ShapeError(`issue ${key}: an unreadable comment node`);
-        return {
-          body: c.body,
-          createdAt: c.createdAt,
-          trusted: trustedUser(c.user),
-        };
-      });
+      const comments = commentFacts(nodes, key);
       return { uuid, comments } satisfies IssueComments;
     },
 
