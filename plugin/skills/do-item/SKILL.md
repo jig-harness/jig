@@ -1779,17 +1779,17 @@ record how it ended. In such a pass:
   dispatcher keeps that line and notifies it as a need; it does not start
   the item again until the item leaves the dispatch states and comes back.
 - **A tracker's rate limit is a wait, not a question.** A tracker script
-  that exits `5` (`RATE-LIMITED until <time>` on stderr) before the claim
-  wrote anything stops the pass: record `waits` with the time it names,
-  through the command the prompt names, and ask nothing. The dispatcher
-  starts the item again after the reset. A claim that exits `5` after it
-  assigned the item but before it moved the item to its working state is
-  partly written: re-read the item, and when it is assigned to this
-  identity, wait for the reset where the deadline allows and finish the
-  transition; otherwise record `failed`, since a retried claim refuses an
-  item that already has an assignee. After a successful claim the item is
-  this pass's: wait for the reset where the deadline allows, else record
-  `failed` as for any other stop.
+  that exits `5` (`RATE-LIMITED until <time>` on stderr) while the claim
+  has not returned success stops the pass: record `waits` with the time it
+  names, through the command the prompt names, and ask nothing. The
+  dispatcher starts the item again after the reset. The exit does not say
+  how far the claim got (nothing written, assigned, or moved to its working
+  state), and the tracker refuses every request until the reset, so do not
+  re-read the item or finish the transition by hand: the claim run again
+  after the reset repeats every start check (sole assignee, holds,
+  blockers, ancestry, `claim_from`) before it writes. After a successful
+  claim the item is this pass's: wait for the reset where the deadline
+  allows, else record `failed` as for any other stop.
 - **A claim the repository's preflight command refused** (exit `3` with
   `"why": "preflight"` and an `"updatedAt"` in the JSON) is not a failure
   of the pass. Nothing was written: record it with the `--refused` command
