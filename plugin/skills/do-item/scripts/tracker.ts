@@ -35,6 +35,17 @@
  * another claim landed first. The reason is printed on stderr and in the
  * JSON on stdout.
  *
+ * Where the repository's default branch sets `do_item.preflight_command`,
+ * `claim` first runs it, before the claim lock and any write, with the
+ * issue's `get_issue.ts` JSON on standard input: exit 0 goes on; exit 3
+ * refuses (exit 3 here, the command's first line of output the reason,
+ * `"why": "preflight"` and the item's `updatedAt` in the JSON); any other
+ * exit, or a run past its deadline, refuses too. Where the repository sets
+ * `do_item.claim_from`, an item in a state outside it, or in a status that
+ * maps to no canonical state, is refused (exit 3, `"why": "state"`). With
+ * `do_item.claim_marker`, a successful claim posts the claim marker
+ * (`lib/claim-marker.ts`); `"marker"` in the JSON says whether it was posted.
+ *
  * Canonical states: backlog, todo, in_progress, in_review, done, canceled,
  * and where the consumer uses them triage, pr_open, ops_pending, duplicate.
  * A transition to an optional state the consumer leaves unset (`pr_open`)
@@ -85,12 +96,24 @@ import { readFile } from "node:fs/promises";
 import { claimServedIssue } from "./lib/served-claim.ts";
 import { withClaimLock } from "./lib/claim-lock.ts";
 import { claimIssue } from "./lib/claim.ts";
+import { getIssue } from "./get_issue.ts";
+import {
+  claimPreflightCommand,
+  preflightClaim,
+  unreadablePreflight,
+} from "./lib/preflight.ts";
+import { claimSettingsFromDefaultBranch } from "./lib/claim-settings.ts";
+import {
+  claimBranch,
+  claimMarkerBody,
+  claimSession,
+} from "./lib/claim-marker.ts";
+import { consumerRoot, readOverlay } from "../../../shared/consumer.ts";
 import { syncPlanBlocks } from "./lib/plan-blocks.ts";
 import { executionPlanBlock } from "./select_execution_issue.ts";
 import { runEntry } from "./lib/cli.ts";
 import { ownTrackerConfig } from "./lib/tracker/config.ts";
 import { closerSentence, parsePostMerge } from "./lib/post-merge.ts";
-import { readOverlay } from "../../../shared/consumer.ts";
 import { issueKeysOf, ANY_KEY_SOURCE } from "./lib/tracker/keys.ts";
 import {
   CANONICAL_STATES,
@@ -326,6 +349,88 @@ interface Operation {
   exitOf?: (out: unknown) => number;
 }
 
+/**
+ * `claim`: the repository's start rules (its preflight command, before the
+ * lock and any write), then the claim itself, served or plain, then the
+ * claim marker where the repository asks for one.
+ */
+async function claim(
+  key: string,
+  person: string | undefined,
+  ancestor: string | undefined,
+  blocking: string | undefined,
+): Promise<unknown> {
+  const config = ownTrackerConfig();
+  const shape = issueKeysOf(config);
+  const normalized = shape?.normalize(key) ?? key;
+  const tracker = openTracker();
+  const overlay = readOverlay();
+  // A post-merge policy the issue link cannot honour is refused before the claim writes.
+  parsePostMerge(overlay);
+  const root = consumerRoot();
+  const read = await claimSettingsFromDefaultBranch(root, overlay);
+  if (!read.ok) return unreadablePreflight(normalized, read.failure.reason);
+  const settings = read.value;
+  // Before the lock and before any write: a refusal leaves nothing behind.
+  const command = await claimPreflightCommand(root, overlay);
+  if (!command.ok)
+    return unreadablePreflight(normalized, command.failure.reason);
+  const refusal =
+    command.value === null
+      ? null
+      : await preflightClaim(root, command.value, normalized, () =>
+          getIssue(normalized, tracker, shape),
+        );
+  if (refusal !== null) return refusal;
+  const result = await withClaimLock(claimLockKey(tracker, normalized), () => {
+    const ancestorKey = ancestor
+      ? (shape?.normalize(ancestor) ?? ancestor)
+      : undefined;
+    return person
+      ? claimServedIssue(tracker, normalized, {
+          person,
+          ...(ancestorKey ? { ancestor: ancestorKey } : {}),
+          ...(blocking
+            ? { blocking: shape?.normalize(blocking) ?? blocking }
+            : {}),
+          epicLabel: config.labels.epic,
+          hitlLabel: config.labels.hitl,
+          manualOpsLabel: config.labels.manualOps,
+          claimFrom: settings.claimFrom,
+        })
+      : claimIssue(tracker, key, { claimFrom: settings.claimFrom });
+  });
+  if (result.outcome !== "claimed" || !settings.claimMarker) return result;
+  return { ...result, marker: await postClaimMarker(tracker, result, root) };
+}
+
+/**
+ * Post the claim marker on a claimed item. A failed post leaves the claim
+ * standing: it is reported, with the reason, beside the claim.
+ */
+async function postClaimMarker(
+  tracker: ReturnType<typeof openTracker>,
+  claim: { issue: string; claimant: { name: string } },
+  root: string,
+): Promise<{ posted: true } | { posted: false; reason: string }> {
+  const body = claimMarkerBody({
+    session: claimSession(),
+    branch: await claimBranch(root),
+    claimant: claim.claimant.name,
+    at: new Date().toISOString(),
+  });
+  try {
+    await tracker.postComment(claim.issue, body);
+    return { posted: true };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    console.error(
+      `the claim marker was not posted on ${claim.issue}: ${reason}`,
+    );
+    return { posted: false, reason };
+  }
+}
+
 /** `claim`'s exit codes: refused before any write, stood down after the re-read. */
 const CLAIM_EXIT = { claimed: 0, refused: 3, stood_down: 4 } as const;
 
@@ -400,7 +505,7 @@ const OPERATIONS: Record<string, Operation> = {
   claim: {
     arity: 1,
     takes: "one issue key",
-    run: ([key], flags) => {
+    run: async ([key], flags) => {
       const forFlags = [...flags].filter((f) => f.startsWith("--for"));
       const ancestorFlags = [...flags].filter((f) =>
         f.startsWith("--ancestor"),
@@ -428,29 +533,7 @@ const OPERATIONS: Record<string, Operation> = {
       const blocking = blockingFlags[0]?.slice(11);
       if ((ancestor || blocking) && !person)
         throw new UsageError("--ancestor and --blocking require --for");
-      const config = ownTrackerConfig();
-      // A post-merge policy the issue link cannot honour is refused before the claim writes.
-      parsePostMerge(readOverlay());
-      const shape = issueKeysOf(config);
-      const normalized = shape?.normalize(key as string) ?? (key as string);
-      const tracker = openTracker();
-      return withClaimLock(claimLockKey(tracker, normalized), () => {
-        const ancestorKey = ancestor
-          ? (shape?.normalize(ancestor) ?? ancestor)
-          : undefined;
-        return person
-          ? claimServedIssue(tracker, normalized, {
-              person,
-              ...(ancestorKey ? { ancestor: ancestorKey } : {}),
-              ...(blocking
-                ? { blocking: shape?.normalize(blocking) ?? blocking }
-                : {}),
-              epicLabel: config.labels.epic,
-              hitlLabel: config.labels.hitl,
-              manualOpsLabel: config.labels.manualOps,
-            })
-          : claimIssue(tracker, key as string);
-      });
+      return claim(key as string, person, ancestor, blocking);
     },
     exitOf: (out) => {
       const result = out as Awaited<ReturnType<typeof claimIssue>>;

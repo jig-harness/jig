@@ -47,6 +47,9 @@
  */
 import { optionalLaunchFields } from "./launch-record-options.ts";
 import { readNext, type NextOwner } from "./next-owner.ts";
+import { type PickupRefusal, readRefusal } from "./pickup-refusal.ts";
+
+export type { PickupRefusal };
 import { unsettledStartups } from "./session-startup.ts";
 import type { Database } from "bun:sqlite";
 import { isMapping } from "../../shared/config-layers.ts";
@@ -266,6 +269,8 @@ export interface ReadRecord {
   /** A pickup's session's or a follow-up pass's recorded answer; `null` when none. */
   result: SessionResult | null;
   next?: NextOwner | null;
+  /** A pickup the repository's start rules refused, recorded with its `failed` result; absent otherwise. */
+  refusal?: PickupRefusal | null;
 }
 
 /** A launch record id: the time it was made, and a random suffix. */
@@ -462,6 +467,7 @@ export interface LaunchRow {
   exit: string | null;
   result: string | null;
   result_next?: string | null;
+  refusal?: string | null;
 }
 
 /** The tick's part of a row, with its samples and episodes; `null` when it does not read as a record. */
@@ -564,6 +570,7 @@ export function readEnded(id: string, root = stateRoot()): ReadRecord | null {
     state: stateOf(row, null, thisHost()),
     result: asResult(row.result),
     next: readNext(row.result_next),
+    refusal: readRefusal(row.refusal),
   };
 }
 
@@ -733,6 +740,7 @@ export async function readLaunches(
       state: stateOf(row, rows, here),
       result: asResult(row.result),
       next: readNext(row.result_next),
+      refusal: readRefusal(row.refusal),
     });
   }
   return { records, unreadable };

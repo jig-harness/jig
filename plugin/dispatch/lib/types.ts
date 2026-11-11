@@ -86,6 +86,8 @@ export interface RepoTarget {
 export interface ClaimedItem {
   key: string;
   title: string;
+  /** Its link as the tracker listing gave it; absent where a reader gives none. */
+  url?: string | null;
   state: string;
 }
 
@@ -104,14 +106,20 @@ export interface WantedItem {
   batchAllowed?: boolean;
   queueIssue?: import("../../skills/do-item/scripts/lib/tracker/port.ts").PoolIssue;
   queueRank?: { unblocks: number; epicOrder?: number };
+  /** When the tracker last saw the item change; absent where the read has none. */
+  updatedAt?: string;
 }
 
 /** How a drive ledger reads, per the design's ledger-to-class table; the state label projection reads it too. */
 export type { LedgerClass } from "../../shared/pr-labels/projection.ts";
 import type { LedgerClass } from "../../shared/pr-labels/projection.ts";
 
-/** How a pickup that needs nothing reads: its last session ended, or its claimed item is idle but not yet stalled. */
-export type PickupClass = "pickup-ended" | "claimed-idle" | "claimed";
+/** How a pickup that needs nothing reads: its last session ended, the repository's start rules refused its claim, or its claimed item is idle but not yet stalled. */
+export type PickupClass =
+  | "pickup-ended"
+  | "pickup-refused"
+  | "claimed-idle"
+  | "claimed";
 
 /** How a merged pull request whose follow-up needs nothing reads: done, or held by a run a person started. */
 export type FollowupClass = "followup-done" | "followup-held";
@@ -267,6 +275,9 @@ export interface Unplaced {
   target: string;
   record: RecordName;
   reason: string;
+  /** For an item the tracker listing returned: its title and link, which the line and the outcome log show beside its key. */
+  title?: string;
+  url?: string | null;
   /**
    * Set for an item only a person can settle: assigned by someone who cannot
    * write, or placed in no repository by its labels and no default.

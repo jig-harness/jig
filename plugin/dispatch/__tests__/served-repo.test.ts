@@ -261,7 +261,7 @@ describe("served items no repository label places", () => {
     const reports = [both.web, both.api];
     dropRepeatedLabelNeeds(reports);
     const needs = reports.flatMap((r) => r.unplaced);
-    expect(needs).toEqual([
+    expect(needs).toMatchObject([
       {
         target: "ENG-1",
         record: "tracker",

@@ -24,7 +24,12 @@
  * that suppresses a repeat (`notices.ts`); `actions/notify.ts` sends it.
  */
 import { batchPickups } from "./queue-batch.ts";
-import { agentOf, holdingRecords, pickupHold } from "./actions/pickup-hold.ts";
+import {
+  agentOf,
+  holdingRecords,
+  type PickupHold,
+  pickupHold,
+} from "./actions/pickup-hold.ts";
 import { type Holding, holding, liveAgents } from "./holding.ts";
 import {
   isInteractive,
@@ -151,7 +156,7 @@ export function planPickups(input: PickupInput): PickupPlan {
       plan.actions.push(doubleClaim(input.slug, item, count, evidence, who));
       continue;
     }
-    const hold = pickupHold(item.key, launches);
+    const hold = pickupHold(item.key, launches, item.updatedAt);
     if (hold.kind === "held") {
       plan.running.push({
         target: item.key,
@@ -178,8 +183,8 @@ export function planPickups(input: PickupInput): PickupPlan {
       });
       continue;
     }
-    if (hold.kind === "ended") {
-      planEnded(input.slug, item, hold.why, launches, plan);
+    if (hold.kind !== "none") {
+      planStopped(input.slug, item, hold, launches, plan);
       continue;
     }
     plan.actions.push(pickupAction(item, held.evidence));
@@ -198,14 +203,23 @@ export function planPickups(input: PickupInput): PickupPlan {
   return plan;
 }
 
-/** An item whose latest pickup ended without claiming it: a need when its pass stopped on a question, else quiet. */
-function planEnded(
+/**
+ * An item whose latest pickup ended without claiming it: held while the
+ * repository's start rules refused it, a need when its pass stopped on a
+ * question, else quiet.
+ */
+function planStopped(
   slug: string,
   item: WantedItem,
-  why: string,
+  hold: Extract<PickupHold, { kind: "ended" | "refused" }>,
   launches: ReadRecord[],
   plan: PickupPlan,
 ): void {
+  const why = hold.why;
+  if (hold.kind === "refused") {
+    plan.quiet.push({ target: item.key, class: "pickup-refused", why });
+    return;
+  }
   const asked = questionAsked(slug, item, launches);
   if (asked !== null) plan.actions.push(asked);
   else plan.quiet.push({ target: item.key, class: "pickup-ended", why });

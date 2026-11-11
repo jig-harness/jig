@@ -81,6 +81,12 @@ export interface ServedOptions extends ServedPolicy {
   nowMs: number;
   headroom: boolean;
 }
+/** An unplaced row's target, with the title and link the listing returned for it. */
+const itemOf = (i: PoolIssue) => ({
+  target: i.identifier,
+  title: i.title,
+  url: i.url,
+});
 
 /** Each identity's list is read with capacity, or on the Queue view's slow cadence. */
 async function assignments(
@@ -165,6 +171,7 @@ export async function readServedPickups(
         ...progress.map((i) => ({
           key: i.identifier,
           title: i.title,
+          url: i.url,
           state: i.state.name,
         })),
       );
@@ -227,6 +234,9 @@ export async function readServedPickups(
     assignedBy: c.by,
     servedPerson: c.identity,
     queueIssue: c.issue,
+    ...(c.issue.updatedAt === undefined
+      ? {}
+      : { updatedAt: c.issue.updatedAt }),
     queueRank: {
       unblocks: c.unblocks,
       ...(c.epicOrder === undefined ? {} : { epicOrder: c.epicOrder }),
@@ -338,7 +348,7 @@ async function readChildren(
     if (child === null || child.truncated.length) {
       unread.push(kept.identifier);
       out.unplaced.push({
-        target: kept.identifier,
+        ...itemOf(kept),
         record: "tracker",
         reason: "the child cannot be read completely",
       });
@@ -442,7 +452,7 @@ async function visitNode(ctx: WalkContext, node: Pending): Promise<void> {
     const initialHold = nodeHold(node, meta, identity, options);
     if (initialHold !== null) {
       out.unplaced.push({
-        target: issue.identifier,
+        ...itemOf(issue),
         record: "tracker",
         reason: initialHold,
       });
@@ -454,13 +464,13 @@ async function visitNode(ctx: WalkContext, node: Pending): Promise<void> {
     const placed = held ?? (await placeNode(ctx, node, meta, candidate));
     if (placed !== null)
       out.unplaced.push({
-        target: issue.identifier,
+        ...itemOf(issue),
         record: "tracker",
         reason: placed,
       });
   } catch (error) {
     out.unplaced.push({
-      target: issue.identifier,
+      ...itemOf(issue),
       record: "tracker",
       reason: `the queue metadata could not be read: ${failureText(error)}`,
     });
@@ -476,7 +486,7 @@ async function placeLeaf(
   const { issue } = candidate;
   const hold = (reason: string, cause?: "needs-repository-label"): void => {
     out.unplaced.push({
-      target: issue.identifier,
+      ...itemOf(issue),
       record: "tracker",
       reason,
       ...(cause === undefined ? {} : { cause }),
