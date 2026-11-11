@@ -379,8 +379,9 @@ async function claim(
   const read = await claimSettingsFromDefaultBranch(root, overlay);
   if (!read.ok) return unreadablePreflight(normalized, read.failure.reason);
   const settings = read.value;
-  // Only a served claim enforces the epic plan; a plain claim never reads it.
-  const planBlock = person ? await claimPlanBlockFromDefaultBranch(root) : null;
+  // Only a pulled-blocker claim enforces the epic plan; any other claim never reads it.
+  const planBlock =
+    person && blocking ? await claimPlanBlockFromDefaultBranch(root) : null;
   if (planBlock !== null && !planBlock.ok)
     return unreadablePreflight(normalized, planBlock.failure.reason);
   // Before the lock and before any write: a refusal leaves nothing behind.

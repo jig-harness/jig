@@ -53,6 +53,8 @@ export interface PullPolicy {
   hitl?: string | undefined;
   manualOps?: string | undefined;
   repoScope?: RepoScope | undefined;
+  /** False when the tracker cannot assign a blocker itself: a qualifying one awaits a person. */
+  canAssign?: boolean | undefined;
 }
 
 /**
@@ -111,7 +113,9 @@ export function pullBlockers(
           : `${blocked.identifier} is not open`;
     if (why !== null || b.issue === null) return `${b.key} (${why})`;
     pulled.push(b.issue);
-    return `${b.key} (picked up first)`;
+    return policy.canAssign === false
+      ? `${b.key} (awaiting assignment)`
+      : `${b.key} (picked up first)`;
   });
   return { reason: `waiting on ${parts.join(", ")}`, pulled, origin: next };
 }

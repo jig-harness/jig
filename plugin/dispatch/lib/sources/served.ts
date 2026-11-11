@@ -884,6 +884,7 @@ async function heldReason(
     hitl: options.hitl,
     manualOps: options.manualOps,
     repoScope: options.repoScope,
+    canAssign: tracker.assignUnassigned !== undefined,
   });
   // A tracker that cannot assign without replacing a concurrent assignee refuses the claim, so no launch is spent on it; each blocker is still explained.
   if (pull.pulled.length > 0 && tracker.assignUnassigned === undefined)

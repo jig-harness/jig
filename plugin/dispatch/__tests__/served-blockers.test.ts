@@ -106,7 +106,8 @@ describe("served items blocked by open work", () => {
     const read = await w.read();
     expect(read.wanted).toEqual([]);
     expect(reasons(read)["#1"]).toContain("a person assigns it");
-    expect(reasons(read)["#1"]).toContain("#2 (picked up first)");
+    expect(reasons(read)["#1"]).toContain("#2 (awaiting assignment)");
+    expect(reasons(read)["#1"]).not.toContain("picked up first");
   });
 
   it("follows blockers of blockers, working the deepest first, to three links", async () => {
