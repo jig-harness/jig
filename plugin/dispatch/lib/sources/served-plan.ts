@@ -3,6 +3,7 @@ import {
   eligibleIssues,
   hasExecutionPlanHeading,
   humanGates,
+  planContradictions,
   readExecutionPlan,
   type LiveIssue,
 } from "../../../skills/do-item/scripts/lib/execution-plan.ts";
@@ -38,6 +39,14 @@ export function servedPlan(
         order: [],
         holds: {},
         error: "Execution plan belongs to a different epic",
+      };
+    const contradictions = planContradictions(plan, live);
+    if (contradictions.length > 0)
+      return {
+        present: true,
+        order: [],
+        holds: {},
+        error: `Execution plan contradicts the tracker's blocks: ${contradictions.join("; ")}`,
       };
     const order = eligibleIssues(plan, live, []);
     const holds: Record<string, string> = {};

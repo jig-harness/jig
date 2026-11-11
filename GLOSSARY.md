@@ -65,6 +65,11 @@ make, use the entry's term instead.
   holds one concrete, tested implementation of it, and what it learns comes
   back as *backflow*. Short form: consumer. *Avoid*: instance, downstream
   repository, target repository, adopting repository.
+- **Tracker namespace** — the stable name of the tracker collection whose
+  served assignments a repository reads: `linear:<team>` for Linear, or
+  `jira:<site>:<project>` for Jira, where the site is its `https://` address. The adapter and, for Jira, its site keep
+  same-named teams or projects separate. A host's `serve_defaults` maps each
+  tracker namespace to the one checkout that starts unlabelled served work.
 - **Consumer action** — what a Jig change asks a *consumer repository* to do,
   declared in the change note's entry: the level it is taken at (`machine`,
   `configuration` or `instructions`), whether it is `required` or `advised`,

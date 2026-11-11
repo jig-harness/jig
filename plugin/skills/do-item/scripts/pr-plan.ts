@@ -42,6 +42,7 @@
  *   1  the policy or a repository fact could not be read
  */
 
+import { parsePostMerge } from "./lib/post-merge.ts";
 import { readFileSync } from "node:fs";
 import {
   consumerRoot,
@@ -679,9 +680,13 @@ function readKeys(): IssueKeys | null {
   }
 }
 
-/** The pull-request policy; exit 1 when it is invalid. */
+/**
+ * The pull-request policy; exit 1 when it is invalid, or when
+ * `do_item.post_merge_state` needs an issue link the policy does not set.
+ */
 function readPolicy(): PrPolicy {
   try {
+    parsePostMerge(readConfig());
     return prPolicy();
   } catch (e) {
     throw new CliExit(1, `ERROR: ${errorText(e)}`);

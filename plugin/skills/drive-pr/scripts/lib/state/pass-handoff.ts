@@ -18,6 +18,7 @@ import { swallow } from "../../../../../shared/errors.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
 
 import { atomicWrite } from "./fsutil.ts";
+import { isDecisionDigest } from "../../../../../shared/decisions/digest.ts";
 import {
   isParkedDecision,
   type ParkedDecision,
@@ -28,6 +29,7 @@ export interface AnswerChoice {
   option: string;
   recommended: boolean;
   form: "approve" | "choose";
+  digest?: string;
   note?: string;
 }
 
@@ -42,6 +44,8 @@ export interface PendingAnswer {
   body: string;
   bodyHash?: string;
   choice?: AnswerChoice;
+  digest?: string;
+  stale?: true;
 }
 
 /**
@@ -56,6 +60,7 @@ export interface PendingVerdict {
   answers: PendingAnswer[];
   provisional?: true;
   decision?: ParkedDecision;
+  digest?: string;
 }
 
 export function answersFile(stateDir: string, pr: string): string {
@@ -73,6 +78,8 @@ function isAnswer(v: unknown): v is PendingAnswer {
     isRecord(v) &&
     [v.author, v.at, v.url, v.body].every(str) &&
     (v.bodyHash === undefined || str(v.bodyHash)) &&
+    (v.digest === undefined || isDecisionDigest(v.digest)) &&
+    (v.stale === undefined || v.stale === true) &&
     (v.choice === undefined || isChoice(v.choice))
   );
 }
@@ -83,6 +90,7 @@ function isChoice(v: unknown): v is AnswerChoice {
     str(v.option) &&
     typeof v.recommended === "boolean" &&
     (v.form === "approve" || v.form === "choose") &&
+    (v.digest === undefined || isDecisionDigest(v.digest)) &&
     (v.note === undefined || str(v.note))
   );
 }
@@ -96,6 +104,7 @@ function isVerdict(v: unknown): v is PendingVerdict {
     Array.isArray(v.answers) &&
     v.answers.every(isAnswer) &&
     (v.decision === undefined || isParkedDecision(v.decision)) &&
+    (v.digest === undefined || isDecisionDigest(v.digest)) &&
     (v.provisional === undefined || v.provisional === true)
   );
 }

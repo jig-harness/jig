@@ -37,20 +37,25 @@ function section(lines: string[], heading: string): string | null {
  * spaces, loses the indent.
  */
 export function decisionOf(park: {
+  digest?: string;
   decision?: ParkedDecision;
   person?: string;
   key: string;
   kind: "thread" | "finding";
   lines: string[];
 }): LineDecision {
+  const identity = {
+    key: park.key,
+    kind: park.kind,
+    ...(park.digest === undefined ? {} : { digest: park.digest }),
+    ...(park.person === undefined ? {} : { person: park.person }),
+  };
   if (park.decision !== undefined) {
     const decision = park.decision;
     const call = decision.call;
     const chosen = call.options.find((o) => o.id === call.recommended);
     return {
-      key: park.key,
-      ...(park.person === undefined ? {} : { person: park.person }),
-      kind: park.kind,
+      ...identity,
       decision,
       lines: renderParkedDecision(decision).split("\n"),
       question: call.question ?? null,
@@ -76,9 +81,7 @@ export function decisionOf(park: {
   const recommendation = section(lines, "Recommended");
   const steps = sectionLines(lines, "Steps for a person");
   return {
-    key: park.key,
-    ...(park.person === undefined ? {} : { person: park.person }),
-    kind: park.kind,
+    ...identity,
     lines,
     question: section(lines, "Question"),
     recommendation,

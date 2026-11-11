@@ -705,16 +705,18 @@ labels, with a documented default per adapter:
 
 GitHub detects an unnamed store, keeps a facet's existing labels and refuses
 conflicting label and field evidence. A named store never waits on detection.
-Jig's own repository keeps type, priority and size in GitHub's fields: the issue type,
-the Priority field and the Effort field. The issue forms and `report-bug.ts`,
+Jig keeps type and priority in GitHub's issue type and Priority field, and
+size in its Effort field. The issue forms and `report-bug.ts`,
 which file around the interface, set the type and leave priority and size
-to triage.
+to triage; `report-bug.ts` still also applies the `bug` label.
 
 Jira's issue-type and custom-field stores and Linear's estimate store are
-built. What remains is their live runs, and, for Jig's own repository, the
-organization's default Task issue type retired, so the web interface
-offers no type that names nothing. These are the remaining steps of
-[the design's build order](tracker-facets.md#build-order).
+built. What remains is their live runs, one issue opened from the bug form
+to confirm it is filed as a Bug, `report-bug.ts` no longer applying the
+`bug` label, and a person's step on Jig's own
+organization: retiring GitHub's default Task issue type, so the web
+interface offers no type that names nothing. These are the remaining steps
+of [the design's build order](tracker-facets.md#build-order).
 A store kept by the repository's own command waits until a repository names
 a facet that needs it.
 

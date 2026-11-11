@@ -627,6 +627,7 @@ export function world(): World {
               : {
                   ...found,
                   parent: null,
+                  relatesTo: conn([]),
                   blockedBy: conn([]),
                   blocking: conn([]),
                   duplicateOf: null,

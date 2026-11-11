@@ -61,3 +61,61 @@ describe("the host's served people", () => {
       expect(read({ serve }).ok).toBe(false);
   });
 });
+
+describe("the host's default repository for unlabelled served items", () => {
+  const repo = (path: string) => ({ path, stages: ["pickup"] });
+  const repositories = [repo("/srv/web"), repo("/srv/api")];
+
+  it("reads one repository per tracker namespace, case folded", () => {
+    const config = read({
+      repositories,
+      serve_defaults: { "LINEAR:ENG": "/srv/api" },
+    });
+    expect(config.ok && config.value?.serveDefaults).toEqual({
+      "linear:eng": "/srv/api",
+    });
+    const none = read({ repositories });
+    expect(none.ok && none.value?.serveDefaults).toEqual({});
+  });
+
+  it("refuses a default that is not listed, a team written twice and a malformed entry", () => {
+    for (const serve_defaults of [
+      { "linear:ENG": "/srv/other" },
+      { "linear:ENG": "/srv/api", "LINEAR:eng": "/srv/web" },
+      { ENG: "srv/api" },
+      { ENG: 3 },
+      ["/srv/api"],
+    ])
+      expect(read({ repositories, serve_defaults }).ok).toBe(false);
+  });
+
+  it("refuses a namespace outside the documented adapter grammar", () => {
+    for (const namespace of [
+      "ENG",
+      "linera:ENG",
+      "linear:",
+      "jira:ENG",
+      "jira::ENG",
+      "jira:site:ENG:extra",
+      "jira:http://example.atlassian.net:ENG",
+      "jira:https://example.atlassian.net:",
+      "jira:https://example.atlassian.net:8443:ENG",
+    ])
+      expect(
+        read({ repositories, serve_defaults: { [namespace]: "/srv/api" } }).ok,
+      ).toBe(false);
+  });
+
+  it("accepts a Jira namespace whose site keeps its scheme", () => {
+    for (const namespace of [
+      "jira:https://example.atlassian.net:eng",
+      "JIRA:https://Example.atlassian.net:ENG",
+    ]) {
+      const result = read({
+        repositories,
+        serve_defaults: { [namespace]: "/srv/api" },
+      });
+      expect(result.ok).toBe(true);
+    }
+  });
+});

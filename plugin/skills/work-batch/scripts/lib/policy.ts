@@ -443,7 +443,8 @@ function lookups(
   for (const [state, name] of Object.entries(
     parseTrackerConfig(overlay).states,
   ))
-    stateNames[name.trim().toLowerCase()] ??= state as CanonicalState;
+    if (name !== null)
+      stateNames[name.trim().toLowerCase()] ??= state as CanonicalState;
   return { areaNaming, areaNamingSpelling, areaFlags, stateNames };
 }
 

@@ -28,7 +28,13 @@ import {
   PRIORITY_NAMES,
   type PriorityName,
 } from "./settings.ts";
-import type { CanonicalState, IssueState } from "../port.ts";
+import {
+  type CanonicalState,
+  type IssueState,
+  type StateNameOf,
+  type StateNames,
+  stateNameIn,
+} from "../port.ts";
 import { TrackerConfigError } from "../config-error.ts";
 
 /** The open states, from least to furthest along. */
@@ -37,6 +43,7 @@ export const OPEN_STATES = [
   "backlog",
   "todo",
   "in_progress",
+  "pr_open",
   "in_review",
   "ops_pending",
 ] as const satisfies ReadonlyArray<CanonicalState>;
@@ -60,6 +67,7 @@ export const STATE_TYPES: Record<CanonicalState, string> = {
   backlog: "backlog",
   todo: "unstarted",
   in_progress: "started",
+  pr_open: "started",
   in_review: "started",
   ops_pending: "started",
   done: "completed",
@@ -81,7 +89,7 @@ export interface StateInput {
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
 export interface GitHubModel {
-  stateName(state: CanonicalState): string;
+  stateName: StateNameOf;
   /** The canonical state an issue is in. */
   stateOf(issue: StateInput): CanonicalState;
   /** The port's view of that state. */
@@ -98,7 +106,8 @@ export interface GitHubModel {
   readonly priorityLabels: string[];
   /**
    * The label an open state carries in labels mode, or `null` for a state
-   * that carries none (`todo`, and any state named like it).
+   * that carries none (`todo`, any state named like it, and an optional
+   * state left unset).
    */
   stateLabel(state: (typeof OPEN_STATES)[number]): string | null;
   /** Every label that stands for a state, in labels mode; none in project mode. */
@@ -106,12 +115,16 @@ export interface GitHubModel {
 }
 
 export function gitHubModel(
-  states: Record<CanonicalState, string>,
+  states: StateNames,
   settings: GitHubSettings,
 ): GitHubModel {
   const labelsMode = settings.statesFrom === "labels";
-  const stateLabel = (s: (typeof OPEN_STATES)[number]): string | null =>
-    !labelsMode || same(states[s], states.todo) ? null : states[s];
+  const stateLabel = (s: (typeof OPEN_STATES)[number]): string | null => {
+    const name = states[s];
+    return !labelsMode || name === null || same(name, states.todo)
+      ? null
+      : name;
+  };
   const stateLabels = labelsMode
     ? [
         ...new Set(
@@ -124,17 +137,24 @@ export function gitHubModel(
     stateLabels.some((l) => same(l, label)) ||
     priorityLabels.some((l) => same(l, label));
 
+  /**
+   * Whether an issue carrying `names` is in open state `s`. A name `pr_open`
+   * shares with `in_review` reads as `pr_open` alone.
+   */
+  function carries(s: (typeof OPEN_STATES)[number], names: string[]): boolean {
+    const carried = labelsMode ? stateLabel(s) : states[s];
+    if (carried === null || !names.some((n) => same(n, carried))) return false;
+    const prOpen = states.pr_open;
+    return s === "pr_open" || prOpen === null || !same(carried, prOpen);
+  }
+
   function openStateOf(issue: StateInput): CanonicalState {
     const names = labelsMode
       ? issue.labels
       : issue.status === null
         ? []
         : [issue.status];
-    let found: CanonicalState | null = null;
-    for (const s of OPEN_STATES) {
-      const carried = labelsMode ? stateLabel(s) : states[s];
-      if (carried !== null && names.some((n) => same(n, carried))) found = s;
-    }
+    const found = OPEN_STATES.filter((s) => carries(s, names)).at(-1) ?? null;
     if (found === null && !labelsMode) refuseUnmapped(issue.status);
     return found ?? "todo";
   }
@@ -156,11 +176,11 @@ export function gitHubModel(
   }
 
   return {
-    stateName: (s) => states[s],
+    stateName: stateNameIn(states),
     stateOf,
     issueState: (issue) => {
       const s = stateOf(issue);
-      return { name: states[s], type: STATE_TYPES[s] };
+      return { name: states[s] ?? "", type: STATE_TYPES[s] };
     },
     priorityOf: (labels) => {
       for (const [i, p] of PRIORITY_NAMES.entries())
