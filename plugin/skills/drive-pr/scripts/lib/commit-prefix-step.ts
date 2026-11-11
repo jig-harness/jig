@@ -18,6 +18,10 @@ import { swallow } from "../../../../shared/errors.ts";
 import { isRecord } from "../../../../shared/guards.ts";
 import { prPolicy } from "./pr-policy.ts";
 import { ghCall, git, helperTimeoutSeconds, run, tsArgv } from "./proc.ts";
+import {
+  assertTreeMutationAllowed,
+  resolveFenceContext,
+} from "./state/lease.ts";
 
 const commitPrefixScript = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -80,10 +84,32 @@ export async function applyCommitPrefix(
   if (!prefixConfigured()) return { ok: true, head, reworded: false };
   const branch = await headBranch(pr);
   if (!branch.ok) return branch;
-  const r = await run(tsArgv(commitPrefixScript, ["--branch", branch.branch]), {
-    stderr: "pipe",
-    timeoutSec: helperTimeoutSeconds(),
-  });
+  // The rewrite moves the branch, so it runs under the tree-mutation fence
+  // `guarded-push.ts` takes: a second session in a tree another live session
+  // drives is refused before it recreates a commit.
+  const fenceCtx = await resolveFenceContext("finish-round.ts commit-prefix");
+  const lock =
+    fenceCtx === null
+      ? null
+      : await assertTreeMutationAllowed(fenceCtx, pr, "finish-round.ts");
+  try {
+    return await prefixUnderFence(pr, head, branch.branch, gitTimeoutSec);
+  } finally {
+    lock?.release();
+    lock?.dispose();
+  }
+}
+
+async function prefixUnderFence(
+  pr: string,
+  head: string,
+  branch: string,
+  gitTimeoutSec: number,
+): Promise<PrefixStep> {
+  const r = await run(
+    tsArgv(commitPrefixScript, ["--branch", branch, "--expect-head", head]),
+    { stderr: "pipe", timeoutSec: helperTimeoutSeconds() },
+  );
   if (r.code !== 0 && r.code !== PUSHED_WITHOUT_PREFIX_EXIT)
     return {
       ok: false,
@@ -103,5 +129,19 @@ export async function applyCommitPrefix(
       ok: false,
       reason: `cannot read local HEAD after commit-prefix.ts (git exited ${after.code}) — re-run against a settled tree`,
     };
+  if (now !== head) {
+    // A reword keeps the tree of the head it started from: any other tree is
+    // a commit this round never validated.
+    const trees = await git(["rev-parse", `${head}^{tree}`, `${now}^{tree}`], {
+      stderr: "pipe",
+      timeoutSec: gitTimeoutSec,
+    });
+    const [was, is] = trees.stdout.trim().split("\n");
+    if (trees.code !== 0 || was === undefined || was !== is)
+      return {
+        ok: false,
+        reason: `local HEAD moved to ${now.slice(0, 12)} during commit-prefix.ts and its tree is not the validated ${head.slice(0, 12)}'s — re-run against a settled tree`,
+      };
+  }
   return { ok: true, head: now, reworded: now !== head };
 }

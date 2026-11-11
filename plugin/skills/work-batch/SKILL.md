@@ -161,10 +161,12 @@ confirm what the script cannot:
   drop one you doubt.
 - **The issues share one base.** With `pull_requests.base_rules` declared,
   run `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/pr-plan.ts" branch --issue "<KEY>" --title "<title>" --issue-json <that issue's JSON file>`
-  for each issue and compare the `base:` line it prints. Issues whose bases
-  differ cannot share a pull request: keep the group with the highest-priority
-  issue and leave the rest for their own pull requests. Repeat the comparison
-  whenever you trim the batch or re-anchor it.
+  for each issue, add `--json`, and compare only the `base` value it prints,
+  never the rule or label that chose it. Issues whose bases differ cannot
+  share a pull request: keep the group with the explicit anchor issue (the
+  highest-priority issue when the anchor is an area, path or epic) and leave
+  the rest for their own pull requests. Repeat the comparison whenever you
+  trim the batch or re-anchor it.
 - **One area is preferred.** An epic anchor may span two; a mixed batch takes
   the union of both areas' validation and mandatory reviews. Split unless
   the anchor is why the areas mix.

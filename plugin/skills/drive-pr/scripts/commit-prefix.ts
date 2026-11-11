@@ -10,7 +10,7 @@
  * Type: Gate
  *
  * Usage:
- *     bun commit-prefix.ts [--branch <name>] [--check] [--json]
+ *     bun commit-prefix.ts [--branch <name>] [--expect-head <sha>] [--check] [--json]
  *
  * The branch's own commits are those reachable from HEAD and from no
  * remote-tracking branch of `repository.remote` other than its own: the
@@ -26,7 +26,9 @@
  *
  * `--branch` names the branch whose key is read, for a detached HEAD (a
  * drive's working tree); the commits checked are still HEAD's. `--check`
- * reports without rewording.
+ * reports without rewording. `--expect-head` refuses (exit 1) unless HEAD is
+ * that commit when the run starts. HEAD and its branch are pinned before the
+ * branch's commits are read and checked again at the final update.
  *
  * Exit codes:
  *   0  every commit of the branch starts with the prefix (any unpushed one
@@ -53,7 +55,7 @@ import { renderCommitPrefix } from "./lib/pr-conventions.ts";
 import { type PrPolicy, prPolicy } from "./lib/pr-policy.ts";
 import { git, unconcludedGitOpMarker } from "./lib/proc.ts";
 
-const USAGE = "usage: commit-prefix.ts [--branch <name>] [--check] [--json]";
+const USAGE = "usage: commit-prefix.ts [--branch <name>] [--expect-head <sha>] [--check] [--json]";
 
 /** Deadline of each local git call, in seconds. */
 const GIT_TIMEOUT = 60;
@@ -222,7 +224,7 @@ async function recreate(
 }
 
 /** Where HEAD stood when the rewrite started: its commit and the ref it points to. */
-interface HeadAt {
+export interface HeadAt {
   sha: string;
   /** `refs/heads/<name>`, or `null` for a detached HEAD. */
   ref: string | null;
@@ -284,13 +286,10 @@ async function moveHead(root: string, at: HeadAt, newHead: string) {
  */
 export async function rewordUnpushed(
   root: string,
+  at: HeadAt,
   commits: readonly BranchCommit[],
   prefix: string,
 ): Promise<PrefixReport["reworded"]> {
-  const at: HeadAt = {
-    sha: (await gitOut(root, ["rev-parse", "HEAD"])).trim(),
-    ref: await headRef(root, false),
-  };
   if (commits.length > 0 && !commits.some((c) => c.sha === at.sha))
     throw new JigError(
       "git-failed",
@@ -298,7 +297,24 @@ export async function rewordUnpushed(
     );
   const { moved, reworded } = await rewrite(root, commits, prefix);
   const newHead = moved.get(at.sha);
-  if (newHead !== undefined) await moveHead(root, at, newHead);
+  if (newHead !== undefined) {
+    // A reword keeps every tree: a result with another tree is a defect.
+    const [was, now] = (
+      await gitOut(root, [
+        "rev-parse",
+        `${at.sha}^{tree}`,
+        `${newHead}^{tree}`,
+      ])
+    )
+      .trim()
+      .split("\n");
+    if (was !== now)
+      throw new JigError(
+        "git-failed",
+        `the rewritten head ${newHead.slice(0, 12)} does not carry the tree of ${at.sha.slice(0, 12)}; nothing was moved`,
+      );
+    await moveHead(root, at, newHead);
+  }
   return reworded;
 }
 
@@ -352,7 +368,7 @@ export function formatReport(report: PrefixReport): string {
 async function main(): Promise<number> {
   const parsed = parseArgs(process.argv.slice(2), {
     flags: ["check", "json"],
-    values: ["branch"],
+    values: ["branch", "expect-head"],
     usage: USAGE,
     noPositional: true,
   });
@@ -368,6 +384,19 @@ async function main(): Promise<number> {
     return 0;
   }
   const root = consumerRoot();
+  // Pinned before anything below reads the branch or its commits, and carried
+  // through to the final update: another session switching branches or
+  // committing meanwhile must refuse the rewrite, never redirect it.
+  const at: HeadAt = {
+    sha: (await gitOut(root, ["rev-parse", "HEAD"])).trim(),
+    ref: await headRef(root, false),
+  };
+  const expected = values.get("expect-head");
+  if (expected !== undefined && expected !== at.sha)
+    return fail(
+      1,
+      `ERROR: HEAD is ${at.sha.slice(0, 12)}, not the ${expected.slice(0, 12)} this run was asked to start from; nothing was rewritten: re-run`,
+    );
   const branch = await branchOf(root, values.get("branch"));
   const keys = issueKeysOrNull();
   if (keys === null)
@@ -404,7 +433,7 @@ async function main(): Promise<number> {
     reworded:
       check || !lacking.some((c) => !c.pushed)
         ? []
-        : await rewordUnpushed(root, commits, prefix),
+        : await rewordUnpushed(root, at, commits, prefix),
     pushed: listed(true),
     unpushed: check ? listed(false) : [],
   };
