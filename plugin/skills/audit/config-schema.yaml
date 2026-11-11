@@ -544,6 +544,16 @@ fields:
   ci.hold_label:
     type: string
     read_by: [drive-pr]
+  ci.log_command:
+    type: command
+    read_by: [fix-ci]
+    repository_only: true
+    since: 0.205.0
+  ci.repair_skill:
+    type: string
+    pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*(?::[A-Za-z0-9][A-Za-z0-9._-]*)?$"
+    read_by: [drive-pr]
+    since: 0.205.0
 
   issue_tracker.adapter:
     type: enum
