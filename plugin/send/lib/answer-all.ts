@@ -32,6 +32,7 @@ import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { listedActOfClass } from "../../shared/acts.ts";
 import { localWriter } from "../../shared/records/writer.ts";
 import {
+  answerKeyFault,
   answerComment,
   answerLine,
   postAnswerComment,
@@ -79,6 +80,8 @@ function eligibility(
   found: ReadParks,
   login: string,
 ): string | Eligible {
+  const keyFault = answerKeyFault(item.key);
+  if (keyFault !== null) return keyFault;
   if (found.answered.some((v) => v.key === item.key))
     return "already answered; answer it by its key to change your answer";
   if (found.disputed.some((v) => v.item.key === item.key))

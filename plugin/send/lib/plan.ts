@@ -92,23 +92,23 @@ const shown = (text: string) =>
     )
     .join("\n");
 
-const row = (name: string, value: string) => `  ${name.padEnd(11)}${value}`;
+/** One plan row: every value passes `shown`, whichever field it came from. */
+const row = (name: string, value: string) =>
+  `  ${name.padEnd(11)}${shown(value).replaceAll("\n", `\n${" ".repeat(13)}`)}`;
 
 /** The plan as it prints before a write, or as a dry run. */
 export function renderPlan(plan: Plan, dryRun: boolean): string {
   return [
-    `jig send ${plan.address} ${plan.verb}${dryRun ? " (dry run)" : ""}`,
+    shown(`jig send ${plan.address} ${plan.verb}${dryRun ? " (dry run)" : ""}`),
     row("repository", plan.repo),
     row("writes as", plan.writesAs),
-    ...(plan.earlier ?? []).map((e) => row("earlier", shown(e))),
+    ...(plan.earlier ?? []).map((e) => row("earlier", e)),
     row("record", plan.record),
     row("where", plan.where),
     row("read by", plan.reader),
     row("undo", plan.undo),
     ...(plan.notice === null ? [] : [row("note", plan.notice)]),
-    ...(plan.detail ?? []).map(([name, value]) =>
-      row(name, shown(value).replaceAll("\n", `\n${" ".repeat(13)}`)),
-    ),
+    ...(plan.detail ?? []).map(([name, value]) => row(name, value)),
     ...(dryRun ? ["dry run: nothing was written."] : []),
   ].join("\n");
 }
@@ -126,8 +126,5 @@ export function renderSent(
     woken === null || plan.tick === null
       ? plan.reader
       : plan.tick.reader(woken);
-  return [
-    row("sent", wrote.replaceAll("\n", `\n${" ".repeat(13)}`)),
-    row("next", reader),
-  ].join("\n");
+  return [row("sent", wrote), row("next", reader)].join("\n");
 }

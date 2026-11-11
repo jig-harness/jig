@@ -325,6 +325,22 @@ describe("--all --approve", () => {
     expect(w.writes()).toEqual([]);
   });
 
+  it("leaves out a park whose key the answer line cannot carry, and prints no control character", async () => {
+    const w = world();
+    many(w, framedPark("F_\u001b[2J", "next-item"));
+    const r = await w.send([
+      ADDRESS,
+      "answer",
+      "--all",
+      "--approve",
+      "--dry-run",
+    ]);
+    expectSpawnExit(r, 0);
+    expect(r.stdout.includes("\u001b")).toBe(false);
+    expect(r.stdout).toContain("cannot be written in an answer line");
+    expect(r.stdout).not.toMatch(/F_.*\(next-item\) \[/);
+  });
+
   it("refuses a real send without the set token, or when the set changed since, writing nothing", async () => {
     const w = world();
     many(w);
