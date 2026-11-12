@@ -204,6 +204,11 @@ root. For example, using the installed do-item skill directory:
 bun "<skill-dir>/scripts/get_issue.ts" "<issue-key>"
 ```
 
+`get_issue.ts` keeps exit `2` and `found: false` for both an absent issue
+and an unreadable tracker answer. Its JSON `reason` distinguishes `not-found`
+(with key and team suggestions) from `read-failed` (the tracker failure,
+without those suggestions).
+
 Native Windows tests cover the pickup scripts and the drive's process
 helpers. The complete interactive Windows smoke test — pick an item,
 open its draft pull request, arm a drive, finish a pass and stop the drive —
