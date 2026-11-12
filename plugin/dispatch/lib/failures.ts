@@ -22,8 +22,9 @@
  * [ADR-0012](../../../docs/adr/ADR-0012-failures-as-values.md)) and when the
  * action is next tried. A wake-up's tick row is quiet once a tick that read
  * its repository succeeded after its last failure: it keeps its count, but
- * nothing escalates it until a wake-up of that repository fails again. A first failure is tried again at the next tick, as
- * every action always was; a second in a row moves the next try
+ * nothing escalates it until a wake-up of that repository fails again.
+ * A first failure is tried again at the next tick, as every action always
+ * was; a second in a row moves the next try
  * `failures.backoff` after it, doubling with each failure after that up to
  * `failures.backoff_max`. A success removes the row, and so does the action
  * leaving the plan: each kind's planner, once it ran whole, names the keys

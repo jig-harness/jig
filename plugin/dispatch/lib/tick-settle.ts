@@ -10,7 +10,8 @@
  * what failed in a row (`settleFailures`): each repository this tick read
  * whose turn was refused, stopped by a defect or found a record that did not
  * read, and the tick itself when it exits 1. A repository read whole, and a
- * tick that exits 0, clears its row. Only a tick with `--apply` and a
+ * tick that exits 0, clears its row; a tick that exits 0 also quiets the
+ * wake-up rows of the other repositories it read whole. Only a tick with `--apply` and a
  * machine file counts: a person's report changes nothing there.
  */
 import { resolve } from "node:path";

@@ -149,7 +149,7 @@ function hostCause(slug: string, row: FailureRow): Action {
     ]);
   return causeOf(slug, row, "ticks-failing", "runtime", [
     `This host's dispatcher ${row.target} have exited 1 ${times(row.count)} in a row since ${row.firstAt}. The last failure: ${sentence(row.reason)}`,
-    `Read the latest receipt and the tick's journal for what failed; this notice retires at the first such tick that exits 0. ${RECEIPT}`,
+    `Read the latest receipt and the tick's journal for what failed; this notice retires at the first such tick that exits 0, or at the first tick that reads that repository whole and exits 0. ${RECEIPT}`,
   ]);
 }
 
