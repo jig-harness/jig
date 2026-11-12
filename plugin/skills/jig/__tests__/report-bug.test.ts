@@ -649,6 +649,20 @@ test("an account whose create drops the type without an error is told so", () =>
   expect(run.stderr.toString()).toContain("filed without the issue type Bug");
 });
 
+test.each([
+  ["a boolean", `{"issueType":false}`],
+  ["an empty object", `{"issueType":{}}`],
+  ["another type", `{"issueType":{"name":"Task"}}`],
+])("an issue type that is %s is not read as Bug", (_name, view) => {
+  const dir = mkdtempSync(join(tmpdir(), "jig-report-bug-"));
+  filingGh(dir, undefined, undefined, `echo '${view}'`);
+  const run = fileDraft(dir);
+  expectSpawnExit(run, 0);
+  expect(run.stderr.toString()).toContain(
+    "could not verify the issue type Bug",
+  );
+});
+
 test("an older gh with no --type files without it", () => {
   const dir = mkdtempSync(join(tmpdir(), "jig-report-bug-"));
   filingGh(

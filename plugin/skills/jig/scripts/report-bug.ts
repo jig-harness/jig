@@ -923,9 +923,10 @@ function untypedNote(created: string): string | null {
   try {
     const parsed: unknown = JSON.parse(String(run.stdout));
     if (!isMapping(parsed) || !("issueType" in parsed)) return unverified;
-    return parsed.issueType === null
-      ? `filed without the issue type ${BUG_TYPE}: the account may not set one; it is set when the issue is triaged`
-      : null;
+    const type = parsed.issueType;
+    if (type === null)
+      return `filed without the issue type ${BUG_TYPE}: the account may not set one; it is set when the issue is triaged`;
+    return isMapping(type) && type.name === BUG_TYPE ? null : unverified;
   } catch (error) {
     swallow(error, "issue type unreadable; the report is filed");
     return unverified;
