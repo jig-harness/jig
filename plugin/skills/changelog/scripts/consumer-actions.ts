@@ -17,7 +17,7 @@
 // failure with its reason, never a throw.
 import { failed, ok, type Outcome } from "../../../shared/outcome.ts";
 import { codeSpans } from "./markdown-blocks.ts";
-import { parseBlocks, plain } from "./markdown-tree.ts";
+import { parseBlocks, plain, prose } from "./markdown-tree.ts";
 
 /** How strongly an action asks: the repository is wrong until it acts, or better for acting. */
 export const STRENGTHS = ["required", "advised"] as const;
@@ -321,13 +321,19 @@ function readBody(body: string): Outcome<Declaration> {
   return readAction(body);
 }
 
-const MARK_SENTINEL = "JIGCONSUMERACTIONMARK";
-
-/** A sentinel no part of `entry` contains, so no text of the entry can collide with it. */
+/**
+ * A one-character sentinel (a private-use code point, which emphasis cannot
+ * split) that neither the entry's source nor its rendered text contains, so
+ * nothing the entry says, however written, can collide with it.
+ */
 function sentinelAbsentFrom(entry: string): string {
-  let sentinel = MARK_SENTINEL;
-  while (entry.includes(sentinel)) sentinel += "X";
-  return sentinel;
+  const rendered = prose(parseBlocks(entry));
+  for (let code = 0xe000; code <= 0xf8ff; code++) {
+    const sentinel = String.fromCharCode(code);
+    if (!entry.includes(sentinel) && !rendered.includes(sentinel))
+      return sentinel;
+  }
+  return "\ue000";
 }
 
 /**

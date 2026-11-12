@@ -520,6 +520,19 @@ describe("review hardening", () => {
     ).toBe(false);
   });
 
+  test("parent text that renders the old sentinel through emphasis does not hide a nested marker", () => {
+    expect(
+      readDeclaration(
+        `- Parent JIG**CONSUMERACTION**MARK.\n  - Child. **Consumer action:** ${ACTION}`,
+      ).ok,
+    ).toBe(false);
+    expect(
+      readDeclaration(
+        `- Parent \ue000.\n  - Child. **Consumer action:** ${ACTION}`,
+      ).ok,
+    ).toBe(false);
+  });
+
   test("a periodless none in another emphasis is refused; ordinary prose is not", () => {
     expect(strict("Change. *Consumer action:* none")).not.toEqual([]);
     expect(strict("Change. **Consumer action** none")).not.toEqual([]);
