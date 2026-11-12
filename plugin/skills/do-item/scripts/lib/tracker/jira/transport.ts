@@ -392,7 +392,7 @@ export function httpTransport(
       request.method === "GET" || request.idempotent === true,
       bound,
     ).catch((err: unknown) => {
-      if (cancelled(bound)) throw abortedError(bound);
+      if (cancelled(signal)) throw abortedError(signal);
       throw err;
     });
     const text = await bodyText(res, bound, what);

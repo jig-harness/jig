@@ -154,13 +154,23 @@ function ghBody(r: RunResult): unknown {
  * A failed run is a failure even when its output parses: report the errors
  * it carries, else its exit status.
  */
-function ghExitFailure(r: RunResult, body: unknown): GitHubApiError {
-  const unavailable = GH_UNAVAILABLE.test(r.stderr);
+function ghExitFailure(
+  r: RunResult,
+  body: unknown,
+  response?: { status: number; headers: Headers },
+): GitHubApiError {
+  const unavailable =
+    GH_UNAVAILABLE.test(r.stderr) ||
+    response?.status === 429 ||
+    (response?.status !== undefined && response.status >= 500);
+  const retryAfterSec =
+    response === undefined ? null : retryAfterSeconds(response.headers);
   if (isRecord(body) && Array.isArray(body.errors))
-    unwrapResponse(body, { unavailable });
+    unwrapResponse(body, { unavailable, retryAfterSec });
   const said = (r.stderr || r.stdout).trim().slice(0, 300);
   return new GitHubApiError(`gh api graphql exited ${r.code}: ${said}`, {
     unavailable: unavailable || GH_UNAVAILABLE.test(said),
+    retryAfterSec,
   });
 }
 
@@ -196,7 +206,8 @@ export function ghTransport(runner: typeof ghCall = ghCall): GitHubTransport {
       bound,
     );
     const body = ghBody(answer.result);
-    if (answer.result.code !== 0) throw ghExitFailure(answer.result, body);
+    if (answer.result.code !== 0)
+      throw ghExitFailure(answer.result, body, answer);
     return unwrapResponse(body);
   };
 }
@@ -207,9 +218,8 @@ function ghHeaders(stdout: string): {
   headers: Headers;
   body: string;
 } {
-  const match = /^HTTP\/[^ ]+ (\d+)[^\r\n]*\r?\n([\s\S]*?)\r?\n\r?\n/.exec(
-    stdout,
-  );
+  const match =
+    /^HTTP\/[^ ]+ (\d+)[^\r\n]*\r?\n([\s\S]*?)\r?\n(?:\r?\n|$)/.exec(stdout);
   if (match === null)
     return { status: 200, headers: new Headers(), body: stdout };
   const headers = new Headers();

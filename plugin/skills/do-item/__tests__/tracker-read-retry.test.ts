@@ -130,6 +130,24 @@ describe("tracker read retries", () => {
 });
 
 describe("read retry bounds", () => {
+  it("does not wait forever for response cleanup after cancellation", async () => {
+    const controller = new AbortController();
+    let cancelled = false;
+    const response = new Response(
+      new ReadableStream({
+        cancel() {
+          cancelled = true;
+          return new Promise<void>(() => {});
+        },
+      }),
+      { status: 503 },
+    );
+    const pending = retryRead(async () => response, true, controller.signal);
+    await Promise.resolve();
+    controller.abort(new Error("deadline elapsed"));
+    await expect(pending).rejects.toThrow("deadline elapsed");
+    expect(cancelled).toBe(true);
+  });
   it("caps each wait and honors an HTTP-date Retry-After", async () => {
     const waits: number[] = [];
     let calls = 0;
@@ -220,6 +238,25 @@ describe("GitHub command-line retries", () => {
       else await expect(result).rejects.toThrow("429");
       expect(calls).toBe(read ? 2 : 1);
     });
+  }
+});
+
+it("preserves failed gh response metadata", async () => {
+  const transport = ghTransport(async () => ({
+    code: 1,
+    stdout:
+      'HTTP/2.0 503 Service Unavailable\r\nRetry-After: 7\r\n\r\n{"errors":[{"message":"down"}]}',
+    stderr: "",
+    stderrTail: "",
+    timedOut: false,
+    bufferExceeded: false,
+    spawnFailed: false,
+  }));
+  try {
+    await transport("query { viewer { login } }", {});
+    throw new Error("expected GitHub failure");
+  } catch (err) {
+    expect(err).toMatchObject({ unavailable: true, retryAfterSec: 7 });
   }
 });
 

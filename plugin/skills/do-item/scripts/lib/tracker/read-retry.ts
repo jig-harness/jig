@@ -21,15 +21,34 @@ export async function retryRead<T extends RetryAnswer>(
     if (!idempotent || attempt >= 3 || ![429, 503].includes(answer.status))
       return answer;
     const delay = (retryAfterSeconds(answer.headers, now) ?? 1) * 1000;
-    if (answer instanceof Response) await discardBody(answer);
+    if (answer instanceof Response) await discardBody(answer, signal);
     await wait(Math.min(30_000, delay), signal);
   }
 }
 
 /** A failed response's cleanup cannot replace its status or prevent a safe retry. */
-export async function discardBody(response: Response): Promise<void> {
+export async function discardBody(
+  response: Response,
+  signal?: AbortSignal,
+): Promise<void> {
   try {
-    await response.body?.cancel();
+    const cancellation = response.body?.cancel();
+    if (cancellation === undefined) return;
+    if (signal === undefined) {
+      await cancellation;
+      return;
+    }
+    await Promise.race([
+      cancellation,
+      new Promise<never>((_, reject) => {
+        const abort = () => reject(signal.reason);
+        signal.addEventListener("abort", abort, { once: true });
+        void cancellation.then(
+          () => signal.removeEventListener("abort", abort),
+          () => signal.removeEventListener("abort", abort),
+        );
+      }),
+    ]);
   } catch (err) {
     swallow(
       err,
