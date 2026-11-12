@@ -71,19 +71,13 @@ function isLoopback(hostname: string): boolean {
   );
 }
 
-/** Whether `hostname` is a Tailscale address: 100.64.0.0/10 or a `*.ts.net` name. */
+/**
+ * Whether `hostname` is a Tailscale name: `*.ts.net`, which resolves only
+ * through the tailnet. An address in 100.64.0.0/10 proves no tunnel (RFC 6598
+ * shared address space), so it does not count.
+ */
 function isTailscale(hostname: string): boolean {
-  const host = hostname.toLowerCase();
-  if (host.endsWith(".ts.net")) return true;
-  const octets = /^100\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
-  if (octets === null) return false;
-  const [second, third, fourth] = octets.slice(1).map(Number);
-  return (
-    second !== undefined &&
-    second >= 64 &&
-    second <= 127 &&
-    [third, fourth].every((n) => n !== undefined && n <= 255)
-  );
+  return hostname.toLowerCase().endsWith(".ts.net");
 }
 
 /**
@@ -103,5 +97,5 @@ export function transportFault(at: {
     isTailscale(at.hostname)
   )
     return null;
-  return `No Send on this address: the page came over plain HTTP from ${at.hostname}, so someone on the network path could read the token. Open the dashboard over HTTPS, from this machine's loopback or over Tailscale to send; Copy works here.`;
+  return `No Send on this address: the page came over plain HTTP from ${at.hostname}, so someone on the network path could read the token. Open the dashboard over HTTPS, from this machine's loopback or by its Tailscale name (*.ts.net) to send; Copy works here.`;
 }

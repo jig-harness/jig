@@ -112,9 +112,6 @@ describe("the addresses a page may send from", () => {
       "http://127.0.0.1:8765/",
       "http://127.200.3.4/",
       "http://[::1]:8765/",
-      "http://100.64.0.1:8765/",
-      "http://100.101.102.103:8765/",
-      "http://100.127.255.255/",
       "http://host.tailnet-name.ts.net:8765/",
     ])
       expect(at(url)).toBeNull();
@@ -124,6 +121,9 @@ describe("the addresses a page may send from", () => {
     for (const url of [
       "http://192.168.1.20:8765/",
       "http://10.0.0.5/",
+      "http://100.64.0.1:8765/",
+      "http://100.101.102.103:8765/",
+      "http://100.127.255.255/",
       "http://100.63.255.255/",
       "http://100.128.0.1/",
       "http://128.0.0.1/",

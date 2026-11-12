@@ -88,7 +88,7 @@ written as that person
 ([ADR-0014](ADR-0014-addresses-are-derived-and-requests-are-records.md));
 a parked decision's answer from its page goes from the person's browser to
 the forge, never through the reader
-([ADR-0017](ADR-0017-the-dashboard-page-answers-as-the-person.md)).
+([ADR-0019](ADR-0019-the-dashboard-page-answers-as-the-person.md)).
 It is the dispatcher's own dashboard with more views, so Jig still has one
 kind of listening server beside the hub ([ADR-0016](ADR-0016-an-optional-hub-for-hosts-that-keep-authority.md)),
 not a second beside it.

@@ -1171,7 +1171,7 @@ other card says why it has no Send. The page's content security policy lets
 it reach its own server and `https://api.github.com` alone, so a pull
 request on another forge has no Send. Send is offered only when the page
 came over HTTPS, from the machine's loopback (`localhost`, 127.0.0.0/8,
-`::1`) or over Tailscale (100.64.0.0/10 or a `*.ts.net` name): over any
+`::1`) or over Tailscale by a `*.ts.net` name: over any
 other plain-HTTP address someone on the network path who can change the page
 could read the token, so the cards say why Send is missing there. A phone
 uses the private HTTPS front ([phone-access.md](phone-access.md)).

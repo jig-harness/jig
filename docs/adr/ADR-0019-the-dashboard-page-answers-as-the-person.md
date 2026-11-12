@@ -1,5 +1,5 @@
 ---
-title: "ADR-0017: The dashboard's page answers a parked decision as the person"
+title: "ADR-0019: The dashboard's page answers a parked decision as the person"
 type: adr
 status: draft
 description: "The dispatch dashboard's page may post a parked decision's answer: from the browser, to the forge's API, with a fine-grained token the person pastes into that browser and that the host never receives; the dashboard's server keeps no write route, the dispatcher never relays an answer, and the answer is trusted as one `jig send` writes from a terminal until item 40 tells a pass's comment from a person's"
@@ -13,7 +13,7 @@ superseded_by: ~
 tags: [adr, dashboard, security, answers, dispatcher]
 ---
 
-# ADR-0017: The dashboard's page answers a parked decision as the person
+# ADR-0019: The dashboard's page answers a parked decision as the person
 
 **Status:** Draft · **Date:** 2026-11-12 · **Deciders:** Jig's maintainers through pull-request review
 
@@ -62,8 +62,8 @@ from the browser, as the person:
   nobody picked is Copy's alone. A guarded pick sends on the second step,
   as it copies.
 - Send is offered only when the page came over HTTPS, from loopback
-  (`localhost`, 127.0.0.0/8, `::1`) or over Tailscale (100.64.0.0/10 or a
-  `*.ts.net` name); on any other plain-HTTP address the card says why it
+  (`localhost`, 127.0.0.0/8, `::1`) or over Tailscale by a
+  `*.ts.net` name; on any other plain-HTTP address the card says why it
   has none.
 - Send works on a phone as on a desktop.
 - The host stays read-only: the dashboard's server gets no write route and

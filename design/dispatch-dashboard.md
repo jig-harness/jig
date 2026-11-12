@@ -271,7 +271,7 @@ comment, since a comment carries one record. The page posts each through
 GitHub's REST API (`POST /repos/{owner}/{repo}/issues/{n}/comments`) itself,
 from the browser, with a fine-grained token the person pastes once per
 browser
-([ADR-0017](../docs/adr/ADR-0017-the-dashboard-page-answers-as-the-person.md)). So:
+([ADR-0019](../docs/adr/ADR-0019-the-dashboard-page-answers-as-the-person.md)). So:
 
 - **Who writes, and with what.** The person, with their own token. The
   page's settings panel tests a pasted token by asking GitHub who it signs
@@ -312,8 +312,8 @@ browser
   `api.github.com` alone.
 - **Only over a path that protects the token.** Send is offered only when
   the page came over HTTPS, from the machine's loopback (`localhost`,
-  127.0.0.0/8, `::1`), or over Tailscale (100.64.0.0/10 or a `*.ts.net`
-  name), whose network encrypts the path. On any other plain-HTTP address
+  127.0.0.0/8, `::1`), or over Tailscale by a `*.ts.net` name,
+  which resolves only through the tailnet, whose network encrypts the path. On any other plain-HTTP address
   every card says why it has no Send and the settings panel takes no
   token, since someone on the path who can change the page could read it.
 - **What comes back.** After GitHub answers 201 for each comment, the card
