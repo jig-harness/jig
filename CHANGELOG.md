@@ -394,6 +394,12 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.222.0] - 2026-11-12
+
+### Added
+
+- `do-item` resolves proposed commands from a `Verification` section, including code blocks, with a configurable `specs.verification_section` heading. The implementer reviews each command before running it and records selected commands as evidence.
+
 ## [0.221.2] - 2026-11-12
 
 A Linear served queue no longer spends the tracker's whole hourly request budget on one read.
@@ -7653,7 +7659,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.221.2...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.222.0...HEAD
+[0.222.0]: https://github.com/jig-harness/jig/compare/v0.221.2...v0.222.0
 [0.221.2]: https://github.com/jig-harness/jig/compare/v0.221.1...v0.221.2
 [0.221.1]: https://github.com/jig-harness/jig/compare/v0.221.0...v0.221.1
 [0.221.0]: https://github.com/jig-harness/jig/compare/v0.220.0...v0.221.0

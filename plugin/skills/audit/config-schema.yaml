@@ -864,7 +864,7 @@ fields:
     default: Verification
     read_by: [do-item]
     repository_only: true
-    since: next
+    since: 0.222.0
 
   workspace_name.template:
     type: string
