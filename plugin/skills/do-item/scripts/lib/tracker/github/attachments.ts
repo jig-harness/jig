@@ -17,6 +17,7 @@
  * credential's own) counts as an attachment.
  */
 
+import { createHash } from "node:crypto";
 import {
   AttachmentRefused,
   attachmentOf,
@@ -69,6 +70,8 @@ interface Marker {
   contentType: string;
   /** The carried file's size in bytes. */
   size?: number;
+  /** The SHA-256 of the carried file, in hexadecimal. */
+  sha256?: string;
   url?: string;
 }
 
@@ -95,6 +98,10 @@ function markerLine(marker: Marker): string {
   return `${ATTACHMENT_MARKER}${json} -->`;
 }
 
+function digestOf(bytes: Uint8Array): string {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
 function headline(file: AttachmentFile, name: string): string {
   const subtitle =
     file.subtitle === undefined ? "" : ` ${inert(file.subtitle)}.`;
@@ -103,10 +110,9 @@ function headline(file: AttachmentFile, name: string): string {
 
 /** The comment carrying a text file, whatever its length. */
 export function carriedBody(file: AttachmentFile, text: string): string {
-  const longest = Math.max(
-    0,
-    ...[...text.matchAll(/`+/g)].map((m) => m[0].length),
-  );
+  let longest = 0;
+  for (const m of text.matchAll(/`+/g))
+    if (m[0].length > longest) longest = m[0].length;
   const fence = "`".repeat(Math.max(3, longest + 1));
   const lang = /\.html?$/i.test(file.filename) ? "html" : "";
   const open = /\.html?$/i.test(file.filename)
@@ -120,6 +126,7 @@ export function carriedBody(file: AttachmentFile, text: string): string {
       filename: file.filename,
       contentType: file.contentType,
       size: file.bytes.byteLength,
+      sha256: digestOf(file.bytes),
     }),
     headline(file, inert(file.filename)),
     "",
@@ -165,7 +172,12 @@ export function attachmentBody(file: AttachmentFile): string {
       throw new AttachmentRefused(
         `${file.url} is not an https address; GitHub Issues links only one`,
       );
-    return linkBody(file, url.toString());
+    const link = linkBody(file, url.toString());
+    if (link.length > GITHUB_COMMENT_LIMIT)
+      throw new AttachmentRefused(
+        `the link comment for ${file.filename} needs ${link.length} characters, over GitHub's limit of ${GITHUB_COMMENT_LIMIT}: shorten its title or subtitle`,
+      );
+    return link;
   }
   const noUpload = "GitHub Issues has no API to upload a file to an issue";
   const decoded = isTextType(file.contentType)
@@ -179,6 +191,11 @@ export function attachmentBody(file: AttachmentFile): string {
   if (text === null || text.includes("\u0000"))
     throw new AttachmentRefused(
       `${noUpload}, and ${file.filename} (${file.contentType}) is not text a comment can carry: pass the address of a copy already hosted as url to link it`,
+    );
+  // Refuse before building the comment: the text alone already overflows.
+  if (text.length > GITHUB_COMMENT_LIMIT)
+    throw new AttachmentRefused(
+      `${noUpload}, and ${file.filename} has ${text.length} characters, over GitHub's comment limit of ${GITHUB_COMMENT_LIMIT}: pass the address of a copy already hosted as url to link it`,
     );
   const body = carriedBody(file, text);
   if (body.length > GITHUB_COMMENT_LIMIT)
@@ -221,6 +238,10 @@ export function carriedBytes(body: string, marker: Marker): Uint8Array {
   if (bytes.byteLength !== marker.size)
     throw new GitHubApiError(
       `the comment carrying ${marker.filename} changed since it was attached (${bytes.byteLength} bytes, not ${marker.size})`,
+    );
+  if (marker.sha256 !== undefined && digestOf(bytes) !== marker.sha256)
+    throw new GitHubApiError(
+      `the comment carrying ${marker.filename} changed since it was attached (its content no longer matches the digest recorded with it)`,
     );
   return bytes;
 }

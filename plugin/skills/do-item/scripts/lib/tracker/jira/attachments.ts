@@ -10,6 +10,7 @@
 
 import { isRecord } from "../../../../../../shared/guards.ts";
 import {
+  AttachmentRefused,
   attachmentOf,
   type IssueAttachment,
   type TrackerAttachments,
@@ -65,10 +66,26 @@ export function jiraAttachments(transport: JiraTransport): TrackerAttachments {
         new Blob([file.bytes], { type: file.contentType }),
         file.filename,
       );
-      const answer = await transport(
-        { method: "POST", path: `${path(key)}/attachments`, form },
-        signal,
-      );
+      let answer: unknown;
+      try {
+        answer = await transport(
+          { method: "POST", path: `${path(key)}/attachments`, form },
+          signal,
+        );
+      } catch (error) {
+        // Jira answers 403 when the site has attachments disabled (or the
+        // account may not add one) and 413 for a file over its limit: the
+        // tracker cannot hold the file, which the callers' local-file
+        // fallback is for. Every other failure stays a failure.
+        if (
+          error instanceof JiraApiError &&
+          (error.status === 403 || error.status === 413)
+        )
+          throw new AttachmentRefused(
+            `Jira refused ${file.filename} for ${key} (HTTP ${error.status}): attachments are disabled, not allowed for this account or over the site's size limit`,
+          );
+        throw error;
+      }
       if (!Array.isArray(answer) || answer.length !== 1)
         throw new JiraApiError(
           `Jira answered the upload of ${file.filename} to ${key} with no single attachment`,

@@ -10,6 +10,7 @@
  * tracker can hold the file in none of those ways, `attachFile` throws
  * `AttachmentRefused` and writes nothing.
  */
+import { isRateLimited } from "../../../../../shared/tracker-budget.ts";
 
 /** A file to attach to an issue. */
 export interface AttachmentFile {
@@ -96,24 +97,31 @@ export interface AttachResult {
   /** Older attachments removed: the same file name or title as the new one. */
   removed: string[];
   /** Older attachments left in place, each with the reason. */
-  kept: Array<{ id: string; reason: string }>;
+  kept: Array<{ id: string; reason: string; failed?: true }>;
 }
 
 /** Whether an older attachment is one the new one replaces. */
 export function replacedBy(
   newer: IssueAttachment,
   older: IssueAttachment,
+  titlePrefix?: string,
 ): boolean {
   if (older.id === newer.id) return false;
   return (
     (newer.filename !== null && older.filename === newer.filename) ||
-    older.title === newer.title
+    older.title === newer.title ||
+    (titlePrefix !== undefined &&
+      titlePrefix !== "" &&
+      older.title.startsWith(titlePrefix))
   );
 }
 
 /**
  * Attach `file` to the issue, then, with `replace`, remove every older
- * attachment with the same file name or the same title. The new attachment
+ * attachment with the same file name or the same title, or whose title starts
+ * with `titlePrefix` (a sheet whose name carries a key that can change). Only
+ * attachments the issue listed before this call are removed, so two
+ * concurrent replacements never remove each other's new attachment. The new attachment
  * comes first, so a failed upload never leaves the issue without one; and an
  * older one is removed only once the issue lists the new one, so a new
  * attachment the tracker does not show yet never leaves it with none.
@@ -127,12 +135,18 @@ export async function attachReplacing(
   file: AttachmentFile,
   replace: boolean,
   signal?: AbortSignal,
+  titlePrefix?: string,
 ): Promise<AttachResult> {
+  const before = replace
+    ? new Set((await tracker.listAttachments(key, signal)).map((a) => a.id))
+    : new Set<string>();
   const attachment = await tracker.attachFile(key, file, signal);
   const result: AttachResult = { attachment, removed: [], kept: [] };
   if (!replace) return result;
   const listed = await tracker.listAttachments(key, signal);
-  const older = listed.filter((a) => replacedBy(attachment, a));
+  const older = listed.filter(
+    (a) => before.has(a.id) && replacedBy(attachment, a, titlePrefix),
+  );
   if (!listed.some((a) => a.id === attachment.id)) {
     result.kept = older.map((a) => ({
       id: a.id,
@@ -145,9 +159,13 @@ export async function attachReplacing(
       await tracker.removeAttachment(key, a.id, signal);
       result.removed.push(a.id);
     } catch (err) {
+      // A cancelled or rate-limited call is not a row to keep: let it stop
+      // the operation with its own exit code.
+      if (signal?.aborted === true || isRateLimited(err)) throw err;
       result.kept.push({
         id: a.id,
         reason: err instanceof Error ? err.message : String(err),
+        failed: true,
       });
     }
   }

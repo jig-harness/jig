@@ -43,6 +43,8 @@ export interface AttachRequest {
   path: string;
   size: number | null;
   replace: boolean;
+  /** With `replace`: also remove older attachments whose title starts with this. */
+  replaceTitlePrefix?: string | undefined;
 }
 
 function text(
@@ -78,6 +80,7 @@ export function parseAttachRequest(raw: string): AttachRequest {
     "subtitle",
     "url",
     "replace",
+    "replaceTitlePrefix",
   ];
   const unknown = Object.keys(o).filter((k) => !known.includes(k));
   if (unknown.length > 0)
@@ -92,12 +95,18 @@ export function parseAttachRequest(raw: string): AttachRequest {
     throw invalid("attach: 'size' must be a whole number of bytes");
   if (o.replace !== undefined && typeof o.replace !== "boolean")
     throw invalid("attach: 'replace' must be true or false");
+  const replaceTitlePrefix = text(
+    o.replaceTitlePrefix,
+    "replaceTitlePrefix",
+    false,
+  );
   const subtitle = text(o.subtitle, "subtitle", false);
   const url = text(o.url, "url", false);
   return {
     path,
     size: (o.size as number | undefined) ?? null,
     replace: o.replace === true,
+    replaceTitlePrefix,
     file: {
       filename: text(o.filename, "filename", false) ?? basename(path),
       contentType: text(o.contentType, "contentType", true) as string,
@@ -108,8 +117,14 @@ export function parseAttachRequest(raw: string): AttachRequest {
   };
 }
 
-const refusedExit = (out: unknown) =>
-  isRecord(out) && "refused" in out ? REFUSED_EXIT : 0;
+const refusedExit = (out: unknown) => {
+  if (!isRecord(out)) return 0;
+  if ("refused" in out) return REFUSED_EXIT;
+  // Older attachments the tracker would not remove: the new one is attached,
+  // and the replacement is not complete.
+  const kept = Array.isArray(out.kept) ? out.kept : [];
+  return kept.some((k) => isRecord(k) && k.failed === true) ? 1 : 0;
+};
 
 /** Run `work`, answering a refusal as `{ issue, refused }`. */
 async function refusable(
@@ -156,6 +171,8 @@ export const ATTACHMENT_OPERATIONS: Record<string, AttachmentOperation> = {
           key as string,
           { ...request.file, bytes },
           request.replace,
+          undefined,
+          request.replaceTitlePrefix,
         )),
       }));
     },

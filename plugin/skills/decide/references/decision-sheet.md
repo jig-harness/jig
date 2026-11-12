@@ -305,7 +305,10 @@ How the issue holds the sheet depends on the tracker, and `form` says which:
   text is carried in a collapsed block of a marked comment, which a reader
   saves as the file. Only a sheet whose comment fits GitHub's comment limit
   can go this way; the compact layout is often small enough when the
-  document layout is not.
+  document layout is not. The comment's "Download the file" sentence does not
+  fit this form: post it with that sentence replaced by one telling the
+  reader to save the text in the attachment's collapsed block as the file
+  and open that in a browser.
 - `link`: a tracker that cannot carry the file links a copy. Give the
   address of a copy already hosted as `url` in the summary's `attachment`
   fields before step 2. Where that copy is published is a person's decision:
@@ -333,7 +336,11 @@ the canonical outcome. Then make the sheet show the ruling:
    gives: download it from there. With no sheet to read, use the local
    source `.context/decide/<stem>/decision.json` if this workspace still
    has it.
-2. Recover its source and its layout. Create `.context/decide/<stem>/`
+2. Recover its source and its layout. With the local source only (no
+   `current.html`), skip the extraction: `decision.json` is already the
+   source. Read the layout from the sheet rendered beside it,
+   `.context/decide/<stem>/<stem>-decision-sheet.html`, with the `template`
+   command below, and go on to step 3. Otherwise create `.context/decide/<stem>/`
    with the file-writing tool first, then save the extracted source:
    `bun "<skill-dir>/../../shared/command.ts" --stdout-file .context/decide/<stem>/decision.json -- bun "<skill-dir>/scripts/decision-sheet/decision-sheet.ts" extract current.html`.
    Then read the layout of the posted sheet:

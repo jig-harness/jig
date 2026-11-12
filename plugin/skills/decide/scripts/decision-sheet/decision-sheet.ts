@@ -19,6 +19,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { sheetAttachmentTitle } from "./attachments.ts";
+import { SHEET_ATTACHMENT_TITLE_PREFIX } from "./labels.ts";
 import {
   adrDirectory,
   assertRepositoriesConfigured,
@@ -253,6 +254,7 @@ function main(argv: string[]): number {
               title: sheetAttachmentTitle(source.id),
               subtitle: `${decisionStatus(source)} · facts verified ${source.verifiedAt.date} @ ${source.verifiedAt.commit}`,
               replace: true,
+              replaceTitlePrefix: SHEET_ATTACHMENT_TITLE_PREFIX,
             },
           },
           null,

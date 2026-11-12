@@ -76,6 +76,17 @@ export interface LinearFiles {
   get(url: string, signal?: AbortSignal): Promise<Uint8Array>;
 }
 
+/** Whether `url` is an HTTPS address on Linear's own file host and its default port. */
+function isLinearUpload(url: string): boolean {
+  if (!URL.canParse(url)) return false;
+  const u = new URL(url);
+  return (
+    u.protocol === "https:" &&
+    u.hostname === LINEAR_UPLOAD_HOST &&
+    u.port === ""
+  );
+}
+
 function bounded(signal: AbortSignal | undefined): AbortSignal {
   const timeout = AbortSignal.timeout(LINEAR_TIMEOUT_MS);
   return signal === undefined ? timeout : AbortSignal.any([timeout, signal]);
@@ -88,10 +99,16 @@ export function linearFiles(
 ): LinearFiles {
   return {
     async put(url, headers, bytes, signal) {
+      if (!URL.canParse(url) || new URL(url).protocol !== "https:")
+        throw new LinearApiError(
+          `${url} is not an HTTPS upload address; the file is not sent to it`,
+          null,
+        );
       const res = await fetchImpl(url, {
         method: "PUT",
         headers,
         body: bytes,
+        redirect: "error",
         signal: bounded(signal),
       });
       if (!res.ok)
@@ -101,7 +118,7 @@ export function linearFiles(
         );
     },
     async get(url, signal) {
-      if (new URL(url).hostname !== LINEAR_UPLOAD_HOST)
+      if (!isLinearUpload(url))
         throw new LinearApiError(
           `${url} is not a file Linear stores; it is not sent the API key`,
           null,
@@ -145,19 +162,13 @@ export function attachmentOfNode(v: unknown, where: string): IssueAttachment {
   const n = record(v, where);
   const url = typeof n.url === "string" ? n.url : null;
   const meta = isRecord(n.metadata) ? n.metadata : {};
-  let host = "";
-  try {
-    host = url === null ? "" : new URL(url).hostname;
-  } catch {
-    // An address Linear keeps but `URL` cannot parse is a plain link.
-  }
   return {
     id: str(n.id, `${where}.id`),
     title: typeof n.title === "string" ? n.title : "",
     subtitle: typeof n.subtitle === "string" ? n.subtitle : null,
     filename: typeof meta.filename === "string" ? meta.filename : null,
     url,
-    form: host === LINEAR_UPLOAD_HOST ? "upload" : "link",
+    form: url !== null && isLinearUpload(url) ? "upload" : "link",
     createdAt: typeof n.createdAt === "string" ? n.createdAt : null,
   };
 }
@@ -222,31 +233,46 @@ export function linearAttachments(
         file.bytes,
         signal,
       );
-      const created = succeeded(
-        record(
-          await transport(
-            ATTACHMENT_CREATE_MUTATION,
-            {
-              input: {
-                issueId: id,
-                title: file.title,
-                ...(file.subtitle === undefined
-                  ? {}
-                  : { subtitle: file.subtitle }),
-                url: str(target.assetUrl, "fileUpload.uploadFile.assetUrl"),
-                metadata: {
-                  filename: file.filename,
-                  contentType: file.contentType,
-                  size: file.bytes.byteLength,
+      const assetUrl = str(target.assetUrl, "fileUpload.uploadFile.assetUrl");
+      let created: Record<string, unknown>;
+      try {
+        created = succeeded(
+          record(
+            await transport(
+              ATTACHMENT_CREATE_MUTATION,
+              {
+                input: {
+                  issueId: id,
+                  title: file.title,
+                  ...(file.subtitle === undefined
+                    ? {}
+                    : { subtitle: file.subtitle }),
+                  url: assetUrl,
+                  metadata: {
+                    filename: file.filename,
+                    contentType: file.contentType,
+                    size: file.bytes.byteLength,
+                  },
                 },
               },
-            },
-            signal,
-          ),
-          "data",
-        ).attachmentCreate,
-        `attaching ${file.filename} to ${key}`,
-      );
+              signal,
+            ),
+            "data",
+          ).attachmentCreate,
+          `attaching ${file.filename} to ${key}`,
+        );
+      } catch (error) {
+        // The bytes are already in Linear's store, and listing the issue's
+        // attachments cannot find them: name the address so the attach can
+        // be retried without another upload.
+        if (error instanceof LinearApiError)
+          throw new LinearApiError(
+            `${error.message} (the file is already uploaded at ${assetUrl}; attach that address instead of uploading it again)`,
+            error.status,
+            error.notFound,
+          );
+        throw error;
+      }
       return attachmentOfNode(
         created.attachment,
         "attachmentCreate.attachment",

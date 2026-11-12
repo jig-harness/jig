@@ -308,3 +308,57 @@ describe("listingFromAnswers", () => {
     }
   });
 });
+
+describe("answers checked against the parent's own listing", () => {
+  const parent = {
+    identifier: "ENG-1",
+    found: true,
+    labels: [],
+    children: [{ identifier: "ENG-2" }, { identifier: "ENG-3" }],
+  };
+  const done = (identifier: string) => ({
+    identifier,
+    state: { name: "Done", type: "completed" },
+    labels: [],
+  });
+
+  it("fails closed for a child the parent lists but the answers omit, or one it does not list", () => {
+    const base = { issue: "ENG-1", parent, complete: true };
+    expect(listingFromAnswers({ ...base, children: {} }).truncated).toBe(true);
+    expect(
+      listingFromAnswers({ ...base, children: { "ENG-2": done("ENG-2") } })
+        .truncated,
+    ).toBe(true);
+    expect(
+      listingFromAnswers({
+        ...base,
+        children: {
+          "ENG-2": done("ENG-2"),
+          "ENG-3": done("ENG-3"),
+          "ENG-4": done("ENG-4"),
+        },
+      }).truncated,
+    ).toBe(true);
+    expect(
+      listingFromAnswers({
+        ...base,
+        children: { "ENG-2": done("ENG-2"), "ENG-3": done("ENG-3") },
+      }).truncated,
+    ).toBeUndefined();
+  });
+
+  it("fails closed for a state field of the wrong type", () => {
+    const answers = {
+      issue: "ENG-1",
+      parent: { ...parent, children: [{ identifier: "ENG-2" }] },
+      complete: true,
+      children: {
+        "ENG-2": {
+          ...done("ENG-2"),
+          state: { name: "Done", type: 123 },
+        },
+      },
+    } as unknown as AnswersInput;
+    expect(listingFromAnswers(answers).truncated).toBe(true);
+  });
+});

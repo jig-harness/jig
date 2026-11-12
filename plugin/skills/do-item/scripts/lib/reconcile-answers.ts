@@ -10,7 +10,8 @@
  * - a child listing not read to its end (`complete` not `true`), a parent
  *   without a labels list (a missing `manual-ops` would read as absent), or a
  *   child whose answer is missing, is for another key, or has an unreadable
- *   state: the listing is truncated.
+ *   state: the listing is truncated. Where the parent's answer lists its
+ *   children, the answers must name exactly those keys.
  */
 
 import { isRecord } from "../../../../shared/guards.ts";
@@ -28,6 +29,8 @@ export interface IssueAnswer {
   identifier?: string;
   state?: { name?: string; type?: string };
   labels?: LabelLike[];
+  /** The parent's own children, as `get_issue.ts` prints them: the keys the listing must answer for. */
+  children?: Array<{ identifier?: string }>;
   nativeType?: string | null;
   /** A child's linked pull request, set by the caller (`linked-pr.ts`). */
   pullRequest?: LinkedPrState;
@@ -64,8 +67,11 @@ const TRUNCATED: ReconcileInput = {
 /** A state the reconciler can read: `get_issue.ts`'s unreadable marker, or no name and no category, is not. */
 function readableState(state: unknown): { name: string; type: string } | null {
   if (!isRecord(state)) return null;
-  const name = typeof state.name === "string" ? state.name : "";
-  const type = typeof state.type === "string" ? state.type : "";
+  // A field that is present with the wrong type is malformed, not absent.
+  if (state.name !== undefined && typeof state.name !== "string") return null;
+  if (state.type !== undefined && typeof state.type !== "string") return null;
+  const name = state.name ?? "";
+  const type = state.type ?? "";
   if (name.trim() === "" && type === "") return null;
   if (type === "unknown" && (name === "Unknown" || name.trim() === ""))
     return null;
@@ -112,6 +118,22 @@ export function listingFromAnswers(input: AnswersInput): ReconcileInput {
     return { found: false, parentLabels: [], children: [] };
   const parentLabels = labelsOf(parent.labels);
   if (!input.complete || parentLabels === null) return TRUNCATED;
+  // Answers for exactly the children the parent lists: an omitted child
+  // would read as done, and an extra one is another issue's.
+  if (Array.isArray(parent.children)) {
+    const expected = new Set(
+      parent.children.map((c) =>
+        isRecord(c) && typeof c.identifier === "string" ? c.identifier : null,
+      ),
+    );
+    const given = Object.keys(input.children);
+    if (
+      expected.has(null) ||
+      given.length !== expected.size ||
+      given.some((k) => !expected.has(k))
+    )
+      return TRUNCATED;
+  }
   const children = Object.entries(input.children).map(([key, answer]) =>
     childOf(key, answer),
   );

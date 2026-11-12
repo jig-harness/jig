@@ -19,6 +19,7 @@ import {
   attachReplacing,
   type IssueAttachment,
 } from "../scripts/lib/tracker/attachment.ts";
+import { LinearApiError } from "../scripts/lib/tracker/linear-transport.ts";
 import {
   type LinearFiles,
   linearFiles,
@@ -224,6 +225,43 @@ describe("Linear attachments", () => {
     );
     expect(asked).toEqual([]);
   });
+
+  it("sends the API key only over HTTPS on the default port, and never uploads to a plain-HTTP address", async () => {
+    const asked: string[] = [];
+    const files = linearFiles("lin_api_key", (async (url: string) => {
+      asked.push(String(url));
+      return new Response("x");
+    }) as typeof fetch);
+    for (const url of [
+      "http://uploads.linear.app/a",
+      "https://uploads.linear.app:8443/a",
+    ])
+      await expect(files.get(url)).rejects.toThrow("not a file Linear stores");
+    await expect(
+      files.put("http://storage.example/a", {}, new Uint8Array()),
+    ).rejects.toThrow("not an HTTPS upload address");
+    expect(asked).toEqual([]);
+  });
+
+  it("names the uploaded address when attaching it fails", async () => {
+    const { t } = linear((call) => {
+      if (call.op === "TrackerIssueId")
+        return { issue: { id: "I_1", team: { id: "team-1", key: "ENG" } } };
+      if (call.op === "TrackerFileUpload")
+        return {
+          fileUpload: {
+            success: true,
+            uploadFile: {
+              uploadUrl: "https://storage.example/u",
+              assetUrl: ASSET,
+              headers: [],
+            },
+          },
+        };
+      return new LinearApiError("boom", 500);
+    });
+    await expect(t.attachFile?.("ENG-1", sheet())).rejects.toThrow(ASSET);
+  });
 });
 
 // ── GitHub Issues ──────────────────────────────────────────────────────────
@@ -337,6 +375,36 @@ describe("GitHub Issues attachments", () => {
     await expect(t.readAttachment("#5", a.id)).rejects.toThrow(
       "changed since it was attached",
     );
+  });
+
+  it("reads a same-length edit of a carried file as changed", async () => {
+    const comments: Array<Record<string, unknown>> = [];
+    const { t } = gitHubIssue(comments);
+    const a = await t.attachFile("#5", sheet({ bytes: bytesOf("safe") }));
+    comments[0] = {
+      ...comments[0],
+      body: String(comments[0]?.body).replace("\nsafe\n", "\nevil\n"),
+    };
+    await expect(t.readAttachment("#5", a.id)).rejects.toThrow(
+      "changed since it was attached",
+    );
+  });
+
+  it("refuses a link comment over the limit, and a text of a million backticks without a RangeError", async () => {
+    const { t, calls } = gitHubIssue();
+    await expect(
+      t.attachFile(
+        "#5",
+        sheet({
+          url: "https://files.example/a.html",
+          title: "t".repeat(GITHUB_COMMENT_LIMIT),
+        }),
+      ),
+    ).rejects.toBeInstanceOf(AttachmentRefused);
+    await expect(
+      t.attachFile("#5", sheet({ bytes: bytesOf("`x".repeat(1_000_000)) })),
+    ).rejects.toBeInstanceOf(AttachmentRefused);
+    expect(writes(calls)).toEqual([]);
   });
 });
 
@@ -477,7 +545,7 @@ describe("attachReplacing", () => {
     expect(f.removed).toEqual(["old-title", "old-file"]);
     expect(result.removed).toEqual(["old-title", "old-file"]);
     expect(result.kept).toEqual([
-      { id: "stuck", reason: "cannot remove stuck" },
+      { id: "stuck", reason: "cannot remove stuck", failed: true },
     ]);
   });
 
@@ -491,6 +559,53 @@ describe("attachReplacing", () => {
     const result = await attachReplacing(f.tracker, "ENG-1", sheet(), true);
     expect(f.removed).toEqual([]);
     expect(result.kept.map((k) => k.id)).toEqual(["old"]);
+  });
+
+  it("removes only what the issue listed before this call, so concurrent replacements keep one", async () => {
+    const after = listed(
+      { id: "new", title: "Decision sheet: ENG-1" },
+      { id: "old", title: "Decision sheet: ENG-1" },
+      { id: "rival", title: "Decision sheet: ENG-1" },
+    );
+    const f = fakeTracker(after);
+    const first = [after[1]] as IssueAttachment[];
+    let reads = 0;
+    f.tracker.listAttachments = async () => (reads++ === 0 ? first : after);
+    await attachReplacing(f.tracker, "ENG-1", sheet(), true);
+    expect(f.removed).toEqual(["old"]);
+  });
+
+  it("replaces a sheet whose title names another key when told the title prefix", async () => {
+    const after = listed(
+      { id: "new", title: "Decision sheet: ENG-9" },
+      { id: "old", title: "Decision sheet: ENG-1", filename: "old.html" },
+    );
+    const f = fakeTracker(after);
+    await attachReplacing(
+      f.tracker,
+      "ENG-9",
+      sheet(),
+      true,
+      undefined,
+      "Decision sheet: ",
+    );
+    expect(f.removed).toEqual(["old"]);
+  });
+
+  it("stops on a cancelled removal rather than keeping it as a row", async () => {
+    const after = listed(
+      { id: "new", title: "Decision sheet: ENG-1" },
+      { id: "old", title: "Decision sheet: ENG-1" },
+    );
+    const f = fakeTracker(after);
+    const ctl = new AbortController();
+    f.tracker.removeAttachment = async () => {
+      ctl.abort();
+      throw new Error("aborted");
+    };
+    await expect(
+      attachReplacing(f.tracker, "ENG-1", sheet(), true, ctl.signal),
+    ).rejects.toThrow("aborted");
   });
 });
 
