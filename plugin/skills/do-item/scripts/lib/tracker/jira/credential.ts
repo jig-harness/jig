@@ -85,10 +85,10 @@ export function resolveJiraCredential(
 /** A header and what to do when the site refuses it with a 401. */
 export interface JiraLease {
   header: Outcome<string, CredentialCode>;
-  /** Record that the header used by this lease was accepted. */
-  accepted: () => void;
   /** Remember that Jira refused the replacement token too. */
   refuseRenewal: () => void;
+  /** Record that the request which tried a replacement has finished. */
+  settleRenewal: () => void;
   /**
    * A fresh header after the site refused this lease's with a 401, to send
    * the request again once; `null` when this credential cannot be renewed.
@@ -173,12 +173,12 @@ export function jiraAuthorization(
       : `Basic ${Buffer.from(`${credential.email}:${credential.token}`).toString("base64")}`;
   const lease: JiraLease = {
     header: ok(value),
-    accepted: () => {
-      // A fixed credential does not track renewal generations.
-    },
     renew: async () => null,
     refuseRenewal: () => {
       // A fixed credential has no renewal to refuse.
+    },
+    settleRenewal: () => {
+      // A fixed credential has no renewal to settle.
     },
   };
   return { lease: async () => lease, header: async () => lease.header };
@@ -275,7 +275,7 @@ function commandAuthorization(
     failed: boolean;
     refused: boolean;
     replacement: boolean;
-    accepted: boolean;
+    verifying: boolean;
   }
   const program = programOf(argv);
   let generation = 0;
@@ -295,7 +295,7 @@ function commandAuthorization(
       failed: false,
       refused: false,
       replacement,
-      accepted: false,
+      verifying: false,
     };
     current = run;
     void run.header.then((h) => {
@@ -310,11 +310,11 @@ function commandAuthorization(
     let renewed: Run | null = null;
     return {
       header: await until(run.header, signal, program),
-      accepted: () => {
-        (renewed ?? run).accepted = true;
-      },
       refuseRenewal: () => {
         if (renewed !== null) renewed.refused = true;
+      },
+      settleRenewal: () => {
+        if (renewed !== null) renewed.verifying = false;
       },
       renew: (renewSignal) => {
         // A later generation already replaced the one this lease holds.
@@ -323,7 +323,7 @@ function commandAuthorization(
           return until(current.header, renewSignal, program);
         }
         // A replacement refused in turn stays refused for this process.
-        if (run.refused || (run.replacement && !run.accepted)) {
+        if (run.refused || (run.replacement && run.verifying)) {
           run.refused = true;
           return Promise.resolve(null);
         }
@@ -331,6 +331,7 @@ function commandAuthorization(
         if (renewSignal?.aborted)
           return Promise.resolve(stopped(renewSignal, program));
         renewed = start(true);
+        renewed.verifying = true;
         return until(renewed.header, renewSignal, program);
       },
     };

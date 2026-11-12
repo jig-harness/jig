@@ -313,6 +313,34 @@ describe("JIRA_TOKEN_COMMAND", () => {
     }
   });
 
+  it("renews an unverified replacement after its first request is cancelled", async () => {
+    const { runs, runner } = printing("old", "replacement", "fresh");
+    let replacementCalls = 0;
+    const impl = (async (_url: unknown, init?: RequestInit) => {
+      const authorization = authorizationOf(init);
+      if (authorization === "Bearer old")
+        return new Response("", { status: 401 });
+      if (authorization === "Bearer replacement" && ++replacementCalls === 1)
+        return new Promise<Response>((_resolve, reject) =>
+          init?.signal?.addEventListener(
+            "abort",
+            () => reject(init.signal?.reason),
+            {
+              once: true,
+            },
+          ),
+        );
+      return new Response("{}", {
+        status: authorization === "Bearer replacement" ? 401 : 200,
+      });
+    }) as typeof fetch;
+    const t = httpTransport(GATEWAY, command(runner), impl);
+    const cancelled = await failure(t(request, AbortSignal.timeout(20)));
+    expect(cancelled.message).toContain("Jira request cancelled:");
+    await t(request);
+    expect(runs.length).toBe(3);
+  });
+
   it("can renew a replacement that Jira previously accepted", async () => {
     const { runs, runner } = printing("old", "accepted", "fresh");
     const { impl } = statuses(401, 200, 401, 200);

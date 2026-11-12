@@ -18,16 +18,14 @@ const ANSWER_MS = 30_000;
 /** `ask`'s answer, or a refusal once it has given none within the time allowed. */
 async function within<T>(ask: (signal: AbortSignal) => Promise<T>): Promise<T> {
   const deadline = new AbortController();
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => {
-      reject(new Error(`no answer within ${ANSWER_MS / 1000} seconds`));
-      deadline.abort();
-    }, ANSWER_MS);
-    timer.unref();
-  });
+  const timer = setTimeout(
+    () =>
+      deadline.abort(new Error(`no answer within ${ANSWER_MS / 1000} seconds`)),
+    ANSWER_MS,
+  );
+  timer.unref();
   try {
-    return await Promise.race([ask(deadline.signal), timeout]);
+    return await ask(deadline.signal);
   } finally {
     clearTimeout(timer);
   }

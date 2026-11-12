@@ -335,29 +335,24 @@ function leasedSender(
     if (res.status === 401) {
       const renewed = await lease.renew(bound);
       if (renewed !== null) {
-        await bodyText(res, bound, what);
-        header = headerOf(renewed, bound);
-        key = keyOf(header);
-        budget.governor?.admit("jira", key);
-        res = await send(
-          fetchImpl,
-          url,
-          requestInit(request, header, bound),
-          bound,
-          what,
-        );
-        if (res.status === 401) lease.refuseRenewal();
+        try {
+          await bodyText(res, bound, what);
+          header = headerOf(renewed, bound);
+          key = keyOf(header);
+          budget.governor?.admit("jira", key);
+          res = await send(
+            fetchImpl,
+            url,
+            requestInit(request, header, bound),
+            bound,
+            what,
+          );
+          if (res.status === 401) lease.refuseRenewal();
+        } finally {
+          lease.settleRenewal();
+        }
       }
     }
-    // A request-specific refusal (such as a missing issue) still answered
-    // the credential; authentication failures and temporary limits do not.
-    if (
-      res.ok ||
-      (res.status >= 400 &&
-        res.status < 500 &&
-        ![401, 403, 429].includes(res.status))
-    )
-      lease.accepted();
     const refused = observeLimit(res, key, what, budget);
     if (refused !== null) {
       void discardBody(res, bound);
