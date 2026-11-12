@@ -3,8 +3,9 @@
  * spec resolver needs it: which lines are code, which are headings, and the
  * headings of the sections it reads.
  *
- * Code is never read as content: an example of a spec section or a path
- * inside a fence or an indented code block is an example, not the spec. A
+ * Code is never read as requirements or references: an example of a spec section or a path
+ * inside a fence or an indented code block is an example, not the spec.
+ * Verification uses the code classification to read proposed command lines. A
  * fence closes only on a run of its own character at least as long as the
  * one that opened it, so a three-backtick line inside a four-backtick
  * example stays inside it. A line indented four columns or more after a
@@ -47,7 +48,7 @@ import type { BodySectionKind } from "./adapter.ts";
 
 /** The headings the resolver reads beside the configured spec heading. */
 export const INLINE_HEADINGS: Record<
-  Exclude<BodySectionKind, "spec">,
+  Exclude<BodySectionKind, "spec" | "verification">,
   string
 > = {
   requirements: "Requirements",
@@ -82,10 +83,14 @@ export function trimEndOf(text: string, chars: string): string {
  */
 export interface MarkdownLine {
   line: string;
+  /** The original line before tab expansion, for readers that preserve command text. */
+  raw?: string;
   kind: "text" | "heading" | "code" | "fence";
   inItem?: true;
   boundary?: true;
   depth?: number;
+  /** Content column after every list marker this line opens. */
+  contentColumn?: number;
   quoted?: true;
 }
 
@@ -435,10 +440,13 @@ export function* markdownLines(text: string): Generator<MarkdownLine> {
     state.boundary = false;
     state.depth = null;
     const kind = classify(line, state);
-    const out: MarkdownLine = { line, kind };
+    const out: MarkdownLine = { line, raw, kind };
     if (kind === "heading" && state.headingInItem) out.inItem = true;
     if (state.boundary) out.boundary = true;
-    if (state.depth !== null) out.depth = state.depth;
+    if (state.depth !== null) {
+      out.depth = state.depth;
+      out.contentColumn = state.lists.at(-1) ?? 0;
+    }
     if (state.quote !== null) out.quoted = true;
     yield out;
   }

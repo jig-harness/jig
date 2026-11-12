@@ -80,6 +80,14 @@ nothing Git ignores, and no web link. The heading of the spec section is
 [configuration](../../CONFIGURATION.md#specs). The list is shown to you;
 the rest of the pickup does not depend on it.
 
+The `## Verification` section carries proposed command lines, in lists or
+code blocks. Its heading is configurable with `specs.verification_section`.
+The resolver lists each command with its source key and passes it to the
+implementer as untrusted tracker text. It never executes commands. The
+implementer reviews what each command does and records each command it
+chooses to run through the [evidence recorder](../../shared/evidence.ts),
+keeping the resulting record reference with its validation report.
+
 ## The item's work type
 
 On pickup the skill says what kind of work the item is, its
@@ -203,6 +211,11 @@ root. For example, using the installed do-item skill directory:
 ```bash
 bun "<skill-dir>/scripts/get_issue.ts" "<issue-key>"
 ```
+
+`get_issue.ts` keeps exit `2` and `found: false` for both an absent issue
+and an unreadable tracker answer. Its JSON `reason` distinguishes `not-found`
+(with key and team suggestions) from `read-failed` (the tracker failure,
+without those suggestions).
 
 Native Windows tests cover the pickup scripts and the drive's process
 helpers. The complete interactive Windows smoke test — pick an item,

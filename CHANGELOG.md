@@ -394,6 +394,61 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.222.1] - 2026-11-12
+
+### Fixed
+
+- The Jira audit reach check verifies the credential before checking the project, so refused credentials report credential guidance and token commands can refresh a stale token.
+- Jira token commands that exceed the request deadline report an unavailable broker with the variable name. Once Jira refuses a replacement token, the process stops renewing the command on later requests; a cancelled replacement request remains retryable. Audit tracker checks preserve the command-specific timeout guidance.
+- `get_issue.ts` reports refused or unreachable tracker reads as unreadable, without key or team suggestions. Its JSON distinguishes `read-failed` from `not-found`, while both keep exit 2 and `found: false` for existing callers.
+
+## [0.222.0] - 2026-11-12
+
+### Added
+
+- `do-item` resolves proposed commands from a `Verification` section, including code blocks, with a configurable `specs.verification_section` heading. The implementer reviews each command before running it and records selected commands as evidence.
+
+## [0.221.2] - 2026-11-12
+
+A Linear served queue no longer spends the tracker's whole hourly request budget on one read.
+
+### Fixed
+
+- The batch read of issues by key and the change probe asked Linear for `{ team, number }` groups inside an `or`, and Linear answers that by matching the team's every issue. Each batch then paged through the whole team (about 200 requests for a team of 10,000 issues) and the probe never found "nothing changed", so a tick after each reset spent the dispatcher's share, and the tracker stayed walled until the next reset. Each group is now `and: [team, number]`: a lookup of up to 50 keys is one request when Linear returns them all (a key it does not return, or one that is not a key of the team, is read on its own), and an unchanged queue costs one probe request.
+- A batch read that pages past the pages its keys can fill now stops with an error instead of reading on, so a filter Linear stops honouring cannot walk a team again.
+
+## [0.221.1] - 2026-11-12
+
+### Fixed
+
+- A repository that `jig dispatch` rarely wakes no longer keeps asking a
+  person about failing ticks long after their cause is gone. A tick that
+  read the repository and exited 0 now quiets that repository's wake-up row
+  in the failure ledger: the row keeps its count, but nothing notifies it
+  or lists it as escalated until a wake-up of that repository fails again,
+  which counts on from where it stopped.
+
+## [0.221.0] - 2026-11-12
+
+### Added
+
+- The workspace launcher supports GitHub Issues beside Linear, including issue numbers, keys and web addresses, with repository routing and separate context caches for each GitHub repository.
+
+### Fixed
+
+- Launcher cache files and Herdr kickoff claims use `issue-123` for a GitHub key such as `#123`, while preserving team keys.
+- The Jira adapter's error when no credential is set says that
+  `JIRA_BEARER_TOKEN`, and the token `JIRA_TOKEN_COMMAND` prints, may be an
+  OAuth access token or an API token with scopes, as the configuration
+  reference says. It said an OAuth access token only, so someone holding a
+  scoped API token read it as the wrong kind of credential.
+- When Jira refuses the adapter's read of the account it acts as, or says a
+  token's scope does not match, the error now names the scopes a scoped or
+  OAuth token needs for that read: the classic `read:jira-user`, or all of
+  the granular `read:application-role:jira`, `read:group:jira`,
+  `read:user:jira` and `read:avatar:jira`. Before, it said only to check the
+  credential.
+
 ## [0.220.0] - 2026-11-12
 
 ### Added
@@ -7612,7 +7667,12 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.220.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.222.1...HEAD
+[0.222.1]: https://github.com/jig-harness/jig/compare/v0.222.0...v0.222.1
+[0.222.0]: https://github.com/jig-harness/jig/compare/v0.221.2...v0.222.0
+[0.221.2]: https://github.com/jig-harness/jig/compare/v0.221.1...v0.221.2
+[0.221.1]: https://github.com/jig-harness/jig/compare/v0.221.0...v0.221.1
+[0.221.0]: https://github.com/jig-harness/jig/compare/v0.220.0...v0.221.0
 [0.220.0]: https://github.com/jig-harness/jig/compare/v0.219.0...v0.220.0
 [0.219.0]: https://github.com/jig-harness/jig/compare/v0.218.1...v0.219.0
 [0.218.1]: https://github.com/jig-harness/jig/compare/v0.218.0...v0.218.1

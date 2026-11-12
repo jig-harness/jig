@@ -53,6 +53,19 @@ Orca is its first session runtime
 ([ADR-0011](docs/adr/ADR-0011-the-dispatcher-targets-orca-first.md)),
 with others through the same interface.
 
+### 50. What the line hands a person: each class of need settled at its source
+
+Most waits the dispatcher hands a person are not decisions. A flaky check
+spends the drive's repair passes. A session ends without recording what it
+did. Finished work sits in a pull request nobody linked to its item. One
+host fault arrives once for every repository it touches. Each kind of wait
+gets one place where it is settled. A mechanism stops most of them before
+they start. The dispatcher settles the mechanical rest by fixed rules, and
+the [steward](GLOSSARY.md) settles what needs reading, where a host allows
+it. What reaches a person arrives as a decision with options, answered in a
+word. A host fault arrives once, saying what to fix. Decisions that are a
+person's stay a person's.
+
 ### 36. The dispatch board: what is driven and what is ready to merge
 
 The dispatch dashboard leads with a Ready to merge list of the converged
@@ -268,8 +281,7 @@ change.
 
 A plan file kept in the repository, beside Linear, GitHub Issues and
 Jira. The [tracker interface](GLOSSARY.md) first gains attaching a file,
-the one operation the skills need that the interface does not have yet, and
-the workspace launcher learns to open GitHub issues.
+the one operation the skills need that the interface does not have yet.
 
 ### 27. Work types: depth by kind of work
 

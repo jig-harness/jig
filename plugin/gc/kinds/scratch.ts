@@ -50,6 +50,69 @@ function ownerRootsOf(proof: Proof): string[] {
     ? ownerRoots
     : [];
 }
+async function proveRegisteredFixtureScratch(
+  root: string,
+  registryRoot: string | undefined,
+  idleDays: number,
+  memberships: Map<string, FixtureScope[]>,
+): Promise<Proof> {
+  const legacy = await legacyScratchProof(root, idleDays);
+  const veto = legacyFixtureVeto(legacy);
+  if (veto) return veto;
+  const registered = fixtureScopeInventory(registryRoot);
+  if (!registered.ok)
+    return {
+      state: "unverified",
+      reason: recordFixtureFailure(registered.failure),
+    };
+  const scopes = registered.value.filter((scope) =>
+    withinFixtureRoot(root, scope),
+  );
+  if (!scopes.some((scope) => scope.root === root))
+    return {
+      state: "unverified",
+      reason: "fixture scope registration disappeared",
+    };
+  const ownerRoots = legacy ? ownerRootsOf(legacy) : [];
+  if (
+    !ownerRoots.every((ownerRoot) =>
+      scopes.some((scope) => scope.root === ownerRoot),
+    )
+  )
+    return {
+      state: "unverified",
+      reason: "legacy owner scope lacks a durable fixture registration",
+    };
+  memberships.set(root, scopes);
+  return fixtureScratchProof(root, scopes, idleDays);
+}
+async function legacyScratchProof(
+  root: string,
+  idleDays: number,
+): Promise<Proof | null> {
+  if (!lstatSync(root, { throwIfNoEntry: false })) return null;
+  try {
+    const legacy = scratchProof(root, await processTable(), idleDays);
+    return legacy.ok
+      ? legacy.value
+      : { state: "unverified", reason: legacy.failure.reason };
+  } catch (error) {
+    return {
+      state: "unverified",
+      reason: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+function legacyFixtureVeto(legacy: Proof | null): Proof | null {
+  if (
+    legacy === null ||
+    legacy.state === "dead" ||
+    (legacy.state === "finding" &&
+      legacy.reason === "scratch scope has no owner record")
+  )
+    return null;
+  return legacy;
+}
 /**
  * Walk without following links; a scope is live when ANY nested owner lives.
  * A walk past its deadline fails `timed-out`, and an owner record that is no
@@ -222,54 +285,12 @@ export function scratchKind(
         // ownership vetoes below it. A recreated registered root may omit its
         // legacy owner file, but a live, unreadable, or malformed nested
         // legacy owner still prevents recursive removal.
-        let legacy: Outcome<Proof, "timed-out" | "unreadable-owner"> | null =
-          null;
-        try {
-          if (lstatSync(resource.id, { throwIfNoEntry: false }))
-            legacy = scratchProof(resource.id, await processTable(), idleDays);
-        } catch (error) {
-          return {
-            state: "unverified",
-            reason: error instanceof Error ? error.message : String(error),
-          };
-        }
-        if (legacy && !legacy.ok)
-          return { state: "unverified", reason: legacy.failure.reason };
-        if (
-          legacy &&
-          legacy.value.state !== "dead" &&
-          !(
-            legacy.value.state === "finding" &&
-            legacy.value.reason === "scratch scope has no owner record"
-          )
-        )
-          return legacy.value;
-        const registered = fixtureScopeInventory(registryRoot);
-        if (!registered.ok)
-          return {
-            state: "unverified",
-            reason: recordFixtureFailure(registered.failure),
-          };
-        const scopes = registered.value.filter((scope) =>
-          withinFixtureRoot(resource.id, scope),
+        return proveRegisteredFixtureScratch(
+          resource.id,
+          registryRoot,
+          idleDays,
+          memberships,
         );
-        if (!scopes.some((scope) => scope.root === resource.id))
-          return {
-            state: "unverified",
-            reason: "fixture scope registration disappeared",
-          };
-        const ownerRoots = legacy?.ok ? ownerRootsOf(legacy.value) : [];
-        if (
-          !ownerRoots.every((ownerRoot) =>
-            scopes.some((scope) => scope.root === ownerRoot),
-          )
-        )
-          return {
-            state: "unverified",
-            reason: "legacy owner scope lacks a durable fixture registration",
-          };
-        memberships.set(resource.id, scopes);
-        return fixtureScratchProof(resource.id, scopes, idleDays);
       }
       const proof = scratchProof(resource.id, await processTable(), idleDays);
       return proof.ok
