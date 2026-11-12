@@ -29,6 +29,7 @@ import type { Outcome } from "../../../../../../shared/outcome.ts";
 import {
   type CredentialCode,
   type JiraAuthorization,
+  type JiraCredential,
   jiraAuthorization,
   resolveJiraCredential,
 } from "./credential.ts";
@@ -288,7 +289,11 @@ export function httpTransport(
   authorization: JiraAuthorization,
   fetchImpl: typeof fetch = fetch,
   governor?: BudgetGovernor,
+  firstRefusal?: string,
 ): JiraTransport {
+  // Until one request succeeds, a 403 carries `firstRefusal`: a credential
+  // the host does not take is refused on the first request.
+  let answered = false;
   const keyOf = (header: string) => credentialKey("jira", `${base} ${header}`);
   return async (request, signal) => {
     if (cancelled(signal)) throw abortedError(signal);
@@ -335,7 +340,18 @@ export function httpTransport(
       governor.observe(key, { limitedUntil: until, why });
       throw new TrackerRateLimited("jira", until, why);
     }
-    if (!res.ok) throw httpFailure(res.status, res.headers, text, what);
+    if (!res.ok) {
+      const failure = httpFailure(res.status, res.headers, text, what);
+      if (res.status !== 403 || answered || firstRefusal === undefined)
+        throw failure;
+      throw new JiraApiError(`${failure.message} (${firstRefusal})`, {
+        status: failure.status,
+        retryAfterSec: failure.retryAfterSec,
+        errorMessages: failure.errorMessages,
+        errors: failure.errors,
+      });
+    }
+    answered = true;
     return answerBody(text, res.status, what);
   };
 }
@@ -348,20 +364,49 @@ export function httpTransport(
 export function defaultTransport(
   base: string,
   env: Record<string, string | undefined> = process.env,
+  fetchImpl: typeof fetch = fetch,
 ): JiraTransport {
   const credential = resolveJiraCredential(env);
-  if (!credential.ok) {
-    const { reason } = credential.failure;
+  const refusal = credential.ok
+    ? bearerOnSite(credential.value, base)
+    : credential.failure.reason;
+  if (!credential.ok || refusal !== null) {
     return async () => {
-      throw new JiraApiError(reason, { unavailable: true });
+      throw new JiraApiError(refusal ?? "", { unavailable: true });
     };
   }
+  const variable = bearerVariable(credential.value);
   return httpTransport(
     base,
     jiraAuthorization(credential.value),
-    fetch,
+    fetchImpl,
     defaultGovernor(),
+    variable === null || new URL(base).hostname === "api.atlassian.com"
+      ? undefined
+      : `the Bearer token from ${variable} was refused by ${new URL(base).hostname}; check that this host accepts a Bearer token at its own address`,
   );
+}
+
+/** The variable that supplies a Bearer token, `null` for any other credential. */
+function bearerVariable(credential: JiraCredential): string | null {
+  if (credential.kind === "bearer") return "JIRA_BEARER_TOKEN";
+  if (credential.kind === "command") return "JIRA_TOKEN_COMMAND";
+  return null;
+}
+
+/**
+ * Why a Bearer credential cannot go to `base`, `null` when it can. An
+ * Atlassian Cloud site answers a Bearer token with a 403 that names no
+ * cause: those tokens belong to the API gateway (`issue_tracker.jira.api_base`).
+ * A site another host serves, allowed through `JIRA_ALLOWED_HOSTS`, may take
+ * a personal access token at its own address and is left alone.
+ */
+function bearerOnSite(credential: JiraCredential, base: string): string | null {
+  const variable = bearerVariable(credential);
+  if (variable === null) return null;
+  if (!new URL(base).hostname.toLowerCase().endsWith(".atlassian.net"))
+    return null;
+  return `${variable} gives a Bearer token, which Atlassian Cloud accepts only through its API gateway, not at ${new URL(base).hostname}: set issue_tracker.jira.api_base to https://api.atlassian.com/ex/jira/<cloud id>`;
 }
 
 // ── Pagers ─────────────────────────────────────────────────────────────────
