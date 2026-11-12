@@ -13,10 +13,12 @@
  * `Done` status with the resolutions Done, Won't Do and Duplicate is the
  * common Jira shape, so when the status name does not tell `done`,
  * `canceled` and `duplicate` apart, the resolution
- * (`issue_tracker.jira.resolutions`) does; with neither, it is `done`.
+ * (`issue_tracker.jira.resolutions`, any of a state's names) does; with
+ * neither, it is `done`.
  *
  * Priority is the issue's priority name, numbered by
- * `issue_tracker.jira.priorities`; any other name reads as 0 (none).
+ * `issue_tracker.jira.priorities`, any of a priority's names; any other name
+ * reads as 0 (none). A priority or a resolution is written as its first name.
  */
 
 import type {
@@ -72,6 +74,10 @@ const CATEGORY_TYPES: Record<string, string> = {
 const same = (a: string, b: string) =>
   a.trim().toLowerCase() === b.trim().toLowerCase();
 
+/** Whether `name` is one of `names`, ignoring case. */
+const listed = (names: ReadonlyArray<string>, name: string) =>
+  names.some((n) => same(n, name));
+
 /** The categories an open state's type belongs to. */
 const OPEN_CATEGORY: Record<string, string> = {
   triage: "new",
@@ -115,8 +121,9 @@ export function jiraModel(
     if (named.length === 1) return named[0] as ResolvedState;
     const resolution = issue.resolution;
     if (resolution !== null) {
-      if (same(settings.resolutions.canceled, resolution)) return "canceled";
-      if (same(settings.resolutions.duplicate, resolution)) return "duplicate";
+      if (listed(settings.resolutions.canceled, resolution)) return "canceled";
+      if (listed(settings.resolutions.duplicate, resolution))
+        return "duplicate";
     }
     return "done";
   }
@@ -197,16 +204,16 @@ export function jiraModel(
     priorityOf(name) {
       if (name === null) return 0;
       const i = PRIORITY_NAMES.findIndex((p) =>
-        same(settings.priorities[p], name),
+        listed(settings.priorities[p], name),
       );
       return i < 0 ? 0 : i + 1;
     },
     priorityName: (priority) =>
       priority < 1 || priority > 4
         ? null
-        : settings.priorities[
+        : (settings.priorities[
             PRIORITY_NAMES[priority - 1] as (typeof PRIORITY_NAMES)[number]
-          ],
-    resolutionOf: (s) => settings.resolutions[s],
+          ][0] as string),
+    resolutionOf: (s) => settings.resolutions[s][0] as string,
   };
 }

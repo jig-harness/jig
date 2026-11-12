@@ -7,13 +7,18 @@
  *     states_from: labels      # or `project`, a board's Status field
  *     project: https://github.com/orgs/owner/projects/1
  *     status_field: Status
- *     priority_labels: { urgent: …, high: …, medium: …, low: … }
+ *     priority_labels: { urgent: …, high: …, medium: …, low: … }   # each a label or a list, the first written
  */
 
 import { isRecord } from "../../../../../../shared/guards.ts";
 import { TrackerConfigError } from "../config-error.ts";
 import { PRIORITY_NAMES, type PriorityName } from "../facets/values.ts";
-import { firstRepeat, nonEmpty, settingsSection } from "../settings-fields.ts";
+import {
+  nameList,
+  nonEmpty,
+  refuseSharedNames,
+  settingsSection,
+} from "../settings-fields.ts";
 
 export { PRIORITY_NAMES, type PriorityName };
 
@@ -41,8 +46,8 @@ export interface GitHubSettings {
   project: GitHubProject | null;
   /** The board's single-select field that holds the state. */
   statusField: string;
-  /** The label that carries each priority. */
-  priorityLabels: Record<PriorityName, string>;
+  /** The labels that carry each priority: every one is read as it, the first is written. */
+  priorityLabels: Record<PriorityName, string[]>;
   /** `priority_labels` is set, so the repository keeps priority in labels. */
   priorityLabelsDeclared: boolean;
 }
@@ -106,11 +111,11 @@ function projectOf(v: unknown): GitHubProject | null {
   };
 }
 
-/** The configured priority labels over the defaults; each must differ. */
-function priorityLabelsOf(v: unknown): Record<PriorityName, string> {
+/** The configured priority labels over the defaults; every label must differ. */
+function priorityLabelsOf(v: unknown): Record<PriorityName, string[]> {
   const labels = Object.fromEntries(
-    PRIORITY_NAMES.map((p) => [p, defaultPriorityLabel(p)]),
-  ) as Record<PriorityName, string>;
+    PRIORITY_NAMES.map((p) => [p, [defaultPriorityLabel(p)]]),
+  ) as Record<PriorityName, string[]>;
   if (v !== undefined && v !== null && !isRecord(v))
     throw new TrackerConfigError(
       field("priority_labels"),
@@ -123,15 +128,14 @@ function priorityLabelsOf(v: unknown): Record<PriorityName, string> {
         at,
         `${at} is not a priority (${PRIORITY_NAMES.join(", ")})`,
       );
-    labels[key as PriorityName] = nonEmpty(name, at);
+    labels[key as PriorityName] = nameList(name, at, "label");
   }
-  const names = PRIORITY_NAMES.map((p) => labels[p]);
-  const twice = firstRepeat(names);
-  if (twice !== undefined)
-    throw new TrackerConfigError(
-      field("priority_labels"),
-      `${field("priority_labels")} names '${twice}' twice; each priority needs its own label`,
-    );
+  refuseSharedNames(
+    field("priority_labels"),
+    PRIORITY_NAMES.map((p) => [p, labels[p]] as const),
+    "label",
+    new Set(Object.keys(v ?? {})),
+  );
   return labels;
 }
 
