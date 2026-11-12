@@ -15,6 +15,7 @@ import {
   identityOf,
   reapOwnedIdentities,
 } from "../../../lib/test-reap-children.ts";
+import { writeScratchOwner } from "../../shared/scratch-owner.ts";
 import { scratchKind } from "../kinds/scratch.ts";
 import { runCollection } from "../runner.ts";
 
@@ -75,18 +76,25 @@ async function collect(
   });
 }
 
-test("report preserves a registered orphan, then collection reaps it before removing scratch", async () => {
-  const f = setup();
-  // Replace the helper's childless registration with this runner's tree.
-  rmSync(f.store, { recursive: true });
-  const ready = join(f.base, "orphan-ready.json");
-  let identity: Awaited<ReturnType<typeof identityOf>> = null;
-  try {
-    const runner = Bun.spawnSync(
-      [
-        process.execPath,
-        "-e",
-        `
+test.skipIf(
+  skipsOnWindows(
+    "process-lifecycle",
+    "Bun on Windows ends the grandchild when its runner exits",
+  ),
+)(
+  "report preserves a registered orphan, then collection reaps it before removing scratch",
+  async () => {
+    const f = setup();
+    // Replace the helper's childless registration with this runner's tree.
+    rmSync(f.store, { recursive: true });
+    const ready = join(f.base, "orphan-ready.json");
+    let identity: Awaited<ReturnType<typeof identityOf>> = null;
+    try {
+      const runner = Bun.spawnSync(
+        [
+          process.execPath,
+          "-e",
+          `
       const { registerFixtureScope, beginFixtureLaunch } = await import(${JSON.stringify(registration)});
       const scope = registerFixtureScope(${JSON.stringify(f.root)}, undefined, ${JSON.stringify(f.store)});
       if (!scope.ok) throw new Error(scope.failure.reason);
@@ -111,49 +119,53 @@ test("report preserves a registered orphan, then collection reaps it before remo
       }
       process.exit(0);
     `,
-      ],
-      {
-        stdout: "pipe",
-        stderr: "pipe",
-        env: { ...process.env },
-        timeout: 20_000,
-      },
-    );
-    expectSpawnExit(runner, 0);
-    const { pid } = JSON.parse(readFileSync(ready, "utf8")) as { pid: number };
-    identity = await identityOf(pid);
-    expect(identity).not.toBeNull();
-
-    const report = await collect(f, false);
-    expect(
-      report.receipt.resources.find((line) => line.resource === f.root)
-        ?.outcome,
-    ).toBe("refused");
-    expect(await identityOf(pid)).toEqual(identity);
-    expect(existsSync(f.root)).toBe(true);
-
-    const result = await collect(f, true);
-    expect(result.receipt.exitStatus).toBe(0);
-    expect(
-      result.receipt.resources.find((line) => line.resource === f.root)
-        ?.outcome,
-    ).toBe("collected");
-    expect(existsSync(f.root)).toBe(false);
-    const deadline = Date.now() + 5000;
-    while ((await identityOf(pid)) !== null && Date.now() < deadline)
-      await Bun.sleep(20);
-    expect(await identityOf(pid)).toBeNull();
-  } finally {
-    if (!identity && existsSync(ready)) {
+        ],
+        {
+          stdout: "pipe",
+          stderr: "pipe",
+          env: { ...process.env },
+          timeout: 20_000,
+        },
+      );
+      expectSpawnExit(runner, 0);
       const { pid } = JSON.parse(readFileSync(ready, "utf8")) as {
         pid: number;
       };
       identity = await identityOf(pid);
+      expect(identity).not.toBeNull();
+
+      const report = await collect(f, false);
+      expect(
+        report.receipt.resources.find((line) => line.resource === f.root)
+          ?.outcome,
+      ).toBe("refused");
+      expect(await identityOf(pid)).toEqual(identity);
+      expect(existsSync(f.root)).toBe(true);
+
+      const result = await collect(f, true);
+      expect(result.receipt.exitStatus).toBe(0);
+      expect(
+        result.receipt.resources.find((line) => line.resource === f.root)
+          ?.outcome,
+      ).toBe("collected");
+      expect(existsSync(f.root)).toBe(false);
+      const deadline = Date.now() + 5000;
+      while ((await identityOf(pid)) !== null && Date.now() < deadline)
+        await Bun.sleep(20);
+      expect(await identityOf(pid)).toBeNull();
+    } finally {
+      if (!identity && existsSync(ready)) {
+        const { pid } = JSON.parse(readFileSync(ready, "utf8")) as {
+          pid: number;
+        };
+        identity = await identityOf(pid);
+      }
+      if (identity) await reapOwnedIdentities([identity]);
+      rmSync(f.base, { recursive: true, force: true });
     }
-    if (identity) await reapOwnedIdentities([identity]);
-    rmSync(f.base, { recursive: true, force: true });
-  }
-}, 45_000);
+  },
+  45_000,
+);
 
 test("reports a dead registered scope, then collects a recreated root without an owner file", async () => {
   const f = setup();
@@ -170,6 +182,21 @@ test("reports a dead registered scope, then collects a recreated root without an
     result.receipt.resources.find((line) => line.resource === f.root)?.outcome,
   ).toBe("collected");
   expect(existsSync(f.root)).toBe(false);
+});
+
+test("a nested legacy owner vetoes collection of a recreated registered root", async () => {
+  const f = setup();
+  rmSync(f.root, { recursive: true });
+  mkdirSync(join(f.root, "nested"), { recursive: true });
+  writeScratchOwner(join(f.root, "nested"));
+  const result = await collect(f, true);
+  expect(
+    result.receipt.resources.find((line) => line.resource === f.root),
+  ).toMatchObject({
+    outcome: "refused",
+    reason: "a scope owner in the subtree is alive",
+  });
+  expect(existsSync(f.root)).toBe(true);
 });
 
 test("native launch uncertainty retains scratch after its parent exits", async () => {

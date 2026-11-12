@@ -96,12 +96,6 @@ export function scratchProof(
   };
   const walked = walk(root);
   if (walked) return walked;
-  // A nested scope cannot supply the missing registration of its parent.
-  if (!readdirSync(root).includes(SCRATCH_OWNER_FILE))
-    return ok({
-      state: "finding",
-      reason: "scratch scope has no owner record",
-    });
   if (live)
     return ok({
       state: "live",
@@ -111,6 +105,12 @@ export function scratchProof(
     return ok({
       state: "unverified",
       reason: "a scope owner's process identity is unreadable",
+    });
+  // A nested scope cannot supply the missing registration of its parent.
+  if (!readdirSync(root).includes(SCRATCH_OWNER_FILE))
+    return ok({
+      state: "finding",
+      reason: "scratch scope has no owner record",
     });
   if (now - newest < idleDays * 86_400_000)
     return ok({ state: "live", reason: "scratch idle guard has not elapsed" });
@@ -195,6 +195,29 @@ export function scratchKind(
         return orphanFixtureProof(processScope.root, processScope.registry);
       }
       if (memberships.has(resource.id)) {
+        // A durable registration replaces the root owner record, not the
+        // ownership vetoes below it. A recreated registered root may omit its
+        // legacy owner file, but a live, unreadable, or malformed nested
+        // legacy owner still prevents recursive removal.
+        let legacy: Outcome<Proof, "timed-out" | "unreadable-owner">;
+        try {
+          legacy = scratchProof(resource.id, await processTable(), idleDays);
+        } catch (error) {
+          return {
+            state: "unverified",
+            reason: error instanceof Error ? error.message : String(error),
+          };
+        }
+        if (!legacy.ok)
+          return { state: "unverified", reason: legacy.failure.reason };
+        if (
+          legacy.value.state !== "dead" &&
+          !(
+            legacy.value.state === "finding" &&
+            legacy.value.reason === "scratch scope has no owner record"
+          )
+        )
+          return legacy.value;
         const registered = fixtureScopeInventory(registryRoot);
         if (!registered.ok)
           return {
