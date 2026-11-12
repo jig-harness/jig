@@ -89,8 +89,12 @@ const closed = (i: PoolIssue) =>
   ["completed", "canceled", "duplicate"].includes(i.state.type);
 const closedType = (type: string) =>
   ["completed", "canceled", "duplicate"].includes(type);
-const ready = (i: PoolIssue) =>
-  !closed(i) && ["triage", "backlog", "unstarted"].includes(i.state.type);
+/** Not started, and not `blocked` (whatever category the tracker gives that state): only the drive-ledger projection or a person moves an item out of it. */
+const ready = (i: PoolIssue, tracker: Pick<Tracker, "stateName">) =>
+  !closed(i) &&
+  ["triage", "backlog", "unstarted"].includes(i.state.type) &&
+  i.state.name.trim().toLowerCase() !==
+    tracker.stateName("blocked")?.trim().toLowerCase();
 
 /** Cache entries without a timestamp are never reused. */
 async function metadata(
@@ -310,7 +314,7 @@ export async function freshServedPickup(
 ): Promise<PoolIssue | string> {
   try {
     const issue = await tracker.poolIssue(key);
-    if (issue === null || !ready(issue))
+    if (issue === null || !ready(issue, tracker))
       return "the served item is no longer open and not started";
     if (policy.repoScope?.invalid !== undefined)
       return `the repository scope is invalid: ${policy.repoScope.invalid}`;
@@ -469,12 +473,14 @@ function leavesNode(
   issue: PoolIssue,
   options: ServedOptions,
   seen: ReadonlySet<string>,
+  tracker: Pick<Tracker, "stateName">,
 ): boolean {
   const walkedEpic =
     issue.labels.includes(options.epic) &&
     issue.hasOpenChildren &&
     !closed(issue);
-  if (seen.has(issue.identifier) || (!ready(issue) && !walkedEpic)) return true;
+  if (seen.has(issue.identifier) || (!ready(issue, tracker) && !walkedEpic))
+    return true;
   return (
     !walkedEpic &&
     (otherRepoLabel(issue.labels, options.repoScope) !== null ||
@@ -484,10 +490,10 @@ function leavesNode(
 }
 
 async function visitNode(ctx: WalkContext, node: Pending): Promise<Found> {
-  const { options, seen } = ctx;
+  const { tracker, options, seen } = ctx;
   const found: Found = { unplaced: [], candidates: [], pending: [] };
   const { issue, ancestor } = node;
-  if (leavesNode(issue, options, seen)) return found;
+  if (leavesNode(issue, options, seen, tracker)) return found;
   // A child assigned elsewhere is not inherited. A direct assignment is read in its owner's list.
   if (ancestor !== undefined && issue.assignee !== null) return found;
   seen.add(issue.identifier);
@@ -578,7 +584,10 @@ async function placeLeaf(
 ): Promise<void> {
   const { tracker, options, cache, view } = ctx;
   const { issue } = candidate;
-  if (!ready(issue) || otherRepoLabel(issue.labels, options.repoScope) !== null)
+  if (
+    !ready(issue, tracker) ||
+    otherRepoLabel(issue.labels, options.repoScope) !== null
+  )
     return;
   const unlabeled = unlabeledOutcome(
     issue.labels,

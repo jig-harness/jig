@@ -423,7 +423,7 @@ function flipAfter(w: ReturnType<typeof world>, reads: number, to: unknown) {
 }
 test("an unreadable item before the inherited assignment write refuses without writing", async () => {
   const w = world(true);
-  flipAfter(w, 3, null);
+  flipAfter(w, 5, null);
   expect(
     await claimServedIssue(w.tracker, "#1", {
       person: "dana",
@@ -451,7 +451,7 @@ test("a direct claim whose state leaves claim_from before any write keeps the st
 });
 test("a direct claim whose final state is started but outside claim_from refuses, not stands down", async () => {
   const w = world();
-  flipAfter(w, 3, {
+  flipAfter(w, 5, {
     identifier: "#1",
     parent: { identifier: "#2" },
     labels: ["epic"],
@@ -464,4 +464,100 @@ test("a direct claim whose final state is started but outside claim_from refuses
     }),
   ).toMatchObject({ outcome: "refused", why: "state" });
   expect(w.writes).toEqual([]);
+});
+/** `world` whose item reads Blocked (unstarted type) from its `from`th getIssue read of "#1" on. */
+function blockedFrom(from: number, inherited: boolean) {
+  const w = world(inherited);
+  const base = w.tracker.getIssue.bind(w.tracker);
+  const tracker = w.tracker as unknown as Record<string, unknown>;
+  let reads = 0;
+  tracker.stateName = (s: string) =>
+    s === "blocked" ? "Blocked" : "In Progress";
+  tracker.getIssue = async (key: string) => {
+    const issue = await base(key);
+    if (key !== "#1" || !issue || ++reads < from) return issue;
+    return { ...issue, state: { name: "Blocked", type: "unstarted" } };
+  };
+  return w;
+}
+test("a served claim refuses an item that is Blocked, before any write", async () => {
+  const w = blockedFrom(1, false);
+  const result = await claimServedIssue(w.tracker, "#1", { person: "dana" });
+  expect(result).toMatchObject({ outcome: "refused", why: "blocked" });
+  expect(w.writes).toEqual([]);
+});
+/** How many reads of "#1" a clean claim has made when it issues `write`. */
+async function readsAtWrite(write: "assign" | "start", inherited: boolean) {
+  const w = world(inherited);
+  const base = w.tracker.getIssue.bind(w.tracker);
+  const tracker = w.tracker as unknown as Record<string, unknown>;
+  const at: Record<string, number> = {};
+  let reads = 0;
+  tracker.stateName = (s: string) =>
+    s === "blocked" ? "Blocked" : "In Progress";
+  tracker.getIssue = async (key: string) => {
+    if (key === "#1") reads++;
+    return base(key);
+  };
+  const assign = w.tracker.assignUnassigned?.bind(w.tracker);
+  if (assign)
+    tracker.assignUnassigned = async (key: string, user: TrackerUser) => {
+      at.assign = reads;
+      return assign(key, user);
+    };
+  const transition = w.tracker.transition.bind(w.tracker);
+  tracker.transition = async (key: string, state: never) => {
+    at.start = reads;
+    return transition(key, state);
+  };
+  const result = await claimServedIssue(w.tracker, "#1", {
+    person: "dana",
+    ...(inherited ? { ancestor: "#3" } : {}),
+  });
+  expect(result).toMatchObject({ outcome: "claimed" });
+  const count = at[write];
+  expect(count).toBeGreaterThan(0);
+  return count as number;
+}
+test("an item blocked at the final read before an inherited assignment is refused without writing", async () => {
+  const w = blockedFrom(await readsAtWrite("assign", true), true);
+  const result = await claimServedIssue(w.tracker, "#1", {
+    person: "dana",
+    ancestor: "#3",
+  });
+  expect(result).toMatchObject({ outcome: "refused", why: "blocked" });
+  expect(w.writes).toEqual([]);
+});
+test("an item blocked at the final read before the start write is never overwritten", async () => {
+  const w = blockedFrom(await readsAtWrite("start", false), false);
+  const result = await claimServedIssue(w.tracker, "#1", { person: "dana" });
+  expect(result).toMatchObject({ outcome: "refused", why: "blocked" });
+  expect(w.writes).toEqual([]);
+});
+test("an inherited claim blocked after its assignment write stands down without starting", async () => {
+  const w = blockedFrom((await readsAtWrite("assign", true)) + 1, true);
+  const result = await claimServedIssue(w.tracker, "#1", {
+    person: "dana",
+    ancestor: "#3",
+  });
+  expect(result).toMatchObject({ outcome: "stood_down" });
+  expect(w.writes).toEqual(["assign"]);
+});
+test("a claim reads no extra state when the tracker has no blocked state", async () => {
+  const count = async (blockedName: string | null) => {
+    const w = world();
+    let reads = 0;
+    const base = w.tracker.getIssue.bind(w.tracker);
+    const tracker = w.tracker as unknown as Record<string, unknown>;
+    const stateName = w.tracker.stateName.bind(w.tracker);
+    tracker.stateName = (s: string) =>
+      s === "blocked" ? blockedName : stateName(s as never);
+    tracker.getIssue = async (key: string) => {
+      reads++;
+      return base(key);
+    };
+    await claimServedIssue(w.tracker, "#1", { person: "dana" });
+    return reads;
+  };
+  expect(await count(null)).toBe((await count("Blocked")) - 2);
 });

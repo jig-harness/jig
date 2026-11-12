@@ -128,7 +128,7 @@ the report, then re-arms within account caps with the timer, then pickups,
 then follow-ups and notifications, then control: a permanent outcome
 log, one row per ended launch with an outcome class from a
 closed list, a dashboard that filters it (`jig dispatch dashboard`, no
-report files, which grows into item 42's hub and keeps its command),
+report files, which grows into item 42's dashboard and keeps its command),
 drift from each stage's expectation reported and notified
 but never acted on, each recurring class recorded once a week as a
 reflection finding about the dispatcher, and one
@@ -198,7 +198,7 @@ request's status row need (conflicts, checks with the failing ones named,
 unresolved threads, the derived merge state); every card says whether it
 settles by waiting or waits on a person, and which act; a pull request that
 becomes ready is notified once per head; and the outcome log records when
-work became ready and why it left. The hub (item 42) adds marks to every
+work became ready and why it left. The dashboard (item 42) adds marks to every
 status row: the drive's round and its time, from the ledger; the
 unresolved threads split by bot and not a bot, on the board read's detail
 set only and under a cap of its own, its cost in the receipt; and the CI
@@ -207,14 +207,14 @@ never in merge now. Later, a board view places every piece
 of work in one column (coming, picking up, driven, needs you, ready to
 merge, merged), each card moving in any direction and saying where it came
 from when it moved back. Built in the design's order, as the first stage
-of the hub (item 42): the waiting loss measured from the existing log
+of the dashboard (item 42): the waiting loss measured from the existing log
 first, then Ready to merge in the tick and on the page, then the board's
 placement, a design round and the board view. The measurement is a
 baseline, not a gate: the board's placement, the design round and the
 board view are built whatever its counts show, since the board is what a
-person asked for. The design round covers the whole hub, its views, cards and chat, so
-the layout holds when the hub's writes arrive, and the board view comes
-with the hub's Work page.
+person asked for. The design round covers the whole dashboard, its views, cards and chat, so
+the layout holds when the dashboard's writes arrive, and the board view comes
+with the dashboard's Work page.
 
 Built: the baseline (step 1) and, of step 2, the predicate the tick, the
 announcement and `jig ask` share, the board read in the tick's observe
@@ -285,7 +285,7 @@ the operator skill, `/jig:operator`
 launch's result naming its next owner, in the outcome row and `last.next`;
 and a park naming the person it waits on, in `waitsOn` and
 `jig ask --waiting --person`. Still
-open, for the hub (item 42), which builds them as its stage 2's first
+open, for the dashboard (item 42), which builds them as its stage 2's first
 step: the thread grows under `ask`'s version 1, each entry with a stable
 id, a question with its key, its class and a status (open, answered, acted
 on, expired), an answer with the question it replies to, who answered and
@@ -363,7 +363,7 @@ one comment answering both; and `jig dispatch log` reports, per
 class, how many parks were approved as recommended and how long they
 waited.
 
-### 42. The hub: one place to watch and steer the line
+### 42. The dispatch dashboard: one place to watch and steer the line
 
 Where a piece of work stands is spread over machines and tools: the
 dispatch dashboard shows one host's dispatcher and no pull request that
@@ -372,9 +372,9 @@ threads and whether a pull request can merge are on the forge. Nothing
 shows a tracker item, its pull request and its follow-up as one piece of
 work, nothing shows a pickup's progress before its pull request exists,
 and answering a parked question takes a terminal.
-[design/hub.md](hub.md) has how it works. What it will build: the
-dispatch dashboard (item 33) grown into one page, `jig hub` in
-`plugin/hub/`, with the dispatcher's views (Merge, where it opens while anything
+[design/dispatch-dashboard.md](dispatch-dashboard.md) has how it works. What it will build: the
+dispatch dashboard (item 33) grown into one page, `jig dashboard` in
+`plugin/dashboard/`, with the dispatcher's views (Merge, where it opens while anything
 is safe to merge, Needs you, Running, Queue and History), a Work page for
 each piece of work with its thread, and Hosts, each derived from the line's records at every
 read and none of them stored; marks on item 36's status row (the
@@ -383,34 +383,34 @@ and the CI hold, which reads held and never failing); a `pickup-progress`
 record that `do-item` and `work-batch` write at each phase, so a Picking
 up card shows the last phase and its age; item 39's thread grown under
 `ask`'s version 1 into one thread per piece of work; the views API from a
-page to its own hub and the source feed from a host to a hub over
-`ssh <host> jig hub rpc`, every fact stamped with its host and a
-visibility class, so a shared control plane can later serve the same feed;
-a host's hub read-only on loopback, answering only its own pages, a
-laptop's hub that serves any browser and reads each host over SSH (Secure
-Shell) with a key that runs the feed and nothing else, and Orca, where a
-person uses it, opening the hub in its own browser; required read-only phone access, with
+page to its own server and the source feed, which the hub (item 49)
+serves for every host it serves, every fact stamped with its host and a
+visibility class; a host's dashboard read-only on loopback, answering only
+its own pages, a laptop's dashboard that serves any browser and reads
+every host through the person's hub, and Orca, where a
+person uses it, opening the dashboard in its own browser; required read-only phone access, with
 visible copy controls, forge and tracker links, continuous availability and
 phone acceptance budgets; a private-network front, Tailscale Serve first,
 that gives a phone an HTTPS
 name and the viewer's login, scopes what each person sees by the grants of
 the tailnet (Tailscale's private network), trusts that login only on a
 Unix socket only Tailscale's daemon reaches, and refuses Tailscale Funnel,
-which publishes to the open internet; `hub` as a component of the `jig`
+which publishes to the open internet; `dashboard` as a component of the `jig`
 command beside `dispatch` and `gc`, installed as a new `resident` job kind
 only where Orca's browser or a front reaches a host's page, which never
 upgrades itself and never migrates a database; and an operator chat that
 explains and drafts and never sends, its plan cards rendered from
 `jig send`'s own dry run and its conversation kept on the person's laptop
-as a `hub-conversation` record that `jig gc` removes 30 days after the
-thread settles. The hub's views read the forge facts the tick already
+as an `operator-conversation` record that `jig gc` removes 30 days after the
+thread settles. The dashboard's views read the forge facts the tick already
 read, and its own forge reads keep to a tenth of each hour's budget and
 stop when less than two fifths of it is left, above the fifth at which the
 tick skips its board read, so an open page adds at most a tenth to what the
 line spends. Jig stays whole without Orca:
-every view works in any browser, the machines talk over SSH, and each
+every view works in any browser, the machines reach each other through
+the hub where a person runs one, and each
 thing Orca adds has a Herdr or plain-text equivalent. Every write is the
-person's, made with their own credential, and the hub writes nothing until
+person's, made with their own credential, and the dashboard writes nothing until
 item 40 settles how a comment a pass posts under the person's login is
 told from the person's own; each commit then asks for proof that a person
 is present. Nothing of it is built. Built in stages, one pull request per
@@ -418,21 +418,20 @@ step: the per-pull-request status on the dashboard that exists (rounds and
 resolved parks in the drive ledger, item 36's board read, the phone
 measurement fixture, Ready to merge and placement with the marks, a line one
 repository's tick refreshes, pickup progress, then one design round for the
-whole hub and the Running, Queue and Work views), with phone support part of
+whole dashboard and the Running, Queue and Work views), with phone support part of
 each view's acceptance and the resident dashboard install, URL sharing and
 private-network front guidance filed as items that do not wait on the later
-stages ([hub.md § Phone scope and access](hub.md#phone-scope-and-access)); then each piece of work across machines (item 39's thread
-additions, `jig send --json` with `--expect`, the `jig hub` server, its
+stages ([dispatch-dashboard.md § Phone scope and access](dispatch-dashboard.md#phone-scope-and-access)); then each piece of work across machines (item 39's thread
+additions, `jig send --json` with `--expect`, the `jig dashboard` server, its
 Needs you across every source, Hosts and History views and its install,
-the private-network front, the Orca plugin's "Open the hub" command and its install from a catalog);
+the private-network front, the Orca plugin's "Open the dashboard" command and its install from a catalog);
 then the chat, and writes once item 40 settles. Stages 2 and 3 are
 planned in detail once stage 1 has been in use for four weeks, and the
-person who asked for the hub decides whether each is built, from the
+person who asked for the dashboard decides whether each is built, from the
 waiting loss measured since stage 1 shipped and what they still pieced
 together outside the page; the call is recorded here with its reason
-([hub.md § Build order](hub.md#build-order)). The shared control plane
-waits for a decision record of its own (Later: a control-plane service for
-the shared records).
+([dispatch-dashboard.md § Build order](dispatch-dashboard.md#build-order)). The shared control plane
+is item 49.
 
 Done when, for stage 1, on a headless host running the dispatcher, every
 pull request card shows its round and its unresolved threads, split by bot
@@ -443,14 +442,14 @@ pull request exists; a tick that reads one repository refreshes that
 repository's part of the page while a stopped timer still reads overdue;
 and serving the page leaves a database one schema behind unchanged byte
 for byte. For a stage a person decides to build, stage 2 is done when a
-laptop's hub shows each host's work, read over SSH, beside its own in any
-browser, with the host's hub listening on loopback only, and says since
+laptop's dashboard shows each host's work, read through the hub, beside its own in any
+browser, with the host's dashboard listening on loopback only, and says since
 when a host stopped answering; one piece of work opens as one Work page,
 its item, pull request and follow-up under one thread; Orca's browser opens
 the same page; and a phone through the front sees only the repositories
 its grant names. For a stage a person decides to build, stage 3 is done
 when the operator chat proposes and never sends and, once item 40 has
-settled, a commit from the hub writes only as the person, after proof that
+settled, a commit from the dashboard writes only as the person, after proof that
 they are present and a dry run that still matches.
 
 ### 34. Jig in the Orca ecosystem
@@ -471,9 +470,9 @@ refuses a launch into a worktree gc holds; a spike on binding a launch to
 its account through the same hook; the plugin's status bar item; and the
 Jig panel, which stays the person's inbox, with an answer box and, on a
 merge-now entry, a button that runs the pinned merge command as the
-person. The board and each piece of work open in the hub (item 42), which
-the plugin's "Open the hub" command opens in Orca's own browser. Orca
-stays optional: every view of the hub works in any browser,
+person. The board and each piece of work open in the dashboard (item 42), which
+the plugin's "Open the dashboard" command opens in Orca's own browser. Orca
+stays optional: every view of the dashboard works in any browser,
 and each thing the plugin adds has a Herdr or plain-text equivalent. Also
 open: what Jig asks of Orca (usage per account
 from the command line; a phone push only when an agent needs input; a hook
@@ -502,9 +501,10 @@ processes the repository.
 ## Next
 
 Next starts with delegated merge, once item 40 holds. Then come what lets a
-second team adopt Jig, work that arrives complete, reviews that catch what
-gates cannot, and doctrine and measurement. Last come the developer machine
-and its runtimes, and the runs a person owes.
+second team adopt Jig, the hub for a team on several hosts, work that
+arrives complete, reviews that catch what gates cannot, and doctrine and
+measurement. Last come the developer machine and its runtimes, and the runs
+a person owes.
 
 ### 9. Delegated merge (`pull_requests.merge: auto-on-converged`)
 
@@ -554,9 +554,6 @@ step:
   states a claim may start from (`do_item.claim_from`; unset, a claim
   keeps today's rule and is not limited to `dispatch.states`), and a claim
   marker naming the session, host and branch.
-- **Stop.** An optional `blocked` canonical state that the shared
-  projection of the drive ledger writes, with the park class and reason,
-  when a drive stops on parked work, and clears when the park is answered.
 - **Pool pickup.** The dispatcher picks up unassigned items in a ready
   pool as a served lane, trusting who made an item ready. A pool requires
   the claim marker, which arbitrates, best effort, between the hosts that pick up from it
@@ -566,39 +563,74 @@ Done when a repository on Jira with all of these set runs an item from its
 ready pool to a merged pull request without a hook or script of its own,
 and an item that fails a rule is refused before anything is written.
 
-### 48. Fitting the drive to a repository's reviewer, CI and pull-request conventions
+### 48. Fitting the drive to a repository's reviewer
 
-The drive and `do-item` assume things about a repository that many do
-not hold. Its AI reviewer stamps the commit it reviewed into a summary
-comment; a reviewer that reviews through the forge's own [review
-objects](../GLOSSARY.md) (CodeRabbit, for one) never does, so the drive either waits until it times
-out or converges without that review. Its CI runs as GitHub Actions; a CI
-service that reports [commit statuses](../GLOSSARY.md) (Jenkins, for one) leaves the repair
-pass and `fix-ci` with no log. Each fix is optional configuration, and an unset one
-keeps today's behaviour. What it will build, one pull request per step:
+The drive reads a reviewer that reviews through the forge's own [review
+objects](../GLOSSARY.md) (CodeRabbit, for one) from its latest review and
+its check run on the head, and counts that reviewer's inline threads as its
+work. It does not read the findings such a reviewer puts only in the
+review's own body (CodeRabbit's nitpick and outside-the-diff sections), so a
+drive can converge with them unanswered. What it will build:
 
-- **The reviewer.** A [reviewer evidence mode](../GLOSSARY.md) that reads the reviewed
-  commit from the reviewer's latest review object and its check run on
-  the head, with a built-in CodeRabbit profile; a paused or skipped
-  review stops as `REVIEW_SKIPPED` with the reason; no merge-ready
-  announcement before a draft-skipping reviewer has run on the head marked
-  Ready; `arm-drive.ts` refuses a reviewer whose evidence it cannot read.
-- **The CI.** Failing commit statuses keep their URL into the repair
-  round; `ci.log_command` fetches a status's failed log and
-  `ci.repair_skill` names the repair skill; `fix-ci --pr` uses both; an
-  aborted build reads as cancelled. Both settings are read from the
-  default branch and run program content from it, never from the working
-  tree of the pull request being repaired, as the [command
-  store](tracker-facets.md#later-the-command-store) does; a status URL is
-  fetched only where the configured CI profile authorizes its scheme and
-  host, redirects are validated, credentials go only to those hosts, and the
-  fetch has a deadline whose expiry cancels the command and its descendants,
-  for the drive's repair pass and `fix-ci --pr` alike.
+- **The review body's findings.** The newest review's body read as findings
+  the drive must answer, the way it reads the sticky comment's bullets: one
+  finding per entry, answerable with `answer-summary-finding.ts`, with a built-in parser
+  for CodeRabbit's sections; another reviewer's body is not parsed until it
+  has a format of its own.
+- **The CI repair command's trust boundary.** The repair step reads
+  `ci.log_command` from the default branch, but `runRepoCommand` runs it
+  with the pull request's checkout as its working directory, so a
+  configured repository script executes the pull request's editable
+  content. The command's program content is to come from the default
+  branch, never from the working tree of the pull request being repaired,
+  as the [command store](tracker-facets.md#later-the-command-store) does.
 
-Done when a repository whose AI reviewer is CodeRabbit, whose CI is
-Jenkins and whose fixes land on release lines under a key-in-every-commit
-ruleset runs a drive from a release-line item to merge-ready with no bridge
-of its own.
+Done when a repository whose AI reviewer is CodeRabbit runs a drive to
+merge-ready with no bridge of its own, and a CI repair command never runs
+program content from the pull request's working tree.
+
+### 49. The hub: a shared control plane for many dispatchers
+
+Every host that dispatches reads the forge and the tracker by itself, so
+hosts that dispatch for one team or one person spend one credential's
+limits several times over. One repository's pickups are dispatched from
+one host only, nobody outside a host learns that it stopped, and a person
+with several machines has a dashboard per machine.
+[design/control-plane.md](control-plane.md) has how it works and
+[ADR-0016](../docs/adr/ADR-0016-an-optional-hub-for-hosts-that-keep-authority.md)
+the decision. What it will build: the hub, `jig hub serve` in
+`plugin/hub/`, one process with one SQLite database that enrolled hosts call
+over HTTPS and that calls no host; enrollment by device grant, with a
+credential per host; a host protocol of `hello`, `changes`, `read` with a
+`notOlderThan` bound, `report`, claims with leases and, last, `offers`,
+versioned by named capabilities; one read of the forge and the tracker for
+every enrolled host, polling first with conditional requests, webhooks as
+hints where the hub can receive them, and a budget per credential for every
+bucket it spends; claims with leases in front of the forge and tracker
+claims, which stay the fences, so a silent host's work is granted to
+another host and a pickup is claimed before its session opens; a silent
+host noticed; the owner of each repository named by the hub, under a lease
+of its own; the source feed of every host served to the dispatch
+dashboard, its only way to show several hosts; and offers to a host with
+free slots, ordered by an offer policy declared as data (an ordered list
+of named rankers, a `command` ranker for a team's own strategy, and named
+policies a repository chooses among). No level of use requires it: the skills never call it,
+and a host whose hub does not answer reads and claims by itself. Built in
+stages, one pull request per step: seams in the dispatcher first, each
+worth building alone (one shared records implementation chosen by
+`records.shared`, the world view apart from the machine view, a pickup
+claim, the GraphQL budget gated); then the hub that reads once; then claims
+with leases and the silent host; then one view of every host; then offers,
+once ADR-0016 is approved. Each stage after the seams is planned in detail,
+and built or not, by the person who asked for the hub once the stage before
+it is in use.
+
+Done when, for the first stage, two hosts dispatching the same repositories
+through one hub spend together about what one host spends alone, and
+stopping the hub during a tick costs that tick only a note on its receipt.
+From the second stage a stopped hub also suspends the owner duties a host
+cannot do without its lease, the one exception to a host working as it does
+today.
 
 ### 26. `init`: setting a repository up for Jig
 
@@ -1304,31 +1336,6 @@ conditions for considering a tap without adopting one ahead of that evidence.
     ([CONTRIBUTING.md § Toolchain](../CONTRIBUTING.md#toolchain) records
     the gap), so a Windows host needs those steps in its own shell first,
     and the provider tried there once it has them.
-- **A control-plane service for the shared records.** The hosts that
-  dispatch one repository publish who holds a launch and how it ended on the
-  forge, and each reads the others' at its next tick
-  ([plugin/RECORDS.md](../plugin/RECORDS.md#on-the-forge-and-the-tracker)).
-  A service that keeps those records for many hosts is the
-  [shared control plane](hub.md#toward-a-shared-control-plane) the hub's
-  design describes: one service with a database that reads the forge and
-  the tracker once for many hosts, keeps the hosts' records as a second
-  implementation behind the same interface
-  (`plugin/shared/records/shared.ts`) under its own `records.shared` value,
-  hands the hosts their work and serves the hub's source feed through
-  connections the hosts open. Handing out work coordinates the hosts, which
-  ADR-0013 declines, so the service gets a decision record of its own,
-  written when one of
-  [ADR-0013](../docs/adr/ADR-0013-records-not-a-daemon.md#when-to-reopen)'s
-  conditions holds: hosts dispatching one repository must see each other's
-  state within seconds rather than at their next tick, a nudge to a running
-  session needs a connection rather than a terminal keystroke, someone
-  outside a host must be told that a dispatching host has stopped, or a
-  second person acts through a host's hub, or needs a scope Jig itself
-  keeps rather than one a private-network front's grant carries. Until then the
-  invariants and seams that
-  [design/hub.md](hub.md#toward-a-shared-control-plane) lists keep the way
-  open, among them a shared claim for pickups, without which one
-  repository's pickups are dispatched from one host only.
 - **The mailbox as every session's inbox.** The
   [drive mailbox](../GLOSSARY.md) reaches a drive's driver only, and the
   dispatcher's one nudge, the `continue` it types into a session whose usage

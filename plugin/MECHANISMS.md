@@ -321,9 +321,10 @@ development and shipped as a version.
   or a target it cannot place is reported and never planned; an account
   whose configuration directory does not resolve to the identity the
   machine file names starts nothing (`dispatch/lib/accounts.ts`); a launch
-  record already claimed is not started twice (exit 3). The tick writes
-  nothing to the tracker: the session's own claim does
-  (`dispatch/lib/actions/pickup.ts`). It names each workspace it creates
+  record already claimed is not started twice (exit 3). A pickup's claim
+  is the session's own write (`dispatch/lib/actions/pickup.ts`), not the
+  tick's; the tick also writes steward-approved facets and the
+  blocked-state projection below. It names each workspace it creates
   and each tab it opens as the dispatcher's, and keeps the
   [dispatched mark](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
   in the workspace's comment and on the launch record, by one convention
@@ -344,7 +345,11 @@ development and shipped as a version.
   (`shared/pr-labels/`), which the drive (`drive-pr`'s
   `scripts/lib/driver/state-labels.ts`) and the follow-up
   (`dispatch/lib/followup-label.ts`) write through too, each when what it
-  owns changes. Where a repository turns its
+  owns changes. Where a repository names a `blocked` tracker state, the
+  drive and the tick also move the items a pull request links to and out
+  of it from the same projection (`shared/pr-labels/blocked.ts` decides,
+  `do-item/scripts/lib/blocked-move.ts` writes, `dispatch/lib/actions/blocked.ts`
+  at the tick), each item read, and written only where it disagrees. Where a repository turns its
   [adoption rule](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
   on, the tick arms a pull request with no ledger that the rule's author
   and window match as it arms a labelled one (`dispatch/lib/adopt.ts`).

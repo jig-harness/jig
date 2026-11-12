@@ -220,6 +220,56 @@ describe("served pickups", () => {
       }),
     );
   });
+  it("walks the ready children of a blocked epic without offering the epic", async () => {
+    const f = fake();
+    const epic = {
+      ...issue("#1", ["epic"]),
+      hasOpenChildren: true,
+      state: { id: "b", name: "Blocked", type: "started" },
+    };
+    f.tracker.stateName = ((s: string) =>
+      s === "blocked"
+        ? "Blocked"
+        : s === "pr_open"
+          ? null
+          : s) as Tracker["stateName"];
+    f.tracker.assignedIssues = async (_: string, s: readonly string[]) =>
+      s.includes("blocked") ? [epic] : [];
+    const read = await readServedPickups(f.tracker, people, {
+      cache: f.cache,
+      epic: "epic",
+      nowMs: 1,
+      headroom: true,
+    });
+    expect(read.wanted.map((w) => w.key)).toEqual(["#3"]);
+  });
+  it("asks the one-request queue read for the blocked state and walks a blocked epic's children", async () => {
+    const f = fake();
+    const epic = {
+      ...issue("#1", ["epic"]),
+      hasOpenChildren: true,
+      state: { id: "b", name: "Blocked", type: "started" },
+    };
+    f.tracker.stateName = ((s: string) =>
+      s === "blocked"
+        ? "Blocked"
+        : s === "pr_open"
+          ? null
+          : s) as Tracker["stateName"];
+    const asked: string[][] = [];
+    f.tracker.queueIssues = async (_: string, s: readonly string[]) => {
+      asked.push([...s]);
+      return [{ ...epic, relations: [], parent: null }];
+    };
+    const read = await readServedPickups(f.tracker, people, {
+      cache: f.cache,
+      epic: "epic",
+      nowMs: 1,
+      headroom: true,
+    });
+    expect(asked[0]).toContain("blocked");
+    expect(read.wanted.map((w) => w.key)).toEqual(["#3"]);
+  });
   it("reports no claims when a served queue fails to read for another reason than the rate limit", async () => {
     const f = fake();
     f.tracker.assignedIssues = async () => {

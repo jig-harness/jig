@@ -3,8 +3,8 @@
  * the issues it names read by key in batches, and a change probe that lets
  * a tick reuse the previous reading whole.
  *
- * - **One queue read.** The issues assigned to the person, open and in
- *   progress, with each one's relations (and the other issue's state) and
+ * - **One queue read.** The issues assigned to the person, open, blocked and
+ *   in progress, with each one's relations (and the other issue's state) and
  *   its parent (with its description), in one paged request where the
  *   adapter has `queueIssues`; otherwise the two assigned lists.
  * - **Batched lookups.** Every issue the walk reads by key goes through one
@@ -35,6 +35,7 @@ import {
 } from "../../../shared/tracker-budget.ts";
 import {
   CANONICAL_STATES,
+  type CanonicalState,
   type PoolIssue,
   type QueueParent,
   type QueueRelation,
@@ -80,7 +81,7 @@ export interface ServedView {
   readonly limited: TrackerRateLimited | null;
   /** When the reading the view holds was taken. */
   readonly readAt: number;
-  /** The assigned issues in the open states (the dispatch's queue). */
+  /** The assigned issues in the open states and the `blocked` state (the dispatch's queue). */
   open(): HeldIssue[];
   /** The assigned issues in progress. */
   progress(): PoolIssue[];
@@ -126,13 +127,24 @@ function watched(s: Snapshot): string[] {
   return [...keys];
 }
 
+/**
+ * The states the queue read asks for beyond the open ones: the tracker's
+ * `blocked` state when the repository names one. An item in it is not a
+ * pickup, but an epic in it still has children the walk may start.
+ */
+const blockedStates = (tracker: Tracker): CanonicalState[] =>
+  tracker.stateName("blocked") === null ? [] : ["blocked"];
+
 /** The queue, read in one request where the adapter can. */
 async function readQueue(
   tracker: Tracker,
   identity: string,
 ): Promise<{ open: HeldIssue[]; progress: PoolIssue[] }> {
   if (tracker.queueIssues === undefined) {
-    const open = await tracker.assignedIssues(identity, [...OPEN]);
+    const open = await tracker.assignedIssues(identity, [
+      ...OPEN,
+      ...blockedStates(tracker),
+    ]);
     const progress = await tracker.assignedIssues(
       identity,
       workingStates(tracker),
@@ -147,7 +159,11 @@ async function readQueue(
     };
   }
   const working = workingStates(tracker);
-  const read = await tracker.queueIssues(identity, [...OPEN, ...working]);
+  const read = await tracker.queueIssues(identity, [
+    ...OPEN,
+    ...blockedStates(tracker),
+    ...working,
+  ]);
   const started = new Set(working.map((s) => tracker.stateName(s)));
   const open: HeldIssue[] = [];
   const progress: PoolIssue[] = [];

@@ -24,6 +24,9 @@
 // did.
 // Every invocation writes a fresh JUnit report and runs M14's executed-test
 // check, so every suite job and shard refuses a successful all-skipped run.
+// On the nightly run, which names its known-failure baseline in the
+// environment, the report is also classified against that baseline, and a run
+// that failed on recorded tests alone passes (scripts/nightly/invocation.ts).
 import { availableParallelism } from "node:os";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -32,6 +35,12 @@ import { cli } from "../lib/cli.ts";
 import { main as withResourceLock } from "../plugin/shared/resource-lock.ts";
 import { withoutLeakyGitEnv } from "../plugin/shared/guarded-git-spawn.ts";
 import { checkTestsExecuted } from "../modules/M14-testing-strategy/reference/tests-executed/check-tests-executed.ts";
+import {
+  BASELINE_ENV,
+  capturedCommand,
+  settle,
+  withoutNightlyEnv,
+} from "./nightly/invocation.ts";
 
 /** The fixed `bun test` arguments; the caller's extra ones follow them. */
 export const TEST_ARGS = ["test", "--timeout", "30000"];
@@ -112,7 +121,7 @@ export function lockEnv(
   return {
     // Scrub before Bun starts: its implicit child environment retains
     // startup values even after a test preload deletes process.env keys.
-    ...withoutLeakyGitEnv(env),
+    ...withoutLeakyGitEnv(withoutNightlyEnv(env)),
     LOCK_TIMEOUT: env.LOCK_TIMEOUT || DEFAULT_LOCK_TIMEOUT,
     LOCK_RUN_COST:
       env.LOCK_RUN_COST || String(effectiveWorkers(extra, platform)),
@@ -126,19 +135,23 @@ if (import.meta.main)
     // Keep it outside discovery and remove it even when the suite fails.
     const work = mkdtempSync(join(tmpdir(), "jig-test-report-"));
     const report = join(work, "junit.xml");
+    const tail = join(work, "output-tail.txt");
+    const nightly = Boolean(process.env[BASELINE_ENV]);
     try {
       const split = extra.indexOf("--");
       const options = split < 0 ? extra : extra.slice(0, split);
       const passthrough = split < 0 ? [] : extra.slice(split);
-      const status = await withResourceLock(
-        testCommand([
-          ...options,
-          "--reporter=junit",
-          `--reporter-outfile=${report}`,
-          ...passthrough,
-        ]),
+      const command = testCommand([
+        ...options,
+        "--reporter=junit",
+        `--reporter-outfile=${report}`,
+        ...passthrough,
+      ]);
+      const ran = await withResourceLock(
+        nightly ? capturedCommand(command, tail) : command,
         lockEnv(process.env, process.platform, extra),
       );
+      const status = nightly ? settle(ran, { report, tail }) : ran;
       // A failed suite or lock admission must keep its own status. A suite
       // that exits successfully still has to show that it executed a test.
       return status || checkTestsExecuted([report]);

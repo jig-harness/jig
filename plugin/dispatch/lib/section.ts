@@ -123,6 +123,11 @@ function states(
     return invalid(
       "dispatch.states cannot list pr_open, the state of an item whose pull request is open",
     );
+  // Only the drive-ledger projection or a person moves an item out of it.
+  if (value.includes("blocked"))
+    return invalid(
+      "dispatch.states cannot list blocked, the state of an item whose drive stopped on parked work",
+    );
   const prOpen = tracker.states.pr_open?.trim().toLowerCase();
   const alias =
     prOpen === undefined

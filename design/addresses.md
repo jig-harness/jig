@@ -34,13 +34,13 @@ the operator skill, in
 result naming its next owner, kept in the outcome row and shown as
 `last.next`; and a park naming the person it waits on, carried in
 `waitsOn` and filtered by `jig ask --waiting --person`. What stays open is
-what the thread gains for the hub
-([What the thread gains for the hub](#what-the-thread-gains-for-the-hub)).
+what the thread gains for the dashboard
+([What the thread gains for the dashboard](#what-the-thread-gains-for-the-dashboard)).
 
-The [hub](../GLOSSARY.md), one page to watch and steer the line
-([hub.md](hub.md), item 42), reads the line through these commands. It
+The [dispatch dashboard](../GLOSSARY.md), one page to watch and steer the line
+([dispatch-dashboard.md](dispatch-dashboard.md), item 42), reads the line through these commands. It
 grows the thread
-([What the thread gains for the hub](#what-the-thread-gains-for-the-hub))
+([What the thread gains for the dashboard](#what-the-thread-gains-for-the-dashboard))
 and runs an operator of its own beside the skill
 ([The operator skill](#the-operator-skill)).
 
@@ -250,12 +250,12 @@ show the same one. An interface that draws threads reads `jig ask --thread
 this design's to fix, in the first build step. Until then an interface's
 prototype may show that it needs a change.
 
-### What the thread gains for the hub
+### What the thread gains for the dashboard
 
-The [hub](hub.md#threads) shows one thread per
+The [dashboard](dispatch-dashboard.md#threads) shows one thread per
 [piece of work](../GLOSSARY.md), across machines, and names single entries
 in it. So the thread grows under `ask`'s version 1, each addition an added
-field, and the answer's version stays the same. The hub reads the thread
+field, and the answer's version stays the same. The dashboard reads the thread
 through `jig ask` like any other interface and stores none of it. When each
 part is built is in the [build order](#build-order).
 
@@ -292,7 +292,7 @@ part is built is in the [build order](#build-order).
   addresses, `ask` lists the threads that hold an open question, an act a
   merge waits on or a follow-up's question, one entry per piece of work. A
   thread leaves the list once nothing in it waits on a person. Hiding one is
-  the reader's own choice: the hub keeps it in that browser, and `ask`
+  the reader's own choice: the dashboard keeps it in that browser, and `ask`
   stores nothing for it.
 
 ### `jig send`: a request is a record
@@ -411,19 +411,19 @@ session runs `jig ask` and reads its plain answer.
   dispatcher's notification show as `answer <key>: …`, and relays the
   parked keys a refused `send` names. Carrying the key on the entry is one
   of the thread's additions
-  ([What the thread gains for the hub](#what-the-thread-gains-for-the-hub)),
+  ([What the thread gains for the dashboard](#what-the-thread-gains-for-the-dashboard)),
   so `ask`'s version stays the same.
 
-**The hub's operator is a separate runner.** The skill's `allowed-tools`
+**The dashboard's operator is a separate runner.** The skill's `allowed-tools`
 pre-approves `jig ask` and `jig send` rather than limiting the agent to
 them: the session keeps every other tool its runtime gives it, and what
 keeps a send the person's is their instruction in the same conversation.
-That suits a person in a terminal. The hub's chat reads thread text that
+That suits a person in a terminal. The dashboard's chat reads thread text that
 anyone can write on a pull request, so it does not run this skill. It runs
 a locked-down runner with tools of its own: reads only, and a `propose`
 that plans one of `send`'s verbs for the person to confirm, never an
 `answer`. That operator explains and drafts and never sends
-([hub.md § The operator chat](hub.md#the-operator-chat)).
+([dispatch-dashboard.md § The operator chat](dispatch-dashboard.md#the-operator-chat)).
 
 ### What a launch hands on, and who a park waits on
 
@@ -455,8 +455,8 @@ through what their owners export (`plugin/shared/records/`, the
 dispatcher's `lib/`, the drive's state modules). Where an owner has no read
 narrow enough, such as one drive's verdict or one key's outcomes, the owner
 gains it. The operator is `plugin/skills/operator/`. The fold by aliases
-is the hub's fold library in `plugin/shared/`, which `ask` shares with the
-dispatcher and the hub.
+is the dashboard's fold library in `plugin/shared/`, which `ask` shares with the
+dispatcher and the dashboard.
 
 ## Build order
 
@@ -480,13 +480,13 @@ before it is in use and has shown the next is wanted.
 acts, in the pull request that builds item 36's predicate or in step 1,
 whichever comes later.
 
-The thread's additions are built in the hub's steps
-([hub.md § Build order](hub.md#build-order)): resolved parks in the drive
+The thread's additions are built in the dashboard's steps
+([dispatch-dashboard.md § Build order](dispatch-dashboard.md#build-order)): resolved parks in the drive
 ledger in its stage 1, and the entry ids, the question's and the answer's
 fields, the fold by aliases and the list of threads in its stage 2. Its
 stage 3 adds to the `drive-answer` record `jig send` writes, beside the
 envelope, the plan id, the dry run's digest and the kind of proof that a
-person is present, with `via: hub`. Item 46 adds, as payload fields of the
+person is present, with `via: dashboard`. Item 46 adds, as payload fields of the
 same version, the decision digest and the option a structured answer
 chose, and the question's options and the answer's choice to the thread
 ([structured-answers.md](structured-answers.md)).
@@ -502,9 +502,9 @@ chose, and the question's options and the answer's choice to the thread
   [ADR-0013](../docs/adr/ADR-0013-records-not-a-daemon.md). A request waits
   for its reader's next run, as a label does today. The wake a send starts
   holds no copy of the request: it only has the tick read the record
-  sooner, and its waiter exits once that tick has run. The hub's Inbox is
+  sooner, and its waiter exits once that tick has run. The dashboard's Inbox is
   read from the records again at each request and holds nothing
-  ([hub.md § A reader, not a daemon](hub.md#a-reader-not-a-daemon)).
+  ([dispatch-dashboard.md § A reader, not a daemon](dispatch-dashboard.md#a-reader-not-a-daemon)).
 - **Free text to a running session.** The dispatcher composes no prompt
   for a session, and `send` gives nobody a way to. A person who wants to
   talk to a session opens its workspace.
@@ -517,13 +517,13 @@ chose, and the question's options and the answer's choice to the thread
   Both read what no record holds, and a transcript can hold a secret.
   Either joins when `ask` is in use and a question it cannot answer from
   records has come up often enough to name, with its own flag, and no read
-  escalates to it. The hub's `hub-conversation` record is no transcript of
-  a station: it is the person's history of their chat with the hub's
+  escalates to it. The dashboard's `operator-conversation` record is no transcript of
+  a station: it is the person's history of their chat with the dashboard's
   operator, kept on one machine at mode `0600`. No station and not `ask`
   ever reads it, it is replayed only as the context of that chat's next
   turn and never as a request, and a `jig gc` kind removes it 30 days after
   its thread settles
-  ([hub.md § The operator chat](hub.md#the-operator-chat)).
+  ([dispatch-dashboard.md § The operator chat](dispatch-dashboard.md#the-operator-chat)).
 - **Addresses for standing roles**, such as the review arbiter or the agent
   a change area names. They leave no records keyed by a piece of work, and
   `do-item`'s routing already says which agent a change gets. A role joins

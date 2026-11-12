@@ -170,7 +170,7 @@ function serialLines(s: SerialReport | undefined): string[] {
   ];
 }
 
-/** The dispatch labels' part: the count, each command label, what a hold kept off, and each write. */
+/** The dispatch labels' part: the count, each command label, what a hold kept off, each write, and each item moved to or out of `blocked`. */
 function labelLines(l: LabelReport | undefined): string[] {
   if (l === undefined) return [];
   const count = (o: LabelWrite["outcome"]) =>
@@ -186,6 +186,9 @@ function labelLines(l: LabelReport | undefined): string[] {
     ),
     ...l.writes.map(
       (w) => `  label    ${w.outcome.padEnd(8)} ${w.target}: ${w.detail}`,
+    ),
+    ...(l.blocked ?? []).map(
+      (b) => `  blocked  ${b.outcome.padEnd(8)} ${b.target}: ${b.detail}`,
     ),
   ];
 }

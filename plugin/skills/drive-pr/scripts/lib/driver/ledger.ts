@@ -79,6 +79,7 @@ import type { DriveState } from "./../state/schema.ts";
 import type { DriveLock } from "./locks.ts";
 import { driveState } from "./paths.ts";
 import { labelDrive } from "./state-labels.ts";
+import { stopKey } from "../../../../../shared/pr-labels/blocked.ts";
 import { readDriveState, recordDriveEvent } from "./rearm.ts";
 import { driverRuntime } from "./runtime.ts";
 import { SINGLE_INSTANCE_LOCK_EXIT, TAKEN_OVER_EXIT } from "./settings.ts";
@@ -633,13 +634,18 @@ async function afterStopWrite(
   if (next === "unwritten") return;
   await dropRecord();
   if (next === "refused") return;
-  await labelOwnDrive(pr, async () => ({
-    stopped: code,
-    byPerson:
-      personStopFor(await resolveStateDir(), pr, started).personStop !==
-      undefined,
-    verifiedSha: (await readDriveState(pr))?.verifiedSha ?? "",
-  }));
+  await labelOwnDrive(pr, async () => {
+    const state = await readDriveState(pr);
+    return {
+      stopped: code,
+      byPerson:
+        personStopFor(await resolveStateDir(), pr, started).personStop !==
+        undefined,
+      verifiedSha: state?.verifiedSha ?? "",
+      stop: stopKey(started, state?.rounds ?? 0),
+      parks: state?.parked ?? [],
+    };
+  });
 }
 
 /**

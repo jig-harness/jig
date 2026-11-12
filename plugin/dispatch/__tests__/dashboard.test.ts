@@ -496,6 +496,99 @@ describe("jig dispatch dashboard", () => {
     expect(policy).toContain(`'sha256-${hash}'`);
   });
 
+  /** A PNG's width and height, from its header. */
+  function pngSize(bytes: Uint8Array): string {
+    const view = new DataView(bytes.buffer, bytes.byteOffset);
+    expect(Array.from(bytes.slice(0, 8))).toEqual([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+    ]);
+    return `${view.getUint32(16)}x${view.getUint32(20)}`;
+  }
+
+  it("serves the app manifest and the icons it names to a server without a token, from an allowed host only", async () => {
+    const served = serveDashboard({
+      listen: { host: "127.0.0.1", port: null },
+      port: 0,
+      root: fixtureLog(),
+      token: null,
+      allowedHosts: ["front.example.ts.net"],
+    });
+    stop = served.stop;
+    const get = (path: string, host = "front.example.ts.net") =>
+      fetch(new URL(path, served.url), { headers: { host } });
+
+    const response = await get("/manifest.webmanifest");
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain(
+      "application/manifest+json",
+    );
+    const manifest = (await response.json()) as {
+      start_url: string;
+      scope: string;
+      display: string;
+      icons: { src: string; sizes: string; type: string; purpose: string }[];
+    };
+    // The installed app opens from this address, so it carries no token.
+    expect(manifest.start_url).toBe("/");
+    expect(manifest.scope).toBe("/");
+    expect(manifest.display).toBe("standalone");
+    expect(manifest.icons.map((i) => i.purpose).sort()).toEqual([
+      "any",
+      "any",
+      "maskable",
+    ]);
+    for (const icon of manifest.icons) {
+      const png = await get(icon.src);
+      expect({ src: icon.src, status: png.status }).toEqual({
+        src: icon.src,
+        status: 200,
+      });
+      expect(png.headers.get("content-type")).toBe(icon.type);
+      expect({
+        src: icon.src,
+        size: pngSize(new Uint8Array(await png.arrayBuffer())),
+      }).toEqual({ src: icon.src, size: icon.sizes });
+    }
+
+    const rebound = await get("/manifest.webmanifest", "attacker.example");
+    expect(rebound.status).toBe(403);
+    expect((await rebound.json()) as unknown).toMatchObject({
+      failure: { code: "host-refused" },
+    });
+  });
+
+  it("answers the manifest and the icons only to the token in a server that asks for one", async () => {
+    const read = served(fixtureLog());
+    for (const path of ["/manifest.webmanifest", "/icons/icon-512.png"]) {
+      const without = await read(path, null);
+      expect({ path, status: without.status }).toEqual({ path, status: 403 });
+      expect((await without.json()) as unknown).toMatchObject({
+        failure: { code: "token-refused" },
+      });
+      const wrong = await read(path, "wrong");
+      expect({ path, status: wrong.status }).toEqual({ path, status: 403 });
+      const through = await read(path);
+      expect({ path, status: through.status }).toEqual({ path, status: 200 });
+    }
+    expect((await read("/icons/not-an-icon.png")).status).toBe(404);
+    // The app's files are no way round the token for the data routes.
+    for (const path of ["/state", "/rows", "/receipt", "/pr"]) {
+      const without = await read(path, null);
+      expect({ path, status: without.status }).toEqual({ path, status: 403 });
+    }
+  });
+
+  it("lets the page name its manifest under its policy", async () => {
+    const page = await served(fixtureLog())("/");
+    expect(page.headers.get("content-security-policy")).toContain(
+      "manifest-src 'self'",
+    );
+    const html = await page.text();
+    expect(html).toContain(
+      '<link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials">',
+    );
+  });
+
   it("sends gzip only when the request's Accept-Encoding allows it", async () => {
     const read = served(fixtureLog());
     const encoding = async (accept: string) =>

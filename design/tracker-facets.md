@@ -826,8 +826,8 @@ constraints:
   branch.
 - **Its environment is scrubbed, and that is not containment.** It runs
   without the tracker and forge tokens the adapters read (`GH_TOKEN`,
-  `GITHUB_TOKEN`, `JIRA_EMAIL`, `JIRA_API_TOKEN`, `LINEAR_API_KEY`,
-  `LINEAR_API_TOKEN`), so they stay out of its environment and its logs.
+  `GITHUB_TOKEN`, `JIRA_EMAIL`, `JIRA_API_TOKEN`, `JIRA_BEARER_TOKEN`,
+  `JIRA_TOKEN_COMMAND`, `LINEAR_API_KEY`, `LINEAR_API_TOKEN`), so they stay out of its environment and its logs.
   It still runs as the same user, who can read the `gh` and `linear`
   logins and any file that user can, so what bounds it is the review of the
   default branch that names it.
