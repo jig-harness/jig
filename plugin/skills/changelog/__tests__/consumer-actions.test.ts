@@ -512,6 +512,14 @@ describe("review hardening", () => {
     ).toBe(false);
   });
 
+  test("parent text that contains the nesting sentinel does not hide a nested marker", () => {
+    expect(
+      readDeclaration(
+        `- Parent JIGCONSUMERACTIONMARK.\n  - Child. **Consumer action:** ${ACTION}`,
+      ).ok,
+    ).toBe(false);
+  });
+
   test("a periodless none in another emphasis is refused; ordinary prose is not", () => {
     expect(strict("Change. *Consumer action:* none")).not.toEqual([]);
     expect(strict("Change. **Consumer action** none")).not.toEqual([]);

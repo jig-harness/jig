@@ -323,6 +323,13 @@ function readBody(body: string): Outcome<Declaration> {
 
 const MARK_SENTINEL = "JIGCONSUMERACTIONMARK";
 
+/** A sentinel no part of `entry` contains, so no text of the entry can collide with it. */
+function sentinelAbsentFrom(entry: string): string {
+  let sentinel = MARK_SENTINEL;
+  while (entry.includes(sentinel)) sentinel += "X";
+  return sentinel;
+}
+
 /**
  * Whether the marker at `at` in `entry` belongs to a nested list item rather
  * than the entry itself, as the Markdown parser reads the list: the marker is
@@ -330,13 +337,14 @@ const MARK_SENTINEL = "JIGCONSUMERACTIONMARK";
  * renders in a paragraph of the entry's item, not inside a list nested in it.
  */
 function nested(entry: string, at: number, end: number): boolean {
-  const marked = `${entry.slice(0, at)}${MARK_SENTINEL}${entry.slice(end)}`;
+  const sentinel = sentinelAbsentFrom(entry);
+  const marked = `${entry.slice(0, at)}${sentinel}${entry.slice(end)}`;
   const [list] = parseBlocks(marked);
   if (list?.k !== "list") return false;
   const own = list.items[0] ?? [];
   return !own.some(
     (block) =>
-      block.k === "paragraph" && plain(block.inline).includes(MARK_SENTINEL),
+      block.k === "paragraph" && plain(block.inline).includes(sentinel),
   );
 }
 
