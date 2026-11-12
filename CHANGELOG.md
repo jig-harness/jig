@@ -182,6 +182,9 @@ changes are marked **Breaking** and say what a consumer changes.
   tests divided by the lines of code in the code-stats skill's default area,
   the figure its report states beside both counts.
 - M0’s discovery-budget check accepts `--commands <dir>` to include legacy command descriptions in the shared skill listing, with nested names, fallback descriptions, exclusions and skill shadowing.
+- M12 records Rex as a workspace runtime to watch, with conditions for
+  reconsidering a provider. The glossary defines the program status a
+  program reports to its terminal through OSC 7501.
 
 ### Changed
 
@@ -390,6 +393,45 @@ changes are marked **Breaking** and say what a consumer changes.
   under it.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
+
+## [0.214.2] - 2026-11-12
+
+### Fixed
+
+- `drive-pr`'s foreground wait (`foreground-wait.ts launch`) now returns only
+  once its runner has started the command, or settled without starting it.
+  It used to return while the runner was still starting up, so a
+  cancellation of the pass's recorded runners that began right after the
+  launch could end the runner just before it started the command, which then
+  ran on with nothing supervising it. On Windows a drive cancels a pass's
+  runners that way when the pass ends or is stopped; on other systems the
+  stop signals the pass's process group, which the command is in.
+
+## [0.214.1] - 2026-11-12
+
+### Fixed
+
+- Jira and GitHub tracker reads retry HTTP 429 and 503 responses up to three times, respecting Retry-After, cancellation and the original call deadline. Read-only searches can retry; writes never do. Credential rate-limit holds continue to prevent requests before their reset.
+- GitHub tracker reads correctly parse headerless responses emitted with mixed line endings by the GitHub CLI.
+
+## [0.214.0] - 2026-11-12
+
+### Added
+
+- `jig dispatch dashboard --access` prints the address of a private-network
+  front, and a QR code of it, for opening the dashboard from a phone. Name the
+  front's token-free HTTPS address as the new `dashboard.front` setting in the
+  machine's dispatch file (accepted only with `require_token: false`, and
+  never with a user name, password, query or fragment; it is printed as
+  configured, so it must carry no token in its path either). `--access` then
+  prints that address as text and, on a terminal wide enough to draw it, a QR
+  code of the same address beneath it, black on white in colors it sets
+  itself, or in plain characters under `NO_COLOR`. The code carries no token:
+  the front still signs the viewer in. Without a front, `--access` prints the private URL as
+  before, draws no code for it, and says on standard error how to set one up.
+  The QR code is drawn by the plugin itself, with no program to install. See
+  [CONFIGURATION.md](plugin/CONFIGURATION.md#the-machines-dispatch-file)
+  and [the phone-access guide](plugin/phone-access.md).
 
 ## [0.213.1] - 2026-11-12
 
@@ -7413,7 +7455,10 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.213.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.214.2...HEAD
+[0.214.2]: https://github.com/jig-harness/jig/compare/v0.214.1...v0.214.2
+[0.214.1]: https://github.com/jig-harness/jig/compare/v0.214.0...v0.214.1
+[0.214.0]: https://github.com/jig-harness/jig/compare/v0.213.1...v0.214.0
 [0.213.1]: https://github.com/jig-harness/jig/compare/v0.213.0...v0.213.1
 [0.213.0]: https://github.com/jig-harness/jig/compare/v0.212.1...v0.213.0
 [0.212.1]: https://github.com/jig-harness/jig/compare/v0.212.0...v0.212.1

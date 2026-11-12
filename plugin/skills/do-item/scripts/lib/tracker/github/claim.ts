@@ -52,11 +52,16 @@ export function claimOperations(
   ): Promise<{ id: string; users: TrackerUser[] }> {
     const ref = client.ref(key);
     const data = record(
-      await client.transport(ASSIGNEES, {
-        owner: ref.owner,
-        name: ref.name,
-        number: ref.number,
-      }),
+      await client.transport(
+        ASSIGNEES,
+        {
+          owner: ref.owner,
+          name: ref.name,
+          number: ref.number,
+        },
+        undefined,
+        true,
+      ),
       "data",
     );
     const issue = record(data.repository, "repository").issue;
@@ -78,7 +83,10 @@ export function claimOperations(
 
   return {
     async viewer() {
-      const data = record(await client.transport(VIEWER, {}), "data");
+      const data = record(
+        await client.transport(VIEWER, {}, undefined, true),
+        "data",
+      );
       return userOf(data.viewer, "viewer");
     },
     async assignees(key) {
@@ -102,7 +110,10 @@ export function claimOperations(
     },
     async user(identity) {
       const login = identity.trim();
-      const data = record(await client.transport(USER, { login }), "data");
+      const data = record(
+        await client.transport(USER, { login }, undefined, true),
+        "data",
+      );
       if (data.user === null || data.user === undefined)
         throw new TrackerRequestError(
           "unresolved",

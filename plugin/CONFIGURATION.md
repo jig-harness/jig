@@ -1547,6 +1547,7 @@ dashboard:
   listen: 100.64.0.7:8765           # jig dispatch dashboard; private or loopback only
   # require_token: false            # only with a loopback listen: a front authenticates
   # allowed_hosts: [host.example.ts.net]  # names that front forwards under
+  # front: https://host.example.ts.net:8443/  # that front's token-free address, which --access prints
 records:
   shared: forge                     # where another host reads this host's launches
 send: true                          # false refuses every jig send from this machine
@@ -1615,6 +1616,7 @@ rejects any other form.
 | `dashboard.listen` | None; the address `jig dispatch dashboard` listens on: a numeric address in the loopback or private ranges (`127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`, `::1`, `fc00::/7`, `fe80::/10`) with an optional port (`8765` when none is named; `--port` overrides it). A host name or any other address is refused. Without it, the dashboard does not start |
 | `dashboard.require_token` | `true`; whether a request needs the token the command prints. `false` serves the page with no token and is accepted only when `dashboard.listen` is a loopback address (`127.0.0.0/8`, `::1`), so the only way in from another machine is a front on the host (Tailscale Serve, a reverse proxy) that authenticates the person first. The page is read-only either way |
 | `dashboard.allowed_hosts` | None; the host names a front forwards requests under (the `Host` header), read only with `require_token: false`. A tokenless dashboard answers `localhost`, `127.0.0.0/8` and `::1` and these names, and refuses any other `Host` with 403, so a page on another origin cannot read it by pointing its own name at this address |
+| `dashboard.front` | None; the token-free HTTPS address a private-network front (Tailscale Serve, a reverse proxy that signs the person in) publishes for the dashboard, such as `https://host.example.ts.net:8443/`. With it, `jig dispatch dashboard --access` prints this address in place of the reader's own URL and, on a terminal, a [QR code](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (a square barcode a phone camera reads) of the same address. Accepted only with `require_token: false`, and only as an `https:` address with no user name, password, query or fragment, and no `%3F`, `%23` or `;` in its path, whose host is a name or an address in the private ranges other than loopback and link-local; `localhost` and the other names for this machine are refused. It is printed exactly as configured, so it must not carry a token anywhere, its path included. A refusal shows only its scheme, host and path. Jig never resolves the name. The front's name normally belongs in `allowed_hosts` too, unless the front sends a `Host` the dashboard already allows; `--access` says so when it is missing. The page the reader serves is the same with or without it |
 
 The same dashboard settings apply to the foreground command and to
 `jig dispatch dashboard --install --yes`. The installed reader has its own
@@ -1622,7 +1624,8 @@ retry timer and requires a fixed listen port. Linux systemd requires user
 [lingering](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), which keeps the account's service manager running without a login; Linux cron is also supported. macOS LaunchAgents tied to a login cannot keep
 a reader through logout, so installation refuses them. No Orca install is
 needed. `--status` reports availability and diagnosis; `--access` alone
-prints the installed reader's private URL; `--uninstall --yes` removes it.
+prints the installed reader's private URL, or the front's address and its QR
+code when `dashboard.front` names one; `--uninstall --yes` removes it.
 See [the dashboard's availability and host checks](README.md#the-dispatcher)
 and [opening it from a phone](phone-access.md).
 
