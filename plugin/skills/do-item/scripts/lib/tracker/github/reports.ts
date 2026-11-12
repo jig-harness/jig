@@ -199,16 +199,29 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
   }
 
   /**
-   * Refuses a label the home repository does not have, unless it is the
-   * epic label read with the epic's issue types too.
+   * Refuses a label the home repository does not have; the epic label read
+   * with the epic's issue types needs none, but each type must be one of the
+   * repository's.
    */
   async function requireLabel(label: string): Promise<void> {
-    if (epicTypesOfLabel(label, epic).length > 0) return;
+    const types = epicTypesOfLabel(label, epic);
+    if (types.length > 0) return requireTypes(types);
     const labels = await client.repoLabels();
     if (!labels.some((l) => same(l.name, label)))
       throw new TrackerRequestError(
         "unresolved",
         `the configured label '${label}' is not a label of ${home.owner}/${home.name}; a name that resolves to nothing silently shrinks the population`,
+      );
+  }
+
+  /** Refuses an epic type the home repository does not have. */
+  async function requireTypes(types: ReadonlyArray<string>): Promise<void> {
+    const have = await client.facets.issueTypes();
+    const lacking = types.filter((t) => !have.some((h) => same(h, t)));
+    if (lacking.length > 0)
+      throw new TrackerRequestError(
+        "unresolved",
+        `issue_tracker.labels.epic_types names ${lacking.map((t) => `'${t}'`).join(", ")}, which is no issue type of ${home.owner}/${home.name}; a name that resolves to nothing silently shrinks the population`,
       );
   }
 

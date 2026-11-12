@@ -193,14 +193,26 @@ describe("GitHub: an epic by its issue type", () => {
     ]);
   });
 
-  it("reads a ledger of the epic label by type too, needing no such label on the repository", async () => {
-    const { t, calls } = gitHub(
-      () => ({ repository: { issues: conn([issueNode({ number: 2 })]) } }),
-      { issue_tracker: EPIC_TYPES },
-    );
+  it("reads a ledger of the epic label by type too, refusing a type the repository lacks", async () => {
+    const answer = (types: string[]) => (call: { op: string }) =>
+      call.op === "TrackerFacetStores"
+        ? {
+            repository: {
+              issueTypes: conn(types.map((name) => ({ id: name, name }))),
+              issueFields: conn([]),
+            },
+          }
+        : { repository: { issues: conn([issueNode({ number: 2 })]) } };
+    const { t, calls } = gitHub(answer(["Bug", "Epic"]), {
+      issue_tracker: EPIC_TYPES,
+    });
     const ledger = await t.ledger({ label: "epic" });
     expect(ledger.map((l) => l.identifier)).toEqual(["#2"]);
     expect(calls.map((c) => c.op)).not.toContain("TrackerLabels");
+    const typo = gitHub(answer(["Bug"]), { issue_tracker: EPIC_TYPES });
+    await expect(typo.t.ledger({ label: "epic" })).rejects.toThrow(
+      "names 'Epic', which is no issue type",
+    );
   });
 
   it("reads the epic label alone where no epic_types is set", async () => {

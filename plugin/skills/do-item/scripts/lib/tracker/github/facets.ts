@@ -180,6 +180,8 @@ export interface GitHubFacets {
   detect(unnamed: Facet[], signal?: AbortSignal): Promise<Detected>;
   /** Drop the cached answer: a write was refused for a value it named. */
   forget(): Promise<void>;
+  /** The repository's issue types, by name. */
+  issueTypes(signal?: AbortSignal): Promise<string[]>;
 }
 
 const same = (a: string, b: string) => fold(a) === fold(b);
@@ -769,6 +771,9 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
     updateInput,
     touches,
     detect: detectCached,
+    async issueTypes(signal) {
+      return (await storeIds(signal)).types.map((t) => t.name);
+    },
     async forget() {
       const key = await cacheKey(unnamed);
       if (key !== null) opts.cache?.drop(key);
