@@ -2222,9 +2222,11 @@ make, use the entry's term instead.
   stations has an *address*. See
   [design/hub.md](design/hub.md#a-piece-of-work-and-its-views).
 - **QR code** (quick response code) — a square barcode a phone camera can
-  scan to open an address. The *hub*'s planned sharing path encodes its
-  private, token-free address; scanning transfers the address and does not
-  authenticate the reader.
+  scan to open an address. `jig dispatch dashboard --access` draws one of the
+  dashboard's private, token-free front address
+  ([plugin/phone-access.md](plugin/phone-access.md)), and the *hub*'s
+  planned sharing path does the same for its own; scanning transfers the
+  address and does not authenticate the reader.
 - **Secure context** — a page environment the browser considers trustworthy,
   normally because it was delivered over an encrypted web connection or
   from the browser's own loopback address. Browser APIs such as the

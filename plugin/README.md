@@ -948,7 +948,7 @@ independent of the dispatch and change-probe timers, without Orca:
 jig dispatch dashboard --install         # preview, using dashboard.listen
 jig dispatch dashboard --install --yes   # install once; repeating is safe
 jig dispatch dashboard --status          # timer, listener health and log locations
-jig dispatch dashboard --access          # explicitly print the private URL
+jig dispatch dashboard --access          # print the address to open: the front's, else the private URL
 jig dispatch dashboard --uninstall --yes # remove this reader and its retry timer
 ```
 
@@ -960,6 +960,15 @@ prints the installed reader's URL; service output and installation previews
 never print it. The access record is owner-only and invalidated on renewal.
 The server routes still only read the dispatch records; availability state
 and the private access record live under `~/.local/state/jig/dispatch/dashboard/`.
+
+With a private-network front named as `dashboard.front`, `--access` prints
+that front's token-free HTTPS address instead, and on a terminal draws a
+[QR code](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (a
+square barcode a phone camera reads) of the same address below it. The code
+holds only the address: the front still signs the viewer in. Into a pipe, a
+file or a `TERM=dumb` terminal it prints the address alone. Without a front,
+`--access` prints the private URL as before, draws no code for it, since it
+carries a token, and says on standard error how to set up a front.
 
 The supported durable setup is Linux with either a systemd user timer and
 **[lingering](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) enabled** (the account's service manager runs without a login), or cron. With systemd, install refuses until

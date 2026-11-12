@@ -46,7 +46,7 @@ function inV6(address: string): boolean {
 }
 
 /** Whether an IP literal lies in a range the dashboard may listen in. */
-function isPrivateAddress(host: string): boolean {
+export function isPrivateAddress(host: string): boolean {
   const kind = isIP(host);
   if (kind === 4) return inV4(host);
   if (kind === 6) return inV6(host);

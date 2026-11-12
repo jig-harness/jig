@@ -94,6 +94,7 @@ without it.
      listen: 127.0.0.1:8765
      require_token: false
      allowed_hosts: [<host>.<tailnet>.ts.net]
+     front: https://<host>.<tailnet>.ts.net:8443/
    ```
 
    `require_token: false` is accepted only with a loopback `listen`, so the
@@ -103,9 +104,12 @@ without it.
    a page on another origin from reading it. If the front rewrites the
    `Host` header to a name the dashboard already allows, leave
    `allowed_hosts` alone. Another front or another name needs its own
-   entry, and stays out otherwise. The reader stops when its configuration
-   changes and the timer starts it again (allow up to two minutes); check with
-   `--status`.
+   entry, and stays out otherwise. `front` is the address the front
+   publishes in step 3, with the port you choose there; the dashboard does not
+   serve on it, it only prints it for the phone (step 5). It is refused
+   unless it is an `https:` address with no token, password, query or
+   fragment in it. The reader stops when its configuration changes and the
+   timer starts it again (allow up to two minutes); check with `--status`.
 
 3. **Publish it on a separate HTTPS port.** Port 443 may already serve
    something else, so pick an HTTPS port and root path no existing route
@@ -133,14 +137,24 @@ without it.
    the dashboard reads no identity header, so a client-supplied one grants
    nothing.
 
-5. **Open it from a second device.** In the phone's ordinary browser, with
-   the phone signed in to the tailnet, open the address. Bookmark it. To carry
-   the address to the phone, print it as text and as a QR code of the same
-   token-free address, for example with `qrencode -t ANSIUTF8
-   'https://<host>.<tailnet>.ts.net:8443/'` where `qrencode` is installed.
-   The text is the fallback when scanning fails. Scan it and confirm the
-   phone's browser shows an address with no token in it. Then run the
-   [phone checks](#phone-checks).
+5. **Open it from a second device.** To carry the address to the phone,
+   print it:
+
+   ```sh
+   jig dispatch dashboard --access
+   ```
+
+   It prints the `front` address as text and, below it, a
+   [QR code](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (a
+   square barcode a phone camera reads) of the same address. The code holds
+   only the address, never a token: scanning it opens the page, and the front
+   still decides who may see it. The text is the fallback when scanning
+   fails, and the only output into a pipe or a terminal that cannot draw the
+   code. The code is drawn light on dark, which reads best on a terminal with
+   a dark background; most phone cameras also read it inverted. With the
+   phone signed in to the tailnet, scan the code or type the address in the
+   phone's ordinary browser. Confirm the browser shows an address with no
+   token in it, and bookmark it. Then run the [phone checks](#phone-checks).
 
 ## Without Orca or Tailscale: an authenticated reverse proxy
 
@@ -156,6 +170,9 @@ must do, whatever the product:
   every interface by default, so name the private interface explicitly.
 - **Forward the public `Host`**, and put that name in `allowed_hosts` as
   above, or send a `Host` the dashboard already allows.
+- **Name its address as `dashboard.front`** (`https://jig.example.net/` in
+  the example below), so `jig dispatch dashboard --access` prints it and its
+  QR code for the phone.
 - **Drop identity headers a client sends**, and set its own from the sign-in
   (copy only fields the sign-in service verified).
   The dashboard ignores them, but a proxy that lets them through teaches the
@@ -239,7 +256,9 @@ Where no front is set up, the dashboard can serve a phone directly:
    (a Tailscale address, say) and **leave `require_token` on**.
 2. Join the phone to the same private network, then print the address with
    `jig dispatch dashboard --access` and carry it to the phone by a private
-   channel.
+   channel. It draws no QR code for this address: the address carries the
+   token, and a code of it would show the credential to any camera that sees
+   the screen.
 
 What it costs:
 
@@ -307,9 +326,9 @@ Removing the front touches nothing else:
    route this guide added, on the port you chose; other mounts on that port
    stay. Run `tailscale serve status` and check every other route is still
    listed. For a reverse proxy, remove its site block and reload it.
-2. In the machine file, delete `require_token: false` and the entry added to
-   `allowed_hosts`, and set `listen` back to its earlier private address if
-   the fallback is wanted. The reader restarts on its own. If any route
+2. In the machine file, delete `require_token: false`, `front` and the entry
+   added to `allowed_hosts`, and set `listen` back to its earlier private
+   address if the fallback is wanted. The reader restarts on its own. If any route
    still forwards to the dashboard's port, restore the token first: a
    tokenless dashboard behind a route with no sign-in serves everyone it
    reaches.
