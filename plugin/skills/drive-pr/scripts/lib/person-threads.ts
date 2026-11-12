@@ -38,6 +38,14 @@ export const PERSON_THREAD_EXIT = 5;
 /** Pages read before the check gives up and refuses: 1,000 threads. */
 const MAX_PAGES = 20;
 
+const COMMENTS_QUERY = `query($id:ID!, $after:String){
+  node(id:$id){
+    ... on PullRequestReviewThread{
+      comments(first:100, after:$after){ pageInfo{ hasNextPage endCursor } nodes{ url createdAt lastEditedAt author{ login __typename } authorAssociation body } }
+    }
+  }
+}`;
+
 const PAGE_QUERY = `query($id:ID!, $after:String){
   viewer{ login }
   node(id:$id){
@@ -48,7 +56,7 @@ const PAGE_QUERY = `query($id:ID!, $after:String){
           pageInfo{ hasNextPage endCursor }
           nodes{
             id path line isResolved
-            comments(first:100){ pageInfo{ hasNextPage } nodes{ url createdAt lastEditedAt author{ login __typename } authorAssociation body } }
+            comments(first:100){ pageInfo{ hasNextPage endCursor } nodes{ url createdAt lastEditedAt author{ login __typename } authorAssociation body } }
           }
         }
       }
@@ -77,6 +85,8 @@ export interface ReviewThread {
   isResolved: boolean;
   /** More than 100 comments: a person's later word may be past the window. */
   truncated: boolean;
+  /** Where the comments past the first 100 start, when there are any. */
+  commentsCursor?: string | null;
   comments: ThreadComment[];
 }
 
@@ -88,7 +98,10 @@ export interface PersonThread {
   line: number | null;
   isResolved: boolean;
   truncated: boolean;
+  /** Everything a person said there: the arbiter weighs it whole. */
   words: ThreadComment[];
+  /** A person spoke or edited after the ruling's `contextAt` (always, with none). */
+  fresh: boolean;
 }
 
 /**
@@ -120,10 +133,11 @@ function postedAfter(c: ThreadComment, since: string): boolean {
 
 /**
  * The threads on `path`, other than `self`, that a person spoke on, or whose
- * comments could not all be read. `self`'s own comments are already in front
- * of the pass that triages it, a person's answer to its park included. With
- * `since`, only words posted after that time count, so a ruling recorded
- * then has weighed everything older.
+ * comments could not all be read, with everything the person said: older
+ * words stay in front of the arbiter. `self`'s own comments are already in
+ * front of the pass that triages it, a person's answer to its park included.
+ * With `since`, `fresh` says whether any word was posted or edited after that
+ * time, so a ruling recorded then has weighed everything older.
  */
 export function personThreadsOn(
   threads: readonly ReviewThread[],
@@ -134,17 +148,32 @@ export function personThreadsOn(
 ): PersonThread[] {
   return threads
     .filter((t) => t.id !== self && t.path === path)
-    .map((t) => ({
-      id: t.id,
-      url: t.comments[0]?.url ?? "",
-      line: t.line,
-      isResolved: t.isResolved,
-      truncated: t.truncated,
-      words: personsWords(t, viewer).filter(
-        (c) => since === undefined || postedAfter(c, since),
-      ),
-    }))
+    .map((t) => {
+      const words = personsWords(t, viewer);
+      return {
+        id: t.id,
+        url: t.comments[0]?.url ?? "",
+        line: t.line,
+        isResolved: t.isResolved,
+        truncated: t.truncated,
+        words,
+        fresh: since === undefined || words.some((c) => postedAfter(c, since)),
+      };
+    })
     .filter((p) => p.truncated || p.words.length > 0);
+}
+
+/**
+ * A comment's author, or `null` when it does not read whole. A deleted
+ * account is an explicit null author and no person; an object missing its
+ * login or type is unreadable.
+ */
+function authorFrom(author: unknown): { login: string; type: string } | null {
+  if (author === null) return { login: "", type: "" };
+  if (!isRecord(author)) return null;
+  const { login, __typename: type } = author;
+  if (typeof login !== "string" || typeof type !== "string") return null;
+  return { login, type };
 }
 
 /** One comment, or `null` when any field the check reads is missing. */
@@ -159,11 +188,11 @@ function commentFrom(raw: unknown): ThreadComment | null {
     (lastEditedAt !== null && typeof lastEditedAt !== "string")
   )
     return null;
-  // A deleted account has no author; it is no person.
-  const who = isRecord(author) ? author : {};
+  const who = authorFrom(author);
+  if (who === null) return null;
   return {
-    login: typeof who.login === "string" ? who.login : "",
-    type: typeof who.__typename === "string" ? who.__typename : "",
+    login: who.login,
+    type: who.type,
     association: authorAssociation,
     body,
     at: createdAt,
@@ -188,6 +217,10 @@ function threadFrom(raw: unknown): ReviewThread | null {
     line: typeof raw.line === "number" ? raw.line : null,
     isResolved: raw.isResolved,
     truncated: !isRecord(pageInfo) || pageInfo.hasNextPage !== false,
+    commentsCursor:
+      isRecord(pageInfo) && typeof pageInfo.endCursor === "string"
+        ? pageInfo.endCursor
+        : null,
     comments: comments as ThreadComment[],
   };
 }
@@ -230,6 +263,50 @@ export function pageFrom(stdout: string): Page | null {
   };
 }
 
+interface CommentsPage {
+  comments: ThreadComment[];
+  endCursor: string | null;
+}
+
+/** One page of a thread's comments, or `null` when any part does not read. */
+function commentsPageFrom(stdout: string): CommentsPage | null {
+  const read = attempt("unreadable", "the thread's comments", (): unknown =>
+    JSON.parse(stdout),
+  );
+  if (!read.ok || !isRecord(read.value)) return null;
+  const data = read.value.data;
+  const node = isRecord(data) ? data.node : undefined;
+  const conn = isRecord(node) ? node.comments : undefined;
+  if (!isRecord(conn) || !isRecord(conn.pageInfo) || !Array.isArray(conn.nodes))
+    return null;
+  const { hasNextPage, endCursor } = conn.pageInfo;
+  if (typeof hasNextPage !== "boolean") return null;
+  if (hasNextPage && (typeof endCursor !== "string" || endCursor === ""))
+    return null;
+  const comments = conn.nodes.map(commentFrom);
+  if (comments.some((c) => c === null)) return null;
+  return {
+    comments: comments as ThreadComment[],
+    endCursor: hasNextPage ? (endCursor as string) : null,
+  };
+}
+
+/** The comments of `t` past its first 100, appended; `t` stays truncated if a read fails. */
+async function readRemainingComments(t: ReviewThread): Promise<void> {
+  let after = t.commentsCursor ?? null;
+  if (after === null) return;
+  for (let page = 0; page < MAX_PAGES && after !== null; page++) {
+    const args = ["api", "graphql", "-f", `query=${COMMENTS_QUERY}`];
+    args.push("-f", `id=${t.id}`, "-f", `after=${after}`);
+    const r = await ghCall(args, { stderr: "inherit" });
+    const read = r.code === 0 ? commentsPageFrom(r.stdout) : null;
+    if (read === null) return;
+    t.comments.push(...read.comments);
+    after = read.endCursor;
+  }
+  t.truncated = after !== null;
+}
+
 /**
  * `threadId`'s file and every review thread of its pull request, or `null`
  * when a read fails. Each page is one `ghCall` under its own deadline.
@@ -250,8 +327,10 @@ async function readThreads(threadId: string): Promise<{
     const read = pageFrom(r.stdout);
     if (read === null) return null;
     threads.push(...read.threads);
-    if (read.endCursor === null)
+    if (read.endCursor === null) {
+      for (const t of threads) if (t.truncated) await readRemainingComments(t);
       return { path: read.path, viewer: read.viewer, threads };
+    }
     after = read.endCursor;
   }
   return null;
@@ -278,7 +357,7 @@ export function refusalLines(
     }),
     "A fix never overrules a person's thread, open or resolved (the triage rubric's guardrails).",
     "Hand this finding and the threads above, with their ids, links and full text, to the review arbiter, record its ruling with drive-state.ts rule (SKILL.md § 4), and act on it:",
-    "fix-now lets this accepted reply post when its record names the time the context was gathered (contextAt) and no person spoke or edited since; rejected is answered **rejected**, citing the person's thread; escalate parks the thread under its class.",
+    "re-run the arbiter with every person's words above, since the threads' older words still bind it; fix-now lets this accepted reply post when its record names the time the context was gathered (contextAt) and no person spoke or edited since; rejected is answered **rejected**, citing the person's thread; escalate parks the thread under its class.",
   ];
 }
 
@@ -299,9 +378,14 @@ export async function refuseOverrulingPersonThread(
 ): Promise<void> {
   if (outcome !== "accepted" || thread.confirmedHumanStarted) return;
   const state = await readDriveState(pr);
-  const ruledAt = (state?.rulings ?? []).find(
+  const recorded = (state?.rulings ?? []).find(
     (r) => r.key === threadId && r.verdict === "fix-now",
   )?.contextAt;
+  // A context time still ahead of now weighed nothing: it lifts nothing.
+  const ruledAt =
+    recorded !== undefined && Date.parse(recorded) <= Date.now()
+      ? recorded
+      : undefined;
   const read = await readThreads(threadId);
   if (read === null || read.path === null)
     fail(
@@ -315,6 +399,7 @@ export async function refuseOverrulingPersonThread(
     read.viewer,
     ruledAt,
   );
-  if (persons.length > 0)
+  const blocking = persons.some((p) => p.truncated || p.fresh);
+  if (blocking)
     fail(PERSON_THREAD_EXIT, ...refusalLines(threadId, read.path, persons));
 }

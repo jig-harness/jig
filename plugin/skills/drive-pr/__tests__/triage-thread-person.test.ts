@@ -217,6 +217,39 @@ describe("triage-thread.ts and a person's thread on the same file", () => {
     expect(r.stderr).toContain("more than 100 comments");
   });
 
+  it("reads the rest of a long thread, and refuses on a person's word past the first 100 comments", () => {
+    const { dir, stateDir } = writeFixtureDir();
+    botFinding(dir, [
+      { id: "PRRT_long", path: FILE, truncated: true, comments: [bot("x")] },
+    ]);
+    writeFileSync(
+      join(dir, "comments-more.json"),
+      JSON.stringify({
+        data: {
+          node: {
+            comments: {
+              pageInfo: { hasNextPage: false, endCursor: null },
+              nodes: [
+                {
+                  url: "https://example.invalid/late",
+                  createdAt: "2026-01-02T00:00:00Z",
+                  lastEditedAt: null,
+                  author: { login: "maintainer", __typename: "User" },
+                  authorAssociation: "OWNER",
+                  body: "Keep these configurable.",
+                },
+              ],
+            },
+          },
+        },
+      }),
+    );
+    const r = runTriage(["PRRT_bot", "999"], ACCEPTED, dir, stateDir);
+    expectSpawnExit(r, 5);
+    expect(r.stderr).toContain("Keep these configurable.");
+    expect(r.stderr).not.toContain("more than 100 comments");
+  });
+
   it("refuses without posting when the pull request's threads cannot be read", () => {
     const { dir, stateDir } = writeFixtureDir();
     botFinding(dir, []);

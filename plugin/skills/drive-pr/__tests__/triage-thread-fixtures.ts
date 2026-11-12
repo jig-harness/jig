@@ -115,6 +115,10 @@ case "$*" in
       printf '%s' '{"data":{"viewer":{"login":"maintainer"},"node":{"path":"src/a.ts","pullRequest":{"reviewThreads":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[]}}}}}'
     fi
     exit 0 ;;
+  *'comments(first:100, after:'*)
+    [ -f "$F/comments-more.json" ] && { cat "$F/comments-more.json"; exit 0; }
+    echo "gh-stub: simulated comment page failure" >&2
+    exit 1 ;;
   *"node(id:"*)
     [ -f "$F/node-fail" ] && { echo "gh-stub: simulated node read failure" >&2; exit 1; }
     cat "$F/node.json"
@@ -154,7 +158,10 @@ function nodePayload(opts: {
       node: {
         isResolved: opts.isResolved ?? false,
         comments: {
-          pageInfo: { hasNextPage: opts.truncated ?? false },
+          pageInfo: {
+            hasNextPage: opts.truncated ?? false,
+            endCursor: opts.truncated ? "c1" : null,
+          },
           nodes: opts.comments.map((c, i) => ({
             url: c.url ?? `https://example.invalid/pull/1#discussion_seed${i}`,
             author: { login: c.author, __typename: c.authorType ?? "User" },
@@ -365,7 +372,10 @@ export function writeThreads(
     line: t.line ?? null,
     isResolved: t.isResolved ?? false,
     comments: {
-      pageInfo: { hasNextPage: t.truncated ?? false },
+      pageInfo: {
+        hasNextPage: t.truncated ?? false,
+        endCursor: t.truncated ? "c1" : null,
+      },
       nodes: t.comments.map((c) => ({
         author: { login: c.author, __typename: c.authorType ?? "User" },
         authorAssociation: c.authorAssociation,

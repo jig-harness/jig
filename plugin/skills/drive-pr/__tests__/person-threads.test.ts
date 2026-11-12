@@ -112,9 +112,10 @@ describe("personThreadsOn", () => {
     });
     const found = (since: string) =>
       personThreadsOn([old], "PRRT_self", "a.md", "maintainer", since);
-    expect(found("2026-02-01T00:00:00Z")).toEqual([]);
-    expect(found("2025-12-01T00:00:00Z")).toHaveLength(1);
-    expect(found("not a time")).toHaveLength(1);
+    expect(found("2026-02-01T00:00:00Z").map((p) => p.fresh)).toEqual([false]);
+    expect(found("2025-12-01T00:00:00Z").map((p) => p.fresh)).toEqual([true]);
+    expect(found("not a time").map((p) => p.fresh)).toEqual([true]);
+    expect(found("2026-02-01T00:00:00Z")[0]?.words).toHaveLength(1);
   });
 
   it("counts a comment edited after the watermark as new words", () => {
@@ -129,8 +130,8 @@ describe("personThreadsOn", () => {
     });
     const found = (since: string) =>
       personThreadsOn([edited], "PRRT_self", "a.md", "maintainer", since);
-    expect(found("2026-02-01T00:00:00Z")).toHaveLength(1);
-    expect(found("2026-04-01T00:00:00Z")).toEqual([]);
+    expect(found("2026-02-01T00:00:00Z")[0]?.fresh).toBe(true);
+    expect(found("2026-04-01T00:00:00Z")[0]?.fresh).toBe(false);
   });
 
   it("lists the other threads on the file a person spoke on, and those it could not read whole", () => {
@@ -186,6 +187,34 @@ describe("pageFrom", () => {
     ).toBe(true);
   });
 
+  it("reads a null author as no person, and an author missing its login or type as unreadable", () => {
+    const c = {
+      url: "u",
+      createdAt: "2026-01-01T00:00:00Z",
+      lastEditedAt: null,
+      authorAssociation: "OWNER",
+      body: "b",
+    };
+    const read = (author: unknown) =>
+      pageFrom(
+        page({ hasNextPage: false }, [
+          {
+            id: "T",
+            path: "a.md",
+            isResolved: false,
+            comments: {
+              pageInfo: { hasNextPage: false },
+              nodes: [{ ...c, author }],
+            },
+          },
+        ]),
+      );
+    expect(read(null)?.threads[0]?.comments[0]?.type).toBe("");
+    expect(read({ login: "maintainer" })).toBeNull();
+    expect(read({ __typename: "User" })).toBeNull();
+    expect(read({ login: "m", __typename: "User" })).not.toBeNull();
+  });
+
   it("refuses an answer it cannot read whole", () => {
     expect(pageFrom("not json")).toBeNull();
     expect(pageFrom(JSON.stringify({ data: { node: null } }))).toBeNull();
@@ -221,6 +250,7 @@ describe("refusalLines", () => {
         line: 3,
         isResolved: true,
         truncated: false,
+        fresh: true,
         words: [
           comment(
             "User",
@@ -235,6 +265,7 @@ describe("refusalLines", () => {
         line: null,
         isResolved: false,
         truncated: true,
+        fresh: true,
         words: [],
       },
     ]);

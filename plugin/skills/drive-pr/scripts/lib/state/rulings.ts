@@ -78,6 +78,14 @@ export function isOptionalRulings(v: unknown): boolean {
   return v === undefined || (Array.isArray(v) && v.every(isRuling));
 }
 
+/** Why a `contextAt` is not a past ISO 8601 time, or `null`. */
+function contextFault(contextAt: unknown): string | null {
+  if (contextAt === undefined) return null;
+  const at = typeof contextAt === "string" ? Date.parse(contextAt) : NaN;
+  if (Number.isNaN(at)) return "contextAt must be an ISO 8601 time when given";
+  return at > Date.now() ? "contextAt must not be in the future" : null;
+}
+
 /**
  * Why `input`'s fields are not of their types, or `null`. A field given with
  * the wrong type is refused, never read as absent: an absent
@@ -86,11 +94,8 @@ export function isOptionalRulings(v: unknown): boolean {
  */
 function shapeFault(input: Record<string, unknown>): string | null {
   const { key, verdict, humanDecision, class: cls, contextAt } = input;
-  if (
-    contextAt !== undefined &&
-    (typeof contextAt !== "string" || Number.isNaN(Date.parse(contextAt)))
-  )
-    return "contextAt must be an ISO 8601 time when given";
+  const timeFault = contextFault(contextAt);
+  if (timeFault !== null) return timeFault;
   if (humanDecision !== undefined && typeof humanDecision !== "boolean")
     return "humanDecision must be true or false when given";
   if (cls !== undefined && typeof cls !== "string")
@@ -107,12 +112,12 @@ function rulingFrom(
   input: Record<string, unknown>,
   classes: readonly string[],
 ): Omit<ArbiterRuling, "round" | "at"> | string {
+  const fault = shapeFault(input);
+  if (fault !== null) return fault;
   const contextAt =
     typeof input.contextAt === "string"
       ? { contextAt: new Date(input.contextAt).toISOString() }
       : {};
-  const fault = shapeFault(input);
-  if (fault !== null) return fault;
   const key = input.key as string;
   const verdict = input.verdict as Verdict;
   const humanDecision = input.humanDecision === true;

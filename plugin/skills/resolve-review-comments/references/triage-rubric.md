@@ -339,9 +339,10 @@ round's decision.
 
    **A person's thread is a decision, whatever its replies say.** A thread a
    person started (`confirmedHumanStarted: true`), or a bot's thread a person
-   answered in their own words (a trusted comment with no hidden marker, from
-   a login other than the one the loop posts as, whatever its first words;
-   the loop's own login cannot be told from a person who shares it), records what that person asked for or settled, open or
+   answered in their own words (a trusted comment with no hidden marker, whatever its
+   first words; only a later reply opening with an outcome token from the
+   login the loop posts as is the loop's own, and a person who shares that
+   login cannot be told from it), records what that person asked for or settled, open or
    resolved, with or without an outcome token on its replies. It outranks
    every earlier outcome on the same construct, including a bot's finding
    the loop accepted before the person spoke. A finding whose remedy would
