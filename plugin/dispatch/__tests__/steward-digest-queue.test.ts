@@ -3,6 +3,11 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { applySteward, stewardQueue } from "../lib/actions/steward.ts";
+import {
+  readRoomMs,
+  settleMs,
+  type ApplyState,
+} from "../lib/actions/launch.ts";
 import { keepStewardRun, type StewardDigest } from "../lib/steward.ts";
 import { closeStateDb } from "../lib/state.ts";
 import type { Tracked } from "../lib/tick-observe.ts";
@@ -179,5 +184,23 @@ describe("the scheduler reads nothing before cadence and cap rule a run out", ()
     expect(seen.opened.report.steward?.status).toBe(
       "the host's hourly steward budget is spent",
     );
+  });
+
+  test("the read room reserves an identity check for every account admission may try", () => {
+    const roomWith = (accounts: number): number | null =>
+      readRoomMs({
+        machine: {
+          runtimeTimeoutMs: 30_000,
+          workspaceTimeoutMs: 60_000,
+          opensPerTick: 2,
+          followupOpensPerTick: 0,
+          repositories: [],
+          accounts: Array.from({ length: accounts }, () => ({})),
+        },
+        startedAt: Date.now(),
+      } as unknown as ApplyState);
+    const one = roomWith(1) ?? Number.NaN;
+    const three = roomWith(3) ?? Number.NaN;
+    expect(one - three).toBe(settleMs(30_000, 2));
   });
 });
