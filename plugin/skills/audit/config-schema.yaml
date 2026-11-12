@@ -1294,12 +1294,12 @@ fields:
     default: false
     read_by: [changelog]
     repository_only: true
-    since: next
+    since: 0.219.0
   changelog.consumer_actions_record:
     type: path
     read_by: [changelog]
     repository_only: true
-    since: next
+    since: 0.219.0
 
   code_stats.areas:
     type: list
