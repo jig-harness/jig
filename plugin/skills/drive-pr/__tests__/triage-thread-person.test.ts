@@ -51,7 +51,12 @@ const ruling: ListedThreadFixture = {
   ],
 };
 
-function seedRuling(stateDir: string, verdict: string, cls?: string): void {
+function seedRuling(
+  stateDir: string,
+  verdict: string,
+  cls?: string,
+  contextAt: string | null = "2026-01-01T00:00:00Z",
+): void {
   const state = readState(stateDir, "999") ?? freshState(999);
   writeState(stateDir, "999", {
     ...state,
@@ -61,6 +66,7 @@ function seedRuling(stateDir: string, verdict: string, cls?: string): void {
         verdict,
         ...(cls === undefined ? {} : { class: cls }),
         humanDecision: false,
+        ...(contextAt === null ? {} : { contextAt }),
         round: 0,
         at: "2026-01-01T00:00:00Z",
       },
@@ -102,6 +108,33 @@ describe("triage-thread.ts and a person's thread on the same file", () => {
       },
     ]);
     seedRuling(stateDir, "fix-now");
+    expectSpawnExit(runTriage(["PRRT_bot", "999"], ACCEPTED, dir, stateDir), 5);
+    expect(postedCount(dir)).toBe(0);
+  });
+
+  it("refuses under a fix-now ruling when a person edited an older comment after its context was gathered", () => {
+    const { dir, stateDir } = writeFixtureDir();
+    botFinding(dir, [
+      {
+        ...ruling,
+        comments: [
+          {
+            ...person("Do not make this change."),
+            createdAt: "2025-12-01T00:00:00Z",
+            lastEditedAt: "2026-01-02T00:00:00Z",
+          },
+        ],
+      },
+    ]);
+    seedRuling(stateDir, "fix-now");
+    expectSpawnExit(runTriage(["PRRT_bot", "999"], ACCEPTED, dir, stateDir), 5);
+    expect(postedCount(dir)).toBe(0);
+  });
+
+  it("refuses under a fix-now ruling that names no context time", () => {
+    const { dir, stateDir } = writeFixtureDir();
+    botFinding(dir, [ruling]);
+    seedRuling(stateDir, "fix-now", undefined, null);
     expectSpawnExit(runTriage(["PRRT_bot", "999"], ACCEPTED, dir, stateDir), 5);
     expect(postedCount(dir)).toBe(0);
   });

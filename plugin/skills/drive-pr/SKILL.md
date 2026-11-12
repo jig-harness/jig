@@ -2039,7 +2039,9 @@ give the finding and the person's thread to the review arbiter, record its
 ruling with the `rule` operation of `drive-state.ts` (§ 4) and act on it. `triage-thread.ts`
 refuses (exit `5`) a fresh `accepted` reply to a bot's thread on a file that
 carries a person's thread until a `fix-now` ruling on that bot's thread is
-recorded, and prints the person's words for the arbiter. On `rejected`,
+recorded with a `contextAt` (the time, taken before the arbiter runs, at which
+you gathered the threads you handed it) and no person has spoken or edited a
+comment on that file since; it prints the person's words for the arbiter. On `rejected`,
 reply `**rejected**` citing the person's thread; on `escalate`, park the
 thread under its class.
 

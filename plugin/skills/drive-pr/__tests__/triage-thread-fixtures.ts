@@ -139,6 +139,7 @@ interface CommentFixture {
   body: string;
   url?: string;
   createdAt?: string;
+  lastEditedAt?: string;
 }
 
 let fixtureSeq = 0;
@@ -370,6 +371,7 @@ export function writeThreads(
         authorAssociation: c.authorAssociation,
         body: c.body,
         createdAt: c.createdAt ?? "2025-12-01T00:00:00Z",
+        lastEditedAt: c.lastEditedAt ?? null,
         url: `https://example.invalid/pull/1#discussion_${t.id}`,
       })),
     },

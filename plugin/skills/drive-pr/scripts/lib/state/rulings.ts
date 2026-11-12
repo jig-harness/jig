@@ -4,14 +4,17 @@
  * agent's claim.
  *
  * `drive-state.ts rule` records one ruling per thread key, read as JSON on
- * stdin (`{ "key", "verdict", "class"?, "humanDecision"? }`):
+ * stdin (`{ "key", "verdict", "class"?, "humanDecision"?, "contextAt"? }`):
  *
  *  - `escalate` requires a class from `autonomy.park_classes`;
  *  - `humanDecision: true` (the fix would change a value the pull request
  *    records as a person's decision, or a rule inside a human-decided span)
  *    is an `escalate` whose class is always `human-decision`: another class
  *    is refused, and a missing one is set;
- *  - any other verdict carries no class.
+ *  - any other verdict carries no class;
+ *  - `contextAt` (ISO 8601) is the time the pass gathered the context it
+ *    handed the arbiter, taken before the arbiter runs: a fix-now ruling
+ *    without it never lifts the person-thread refusal.
  *
  * `park --kind thread` then refuses a class other than the recorded one, and
  * refuses to park a thread the arbiter ruled on with any verdict but
@@ -44,6 +47,11 @@ export interface ArbiterRuling {
   /** Present exactly when the verdict is `escalate`. */
   class?: string;
   humanDecision: boolean;
+  /**
+   * When the pass gathered the context it handed the arbiter, ISO 8601; the
+   * person-thread check lifts only for words not newer than this.
+   */
+  contextAt?: string;
   round: number;
   at: string;
 }
@@ -59,6 +67,7 @@ function isRuling(v: unknown): v is ArbiterRuling {
       ? typeof v.class === "string" && v.class !== ""
       : v.class === undefined) &&
     typeof v.humanDecision === "boolean" &&
+    (v.contextAt === undefined || typeof v.contextAt === "string") &&
     (!v.humanDecision || v.class === HUMAN_DECISION_CLASS) &&
     typeof v.round === "number" &&
     typeof v.at === "string"
@@ -76,7 +85,12 @@ export function isOptionalRulings(v: unknown): boolean {
  * permissive answer.
  */
 function shapeFault(input: Record<string, unknown>): string | null {
-  const { key, verdict, humanDecision, class: cls } = input;
+  const { key, verdict, humanDecision, class: cls, contextAt } = input;
+  if (
+    contextAt !== undefined &&
+    (typeof contextAt !== "string" || Number.isNaN(Date.parse(contextAt)))
+  )
+    return "contextAt must be an ISO 8601 time when given";
   if (humanDecision !== undefined && typeof humanDecision !== "boolean")
     return "humanDecision must be true or false when given";
   if (cls !== undefined && typeof cls !== "string")
@@ -93,6 +107,10 @@ function rulingFrom(
   input: Record<string, unknown>,
   classes: readonly string[],
 ): Omit<ArbiterRuling, "round" | "at"> | string {
+  const contextAt =
+    typeof input.contextAt === "string"
+      ? { contextAt: new Date(input.contextAt).toISOString() }
+      : {};
   const fault = shapeFault(input);
   if (fault !== null) return fault;
   const key = input.key as string;
@@ -106,11 +124,11 @@ function rulingFrom(
   const cls = humanDecision ? HUMAN_DECISION_CLASS : given;
   if (verdict !== "escalate")
     return cls === undefined
-      ? { key, verdict, humanDecision }
+      ? { key, verdict, humanDecision, ...contextAt }
       : `a ${verdict} ruling carries no class`;
   if (cls === undefined || !classes.includes(cls))
     return `an escalate ruling needs its class, one of: ${classes.join(", ")}`;
-  return { key, verdict: "escalate", class: cls, humanDecision };
+  return { key, verdict: "escalate", class: cls, humanDecision, ...contextAt };
 }
 
 /** `rule [PR]`: record the arbiter's ruling on one thread. */
@@ -124,7 +142,7 @@ export async function recordRuling(
   } catch {
     fail(
       2,
-      'rule reads one JSON object on stdin: {"key", "verdict", "class"?, "humanDecision"?}',
+      'rule reads one JSON object on stdin: {"key", "verdict", "class"?, "humanDecision"?, "contextAt"?}',
     );
   }
   if (!isRecord(input)) fail(2, "rule: stdin is not a JSON object");

@@ -117,6 +117,22 @@ describe("personThreadsOn", () => {
     expect(found("not a time")).toHaveLength(1);
   });
 
+  it("counts a comment edited after the watermark as new words", () => {
+    const edited = thread({
+      id: "PRRT_edit",
+      comments: [
+        {
+          ...comment("User", "OWNER", "Do not change this."),
+          editedAt: "2026-03-01T00:00:00Z",
+        },
+      ],
+    });
+    const found = (since: string) =>
+      personThreadsOn([edited], "PRRT_self", "a.md", "maintainer", since);
+    expect(found("2026-02-01T00:00:00Z")).toHaveLength(1);
+    expect(found("2026-04-01T00:00:00Z")).toEqual([]);
+  });
+
   it("lists the other threads on the file a person spoke on, and those it could not read whole", () => {
     const found = personThreadsOn(
       [mine, ruling, elsewhere, long, quiet],

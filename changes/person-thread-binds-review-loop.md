@@ -16,5 +16,5 @@ release: patch
   `drive-pr`'s `triage-thread.ts` refuses (exit 5) a fresh `accepted` reply
   to a bot's thread on a file that carries a person's thread, printing the
   person's words, until the arbiter's `fix-now` ruling on that thread is
-  recorded and no person has spoken on the file since. The triage rubric, the arbiter and M7's human-in-the-loop
+  recorded with the time its context was gathered (`contextAt`) and no person has spoken or edited a comment on the file since. The triage rubric, the arbiter and M7's human-in-the-loop
   registry template say so.

@@ -17,7 +17,9 @@
  * same token from another login is a person's verdict. A person who shares
  * the drive's login is indistinguishable from it, a limit of the forge's
  * identity. The arbiter's `fix-now` ruling lifts the refusal only while no
- * person has spoken on the file since it was recorded. Every read goes
+ * person has spoken or edited a comment on the file since the context it
+ * weighed was gathered (`contextAt` in the ruling), never since the ruling
+ * was stored. Every read goes
  * through `ghCall` under its deadline, and a read that fails or does not
  * parse whole refuses, since the absence of a person's thread is
  * established, never assumed.
@@ -46,7 +48,7 @@ const PAGE_QUERY = `query($id:ID!, $after:String){
           pageInfo{ hasNextPage endCursor }
           nodes{
             id path line isResolved
-            comments(first:100){ pageInfo{ hasNextPage } nodes{ url createdAt author{ login __typename } authorAssociation body } }
+            comments(first:100){ pageInfo{ hasNextPage } nodes{ url createdAt lastEditedAt author{ login __typename } authorAssociation body } }
           }
         }
       }
@@ -61,6 +63,8 @@ export interface ThreadComment {
   body: string;
   /** When it was posted, ISO 8601. */
   at: string;
+  /** When its text was last edited, if ever: an edit is new words. */
+  editedAt?: string | null;
   /** Its permalink. */
   url: string;
 }
@@ -100,11 +104,18 @@ export function personsWords(t: ReviewThread, viewer: string): ThreadComment[] {
   );
 }
 
-/** Whether `c` was posted after `since`; a time that does not parse is after. */
+/**
+ * Whether `c` was posted or its text edited after `since`; a time that does
+ * not parse is after.
+ */
 function postedAfter(c: ThreadComment, since: string): boolean {
-  const at = Date.parse(c.at);
   const bound = Date.parse(since);
-  return Number.isNaN(at) || Number.isNaN(bound) || at > bound;
+  if (Number.isNaN(bound)) return true;
+  return [c.at, c.editedAt ?? null].some((t) => {
+    if (t === null) return false;
+    const at = Date.parse(t);
+    return Number.isNaN(at) || at > bound;
+  });
 }
 
 /**
@@ -139,12 +150,13 @@ export function personThreadsOn(
 /** One comment, or `null` when any field the check reads is missing. */
 function commentFrom(raw: unknown): ThreadComment | null {
   if (!isRecord(raw)) return null;
-  const { author, authorAssociation, body, createdAt, url } = raw;
+  const { author, authorAssociation, body, createdAt, lastEditedAt, url } = raw;
   if (
     typeof authorAssociation !== "string" ||
     typeof body !== "string" ||
     typeof createdAt !== "string" ||
-    typeof url !== "string"
+    typeof url !== "string" ||
+    (lastEditedAt !== null && typeof lastEditedAt !== "string")
   )
     return null;
   // A deleted account has no author; it is no person.
@@ -155,6 +167,7 @@ function commentFrom(raw: unknown): ThreadComment | null {
     association: authorAssociation,
     body,
     at: createdAt,
+    editedAt: lastEditedAt,
     url,
   };
 }
@@ -265,7 +278,7 @@ export function refusalLines(
     }),
     "A fix never overrules a person's thread, open or resolved (the triage rubric's guardrails).",
     "Hand this finding and the threads above, with their ids, links and full text, to the review arbiter, record its ruling with drive-state.ts rule (SKILL.md § 4), and act on it:",
-    "fix-now lets this accepted reply post; rejected is answered **rejected**, citing the person's thread; escalate parks the thread under its class.",
+    "fix-now lets this accepted reply post when its record names the time the context was gathered (contextAt) and no person spoke or edited since; rejected is answered **rejected**, citing the person's thread; escalate parks the thread under its class.",
   ];
 }
 
@@ -273,7 +286,9 @@ export function refusalLines(
  * `triage-thread.ts`, before a fresh reply with `outcome` on `thread`:
  * refuse an `accepted` one to a bot's thread while another thread on its
  * file is a person's, unless the arbiter's ruling recorded for it is
- * `fix-now` and no person has spoken on the file since it was recorded. A thread a person started is never checked: the pass carries
+ * `fix-now` and no person has spoken or edited on the file since the
+ * ruling's `contextAt`, the time the pass gathered what it handed the arbiter
+ * (a ruling without one lifts nothing). A thread a person started is never checked: the pass carries
  * out their request.
  */
 export async function refuseOverrulingPersonThread(
@@ -286,7 +301,7 @@ export async function refuseOverrulingPersonThread(
   const state = await readDriveState(pr);
   const ruledAt = (state?.rulings ?? []).find(
     (r) => r.key === threadId && r.verdict === "fix-now",
-  )?.at;
+  )?.contextAt;
   const read = await readThreads(threadId);
   if (read === null || read.path === null)
     fail(
