@@ -660,13 +660,44 @@ stays optional: a repository whose queue only one host picks up from
 needs none, and unset, claims serialize on one host only. Two claims whose
 read-backs each miss the other's marker can still both win; the read after
 the write narrows that to the claims' own length, and the dispatcher's
-double-claim watch stays as the backstop. The pool pickup (plan item 47),
-where several hosts take unassigned items from one ready pool, will
-require the marker: a pool configured without `do_item.claim_marker` will
-be refused. Inherited claims on Linear and Jira, whose issues hold one
+double-claim watch stays as the backstop. The ready pool (below), where
+several hosts take unassigned items from one pool, requires the marker: a
+pool configured without `do_item.claim_marker` is refused. Inherited claims on Linear and Jira, whose issues hold one
 assignee, assign and then verify through the item's history that the
 assignment replaced nobody, putting back anyone it did replace
 ([served pickups](../plugin/README.md#the-dispatcher)).
+
+**The ready pool.** A team whose lane is a pool (validated items left
+unassigned for whoever takes them first) names its states in
+`dispatch.pool.states`, rather than assigning each item to the factory
+identity. The interface gains two reads for it, both optional, which every
+adapter answers: `unassignedIssues(states)`, the open issues assigned to
+nobody in those states inside the tracker's pool scope
+(`issue_tracker.jira.pool_issue_types` on Jira), and `stateChangedBy(key)`,
+who made the issue's latest move into the state it is in now, from the
+tracker's history, as `assignedBy` reads an assignment. Trust moves from
+who assigned an item to who made it ready: an item is wanted only when that
+mover passes the assigner's test above, and an item whose history holds no
+move into its state was created there, so its creator is the mover. On
+GitHub the move is the latest effective transition into the state the
+issue is in now (the state its furthest-along state label gives): the
+labelling that put that label in force, the removal of a label that
+exposed it, or a reopening; on a board, the newest change of the `Status` field to the
+state's option, where a project workflow's change is never trusted and an
+item with no option is in no recorded state. Every gap (a history not read
+whole, a deleted account where the tracker names none) leaves the item out
+with its reason, as an unreadable assigner does. The holds and the
+repository scope a served item meets apply, and so does its open-blocker
+rule: an item one of whose blockers is open or cannot be read waits, its
+row naming the blocker, and is planned once the blocker closes (its
+relations kept until it changes, each blocker's state read every tick).
+The wanted items are ranked by the queue's rules after the identity's own,
+and the launch reads the item again, unassigned, in the pool, made ready by
+a trusted person and with no open blocker, before it starts. The pickup's `do-item` claims the item as any claim does, so the
+precondition command, `claim_from` and the claim marker apply, and the
+claim assigns it to the factory identity, whose claimed items the stall and
+double-claim watches read. The pool is refused without the factory identity
+and without the claim marker.
 
 **The forge.** The tick lists the repository's open pull requests and reads
 each one's comments for the ledger's marker, as the drive itself does; it

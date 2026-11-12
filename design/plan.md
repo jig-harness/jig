@@ -551,24 +551,9 @@ close items by one fixed rule, so a team whose rules differ keeps them in
 hooks and scripts outside Jig, where an agent can skip them. This item
 lets a repository state those rules as configuration that every skill which
 claims, moves or closes an item honours. Every setting is optional, and an
-unset one keeps today's behaviour. What it will build, one pull request per
-step:
-
-- **Start.** A precondition command (`do_item.preflight_command`) that the
-  claim script runs before it claims, for `do-item`, `work-batch` and the
-  dispatcher's pickups alike; the dispatcher's tick never runs it, and
-  shows a refusal as a hold until the item changes. It runs through the
-  repository-command runner the facets design specifies for its command
-  store ([tracker-facets.md](tracker-facets.md#later-the-command-store):
-  set by the repository only, read from the default branch, bounded by a
-  timeout); whichever of the two steps lands first builds that runner. The
-  states a claim may start from (`do_item.claim_from`; unset, a claim
-  keeps today's rule and is not limited to `dispatch.states`), and a claim
-  marker naming the session, host and branch.
-- **Pool pickup.** The dispatcher picks up unassigned items in a ready
-  pool as a served lane, trusting who made an item ready. A pool requires
-  the claim marker, which arbitrates, best effort, between the hosts that pick up from it
-  ([claims across hosts](dark-factory-dispatch.md#the-records-it-reads)).
+unset one keeps today's behaviour. Its settings are built
+([CHANGELOG.md](../CHANGELOG.md)); what remains is a run on a working
+repository, owed by a person.
 
 Done when a repository on Jira with all of these set runs an item from its
 ready pool to a merged pull request without a hook or script of its own,
@@ -787,9 +772,7 @@ a facet that needs it.
 Changes to the design follow from a Jira team's use. An issue of a
 listed native type (`issue_tracker.labels.epic_types`) reads as an epic on
 every adapter with issue types, replacing the non-goal that kept the epic a
-label. Every value map reads any of several names and writes the first, for
-priorities, types and Jira's resolutions. And the weekly sweep can comment
-on an incomplete issue without moving it back to triage.
+label.
 
 Done when a repository on each adapter files and reads all three in its
 configured store, and Jig's own repository keeps them in GitHub's fields
@@ -803,13 +786,12 @@ source on a machine. Today a person reads the changelog by hand and tests each
 entry against the repository, nothing records which release a repository has
 already taken, and `/followup` stops on "which repositories are consumers?"
 because Jig names none. [design/consumer-actions.md](consumer-actions.md) has
-how it works. What it will build: a change note names the **consumer action**
-in its list item (the level it is taken at: machine, configuration or
-instructions; required or advised; hints that say how to detect it), which the
-changelog check validates and the release step derives into a record in the
-plugin; a repository records the version it last reconciled with
-(`jig.reconciled`); `jig reconcile` reads the record between that version and
-the installed one (machine actions are checked on every host regardless), tests each action against the repository and reports
+how it works. What it will build, on the **consumer actions** change notes
+declare and the record the release step derives from them
+(`plugin/consumer-actions.json`): a repository records the version it last
+reconciled with (`jig.reconciled`,
+[ADR-0017](../docs/adr/ADR-0017-a-repository-records-the-jig-version-it-reconciled.md));
+`jig reconcile` reads the record between that version and the installed one (machine actions are checked on every host regardless), tests each action against the repository and reports
 required, advised, needs-a-look and not-applicable with file and line
 evidence, and files the repository's own tracker items only for what a person
 approved; a `reconcile` dispatch stage runs it per dispatched repository and
@@ -838,9 +820,6 @@ launcher tracker for GitHub Issues and the key's file name (`issue-123`)
 where they name a cache file or a claim.
 [plugin/EXTENDING.md](../plugin/EXTENDING.md#issue-tracker) lists what
 still assumes Linear.
-
-The Jira adapter also gains state names per issue type, for a large shared
-project whose issue types follow different workflows.
 
 ### 27. Work types: depth by kind of work
 

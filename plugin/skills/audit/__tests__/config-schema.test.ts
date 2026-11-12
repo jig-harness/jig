@@ -14,7 +14,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { load } from "../../../shared/yaml.ts";
-import { LABEL_ROLES } from "../../../shared/tracker-labels.ts";
+import { LABEL_KEYS } from "../../../shared/tracker-labels.ts";
 import {
   ISSUE_LINKS,
   KNOWN_KEYS,
@@ -425,6 +425,7 @@ describe("the reading skills", () => {
       "changelog.tag_prefix": CHANGELOG_DEFAULTS.tagPrefix,
       "changelog.release.push": CHANGELOG_DEFAULTS.push,
       "changelog.release.branch": CHANGELOG_DEFAULTS.branch,
+      "changelog.consumer_actions": CHANGELOG_DEFAULTS.consumerActions,
       "code_stats.default_area": CODE_STATS_DEFAULT_AREA,
       "docs.stale_after_days": DEFAULT_STALE_AFTER_DAYS,
       "docs.promoted_statuses": DEFAULT_PROMOTED_STATUSES,
@@ -601,7 +602,7 @@ describe("the reading skills", () => {
   test("read the fields the schema lists in their strict maps", () => {
     expect(under("pull_requests").sort()).toEqual([...KNOWN_KEYS].sort());
     expect(under("issue_tracker.labels").sort()).toEqual(
-      [...LABEL_ROLES].sort(),
+      [...LABEL_KEYS].sort(),
     );
     expect(under("specs").sort()).toEqual([...SPECS_FIELDS].sort());
     expect(under("work_batch.ranking").sort()).toEqual(

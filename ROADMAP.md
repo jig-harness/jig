@@ -175,9 +175,11 @@ Jig itself keeps a person merging
 
 A team states the rules its agent work follows, and every Jig skill that
 claims, moves or closes an item keeps them. Work starts only when a check
-the team supplies passes and only from the states the team allows. The
-dispatcher can also pick up from an unassigned ready pool. Every rule is optional, and a team
-that sets none keeps today's behaviour.
+the team supplies passes and only from the states the team allows, and the
+dispatcher can pick up from an unassigned ready pool. Every rule is
+optional, and a team that sets none keeps today's behaviour. The rules are
+built; what remains is proving them on a team's own Jira project, from its
+ready pool to a merged pull request.
 
 ### 48. Fitting the drive to a repository's reviewer
 
@@ -245,21 +247,19 @@ does not already keep them in labels. No repository's store moves unless it
 asks. Every way Jig's tools file an issue through the tracker sets all three
 (an epic needs no size) and checks them. The issue forms set the type and
 leave priority and size to triage. The weekly check can move an issue missing an attribute back to
-triage while it has not been started. Jira's issue-type and custom-field
-stores and Linear's estimate are built; still to come are live checks of
-those stores. Also to come: an epic recognised by its issue type as well as
-its label. Several tracker names will read as one value, such as a site's
-seven priorities onto Jig's four. The weekly check will be able to comment
-without moving an issue.
+triage while it has not been started, or only comment on it. Jira's
+issue-type and custom-field stores and Linear's estimate are built; still to
+come are live checks of those stores. Also to come: an epic recognised by its
+issue type as well as its label.
 
 ### 43. Consumer actions: which Jig changes a repository must act on
 
 A Jig release can ask something of the repositories that use it: a runbook
 that describes old behaviour, a configuration key to change, a plugin source
-on a machine. A release note will say at which of those levels a repository
-acts, and whether it must or is only advised to. A repository records the
-Jig version it last took. One command, `jig reconcile`, checks the repository
-against every change since, and each host against the changes that concern it. It reports what the repository must do, what it is
+on a machine. A repository records the Jig version it last took. One
+command, `jig reconcile`, checks the repository against every change since
+that a release note says it must or should act on. It checks each host against
+the changes that concern it. It reports what the repository must do, what it is
 advised to do, what needs a person's look and what does not apply. Each line
 names the file and line that show why. It files items in the repository's own
 tracker only for what a person approved. A dispatch stage runs the check for
@@ -271,8 +271,7 @@ change.
 A plan file kept in the repository, beside Linear, GitHub Issues and
 Jira. The [tracker interface](GLOSSARY.md) first gains attaching a file,
 the one operation the skills need that the interface does not have yet, and
-the workspace launcher learns to open GitHub issues. On Jira, each issue
-type can have its own workflow states.
+the workspace launcher learns to open GitHub issues.
 
 ### 27. Work types: depth by kind of work
 

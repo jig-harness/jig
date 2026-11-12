@@ -157,6 +157,12 @@ changelog:
       - { path: plugin/.codex-plugin/plugin.json, key: version }
   # A change under plugin/ ships only in a release.
   release_paths: [plugin/]
+  # A breaking change says what a repository using Jig must do
+  # (changes/README.md § Consumer actions), and the release step derives the
+  # record of those actions that ships in the plugin
+  # (design/consumer-actions.md).
+  consumer_actions: true
+  consumer_actions_record: plugin/consumer-actions.json
   # A criterion or configuration field records the version that added it; its
   # branch writes `since: next` and the release names the version.
   placeholders:

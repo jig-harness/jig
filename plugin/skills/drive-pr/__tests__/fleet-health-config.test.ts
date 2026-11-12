@@ -78,6 +78,7 @@ describe("loadConfig", () => {
     expect(cfg.keys?.example).toBe("ENG-123");
     expect(cfg.labels).toEqual({
       epic: "initiative",
+      epicTypes: [],
       followup: "follow-up",
       deliverySystem: "delivery-system",
       repositories: ["web", "api"],
@@ -192,6 +193,7 @@ describe("loadConfig", () => {
     const plain = parseConfig(base);
     expect(plain.labels).toEqual({
       epic: "epic",
+      epicTypes: [],
       followup: null,
       deliverySystem: null,
       repositories: [],

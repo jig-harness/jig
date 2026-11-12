@@ -79,16 +79,24 @@ make, use the entry's term instead.
   same-named teams or projects separate. A host's `serve_defaults` maps each
   tracker namespace to the one checkout that starts unlabelled served work.
 - **Consumer action** — what a Jig change asks a *consumer repository* to do,
-  declared in the change note's entry: the level it is taken at (`machine`,
-  `configuration` or `instructions`), whether it is `required` or `advised`,
-  and optional hints that detect whether a repository is affected. The check
-  that reads them is `jig reconcile`. Planned, not built yet: see
+  declared in the change note's entry after `**Consumer action:**`: whether
+  it is `required` or `advised`, the levels it is taken at (`machine`,
+  `configuration` or `instructions`), an instruction, and optional hints
+  after `**Detect:**` that show whether a repository is affected
+  ([changes/README.md](changes/README.md#consumer-actions)). Each has an id,
+  the release's version and a short hash of its text. The check that will
+  read them is `jig reconcile`, planned: see
   [the design](design/consumer-actions.md).
+- **Consumer-actions record** — the file the release step derives from the
+  changelog's released sections, listing every *consumer action* with its
+  id, so a check reads them without the changelog; Jig's is
+  `plugin/consumer-actions.json`, shipped in the plugin.
 - **Reconciled version** — the Jig version a *consumer repository* last took
   every consumer action up to, recorded in its configuration as
   `jig.reconciled`; for repository-level actions the check reads only the
-  changes after it. Planned, not
-  built yet: see [the design](design/consumer-actions.md).
+  changes after it
+  ([ADR-0017](docs/adr/ADR-0017-a-repository-records-the-jig-version-it-reconciled.md)).
+  Planned, not built yet: see [the design](design/consumer-actions.md).
 - **Invariant** — the tool-independent statement of a practice ("every
   committed generated file has a drift check"), as opposed to any particular
   tool that implements it.
@@ -2516,6 +2524,13 @@ make, use the entry's term instead.
   unassigned item under an epic assigned to them, is ranked and picked up
   beside the *factory identity*'s, and the pickup keeps them as the
   item's assignee ([served pickups](plugin/README.md#the-dispatcher)).
+- **Ready pool** — the tracker states a team leaves validated items in,
+  unassigned, for whoever takes them first. A repository names them in
+  `dispatch.pool.states`, and the *dispatcher* picks up an item there when
+  the person who made the latest move into its state can write to the
+  repository; the pickup's claim assigns it to the *factory identity*, and
+  the claim marker decides between hosts that take the same item
+  ([dispatch.pool](plugin/CONFIGURATION.md#dispatch)).
 - **Steward** — the agent pass a *dispatcher*'s host starts every 20
   minutes, when its input changed, to read what is stopped and waiting on
   the line and propose what to do about it: re-arm a drive once when its

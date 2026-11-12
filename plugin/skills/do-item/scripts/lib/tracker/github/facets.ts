@@ -39,6 +39,9 @@ import {
 } from "../facets/detect.ts";
 import {
   fold,
+  numberedValue,
+  numberIsShared,
+  sharedNumber,
   priorityName,
   priorityNumber,
   type PriorityName,
@@ -141,6 +144,13 @@ export interface GitHubFacetOptions {
   detected?: Detected;
 }
 
+/** The facets read off one issue, and its issue type where `epic_types` marks an epic by it. */
+type FacetRead = Partial<
+  Record<"type" | "size" | "nativeType", string | null>
+> & {
+  priority: number;
+};
+
 /** What the adapter reads and writes of the facets it keeps itself. */
 export interface GitHubFacets {
   /** GraphQL fields every issue read adds; empty when no store needs one. */
@@ -153,7 +163,7 @@ export interface GitHubFacets {
     raw: Record<string, unknown>,
     labels: ReadonlyArray<string>,
     signal?: AbortSignal,
-  ): Promise<{ priority: number; type?: string | null; size?: string | null }>;
+  ): Promise<FacetRead>;
   /** What `createIssue`'s input adds for the facets kept in GitHub's own fields. */
   createInput(issue: NewIssue): Promise<Record<string, unknown>>;
   /** What `updateIssue`'s input adds for a patch of those facets. */
@@ -173,6 +183,8 @@ export interface GitHubFacets {
   detect(unnamed: Facet[], signal?: AbortSignal): Promise<Detected>;
   /** Drop the cached answer: a write was refused for a value it named. */
   forget(): Promise<void>;
+  /** The repository's issue types, by name. */
+  issueTypes(signal?: AbortSignal): Promise<string[]>;
 }
 
 const same = (a: string, b: string) => fold(a) === fold(b);
@@ -333,8 +345,9 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
   if (typeKept !== null) own.add("type");
   if (kept("size") !== null) own.add("size");
 
+  const typedEpics = facets.epicTypes.length > 0;
   const fields = [
-    typeKept?.store === "native" ? "issueType { name }" : "",
+    typeKept?.store === "native" || typedEpics ? "issueType { name }" : "",
     fieldStores.length > 0 || nativePriority !== null ? FIELD_VALUES("") : "",
   ]
     .filter((s) => s !== "")
@@ -412,10 +425,7 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
     }
     if (field.dataType === "NUMBER") {
       const n = Number(name);
-      const numbers = (s.map?.entries ?? [])
-        .map(([, t]) => Number(t))
-        .filter(Number.isFinite);
-      if (new Set(numbers).size !== numbers.length)
+      if (sharedNumber(s.map) !== undefined)
         throw new TrackerRequestError(
           "invalid",
           `issue_tracker.facets.${s.facet}.values gives two ${s.facet} values the same number in the field '${field.name}'`,
@@ -498,20 +508,12 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
   ): string | null {
     const found = values.find((v) => same(v.field, fieldName(s)));
     if (found === undefined) return null;
-    const exact = s.map?.fromTracker(found.value) ?? null;
-    if (
-      exact !== null ||
-      s.map === null ||
-      found.numeric !== true ||
-      found.value.trim() === ""
-    )
-      return exact;
-    // A number field returns the number, not its configured spelling.
     const n = Number(found.value);
-    return (
-      s.map.entries.find(([, t]) => t.trim() !== "" && Number(t) === n)?.[0] ??
-      null
-    );
+    const numeric =
+      found.numeric === true && found.value.trim() !== "" && Number.isFinite(n);
+    if (!numeric) return s.map?.fromTracker(found.value) ?? null;
+    if (numberIsShared(s.map, n)) return null;
+    return s.map?.fromTracker(found.value) ?? numberedValue(s.map, n);
   }
 
   async function read(
@@ -533,12 +535,7 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
                 v !== null,
             )
         : [];
-    const out: {
-      priority: number;
-      unmappedFacets?: Facet[];
-      type?: string | null;
-      size?: string | null;
-    } = {
+    const out: FacetRead & { unmappedFacets?: Facet[] } = {
       priority:
         nativePriority === null
           ? model.priorityOf([...labels])
@@ -547,6 +544,7 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
               return name === null ? 0 : priorityNumber(name as PriorityName);
             })(),
     };
+    if (typedEpics) out.nativeType = nativeTypeName(raw, issue.key);
     if (typeKept?.store === "native") {
       const name = nativeTypeName(raw, issue.key);
       out.type =
@@ -765,6 +763,9 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
     updateInput,
     touches,
     detect: detectCached,
+    async issueTypes(signal) {
+      return (await storeIds(signal)).types.map((t) => t.name);
+    },
     async forget() {
       const key = await cacheKey(unnamed);
       if (key !== null) opts.cache?.drop(key);

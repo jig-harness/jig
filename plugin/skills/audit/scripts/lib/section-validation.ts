@@ -29,7 +29,7 @@ import { checkLinearFacets } from "../../../do-item/scripts/lib/tracker/linear-f
 import { parseRouting } from "../../../do-item/scripts/lib/routing.ts";
 import { claimSettingsOf } from "../../../do-item/scripts/lib/claim-settings.ts";
 import { preflightCommandOf } from "../../../do-item/scripts/lib/preflight.ts";
-import { claimFromFindings } from "./claim-fit.ts";
+import { claimFromFindings, poolClaimFindings } from "./claim-fit.ts";
 import {
   facetsOf,
   parseTrackerConfig,
@@ -156,6 +156,7 @@ export function skillValidation(
     preflightCommandOf(config);
   });
   findings.push(...claimFromFindings(config));
+  findings.push(...poolClaimFindings(config));
   attempt("do-item (spec resolver)", () =>
     parseSpecsConfig(
       config.specs,

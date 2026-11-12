@@ -13,12 +13,24 @@ import {
   type ResolvedFacet,
   type TaxonomyValues,
 } from "../scripts/lib/tracker/facets/config.ts";
+import {
+  numberedValue,
+  numberIsShared,
+  sharedNumber,
+  valueMap,
+} from "../scripts/lib/tracker/facets/values.ts";
 import { labelCodec } from "../scripts/lib/tracker/facets/label.ts";
+import {
+  type CoreTracker,
+  withFacets,
+} from "../scripts/lib/tracker/facets/tracker.ts";
+import type { NewIssue } from "../scripts/lib/tracker/port.ts";
 import {
   type LinearTransport,
   linearTracker,
 } from "../scripts/lib/tracker/linear.ts";
 import { linearFacets } from "../scripts/lib/tracker/linear-facets.ts";
+import { movedFacets } from "../../file-issue/scripts/lib/move.ts";
 import { parseNewIssue, parsePatch } from "../scripts/tracker.ts";
 import { gitHub, issueNode, conn, JIG_TAXONOMY } from "./github-fixtures.ts";
 import { jira, routes } from "./jira-fixtures.ts";
@@ -260,7 +272,7 @@ describe("issue_tracker.facets: what reading the configuration refuses", () => {
         },
       },
     });
-    expect(jira.priorities.urgent).toBe("Blocker");
+    expect(jira.priorities.urgent).toEqual(["Blocker"]);
   });
 });
 
@@ -442,6 +454,33 @@ describe("the facets on Linear and Jira, with today's behaviour", () => {
       labelIds: ["l-bug", "l-small"],
       priority: 2,
     });
+  });
+
+  it("resolves an adapter's preview of a write through the facet conversion the write makes", async () => {
+    const { t } = linear();
+    const seen: unknown[] = [];
+    const config = parseTrackerConfig({
+      issue_tracker: { adapter: "linear", team: "ENG" },
+    });
+    const wrapped = withFacets(
+      {
+        ...t,
+        filedAs: async (i: NewIssue) => {
+          seen.push(i);
+          return { labels: i.labels, nativeType: null };
+        },
+      } as unknown as CoreTracker,
+      resolveFacets(facetInputs(config), TAXONOMY),
+      new Set(),
+    );
+    const filed = await wrapped.filedAs?.({
+      title: "x",
+      description: "",
+      labels: [],
+      type: "bug",
+    });
+    expect(filed?.labels).toEqual(["bug"]);
+    expect(seen).toEqual([{ title: "x", description: "", labels: ["bug"] }]);
   });
 
   it("keeps priority in labels on Linear where a store names them", async () => {
@@ -645,5 +684,53 @@ describe("issue_tracker.facets: values and maps the configuration must keep", ()
     expect(() => linearFacets({} as never, remapped)).toThrow(
       "cannot remap Linear's native priority",
     );
+  });
+});
+
+describe("repeated names within one value", () => {
+  it("refuses a type or size label list that names a label twice", () => {
+    for (const facet of ["type", "size"] as const)
+      expect(() =>
+        facets({
+          facets: {
+            [facet]: {
+              store: "label",
+              labels: {
+                [facet === "type" ? "feature" : "large"]: ["Story", "story"],
+              },
+            },
+          },
+        }),
+      ).toThrow("twice");
+  });
+});
+
+describe("numeric aliases", () => {
+  const sizes = ["small", "large", "xl"];
+  it("treats equivalent spellings of one value as no clash", () => {
+    const map = valueMap(sizes, { large: ["5", "05"] }, "w");
+    expect(sharedNumber(map)).toBeUndefined();
+    expect(numberedValue(map, 5)).toBe("large");
+  });
+  it("reads a number two values name as none", () => {
+    const map = valueMap(sizes, { large: ["4", "05"], xl: "5" }, "w");
+    expect(sharedNumber(map)).toBe(5);
+    expect(numberedValue(map, 5)).toBeNull();
+    expect(numberIsShared(map, 5)).toBe(true);
+  });
+});
+
+describe("moved facets", () => {
+  it("counts a change of read aliases as no move", () => {
+    const at = (large: unknown) =>
+      facets({
+        adapter: "jira",
+        team: "ENG",
+        facets: {
+          size: { store: "field", field: "Points", values: { large } },
+        },
+      });
+    expect(movedFacets(at(5), at([5, 8]))).not.toContain("size");
+    expect(movedFacets(at(5), at(8))).toContain("size");
   });
 });

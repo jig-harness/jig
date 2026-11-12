@@ -151,7 +151,7 @@ The skill acts on a few labels as process signals, by role:
 
 | Role (`issue_tracker.labels.<role>`) | Default | What it signals |
 |---------------------------------------|---------|-----------------|
-| `epic` | `epic` | An issue whose sub-issues are worked one at a time |
+| `epic` | `epic` | An issue whose sub-issues are worked one at a time; on Jira and GitHub, an issue whose own issue type `issue_tracker.labels.epic_types` lists is one too, without the label |
 | `hitl` | `hitl` | A deliverable that is a human's judgment (human-in-the-loop, [HITL](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)); its facets are `<hitl>:<stakeholder>` (`hitl:legal`, `hitl:product`, …) |
 | `manual_ops` | `manual-ops` | A step a person performs outside the code |
 | `followup` | `pr-followup` | An issue filed from a review finding |
@@ -508,11 +508,12 @@ Build the input from what Step 1 fetched, plus the issue's parent (a second
 get-issue call) when it has one:
 
 - **No sub-issues (Step 4a):** `epic` = the parent, `issue` = this issue.
-- **Has sub-issues and the `epic` label:** skip the write here. Step 4b writes
-  it once a sub-issue is selected, with this issue as `epic` and the selected
+- **Has sub-issues and is an epic** (`isEpic` as `get_issue.ts` prints it;
+  on the native transport, the `epic` label): skip the write here. Step 4b
+  writes it once a sub-issue is selected, with this issue as `epic` and the selected
   sub-issue as `issue`, so the calibration arm is bucketed by the sub-issue:
   the unit each PR delivers.
-- **Has sub-issues, no `epic` label:** `epic` = the parent, `issue` = this
+- **Has sub-issues, not an epic:** `epic` = the parent, `issue` = this
   issue. Step 4b rewrites it with the selected sub-issue added as `subIssue`.
 
 Each entry is `{ identifier, title, updatedAt, description }`, copied verbatim
@@ -1386,7 +1387,7 @@ implementation. Skip this check for issues about the repository's own code.
    operational or legal step remains (an operator checklist, a drill, a
    verification, a sign-off), in which case transition it to `ops_pending`.
    Nothing else moves statuses; deployment state comes from git, not from the
-   tracker. An issue that itself carries the configured epic label (an epic
+   tracker. An issue that is itself an epic (`isEpic`; an epic
    with no sub-issues, worked whole in Step 4a) reaches `done` only with the
    closing authorization in Step 5a; without one, transition it to
    `in_review` and report that it waits for an accepting verdict or a waiver.
@@ -1509,8 +1510,8 @@ snapshot mapping are **exact**.
    f. Only when no Execution Plan exists at all (`present: false`), fall
       back to `sub_issue_analysis.next_issue`.
 
-   **Epic-level snapshot fallback.** Whenever this issue carries the `epic`
-   label and this invocation ends without reaching item 3 with a selected
+   **Epic-level snapshot fallback.** Whenever this issue is an epic
+   (`isEpic`) and this invocation ends without reaching item 3 with a selected
    child — item 1 routing to Step 5a, every candidate ineligible, a pause for
    the user's choice, or any other return without a `nextSubIssue` — rewrite
    the intent-chain snapshot before returning: pass this issue as **both**
@@ -1538,7 +1539,7 @@ snapshot mapping are **exact**.
    carry only key, title and state — a children listing does not include
    descriptions — so building the snapshot from it would lose the
    sub-issue's scope. Fetch
-   it with get-issue first. Then: **if this issue carries `epic`**, pass the
+   it with get-issue first. Then: **if this issue is an epic** (`isEpic`), pass the
    fetched sub-issue as `issue` and this issue as `epic` (the arm is
    bucketed by `issue`, and the epic's intent is read from `epic`);
    **otherwise**, keep this issue as `issue` and pass the fetched sub-issue
@@ -1759,7 +1760,7 @@ data flow, not an executable harness API.
    | `listing_failed` | **Stop**: report that the tracker refresh failed or was incomplete; do not change the parent's status |
    | `keep_in_progress` | Go to Step 4b |
    | `extract_and_close_eligible` | Verify the epic's closing authorization (below); if it has one, extract and close per the rule above (see the `manual-ops` note below when the parent carries that label). Otherwise **stop**: report that every remaining sub-issue is an extractable tail but the epic has no accepting verdict or waiver yet |
-   | `set_status` | When `decision.parentState` is `done` and the parent is an epic (`listing.parentLabels` carries the configured epic label), verify its closing authorization (below) first; without one, transition it to `in_review` instead and report that it waits for an accepting verdict or a waiver. Transition the parent: `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" transition "<KEY>" <canonical-state> --post-merge` on the script transport; Linear native: `mcp__linear__save_issue({ id: issue.id, state: <mapped name> })`, only after `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" post-merge` shows that its `state` allows it. A parent the reconciler capped at `do_item.post_merge_state` gets that output's `closing` sentence in its closing comment |
+   | `set_status` | When `decision.parentState` is `done` and the parent is an epic (its `isEpic` as `get_issue.ts` prints it; on the native transport, `listing.parentLabels` carries the configured epic label), verify its closing authorization (below) first; without one, transition it to `in_review` instead and report that it waits for an accepting verdict or a waiver. Transition the parent: `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" transition "<KEY>" <canonical-state> --post-merge` on the script transport; Linear native: `mcp__linear__save_issue({ id: issue.id, state: <mapped name> })`, only after `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" post-merge` shows that its `state` allows it. A parent the reconciler capped at `do_item.post_merge_state` gets that output's `closing` sentence in its closing comment |
 
    **Closing authorization.** An epic may close only when its newest verdict
    from the repository's epic acceptance review accepts it, or when a person
@@ -1822,7 +1823,9 @@ Without such a runner, ask as in [Asking the user](#asking-the-user).
 ## Dispatched passes
 
 `jig dispatch` starts this skill as a headless pass for an item assigned to
-the factory identity: `/jig:do-item <KEY>` followed by the line
+the factory identity, or an unassigned one from the repository's ready pool
+(`dispatch.pool`), which Step 4a's claim assigns: `/jig:do-item <KEY>`
+followed by the line
 `route: rules`, with nobody at the keyboard and nobody to answer while it
 runs. Its prompt says so, and names the `jig dispatch result` commands that
 record how it ended. In such a pass:

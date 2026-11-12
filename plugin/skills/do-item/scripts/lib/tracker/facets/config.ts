@@ -9,6 +9,9 @@
  *       priority: { store: label, labels: { urgent: P0, high: P1, medium: P2, low: P3 } }
  *       size:     { store: field, field: Effort }
  *
+ * A value in `values` or `labels` may list several names, read in any of
+ * them and written as the first: `feature: [Story, Improvement]`.
+ *
  * Reading the section (`parseFacetEntries`) checks what the overlay alone
  * can show; resolving it (`resolveFacets`) adds the type and size values of
  * the repository's label taxonomy and checks the rest. A facet the section
@@ -31,10 +34,13 @@ import {
   type FacetStoreKind,
   type FacetStoreReport,
 } from "../port.ts";
+import { firstRepeat } from "../settings-fields.ts";
 import {
   canonical,
   DEFAULT_TYPES,
   fold,
+  type MapNames,
+  namesIn,
   PRIORITY_NAMES,
   type ValueMap,
   valueMap,
@@ -79,12 +85,12 @@ const REFUSALS: Readonly<Record<string, string>> = {
 /** One facet's entry in `issue_tracker.facets`, as written. */
 export interface FacetEntry {
   store: FacetStoreKind;
-  /** `native` and `field`: canonical value → the tracker's value. */
-  values?: Record<string, string>;
+  /** `native` and `field`: canonical value → the tracker's value, or several, the first written. */
+  values?: Record<string, MapNames>;
   /** `field`: the field's name (a GitHub issue field), or on Jira its name or id. */
   field?: string;
-  /** `label`: canonical value → its label. */
-  labels?: Record<string, string>;
+  /** `label`: canonical value → its label, or several, the first written. */
+  labels?: Record<string, MapNames>;
   /** `label`: each value's label is this prefix followed by the value. */
   prefix?: string;
 }
@@ -94,24 +100,36 @@ export type FacetEntries = Partial<Record<Facet, FacetEntry>>;
 const at = (facet: string, key?: string) =>
   `issue_tracker.facets.${facet}${key === undefined ? "" : `.${key}`}`;
 
+/** A map of values to a name, or to a nonempty list of names, the first written. */
 function textMap(
   v: unknown,
   where: string,
   numbers: boolean,
-): Record<string, string> {
+): Record<string, MapNames> {
   if (!isRecord(v))
     throw new TrackerConfigError(where, `${where} must be a mapping`);
-  const out: Record<string, string> = {};
-  for (const [key, value] of Object.entries(v)) {
+  const what = numbers ? "name or a number" : "label";
+  const one = (value: unknown, at: string): string => {
     const ok =
       (typeof value === "string" && value.trim() !== "") ||
       (numbers && typeof value === "number" && Number.isFinite(value));
     if (!ok)
+      throw new TrackerConfigError(at, `${at} must be a nonempty ${what}`);
+    return String(value);
+  };
+  const out: Record<string, MapNames> = {};
+  for (const [key, value] of Object.entries(v)) {
+    const at = `${where}.${key}`;
+    if (!Array.isArray(value)) {
+      out[key] = one(value, at);
+      continue;
+    }
+    if (value.length === 0)
       throw new TrackerConfigError(
-        `${where}.${key}`,
-        `${where}.${key} must be a nonempty ${numbers ? "name or a number" : "label"}`,
+        at,
+        `${at} must be a nonempty ${what}, or a nonempty list of them`,
       );
-    out[key] = String(value);
+    out[key] = value.map((n, i) => one(n, `${at}[${i}]`));
   }
   return out;
 }
@@ -205,6 +223,19 @@ function entryOf(facet: Facet, raw: unknown, adapter: string): FacetEntry {
   return entry;
 }
 
+/** Linear's native priority is a number per priority, so a list, even of one, has no meaning. */
+function refuseLinearPriorityLists(entry: FacetEntry, adapter: string): void {
+  if (adapter !== "linear" || entry.store !== "native") return;
+  for (const [key, names] of Object.entries(entry.values ?? {})) {
+    if (!Array.isArray(names)) continue;
+    const where = at("priority", `values.${key}`);
+    throw new TrackerConfigError(
+      where,
+      `${where} cannot be a list: Linear's native priority is always urgent 1 to low 4; keep priority in labels to name other values`,
+    );
+  }
+}
+
 /** A priority entry's keys are the priorities, and outside GitHub a label store names its labels. */
 function checkPriorityEntry(entry: FacetEntry, adapter: string): void {
   for (const [key, map] of [
@@ -212,6 +243,7 @@ function checkPriorityEntry(entry: FacetEntry, adapter: string): void {
     ["labels", entry.labels],
   ] as const)
     if (map !== undefined) valueMap(PRIORITY_NAMES, map, at("priority", key));
+  refuseLinearPriorityLists(entry, adapter);
   if (
     entry.store === "label" &&
     adapter !== "github" &&
@@ -259,7 +291,9 @@ export function entryLabels(
 ): string[] {
   if (entry?.labels !== undefined) {
     const key = Object.keys(entry.labels).find((k) => fold(k) === fold(value));
-    return key === undefined ? [value] : [entry.labels[key] as string];
+    return key === undefined
+      ? [value]
+      : [...namesIn(entry.labels[key] as MapNames)];
   }
   if (entry?.prefix !== undefined) return [`${entry.prefix}${value}`];
   return fallback();
@@ -309,6 +343,8 @@ export interface Facets {
   size: FacetSlot;
   /** The epic label: an epic needs no size. */
   epic: string;
+  /** The native issue types whose issues read as epics (`issue_tracker.labels.epic_types`). */
+  epicTypes: string[];
   /** The taxonomy the values came from, for the report. */
   taxonomy: { path: string | null; problem: string | null };
 }
@@ -325,11 +361,13 @@ export interface FacetInputs {
   /** `issue_tracker.labels.bug`. */
   bugLabels: string[];
   epic: string;
-  /** The GitHub adapter's priority labels in force, and whether today's key set them. */
-  priorityLabels: Readonly<Record<string, string>> | null;
+  /** `issue_tracker.labels.epic_types`; none when absent. */
+  epicTypes?: string[];
+  /** The GitHub adapter's priority labels in force, the first written, and whether today's key set them. */
+  priorityLabels: Readonly<Record<string, ReadonlyArray<string>>> | null;
   priorityLabelsDeclared: boolean;
-  /** The Jira priorities in force (`issue_tracker.jira.priorities`). */
-  jiraPriorities: Readonly<Record<string, string>> | null;
+  /** The Jira priorities in force (`issue_tracker.jira.priorities`), the first written. */
+  jiraPriorities: Readonly<Record<string, ReadonlyArray<string>>> | null;
   /** `issue_tracker.jira.field_labels` on Jira: a field's name or id → its label prefix. */
   jiraFieldLabels?: Readonly<Record<string, string>> | null;
   /** Labels a facet's label may not be: the state labels, in labels mode. */
@@ -408,6 +446,27 @@ function typeDefaults(
   };
 }
 
+/** Refuse a label list naming a value the facet lacks, or one label twice for a value. */
+function checkLabelNames(
+  facet: Facet,
+  labels: Readonly<Record<string, MapNames>>,
+  values: ReadonlyArray<string>,
+): void {
+  for (const [key, listed] of Object.entries(labels)) {
+    if (canonical(values, key) === null)
+      throw new TrackerConfigError(
+        at(facet, "labels"),
+        `${at(facet, "labels")} names '${key}', which is not a ${facet} of this repository (${values.join(", ")})`,
+      );
+    const twice = firstRepeat(namesIn(listed));
+    if (twice !== undefined)
+      throw new TrackerConfigError(
+        at(facet, `labels.${key}`),
+        `${at(facet, `labels.${key}`)} names '${twice}' twice`,
+      );
+  }
+}
+
 function resolved(
   facet: Facet,
   entry: FacetEntry | undefined,
@@ -417,7 +476,7 @@ function resolved(
     defaultWhy: ResolvedFacet["why"];
     labels: (value: string) => string[];
     nativeField: string | null;
-    nativeMap: Record<string, string>;
+    nativeMap: Record<string, MapNames>;
     /** A native store that keeps a value in its labels where the tracker cannot (Jira's issue type). */
     fallback?: boolean;
   },
@@ -425,12 +484,7 @@ function resolved(
   const store = entry?.store ?? base.defaultStore;
   const why = entry === undefined ? base.defaultWhy : "configured";
   if (store === "label") {
-    for (const key of Object.keys(entry?.labels ?? {}))
-      if (canonical(base.values, key) === null)
-        throw new TrackerConfigError(
-          at(facet, "labels"),
-          `${at(facet, "labels")} names '${key}', which is not a ${facet} of this repository (${base.values.join(", ")})`,
-        );
+    checkLabelNames(facet, entry?.labels ?? {}, base.values);
     return {
       facet,
       store,
@@ -526,7 +580,7 @@ function priorityFacet(inputs: FacetInputs): ResolvedFacet {
     defaultWhy:
       github && inputs.priorityLabelsDeclared ? "kept in labels" : "default",
     labels: (v) => [
-      inputs.priorityLabels?.[v] ?? (github ? `priority: ${v}` : v),
+      ...(inputs.priorityLabels?.[v] ?? [github ? `priority: ${v}` : v]),
     ],
     nativeField: github ? "Priority" : null,
     nativeMap:
@@ -567,8 +621,8 @@ function refuseSharedLabels(
 }
 
 /**
- * Refuse type labels named here that `issue_tracker.types`, also set, gives
- * other labels: the two would disagree about which label is a type's.
+ * Refuse a type label named here that `issue_tracker.types`, also set, does
+ * not give that type: the two would disagree about which label is a type's.
  */
 function refuseDisagreement(
   type: ResolvedFacet,
@@ -583,8 +637,10 @@ function refuseDisagreement(
   )
     return;
   for (const [value, labels] of type.labels ?? []) {
-    const label = labels[0] as string;
-    if (!today(value).some((l) => fold(l) === fold(label)))
+    const label = labels.find(
+      (label) => !today(value).some((l) => fold(l) === fold(label)),
+    );
+    if (label !== undefined)
       throw new TrackerConfigError(
         at("type"),
         `${at("type")} keeps type ${value} in the label '${label}', but issue_tracker.types marks it with ${today(value).join(", ")}; keep one, or make them agree`,
@@ -644,6 +700,7 @@ export function resolveFacets(
     priority,
     size,
     epic: inputs.epic,
+    epicTypes: inputs.epicTypes ?? [],
     taxonomy: {
       path: taxonomy?.path ?? null,
       problem: broken?.problem ?? null,
@@ -690,7 +747,7 @@ function unreadable(problem: string): { type: FacetSlot; size: FacetSlot } {
  */
 export function defaultFacets(
   adapter: string,
-  priorityLabels: Readonly<Record<string, string>> | null = null,
+  priorityLabels: Readonly<Record<string, ReadonlyArray<string>>> | null = null,
 ): Facets {
   return resolveFacets(
     {

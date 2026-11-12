@@ -173,7 +173,7 @@ describe("claimed items read for a served person", () => {
     const read = await readServedPickups(
       tracker,
       [{ name: "Alex", forge: ["alex"], tracker: { github: "alex" } }],
-      { epic: "epic", nowMs: NOW, headroom: true },
+      { nowMs: NOW, headroom: true },
     );
     expect(read.claimed).toEqual([
       {

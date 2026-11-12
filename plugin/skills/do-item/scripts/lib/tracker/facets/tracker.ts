@@ -56,17 +56,22 @@ import {
   priorityLabel,
 } from "./label.ts";
 import { canonical, fold, PRIORITY_NAMES } from "./values.ts";
+import { isEpic } from "../../../../../../shared/tracker-labels.ts";
 
-/** An issue as an adapter's core reads it: the facets it keeps, at most. */
-export type CoreIssue = Omit<Issue, "type" | "size"> &
+/**
+ * An issue as an adapter's core reads it: the facets it keeps, at most, and
+ * no `isEpic`, which `withFacets` sets.
+ */
+export type CoreIssue = Omit<Issue, "type" | "size" | "isEpic"> &
   Partial<Pick<Issue, "type" | "size">>;
 
 /**
  * A pool issue as an adapter's core reads it. `hiddenLabels` are labels the
  * core keeps out of `labels` (GitHub's priority labels): only the open
  * population carries them, so `incompleteIssues` can list a retired one.
+ * `withFacets` reads `isEpic` from its labels and `nativeType`.
  */
-export type CorePoolIssue = Omit<PoolIssue, "type" | "size"> &
+export type CorePoolIssue = Omit<PoolIssue, "type" | "size" | "isEpic"> &
   Partial<Pick<PoolIssue, "type" | "size">> & { hiddenLabels?: string[] };
 
 /** A queue issue as an adapter's core reads it: its parent in core form too. */
@@ -98,6 +103,7 @@ export interface CoreTracker
     | "poolIssues"
     | "queueIssues"
     | "assignedIssues"
+    | "unassignedIssues"
     | "incompleteIssues"
     | "openPopulation"
     | "facetStores"
@@ -117,6 +123,10 @@ export interface CoreTracker
   ): Promise<CoreQueueIssue[]>;
   assignedIssues(
     identity: string,
+    states: ReadonlyArray<CanonicalState>,
+    signal?: AbortSignal,
+  ): Promise<CorePoolIssue[]>;
+  unassignedIssues?(
     states: ReadonlyArray<CanonicalState>,
     signal?: AbortSignal,
   ): Promise<CorePoolIssue[]>;
@@ -172,6 +182,7 @@ export function withFacets(
     facetReport,
     poolIssues: _batch,
     queueIssues: _queue,
+    unassignedIssues,
     ...rest
   } = core;
   const codecs = new Map<Facet, LabelCodec>();
@@ -183,22 +194,26 @@ export function withFacets(
 
   function withValues<T extends CoreIssue | CorePoolIssue>(
     issue: T,
-  ): T & FacetValues {
+  ): T & FacetValues & { isEpic: boolean } {
     const read = (f: "type" | "size"): string | null => {
       const codec = codecs.get(f);
       if (codec !== undefined) return codec.read(issue.labels ?? []);
       return coreFacets.has(f) ? (issue[f] ?? null) : null;
     };
     const priority = codecs.get("priority");
-    return {
-      ...issue,
+    const values: FacetValues & { isEpic: boolean } = {
       type: read("type"),
       size: read("size"),
       priority:
         priority === undefined
           ? issue.priority
           : priorityFromLabels(priority, issue.labels ?? []),
+      isEpic: isEpic(
+        { labels: issue.labels ?? [], nativeType: issue.nativeType ?? null },
+        facets,
+      ),
     };
+    return { ...issue, ...values };
   }
 
   /**
@@ -243,7 +258,8 @@ export function withFacets(
       );
   }
 
-  async function createIssue(issue: NewIssue) {
+  /** `issue` as the core receives it: label-kept facets turned into labels. */
+  function forCore(issue: NewIssue): NewIssue {
     refuseFacetLabels(issue.labels, "to file");
     const out: NewIssue = { ...issue, labels: [...issue.labels] };
     const add = (label: string) => {
@@ -268,8 +284,19 @@ export function withFacets(
       const label = priorityLabel(priority, issue.priority);
       if (label !== null) add(label);
     }
-    return rest.createIssue(out);
+    return out;
   }
+
+  async function createIssue(issue: NewIssue) {
+    return rest.createIssue(forCore(issue));
+  }
+
+  /** What the core would file `issue` as, after the same facet conversion as the write. */
+  const coreFiledAs = rest.filedAs?.bind(rest);
+  const filedAs =
+    coreFiledAs === undefined
+      ? undefined
+      : (issue: NewIssue) => coreFiledAs(forCore(issue));
 
   /** The label changes a patch's label-kept facets make, from the issue's labels. */
   async function facetLabels(
@@ -392,12 +419,9 @@ export function withFacets(
     return slot;
   }
 
-  const isEpic = (issue: PoolIssue) =>
-    issue.labels.some((l) => fold(l) === fold(facets.epic));
-
   /** Whether an issue lacks `f`; an epic needs no size where `epicExempt`. */
   function lacks(issue: PoolIssue, f: Facet, epicExempt: boolean): boolean {
-    if (f === "size" && epicExempt && isEpic(issue)) return false;
+    if (f === "size" && epicExempt && issue.isEpic) return false;
     return f === "priority" ? issue.priority === 0 : issue[f] === null;
   }
 
@@ -422,7 +446,7 @@ export function withFacets(
     const outside = open.filter((i) => i.state.type !== "triage");
     const counts: IncompletePage["counts"] = {};
     for (const f of query.missing) {
-      const required = outside.filter((i) => !(f === "size" && isEpic(i)));
+      const required = outside.filter((i) => !(f === "size" && i.isEpic));
       counts[f] = {
         required: required.length,
         lacking: required.filter((i) => lacks(i, f, false)).length,
@@ -497,6 +521,15 @@ export function withFacets(
         withValues,
       );
     },
+    ...(unassignedIssues === undefined
+      ? {}
+      : {
+          async unassignedIssues(states, options) {
+            const signal = readSignal(options);
+            refuseStopped(signal);
+            return (await unassignedIssues(states, signal)).map(withValues);
+          },
+        }),
     ...batchedReads(core, withValues),
     async ledger(query, onPage) {
       const issues = await rest.ledger(query, onPage);
@@ -509,6 +542,7 @@ export function withFacets(
       );
     },
     createIssue,
+    ...(filedAs === undefined ? {} : { filedAs }),
     updateIssue,
     incompleteIssues,
     async openPopulation(options) {
@@ -545,7 +579,9 @@ export function withFacets(
 /** The batched reads of a core that has them, each issue given its facet values. */
 function batchedReads(
   core: CoreTracker,
-  withValues: <T extends CorePoolIssue>(issue: T) => T & FacetValues,
+  withValues: <T extends CorePoolIssue>(
+    issue: T,
+  ) => T & FacetValues & { isEpic: boolean },
 ): Pick<Tracker, "poolIssues" | "queueIssues"> {
   const { poolIssues, queueIssues } = core;
   return {

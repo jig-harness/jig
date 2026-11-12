@@ -4,14 +4,17 @@
  * agent's claim.
  *
  * `drive-state.ts rule` records one ruling per thread key, read as JSON on
- * stdin (`{ "key", "verdict", "class"?, "humanDecision"? }`):
+ * stdin (`{ "key", "verdict", "class"?, "humanDecision"?, "contextAt"? }`):
  *
  *  - `escalate` requires a class from `autonomy.park_classes`;
  *  - `humanDecision: true` (the fix would change a value the pull request
  *    records as a person's decision, or a rule inside a human-decided span)
  *    is an `escalate` whose class is always `human-decision`: another class
  *    is refused, and a missing one is set;
- *  - any other verdict carries no class.
+ *  - any other verdict carries no class;
+ *  - `contextAt` (ISO 8601) is the time the pass gathered the context it
+ *    handed the arbiter, taken before the arbiter runs: a fix-now ruling
+ *    without it never lifts the person-thread refusal.
  *
  * `park --kind thread` then refuses a class other than the recorded one, and
  * refuses to park a thread the arbiter ruled on with any verdict but
@@ -44,6 +47,11 @@ export interface ArbiterRuling {
   /** Present exactly when the verdict is `escalate`. */
   class?: string;
   humanDecision: boolean;
+  /**
+   * When the pass gathered the context it handed the arbiter, ISO 8601; the
+   * person-thread check lifts only for words not newer than this.
+   */
+  contextAt?: string;
   round: number;
   at: string;
 }
@@ -59,6 +67,7 @@ function isRuling(v: unknown): v is ArbiterRuling {
       ? typeof v.class === "string" && v.class !== ""
       : v.class === undefined) &&
     typeof v.humanDecision === "boolean" &&
+    (v.contextAt === undefined || typeof v.contextAt === "string") &&
     (!v.humanDecision || v.class === HUMAN_DECISION_CLASS) &&
     typeof v.round === "number" &&
     typeof v.at === "string"
@@ -69,6 +78,41 @@ export function isOptionalRulings(v: unknown): boolean {
   return v === undefined || (Array.isArray(v) && v.every(isRuling));
 }
 
+const ISO_WITH_ZONE =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-]([01]\d|2[0-3]):[0-5]\d)$/;
+
+/** The instant of an ISO 8601 time with an explicit zone and a real calendar date, else `NaN`. */
+function strictTime(text: string): number {
+  const m = ISO_WITH_ZONE.exec(text);
+  if (m === null) return NaN;
+  const [y, mo, d, h, mi, s] = m.slice(1, 7).map(Number) as [
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+  ];
+  const day = new Date(Date.UTC(y, mo - 1, d));
+  const real =
+    day.getUTCFullYear() === y &&
+    day.getUTCMonth() === mo - 1 &&
+    day.getUTCDate() === d &&
+    h < 24 &&
+    mi < 60 &&
+    s < 60;
+  return real ? Date.parse(text) : NaN;
+}
+
+/** Why a `contextAt` is not a past ISO 8601 time with a zone, or `null`. */
+function contextFault(contextAt: unknown): string | null {
+  if (contextAt === undefined) return null;
+  const at = typeof contextAt === "string" ? strictTime(contextAt) : NaN;
+  if (Number.isNaN(at))
+    return "contextAt must be a calendar ISO 8601 time with an explicit zone when given";
+  return at > Date.now() ? "contextAt must not be in the future" : null;
+}
+
 /**
  * Why `input`'s fields are not of their types, or `null`. A field given with
  * the wrong type is refused, never read as absent: an absent
@@ -76,7 +120,9 @@ export function isOptionalRulings(v: unknown): boolean {
  * permissive answer.
  */
 function shapeFault(input: Record<string, unknown>): string | null {
-  const { key, verdict, humanDecision, class: cls } = input;
+  const { key, verdict, humanDecision, class: cls, contextAt } = input;
+  const timeFault = contextFault(contextAt);
+  if (timeFault !== null) return timeFault;
   if (humanDecision !== undefined && typeof humanDecision !== "boolean")
     return "humanDecision must be true or false when given";
   if (cls !== undefined && typeof cls !== "string")
@@ -95,6 +141,10 @@ function rulingFrom(
 ): Omit<ArbiterRuling, "round" | "at"> | string {
   const fault = shapeFault(input);
   if (fault !== null) return fault;
+  const contextAt =
+    typeof input.contextAt === "string"
+      ? { contextAt: new Date(input.contextAt).toISOString() }
+      : {};
   const key = input.key as string;
   const verdict = input.verdict as Verdict;
   const humanDecision = input.humanDecision === true;
@@ -106,11 +156,11 @@ function rulingFrom(
   const cls = humanDecision ? HUMAN_DECISION_CLASS : given;
   if (verdict !== "escalate")
     return cls === undefined
-      ? { key, verdict, humanDecision }
+      ? { key, verdict, humanDecision, ...contextAt }
       : `a ${verdict} ruling carries no class`;
   if (cls === undefined || !classes.includes(cls))
     return `an escalate ruling needs its class, one of: ${classes.join(", ")}`;
-  return { key, verdict: "escalate", class: cls, humanDecision };
+  return { key, verdict: "escalate", class: cls, humanDecision, ...contextAt };
 }
 
 /** `rule [PR]`: record the arbiter's ruling on one thread. */
@@ -124,7 +174,7 @@ export async function recordRuling(
   } catch {
     fail(
       2,
-      'rule reads one JSON object on stdin: {"key", "verdict", "class"?, "humanDecision"?}',
+      'rule reads one JSON object on stdin: {"key", "verdict", "class"?, "humanDecision"?, "contextAt"?}',
     );
   }
   if (!isRecord(input)) fail(2, "rule: stdin is not a JSON object");

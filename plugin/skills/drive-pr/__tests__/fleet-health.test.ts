@@ -92,6 +92,7 @@ const CONTEXT: ConfigContext = {
   root: FIXTURES,
   keys: teamKeys("ENG"),
   epicLabel: "epic",
+  epicTypes: [],
   followupLabel: "follow-up",
   repositoryLabels: ["repo-web", "repo-api"],
   catalogPath: join(FIXTURES, "change-areas-catalog.yaml"),
@@ -1253,6 +1254,17 @@ describe("runFleetHealth", () => {
 });
 
 // ── Review-driven additions ────────────────────────────────────────────────
+
+describe("attribution to an epic by its issue type", () => {
+  it("finds the epic an ancestor's listed issue type marks, with no epic label", () => {
+    const child = issue("ENG-2", {
+      labels: [],
+      ancestors: [{ id: "ENG-1", labels: [], nativeType: "Epic" }],
+    });
+    expect(epicOf(child, { epic: "epic", epicTypes: ["Epic"] })).toBe("ENG-1");
+    expect(epicOf(child)).toBeNull();
+  });
+});
 
 describe("attribution to an epic named directly", () => {
   it("counts a trailer that names the epic itself toward that epic", () => {

@@ -90,6 +90,7 @@ export const REPOSITORY_ONLY_FIELDS: readonly string[] = [
   "dispatch.adopt.enabled",
   "dispatch.adopt.authors",
   "dispatch.adopt.within",
+  "dispatch.pool.states",
   "repository.base_branch",
   "issue_tracker.team",
   "issue_tracker.github.repository",
@@ -120,6 +121,8 @@ export const REPOSITORY_ONLY_FIELDS: readonly string[] = [
   "changelog.tag_prefix",
   "changelog.release.push",
   "changelog.release.branch",
+  "changelog.consumer_actions",
+  "changelog.consumer_actions_record",
   // How a repository's files are classified describes that repository.
   "code_stats.areas",
   "code_stats.default_area",

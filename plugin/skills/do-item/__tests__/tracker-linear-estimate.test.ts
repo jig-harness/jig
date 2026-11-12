@@ -205,6 +205,60 @@ describe("Linear: size in the estimate", () => {
     ]);
   });
 
+  it("reads every point a size lists as that size, and writes its first", async () => {
+    const listed = {
+      facets: {
+        size: {
+          store: "native",
+          values: { xs: 1, small: 2, medium: 3, large: [5, 13], xl: [8, 21] },
+        },
+      },
+    };
+    const extended = { type: "fibonacci", extended: true };
+    for (const [estimate, size] of [
+      [13, "large"],
+      [5, "large"],
+      [21, "xl"],
+    ] as const) {
+      const { t } = linear(listed, extended, { estimate });
+      expect((await t.getIssue("ENG-1"))?.size).toBe(size);
+    }
+    const { t, calls } = linear(listed, extended);
+    await t.updateIssue("ENG-1", { size: "large" });
+    expect(updated(calls)).toEqual([{ estimate: 5 }]);
+  });
+
+  it("refuses a native priority written as a list, several numbers or one", () => {
+    for (const urgent of [[1, 0], [1]])
+      expect(() =>
+        parseTrackerConfig({
+          issue_tracker: {
+            adapter: "linear",
+            team: "ENG",
+            facets: { priority: { store: "native", values: { urgent } } },
+          },
+        }),
+      ).toThrow("cannot be a list");
+  });
+
+  it("refuses a native priority remapped to other numbers", () => {
+    const remapped = resolveFacets(
+      facetInputs(
+        parseTrackerConfig({
+          issue_tracker: {
+            adapter: "linear",
+            team: "ENG",
+            facets: { priority: { store: "native", values: { urgent: 2 } } },
+          },
+        }),
+      ),
+      null,
+    );
+    expect(() => checkLinearFacets(remapped)).toThrow(
+      "cannot remap Linear's native priority",
+    );
+  });
+
   it("refuses, before writing, a team with estimates off, a scale with too few points, and a value off the scale", async () => {
     const refusal = async (
       section: Record<string, unknown>,

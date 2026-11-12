@@ -9,7 +9,7 @@
  * matches words, and a marker it missed would be a lost finding.
  *
  * The candidate pools and the populations (`openIssues`, `assignedIssues`,
- * `openPopulation`, which the facet census counts, and an `issuesInWindow`
+ * `unassignedIssues`, `openPopulation`, which the facet census counts, and an `issuesInWindow`
  * that names no label) are limited to `issue_tracker.jira.pool_issue_types`
  * where it is set. Reads by key, an issue's children and the reads a label
  * defines are not: an epic's accounting needs every type its label carries.
@@ -23,6 +23,7 @@ import type {
   LedgerIssue,
   StartedIssueActivity,
 } from "../port.ts";
+import { epicTypesOfLabel } from "../../../../../../shared/tracker-labels.ts";
 import type { CorePoolIssue, CoreTracker } from "../facets/tracker.ts";
 import { TrackerRequestError } from "../port.ts";
 import { checkPoolQuery, inWindow } from "../requests.ts";
@@ -31,8 +32,8 @@ import type { JiraFacetStores } from "./facets.ts";
 import { type JiraIssue, record } from "./read.ts";
 import {
   fieldOfLabel,
-  hasLabel,
   inProject,
+  labelOrEpicType,
   KEY,
   keyList,
   noLabel,
@@ -52,6 +53,10 @@ import {
   searchPages,
 } from "./transport.ts";
 
+/** The issue's type by name, as `Issue.nativeType`. */
+const nativeTypeOf = (issue: JiraIssue): string | null =>
+  issue.issueType?.name ?? null;
+
 type ReportOps = Pick<
   CoreTracker,
   | "issuesByKeys"
@@ -65,6 +70,7 @@ type ReportOps = Pick<
   | "openChildren"
   | "poolIssue"
   | "assignedIssues"
+  | "unassignedIssues"
   | "openPopulation"
 >;
 
@@ -164,7 +170,7 @@ export function reportOperations(
       frontier = [...found.values()];
     }
     return issues.map((issue) => {
-      const ancestors: Array<{ id: string; labels: string[] }> = [];
+      const ancestors: IssueFact["ancestors"] = [];
       let parent = issue.parent?.key;
       while (parent !== undefined) {
         if (ancestors.length === PARENT_DEPTH)
@@ -176,7 +182,11 @@ export function reportOperations(
           throw new JiraApiError(
             `issue ${issue.key}: its ancestor ${parent} is not visible, so its chain would be partial`,
           );
-        ancestors.push({ id: p.key, labels: p.labels });
+        ancestors.push({
+          id: p.key,
+          labels: p.labels,
+          nativeType: nativeTypeOf(p),
+        });
         parent = p.parent?.key;
       }
       return {
@@ -187,6 +197,7 @@ export function reportOperations(
         completedAt: completedAt(issue),
         stateType: stateType(issue),
         description: issue.description,
+        nativeType: nativeTypeOf(issue),
         ancestors,
       };
     });
@@ -262,7 +273,7 @@ export function reportOperations(
       const { state } = model.read(issue);
       return {
         identifier: issue.key,
-        nativeType: issue.issueType?.name ?? null,
+        nativeType: nativeTypeOf(issue),
         title: issue.title,
         url: issue.url,
         priority: model.priorityOf(issue.priority),
@@ -287,10 +298,12 @@ export function reportOperations(
   /**
    * Refuse a label no issue of the site carries: it would read as an empty
    * population. A field's value (`field_labels`) is not a Jira label, and
-   * its field was resolved when the fields were read.
+   * its field was resolved when the fields were read; the epic label read
+   * with the epic's issue types needs no label on the site.
    */
   async function requireLabel(label: string): Promise<void> {
     if (fieldOfLabel(label, await client.fieldLabels()) !== null) return;
+    if (epicTypesOfLabel(label, client.facets).length > 0) return;
     const values = await offsetPages(
       client.transport,
       { method: "GET", path: "label", query: { query: label } },
@@ -309,7 +322,7 @@ export function reportOperations(
   }
 
   const label = async (l: string, signal?: AbortSignal) =>
-    hasLabel(l, await client.fieldLabels(signal));
+    labelOrEpicType(l, await client.fieldLabels(signal), client.facets);
 
   /** The pool's issue-type clause, as a list to spread; empty when unscoped. */
   const scope = async (signal?: AbortSignal) => {
@@ -317,6 +330,46 @@ export function reportOperations(
     return clause === null ? [] : [clause];
   };
 
+  /** This project's issues in one of `states`, narrowed by the clause `who` builds, inside the pool scope. */
+  async function inStates(
+    states: ReadonlyArray<CanonicalState>,
+    who: () => Promise<string>,
+    where: string,
+    signal?: AbortSignal,
+  ): Promise<CorePoolIssue[]> {
+    if (states.length === 0)
+      throw new TrackerRequestError(
+        "invalid",
+        "a query of issues by state needs at least one state",
+      );
+    if (signal?.aborted === true) throw abortedError(signal);
+    const names = [
+      ...new Set(
+        states
+          .flatMap((s) => model.stateNames(s))
+          .filter((n): n is string => n !== null),
+      ),
+    ];
+    if (names.length === 0) return [];
+    const read = await client.search(
+      inProject(
+        project,
+        await who(),
+        `status in ${stringList(names)}`,
+        ...(await scope(signal)),
+      ),
+      where,
+      signal,
+    );
+    const wanted = new Set<CanonicalState>(states);
+    return pools(
+      read.filter((i) => {
+        const s = model.read(i).canonical;
+        return s !== null && wanted.has(s);
+      }),
+      signal,
+    );
+  }
   return {
     async issuesByKeys(keys) {
       const own = keys.filter((k) => ownKey.test(k));
@@ -527,37 +580,20 @@ export function reportOperations(
     },
 
     async assignedIssues(identity, states, signal) {
-      if (states.length === 0)
-        throw new TrackerRequestError(
-          "invalid",
-          "an assigned-issues query needs at least one state",
-        );
-      if (signal?.aborted === true) throw abortedError(signal);
-      const names = [
-        ...new Set(
-          states
-            .flatMap((s) => model.stateNames(s))
-            .filter((n): n is string => n !== null),
-        ),
-      ];
-      if (names.length === 0) return [];
-      const accountId = await client.accountId(identity, signal);
-      const read = await client.search(
-        inProject(
-          project,
-          `assignee = ${quote(accountId)}`,
-          `status in ${stringList(names)}`,
-          ...(await scope(signal)),
-        ),
+      return inStates(
+        states,
+        async () =>
+          `assignee = ${quote(await client.accountId(identity, signal))}`,
         `issues assigned to ${identity}`,
         signal,
       );
-      const wanted = new Set<CanonicalState>(states);
-      return pools(
-        read.filter((i) => {
-          const s = model.read(i).canonical;
-          return s !== null && wanted.has(s);
-        }),
+    },
+
+    async unassignedIssues(states, signal) {
+      return inStates(
+        states,
+        async () => `assignee is EMPTY AND ${open}`,
+        `unassigned issues of ${project}`,
         signal,
       );
     },

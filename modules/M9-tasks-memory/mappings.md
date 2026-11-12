@@ -114,9 +114,9 @@ tracker: a priority every filing path can set, a marker for the container
 
 | Tracker | Priority at birth | Epic marker | Verdict or waiver before close |
 |---------|-------------------|-------------|--------------------------------|
-| GitHub issues | no native priority: a single-valued project field (or a `priority:` label set) written on create | an `epic` label; sub-issues for the children | a comment carrying a verdict marker line; a workflow on `issues: closed` reopens an epic without one |
+| GitHub issues | no native priority: a single-valued project field (or a `priority:` label set) written on create | an `epic` label, or an issue type such as Epic that `issue_tracker.labels.epic_types` lists; sub-issues for the children | a comment carrying a verdict marker line; a workflow on `issues: closed` reopens an epic without one |
 | GitLab issues | scoped labels (`priority::2`, a paid tier), single-valued by construction; on the free tier, a `priority-` label set the filing path keeps to one | epics (a paid tier) or an `epic` label | a comment marker; a webhook or scheduled job reopens an epic closed without one |
-| Jira | the built-in Priority field, required on create by the field configuration | the Epic issue type replaces the bug or feature type, so record the real type in a field; or keep the real type and add an `epic` label | a workflow validator on the closing transition requires the verdict field or a waiver comment |
+| Jira | the built-in Priority field, required on create by the field configuration | the Epic issue type, read as the epic where `issue_tracker.labels.epic_types` lists it; it replaces the bug or feature type, so record the real type in a field; or keep the real type and add an `epic` label | a workflow validator on the closing transition requires the verdict field or a waiver comment |
 | Linear | the built-in priority (0 none, 1 urgent to 4 low), set on create | an `epic` label, keeping the real type label | a comment marker; [`do-item`](../../plugin/skills/do-item/SKILL.md) Step 5a asks for it before extracting tails and closing |
 
 Whatever the tracker, keep the [severity mapping](../../GLOSSARY.md) in one

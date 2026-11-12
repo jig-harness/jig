@@ -67,6 +67,7 @@ function memory(
       state: { id: held.state, name: held.state, type: "unstarted" },
       assignee: held.holders[0] ?? null,
       labels: [],
+      isEpic: false,
       hasOpenChildren: false,
       truncated: [],
     }),
