@@ -226,6 +226,15 @@ function readHint(text: string): Outcome<Hint> {
   return ok({ kind: kind as HintKind, value });
 }
 
+/** `text` without the backticks at either end. */
+function stripBackticks(text: string): string {
+  let start = 0;
+  let end = text.length;
+  while (start < end && text[start] === "`") start++;
+  while (end > start && text[end - 1] === "`") end--;
+  return text.slice(start, end);
+}
+
 /** The hints after `**Detect:**`: code spans separated by commas, an optional full stop after the last. */
 function readHints(text: string): Outcome<Hint[]> {
   const parts = codeSpans(text);
@@ -236,7 +245,7 @@ function readHints(text: string): Outcome<Hint[]> {
   const hints: Hint[] = [];
   for (const [i, part] of parts.entries()) {
     if (i % 2 === 1) {
-      const hint = readHint(part.replace(/^`+|`+$/g, "").trim());
+      const hint = readHint(stripBackticks(part).trim());
       if (!hint.ok) return hint;
       hints.push(hint.value);
       continue;
@@ -251,12 +260,16 @@ function readHints(text: string): Outcome<Hint[]> {
   // Normalized: each hint once, in one order, so the id does not depend on
   // how the author listed them.
   const unique = new Map(hints.map((hint) => [hintText(hint), hint]));
-  return ok([...unique.keys()].sort().map((key) => unique.get(key) as Hint));
+  return ok(
+    [...unique.keys()]
+      .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+      .map((key) => unique.get(key) as Hint),
+  );
 }
 
 /** The levels a declaration names, distinct and known, in `LEVELS` order. */
 function readLevels(text: string): Outcome<Level[]> {
-  const named = text.split(/\s*,\s*/);
+  const named = text.split(",").map((level) => level.trim());
   const unknown = named.find(
     (level) => !(LEVELS as readonly string[]).includes(level),
   );
