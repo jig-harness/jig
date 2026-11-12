@@ -52,6 +52,7 @@ import {
   type PickupRefusal,
   readRefusal,
   type RefusedMember,
+  waitsOf,
 } from "./pickup-refusal.ts";
 
 export type { PickupRefusal, RefusedMember };
@@ -618,12 +619,6 @@ export function asResult(
 ): SessionResult | null {
   if (value === "failed" && until !== null) return "waits";
   return value === "done" || value === "failed" ? value : null;
-}
-
-/** When a `waits` result lets the pickup start again, as the row carries it. */
-function waitsOf(row: LaunchRow): { waitsUntil?: string } {
-  const until = row.result_until ?? null;
-  return row.result === "failed" && until !== null ? { waitsUntil: until } : {};
 }
 
 /** A record's recorded answer; `null` when none. */
