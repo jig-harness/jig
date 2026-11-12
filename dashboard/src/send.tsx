@@ -62,7 +62,7 @@ type Phase =
   | { kind: "sending" }
   | { kind: "failed"; reason: string };
 
-/** A send in flight, or one whose decisions may have posted: `texts` holds every answer of each such decision that may have posted, by key, so only a send of one of those same answers to that decision is held back. */
+/** A send in flight, or one whose decisions may have posted: `texts` holds every answer of each such decision that may have posted, by writer and key (`uncertainKeyOf`), so only a send of one of those same answers to that decision by that writer is held back. */
 type SendState =
   | "sending"
   | { uncertain: string; texts: Map<string, string[]> };
@@ -74,6 +74,11 @@ function answerFingerprint(a: {
   answer: CardAnswer;
 }): string {
   return cardAnswerLines(a.key, a.answer, a.digest).join("\n");
+}
+
+/** The key an answer's uncertainty is kept under: the writer too, since another writer's comment does not supersede it. */
+function uncertainKeyOf(login: string, key: string): string {
+  return `${login}\n${key}`;
 }
 
 const sends = new Map<string, SendState>();
@@ -216,7 +221,9 @@ export function useSend(need: NeedView, picking: Picking): Sending | null {
       commit !== null &&
       sending !== null &&
       commit.answers.some((a) =>
-        sending.texts.get(a.key)?.includes(answerFingerprint(a)),
+        sending.texts
+          .get(uncertainKeyOf(kept.login, a.key))
+          ?.includes(answerFingerprint(a)),
       )
     )
       return;
@@ -262,12 +269,14 @@ export function useSend(need: NeedView, picking: Picking): Sending | null {
       const texts = new Map(
         [...(earlierUncertain?.texts ?? [])].map(([k, v]) => [k, [...v]]),
       );
-      for (const a of commit.answers.slice(0, urls.length)) texts.delete(a.key);
+      for (const a of commit.answers.slice(0, urls.length))
+        texts.delete(uncertainKeyOf(token.login, a.key));
       const unsure = commit.answers.find((a) => a.key === uncertainKey);
       if (unsure !== undefined) {
-        const said = texts.get(unsure.key) ?? [];
+        const mineKey = uncertainKeyOf(token.login, unsure.key);
+        const said = texts.get(mineKey) ?? [];
         const mine = answerFingerprint(unsure);
-        texts.set(unsure.key, said.includes(mine) ? said : [...said, mine]);
+        texts.set(mineKey, said.includes(mine) ? said : [...said, mine]);
       }
       const reason =
         uncertainKey !== null && refused !== null ? refused : priorReason;
