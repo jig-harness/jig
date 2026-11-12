@@ -5,9 +5,10 @@ release: patch
 ### Fixed
 
 - A Codex drive pass no longer loses a long step between starting it and
-  waiting on it. Codex ends every process a tool call started when the call
-  returns, so drive-pr's foreground wait (`foreground-wait.ts`) now refuses
-  to launch under Codex, exit `4`, before starting anything, and names the
+  waiting on it. Codex's default Linux sandbox ends the processes a tool call
+  started when the call returns, so drive-pr's foreground wait
+  (`foreground-wait.ts`) now refuses to launch under Codex as a conservative
+  policy, exit `4`, before starting anything, and names the
   way to run the step there: `exec_command`, then `write_stdin` on the same
   session until the command exits
   ([drive-pr § Driver pass](../plugin/skills/drive-pr/SKILL.md#driver-pass-you-are-headless-and-one-shot)).

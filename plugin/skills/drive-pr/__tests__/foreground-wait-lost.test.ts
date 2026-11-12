@@ -49,9 +49,16 @@ const kill = (pid: number | null) => {
   }
 };
 
+const PID_FILES = ["runner.pid", "cmd.pid"];
+/** Drop the recorded pids once their processes are known gone, so a reused pid is never signalled. */
+const forgetPids = () => {
+  for (const name of PID_FILES)
+    rmSync(join(generation(), name), { force: true });
+};
+
 afterEach(() => {
   if (existsSync(stateRoot()) && readdirSync(stateRoot()).includes("gen-1"))
-    for (const name of ["runner.pid", "cmd.pid"]) kill(pidOf(name));
+    for (const name of PID_FILES) kill(pidOf(name));
   rmSync(cwd, { recursive: true, force: true });
 });
 
@@ -100,6 +107,33 @@ test(
 );
 
 test(
+  "CODEX_HOME alone, a configuration directory, does not refuse a launch",
+  () => {
+    const launched = spawnScript(
+      codexEnv({ CODEX_HOME: "/nonexistent/codex-home" }),
+      "launch",
+      "--",
+      ...bunCommand("console.log('ok')"),
+    );
+    // codexEnv always adds CODEX_THREAD_ID; drop it to leave only CODEX_HOME.
+    expectSpawnExit(launched, 4);
+    const env = codexEnv({ CODEX_HOME: "/nonexistent/codex-home" });
+    delete env.CODEX_THREAD_ID;
+    const homeOnly = spawnScript(
+      env,
+      "launch",
+      "--",
+      ...bunCommand("console.log('ok')"),
+    );
+    expectSpawnExit(homeOnly, 0);
+    const waited = run("wait");
+    expectSpawnExit(waited, 0);
+    forgetPids();
+  },
+  T,
+);
+
+test(
   "a Claude Code session that inherited Codex's variables still launches",
   () => {
     const launched = spawnScript(
@@ -112,9 +146,38 @@ test(
     const waited = run("wait");
     expectSpawnExit(waited, 0);
     expect(out(waited)).toContain("ok");
+    forgetPids();
   },
   T,
 );
+
+/** Kill the runner and its command, wait until both are gone, then forget their pids. */
+const loseRunner = async (deadline: number) => {
+  const pids = [pidOf("runner.pid"), pidOf("cmd.pid")];
+  for (const pid of pids) kill(pid);
+  const gone = async () => {
+    const rows = await processTable();
+    return pids.every(
+      (pid) =>
+        !rows?.some((row) => row.pid === pid && !row.stat.startsWith("Z")),
+    );
+  };
+  while (!(await gone())) {
+    expect(Date.now()).toBeLessThan(deadline);
+    await sleepMs(20);
+  }
+  forgetPids();
+};
+const logSize = () => {
+  const file = join(generation(), "log");
+  return existsSync(file) ? readFileSync(file).length : 0;
+};
+const untilLogSize = async (size: number, deadline: number) => {
+  while (logSize() < size) {
+    expect(Date.now()).toBeLessThan(deadline);
+    await sleepMs(20);
+  }
+};
 
 test(
   "a lost runner is reported lost with the command's last output, even output already relayed",
@@ -140,24 +203,102 @@ test(
     expect(out(running)).toContain("last words");
 
     // The runner goes first, so it cannot publish a result for its command.
-    const pids = [pidOf("runner.pid"), pidOf("cmd.pid")];
-    for (const pid of pids) kill(pid);
-    const gone = async () => {
-      const rows = await processTable();
-      return pids.every(
-        (pid) =>
-          !rows?.some((row) => row.pid === pid && !row.stat.startsWith("Z")),
-      );
-    };
-    while (!(await gone())) {
-      expect(Date.now()).toBeLessThan(deadline);
-      await sleepMs(20);
-    }
+    await loseRunner(deadline);
 
     const lost = run("wait", "--max-sec", "30");
     expectSpawnExit(lost, 21);
     expect(out(lost)).toContain("runner was lost before it published a result");
     expect(out(lost)).toContain("last words");
+  },
+  T,
+);
+
+test(
+  "a lost runner's report shows the final 4 KiB of a log that was already relayed",
+  async () => {
+    const deadline = Date.now() + 30_000;
+    const go = join(cwd, "go");
+    expectSpawnExit(
+      run(
+        "launch",
+        "--",
+        ...bunCommand(
+          `const fs = require("node:fs");
+process.stdout.write("a".repeat(6000));
+const t = setInterval(() => {
+  if (fs.existsSync(${JSON.stringify(go)})) {
+    clearInterval(t);
+    process.stdout.write("b".repeat(1000));
+    setInterval(() => {}, 1000);
+  }
+}, 20);`,
+        ),
+      ),
+      0,
+    );
+    await untilLogSize(6000, deadline);
+    // Everything so far is relayed, so only the 4 KiB floor can show it again.
+    expectSpawnExit(run("wait", "--max-sec", "1"), 20);
+    writeFileSync(go, "1");
+    await untilLogSize(7000, deadline);
+    await loseRunner(deadline);
+
+    const lost = run("wait", "--max-sec", "30");
+    expectSpawnExit(lost, 21);
+    // Partially unseen: 1000 unseen bytes, so the tail is the final 4096.
+    expect(out(lost)).toContain(`${"a".repeat(3096)}${"b".repeat(1000)}`);
+    expect(out(lost)).not.toContain("a".repeat(3097));
+  },
+  T,
+);
+
+test(
+  "a lost runner's report shows all of an unseen log larger than 4 KiB",
+  async () => {
+    const deadline = Date.now() + 30_000;
+    expectSpawnExit(
+      run(
+        "launch",
+        "--",
+        ...bunCommand(
+          'process.stdout.write("a".repeat(10000)); setInterval(() => {}, 1000)',
+        ),
+      ),
+      0,
+    );
+    await untilLogSize(10000, deadline);
+    await loseRunner(deadline);
+
+    const lost = run("wait", "--max-sec", "30");
+    expectSpawnExit(lost, 21);
+    expect(out(lost)).toContain("a".repeat(10000));
+  },
+  T,
+);
+
+test(
+  "a lost runner's report keeps exactly 4 KiB of a log wholly relayed",
+  async () => {
+    const deadline = Date.now() + 30_000;
+    expectSpawnExit(
+      run(
+        "launch",
+        "--",
+        ...bunCommand(
+          'process.stdout.write("a".repeat(5904) + "b".repeat(4096)); setInterval(() => {}, 1000)',
+        ),
+      ),
+      0,
+    );
+    await untilLogSize(10000, deadline);
+    expectSpawnExit(run("wait", "--max-sec", "1"), 20);
+    await loseRunner(deadline);
+
+    const lost = run("wait", "--max-sec", "30");
+    expectSpawnExit(lost, 21);
+    expect(out(lost)).toContain("final 4096 bytes");
+    expect(out(lost)).toContain("b".repeat(4096));
+    expect(out(lost)).not.toContain("aaaa");
   },
   T,
 );

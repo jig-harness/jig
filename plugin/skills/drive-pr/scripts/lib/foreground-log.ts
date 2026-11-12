@@ -27,17 +27,21 @@ const STDOUT_RELAY_MAX_MS = 60_000;
 const UNSUPPORTED_HARNESS_EXIT = 4;
 
 /**
- * Codex ends every process a tool call started when that call returns, so a
- * runner cannot outlive `launch` there. Say so and name Codex's own
- * long-running command session; null under any other harness.
+ * Codex's default Linux sandbox ends every process a tool call started when
+ * that call returns, and a runner's survival cannot be verified from inside
+ * it, so Jig refuses the foreground wait there as a conservative policy. Name
+ * Codex's own long-running command session; null under any other harness.
+ * `CODEX_HOME` only selects a configuration directory, so alone it does not
+ * mark a Codex tool call.
  */
 export function refuseUnderCodex(): number | null {
   if (detectHarness()?.name !== "codex") return null;
-  const marker = Object.keys(process.env).find((name) =>
-    name.startsWith("CODEX_"),
+  const marker = Object.keys(process.env).find(
+    (name) => name.startsWith("CODEX_") && name !== "CODEX_HOME",
   );
+  if (marker === undefined) return null;
   console.error(
-    `foreground-wait: not under Codex (${marker} is set) — Codex ends every process a tool call started when the call returns, so the runner would be lost before \`wait\`. Run the command itself through \`exec_command\` with a \`yield_time_ms\` below the call ceiling, then poll that session with \`write_stdin\` (empty input) until it exits; where neither tool is exposed, run the command in one foreground call and, if it cannot finish within the ceiling, stop and say so. Nothing was started`,
+    `foreground-wait: not under Codex (${marker} is set) — Codex's sandbox ends the processes a tool call started when the call returns, so the runner would be lost before \`wait\`; Jig refuses rather than rely on it surviving. Run the command itself through \`exec_command\` with a \`yield_time_ms\` below the call ceiling, then poll that session with \`write_stdin\` (empty input) until it exits; where neither tool is exposed, run the command in one foreground call and, if it cannot finish within the ceiling, stop and say so. Nothing was started`,
   );
   return UNSUPPORTED_HARNESS_EXIT;
 }

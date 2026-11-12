@@ -33,10 +33,11 @@
  * `launch` returns once the runner has started the command, so a later
  * cancellation of the runner's tree reaches it (lib/foreground-start.ts).
  *
- * NOT UNDER CODEX. Codex ends every process a tool call started when that call
- * returns: its Linux sandbox runs the call in a PID namespace of its own, which
- * takes even a `setsid` process with it. A runner therefore cannot outlive
- * `launch` there, and `launch` refuses (exit 4) before it writes anything,
+ * NOT UNDER CODEX. Codex's default Linux sandbox runs a tool call in a PID
+ * namespace of its own and ends the call's processes, even a `setsid` one,
+ * when it returns. The sandbox can be bypassed or share the caller's
+ * namespace, and a runner's survival cannot be verified from inside it, so as
+ * a conservative policy `launch` refuses (exit 4) before it writes anything,
  * naming Codex's own long-running command session as the way to run the step.
  *
  * STATE. Every launch owns one generation directory,

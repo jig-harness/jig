@@ -1315,10 +1315,10 @@ pre-commit hook runs a long suite, a push that runs the pre-push suite), use the
 **foreground wait**. It is two calls, launched once and waited on as often as
 the ceiling requires, all inside this turn.
 
-**Under Codex, use Codex's own command session instead.** Codex ends every
-process a tool call started when that call returns, so the foreground wait's
-runner cannot outlive `launch` there: `launch` refuses at once (exit `4`) and
-starts nothing. Run the step's command itself through `exec_command` with a
+**Under Codex, use Codex's own command session instead.** Codex's default Linux
+sandbox ends the processes a tool call started when that call returns, and a
+runner's survival there cannot be verified, so as a conservative policy
+`launch` refuses at once under Codex (exit `4`) and starts nothing. Run the step's command itself through `exec_command` with a
 `yield_time_ms` below the call ceiling, and while it is still running poll
 the same session with `write_stdin` and empty input until it exits; that
 session belongs to Codex and outlives each call. Where neither tool is

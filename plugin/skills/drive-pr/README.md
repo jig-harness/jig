@@ -571,9 +571,9 @@ with `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`. A successful pass that leaves
 uncommitted edits and this tree's unverified holds from the current round
 stops immediately with `WORKTREE_UNCLEAN` (exit `12`), naming the unfinished
 held fixes. Validate, commit and push them, then re-arm in that tree. Other
-runtimes follow the same foreground completion rule. Codex ends every process
-a tool call started when the call returns, so there the foreground wait
-refuses to launch, and a pass runs a long step through Codex's own command
+runtimes follow the same foreground completion rule. Codex's default Linux
+sandbox ends the processes a tool call started when the call returns, so as
+a conservative policy the foreground wait refuses to launch there, and a pass runs a long step through Codex's own command
 session instead.
 
 The same holds for other work nobody pushed: a pass that ended its turn after
