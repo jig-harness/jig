@@ -540,8 +540,11 @@ own machine only.
   `jig ask --thread`, each with the views API's envelope and the feed
   call's deadline.
 - **Its transport is HTTPS to the hub**, a connection the dashboard opens
-  through the hub's private-network front, which names the person; the
-  hub answers within that person's grant. A dashboard reconnects with its
+  through the hub's private-network front, which names the person, on the
+  front's `/feed` path ([control-plane.md § One view of every
+  host](control-plane.md#one-view-of-every-host)); the hub answers within
+  that person's grant. A record's identity in the feed is the host, its
+  incarnation, the repository, the kind and the key. A dashboard reconnects with its
   cursor.
 - **Every record a source sends is untrusted.** The laptop checks it
   against the feed's schema, drops one that fails and counts it on the
@@ -850,9 +853,12 @@ its 1.104 command line, not yet with the dashboard.
   same app capability. `fleet` is the hub's owner view: receipts,
   accounts, walls, workspaces, terminals and paths of every host whose
   repositories the scope names, so `receipt.get` and the paths the
-  workspace opening needs reach a laptop through the front. The hub
-  checks it per reported host, against the approved scope the host
-  enrolled with. Without `fleet` a viewer gets public facts only, as
+  workspace opening needs reach a laptop through the front. A host
+  enrolled for more repositories than the viewer's scope names is shown
+  whole to a `fleet` viewer only when the scope covers every repository the
+  host enrolled with; otherwise the host's combined receipts, workspaces
+  and paths are withheld and only the facts of the repositories in the
+  scope are returned. Without `fleet` a viewer gets public facts only, as
   above.
 - **It does not unblock writes.** Tailscale says who is looking, not whose
   forge login writes. Phone access remains read-only; desktop

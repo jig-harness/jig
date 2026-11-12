@@ -2285,10 +2285,8 @@ make, use the entry's term instead.
   machine's records: a snapshot, then the changes since a cursor, each
   record in its *record envelope* and stamped with the host it came from
   and a visibility class (safe on the forge, for one person's machines, or
-  for this machine only). Its first transport is
-  `ssh <host> jig dashboard feed`, JSON lines over *SSH*; the *hub* serves it
-  too, from what its hosts report, and a *shared control plane* would serve
-  the same feed over a connection the host opens. Not the
+  for this machine only). The *hub* serves it over HTTPS, from what its
+  hosts report; without a hub a dashboard reads its own machine only. Not the
   *views API*, which a page uses to talk to its own server. See
   [design/dispatch-dashboard.md](design/dispatch-dashboard.md#the-source-feed-from-a-host-to-a-dashboard).
 - **Views API** — the protocol between the *dispatch dashboard*'s page and the server that

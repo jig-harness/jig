@@ -631,6 +631,9 @@ it is in use.
 Done when, for the first stage, two hosts dispatching the same repositories
 through one hub spend together about what one host spends alone, and
 stopping the hub during a tick costs that tick only a note on its receipt.
+From the second stage a stopped hub also suspends the owner duties a host
+cannot do without its lease, the one exception to a host working as it does
+today.
 
 ### 26. `init`: setting a repository up for Jig
 

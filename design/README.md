@@ -70,7 +70,7 @@ with the review.
 | [One look for Jig's pages, and a theme a repository can set](ui-theming.md) | 38; Later: a repository's theme |
 | [The dispatch board, what is driven and what is ready to merge](dispatch-board.md) | 36 |
 | [Addresses: asking and telling the stations of the line](addresses.md) | 39 |
-| [The dispatch dashboard, including required phone access](dispatch-dashboard.md) | 42; Later: a control-plane service for the shared records |
+| [The dispatch dashboard, including required phone access](dispatch-dashboard.md) | 42 |
 | [The hub, a shared control plane for many dispatchers](control-plane.md) | 49 |
 | [Consumer actions, which Jig changes a repository must act on](consumer-actions.md) | 43 |
 | [Distribution channels](distribution.md) | 45 |

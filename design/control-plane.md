@@ -197,7 +197,10 @@ records that reconsideration, and it is settled before stage 1 starts.
   included), pickup progress, receipts and the correspondence the source
   feed's bounded calls return, each under the visibility its repository's
   scope gives it. Each record goes in the envelope Jig already uses, with
-  its key and generation, so a report sent twice counts once. The host
+  its repository, key and generation: a key is unique only within its
+repository, so the hub stores, acknowledges and deduplicates by host,
+incarnation, repository, kind and key, and a report sent twice counts
+once. The host
   keeps a durable checkpoint of what the hub acknowledged, per incarnation,
   and a tick resends everything after it; after `hello` shows a hub with no
   memory of the host's incarnation (a deleted database) the host backfills
@@ -301,8 +304,9 @@ running.
 Today each host's machine file says whether it owns a repository's
 notices, labels, board, serialization holds, steward and reflection
 findings, and two hosts that both claim a repository are only reported.
-With the hub, `hello` names the owner of each repository: the host that
-claimed it first, until that host goes silent, then the next. Two hosts
+From stage 2, `hello` names the owner of each repository: the host that
+claimed it first, until that host goes silent, then the next. Until then the
+machine file decides, as today. Two hosts
 must never hold a duty at once, since a host cut off from the hub alone
 would otherwise keep its duty while the hub names another. So the owner
 holds its duty under a lease of its own, renewed with each call, and a
@@ -417,9 +421,16 @@ strategy the built-ins lack can be added without changing them.
 The hub serves the source feed, so a dashboard that names the hub as its
 source shows every enrolled host's work, each fact stamped with its host,
 and its Needs you covers them all. The hub's machine runs a dashboard server of its own that names the
-hub as its source and serves the page; the hub's front routes to that
-server, never to the hub's protocol port, so the page still talks only to
-its own dashboard server. A phone reaches that page through
+hub as its source and serves the page; the hub's front routes the page to
+that server, never to the hub's host-facing protocol port, so the page
+still talks only to its own dashboard server. The front also routes one
+more path, `/feed`, to the hub's feed endpoint, which serves only the
+source feed's reads (`hello`, `changes`, `log.rows`, `receipt.get`,
+`thread.get`) to a viewer the front names: a laptop's dashboard reaches
+the hub there. The hub reads the viewer and its grant from the headers on
+the front's own socket, as the dashboard does, and filters every answer
+by that grant; the endpoint takes no host calls, which stay on the
+protocol port. A phone reaches that page through
 a private-network front, as it reaches a host's page today
 ([dispatch-dashboard.md § A front on a private network](dispatch-dashboard.md#a-front-on-a-private-network)),
 and sees every host at once. The views API between a page and its own
@@ -490,7 +501,9 @@ tick and the change probe use the hub when the machine file names one, and
 fall back when it does not answer. Done when two hosts dispatching the same
 repositories through one hub spend, together, about what one host spends
 alone, and a hub stopped mid-tick costs that tick nothing but its
-receipt's note and the owner duties a host cannot do without its lease.
+receipt's note. In this stage `hello` names no owner and no lease exists:
+each repository's owner is the host its machine file names, as today, so
+nothing about owner duties changes until stage 2.
 
 **Stage 2: claims with leases, and a silent host noticed**, once
 [ADR-0016](../docs/adr/ADR-0016-an-optional-hub-for-hosts-that-keep-authority.md)
