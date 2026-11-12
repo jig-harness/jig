@@ -394,6 +394,22 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.218.0] - 2026-11-12
+
+### Added
+
+- Every tracker value map takes a list of names per value, read in any of
+  them and written as the first; a plain name keeps its meaning. A Jira site
+  with more priorities than Jig's four reads each as one of them
+  (`issue_tracker.jira.priorities: { urgent: [Blocker, Critical, Highest] }`),
+  a closed state reads from any of its resolutions
+  (`issue_tracker.jira.resolutions: { canceled: ["Won't Do", "Won't Fix"] }`),
+  and a type, priority or size kept in issue types, fields or labels reads
+  from several (`issue_tracker.facets.type.values: { feature: [Story, Improvement] }`),
+  as do `issue_tracker.github.priority_labels`. A name listed for two values
+  is refused when the configuration is read
+  ([CONFIGURATION.md](plugin/CONFIGURATION.md#issue_tracker)).
+
 ## [0.217.0] - 2026-11-12
 
 ### Added
@@ -7522,7 +7538,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.217.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.218.0...HEAD
+[0.218.0]: https://github.com/jig-harness/jig/compare/v0.217.0...v0.218.0
 [0.217.0]: https://github.com/jig-harness/jig/compare/v0.216.0...v0.217.0
 [0.216.0]: https://github.com/jig-harness/jig/compare/v0.215.0...v0.216.0
 [0.215.0]: https://github.com/jig-harness/jig/compare/v0.214.2...v0.215.0

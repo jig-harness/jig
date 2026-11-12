@@ -13,6 +13,12 @@ import {
   type ResolvedFacet,
   type TaxonomyValues,
 } from "../scripts/lib/tracker/facets/config.ts";
+import {
+  numberedValue,
+  numberIsShared,
+  sharedNumber,
+  valueMap,
+} from "../scripts/lib/tracker/facets/values.ts";
 import { labelCodec } from "../scripts/lib/tracker/facets/label.ts";
 import {
   type CoreTracker,
@@ -24,6 +30,7 @@ import {
   linearTracker,
 } from "../scripts/lib/tracker/linear.ts";
 import { linearFacets } from "../scripts/lib/tracker/linear-facets.ts";
+import { movedFacets } from "../../file-issue/scripts/lib/move.ts";
 import { parseNewIssue, parsePatch } from "../scripts/tracker.ts";
 import { gitHub, issueNode, conn, JIG_TAXONOMY } from "./github-fixtures.ts";
 import { jira, routes } from "./jira-fixtures.ts";
@@ -265,7 +272,7 @@ describe("issue_tracker.facets: what reading the configuration refuses", () => {
         },
       },
     });
-    expect(jira.priorities.urgent).toBe("Blocker");
+    expect(jira.priorities.urgent).toEqual(["Blocker"]);
   });
 });
 
@@ -677,5 +684,53 @@ describe("issue_tracker.facets: values and maps the configuration must keep", ()
     expect(() => linearFacets({} as never, remapped)).toThrow(
       "cannot remap Linear's native priority",
     );
+  });
+});
+
+describe("repeated names within one value", () => {
+  it("refuses a type or size label list that names a label twice", () => {
+    for (const facet of ["type", "size"] as const)
+      expect(() =>
+        facets({
+          facets: {
+            [facet]: {
+              store: "label",
+              labels: {
+                [facet === "type" ? "feature" : "large"]: ["Story", "story"],
+              },
+            },
+          },
+        }),
+      ).toThrow("twice");
+  });
+});
+
+describe("numeric aliases", () => {
+  const sizes = ["small", "large", "xl"];
+  it("treats equivalent spellings of one value as no clash", () => {
+    const map = valueMap(sizes, { large: ["5", "05"] }, "w");
+    expect(sharedNumber(map)).toBeUndefined();
+    expect(numberedValue(map, 5)).toBe("large");
+  });
+  it("reads a number two values name as none", () => {
+    const map = valueMap(sizes, { large: ["4", "05"], xl: "5" }, "w");
+    expect(sharedNumber(map)).toBe(5);
+    expect(numberedValue(map, 5)).toBeNull();
+    expect(numberIsShared(map, 5)).toBe(true);
+  });
+});
+
+describe("moved facets", () => {
+  it("counts a change of read aliases as no move", () => {
+    const at = (large: unknown) =>
+      facets({
+        adapter: "jira",
+        team: "ENG",
+        facets: {
+          size: { store: "field", field: "Points", values: { large } },
+        },
+      });
+    expect(movedFacets(at(5), at([5, 8]))).not.toContain("size");
+    expect(movedFacets(at(5), at(8))).toContain("size");
   });
 });

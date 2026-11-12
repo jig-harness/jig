@@ -39,6 +39,9 @@ import {
 } from "../facets/detect.ts";
 import {
   fold,
+  numberedValue,
+  numberIsShared,
+  sharedNumber,
   priorityName,
   priorityNumber,
   type PriorityName,
@@ -422,10 +425,7 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
     }
     if (field.dataType === "NUMBER") {
       const n = Number(name);
-      const numbers = (s.map?.entries ?? [])
-        .map(([, t]) => Number(t))
-        .filter(Number.isFinite);
-      if (new Set(numbers).size !== numbers.length)
+      if (sharedNumber(s.map) !== undefined)
         throw new TrackerRequestError(
           "invalid",
           `issue_tracker.facets.${s.facet}.values gives two ${s.facet} values the same number in the field '${field.name}'`,
@@ -508,20 +508,12 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
   ): string | null {
     const found = values.find((v) => same(v.field, fieldName(s)));
     if (found === undefined) return null;
-    const exact = s.map?.fromTracker(found.value) ?? null;
-    if (
-      exact !== null ||
-      s.map === null ||
-      found.numeric !== true ||
-      found.value.trim() === ""
-    )
-      return exact;
-    // A number field returns the number, not its configured spelling.
     const n = Number(found.value);
-    return (
-      s.map.entries.find(([, t]) => t.trim() !== "" && Number(t) === n)?.[0] ??
-      null
-    );
+    const numeric =
+      found.numeric === true && found.value.trim() !== "" && Number.isFinite(n);
+    if (!numeric) return s.map?.fromTracker(found.value) ?? null;
+    if (numberIsShared(s.map, n)) return null;
+    return s.map?.fromTracker(found.value) ?? numberedValue(s.map, n);
   }
 
   async function read(

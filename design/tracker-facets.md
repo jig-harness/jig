@@ -156,6 +156,13 @@ Today's keys list several labels for one value
 one written; the others are read as the same value. No label may name two
 values, which loading already refuses.
 
+The adapters' own maps read the same way: `issue_tracker.jira.priorities`,
+`issue_tracker.jira.resolutions` (a closed state read from any of its
+resolutions, set with the first) and `issue_tracker.github.priority_labels`
+each take a name or a list per value, and no name in any list may stand
+for two values. Linear's native priority is the exception: its numbers are
+Linear's own, so a list there is refused.
+
 ### Defaults per adapter
 
 A facet whose store the configuration does not name gets its adapter's

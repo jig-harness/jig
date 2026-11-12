@@ -767,10 +767,8 @@ of [the design's build order](tracker-facets.md#build-order).
 A store kept by the repository's own command waits until a repository names
 a facet that needs it.
 
-Changes to the design follow from a Jira team's use. Every value map reads
-any of several names and writes the first, for priorities, types and Jira's
-resolutions. And the weekly sweep can comment
-on an incomplete issue without moving it back to triage.
+Changes to the design follow from a Jira team's use. The weekly sweep can
+comment on an incomplete issue without moving it back to triage.
 
 Done when a repository on each adapter files and reads all three in its
 configured store, and Jig's own repository keeps them in GitHub's fields

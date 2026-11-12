@@ -247,8 +247,7 @@ asks. Every way Jig's tools file an issue through the tracker sets all three
 leave priority and size to triage. The weekly check can move an issue missing an attribute back to
 triage while it has not been started. Jira's issue-type and custom-field
 stores and Linear's estimate are built; still to come are live checks of
-those stores. Also to come: several tracker names will read as one value, such as a site's
-seven priorities onto Jig's four. The weekly check will be able to comment
+those stores. Also to come: the weekly check will be able to comment
 without moving an issue.
 
 ### 43. Consumer actions: which Jig changes a repository must act on
