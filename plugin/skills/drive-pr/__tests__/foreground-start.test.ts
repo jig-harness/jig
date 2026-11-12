@@ -81,6 +81,79 @@ test("launch returns once the runner has started the command, so a cancellation 
   expect(tree?.some((row) => row.pid === command)).toBe(true);
 }, 60_000);
 
+const alive = (child: ReturnType<typeof spawn>) =>
+  child.exitCode === null && child.signalCode === null;
+
+// A runner that never reads the cancel request, as one stuck before it binds.
+const unanswering = {
+  commandStarted: () => false,
+  settled: () => false,
+  requestCancel: () => undefined,
+  result: () => null,
+  recordFailure: () => undefined,
+  captureRunnerTree: async () => null,
+  endCaptured: async () => "unconfirmed" as const,
+};
+
+test("a runner that answers the cancel request is not killed, and its witnessed result decides the verdict", async () => {
+  const runner = spawn(process.execPath, ["-e", "setInterval(()=>{},1000)"], {
+    stdio: "ignore",
+  });
+  let cancelled = false;
+  try {
+    const status = await handOffToRunner(
+      runner,
+      { registry: undefined, entry: "x" },
+      {
+        ...unanswering,
+        requestCancel: () => {
+          cancelled = true;
+        },
+        settled: () => cancelled,
+        result: () =>
+          cancelled
+            ? { note: "launch cancelled: x", treeWitnessed: true }
+            : null,
+        captureRunnerTree: async () => {
+          throw new Error("an answering runner is never captured");
+        },
+      },
+      0,
+      "launched",
+    );
+    expect(status).toBe(1);
+    expect(alive(runner)).toBe(true);
+  } finally {
+    runner.kill("SIGKILL");
+  }
+}, 60_000);
+
+test("a launch that cannot capture the runner's tree leaves the runner alive and records the failure unwitnessed", async () => {
+  const runner = spawn(process.execPath, ["-e", "setInterval(()=>{},1000)"], {
+    stdio: "ignore",
+  });
+  const recorded: boolean[] = [];
+  try {
+    const status = await handOffToRunner(
+      runner,
+      { registry: undefined, entry: "x" },
+      {
+        ...unanswering,
+        recordFailure: (witnessed) => recorded.push(witnessed),
+        captureRunnerTree: async () => null,
+        endCaptured: async () => "unconfirmed",
+      },
+      0,
+      "launched",
+    );
+    expect(status).toBe(1);
+    expect(recorded).toEqual([false]);
+    expect(alive(runner)).toBe(true);
+  } finally {
+    runner.kill("SIGKILL");
+  }
+}, 60_000);
+
 test("a launch that ran out of budget ends a command the runner started but had not published", async () => {
   // The runner has a child and has written no pid file: only the tree finds it.
   const runner = spawn(
@@ -99,25 +172,32 @@ test("a launch that ran out of budget ends a command the runner started but had 
     await Bun.sleep(50);
   }
   expect(tree?.length).toBeGreaterThan(1);
-  const status = await handOffToRunner(
-    runner,
-    { registry: undefined, entry: "x" },
-    {
-      commandStarted: () => false,
-      settled: () => false,
-      captureRunnerTree: () => captureProcessTree(runner.pid as number),
-      endCaptured: async (captured, pid) =>
-        captured.every((row) => row.pid === pid)
-          ? "none"
-          : (await forceIdentityTargetsAndWitness(captured))
-            ? "ended"
-            : "unconfirmed",
-    },
-    0,
-    "launched",
-  );
-  expect(status).toBe(1);
-  expect(await identityTargetsGone(tree as NonNullable<typeof tree>)).toBe(
-    true,
-  );
+  try {
+    const status = await handOffToRunner(
+      runner,
+      { registry: undefined, entry: "x" },
+      {
+        ...unanswering,
+        captureRunnerTree: () => captureProcessTree(runner.pid as number),
+        endCaptured: async (captured, pid) =>
+          captured.every((row) => row.pid === pid)
+            ? "none"
+            : (await forceIdentityTargetsAndWitness(captured))
+              ? "ended"
+              : "unconfirmed",
+      },
+      0,
+      "launched",
+    );
+    expect(status).toBe(1);
+    expect(await identityTargetsGone(tree as NonNullable<typeof tree>)).toBe(
+      true,
+    );
+  } finally {
+    await signalIdentityTargets(
+      (await captureProcessTree(runner.pid as number)) ?? [],
+      "SIGKILL",
+    );
+    runner.kill("SIGKILL");
+  }
 }, 60_000);

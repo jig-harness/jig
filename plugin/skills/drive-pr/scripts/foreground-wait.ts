@@ -69,11 +69,18 @@ import {
   claimGenerationLauncher,
   ownsGenerationLauncher,
 } from "./lib/foreground-claim.ts";
-import { handOffToRunner } from "./lib/foreground-start.ts";
+import {
+  handOffToRunner,
+  LAUNCH_CANCELLED_NOTE,
+} from "./lib/foreground-start.ts";
+import {
+  armCommandDeadline,
+  forceOwnedChild,
+  registerRunnerSnapshot,
+} from "./lib/foreground-runner-support.ts";
 import { liveOrUnknownTargets } from "../../../shared/process-uncertainty.ts";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { swallow } from "../../../shared/errors.ts";
 import {
   appendFileSync,
   closeSync,
@@ -92,14 +99,10 @@ import {
 import { join, isAbsolute } from "node:path";
 import { testPacing } from "./lib/cli.ts";
 import { readTimeoutEnv } from "./lib/proc.ts";
-import {
-  processTable,
-  type ProcessRow,
-} from "../../../shared/process-table.ts";
+import { processTable } from "../../../shared/process-table.ts";
 import {
   beginProcessRegistration,
   clearPendingProcessRegistration,
-  publishProcessIdentity,
   processCompletionPath,
   publishProcessCompletion,
 } from "../../../shared/process-registry.ts";
@@ -155,6 +158,9 @@ interface Result {
   /** Registry authorities require a boolean; only legacy public results may omit it. */
   treeWitnessed?: boolean;
 }
+
+/** Written by a launch that gave up waiting; the runner starts nothing after it. */
+const CANCEL_FILE = "cancel";
 
 function generations(): number[] {
   if (!existsSync(ROOT)) return [];
@@ -546,6 +552,15 @@ async function launch(argv: string[]): Promise<number> {
       {
         commandStarted: () => readPid(dir, "cmd.pid") !== null,
         settled: () => readResult(dir) !== null,
+        requestCancel: () => writeAtomic(dir, CANCEL_FILE, "1"),
+        result: () => readResult(dir),
+        recordFailure: (witnessed, note) =>
+          publish(
+            dir,
+            { exitCode: 125, signal: null, treeWitnessed: witnessed, note },
+            started.registry,
+            started.entry,
+          ),
         captureRunnerTree: () =>
           captureProcessTree(started.runner.pid as number),
         endCaptured: async (tree, runnerPid) => {
@@ -569,67 +584,6 @@ function publish(
 ): void {
   if (registry && entry) publishProcessCompletion(registry, entry, result);
   writeAtomic(dir, "result.json", JSON.stringify(result));
-}
-
-/** Force only this still-owned OS child handle when native identity lookup is unavailable. */
-function forceOwnedChild(child: ReturnType<typeof spawn>): void {
-  if (child.exitCode !== null || child.signalCode !== null) return;
-  try {
-    child.kill("SIGKILL");
-  } catch (error) {
-    swallow(
-      error,
-      "owned foreground command could not be forced; tree remains unknown",
-    );
-  }
-}
-
-/** A readable runner identity can finish a handoff whose launch-time probe failed. */
-function registerRunnerSnapshot(
-  registry: string | undefined,
-  entry: string | undefined,
-  rows: ProcessRow[] | null,
-): boolean {
-  if (!registry || !entry) return false;
-  const self = rows?.find((row) => row.pid === process.pid);
-  if (!self?.start) return false;
-  publishProcessIdentity(
-    registry,
-    entry,
-    self,
-    processCompletionPath(registry, entry),
-  );
-  return true;
-}
-
-/** A test fixture can establish captured identities before starting its unchanged deadline. */
-function armCommandDeadline(
-  seconds: number,
-  timers: NodeJS.Timeout[],
-  terminate: (code: number, note: string) => Promise<void>,
-): void {
-  const start = () =>
-    timers.push(
-      setTimeout(() => {
-        void terminate(124, `deadline of ${seconds}s reached`);
-      }, seconds * 1000),
-    );
-  const gate =
-    process.env.NODE_ENV === "test"
-      ? process.env.DRIVE_PR_FOREGROUND_WAIT_DEADLINE_GATE
-      : undefined;
-  if (!gate) {
-    start();
-    return;
-  }
-  const readyBy = Date.now() + 20000;
-  const readiness = setInterval(() => {
-    if (!existsSync(gate) && Date.now() < readyBy) return;
-    clearInterval(readiness);
-    if (existsSync(gate)) start();
-    else void terminate(125, "test deadline gate did not become ready");
-  }, 20);
-  timers.push(readiness);
 }
 
 /** Test-only acknowledgment of identities already bound by the runner's tracker. */
@@ -678,10 +632,8 @@ async function run(
   const registry = process.env.JIG_PROCESS_REGISTRY_DIR;
   let registered = false;
   const log = at(dir, "log");
-  const bound = await bindRunner();
-  if (bound === null) {
-    const note =
-      "could not establish supervisor ownership; command was not started";
+  // Publish a result for a command that was never started.
+  const refuse = (note: string): void => {
     appendFileSync(log, `foreground-wait: ${note}\n`);
     publish(
       dir,
@@ -690,8 +642,12 @@ async function run(
       entry,
     );
     if (registry && entry) clearPendingProcessRegistration(registry, entry);
-    return;
-  }
+  };
+  const bound = await bindRunner();
+  if (bound === null)
+    return refuse(
+      "could not establish supervisor ownership; command was not started",
+    );
   writeAtomic(
     dir,
     "runner.identity.json",
@@ -703,6 +659,10 @@ async function run(
     }),
   );
   registered = registerRunnerSnapshot(registry, entry, bound.rows);
+  // A launch that gave up on this runner asked it, through this file, not to
+  // start the command; it is checked again right after the spawn below.
+  if (existsSync(at(dir, CANCEL_FILE)))
+    return refuse(`${LAUNCH_CANCELLED_NOTE}: the command was not started`);
   // Output passes through the runner so retention is bounded at the writer.
   const child = spawn(argv[0] as string, argv.slice(1), {
     stdio: ["ignore", "pipe", "pipe"],
@@ -970,6 +930,11 @@ async function run(
   );
   const seconds = deadlineSec() ?? DEFAULT_DEADLINE_SEC;
   armCommandDeadline(seconds, timers, terminate);
+  if (existsSync(at(dir, CANCEL_FILE)))
+    void terminate(
+      125,
+      `${LAUNCH_CANCELLED_NOTE}: the command was ended as it started`,
+    );
   // `close` follows `error` for a failed spawn; the first outcome wins.
   child.on("error", (err) => {
     write(`foreground-wait: could not start command: ${err.message}\n`);
