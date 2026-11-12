@@ -27,6 +27,13 @@ const STATE_IDS: Record<string, string> = {};
 /** The state names an assigned-issues filter asks for: its third clause. */
 const statesOf = (and: Array<Record<string, unknown>>): string[] =>
   (and[2]?.state as { name: { in: string[] } } | undefined)?.name.in ?? [];
+/** The relations a queue read asks for in each direction; more are left to `listRelations`. */
+const RELATION_PAGE = 20;
+/** The first `size` nodes of a connection that says whether there are more. */
+const firstPage = (nodes: unknown[], size: number) => ({
+  pageInfo: { hasNextPage: nodes.length > size, endCursor: null },
+  nodes: nodes.slice(0, size),
+});
 const page = (nodes: unknown[]) => ({
   pageInfo: { hasNextPage: false, endCursor: null },
   nodes,
@@ -112,14 +119,16 @@ export class FakeLinear {
     const parent = i.parent === null ? null : this.issues.get(i.parent);
     return {
       ...this.pool(i),
-      relations: page(
+      relations: firstPage(
         blocks.map((o) => ({
           type: "blocks",
           relatedIssue: this.related(o.identifier),
         })),
+        RELATION_PAGE,
       ),
-      inverseRelations: page(
+      inverseRelations: firstPage(
         i.blockedBy.map((k) => ({ type: "blocks", issue: this.related(k) })),
+        RELATION_PAGE,
       ),
       parent:
         parent === undefined || parent === null
@@ -298,7 +307,21 @@ export class FakeLinear {
             c.parent === String(variables.id) &&
             !["completed", "canceled"].includes(c.state.type),
         );
-        return { issue: { children: page(children.map((c) => this.pool(c))) } };
+        // Pages as the query asks: its page size, the cursor an offset.
+        const size = Number(/children\(first: (\d+)/.exec(query)?.[1] ?? 50);
+        const from = Number(variables.after ?? 0);
+        const more = from + size < children.length;
+        return {
+          issue: {
+            children: {
+              pageInfo: {
+                hasNextPage: more,
+                endCursor: more ? String(from + size) : null,
+              },
+              nodes: children.slice(from, from + size).map((c) => this.pool(c)),
+            },
+          },
+        };
       }
       case "TrackerPoolIssue": {
         const i = this.issues.get(String(variables.id));

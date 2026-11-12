@@ -33,6 +33,40 @@ interface Body {
   parent: string | null;
 }
 
+/** The body a read already carried of `issue`, when it is the issue's current one. */
+function carriedBody(
+  carried: QueueParent | undefined,
+  issue: PoolIssue,
+): Body | null {
+  return carried !== undefined && carried.issue.updatedAt === issue.updatedAt
+    ? {
+        updatedAt: issue.updatedAt ?? "",
+        description: carried.description,
+        parent: carried.parent,
+      }
+    : null;
+}
+
+/** A kept entry, when it is the issue's current one. */
+function current<T extends { updatedAt: string }>(
+  kept: T | null,
+  issue: PoolIssue,
+): T | null {
+  return issue.updatedAt && kept?.updatedAt === issue.updatedAt ? kept : null;
+}
+
+/** Keeps what a read carried, for a tick whose reads carry none (the kept reading is reused). */
+function remember<T>(
+  cache: PickupReads,
+  key: string,
+  value: T,
+  kept: T | null,
+  issue: PoolIssue,
+): T {
+  if (issue.updatedAt && kept === null) cache.set(key, value);
+  return value;
+}
+
 async function body(
   tracker: Tracker,
   issue: PoolIssue,
@@ -40,20 +74,10 @@ async function body(
   reads: ParentReads,
 ): Promise<Body | null> {
   const key = `${trackerScope(tracker)}:parent-plan:${issue.identifier}`;
-  const kept = cache.get<Body>(key);
-  const fresh = issue.updatedAt && kept?.updatedAt === issue.updatedAt;
-  const carried = reads.parentBody?.(issue.identifier);
-  if (carried !== undefined && carried.issue.updatedAt === issue.updatedAt) {
-    const value = {
-      updatedAt: issue.updatedAt ?? "",
-      description: carried.description,
-      parent: carried.parent,
-    };
-    // Kept for a tick whose reads carry no parents (the kept reading is reused).
-    if (issue.updatedAt && !fresh) cache.set(key, value);
-    return value;
-  }
-  if (fresh && kept) return kept;
+  const kept = current(cache.get<Body>(key), issue);
+  const carried = carriedBody(reads.parentBody?.(issue.identifier), issue);
+  if (carried !== null) return remember(cache, key, carried, kept, issue);
+  if (kept !== null) return kept;
   const read = () => tracker.getIssue(issue.identifier);
   const full = await (reads.once === undefined
     ? read()
@@ -64,8 +88,7 @@ async function body(
     description: full.description,
     parent: full.parent?.identifier ?? null,
   };
-  if (issue.updatedAt) cache.set(key, value);
-  return value;
+  return remember(cache, key, value, null, issue);
 }
 
 /** The issue's parent's key (`null` for none), from the queue read where it carried it; `null` overall when unreadable. */
@@ -76,17 +99,19 @@ async function parentOf(
   reads: ParentReads,
 ): Promise<{ parent: string | null } | null> {
   const key = `${trackerScope(tracker)}:parent-of:${issue.identifier}`;
-  const kept = cache.get<{ updatedAt: string; parent: string | null }>(key);
-  const fresh = issue.updatedAt && kept?.updatedAt === issue.updatedAt;
+  const kept = current(
+    cache.get<{ updatedAt: string; parent: string | null }>(key),
+    issue,
+  );
   const held = reads.held?.(issue.identifier);
   if (held !== undefined && held.parent !== undefined) {
-    const parent = held.parent?.issue.identifier ?? null;
-    // Kept for a tick whose reads carry no parents (the kept reading is reused).
-    if (issue.updatedAt && !fresh)
-      cache.set(key, { updatedAt: issue.updatedAt, parent });
-    return { parent };
+    const value = {
+      updatedAt: issue.updatedAt ?? "",
+      parent: held.parent?.issue.identifier ?? null,
+    };
+    return { parent: remember(cache, key, value, kept, issue).parent };
   }
-  if (fresh && kept) return { parent: kept.parent };
+  if (kept !== null) return { parent: kept.parent };
   const full = await body(tracker, issue, cache, reads);
   return full === null ? null : { parent: full.parent };
 }

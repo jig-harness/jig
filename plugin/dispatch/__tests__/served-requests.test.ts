@@ -469,13 +469,48 @@ function epic(n: number): FakeLinear {
 describe("an epic's children read together with their relations", () => {
   it("reads the relations of every child in the batch, not one issue at a time", async () => {
     const fake = epic(60);
-    const read = await tick(fake.tracker(), memoryCache(), 0);
+    const cache = memoryCache();
+    const read = await tick(fake.tracker(), cache, 0);
     const ops = fake.requests.filter((r) => r !== "TrackerAssignmentHistory");
     expect(ops.filter((r) => r === "TrackerRelations")).toHaveLength(0);
     expect(ops.filter((r) => r === "TrackerInverseRelations")).toHaveLength(0);
     // 60 children in three pages, then the blocker they share.
     expect(ops.filter((r) => r === "TrackerQueueByKey")).toHaveLength(4);
     expect(read.wanted.map((w) => w.key)).toEqual(["ENG-101"]);
+    // The next tick, with nothing changed, reads no child again.
+    const before = fake.count();
+    await tick(fake.tracker(), cache, 2);
+    expect(fake.requests.slice(before)).toEqual(["TrackerChanges"]);
+  });
+
+  it("reads an issue with more relations than a page holds on its own, and only that one", async () => {
+    const fake = epic(2);
+    for (let b = 1; b <= 21; b++)
+      fake.add({
+        identifier: `ENG-${2000 + b}`,
+        state: { name: "Done", type: "completed" },
+      });
+    fake.add({
+      identifier: "ENG-102",
+      parent: "ENG-1",
+      blockedBy: Array.from({ length: 21 }, (_, b) => `ENG-${2001 + b}`),
+    });
+    await tick(fake.tracker(), memoryCache(), 0);
+    // One request per direction, for the one issue whose relations overflowed.
+    expect(fake.requests.filter((r) => r === "TrackerRelations")).toHaveLength(
+      1,
+    );
+    expect(
+      fake.requests.filter((r) => r === "TrackerInverseRelations"),
+    ).toHaveLength(1);
+  });
+
+  it("pages an epic's open children as the tracker does", async () => {
+    const fake = epic(101);
+    await tick(fake.tracker(), memoryCache(), 0);
+    expect(
+      fake.requests.filter((r) => r === "TrackerOpenChildren"),
+    ).toHaveLength(2);
   });
 
   it("costs a cold tick a number of requests that grows with pages, not children", async () => {
