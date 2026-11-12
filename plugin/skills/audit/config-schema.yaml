@@ -912,7 +912,7 @@ fields:
     type: boolean
     default: true
     read_by: [file-issue]
-    since: next
+    since: 0.216.0
 
   routing.complex_flags:
     type: list
