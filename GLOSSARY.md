@@ -1053,6 +1053,13 @@ make, use the entry's term instead.
   *false green* ([M14](modules/M14-testing-strategy/README.md)).
 - **Flaky test** — a test that sometimes passes and sometimes fails on the
   same code, because of timing, shared state or an unreliable dependency.
+- **Known-failure baseline** — a committed list of the tests known to fail
+  in one place (a platform, a suite), each with the reason and the issue
+  that owns the fix. A run that fails only on listed tests passes and one
+  that fails on any other test fails, so a new regression stands out from
+  the old ones; a listed test that passes is reported so its entry is
+  removed, and the list only shrinks. It makes a run that is red for known
+  reasons a signal again while those failures are fixed.
 - **Lock quarantine** — displaced lock directories or recovery marker files
   kept under a distinct name so a later lock holder cannot mistake them for
   the current lock. The drive's state reaper reports these entries and retires

@@ -26,6 +26,8 @@ import {
   PR_SUITE,
   PR_TRIGGERS,
   PR_WEBSITE_SUITE,
+  nightlyEnvAllowed,
+  runsEveryShard,
   type SuiteContract,
   WEBSITE_STEP,
 } from "./gates-workflow-contract.ts";
@@ -1224,9 +1226,9 @@ type SuiteJob = {
 // intends. An allowlist rather than a list of rejected keys, because each key
 // GitHub adds or a workflow uses that this check does not know — a job- or
 // step-level `continue-on-error`, a workflow- or job-level `defaults` shell,
-// a `container`, an `env`
-// a test runner reads — is one more way to keep the job green while the suite
-// does not run or its failures are suppressed. The condition and the
+// a `container`, an `env` a test runner reads (other than the nightly's
+// baseline, nightlyEnvAllowed) — is one more way to keep the job green while
+// the suite does not run or its failures are suppressed. The condition and the
 // dependencies must equal the contract; the matrix may hold nothing but the
 // shard list, so no include, exclude or extra dimension can change which jobs
 // run. The suite's step carries a name and a command and nothing else (and
@@ -1254,6 +1256,7 @@ const SUITE_WORKFLOW_KEYS = new Set([
 ]);
 const SUITE_JOB_KEYS = new Set([
   "name",
+  "env",
   "needs",
   "if",
   "strategy",
@@ -1262,13 +1265,14 @@ const SUITE_JOB_KEYS = new Set([
   "steps",
 ]);
 const SUITE_STRATEGY_KEYS = new Set(["fail-fast", "matrix"]);
-const SUITE_STEP_KEYS = new Set(["name", "run"]);
+const SUITE_STEP_KEYS = new Set(["name", "run", "env"]);
 
 const onlyKeys = (value: object, allowed: Set<string>) =>
   Object.keys(value).every((key) => allowed.has(key));
 
 function suiteJobShapeAllowed(job: SuiteJob, contract: SuiteContract) {
-  if (!onlyKeys(job, SUITE_JOB_KEYS)) return false;
+  if (!onlyKeys(job, SUITE_JOB_KEYS) || !nightlyEnvAllowed(job.env, "job"))
+    return false;
   if (job.if !== contract.if || job.needs !== contract.needs) return false;
   const strategy = job.strategy;
   if (strategy === undefined) return true;
@@ -1299,21 +1303,6 @@ function matrixPlatforms(job: SuiteJob): string[] {
   );
 }
 
-function runsEveryShard(run: string, dir: string, shards: unknown): boolean {
-  const sharded = run.match(
-    new RegExp(
-      `^bun run test --shard=\\$\\{\\{ matrix\\.shard \\}\\}/([1-9][0-9]*) \\./${dir.replace(/[.]/g, "\\.")}$`,
-    ),
-  );
-  if (!sharded) return false;
-  const total = Number(sharded[1]);
-  return (
-    Array.isArray(shards) &&
-    shards.length === total &&
-    shards.every((shard, i) => shard === i + 1)
-  );
-}
-
 function runsSuite(job: SuiteJob, dir: string, contract: SuiteContract = {}) {
   if (!suiteJobShapeAllowed(job, contract)) return false;
   const shards = job.strategy?.matrix?.shard;
@@ -1324,6 +1313,7 @@ function runsSuite(job: SuiteJob, dir: string, contract: SuiteContract = {}) {
   return (job.steps ?? []).some(
     (step) =>
       onlyKeys(step, stepKeys) &&
+      nightlyEnvAllowed(step.env, "step") &&
       step.if === contract.stepIf &&
       typeof step.run === "string" &&
       (step.run.trim() === `bun run test ./${dir}` ||

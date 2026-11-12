@@ -16,10 +16,23 @@
 # Every `bun run test`, including each platform gate shard's test stage,
 # writes a fresh JUnit report and checks tests executed (scripts/test.ts).
 #
-# Nothing waits for this run. GitHub notifies whoever last changed the
-# schedule when it fails; workflow_dispatch runs it on demand, against any
-# branch, before merging a change that is likely to break on one of these
-# platforms.
+# Tests known to fail on a platform are recorded, each group with its reason
+# and the issue that owns the fix, in the known-failure baseline
+# (.config/nightly-baseline.yaml). Each job's test step names the baseline in
+# JIG_NIGHTLY_BASELINE: the step passes when every failing test is recorded
+# for its platform and fails on any that is not, and a recorded test that
+# passes is reported as stale, as a warning and in the job summary, so its
+# entry is removed. A failure the report cannot tie to a named test, such as a
+# test file that fails to load, keeps the step red. `bun run gates` checks
+# that every entry still names a test (scripts/check-nightly-baseline.ts).
+#
+# Nothing waits for this run. On main, its last job reads how every job ended
+# and what each test step found, and keeps one tracking issue
+# (scripts/nightly/report.ts): a failing run opens it, or comments on it with
+# the run link, the jobs that failed and their new failures; the next passing
+# run comments and closes it. workflow_dispatch runs it on demand, against
+# any branch, before merging a change that is likely to break on one of these
+# platforms; a run on another branch leaves the issue alone.
 name: nightly
 
 on:
@@ -73,6 +86,8 @@ jobs:
       # Every runner image has Google Chrome, so a sheet's browser checks
       # fail here when it is missing instead of being skipped with a warning.
       JIG_REQUIRE_BROWSER: "1"
+      # The job's name, as its test results and the tracking issue give it.
+      JIG_NIGHTLY_JOB: gates (${{ matrix.os }}${{ matrix.shard && format(', {0}', matrix.shard) || '' }})
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -97,7 +112,18 @@ jobs:
           JIG_TEST_PWSH: "1"
         run: bun run test --timeout 60000 tools/plugin/powershell-smoke.test.ts --test-name-pattern PowerShell
       - name: Run gate set
+        env:
+          JIG_NIGHTLY_BASELINE: .config/nightly-baseline.yaml
+          JIG_NIGHTLY_RESULTS: ${{ runner.temp }}/nightly-results
         run: bun run gates
+      - name: Keep this job's test results for the report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: nightly-results-${{ github.job }}-${{ strategy.job-index }}
+          path: ${{ runner.temp }}/nightly-results
+          if-no-files-found: ignore
+          retention-days: 7
 
   drive-pr-suite:
     name: drive-pr suite (macos, ${{ matrix.shard }}/4)
@@ -108,6 +134,8 @@ jobs:
     runs-on: macos-latest
     # A shard takes up to about 3 minutes.
     timeout-minutes: 15
+    env:
+      JIG_NIGHTLY_JOB: drive-pr suite (macos, ${{ matrix.shard }}/4)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -118,7 +146,18 @@ jobs:
       - name: Install locked dependencies, scripts off
         run: bun install --frozen-lockfile --ignore-scripts
       - name: Run this shard of the drive-pr suite
+        env:
+          JIG_NIGHTLY_BASELINE: .config/nightly-baseline.yaml
+          JIG_NIGHTLY_RESULTS: ${{ runner.temp }}/nightly-results
         run: bun run test --shard=${{ matrix.shard }}/4 ./plugin/skills/drive-pr/
+      - name: Keep this job's test results for the report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: nightly-results-${{ github.job }}-${{ strategy.job-index }}
+          path: ${{ runner.temp }}/nightly-results
+          if-no-files-found: ignore
+          retention-days: 7
 
   drive-pr-suite-windows:
     name: drive-pr suite (windows, ${{ matrix.shard }}/4)
@@ -128,8 +167,12 @@ jobs:
         shard: [1, 2, 3, 4]
     runs-on: windows-latest
     # Serial native fixture execution and teardown need a larger job budget;
-    # each test retains the test runner's independent deadline.
-    timeout-minutes: 35
+    # each test retains the test runner's independent deadline. A shard
+    # takes 29 to 35 minutes while its known failures wait out their
+    # deadlines, so the budget leaves room above that.
+    timeout-minutes: 45
+    env:
+      JIG_NIGHTLY_JOB: drive-pr suite (windows, ${{ matrix.shard }}/4)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -148,7 +191,18 @@ jobs:
           "JIG_TRACE=1" >> $env:GITHUB_ENV
           "JIG_TRACE_FILE=$env:RUNNER_TEMP/drive-pr-trace.jsonl" >> $env:GITHUB_ENV
       - name: Run this shard of the drive-pr suite
+        env:
+          JIG_NIGHTLY_BASELINE: .config/nightly-baseline.yaml
+          JIG_NIGHTLY_RESULTS: ${{ runner.temp }}/nightly-results
         run: bun run test --shard=${{ matrix.shard }}/4 ./plugin/skills/drive-pr/
+      - name: Keep this job's test results for the report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: nightly-results-${{ github.job }}-${{ strategy.job-index }}
+          path: ${{ runner.temp }}/nightly-results
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Print Windows drive timing spans on failure
         if: failure()
         shell: pwsh
@@ -166,6 +220,8 @@ jobs:
             runner: windows-latest
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 10
+    env:
+      JIG_NIGHTLY_JOB: website (${{ matrix.os }})
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
@@ -175,4 +231,50 @@ jobs:
         working-directory: website
         run: bun install --frozen-lockfile --ignore-scripts
       - name: Test the document parsers
+        env:
+          JIG_NIGHTLY_BASELINE: .config/nightly-baseline.yaml
+          JIG_NIGHTLY_RESULTS: ${{ runner.temp }}/nightly-results
         run: bun run test ./website/
+      - name: Keep this job's test results for the report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: nightly-results-${{ github.job }}-${{ strategy.job-index }}
+          path: ${{ runner.temp }}/nightly-results
+          if-no-files-found: ignore
+          retention-days: 7
+
+  report:
+    name: report
+    needs: [platform-gates, drive-pr-suite, drive-pr-suite-windows, website]
+    # Runs whether the jobs passed or failed, but not for a run a newer one
+    # cancelled, and only on main: a dispatch against a branch leaves the
+    # tracking issue alone. The concurrency group keeps two reports from
+    # opening an issue at once.
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      # The run's job listing says how each job ended.
+      actions: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
+      - name: Test the reporter before it maintains an issue
+        run: bun run test ./scripts/nightly/
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        # A job that ended before its tests reported uploaded nothing; the
+        # report names it from the job listing.
+        continue-on-error: true
+        with:
+          pattern: nightly-results-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/nightly-results
+      - name: Report the run and reconcile its tracking issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bun scripts/nightly/report.ts --results "$RUNNER_TEMP/nightly-results"
