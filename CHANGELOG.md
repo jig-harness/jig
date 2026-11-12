@@ -391,6 +391,42 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.213.1] - 2026-11-12
+
+### Fixed
+
+- CONFIGURATION.md's `accounts[].vendor` now says a drive's pass on a
+  `codex` account runs on the standard tier of `routing.models.codex` (by
+  default `terra`, given as `gpt-5.6-terra`), the tier name routing uses,
+  rather than the execution tier.
+
+## [0.213.0] - 2026-11-12
+
+### Added
+
+- `do-item`'s `scripts/linked-pr.ts` reads whether each item's linked pull
+  request merged, finding it through the pull-request link in the item's
+  comments or the `Closes <KEY>` / `Refs <KEY>` line in a pull request's
+  body. A read that fails answers `unreadable`, which never moves an epic.
+
+### Changed
+
+- A tracker with one review status, where `issue_tracker.states` gives
+  `pr_open` and `in_review` the same name, no longer keeps its epics in
+  progress after every child has merged. `do-item`'s parent roll-up (Step
+  5a, which `work-batch after-merge` and the post-merge follow-up run too)
+  reads each child under that name by its linked pull request: merged into
+  the integration branch, it counts as `in_review`, merged and parked; open,
+  missing, or unreadable, it counts as `pr_open` and keeps the epic in
+  progress. With `do_item.post_merge_state: in_review`, an epic whose
+  children have all merged now rolls up to `in_review`. Distinct names read
+  nothing from the code host and behave as before.
+
+### Fixed
+
+- Require an explicit tracker-comment association when a pull request has no issue-link line, so unrelated pull request mentions cannot advance an item.
+- Require trusted authors for explicit tracker-comment association markers, regardless of repository-name casing, and ignore quoted or code-example association evidence.
+
 ## [0.212.1] - 2026-11-12
 
 ### Changed
@@ -7377,7 +7413,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.212.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.213.1...HEAD
+[0.213.1]: https://github.com/jig-harness/jig/compare/v0.213.0...v0.213.1
+[0.213.0]: https://github.com/jig-harness/jig/compare/v0.212.1...v0.213.0
 [0.212.1]: https://github.com/jig-harness/jig/compare/v0.212.0...v0.212.1
 [0.212.0]: https://github.com/jig-harness/jig/compare/v0.211.0...v0.212.0
 [0.211.0]: https://github.com/jig-harness/jig/compare/v0.210.2...v0.211.0

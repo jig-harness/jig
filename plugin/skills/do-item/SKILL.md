@@ -1175,9 +1175,12 @@ implementation. Skip this check for issues about the repository's own code.
    posted once, after the arm check, as below. Otherwise:
 
    1. Post the tracker comment that links the pull request now, through
-      the tracker's comment operation: the pull request's link, how it
-      covers the item's acceptance criteria, and the `## Out-of-tree
-      follow-ups` section.
+      the tracker's comment operation: first add
+      `<!-- do-item-pr: <PR URL> -->` on a line of its own, then the pull
+      request's link, how it covers the item's acceptance criteria, and the
+      `## Out-of-tree follow-ups` section. The marker is the durable
+      association when `pull_requests.issue_link` is `none`; a URL or an
+      item-key mention in another comment is not enough.
    2. Then move the item:
       `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" transition "<KEY>" pr_open`
       (Linear native: `mcp__linear__save_issue` with the mapped name). A
@@ -1580,9 +1583,10 @@ data flow, not an executable harness API.
 > | Every sub-issue is merged-and-parked (`done`, `ops_pending`, `in_review`) or abandoned | The least advanced of those (any sub-issue in `in_review` → `in_review`; otherwise `ops_pending`) |
 > | Any sub-issue still in progress, with its pull request open (`pr_open`), to do or blocked (`blocked`, or blocked by another issue) | Keep `in_progress`; continue with Step 4b |
 >
-> A sub-issue in the tracker's name for `pr_open` is active work even where
-> that name is shared with `in_review`: the tracker cannot say whether its
-> pull request merged, so it never counts as merged and parked.
+> A sub-issue in the tracker's name for `pr_open` is active work. Where that
+> name is shared with `in_review`, the tracker cannot say which wait the
+> sub-issue is in, so its linked pull request decides: merged reads as
+> `in_review`; open, none, or a read that failed reads as `pr_open`.
 >
 > `reconcile_parent_status.ts` implements and tests this table; do not
 > re-derive it by hand.
@@ -1646,7 +1650,7 @@ data flow, not an executable harness API.
          ? {
              found: true,
              parentLabels: parent.labels,
-             children: children.map(s => ({ state: { name: s.status, type: s.statusType }, labels: s.labels })),
+             children: children.map(s => ({ identifier: s.identifier, state: { name: s.status, type: s.statusType }, labels: s.labels })),
            }
          : { found: true, truncated: true, parentLabels: [], children: [] }
      } catch (err) {
@@ -1706,6 +1710,26 @@ data flow, not an executable harness API.
      }
    }
    ```
+
+   **Under a shared review name only** (exact): when
+   `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" states` names `pr_open`
+   and its name equals `in_review`'s (trimmed, ignoring case), read whether
+   the pull request of each child under that name merged, every such key in
+   one call:
+
+   ```bash
+   bun "${CLAUDE_SKILL_DIR}/scripts/linked-pr.ts" "<KEY>" ["<KEY>" ...]
+   ```
+
+   It finds each item's pull requests through the pull-request links in the
+   item's comments and the `Closes <KEY>` or `Refs <KEY>` line in a pull
+   request's body, and prints `{ "<KEY>": { pullRequest, pulls, reason } }`.
+   Set each child's `pullRequest` in `listing` to the value printed for its
+   key: `merged` reads as `in_review`; `open`, `none` (no linked pull
+   request) and `unreadable` read as `pr_open`. On a non-zero exit, set
+   none: every child under the shared name then reads as `pr_open`, and the
+   parent stays in progress. Under distinct names, or with `pr_open` unset,
+   skip this read.
 
    Write `listing` as `reconcile-input.json` through the file-writing tool;
    pass that file to the reconciler and parse its stdout as
@@ -1864,6 +1888,7 @@ record how it ended. In such a pass:
 | `select_scout_finding.ts` | Pick the newest Scout Findings comment and judge freshness | Comments JSON (`--input` or stdin), `--git-head` or `--current-hash` | JSON decision (`reuse`/`rerun`/`run`) |
 | `select_execution_issue.ts` | Read an epic's Execution Plan and list eligible sub-issues | Selection JSON (`--input` or stdin) | JSON `{ present, eligible, gates, mergeConflicts }` |
 | `reconcile_parent_status.ts` | Decide a parent's status from its sub-issues | `ReconcileInput` JSON (`--input` or stdin) | JSON decision (`verdict`, `parentState`, `parentStateName`, `reason`) |
+| `linked-pr.ts` | Read whether each item's linked pull request merged, for the roll-up under a shared review name (Step 5a) | One or more issue keys | JSON `{ "<KEY>": { pullRequest, pulls, reason } }`, `pullRequest` one of `merged`, `open`, `none`, `unreadable` |
 | `pr-plan.ts` | Apply the pull-request policy: a branch name and the base to cut it from, or the plan for opening the current branch's PR | `branch --issue "<KEY>" --title <title> [--issue-json <file>]`, or `open [--issue "<KEY>"] [--issue-json <file>] [--stack-on <branch>] [--accept-oversize <reason>]` | Branch name and base, or the plan (text or `--json`); exit `3` when the policy refuses |
 | `intent-chain.ts` | Write the Refocus intent-chain snapshot (Step 3.5); `--clear-session` removes this session's copy | `IntentChainInput` JSON (stdin or `--input`); nothing with `--clear-session` | Snapshot files and a JSON summary (`path`, `sessionPath`, `pickupId`, `chars`, `arm`, `truncated`, `pointerErrors`); with `--clear-session`, `{ sessionPath, removed }` |
 | `${CLAUDE_SKILL_DIR}/../../shared/spec/resolve.ts` | Resolve the requirements, acceptance criteria and tasks the issue carries or links (Step 1) | Issue JSON (`--input` or stdin), optional `--summary` | JSON `{ sources, requirements, acceptance, tasks, unresolved }`, or with `--summary` as text: the counts, every requirement, criterion and task with its key and text, the sources and the unresolved references |
