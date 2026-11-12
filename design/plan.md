@@ -837,9 +837,6 @@ where they name a cache file or a claim.
 [plugin/EXTENDING.md](../plugin/EXTENDING.md#issue-tracker) lists what
 still assumes Linear.
 
-The Jira adapter also gains state names per issue type, for a large shared
-project whose issue types follow different workflows.
-
 ### 27. Work types: depth by kind of work
 
 Every item runs the same stations at the same depth, and the kinds of work
