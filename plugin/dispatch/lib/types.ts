@@ -679,14 +679,15 @@ export interface LabelReport {
 
 /**
  * One item the projection moved to or out of `blocked`: `written` when the
- * tracker took it, `failed` when it refused it (tried again next tick),
+ * tracker took it, `skipped` when its workflow has no blocked state,
+ * `failed` when it refused it (tried again next tick),
  * `waits` when the tick's time was spent or the ledger changed since the
  * tick read it (`item` is then `null`: no item was read).
  */
 export interface BlockedWrite {
   target: string;
   item: string | null;
-  outcome: "written" | "failed" | "waits";
+  outcome: "written" | "skipped" | "failed" | "waits";
   detail: string;
 }
 

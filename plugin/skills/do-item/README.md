@@ -327,3 +327,13 @@ command is written for a POSIX shell.
 Orca's own Linear skill (`orca-linear`) has a completion flow of its own.
 Inside this skill the ticket's comments and transitions stay with `do-item`,
 so that flow is not run beside it.
+
+## Jira workflows by issue type
+
+When Jira issue types use different workflows, configure
+`issue_tracker.jira.states_by_type` with each type’s overrides on
+`issue_tracker.states`. The parent roll-up reads each child’s workflow and
+moves the parent through its own status names. An explicit `null` marks a
+state absent from that workflow; the move is skipped and reported.
+The tracker’s states command prints the repository map and each configured type’s
+effective map. See the [configuration reference](../../CONFIGURATION.md#issue_tracker).

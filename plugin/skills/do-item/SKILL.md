@@ -1650,6 +1650,7 @@ data flow, not an executable harness API.
          ? {
              found: true,
              parentLabels: parent.labels,
+             parentNativeType: parent.nativeType ?? null,
              children: children.map(s => ({ identifier: s.identifier, state: { name: s.status, type: s.statusType }, labels: s.labels })),
            }
          : { found: true, truncated: true, parentLabels: [], children: [] }
@@ -1700,20 +1701,26 @@ data flow, not an executable harness API.
          if (fetched?.found !== true || fetched.identifier !== c.identifier || isUnreadableState(fetched.state)) {
            return null
          }
-         return { ...c, labels: fetched.labels, state: fetched.state ?? c.state }
+         return { ...c, labels: fetched.labels, state: fetched.state ?? c.state, nativeType: fetched.nativeType ?? null }
        })
        // One unverified child makes the whole listing untrustworthy: its
        // stale state alone could advance the parent wrongly.
        listing = verifiedChildren.some((c) => c === null)
          ? { found: true, truncated: true, parentLabels: [], children: [] }
-         : { found: true, parentLabels: parent.labels, children: verifiedChildren }
+         : { found: true, parentLabels: parent.labels, parentNativeType: parent.nativeType ?? null, children: verifiedChildren }
      }
    }
    ```
 
+   Preserve `parentNativeType` and each child’s `nativeType` from the refreshed
+   issues. On Jira, the reconciler uses each issue type’s effective state map
+   (`issue_tracker.jira.states_by_type`); a target absent from the parent’s
+   workflow returns `skipped`, with its reason, without a substitute.
+
    **Under a shared review name only** (exact): when
    `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" states` names `pr_open`
-   and its name equals `in_review`'s (trimmed, ignoring case), read whether
+   and its name equals `in_review`'s in that child’s effective map (trimmed,
+   ignoring case; on Jira use its `states_by_type` entry when present), read whether
    the pull request of each child under that name merged, every such key in
    one call:
 
@@ -1748,6 +1755,7 @@ data flow, not an executable harness API.
 
    | `verdict` | Action |
    |-----------|--------|
+   | `skipped` | Report `decision.reason`; leave the parent in its current state because its own workflow has no target state |
    | `listing_failed` | **Stop**: report that the tracker refresh failed or was incomplete; do not change the parent's status |
    | `keep_in_progress` | Go to Step 4b |
    | `extract_and_close_eligible` | Verify the epic's closing authorization (below); if it has one, extract and close per the rule above (see the `manual-ops` note below when the parent carries that label). Otherwise **stop**: report that every remaining sub-issue is an extractable tail but the epic has no accepting verdict or waiver yet |

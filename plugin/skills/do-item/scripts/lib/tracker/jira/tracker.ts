@@ -42,7 +42,7 @@ import type {
   Tracker,
 } from "../port.ts";
 import { TrackerRequestError } from "../port.ts";
-import { namedState, TrackerConfigError } from "../config-error.ts";
+import { TrackerConfigError } from "../config-error.ts";
 import { type CoreTracker, withFacets } from "../facets/tracker.ts";
 import {
   checkPatch,
@@ -96,6 +96,7 @@ export function summaryOf(issue: JiraIssue, client: Client): IssueSummary {
     identifier: issue.key,
     title: issue.title,
     state: client.model.read(issue).state,
+    nativeType: issue.issueType?.name ?? null,
     labels: issue.labels,
   };
 }
@@ -308,9 +309,11 @@ export function jiraTracker(client: Client): Tracker {
 
   const tracker: CoreTracker = {
     adapter: "jira",
+    configKey: JSON.stringify(settings.statesByType),
     team: project,
     instance: client.site,
-    stateName: (state) => model.stateName(state),
+    stateName: model.stateName,
+    stateMaps: model.stateMaps,
 
     async reach(signal) {
       try {
@@ -371,8 +374,14 @@ export function jiraTracker(client: Client): Tracker {
     },
 
     async transition(key, state, signal) {
-      const target = namedState(model.stateName(state), state);
       const issue = await client.mustIssue(key, signal);
+      const target = model.stateName(state, issue.issueType?.name ?? null);
+      if (target === null) {
+        console.error(
+          `${issue.key}: skipped ${state}; its workflow has no configured state`,
+        );
+        return;
+      }
       const already =
         same(issue.status.name, target) &&
         (!isResolvedState(state) || model.read(issue).canonical === state);
@@ -564,11 +573,19 @@ export function jiraTracker(client: Client): Tracker {
           match,
           ...(opts.includeClosed === true
             ? []
-            : [openClause(model.stateName("blocked"))]),
+            : [openClause(model.stateNames("blocked"))]),
         ),
         `issues containing '${text}'`,
       );
-      return found.map((i) => summaryOf(i, client));
+      return found
+        .filter(
+          (i) =>
+            opts.includeClosed === true ||
+            !["completed", "canceled", "duplicate"].includes(
+              model.read(i).state.type,
+            ),
+        )
+        .map((i) => summaryOf(i, client));
     },
 
     listRelations: relations,
