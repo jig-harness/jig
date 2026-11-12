@@ -221,20 +221,25 @@ function ghHeaders(stdout: string): {
   headers: Headers;
   body: string;
 } {
-  const match =
-    /^HTTP\/[^ ]+ (\d+)[^\r\n]*\r?\n([\s\S]*?)\r?\n(?:\r?\n|$)/.exec(stdout);
-  if (match === null)
+  const separator = stdout.includes("\r\n\r\n") ? "\r\n\r\n" : "\n\n";
+  const headerEnd = stdout.indexOf(separator);
+  if (headerEnd === -1)
+    return { status: 200, headers: new Headers(), body: stdout };
+  const headerLines = stdout.slice(0, headerEnd).split(/\r?\n/);
+  const statusLine = headerLines.shift() ?? "";
+  const status = Number(statusLine.split(" ")[1]);
+  if (!statusLine.startsWith("HTTP/") || !Number.isInteger(status))
     return { status: 200, headers: new Headers(), body: stdout };
   const headers = new Headers();
-  for (const line of (match[2] ?? "").split(/\r?\n/)) {
+  for (const line of headerLines) {
     const colon = line.indexOf(":");
     if (colon > 0)
       headers.append(line.slice(0, colon), line.slice(colon + 1).trim());
   }
   return {
-    status: Number(match[1]),
+    status,
     headers,
-    body: stdout.slice(match[0].length),
+    body: stdout.slice(headerEnd + separator.length),
   };
 }
 
