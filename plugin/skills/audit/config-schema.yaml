@@ -707,7 +707,7 @@ fields:
     distinct: true
     nonempty: true
     read_by: [do-item, resolve-review-comments, drive-pr, work-batch, file-issue, reflect, dispatch]
-    since: next
+    since: 0.220.0
   issue_tracker.labels.hitl:
     type: string
     read_by: [do-item, decide, work-batch]
