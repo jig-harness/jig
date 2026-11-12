@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
+import { spawn } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -10,8 +11,11 @@ import { tmpdir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
 import {
   captureProcessTree,
+  forceIdentityTargetsAndWitness,
+  identityTargetsGone,
   signalIdentityTargets,
 } from "../../../shared/process-tree.ts";
+import { handOffToRunner } from "../scripts/lib/foreground-start.ts";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 import { byPlatform } from "../../../../lib/test-helpers/windows-skip.ts";
@@ -75,4 +79,45 @@ test("launch returns once the runner has started the command, so a cancellation 
   expect(command).not.toBeNull();
   const tree = await captureProcessTree(pidOf("runner.pid") as number);
   expect(tree?.some((row) => row.pid === command)).toBe(true);
+}, 60_000);
+
+test("a launch that ran out of budget ends a command the runner started but had not published", async () => {
+  // The runner has a child and has written no pid file: only the tree finds it.
+  const runner = spawn(
+    process.execPath,
+    [
+      "-e",
+      "Bun.spawn([process.execPath,'-e','setInterval(()=>{},1000)']); setInterval(()=>{},1000)",
+    ],
+    { stdio: "ignore" },
+  );
+  let tree: Awaited<ReturnType<typeof captureProcessTree>> = null;
+  const deadline = Date.now() + 20_000;
+  while (Date.now() < deadline) {
+    tree = await captureProcessTree(runner.pid as number);
+    if (tree && tree.length > 1) break;
+    await Bun.sleep(50);
+  }
+  expect(tree?.length).toBeGreaterThan(1);
+  const status = await handOffToRunner(
+    runner,
+    { registry: undefined, entry: "x" },
+    {
+      commandStarted: () => false,
+      settled: () => false,
+      captureRunnerTree: () => captureProcessTree(runner.pid as number),
+      endCaptured: async (captured, pid) =>
+        captured.every((row) => row.pid === pid)
+          ? "none"
+          : (await forceIdentityTargetsAndWitness(captured))
+            ? "ended"
+            : "unconfirmed",
+    },
+    0,
+    "launched",
+  );
+  expect(status).toBe(1);
+  expect(await identityTargetsGone(tree as NonNullable<typeof tree>)).toBe(
+    true,
+  );
 }, 60_000);

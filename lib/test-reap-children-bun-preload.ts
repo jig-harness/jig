@@ -54,9 +54,13 @@ Object.defineProperty(globalThis, Symbol.for("jig.test-reap.captured"), {
 });
 
 // Drop what a capture recorded about one pid, for a test that needs the
-// uncaptured state however the sampler happened to be scheduled.
+// uncaptured state however the sampler happened to be scheduled. It waits
+// for a capture in flight first, whose snapshot may predate the caller and
+// would put the pid back; a capture started after it reads the table as the
+// caller left it. Callers await it.
 Object.defineProperty(globalThis, Symbol.for("jig.test-reap.forget"), {
-  value: (pid: number) => {
+  value: async (pid: number) => {
+    await capturing;
     for (const [key, entry] of captured)
       if (entry.pid === pid) captured.delete(key);
   },

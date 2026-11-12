@@ -689,7 +689,7 @@ test("orphans a grandchild at once", async () => {
   if (!identity) throw new Error("the grandchild's identity could not be read");
   // A sampling tick before the launcher exited may have named it, which would
   // reap it by identity rather than by group: forget that, so only the group can.
-  globalThis[Symbol.for("jig.test-reap.forget")](pid);
+  await globalThis[Symbol.for("jig.test-reap.forget")](pid);
   writeFileSync(${JSON.stringify(ownedFile)}, JSON.stringify([identity]));
   writeFileSync(${JSON.stringify(identityFile)}, JSON.stringify(identity));
 }, 30_000);

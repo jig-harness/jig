@@ -105,6 +105,7 @@ import {
 } from "../../../shared/process-registry.ts";
 import {
   captureProcessTree,
+  forceIdentityTargetsAndWitness,
   signalIdentityTargets,
 } from "../../../shared/process-tree.ts";
 import {
@@ -545,13 +546,13 @@ async function launch(argv: string[]): Promise<number> {
       {
         commandStarted: () => readPid(dir, "cmd.pid") !== null,
         settled: () => readResult(dir) !== null,
-        stopStartedCommand: async () => {
-          const pid = readPid(dir, "cmd.pid");
-          if (pid === null) return false;
-          const targets = await captureProcessTree(pid);
-          if (targets) await signalIdentityTargets(targets, "SIGKILL");
-          else if (process.platform !== "win32") signalPid(pid, "SIGKILL");
-          return true;
+        captureRunnerTree: () =>
+          captureProcessTree(started.runner.pid as number),
+        endCaptured: async (tree, runnerPid) => {
+          if (tree.every((row) => row.pid === runnerPid)) return "none";
+          return (await forceIdentityTargetsAndWitness(tree))
+            ? "ended"
+            : "unconfirmed";
         },
       },
       START_BUDGET_MS,

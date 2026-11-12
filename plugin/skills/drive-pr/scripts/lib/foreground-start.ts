@@ -22,11 +22,26 @@ export interface RunnerProgress {
   /** The runner has published a result, with or without starting the command. */
   settled: () => boolean;
   /**
-   * End a command the runner started, with its tree, and say whether there
-   * was one. Called only after the runner is dead, so nothing can start it later.
+   * The runner's live tree with the identities it holds now, or null when
+   * the process table cannot say. Called while the launcher still holds the
+   * runner's child handle, so the pid cannot belong to anyone else.
    */
-  stopStartedCommand: () => Promise<boolean>;
+  captureRunnerTree: () => Promise<readonly TreeRow[] | null>;
+  /**
+   * End what a capture holds and say what happened: `none` when it holds
+   * nothing but the runner, `ended` when every process was seen gone,
+   * `unconfirmed` when one was not.
+   */
+  endCaptured: (
+    tree: readonly TreeRow[],
+    runnerPid: number,
+  ) => Promise<"none" | "ended" | "unconfirmed">;
 }
+
+type TreeRow = { pid: number; start: string };
+
+/** How long ending the runner may take after the budget ran out. */
+const CLEANUP_MS = 5_000;
 
 /**
  * Record the runner's identity while the child handle still proves
@@ -62,29 +77,54 @@ export async function handOffToRunner(
   }
   const deadline = Date.now() + startBudgetMs;
   while (!progress.commandStarted() && !progress.settled() && !exited()) {
-    if (Date.now() >= deadline) {
-      if (exited()) break;
-      const gone = new Promise<void>((resolve) =>
-        runner.once("exit", () => resolve()),
-      );
-      runner.kill("SIGKILL");
-      await gone;
-      // The runner may have started the command just before it died, and the
-      // supervisor that held its deadline died with it: end that command too
-      // rather than report success over an unsupervised one.
-      if (await progress.stopStartedCommand()) {
-        console.error(
-          "foreground-wait: launch failed: the runner started the command as the start budget ran out; both were ended",
-        );
-        return 1;
-      }
-      console.error(
-        `foreground-wait: launch failed: the runner had not started the command within ${startBudgetMs / 1000}s`,
-      );
-      return 1;
-    }
+    if (Date.now() >= deadline)
+      return await abandonLaunch(runner, progress, startBudgetMs);
     await new Promise((resolve) => setTimeout(resolve, START_POLL_MS));
   }
   console.log(launchedLine);
   return 0;
+}
+
+/**
+ * The budget ran out. Freeze the runner so it cannot start the command
+ * while its tree is read, capture the tree with identities, end the runner,
+ * then end what was captured: the command is found by the tree, never by a
+ * pid file the runner may not have written yet, and never by a fresh read
+ * after the runner died.
+ */
+async function abandonLaunch(
+  runner: Runner,
+  progress: RunnerProgress,
+  startBudgetMs: number,
+): Promise<number> {
+  const pid = runner.pid;
+  const gone = new Promise<boolean>((resolve) => {
+    const timer = setTimeout(() => resolve(false), CLEANUP_MS);
+    runner.once("exit", () => {
+      clearTimeout(timer);
+      resolve(true);
+    });
+  });
+  if (pid !== undefined && process.platform !== "win32") runner.kill("SIGSTOP");
+  const tree = pid === undefined ? null : await progress.captureRunnerTree();
+  runner.kill("SIGKILL");
+  const runnerGone = await gone;
+  const ended =
+    tree !== null && pid !== undefined
+      ? await progress.endCaptured(tree, pid)
+      : "unconfirmed";
+  if (runnerGone && ended === "none") {
+    console.error(
+      `foreground-wait: launch failed: the runner had not started the command within ${startBudgetMs / 1000}s`,
+    );
+  } else if (runnerGone && ended === "ended") {
+    console.error(
+      "foreground-wait: launch failed: the runner started the command as the start budget ran out; both were ended",
+    );
+  } else {
+    console.error(
+      "foreground-wait: launch failed: the runner had not started the command within the start budget, and ending it could not be confirmed; check the process table before relaunching",
+    );
+  }
+  return 1;
 }
