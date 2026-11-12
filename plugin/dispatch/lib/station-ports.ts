@@ -380,10 +380,14 @@ async function clearRecord(
   if (row.state.kind !== "pending" || row.record === null)
     return refused(`launch record ${id} is ${row.state.kind}, not stuck`);
   const { action } = row.record;
-  const off =
-    action === "pickup" || action === "followup"
-      ? stageOff(inputs, action)
-      : null;
+  // A re-arm or a takeover record is the rearm stage's.
+  const stage =
+    action === "rearm" || action === "takeover"
+      ? "rearm"
+      : action === "pickup" || action === "followup"
+        ? action
+        : null;
+  const off = stage === null ? null : stageOff(inputs, stage);
   if (off !== null) return refused(off);
   if (retryable(row.record))
     return refused(`launch record ${id}'s launch can still be retried`);

@@ -56,31 +56,44 @@ export interface AnswerRow {
  * tick already had. The answer a session the step starts is handed (`carry`)
  * is kept with the claim, before the step's effect, so a tick that dies
  * between the effect and its outcome still leaves the next launch the answer;
- * a step that ends refused takes it back (`finishAnswer`).
+ * a step that ends refused takes it back (`finishAnswer`), and a newer answer
+ * to the same decision retires the carries of the earlier ones.
  */
 export function claimAnswer(
   row: AnswerRow,
   carry: CarriedAnswer | null = null,
   root = stateRoot(),
 ): boolean {
-  const done = stateDb(root)
-    .query(
-      `INSERT OR IGNORE INTO station_answers
+  const db = stateDb(root);
+  return inTransaction(db, () => {
+    const done = db
+      .query(
+        `INSERT OR IGNORE INTO station_answers
        (repo, target, key, digest, answer, author, option, claimed_at, carry)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-    .run(
-      row.repo,
-      row.target,
-      row.key,
-      row.digest,
-      row.answer,
-      row.author,
-      row.option,
-      new Date().toISOString(),
-      carry === null ? null : JSON.stringify(carry),
-    );
-  return done.changes === 1;
+      )
+      .run(
+        row.repo,
+        row.target,
+        row.key,
+        row.digest,
+        row.answer,
+        row.author,
+        row.option,
+        new Date().toISOString(),
+        carry === null ? null : JSON.stringify(carry),
+      );
+    if (done.changes !== 1) return false;
+    // A newer answer to the same decision supersedes the earlier ones'
+    // carries, interrupted rows included: an older option must not become a
+    // later session's instructions.
+    db.query(
+      `UPDATE station_answers SET carry = NULL
+       WHERE repo = ? AND target = ? AND key = ? AND digest = ? AND answer != ?
+         AND carry IS NOT NULL AND consumed_by IS NULL`,
+    ).run(row.repo, row.target, row.key, row.digest, row.answer);
+    return true;
+  });
 }
 
 /** Write how the step on `row` ended, with the answer a session it starts is handed. */

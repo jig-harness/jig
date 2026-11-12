@@ -14,7 +14,11 @@ import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import type { CommentLike } from "../../skills/drive-pr/scripts/lib/answer-forms.ts";
 import { stationContextOf, stationDecision } from "../lib/line-station.ts";
 import { closeStateDb } from "../lib/state.ts";
-import { takeCarried } from "../lib/station-answer-store.ts";
+import {
+  claimAnswer,
+  type CarriedAnswer,
+  takeCarried,
+} from "../lib/station-answer-store.ts";
 import {
   settleStationAnswers,
   type StationPorts,
@@ -279,5 +283,31 @@ describe("settleStationAnswers", () => {
       changes: "The column goes.",
       note: "only the export's copy",
     });
+  });
+
+  it("retires an interrupted answer's carry when a newer answer to the same decision is claimed", () => {
+    const dir = root();
+    const carry = (option: string): CarriedAnswer => ({
+      question: "q?",
+      option,
+      recommended: false,
+      changes: "",
+      costs: "",
+      by: "maintainer",
+      url: `https://github.com/${SLUG}/pull/12#issuecomment-${option}`,
+    });
+    const row = (answer: string, option: string) => ({
+      repo: SLUG,
+      target: "PR #12",
+      key: "followup",
+      digest: "d1",
+      answer,
+      author: "maintainer",
+      option,
+    });
+    expect(claimAnswer(row("a 1", "First"), carry("First"), dir)).toBe(true);
+    expect(claimAnswer(row("b 2", "Second"), carry("Second"), dir)).toBe(true);
+    expect(takeCarried(SLUG, "PR #12", "r-1", dir)?.option).toBe("Second");
+    expect(takeCarried(SLUG, "PR #12", "r-2", dir)).toBeNull();
   });
 });

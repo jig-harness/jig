@@ -819,7 +819,7 @@ they change.
 
 | Cause | Key | Options (the recommendation in bold) | The tick's step |
 | --- | --- | --- | --- |
-| a failed follow-up (`followup-failed`), a stale claim again (`followup-stale`) | `followup` | **Run it again** when the pass asked nothing or the claim went stale; Record it done; **Leave it to me** when the pass stopped on a question | deletes the marker the need names, so a later tick starts the follow-up again, the person's note in its prompt; or deletes it and posts a marker marked done in its place |
+| a failed follow-up (`followup-failed`), a stale claim again (`followup-stale`) | `followup` | **Run it again** when the pass asked nothing or the claim went stale; Record it done; **Leave it to me** when the pass stopped on a question | deletes the marker the need names, so a later tick starts the follow-up again, the person's note in its prompt; or marks the existing marker done in place |
 | a stalled pickup (`stalled`), a pickup's question it did not frame (`pickup-question`) | `pickup` | **Release the claim** for a stall no open pull request carries; **Leave it to me** otherwise | moves the item back to the first state a pickup starts from, so a later tick picks it up afresh |
 | a checkout the workspace runtime does not list holds the launch's branch and is in use (`needs-person`) | `checkout` | Detach the checkout; **Leave it to me** | detaches it at its commit when it is idle, as an open does an idle holder |
 | a drive the ledger handed to a person, or one stopped with no cause (`needs-person`, `stopped-unknown`) | `drive` | Re-arm the drive; **Leave it to me** | adds the rearm label, the person's command the tick then carries out |

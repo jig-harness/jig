@@ -201,7 +201,10 @@ export function releaseEnded(
     const item = record.item as string;
     // A claim seen while the pass still runs counts too: the item may be
     // back among the dispatch states by the time the record ends.
-    const members = record.batchItems?.map((i) => i.key) ?? [item];
+    // A member already released alone no longer counts toward holding its siblings' record.
+    const members = (record.batchItems?.map((i) => i.key) ?? [item]).filter(
+      (key) => holdsItem(record, key),
+    );
     const claimedMembers = members.filter((key) => claimed.has(key));
     // The dispatch identity's own claimed item can only be this pickup's
     // claim, seen while it ran or after it ended. A served person starts their

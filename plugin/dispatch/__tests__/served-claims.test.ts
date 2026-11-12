@@ -1,8 +1,12 @@
 import { describe, expect, it } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { Tracker } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import type { LaunchRecord, ReadRecord } from "../lib/launches.ts";
 import { type PickupInput, planPickups } from "../lib/plan-pickups.ts";
 import { releaseEnded } from "../lib/actions/pickup-hold.ts";
+import { closeStateDb } from "../lib/state.ts";
 import { readServedPickups } from "../lib/sources/served.ts";
 import type { ClaimedItem, DispatchSection } from "../lib/types.ts";
 import { SLUG } from "./fixtures.ts";
@@ -180,5 +184,23 @@ describe("claimed items read for a served person", () => {
         url: null,
       },
     ]);
+  });
+
+  it("does not let a member released alone keep its siblings' record", () => {
+    const record = endedPickup("#7", false);
+    Object.assign(record.record, {
+      createdAt: "2026-11-11T06:00:00Z",
+      batchItems: [{ key: "#7" }, { key: "#8" }],
+      releasedItems: ["#7"],
+    });
+    // #7 is still Todo (wanted) but was released by its answer; #8 is gone.
+    const dir = mkdtempSync(join(tmpdir(), "served-claims-"));
+    try {
+      releaseEnded([record], SLUG, new Set(["#7"]), new Set(), new Set(), dir);
+      expect(record.record.released).toBe(true);
+    } finally {
+      closeStateDb(dir);
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
