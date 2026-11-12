@@ -177,7 +177,11 @@ describe("which adapters run", () => {
     ]);
     const byDefault = await resolveSpec(body, root, {
       registry,
-      config: { adapters: null, bodySection: DEFAULT_BODY_SECTION },
+      config: {
+        adapters: null,
+        bodySection: DEFAULT_BODY_SECTION,
+        verificationSection: "Verification",
+      },
     });
     expect(byDefault.sources.map((s) => `${s.adapter} ${s.ref}`)).toEqual([
       "body #body/Spec",
@@ -191,7 +195,11 @@ describe("which adapters run", () => {
     put(root, "notes/a.md", "AC-1 x\n");
     const result = await resolveSpec(issue("## Spec\n\n- notes/a.md\n"), root, {
       registry: [stub("notes", "notes", [], false)],
-      config: { adapters: null, bodySection: DEFAULT_BODY_SECTION },
+      config: {
+        adapters: null,
+        bodySection: DEFAULT_BODY_SECTION,
+        verificationSection: "Verification",
+      },
     });
     expect(result.unresolved).toEqual(["notes/a.md (no adapter claims it)"]);
   });
@@ -203,6 +211,7 @@ describe("the specs configuration", () => {
     expect(readSpecsConfig(root, ["body"], NO_USER_LAYER)).toEqual({
       adapters: null,
       bodySection: "Spec",
+      verificationSection: "Verification",
     });
     put(
       root,
@@ -212,6 +221,7 @@ describe("the specs configuration", () => {
     expect(readSpecsConfig(root, ["body"], NO_USER_LAYER)).toEqual({
       adapters: ["body"],
       bodySection: "Plan",
+      verificationSection: "Verification",
     });
     for (const [yaml, message] of [
       [
@@ -259,6 +269,7 @@ describe("the specs configuration", () => {
     expect(readSpecsConfig(root, ["body"], NO_USER_LAYER)).toEqual({
       adapters: null,
       bodySection: "Spec",
+      verificationSection: "Verification",
     });
   });
 
@@ -315,7 +326,7 @@ describe("the command line", () => {
     expectSpawnExit(text, 0);
     expect(text.stdout.trim()).toBe(
       [
-        "Spec: 2 sources, 0 requirements, 1 acceptance criterion, 0 tasks",
+        "Spec: 2 sources, 0 requirements, 1 acceptance criterion, 0 tasks, 0 verification commands",
         "Acceptance criteria:",
         "- #body/Acceptance criteria#AC-1: Works",
         "Sources:",
@@ -366,7 +377,10 @@ test("the summary of an empty result says so", () => {
       requirements: [],
       acceptance: [],
       tasks: [],
+      verification: [],
       unresolved: [],
     }),
-  ).toBe("Spec: 0 sources, 0 requirements, 0 acceptance criteria, 0 tasks");
+  ).toBe(
+    "Spec: 0 sources, 0 requirements, 0 acceptance criteria, 0 tasks, 0 verification commands",
+  );
 });

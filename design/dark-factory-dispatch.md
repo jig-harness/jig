@@ -1722,6 +1722,12 @@ waits on the authenticated Windows smoke.
   tick never infers contention from a conflict it just saw. A hold keeps
   only the dispatcher's own launches off.
 
+Item 50 narrows two of these rules, once built: the tick moves an item to
+its `pr_open` state when an open pull request on the branch of this host's
+launch names it, and relaunches a stalled pickup once in its own tree to
+push and record work that tree holds
+([need-classes.md § What changes in the dispatcher's rules](need-classes.md#what-changes-in-the-dispatchers-rules)).
+
 ### Notifications
 
 A notification goes out for each cause, its launch record or receipt
@@ -1836,7 +1842,18 @@ try:
   send`'s, a change probe's) has its own row, and every tick of several
   repositories shares one, so the sweeps that succeed between failing
   wake-ups do not clear the wake-ups' count. A tick that exits 1 counts;
-  one that exits 3 found the lock held and counts nothing.
+  one that exits 3 found the lock held and counts nothing. A tick that
+  exits 0 makes the wake-up row of each other repository it read whole
+  **quiet**: the row keeps its count, but nothing escalates it, since the
+  cause it last recorded did not stop that tick. The next wake-up of that
+  repository decides: a failure counts on from the kept count and
+  escalates again at once past the threshold, and a success removes the
+  row. Its notice retires while it is quiet, and a failure after it is a
+  new notice with its own identity, so it is told again at once rather than
+  on `dispatch.renotify_after`, even where the destination still holds the
+  earlier one. A wake-up
+  that fails every time is still told, while one that is rarely woken
+  stops asking about a cause that is gone.
 
 Only a tick with `--apply` and a machine file keeps the ledger; a person's
 report changes nothing there. Each host keeps its own.

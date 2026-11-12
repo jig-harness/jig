@@ -1,8 +1,10 @@
 /** The registered issue trackers, by the name configuration uses. */
 import type { Tracker, TrackerOptions } from "../tracker.ts";
+import { githubTracker } from "./github.ts";
 import { linearTracker } from "./linear.ts";
 
 const TRACKERS = new Map<string, (options: TrackerOptions) => Tracker>([
+  ["github", (options) => githubTracker(options)],
   ["linear", (options) => linearTracker(options)],
 ]);
 

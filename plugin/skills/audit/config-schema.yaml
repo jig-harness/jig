@@ -858,6 +858,13 @@ fields:
     read_by: [do-item]
     repository_only: true
     since: 0.100.0
+  specs.verification_section:
+    type: string
+    pattern: "^[ \\t]*[^#\\s][^\\r\\n]*$"
+    default: Verification
+    read_by: [do-item]
+    repository_only: true
+    since: 0.222.0
 
   workspace_name.template:
     type: string

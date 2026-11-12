@@ -62,7 +62,12 @@ export interface QueueOptions {
 
 const KEY = /^([A-Za-z][A-Za-z0-9_]*)-(\d+)$/;
 
-/** Keys by team, as Linear filters them: `{ team, number in [...] }` per team. */
+/**
+ * Keys by team, as Linear filters them: per team, `{ and: [team, number in
+ * [...]] }`. The `and` is load-bearing: inside an `or`, Linear drops the
+ * `number` clause of an element that holds a bare `{ team, number }` and
+ * matches the whole team, which a batch read would then page through.
+ */
 export function keyGroups(
   keys: ReadonlyArray<string>,
 ): Array<Record<string, unknown>> {
@@ -74,12 +79,37 @@ export function keyGroups(
     byTeam.set(team, [...(byTeam.get(team) ?? []), Number(m[2])]);
   }
   return [...byTeam].map(([team, numbers]) => ({
-    team: { key: { eq: team } },
-    number: { in: [...new Set(numbers)] },
+    and: [
+      { team: { key: { eq: team } } },
+      { number: { in: [...new Set(numbers)] } },
+    ],
   }));
 }
 
 const RELATED = "identifier state { type }";
+
+/** The issues one batch page holds, matching the `first` of `batchQuery`. */
+const BATCH_PAGE = 50;
+
+/**
+ * `transport` for one batch read of `count` keys: a read that asks for more
+ * pages than the keys can fill is not selecting them (the filter matched more
+ * than the keys named), so it stops instead of reading on.
+ */
+function boundedBatch(
+  transport: LinearTransport,
+  count: number,
+): LinearTransport {
+  const allowed = Math.ceil(count / BATCH_PAGE) + 1;
+  let sent = 0;
+  return async (query, variables, signal) => {
+    if (++sent > allowed)
+      throw new ShapeError(
+        `${count} issue(s) by key: the read is paging past its keys`,
+      );
+    return transport(query, variables, signal);
+  };
+}
 
 /**
  * The queue's page sizes, kept so one page stays under Linear's complexity
@@ -110,7 +140,7 @@ query TrackerQueue($filter: IssueFilter!, $after: String) {
 function batchQuery(extra: string): string {
   return `
 query TrackerPoolIssues($filter: IssueFilter!, $after: String) {
-  issues(first: 50, after: $after, includeArchived: true, filter: $filter) {
+  issues(first: ${BATCH_PAGE}, after: $after, includeArchived: true, filter: $filter) {
     pageInfo { hasNextPage endCursor }
     nodes { ${poolFields(extra)} }
   }
@@ -238,7 +268,7 @@ export function queueOperations(opts: QueueOptions) {
       const groups = keyGroups(wanted);
       if (groups.length > 0) {
         const nodes = await pageAll(
-          transport,
+          boundedBatch(transport, wanted.length),
           batch,
           { filter: { or: groups } },
           (d) => d.issues,
@@ -264,11 +294,20 @@ export function queueOperations(opts: QueueOptions) {
     ): Promise<ChangeAnswer> {
       const groups = keyGroups(query.keys);
       const filter = {
-        updatedAt: { gt: query.since },
-        or: [
-          { team: { key: { eq: team } }, ...assigneeClause(query.identity) },
-          ...groups,
-          ...groups.map((g) => ({ parent: g })),
+        and: [
+          { updatedAt: { gt: query.since } },
+          {
+            or: [
+              {
+                and: [
+                  { team: { key: { eq: team } } },
+                  assigneeClause(query.identity),
+                ],
+              },
+              ...groups,
+              ...groups.map((g) => ({ parent: g })),
+            ],
+          },
         ],
       };
       const data = record(

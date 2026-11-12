@@ -46,6 +46,7 @@ function expectWellFormed(result: SpecResult): void {
     ...result.requirements,
     ...result.acceptance,
     ...result.tasks,
+    ...result.verification,
   ];
   const keys = entries.map((e) => e.key);
   expect(new Set(keys).size).toBe(keys.length);
