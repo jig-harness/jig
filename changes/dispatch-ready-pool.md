@@ -12,7 +12,10 @@ release: minor
   person who can write to the repository (its creator, where it was created
   there; on Jira never an app's account, Jira Automation's included); an
   item anyone else made ready shows in the Queue view with who moved it and
-  never starts. The pickup's claim assigns the item to the factory identity,
+  never starts. An item with an open blocker (on Jira, through any link type
+  `issue_tracker.jira.link_types` configures), or one that cannot be read,
+  waits, the Queue view naming the blocker, until the blocker closes. The
+  pickup's claim assigns the item to the factory identity,
   so `do_item.preflight_command`, `do_item.claim_from` and the claim marker
   apply. A pool is refused without `dispatch.identity` and without
   `do_item.claim_marker: true`, the token that decides between hosts taking

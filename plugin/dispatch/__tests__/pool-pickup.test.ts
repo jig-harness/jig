@@ -3,8 +3,9 @@
  * as the factory identity's, trusted by who made them ready. The section is
  * refused without the claim marker; on each adapter, through its fake
  * transport, an item a person with write access made ready is planned by
- * two hosts and claimed once, the claim marker deciding between them, and
- * an item an account without write access made ready is never planned.
+ * two hosts and claimed once, the claim marker deciding between them; an
+ * item an account without write access made ready is never planned, and one
+ * with an open blocker waits, named in the queue, until the blocker closes.
  */
 import { describe, expect, it } from "bun:test";
 import type { Clock } from "../../shared/clock.ts";
@@ -134,6 +135,26 @@ async function twoHosts(
   return (await Promise.all([claim(), claim()])).map((r) => r.outcome).sort();
 }
 
+/**
+ * While `blocker` is open the item is not planned, the queue says it waits
+ * on it, and its launch is refused; `close` closes the blocker.
+ */
+async function waitsOn(
+  make: () => Tracker,
+  section: DispatchSection,
+  key: string,
+  blocker: string,
+): Promise<void> {
+  const held = await readPickups(make, section);
+  expect(held.wanted).toEqual([]);
+  expect(held.unplaced.map((u) => [u.target, u.reason])).toEqual([
+    [key, `in the ready pool (Todo), but waiting on ${blocker}`],
+  ]);
+  expect(await freshPoolPickup(make(), section, key)).toBe(
+    `waiting on ${blocker}`,
+  );
+}
+
 describe("a pool pickup across two hosts", () => {
   it("on GitHub", async () => {
     const item = { labels: [] as string[], logins: [] as string[] };
@@ -141,13 +162,36 @@ describe("a pool pickup across two hosts", () => {
     const writes: string[] = [];
     let n = 0;
     let author = "dana";
+    let blockerOpen = true;
     const user = (login: string) => ({ id: `U_${login}`, login });
+    const relations = (blockedBy: number[]) => ({
+      blockedBy: conn(
+        blockedBy.map((number) => ({
+          number,
+          repository: { nameWithOwner: "acme/app" },
+        })),
+      ),
+      blocking: conn([]),
+      relatesTo: conn([]),
+      duplicateOf: null,
+      timelineItems: conn([]),
+    });
     const node = () =>
       issueNode({
         number: 5,
         labels: item.labels,
         assignee: item.logins[0] ?? null,
-        extra: { subIssues: conn([]), author: { login: author } },
+        extra: {
+          subIssues: conn([]),
+          author: { login: author },
+          ...relations([6]),
+        },
+      });
+    const blocker = () =>
+      issueNode({
+        number: 6,
+        state: blockerOpen ? "OPEN" : "CLOSED",
+        extra: { subIssues: conn([]), ...relations([]) },
       });
     const make = () =>
       gitHub((c) => {
@@ -159,7 +203,7 @@ describe("a pool pickup across two hosts", () => {
             return { repository: { issues: conn(mine ? [node()] : []) } };
           }
           case "TrackerIssue":
-            return oneIssue(node());
+            return oneIssue(c.variables.number === 6 ? blocker() : node());
           case "TrackerStateChanges":
             return {
               repository: {
@@ -247,6 +291,8 @@ describe("a pool pickup across two hosts", () => {
       ],
     ]);
     author = "dana";
+    await waitsOn(make, section, "#5", "#6");
+    blockerOpen = false;
     expect(await twoHosts(make, section, "#5")).toEqual(["claimed", "refused"]);
     expect(writes).toEqual(["TrackerAssign", "TrackerAddLabels"]);
     expect(comments).toHaveLength(1);
@@ -268,6 +314,7 @@ describe("a pool pickup across two hosts", () => {
       Todo: "s-todo",
       "In Progress": "s-ip",
     };
+    let blockerType = "started";
     const poolNode = () => ({
       identifier: "ENG-4",
       title: "t",
@@ -313,7 +360,28 @@ describe("a pool pickup across two hosts", () => {
         case "TrackerAssignee":
           return { issue: { id: "uuid-4", assignee: item.assignee } };
         case "TrackerPoolIssue":
-          return { issue: poolNode() };
+          return variables.id === "ENG-5"
+            ? {
+                issue: {
+                  ...poolNode(),
+                  identifier: "ENG-5",
+                  state: { id: "s-x", name: "Blocker", type: blockerType },
+                },
+              }
+            : { issue: poolNode() };
+        case "TrackerRelations":
+          return { issue: { relations: { ...none, nodes: [] } } };
+        case "TrackerInverseRelations":
+          return {
+            issue: {
+              inverseRelations: {
+                ...none,
+                nodes: [
+                  { id: "r-1", type: "blocks", issue: { identifier: "ENG-5" } },
+                ],
+              },
+            },
+          };
         case "TrackerAssign":
           writes.push(op);
           item.assignee = ME;
@@ -372,6 +440,8 @@ describe("a pool pickup across two hosts", () => {
     expect(untrusted.wanted).toEqual([]);
     expect(untrusted.unplaced[0]?.reason).toContain("moved to Todo by Guest");
     mover = trusted;
+    await waitsOn(make, section, "ENG-4", "ENG-5");
+    blockerType = "completed";
     expect(await twoHosts(make, section, "ENG-4")).toEqual([
       "claimed",
       "refused",
@@ -390,13 +460,46 @@ describe("a pool pickup across two hosts", () => {
     const writes: string[] = [];
     let n = 0;
     let mover: Record<string, unknown> = MEMBER;
+    let blocker: { status: string; category: "indeterminate" | "done" } = {
+      status: "Doing",
+      category: "indeterminate",
+    };
     const answer = (c: Call) => {
+      if (c.route === "GET issueLinkType")
+        return {
+          issueLinkTypes: [
+            {
+              id: "1",
+              name: "Blocks",
+              inward: "is blocked by",
+              outward: "blocks",
+            },
+            {
+              id: "2",
+              name: "Relates",
+              inward: "relates to",
+              outward: "relates to",
+            },
+            {
+              id: "3",
+              name: "Duplicate",
+              inward: "is duplicated by",
+              outward: "duplicates",
+            },
+          ],
+        };
+      if (c.route === "GET issue/ENG-2")
+        return jiraIssue({ key: "ENG-2", ...blocker });
       if (c.route === "GET myself") return { ...FACTORY, timeZone: "UTC" };
       if (c.route === "GET user") return FACTORY;
       if (c.route === "GET issue/ENG-1")
         return c.query.fields === "creator"
           ? { key: "ENG-1", fields: { creator: MEMBER } }
-          : jiraIssue({ key: "ENG-1", ...item });
+          : jiraIssue({
+              key: "ENG-1",
+              ...item,
+              links: [{ type: "Blocks", inward: "ENG-2" }],
+            });
       if (c.route === "GET issue/ENG-1/changelog")
         return {
           values: [
@@ -493,6 +596,8 @@ describe("a pool pickup across two hosts", () => {
       "moved to Todo by Automation for Jira",
     );
     mover = MEMBER;
+    await waitsOn(make, section, "ENG-1", "ENG-2");
+    blocker = { status: "Done", category: "done" };
     expect(await twoHosts(make, section, "ENG-1")).toEqual([
       "claimed",
       "refused",
@@ -536,6 +641,7 @@ describe("who made a pool item ready", () => {
       user: async () => ({ id: "u-f", name: "Factory" }),
       viewer: async () => ({ id: "u-f", name: "Factory" }),
       unassignedIssues: async () => [current],
+      listRelations: async () => [],
       stateChangedBy: async (key: string) => {
         reads.push(key);
         return { id: "u-d", name: "Dana", trusted: true };
@@ -580,6 +686,7 @@ describe("the pool's guards", () => {
       viewer: async () => ({ id: "u-f", name: "Factory" }),
       unassignedIssues: async () => [issue],
       poolIssue: async () => issue,
+      listRelations: async () => [],
       stateChangedBy: async () => ({ id: "u-d", name: "Dana", trusted: true }),
       ...over,
     }) as unknown as Tracker;

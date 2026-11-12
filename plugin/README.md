@@ -398,7 +398,9 @@ queue's rules after the items assigned to the factory identity, when the
 latest move into its state was a repository writer's (on Jira, a person's
 account, never an app's), its creator's where it was created there. An item
 someone else made ready shows in the Queue view with who moved it and never
-starts. The same holds and repository labels as a served item's apply, the
+starts. An item with an open or unreadable blocker waits, shown as "waiting
+on #N", until the blocker closes. The same holds and repository labels as a
+served item's apply, the
 pickup's claim assigns the item to the factory identity, and the pool
 requires `do_item.claim_marker`, the token between hosts that take from the
 same pool ([CONFIGURATION.md](CONFIGURATION.md#dispatch)).

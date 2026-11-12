@@ -686,10 +686,13 @@ state's option, where a project workflow's change is never trusted and an
 item with no option is in no recorded state. Every gap (a history not read
 whole, a deleted account where the tracker names none) leaves the item out
 with its reason, as an unreadable assigner does. The holds and the
-repository scope a served item meets apply, the wanted items are ranked by
-the queue's rules after the identity's own, and the launch reads the item
-again, unassigned, in the pool and made ready by a trusted person, before
-it starts. The pickup's `do-item` claims the item as any claim does, so the
+repository scope a served item meets apply, and so does its open-blocker
+rule: an item one of whose blockers is open or cannot be read waits, its
+row naming the blocker, and is planned once the blocker closes (its
+relations kept until it changes, each blocker's state read every tick).
+The wanted items are ranked by the queue's rules after the identity's own,
+and the launch reads the item again, unassigned, in the pool, made ready by
+a trusted person and with no open blocker, before it starts. The pickup's `do-item` claims the item as any claim does, so the
 precondition command, `claim_from` and the claim marker apply, and the
 claim assigns it to the factory identity, whose claimed items the stall and
 double-claim watches read. The pool is refused without the factory identity

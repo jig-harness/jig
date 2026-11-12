@@ -17,6 +17,7 @@ import {
 } from "../../../shared/tracker-budget.ts";
 import type {
   Assigner,
+  IssueRelation,
   PoolIssue,
   Tracker,
 } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
@@ -33,6 +34,7 @@ import {
   unlabeledOutcome,
 } from "./served-repo.ts";
 import { trackerScope } from "./served-reads.ts";
+import { openBlockers } from "./served-pull.ts";
 
 export interface PoolReading {
   wanted: WantedItem[];
@@ -77,15 +79,7 @@ async function madeReadyBy(
   team: string,
   issue: PoolIssue,
 ): Promise<{ by: string } | { row: Unplaced }> {
-  const row = (reason: string): { row: Unplaced } => ({
-    row: {
-      target: issue.identifier,
-      title: issue.title,
-      url: issue.url,
-      record: "tracker",
-      reason,
-    },
-  });
+  const row = (reason: string) => rowOf(issue, reason);
   let by: Assigner;
   try {
     by = await read(issue);
@@ -159,21 +153,96 @@ function wantedOf(issue: PoolIssue, identity: string, by: string): WantedItem {
 /** One pool issue: held out (`row`), another checkout's (`null`), or who made it ready (`by`). */
 async function placed(
   read: (issue: PoolIssue) => Promise<Assigner>,
+  blockers: (issue: PoolIssue) => Promise<string[]>,
   team: string,
   issue: PoolIssue,
   policy: ServedPolicy,
 ): Promise<{ by: string } | { row: Unplaced } | null> {
   const held = heldOut(issue, policy);
   if (held === "leave") return null;
-  if (held === null) return madeReadyBy(read, team, issue);
+  if (held !== null)
+    return rowOf(issue, `in the ready pool (${issue.state.name}), but ${held}`);
+  const made = await madeReadyBy(read, team, issue);
+  if ("row" in made) return made;
+  return (await blockerHold(blockers, issue, policy)) ?? made;
+}
+
+/** A queue row for a pool item held out, with why. */
+function rowOf(issue: PoolIssue, reason: string): { row: Unplaced } {
   return {
     row: {
       target: issue.identifier,
       title: issue.title,
       url: issue.url,
       record: "tracker",
-      reason: `in the ready pool (${issue.state.name}), but ${held}`,
+      reason,
     },
+  };
+}
+
+/**
+ * The served queue's open-blocker rule, for a pool item: it waits while a
+ * blocker is open or cannot be read (`openBlockers`, `queueHold`), and the
+ * row says on which; `null` when nothing blocks it.
+ */
+async function blockerHold(
+  blockers: (issue: PoolIssue) => Promise<string[]>,
+  issue: PoolIssue,
+  policy: ServedPolicy,
+): Promise<{ row: Unplaced } | null> {
+  let open: string[];
+  try {
+    open = await blockers(issue);
+  } catch (error) {
+    if (isRateLimited(error)) throw error;
+    return rowOf(
+      issue,
+      `in the ready pool (${issue.state.name}), but its blockers cannot be read: ${failureText(error)}`,
+    );
+  }
+  const held = queueHold({ issue, blockers: open, unblocks: 0 }, policy);
+  return held === null
+    ? null
+    : rowOf(issue, `in the ready pool (${issue.state.name}), but ${held}`);
+}
+
+/** The keys of an item's open blockers, whatever relations the tracker reads as `blocked_by` (on Jira, every configured link type). */
+async function openBlockerKeys(
+  tracker: Tracker,
+  relations: ReadonlyArray<IssueRelation>,
+): Promise<string[]> {
+  return (await openBlockers((k) => tracker.poolIssue(k), relations)).map(
+    (b) => b.key,
+  );
+}
+
+/**
+ * A pool item's open blockers: its relations kept in `cache` until the item's
+ * update time changes, as a served item's are, and each blocker's state
+ * read afresh, so a blocker that closes releases the item at the next tick.
+ */
+function blockerReader(
+  tracker: Tracker,
+  cache: PickupReads | undefined,
+  bound: FacetBound | undefined,
+): (issue: PoolIssue) => Promise<string[]> {
+  return async (issue) => {
+    const key = `${trackerScope(tracker)}:pool-relations:${issue.identifier}`;
+    const kept = cache?.get<{
+      updatedAt: string;
+      relations: IssueRelation[];
+    }>(key);
+    let relations: IssueRelation[];
+    if (issue.updatedAt && kept?.updatedAt === issue.updatedAt)
+      relations = kept.relations;
+    else {
+      const asked = tracker.listRelations(issue.identifier);
+      relations = await (bound === undefined ? asked : within(asked, bound));
+      if (issue.updatedAt)
+        cache?.set(key, { updatedAt: issue.updatedAt, relations });
+    }
+    const open = openBlockerKeys(tracker, relations);
+    return bound === undefined ? open : within(open, bound);
   };
 }
 
@@ -184,6 +253,7 @@ async function placed(
  */
 async function placeAll(
   read: (issue: PoolIssue) => Promise<Assigner>,
+  blockers: (issue: PoolIssue) => Promise<string[]>,
   team: string,
   issues: readonly PoolIssue[],
   policy: ServedPolicy,
@@ -210,7 +280,7 @@ async function placeAll(
     }
     let one: Awaited<ReturnType<typeof placed>>;
     try {
-      one = await placed(read, team, issue, policy);
+      one = await placed(read, blockers, team, issue, policy);
     } catch (error) {
       if (!isRateLimited(error)) throw error;
       return { reading: { ...reading, limited: error }, ranked: [] };
@@ -293,7 +363,14 @@ export async function readPoolPickups(
       `the ready pool (${names}) could not be read: ${failureText(error)}`,
     );
   }
-  const out = await placeAll(read, tracker.team, issues, policy, bound);
+  const out = await placeAll(
+    read,
+    blockerReader(tracker, cache, bound),
+    tracker.team,
+    issues,
+    policy,
+    bound,
+  );
   return {
     ...out.reading,
     states: names,
@@ -353,6 +430,16 @@ export async function freshPoolPickup(
       return `it was moved to ${issue.state.name} by ${by.name}, who cannot write to ${tracker.team}`;
   } catch (error) {
     return `who made it ready cannot be read again: ${failureText(error)}`;
+  }
+  try {
+    const open = await openBlockerKeys(
+      tracker,
+      await tracker.listRelations(key),
+    );
+    const waiting = queueHold({ issue, blockers: open, unblocks: 0 }, policy);
+    if (waiting !== null) return waiting;
+  } catch (error) {
+    return `its blockers cannot be read again: ${failureText(error)}`;
   }
   return issue;
 }

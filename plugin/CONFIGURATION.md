@@ -1295,8 +1295,11 @@ field to the state's option, a project workflow's never trusted, and an item
 with no option is not picked up. An item made ready by anyone else, or whose
 mover cannot be read, is shown in the queue with why and never planned. The
 holds a served item meets (`hitl`, `manual-ops`, `jig:hold`) and the
-repository labels apply too, and the pool's items are ranked by the queue's
-rules after the items assigned to `identity`. The pickup's claim assigns the
+repository labels apply too, and an item one of whose blockers (a
+`blocked_by` relation; on Jira, any link type `issue_tracker.jira.link_types`
+names for it) is open, or cannot be read, waits, its queue row naming the
+blocker, until that blocker closes. The pool's items are ranked by the
+queue's rules after the items assigned to `identity`. The pickup's claim assigns the
 item to `identity`, so the pool requires the claim marker
 (`do_item.claim_marker`), which decides between hosts that take the same
 item, and the claim's other start rules (`do_item.preflight_command`,
