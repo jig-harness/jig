@@ -679,9 +679,10 @@ tracker's history, as `assignedBy` reads an assignment. Trust moves from
 who assigned an item to who made it ready: an item is wanted only when that
 mover passes the assigner's test above, and an item whose history holds no
 move into its state was created there, so its creator is the mover. On
-GitHub the move is the newest labelling with the state's label, the
-removal of the last state label for the state that carries none, or a
-reopening; on a board, the newest change of the `Status` field to the
+GitHub the move is the latest effective transition into the state the
+issue is in now (the state its furthest-along state label gives): the
+labelling that put that label in force, the removal of a label that
+exposed it, or a reopening; on a board, the newest change of the `Status` field to the
 state's option, where a project workflow's change is never trusted and an
 item with no option is in no recorded state. Every gap (a history not read
 whole, a deleted account where the tracker names none) leaves the item out

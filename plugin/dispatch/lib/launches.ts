@@ -32,11 +32,9 @@
  * | no claim | pending |
  *
  * Pending, alive and unknown records hold their stage and their account's
- * slot; an unknown or a pending record whose launch cannot be retried
- * holds them until a person clears it (`jig dispatch clear`). An
- * interactive session's record is also read beside its agent
- * (`actions/pickup-hold.ts`): while its wrapper is alive, the record ends
- * when the runtime reports the agent finished.
+ * slot; an unknown or a pending record whose launch cannot be retried holds
+ * them until a person clears it (`jig dispatch clear`). An interactive
+ * session's record also ends with its agent (`actions/pickup-hold.ts`).
  *
  * What Control adds while the record runs and when it ends: a drive's
  * unresolved-thread count per ledger round (`samples`, the

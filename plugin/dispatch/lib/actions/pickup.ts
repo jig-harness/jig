@@ -394,7 +394,12 @@ export async function applyPickups(
 ): Promise<void> {
   const wanted = report.actions.filter((a) => a.stage === "pickup");
   await retryPending(state, repo, report, ctx);
-  for (const action of wanted.some((a) => a.evidence.servedPerson !== undefined)
+  // A served or pooled queue is ranked (assigned before pool, then the
+  // queue's own order), so it launches in that order; only the unranked
+  // factory pickups rotate.
+  for (const action of wanted.some(
+    (a) => a.evidence.servedPerson !== undefined || a.evidence.pooled === true,
+  )
     ? wanted
     : rotated(state, wanted, "targets"))
     report.launches.push(await launchOne(state, repo, action, ctx));

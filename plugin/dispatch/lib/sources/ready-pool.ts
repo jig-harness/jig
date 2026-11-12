@@ -435,7 +435,7 @@ export async function freshPoolPickup(
   if (issue.assignee !== null)
     return `it is assigned to ${issue.assignee.name} since the plan read it`;
   const inPool = pool.states.some((s) => {
-    const name = tracker.stateName(s);
+    const name = tracker.stateName(s, issue.nativeType ?? null);
     return (
       name !== null && name.toLowerCase() === issue.state.name.toLowerCase()
     );

@@ -725,6 +725,23 @@ describe("the pool's guards", () => {
     ).toContain("is assigned to");
   });
 
+  it("reads the pool's state by the item's own native type", async () => {
+    const bug = {
+      ...issue,
+      nativeType: "Bug",
+      state: { id: "s-ready", name: "Ready", type: "unstarted" },
+    };
+    const tracker = trackerOf({
+      stateName: (s: string, type?: string | null) =>
+        s === "todo" ? (type === "Bug" ? "Ready" : "Todo") : null,
+      poolIssue: async () => bug,
+      unassignedIssues: async () => [bug],
+    });
+    expect(typeof (await freshPoolPickup(tracker, section, "ENG-9"))).toBe(
+      "object",
+    );
+  });
+
   it("refuses a launch of an item that left the pool's scope", async () => {
     const tracker = trackerOf({ unassignedIssues: async () => [] });
     expect(await freshPoolPickup(tracker, section, "ENG-9")).toContain(

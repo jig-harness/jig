@@ -1302,9 +1302,10 @@ assigning each item to `identity`. An unassigned open item in one of those
 states is a pickup when the latest move into its state was made by a person
 who can write to the repository, by the same rule as an assignment below;
 an item that was created in the state counts as moved there by its
-creator. On GitHub that move is the newest labelling with the state's label,
-the removal of the last state label for the state that carries none
-(`todo`), or a reopening; on a board, the newest change of the `Status`
+creator. On GitHub that move is the latest effective transition into the
+state the issue is in now (the state its furthest-along state label gives):
+the labelling that put that label in force, the removal of a label that
+exposed it, or a reopening; on a board, the newest change of the `Status`
 field to the state's option, a project workflow's never trusted, and an item
 with no option is not picked up. An item made ready by anyone else, or whose
 mover cannot be read, is shown in the queue with why and never planned. The
