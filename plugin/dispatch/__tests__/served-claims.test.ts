@@ -86,6 +86,23 @@ describe("claimed items read for a served person", () => {
     );
   });
 
+  it("leaves a served person's claim quiet while an unclaiming pickup waits on the rate limit", () => {
+    const record = endedPickup("#7", false);
+    record.result = "waits";
+    record.waitsUntil = new Date(NOW + HOUR).toISOString();
+    const plan = planPickups(
+      input(
+        [{ key: "#7", title: "task", state: "In Progress", served: true }],
+        [record],
+      ),
+    );
+    expect(plan.actions).toEqual([]);
+    expect(plan.idleNow).toEqual([]);
+    expect(plan.quiet).toContainEqual(
+      expect.objectContaining({ target: "#7", class: "claimed-by-person" }),
+    );
+  });
+
   it("does not attribute a later served claim to an ended pickup", () => {
     const record = endedPickup("#7", false);
     releaseEnded(

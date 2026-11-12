@@ -250,13 +250,13 @@ function planClaimed(
     });
     return;
   }
-  const pickup = pickupHold(item.key, input.launches);
-  if (
-    item.served === true &&
-    (pickup.kind === "none" ||
-      (pickup.kind === "ended" &&
-        !pickupClaimed(pickup.record.record, item.key)))
-  ) {
+  const pickup = pickupHold(item.key, input.launches, undefined, input.nowMs);
+  // A rate-limit wait holds an ended pickup, which claims nothing by waiting.
+  const endedUnclaimed =
+    (pickup.kind === "ended" ||
+      (pickup.kind === "held" && pickup.record.result === "waits")) &&
+    !pickupClaimed(pickup.record.record, item.key);
+  if (item.served === true && (pickup.kind === "none" || endedUnclaimed)) {
     plan.quiet.push({
       target: item.key,
       class: "claimed-by-person",
