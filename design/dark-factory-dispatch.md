@@ -1722,6 +1722,12 @@ waits on the authenticated Windows smoke.
   tick never infers contention from a conflict it just saw. A hold keeps
   only the dispatcher's own launches off.
 
+Item 50 narrows two of these rules, once built: the tick moves an item to
+its `pr_open` state when an open pull request on the branch of this host's
+launch names it, and relaunches a stalled pickup once in its own tree to
+push and record work that tree holds
+([need-classes.md § What changes in the dispatcher's rules](need-classes.md#what-changes-in-the-dispatchers-rules)).
+
 ### Notifications
 
 A notification goes out for each cause, its launch record or receipt
