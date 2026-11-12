@@ -11,17 +11,22 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { writeLabels } from "../lib/actions/labels.ts";
 import type { editLabels } from "../lib/forge.ts";
-import { failureCauses, homeOf } from "../lib/failure-notices.ts";
+import {
+  failureCauses,
+  homeOf,
+  hostNoticeKeys,
+} from "../lib/failure-notices.ts";
 import {
   actionBook,
   backoffAfter,
   FAILURE_DEFAULTS,
   type FailureRow,
+  quietFailure,
   readFailures,
   recordFailure,
 } from "../lib/failures.ts";
 import type { MachineRepository } from "../lib/machine-config.ts";
-import { closeStateDb } from "../lib/state.ts";
+import { closeStateDb, stateDb } from "../lib/state.ts";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -87,6 +92,85 @@ describe("the failure ledger's wait", () => {
       root,
     );
     expect(row.nextAtMs).toBe(5_000);
+  });
+});
+
+describe("a quiet row and a copy that predates the quiet columns", () => {
+  it("ends the quiet when an older copy's failure moves last_at without touching quiet_at, and counts it as one renewal that the next failure keeps", () => {
+    const root = stateRootForTest();
+    const tick = {
+      repo: "",
+      key: "ticks /c",
+      kind: "tick" as const,
+      target: "ticks of o/c",
+    };
+    recordFailure(
+      tick,
+      "a",
+      Date.parse("2026-11-06T10:00:00.000Z"),
+      SETTINGS,
+      root,
+    );
+    quietFailure("", tick.key, "2026-11-06T10:05:00.000Z", root);
+    expect(readFailures("", root)[0]?.quietAt).toBe("2026-11-06T10:05:00.000Z");
+    // What an older copy's conflict update does: count and last_at only.
+    stateDb(root)
+      .query("UPDATE failures SET count = count + 1, last_at = ? WHERE key = ?")
+      .run("2026-11-06T10:10:00.000Z", tick.key);
+    const [after] = readFailures("", root);
+    expect(after?.quietAt).toBeNull();
+    expect(after?.renewals).toBe(1);
+    const next = recordFailure(
+      tick,
+      "b",
+      Date.parse("2026-11-06T10:15:00.000Z"),
+      SETTINGS,
+      root,
+    );
+    expect(next.renewals).toBe(1);
+    expect(next.quietAt).toBeNull();
+  });
+
+  it("keeps each inferred renewal through repeated older-copy failure and quiet cycles", () => {
+    const root = stateRootForTest();
+    const tick = {
+      repo: "",
+      key: "ticks /d",
+      kind: "tick" as const,
+      target: "ticks of o/d",
+    };
+    recordFailure(
+      tick,
+      "a",
+      Date.parse("2026-11-06T10:00:00.000Z"),
+      SETTINGS,
+      root,
+    );
+    for (const [cycle, minute] of [
+      [1, 10],
+      [2, 30],
+    ] as const) {
+      quietFailure("", tick.key, `2026-11-06T10:${minute}:00.000Z`, root);
+      stateDb(root)
+        .query(
+          "UPDATE failures SET count = count + 1, last_at = ? WHERE key = ?",
+        )
+        .run(`2026-11-06T10:${minute + 5}:00.000Z`, tick.key);
+      expect(readFailures("", root)[0]?.renewals).toBe(cycle);
+    }
+    quietFailure("", tick.key, "2026-11-06T10:50:00.000Z", root);
+    const stored = stateDb(root)
+      .query("SELECT renewals FROM failures WHERE key = ?")
+      .get(tick.key) as { renewals: number };
+    expect(stored.renewals).toBe(2);
+    const next = recordFailure(
+      tick,
+      "b",
+      Date.parse("2026-11-06T11:00:00.000Z"),
+      SETTINGS,
+      root,
+    );
+    expect(next.renewals).toBe(3);
   });
 });
 
@@ -159,6 +243,8 @@ function row(
     lastAt: "2026-11-06T10:20:00.000Z",
     reason: "the forge refused it",
     nextAtMs: Date.parse("2026-11-06T10:36:00.000Z"),
+    quietAt: null,
+    renewals: 0,
     ...fields,
   };
 }
@@ -261,6 +347,24 @@ describe("the failure ledger's notifications", () => {
       "host ticks sweep failing since 2026-11-06T10:00:00.000Z",
     );
     expect(atD[0]?.notice?.key).toBe(atC[0]?.notice?.key);
+  });
+
+  it("tells nothing of a quiet wake-up row, and lets its notice retire", () => {
+    const machine = { repositories: [repository("/c")] };
+    const quiet = row({
+      repo: "",
+      key: "ticks /c",
+      kind: "tick",
+      target: "ticks of o/c",
+      quietAt: "2026-11-06T10:30:00.000Z",
+    });
+    expect(failureCauses("o/c", "/c", [quiet], machine)).toEqual([]);
+    expect(hostNoticeKeys([quiet]).size).toBe(0);
+    const loud = { ...quiet, quietAt: null };
+    expect(
+      failureCauses("o/c", "/c", [loud], machine).map((c) => c.cause),
+    ).toEqual(["ticks-failing"]);
+    expect(hostNoticeKeys([loud]).size).toBe(1);
   });
 
   it("never notifies a repository's failures from a host that does not own it", () => {
