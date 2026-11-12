@@ -97,6 +97,8 @@ async function readNode(
     return { reason: `${current} is no longer open and not started` };
   if (hold(issue.labels, options))
     return { reason: `${current} needs a person to start` };
+  if (blockedStateRefusal(tracker, current, issue.state.name))
+    return { reason: `${current} is in the blocked state` };
   if (!child && !issue.labels.includes(options.epicLabel ?? "epic"))
     return { reason: `${current} is no longer an epic` };
   const blocked = await blockedReasonForNode(tracker, current, child, options);
@@ -224,6 +226,7 @@ async function passable(
     item.truncated.length === 0 &&
     item.assignee === null &&
     waiting(item.state.type) &&
+    blockedStateRefusal(tracker, key, item.state.name) === null &&
     !(await isEpic(tracker, key, options)) &&
     !hold(item.labels, options) &&
     (await planHold(tracker, item, options)) === null
@@ -364,7 +367,7 @@ function startStateRefusal(
   options: ServedClaim,
 ): ClaimResult | null {
   const blocked = blockedStateRefusal(tracker, key, state);
-  if (blocked && options.ancestor)
+  if (blocked && (options.ancestor || options.blocking))
     return {
       outcome: "stood_down",
       issue: key,

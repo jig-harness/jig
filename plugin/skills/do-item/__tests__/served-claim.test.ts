@@ -14,7 +14,7 @@ function world(inherited = false) {
   const tracker = {
     user: async () => person,
     listRelations: async () => [],
-    stateName: () => "In Progress",
+    stateName: (s: string) => (s === "blocked" ? null : "In Progress"),
     getIssue: async (key: string) => ({
       identifier: key,
       parent:

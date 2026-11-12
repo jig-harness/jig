@@ -12,7 +12,7 @@ function world(chain: string[] = ["#1", "#2", "#3"]) {
   const writes: string[] = [];
   const tracker = {
     user: async () => person,
-    stateName: () => "In Progress",
+    stateName: (s: string) => (s === "blocked" ? null : "In Progress"),
     listRelations: async (key: string) => {
       const at = chain.indexOf(key);
       const next = at === -1 ? undefined : chain[at + 1];
@@ -245,4 +245,48 @@ test("refuses a pulled blocker, before any write, when an item between cannot be
   });
   expect(result).toMatchObject({ outcome: "refused" });
   expect(w.writes).toEqual([]);
+});
+
+/** Reads `key` as the named Blocked state (an unstarted type) once `when` holds. */
+function blockedStateOf(
+  w: ReturnType<typeof world>,
+  key: string,
+  when: () => boolean,
+) {
+  const tracker = w.tracker as unknown as Record<string, unknown>;
+  tracker.stateName = (s: string) =>
+    s === "blocked" ? "Blocked" : "In Progress";
+  for (const read of ["getIssue", "poolIssue"]) {
+    const base = tracker[read] as (k: string) => Promise<object>;
+    tracker[read] = async (k: string) => {
+      const item = await base(k);
+      return k === key && when()
+        ? { ...item, state: { name: "Blocked", type: "unstarted" } }
+        : item;
+    };
+  }
+}
+
+test("refuses a pulled blocker, before any write, when the origin or an item between is in the blocked state", async () => {
+  for (const blocked of ["#1", "#2"]) {
+    const w = world(["#1", "#2", "#3"]);
+    blockedStateOf(w, blocked, () => true);
+    const result = await claimServedIssue(w.tracker, "#3", {
+      person: "dana",
+      blocking: "#1",
+    });
+    expect(result.outcome).toBe("refused");
+    expect(w.writes).toEqual([]);
+  }
+});
+
+test("stands down, not refuses, when a pulled blocker becomes blocked after its assignment was written", async () => {
+  const w = world(["#1", "#2"]);
+  blockedStateOf(w, "#2", () => w.writes.includes("assign #2"));
+  const result = await claimServedIssue(w.tracker, "#2", {
+    person: "dana",
+    blocking: "#1",
+  });
+  expect(result.outcome).toBe("stood_down");
+  expect(w.writes).toEqual(["assign #2"]);
 });
