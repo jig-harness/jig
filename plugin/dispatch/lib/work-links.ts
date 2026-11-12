@@ -220,9 +220,16 @@ function openedFence(
       };
 }
 
-/** The column of the text of the list item a line starts or continues, 0 once a less indented line ends the item. */
-function listColumnAfter(text: string, column: number): number {
-  const item = /^( {0,3})([-*+]|\d{1,9}[.)])([ \t]+)\S/.exec(text);
+/** The column of the text of the list item a line starts or continues, 0 once a less indented line ends the item; a line inside an HTML comment changes nothing. */
+function listColumnAfter(
+  text: string,
+  column: number,
+  inComment: boolean,
+): number {
+  if (inComment) return column;
+  const item = /^( {0,3})([-*+]|\d{1,9}[.)])( +)\S/.exec(
+    text.replace(/\t/g, "    "),
+  );
   if (item !== null)
     return (
       (item[1]?.length ?? 0) + (item[2]?.length ?? 0) + (item[3]?.length ?? 0)
@@ -262,7 +269,7 @@ function withoutBlockquoteContainers(body: string): string {
       continue;
     }
     visible.push(text);
-    listColumn = listColumnAfter(text, listColumn);
+    listColumn = listColumnAfter(text, listColumn, state.comment);
     fence = state.comment ? null : openedFence(text, prefix.depth, listColumn);
     if (fence === null) commentState(lines, lineIndex, state);
   }

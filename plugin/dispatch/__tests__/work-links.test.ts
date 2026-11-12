@@ -169,6 +169,33 @@ describe("a team key", () => {
           ["ENG-3"],
         ],
         [
+          "counts a tab after a list marker as columns, so a two-space fence stays top-level",
+          [
+            "-\tIntro",
+            "  ~~~",
+            "  example",
+            "> ~~~",
+            "> code",
+            "> ~~~",
+            "Closes ENG-1",
+          ],
+          [],
+        ],
+        [
+          "ignores a list marker inside an HTML comment when tracking the list column",
+          [
+            "<!--",
+            "- Intro",
+            "  -->",
+            "  ~~~",
+            "> ~~~",
+            "> code",
+            "> ~~~",
+            "Closes ENG-1",
+          ],
+          [],
+        ],
+        [
           "is not read from multiline inline code, and accepts a longer closing fence",
           ["`Fixes", "ENG-1`", "```", "Closes ENG-2", "````", "Closes ENG-3"],
           ["ENG-3"],
