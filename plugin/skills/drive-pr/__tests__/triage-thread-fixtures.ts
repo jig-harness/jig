@@ -44,14 +44,19 @@ function scrubbedGitEnv(): Record<string, string> {
   return env;
 }
 
-beforeAll(() => {
-  ({ tmpRoot, binDir, scratchWorktree } = createThreadWorktree(
-    "triage-thread-",
-    scrubbedGitEnv(),
-  ));
+/**
+ * Registers the fake forge and scratch worktree for the calling test file;
+ * each file that imports these fixtures calls it once at its top level.
+ */
+export function useTriageForge(): void {
+  beforeAll(() => {
+    ({ tmpRoot, binDir, scratchWorktree } = createThreadWorktree(
+      "triage-thread-",
+      scrubbedGitEnv(),
+    ));
 
-  // A fake forge serving the thread read and mutation fixtures.
-  const stub = `#!/usr/bin/env bash
+    // A fake forge serving the thread read and mutation fixtures.
+    const stub = `#!/usr/bin/env bash
 set -euo pipefail
 (
   [[ "$1 $2" == 'api graphql' ]] || { echo "unexpected fake gh command: $*" >&2; exit 2; }
@@ -104,6 +109,17 @@ case "$*" in
     : > "$F/resolved-$((n + 1))"
     echo "true"
     exit 0 ;;
+  *"reviewThreads(first:"*)
+    [ -f "$F/threads-fail" ] && { echo "gh-stub: simulated thread list failure" >&2; exit 1; }
+    if [ -f "$F/threads.json" ]; then cat "$F/threads.json"; else
+      printf '%s' '{"data":{"viewer":{"login":"maintainer"},"node":{"path":"src/a.ts","pullRequest":{"reviewThreads":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[]}}}}}'
+    fi
+    exit 0 ;;
+  *'comments(first:100, after:'*)
+    echo read >> "$F/comment-pages-read"
+    [ -f "$F/comments-more.json" ] && { cat "$F/comments-more.json"; exit 0; }
+    echo "gh-stub: simulated comment page failure" >&2
+    exit 1 ;;
   *"node(id:"*)
     [ -f "$F/node-fail" ] && { echo "gh-stub: simulated node read failure" >&2; exit 1; }
     cat "$F/node.json"
@@ -112,13 +128,14 @@ esac
 echo "gh-stub: unhandled: $*" >&2
 exit 1
 `;
-  const ghPath = join(binDir, "gh");
-  writeFakeProgram(ghPath, stub);
-});
+    const ghPath = join(binDir, "gh");
+    writeFakeProgram(ghPath, stub);
+  });
 
-afterAll(() => {
-  rmSync(tmpRoot, { recursive: true, force: true });
-});
+  afterAll(() => {
+    rmSync(tmpRoot, { recursive: true, force: true });
+  });
+}
 
 interface CommentFixture {
   author: string;
@@ -126,6 +143,8 @@ interface CommentFixture {
   authorType?: "User" | "Bot";
   body: string;
   url?: string;
+  createdAt?: string;
+  lastEditedAt?: string;
 }
 
 let fixtureSeq = 0;
@@ -140,7 +159,10 @@ function nodePayload(opts: {
       node: {
         isResolved: opts.isResolved ?? false,
         comments: {
-          pageInfo: { hasNextPage: opts.truncated ?? false },
+          pageInfo: {
+            hasNextPage: opts.truncated ?? false,
+            endCursor: opts.truncated ? "c1" : null,
+          },
           nodes: opts.comments.map((c, i) => ({
             url: c.url ?? `https://example.invalid/pull/1#discussion_seed${i}`,
             author: { login: c.author, __typename: c.authorType ?? "User" },
@@ -329,6 +351,57 @@ export function holdDirectly(
 }
 
 /** Seed the human starter used by leave-open disposition cases. */
+/** A review thread of the fixture PR, as the person-thread check reads it. */
+export interface ListedThreadFixture {
+  id: string;
+  path: string;
+  line?: number;
+  isResolved?: boolean;
+  truncated?: boolean;
+  comments: CommentFixture[];
+}
+
+/** The PR's review threads, served for the thread at `path`. */
+export function writeThreads(
+  dir: string,
+  path: string,
+  threads: ListedThreadFixture[],
+): void {
+  const nodes = threads.map((t) => ({
+    id: t.id,
+    path: t.path,
+    line: t.line ?? null,
+    isResolved: t.isResolved ?? false,
+    comments: {
+      pageInfo: {
+        hasNextPage: t.truncated ?? false,
+        endCursor: t.truncated ? "c1" : null,
+      },
+      nodes: t.comments.map((c) => ({
+        author: { login: c.author, __typename: c.authorType ?? "User" },
+        authorAssociation: c.authorAssociation,
+        body: c.body,
+        createdAt: c.createdAt ?? "2025-12-01T00:00:00Z",
+        lastEditedAt: c.lastEditedAt ?? null,
+        url: `https://example.invalid/pull/1#discussion_${t.id}`,
+      })),
+    },
+  }));
+  const reviewThreads = {
+    pageInfo: { hasNextPage: false, endCursor: null },
+    nodes,
+  };
+  writeFileSync(
+    join(dir, "threads.json"),
+    JSON.stringify({
+      data: {
+        viewer: { login: "maintainer" },
+        node: { path, pullRequest: { reviewThreads } },
+      },
+    }),
+  );
+}
+
 export function writeHumanFinding(dir: string): void {
   writeNode(dir, {
     comments: [

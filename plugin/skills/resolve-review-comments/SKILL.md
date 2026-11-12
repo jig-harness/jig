@@ -1062,6 +1062,11 @@ Resolving another person's thread is a social act:
   "**accepted** — added the missing guard; not yet pushed" and leave it open for them to close. The
   outcome token still belongs there; leaving resolution to the author does not
   exempt the reply from the harvesting contract.
+- **A resolved human thread still binds.** A fix for a later finding never
+  undoes, narrows or contradicts what a person asked for or settled in their
+  thread, open or resolved: the
+  [triage rubric's guardrails](references/triage-rubric.md#guardrails) route
+  such a finding to the arbiter.
 
 This is the one deliberate exception to "every acted-on thread ends resolved",
 and it is why continuous mode targets bot threads.

@@ -273,17 +273,15 @@
  *       RECONCILING call whose existing reply carries no LEAVE_OPEN_MARKER:
  *       reconciliation posts nothing, so the choice cannot be made durable and
  *       this refuses rather than silently proceeding on a promise the next
- *       invocation will not see (see `--leave-open`'s own usage entry).
- *       Reported this way rather than as a silent stderr-only warning because
- *       nothing else will ever revisit a RESOLVED thread to retry it
- *       (`releaseStaleHold`'s own header). Fail-closed — an unreadable
- *       precondition in front of an irreversible post is a refusal, not a
- *       guess.
+ *       invocation will not see (see `--leave-open`'s own usage entry). An exit,
+ *       not a warning: nothing revisits a RESOLVED thread to retry it.
  *   2   usage error, or the stdin body does not open with the outcome
  *       grammar.
  *   3   the thread is `commentsTruncated` — needs a human look
  *       (`/resolve-review-comments` § 2), not an automatic decision.
  *   4   a merit reply stands, but its code scanning alert is undismissed: open.
+ *   5   a fresh accepted reply to a bot's thread whose file carries a person's
+ *       thread, with no `fix-now` arbiter ruling recorded (`lib/person-threads.ts`).
  *   *   whatever `reply-to-thread.ts`, `resolve-thread.ts`, or `drive-state.ts
  *       hold` themselves returned, propagated verbatim — including 11
  *       (another live session holds this tree's drive lease) and 13 (another
@@ -304,6 +302,7 @@ import {
   type Outcome,
   qualifyingOutcome,
 } from "./lib/outcome.ts";
+import { refuseOverrulingPersonThread } from "./lib/person-threads.ts";
 import { ghCall, readTimeoutEnv, resolvePr, run, tsArgv } from "./lib/proc.ts";
 import { refuseProvisional } from "./lib/provisional.ts";
 import {
@@ -442,10 +441,8 @@ query($id:ID!){
         authorAssociation:
           typeof e.authorAssociation === "string" ? e.authorAssociation : null,
         body: typeof e.body === "string" ? e.body : null,
-        // An empty string is treated the same as a missing url — `hold
-        // --kind thread` refuses one either way, matching
-        // reconcile-replied-threads.ts's own `commentUrl === null ||
-        // commentUrl === ''` check on the identical field.
+        // An empty url reads as missing: `hold --kind thread` refuses either,
+        // as reconcile-replied-threads.ts's check on the same field does.
         url: typeof e.url === "string" && e.url !== "" ? e.url : null,
       };
     }),
@@ -915,6 +912,7 @@ async function main(): Promise<number> {
       commentUrl = existingUrl ?? "";
     }
   } else {
+    await refuseOverrulingPersonThread(threadId, pr, intendedOutcome, thread);
     // LAST local act before the irreversible one. reply-to-thread.ts owns the
     // grammar re-check, the drive-lease fence, and the actual
     // mutation — nothing here duplicates any of that.

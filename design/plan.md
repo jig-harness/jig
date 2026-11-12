@@ -767,8 +767,10 @@ of [the design's build order](tracker-facets.md#build-order).
 A store kept by the repository's own command waits until a repository names
 a facet that needs it.
 
-Changes to the design follow from a Jira team's use. The weekly sweep can
-comment on an incomplete issue without moving it back to triage.
+Changes to the design follow from a Jira team's use. An issue of a
+listed native type (`issue_tracker.labels.epic_types`) reads as an epic on
+every adapter with issue types, replacing the non-goal that kept the epic a
+label.
 
 Done when a repository on each adapter files and reads all three in its
 configured store, and Jig's own repository keeps them in GitHub's fields
