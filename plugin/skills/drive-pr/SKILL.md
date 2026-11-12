@@ -1841,7 +1841,9 @@ thread count alone reports such a PR converged. It also has no `threadId`, so
 (`review.reviewer_evidence: review_object`) these are the entries in its
 reviews' bodies (`source: "review-body"`; CodeRabbit's outside-diff,
 nitpick, duplicate and follow-up comments), read from every review it
-submitted on the pull request.
+submitted on the pull request. Only a reviewer whose built-in profile names a
+body format is read (today CodeRabbit); another review-object reviewer's
+bodies are not.
 
 `--configured-reviewer-only` keeps this enumeration in step with § 1's gate,
 which passes the same flag: where the repository names no AI reviewer, neither

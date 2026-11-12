@@ -197,21 +197,26 @@ describe("reviewBodyReport", () => {
 
   it("dates each finding against the newest review that carries it", () => {
     const older = "b".repeat(40);
+    const body = fixture("current-actionable");
+    const fp = report([review(1, body)]).findings[0]?.fingerprint ?? "";
+    expect(fp).not.toBe("");
+    const reviews = [review(1, body, older), review(2, body)];
     const asked: string[] = [];
-    const r = report(
-      [
-        review(1, fixture("duplicate"), older),
-        review(2, fixture("current-actionable")),
-      ],
-      (commit) => {
-        asked.push(commit);
-        return new Set(commit === older ? ["*"] : []);
-      },
+    // Answered as of the older review's commit only: the newest review
+    // raises the finding again, so the answer no longer holds.
+    const stale = report(reviews, (commit) => {
+      asked.push(commit);
+      return new Set(commit === older ? [fp] : []);
+    });
+    expect(asked).toEqual([COMMIT]);
+    expect(stale.total).toBe(1);
+    expect(stale.findings[0]?.addressed).toBe(false);
+    // Answered as of the newest review's commit: it holds.
+    const current = report(
+      reviews,
+      (commit) => new Set(commit === older ? [] : [fp]),
     );
-    expect(asked.sort()).toEqual([COMMIT, older].sort());
-    expect(r.total).toBe(3);
-    const fromOlder = r.findings.filter((f) => f.path === "package.json");
-    expect(fromOlder).toHaveLength(2);
+    expect(current.findings[0]?.addressed).toBe(true);
   });
 
   it("marks an answered finding addressed and leaves the rest open", () => {
@@ -259,11 +264,36 @@ describe("reviewBodyReport", () => {
       "55: _⚠️ Potential issue_ | _🟠 Major_",
     );
     const r = report([review(41, body)]);
-    expect(r.total).toBe(2);
-    const slot = r.unaddressed.find((f) => f.source === "unaccounted");
-    expect(slot?.fingerprint).toBe(
+    // The heading's shortfall and the unread id are separate obligations: the
+    // two are not known to name the same entry.
+    expect(r.total).toBe(3);
+    const slots = r.unaddressed.filter((f) => f.source === "unaccounted");
+    expect(slots.map((f) => f.fingerprint)).toEqual([
       `unaccounted-${COMMIT.slice(0, 12)}-41-duplicate-2`,
+      `unaccounted-${COMMIT.slice(0, 12)}-41-unread-1`,
+    ]);
+    expect(slots[0]?.text).toContain("declares 2 duplicate comment(s)");
+  });
+
+  it("takes no entry id from fenced code", () => {
+    const body = fixture("current-actionable").replace(
+      "\n",
+      "\n\n```\n<!-- cr-comment:v1:deadbeef -->\n```\n",
     );
-    expect(slot?.text).toContain("declares 2 duplicate comment(s)");
+    const r = report([review(44, body)]);
+    expect(r.findings.filter((f) => f.source === "unaccounted")).toEqual([]);
+  });
+
+  it("does not read a tag quoted as inline code as layout", () => {
+    const body = fixture("current-outside-diff").replace(
+      "The separator treats",
+      "Escape `<details>` and `</details>` here. The separator treats",
+    );
+    expect(body).not.toBe(fixture("current-outside-diff"));
+    const quoted = parseCodeRabbitBody(body);
+    const plain = parseCodeRabbitBody(fixture("current-outside-diff"));
+    expect(where(quoted.entries)).toEqual(where(plain.entries));
+    expect(quoted.entries[0]?.text).toContain("Escape `<details>`");
+    expect(quoted.entries[0]?.id).toBe(plain.entries[0]?.id);
   });
 });

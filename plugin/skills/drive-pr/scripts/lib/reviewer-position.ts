@@ -61,24 +61,42 @@ import { spawnSync } from "node:child_process";
  */
 export type ReviewerPosition = "behind" | "at" | "past" | "unknown";
 
+/** The git executable, resolved once so no spawn depends on a later PATH lookup. */
+const GIT = Bun.which("git");
+
+/**
+ * Commit ids by repository and revision, shared by every position asked in this
+ * process; only a resolved id is kept, since a revision git cannot resolve now
+ * may resolve after a fetch.
+ */
+const commitIds = new Map<string, string>();
+
+// `^{commit}` so a revision that resolves to some other object type is a
+// non-answer rather than an id that can never equal a commit's.
+function commitId(git: string, rev: string): string | null {
+  const key = `${process.cwd()}\0${rev}`;
+  const known = commitIds.get(key);
+  if (known !== undefined) return known;
+  const r = spawnSync(git, ["rev-parse", "--verify", `${rev}^{commit}`], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"],
+  });
+  // A signalled or unspawnable child reports a null status, not a number.
+  const id = r.status === 0 ? r.stdout.trim() || null : null;
+  if (id !== null) commitIds.set(key, id);
+  return id;
+}
+
+/** Positions by repository and resolved commit pair, compared once per process. */
+const positions = new Map<string, ReviewerPosition>();
+
 export function reviewerPosition(
   sha: string,
   reviewedSha?: string,
 ): ReviewerPosition {
-  if (!reviewedSha) return "past";
+  if (!reviewedSha || !GIT) return "past";
   try {
-    // `^{commit}` so a revision that resolves to some other object type is a
-    // non-answer rather than an id that can never equal a commit's.
-    const commitId = (rev: string): string | null => {
-      const r = spawnSync("git", ["rev-parse", "--verify", `${rev}^{commit}`], {
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "ignore"],
-      });
-      // A signalled or unspawnable child reports a null status, not a number.
-      if (r.status !== 0) return null;
-      return r.stdout.trim() || null;
-    };
-    const to = commitId(sha);
+    const to = commitId(GIT, sha);
     // The MARKER's own SHA not resolving is a different failure from every
     // other one here, and the only one that has to be told apart: the others
     // say "the reviewer's position relative to this fix is unknown", which
@@ -89,17 +107,24 @@ export function reviewerPosition(
     // dating requirement" contract in `AddressedOptions.winddownDeferred`. A
     // distinct value, checked there.
     if (!to) return "unknown";
-    const from = commitId(reviewedSha);
+    const from = commitId(GIT, reviewedSha);
     if (!from) return "past";
     if (from === to) return "at";
+    const key = `${process.cwd()}\0${from}..${to}`;
+    const known = positions.get(key);
+    if (known !== undefined) return known;
     const { status } = spawnSync(
-      "git",
+      GIT,
       ["merge-base", "--is-ancestor", from, to],
-      { stdio: "ignore" },
+      {
+        stdio: "ignore",
+      },
     );
     // Same null-status reasoning: an answer git did not give must land in
     // `past` like every other unknown here, never be read as the ancestor case.
-    return status === 0 ? "behind" : "past";
+    const position = status === 0 ? "behind" : "past";
+    positions.set(key, position);
+    return position;
   } catch {
     return "past";
   }

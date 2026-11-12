@@ -46,7 +46,7 @@ export interface ParsedReviewBody {
   entries: ReviewBodyEntry[];
   /** Per section, the entry count its heading declares. */
   declared: Partial<Record<ReviewBodySection, number>>;
-  /** Every entry id the body carries; none in a format without them. */
+  /** Every entry id the body carries outside fenced code; none in a format without them. */
   ids: string[];
 }
 
@@ -86,6 +86,9 @@ const SCAFFOLD =
 
 /** A code fence: three or more backticks or tildes. */
 const FENCE = /^(`{3,}|~{3,})(.*)$/;
+
+/** An inline code span, whose content is never layout. */
+const INLINE_CODE = /`[^`]*`/g;
 
 /** A blockquote's markers, which a callout puts before every line. */
 const QUOTE = /^\s*(?:>[ \t]?)+/;
@@ -228,13 +231,18 @@ function step(st: ParseState, raw: string): void {
   const trimmed = line.trim();
   if (st.section?.byQuote && !quoted) endSection(st);
   if (fenced(st, line, trimmed)) return;
-  const opens = trimmed.match(/<details\b/g)?.length ?? 0;
+  for (const m of trimmed.matchAll(ENTRY_ID)) {
+    if (m[1] !== undefined && !st.ids.includes(m[1])) st.ids.push(m[1]);
+  }
+  // Tags quoted as inline code are prose, not layout.
+  const markup = trimmed.replace(INLINE_CODE, "");
+  const opens = markup.match(/<details\b/g)?.length ?? 0;
   st.depth += opens;
   const structural =
     opensSection(st, trimmed, quoted && opens === 0) ||
     (st.section !== null && opensBlock(st, st.section, trimmed));
   if (!structural && opens === 0) appendText(st, line, trimmed);
-  st.depth -= trimmed.match(/<\/details>/g)?.length ?? 0;
+  st.depth -= markup.match(/<\/details>/g)?.length ?? 0;
   leaveClosed(st);
 }
 
@@ -250,7 +258,7 @@ export function parseCodeRabbitBody(body: string): ParsedReviewBody {
   const st: ParseState = {
     entries: [],
     declared: {},
-    ids: [...new Set(body.matchAll(ENTRY_ID).map((m) => m[1] ?? ""))],
+    ids: [],
     depth: 0,
     fence: null,
     section: null,
@@ -278,8 +286,9 @@ export function parseReviewBody(
 
 /**
  * The entries of `review` the parser could not read: per section, the count
- * its heading declares beyond the entries read, then the entry ids no entry
- * read took, beyond the slots those counts already raised. Keyed by the review,
+ * its heading declares beyond the entries read, then every entry id no entry
+ * read took. The two signals are not known to name the same entries, so each
+ * keeps its own obligation. Keyed by the review,
  * so an answer to one review's unreadable entry never stands for another's.
  */
 function unreadSlots(
@@ -298,7 +307,7 @@ function unreadSlots(
   }
   const read = new Set(parsed.entries.map((e) => e.id));
   const unread = parsed.ids.filter((id) => !read.has(id));
-  for (let i = slots.length; i < unread.length; i++)
+  for (let i = 0; i < unread.length; i++)
     slots.push({
       fingerprint: `${scope}-unread-${i + 1}`,
       text: `Review ${review.id} marks ${unread.length} comment(s) in its body that could not be read. Read the review and answer this slot explicitly.`,
