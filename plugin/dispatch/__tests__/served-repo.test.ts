@@ -66,7 +66,6 @@ const read = (
 ) =>
   readServedPickups(f.tracker, people, {
     cache: f.cache,
-    epic: "epic",
     nowMs: 1,
     headroom: true,
     ...(repoScope === undefined ? {} : { repoScope }),
@@ -139,7 +138,6 @@ describe("served pickups across repositories", () => {
     } as unknown as Tracker;
     const reading = await readServedPickups(tracker, people, {
       cache: f.cache,
-      epic: "epic",
       nowMs: 1,
       headroom: true,
       repoScope: { own: "", others: [], invalid: "empty taxonomy list" },

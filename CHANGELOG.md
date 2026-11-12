@@ -394,6 +394,61 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.220.0] - 2026-11-12
+
+### Added
+
+- `issue_tracker.labels.epic_types` (optional, Jira and GitHub) lists issue
+  types, such as `[Epic]`, whose issues are epics as if they carried the epic
+  label: they need no size, a batch never takes them, a served claim walks
+  their children and their closing waits for an acceptance verdict. A read
+  of the issues carrying the epic label takes them too (on Jira
+  `labels = "epic" OR issuetype in (…)`, on GitHub a second read by issue
+  type), and the label is never written on them. `get_issue.ts` prints
+  `isEpic` for every issue, and `tracker.ts labels` prints the list beside
+  `epic`. Linear has no issue types, so there it marks nothing; unset, an
+  epic is the label alone, as before.
+
+### Changed
+
+- Every skill now asks one test whether an issue is an epic, the tracker
+  interface's `isEpic`, so the epic label matches ignoring case everywhere,
+  as the filing check and the weekly sweep already did.
+
+## [0.219.0] - 2026-11-12
+
+### Added
+
+- A change note's entry can say what the change asks of the people who use
+  the release, as a **consumer action** after its description:
+  `**Consumer action:** required at configuration. Rename the key.`, with
+  the strength (`required` or `advised`), the levels (`machine`,
+  `configuration`, `instructions`), an instruction of at most 400 characters
+  and optional `**Detect:**` hints (`config:`, `text:`, `file:`,
+  `plugin-source:`); `none.` says it asks nothing and `retracts <id>.`
+  withdraws an earlier one. `/jig:changelog`'s check now refuses a malformed
+  declaration in any note, and with the new `changelog.consumer_actions: true`
+  it also requires one on every breaking entry a branch adds and refuses a
+  near-miss marker or a `**Detect:**` with no declaration. The form is in
+  the [changelog skill's guide](plugin/skills/changelog/README.md#consumer-actions).
+  **Consumer action:** none.
+- `changelog.consumer_actions_record` names a file the release step derives
+  from the changelog's released sections in every release: each consumer
+  action with its id, for a tool to read without the changelog.
+  `consumer-actions-record.ts --check` fails when the committed file is not
+  what the changelog derives, and `--write` regenerates it. The plugin now
+  ships Jig's own record, `plugin/consumer-actions.json`, which lists the
+  actions of every release from this one on. **Consumer action:** none.
+
+### Fixed
+
+- `/jig:jig`'s bug reporter now creates the Jig bug it files with the issue
+  type Bug in the same call, instead of in an edit afterwards, and files it
+  with no `bug`, size or priority label, which Jig's repository keeps in
+  fields. A draft that carries such a label (a type, a priority or a size) has
+  it dropped, and the reporter says which. Where the account cannot set issue
+  types the report is still filed and the reporter says the type was not set.
+
 ## [0.218.1] - 2026-11-12
 
 ### Fixed
@@ -7557,7 +7612,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.218.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.220.0...HEAD
+[0.220.0]: https://github.com/jig-harness/jig/compare/v0.219.0...v0.220.0
+[0.219.0]: https://github.com/jig-harness/jig/compare/v0.218.1...v0.219.0
 [0.218.1]: https://github.com/jig-harness/jig/compare/v0.218.0...v0.218.1
 [0.218.0]: https://github.com/jig-harness/jig/compare/v0.217.0...v0.218.0
 [0.217.0]: https://github.com/jig-harness/jig/compare/v0.216.0...v0.217.0

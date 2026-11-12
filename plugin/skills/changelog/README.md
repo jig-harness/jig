@@ -73,6 +73,70 @@ release: minor
 The full rules are in the [scripts reference](scripts/README.md) and
 [`SKILL.md`](SKILL.md).
 
+## Consumer actions
+
+Some changes ask something of the people who use what the repository releases:
+a renamed setting, a step their own instructions or runbooks describe, a newer
+install on their machines. Such an entry says so after its description, in a
+fixed form a tool can read, so each user can be told what they still owe
+instead of reading every release by hand. This is a
+[consumer action](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md):
+
+```markdown
+- **Breaking:** A stopped drive is re-armed by the dispatcher, not by hand.
+  **Consumer action:** required at instructions, machine. Remove the manual
+  restart step from runbooks and point the plugin source at the current
+  release. **Detect:** `text:restart the drive`, `plugin-source:old`.
+```
+
+- After `**Consumer action:**` comes the strength, `required` (the user is
+  wrong or broken until they act) or `advised` (it works, and acting is
+  better or avoids a coming removal); `at` and one or more levels, separated
+  by commas: `machine` (what runs on the host), `configuration` (the
+  repository's configuration) or `instructions` (its own agent
+  instructions, runbooks and documents); a full stop; and the instruction in
+  plain language, at most 400 characters.
+- `**Consumer action:** none.` says the entry asks nothing, so a reader can
+  tell that from an entry nobody thought about. `**Consumer action:**
+  retracts <id>.` withdraws a wrong or obsolete action of an earlier
+  release.
+- `**Detect:**` is optional: hints that a repository is affected, each a code
+  span and separated by commas. `config:<dotted.key>`: the key is set
+  (`config:!<dotted.key>`: it is absent). `text:<phrase>`: the phrase appears
+  in the repository's instructions or runbooks. `file:<glob>`: a tracked file
+  matches the glob, relative to the repository root. `plugin-source:<kind>`:
+  the host installs the plugin from that kind of source (`old`, `path`,
+  `project-scope`). A hint is evidence for a person, never a command.
+
+The marker is written exactly `**Consumer action:**`, in the entry itself
+rather than a nested list item; one in a code span or escaped
+(`\**Consumer action:**`) is text.
+
+An action's **id** is the release's version, `#` and eight hexadecimal digits
+computed from the entry's text, its levels and hints in one order
+(`0.157.0#3fa9c2b1`), so reordering a release or a list of hints does not
+change it. Two identical entries in one release are one action.
+
+The branch check refuses a malformed declaration in any note: an unknown
+strength, level or hint kind, a `file:` hint that leaves the repository (an
+absolute path, a drive, a backslash or a `..`, in any alternative of its
+braces), an instruction over the cap, a `retracts` without an id, and two
+entries of one release that declare the same action written differently (in
+whitespace, or in the order of their levels or hints). Where the repository
+sets `changelog.consumer_actions: true`, it also requires every breaking
+entry (marked `**Breaking:**`, `**Breaking**` or `**Breaking.**`, in any case
+and anywhere in the entry) of a note the branch adds to carry a declaration,
+`none` included, and refuses a marker nearly written (`**Consumer Action:**`,
+`**Consumer action**:`, `__Consumer action:__`) and a `**Detect:**` with no
+declaration before it; a repository with the setting off reads both as
+ordinary text. Where it sets
+`changelog.consumer_actions_record` to a path, the release step derives the
+**consumer-actions record** there: every action the changelog's released
+sections declare, as JSON a tool reads without the changelog, rewritten in each
+release commit. `bun "<skill-dir>/scripts/consumer-actions-record.ts" --check` fails when the committed
+file is not what the changelog derives, so it is never edited by hand. The
+record needs Keep a Changelog, which leaves each entry as its note wrote it.
+
 ## Two formats
 
 - **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/)**: an `Unreleased`

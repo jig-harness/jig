@@ -22,7 +22,6 @@ export interface ServedClaim {
   blocking?: string;
   /** Set while the `blocking` item itself is validated: it waits on the claimed one by definition. */
   blocked?: boolean;
-  epicLabel?: string;
   hitlLabel?: string;
   manualOpsLabel?: string;
   /** `do_item.execution_plan_block`: the fenced block the origin's ancestor plans are read from. */
@@ -99,7 +98,7 @@ async function readNode(
     return { reason: `${current} needs a person to start` };
   if (child && blockedStateRefusal(tracker, current, issue.state.name, issue))
     return { reason: `${current} is in the blocked state` };
-  if (!child && !issue.labels.includes(options.epicLabel ?? "epic"))
+  if (!child && !issue.isEpic)
     return { reason: `${current} is no longer an epic` };
   const blocked = await blockedReasonForNode(tracker, current, child, options);
   return blocked ? { reason: blocked } : { issue };
@@ -187,17 +186,10 @@ async function validateAssignment(
   }
 }
 
-/** An epic by its label or by its open children: a queue never pulls one forward. */
-async function isEpic(
-  tracker: Tracker,
-  key: string,
-  options: ServedClaim,
-): Promise<boolean> {
+/** An epic, or an item with open children: a queue never pulls one forward. */
+async function isEpic(tracker: Tracker, key: string): Promise<boolean> {
   const item = await tracker.poolIssue(key);
-  return (
-    item !== null &&
-    (item.hasOpenChildren || item.labels.includes(options.epicLabel ?? "epic"))
-  );
+  return item !== null && (item.hasOpenChildren || item.isEpic);
 }
 
 /** The reason an item's epic plans hold it, else null; an unreadable plan holds. */
@@ -232,7 +224,7 @@ async function passable(
       item.state.name,
       item.nativeType ?? null,
     ) === null &&
-    !(await isEpic(tracker, key, options)) &&
+    !(await isEpic(tracker, key)) &&
     !hold(item.labels, options) &&
     (await planHold(tracker, item, options)) === null
   );
@@ -253,7 +245,7 @@ async function validatePulled(
   const origin = options.blocking as string;
   const node = await readNode(tracker, key, true, options, claimed);
   if ("reason" in node) return node.reason;
-  if (await isEpic(tracker, key, options))
+  if (await isEpic(tracker, key))
     return `${key} is an epic and is not pulled forward`;
   const holders = await tracker.assignees(key);
   if (claimed ? !only(holders, user) : holders.length !== 0)
@@ -266,7 +258,6 @@ async function validatePulled(
     {
       person: options.person,
       ...(options.ancestor ? { ancestor: options.ancestor } : {}),
-      ...(options.epicLabel ? { epicLabel: options.epicLabel } : {}),
       ...(options.hitlLabel ? { hitlLabel: options.hitlLabel } : {}),
       ...(options.manualOpsLabel
         ? { manualOpsLabel: options.manualOpsLabel }
