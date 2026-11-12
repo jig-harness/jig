@@ -44,6 +44,7 @@ import {
 export async function applySteward(
   state: ApplyState,
   observation: RepoObservation,
+  readDigest: typeof digestOf = digestOf,
 ): Promise<void> {
   const { opened, forge } = observation;
   const { repo, report } = opened;
@@ -85,7 +86,7 @@ export async function applySteward(
   const runs = stewardRuns(repo.slug, state.root);
   if (stewardWaits(runs, Date.now(), config.everyMs))
     return skip("cadence has not elapsed or hourly budget is spent");
-  const read = await digestOf(state, observation);
+  const read = await readDigest(state, observation);
   if (!read.ok) return skip(read.failure.reason);
   const digest = read.value;
   const hash = digestHash(digest);
@@ -183,7 +184,7 @@ const QUEUE_READ_MS = 60_000;
  * admission. A digest that cannot be completed is a failure, since a
  * partial queue would hash as changed input.
  */
-async function digestOf(
+export async function digestOf(
   state: ApplyState,
   observation: RepoObservation,
 ): Promise<Outcome<StewardDigest, QueueFailure>> {

@@ -1,5 +1,10 @@
-import { describe, expect, test } from "bun:test";
-import { stewardQueue } from "../lib/actions/steward.ts";
+import { afterAll, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { applySteward, stewardQueue } from "../lib/actions/steward.ts";
+import { keepStewardRun, type StewardDigest } from "../lib/steward.ts";
+import { closeStateDb } from "../lib/state.ts";
 import type { Tracked } from "../lib/tick-observe.ts";
 import type { PoolIssue } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import type { WantedItem } from "../lib/types.ts";
@@ -77,7 +82,7 @@ describe("the steward's queue", () => {
     });
     const started = Date.now();
     const queue = await stewardQueue(t.tracked, () => 50);
-    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(Date.now() - started).toBeLessThan(500);
     expect(queue).toMatchObject({
       ok: false,
       failure: {
@@ -92,5 +97,73 @@ describe("the steward's queue", () => {
       ok: true,
       value: [],
     });
+  });
+});
+
+function digest(repo: string): StewardDigest {
+  return {
+    version: 1,
+    repo,
+    drives: [],
+    needs: [],
+    queue: [],
+    passes: [],
+    failures: [],
+    load: null,
+  };
+}
+
+describe("the scheduler reads nothing before cadence and cap rule a run out", () => {
+  const root = mkdtempSync(join(tmpdir(), "steward-order-"));
+  afterAll(() => {
+    closeStateDb();
+    rmSync(root, { recursive: true, force: true });
+  });
+  function stateAt(): Parameters<typeof applySteward>[0] {
+    return {
+      root,
+      records: [],
+      machine: { steward: { enabled: true, everyMs: 1_200_000 } },
+    } as unknown as Parameters<typeof applySteward>[0];
+  }
+  function observation(): Parameters<typeof applySteward>[1] {
+    return {
+      forge: { ok: true },
+      opened: {
+        owner: true,
+        stages: new Set(["steward"]),
+        repo: { slug: "example-org/order" },
+        report: { launches: [], records: [] },
+      },
+    } as unknown as Parameters<typeof applySteward>[1];
+  }
+  test("an unelapsed cadence reads no digest", async () => {
+    keepStewardRun(
+      "recent",
+      digest("example-org/order"),
+      Date.now() - 1_000,
+      root,
+    );
+    let reads = 0;
+    await applySteward(stateAt(), observation(), async () => {
+      reads++;
+      throw new Error("digest read");
+    });
+    expect(reads).toBe(0);
+  });
+  test("a spent host-wide hourly cap reads no digest", async () => {
+    for (const i of [1, 2, 3])
+      keepStewardRun(
+        `other-${i}`,
+        digest(`example-org/other-${i}`),
+        Date.now() - 1_000,
+        root,
+      );
+    let reads = 0;
+    await applySteward(stateAt(), observation(), async () => {
+      reads++;
+      throw new Error("digest read");
+    });
+    expect(reads).toBe(0);
   });
 });

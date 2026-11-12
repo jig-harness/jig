@@ -157,12 +157,19 @@ export function timeLeftMs(state: ApplyState): number | null {
   return allowed - (Date.now() - state.startedAt);
 }
 
-/** What the tick has left for reads that still leaves a runtime launch its room; `null` for a tick that keeps no start. */
+/** The runtime calls a launch needs before it: the account's identity check, the workspace open and the identity check after it. */
+const PREPARATION_CALLS = 3;
+
+/** What the tick has left for reads that still leaves a runtime launch its preparation and its room; `null` for a tick that keeps no start. */
 export function readRoomMs(state: ApplyState): number | null {
   const left = timeLeftMs(state);
   return left === null
     ? null
-    : left - settleMs(state.machine.runtimeTimeoutMs, LAUNCH_CALLS);
+    : left -
+        settleMs(
+          state.machine.runtimeTimeoutMs,
+          PREPARATION_CALLS + LAUNCH_CALLS,
+        );
 }
 
 /**
