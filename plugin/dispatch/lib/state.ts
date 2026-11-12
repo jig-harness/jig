@@ -350,6 +350,19 @@ export const MIGRATIONS: readonly Migration[] = [
     sql: "ALTER TABLE launches ADD COLUMN result_until TEXT;",
   },
   {
+    // A pickup claim is acknowledged at the tracker boundary. It must not
+    // share the tick-owned record JSON: a tick can still be writing an older
+    // snapshot when the pickup claims its item.
+    additive: true,
+    sql: `
+  CREATE TABLE pickup_claims (
+    launch TEXT NOT NULL REFERENCES launches(id) ON DELETE CASCADE,
+    item TEXT NOT NULL,
+    PRIMARY KEY (launch, item)
+  );
+  `,
+  },
+  {
     // The framed decision a follow-up's or pickup's pass recorded with its `failed` result (`framed-result.ts`), as JSON with its digest and time. Written with the result, by the same update.
     additive: true,
     sql: "ALTER TABLE launches ADD COLUMN result_decision TEXT;",

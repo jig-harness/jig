@@ -190,6 +190,7 @@ export function releaseEnded(
   claimed: ReadonlySet<string> = new Set(),
   returned: ReadonlySet<string> = new Set(),
   root?: string,
+  served: ReadonlySet<string> = new Set(),
 ): void {
   for (const r of records) {
     const { record } = r;
@@ -200,7 +201,18 @@ export function releaseEnded(
     // back among the dispatch states by the time the record ends.
     const members = record.batchItems?.map((i) => i.key) ?? [item];
     const claimedMembers = members.filter((key) => claimed.has(key));
-    if (claimedMembers.length > 0) noteClaims(record, claimedMembers, root);
+    // The dispatch identity's own claimed item can only be this pickup's
+    // claim, seen while it ran or after it ended. A served person starts their
+    // own work too: their claim counts only while this pickup's process runs,
+    // never from a reservation not yet started or once the pickup has ended.
+    const provable = claimedMembers.filter(
+      (key) =>
+        !served.has(key) ||
+        r.state.kind === "alive" ||
+        r.state.kind === "unknown",
+    );
+    if (provable.length > 0 && r.state.kind !== "pending")
+      noteClaims(record, provable, root);
     if (claimedMembers.length > 0 || holds(r.state)) continue;
     if (keepsWanted(record, members, wanted, returned)) continue;
     record.released = true;
@@ -222,6 +234,11 @@ function wantsRecord(
 /** Whether this batch member was seen claimed after its record ended. */
 function wasClaimed(record: LaunchRecord, item: string): boolean {
   return record.claimedItems?.includes(item) ?? record.claimedSeen === true;
+}
+
+/** Whether this ended pickup actually claimed this item, rather than merely attempting it. */
+export function pickupClaimed(record: LaunchRecord, item: string): boolean {
+  return wasClaimed(record, item);
 }
 
 /** Remember the batch members seen claimed, without marking their siblings. */

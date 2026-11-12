@@ -13,7 +13,10 @@
  * - A claimed item (in the in-progress state) with no running session for
  *   longer than `dispatch.stalled_after` is a stalled pickup: reported,
  *   never relaunched, since a relaunch would start a second implementer on
- *   a claimed item.
+ *   a claimed item. A served person's item is a pickup's claim only when a
+ *   pickup of this machine claimed it: its claim, noted on its launch record
+ *   where `tracker.ts claim` made it (`pickup-claim.ts`), or seen while it
+ *   ran. The rest of their work in progress is their own, and quiet.
  * - A session this machine launched that the runtime reports waiting for
  *   longer than `dispatch.blocked_after` is reported; it keeps its slot.
  * - An item whose latest pickup pass ended on a question, without recording
@@ -27,6 +30,7 @@ import { batchPickups } from "./queue-batch.ts";
 import {
   agentOf,
   holdingRecords,
+  pickupClaimed,
   type PickupHold,
   pickupHold,
 } from "./actions/pickup-hold.ts";
@@ -243,6 +247,20 @@ function planClaimed(
       target: item.key,
       class: "claimed",
       why: `in ${item.state}, a session holds it: ${evidence}`,
+    });
+    return;
+  }
+  const pickup = pickupHold(item.key, input.launches, undefined, input.nowMs);
+  // A rate-limit wait holds an ended pickup, which claims nothing by waiting.
+  const endedUnclaimed =
+    (pickup.kind === "ended" ||
+      (pickup.kind === "held" && pickup.record.result === "waits")) &&
+    !pickupClaimed(pickup.record.record, item.key);
+  if (item.served === true && (pickup.kind === "none" || endedUnclaimed)) {
+    plan.quiet.push({
+      target: item.key,
+      class: "claimed-by-person",
+      why: `in ${item.state}, started by its served person: no pickup of this machine claimed it`,
     });
     return;
   }
