@@ -657,3 +657,18 @@ it("cancels migration revalidation before reading the destination", async () => 
   ).rejects.toThrow("cancelled revalidation");
   expect(calls).toEqual([["source", controller.signal]]);
 });
+
+it("counts a dropped or reassigned label alias as a move, an added one as none", () => {
+  const { repo } = setup();
+  const view = (labels: Record<string, string[]>) =>
+    repo.view({ ...LABEL_SECTION, type: { store: "label", labels } }).facets;
+  const base = view({ feature: ["kind:feature", "kind:story"] });
+  const moved = (to: Record<string, string[]>) =>
+    movedFacets(base, view(to)).includes("type");
+  expect(moved({ feature: ["kind:feature", "kind:story", "kind:new"] })).toBe(
+    false,
+  );
+  expect(moved({ feature: ["kind:feature"] })).toBe(true);
+  expect(moved({ feature: ["kind:feature"], bug: ["kind:story"] })).toBe(true);
+  expect(moved({ feature: ["kind:story", "kind:feature"] })).toBe(true);
+});
