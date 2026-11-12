@@ -38,6 +38,7 @@ import {
   INVALID_JSON_INPUT,
 } from "../../../shared/json-input.ts";
 import { parseArgs, runEntry } from "./lib/cli.ts";
+import { LINKED_PR_STATES, type LinkedPrState } from "./lib/linked-pr.ts";
 
 /** A label as either transport supplies it: a flat string (MCP, get_issue.ts) or `{ name }`. */
 export type LabelLike = string | { name?: string };
@@ -45,6 +46,14 @@ export type LabelLike = string | { name?: string };
 export interface ReconcileChildInput {
   state?: { name?: string; type?: string };
   labels?: LabelLike[];
+  /**
+   * Whether the child's linked pull request merged (`linked-pr.ts`), read
+   * only where `pr_open` shares its name with `in_review`. Under that name a
+   * child whose pull request merged is `in_review`; one whose pull request
+   * is open, that has none, whose read failed or that carries no fact is
+   * `pr_open`. Ignored under any other name.
+   */
+  pullRequest?: LinkedPrState;
 }
 
 export interface ReconcileInput {
@@ -126,9 +135,11 @@ export const DEFAULT_VOCABULARY: ReconcileVocabulary = {
  * there must keep the parent "In Progress" too (route to Step 4b), never let
  * it cap out at a later state.
  *
- * A child named like `pr_open` is active work, never parked, even where
- * `pr_open` shares its name with `in_review`: its pull request may still be
- * open, so it keeps the parent in progress like an `in_progress` child.
+ * A child named like `pr_open` is active work, never parked: its pull
+ * request is open, so it keeps the parent in progress like an `in_progress`
+ * child. Where `pr_open` shares its name with `in_review`, the name alone
+ * cannot say which wait the child is in, so its `pullRequest` fact decides:
+ * `merged` reads as `in_review`, anything else as `pr_open` (`readsAsPrOpen`).
  *
  * This is deliberately NOT the full merged-or-parked set — Done/Canceled/
  * Duplicate are covered by `classifyChildState`'s bucket instead (see
@@ -163,6 +174,23 @@ function nameTrustworthyForParkedCheck(
 ): boolean {
   const type = (state?.type ?? "").toLowerCase();
   return !KNOWN_STATE_TYPES.has(type) || type === "started";
+}
+
+/**
+ * Whether a child reads as `pr_open`: its state carries `pr_open`'s name,
+ * and, where that name is shared with `in_review`, its linked pull request
+ * is not known to have merged. Fails closed: an open pull request, none, an
+ * unreadable read and a missing fact all keep the parent in progress.
+ */
+function readsAsPrOpen(
+  child: ReconcileChildInput,
+  states: StateNames,
+): boolean {
+  const prOpen = states.pr_open;
+  if (prOpen === null || !stateNameEquals(child.state?.name, prOpen))
+    return false;
+  const shared = stateNameEquals(prOpen, states.in_review);
+  return !(shared && child.pullRequest === "merged");
 }
 
 function labelName(l: LabelLike | undefined): string {
@@ -212,7 +240,6 @@ export function reconcileParentStatus(
 ): ReconcileDecision {
   const { labels, states } = vocabulary;
   const postMergeState = vocabulary.postMergeState ?? "done";
-  const prOpen = states.pr_open;
   const decide = (
     verdict: ReconcileVerdict,
     parentState: ParentState | null,
@@ -323,17 +350,23 @@ export function reconcileParentStatus(
     (c, i) =>
       buckets[i] !== "incomplete" ||
       (nameTrustworthyForParkedCheck(c.state) &&
-        !(prOpen !== null && stateNameEquals(c.state?.name, prOpen)) &&
+        !readsAsPrOpen(c, states) &&
         PARKED_ACTIVE_STATES.some((key) =>
           stateNameEquals(c.state?.name, states[key]),
         )),
   );
 
   if (!allMergedOrParked) {
+    const unmerged =
+      states.pr_open !== null &&
+      stateNameEquals(states.pr_open, states.in_review) &&
+      children.some((c) => readsAsPrOpen(c, states))
+        ? ` A sub-issue under "${states.pr_open}", the name pr_open shares with in_review, reads as pr_open unless its linked pull request merged (its pullRequest fact is not "merged").`
+        : "";
     return decide(
       "keep_in_progress",
       null,
-      `At least one sub-issue is still in progress/todo/blocked — keep the parent "${states.in_progress}" and continue with Step 4b.`,
+      `At least one sub-issue is still in progress/todo/blocked — keep the parent "${states.in_progress}" and continue with Step 4b.${unmerged}`,
     );
   }
 
@@ -457,7 +490,11 @@ export function isReconcileInputShape(value: unknown): value is ReconcileInput {
     isState((c as Record<string, unknown>).state) &&
     hasReadableState((c as Record<string, unknown>).state) &&
     ((c as Record<string, unknown>).labels === undefined ||
-      isLabelArray((c as Record<string, unknown>).labels));
+      isLabelArray((c as Record<string, unknown>).labels)) &&
+    ((c as Record<string, unknown>).pullRequest === undefined ||
+      (LINKED_PR_STATES as readonly unknown[]).includes(
+        (c as Record<string, unknown>).pullRequest,
+      ));
 
   if (v.found !== undefined && typeof v.found !== "boolean") return false;
   if (v.truncated !== undefined && typeof v.truncated !== "boolean")
@@ -588,7 +625,7 @@ async function main(): Promise<number> {
 
   if (!isReconcileInputShape(input)) {
     console.error(
-      "input is not a valid ReconcileInput: expected { found?, truncated?, parentLabels: [], children: [{ state?, labels? }] }",
+      "input is not a valid ReconcileInput: expected { found?, truncated?, parentLabels: [], children: [{ state?, labels?, pullRequest? }] }",
     );
     return 1;
   }
