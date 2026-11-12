@@ -162,6 +162,46 @@ async function cacheComments(
   }
 }
 
+/** Read both supported GitHub issue-dependency directions when available. */
+async function cacheRelationships(
+  run: Run,
+  endpoint: string,
+  signal: AbortSignal,
+  cache: ContextCache,
+  warnings: string[],
+): Promise<void> {
+  try {
+    const pages = await Promise.all(
+      ["dependencies/blocked_by", "dependencies/blocking"].map((suffix) =>
+        run([`${endpoint}/${suffix}`, "--paginate", "--slurp"], signal),
+      ),
+    );
+    const linked = new Set<string>();
+    for (const response of pages) {
+      if (
+        !Array.isArray(response) ||
+        response.some((page) => !Array.isArray(page))
+      )
+        throw new GithubTrackerError("malformed relationship pages");
+      for (const issue of response.flat()) {
+        const number = isRecord(issue) ? issue.number : undefined;
+        if (
+          !Number.isSafeInteger(number) ||
+          typeof number !== "number" ||
+          number < 1
+        )
+          throw new GithubTrackerError("malformed related issue");
+        linked.add(`#${number}`);
+      }
+    }
+    cache.linked_issue_ids = [...linked];
+  } catch (error) {
+    warnings.push(
+      `Relationships for ${cache.identifier} were not read in full (${describe(error)}); linked issue context is unavailable`,
+    );
+  }
+}
+
 function assignedTo(assignees: unknown, login: string): boolean {
   return (
     Array.isArray(assignees) &&
@@ -257,6 +297,13 @@ export function githubTracker(
         };
         const warnings: string[] = [];
         await cacheComments(run, endpoint, request.signal, cache, warnings);
+        await cacheRelationships(
+          run,
+          endpoint,
+          request.signal,
+          cache,
+          warnings,
+        );
         return {
           cache,
           repoLabel: label,

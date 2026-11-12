@@ -180,6 +180,34 @@ test("GitHub refuses mismatched issues and omits incomplete comments", async () 
   );
 });
 
+test("GitHub caches issue dependencies from both directions", async () => {
+  const tracker = githubTracker(
+    {
+      home: "/tmp",
+      env: {},
+      repos: { service: { github: { repository: "acme/service" } } },
+    },
+    {
+      async run(args) {
+        if (args[0]?.endsWith("/comments")) return [[]];
+        if (args[0]?.endsWith("/blocked_by")) return [[{ number: 7 }]];
+        if (args[0]?.endsWith("/blocking")) return [[{ number: 8 }]];
+        return { number: 123, title: "right", body: null, assignees: [] };
+      },
+    },
+  );
+  const result = await tracker.read({
+    issue: "#123",
+    repoLabelGroup: "Repo",
+    fallback: {},
+    nowSeconds: 1,
+    signal: AbortSignal.timeout(1000),
+  });
+  expect("unavailable" in result).toBe(false);
+  if ("unavailable" in result) return;
+  expect(result.cache?.linked_issue_ids).toEqual(["#7", "#8"]);
+});
+
 test("equal issue numbers in different repositories keep separate caches", async () => {
   const home = mkdtempSync(join(tmpdir(), "launcher-github-repos-"));
   try {
@@ -315,7 +343,7 @@ console.log(JSON.stringify(endpoint === "user" ? {login: "opener"} : endpoint.en
       .trim()
       .split("\n")
       .map((line) => JSON.parse(line));
-    expect(calls).toHaveLength(3);
+    expect(calls).toHaveLength(5);
     for (const args of calls)
       expect(args.slice(0, 3)).toEqual(["api", "--hostname", "github.com"]);
   } finally {

@@ -258,6 +258,7 @@ export async function launch(
     issue,
     prompt: promptFor(file),
     cacheFile: file,
+    ...(namespace === "" ? {} : { cacheNamespace: namespace }),
     cacheWriteFailed: !cacheWritten,
     promptFor,
     branch,
