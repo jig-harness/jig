@@ -3,47 +3,46 @@ import { readSpecsConfig } from "../spec/config.ts";
 import { resolveSpec, summary } from "../spec/resolve.ts";
 import { issue, NO_USER_LAYER, put, scratchRepo } from "./spec-helpers.ts";
 
+async function resolveBody(body: string, config?: string) {
+  const { root } = scratchRepo("spec-verification-");
+  if (config) put(root, ".config/jig.yaml", config);
+  return resolveSpec(issue(body), root, { env: NO_USER_LAYER });
+}
+
+const texts = (r: Awaited<ReturnType<typeof resolveBody>>) =>
+  r.verification.map((v) => v.text);
+
 describe("verification commands", () => {
   test("drops list prefixes on indented code opened after a marker", async () => {
-    const { root } = scratchRepo("spec-verification-");
-    const result = await resolveSpec(
-      issue(
-        [
-          "## Verification",
-          "-     bun test",
-          "- -     bun run check",
-          "```sh",
-          "-     preserve",
-          "```",
-        ].join("\n"),
-      ),
-      root,
-      { env: NO_USER_LAYER },
+    const result = await resolveBody(
+      [
+        "## Verification",
+        "-     bun test",
+        "- -     bun run check",
+        "```sh",
+        "-     preserve",
+        "```",
+      ].join("\n"),
     );
-    expect(result.verification.map((v) => v.text)).toEqual([
+    expect(texts(result)).toEqual([
       "bun test",
       "bun run check",
       "-     preserve",
     ]);
   });
   test("removes compact nested list markers without changing fenced markers", async () => {
-    const { root } = scratchRepo("spec-verification-");
-    const result = await resolveSpec(
-      issue(
-        [
-          "## Verification",
-          "- - bun test",
-          "- 1. `bun run check`",
-          "```sh",
-          "- - preserve",
-          "--flag",
-          "```",
-        ].join("\n"),
-      ),
-      root,
-      { env: NO_USER_LAYER },
+    const result = await resolveBody(
+      [
+        "## Verification",
+        "- - bun test",
+        "- 1. `bun run check`",
+        "```sh",
+        "- - preserve",
+        "--flag",
+        "```",
+      ].join("\n"),
     );
-    expect(result.verification.map((v) => v.text)).toEqual([
+    expect(texts(result)).toEqual([
       "bun test",
       "bun run check",
       "- - preserve",
@@ -51,27 +50,22 @@ describe("verification commands", () => {
     ]);
   });
   test("reads list items and fenced lines, preserving command text and source keys", async () => {
-    const { root } = scratchRepo("spec-verification-");
-    const result = await resolveSpec(
-      issue(
-        [
-          "## Verification",
-          "- `bun test src/check.test.ts`",
-          "1. bun run check",
-          "```sh",
-          "printf '%s  %s' one two",
-          "# a shell comment",
-          "",
-          "bun test --filter='a  b'",
-          "```",
-          "## Notes",
-          "bun run outside",
-        ].join("\n"),
-      ),
-      root,
-      { env: NO_USER_LAYER },
+    const result = await resolveBody(
+      [
+        "## Verification",
+        "- `bun test src/check.test.ts`",
+        "1. bun run check",
+        "```sh",
+        "printf '%s  %s' one two",
+        "# a shell comment",
+        "",
+        "bun test --filter='a  b'",
+        "```",
+        "## Notes",
+        "bun run outside",
+      ].join("\n"),
     );
-    expect(result.verification.map((v) => v.text)).toEqual([
+    expect(texts(result)).toEqual([
       "bun test src/check.test.ts",
       "bun run check",
       "printf '%s  %s' one two",
@@ -87,26 +81,21 @@ describe("verification commands", () => {
   });
 
   test("preserves command-significant whitespace and only unwraps complete code spans", async () => {
-    const { root } = scratchRepo("spec-verification-");
-    const result = await resolveSpec(
-      issue(
-        [
-          "## Verification",
-          "```sh",
-          "printf '%s\\n' a\\ ",
-          "```",
-          "`echo hello",
-          "echo hello`",
-          "`echo` `hello`",
-          "``echo `hello` ``",
-          "`bun test`  ",
-          "``printf '%s' '```'``",
-        ].join("\n"),
-      ),
-      root,
-      { env: NO_USER_LAYER },
+    const result = await resolveBody(
+      [
+        "## Verification",
+        "```sh",
+        "printf '%s\\n' a\\ ",
+        "```",
+        "`echo hello",
+        "echo hello`",
+        "`echo` `hello`",
+        "``echo `hello` ``",
+        "`bun test`  ",
+        "``printf '%s' '```'``",
+      ].join("\n"),
     );
-    expect(result.verification.map((v) => v.text)).toEqual([
+    expect(texts(result)).toEqual([
       "printf '%s\\n' a\\ ",
       "`echo hello",
       "echo hello`",
@@ -118,38 +107,20 @@ describe("verification commands", () => {
   });
 
   test("keeps a line of only backticks instead of unwrapping it to nothing", async () => {
-    const { root } = scratchRepo("spec-verification-");
-    const result = await resolveSpec(
-      issue(["## Verification", "`", "``"].join("\n")),
-      root,
-      { env: NO_USER_LAYER },
-    );
-    expect(result.verification.map((v) => v.text)).toEqual(["`", "``"]);
+    const result = await resolveBody(["## Verification", "`", "``"].join("\n"));
+    expect(texts(result)).toEqual(["`", "``"]);
   });
 
   test("keeps an escaped trailing space on a list or bare command", async () => {
-    const { root } = scratchRepo("spec-verification-");
-    const result = await resolveSpec(
-      issue(
-        ["## Verification", "- printf '%s' a\\ ", "printf '%s' b\\ "].join(
-          "\n",
-        ),
-      ),
-      root,
-      { env: NO_USER_LAYER },
+    const result = await resolveBody(
+      ["## Verification", "- printf '%s' a\\ ", "printf '%s' b\\ "].join("\n"),
     );
-    expect(result.verification.map((v) => v.text)).toEqual([
-      "printf '%s' a\\ ",
-      "printf '%s' b\\ ",
-    ]);
+    expect(texts(result)).toEqual(["printf '%s' a\\ ", "printf '%s' b\\ "]);
   });
 
   test("assigns duplicate command ids without rescanning earlier suffixes", async () => {
-    const { root } = scratchRepo("spec-verification-");
-    const result = await resolveSpec(
-      issue(["## Verification", ...Array(20).fill("bun test")].join("\n")),
-      root,
-      { env: NO_USER_LAYER },
+    const result = await resolveBody(
+      ["## Verification", ...Array(20).fill("bun test")].join("\n"),
     );
     expect(result.verification.at(-1)?.id).toBe(
       `${result.verification[0]?.id}~20`,
@@ -157,54 +128,41 @@ describe("verification commands", () => {
   });
 
   test("uses the configured heading with the same matching rules as Spec", async () => {
-    const { root } = scratchRepo("spec-verification-");
-    put(root, ".config/jig.yaml", "specs:\n  verification_section: Checks\n");
-    const result = await resolveSpec(
-      issue(
-        "### **CHECKS:**\n\nbun run check\n\n### Verification\n\nbun run ignored\n",
-      ),
-      root,
-      { env: NO_USER_LAYER },
+    const result = await resolveBody(
+      "### **CHECKS:**\n\nbun run check\n\n### Verification\n\nbun run ignored\n",
+      "specs:\n  verification_section: Checks\n",
     );
-    expect(result.verification.map((v) => v.text)).toEqual(["bun run check"]);
+    expect(texts(result)).toEqual(["bun run check"]);
     expect(result.sources[0]?.ref).toBe("#body/Checks");
   });
 
   test("no section produces an empty list, and headings inside code open no section", async () => {
-    const { root } = scratchRepo("spec-verification-");
-    const result = await resolveSpec(
-      issue("```md\n## Verification\nbun run example\n```\n"),
-      root,
-      { env: NO_USER_LAYER },
+    const result = await resolveBody(
+      "```md\n## Verification\nbun run example\n```\n",
     );
     expect(result.verification).toEqual([]);
     expect(result.sources).toEqual([]);
   });
 
   test("repeated and nested sections keep commands once per occurrence and code syntax intact", async () => {
-    const { root } = scratchRepo("spec-verification-");
-    const result = await resolveSpec(
-      issue(
-        [
-          "## Spec",
-          "### Verification",
-          "- bun test",
-          "```sh",
-          "printf 'a\tb'",
-          "--flag",
-          "```",
-          "### Acceptance criteria",
-          "- Works",
-          "## Verification",
-          "- bun test",
-          "## Notes",
-          "bun run outside",
-        ].join("\n"),
-      ),
-      root,
-      { env: NO_USER_LAYER },
+    const result = await resolveBody(
+      [
+        "## Spec",
+        "### Verification",
+        "- bun test",
+        "```sh",
+        "printf 'a\tb'",
+        "--flag",
+        "```",
+        "### Acceptance criteria",
+        "- Works",
+        "## Verification",
+        "- bun test",
+        "## Notes",
+        "bun run outside",
+      ].join("\n"),
     );
-    expect(result.verification.map((v) => v.text)).toEqual([
+    expect(texts(result)).toEqual([
       "bun test",
       "printf 'a\tb'",
       "--flag",
