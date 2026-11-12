@@ -15,7 +15,7 @@
  * pickup's launch makes just before it starts.
  */
 import type { ServedPerson } from "../serve-config.ts";
-import { pickupReads } from "../pickup-reads.ts";
+import { type PickupReads, pickupReads } from "../pickup-reads.ts";
 import { freshPoolPickup, readPoolPickups } from "./ready-pool.ts";
 import { limitedRow, readServedPickups, type ServedPolicy } from "./served.ts";
 import {
@@ -389,14 +389,7 @@ export async function readPickups(
   const once = () => (tracker ??= open());
   const factory = withPool(
     await readFactoryPickups(once, section, facets),
-    section.pool === undefined || section.identity === null
-      ? null
-      : await readPoolPickups(
-          once(),
-          section,
-          served,
-          served === undefined ? undefined : (served.cache ?? pickupReads),
-        ),
+    await readPool(once, section, served),
     once,
   );
   if (served === undefined || served.people.length === 0) return factory;
@@ -442,6 +435,24 @@ export async function readPickups(
             ).values(),
           ],
   };
+}
+
+/**
+ * The ready pool's reading, `null` when the repository has none; with the
+ * tick's served options, its policy and the kept reads apply.
+ */
+async function readPool(
+  open: () => Tracker,
+  section: DispatchSection,
+  served: (ServedPolicy & { cache?: PickupReads }) | undefined,
+): Promise<Awaited<ReturnType<typeof readPoolPickups>> | null> {
+  if (section.pool === undefined || section.identity === null) return null;
+  return readPoolPickups(
+    open(),
+    section,
+    served,
+    served === undefined ? undefined : (served.cache ?? pickupReads),
+  );
 }
 
 /**
