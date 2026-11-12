@@ -97,7 +97,7 @@ async function readNode(
     return { reason: `${current} is no longer open and not started` };
   if (hold(issue.labels, options))
     return { reason: `${current} needs a person to start` };
-  if (blockedStateRefusal(tracker, current, issue.state.name))
+  if (child && blockedStateRefusal(tracker, current, issue.state.name))
     return { reason: `${current} is in the blocked state` };
   if (!child && !issue.labels.includes(options.epicLabel ?? "epic"))
     return { reason: `${current} is no longer an epic` };

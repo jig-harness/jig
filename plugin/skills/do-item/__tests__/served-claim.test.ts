@@ -546,6 +546,25 @@ test("an inherited claim blocked after its assignment write stands down without 
   expect(result).toMatchObject({ outcome: "stood_down" });
   expect(w.writes).toEqual(["assign"]);
 });
+test("an inherited claim still passes through an ancestor epic in the blocked state", async () => {
+  const w = world(true);
+  const tracker = w.tracker as unknown as Record<string, unknown>;
+  const base = w.tracker.getIssue.bind(w.tracker);
+  tracker.stateName = (s: string) =>
+    s === "blocked" ? "Blocked" : "In Progress";
+  tracker.getIssue = async (key: string) => {
+    const issue = await base(key);
+    return key === "#2" && issue
+      ? { ...issue, state: { name: "Blocked", type: "unstarted" } }
+      : issue;
+  };
+  const result = await claimServedIssue(w.tracker, "#1", {
+    person: "dana",
+    ancestor: "#3",
+  });
+  expect(result).toMatchObject({ outcome: "claimed" });
+  expect(w.writes).toEqual(["assign", "start"]);
+});
 test("a claim reads no extra state when the tracker has no blocked state", async () => {
   const count = async (blockedName: string | null) => {
     const w = world();
