@@ -501,12 +501,12 @@ async function readsAtWrite(write: "assign" | "start", inherited: boolean) {
   };
   const assign = w.tracker.assignUnassigned?.bind(w.tracker);
   if (assign)
-    w.tracker.assignUnassigned = async (key, user) => {
+    tracker.assignUnassigned = async (key: string, user: TrackerUser) => {
       at.assign = reads;
       return assign(key, user);
     };
   const transition = w.tracker.transition.bind(w.tracker);
-  w.tracker.transition = async (key, state) => {
+  tracker.transition = async (key: string, state: never) => {
     at.start = reads;
     return transition(key, state);
   };
@@ -514,7 +514,7 @@ async function readsAtWrite(write: "assign" | "start", inherited: boolean) {
     person: "dana",
     ...(inherited ? { ancestor: "#3" } : {}),
   });
-  return at[write];
+  return at[write] ?? 0;
 }
 test("an item blocked at the final read before an inherited assignment is refused without writing", async () => {
   const w = blockedFrom(await readsAtWrite("assign", true), true);
