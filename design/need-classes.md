@@ -105,13 +105,13 @@ Most of these have a mechanical answer, so no repair pass is spent on them.
   not follow it (#941).
 - An [advisory check](../GLOSSARY.md), named in `ci.advisory_checks`, is
   one a repair pass cannot satisfy by itself, such as a scanner's quality
-  gate. When every failing check on the converged head is advisory, the
-  drive spends no repair pass and parks once (exit `8`) under the
-  `reviewer-posture` class: **Fix the finding** (one repair pass aimed at
-  it), **Waive it** (a person's decision recorded on the pull request),
-  **Leave it to me**. Where the repository's `autonomy.park_classes` leaves
-  `reviewer-posture` out, the key has no effect and the configuration check
-  says so (#941).
+  gate. When every failing check on the converged head is advisory and the
+  repository's `autonomy.park_classes` includes `reviewer-posture`, the
+  drive spends no repair pass and parks once (exit `8`) under that class:
+  **Fix the finding** (one repair pass aimed at it), **Waive it** (a
+  person's decision recorded on the pull request), **Leave it to me**.
+  Without that class, the key has no effect and the configuration check says
+  so (#941).
 - The number of repair passes is the repository's `drive.ci_repair_rounds`
   (#942).
 - The steward may ask for one more re-drive when the failing job is a flake,
@@ -375,11 +375,11 @@ digest or its words:
 | `redrive` (the pull request, class `flake`) | a spent CI re-drive (exit `21`) | the forge shows the failing job passed on the base, or on another run of the same head; one per head, at most three a week per repository, on top of `dispatch.redrive.ci` and within the recovery budget. Reaching the weekly cap records a reflection finding proposing a rule |
 | `rerun-checks` (the run) | a failed run on a converged head or a releasing commit | the run's commit is the pull request's head or the releasing commit, and `shared/ci-infra.ts` or the job's history on the forge classifies the failure as passing; once per run |
 
-For each record it applies, the tick comments on the item or the pull
-request from a fixed text: the record kind, the facts it checked and how to
-reverse it. The steward's reason stays in the owner host's state database
-and is never posted, since it is text a pass wrote after reading untrusted
-input.
+For each widened record it applies, the tick comments on the item or the
+pull request from a fixed text: the record kind, the facts it checked and
+how to reverse it. Its steward-supplied reason stays in the owner host's
+state database and is never posted, since it is text a pass wrote after
+reading untrusted input.
 
 A re-run of a stage that ended without a result is not a steward record:
 the tick owns it ([A stage ended without a result](#a-stage-ended-without-a-result)).

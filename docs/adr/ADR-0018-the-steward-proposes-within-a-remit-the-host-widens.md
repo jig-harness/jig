@@ -60,8 +60,9 @@ The forces:
    checked at submit) beside a reason in its own words. The tick reads the
    facts each record's guard names itself, from the forge, the tracker and
    its own records, never from the steward's digest or reason, and refuses
-   a record whose facts do not hold. The reason stays in the owner host's
-   state database and is never posted where others read it. The steward never launches,
+   a record whose facts do not hold. For a widened record, the reason stays
+   in the owner host's state database and is never posted where others read
+   it. The steward never launches,
    merges, answers a registry-class park
    ([ADR-0010](ADR-0010-parking-is-reserved-for-registry-classes.md)),
    re-arms a drive a person stopped or held, writes an item's done state,
