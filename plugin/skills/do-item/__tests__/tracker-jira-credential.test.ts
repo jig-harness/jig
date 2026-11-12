@@ -98,7 +98,7 @@ describe("issue_tracker.jira.api_base", () => {
       const seen = [];
       globalThis.fetch = async (url, init) => {
         seen.push([String(url), init.headers.Authorization]);
-        return new Response("{}", { status: 200 });
+        return Response.json({ accountId: "member", timeZone: "UTC" });
       };
       const t = openTracker(parseTrackerConfig({ issue_tracker: { adapter: "jira", team: "ENG",
         jira: { site: ${JSON.stringify(SITE)}, api_base: ${JSON.stringify(GATEWAY)} } } }), ".");

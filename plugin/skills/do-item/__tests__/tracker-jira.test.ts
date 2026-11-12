@@ -785,7 +785,10 @@ describe("Jira adapter: reach", () => {
     });
     const unset = jira(answer);
     await unset.t.reach();
-    expect(unset.calls.map((c) => c.route)).toEqual(["GET project/ENG"]);
+    expect(unset.calls.map((c) => c.route)).toEqual([
+      "GET myself",
+      "GET project/ENG",
+    ]);
     await jira(answer, {
       issue_tracker: { jira: { pool_issue_types: ["task"] } },
     }).t.reach();

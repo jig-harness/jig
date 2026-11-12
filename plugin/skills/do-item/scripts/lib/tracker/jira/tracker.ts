@@ -318,6 +318,7 @@ export function jiraTracker(client: Client): Tracker {
     stateMaps: model.stateMaps,
 
     async reach(signal) {
+      await client.authenticate(signal);
       try {
         await transport({ method: "GET", path: `project/${project}` }, signal);
       } catch (err) {
