@@ -278,6 +278,87 @@ describe("JIRA_TOKEN_COMMAND", () => {
     expect([runs.length, sent]).toEqual([2, ["Bearer old", "Bearer new"]]);
   });
 
+  it("stops renewing after Jira refuses the replacement token", async () => {
+    const { runs, runner } = printing("old", "revoked");
+    const t = httpTransport(GATEWAY, command(runner), statuses(401).impl);
+    for (let i = 0; i < 4; i++) {
+      const err = await failure(t(request));
+      expect(err.status).toBe(401);
+      expect(err.message).toContain("JIRA_TOKEN_COMMAND");
+    }
+    expect(runs.length).toBe(2);
+  });
+
+  it("does not renew a replacement refused by a concurrent first attempt", async () => {
+    const { runs, runner } = printing("old", "replacement", "third");
+    const held = Promise.withResolvers<Response>();
+    let replacements = 0;
+    const impl = (async (_url: unknown, init?: RequestInit) => {
+      if (
+        authorizationOf(init) === "Bearer replacement" &&
+        ++replacements === 1
+      )
+        return held.promise;
+      return new Response("", { status: 401 });
+    }) as typeof fetch;
+    const t = httpTransport(GATEWAY, command(runner), impl);
+    const first = failure(t(request));
+    try {
+      await until(() => replacements === 1);
+      expect((await failure(t(request))).status).toBe(401);
+      expect(runs.length).toBe(2);
+    } finally {
+      held.resolve(new Response("", { status: 401 }));
+      await first;
+    }
+  });
+
+  it("can renew a replacement that Jira previously accepted", async () => {
+    const { runs, runner } = printing("old", "accepted", "fresh");
+    const { impl } = statuses(401, 200, 401, 200);
+    const t = httpTransport(GATEWAY, command(runner), impl);
+    await t(request);
+    await t(request);
+    expect(runs.length).toBe(3);
+  });
+
+  it("can renew a replacement after an authenticated missing-issue response", async () => {
+    const { runs, runner } = printing("old", "accepted", "fresh");
+    const { impl } = statuses(401, 404, 401, 200);
+    const t = httpTransport(GATEWAY, command(runner), impl);
+    expect((await failure(t(request))).status).toBe(404);
+    await t(request);
+    expect(runs.length).toBe(3);
+  });
+
+  it("reports a pending command as unavailable when the transport deadline expires", async () => {
+    const module = join(
+      import.meta.dir,
+      "../scripts/lib/tracker/jira/transport.ts",
+    );
+    const credential = join(
+      import.meta.dir,
+      "../scripts/lib/tracker/jira/credential.ts",
+    );
+    const script = `
+      const original = AbortSignal.timeout.bind(AbortSignal);
+      AbortSignal.timeout = () => original(20);
+      const { httpTransport } = await import(${JSON.stringify(module)});
+      const { jiraAuthorization } = await import(${JSON.stringify(credential)});
+      const auth = jiraAuthorization({kind:"command",argv:["broker"]}, {runner: () => new Promise(() => {})});
+      try { await httpTransport(${JSON.stringify(GATEWAY)}, auth)({method:"GET",path:"myself"}); }
+      catch (e) { console.log(JSON.stringify({message:e.message, unavailable:e.unavailable})); }
+    `;
+    const r = Bun.spawnSync([process.execPath, "-e", script], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    expectSpawnExit(r, 0, "token command under the transport deadline");
+    const error = JSON.parse(r.stdout.toString());
+    expect(error.message).toContain("JIRA_TOKEN_COMMAND");
+    expect(error.unavailable).toBe(true);
+  });
+
   it("shares one renewal among the requests a token was refused for", async () => {
     const { runs, runner } = printing("old", "new");
     const sent: string[] = [];
@@ -421,6 +502,23 @@ describe("JIRA_TOKEN_COMMAND", () => {
       );
     } finally {
       late.resolve(tokenRun("late\n"));
+    }
+  });
+
+  it("keeps a caller's timeout as cancellation while waiting for a command", async () => {
+    const late = Promise.withResolvers<TokenRun>();
+    try {
+      const err = await failure(
+        httpTransport(
+          GATEWAY,
+          command(() => late.promise),
+          statuses(200).impl,
+        )(request, AbortSignal.timeout(20)),
+      );
+      expect(err.message).toContain("Jira request cancelled:");
+      expect(err.unavailable).toBe(false);
+    } finally {
+      late.resolve(tokenRun("late"));
     }
   });
 

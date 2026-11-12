@@ -259,6 +259,8 @@ function headerOf(
   header: Outcome<string, CredentialCode>,
   signal: AbortSignal | undefined,
 ): string {
+  if (!header.ok && header.failure.code === "token-command-unavailable")
+    throw new JiraApiError(header.failure.reason, { unavailable: true });
   if (cancelled(signal)) throw abortedError(signal);
   if (!header.ok)
     throw new JiraApiError(header.failure.reason, {
@@ -344,8 +346,18 @@ function leasedSender(
           bound,
           what,
         );
+        if (res.status === 401) lease.refuseRenewal();
       }
     }
+    // A request-specific refusal (such as a missing issue) still answered
+    // the credential; authentication failures and temporary limits do not.
+    if (
+      res.ok ||
+      (res.status >= 400 &&
+        res.status < 500 &&
+        ![401, 403, 429].includes(res.status))
+    )
+      lease.accepted();
     const refused = observeLimit(res, key, what, budget);
     if (refused !== null) {
       void discardBody(res, bound);
@@ -387,6 +399,7 @@ export function httpTransport(
     const bound =
       signal === undefined ? deadline : AbortSignal.any([deadline, signal]);
     const lease = await authorization.lease(bound);
+    if (cancelled(signal)) throw abortedError(signal);
     const res = await retryRead(
       leasedSender(base, request, lease, bound, fetchImpl, budget),
       request.method === "GET" || request.idempotent === true,
