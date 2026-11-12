@@ -58,7 +58,8 @@ type Phase =
   | { kind: "sending" }
   | { kind: "failed"; reason: string };
 
-type SendState = "sending" | { uncertain: string };
+/** A send in flight, or one that may have posted: `text` is the answer it carried, so only a send of that same answer is held back. */
+type SendState = "sending" | { uncertain: string; text: string };
 
 const sends = new Map<string, SendState>();
 const sendListeners = new Set<() => void>();
@@ -82,9 +83,12 @@ function useSendState(key: string): SendState | null {
   );
 }
 
-function finishSend(key: string, reason: string | null): void {
-  if (reason === null) sends.delete(key);
-  else sends.set(key, { uncertain: reason });
+function finishSend(
+  key: string,
+  uncertain: { reason: string; text: string } | null,
+): void {
+  if (uncertain === null) sends.delete(key);
+  else sends.set(key, { uncertain: uncertain.reason, text: uncertain.text });
   changedSends();
 }
 
@@ -107,39 +111,56 @@ export interface Sending {
   phase: Phase;
   /** Whether an option is picked, so a press sends. */
   ready: boolean;
+  /** Whether the last send may have posted, so the person checks the pull request before sending that answer again. */
+  uncertain: boolean;
   send: () => void;
+  /** The person checked the pull request: lets the held-back answer send again. */
+  checked: () => void;
 }
 
 /** The refusals `sendRefusal` says posted nothing; any other outcome may have created the comment. */
 const POSTED_NOTHING = new Set([401, 403, 404, 410, 422]);
 
 /**
- * Posts each comment in order; the links posted, why the first refused one
- * was not, and whether that one may nevertheless have been posted.
+ * Posts each comment in order, into `urls` so the links posted survive a
+ * failure; why the first refused one was not, and whether that one may
+ * nevertheless have been posted. It stops before the next comment once
+ * `held` says the token it holds was forgotten or replaced.
  */
-async function postAll(
+export async function postAll(
   token: string,
   to: SendTarget,
   comments: Array<{ key: string; body: string }>,
-): Promise<{ urls: string[]; refused: string | null; uncertain: boolean }> {
-  const urls: string[] = [];
+  urls: string[],
+  held: () => boolean,
+): Promise<{ refused: string | null; uncertain: boolean }> {
   for (const comment of comments) {
+    if (!held())
+      return {
+        refused: `The token was forgotten or replaced, so the rest was not attempted: ${comments
+          .slice(urls.length)
+          .map((c) => c.key)
+          .join(", ")}.`,
+        uncertain: false,
+      };
     const posted = await postComment(token, to, comment.body);
     if (!posted.ok) {
-      const rest = comments.slice(urls.length).map((c) => c.key);
+      const uncertain =
+        posted.status === null || !POSTED_NOTHING.has(posted.status);
+      const rest = comments
+        .slice(urls.length + (uncertain ? 1 : 0))
+        .map((c) => c.key);
       const done =
-        urls.length === 0
+        urls.length === 0 && !uncertain
           ? ""
-          : ` The answers before it were posted; not posted: ${rest.join(", ")}.`;
-      return {
-        urls,
-        refused: `${sendRefusal(posted, to)}${done}`,
-        uncertain: posted.status === null || !POSTED_NOTHING.has(posted.status),
-      };
+          : ` ${urls.length === 0 ? "No answer before it was posted" : "The answers before it were posted"}${
+              uncertain ? `; ${comment.key} may or may not have been` : ""
+            }${rest.length === 0 ? "" : `; not attempted: ${rest.join(", ")}`}.`;
+      return { refused: `${sendRefusal(posted, to)}${done}`, uncertain };
     }
     urls.push(posted.value);
   }
-  return { urls, refused: null, uncertain: false };
+  return { refused: null, uncertain: false };
 }
 
 /** The card's Send, while a token is kept, its decisions are a drive's on github.com and the page came over a safe path. */
@@ -152,8 +173,10 @@ export function useSend(need: NeedView, picking: Picking): Sending | null {
     return null;
   const to = need.send.to;
   const send = () => {
-    if (phase.kind === "sending" || sending !== null) return;
+    if (phase.kind === "sending" || sending === "sending") return;
     const commit = picking.sendGate();
+    if (commit !== null && sending !== null && sending.text === commit.text)
+      return;
     // The token may have been forgotten in another tab since the card drew.
     const token = keptToken();
     if (commit === null || token === null) return;
@@ -163,34 +186,60 @@ export function useSend(need: NeedView, picking: Picking): Sending | null {
       { login: token.login, host: BROWSER_HOST },
       new Date().toISOString(),
     );
+    const urls: string[] = [];
+    const generation = tokenGeneration();
     sends.set(key, "sending");
     changedSends();
     setPhase({ kind: "sending" });
     announce(`Sending the answers for ${need.target} as ${token.login}`);
-    void postAll(token.token, to, comments).then(
-      ({ urls, refused, uncertain }) => {
-        if (urls.length > 0)
-          keepSent(need.repo, need.target, {
-            text: commit.text,
-            urls,
-            at: Date.now(),
-          });
-        if (refused === null) {
-          setPhase({ kind: "idle" });
-          finishSend(key, null);
-          announce(`Sent the answers for ${need.target} as ${token.login}`);
-          return;
-        }
-        setPhase({ kind: "failed", reason: refused });
-        finishSend(key, uncertain ? refused : null);
-        announce(`Not sent: ${refused}`);
-      },
+    // What was posted: the whole answer, or only the comments that went, so a
+    // reload never reads a partial send as the card's whole answer.
+    const sentText = (done: number) =>
+      done === comments.length
+        ? commit.text
+        : comments
+            .slice(0, done)
+            .map((c) => c.body)
+            .join("\n\n");
+    const settle = (refused: string | null, uncertain: boolean) => {
+      if (urls.length > 0)
+        keepSent(need.repo, need.target, {
+          text: sentText(urls.length),
+          urls,
+          at: Date.now(),
+        });
+      if (refused === null) {
+        setPhase({ kind: "idle" });
+        finishSend(key, null);
+        announce(`Sent the answers for ${need.target} as ${token.login}`);
+        return;
+      }
+      setPhase({ kind: "failed", reason: refused });
+      finishSend(
+        key,
+        uncertain ? { reason: refused, text: commit.text } : null,
+      );
+      announce(`Not sent: ${refused}`);
+    };
+    void postAll(
+      token.token,
+      to,
+      comments,
+      urls,
+      () => tokenGeneration() === generation,
+    ).then(
+      ({ refused, uncertain }) => settle(refused, uncertain),
+      () =>
+        settle(
+          "The page lost the connection to GitHub mid-send. Open the pull request and check before sending again.",
+          true,
+        ),
     );
   };
   const currentPhase: Phase =
     sending === "sending"
       ? { kind: "sending" }
-      : sending === null
+      : sending === null || !("uncertain" in sending)
         ? phase
         : { kind: "failed", reason: sending.uncertain };
   return {
@@ -198,7 +247,9 @@ export function useSend(need: NeedView, picking: Picking): Sending | null {
     login: kept.login,
     phase: currentPhase,
     ready: picking.commit.picked > 0,
+    uncertain: sending !== null && sending !== "sending",
     send,
+    checked: () => finishSend(key, null),
   };
 }
 
@@ -290,6 +341,13 @@ export function SendSaid({
           Not sent: {sending.phase.reason}
         </p>
       ) : null}
+      {sending.uncertain ? (
+        <div className="copyRow">
+          <button type="button" className="fbtn" onClick={sending.checked}>
+            I checked the pull request; allow Send again
+          </button>
+        </div>
+      ) : null}
       {sending.ready ? null : (
         <p className="mut sendWaits">
           Send posts once you pick an option; Copy takes the card as it is.
@@ -332,7 +390,12 @@ function TokenField() {
     const generation = tokenGeneration();
     setTest({ kind: "testing" });
     void tokenLogin(token).then((answer) => {
-      if (!alive() || tokenGeneration() !== generation) return;
+      if (!alive()) return;
+      if (tokenGeneration() !== generation) {
+        // The token changed under the test: drop its result, not its busy state.
+        setTest({ kind: "idle" });
+        return;
+      }
       if (!answer.ok) {
         setTest({ kind: "refused", reason: tokenRefusal(answer) });
         return;
@@ -393,7 +456,12 @@ function KeptTokenRow() {
     const generation = tokenGeneration();
     setTest({ kind: "testing" });
     void tokenLogin(kept.token).then((answer) => {
-      if (!alive() || tokenGeneration() !== generation) return;
+      if (!alive()) return;
+      if (tokenGeneration() !== generation) {
+        // The token changed under the test: drop its result, not its busy state.
+        setTest({ kind: "idle" });
+        return;
+      }
       if (!answer.ok) {
         setTest({ kind: "refused", reason: tokenRefusal(answer) });
         return;
@@ -455,9 +523,10 @@ export function SendSettings({
     <section className="sendSettings" id={id} aria-labelledby={head}>
       <h3 id={head}>Send answers from this page</h3>
       <p className="sm">
-        Send posts a card's answers as one comment on its pull request, as you,
-        from this browser straight to GitHub: the same comment Copy takes. The
-        token you paste stays in this browser; the dashboard's host never
+        Send posts a card's answers as you, from this browser straight to
+        GitHub, one comment on its pull request for each decision it answers, so
+        a card with several decisions can be sent in part and says which went.
+        The token you paste stays in this browser; the dashboard's host never
         receives it, and anyone who can open this page in this browser can send
         with it.
       </p>
