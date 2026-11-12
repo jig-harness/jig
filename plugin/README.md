@@ -2096,6 +2096,12 @@ them together.
   [`agents/review-arbiter.md`](agents/review-arbiter.md) as its
   instructions, or define the arbiter once as a Codex custom agent from that
   file.
+- **A drive pass waits on a long step through Codex's own command session.**
+  Codex ends every process a tool call started when the call returns, so
+  drive-pr's foreground wait, which starts a step in one call and waits on it
+  in later ones, refuses under Codex and names the fallback: run the step
+  through `exec_command` and poll that session with `write_stdin`
+  ([drive-pr § Driver pass](skills/drive-pr/SKILL.md#driver-pass-you-are-headless-and-one-shot)).
 - **The drive has a pass command for each.** Claude Code's
   (`claude -p "/jig:drive-pr <PR>"`) is the default; Codex's
   (`codex exec "Use the jig:drive-pr skill: /jig:drive-pr <PR>"`, with

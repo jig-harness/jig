@@ -1,0 +1,179 @@
+import { afterEach, beforeEach, expect, test } from "bun:test";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import { processTable } from "../../../shared/process-table.ts";
+import { hostEnv } from "../../../../lib/test-helpers/host-env.ts";
+
+// A launch whose runner cannot be waited on: refused up front under Codex,
+// whose tool calls end the processes they start, and reported as lost, with
+// the command's last output, when its runner disappears anyway.
+const SCRIPT = resolve(import.meta.dir, "../scripts/foreground-wait.ts");
+const T = 60_000;
+const PACING = {
+  DRIVE_PR_FOREGROUND_WAIT_POLL_MS: "100",
+  DRIVE_PR_FOREGROUND_WAIT_TRACK_MS: "200",
+  DRIVE_PR_FOREGROUND_WAIT_KILL_GRACE_MS: "1000",
+};
+const bunCommand = (source: string) => [process.execPath, "-e", source];
+const sleepMs = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+let cwd: string;
+beforeEach(() => {
+  cwd = mkdtempSync(join(tmpdir(), "fgwait-lost-"));
+});
+
+const stateRoot = () => join(cwd, ".context", "foreground-wait");
+const generation = () => join(stateRoot(), "gen-1");
+const pidOf = (name: string): number | null => {
+  const file = join(generation(), name);
+  return existsSync(file)
+    ? Number.parseInt(readFileSync(file, "utf8"), 10)
+    : null;
+};
+const kill = (pid: number | null) => {
+  if (pid === null) return;
+  try {
+    process.kill(pid, "SIGKILL");
+  } catch {
+    // Already gone: nothing to end.
+  }
+};
+
+afterEach(() => {
+  if (existsSync(stateRoot()) && readdirSync(stateRoot()).includes("gen-1"))
+    for (const name of ["runner.pid", "cmd.pid"]) kill(pidOf(name));
+  rmSync(cwd, { recursive: true, force: true });
+});
+
+const spawnScript = (
+  env: Record<string, string | undefined>,
+  ...args: string[]
+) =>
+  Bun.spawnSync([process.execPath, SCRIPT, ...args], {
+    cwd,
+    stderr: "pipe",
+    env,
+  });
+const run = (...args: string[]) =>
+  spawnScript({ ...hostEnv, ...PACING }, ...args);
+const out = (r: ReturnType<typeof run>) => r.stdout.toString();
+
+/** The environment of a Codex tool call: Codex's variables, no Claude Code. */
+const codexEnv = (extra: Record<string, string> = {}) => {
+  const env: Record<string, string | undefined> = { ...hostEnv, ...PACING };
+  delete env.CLAUDECODE;
+  delete env.CLAUDE_CODE_ENTRYPOINT;
+  return { ...env, CODEX_THREAD_ID: "thread-under-test", ...extra };
+};
+
+test(
+  "launch refuses under Codex, names the fallback and starts nothing",
+  () => {
+    const marker = join(cwd, "ran");
+    const refused = spawnScript(
+      codexEnv(),
+      "launch",
+      "--",
+      ...bunCommand(
+        `require("node:fs").writeFileSync(${JSON.stringify(marker)}, "1")`,
+      ),
+    );
+    expectSpawnExit(refused, 4);
+    const said = refused.stderr.toString();
+    expect(said).toContain("CODEX_THREAD_ID is set");
+    expect(said).toContain("exec_command");
+    expect(said).toContain("write_stdin");
+    expect(existsSync(stateRoot())).toBe(false);
+    expect(existsSync(marker)).toBe(false);
+  },
+  T,
+);
+
+test(
+  "a Claude Code session that inherited Codex's variables still launches",
+  () => {
+    const launched = spawnScript(
+      codexEnv({ CLAUDECODE: "1" }),
+      "launch",
+      "--",
+      ...bunCommand("console.log('ok')"),
+    );
+    expectSpawnExit(launched, 0);
+    const waited = run("wait");
+    expectSpawnExit(waited, 0);
+    expect(out(waited)).toContain("ok");
+  },
+  T,
+);
+
+test(
+  "a lost runner is reported lost with the command's last output, even output already relayed",
+  async () => {
+    expectSpawnExit(
+      run(
+        "launch",
+        "--",
+        ...bunCommand('console.log("last words"); setInterval(() => {}, 1000)'),
+      ),
+      0,
+    );
+    const log = () => join(generation(), "log");
+    const deadline = Date.now() + 20_000;
+    while (
+      !(existsSync(log()) && readFileSync(log(), "utf8").includes("last words"))
+    ) {
+      expect(Date.now()).toBeLessThan(deadline);
+      await sleepMs(20);
+    }
+    const running = run("wait", "--max-sec", "1");
+    expectSpawnExit(running, 20);
+    expect(out(running)).toContain("last words");
+
+    // The runner goes first, so it cannot publish a result for its command.
+    const pids = [pidOf("runner.pid"), pidOf("cmd.pid")];
+    for (const pid of pids) kill(pid);
+    const gone = async () => {
+      const rows = await processTable();
+      return pids.every(
+        (pid) =>
+          !rows?.some((row) => row.pid === pid && !row.stat.startsWith("Z")),
+      );
+    };
+    while (!(await gone())) {
+      expect(Date.now()).toBeLessThan(deadline);
+      await sleepMs(20);
+    }
+
+    const lost = run("wait", "--max-sec", "30");
+    expectSpawnExit(lost, 21);
+    expect(out(lost)).toContain("runner was lost before it published a result");
+    expect(out(lost)).toContain("last words");
+  },
+  T,
+);
+
+test(
+  "a launch lost before its runner wrote a log says so rather than calling the command silent",
+  () => {
+    // A launcher that recorded itself and is gone, with nothing after it.
+    const gone = Bun.spawnSync([process.execPath, "-e", ""]);
+    expectSpawnExit(gone, 0);
+    mkdirSync(generation(), { recursive: true });
+    writeFileSync(join(generation(), "launcher.pid"), `${gone.pid}\n`);
+    const lost = run("wait", "--max-sec", "5");
+    expectSpawnExit(lost, 21);
+    expect(out(lost)).toContain("no log was written");
+    expect(out(lost)).not.toContain("the command wrote no output");
+  },
+  T,
+);
