@@ -1,7 +1,7 @@
 import { resolve, join } from "node:path";
 import { existsSync } from "node:fs";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
-import { peekCloneKey } from "../scripts/lib/state/clone-key.ts";
+import { cloneKey } from "../scripts/lib/state/clone-key.ts";
 import { Defect } from "../../../shared/errors.ts";
 import { afterEach, describe, expect, it, spyOn } from "bun:test";
 import * as checkout from "../scripts/lib/base-drift.ts";
@@ -33,7 +33,7 @@ const commonRead = Bun.spawnSync(["git", "rev-parse", "--git-common-dir"], {
 });
 expectSpawnExit(commonRead, 0);
 const commonDir = resolve(commonRead.stdout.toString().trim());
-const stateDir = join("/tmp", peekCloneKey(commonDir) ?? "missing-clone-key");
+const stateDir = join("/tmp", cloneKey(commonDir));
 const started = "2026-11-06T12:00:00.000Z";
 const restore: Array<() => void> = [];
 afterEach(() => {
