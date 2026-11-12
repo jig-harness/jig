@@ -26,6 +26,12 @@ function fixture(name: string): string {
   );
 }
 
+/** `text` with `insert` as lines after its first. */
+function afterFirstLine(text: string, insert: string): string {
+  const at = text.indexOf("\n") + 1;
+  return `${text.slice(0, at)}${insert}\n${text.slice(at)}`;
+}
+
 function where(entries: ReviewBodyEntry[]) {
   return entries.map(({ section, path, lines }) => ({ section, path, lines }));
 }
@@ -276,9 +282,9 @@ describe("reviewBodyReport", () => {
   });
 
   it("takes no entry id from fenced code", () => {
-    const body = fixture("current-actionable").replace(
-      "\n",
-      "\n\n```\n<!-- cr-comment:v1:deadbeef -->\n```\n",
+    const body = afterFirstLine(
+      fixture("current-actionable"),
+      "\n```\n<!-- cr-comment:v1:deadbeef -->\n```",
     );
     const r = report([review(44, body)]);
     expect(r.findings.filter((f) => f.source === "unaccounted")).toEqual([]);
@@ -295,5 +301,40 @@ describe("reviewBodyReport", () => {
     expect(where(quoted.entries)).toEqual(where(plain.entries));
     expect(quoted.entries[0]?.text).toContain("Escape `<details>`");
     expect(quoted.entries[0]?.id).toBe(plain.entries[0]?.id);
+  });
+
+  it("does not read inline code as a fence opener", () => {
+    const plain = parseCodeRabbitBody(fixture("current-actionable"));
+    const body = afterFirstLine(
+      fixture("current-actionable"),
+      "```` ``` ```` is an inline example.\n",
+    );
+    const parsed = parseCodeRabbitBody(body);
+    expect(where(parsed.entries)).toEqual(where(plain.entries));
+    expect(parsed.ids).toEqual(plain.ids);
+    expect(parsed.declared).toEqual(plain.declared);
+  });
+
+  it("matches a code span's closing run by length", () => {
+    const body = fixture("current-outside-diff").replace(
+      "The separator treats",
+      "Replace ``<details>`` with ``</details>`` to fix nesting. The separator treats",
+    );
+    const quoted = parseCodeRabbitBody(body);
+    expect(quoted.entries[0]?.text).toContain("Replace ``<details>`` with");
+    expect(quoted.entries[0]?.id).toBe(
+      parseCodeRabbitBody(fixture("current-outside-diff")).entries[0]?.id,
+    );
+  });
+
+  it("takes no entry id from a marker quoted in prose", () => {
+    const body = fixture("current-outside-diff").replace(
+      "The separator treats",
+      "Do not emit `<!-- cr-comment:v1:deadbeef -->` here. The separator treats",
+    );
+    const parsed = parseCodeRabbitBody(body);
+    expect(parsed.ids).not.toContain("deadbeef");
+    expect(parsed.entries[0]?.id).not.toBe("deadbeef");
+    expect(parsed.entries[0]?.text).toContain("Do not emit");
   });
 });

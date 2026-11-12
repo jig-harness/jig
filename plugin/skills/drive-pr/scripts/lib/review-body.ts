@@ -66,7 +66,7 @@ const HEADING =
   /^(?:<summary>|\*\*).*?(?<![\w./-])(outside diff range comments|nitpick comments|duplicate comments|follow-up)\s*(?:\((\d+)\)|:\s*(\d+))/i;
 
 /** The id CodeRabbit marks each entry with, on a line of its own. */
-const ENTRY_ID = /<!--\s*cr-comment:v\d+:([0-9a-f]+)\s*-->/g;
+const ENTRY_ID = /^<!--\s*cr-comment:v\d+:([0-9a-f]+)\s*-->$/;
 
 /** A file's group in a section: `<summary>src/a.ts (2)</summary>` or `src/a.ts: 2`. */
 const GROUP = /^<summary>([^<>]+?)(?:\s*\(\d+\)|:\s*\d+)<\/summary>/;
@@ -86,9 +86,6 @@ const SCAFFOLD =
 
 /** A code fence: three or more backticks or tildes. */
 const FENCE = /^(`{3,}|~{3,})(.*)$/;
-
-/** An inline code span, whose content is never layout. */
-const INLINE_CODE = /`[^`]*`/g;
 
 /** A blockquote's markers, which a callout puts before every line. */
 const QUOTE = /^\s*(?:>[ \t]?)+/;
@@ -115,6 +112,8 @@ interface ParseState extends ParsedReviewBody {
   depth: number;
   /** The fence the open code block opened with, as CommonMark closes it. */
   fence: string | null;
+  /** The length of the backtick run of a code span still open, else 0. */
+  span: number;
   section: Section | null;
   group: { path: string; depth: number } | null;
   entry: Open | null;
@@ -143,10 +142,36 @@ function fenced(st: ParseState, line: string, trimmed: string): boolean {
   const m = trimmed.match(FENCE);
   const open = st.fence;
   if (open === null && m === null) return false;
+  // A backtick fence's info string holds no backtick: the line is inline code.
+  if (open === null && m?.[1]?.[0] === "`" && m[2]?.includes("`")) return false;
   if (open === null) st.fence = m?.[1] ?? null;
   else if (m && closesFence(open, m[1] ?? "", m[2] ?? "")) st.fence = null;
   if (st.entry?.depth === st.depth) st.entry.text.push(line);
   return true;
+}
+
+/**
+ * `text` without its inline code spans, as CommonMark reads them: a span opens
+ * on a backtick run and closes on the next run of the same length, across
+ * lines until a blank line ends the paragraph (`st.span` carries the open
+ * run's length).
+ */
+function withoutCode(st: ParseState, text: string): string {
+  let out = "";
+  let i = 0;
+  while (i < text.length) {
+    if (text[i] !== "`") {
+      if (st.span === 0) out += text[i];
+      i++;
+      continue;
+    }
+    let j = i;
+    while (text[j] === "`") j++;
+    if (st.span === 0) st.span = j - i;
+    else if (st.span === j - i) st.span = 0;
+    i = j;
+  }
+  return out;
 }
 
 function closesFence(open: string, fence: string, rest: string): boolean {
@@ -217,10 +242,14 @@ function leaveClosed(st: ParseState): void {
  * Adds a line of the open entry's own block to its text, unless it is layout;
  * the entry's id line names its id.
  */
-function appendText(st: ParseState, line: string, trimmed: string): void {
+function appendText(
+  st: ParseState,
+  line: string,
+  trimmed: string,
+  id: string | undefined,
+): void {
   const entry = st.entry;
   if (entry?.depth !== st.depth) return;
-  const id = [...trimmed.matchAll(ENTRY_ID)][0]?.[1];
   if (id !== undefined) entry.id ??= id;
   else if (!SCAFFOLD.test(trimmed)) entry.text.push(line);
 }
@@ -231,17 +260,17 @@ function step(st: ParseState, raw: string): void {
   const trimmed = line.trim();
   if (st.section?.byQuote && !quoted) endSection(st);
   if (fenced(st, line, trimmed)) return;
-  for (const m of trimmed.matchAll(ENTRY_ID)) {
-    if (m[1] !== undefined && !st.ids.includes(m[1])) st.ids.push(m[1]);
-  }
-  // Tags quoted as inline code are prose, not layout.
-  const markup = trimmed.replace(INLINE_CODE, "");
+  if (trimmed === "") st.span = 0;
+  // Code spans are prose: neither their tags nor their markers are layout.
+  const markup = withoutCode(st, trimmed);
+  const id = markup.trim().match(ENTRY_ID)?.[1];
+  if (id !== undefined && !st.ids.includes(id)) st.ids.push(id);
   const opens = markup.match(/<details\b/g)?.length ?? 0;
   st.depth += opens;
   const structural =
     opensSection(st, trimmed, quoted && opens === 0) ||
     (st.section !== null && opensBlock(st, st.section, trimmed));
-  if (!structural && opens === 0) appendText(st, line, trimmed);
+  if (!structural && opens === 0) appendText(st, line, trimmed, id);
   st.depth -= markup.match(/<\/details>/g)?.length ?? 0;
   leaveClosed(st);
 }
@@ -261,6 +290,7 @@ export function parseCodeRabbitBody(body: string): ParsedReviewBody {
     ids: [],
     depth: 0,
     fence: null,
+    span: 0,
     section: null,
     group: null,
     entry: null,
