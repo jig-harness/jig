@@ -227,13 +227,8 @@ export function releasedIds(
     : record;
 }
 
-const isLink = (path: string): boolean => {
-  try {
-    return lstatSync(path).isSymbolicLink();
-  } catch {
-    return false;
-  }
-};
+const isLink = (path: string): boolean =>
+  lstatSync(path, { throwIfNoEntry: false })?.isSymbolicLink() ?? false;
 
 /** The first part of `path` (relative to `root`) that is a symbolic link; null when none is. */
 function linkedPath(root: string, path: string): string | null {
