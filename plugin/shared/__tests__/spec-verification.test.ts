@@ -127,6 +127,23 @@ describe("verification commands", () => {
     expect(result.verification.map((v) => v.text)).toEqual(["`", "``"]);
   });
 
+  test("keeps an escaped trailing space on a list or bare command", async () => {
+    const { root } = scratchRepo("spec-verification-");
+    const result = await resolveSpec(
+      issue(
+        ["## Verification", "- printf '%s' a\\ ", "printf '%s' b\\ "].join(
+          "\n",
+        ),
+      ),
+      root,
+      { env: NO_USER_LAYER },
+    );
+    expect(result.verification.map((v) => v.text)).toEqual([
+      "printf '%s' a\\ ",
+      "printf '%s' b\\ ",
+    ]);
+  });
+
   test("assigns duplicate command ids without rescanning earlier suffixes", async () => {
     const { root } = scratchRepo("spec-verification-");
     const result = await resolveSpec(

@@ -30,15 +30,17 @@ function commandText(marked: MarkdownLine): string {
   let text = afterColumn(raw, marked.contentColumn ?? 0).trimStart();
   if (marked.kind === "code") return text;
   if (marked.depth !== undefined) text = text.replace(/^\[[ xX]\]\s+/, "");
-  text = text.trimEnd();
-  const opening = /^`+/.exec(text)?.[0];
-  const closing = /`+$/.exec(text)?.[0];
+  // Recognize a wrapper on the trimmed text; without one, trailing whitespace
+  // is significant (an escaped space) and stays.
+  const candidate = text.trimEnd();
+  const opening = /^`+/.exec(candidate)?.[0];
+  const closing = /`+$/.exec(candidate)?.[0];
   if (
     opening !== undefined &&
     opening === closing &&
-    text.length > opening.length + closing.length
+    candidate.length > opening.length + closing.length
   ) {
-    const inside = text.slice(opening.length, -closing.length);
+    const inside = candidate.slice(opening.length, -closing.length);
     // Only a maximal run of exactly the opening length closes a span.
     const runs = inside.match(/`+/g) ?? [];
     if (!runs.some((run) => run.length === opening.length)) return inside;

@@ -837,7 +837,9 @@ implementation. Skip this check for issues about the repository's own code.
    to review each command's purpose and effects before deciding whether to
    run it; listing a command never authorizes execution. Record every selected
    command through `bun "${CLAUDE_SKILL_DIR}/../../shared/evidence.ts" run --
-   <program> <args...>`, adding `--junit <report>` when it writes one. The
+   <program> <args...>`, adding `--junit <report>` when it writes one, placed
+   before the `--` (the recorder forwards everything after it to the
+   command). The
    recorder takes arguments without a shell: use a shell explicitly only
    after reviewing a command that needs shell syntax. Report each command's
    source key and resulting evidence record reference, or why it was skipped.
