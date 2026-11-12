@@ -43,6 +43,7 @@ export async function discardBody(
       new Promise<never>((_, reject) => {
         const abort = () => reject(signal.reason);
         signal.addEventListener("abort", abort, { once: true });
+        if (signal.aborted) abort();
         void cancellation.then(
           () => signal.removeEventListener("abort", abort),
           () => signal.removeEventListener("abort", abort),

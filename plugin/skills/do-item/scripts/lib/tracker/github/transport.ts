@@ -196,7 +196,7 @@ export function ghTransport(runner: typeof ghCall = ghCall): GitHubTransport {
             signal: bound,
           },
         );
-        if (cancelled(bound)) throw abortedError(bound);
+        if (cancelled(signal)) throw abortedError(signal);
         const failure = ghFailure(r);
         if (failure !== null) throw failure;
         const parsed = ghHeaders(r.stdout);
@@ -205,7 +205,10 @@ export function ghTransport(runner: typeof ghCall = ghCall): GitHubTransport {
       idempotent,
       bound,
     );
-    const body = ghBody(answer.result);
+    const body =
+      answer.result.code === 0
+        ? ghBody(answer.result)
+        : parsedOrNull(answer.result.stdout);
     if (answer.result.code !== 0)
       throw ghExitFailure(answer.result, body, answer);
     return unwrapResponse(body);

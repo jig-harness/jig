@@ -137,7 +137,9 @@ describe("read retry bounds", () => {
       new ReadableStream({
         cancel() {
           cancelled = true;
-          return new Promise<void>(() => {});
+          return new Promise<void>(() => {
+            // The stream never settles its cancellation callback.
+          });
         },
       }),
       { status: 503 },
@@ -147,6 +149,29 @@ describe("read retry bounds", () => {
     controller.abort(new Error("deadline elapsed"));
     await expect(pending).rejects.toThrow("deadline elapsed");
     expect(cancelled).toBe(true);
+  });
+  it("handles cancellation that happens while cleanup begins", async () => {
+    const controller = new AbortController();
+    const response = new Response(
+      new ReadableStream({
+        cancel() {
+          controller.abort(new Error("cleanup cancelled"));
+          return new Promise<void>(() => {
+            // The stream never settles its cancellation callback.
+          });
+        },
+      }),
+      { status: 503 },
+    );
+    const pending = retryRead(async () => response, true, controller.signal);
+    await expect(
+      Promise.race([
+        pending,
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("cleanup remained pending")), 100),
+        ),
+      ]),
+    ).rejects.toThrow("cleanup cancelled");
   });
   it("caps each wait and honors an HTTP-date Retry-After", async () => {
     const waits: number[] = [];
@@ -246,6 +271,25 @@ it("preserves failed gh response metadata", async () => {
     code: 1,
     stdout:
       'HTTP/2.0 503 Service Unavailable\r\nRetry-After: 7\r\n\r\n{"errors":[{"message":"down"}]}',
+    stderr: "",
+    stderrTail: "",
+    timedOut: false,
+    bufferExceeded: false,
+    spawnFailed: false,
+  }));
+  try {
+    await transport("query { viewer { login } }", {});
+    throw new Error("expected GitHub failure");
+  } catch (err) {
+    expect(err).toMatchObject({ unavailable: true, retryAfterSec: 7 });
+  }
+});
+
+it("preserves failed gh response metadata for a non-JSON body", async () => {
+  const transport = ghTransport(async () => ({
+    code: 1,
+    stdout:
+      "HTTP/2.0 503 Service Unavailable\r\nRetry-After: 7\r\n\r\n<html>down</html>",
     stderr: "",
     stderrTail: "",
     timedOut: false,

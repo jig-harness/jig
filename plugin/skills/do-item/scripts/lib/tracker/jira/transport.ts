@@ -348,7 +348,7 @@ function leasedSender(
     }
     const refused = observeLimit(res, key, what, budget);
     if (refused !== null) {
-      await discardBody(res);
+      await discardBody(res, bound);
       throw refused;
     }
     return res;
