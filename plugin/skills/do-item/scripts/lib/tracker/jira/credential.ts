@@ -11,6 +11,9 @@
  *    credential broker holds the secret and the environment holds only the
  *    command. It runs once for the process, under a deadline; after a 401 it
  *    runs once more and the request is sent again once with the new token.
+ *    A token from that second run which is refused in turn stops the
+ *    reruns: every request fails with the credential guidance until one
+ *    request is accepted.
  * 3. `JIRA_EMAIL` and `JIRA_API_TOKEN`: an Atlassian account's email and an
  *    API token (scoped or not), sent as HTTP Basic authentication.
  *
@@ -92,6 +95,11 @@ export interface JiraLease {
   renew: (
     signal?: AbortSignal,
   ) => Promise<Outcome<string, CredentialCode> | null>;
+  /**
+   * Called when the site did not refuse a header with a 401: the lease's own,
+   * or, with `renewed`, the one `renew` gave.
+   */
+  accepted?: (renewed: boolean) => void;
 }
 
 /** The `Authorization` header of each request, and its renewal after a 401. */
@@ -260,11 +268,15 @@ function commandAuthorization(
     generation: number;
     header: Promise<Outcome<string, CredentialCode>>;
     failed: boolean;
+    /** Made by a renewal after a 401, not by a request's first need. */
+    renewed: boolean;
+    /** The site has taken this run's token, in a response that was no 401. */
+    accepted: boolean;
   }
   const program = programOf(argv);
   let generation = 0;
   let current: Run | null = null;
-  const start = (): Run => {
+  const start = (renewed: boolean): Run => {
     const pending = runner(argv, timeoutMs).then(
       (r) => tokenOf(argv, r, timeoutMs),
       (err: unknown) =>
@@ -277,6 +289,8 @@ function commandAuthorization(
       generation: ++generation,
       header: pending.then((t) => (t.ok ? ok(`Bearer ${t.value}`) : t)),
       failed: false,
+      renewed,
+      accepted: false,
     };
     current = run;
     void run.header.then((h) => {
@@ -289,18 +303,30 @@ function commandAuthorization(
     signal?: AbortSignal,
   ): Promise<JiraLease> => ({
     header: await until(run.header, signal, program),
+    accepted: (renewed) => {
+      const taken = renewed ? current : run;
+      if (taken !== null) taken.accepted = true;
+    },
     renew: (renewSignal) => {
       // A later generation already replaced the one this lease holds.
       if (current !== null && current.generation > run.generation)
         return until(current.header, renewSignal, program);
+      // A token a renewal printed was refused in turn: the credential is
+      // revoked, and each further run would only be another broker call.
+      // The request fails with the 401's credential guidance.
+      if (run.renewed && !run.accepted && !run.failed)
+        return Promise.resolve(null);
       // No one is waiting once the request has ended: start no new run.
       if (renewSignal?.aborted)
         return Promise.resolve(stopped(renewSignal, program));
-      return until(start().header, renewSignal, program);
+      return until(start(true).header, renewSignal, program);
     },
   });
   const lease = (signal?: AbortSignal) =>
-    leaseOf(current !== null && !current.failed ? current : start(), signal);
+    leaseOf(
+      current !== null && !current.failed ? current : start(false),
+      signal,
+    );
   return {
     lease,
     header: async (signal) => (await lease(signal)).header,

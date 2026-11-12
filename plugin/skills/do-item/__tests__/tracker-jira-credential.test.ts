@@ -424,6 +424,68 @@ describe("JIRA_TOKEN_COMMAND", () => {
     }
   });
 
+  it("names the variable and is unavailable when the transport's own deadline ends a command that never settles", async () => {
+    const late = Promise.withResolvers<TokenRun>();
+    const { sent, impl } = statuses(200);
+    try {
+      const err = await failure(
+        httpTransport(
+          GATEWAY,
+          command(() => late.promise),
+          impl,
+          undefined,
+          undefined,
+          50,
+        )(request),
+      );
+      expect(err.message).toMatch(
+        /^JIRA_TOKEN_COMMAND \(.+\) printed no token before the request's deadline$/,
+      );
+      expect(err.unavailable).toBe(true);
+      expect(sent).toEqual([]);
+    } finally {
+      late.resolve(tokenRun("late\n"));
+    }
+  });
+
+  it("stops re-running the command once a renewed token is refused in turn", async () => {
+    const { runs, runner } = printing("old", "new", "newer");
+    const { sent, impl } = statuses(401);
+    const t = httpTransport(GATEWAY, command(runner), impl);
+    const errors = [];
+    for (let i = 0; i < 4; i++) errors.push(await failure(t(request)));
+    expect(runs.length).toBe(2);
+    for (const err of errors) {
+      expect([err.status, err.unavailable]).toEqual([401, false]);
+      expect(err.message).toContain("JIRA_TOKEN_COMMAND");
+    }
+    expect(sent.slice(0, 3)).toEqual([
+      "Bearer old",
+      "Bearer new",
+      "Bearer new",
+    ]);
+  });
+
+  it("renews again after a renewed token has been accepted and later refused", async () => {
+    const { runs, runner } = printing("one", "two", "three");
+    const answers = [401, 200, 401, 200];
+    const sent: string[] = [];
+    const impl = (async (_url: unknown, init?: RequestInit) => {
+      sent.push(authorizationOf(init));
+      return new Response("{}", { status: answers[sent.length - 1] ?? 200 });
+    }) as typeof fetch;
+    const t = httpTransport(GATEWAY, command(runner), impl);
+    await t(request);
+    await t(request);
+    expect(runs.length).toBe(3);
+    expect(sent).toEqual([
+      "Bearer one",
+      "Bearer two",
+      "Bearer two",
+      "Bearer three",
+    ]);
+  });
+
   it("keeps a timed-out token broker retryable", async () => {
     const err = await failure(
       httpTransport(
