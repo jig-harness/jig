@@ -223,6 +223,19 @@ function entryOf(facet: Facet, raw: unknown, adapter: string): FacetEntry {
   return entry;
 }
 
+/** Linear's native priority is a number per priority, so a list, even of one, has no meaning. */
+function refuseLinearPriorityLists(entry: FacetEntry, adapter: string): void {
+  if (adapter !== "linear" || entry.store !== "native") return;
+  for (const [key, names] of Object.entries(entry.values ?? {})) {
+    if (!Array.isArray(names)) continue;
+    const where = at("priority", `values.${key}`);
+    throw new TrackerConfigError(
+      where,
+      `${where} cannot be a list: Linear's native priority is always urgent 1 to low 4; keep priority in labels to name other values`,
+    );
+  }
+}
+
 /** A priority entry's keys are the priorities, and outside GitHub a label store names its labels. */
 function checkPriorityEntry(entry: FacetEntry, adapter: string): void {
   for (const [key, map] of [
@@ -230,13 +243,7 @@ function checkPriorityEntry(entry: FacetEntry, adapter: string): void {
     ["labels", entry.labels],
   ] as const)
     if (map !== undefined) valueMap(PRIORITY_NAMES, map, at("priority", key));
-  if (adapter === "linear" && entry.store === "native")
-    for (const [key, names] of Object.entries(entry.values ?? {}))
-      if (Array.isArray(names))
-        throw new TrackerConfigError(
-          at("priority", `values.${key}`),
-          `${at("priority", `values.${key}`)} cannot be a list: Linear's native priority is always urgent 1 to low 4; keep priority in labels to name other values`,
-        );
+  refuseLinearPriorityLists(entry, adapter);
   if (
     entry.store === "label" &&
     adapter !== "github" &&
@@ -435,6 +442,27 @@ function typeDefaults(
   };
 }
 
+/** Refuse a label list naming a value the facet lacks, or one label twice for a value. */
+function checkLabelNames(
+  facet: Facet,
+  labels: Readonly<Record<string, MapNames>>,
+  values: ReadonlyArray<string>,
+): void {
+  for (const [key, listed] of Object.entries(labels)) {
+    if (canonical(values, key) === null)
+      throw new TrackerConfigError(
+        at(facet, "labels"),
+        `${at(facet, "labels")} names '${key}', which is not a ${facet} of this repository (${values.join(", ")})`,
+      );
+    const twice = firstRepeat(namesIn(listed));
+    if (twice !== undefined)
+      throw new TrackerConfigError(
+        at(facet, `labels.${key}`),
+        `${at(facet, `labels.${key}`)} names '${twice}' twice`,
+      );
+  }
+}
+
 function resolved(
   facet: Facet,
   entry: FacetEntry | undefined,
@@ -452,19 +480,7 @@ function resolved(
   const store = entry?.store ?? base.defaultStore;
   const why = entry === undefined ? base.defaultWhy : "configured";
   if (store === "label") {
-    for (const [key, listed] of Object.entries(entry?.labels ?? {})) {
-      if (canonical(base.values, key) === null)
-        throw new TrackerConfigError(
-          at(facet, "labels"),
-          `${at(facet, "labels")} names '${key}', which is not a ${facet} of this repository (${base.values.join(", ")})`,
-        );
-      const twice = firstRepeat(namesIn(listed));
-      if (twice !== undefined)
-        throw new TrackerConfigError(
-          at(facet, `labels.${key}`),
-          `${at(facet, `labels.${key}`)} names '${twice}' twice`,
-        );
-    }
+    checkLabelNames(facet, entry?.labels ?? {}, base.values);
     return {
       facet,
       store,

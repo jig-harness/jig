@@ -500,14 +500,10 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
     if (found === undefined) return null;
     const n = Number(found.value);
     const numeric =
-      s.map !== null &&
-      found.numeric === true &&
-      found.value.trim() !== "" &&
-      Number.isFinite(n);
-    if (numeric && numberIsShared(s.map, n)) return null;
-    const exact = s.map?.fromTracker(found.value) ?? null;
-    if (exact !== null || !numeric) return exact;
-    return numberedValue(s.map, n);
+      found.numeric === true && found.value.trim() !== "" && Number.isFinite(n);
+    if (!numeric) return s.map?.fromTracker(found.value) ?? null;
+    if (numberIsShared(s.map, n)) return null;
+    return s.map?.fromTracker(found.value) ?? numberedValue(s.map, n);
   }
 
   async function read(
