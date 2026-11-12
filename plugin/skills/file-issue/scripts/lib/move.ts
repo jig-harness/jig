@@ -105,21 +105,41 @@ export interface MoveReport {
   stopped: string | null;
 }
 
-/** Whether two slots keep a facet in the same place, the same way. */
+/**
+ * Whether two slots keep a facet in the same place, the same way: the same
+ * field and the same written value. Names added for reading back are no move,
+ * since the stored value is unchanged and a retire would clear the
+ * destination; a name dropped or given to another value is.
+ */
 function sameStore(a: FacetSlot, b: FacetSlot): boolean {
   if (!usable(a) || !usable(b)) return usable(a) === usable(b);
-  const labels = (s: ResolvedFacet) =>
-    JSON.stringify(
-      (s.labels ?? []).map(([v, ls]) => [v, ls.map(fold)] as const),
-    );
-  const map = (s: ResolvedFacet) =>
-    JSON.stringify((s.map?.entries ?? []).map(([v, n]) => [v, fold(n)]));
   return (
     a.store === b.store &&
     (a.field ?? "") === (b.field ?? "") &&
-    labels(a) === labels(b) &&
-    map(a) === map(b)
+    keepsNames(a.labels, b.labels) &&
+    keepsNames(a.map?.names, b.map?.names)
   );
+}
+
+/**
+ * Whether every value's names in `from` still read, and still write, the same
+ * in `to`: the same first (written) name and every other name kept under the
+ * same value. Names added are safe; a name dropped or given to another value
+ * leaves issues carrying it without a value, so that is a move.
+ */
+function keepsNames(
+  from: ReadonlyArray<readonly [string, readonly string[]]> | null | undefined,
+  to: ReadonlyArray<readonly [string, readonly string[]]> | null | undefined,
+): boolean {
+  const kept = new Map(
+    (to ?? []).map(([v, ns]) => [v, ns.map((n) => fold(n))] as const),
+  );
+  return (from ?? []).every(([v, ns]) => {
+    const now = kept.get(v);
+    if (now === undefined) return false;
+    if (fold(ns[0] ?? "") !== (now[0] ?? "")) return false;
+    return ns.every((n) => now.includes(fold(n)));
+  });
 }
 
 /** The facets whose store the target changes. */

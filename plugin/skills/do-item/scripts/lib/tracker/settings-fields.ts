@@ -35,9 +35,57 @@ export function settingsSection(
   return section;
 }
 
-/** The first name that an earlier entry already has, compared without case. */
+/**
+ * A map entry that names one thing or several: a nonempty string, or a
+ * nonempty list of them, each trimmed. `what` names the thing in the
+ * refusal ("priority", "label").
+ */
+export function nameList(v: unknown, at: string, what: string): string[] {
+  if (!Array.isArray(v)) return [nonEmpty(v, at).trim()];
+  if (v.length === 0)
+    throw new TrackerConfigError(at, `${at} names no ${what}`);
+  return v.map((n, i) => nonEmpty(n, `${at}[${i}]`).trim());
+}
+
+const folded = (s: string) => s.trim().toLowerCase();
+
+/** The first name that an earlier entry already has, compared trimmed and without case. */
 export function firstRepeat(names: ReadonlyArray<string>): string | undefined {
   return names.find(
-    (n, i) => names.findIndex((m) => m.toLowerCase() === n.toLowerCase()) !== i,
+    (n, i) => names.findIndex((m) => folded(m) === folded(n)) !== i,
   );
+}
+
+/**
+ * Refuse a name one key lists twice, or two keys share, compared trimmed
+ * and without case, so a name read back names one key. A clash with a key
+ * the configuration did not set (one outside `configured`) names that
+ * key's default as the other side.
+ */
+export function refuseSharedNames(
+  at: string,
+  entries: ReadonlyArray<readonly [string, ReadonlyArray<string>]>,
+  what: string,
+  configured: ReadonlySet<string>,
+): void {
+  const owner = new Map<string, string>();
+  for (const [key, names] of entries) {
+    const twice = firstRepeat(names);
+    if (twice !== undefined)
+      throw new TrackerConfigError(
+        `${at}.${key}`,
+        `${at}.${key} names '${twice}' twice`,
+      );
+    for (const name of names) {
+      const other = owner.get(folded(name));
+      if (other !== undefined) {
+        const fallback = [other, key].find((k) => !configured.has(k));
+        throw new TrackerConfigError(
+          at,
+          `${at} gives ${other} and ${key} the one ${what} '${name}'${fallback === undefined ? "" : ` (${fallback}'s default)`}; each needs its own, so a ${what} read back names one`,
+        );
+      }
+      owner.set(folded(name), key);
+    }
+  }
 }
