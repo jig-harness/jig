@@ -1,13 +1,15 @@
 // Bun `[test] preload` adapter for test-reap-children.ts: as tests run,
 // capture the identities of this process's descendants, and after the last
-// test kill every descendant a test left running, captured ones init has
-// since adopted included, and say so on stderr, because a leak is a test
-// defect worth seeing even when the run passed. The capture runs every
-// CAPTURE_INTERVAL_MS while tests run, from a timer that does not keep the
-// process alive, and after a test when the last capture is older than that,
-// so a suite of thousands of short tests does not read the process table
-// thousands of times, and a tree that lives longer than the interval is
-// captured while its parent links still exist. A capture also drops the
+// test kill every descendant a test left running, captured ones init or a
+// subreaper has since adopted included, and say so on stderr, because a leak
+// is a test defect worth seeing even when the run passed. The capture runs
+// every CAPTURE_INTERVAL_MS while tests run, from a timer that does not keep
+// the process alive, and after a test when the last capture is older than
+// that, so a suite of thousands of short tests does not read the process
+// table thousands of times, and a tree that lives longer than the interval is
+// captured while its parent links still exist. A tree orphaned within one
+// interval is never captured; in a `--parallel` worker, which leads its own
+// process group, the reap still finds it by that group. A capture also drops the
 // identities it shows gone, so the record holds what may still be running
 // rather than every process the suite ever started. A preload-scope
 // `afterAll` runs once per test process (each `--parallel` worker loads the
@@ -49,6 +51,19 @@ sampler.unref();
 // fixed time.
 Object.defineProperty(globalThis, Symbol.for("jig.test-reap.captured"), {
   value: () => [...captured.values()],
+});
+
+// Drop what a capture recorded about one pid, for a test that needs the
+// uncaptured state however the sampler happened to be scheduled. It waits
+// for a capture in flight first, whose snapshot may predate the caller and
+// would put the pid back; a capture started after it reads the table as the
+// caller left it. Callers await it.
+Object.defineProperty(globalThis, Symbol.for("jig.test-reap.forget"), {
+  value: async (pid: number) => {
+    await capturing;
+    for (const [key, entry] of captured)
+      if (entry.pid === pid) captured.delete(key);
+  },
 });
 
 afterEach(async () => {

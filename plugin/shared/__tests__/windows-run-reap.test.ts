@@ -13,7 +13,7 @@ const foreground = resolve(
 function fixture(proc: string): string {
   return `
     import { mock } from 'bun:test';
-    import { readFileSync, readdirSync } from 'node:fs';
+    import { existsSync, readFileSync, readdirSync } from 'node:fs';
     import { join } from 'node:path';
     const lifecyclePath = ${JSON.stringify(join(shared, "windows-process.ts"))};
     const original = (await import(lifecyclePath)).windowsProcessLifecycle;
@@ -34,20 +34,43 @@ function fixture(proc: string): string {
     const parent = ${JSON.stringify(`
       const launched = Bun.spawnSync([process.execPath, ${JSON.stringify(foreground)}, 'launch', '--', process.execPath, '-e', 'setInterval(() => {},1000)'], {stdout:'pipe',stderr:'pipe'});
       if (launched.exitCode !== 0) { process.stderr.write(launched.stderr); process.exit(1); }
+      const fs = require('node:fs');
+      const gens = fs.readdirSync('.context/foreground-wait').filter(n => n.startsWith('gen-'));
+      const cmd = Number(fs.readFileSync('.context/foreground-wait/' + gens[0] + '/cmd.pid', 'utf8'));
+      const { processTable } = await import(${JSON.stringify(join(shared, "process-table.ts"))});
+      const row = ((await processTable()) ?? []).find(r => r.pid === cmd);
+      fs.writeFileSync('.context/foreground-wait/' + gens[0] + '/cmd.identity', JSON.stringify({ pid: cmd, start: row?.start ?? '' }));
     `)};
     const result = await run([process.execPath, '-e', parent], {reapGroup:true});
     if (result.code !== 0 || result.groupSurvived !== true) throw new Error(JSON.stringify(result));
     const root = join(process.cwd(), '.context', 'foreground-wait');
     const generation = readdirSync(root).find(name => name.startsWith('gen-'));
     const runner = Number(readFileSync(join(root,generation,'runner.pid'),'utf8'));
+    const commandFile = join(root,generation,'cmd.pid');
+    const command = existsSync(commandFile) ? Number(readFileSync(commandFile,'utf8')) : null;
     const { processTable } = await import(${JSON.stringify(join(shared, "process-table.ts"))});
+    const { signalIdentityTargets } = await import(${JSON.stringify(join(shared, "process-tree.ts"))});
     const rows = await processTable();
-    if (rows === null || rows.some(row => row.pid === runner && !row.stat.startsWith('Z'))) throw new Error('registered runner survived reap');
-    console.log('registered runner reaped; groupSurvived=true');
+    if (rows === null) throw new Error('the process table could not be read');
+    const live = (pid) => rows.find(row => row.pid === pid && !row.stat.startsWith('Z'));
+    // Launch returned before the reap began, so the runner had started its command.
+    if (command === null) throw new Error('the runner had not started its command when launch returned');
+    // The identity recorded while the launch still owned the command: a reused
+    // pid is another process and is neither the survivor nor ours to kill.
+    const recorded = JSON.parse(readFileSync(join(root,generation,'cmd.identity'),'utf8'));
+    if (!recorded.start) throw new Error('the command identity could not be read');
+    const found = live(command);
+    const survivor = found && found.start === recorded.start ? found : undefined;
+    if (survivor) {
+      await signalIdentityTargets([survivor], 'SIGKILL');
+      throw new Error('the command survived the reap of its registered runner');
+    }
+    if (live(runner)) throw new Error('registered runner survived reap');
+    console.log('registered runner and its command reaped; groupSurvived=true');
   `;
 }
 
-test("Windows normal-exit reaping reports registered runners in groupSurvived", () => {
+test("Windows normal-exit reaping reports registered runners in groupSurvived and ends the command each started", () => {
   const cwd = mkdtempSync(join(tmpdir(), "windows-run-reap-"));
   try {
     const result = Bun.spawnSync(
@@ -62,7 +85,7 @@ test("Windows normal-exit reaping reports registered runners in groupSurvived", 
     );
     expectSpawnExit(result, 0);
     expect(result.stdout.toString()).toContain(
-      "registered runner reaped; groupSurvived=true",
+      "registered runner and its command reaped; groupSurvived=true",
     );
   } finally {
     rmSync(cwd, { recursive: true, force: true });
