@@ -350,7 +350,9 @@ test("reports an item whose workflow has no blocked state", async () => {
     outcome: "skipped",
     detail: "ENG-123: blocked is absent from its workflow",
   });
-  expect(blockedLine(7, outcome!)).toContain(
+  expect(outcome).toBeDefined();
+  if (outcome === undefined) return;
+  expect(blockedLine(7, outcome)).toContain(
     "blocked is absent from its workflow",
   );
 });
