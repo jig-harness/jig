@@ -21,13 +21,17 @@ import type {
   Tracker,
 } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import {
+  githubClaimStore,
+  jiraClaimStore,
+  linearClaimStore,
+} from "../../skills/do-item/__tests__/claim-fakes.ts";
+import {
   conn,
   gitHub,
   issueNode,
   oneIssue,
 } from "../../skills/do-item/__tests__/github-fixtures.ts";
 import {
-  assignable,
   type Call,
   FACTORY,
   issue as jiraIssue,
@@ -157,13 +161,10 @@ async function waitsOn(
 
 describe("a pool pickup across two hosts", () => {
   it("on GitHub", async () => {
-    const item = { labels: [] as string[], logins: [] as string[] };
-    const comments: Array<Record<string, unknown>> = [];
-    const writes: string[] = [];
-    let n = 0;
+    const s = githubClaimStore();
+    const { item, user } = s;
     let author = "dana";
     let blockerOpen = true;
-    const user = (login: string) => ({ id: `U_${login}`, login });
     const relations = (blockedBy: number[]) => ({
       blockedBy: conn(
         blockedBy.map((number) => ({
@@ -227,57 +228,10 @@ describe("a pool pickup across two hosts", () => {
                 },
               },
             };
-          case "TrackerViewer":
-            return { viewer: user("factory") };
           case "TrackerUser":
             return { user: user("factory") };
-          case "TrackerAssignees":
-            return {
-              repository: {
-                issue: {
-                  id: "I_5",
-                  assignees: {
-                    totalCount: item.logins.length,
-                    nodes: item.logins.map(user),
-                  },
-                },
-              },
-            };
-          case "TrackerLabels":
-            return {
-              repository: {
-                labels: conn([{ id: "LA_ip", name: "In Progress" }]),
-              },
-            };
-          case "TrackerAssign":
-            writes.push(c.op);
-            item.logins = ["factory"];
-            return { updateIssue: { issue: { id: "I_5" } } };
-          case "TrackerAddLabels":
-            writes.push(c.op);
-            item.labels = ["In Progress"];
-            return { addLabelsToLabelable: { clientMutationId: null } };
-          case "TrackerComment":
-            n++;
-            comments.push({
-              id: `IC_${n}`,
-              body: String(c.variables.body),
-              createdAt: new Date().toISOString(),
-              authorAssociation: "MEMBER",
-              viewerDidAuthor: true,
-            });
-            return { addComment: { clientMutationId: null } };
-          case "TrackerComments":
-            return {
-              repository: { issue: { id: "I_5", comments: conn(comments) } },
-            };
-          case "TrackerDeleteComment": {
-            const at = comments.findIndex((m) => m.id === c.variables.id);
-            if (at >= 0) comments.splice(at, 1);
-            return { deleteIssueComment: { clientMutationId: null } };
-          }
           default:
-            throw new Error(`unexpected ${c.op}`);
+            return s.answer(c);
         }
       }).t;
     const section = poolSection("factory");
@@ -294,25 +248,18 @@ describe("a pool pickup across two hosts", () => {
     await waitsOn(make, section, "#5", "#6");
     blockerOpen = false;
     expect(await twoHosts(make, section, "#5")).toEqual(["claimed", "refused"]);
-    expect(writes).toEqual(["TrackerAssign", "TrackerAddLabels"]);
-    expect(comments).toHaveLength(1);
+    expect(s.writes).toEqual(["TrackerAssign", "TrackerAddLabels"]);
+    expect(s.comments).toHaveLength(1);
   });
 
   it("on Linear", async () => {
-    const ME = { id: "u-me", name: "factory" };
-    const item = { stateName: "Todo", assignee: null as typeof ME | null };
-    const comments: Array<Record<string, unknown>> = [];
-    const writes: string[] = [];
-    let n = 0;
+    const s = linearClaimStore("Todo");
+    const { ME, item, STATE_IDS, none } = s;
     let mover: Record<string, unknown> = {
       id: "u-d",
       name: "Dana",
       guest: false,
       teams: { nodes: [{ key: "ENG" }] },
-    };
-    const STATE_IDS: Record<string, string> = {
-      Todo: "s-todo",
-      "In Progress": "s-ip",
     };
     let blockerType = "started";
     const poolNode = () => ({
@@ -330,7 +277,6 @@ describe("a pool pickup across two hosts", () => {
       labels: { pageInfo: { hasNextPage: false }, nodes: [] },
       children: { pageInfo: { hasNextPage: false }, nodes: [] },
     });
-    const none = { pageInfo: { hasNextPage: false, endCursor: null } };
     const transport: LinearTransport = async (query, variables) => {
       const op = /(?:query|mutation)\s+(\w+)/.exec(query)?.[1] ?? "?";
       switch (op) {
@@ -353,12 +299,8 @@ describe("a pool pickup across two hosts", () => {
               history: { ...none, nodes: [] },
             },
           };
-        case "TrackerViewer":
-          return { viewer: ME };
         case "TrackerUsers":
           return { users: { nodes: [ME] } };
-        case "TrackerAssignee":
-          return { issue: { id: "uuid-4", assignee: item.assignee } };
         case "TrackerPoolIssue":
           return variables.id === "ENG-5"
             ? {
@@ -382,49 +324,8 @@ describe("a pool pickup across two hosts", () => {
               },
             },
           };
-        case "TrackerAssign":
-          writes.push(op);
-          item.assignee = ME;
-          return { issueUpdate: { success: true } };
-        case "TrackerIssueId":
-          return { issue: { id: "uuid-4", team: { id: "t-1", key: "ENG" } } };
-        case "TrackerStates":
-          return {
-            team: {
-              states: {
-                ...none,
-                nodes: Object.entries(STATE_IDS).map(([name, id]) => ({
-                  id,
-                  name,
-                  type: "unstarted",
-                })),
-              },
-            },
-          };
-        case "TrackerUpdate":
-          writes.push(op);
-          item.stateName = "In Progress";
-          return { issueUpdate: { success: true } };
-        case "TrackerComment":
-          n++;
-          comments.push({
-            id: `c-${n}`,
-            body: String(variables.body),
-            createdAt: new Date(Date.now() + n).toISOString(),
-            user: { id: ME.id, guest: false },
-          });
-          return { commentCreate: { success: true } };
-        case "TrackerComments":
-          return {
-            issue: { id: "uuid-4", comments: { ...none, nodes: comments } },
-          };
-        case "TrackerDeleteComment": {
-          const at = comments.findIndex((m) => m.id === variables.id);
-          if (at >= 0) comments.splice(at, 1);
-          return { commentDelete: { success: true } };
-        }
         default:
-          throw new Error(`unexpected ${op}`);
+          return s.answer(op, variables);
       }
     };
     const make = () =>
@@ -446,19 +347,12 @@ describe("a pool pickup across two hosts", () => {
       "claimed",
       "refused",
     ]);
-    expect(writes).toEqual(["TrackerAssign", "TrackerUpdate"]);
-    expect(comments).toHaveLength(1);
+    expect(s.writes).toEqual(["TrackerAssign", "TrackerUpdate"]);
+    expect(s.comments).toHaveLength(1);
   });
 
   it("on Jira", async () => {
-    const item = {
-      status: "Todo",
-      category: "new" as "new" | "indeterminate",
-      assignee: null as typeof FACTORY | null,
-    };
-    const comments: Array<Record<string, unknown>> = [];
-    const writes: string[] = [];
-    let n = 0;
+    const s = jiraClaimStore("Todo");
     let mover: Record<string, unknown> = MEMBER;
     let blocker: { status: string; category: "indeterminate" | "done" } = {
       status: "Doing",
@@ -497,7 +391,7 @@ describe("a pool pickup across two hosts", () => {
           ? { key: "ENG-1", fields: { creator: MEMBER } }
           : jiraIssue({
               key: "ENG-1",
-              ...item,
+              ...s.item,
               links: [{ type: "Blocks", inward: "ENG-2" }],
             });
       if (c.route === "GET issue/ENG-1/changelog")
@@ -526,62 +420,11 @@ describe("a pool pickup across two hosts", () => {
         const jql = jqlOf(c);
         const listed =
           jql.includes("assignee is EMPTY") &&
-          item.assignee === null &&
-          jql.includes(`"${item.status}"`);
-        return listed ? page(jiraIssue({ key: "ENG-1", ...item })) : page();
+          s.item.assignee === null &&
+          jql.includes(`"${s.item.status}"`);
+        return listed ? page(jiraIssue({ key: "ENG-1", ...s.item })) : page();
       }
-      if (c.route === "PUT issue/ENG-1/assignee") {
-        writes.push(c.route);
-        item.assignee = FACTORY;
-        return null;
-      }
-      if (c.route === "GET issue/ENG-1/transitions")
-        return {
-          transitions: [
-            {
-              id: "11",
-              name: "to In Progress",
-              to: {
-                id: "s-InProgress",
-                name: "In Progress",
-                statusCategory: { key: "indeterminate" },
-              },
-              fields: {},
-            },
-          ],
-        };
-      if (c.route === "POST issue/ENG-1/transitions") {
-        writes.push(c.route);
-        item.status = "In Progress";
-        item.category = "indeterminate";
-        return null;
-      }
-      if (c.route === "GET user/assignable/search")
-        return assignable(FACTORY.accountId, MEMBER.accountId)(c);
-      if (c.route === "POST issue/ENG-1/comment") {
-        n++;
-        comments.push({
-          id: String(1000 + n),
-          author: FACTORY,
-          body: c.body.body,
-          created: new Date().toISOString().replace("Z", "+0000"),
-        });
-        return { id: String(1000 + n) };
-      }
-      if (c.route === "GET issue/ENG-1/comment")
-        return {
-          comments,
-          startAt: 0,
-          maxResults: 100,
-          total: comments.length,
-        };
-      const del = /^DELETE issue\/ENG-1\/comment\/(\d+)$/.exec(c.route);
-      if (del) {
-        const at = comments.findIndex((m) => m.id === del[1]);
-        if (at >= 0) comments.splice(at, 1);
-        return null;
-      }
-      return new Error(`unexpected request ${c.route}`);
+      return s.answer(c);
     };
     const make = () => jira(answer).t;
     const section = poolSection(FACTORY.accountId);
@@ -602,11 +445,11 @@ describe("a pool pickup across two hosts", () => {
       "claimed",
       "refused",
     ]);
-    expect(writes).toEqual([
+    expect(s.writes).toEqual([
       "PUT issue/ENG-1/assignee",
       "POST issue/ENG-1/transitions",
     ]);
-    expect(comments).toHaveLength(1);
+    expect(s.comments).toHaveLength(1);
   });
 });
 
