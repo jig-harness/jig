@@ -2179,6 +2179,13 @@ make, use the entry's term instead.
   Orca is its first implementation
   ([ADR-0011](docs/adr/ADR-0011-the-dispatcher-targets-orca-first.md)); a
   *workspace runtime* becomes another by implementing the same methods.
+- **Program status** — the state a program reports to its own terminal
+  through [OSC (Operating System Command) 7501](https://www.superlogical.com/rex/docs/build/program-status):
+  `idle`, `working`, `blocked`, `done` or `error`. A blocked report can say
+  whether it needs permission, an answer or authentication. A *workspace
+  runtime* may expose those reports to Jig's *session runtime*. The agent
+  reports its own status; Jig's commands do not emit it, since drives and
+  dispatch ticks run detached and rarely hold a terminal.
 - **Headless pass** — a non-interactive agent run: it receives a task,
   works without a person replying in a chat session, and exits with a result.
   The *dispatcher* can start a follow-up this way on its chosen account
