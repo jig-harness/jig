@@ -376,6 +376,7 @@ function failedTick(
     : `marker comment ${marker.id} names launch record ${id}, and neither that record nor its outcome is on this machine`;
   const action = failed(input, pr, marker, why, ended, question);
   action.evidence.record = id;
+  if (ended && found?.framed !== undefined) action.framed = found.framed;
   return action;
 }
 
@@ -658,6 +659,9 @@ function failedRerun(
 ): Action {
   const why = `its pass under launch record ${again.record} ${again.what}, and ${spent}`;
   const question = again.routine?.standing.question ?? null;
+  const framed = input.launches.find(
+    (r) => r.record.id === again.record,
+  )?.framed;
   return {
     stage: "notify",
     target: `PR #${pr.number}`,
@@ -677,6 +681,7 @@ function failedRerun(
       question,
     ),
     launched: true,
+    ...(framed === undefined ? {} : { framed }),
   };
 }
 

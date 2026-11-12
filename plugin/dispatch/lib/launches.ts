@@ -47,6 +47,7 @@
  */
 import { optionalLaunchFields } from "./launch-record-options.ts";
 import { readNext, type NextOwner } from "./next-owner.ts";
+import { type FramedResult, readFramedResult } from "./framed-result.ts";
 import {
   type PickupRefusal,
   readRefusal,
@@ -212,6 +213,8 @@ export interface LaunchRecord {
   routineTags?: boolean;
   /** For a follow-up's routine run again: the question the earlier pass stopped on and the classes whose standing answers its prompt gives; absent on any other record. */
   standing?: StandingAnswer | null;
+  /** The answer a person gave the decision an earlier session of this target stopped on, which this session is handed (`station-answer-store.ts`). */
+  answered?: import("./station-answer-store.ts").CarriedAnswer;
 }
 
 /** A drive's unresolved review threads at one ledger round. */
@@ -285,6 +288,8 @@ export interface ReadRecord {
   waitsUntil?: string;
   /** A pickup the repository's start rules refused, recorded with its `failed` result; absent otherwise. */
   refusal?: PickupRefusal | null;
+  /** The framed decision the pass recorded with its `failed` result, when it stopped for a person; absent otherwise. */
+  framed?: FramedResult;
 }
 
 /** A launch record id: the time it was made, and a random suffix. */
@@ -484,6 +489,14 @@ export interface LaunchRow {
   /** A pickup that waits on a tracker's rate limit: when it may start again. */
   result_until?: string | null;
   refusal?: string | null;
+  /** A pass's framed decision, recorded with its `failed` result (`framed-result.ts`). */
+  result_decision?: string | null;
+}
+
+/** A row's framed decision, as a read record carries it: absent when it has none. */
+function framedOf(row: LaunchRow): { framed?: FramedResult } {
+  const framed = readFramedResult(row.result_decision);
+  return framed === null ? {} : { framed };
 }
 
 /** The tick's part of a row, with its samples and episodes; `null` when it does not read as a record. */
@@ -588,6 +601,7 @@ export function readEnded(id: string, root = stateRoot()): ReadRecord | null {
     next: readNext(row.result_next),
     ...waitsOf(row),
     refusal: readRefusal(row.refusal),
+    ...framedOf(row),
   };
 }
 
@@ -775,6 +789,7 @@ export async function readLaunches(
       next: readNext(row.result_next),
       ...waitsOf(row),
       refusal: readRefusal(row.refusal),
+      ...framedOf(row),
     });
   }
   return { records, unreadable };

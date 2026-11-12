@@ -284,6 +284,11 @@ const DISPATCHER: RecordKind[] = [
   ),
   dispatchTable("dispatch-failure", "dispatch/lib/failures.ts", "failures"),
   dispatchTable(
+    "dispatch-station-answer",
+    "dispatch/lib/station-answer-store.ts",
+    "station_answers",
+  ),
+  dispatchTable(
     "dispatch-steward-run",
     "dispatch/lib/steward.ts",
     "steward_runs",

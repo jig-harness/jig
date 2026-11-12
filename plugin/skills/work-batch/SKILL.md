@@ -88,8 +88,10 @@ served assignment does not exclude them. Keep only named items the other
 eligibility checks permit. This flag does not claim an item: the live claim
 below still checks its state, assignment, holds and assignment provenance.
 Read the full issues and assess their independence as for any batch. A
-question that needs a person ends the pass with `Question:`; record the
-failed result through the launch's result command. Never choose for them.
+question that needs a person ends the pass with `Question:`; frame it as
+a decision record and record the failed result with it through the
+launch's result command (`failed --decision <file>`, as the prompt says).
+Never choose for them.
 
 ```bash
 bun "${CLAUDE_SKILL_DIR}/scripts/candidates.ts" "<anchor>" [--budget N] [--limit N] [--claimed "KEY,KEY"] [--format json]

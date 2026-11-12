@@ -6,13 +6,15 @@ import { isMapping } from "../../shared/config-layers.ts";
 import { derivedNext, type NextOwner } from "./next-owner.ts";
 import { sessionResultClass } from "./session-result-class.ts";
 import { inTransaction, stateDb } from "./state.ts";
+import type { FramedResult } from "./framed-result.ts";
 
 /**
  * Record a session's or a follow-up pass's answer: true when this call wrote it,
  * false when the record already had one, which stands. A `waits` result
  * carries `until`: it is kept as `failed` with `until` beside it
  * (`asResult`). A pickup the repository's start rules refused carries its
- * `refusal`, written with it.
+ * `refusal`, written with it; a pass that stopped for a person carries the
+ * decision it framed (`framed`), written with it too.
  */
 export function recordResult(
   id: string,
@@ -21,6 +23,7 @@ export function recordResult(
   next: NextOwner | null = null,
   refusal: PickupRefusal | null = null,
   until?: string,
+  framed?: FramedResult,
 ): boolean {
   if (result === "waits" && until === undefined)
     throw new Defect("a waits result needs the time it waits until");
@@ -29,14 +32,15 @@ export function recordResult(
   return inTransaction(db, () => {
     const done = db
       .query(
-        "UPDATE launches SET result = ?, result_at = ?, result_next = ?, result_until = ?, refusal = ? WHERE id = ? AND result IS NULL",
+        "UPDATE launches SET result = ?, result_at = ?, result_next = ?, result_until = ?, refusal = ?, result_decision = ? WHERE id = ? AND result IS NULL",
       )
       .run(
         result === "waits" ? "failed" : result,
-        new Date().toISOString(),
+        framed?.at ?? new Date().toISOString(),
         next === null ? null : JSON.stringify(next),
         until ?? null,
         refused,
+        framed === undefined ? null : JSON.stringify(framed),
         id,
       );
     if (done.changes !== 1) return false;

@@ -379,6 +379,10 @@ export interface Action {
   release?: StaleClaim;
   /** For a follow-up's routine run again: the earlier question and the classes whose standing answers its prompt gives. */
   standing?: StandingAnswer;
+  /** For a need whose pass stopped for a person: the decision it framed with its result (`framed-result.ts`). */
+  framed?: import("./framed-result.ts").FramedResult;
+  /** For a need with a framed decision: the answers the tick read for it and its step on the one that counts (`station-answers.ts`). */
+  answered?: import("./station-answers.ts").StationAnswered;
 }
 
 /** What `--apply` did with one stale follow-up claim. */
@@ -623,7 +627,8 @@ export interface RepoReport {
   /** Targets that need nothing from the tick, by class: a pull request's ledger class, a pickup's, or a follow-up's. */
   quiet: Array<{
     target: string;
-    class: LedgerClass | PickupClass | FollowupClass;
+    /** `answered-hold`: a need a person answered Leave it to me, kept off Needs you for its facts (`station-answers.ts`). */
+    class: LedgerClass | PickupClass | FollowupClass | "answered-hold";
     why: string;
   }>;
 }

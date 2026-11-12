@@ -23,6 +23,11 @@ import { pullUrl } from "./forge.ts";
 import { itemBases, itemLinkFrom } from "../../shared/item-links.ts";
 import { actOfNeed, NEED_ACTS, type NeedAct } from "../../shared/acts.ts";
 import { decisionOf } from "./line-decision.ts";
+import {
+  type StationContext,
+  stationContextOf,
+  stationDecision,
+} from "./line-station.ts";
 export { decisionOf } from "./line-decision.ts";
 import { holds, targetOf } from "./launches.ts";
 import { isFailureCause } from "./failure-notices.ts";
@@ -160,16 +165,25 @@ function isNeed(action: Action): action is Action & { cause: NeedCause } {
   );
 }
 
-/** A need's open decisions and its act: a stuck launch record has no decisions and is investigated. */
+/**
+ * A need's open decisions and its act. A park's are its drive's unanswered
+ * parks; any other need carries the decision its pass framed or the tick
+ * frames (`line-station.ts`), whose class names its act; a need with neither
+ * keeps the act the steward proposed for it, else its cause's.
+ */
 function needDecisions(
   view: RepoView,
   action: Action & { cause: NeedCause },
   pr: number | null,
 ): Pick<LineNeed, "decisions"> & { act: NonNullable<LineNeed["act"]> } {
   const stuck = text(action.evidence, "stuck") !== null;
-  const decisions = stuck
-    ? []
-    : (view.drive(pr)?.waiting ?? []).map(decisionOf);
+  const parks =
+    stuck || action.cause !== "parked"
+      ? []
+      : (view.drive(pr)?.waiting ?? []).map(decisionOf);
+  const station =
+    action.cause === "parked" ? null : stationDecision(action, view.station);
+  const decisions = station === null ? parks : [station];
   const steward = action.evidence.stewardAct;
   const proposed =
     typeof steward === "string" &&
@@ -179,12 +193,15 @@ function needDecisions(
   return {
     decisions,
     act:
-      action.cause !== "parked" && !stuck && proposed !== undefined
+      action.cause !== "parked" &&
+      station === null &&
+      !stuck &&
+      proposed !== undefined
         ? proposed
         : actOfNeed({
             cause: action.cause,
             decisionClass: decisions[0]?.decisionClass ?? null,
-            stuck,
+            stuck: stuck && station === null,
           }),
   };
 }
@@ -269,6 +286,11 @@ class RepoView {
 
   drive(pr: number | null): DrivenPr | undefined {
     return pr === null ? undefined : this.drives.get(pr);
+  }
+
+  /** What a need's framed decision reads beside its action (`line-station.ts`). */
+  get station(): StationContext {
+    return stationContextOf(this.slug, this.input);
   }
 
   title(target: string, evidence: Evidence = {}): string | null {

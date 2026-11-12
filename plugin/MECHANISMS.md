@@ -871,14 +871,20 @@ stops a model. A team that runs passes unattended should know which:
   chosen option, the framed decision and any note. The pass's instructions
   require it to apply that option, permit a note only to narrow it, and
   park again when the note conflicts or asks for more. No script checks
-  that the changes implement the option's prose.
+  that the changes implement the option's prose. A dispatched follow-up or
+  pickup started on a person's answer to the decision its earlier pass
+  framed is handed the option the same way, under the same instructions.
+  An option of a decision the dispatcher framed itself is a step the tick
+  carries out, with no pass to interpret it.
 
 - **Comments a script trusts by their author.** A ledger and a takeover
   claim count when the drive's own login or an owner, member or
   collaborator wrote them; a follow-up marker when the dispatcher's own
   login or one of those wrote it; a merge-ready announcement, an answer to a
-  thread or a parked question when an owner, member or collaborator wrote it
-  (`shared/trusted-authors.ts`, `shared/records/forge-claims.ts`,
+  thread or a parked question when an owner, member or collaborator wrote
+  it, and an answer to a need's decision when one other than the
+  dispatcher's own login did
+  (`shared/trusted-authors.ts`, `dispatch/lib/station-answers.ts`, `shared/records/forge-claims.ts`,
   `skills/drive-pr/scripts/lib/state/ledger.ts`,
   `skills/drive-pr/scripts/lib/driver/rearm.ts`). A pass signed in as the
   same login as the person can therefore post a comment those scripts would

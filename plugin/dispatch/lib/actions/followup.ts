@@ -42,6 +42,7 @@ import type {
   SharedTarget,
 } from "../../../shared/records/shared.ts";
 import { localWriter } from "../../../shared/records/writer.ts";
+import { carried } from "../station-answer-store.ts";
 import { admittedVendor, type Slots } from "../accounts.ts";
 import { holding } from "../holding.ts";
 import { sessionIdFor } from "../session.ts";
@@ -324,6 +325,7 @@ function newFollowupRecord(
     sessionId: sessionIdFor(admittedVendor(slots.account)),
     routineTags: true,
     ...(action.standing === undefined ? {} : { standing: action.standing }),
+    ...carried(repo.slug, `PR #${pr.number}`, named.id),
   };
 }
 

@@ -349,6 +349,32 @@ export const MIGRATIONS: readonly Migration[] = [
     additive: true,
     sql: "ALTER TABLE launches ADD COLUMN result_until TEXT;",
   },
+  {
+    // The framed decision a follow-up's or pickup's pass recorded with its `failed` result (`framed-result.ts`), as JSON with its digest and time. Written with the result, by the same update.
+    additive: true,
+    sql: "ALTER TABLE launches ADD COLUMN result_decision TEXT;",
+  },
+  {
+    // A person's answer to a need's station decision that the tick acted on, once (`station-answer-store.ts`): which answer, the option, what the step did, and, for a step that starts a session, the answer that session is handed.
+    additive: true,
+    sql: `
+  CREATE TABLE station_answers (
+    repo TEXT NOT NULL,
+    target TEXT NOT NULL,
+    key TEXT NOT NULL,
+    digest TEXT NOT NULL,
+    answer TEXT NOT NULL,
+    author TEXT NOT NULL,
+    option TEXT NOT NULL,
+    claimed_at TEXT NOT NULL,
+    outcome TEXT,
+    detail TEXT,
+    carry TEXT,
+    consumed_by TEXT,
+    PRIMARY KEY (repo, target, key, digest, answer)
+  );
+  `,
+  },
 ];
 
 /** The schema version this plugin writes. */

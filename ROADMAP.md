@@ -98,6 +98,11 @@ decision it answers, so an approval of an older version does not count.
 On the dashboard a person moves to a card with `j` and `k` and
 presses `1` to pick the recommendation. A pick stays on the page and can be
 undone, and one comment can answer all of a pull request's decisions.
+Everything else the line waits on a person for comes framed the same way:
+a follow-up or a pickup that stops frames its own question, and for what
+the dispatcher finds itself, such as a failed follow-up, a stalled pickup
+or a stopped drive, it offers the steps it can take and takes the one a
+person chooses, once.
 Jig also reports how often each kind of decision follows the
 recommendation, so a team can see which decisions still need a person.
 Later, decisions that cannot be undone, such as a release, will need proof

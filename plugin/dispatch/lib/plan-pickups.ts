@@ -320,7 +320,12 @@ function questionAsked(
     latest.result === "waits"
   )
     return null;
-  const question = questionOf(latest.state);
+  // A pass that framed its decision asks its question there, whether or not it also ended on a question line.
+  const question =
+    questionOf(latest.state) ??
+    (latest.result === "failed"
+      ? (latest.framed?.decision.call.question ?? null)
+      : null);
   if (question === null) return null;
   const { record } = latest;
   const reason = `the pickup stopped on a question for a person: ${question}`;
@@ -338,6 +343,7 @@ function questionAsked(
       question,
     },
     cause: "pickup-question",
+    ...(latest.framed === undefined ? {} : { framed: latest.framed }),
     notice: pickupNotice(
       slug,
       `${item.key} question, record ${record.id}`,
