@@ -75,10 +75,10 @@ function answerFingerprint(a: {
 }): string {
   return cardAnswerLines(a.key, a.answer, a.digest).join("\n");
 }
-
+/** The key an answer's uncertainty is kept under: the writer too (by the readers' case-insensitive identity), since another writer's comment does not supersede it. */
 /** The key an answer's uncertainty is kept under: the writer too, since another writer's comment does not supersede it. */
 function uncertainKeyOf(login: string, key: string): string {
-  return `${login}\n${key}`;
+  return `${login.toLowerCase()}\n${key}`;
 }
 
 const sends = new Map<string, SendState>();
