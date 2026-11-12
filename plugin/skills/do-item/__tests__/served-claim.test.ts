@@ -510,11 +510,14 @@ async function readsAtWrite(write: "assign" | "start", inherited: boolean) {
     at.start = reads;
     return transition(key, state);
   };
-  await claimServedIssue(w.tracker, "#1", {
+  const result = await claimServedIssue(w.tracker, "#1", {
     person: "dana",
     ...(inherited ? { ancestor: "#3" } : {}),
   });
-  return at[write] ?? 0;
+  expect(result).toMatchObject({ outcome: "claimed" });
+  const count = at[write];
+  expect(count).toBeGreaterThan(0);
+  return count as number;
 }
 test("an item blocked at the final read before an inherited assignment is refused without writing", async () => {
   const w = blockedFrom(await readsAtWrite("assign", true), true);
