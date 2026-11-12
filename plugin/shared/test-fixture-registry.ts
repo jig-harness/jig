@@ -36,6 +36,7 @@ export interface FixtureScope {
   root: string;
   registry: string;
   createdAt: string;
+  registeredBy: ProcessIdentity;
 }
 type NodeRecord = {
   version: 1;
@@ -113,6 +114,7 @@ export function registerFixtureScope(
       version: 1,
       root: resolve(root),
       createdAt: new Date().toISOString(),
+      registeredBy: encodeIdentity(ownIdentity()),
     });
     return membership;
   });
@@ -208,13 +210,22 @@ function scopeRecord(file: string, registry: string): FixtureScope | null {
   const text = readRecord(file);
   if (text === null) return null;
   const value: unknown = JSON.parse(text);
+  const registeredBy = isRecord(value)
+    ? decodeIdentity(value.registeredBy)
+    : null;
   return isRecord(value) &&
     value.version === 1 &&
     typeof value.root === "string" &&
     isAbsolute(value.root) &&
     typeof value.createdAt === "string" &&
-    Number.isFinite(Date.parse(value.createdAt))
-    ? { root: value.root, registry, createdAt: value.createdAt }
+    Number.isFinite(Date.parse(value.createdAt)) &&
+    registeredBy !== null
+    ? {
+        root: value.root,
+        registry,
+        createdAt: value.createdAt,
+        registeredBy,
+      }
     : null;
 }
 interface ScanBudget {

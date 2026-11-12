@@ -17,6 +17,7 @@ import {
   ok,
   type Outcome,
 } from "../../shared/outcome.ts";
+import { swallow } from "../../shared/errors.ts";
 import type { CollectionKind, Proof, Resource } from "../types.ts";
 import {
   fixtureScopeInventory,
@@ -76,12 +77,17 @@ async function proveRegisteredFixtureScratch(
   const ownerRoots = legacy ? ownerRootsOf(legacy) : [];
   if (
     !ownerRoots.every((ownerRoot) =>
-      scopes.some((scope) => scope.root === ownerRoot),
+      scopes.some(
+        (scope) =>
+          scope.root === ownerRoot &&
+          scopeOwnerMatchesRegistration(scope, ownerRoot),
+      ),
     )
   )
     return {
       state: "unverified",
-      reason: "legacy owner scope lacks a durable fixture registration",
+      reason:
+        "legacy owner scope lacks a matching durable fixture registration",
     };
   memberships.set(root, scopes);
   return fixtureScratchProof(root, scopes, idleDays);
@@ -101,6 +107,25 @@ async function legacyScratchProof(
       state: "unverified",
       reason: error instanceof Error ? error.message : String(error),
     };
+  }
+}
+function scopeOwnerMatchesRegistration(
+  scope: FixtureScope,
+  root: string,
+): boolean {
+  try {
+    const owner = readScratchOwner(root);
+    return (
+      owner.pid === scope.registeredBy.pid &&
+      owner.start !== null &&
+      owner.start === scope.registeredBy.start
+    );
+  } catch (error) {
+    swallow(
+      error,
+      "Cannot compare a scratch owner to its fixture registration",
+    );
+    return false;
   }
 }
 function legacyFixtureVeto(legacy: Proof | null): Proof | null {

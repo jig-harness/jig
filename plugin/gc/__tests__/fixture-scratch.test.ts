@@ -234,7 +234,36 @@ test("an exited unregistered nested legacy owner vetoes collection", async () =>
     result.receipt.resources.find((line) => line.resource === f.root),
   ).toMatchObject({
     outcome: "unverified",
-    reason: "legacy owner scope lacks a durable fixture registration",
+    reason: "legacy owner scope lacks a matching durable fixture registration",
+  });
+  expect(existsSync(f.root)).toBe(true);
+});
+
+test("an exited replacement owner cannot claim an earlier registration", async () => {
+  const f = setup();
+  const owner = Bun.spawnSync(
+    [
+      process.execPath,
+      "-e",
+      `
+        const { writeScratchOwner } = await import(${JSON.stringify(resolve(import.meta.dir, "../../shared/scratch-owner.ts"))});
+        writeScratchOwner(${JSON.stringify(f.root)});
+      `,
+    ],
+    {
+      env: { ...process.env },
+      stdout: "pipe",
+      stderr: "pipe",
+      timeout: 30_000,
+    },
+  );
+  expectSpawnExit(owner, 0);
+  const result = await collect(f, true);
+  expect(
+    result.receipt.resources.find((line) => line.resource === f.root),
+  ).toMatchObject({
+    outcome: "unverified",
+    reason: "legacy owner scope lacks a matching durable fixture registration",
   });
   expect(existsSync(f.root)).toBe(true);
 });
