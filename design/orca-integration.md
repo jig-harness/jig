@@ -29,12 +29,12 @@ worktrees kind's runtime column, which a Herdr worktree joins by the same
 route, and the board helper and the plugin are Orca-bound tooling with no
 Herdr counterpart yet (Left out).
 
-Jig stays whole without Orca. The [hub](../GLOSSARY.md), one page to watch
-and steer the line ([hub.md](hub.md), item 42), works in any browser and
+Jig stays whole without Orca. The [dispatch dashboard](../GLOSSARY.md), one page to watch
+and steer the line ([dispatch-dashboard.md](dispatch-dashboard.md), item 42), works in any browser and
 reads other machines over SSH (Secure Shell). What the plugin adds (the
-panel, the status bar, the hub opened in Orca's browser, a jump to a
+panel, the status bar, the dashboard opened in Orca's browser, a jump to a
 workspace) is a convenience with a Herdr or plain-text equivalent.
-[The `jig` plugin for Orca](#the-jig-plugin-for-orca) says what the hub
+[The `jig` plugin for Orca](#the-jig-plugin-for-orca) says what the dashboard
 changes in the plugin.
 
 ## How it works
@@ -54,9 +54,9 @@ loads. Each class pays off before the next starts.
 | Worktree removal | `jig gc`'s worktrees kind collects an Orca-managed checkout through Orca, after the remove hook and the reflection park, and reports any other | The plugin's launch guard refuses a launch Orca makes into a worktree gc is collecting; a removal made in Orca's app runs the remove hook and the reflection park once Orca offers a hook before the removal | plugin, contribute |
 | Scheduled automations | Nothing | Nothing: the dispatcher is a stateless tick on the machine's timer, with a report and a ledger, which an automation that runs an agent prompt is not | — |
 | Orchestration runs: a coordinator, supervised workers, decision gates | `do-item` delegates to subagents in one session | A later design: the implementer as a supervised worker, routed by item 31 | later |
-| Plugins: worker events, hooks, panels, status bar items, commands | A worker that wakes the dispatcher when an agent waits, blocks or finishes | The launch guard, an account binding through the same hook (a spike), a status bar item, the Jig panel's inbox, an "Open the hub" command, and a wake-up when a workspace is removed | plugin |
-| The browser, on this machine or in a workspace on a paired host | Nothing | The [hub](hub.md), opened by the plugin's command: this machine's, or a paired host's on that host's loopback, which Orca's browser reaches through the host | plugin |
-| Notifications and the phone | The dispatcher notifies a park once, as an unread card; the plugin shows each tick's receipt as an in-app notification | In the desktop app, the status bar's counts and overdue flag and the panel's inbox, each notice linking to its item in the hub's Inbox; on the phone, a push only when an agent needs input, which Orca sends for every finished turn today | plugin, contribute |
+| Plugins: worker events, hooks, panels, status bar items, commands | A worker that wakes the dispatcher when an agent waits, blocks or finishes | The launch guard, an account binding through the same hook (a spike), a status bar item, the Jig panel's inbox, an "Open the dashboard" command, and a wake-up when a workspace is removed | plugin |
+| The browser, on this machine or in a workspace on a paired host | Nothing | The [dashboard](dispatch-dashboard.md), opened by the plugin's command: this machine's, or a paired host's on that host's loopback, which Orca's browser reaches through the host | plugin |
+| Notifications and the phone | The dispatcher notifies a park once, as an unread card; the plugin shows each tick's receipt as an in-app notification | In the desktop app, the status bar's counts and overdue flag and the panel's inbox, each notice linking to its item in the dashboard's Inbox; on the phone, a push only when an agent needs input, which Orca sends for every finished turn today | plugin, contribute |
 
 ### The board, from Jig's side
 
@@ -248,7 +248,7 @@ which Orca dev-loads. `jig` never approves new access itself: a version
 that asks for access the installed one lacks is reported as "Orca plugin
 update needs review", for a person to accept in Orca. `jig doctor` fails
 when a dev-loaded copy and a catalog copy run at once
-([hub.md § Install and upgrade](hub.md#install-and-upgrade)).
+([dispatch-dashboard.md § Install and upgrade](dispatch-dashboard.md#install-and-upgrade)).
 
 The plugin guards and shows; Jig decides and acts. The plugin reads records
 Jig writes, writes to none but the guard record, runs the installed `jig`
@@ -328,7 +328,7 @@ tick's line as JSON, as the dashboard serves it, so the plugin never opens
 Jig's database. It reads any line whose `minReader` it meets, ignoring the
 fields it does not know, and otherwise says to update the plugin, so the
 line can grow fields without breaking the item or the panel
-([hub.md § The source feed](hub.md#the-source-feed-from-a-host-to-a-hub)).
+([dispatch-dashboard.md § The source feed](dispatch-dashboard.md#the-source-feed-from-a-host-to-a-dashboard)).
 The flag catches a stopped timer while Orca runs; a host
 that is off flags nothing, and telling a person about it needs a watcher
 elsewhere. The item shows in the desktop app only.
@@ -344,16 +344,16 @@ nothing. It is a small inbox: everything waiting on the person across the
 machine file's repositories, read from the newest tick's line. That is
 parks with their decisions and the lines that answer them, stalled pickups, double claims
 and, once the dispatch board's Ready to merge is built, the merge queue.
-Once the hub's server is built, the worker reads the entries through
-`jig ask --waiting --json`, which derives them with the hub's Inbox's own
+Once the dashboard's server is built, the worker reads the entries through
+`jig ask --waiting --json`, which derives them with the dashboard's Inbox's own
 rules, so a rule of what waits on a person is kept in one place. Each entry
 links its pull request and opens the Orca workspace that holds the work
 (`workspace.open`, host API 1.3).
 
 - **An answer** typed in a park's entry goes out through
   `jig send <address> answer`, as the person. It is one of the places a
-  person answers while the hub writes nothing
-  ([hub.md § When the hub writes](hub.md#when-the-hub-writes)). That only a
+  person answers while the dashboard writes nothing
+  ([dispatch-dashboard.md § When the dashboard writes](dispatch-dashboard.md#when-the-dashboard-writes)). That only a
   click in Orca's window reaches the box is not tried yet. The box and the
   merge button act only on an event the browser marks as the user's own
   (`isTrusted`), which stops a script that sends them made-up events but
@@ -371,8 +371,8 @@ links its pull request and opens the Orca workspace that holds the work
   drive's pinned merge command, exactly as the line gives it and only after
   it passes the command's strict forms, as that person and nothing else. A
   panel has no network route, so the button opens no write route into the
-  host. Until the hub's stage 3 brings a proof that a person is present,
-  this button is the only merge control Jig's interfaces offer; the hub's
+  host. Until the dashboard's stage 3 brings a proof that a person is present,
+  this button is the only merge control Jig's interfaces offer; the dashboard's
   page gives the link and the
   [pinned merge command](dispatch-board.md#the-merge-command) to copy.
 
@@ -381,26 +381,26 @@ sends is a record `jig send` writes, so an address reads the same on the
 command line, on the forge and in Orca. The panel never types into a live
 agent's terminal; it opens the workspace instead.
 
-**The hub in Orca's browser.** The board, each piece of work with its
-thread, and the hub's other views open in Orca's browser through the
-plugin's "Open the hub" command; the panel holds the inbox only
-([hub.md § Where it runs](hub.md#where-it-runs)). On this
-machine the command opens this machine's hub. In a workspace on a paired
+**The dashboard in Orca's browser.** The board, each piece of work with its
+thread, and the dashboard's other views open in Orca's browser through the
+plugin's "Open the dashboard" command; the panel holds the inbox only
+([dispatch-dashboard.md § Where it runs](dispatch-dashboard.md#where-it-runs)). On this
+machine the command opens this machine's dashboard. In a workspace on a paired
 remote host, Orca's browser routes the page's loopback traffic through the
 host, as Orca documents for remote workspaces, so it reaches that host's
-read-only hub while nothing on the host listens on the network.
-Notifications stay Orca's notices, each linking to its item in the hub's
-Inbox. Where a piece of work's session runs on the machine whose hub serves
+read-only dashboard while nothing on the host listens on the network.
+Notifications stay Orca's notices, each linking to its item in the dashboard's
+Inbox. Where a piece of work's session runs on the machine whose dashboard serves
 the page, its card opens the workspace and the terminal through
-`orca terminal switch`, as Herdr's attach command does for Herdr. The hub
+`orca terminal switch`, as Herdr's attach command does for Herdr. The dashboard
 is Jig's own page, not the plugin's (Left out), so every reader without
 Orca, the phone among them, opens it in any browser.
 
 Not tried yet: whether Orca's phone app opens a loopback page through the
 paired host, and whether `orca terminal switch` run on a host reveals the
 tab in a paired laptop's window. Both are tried with a throwaway page
-before the hub's second stage is planned; if the phone app cannot open
-the page, a phone reaches the hub through a front only.
+before the dashboard's second stage is planned; if the phone app cannot open
+the page, a phone reaches the dashboard through a front only.
 
 ## Build order
 
@@ -436,10 +436,10 @@ One pull request each, in this order; each is usable on its own.
 9. **The Jig panel.** First the spike on fixtures that picks the drawing
    mode and the sidebar's fit, then the inbox with its answer box, then its
    merge button once the dispatch board's Ready to merge is built. Each is
-   its own pull request. The board and the threads are the hub's: the
-   plugin's reading by `minReader`, its "Open the hub" command, and its
+   its own pull request. The board and the threads are the dashboard's: the
+   plugin's reading by `minReader`, its "Open the dashboard" command, and its
    install from the Orca catalog and the host's staged folder are steps of
-   [the hub's build order](hub.md#build-order).
+   [the dashboard's build order](dispatch-dashboard.md#build-order).
 
 ## Left out
 
@@ -468,7 +468,7 @@ One pull request each, in this order; each is usable on its own.
   Herdr equivalent today; the collection step's runtime column is where a
   Herdr worktree would be collected through `herdr worktree remove` when
   that is built. What the panel and the status bar show, a Herdr user reads
-  in the hub in any browser and answers with `jig send`, and a hub card
+  in the dashboard in any browser and answers with `jig send`, and a dashboard card
   opens a Herdr session through its attach command.
-- **The hub inside the plugin.** The hub is Jig's own page, which Orca
-  opens in its browser; [hub.md § Left out](hub.md#left-out) says why.
+- **The dashboard inside the plugin.** The dashboard is Jig's own page, which Orca
+  opens in its browser; [dispatch-dashboard.md § Left out](dispatch-dashboard.md#left-out) says why.

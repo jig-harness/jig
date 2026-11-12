@@ -4,13 +4,13 @@ type: adr
 status: draft
 description: "Every station of the execution line on a piece of work has an address that is derived from the records the station leaves, never declared or held; asking reads those records and telling writes one record the line already acts on, so no resident agent, daemon or queue holds an address or a request; a person's conversation with the operator is kept apart, on one machine, and never read as a request"
 lifecycle: permanent
-version: "1.1"
-last_updated: 2026-11-06
+version: "1.2"
+last_updated: 2026-11-11
 owner: maintainers
 decision_date: 2026-11-05
 supersedes: ~
 superseded_by: ~
-tags: [adr, records, addresses, dispatcher, drive, dark-factory, hub]
+tags: [adr, records, addresses, dispatcher, drive, dark-factory, dashboard]
 ---
 
 # ADR-0014: An address is derived from records, and a request is a record
@@ -51,8 +51,8 @@ and a daemon drains. These constraints weigh against it.
   those records reaches its reader at its next run with no new path to it.
 - **A conversation is not a request.** A person who talks a piece of work
   over with the [operator](../../GLOSSARY.md) in the
-  [hub](../../GLOSSARY.md)
-  ([design/hub.md § The operator chat](../../design/hub.md#the-operator-chat))
+  [dispatch dashboard](../../GLOSSARY.md)
+  ([design/dispatch-dashboard.md § The operator chat](../../design/dispatch-dashboard.md#the-operator-chat))
   comes back to it later, and the context they left is in no record. What
   they decide reaches the line as one of the records above, written as
   them.
@@ -73,11 +73,11 @@ its next run. No resident agent holds an address, and no daemon, queue or
 inbox holds a request.
 
 The one thing Jig keeps beside those records is a person's conversation
-with the operator in the hub: a `hub-conversation` record, one file per
+with the operator in the dashboard: an `operator-conversation` record, one file per
 thread, readable by its owner alone (mode `0600`), on the one machine the
-person chats on, registered on the machine medium with the hub as its
+person chats on, registered on the machine medium with the dashboard as its
 owner. No station and
-not `ask` reads it, and the hub shows it apart from the thread's records.
+not `ask` reads it, and the dashboard shows it apart from the thread's records.
 Nothing replays it as a request: the operator's next turn reads it as
 context, and the operator only proposes. It holds what was said and the
 commits made from the thread (each one's plan, its proof that a person was
@@ -130,7 +130,7 @@ mailbox.
   an unchanged pull request costs nothing against the forge's limit, but a
   changed one does.
 - A conversation with the operator lives on the one machine that keeps it:
-  another machine's hub does not show it, and it is gone 30 days after its
+  another machine's dashboard does not show it, and it is gone 30 days after its
   thread settles or 90 days after its last turn, or sooner when its owner
   deletes it.
 
@@ -148,4 +148,4 @@ reads only through the exports of the components that own each record. That
 `jig ask` writes no record is held by its tests, which run it against a
 forge that answers reads only and find every forge call a read. That no
 command keeps a store of addresses or requests, and that no station and not
-`ask` reads a `hub-conversation` record, is review's to hold.
+`ask` reads an `operator-conversation` record, is review's to hold.
