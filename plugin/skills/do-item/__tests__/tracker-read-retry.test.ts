@@ -355,6 +355,40 @@ it("reports a long credential hold immediately instead of losing it at the deadl
   ).rejects.toBeInstanceOf(TrackerRateLimited);
 });
 
+it("reports a long credential hold without waiting for stream cleanup", async () => {
+  let cancelled = false;
+  const fetcher = (async () =>
+    new Response(
+      new ReadableStream({
+        cancel() {
+          cancelled = true;
+          return new Promise<void>(() => {
+            // The stream never settles its cancellation callback.
+          });
+        },
+      }),
+      { status: 429, headers: { "Retry-After": "1e13" } },
+    )) as unknown as typeof fetch;
+  const pending = jiraHttp(
+    "https://jira.example",
+    auth(),
+    fetcher,
+    budgetGovernor(memoryBudgetStore()),
+  )({ method: "GET", path: "myself" });
+  await expect(
+    Promise.race([
+      pending,
+      new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error("credential refusal remained pending")),
+          100,
+        ),
+      ),
+    ]),
+  ).rejects.toBeInstanceOf(TrackerRateLimited);
+  expect(cancelled).toBe(true);
+});
+
 it("retries after a short credential hold has expired", async () => {
   let calls = 0;
   const fetcher = (async () =>
