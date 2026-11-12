@@ -98,6 +98,7 @@ export interface CoreTracker
     | "poolIssues"
     | "queueIssues"
     | "assignedIssues"
+    | "unassignedIssues"
     | "incompleteIssues"
     | "openPopulation"
     | "facetStores"
@@ -117,6 +118,10 @@ export interface CoreTracker
   ): Promise<CoreQueueIssue[]>;
   assignedIssues(
     identity: string,
+    states: ReadonlyArray<CanonicalState>,
+    signal?: AbortSignal,
+  ): Promise<CorePoolIssue[]>;
+  unassignedIssues?(
     states: ReadonlyArray<CanonicalState>,
     signal?: AbortSignal,
   ): Promise<CorePoolIssue[]>;
@@ -172,6 +177,7 @@ export function withFacets(
     facetReport,
     poolIssues: _batch,
     queueIssues: _queue,
+    unassignedIssues,
     ...rest
   } = core;
   const codecs = new Map<Facet, LabelCodec>();
@@ -494,6 +500,15 @@ export function withFacets(
         withValues,
       );
     },
+    ...(unassignedIssues === undefined
+      ? {}
+      : {
+          async unassignedIssues(states, options) {
+            const signal = readSignal(options);
+            refuseStopped(signal);
+            return (await unassignedIssues(states, signal)).map(withValues);
+          },
+        }),
     ...batchedReads(core, withValues),
     async ledger(query, onPage) {
       const issues = await rest.ledger(query, onPage);

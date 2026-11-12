@@ -419,13 +419,17 @@ function pickupAction(
     stage: "pickup",
     target: item.key,
     record: "tracker",
-    reason: `assigned to ${item.assignee} by ${item.assignedBy}, in ${item.state}, with no running session`,
+    reason:
+      item.pooled === true
+        ? `unassigned in the ready pool (${item.state}), made ready by ${item.assignedBy}, with no running session; its claim assigns it to ${item.assignee}`
+        : `assigned to ${item.assignee} by ${item.assignedBy}, in ${item.state}, with no running session`,
     evidence: {
       title: item.title,
       url: item.url,
       state: item.state,
       assignee: item.assignee,
       assignedBy: item.assignedBy,
+      ...(item.pooled === true ? { pooled: true } : {}),
       ...(item.servedPerson === undefined
         ? {}
         : { servedPerson: item.servedPerson }),

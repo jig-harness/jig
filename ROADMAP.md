@@ -168,9 +168,11 @@ Jig itself keeps a person merging
 
 A team states the rules its agent work follows, and every Jig skill that
 claims, moves or closes an item keeps them. Work starts only when a check
-the team supplies passes and only from the states the team allows. The
-dispatcher can also pick up from an unassigned ready pool. Every rule is optional, and a team
-that sets none keeps today's behaviour.
+the team supplies passes and only from the states the team allows, and the
+dispatcher can pick up from an unassigned ready pool. Every rule is
+optional, and a team that sets none keeps today's behaviour. The rules are
+built; what remains is proving them on a team's own Jira project, from its
+ready pool to a merged pull request.
 
 ### 48. Fitting the drive to a repository's reviewer
 

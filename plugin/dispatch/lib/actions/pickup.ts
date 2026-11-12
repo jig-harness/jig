@@ -96,7 +96,7 @@ export async function changed(
 ): Promise<{ issue: PoolIssue } | { why: string }> {
   const issue =
     served?.servedPerson === undefined
-      ? await freshPickup(ctx.tracker, ctx.section, key)
+      ? await freshPickup(ctx.tracker, ctx.section, key, ctx.servedPolicy)
       : await freshServedPickup(
           ctx.tracker,
           key,
@@ -332,7 +332,7 @@ async function retryPending(
     const unauthorized = servedAuthorization(state, ctx, record, item);
     const fresh =
       record.servedPerson === undefined
-        ? await freshPickup(ctx.tracker, ctx.section, item)
+        ? await freshPickup(ctx.tracker, ctx.section, item, ctx.servedPolicy)
         : await freshServedPickup(
             ctx.tracker,
             item,

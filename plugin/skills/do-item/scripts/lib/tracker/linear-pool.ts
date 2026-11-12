@@ -15,8 +15,10 @@
 import { isRecord } from "../../../../../shared/guards.ts";
 import type { LinearTransport } from "./linear.ts";
 import { claimOperations } from "./linear-claim.ts";
+import { stateChangeOperations, teamMember } from "./linear-state-change.ts";
 import {
   type Assigner,
+  type CanonicalState,
   CLOSED_STATE_TYPES,
   type PoolQuery,
   type StateNames,
@@ -205,15 +207,8 @@ function assigner(actor: unknown, key: string, team: string): Assigner {
     throw new AssignmentError(
       `issue ${key}: its assignment was made by no user (an integration or an automation)`,
     );
-  const teams = field(actor.teams, `issue ${key} assigner.teams`).nodes;
-  return {
-    id: actor.id,
-    name: typeof actor.name === "string" ? actor.name : actor.id,
-    trusted:
-      actor.guest === false &&
-      Array.isArray(teams) &&
-      teams.some((t) => isRecord(t) && t.key === team),
-  };
+  field(actor.teams, `issue ${key} assigner.teams`);
+  return teamMember(actor as Record<string, unknown> & { id: string }, team);
 }
 
 export function assignedOperations(
@@ -221,7 +216,9 @@ export function assignedOperations(
 ): Pick<
   CoreTracker,
   | "assignedIssues"
+  | "unassignedIssues"
   | "assignedBy"
+  | "stateChangedBy"
   | "viewer"
   | "assignees"
   | "assign"
@@ -231,8 +228,46 @@ export function assignedOperations(
   | "openPopulation"
 > {
   const { team, states, transport, pageAll } = opts;
+  /** This team's open issues in `wanted`, narrowed by `who`. */
+  async function inStates(
+    who: Record<string, unknown>,
+    wanted: ReadonlyArray<CanonicalState>,
+    where: string,
+    signal?: AbortSignal,
+  ) {
+    if (wanted.length === 0)
+      throw new TrackerRequestError(
+        "invalid",
+        `${where}: a query of issues by state needs at least one state`,
+      );
+    const filter = {
+      and: [
+        { team: { key: { eq: team } } },
+        who,
+        {
+          state: {
+            name: {
+              in: wanted
+                .map((s) => states[s])
+                .filter((n): n is string => n !== null),
+            },
+          },
+        },
+      ],
+    };
+    const nodes = await pageAll(
+      transport,
+      opts.poolQuery,
+      { filter },
+      (d) => d.issues,
+      where,
+      signal,
+    );
+    return nodes.map(opts.parsePool);
+  }
   return {
     ...claimOperations(transport, pageAll),
+    ...stateChangeOperations({ team, transport, pageAll }),
     async openPopulation(signal) {
       const filter = { and: [{ team: { key: { eq: team } } }, OPEN] };
       const nodes = await pageAll(
@@ -245,44 +280,27 @@ export function assignedOperations(
       );
       return nodes.map(opts.parsePool);
     },
-    async assignedIssues(identity, wanted, signal) {
-      if (wanted.length === 0)
-        throw new TrackerRequestError(
-          "invalid",
-          "an assigned-issues query needs at least one state",
-        );
-      const filter = {
-        and: [
-          { team: { key: { eq: team } } },
-          {
-            assignee: {
-              or: [
-                { email: { eqIgnoreCase: identity } },
-                { displayName: { eqIgnoreCase: identity } },
-              ],
-            },
+    assignedIssues: (identity, wanted, signal) =>
+      inStates(
+        {
+          assignee: {
+            or: [
+              { email: { eqIgnoreCase: identity } },
+              { displayName: { eqIgnoreCase: identity } },
+            ],
           },
-          {
-            state: {
-              name: {
-                in: wanted
-                  .map((s) => states[s])
-                  .filter((n): n is string => n !== null),
-              },
-            },
-          },
-        ],
-      };
-      const nodes = await pageAll(
-        transport,
-        opts.poolQuery,
-        { filter },
-        (d) => d.issues,
+        },
+        wanted,
         `issues assigned to ${identity}`,
         signal,
-      );
-      return nodes.map(opts.parsePool);
-    },
+      ),
+    unassignedIssues: (wanted, signal) =>
+      inStates(
+        { assignee: { null: true } },
+        wanted,
+        `unassigned issues of ${team}`,
+        signal,
+      ),
 
     async assignedBy(key, assignee) {
       let current: unknown = null;

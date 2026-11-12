@@ -90,7 +90,7 @@ function pickupPrompt(
   return [
     skillPrompt(record.vendor, `${PICKUP_SKILL} ${record.item}`),
     "",
-    "jig dispatch started this session for an item assigned to the factory identity; nobody is at the keyboard.",
+    "jig dispatch started this session for an item assigned to the factory identity, or for an unassigned item from the repository's ready pool, which your claim assigns; nobody is at the keyboard.",
     ...pickupResultLines(record),
   ].join("\n");
 }
@@ -160,7 +160,7 @@ function pickupPassPrompt(
           `Claim this served assignment using tracker.ts claim ${shellQuote(record.item ?? "")} --for ${shellQuote(record.servedPerson)}${record.ancestorEpic === undefined ? "" : ` --ancestor ${shellQuote(record.ancestorEpic)}`}${record.blockingFor === undefined ? "" : ` --blocking ${shellQuote(record.blockingFor)}`}; preserve the person as the only assignee. A refusal stops the pickup.`,
         ]),
     "",
-    "jig dispatch started this headless pass for an item assigned to the factory identity; nobody is at the keyboard, and nobody can answer a question while it runs.",
+    "jig dispatch started this headless pass for an item assigned to the factory identity, or for an unassigned item from the repository's ready pool, which your claim assigns; nobody is at the keyboard, and nobody can answer a question while it runs.",
     `Where a step needs a person's decision, do not guess: carry out what does not depend on it, then stop, and end your output with one line that starts "${QUESTION_PREFIX}" and states what the person must decide, with no secret or personal data in it. The dispatcher sends that line to a person.`,
     ...pickupResultLines(record),
   ].join("\n");

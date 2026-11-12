@@ -7,12 +7,17 @@
  * assigner cannot write, or whose history cannot be read, is reported and
  * never planned.
  *
+ * With a ready pool (`dispatch.pool`), the unassigned items in its states
+ * are pickups too, trusted by who made them ready (`ready-pool.ts`).
+ *
  * Beside them, the items the identity claimed (in its in-progress state),
  * which the plan watches for stalls and double claims; and the fresh read a
  * pickup's launch makes just before it starts.
  */
 import type { ServedPerson } from "../serve-config.ts";
-import { limitedRow, readServedPickups } from "./served.ts";
+import { pickupReads } from "../pickup-reads.ts";
+import { freshPoolPickup, readPoolPickups } from "./ready-pool.ts";
+import { limitedRow, readServedPickups, type ServedPolicy } from "./served.ts";
 import {
   isRateLimited,
   type TrackerRateLimited,
@@ -326,6 +331,7 @@ export async function freshPickup(
   tracker: Tracker,
   section: DispatchSection,
   key: string,
+  policy?: ServedPolicy,
 ): Promise<PoolIssue | string> {
   if (section.identity === null) return "dispatch.identity is no longer set";
   let issues: PoolIssue[];
@@ -338,8 +344,15 @@ export async function freshPickup(
     return `the tracker cannot be read again: ${failureText(error)}`;
   }
   const issue = issues.find((i) => i.identifier === key);
-  if (issue === undefined)
-    return `it is no longer assigned to ${section.identity} in ${section.states.join(", ")}`;
+  const unassigned = `it is no longer assigned to ${section.identity} in ${section.states.join(", ")}`;
+  if (issue === undefined && section.pool !== undefined) {
+    // Not assigned: a pickup from the ready pool, read again as one.
+    const pooled = await freshPoolPickup(tracker, section, key, policy);
+    return typeof pooled === "string"
+      ? `${unassigned}, and not ready in the pool: ${pooled}`
+      : pooled;
+  }
+  if (issue === undefined) return unassigned;
   // The assignment authorizes the pickup: who made it is read again, so a
   // reassignment by someone without write access, or an assigner whose access
   // ended since the plan, starts nothing.
@@ -374,7 +387,18 @@ export async function readPickups(
 ): Promise<TrackerReading> {
   let tracker: Tracker | undefined;
   const once = () => (tracker ??= open());
-  const factory = await readFactoryPickups(once, section, facets);
+  const factory = withPool(
+    await readFactoryPickups(once, section, facets),
+    section.pool === undefined || section.identity === null
+      ? null
+      : await readPoolPickups(
+          once(),
+          section,
+          served,
+          served === undefined ? undefined : (served.cache ?? pickupReads),
+        ),
+    once,
+  );
   if (served === undefined || served.people.length === 0) return factory;
   const extra = await readServedPickups(once(), served.people, {
     ...(served.cache === undefined ? {} : { cache: served.cache }),
@@ -417,6 +441,36 @@ export async function readPickups(
               [...extra.claimed, ...factory.claimed].map((i) => [i.key, i]),
             ).values(),
           ],
+  };
+}
+
+/**
+ * The factory's reading with the ready pool's pickups after its own, an item
+ * both readings want kept once; the pool's rate limit or failure is named
+ * in its rows, and leaves the claims as the factory read them.
+ */
+function withPool(
+  factory: TrackerReading,
+  pool: Awaited<ReturnType<typeof readPoolPickups>> | null,
+  open: () => Tracker,
+): TrackerReading {
+  if (pool === null) return factory;
+  const keys = new Set(factory.wanted.map((i) => i.key));
+  const detail =
+    pool.limited !== undefined
+      ? `the ready pool (${pool.states}) waits for the tracker's rate limit to reset`
+      : pool.failed === true
+        ? `the ready pool (${pool.states}) was not read`
+        : `${pool.read} unassigned item(s) in the ready pool (${pool.states}), ${pool.wanted.length} made ready by a person with write access`;
+  return {
+    ...factory,
+    read: { ...factory.read, detail: `${factory.read.detail}; ${detail}` },
+    wanted: [...factory.wanted, ...pool.wanted.filter((i) => !keys.has(i.key))],
+    unplaced: onceEach([
+      ...factory.unplaced,
+      ...pool.unplaced,
+      ...(pool.limited === undefined ? [] : [limitedRow(open(), pool.limited)]),
+    ]),
   };
 }
 

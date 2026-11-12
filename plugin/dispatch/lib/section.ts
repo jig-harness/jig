@@ -10,7 +10,10 @@ import {
   parseTrackerConfig,
   type TrackerConfig,
 } from "../../skills/do-item/scripts/lib/tracker/config.ts";
-import { CANONICAL_STATES } from "../../skills/do-item/scripts/lib/tracker/port.ts";
+import {
+  CANONICAL_STATES,
+  type CanonicalState,
+} from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { parseLabelConfig } from "../../shared/pr-labels/config.ts";
 import type { LabelConfig } from "./labels.ts";
 import { duration } from "./machine-config.ts";
@@ -48,6 +51,7 @@ const KEYS = [
   "renotify_after",
   "labels",
   "adopt",
+  "pool",
 ];
 const ADOPT_KEYS = ["enabled", "authors", "within"];
 /** `adopt.within`'s default: a week. */
@@ -101,6 +105,7 @@ function text(value: unknown, field: string): Checked<string | null> {
 function states(
   value: unknown,
   tracker: Pick<TrackerConfig, "states">,
+  field = "states",
 ): Checked<string[]> {
   if (value === undefined || value === null) return ok(DEFAULT_STATES);
   if (
@@ -109,24 +114,24 @@ function states(
     value.some((s) => !(CANONICAL_STATES as readonly unknown[]).includes(s))
   )
     return invalid(
-      `dispatch.states must be a nonempty list of canonical states (${CANONICAL_STATES.join(", ")})`,
+      `dispatch.${field} must be a nonempty list of canonical states (${CANONICAL_STATES.join(", ")})`,
     );
   if (new Set(value).size !== value.length)
-    return invalid("dispatch.states lists a state twice");
+    return invalid(`dispatch.${field} lists a state twice`);
   // `do-item`'s claim moves an item there: a claimed item is never a pickup.
   if (value.includes("in_progress"))
     return invalid(
-      "dispatch.states cannot list in_progress, the state do-item's claim moves an item to",
+      `dispatch.${field} cannot list in_progress, the state do-item's claim moves an item to`,
     );
   // An item there has a pull request open: it is claimed work, never a pickup.
   if (value.includes("pr_open"))
     return invalid(
-      "dispatch.states cannot list pr_open, the state of an item whose pull request is open",
+      `dispatch.${field} cannot list pr_open, the state of an item whose pull request is open`,
     );
   // Only the drive-ledger projection or a person moves an item out of it.
   if (value.includes("blocked"))
     return invalid(
-      "dispatch.states cannot list blocked, the state of an item whose drive stopped on parked work",
+      `dispatch.${field} cannot list blocked, the state of an item whose drive stopped on parked work`,
     );
   const prOpen = tracker.states.pr_open?.trim().toLowerCase();
   const alias =
@@ -140,7 +145,7 @@ function states(
         );
   if (alias !== undefined)
     return invalid(
-      `dispatch.states cannot list ${alias}, which shares the '${tracker.states.pr_open}' tracker state name with pr_open; items there have a pull request open and are never pickups`,
+      `dispatch.${field} cannot list ${alias}, which shares the '${tracker.states.pr_open}' tracker state name with pr_open; items there have a pull request open and are never pickups`,
     );
   return ok(value as string[]);
 }
@@ -269,6 +274,51 @@ function pickup(
   });
 }
 
+const POOL_KEYS = ["states"];
+
+/**
+ * `dispatch.pool`: the ready pool, unassigned items in its states picked up
+ * as the factory identity's. Several hosts may take from one pool, so it
+ * requires the claim marker (`do_item.claim_marker`), the token that
+ * arbitrates between their claims; and the factory identity, whom the claim
+ * assigns and whose claimed items the stall watch reads.
+ */
+function pool(
+  values: Record<string, unknown>,
+  section: Record<string, unknown>,
+  identity: string | null,
+  tracker: Pick<TrackerConfig, "states">,
+): Checked<DispatchSection["pool"]> {
+  const raw = section.pool;
+  if (raw === undefined || raw === null) return ok(undefined);
+  if (!isMapping(raw)) return invalid("dispatch.pool must be a mapping");
+  const unknown = Object.keys(raw).filter((k) => !POOL_KEYS.includes(k));
+  if (unknown.length > 0)
+    return invalid(
+      `dispatch.pool has unknown key(s): ${unknown.join(", ")} (known: ${POOL_KEYS.join(", ")})`,
+    );
+  const named = (raw as Record<string, unknown>).states;
+  if (named === undefined || named === null)
+    return invalid(
+      "dispatch.pool.states must name the states whose unassigned items are pickups",
+    );
+  const poolStates = states(named, tracker, "pool.states");
+  if (!poolStates.ok) return poolStates;
+  if (identity === null)
+    return invalid(
+      "dispatch.pool needs dispatch.identity: a pool pickup's claim assigns the item to the factory identity, whose claimed items the dispatcher watches",
+    );
+  const item = values.do_item;
+  if (
+    !isMapping(item) ||
+    (item as Record<string, unknown>).claim_marker !== true
+  )
+    return invalid(
+      "dispatch.pool needs do_item.claim_marker: true: several hosts may take an item from one pool, and the claim marker is what decides which of their claims holds it",
+    );
+  return ok({ states: poolStates.value as CanonicalState[] });
+}
+
 /** What `timings` reads: every field but the pickup's own, the rules and the deadline. */
 type Timings = Omit<
   DispatchSection,
@@ -368,7 +418,10 @@ export function dispatchSection(
     DEFAULT_PICKUP_DEADLINE_MS,
   );
   if (!pickupDeadlineMs.ok) return pickupDeadlineMs;
+  const ready = pool(values, section, picked.value.identity, tracker);
+  if (!ready.ok) return ready;
   return ok({
+    ...(ready.value === undefined ? {} : { pool: ready.value }),
     ...picked.value,
     ...waits.value,
     pickupDeadlineMs: pickupDeadlineMs.value,

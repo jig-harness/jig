@@ -2499,6 +2499,13 @@ make, use the entry's term instead.
   unassigned item under an epic assigned to them, is ranked and picked up
   beside the *factory identity*'s, and the pickup keeps them as the
   item's assignee ([served pickups](plugin/README.md#the-dispatcher)).
+- **Ready pool** — the tracker states a team leaves validated items in,
+  unassigned, for whoever takes them first. A repository names them in
+  `dispatch.pool.states`, and the *dispatcher* picks up an item there when
+  the person who made the latest move into its state can write to the
+  repository; the pickup's claim assigns it to the *factory identity*, and
+  the claim marker decides between hosts that take the same item
+  ([dispatch.pool](plugin/CONFIGURATION.md#dispatch)).
 - **Steward** — the agent pass a *dispatcher*'s host starts every 20
   minutes, when its input changed, to read what is stopped and waiting on
   the line and propose what to do about it: re-arm a drive once when its

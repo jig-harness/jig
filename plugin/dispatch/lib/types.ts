@@ -60,6 +60,10 @@ export interface DispatchSection {
   labels: LabelConfig;
   /** The adoption rule (`dispatch.adopt`): off by default. */
   adopt: AdoptRule;
+  /** The ready pool (`dispatch.pool`): unassigned items in these states are pickups too; absent = no pool. */
+  pool?: {
+    states: import("../../skills/do-item/scripts/lib/tracker/port.ts").CanonicalState[];
+  };
 }
 
 /** `dispatch.adopt`: which open pull requests with no drive ledger the tick drives as if labelled `drive`. */
@@ -100,7 +104,10 @@ export interface WantedItem {
   url: string | null;
   state: string;
   assignee: string;
+  /** Who assigned it; for an item from the ready pool, who made it ready. */
   assignedBy: string;
+  /** Taken from the ready pool (`dispatch.pool`): unassigned, its claim assigns it. */
+  pooled?: true;
   servedPerson?: string;
   ancestorEpic?: string;
   /** For a blocker pulled forward: the served item it blocks, which carries the authority. */

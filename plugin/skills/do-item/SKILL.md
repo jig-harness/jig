@@ -1790,7 +1790,9 @@ Without such a runner, ask as in [Asking the user](#asking-the-user).
 ## Dispatched passes
 
 `jig dispatch` starts this skill as a headless pass for an item assigned to
-the factory identity: `/jig:do-item <KEY>` followed by the line
+the factory identity, or an unassigned one from the repository's ready pool
+(`dispatch.pool`), which Step 4a's claim assigns: `/jig:do-item <KEY>`
+followed by the line
 `route: rules`, with nobody at the keyboard and nobody to answer while it
 runs. Its prompt says so, and names the `jig dispatch result` commands that
 record how it ended. In such a pass:
