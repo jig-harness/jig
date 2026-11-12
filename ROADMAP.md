@@ -115,8 +115,8 @@ which review threads wait on a person rather than a bot. A pull request held
 back from CI on purpose reads held, never failing. A pickup shows its
 progress before its pull request exists. The dashboard reads the records the line
 keeps and stores no copy of them. On a host, the dashboard only reads and accepts
-no commands. A laptop serves the page to any browser and reads each host
-over SSH (Secure Shell). Every view works without Orca. A team that uses
+no commands. A laptop serves the page to any browser, and shows every
+host when the team runs the hub (item 49). Every view works without Orca. A team that uses
 Orca opens the dashboard in Orca's own browser. A phone reaches a host's page
 through a front on a private network. Phone access is required, with read-only
 views, visible copy controls and links to pull requests and issues. Tailscale
@@ -187,9 +187,9 @@ A team or a person who runs the dispatcher on several machines can add one
 service that every host calls, the [hub](GLOSSARY.md). It reads the forge
 and the tracker once for all the hosts instead of once per host, so their
 rate limits are spent once. Its claims let several hosts pick up one
-repository's work, and lapse when a host goes silent. It tells a person when a
-host stops, and shows every host's work on one dashboard, phone included.
-Later it offers work to whichever host has a free slot. The hub
+repository's work, and it tells a person when a host stops. It shows every
+host's work on one dashboard, phone included. Later it offers work to
+whichever host has a free slot, in an order each team can set. The hub
 runs on a machine the team chooses and needs no cloud service. Nothing
 requires it: a host that does not enroll, or whose hub is down, dispatches
 on its own as it does today.

@@ -31,9 +31,9 @@ person meet these forces:
   queues on its own timer, against limits that belong to one credential or
   one organization. A single host has already spent a tracker's hourly
   limit for one person by itself; each further host spends it again.
-- **A dead host's claim stays.** A launch claim on the forge has no expiry,
-  so a host that dies holds its pull request until a person deletes the
-  claim.
+- **A dead host's work waits.** A launch claim on the forge has no expiry,
+  and nothing outside the host notices that it died, so its work waits
+  until a person does.
 - **Pickups cannot be shared.** Nothing claims an item before a session
   opens, so one repository's pickups are dispatched from one host only.
 - **Nobody outside a host learns that it stopped**, which is one of
@@ -92,7 +92,7 @@ own stage 1 design, which records its choice here before it starts.
 ## Alternatives considered
 
 - **Hosts dispatching alone, as now.** Rejected: reads keep multiplying
-  with each host, a dead host's claims stay until a person removes them,
+  with each host, a dead host's work waits until a person notices,
   and pickups stay on one host.
 - **A shared read cache that coordinates nothing.** Kept as the hub's first
   stage, which ADR-0013 already allows. Alone it leaves dead claims, shared
@@ -119,8 +119,9 @@ own stage 1 design, which records its choice here before it starts.
 
 - Hosts dispatching the same repositories spend about one host's reads
   between them.
-- A stopped host's claims lapse for every enrolled host, with no write on
-  its behalf, and a person is told the host stopped.
+- A stopped host is noticed: a person is told, and its leases lapse, so
+  the hub grants its work to another host, which takes it over by the
+  forge's own path.
 - One repository's pickups can be dispatched from several hosts.
 - One dashboard and one phone page show every enrolled host's work.
 

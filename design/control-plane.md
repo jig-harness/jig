@@ -7,17 +7,16 @@ timer. One host is fine. Several hosts that dispatch for one team or one
 person read the same pull requests and the same queues several times over,
 against limits that belong to one credential or one organization: Linear,
 for one, allows each person's keys 2,500 requests an hour between them. A
-host sees another host's work only through the forge, a tick behind. A
-host that dies leaves its launch claims on the forge until a person
-deletes them. One repository's pickups can be dispatched from one host
-only, since nothing claims an item before a session opens. Nobody outside a
-host learns that it stopped. A person with several machines has one
+host sees another host's work only through the forge, a tick behind. One
+repository's pickups can be dispatched from one host only, since nothing
+claims an item before a session opens. Nobody outside a host learns that
+it stopped, so its work waits until a person notices. A person with several machines has one
 [dispatch dashboard](../GLOSSARY.md) per machine and no view of all of
 them. With this built, an optional service, the [hub](../GLOSSARY.md),
 reads the forge and the tracker once for every host enrolled in it. It
-also holds claims with leases that lapse when a host goes silent, offers
-work to whichever host has a free slot, tells a person when a host stops
-and serves one view of every host's work. A host that never enrolls loses
+also grants claims with leases, so a silent host's work goes to another
+host, offers work to whichever host has a free slot, tells a person when a
+host stops and serves one view of every host's work. A host that never enrolls loses
 nothing, and a host whose hub is unreachable works exactly as it does
 today.
 
@@ -59,7 +58,9 @@ These rules keep each level whole:
   a tick makes to the hub has a short deadline. When it fails, the tick
   reads the forge and the tracker itself within its own budgets, claims on
   the forge as it does today, and says on its receipt since when the hub
-  has not answered. Running sessions never notice.
+  has not answered. Running sessions never notice. The one exception is an
+  owner's duties, which wait for the hub so two hosts never hold one
+  ([Owner duties](#owner-duties)).
 - **The hub adds checks in front of the fences and never replaces them.** A
   drive launch still needs the winning claim on the forge, and a pickup
   still needs its tracker claim. The hub's own claim is a faster check
@@ -108,6 +109,10 @@ nothing requires it.
   ([`report`](#the-host-protocol)). A lost lease lapses on its own, and the fence behind it still
   holds. So deleting the hub's database costs a fresh enrollment of each
   host and nothing that the line depends on.
+- **It keeps what it serves**, comment text included, on the machine the
+  organization chose, as each host's own records do. Reading the text
+  through on each request instead would spend the reads the hub exists to
+  save.
 - **No relationship store.** Links between items live in the tracker
   ([ADR-0015](../docs/adr/ADR-0015-relationships-live-in-the-tracker.md)),
   and the hub reads them there like any host.
@@ -303,11 +308,9 @@ of them into the hub itself waits until a duty is shown to need it.
 The last stage lets the hub suggest which host takes which work. A tick
 with free slots asks `offers` with its slots, the accounts and agent kinds
 it can run, and the repositories it has clones of. The hub answers with
-items and pull requests ranked by the queue's order (the tracker's, as the
-steward ordered it), skipping work in a change area another launch holds
-([serialized areas](dark-factory-dispatch.md)), and preferring the host
-that already holds a piece of work's workspace. "Nothing for you" is an
-answer of its own.
+items and pull requests in the order its policy gives
+([How offers are ranked](#how-offers-are-ranked)), skipping what the host
+cannot take. "Nothing for you" is an answer of its own.
 
 An offer is only an input to the tick's plan: the host still applies its
 own admission (slots, load, walls) and still needs the hub's grant and the
@@ -317,6 +320,59 @@ it does today. Handing out work coordinates the hosts, which
 [ADR-0016](../docs/adr/ADR-0016-an-optional-hub-for-hosts-that-keep-authority.md)
 decides it for enrolled hosts only.
 
+### How offers are ranked
+
+How the hub orders the work it offers is a policy, and teams will want
+different ones: one shares hosts fairly between repositories, another
+keeps a host on the work it started, a third sends the oldest item first.
+So the order is declared as data in the hub's settings, as a route is
+([ADR-0009](../docs/adr/ADR-0009-routes-are-derived-by-rules-as-data.md)),
+never written into the hub's code and never asked of a model, and a
+strategy the built-ins lack can be added without changing them.
+
+- **Filters come first and are not policy.** A candidate the host cannot
+  take is never offered. That covers a repository the host has no clone
+  of, a route whose agent kind none of its accounts runs, work on hold,
+  and a change area another launch holds. These follow the fences and the
+  tick's own admission, so no policy can turn them off.
+- **Then an ordered list of rankers.** A policy is a list of rankers, each
+  named, with settings of its own. Every ranker gives each candidate a
+  value; candidates are ordered by the first ranker, ties broken by the
+  second, and so on. The `weighted` ranker combines other rankers' values
+  with weights, for a team that wants a blend rather than an order.
+- **The default policy** is `queue` (the queue's order, as the tracker
+  and the steward set it), then `affinity` (the host that already holds the
+  work's workspace or ran its last round), then `free-slots` (the host with
+  the most free slots).
+- **More built-ins join behind the same interface**, each a ranker added
+  with no change to the others or to the hub's callers. Likely ones:
+  - `age`, longest waiting first;
+  - `facet`, by a priority or size the tracker keeps
+    ([tracker-facets.md](tracker-facets.md));
+  - `repository-share`, so one repository's long queue does not starve
+    the others;
+  - `host-preference`, hosts a repository or an item asks for;
+  - `load`, the host whose load factor is lowest.
+- **A ranker of a team's own: `command`.** It runs a program the hub's
+  settings name, hands it the host and the candidates with their facts as
+  JSON on standard input, and reads back an order or a value per candidate
+  on standard output, within a 2-second deadline. A command that fails,
+  times out or answers out of shape is skipped for that offer and shown on
+  the hub's status, and the rest of the policy still ranks. Only the hub's
+  own settings name a command, never a repository's file, since the hub
+  runs it with its own identity.
+- **Named policies, chosen per repository.** The hub's settings define
+  policies by name and a default. A repository may name one of them in its
+  `.config/jig.yaml`, read from its default branch: a choice of data,
+  never a program.
+- **Every offer explains itself.** An offer carries each ranker's value and
+  the ranker that decided its place, and `jig hub offers --explain <host>`
+  prints the order for a host's free slots without offering anything.
+- **A policy is checked when it loads.** An unknown ranker or setting is
+  refused by name, and the hub keeps its last good policy. Policies are
+  tested as data: fixtures of hosts and candidates, and the order each
+  must give.
+
 ### One view of every host
 
 The hub serves the source feed, so a dashboard that names the hub as its
@@ -325,7 +381,9 @@ and its Needs you covers them all. A phone reaches the hub's page through
 a private-network front, as it reaches a host's page today
 ([dispatch-dashboard.md § A front on a private network](dispatch-dashboard.md#a-front-on-a-private-network)),
 and sees every host at once. The views API between a page and its own
-server does not change.
+server does not change. This is the dispatch dashboard's only way to show
+several hosts: a person with several machines runs a hub in its smallest
+form, on the host that already dispatches.
 
 People sign in to the hub's page through that front, which names the
 viewer, and see the repositories its grants give them. A sign-in of the
@@ -401,37 +459,12 @@ leases and their renewal, the replay after an outage, the owner named by
 records, the source feed served from them, and the dashboard reading it,
 through a front for a phone.
 
-**Stage 4: handing out work.** `offers` and the tick's plan taking them as
-input, once
+**Stage 4: handing out work**, once
 [ADR-0016](../docs/adr/ADR-0016-an-optional-hub-for-hosts-that-keep-authority.md)
-is approved.
-
-## Decisions for a person
-
-Each has a recommendation; the person who asked for the hub decides before
-the step that depends on it.
-
-- **The name.** Recommended: the hub, `jig hub`. The word is free since the
-  dispatch dashboard stopped using it.
-- **Where it lives.** Recommended: in the plugin, released with it, so a
-  host and its hub never disagree about the protocol. The alternative is a
-  repository of its own, which a team would deploy apart from the plugin.
-- **One view across machines without a hub.** The dispatch dashboard's
-  stage 2 plans a laptop that reads each host over SSH and shows them
-  together. Recommended: drop that path, and let a person with several
-  machines run a hub in its smallest form on the host that already
-  dispatches. The hub then gives that person the same view, plus the phone,
-  the silent-host notice and the single read. Keeping SSH means two ways to
-  build one view; dropping it means one more process for that person.
-  Either way the source feed's protocol stays.
-- **What the hub stores of the forge's text.** Recommended: it keeps what
-  it serves, comment text included, on the machine the organization
-  chose, as each host's own records do today. The alternative keeps only
-  references and reads text through on each request, at the cost of the
-  reads the hub exists to save.
-- **How a host's offers are ranked.** Recommended: the queue's order, then
-  a host that already holds the work's workspace, then the host with the
-  most free slots.
+is approved. `offers` and the tick's plan taking them as input, with the
+offer policy, its default rankers and `jig hub offers --explain`; then the
+`command` ranker, a step of its own; then each further built-in ranker,
+one at a time, when a team asks for it.
 
 ## Left out
 
@@ -448,5 +481,8 @@ the step that depends on it.
 - **A hub's own sign-in for people.** The private-network front names the
   viewer; a sign-in of the hub's own waits for a team that cannot use one.
 - **Hubs talking to each other**, and a host enrolled in two hubs.
+- **A dashboard that reads each host over SSH.** It would be a second way
+  to build one view across hosts, with none of the hub's single read, its
+  notice of a stopped host or its view on a phone.
 - **Serving the reads a session makes.** A drive's own reads of its pull
   request stay with its account; they are not multiplied across hosts.

@@ -383,12 +383,11 @@ and the CI hold, which reads held and never failing); a `pickup-progress`
 record that `do-item` and `work-batch` write at each phase, so a Picking
 up card shows the last phase and its age; item 39's thread grown under
 `ask`'s version 1 into one thread per piece of work; the views API from a
-page to its own server and the source feed from a host to a dashboard over
-`ssh <host> jig dashboard feed`, every fact stamped with its host and a
-visibility class, so a shared control plane can later serve the same feed;
-a host's dashboard read-only on loopback, answering only its own pages, a
-laptop's dashboard that serves any browser and reads each host over SSH (Secure
-Shell) with a key that runs the feed and nothing else, and Orca, where a
+page to its own server and the source feed, which the hub (item 49)
+serves for every host it serves, every fact stamped with its host and a
+visibility class; a host's dashboard read-only on loopback, answering only
+its own pages, a laptop's dashboard that serves any browser and reads
+every host through the person's hub, and Orca, where a
 person uses it, opening the dashboard in its own browser; required read-only phone access, with
 visible copy controls, forge and tracker links, continuous availability and
 phone acceptance budgets; a private-network front, Tailscale Serve first,
@@ -408,7 +407,8 @@ read, and its own forge reads keep to a tenth of each hour's budget and
 stop when less than two fifths of it is left, above the fifth at which the
 tick skips its board read, so an open page adds at most a tenth to what the
 line spends. Jig stays whole without Orca:
-every view works in any browser, the machines talk over SSH, and each
+every view works in any browser, the machines reach each other through
+the hub where a person runs one, and each
 thing Orca adds has a Herdr or plain-text equivalent. Every write is the
 person's, made with their own credential, and the dashboard writes nothing until
 item 40 settles how a comment a pass posts under the person's login is
@@ -442,7 +442,7 @@ pull request exists; a tick that reads one repository refreshes that
 repository's part of the page while a stopped timer still reads overdue;
 and serving the page leaves a database one schema behind unchanged byte
 for byte. For a stage a person decides to build, stage 2 is done when a
-laptop's dashboard shows each host's work, read over SSH, beside its own in any
+laptop's dashboard shows each host's work, read through the hub, beside its own in any
 browser, with the host's dashboard listening on loopback only, and says since
 when a host stopped answering; one piece of work opens as one Work page,
 its item, pull request and follow-up under one thread; Orca's browser opens
@@ -597,8 +597,7 @@ program content from the pull request's working tree.
 
 Every host that dispatches reads the forge and the tracker by itself, so
 hosts that dispatch for one team or one person spend one credential's
-limits several times over. A dead host's launch claims stay on the forge
-until a person deletes them, one repository's pickups are dispatched from
+limits several times over. One repository's pickups are dispatched from
 one host only, nobody outside a host learns that it stopped, and a person
 with several machines has a dashboard per machine.
 [design/control-plane.md](control-plane.md) has how it works and
@@ -612,11 +611,14 @@ versioned by named capabilities; one read of the forge and the tracker for
 every enrolled host, polling first with conditional requests, webhooks as
 hints where the hub can receive them, and a budget per credential for every
 bucket it spends; claims with leases in front of the forge and tracker
-claims, which stay the fences, so a silent host's claims lapse for every
-enrolled host and a pickup is claimed before its session opens; a silent
-host noticed; the owner of each repository named by the hub; the source
-feed of every host served to the dispatch dashboard; and offers to a host
-with free slots. No level of use requires it: the skills never call it,
+claims, which stay the fences, so a silent host's work is granted to
+another host and a pickup is claimed before its session opens; a silent
+host noticed; the owner of each repository named by the hub, under a lease
+of its own; the source feed of every host served to the dispatch
+dashboard, its only way to show several hosts; and offers to a host with
+free slots, ordered by an offer policy declared as data (an ordered list
+of named rankers, a `command` ranker for a team's own strategy, and named
+policies a repository chooses among). No level of use requires it: the skills never call it,
 and a host whose hub does not answer reads and claims by itself. Built in
 stages, one pull request per step: seams in the dispatcher first, each
 worth building alone (one shared records implementation chosen by
@@ -625,10 +627,7 @@ claim, the GraphQL budget gated); then the hub that reads once; then claims
 with leases and the silent host; then one view of every host; then offers,
 once ADR-0016 is approved. Each stage after the seams is planned in detail,
 and built or not, by the person who asked for the hub once the stage before
-it is in use. The decisions the design leaves to that person (the name,
-where it lives, the dispatch dashboard's view across machines without a
-hub, what the hub stores of the forge's text, how offers are ranked) are in
-[its list](control-plane.md#decisions-for-a-person).
+it is in use.
 
 Done when, for the first stage, two hosts dispatching the same repositories
 through one hub spend together about what one host spends alone, and

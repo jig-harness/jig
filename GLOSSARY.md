@@ -2204,8 +2204,8 @@ make, use the entry's term instead.
   each *piece of work* on a card, a page per piece of work with its thread,
   and a chat with the *operator* that explains and drafts and never sends.
   Each machine serves its own. A host's dashboard answers reads only, on
-  its loopback address; a laptop's reads each host over *SSH* through the
-  *source feed* and serves the page to any browser, Orca's among them. It
+  its loopback address; a laptop's serves the page to any browser, Orca's
+  among them, and shows every host through the *hub*'s *source feed*. It
   keeps no copy of the line, only the person's conversation with the
   operator, and nothing the line does waits on it
   ([ADR-0013](docs/adr/ADR-0013-records-not-a-daemon.md)). Not the *shared
@@ -2255,11 +2255,18 @@ make, use the entry's term instead.
 - **Capabilities** — named flags a call to the *hub* carries, and the hub
   answers with its own, so either side adds a feature without changing the
   other.
+- **Offer policy** — how the *hub* orders the work it offers a host with
+  free slots: an ordered list of named rankers declared as data in the
+  hub's settings, ties in one broken by the next, with built-in rankers
+  (the queue's order, the host that already holds the work, free slots)
+  and a `command` ranker that runs a program the hub's settings name. A
+  repository may choose one of the hub's named policies. See
+  [design/control-plane.md](design/control-plane.md#how-offers-are-ranked).
 - **Shared control plane** — one service that serves many hosts' *dispatchers*:
   it reads the forge and the tracker once for all of them, puts claims with
   leases in front of the forge and tracker claims, notices a host that
   stopped, serves the *source feed* of every host's work and may offer work
-  to a host with free slots. Each host's *dispatcher* is Jig's first
+  to a host with free slots, in the order an *offer policy* gives. Each host's *dispatcher* is Jig's first
   *control plane*; Jig's shared one is the *hub*. The rules it keeps: no
   level of use requires it, a host keeps authority over what it did, the
   forge and tracker claims stay the fences, no server timer rewrites a
@@ -2271,9 +2278,8 @@ make, use the entry's term instead.
   machine's records: a snapshot, then the changes since a cursor, each
   record in its *record envelope* and stamped with the host it came from
   and a visibility class (safe on the forge, for one person's machines, or
-  for this machine only). Its first transport is
-  `ssh <host> jig dashboard feed`, JSON lines over *SSH*; a *shared control plane*
-  would serve the same feed over a connection the host opens. Not the
+  for this machine only). The *hub* serves it, from what its hosts report.
+  Not the
   *views API*, which a page uses to talk to its own server. See
   [design/dispatch-dashboard.md](design/dispatch-dashboard.md#the-source-feed-from-a-host-to-a-dashboard).
 - **Views API** — the protocol between the *dispatch dashboard*'s page and the server that
