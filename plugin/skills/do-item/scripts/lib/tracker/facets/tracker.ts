@@ -252,7 +252,8 @@ export function withFacets(
       );
   }
 
-  async function createIssue(issue: NewIssue) {
+  /** `issue` as the core receives it: label-kept facets turned into labels. */
+  function forCore(issue: NewIssue): NewIssue {
     refuseFacetLabels(issue.labels, "to file");
     const out: NewIssue = { ...issue, labels: [...issue.labels] };
     const add = (label: string) => {
@@ -277,8 +278,18 @@ export function withFacets(
       const label = priorityLabel(priority, issue.priority);
       if (label !== null) add(label);
     }
-    return rest.createIssue(out);
+    return out;
   }
+
+  async function createIssue(issue: NewIssue) {
+    return rest.createIssue(forCore(issue));
+  }
+
+  /** What the core would file `issue` as, after the same facet conversion as the write. */
+  const filedAs =
+    rest.filedAs === undefined
+      ? undefined
+      : (issue: NewIssue) => rest.filedAs!(forCore(issue));
 
   /** The label changes a patch's label-kept facets make, from the issue's labels. */
   async function facetLabels(
@@ -515,6 +526,7 @@ export function withFacets(
       );
     },
     createIssue,
+    ...(filedAs === undefined ? {} : { filedAs }),
     updateIssue,
     incompleteIssues,
     async openPopulation(options) {

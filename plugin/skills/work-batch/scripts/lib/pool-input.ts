@@ -46,6 +46,15 @@ const POOL_FIELDS: ReadonlyArray<
 
 /** What the first malformed field of an issue must be, or `null`. */
 function fieldProblem(issue: Record<string, unknown>): string | null {
+  // Optional, so omitted by a reader of an earlier release; supplied, they must be well formed.
+  if (issue.isEpic !== undefined && typeof issue.isEpic !== "boolean")
+    return "isEpic must be true or false when given";
+  if (
+    issue.nativeType !== undefined &&
+    issue.nativeType !== null &&
+    !isText(issue.nativeType)
+  )
+    return "nativeType must be a string or null when given";
   const bad = POOL_FIELDS.find(([field, ok]) => !ok(issue[field]));
   return bad === undefined ? null : `${bad[0]} must be ${bad[2]}`;
 }

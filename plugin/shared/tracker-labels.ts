@@ -137,7 +137,7 @@ function labelList(value: unknown, field: string, what = "label"): string[] {
     !Array.isArray(value) ||
     value.length === 0 ||
     value.some((l) => typeof l !== "string" || l.trim() === "") ||
-    new Set(value).size !== value.length
+    new Set(value.map(fold)).size !== value.length
   )
     throw new Error(
       `${field} must be a list of distinct nonempty ${what} names`,

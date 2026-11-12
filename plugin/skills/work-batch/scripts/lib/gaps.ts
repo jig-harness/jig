@@ -179,15 +179,17 @@ const show = (labels: readonly string[]) =>
  */
 function gapBlockers(gap: LabellingGap, policy: BatchPolicy): string[] {
   const { labels } = gap;
+  const epicLabel = labels.find(
+    (l) => l.trim().toLowerCase() === policy.epicLabel.trim().toLowerCase(),
+  );
   return [
     ...new Set([
       ...labels.filter((l) => soloFlagOf([l], policy) !== null),
-      ...(gap.isEpic &&
-      !labels.some(
-        (l) => l.trim().toLowerCase() === policy.epicLabel.trim().toLowerCase(),
-      )
-        ? ["an epic by issue type"]
-        : []),
+      ...(epicLabel !== undefined
+        ? [epicLabel]
+        : gap.isEpic
+          ? ["an epic by issue type"]
+          : []),
       ...areaShapedLabels(labels, policy).filter(
         (l) => !isKnownAreaLabel(l, policy),
       ),

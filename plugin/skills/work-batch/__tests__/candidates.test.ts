@@ -826,6 +826,11 @@ describe("the eligibility mode", () => {
         epicTypes: ["Epic"],
       })[0]?.isEpic,
     ).toBe(true);
+    // A supplied field that is malformed is refused, never read as absent.
+    for (const bad of [{ isEpic: "true" }, { nativeType: 3 }])
+      expect(() => parsePoolIssues([{ ...typed, ...bad }], EPIC)).toThrow(
+        /isEpic|nativeType/,
+      );
   });
 });
 
@@ -1008,6 +1013,25 @@ describe("the table", () => {
     );
     expect(text).toContain("ENG-7  flagged  (no size)  [also: hitl:legal]");
     expect(text).toMatch(/ENG-8 {2}plain {2}\(no priority, no size\)$/m);
+  });
+
+  it("names the epic blocker of a labelled epic and of a type-derived one", () => {
+    const gap = (identifier: string, labels: string[]) => ({
+      identifier,
+      title: "an epic",
+      url: null,
+      labels,
+      missing: ["priority" as const],
+      isEpic: true,
+    });
+    const text = renderTable(
+      proposal({
+        labellingGaps: [gap("ENG-9", ["epic"]), gap("ENG-10", [])],
+      }),
+      P,
+    );
+    expect(text).toMatch(/ENG-9 .*\[also: epic\]$/m);
+    expect(text).toMatch(/ENG-10 .*\[also: an epic by issue type\]$/m);
   });
 
   it("says when the batch is empty, and how much was left out", () => {

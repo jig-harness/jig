@@ -172,7 +172,14 @@ describe("epic_types", () => {
   });
 
   it("refuses a list that is empty, repeats a name or holds a non-name", () => {
-    for (const bad of [[], ["Epic", "Epic"], [""], "Epic", [3]])
+    for (const bad of [
+      [],
+      ["Epic", "Epic"],
+      ["Epic", " epic "],
+      [""],
+      "Epic",
+      [3],
+    ])
       expect(() => labels({ epic_types: bad })).toThrow(
         "issue_tracker.labels.epic_types must be a list of distinct nonempty issue type names",
       );
