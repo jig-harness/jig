@@ -15,7 +15,8 @@ import {
   recordFailure,
 } from "../lib/failures.ts";
 import type { MachineConfig } from "../lib/machine-config.ts";
-import { closeStateDb } from "../lib/state.ts";
+import { hostNoticeKeys } from "../lib/failure-notices.ts";
+import { closeStateDb, stateDb } from "../lib/state.ts";
 import type { TickContext } from "../lib/tick-context.ts";
 import { finalizeTickFailure, settleFailures } from "../lib/tick-settle.ts";
 import type { TickReceipt } from "../receipts.ts";
@@ -98,6 +99,120 @@ describe("the tick's own failure row", () => {
     recordFailure(SWEEP, "the line failed", Date.now(), FAILURE_DEFAULTS, root);
     settleFailures(receipt, context);
     expect(readFailures(undefined, root)).toEqual([]);
+  });
+});
+
+/** A wake-up's own row, failed three times in a row so it escalates. */
+function failingWakeUp(root: string, path: string): void {
+  for (let i = 3; i >= 1; i--)
+    recordFailure(
+      {
+        repo: "",
+        key: `ticks ${path}`,
+        kind: "tick",
+        target: `ticks of o${path}`,
+      },
+      "the outcome log was not written",
+      Date.now() - i * 60_000,
+      FAILURE_DEFAULTS,
+      root,
+    );
+}
+
+/** A tick of `path` alone, with the machine listing every repository of `listed`. */
+function wakeUp(
+  listed: string[],
+  path: string,
+  root: string,
+): { context: TickContext; receipt: TickReceipt } {
+  const { context, receipt } = world(listed);
+  (context as unknown as { apply: { root: string } }).apply.root = root;
+  (context.options as unknown as { repos: string[] }).repos = [path];
+  receipt.repos = receipt.repos.filter((r) => r.path === path);
+  return { context, receipt };
+}
+
+describe("a wake-up's row after a sweep that read its repository", () => {
+  it("is quiet once the sweep exits 0: it keeps its count and nothing escalates it", () => {
+    const { root, context, receipt } = world(["/a", "/b"]);
+    failingWakeUp(root, "/a");
+    settleFailures(receipt, context);
+    finalizeTickFailure(receipt, context);
+    const [row] = readFailures(undefined, root);
+    expect(row?.count).toBe(3);
+    expect(row?.quietAt).not.toBeNull();
+    expect(receipt.failures).toBeUndefined();
+  });
+
+  it("releases the suppression of its notice, told at another repository's home", () => {
+    const { root, context, receipt } = world(["/a", "/b"]);
+    failingWakeUp(root, "/a");
+    const [key] = hostNoticeKeys(readFailures(undefined, root));
+    const db = stateDb(root);
+    db.query(
+      "INSERT INTO notices (repo, key, target, workspace, at, lasting) VALUES (?, ?, ?, ?, ?, 0)",
+    ).run("o/b", key as string, "t", "w", new Date().toISOString());
+    settleFailures(receipt, context);
+    finalizeTickFailure(receipt, context);
+    const left = db.query("SELECT key FROM notices").all();
+    expect(left).toEqual([]);
+  });
+
+  it("counts on from its kept count and escalates again when the next wake-up fails", () => {
+    const { root, context, receipt } = world(["/a", "/b"]);
+    failingWakeUp(root, "/a");
+    settleFailures(receipt, context);
+    finalizeTickFailure(receipt, context);
+    const wake = wakeUp(["/a", "/b"], "/a", root);
+    wake.receipt.exitStatus = 1;
+    wake.receipt.lineFailed = "disk full";
+    settleFailures(wake.receipt, wake.context);
+    const [row] = readFailures(undefined, root);
+    expect(row?.count).toBe(4);
+    expect(row?.quietAt).toBeNull();
+    expect(row?.renewals).toBe(1);
+    expect([...hostNoticeKeys(readFailures(undefined, root))][0]).toContain(
+      "(again 1)",
+    );
+    expect(wake.receipt.failures?.escalated.map((e) => e.key)).toEqual([
+      "ticks /a",
+    ]);
+  });
+
+  it("is cleared by a wake-up of its repository that exits 0", () => {
+    const { root, context, receipt } = world(["/a", "/b"]);
+    failingWakeUp(root, "/a");
+    settleFailures(receipt, context);
+    finalizeTickFailure(receipt, context);
+    const wake = wakeUp(["/a", "/b"], "/a", root);
+    settleFailures(wake.receipt, wake.context);
+    finalizeTickFailure(wake.receipt, wake.context);
+    expect(readFailures(undefined, root)).toEqual([]);
+  });
+
+  it("stays escalated when its repository's turn failed in that sweep", () => {
+    const { root, context, receipt } = world(["/a", "/b"]);
+    failingWakeUp(root, "/a");
+    (receipt.repos[0] as unknown as { refused: string }).refused = "refused";
+    settleFailures(receipt, context);
+    finalizeTickFailure(receipt, context);
+    const wakeRow = readFailures(undefined, root).find(
+      (r) => r.key === "ticks /a",
+    );
+    expect(wakeRow?.quietAt).toBeNull();
+    expect(receipt.failures?.escalated.map((e) => e.key)).toContain("ticks /a");
+  });
+
+  it("stays escalated after a sweep that exits 1", () => {
+    const { root, context, receipt } = world(["/a", "/b"]);
+    failingWakeUp(root, "/a");
+    receipt.exitStatus = 1;
+    receipt.lineFailed = "disk full";
+    settleFailures(receipt, context);
+    const wakeRow = readFailures(undefined, root).find(
+      (r) => r.key === "ticks /a",
+    );
+    expect(wakeRow?.quietAt).toBeNull();
   });
 });
 

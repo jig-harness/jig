@@ -394,6 +394,32 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.222.0] - 2026-11-12
+
+### Added
+
+- `do-item` resolves proposed commands from a `Verification` section, including code blocks, with a configurable `specs.verification_section` heading. The implementer reviews each command before running it and records selected commands as evidence.
+
+## [0.221.2] - 2026-11-12
+
+A Linear served queue no longer spends the tracker's whole hourly request budget on one read.
+
+### Fixed
+
+- The batch read of issues by key and the change probe asked Linear for `{ team, number }` groups inside an `or`, and Linear answers that by matching the team's every issue. Each batch then paged through the whole team (about 200 requests for a team of 10,000 issues) and the probe never found "nothing changed", so a tick after each reset spent the dispatcher's share, and the tracker stayed walled until the next reset. Each group is now `and: [team, number]`: a lookup of up to 50 keys is one request when Linear returns them all (a key it does not return, or one that is not a key of the team, is read on its own), and an unchanged queue costs one probe request.
+- A batch read that pages past the pages its keys can fill now stops with an error instead of reading on, so a filter Linear stops honouring cannot walk a team again.
+
+## [0.221.1] - 2026-11-12
+
+### Fixed
+
+- A repository that `jig dispatch` rarely wakes no longer keeps asking a
+  person about failing ticks long after their cause is gone. A tick that
+  read the repository and exited 0 now quiets that repository's wake-up row
+  in the failure ledger: the row keeps its count, but nothing notifies it
+  or lists it as escalated until a wake-up of that repository fails again,
+  which counts on from where it stopped.
+
 ## [0.221.0] - 2026-11-12
 
 ### Added
@@ -7633,7 +7659,10 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.221.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.222.0...HEAD
+[0.222.0]: https://github.com/jig-harness/jig/compare/v0.221.2...v0.222.0
+[0.221.2]: https://github.com/jig-harness/jig/compare/v0.221.1...v0.221.2
+[0.221.1]: https://github.com/jig-harness/jig/compare/v0.221.0...v0.221.1
 [0.221.0]: https://github.com/jig-harness/jig/compare/v0.220.0...v0.221.0
 [0.220.0]: https://github.com/jig-harness/jig/compare/v0.219.0...v0.220.0
 [0.219.0]: https://github.com/jig-harness/jig/compare/v0.218.1...v0.219.0

@@ -76,6 +76,7 @@ with the review.
 | [Distribution channels](distribution.md) | 45 |
 | [Issue facets: type, priority and size wherever the tracker keeps them](tracker-facets.md) | 41; Later: the command store |
 | [Structured answers, approving or choosing a parked decision in a word](structured-answers.md) | 46 |
+| [The classes of need, and where each is settled](need-classes.md) | 50 |
 
 ## Starting a design
 
