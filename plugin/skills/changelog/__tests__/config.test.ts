@@ -43,6 +43,8 @@ describe("the section", () => {
       authors: true,
       tagPrefix: "v",
       release: { push: "direct", branch: "changelog-release" },
+      consumerActions: false,
+      consumerActionsRecord: null,
     });
     expect(parseChangelogSection(undefined)).toBeNull();
     // Without a file it is off, even when other fields are set; they are still checked.

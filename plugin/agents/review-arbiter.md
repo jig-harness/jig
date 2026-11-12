@@ -34,6 +34,9 @@ The caller provides, for each thread:
 - the finding's diff hunk — or an explicit note that it targets pre-existing
   code the PR did not touch,
 - the PR number,
+- the threads on the finding's file in which a person spoke, open or
+  resolved, with that person's words (`triage-thread.ts` prints them when it
+  refuses an `accepted` reply), when there are any,
 - computed once per round: the PR's changed-line count and its sensitivity
   flags, as the repository's change-area projection and high-risk path rules
   define them (for example a database migration, an API contract change, a
@@ -137,6 +140,18 @@ changes a normative rule inside such a span, even when the decided value
 stays as recorded: rule `escalate`, unless the wording leaves the rule
 unchanged.
 
+**Nor is `fix-now` available for a finding whose fix would undo, narrow or
+contradict what a person asked for or settled in a review thread on this
+pull request**, one they started or a bot's thread they answered. Resolving
+the thread does not end what the person decided in it. Rule `rejected` when
+the finding re-argues what the person settled: the reply-draft cites the
+person's thread, since their word is the decision and a reviewer's
+disagreement adds no authority to it. Rule `escalate` with the class
+`human-thread` when the finding raises a case or a consequence the person's
+thread did not settle: only that person may extend or change what they
+decided. A fix that leaves what the person said exactly as it is gets
+ordinary triage (`triage-rubric.md` § Guardrails).
+
 ## Output format
 
 One block per thread, nothing else:
@@ -174,7 +189,8 @@ it by these rules, in order:
    (the rule above). Always this class, never another.
 2. The registry row the call belongs to, when one does: `scope` for a fix
    that widens the PR's scope, `human-thread` for overruling a person's
-   thread, `legal` for a privacy or regulatory call, and so on.
+   thread (open or resolved, by the rule above), `legal` for a privacy or
+   regulatory call, and so on.
 3. `escalated` for a product or stakeholder call no row names.
 
 The class is your ruling, not the caller's claim: the caller records it with

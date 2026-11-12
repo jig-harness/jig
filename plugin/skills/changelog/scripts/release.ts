@@ -14,6 +14,10 @@
 // names a placeholder instead, which the step replaces with the version it
 // releases: a branch cannot know that version before it merges.
 //
+// Where the repository keeps a consumer-actions record
+// (`changelog.consumer_actions_record`), the step derives it again from the
+// changelog it writes, so the record and the release land in one commit.
+//
 // Everything it needs is the repository's `changelog:` configuration
 // (.config/jig.yaml); a repository without `changelog.file` gets nothing
 // written.
@@ -30,7 +34,7 @@
 // Common Changelog release); 2 a usage error, an invalid configuration or an
 // unreadable file.
 import { ChangelogError } from "./errors.ts";
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { fail, runMain } from "../../../shared/cli.ts";
@@ -42,6 +46,7 @@ import { banner } from "./banner.ts";
 import { type ChangeNote, nextVersion, rebaseLinks } from "./change-notes.ts";
 import { applyCommonChangelog, credited } from "./common-changelog.ts";
 import { loadResolved, type Placeholder, type Resolved } from "./config.ts";
+import { recordUpdate } from "./consumer-actions-record.ts";
 import { releasedVersions } from "./formats.ts";
 import { creditOf, originLinks } from "./history.ts";
 import { applyKeepAChangelog } from "./keep-a-changelog.ts";
@@ -232,6 +237,7 @@ function plan(options: ReleaseOptions, withAfterVersion: boolean): Plan {
   const computed = new Map<string, string>([
     ...(version ? versionWrites(options, previous, version) : []),
     [changelogPath, changelog],
+    ...recordWrite(options, changelog),
   ]);
   // A placeholder is filled in the text already computed for a file the
   // release writes itself, never in a fresh read that would overwrite it.
@@ -258,10 +264,31 @@ function plan(options: ReleaseOptions, withAfterVersion: boolean): Plan {
   };
 }
 
+/**
+ * The consumer-actions record the new changelog derives, when the repository
+ * keeps one and it changes; throws on a declaration the record cannot read.
+ */
+function recordWrite(
+  options: ReleaseOptions,
+  changelog: string,
+): [string, string][] {
+  const path = options.config.consumerActionsRecord;
+  if (path === null) return [];
+  const update = recordUpdate(options.root, path, changelog, options.format);
+  if (!update.ok) throw new MalformedNotes(update.failure.reason);
+  return update.value === null
+    ? []
+    : [[join(options.root, path), update.value]];
+}
+
 /** Write a plan's files, unless the run is a dry one. */
 function writeFiles(options: ReleaseOptions, { writes }: Plan): void {
   if (options.dryRun) return;
-  for (const [path, text] of writes) writeFileSync(path, text);
+  for (const [path, text] of writes) {
+    // The record may be the first file in its folder.
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, text);
+  }
 }
 
 /** Delete the notes a plan wrote in, unless the run is a dry one. */

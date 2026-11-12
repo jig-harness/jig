@@ -94,8 +94,8 @@ applies Jig's label taxonomy.
 
 ### Report it
 
-A Jig bug is an issue on `jig-harness/jig`, labelled `bug` and of the
-issue type Bug, in the fields of its bug form. The tracker is public, and
+A Jig bug is an issue on `jig-harness/jig` of the issue type Bug, in the
+fields of its bug form. The tracker is public, and
 filing is publishing: a person confirms every report before it is filed.
 
 1. **Reproduce it once** and keep the command, its exit code and its
@@ -151,8 +151,10 @@ filing is publishing: a person confirms every report before it is filed.
    bun "${CLAUDE_SKILL_DIR}/scripts/report-bug.ts" file "<draft file>"
    ```
 
-   It prints the new issue's address; report it. It then gives the issue
-   the issue type Bug, as the form does; where the account may not set
+   It prints the new issue's address; report it. The issue is created with
+   the issue type Bug, as the form gives it, and with no type, priority or
+   size label, which Jig's repository keeps in fields: it says which such
+   labels a draft carried and it dropped. Where the account may not set
    issue types it says so and the issue stays filed, its type, priority
    and size set at triage. When `gh` is missing or its account cannot file
    there, the script prints the bug form's address with the fields filled

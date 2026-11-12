@@ -30,11 +30,13 @@
  *                    urlOmitted, replaced }
  *   bun report-bug.ts file <draft file>
  *     File the draft on Jig's tracker and print the new issue's address.
- *     The issue is then given the issue type Bug, as the bug form gives
- *     it; an account GitHub does not let set issue types (or a `gh` too
- *     old to set one) leaves it without, which is said on stderr and is
- *     no failure: the type, the priority and the size are set when the
- *     issue is triaged.
+ *     The issue is created with the issue type Bug, as the bug form gives
+ *     it, and with no type, priority or size label: Jig's repository keeps
+ *     those in fields, so a draft's such labels are dropped, which is said
+ *     on stderr. An account GitHub does not let set issue types (or a `gh`
+ *     too old to set one) files the issue without the type, which is said
+ *     on stderr and is no failure: the type, the priority and the size are
+ *     set when the issue is triaged.
  *
  * The plugin version is read from this copy's manifest, the operating system
  * from the machine. Before anything is printed, every text the agent gave has
@@ -71,14 +73,20 @@ import { pluginVersion } from "../../../shared/plugin-version.ts";
 /** Jig's own repository, where its issues are filed. */
 export const JIG_REPOSITORY = "jig-harness/jig";
 
-/** The label the bug form applies. */
-export const BUG_LABEL = "bug";
-
 /** The repository label (`review.repo_label`) the bug form applies. */
 export const REPO_LABEL = "jig";
 
 /** The issue type the bug form applies. */
 export const BUG_TYPE = "Bug";
+
+/**
+ * The labels of the type, priority and size facets, which Jig's repository
+ * keeps in the issue type and the Priority and Effort fields: the default
+ * label of every value of each facet, and the taxonomy's types. An open issue
+ * there carries none of them. Matched ignoring case.
+ */
+const FACET_LABEL =
+  /^(?:bug|feature|improvement|task|spike|docs|chore|infra|type:.*|priority:.*|xs|small|medium|large|xl)$/i;
 
 /** The answers of the bug form's channel field, by the short name `--channel` takes. */
 export const CHANNELS: Record<string, string> = {
@@ -423,7 +431,7 @@ export function draft(
   return {
     repository: JIG_REPOSITORY,
     title,
-    labels: [BUG_LABEL, REPO_LABEL],
+    labels: [REPO_LABEL],
     body: body(fields),
     url: form.url,
     urlComplete: form.complete,
@@ -450,8 +458,33 @@ export function searchArgs(words: string): string[] {
   ];
 }
 
-/** The `gh` arguments that file `d`, its body read from stdin. */
-export function fileArgs(d: Pick<Draft, "title" | "labels">): string[] {
+/**
+ * `labels` split into those Jig's repository keeps and its facet labels,
+ * which it does not. `gh` reads a comma in a label as a separator, so each
+ * entry is split there first.
+ */
+export function splitFacetLabels(labels: string[]): {
+  kept: string[];
+  dropped: string[];
+} {
+  const each = labels
+    .flatMap((label) => label.split(","))
+    .map((label) => label.trim())
+    .filter((label) => label !== "");
+  return {
+    kept: each.filter((label) => !FACET_LABEL.test(label)),
+    dropped: each.filter((label) => FACET_LABEL.test(label)),
+  };
+}
+
+/**
+ * The `gh` arguments that file `d`, its body read from stdin: its labels but
+ * for the facet ones, and the issue type Bug unless `withType` is false.
+ */
+export function fileArgs(
+  d: Pick<Draft, "title" | "labels">,
+  withType = true,
+): string[] {
   return [
     "issue",
     "create",
@@ -459,15 +492,11 @@ export function fileArgs(d: Pick<Draft, "title" | "labels">): string[] {
     JIG_REPOSITORY,
     "--title",
     d.title,
-    ...d.labels.flatMap((label) => ["--label", label]),
+    ...splitFacetLabels(d.labels).kept.flatMap((label) => ["--label", label]),
+    ...(withType ? ["--type", BUG_TYPE] : []),
     "--body-file",
     "-",
   ];
-}
-
-/** The `gh` arguments that give the issue at `url` the issue type Bug. */
-export function typeArgs(url: string): string[] {
-  return ["issue", "edit", url, "--type", BUG_TYPE];
 }
 
 /** Jig's issues page searched for `words`, for a machine without a working `gh`. */
@@ -635,6 +664,7 @@ interface Issue {
   title: string;
   state: string;
   url: string;
+  createdAt?: unknown;
 }
 
 function isIssue(value: unknown): value is Issue {
@@ -726,12 +756,22 @@ export function fallbackUrl(d: Pick<Draft, "title" | "body">): {
   return { url, omitted, split: fields !== null };
 }
 
+/** How many of the account's newest issues `findFiled` lists. */
+const FILED_WINDOW = 30;
+
+/** Clock skew allowed between this machine and GitHub when dating an attempt. */
+const SKEW_MS = 60_000;
+
 /**
  * After a failed `gh issue create`, which may have created the issue before
- * the call failed: the address of an issue of this exact title, `null` when
- * there is none, `undefined` when the search could not be made.
+ * the call failed: the address of an issue of this exact title among the
+ * account's newest, `null` when there is none, `undefined` when the outcome
+ * cannot be known: the listing could not be made or read, had an entry of an
+ * unexpected shape, or filled its window with issues newer than the attempt
+ * (`since`) so that an older match could lie beyond it. It lists rather than
+ * searches, since GitHub's search index lags behind a new issue.
  */
-function findFiled(title: string): string | null | undefined {
+function findFiled(title: string, since: Date): string | null | undefined {
   const run = gh([
     "issue",
     "list",
@@ -741,20 +781,22 @@ function findFiled(title: string): string | null | undefined {
     "all",
     "--author",
     "@me",
-    "--search",
-    `${title} in:title`,
     "--limit",
-    "20",
+    String(FILED_WINDOW),
     "--json",
-    "number,title,state,url",
+    "number,title,state,url,createdAt",
   ]);
   if (run.status !== 0) return undefined;
   try {
     const parsed: unknown = JSON.parse(String(run.stdout));
-    const match = (Array.isArray(parsed) ? parsed : [])
-      .filter(isIssue)
-      .find((i) => i.title === title);
-    return match ? match.url : null;
+    if (!Array.isArray(parsed) || !parsed.every(isIssue)) return undefined;
+    const match = parsed.find((i) => i.title === title);
+    if (match) return match.url;
+    if (parsed.length < FILED_WINDOW) return null;
+    const oldest = Math.min(
+      ...parsed.map((i) => Date.parse(String(i.createdAt))),
+    );
+    return oldest < since.getTime() - SKEW_MS ? null : undefined;
   } catch (error) {
     swallow(error, "search output unreadable; creation outcome unknown");
     return undefined;
@@ -762,9 +804,13 @@ function findFiled(title: string): string | null | undefined {
 }
 
 /** Report why `gh issue create` failed and what to do instead; never returns. */
-function reportFilingFailure(d: Draft, run: ReturnType<typeof gh>): never {
+function reportFilingFailure(
+  d: Draft,
+  run: ReturnType<typeof gh>,
+  since: Date,
+): never {
   const reason = `could not file with gh: ${why(run)}`;
-  const existing = precedesCreation(run) ? null : findFiled(d.title);
+  const existing = precedesCreation(run) ? null : findFiled(d.title, since);
   if (existing === undefined)
     fail(
       1,
@@ -803,35 +849,88 @@ function runFile(argv: string[]): number {
   }
   const d = asDraft(parsed);
   if (!d) fail(2, `${path} is not a draft this script wrote`);
-  const run = gh(fileArgs(d), d.body);
-  if (run.status !== 0) reportFilingFailure(d, run);
+  say(droppedNote(d.labels));
+  const { run, typed, since } = createIssue(d);
+  if (run.status !== 0) reportFilingFailure(d, run, since);
   process.stdout.write(run.stdout);
-  setBugType(String(run.stdout));
+  if (typed) say(untypedNote(String(run.stdout)));
   return 0;
 }
 
+function say(note: string | null): void {
+  if (note !== null) process.stderr.write(`${note}\n`);
+}
+
+/** What the facet labels dropped from a draft are told as, `null` when there are none. */
+function droppedNote(labels: string[]): string | null {
+  const { dropped } = splitFacetLabels(labels);
+  if (dropped.length === 0) return null;
+  return `dropped the label${dropped.length === 1 ? "" : "s"} ${dropped.join(", ")}: Jig's repository keeps type, priority and size in fields, which are set when the issue is triaged`;
+}
+
 /**
- * Give the issue `gh issue create` printed the address of the issue type
- * Bug. Filed apart from the issue, so an account that may not set types
- * still files; a refusal is one line on stderr, never a failure.
+ * Create the issue with its type; when `gh` refuses because of the type,
+ * create it without, saying so. `typed` is whether the type was asked for.
  */
-function setBugType(created: string): void {
+function createIssue(d: Draft): {
+  run: ReturnType<typeof gh>;
+  typed: boolean;
+  since: Date;
+} {
+  const since = new Date();
+  const run = gh(fileArgs(d), d.body);
+  if (run.status === 0 || !typeRefused(run, d.title, since))
+    return { run, typed: true, since };
+  const reason = (why(run).split("\n")[0] ?? "").trim().slice(0, 200);
+  const retry = gh(fileArgs(d, false), d.body);
+  if (retry.status === 0)
+    say(
+      `filed without the issue type ${BUG_TYPE} (${reason}); it is set when the issue is triaged`,
+    );
+  return { run: retry, typed: false, since };
+}
+
+/**
+ * Whether `gh` failed to create the issue because of its type (an account
+ * that may not set one, a `gh` that has no `--type`), so that filing again
+ * without the type is safe: it names the type, and no issue of this title
+ * exists, since a failure after the issue was created must not file it twice.
+ */
+function typeRefused(
+  run: ReturnType<typeof gh>,
+  title: string,
+  since: Date,
+): boolean {
+  if (precedesCreation(run) || !/\btype\b/i.test(why(run))) return false;
+  return findFiled(title, since) === null;
+}
+
+/**
+ * The note for an issue `gh issue create --type` printed the address of when
+ * it has no issue type: an account that may not set one can be filed without
+ * it and no error, or when it cannot be read back, so the reporter is never
+ * silent about an unverified type. `null` only when it has one.
+ */
+function untypedNote(created: string): string | null {
+  const unverified = `could not verify the issue type ${BUG_TYPE} of the filed issue; check it at triage`;
   const url = created
     .split("\n")
     .map((l) => l.trim())
     .findLast((l) => l.startsWith("https://"));
-  if (url === undefined) {
-    process.stderr.write(
-      `filed without the issue type ${BUG_TYPE}: gh printed no issue address; it is set when the issue is triaged\n`,
-    );
-    return;
+  if (url === undefined) return unverified;
+  const run = gh(["issue", "view", url, "--json", "issueType"]);
+  if (run.status !== 0) return unverified;
+  try {
+    const parsed: unknown = JSON.parse(String(run.stdout));
+    if (!isMapping(parsed) || !("issueType" in parsed)) return unverified;
+    const type = parsed.issueType;
+    if (type === null)
+      return `filed without the issue type ${BUG_TYPE}: the account may not set one; it is set when the issue is triaged`;
+    return isMapping(type) && type.name === BUG_TYPE ? null : unverified;
+  } catch (error) {
+    swallow(error, "issue type unreadable; the report is filed");
+    return unverified;
   }
-  const run = gh(typeArgs(url));
-  if (run.status === 0) return;
-  const reason = (why(run).split("\n")[0] ?? "").trim().slice(0, 200);
-  process.stderr.write(
-    `filed without the issue type ${BUG_TYPE} (${reason}); it is set when the issue is triaged\n`,
-  );
 }
 
 async function main(): Promise<number> {
