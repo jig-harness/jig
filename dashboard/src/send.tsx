@@ -18,11 +18,22 @@
  * in as, and forgets it.
  */
 import { KeyRound, Send } from "lucide-react";
-import { useId, useState } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { cardAnswerComments } from "../../plugin/shared/decisions/answer-record.ts";
 import { BROWSER_HOST } from "../../plugin/shared/records/writer-shape.ts";
 import { announce } from "./copy.tsx";
-import { keepToken, keptToken, useKeptToken } from "./forge-token.ts";
+import {
+  keepToken,
+  keptToken,
+  tokenGeneration,
+  useKeptToken,
+} from "./forge-token.ts";
 import {
   postComment,
   sendRefusal,
@@ -47,6 +58,48 @@ type Phase =
   | { kind: "sending" }
   | { kind: "failed"; reason: string };
 
+type SendState = "sending" | { uncertain: string };
+
+const sends = new Map<string, SendState>();
+const sendListeners = new Set<() => void>();
+
+function sendKey(need: NeedView): string {
+  return `${need.repo} ${need.target}`;
+}
+
+function changedSends(): void {
+  for (const listener of sendListeners) listener();
+}
+
+function useSendState(key: string): SendState | null {
+  return useSyncExternalStore(
+    (listener) => {
+      sendListeners.add(listener);
+      return () => sendListeners.delete(listener);
+    },
+    () => sends.get(key) ?? null,
+    () => null,
+  );
+}
+
+function finishSend(key: string, reason: string | null): void {
+  if (reason === null) sends.delete(key);
+  else sends.set(key, { uncertain: reason });
+  changedSends();
+}
+
+/** Invalidates a callback once its settings component no longer exists. */
+function useRequestGeneration(): () => boolean {
+  const live = useRef(true);
+  useEffect(
+    () => () => {
+      live.current = false;
+    },
+    [],
+  );
+  return () => live.current;
+}
+
 /** A card's Send: how to start it, and what it is doing; `null` when the card has none. */
 export interface Sending {
   to: SendTarget;
@@ -57,12 +110,18 @@ export interface Sending {
   send: () => void;
 }
 
-/** Posts each comment in order; the links posted, and why the first refused one was not. */
+/** The refusals `sendRefusal` says posted nothing; any other outcome may have created the comment. */
+const POSTED_NOTHING = new Set([401, 403, 404, 410, 422]);
+
+/**
+ * Posts each comment in order; the links posted, why the first refused one
+ * was not, and whether that one may nevertheless have been posted.
+ */
 async function postAll(
   token: string,
   to: SendTarget,
   comments: Array<{ key: string; body: string }>,
-): Promise<{ urls: string[]; refused: string | null }> {
+): Promise<{ urls: string[]; refused: string | null; uncertain: boolean }> {
   const urls: string[] = [];
   for (const comment of comments) {
     const posted = await postComment(token, to, comment.body);
@@ -72,22 +131,28 @@ async function postAll(
         urls.length === 0
           ? ""
           : ` The answers before it were posted; not posted: ${rest.join(", ")}.`;
-      return { urls, refused: `${sendRefusal(posted, to)}${done}` };
+      return {
+        urls,
+        refused: `${sendRefusal(posted, to)}${done}`,
+        uncertain: posted.status === null || !POSTED_NOTHING.has(posted.status),
+      };
     }
     urls.push(posted.value);
   }
-  return { urls, refused: null };
+  return { urls, refused: null, uncertain: false };
 }
 
 /** The card's Send, while a token is kept, its decisions are a drive's on github.com and the page came over a safe path. */
 export function useSend(need: NeedView, picking: Picking): Sending | null {
   const { kept } = useKeptToken();
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
+  const key = sendKey(need);
+  const sending = useSendState(key);
   if (kept === null || !("to" in need.send) || pageTransportFault() !== null)
     return null;
   const to = need.send.to;
   const send = () => {
-    if (phase.kind === "sending") return;
+    if (phase.kind === "sending" || sending !== null) return;
     const commit = picking.sendGate();
     // The token may have been forgotten in another tab since the card drew.
     const token = keptToken();
@@ -98,28 +163,40 @@ export function useSend(need: NeedView, picking: Picking): Sending | null {
       { login: token.login, host: BROWSER_HOST },
       new Date().toISOString(),
     );
+    sends.set(key, "sending");
+    changedSends();
     setPhase({ kind: "sending" });
     announce(`Sending the answers for ${need.target} as ${token.login}`);
-    void postAll(token.token, to, comments).then(({ urls, refused }) => {
-      if (urls.length > 0)
-        keepSent(need.repo, need.target, {
-          text: commit.text,
-          urls,
-          at: Date.now(),
-        });
-      if (refused === null) {
-        setPhase({ kind: "idle" });
-        announce(`Sent the answers for ${need.target} as ${token.login}`);
-        return;
-      }
-      setPhase({ kind: "failed", reason: refused });
-      announce(`Not sent: ${refused}`);
-    });
+    void postAll(token.token, to, comments).then(
+      ({ urls, refused, uncertain }) => {
+        if (urls.length > 0)
+          keepSent(need.repo, need.target, {
+            text: commit.text,
+            urls,
+            at: Date.now(),
+          });
+        if (refused === null) {
+          setPhase({ kind: "idle" });
+          finishSend(key, null);
+          announce(`Sent the answers for ${need.target} as ${token.login}`);
+          return;
+        }
+        setPhase({ kind: "failed", reason: refused });
+        finishSend(key, uncertain ? refused : null);
+        announce(`Not sent: ${refused}`);
+      },
+    );
   };
+  const currentPhase: Phase =
+    sending === "sending"
+      ? { kind: "sending" }
+      : sending === null
+        ? phase
+        : { kind: "failed", reason: sending.uncertain };
   return {
     to,
     login: kept.login,
-    phase,
+    phase: currentPhase,
     ready: picking.commit.picked > 0,
     send,
   };
@@ -248,11 +325,14 @@ function TokenField() {
   const [draft, setDraft] = useState("");
   const [test, setTest] = useState<Test>({ kind: "idle" });
   const id = useId();
+  const alive = useRequestGeneration();
   const run = () => {
     const token = draft.trim();
     if (token === "" || test.kind === "testing") return;
+    const generation = tokenGeneration();
     setTest({ kind: "testing" });
     void tokenLogin(token).then((answer) => {
+      if (!alive() || tokenGeneration() !== generation) return;
       if (!answer.ok) {
         setTest({ kind: "refused", reason: tokenRefusal(answer) });
         return;
@@ -306,11 +386,14 @@ function TokenField() {
 function KeptTokenRow() {
   const { kept, saved } = useKeptToken();
   const [test, setTest] = useState<Test>({ kind: "idle" });
+  const alive = useRequestGeneration();
   if (kept === null) return null;
   const again = () => {
     if (test.kind === "testing") return;
+    const generation = tokenGeneration();
     setTest({ kind: "testing" });
     void tokenLogin(kept.token).then((answer) => {
+      if (!alive() || tokenGeneration() !== generation) return;
       if (!answer.ok) {
         setTest({ kind: "refused", reason: tokenRefusal(answer) });
         return;

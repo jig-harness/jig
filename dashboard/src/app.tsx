@@ -48,6 +48,7 @@ import { Refused } from "./refused.tsx";
 import { type Steering, useSteering, ViewFilter } from "./steering.tsx";
 import { TicksPanel } from "./ticks.tsx";
 import { bindAnswersToPark, forgetOldAnswers } from "./answers.ts";
+import { useKeptToken } from "./forge-token.ts";
 import { forgetOldSends } from "./sent.ts";
 import { decisionRows } from "./picking.ts";
 import {
@@ -515,6 +516,7 @@ function CardView({
   log: RowsAnswer | null;
 }) {
   const { line, clock } = view;
+  const { kept } = useKeptToken();
   if (tab === "merge")
     return (
       <PanelBoundary name="Ready to merge" className="pMerge" reads={line}>
@@ -543,7 +545,7 @@ function CardView({
           pastTense={view.pastTense}
         />
       </PanelBoundary>
-      {line !== null && hasNeedRows(line, clock.nowMs) ? (
+      {line !== null && (hasNeedRows(line, clock.nowMs) || kept !== null) ? (
         <PanelBoundary name="What needs you" className="pNeeds" reads={line}>
           <NeedsPanel line={line} clock={clock} />
         </PanelBoundary>

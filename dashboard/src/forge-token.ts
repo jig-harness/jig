@@ -50,6 +50,11 @@ export function keptToken(): KeptToken | null {
   return now().kept;
 }
 
+/** Changes whenever this page or another tab replaces or forgets the token. */
+export function tokenGeneration(): number {
+  return revision;
+}
+
 /** Keeps a tested token, or forgets the one kept when `null`; whether this browser stored it rather than holding it only while the page is open. */
 export function keepToken(kept: KeptToken | null): boolean {
   const saved = writeKept(KEY, kept === null ? null : JSON.stringify(kept));

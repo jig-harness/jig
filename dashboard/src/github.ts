@@ -51,8 +51,17 @@ async function call(
     read = await response.json();
   } catch (cause) {
     // A body that is not JSON carries no message to show.
-    if (!(cause instanceof SyntaxError || cause instanceof TypeError))
+    if (
+      !(
+        cause instanceof SyntaxError ||
+        cause instanceof TypeError ||
+        cause instanceof DOMException
+      )
+    )
       throw cause;
+    // The response is still authoritative. A POST may succeed before its
+    // body stalls past the request deadline.
+    if (response.ok) return { ok: true, value: null };
   }
   if (response.ok) return { ok: true, value: read };
   const message =

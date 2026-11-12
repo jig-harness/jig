@@ -59,7 +59,8 @@ function read(id: string, nowMs: number): SentHere | null {
 /** Keeps what was sent for a card; held for the page when storage refuses it. */
 export function keepSent(repo: string, target: string, sent: SentHere): void {
   const id = idOf(repo, target);
-  writeKept(id, JSON.stringify(sent));
+  // Do not revive an older receipt when a full store rejects this write.
+  if (!writeKept(id, JSON.stringify(sent))) writeKept(id, null);
   held.set(id, sent);
   changed();
 }
