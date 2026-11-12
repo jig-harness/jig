@@ -549,24 +549,9 @@ close items by one fixed rule, so a team whose rules differ keeps them in
 hooks and scripts outside Jig, where an agent can skip them. This item
 lets a repository state those rules as configuration that every skill which
 claims, moves or closes an item honours. Every setting is optional, and an
-unset one keeps today's behaviour. What it will build, one pull request per
-step:
-
-- **Start.** A precondition command (`do_item.preflight_command`) that the
-  claim script runs before it claims, for `do-item`, `work-batch` and the
-  dispatcher's pickups alike; the dispatcher's tick never runs it, and
-  shows a refusal as a hold until the item changes. It runs through the
-  repository-command runner the facets design specifies for its command
-  store ([tracker-facets.md](tracker-facets.md#later-the-command-store):
-  set by the repository only, read from the default branch, bounded by a
-  timeout); whichever of the two steps lands first builds that runner. The
-  states a claim may start from (`do_item.claim_from`; unset, a claim
-  keeps today's rule and is not limited to `dispatch.states`), and a claim
-  marker naming the session, host and branch.
-- **Pool pickup.** The dispatcher picks up unassigned items in a ready
-  pool as a served lane, trusting who made an item ready. A pool requires
-  the claim marker, which arbitrates, best effort, between the hosts that pick up from it
-  ([claims across hosts](dark-factory-dispatch.md#the-records-it-reads)).
+unset one keeps today's behaviour. Its settings are built
+([CHANGELOG.md](../CHANGELOG.md)); what remains is a run on a working
+repository, owed by a person.
 
 Done when a repository on Jira with all of these set runs an item from its
 ready pool to a merged pull request without a hook or script of its own,
@@ -835,9 +820,6 @@ launcher tracker for GitHub Issues and the key's file name (`issue-123`)
 where they name a cache file or a claim.
 [plugin/EXTENDING.md](../plugin/EXTENDING.md#issue-tracker) lists what
 still assumes Linear.
-
-The Jira adapter also gains state names per issue type, for a large shared
-project whose issue types follow different workflows.
 
 ### 27. Work types: depth by kind of work
 

@@ -423,6 +423,15 @@ function configIdentity(tracker: Tracker): string {
   return `${tracker.instance ?? ""}|${states}#${tracker.configKey ?? ""}`;
 }
 
+/**
+ * The key a pool reading is kept under: the tracker, its configuration and
+ * the settings that decide who made an item ready and what blocks it, so a
+ * changed board or link mapping never reuses an earlier answer.
+ */
+export function poolScope(tracker: Tracker): string {
+  return `${trackerScope(tracker)}#${configIdentity(tracker)}#${tracker.readinessKey ?? ""}`;
+}
+
 /** The view of one tracker, team and person for this tick. */
 async function openView(
   tracker: Tracker,

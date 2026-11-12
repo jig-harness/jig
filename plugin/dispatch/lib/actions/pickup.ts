@@ -90,6 +90,7 @@ export async function changed(
   ctx: PickupContext,
   key: string,
   served?: {
+    pooled?: boolean;
     servedPerson?: string;
     ancestorEpic?: string;
     blockingFor?: string;
@@ -97,7 +98,13 @@ export async function changed(
 ): Promise<{ issue: PoolIssue } | { why: string }> {
   const issue =
     served?.servedPerson === undefined
-      ? await freshPickup(ctx.tracker, ctx.section, key)
+      ? await freshPickup(
+          ctx.tracker,
+          ctx.section,
+          key,
+          ctx.servedPolicy,
+          served?.pooled,
+        )
       : await freshServedPickup(
           ctx.tracker,
           key,
@@ -271,12 +278,14 @@ async function startOrReturn(
 
 /** The optional served-item facts which a pickup preserves in its launch record. */
 function servedEvidence(action: Action): {
+  pooled?: boolean;
   servedPerson?: string;
   ancestorEpic?: string;
   blockingFor?: string;
 } {
-  const { ancestorEpic, blockingFor, servedPerson } = action.evidence;
+  const { ancestorEpic, blockingFor, servedPerson, pooled } = action.evidence;
   return {
+    ...(pooled === true ? { pooled: true } : {}),
     ...(typeof servedPerson === "string" ? { servedPerson } : {}),
     ...(typeof ancestorEpic === "string" ? { ancestorEpic } : {}),
     ...(typeof blockingFor === "string" ? { blockingFor } : {}),
@@ -346,7 +355,13 @@ async function retryPending(
     const unauthorized = servedAuthorization(state, ctx, record, item);
     const fresh =
       record.servedPerson === undefined
-        ? await freshPickup(ctx.tracker, ctx.section, item)
+        ? await freshPickup(
+            ctx.tracker,
+            ctx.section,
+            item,
+            ctx.servedPolicy,
+            record.pooled,
+          )
         : await freshServedPickup(
             ctx.tracker,
             item,
@@ -379,7 +394,12 @@ export async function applyPickups(
 ): Promise<void> {
   const wanted = report.actions.filter((a) => a.stage === "pickup");
   await retryPending(state, repo, report, ctx);
-  for (const action of wanted.some((a) => a.evidence.servedPerson !== undefined)
+  // A served or pooled queue is ranked (assigned before pool, then the
+  // queue's own order), so it launches in that order; only the unranked
+  // factory pickups rotate.
+  for (const action of wanted.some(
+    (a) => a.evidence.servedPerson !== undefined || a.evidence.pooled === true,
+  )
     ? wanted
     : rotated(state, wanted, "targets"))
     report.launches.push(await launchOne(state, repo, action, ctx));

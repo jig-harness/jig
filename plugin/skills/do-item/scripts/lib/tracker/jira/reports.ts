@@ -9,7 +9,7 @@
  * matches words, and a marker it missed would be a lost finding.
  *
  * The candidate pools and the populations (`openIssues`, `assignedIssues`,
- * `openPopulation`, which the facet census counts, and an `issuesInWindow`
+ * `unassignedIssues`, `openPopulation`, which the facet census counts, and an `issuesInWindow`
  * that names no label) are limited to `issue_tracker.jira.pool_issue_types`
  * where it is set. Reads by key, an issue's children and the reads a label
  * defines are not: an epic's accounting needs every type its label carries.
@@ -65,6 +65,7 @@ type ReportOps = Pick<
   | "openChildren"
   | "poolIssue"
   | "assignedIssues"
+  | "unassignedIssues"
   | "openPopulation"
 >;
 
@@ -317,6 +318,46 @@ export function reportOperations(
     return clause === null ? [] : [clause];
   };
 
+  /** This project's issues in one of `states`, narrowed by the clause `who` builds, inside the pool scope. */
+  async function inStates(
+    states: ReadonlyArray<CanonicalState>,
+    who: () => Promise<string>,
+    where: string,
+    signal?: AbortSignal,
+  ): Promise<CorePoolIssue[]> {
+    if (states.length === 0)
+      throw new TrackerRequestError(
+        "invalid",
+        "a query of issues by state needs at least one state",
+      );
+    if (signal?.aborted === true) throw abortedError(signal);
+    const names = [
+      ...new Set(
+        states
+          .flatMap((s) => model.stateNames(s))
+          .filter((n): n is string => n !== null),
+      ),
+    ];
+    if (names.length === 0) return [];
+    const read = await client.search(
+      inProject(
+        project,
+        await who(),
+        `status in ${stringList(names)}`,
+        ...(await scope(signal)),
+      ),
+      where,
+      signal,
+    );
+    const wanted = new Set<CanonicalState>(states);
+    return pools(
+      read.filter((i) => {
+        const s = model.read(i).canonical;
+        return s !== null && wanted.has(s);
+      }),
+      signal,
+    );
+  }
   return {
     async issuesByKeys(keys) {
       const own = keys.filter((k) => ownKey.test(k));
@@ -527,37 +568,20 @@ export function reportOperations(
     },
 
     async assignedIssues(identity, states, signal) {
-      if (states.length === 0)
-        throw new TrackerRequestError(
-          "invalid",
-          "an assigned-issues query needs at least one state",
-        );
-      if (signal?.aborted === true) throw abortedError(signal);
-      const names = [
-        ...new Set(
-          states
-            .flatMap((s) => model.stateNames(s))
-            .filter((n): n is string => n !== null),
-        ),
-      ];
-      if (names.length === 0) return [];
-      const accountId = await client.accountId(identity, signal);
-      const read = await client.search(
-        inProject(
-          project,
-          `assignee = ${quote(accountId)}`,
-          `status in ${stringList(names)}`,
-          ...(await scope(signal)),
-        ),
+      return inStates(
+        states,
+        async () =>
+          `assignee = ${quote(await client.accountId(identity, signal))}`,
         `issues assigned to ${identity}`,
         signal,
       );
-      const wanted = new Set<CanonicalState>(states);
-      return pools(
-        read.filter((i) => {
-          const s = model.read(i).canonical;
-          return s !== null && wanted.has(s);
-        }),
+    },
+
+    async unassignedIssues(states, signal) {
+      return inStates(
+        states,
+        async () => `assignee is EMPTY AND ${open}`,
+        `unassigned issues of ${project}`,
         signal,
       );
     },
