@@ -861,6 +861,13 @@ const TRACKER: RecordKind[] = [
   ),
   plain(
     "tracker",
+    "dispatch-pool-readiness",
+    "dispatch/lib/sources/ready-pool.ts",
+    "an unassigned item a person moved into a ready-pool state, read with who made the move",
+    0,
+  ),
+  plain(
+    "tracker",
     "deferred-issue",
     `${RRC}file-deferred.ts`,
     "an issue whose description names the deferred finding",

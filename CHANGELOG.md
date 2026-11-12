@@ -394,6 +394,39 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.217.0] - 2026-11-12
+
+### Added
+
+- The dispatcher can pick up from a ready pool: set `dispatch.pool.states`
+  and the unassigned open items in those states (inside
+  `issue_tracker.jira.pool_issue_types` on Jira) are pickups beside the
+  items assigned to `dispatch.identity`, ranked by the queue's rules. An
+  item is picked up only when the latest move into its state was made by a
+  person who can write to the repository (its creator, where it was created
+  there; on Jira never an app's account, Jira Automation's included); an
+  item anyone else made ready shows in the Queue view with who moved it and
+  never starts. An item with an open blocker (on Jira, through any link type
+  `issue_tracker.jira.link_types` configures), or one that cannot be read,
+  waits, the Queue view naming the blocker, until the blocker closes. The
+  pickup's claim assigns the item to the factory identity,
+  so `do_item.preflight_command`, `do_item.claim_from` and the claim marker
+  apply. A pool is refused without `dispatch.identity` and without
+  `do_item.claim_marker: true`, the token that decides between hosts taking
+  from the same pool. On GitHub, a pool state on a board needs the
+  `Status` field, whose changes GitHub records.
+- The tracker interface reads a ready pool on GitHub Issues, Linear and
+  Jira: the open issues assigned to nobody in given states
+  (`unassignedIssues`), and who made an issue's latest move into its
+  current state (`stateChangedBy`), with that person's trust as
+  `assignedBy` judges an assigner.
+- The audit warns when `dispatch.pool.states` names a state
+  `do_item.claim_from` refuses.
+
+### Fixed
+
+- The dispatcher reports a refused steward record only on the tick that refuses it and skips stored digest reads for settled records. Continuing needs keep their steward framing, and retained records still witness the decision.
+
 ## [0.216.0] - 2026-11-12
 
 Every need on the dispatch dashboard's Needs you is now a framed decision a person answers in a word, and the dispatcher carries out the option they choose.
@@ -7489,7 +7522,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.216.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.217.0...HEAD
+[0.217.0]: https://github.com/jig-harness/jig/compare/v0.216.0...v0.217.0
 [0.216.0]: https://github.com/jig-harness/jig/compare/v0.215.0...v0.216.0
 [0.215.0]: https://github.com/jig-harness/jig/compare/v0.214.2...v0.215.0
 [0.214.2]: https://github.com/jig-harness/jig/compare/v0.214.1...v0.214.2
