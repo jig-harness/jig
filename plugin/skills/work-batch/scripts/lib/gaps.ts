@@ -44,11 +44,13 @@ export interface LabellingGap {
   labels: string[];
   /** What it lacks. */
   missing: GapFacet[];
+  /** It is an epic (`PoolIssue.isEpic`), which a batch never takes. */
+  isEpic: boolean;
 }
 
 /** Whether an issue carries no size; an epic needs none. */
 function lacksSize(issue: PoolIssue, policy: BatchPolicy): boolean {
-  if (issue.labels.includes(policy.epicLabel)) return false;
+  if (issue.isEpic) return false;
   return policy.facets
     ? issue.size === null
     : !issue.labels.some((l) => policy.knownSizes.includes(l));
@@ -102,6 +104,7 @@ export function toLabellingGaps(
       url: i.url,
       labels: [...i.labels],
       missing,
+      isEpic: i.isEpic,
     });
   }
   gaps.sort((a, b) =>
@@ -171,14 +174,23 @@ const show = (labels: readonly string[]) =>
 
 /**
  * What a gap's labels already say will hold it back once it has what it
- * lacks. Only label-visible blockers: an unlabelled epic shows as a bare
- * row, so a bare row means "no known blocker", not "batchable".
+ * lacks. Only blockers the issue itself shows: its labels, and an epic
+ * issue type when the adapter reports one. An epic with neither shows as a
+ * bare row, so a bare row means "no known blocker", not "batchable".
  */
-function gapBlockers(labels: readonly string[], policy: BatchPolicy): string[] {
+function gapBlockers(gap: LabellingGap, policy: BatchPolicy): string[] {
+  const { labels } = gap;
+  const epicLabel = labels.find(
+    (l) => l.trim().toLowerCase() === policy.epicLabel.trim().toLowerCase(),
+  );
   return [
     ...new Set([
       ...labels.filter((l) => soloFlagOf([l], policy) !== null),
-      ...labels.filter((l) => l === policy.epicLabel),
+      ...(epicLabel !== undefined
+        ? [epicLabel]
+        : gap.isEpic
+          ? ["an epic by issue type"]
+          : []),
       ...areaShapedLabels(labels, policy).filter(
         (l) => !isKnownAreaLabel(l, policy),
       ),
@@ -196,7 +208,7 @@ export function gapLines(
     "",
     "Labelling gaps (no priority or no size, so never batched; set what each lacks and re-run, which decides whether it is batchable):",
     ...gaps.map((g) => {
-      const blockers = gapBlockers(g.labels, policy);
+      const blockers = gapBlockers(g, policy);
       const suffix = blockers.length > 0 ? `  [also: ${show(blockers)}]` : "";
       return `  ${sanitizeForDisplay(g.identifier)}  ${sanitizeForDisplay(g.title)}  (no ${g.missing.join(", no ")})${suffix}`;
     }),
