@@ -198,9 +198,12 @@ records that reconsideration, and it is settled before stage 1 starts.
   feed's bounded calls return, each under the visibility its repository's
   scope gives it. Each record goes in the envelope Jig already uses, with
   its repository, key and generation: a key is unique only within its
-repository, so the hub stores, acknowledges and deduplicates by host,
-incarnation, repository, kind and key, and a report sent twice counts
-once. The host
+  repository, so the hub stores a record under host, incarnation,
+  repository, kind and key. That tuple names the record, not one update of
+  it: a rewrite in place carries a higher generation and replaces the stored
+  copy, a report of a generation the hub already holds counts once, and one
+  of a lower generation is refused as a stale replay and never moves the
+  acknowledgement past an update the hub did not keep. The host
   keeps a durable checkpoint of what the hub acknowledged, per incarnation,
   and a tick resends everything after it; after `hello` shows a hub with no
   memory of the host's incarnation (a deleted database) the host backfills
@@ -425,8 +428,8 @@ hub as its source and serves the page; the hub's front routes the page to
 that server, never to the hub's host-facing protocol port, so the page
 still talks only to its own dashboard server. The front also routes one
 more path, `/feed`, to the hub's feed endpoint, which serves only the
-source feed's reads (`hello`, `changes`, `log.rows`, `receipt.get`,
-`thread.get`) to a viewer the front names: a laptop's dashboard reaches
+source feed's reads (`hello`, `snapshot`, `changes`, `log.rows`,
+`receipt.get`, `thread.get`) to a viewer the front names: a laptop's dashboard reaches
 the hub there. The hub reads the viewer and its grant from the headers on
 the front's own socket, as the dashboard does, and filters every answer
 by that grant; the endpoint takes no host calls, which stay on the
