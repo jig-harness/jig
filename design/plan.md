@@ -565,19 +565,18 @@ and an item that fails a rule is refused before anything is written.
 
 ### 48. Fitting the drive to a repository's reviewer
 
-The drive and `do-item` assume things about a repository that many do
-not hold. Its AI reviewer stamps the commit it reviewed into a summary
-comment; a reviewer that reviews through the forge's own [review
-objects](../GLOSSARY.md) (CodeRabbit, for one) never does, so the drive either waits until it times
-out or converges without that review. The fix is optional configuration, and an
-unset one keeps today's behaviour. What it will build:
+The drive reads a reviewer that reviews through the forge's own [review
+objects](../GLOSSARY.md) (CodeRabbit, for one) from its latest review and
+its check run on the head, and counts that reviewer's inline threads as its
+work. It does not read the findings such a reviewer puts only in the
+review's own body (CodeRabbit's nitpick and outside-the-diff sections), so a
+drive can converge with them unanswered. What it will build:
 
-- **The reviewer.** A [reviewer evidence mode](../GLOSSARY.md) that reads the reviewed
-  commit from the reviewer's latest review object and its check run on
-  the head, with a built-in CodeRabbit profile; a paused or skipped
-  review stops as `REVIEW_SKIPPED` with the reason; no merge-ready
-  announcement before a draft-skipping reviewer has run on the head marked
-  Ready; `arm-drive.ts` refuses a reviewer whose evidence it cannot read.
+- **The review body's findings.** The newest review's body read as findings
+  the drive must answer, the way it reads the sticky comment's bullets: one
+  finding per entry, answerable with `answer-summary-finding.ts`, with a built-in parser
+  for CodeRabbit's sections; another reviewer's body is not parsed until it
+  has a format of its own.
 - **The CI repair command's trust boundary.** The repair step reads
   `ci.log_command` from the default branch, but `runRepoCommand` runs it
   with the pull request's checkout as its working directory, so a
