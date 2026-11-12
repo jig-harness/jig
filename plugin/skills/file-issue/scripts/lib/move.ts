@@ -105,16 +105,20 @@ export interface MoveReport {
   stopped: string | null;
 }
 
-/** Whether two slots keep a facet in the same place, the same way. */
+/**
+ * Whether two slots keep a facet in the same place, the same way: the same
+ * field and the same written value. Names only read back are no move, since
+ * the stored value is unchanged and a retire would clear the destination.
+ */
 function sameStore(a: FacetSlot, b: FacetSlot): boolean {
   if (!usable(a) || !usable(b)) return usable(a) === usable(b);
   const labels = (s: ResolvedFacet) =>
     JSON.stringify(
-      (s.labels ?? []).map(([v, ls]) => [v, ls.map(fold)] as const),
+      (s.labels ?? []).map(([v, ls]) => [v, fold(ls[0] ?? "")] as const),
     );
   const map = (s: ResolvedFacet) =>
     JSON.stringify(
-      (s.map?.names ?? []).map(([v, ns]) => [v, ns.map(fold)] as const),
+      (s.map?.names ?? []).map(([v, ns]) => [v, fold(ns[0] ?? "")] as const),
     );
   return (
     a.store === b.store &&

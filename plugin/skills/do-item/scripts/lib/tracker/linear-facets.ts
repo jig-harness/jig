@@ -215,12 +215,17 @@ function sizePoints(
       );
     return [v, n] as const;
   });
-  if (new Set(out.map(([, n]) => n)).size !== out.length)
-    throw new TrackerRequestError(
-      "unresolved",
-      `${at}.values gives two sizes one point of ${shown}`,
-    );
-  return out;
+  const owner = new Map<number, string>();
+  for (const [v, n] of out)
+    if ((owner.get(n) ?? v) !== v)
+      throw new TrackerRequestError(
+        "unresolved",
+        `${at}.values gives two sizes one point of ${shown}`,
+      );
+    else owner.set(n, v);
+  return out.filter(
+    ([v, n], i) => out.findIndex(([w, m]) => w === v && m === n) === i,
+  );
 }
 
 /** Where size is kept on a Linear team: in the estimate where `facets` say so. */

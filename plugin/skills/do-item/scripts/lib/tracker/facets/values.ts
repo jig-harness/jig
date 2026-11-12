@@ -141,13 +141,35 @@ export function everyName(
   );
 }
 
+/** The distinct values that name the number `n` in some name of `map`. */
+function numberOwners(map: ValueMap | null, n: number): string[] {
+  return [
+    ...new Set(
+      everyName(map)
+        .filter(([, t]) => t.trim() !== "" && Number(t) === n)
+        .map(([v]) => v),
+    ),
+  ];
+}
+
 /**
  * The value one of whose names is the number `n` (a number field answers
- * with the number, not its configured spelling), or `null` for none.
+ * with the number, not its configured spelling), or `null` for none, or for
+ * several values naming it.
  */
 export function numberedValue(map: ValueMap | null, n: number): string | null {
-  return (
-    everyName(map).find(([, t]) => t.trim() !== "" && Number(t) === n)?.[0] ??
-    null
-  );
+  const owners = numberOwners(map, n);
+  return owners.length === 1 ? (owners[0] as string) : null;
+}
+
+/** The first number two values both name, or `undefined`. Equivalent names of one value are no clash. */
+export function sharedNumber(map: ValueMap | null): number | undefined {
+  return everyName(map)
+    .map(([, t]) => (t.trim() === "" ? Number.NaN : Number(t)))
+    .find((n) => Number.isFinite(n) && numberOwners(map, n).length > 1);
+}
+
+/** Whether more than one value names the number `n`. */
+export function numberIsShared(map: ValueMap | null, n: number): boolean {
+  return numberOwners(map, n).length > 1;
 }

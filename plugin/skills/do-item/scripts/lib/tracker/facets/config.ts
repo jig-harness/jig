@@ -34,6 +34,7 @@ import {
   type FacetStoreKind,
   type FacetStoreReport,
 } from "../port.ts";
+import { firstRepeat } from "../settings-fields.ts";
 import {
   canonical,
   DEFAULT_TYPES,
@@ -229,6 +230,13 @@ function checkPriorityEntry(entry: FacetEntry, adapter: string): void {
     ["labels", entry.labels],
   ] as const)
     if (map !== undefined) valueMap(PRIORITY_NAMES, map, at("priority", key));
+  if (adapter === "linear" && entry.store === "native")
+    for (const [key, names] of Object.entries(entry.values ?? {}))
+      if (Array.isArray(names))
+        throw new TrackerConfigError(
+          at("priority", `values.${key}`),
+          `${at("priority", `values.${key}`)} cannot be a list: Linear's native priority is always urgent 1 to low 4; keep priority in labels to name other values`,
+        );
   if (
     entry.store === "label" &&
     adapter !== "github" &&
@@ -444,12 +452,19 @@ function resolved(
   const store = entry?.store ?? base.defaultStore;
   const why = entry === undefined ? base.defaultWhy : "configured";
   if (store === "label") {
-    for (const key of Object.keys(entry?.labels ?? {}))
+    for (const [key, listed] of Object.entries(entry?.labels ?? {})) {
       if (canonical(base.values, key) === null)
         throw new TrackerConfigError(
           at(facet, "labels"),
           `${at(facet, "labels")} names '${key}', which is not a ${facet} of this repository (${base.values.join(", ")})`,
         );
+      const twice = firstRepeat(namesIn(listed));
+      if (twice !== undefined)
+        throw new TrackerConfigError(
+          at(facet, `labels.${key}`),
+          `${at(facet, `labels.${key}`)} names '${twice}' twice`,
+        );
+    }
     return {
       facet,
       store,

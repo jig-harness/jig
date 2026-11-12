@@ -228,22 +228,33 @@ describe("Linear: size in the estimate", () => {
     expect(updated(calls)).toEqual([{ estimate: 5 }]);
   });
 
-  it("refuses a native priority that lists several numbers", () => {
-    const listed = resolveFacets(
+  it("refuses a native priority written as a list, several numbers or one", () => {
+    for (const urgent of [[1, 0], [1]])
+      expect(() =>
+        parseTrackerConfig({
+          issue_tracker: {
+            adapter: "linear",
+            team: "ENG",
+            facets: { priority: { store: "native", values: { urgent } } },
+          },
+        }),
+      ).toThrow("cannot be a list");
+  });
+
+  it("refuses a native priority remapped to other numbers", () => {
+    const remapped = resolveFacets(
       facetInputs(
         parseTrackerConfig({
           issue_tracker: {
             adapter: "linear",
             team: "ENG",
-            facets: {
-              priority: { store: "native", values: { urgent: [1, 0] } },
-            },
+            facets: { priority: { store: "native", values: { urgent: 2 } } },
           },
         }),
       ),
       null,
     );
-    expect(() => checkLinearFacets(listed)).toThrow(
+    expect(() => checkLinearFacets(remapped)).toThrow(
       "cannot remap Linear's native priority",
     );
   });

@@ -38,9 +38,10 @@ import {
   type Evidence,
 } from "../facets/detect.ts";
 import {
-  everyName,
   fold,
   numberedValue,
+  numberIsShared,
+  sharedNumber,
   priorityName,
   priorityNumber,
   type PriorityName,
@@ -414,10 +415,7 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
     }
     if (field.dataType === "NUMBER") {
       const n = Number(name);
-      const numbers = everyName(s.map)
-        .map(([, t]) => Number(t))
-        .filter(Number.isFinite);
-      if (new Set(numbers).size !== numbers.length)
+      if (sharedNumber(s.map) !== undefined)
         throw new TrackerRequestError(
           "invalid",
           `issue_tracker.facets.${s.facet}.values gives two ${s.facet} values the same number in the field '${field.name}'`,
@@ -500,15 +498,16 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
   ): string | null {
     const found = values.find((v) => same(v.field, fieldName(s)));
     if (found === undefined) return null;
+    const n = Number(found.value);
+    const numeric =
+      s.map !== null &&
+      found.numeric === true &&
+      found.value.trim() !== "" &&
+      Number.isFinite(n);
+    if (numeric && numberIsShared(s.map, n)) return null;
     const exact = s.map?.fromTracker(found.value) ?? null;
-    if (
-      exact !== null ||
-      s.map === null ||
-      found.numeric !== true ||
-      found.value.trim() === ""
-    )
-      return exact;
-    return numberedValue(s.map, Number(found.value));
+    if (exact !== null || !numeric) return exact;
+    return numberedValue(s.map, n);
   }
 
   async function read(

@@ -26,7 +26,12 @@ import { readSignal, refuseStopped } from "../facets/bounds.ts";
 import { type Facets, type ResolvedFacet, usable } from "../facets/config.ts";
 import { type LabelCodec, labelCodec } from "../facets/label.ts";
 import type { CoreFacetReport } from "../facets/tracker.ts";
-import { everyName, fold, numberedValue } from "../facets/values.ts";
+import {
+  fold,
+  numberedValue,
+  numberIsShared,
+  sharedNumber,
+} from "../facets/values.ts";
 import {
   type Facet,
   FACETS,
@@ -250,10 +255,7 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
   ): string | null {
     if (numeric && Number.isFinite(Number(raw)) && raw.trim() !== "") {
       const n = Number(raw);
-      const hits = everyName(s.map).filter(
-        ([, t]) => t.trim() !== "" && Number(t) === n,
-      );
-      if (new Set(hits.map(([v]) => v)).size > 1) return null;
+      if (numberIsShared(s.map, n)) return null;
     }
     const exact = s.map?.fromTracker(raw) ?? null;
     if (
@@ -354,11 +356,7 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
     name: string,
     field: FacetField,
   ): number {
-    const numbers = everyName(s.map).map(([, t]) => Number(t));
-    if (
-      !Number.isFinite(Number(name)) ||
-      new Set(numbers).size !== numbers.length
-    )
+    if (!Number.isFinite(Number(name)) || sharedNumber(s.map) !== undefined)
       throw new TrackerRequestError(
         "invalid",
         `${s.facet} ${value} is kept as '${name}' in the number field '${field.name}'; give each ${s.facet} its own number in ${at(s.facet, "values")}`,
