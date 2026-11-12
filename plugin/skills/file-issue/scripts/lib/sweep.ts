@@ -315,16 +315,11 @@ function changed(err: unknown): boolean {
   );
 }
 
-/** Sweep the open issues of `tracker`; a read that fails throws. */
-export async function sweep(
-  tracker: Tracker,
+function freshReport(
+  stores: Awaited<ReturnType<Tracker["facetStores"]>>,
   opts: SweepOptions,
-): Promise<SweepReport> {
-  const stores = await tracker.facetStores({
-    discovery: false,
-    ...(opts.writer.signal === undefined ? {} : { signal: opts.writer.signal }),
-  });
-  const report: SweepReport = {
+): SweepReport {
+  return {
     stores: stores.facets.map((f) => ({
       facet: f.facet,
       store: f.store,
@@ -346,6 +341,50 @@ export async function sweep(
     apply: opts.apply,
     move: opts.move ?? true,
   };
+}
+
+/** Write to the listed issues, one by one, until the cap or a stop. */
+async function applyAll(
+  tracker: Tracker,
+  opts: SweepOptions,
+  report: SweepReport,
+): Promise<void> {
+  const budget = opts.limits?.moves ?? SWEEP_LIMITS.moves;
+  // Moving, every issue reached counts; without moving, a marked issue stays
+  // in every listing, so it is passed over uncounted.
+  const spent = () =>
+    (report.move ? report.moved.length : report.commented.length) +
+    report.skipped.length;
+  const one = report.move ? moveOne : commentOne;
+  for (const issue of report.listed) {
+    if (spent() >= budget) {
+      if (report.move) return;
+      // Past the cap nothing more is written, but a marked issue needs no
+      // comment, so it is classified (a read) rather than counted as remaining.
+      const read = await attempt(issue, report, async () => {
+        if (await marked(tracker, issue, opts))
+          report.marked.push(issue.identifier);
+      });
+      if (!read) return;
+      continue;
+    }
+    if (
+      !(await attempt(issue, report, () => one(tracker, issue, opts, report)))
+    )
+      return;
+  }
+}
+
+/** Sweep the open issues of `tracker`; a read that fails throws. */
+export async function sweep(
+  tracker: Tracker,
+  opts: SweepOptions,
+): Promise<SweepReport> {
+  const stores = await tracker.facetStores({
+    discovery: false,
+    ...(opts.writer.signal === undefined ? {} : { signal: opts.writer.signal }),
+  });
+  const report = freshReport(stores, opts);
   if (report.storeProblem !== null) return report;
   const missing = stores.facets
     .filter((f) => f.store !== null)
@@ -358,31 +397,8 @@ export async function sweep(
   );
   report.read = true;
   report.storeProblem = emptiedStore(report.counts);
-  if (!opts.apply || report.storeProblem !== null) return report;
-  const budget = opts.limits?.moves ?? SWEEP_LIMITS.moves;
-  // Moving, every issue reached counts; without moving, a marked issue stays
-  // in every listing, so it is passed over uncounted.
-  const spent = () =>
-    (report.move ? report.moved.length : report.commented.length) +
-    report.skipped.length;
-  const one = report.move ? moveOne : commentOne;
-  for (const issue of report.listed) {
-    if (spent() >= budget) {
-      if (report.move) break;
-      // Past the cap nothing more is written, but a marked issue needs no
-      // comment, so it is classified (a read) rather than counted as remaining.
-      const read = await attempt(issue, report, async () => {
-        if (await marked(tracker, issue, opts))
-          report.marked.push(issue.identifier);
-      });
-      if (!read) break;
-      continue;
-    }
-    if (
-      !(await attempt(issue, report, () => one(tracker, issue, opts, report)))
-    )
-      break;
-  }
+  if (report.apply && report.storeProblem === null)
+    await applyAll(tracker, opts, report);
   return report;
 }
 
@@ -423,6 +439,14 @@ function listingLines(report: SweepReport): string[] {
   ];
 }
 
+/** The first line of the outcome: what the run did, and what remains. */
+function doneLine(report: SweepReport, remaining: number): string {
+  const capped = report.readCapped ? ", and more past the read's page cap" : "";
+  if (report.move)
+    return `moved ${report.moved.length} to triage (${report.commented.length} commented on); ${remaining} remain${capped}`;
+  return `commented on ${report.commented.length}, moved none (file_issue.sweep.move is false); ${report.marked.length} already commented on; ${remaining} remain${capped}`;
+}
+
 /** What the run moved, what remains, and why it stopped. */
 function outcomeLines(report: SweepReport): string[] {
   if (report.storeProblem !== null)
@@ -438,12 +462,7 @@ function outcomeLines(report: SweepReport): string[] {
     (report.move ? report.moved.length : report.commented.length) -
     report.marked.length -
     report.skipped.length;
-  const capped = report.readCapped ? ", and more past the read's page cap" : "";
-  const lines = [
-    report.move
-      ? `moved ${report.moved.length} to triage (${report.commented.length} commented on); ${remaining} remain${capped}`
-      : `commented on ${report.commented.length}, moved none (file_issue.sweep.move is false); ${report.marked.length} already commented on; ${remaining} remain${capped}`,
-  ];
+  const lines = [doneLine(report, remaining)];
   if (report.skipped.length > 0)
     lines.push(`changed during pacing, skipped: ${report.skipped.join(", ")}`);
   if (report.stopped !== null) lines.push(`stopped: ${report.stopped}`);
