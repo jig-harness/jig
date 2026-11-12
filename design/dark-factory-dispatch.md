@@ -1885,7 +1885,7 @@ schema carries a version: a database at an older one is migrated forward
 in one transaction, and one a newer plugin wrote is refused, with its
 version named, by every command that opens it. The dashboard's server
 opens it through the reader that migrates it until the dashboard design's
-first stage (its step 4) makes the server, and every later stage's, open
+first stage (its step 5) makes the server, and every later stage's, open
 it read-only, never migrating it and showing a schema older or newer than
 their own as such
 ([dispatch-dashboard.md § Install and upgrade](dispatch-dashboard.md#install-and-upgrade)).

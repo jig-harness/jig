@@ -25,7 +25,18 @@ import {
   remoteName,
   type ReviewBot,
 } from "../../../../shared/consumer.ts";
+import {
+  POLICY_BASE_VARIABLE,
+  POLICY_BOUND_VARIABLE,
+  readSnapshotAt,
+} from "../../../../shared/autonomy.ts";
 import { verifyRemoteIsPrRepo } from "./base-drift.ts";
+import {
+  evidenceProblem,
+  REVIEWER_EVIDENCE,
+  type ReviewerEvidence,
+  reviewerProfile,
+} from "./reviewer-profiles.ts";
 import { attachedTree } from "./driven-branch.ts";
 import { ghCall, git, gitCallTimeoutSeconds } from "./proc.ts";
 
@@ -114,19 +125,120 @@ export function reviewerLabel(): string {
 
 /**
  * The anchored pattern naming the posting reviewer's check run:
- * `DRIVE_PR_REVIEWER_CHECK`, else `review.reviewer_check_pattern`, else
- * `AI review` with an optional parenthesised arm suffix.
+ * `DRIVE_PR_REVIEWER_CHECK`, else `review.reviewer_check_pattern`, else the
+ * reviewer app's built-in profile, else `AI review` with an optional
+ * parenthesised arm suffix.
  */
 export function reviewerCheckPattern(): string {
   return (
     nonEmptyEnv("DRIVE_PR_REVIEWER_CHECK") ??
     optionalString("review", "reviewer_check_pattern") ??
-    DEFAULT_REVIEWER_CHECK
+    defaultReviewerCheckFor(reviewerApp())
   );
 }
 
-/** The posting reviewer's check-run name where the repository names no pattern. */
+/** The posting reviewer's check-run name where the repository names no pattern and no known app. */
 export const DEFAULT_REVIEWER_CHECK = "^ai[ _-]?review(\\s*\\(.+\\))?$";
+
+/** The check-run pattern for the app `app` where the repository names none: its profile's, else the default. */
+export function defaultReviewerCheckFor(app: string | null): string {
+  return reviewerProfile(app ?? "")?.checkPattern ?? DEFAULT_REVIEWER_CHECK;
+}
+
+/**
+ * How the reviewer records the commit it reviewed:
+ * `DRIVE_PR_REVIEWER_EVIDENCE`, else `review.reviewer_evidence`, else the
+ * reviewer app's built-in profile, else `sticky` (`reviewer-profiles.ts`).
+ */
+export function reviewerEvidence(): ReviewerEvidence {
+  const value =
+    nonEmptyEnv("DRIVE_PR_REVIEWER_EVIDENCE") ??
+    optionalString("review", "reviewer_evidence");
+  if (value === undefined)
+    return reviewerProfile(reviewerApp())?.evidence ?? "sticky";
+  if (!(REVIEWER_EVIDENCE as readonly string[]).includes(value))
+    throw new DecodeError(
+      configSource("review.reviewer_evidence"),
+      "$.review.reviewer_evidence",
+      `must be one of ${REVIEWER_EVIDENCE.join(", ")} (got '${value}')`,
+    );
+  return value as ReviewerEvidence;
+}
+
+/**
+ * Why the drive could not read the evidence of the reviewer the repository
+ * names, so that a drive would wait for it until `--timeout`; `null` when it
+ * can, or when no reviewer is expected. A malformed field throws, as every
+ * field here does.
+ */
+export function reviewerEvidenceProblem(): string | null {
+  return reviewerExpected()
+    ? evidenceProblem(reviewerApp(), reviewerEvidence())
+    : null;
+}
+
+/**
+ * `review.draft_skipping_reviewers`: the GitHub Apps whose reviewers skip
+ * draft pull requests and must have run on a head after it was marked Ready
+ * before the merge-ready announcement vouches for it; `[]` when not set.
+ * The list is the base branch's, in a driver pass and in the standalone
+ * announcement alike (both name the commit in `$DRIVE_PR_POLICY_BASE`), never
+ * the pull request's own file nor a user, environment or overlay layer, so
+ * the change being certified cannot empty its own gate. A stacked layer's
+ * list adds to the integration branch's (`$DRIVE_PR_POLICY_BOUND`), never
+ * removes from it. A base whose policy cannot be read, or whose `review`
+ * section is not a mapping, throws.
+ */
+export function draftSkippingReviewers(): string[] {
+  const field = "review.draft_skipping_reviewers";
+  const refuse = (message: string): never => {
+    throw new DecodeError(configSource(field), `$.${field}`, message);
+  };
+  const listAt = (
+    snapshot: ReturnType<typeof readSnapshotAt>,
+    branch: string,
+  ): string[] => {
+    if (snapshot.from !== "base")
+      return refuse(
+        `the ${branch} branch's configuration cannot be read (${
+          snapshot.from === "unreadable" ? snapshot.reason : "no snapshot"
+        })`,
+      );
+    const review = snapshot.values.review;
+    if (review === undefined || review === null) return [];
+    if (typeof review !== "object" || Array.isArray(review))
+      return refuse(`the ${branch} branch's review section must be a mapping`);
+    const value = (review as Record<string, unknown>).draft_skipping_reviewers;
+    if (value === undefined || value === null) return [];
+    if (!isDistinctNameList(value))
+      return refuse("must be a list of distinct GitHub App slugs");
+    return value;
+  };
+  const root = consumerRoot(process.cwd(), process.env);
+  const base = listAt(
+    readSnapshotAt(
+      (process.env[POLICY_BASE_VARIABLE] ?? "").trim(),
+      POLICY_BASE_VARIABLE,
+      "base",
+      process.env,
+      root,
+    ),
+    "base",
+  );
+  const boundCommit = (process.env[POLICY_BOUND_VARIABLE] ?? "").trim();
+  if (boundCommit === "") return base;
+  const bound = listAt(
+    readSnapshotAt(
+      boundCommit,
+      POLICY_BOUND_VARIABLE,
+      "integration",
+      process.env,
+      root,
+    ),
+    "integration",
+  );
+  return [...new Set([...bound, ...base])];
+}
 
 /**
  * The marker that identifies the reviewer's sticky summary comment:

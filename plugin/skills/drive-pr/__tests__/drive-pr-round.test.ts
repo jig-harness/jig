@@ -40,6 +40,7 @@ import {
   DORMANT_ARM,
   binDir,
   scratchClean,
+  announcePolicyEnv,
   gitCleanEnv,
   makeScratchRepo,
   makeUnresolvedMergeRepo,
@@ -123,6 +124,8 @@ describe("announce-merge-ready.ts", () => {
       /** Prepended ahead of `binDir` in PATH — for a probe's own `git` stub. */
       extraBinDir?: string;
       dryRun?: boolean;
+      /** The pull request's timeline events, replacing the empty default. */
+      timeline?: unknown[];
       /** Spawn a wrapper that deletes this association from the LIVE
        * `TRUSTED_ASSOCIATIONS` object before dynamically importing
        * announce-merge-ready.ts itself — the live-dependency test, below. */
@@ -137,6 +140,8 @@ describe("announce-merge-ready.ts", () => {
     // dedicated negative probe below omits it deliberately.
     writeVerifiedSha(stateDir, f.head ?? HEAD);
     if (paginateFails) writeFileSync(join(dir, "paginate-fails"), "");
+    if (opts.timeline !== undefined)
+      writeFileSync(join(dir, "timeline.json"), JSON.stringify(opts.timeline));
     // Each option the fixture reads becomes a file of the same purpose: a
     // flag is an empty file, a counter or a head holds its value.
     const flagFiles: Array<[boolean | undefined, string]> = [
@@ -203,7 +208,7 @@ describe("announce-merge-ready.ts", () => {
           ...(opts.postedIdBase
             ? { DRIVE_PR_POSTED_ID_BASE: opts.postedIdBase }
             : {}),
-          ...(opts.env ?? {}),
+          ...announcePolicyEnv(cwd, opts.env),
         },
         stdin: "ignore",
         stdout: "pipe",
@@ -308,6 +313,7 @@ describe("announce-merge-ready.ts", () => {
           DRIVE_PR_STATE_DIR: stateDir,
           DRIVE_PR_MERGE_MARKER_FIXTURE: `<!-- drive-pr-merge-ready: ${CONVERGED.head} -->`,
           DRIVE_PR_ANNOUNCE_OPENER_FIXTURE: OPENER,
+          ...announcePolicyEnv(scratchClean.dir),
         },
         stdin: "ignore",
         stdout: "pipe",
@@ -1346,6 +1352,52 @@ describe("announce-merge-ready.ts", () => {
     expect(r.stderr).not.toContain("already announced for");
   });
 
+  it("withdraws a same-head announcement when a draft skipper is pending, ahead of the CI refusal", async () => {
+    const r = await announce(
+      {
+        ...CONVERGED,
+        statuses: [{ context: "ci", state: "pending", description: "." }],
+      },
+      false,
+      {
+        staleAnnouncementFor: CONVERGED.head,
+        timeline: [
+          { event: "ready_for_review", created_at: "2026-11-11T09:24:30Z" },
+        ],
+        env: { JIG__REVIEW__DRAFT_SKIPPING_REVIEWERS: "[coderabbitai]" },
+      },
+    );
+    expect(r.posted).toBe(false);
+    expect(r.deleted).toEqual(["7"]);
+    expect(r.stderr).toContain("CI is");
+  });
+
+  it("reports the waiting exit, and withdraws, when a pending draft skipper is the reviewer still awaited", async () => {
+    const r = await announce({ ...CONVERGED, checkRuns: [] }, false, {
+      staleAnnouncementFor: CONVERGED.head,
+      env: { JIG__REVIEW__DRAFT_SKIPPING_REVIEWERS: "[example-review]" },
+    });
+    expect(r.posted).toBe(false);
+    expect(r.deleted).toEqual(["7"]);
+    expectSpawnExit(r, 4);
+  });
+
+  it("leaves a same-head announcement alone when the skipper facts are unreadable", async () => {
+    const r = await announce(
+      {
+        ...CONVERGED,
+        statuses: [{ context: "ci", state: "pending", description: "." }],
+      },
+      false,
+      {
+        staleAnnouncementFor: CONVERGED.head,
+        timeline: [{}],
+        env: { JIG__REVIEW__DRAFT_SKIPPING_REVIEWERS: "[coderabbitai]" },
+      },
+    );
+    expect(r.deleted).toEqual([]);
+  });
+
   it("--dry-run deletes NOTHING, even a stale announcement it would otherwise retract", async () => {
     // The cleanup issues real DELETEs, and it runs before the dry-run exit.
     // `--dry-run` promises to show what would be announced and mutate nothing;
@@ -1364,6 +1416,7 @@ describe("announce-merge-ready.ts", () => {
           DRIVE_PR_FIXTURES: dir,
           DRIVE_PR_STATE_DIR: stateDir,
           DRIVE_PR_ANNOUNCE_OPENER_FIXTURE: OPENER,
+          ...announcePolicyEnv(scratchClean.dir),
         },
         stdin: "ignore",
         stdout: "pipe",

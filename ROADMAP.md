@@ -175,11 +175,9 @@ that sets none keeps today's behaviour.
 
 ### 48. Fitting the drive to a repository's reviewer
 
-The drive adapts to a repository's AI reviewer. Review evidence is read from
-the repository's own settings. A repository whose AI reviewer is CodeRabbit
-is one such case: the drive waits for its review of the latest commit and
-stops when it pauses or skips. The setting is optional, and a team that sets
-none keeps today's behaviour.
+Some AI reviewers, CodeRabbit for one, write findings in the text of their
+review rather than as comments on lines. The drive reads those findings too,
+so it never finishes with them unanswered.
 
 ### 49. The hub: one control plane for many dispatchers
 

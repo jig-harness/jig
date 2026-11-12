@@ -665,6 +665,30 @@ describe("arm-drive.ts", () => {
     expectSpawnExit(await runArm(tree, ["042"], CLAUDE), 2);
   });
 
+  it("refuses a reviewer whose evidence the drive cannot read, rather than arm a drive that waits for it", async () => {
+    const tree = scratchTree();
+    const sticky = await runArm(tree, ["42"], {
+      ...CLAUDE,
+      JIG__REVIEW__REVIEWER_APP: "coderabbitai",
+      JIG__REVIEW__REVIEWER_EVIDENCE: "sticky",
+    });
+    expectSpawnExit(sticky, 1);
+    expect(report(sticky).status).toBe("failed");
+    expect(report(sticky).reason).toContain("submits pull-request reviews");
+    const appless = await runArm(tree, ["42"], {
+      ...CLAUDE,
+      JIG__REVIEW__REVIEWER_CHECK_PATTERN: "^Bot$",
+      JIG__REVIEW__REVIEWER_EVIDENCE: "review_object",
+    });
+    expectSpawnExit(appless, 1);
+    expect(report(appless).reason).toContain("no review.reviewer_app");
+    const profile = await runArm(tree, ["42"], {
+      ...CLAUDE,
+      JIG__REVIEW__REVIEWER_APP: "coderabbitai",
+    });
+    expectSpawnExit(profile, 0);
+  });
+
   it("answers a model it cannot resolve with a failed report on the default model", async () => {
     const tree = scratchTree();
     const tier = await runArm(tree, ["42"], {

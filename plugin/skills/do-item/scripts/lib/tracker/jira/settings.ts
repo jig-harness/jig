@@ -3,6 +3,7 @@
  *
  *   jira:
  *     site: https://example.atlassian.net   # required
+ *     api_base: https://api.atlassian.com/ex/jira/<cloud id>   # default: the site
  *     issue_type: Task          # the type a new issue gets
  *     subtask_type: Sub-task    # default: the project's one sub-task type
  *     priorities: { urgent: Highest, high: High, medium: Medium, low: Low }
@@ -13,6 +14,12 @@
  *
  * A relation in `link_types` may name several link types, each a name or
  * `{ name, inverted }`: `[Blocks, { name: "Depends", inverted: true }]`.
+ *
+ * `api_base` sends every request through Atlassian's API gateway, which a
+ * scoped API token or an OAuth token calls; `site` still names the site, and
+ * builds every issue's browse link. Only the gateway's host, and only its
+ * Jira path for one cloud id, is accepted: `JIRA_ALLOWED_HOSTS` does not
+ * widen it.
  *
  * The section is parsed whatever the adapter, so a mistyped field is refused
  * before the adapter is chosen; only the Jira adapter requires `site`.
@@ -43,6 +50,8 @@ export interface LinkTypeEntry {
 export interface JiraSettings {
   /** `https://<name>.atlassian.net`, no trailing slash; `null` = not set. */
   site: string | null;
+  /** `https://api.atlassian.com/ex/jira/<cloud id>`, no trailing slash; `null` = the site. */
+  apiBase: string | null;
   issueType: string;
   /** `null` = the project's one sub-task type. */
   subtaskType: string | null;
@@ -58,6 +67,7 @@ export interface JiraSettings {
 
 const FIELDS = [
   "site",
+  "api_base",
   "issue_type",
   "subtask_type",
   "priorities",
@@ -124,6 +134,25 @@ function siteOf(v: unknown): string | null {
       `${field("site")} must be an Atlassian Cloud site (*.atlassian.net); another host receives the credential only when JIRA_ALLOWED_HOSTS names it (got ${JSON.stringify(site)})`,
     );
   return site.replace(/\/$/, "");
+}
+
+/**
+ * Atlassian's API gateway for one Jira Cloud site: that host, that path and
+ * a cloud id (letters, digits and hyphens), nothing else; no port, no
+ * user, no query and no further path.
+ */
+const API_BASE =
+  /^https:\/\/api\.atlassian\.com\/ex\/jira\/[A-Za-z0-9][A-Za-z0-9-]{0,63}\/?$/;
+
+function apiBaseOf(v: unknown): string | null {
+  if (v === undefined || v === null) return null;
+  const base = nonEmpty(v, field("api_base"));
+  if (!API_BASE.test(base))
+    throw new TrackerConfigError(
+      field("api_base"),
+      `${field("api_base")} must be Atlassian's API gateway address for the site, https://api.atlassian.com/ex/jira/<cloud id>, and nothing else (got ${JSON.stringify(base)})`,
+    );
+  return base.replace(/\/$/, "");
 }
 
 /**
@@ -313,6 +342,7 @@ export function parseJiraSettings(raw: unknown): JiraSettings {
   const section = sectionOf(raw);
   return {
     site: siteOf(section.site),
+    apiBase: apiBaseOf(section.api_base),
     issueType:
       section.issue_type === undefined || section.issue_type === null
         ? DEFAULT_ISSUE_TYPE
@@ -347,4 +377,9 @@ export function requireSite(settings: JiraSettings): string {
       `${field("site")} is not set; it names the Jira Cloud site, such as https://example.atlassian.net`,
     );
   return settings.site;
+}
+
+/** Where requests go: the API gateway when `api_base` is set, else the site. */
+export function requestBase(settings: JiraSettings): string {
+  return settings.apiBase ?? requireSite(settings);
 }

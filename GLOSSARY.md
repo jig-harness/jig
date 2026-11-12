@@ -1570,6 +1570,13 @@ make, use the entry's term instead.
   review. The drive reads it to tell a head the reviewer has not reached yet
   from one it will never review
   ([terminal states](plugin/skills/drive-pr/references/terminal-states.md)).
+- **Review object (reviewer evidence)** — a pull-request review the forge
+  records, naming the commit it was submitted against. Some automated
+  reviewers (CodeRabbit among them) record their reviews this way instead of
+  in a *sticky comment*, and post none on a push they have nothing new to say
+  about; the drive then reads the review and the reviewer's check run
+  (`review.reviewer_evidence: review_object`,
+  [terminal states](plugin/skills/drive-pr/references/terminal-states.md#a-reviewer-that-submits-pull-request-reviews)).
 - **Summary-only finding** — a review finding that appears only in the
   reviewer's *sticky comment* because it could not be anchored to a diff line,
   so it creates no thread. A loop that counted only threads would report
@@ -2278,8 +2285,10 @@ make, use the entry's term instead.
   machine's records: a snapshot, then the changes since a cursor, each
   record in its *record envelope* and stamped with the host it came from
   and a visibility class (safe on the forge, for one person's machines, or
-  for this machine only). The *hub* serves it, from what its hosts report.
-  Not the
+  for this machine only). Its first transport is
+  `ssh <host> jig dashboard feed`, JSON lines over *SSH*; the *hub* serves it
+  too, from what its hosts report, and a *shared control plane* would serve
+  the same feed over a connection the host opens. Not the
   *views API*, which a page uses to talk to its own server. See
   [design/dispatch-dashboard.md](design/dispatch-dashboard.md#the-source-feed-from-a-host-to-a-dashboard).
 - **Views API** — the protocol between the *dispatch dashboard*'s page and the server that
