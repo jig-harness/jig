@@ -72,30 +72,16 @@ function isLoopback(hostname: string): boolean {
 }
 
 /**
- * Whether `hostname` is a Tailscale name: `*.ts.net`, which resolves only
- * through the tailnet. An address in 100.64.0.0/10 proves no tunnel (RFC 6598
- * shared address space), so it does not count.
- */
-function isTailscale(hostname: string): boolean {
-  return hostname.toLowerCase().endsWith(".ts.net");
-}
-
-/**
  * Why the page cannot send from the address it was served at, or `null` when
  * it can. The token a page keeps is as safe as the path the page came over,
- * so Send is offered only over HTTPS, from this machine's loopback, or over
- * Tailscale's encrypted network; on any other plain-HTTP address someone on
- * the path who can change the page could read the token.
+ * so Send is offered only over HTTPS or from this machine's loopback; on any
+ * other plain-HTTP address someone on the path who can change the page could
+ * read the token. A hostname proves no encrypted path, so none is trusted.
  */
 export function transportFault(at: {
   protocol: string;
   hostname: string;
 }): string | null {
-  if (
-    at.protocol === "https:" ||
-    isLoopback(at.hostname) ||
-    isTailscale(at.hostname)
-  )
-    return null;
-  return `No Send on this address: the page came over plain HTTP from ${at.hostname}, so someone on the network path could read the token. Open the dashboard over HTTPS, from this machine's loopback or by its Tailscale name (*.ts.net) to send; Copy works here.`;
+  if (at.protocol === "https:" || isLoopback(at.hostname)) return null;
+  return `No Send on this address: the page came over plain HTTP from ${at.hostname}, so someone on the network path could read the token. Open the dashboard over HTTPS or from this machine's loopback to send; Copy works here.`;
 }

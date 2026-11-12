@@ -62,8 +62,7 @@ from the browser, as the person:
   nobody picked is Copy's alone. A guarded pick sends on the second step,
   as it copies.
 - Send is offered only when the page came over HTTPS, from loopback
-  (`localhost`, 127.0.0.0/8, `::1`) or over Tailscale by a
-  `*.ts.net` name; on any other plain-HTTP address the card says why it
+  (`localhost`, 127.0.0.0/8, `::1`); on any other plain-HTTP address the card says why it
   has none.
 - Send works on a phone as on a desktop.
 - The host stays read-only: the dashboard's server gets no write route and
@@ -82,8 +81,9 @@ Send.
 ## Alternatives considered
 
 - **A `POST /answer` route on the dashboard's server, gated by a passkey.**
-  Rejected: it adds a write route on the host, which ADR-0013 keeps out,
-  and needs enrolment and HTTPS before the first answer. Until item 40, the
+  Rejected: it adds a write route on the host, which this record chooses
+  not to add (ADR-0013 permits a write made for a person, as one of the
+  records the line already reads, but does not require one), and needs enrolment and HTTPS before the first answer. Until item 40, the
   answer it posts is still the person's login's comment, so the passkey
   proves a person to the dashboard, not to the drive that reads the answer.
 - **Copy and paste only.** Rejected: it keeps the host read-only at the
@@ -107,7 +107,7 @@ Send.
   against, and a narrow scope (the dashboard's repositories, Issues and
   Pull requests only, a short expiry) limits. Over plain HTTP, someone on
   the network path who can change the page could read it, so Send is
-  offered only over HTTPS, loopback or Tailscale.
+  offered only over HTTPS or loopback.
 - Any process of the person's account on the device whose browser keeps
   the token can read it, as it can read a terminal's credential.
 - Send reaches github.com only; a pull request on another forge keeps Copy.

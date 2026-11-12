@@ -12,7 +12,7 @@
  * picked is Copy's alone. A guarded pick sends on the second step, as it
  * copies. A card that no drive reads an answer comment for, whose pull
  * request is not on github.com, or a page served over plain HTTP outside
- * loopback and Tailscale (`transportFault`) has no Send and says why.
+ * loopback (`transportFault`) has no Send and says why.
  *
  * The settings panel takes the token, tests it by asking GitHub who it signs
  * in as, and forgets it.

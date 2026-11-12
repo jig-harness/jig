@@ -312,8 +312,8 @@ browser
   `api.github.com` alone.
 - **Only over a path that protects the token.** Send is offered only when
   the page came over HTTPS, from the machine's loopback (`localhost`,
-  127.0.0.0/8, `::1`), or over Tailscale by a `*.ts.net` name,
-  which resolves only through the tailnet, whose network encrypts the path. On any other plain-HTTP address
+  127.0.0.0/8, `::1`). A hostname proves no encrypted path, so none
+  is trusted. On any other plain-HTTP address
   every card says why it has no Send and the settings panel takes no
   token, since someone on the path who can change the page could read it.
 - **What comes back.** After GitHub answers 201 for each comment, the card
@@ -345,7 +345,7 @@ that keeps it.
   repositories only, which is why the token's scope is narrow.
 - **The network path.** Over plain HTTP a person on the path who can change
   the page's response could add a script, so Send is offered only over
-  HTTPS, loopback or Tailscale; the private HTTPS front
+  HTTPS or loopback; the private HTTPS front
   ([Phone scope and access](#phone-scope-and-access)) is the setup a phone
   uses.
 - **Processes on the person's device.** Any process of the person's account
@@ -749,7 +749,7 @@ rules, timestamps and failure states serve desktop and phone.
 | Merge, Needs you, Running, Queue and History | Read the next act, progress and recent outcomes while away. Repository selection and History's time window are the basic filters; pagination keeps long lists bounded. |
 | An opened Work card and its decisions | Read the status, ask, recommended option, costs, alternatives and evidence. Stage 1 shows one item or pull request; stage 2 adds the joined thread. Expand details with a visible control. |
 | Copy the pinned merge command or an answer line | Carry the proposed act to the person's terminal without executing it. Copy success must be confirmed; when browser clipboard access fails, select the complete text for manual copying. |
-| Send a parked decision's answer | Once an option is picked, post each decision's answer as the comment `jig send` writes, from the phone's browser to GitHub with a token kept in that browser, over the HTTPS front or Tailscale ([When the dashboard writes](#when-the-dashboard-writes)); a guarded pick sends on the second step, by tap. |
+| Send a parked decision's answer | Once an option is picked, post each decision's answer as the comment `jig send` writes, from the phone's browser to GitHub with a token kept in that browser, over the HTTPS front ([When the dashboard writes](#when-the-dashboard-writes)); a guarded pick sends on the second step, by tap. |
 | Open the pull request or issue | Follow an explicit link to the forge or tracker, which owns its login and any action there. The dashboard's server remains read-only. |
 | A failed or stale read | Show the last successful read and its age while the page is open; after a reconnect, read again before displaying readiness as current. A failed connection never means the queue is empty. |
 
@@ -959,8 +959,10 @@ its 1.104 command line, not yet with the dashboard.
   scope are returned. Without `fleet` a viewer gets public facts only, as
   above.
 - **It does not unblock writes.** Tailscale says who is looking, not whose
-  forge login writes. Phone access remains read-only; desktop
-  writes still wait for item 40.
+  forge login writes. Phone access does not write through the host; the page
+  may post a parked decision's answer from the browser (Send, [When the
+  dashboard writes](#when-the-dashboard-writes)), and every other write waits
+  for item 40.
 - **Derived, not declared.** `jig doctor dashboard` reads `tailscale serve status
   --json` and fails on Tailscale Funnel, which publishes to the open
   internet; on `--tcp` mode, which passes the encrypted connection through

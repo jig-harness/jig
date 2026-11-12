@@ -616,7 +616,7 @@ Each surface's commit:
 | Surface | Commit | Waits on |
 | --- | --- | --- |
 | Dashboard, Copy | `c` copies, `p` opens the pull request, the person pastes | nothing |
-| Dashboard, Send | Once an option is picked, Send posts one `drive-answer` comment per decision, from the browser with the person's token | a token kept in that browser; a page over HTTPS, loopback or Tailscale |
+| Dashboard, Send | Once an option is picked, Send posts one `drive-answer` comment per decision, from the browser with the person's token | a token kept in that browser; a page over HTTPS or loopback |
 | Orca panel | Send runs `jig send` once for each decision's active answer, a free answer with its words | nothing |
 | Terminal | `jig ask --waiting` numbers the options; `jig send` names one | nothing |
 

@@ -80,7 +80,7 @@ export function HelpView({ Fold }: { Fold: FoldComponent }) {
             the record <code>jig send</code> writes. The token stays in this
             browser and never reaches the host. A guarded pick sends on the
             second step, as it copies. Send is offered only over HTTPS, from
-            this machine's loopback or over Tailscale.
+            this machine's loopback.
           </p>
         </div>
       </section>

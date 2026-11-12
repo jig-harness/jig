@@ -13,8 +13,9 @@ This guide sets up the better path: a **private HTTPS address** that opens in
 the phone's ordinary browser with no token in it, put in front of the
 dashboard by a [private-network front](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md). It also describes the
 plain private-HTTP fallback and what it costs. Neither path writes
-anything: the page only reads, and nothing here sends a command or changes a
-pull request through Jig.
+through the host: nothing here sends a command or changes a pull request
+through Jig. The page's one write is Send, which posts from the phone's
+browser straight to GitHub (below).
 
 Who it is for: the person who owns the host that runs the dashboard. Every
 step runs on that host, except the checks on the phone.
@@ -255,8 +256,8 @@ passes only when the result is the one in the table.
 
 Copying only puts text in the clipboard. Send posts from the phone's
 browser straight to GitHub. Neither path sends a command or writes anything
-through the host. The page offers Send only over HTTPS, loopback or a
-Tailscale address: over another plain-HTTP address someone on the network
+through the host. The page offers Send only over HTTPS or loopback: over
+any plain-HTTP address else someone on the network
 path who can change the page could read the token, so the cards say why
 Send is missing there.
 

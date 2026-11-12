@@ -103,7 +103,7 @@ describe("the addresses a page may send from", () => {
     return transportFault({ protocol, hostname });
   };
 
-  it("sends over HTTPS, from loopback and over Tailscale", () => {
+  it("sends over HTTPS and from loopback", () => {
     for (const url of [
       "https://dispatch.example.org/",
       "https://192.168.1.20:8765/",
@@ -112,7 +112,6 @@ describe("the addresses a page may send from", () => {
       "http://127.0.0.1:8765/",
       "http://127.200.3.4/",
       "http://[::1]:8765/",
-      "http://host.tailnet-name.ts.net:8765/",
     ])
       expect(at(url)).toBeNull();
   });
@@ -129,6 +128,7 @@ describe("the addresses a page may send from", () => {
       "http://128.0.0.1/",
       "http://localhost.example.org/",
       "http://ts.net.example.org/",
+      "http://host.tailnet-name.ts.net:8765/",
       "http://[::2]/",
     ])
       expect(at(url)).toContain("No Send on this address");
