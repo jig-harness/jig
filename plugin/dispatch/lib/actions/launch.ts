@@ -157,6 +157,14 @@ export function timeLeftMs(state: ApplyState): number | null {
   return allowed - (Date.now() - state.startedAt);
 }
 
+/** What the tick has left for reads that still leaves a runtime launch its room; `null` for a tick that keeps no start. */
+export function readRoomMs(state: ApplyState): number | null {
+  const left = timeLeftMs(state);
+  return left === null
+    ? null
+    : left - settleMs(state.machine.runtimeTimeoutMs, LAUNCH_CALLS);
+}
+
 /**
  * Why the tick cannot settle a runtime launch now; `null` when it can. The
  * launch is admitted on its settlement bound, not its timeout, and the
