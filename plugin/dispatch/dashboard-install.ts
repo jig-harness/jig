@@ -345,16 +345,6 @@ export async function dashboardStatus(): Promise<number> {
     : 1;
 }
 
-export function dashboardAccess(): number {
-  const access = readAccess();
-  if (!access.ok) {
-    console.error(access.failure.reason);
-    return 1;
-  }
-  console.log(access.value.url);
-  return 0;
-}
-
 /** Poll cheap config/generation every second; resolve the installed entry at most once a minute. */
 export async function scheduledDashboard(script: string): Promise<number> {
   const path = machineConfigPath();
