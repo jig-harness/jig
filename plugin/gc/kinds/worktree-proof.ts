@@ -29,6 +29,7 @@ import {
   processHolder,
   requestByNumber,
   requests,
+  requestsForCommit,
   worktreeActivity,
 } from "./worktree-git.ts";
 
@@ -225,21 +226,66 @@ async function describesHead(
     if ((await ancestry(path, "HEAD", pr.head)) === true) return ok(true);
   return ok(false);
 }
-/** The recorded pull request of a detached tree whose head is still its work. */
+/**
+ * The recorded pull request of a detached tree, or null when the head has
+ * moved on to another branch's work since the attach: the record then names
+ * a pull request the head no longer belongs to.
+ */
 async function drivenRequests(
   path: string,
   record: DrivenTree,
-): Promise<Outcome<WorktreeRequest[]>> {
+): Promise<Outcome<WorktreeRequest[] | null>> {
   const prs = await requestByNumber(path, record.remote, record.pr);
   if (!prs.ok) return prs;
   const describes = await describesHead(path, record, prs.value);
   if (!describes.ok) return describes;
-  if (!describes.value)
-    return failed(
-      "other-work",
-      "HEAD is detached on another branch's work since a drive attached the worktree",
-    );
-  return prs;
+  return ok(describes.value ? prs.value : null);
+}
+/**
+ * How a detached tree's pull requests were found, for its reason: the
+ * drive's record that names one, or the forge's pull requests for the
+ * commit at HEAD.
+ */
+function detachedSource(
+  found: WorktreeRequest[],
+  record: DrivenTree | null,
+): string {
+  if (record)
+    return `HEAD is detached; pull request #${record.pr} is named by the drive's tree record`;
+  const numbers = found.map((pr) => `#${pr.number ?? "?"}`);
+  if (numbers.length === 0)
+    return "HEAD is detached; the forge lists no pull request holding its commit";
+  const which = numbers.length === 1 ? "pull request" : "pull requests";
+  return `HEAD is detached; the forge lists ${which} ${numbers.join(", ")} as holding its commit`;
+}
+/**
+ * The pull requests a worktree is judged by and, for a detached tree, how
+ * they were found. A branch lists its own; a detached tree takes its drive
+ * record's while that record describes the head (`attachedDrive`,
+ * `describesHead`), and otherwise the forge's pull requests for its commit,
+ * so a record left behind never names the pull request of work the head
+ * moved on from.
+ */
+async function treeRequests(
+  path: string,
+  policy: WorktreePolicy,
+  identity: WorktreeIdentity,
+): Promise<Outcome<{ found: WorktreeRequest[]; source: string | null }>> {
+  if (identity.name !== "HEAD") {
+    const found = await requests(path, policy.remote, identity.name);
+    return found.ok ? ok({ found: found.value, source: null }) : found;
+  }
+  const record = await attachedDrive(path, identity);
+  const recorded = record ? await drivenRequests(path, record) : ok(null);
+  if (!recorded.ok) return recorded;
+  if (recorded.value !== null)
+    return ok({
+      found: recorded.value,
+      source: detachedSource(recorded.value, record),
+    });
+  const found = await requestsForCommit(path, policy.remote, identity.head);
+  if (!found.ok) return found;
+  return ok({ found: found.value, source: detachedSource(found.value, null) });
 }
 /** A path as git spells a worktree: links resolved, where the path exists. */
 export function canonicalWorktree(path: string): string {
@@ -351,30 +397,20 @@ async function worktreeIdentity(
   return ok({ name: name.value, head: head.value, admin });
 }
 /**
- * The drive record of a detached tree, null for a tree on a branch, and a
- * `detached` failure for a detached tree no drive attached. A detached tree
- * a drive attached names its pull request, and the remote that pull request
- * was fetched through, in its record, for as long as its head still descends
- * from the commit attached and holds no other branch's work
- * (`describesHead`). Unlike the drive's readers, no remote branch is
- * required: a merged pull request's branch is often deleted, and that is
- * when the tree is reported.
+ * The drive record of a detached tree, while its head still descends from
+ * the commit the drive attached; null otherwise. Unlike the drive's readers,
+ * no remote branch is required: a merged pull request's branch is often
+ * deleted, and that is when the tree is reported.
  */
 async function attachedDrive(
   path: string,
   identity: WorktreeIdentity,
-): Promise<Outcome<DrivenTree | null>> {
-  if (identity.name !== "HEAD") return ok(null);
+): Promise<DrivenTree | null> {
   const record = readDrivenTree(identity.admin);
-  if (
-    record !== null &&
+  return record !== null &&
     (await ancestry(path, record.head, identity.head)) === true
-  )
-    return ok(record);
-  return failed(
-    "detached",
-    "HEAD is detached and no drive attached the worktree",
-  );
+    ? record
+    : null;
 }
 /**
  * What the tree itself holds: uncommitted and index-hidden changes, an
@@ -474,16 +510,21 @@ async function identityUnchanged(
 /**
  * A proof carrying the paths set aside as rebuildable, whatever its state,
  * so the receipt says what was judged rebuildable even for a worktree that
- * goes on to report `would-collect`.
+ * goes on to report `would-collect`, and, for a detached tree, how its pull
+ * requests were found.
  */
 function withRebuildable(
   facts: WorktreeEvidence,
   proof: Proof,
+  source: string | null = null,
 ): Outcome<Proof> {
+  const told = source
+    ? { ...proof, reason: `${proof.reason}; ${source}` }
+    : proof;
   return ok(
     facts.ignoredContent.rebuildable.length
-      ? { ...proof, details: { rebuildable: facts.ignoredContent.rebuildable } }
-      : proof,
+      ? { ...told, details: { rebuildable: facts.ignoredContent.rebuildable } }
+      : told,
   );
 }
 /**
@@ -502,23 +543,20 @@ export async function worktreeProof(
     return ok({ state: "finding", reason: "worktree root is not a directory" });
   const identity = await worktreeIdentity(path);
   if (!identity.ok) return identity;
-  const driven = await attachedDrive(path, identity.value);
-  if (!driven.ok) return driven;
   const local = await localEvidence(path, identity.value.admin, coordinated);
   if (!local.ok) return local;
   const facts = local.value;
   const veto = localWorktreeVeto(facts);
   if (veto) return withRebuildable(facts, veto);
-  const found =
-    driven.value === null
-      ? await requests(path, policy.remote, identity.value.name)
-      : await drivenRequests(path, driven.value);
+  const found = await treeRequests(path, policy, identity.value);
   if (!found.ok) return found;
-  const proved = { ...facts, requests: found.value };
+  const { source } = found.value;
+  const proved = { ...facts, requests: found.value.found };
   if (proved.requests.some((pr) => pr.state === "OPEN"))
     return withRebuildable(
       proved,
       classifyWorktree(proved, idleDays * 86_400_000),
+      source,
     );
   const history = await historyEvidence(path, policy, identity.value, proved);
   if (!history.ok) return history;
@@ -527,5 +565,6 @@ export async function worktreeProof(
   return withRebuildable(
     proved,
     classifyWorktree(proved, idleDays * 86_400_000),
+    source,
   );
 }

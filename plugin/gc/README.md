@@ -62,6 +62,32 @@ creator and why that creator counts as gone.
 Worktree openers have not adopted that protocol, so clean or merged worktrees
 are reported only, except those a workspace runtime manages.
 
+### Detached worktrees
+
+A worktree on a branch is judged by the pull requests the forge lists for
+that branch. A worktree whose HEAD is detached has no branch, so gc finds
+its pull requests another way, and the reason it reports says which pull
+requests and how they were found:
+
+- **The drive's tree record.** When drive-pr's attach checks a pull
+  request's head out detached, it records the pull request in the tree's
+  git directory (`shared/driven-tree.ts`). While the head still descends
+  from the commit attached and holds no other branch's work, gc judges the
+  tree by that pull request.
+- **The forge's pull requests for the commit.** Otherwise (no record, or a
+  record the head has moved on from) gc asks the forge for the pull requests
+  whose commits include the HEAD commit (`gh api
+  repos/<owner>/<name>/commits/<commit>/pulls`, bounded like every other
+  forge call). Every one from this repository counts: an open one keeps the
+  tree, and a commit no remote branch holds is covered only when a merged
+  one's head contains it. A record left behind never names the pull request
+  of work the head has moved on to. A listing that fills its page, or that
+  the forge cannot answer, leaves the tree unverified.
+
+The rest of the proof is the one a branched tree gets: a detached tree whose
+commits no remote branch and no merged pull request's head holds is kept,
+and one no pull request holds is judged as a tree without a pull request.
+
 ### Worktrees Orca manages
 
 Removing a worktree Orca manages with plain git leaves Orca's card, its

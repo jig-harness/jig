@@ -157,14 +157,39 @@ writeFileSync(${JSON.stringify(marker)}, "executed"); process.stdout.write("toke
   expect(existsSync(marker)).toBe(false);
 });
 
+/** The commit `f.repo` has checked out. */
+function headOf(f: ReturnType<typeof repository>): string {
+  return Bun.spawnSync(["git", "-C", f.repo, "rev-parse", "HEAD"], {
+    env: gitEnvironment(),
+  })
+    .stdout.toString()
+    .trim();
+}
+
+/** One entry of the forge's pull requests for a commit, in its REST form. */
+function commitPull(
+  number: number,
+  state: "OPEN" | "MERGED" | "CLOSED",
+  head: string,
+  source = "team/repo",
+) {
+  return {
+    number,
+    state: state === "OPEN" ? "open" : "closed",
+    merged_at: state === "MERGED" ? "2026-11-01T00:00:00Z" : null,
+    head: { sha: head, repo: { full_name: source } },
+  };
+}
+
 /**
  * Prove the detached worktree `f.repo` in a child with `gh` answering the pull
- * request `pr` (a JS expression), after writing a tree record for `head` (a
- * JS expression, or none); the proof's result or its error, as JSON.
+ * request `pr` (a JS expression) to `pr view` and `pulls` to the forge's
+ * pull requests for a commit, after writing a tree record for `head` (a JS
+ * expression, or none); the proof's result or its error, as JSON.
  */
 function detachedProof(
   f: ReturnType<typeof repository>,
-  options: { pr: string; head: string | null; remote: string },
+  options: { pr: string; head: string | null; remote: string; pulls?: unknown },
 ) {
   const bin = join(f.root, "bin");
   mkdirSync(bin, { recursive: true });
@@ -173,7 +198,8 @@ function detachedProof(
     `#!/usr/bin/env bun
 import { appendFileSync } from "node:fs";
 appendFileSync(${JSON.stringify(join(f.root, "gh-calls"))}, process.argv.slice(2).join(" ") + "\\n");
-console.log(JSON.stringify({ ...${options.pr}, headRepository: { name: "repo" }, headRepositoryOwner: { login: "team" } }));
+if (process.argv[2] === "api") console.log(JSON.stringify(${JSON.stringify(options.pulls ?? [])}));
+else console.log(JSON.stringify({ ...${options.pr}, headRepository: { name: "repo" }, headRepositoryOwner: { login: "team" } }));
 `,
   );
   const source = `import { writeDrivenTree } from ${JSON.stringify(resolve(import.meta.dir, "../../shared/driven-tree.ts"))};
@@ -204,37 +230,81 @@ catch (error) { console.log(JSON.stringify({ error: String(error) })); }`;
   return JSON.parse(result.stdout.toString()) as Record<string, unknown>;
 }
 
+/** What the fake `gh` was asked, one call per line. */
+function ghCalls(f: ReturnType<typeof repository>): string {
+  return readFileSync(join(f.root, "gh-calls"), "utf8");
+}
+
 test("a detached worktree is proven by the pull request a drive attached it to, through the remote it was attached from", () => {
   const f = repository();
   f.git("remote", "add", "origin", "https://github.com/fork/repo.git");
   f.git("remote", "add", "upstream", "https://github.com/team/repo.git");
   f.git("checkout", "--quiet", "--detach");
-  const pr = `{ state: "OPEN", headRefOid: "a".repeat(40) }`;
+  const pr = `{ number: 7, state: "OPEN", headRefOid: "a".repeat(40) }`;
   const head = `Bun.spawnSync(["git", "-C", ${JSON.stringify(f.repo)}, "rev-parse", "HEAD"]).stdout.toString().trim()`;
-  expect(detachedProof(f, { pr, head: null, remote: "origin" })).toMatchObject({
-    ok: false,
-    failure: {
-      code: "detached",
-      reason: "HEAD is detached and no drive attached the worktree",
-    },
-  });
   expect(detachedProof(f, { pr, head, remote: "origin" })).toMatchObject({
     ok: true,
-    value: { state: "live", reason: "branch has an open pull request" },
+    value: {
+      state: "live",
+      reason:
+        "branch has an open pull request; HEAD is detached; pull request #7 is named by the drive's tree record",
+    },
   });
-  expect(readFileSync(join(f.root, "gh-calls"), "utf8")).toContain(
-    "pr view 7 --repo github.com/team/repo",
+  expect(ghCalls(f)).toContain("pr view 7 --repo github.com/team/repo");
+  expect(ghCalls(f)).not.toContain("api");
+});
+
+test("a detached worktree no drive recorded is judged by the pull requests the forge lists for its commit", () => {
+  const f = repository();
+  f.git("remote", "add", "origin", "https://github.com/team/repo.git");
+  f.git("checkout", "--quiet", "--detach");
+  const head = headOf(f);
+  const pulls = [
+    commitPull(9, "OPEN", head),
+    // A fork's pull request carrying the same commit is not this repository's.
+    commitPull(10, "MERGED", head, "other/repo"),
+  ];
+  expect(
+    detachedProof(f, { pr: "{}", head: null, remote: "origin", pulls }),
+  ).toMatchObject({
+    ok: true,
+    value: {
+      state: "live",
+      reason:
+        "branch has an open pull request; HEAD is detached; the forge lists pull request #9 as holding its commit",
+    },
+  });
+  expect(ghCalls(f)).toContain(
+    `api --hostname github.com repos/team/repo/commits/${head}/pulls?per_page=100`,
   );
+});
+
+test("a commit lookup the forge cannot answer in full, or answers malformed, fails the proof", () => {
+  const f = repository();
+  f.git("remote", "add", "origin", "https://github.com/team/repo.git");
+  f.git("checkout", "--quiet", "--detach");
+  const head = headOf(f);
+  const full = Array.from({ length: 100 }, (_, i) =>
+    commitPull(i + 1, "MERGED", head),
+  );
+  expect(
+    detachedProof(f, { pr: "{}", head: null, remote: "origin", pulls: full }),
+  ).toMatchObject({ ok: false, failure: { code: "incomplete" } });
+  const unnumbered = [{ ...commitPull(1, "MERGED", head), number: "1" }];
+  expect(
+    detachedProof(f, {
+      pr: "{}",
+      head: null,
+      remote: "origin",
+      pulls: unnumbered,
+    }),
+  ).toMatchObject({ ok: false, failure: { code: "malformed" } });
 });
 
 test("a detached worktree moved onto a stacked branch's work is not proven by the merged pull request it was attached to", () => {
   const f = repository();
   f.git("remote", "add", "upstream", "https://github.com/team/repo.git");
-  const attached = Bun.spawnSync(["git", "-C", f.repo, "rev-parse", "HEAD"], {
-    env: gitEnvironment(),
-  })
-    .stdout.toString()
-    .trim();
+  const attached = headOf(f);
   f.git("checkout", "--quiet", "--detach");
   writeFileSync(join(f.repo, "stacked.txt"), "stacked\n");
   f.git("add", ".");
@@ -242,24 +312,39 @@ test("a detached worktree moved onto a stacked branch's work is not proven by th
   // The descendant is a stacked pull request's, pushed to its own branch.
   f.git("update-ref", "refs/remotes/upstream/stacked", "HEAD");
   const head = JSON.stringify(attached);
-  const pr = (state: string) => `{ state: "${state}", headRefOid: ${head} }`;
+  const pr = (state: string) =>
+    `{ number: 7, state: "${state}", headRefOid: ${head} }`;
+  const pulls = [commitPull(8, "OPEN", headOf(f))];
+  // The record no longer describes the head, so the forge's pull requests
+  // for the commit judge it, never the merged one the record names.
   expect(
-    detachedProof(f, { pr: pr("MERGED"), head, remote: "upstream" }),
+    detachedProof(f, {
+      pr: pr("MERGED"),
+      head,
+      remote: "upstream",
+      pulls,
+    }),
   ).toMatchObject({
-    ok: false,
-    failure: {
-      code: "other-work",
-      reason: expect.stringContaining("another branch's work"),
+    ok: true,
+    value: {
+      state: "live",
+      reason:
+        "branch has an open pull request; HEAD is detached; the forge lists pull request #8 as holding its commit",
     },
   });
   // The record's own branch holding the head makes it the drive's work again
   // (an open pull request, so the proof ends before any remote is read).
   f.git("update-ref", "refs/remotes/upstream/topic", "HEAD");
   expect(
-    detachedProof(f, { pr: pr("OPEN"), head, remote: "upstream" }),
+    detachedProof(f, { pr: pr("OPEN"), head, remote: "upstream", pulls }),
   ).toMatchObject({
     ok: true,
-    value: { state: "live", reason: "branch has an open pull request" },
+    value: {
+      state: "live",
+      reason: expect.stringContaining(
+        "pull request #7 is named by the drive's tree record",
+      ),
+    },
   });
 });
 
