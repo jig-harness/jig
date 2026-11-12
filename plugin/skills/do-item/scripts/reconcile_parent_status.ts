@@ -375,16 +375,18 @@ export function reconcileParentStatus(
   );
 
   if (!allMergedOrParked) {
-    const unmerged = children.some((c) => {
+    const openPrChild = children.find((c) => {
       const own = childStates(c);
       return (
         own.pr_open !== null &&
         stateNameEquals(own.pr_open, own.in_review) &&
         readsAsPrOpen(c, own)
       );
-    })
-      ? ` A sub-issue under "${states.pr_open}", the name pr_open shares with in_review, reads as pr_open unless its linked pull request merged (its pullRequest fact is not "merged").`
-      : "";
+    });
+    const unmerged =
+      openPrChild !== undefined
+        ? ` A sub-issue under "${childStates(openPrChild).pr_open}", the name pr_open shares with in_review, reads as pr_open unless its linked pull request merged (its pullRequest fact is not "merged").`
+        : "";
     return decide(
       "keep_in_progress",
       null,

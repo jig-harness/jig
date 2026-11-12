@@ -97,14 +97,19 @@ async function waitsFor(mode: BlockedMode, pr: number): Promise<string | null> {
   );
 }
 
-/** The receipt's lines for one pull request's moves: each item written or refused. */
+/** The receipt's lines for one pull request's moves, refusals, and reportable skips. */
 function receiptLines(target: string, moved: BlockedOutcome[]): BlockedWrite[] {
   return moved
     .filter((o) => o.outcome !== "kept")
     .map((o) => ({
       target,
       item: o.item,
-      outcome: o.outcome === "refused" ? "failed" : "written",
+      outcome:
+        o.outcome === "refused"
+          ? "failed"
+          : o.outcome === "skipped"
+            ? "skipped"
+            : "written",
       detail: o.detail,
     }));
 }

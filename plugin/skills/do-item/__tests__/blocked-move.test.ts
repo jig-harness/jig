@@ -4,7 +4,11 @@
  * re-arm.
  */
 import { describe, expect, test } from "bun:test";
-import { type BlockedPr, projectBlocked } from "../scripts/lib/blocked-move.ts";
+import {
+  blockedLine,
+  type BlockedPr,
+  projectBlocked,
+} from "../scripts/lib/blocked-move.ts";
 import type {
   BlockedFields,
   CanonicalState,
@@ -331,4 +335,22 @@ test("a tracker without a blocked state reads and writes nothing", async () => {
   ).toEqual([]);
   expect(fake.calls).toEqual([]);
   expect(fake.states.get("ENG-123")).toBe("In Progress");
+});
+
+test("reports an item whose workflow has no blocked state", async () => {
+  const fake = fresh({ "ENG-123": "In Progress" });
+  const tracker = fakeTracker(fake, NAMES);
+  tracker.stateName = ((state: CanonicalState, issue?: Issue) =>
+    issue?.identifier === "ENG-123" && state === "blocked"
+      ? null
+      : (NAMES[state] ?? null)) as never;
+  const [outcome] = await projectBlocked(tracker, KEYS, LABELS, parked(), NOW);
+  expect(outcome).toMatchObject({
+    item: "ENG-123",
+    outcome: "skipped",
+    detail: "ENG-123: blocked is absent from its workflow",
+  });
+  expect(blockedLine(7, outcome!)).toContain(
+    "blocked is absent from its workflow",
+  );
 });

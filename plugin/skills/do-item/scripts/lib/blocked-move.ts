@@ -60,7 +60,7 @@ export interface BlockedPr {
 /** What happened to one linked item. */
 export interface BlockedOutcome {
   item: string;
-  outcome: "blocked" | "returned" | "kept" | "refused";
+  outcome: "blocked" | "returned" | "kept" | "skipped" | "refused";
   detail: string;
 }
 
@@ -157,7 +157,7 @@ async function projectItem(
     if (tracker.stateName("blocked", issue) === null)
       return {
         item: key,
-        outcome: "kept",
+        outcome: "skipped",
         detail: `${key}: blocked is absent from its workflow`,
       };
     const canonical = canonicalOf(tracker, issue.state.name, issue);
