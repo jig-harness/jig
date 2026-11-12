@@ -335,8 +335,7 @@ function nested(raw: string, at: number): boolean {
   // The content columns of the nested bullets enclosing each line.
   const enclosing: number[] = [];
   const leave = (indent: number): void => {
-    while (enclosing.length && enclosing[enclosing.length - 1]! > indent)
-      enclosing.pop();
+    while ((enclosing.at(-1) ?? 0) > indent) enclosing.pop();
   };
   for (const line of raw.slice(0, lineStart).split("\n").slice(1)) {
     if (!line.trim()) continue;
