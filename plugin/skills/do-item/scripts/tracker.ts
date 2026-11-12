@@ -33,7 +33,9 @@
  * `blocked`, or assigned to anyone else (exit 3, nothing written), assigns it to that identity and moves it
  * to `in_progress`, then reads it again and stands down (exit 4) when
  * another claim landed first. The reason is printed on stderr and in the
- * JSON on stdout.
+ * JSON on stdout. In a pickup the dispatcher started (`JIG_LAUNCH` names
+ * its launch record), a claim that landed is noted on that record, so the
+ * dispatcher counts the item as its pickup's however soon the pass ends.
  *
  * Where the repository's default branch sets `do_item.preflight_command`,
  * `claim` first runs it, before the claim lock and any write, with the
@@ -119,6 +121,10 @@ import {
 } from "./lib/claim-settings.ts";
 import { claimBranch, claimSession } from "./lib/claim-marker.ts";
 import { claimWithMarker } from "./lib/claim-token.ts";
+import {
+  NOT_DISPATCHED,
+  notePickupClaim,
+} from "../../../dispatch/lib/pickup-claim.ts";
 import { consumerRoot, readOverlay } from "../../../shared/consumer.ts";
 import { syncPlanBlocks } from "./lib/plan-blocks.ts";
 import { executionPlanBlock } from "./select_execution_issue.ts";
@@ -400,42 +406,64 @@ async function claim(
   if (refusal !== null) return refusal;
   const blocked = await blockedClaimRefusal(tracker, normalized);
   if (blocked !== null) return blocked;
-  return withClaimLock(claimLockKey(tracker, normalized), async () => {
-    // The projection may have blocked the item while the claim waited for the lock.
-    const stale = await blockedClaimRefusal(tracker, normalized);
-    if (stale !== null) return stale;
-    const ancestorKey = ancestor
-      ? (shape?.normalize(ancestor) ?? ancestor)
-      : undefined;
-    const body = () =>
-      person
-        ? claimServedIssue(tracker, normalized, {
-            person,
-            ...(ancestorKey ? { ancestor: ancestorKey } : {}),
-            ...(blocking
-              ? { blocking: shape?.normalize(blocking) ?? blocking }
-              : {}),
-            epicLabel: config.labels.epic,
-            hitlLabel: config.labels.hitl,
-            manualOpsLabel: config.labels.manualOps,
-            ...(planBlock?.ok && planBlock.value !== undefined
-              ? { executionPlanBlock: planBlock.value }
-              : {}),
-            claimFrom: settings.claimFrom,
-          })
-        : claimIssue(tracker, key, { claimFrom: settings.claimFrom });
-    if (!settings.claimMarker) return body();
-    // The marker names who the item will be assigned to, before it is.
-    const claimant = person
-      ? (await tracker.user(person)).name
-      : (await tracker.viewer()).name;
-    return claimWithMarker(
-      tracker,
-      normalized,
-      { session: claimSession(), branch: await claimBranch(root), claimant },
-      body,
+  const result = await withClaimLock(
+    claimLockKey(tracker, normalized),
+    async () => {
+      // The projection may have blocked the item while the claim waited for the lock.
+      const stale = await blockedClaimRefusal(tracker, normalized);
+      if (stale !== null) return stale;
+      const ancestorKey = ancestor
+        ? (shape?.normalize(ancestor) ?? ancestor)
+        : undefined;
+      const body = () =>
+        person
+          ? claimServedIssue(tracker, normalized, {
+              person,
+              ...(ancestorKey ? { ancestor: ancestorKey } : {}),
+              ...(blocking
+                ? { blocking: shape?.normalize(blocking) ?? blocking }
+                : {}),
+              epicLabel: config.labels.epic,
+              hitlLabel: config.labels.hitl,
+              manualOpsLabel: config.labels.manualOps,
+              ...(planBlock?.ok && planBlock.value !== undefined
+                ? { executionPlanBlock: planBlock.value }
+                : {}),
+              claimFrom: settings.claimFrom,
+            })
+          : claimIssue(tracker, normalized, { claimFrom: settings.claimFrom });
+      if (!settings.claimMarker) return body();
+      // The marker names who the item will be assigned to, before it is.
+      const claimant = person
+        ? (await tracker.user(person)).name
+        : (await tracker.viewer()).name;
+      return claimWithMarker(
+        tracker,
+        normalized,
+        { session: claimSession(), branch: await claimBranch(root), claimant },
+        body,
+      );
+    },
+  );
+  if (result.outcome === "claimed") noteDispatchedClaim(result.issue);
+  return result;
+}
+
+/**
+ * In a pickup the dispatcher started, note the claim on its launch record, so
+ * the dispatcher counts the item as its pickup's however soon the pass ends.
+ * A failed note leaves the claim standing: it is reported beside it.
+ */
+function noteDispatchedClaim(issue: string): void {
+  const noted = notePickupClaim(issue);
+  if (!noted.ok)
+    console.error(
+      `the claim of ${issue} was not noted for the dispatcher: ${noted.failure.reason}`,
     );
-  });
+  else if (!noted.value.noted && noted.value.why !== NOT_DISPATCHED)
+    console.error(
+      `the claim of ${issue} was not noted for the dispatcher: ${noted.value.why}`,
+    );
 }
 
 /** `claim`'s exit codes: refused before any write, stood down after the re-read. */

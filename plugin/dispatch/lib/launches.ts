@@ -68,6 +68,7 @@ import {
 import { type ProcessRow, processTable } from "../../shared/process-table.ts";
 import { LAUNCH_RECORD_ID } from "../../shared/records/launch-claims.ts";
 import { pendingRearm } from "./rearm-state.ts";
+import { pickupClaims } from "./pickup-claim-table.ts";
 import { DRIVER_REFUSAL_EXITS } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { stateRoot } from "../receipts.ts";
 import { existingStateDb, inTransaction, stateDb, statePath } from "./state.ts";
@@ -76,11 +77,8 @@ import { cancelledBeforeExecution } from "./cancellation.ts";
 import type { StandingAnswer } from "./routine-questions.ts";
 export { cancelledBeforeExecution } from "./cancellation.ts";
 export { UNARMED_FACTS } from "./launch-keep.ts";
-import {
-  latestArms,
-  latestFailedRearms,
-  latestPickups,
-} from "./launch-keep.ts";
+import { latestArms, latestFailedRearms } from "./launch-keep.ts";
+import { latestPickups } from "./launch-pickups.ts";
 
 /** What a launch starts: a re-arm of a stopped drive, a takeover of a wedged one, a pickup's `do-item` session, or a merge's follow-up pass. */
 export type LaunchAction =
@@ -368,7 +366,8 @@ function namesTarget(value: Record<string, unknown>): boolean {
   );
 }
 
-function isLaunchRecord(value: unknown): value is LaunchRecord {
+/** Whether a parsed value reads as a launch record (the tick's part, as stored). */
+export function isLaunchRecord(value: unknown): value is LaunchRecord {
   return (
     isMapping(value) &&
     value.version === 1 &&
@@ -491,6 +490,7 @@ export function recordOf(
   row: LaunchRow,
   root: string,
   control?: Map<string, ControlRows>,
+  db: Database = stateDb(root),
 ): LaunchRecord | null {
   const value = parseJson(row.record, `launch record ${row.id}`);
   // A record whose embedded id names another row would read that row's claim and exit.
@@ -500,7 +500,13 @@ export function recordOf(
     control === undefined
       ? controlRows(root, row.id).get(row.id)
       : control.get(row.id);
-  return { ...normalized(value), ...(rows ?? EMPTY) };
+  const record = normalized(value);
+  const claims = pickupClaims(row.id, db);
+  if (claims.length > 0)
+    record.claimedItems = [
+      ...new Set([...(record.claimedItems ?? []), ...claims]),
+    ];
+  return { ...record, ...(rows ?? EMPTY) };
 }
 
 interface EpisodeRow {
@@ -763,7 +769,7 @@ export async function readLaunches(
   const records: ReadRecord[] = [];
   const unreadable: string[] = [];
   for (const row of all) {
-    const record = recordOf(row, root, control);
+    const record = recordOf(row, root, control, db);
     if (record === null) {
       unreadable.push(`launch record ${row.id} in ${statePath(root)}`);
       continue;
