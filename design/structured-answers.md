@@ -766,15 +766,127 @@ and `choice` (the option's name and the form). The dashboard's Send writes
 the same record, one comment per decision, naming the person's login and
 `dashboard (browser)` as its writer's host.
 
+### Every need framed
+
+The dispatch dashboard's Needs you lists every cause the tick notifies, and
+each is something a person decides: run a failed follow-up again or settle
+it by hand, start a stalled pickup afresh, re-arm a drive the ledger handed
+to a person. Without a framing each arrives as a sentence, and the person
+works out what the dispatcher could do and does it themselves. So every
+need carries a framed decision, rendered as decision rows and answered in a
+word, the way a park is:
+
+- **A session-framed decision** is the one a follow-up's or pickup's pass
+  recorded when it stopped for a person.
+- **A dispatcher-framed decision** is one the tick frames from the facts it
+  read, for a cause it detects itself, with a fixed set of options, each a
+  step the tick can carry out.
+
+A need whose pass framed nothing, and a cause the tick frames none for,
+keep their free text as before.
+
+#### Sessions frame their questions
+
+A dispatched pass that stops for a person records its result with the
+decision it framed: `jig dispatch result <record> <token> failed --decision
+<file>`, the file holding a `parked-decision/v1` record, the same model a
+park holds (`shared/decisions/park.ts`), checked by the same checker. Its
+class is the registry class the decision falls in; the dispatcher's own
+classes (below) are refused, so a session never frames a decision the tick
+would carry out. A decision the check refuses records nothing, and the
+pass fixes it and sends it again; a pass that cannot frame records `failed`
+without one. The launch record keeps the decision with the result
+(`launches.result_decision`), its digest computed once, when it is
+recorded, and the time, which binds its answers as a park's time does. The
+pass still ends its output on a `Question:` line, so a pass that could not
+frame is notified with its words, and a routine question keeps its tag
+(#544's classes). The prompts of a follow-up's and a pickup's pass give the
+record's shape and the command, and `do-item`'s and `work-batch`'s
+dispatched-pass sections say the same.
+
+The need is a failed follow-up (`followup-failed`) or a pickup that stopped
+on a question (`pickup-question`), keyed `followup` or `pickup`; a pickup
+whose pass framed a decision with no question line is such a need too.
+
+#### The tick frames what it detects
+
+For the causes the tick finds itself it frames the decision from the facts
+that identify the occurrence: the launch record, the marker, the item, the
+branch and the path, the exit. Never a clock or a count: the digest stays
+the same from tick to tick while those facts do, and an answer to earlier
+facts is stale. Every set ends with **Leave it to me**: the tick takes no
+step, and the need leaves Needs you for these facts; it comes back when
+they change.
+
+| Cause | Key | Options (the recommendation in bold) | The tick's step |
+| --- | --- | --- | --- |
+| a failed follow-up (`followup-failed`), a stale claim again (`followup-stale`) | `followup` | **Run it again** when the pass asked nothing or the claim went stale; Record it done; **Leave it to me** when the pass stopped on a question | deletes the marker the need names, so a later tick starts the follow-up again, the person's note in its prompt; or marks the existing marker done in place |
+| a stalled pickup (`stalled`), a pickup's question it did not frame (`pickup-question`) | `pickup` | **Release the claim** for a stall no open pull request carries; **Leave it to me** otherwise | moves the item back to the first state a pickup starts from, so a later tick picks it up afresh |
+| a checkout the workspace runtime does not list holds the launch's branch and is in use (`needs-person`) | `checkout` | Detach the checkout; **Leave it to me** | detaches it at its commit when it is idle, as an open does an idle holder |
+| a drive the ledger handed to a person, or one stopped with no cause (`needs-person`, `stopped-unknown`) | `drive` | Re-arm the drive; **Leave it to me** | adds the rearm label, the person's command the tick then carries out |
+| a launch record stuck pending (`needs-person`) | `launch` | **Clear the record**; Leave it to me | removes it, as `jig dispatch clear` does |
+
+The classes (`followup-recovery`, `pickup-recovery`, `checkout-recovery`,
+`drive-recovery`, `launch-recovery`) read Decide in the acts table, so the
+need's act is Decide, and a steward's proposed act stands only on a need
+with no decision. A double claim, an unanswered nudge and an item assigned
+by someone who cannot write have no step beside leaving them, and are not
+framed.
+
+#### Where an answer goes
+
+An answer is the comment a park takes, `answer <key>: approve [<digest>]`
+or `answer <key>: choose <option> [<digest>]`, with a `note <key>:` line
+beside it, on the need's pull request, or on its item where the items are
+the forge's issues. The line carries, with each such decision, the station
+`jig send` answers it through, its address, where the comment goes and who
+framed it (`LineDecision.answer`), so the dashboard copies the comment it
+already copies for a park, and `stationSendCommand` in
+`shared/decisions/station.ts` writes the matching `jig send` command; that
+module and `decision-card.ts` are the one answer format every surface
+imports. `jig send followup@…|pickup@…|drive@… answer <key>
+--approve|--choose <option> [--note] --decision <digest>` reads the need
+from this machine's newest line and writes that comment, with the
+`drive-answer` record as an answer to a park has it. It refuses words (the
+tick carries out an option), an option the decision does not offer, a
+missing or stale digest, and an item on another tracker, whose comments the
+tick does not read yet.
+
+#### The tick acts
+
+Each tick of the host that owns the repository reads, for each framed
+need, the comments of its pull request or forge issue through the reader
+every station shares (`answer-forms.ts`), under the same rule for who may
+answer (`shared/trusted-authors.ts`). A comment by the dispatcher's own
+login never answers: a dispatcher does not answer on a person's behalf. An
+answer counts only when it names the decision's current digest; each
+person's latest answer is theirs, two that differ leave the need disputed,
+and a free answer is shown and never acted on. The line shows the answers,
+their state and the step taken.
+
+The counted answer's step runs once: a row of `station_answers` keyed by
+the decision's digest and the answer (its comment and time) is claimed
+before the step runs, and holds how it ended. The step reads again, just
+before it acts, what makes it safe: the stage is on for the repository on
+this host; no person's hold label is on the pull request; the marker is
+still the tick's, earliest and not done; no session holds the work; no open
+pull request carries the item; the checkout is idle. A step that no longer
+may act refuses with that reason, kept in the row and shown on the need;
+a person answers again to try again. For a session-framed decision the
+step starts the stage again (the follow-up's marker deleted, or the item
+released), and the next launch of that target takes the answer, once, into
+its prompt: the option chosen as the decision states it, narrowed by the
+note and never wider, quoted as data. A dispatcher-framed Run it again or
+Release the claim hands on the person's note the same way.
+
+This is the one place the dispatcher writes to the tracker or deletes a
+follow-up's marker of its own accord, and it does so only on a person's
+answer.
+
 ### Beyond the drive
 
-The forms fit any framed question, and each of these becomes a step of its
-own once the drive's answers work:
+The forms fit any framed question; each of these becomes a step of its own:
 
-- **A follow-up's question.** A follow-up pass that stops on a question a
-  person must answer frames it as a park does and takes its answer through
-  `jig send followup@… answer`, rather than a free `Question:` line read
-  from its output.
 - **A loosened ratchet.** Item 40 counts a `Ratchet-Loosen` trailer only
   with evidence a person gave it. A drive that needs one parks under
   `rules` with the loosening as an option; a structured answer choosing
@@ -783,6 +895,10 @@ own once the drive's answers work:
   "needs a person to start" (item 44). That becomes an Authorize decision
   on the item, answered in a tracker comment, which the pickup reads before
   it claims.
+- **Answers on another tracker.** A pickup's decision on an item that is
+  not a forge issue is framed and shown, but its answers are read only once
+  the tracker's comments name their author, which the tracker interface's
+  comment facts do not carry yet.
 
 ## Build order
 
@@ -853,8 +969,16 @@ and its pull request saying what changed in the audit.
    dashboard for one park.
 9. **Attested classes**, with item 40's first proof, and
    `autonomy.attested_classes` in [CONFIGURATION.md](../plugin/CONFIGURATION.md).
-10. **Beyond the drive**: the follow-up's question, the loosened ratchet
-   and the pickup, one pull request each.
+10. **Every need framed**: the session-framed decision recorded with a
+   pass's result, the dispatcher-framed decisions, `jig send`'s answers to
+   the follow-up's, the pickup's and the drive's station, and the tick's
+   step on each counted answer, once. Done when a pass's framed decision
+   shows on its need, each cause the tick detects carries a decision whose
+   digest holds while its facts do, a sent answer's step runs once and
+   refuses with why when it no longer may, and a session started on an
+   answer is handed it.
+11. **Beyond the drive**: the loosened ratchet, the pickup only a person
+   may start, and answers on another tracker, one pull request each.
 
 ## Left out
 
@@ -873,10 +997,12 @@ and its pull request saying what changed in the audit.
   how they interact.
 - **A digit that commits.** One keystroke on a decision that cannot be
   undone is too little, and a pick costs nothing to confirm.
-- **Applying an option without a pass**, such as marking a pull request
-  ready on an approved `ready` park. Worth measuring first: step 7 shows
-  which classes are approved as recommended, and a step that skips the pass
-  for one of them is a design change of its own.
+- **Applying a park's option without a pass**, such as marking a pull
+  request ready on an approved `ready` park. Worth measuring first: step 7
+  shows which classes are approved as recommended, and a step that skips
+  the pass for one of them is a design change of its own. A
+  dispatcher-framed decision is the exception by construction: its options
+  are the tick's own steps ([Every need framed](#every-need-framed)).
 - **Writing from the dashboard.** The page copies lines; #477 and item 40
   decide whether it writes.
 - **Reactions as answers.** An emoji cannot name an option, is as easy for

@@ -41,6 +41,8 @@ import {
   type QueueRelation,
   type Tracker,
   workingStates,
+  isWorkingIssue,
+  trackerStateMaps,
 } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
 import type { PickupReads } from "../pickup-reads.ts";
 
@@ -133,7 +135,9 @@ function watched(s: Snapshot): string[] {
  * pickup, but an epic in it still has children the walk may start.
  */
 const blockedStates = (tracker: Tracker): CanonicalState[] =>
-  tracker.stateName("blocked") === null ? [] : ["blocked"];
+  trackerStateMaps(tracker).some((map) => map.blocked !== null)
+    ? ["blocked"]
+    : [];
 
 /** The queue, read in one request where the adapter can. */
 async function readQueue(
@@ -155,7 +159,10 @@ async function readQueue(
         relations: null,
         parent: undefined,
       })),
-      progress,
+      progress: progress.filter(
+        (issue) =>
+          tracker.stateMaps === undefined || isWorkingIssue(tracker, issue),
+      ),
     };
   }
   const working = workingStates(tracker);
@@ -164,11 +171,10 @@ async function readQueue(
     ...blockedStates(tracker),
     ...working,
   ]);
-  const started = new Set(working.map((s) => tracker.stateName(s)));
   const open: HeldIssue[] = [];
   const progress: PoolIssue[] = [];
   for (const { relations, parent, ...issue } of read)
-    if (started.has(issue.state.name)) progress.push(issue);
+    if (isWorkingIssue(tracker, issue)) progress.push(issue);
     else open.push({ issue, relations, parent });
   return { open, progress };
 }
@@ -411,7 +417,9 @@ export function trackerScope(tracker: Tracker): string {
  * the facet stores. Repositories that differ in either cannot share a reading.
  */
 function configIdentity(tracker: Tracker): string {
-  const states = CANONICAL_STATES.map((s) => tracker.stateName(s)).join("|");
+  const states = trackerStateMaps(tracker)
+    .map((map) => CANONICAL_STATES.map((state) => map[state]).join("|"))
+    .join(";");
   return `${tracker.instance ?? ""}|${states}#${tracker.configKey ?? ""}`;
 }
 

@@ -320,6 +320,28 @@ describe("reconcileParentStatus with pr_open", () => {
         ),
       ).toMatchObject({ verdict: "set_status", parentState: "in_review" });
     });
+
+    it("names the child workflow's shared review state in its explanation", () => {
+      const parentVocabulary = {
+        ...shared,
+        states: { ...shared.states, pr_open: null, in_review: null },
+        statesByType: { Story: shared.states },
+      };
+      const result = reconcileParentStatus(
+        {
+          parentLabels: [],
+          children: [
+            {
+              ...underShared("open"),
+              nativeType: "Story",
+            },
+          ],
+        },
+        parentVocabulary,
+      );
+      expect(result.reason).toContain('under "In Review"');
+      expect(result.reason).not.toContain('under "null"');
+    });
   });
 
   it("ignores a merged pull request fact under a distinct pr_open name", () => {

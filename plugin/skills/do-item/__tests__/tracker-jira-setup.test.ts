@@ -37,6 +37,7 @@ const fieldOf = (f: () => unknown): string | null => {
 describe("issue_tracker.jira", () => {
   it("fills in the defaults", () => {
     expect(parseJiraSettings({ site: `${SITE}/` })).toEqual({
+      statesByType: {},
       site: SITE,
       apiBase: null,
       issueType: "Task",

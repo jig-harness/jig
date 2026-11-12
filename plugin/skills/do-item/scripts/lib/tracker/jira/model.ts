@@ -19,12 +19,13 @@
  * `issue_tracker.jira.priorities`; any other name reads as 0 (none).
  */
 
-import {
-  type CanonicalState,
-  type IssueState,
-  type StateNameOf,
-  type StateNames,
-  stateNameIn,
+import type {
+  CanonicalState,
+  IssueState,
+  StateNameOf,
+  StateNames,
+  StateMap,
+  StateContext,
 } from "../port.ts";
 import { OPEN_STATES, STATE_TYPES } from "../github/model.ts";
 import {
@@ -33,6 +34,8 @@ import {
   RESOLVED_STATES,
   type ResolvedState,
 } from "./settings.ts";
+
+import { statesForType, jiraStateMaps } from "./state-maps.ts";
 
 export { STATE_TYPES };
 
@@ -47,6 +50,7 @@ export interface JiraStatus {
 /** What the model needs of one issue. */
 export interface StateInput {
   status: JiraStatus;
+  issueType?: { name: string } | null;
   /** The resolution's name; `null` when unresolved. */
   resolution: string | null;
 }
@@ -78,6 +82,8 @@ const OPEN_CATEGORY: Record<string, string> = {
 
 export interface JiraModel {
   stateName: StateNameOf;
+  stateNames(state: CanonicalState): string[];
+  stateMaps(): StateMap[];
   /** The state an issue is in. */
   read(issue: StateInput): ReadState;
   /** The closed state of a done-category issue. */
@@ -98,9 +104,13 @@ export function jiraModel(
   states: StateNames,
   settings: JiraSettings,
 ): JiraModel {
+  const maps = [states, ...Object.values(jiraStateMaps(states, settings))];
+  const namesFor = (issue: StateInput) =>
+    statesForType(states, settings, issue.issueType?.name ?? null);
   function closedState(issue: StateInput): ResolvedState {
-    const named = RESOLVED_STATES.filter((s) =>
-      same(states[s], issue.status.name),
+    const states = namesFor(issue);
+    const named = RESOLVED_STATES.filter(
+      (s) => states[s] !== null && same(states[s], issue.status.name),
     );
     if (named.length === 1) return named[0] as ResolvedState;
     const resolution = issue.resolution;
@@ -116,7 +126,10 @@ export function jiraModel(
    * type fits the status's category (else among all named like it); a name
    * `pr_open` shares with `in_review` reads as `pr_open`.
    */
-  function openState(status: JiraStatus): CanonicalState | null {
+  function openState(
+    status: JiraStatus,
+    states: StateMap,
+  ): CanonicalState | null {
     const named = OPEN_STATES.filter((s) => {
       const name = states[s];
       return name !== null && same(name, status.name);
@@ -133,9 +146,21 @@ export function jiraModel(
   }
 
   return {
-    stateName: stateNameIn(states),
+    stateName: ((state: CanonicalState, context?: StateContext) =>
+      context === undefined
+        ? states[state]
+        : statesForType(states, settings, context)[state]) as StateNameOf,
+    stateNames: (state) => [
+      ...new Set(
+        maps
+          .map((map) => map[state])
+          .filter((name): name is string => name !== null),
+      ),
+    ],
+    stateMaps: () => maps.map((map) => ({ ...map })),
     closedState,
     read(issue) {
+      const states = namesFor(issue);
       // A status configured as blocked stays blocked whatever category the site files it under.
       const blocked = states.blocked;
       if (
@@ -152,10 +177,10 @@ export function jiraModel(
         const s = closedState(issue);
         return {
           canonical: s,
-          state: { name: states[s], type: STATE_TYPES[s] },
+          state: { name: states[s] ?? issue.status.name, type: STATE_TYPES[s] },
         };
       }
-      const s = openState(issue.status);
+      const s = openState(issue.status, states);
       if (s !== null)
         return {
           canonical: s,

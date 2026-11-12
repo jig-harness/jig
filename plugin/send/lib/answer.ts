@@ -63,6 +63,7 @@ import {
 } from "./answer-parks.ts";
 import { type Planned, refused } from "./plan.ts";
 import { planAnswerAll } from "./answer-all.ts";
+import { planStationAnswer } from "./answer-station.ts";
 
 type OneAnswer = Extract<AnswerRequest, { all: false }>;
 
@@ -250,13 +251,27 @@ async function planAnswer(
   });
 }
 
-/** The plan of `request`: one key's answer, or every eligible item's approval. */
+/**
+ * The plan of `request`: one key's answer, or every eligible item's
+ * approval. A follow-up's or a pickup's address answers a need's decision
+ * (`answer-station.ts`); a drive's answers a need's decision when its line
+ * holds one of that key, else a parked question.
+ */
 export function planAnswerRequest(
   ctx: AskContext,
   request: AnswerRequest,
   sender: Sender,
 ): Promise<Planned> {
-  return request.all
-    ? planAnswerAll(ctx, request.decisionSet, sender)
-    : planAnswer(ctx, request, sender);
+  if (request.all)
+    return ctx.address.station === "drive"
+      ? planAnswerAll(ctx, request.decisionSet, sender)
+      : Promise.resolve(
+          refused(
+            "answer --all --approve approves a drive's parked questions; answer this need's decision by its key",
+          ),
+        );
+  const station = planStationAnswer(ctx, request, sender);
+  return station === null
+    ? planAnswer(ctx, request, sender)
+    : Promise.resolve(station);
 }

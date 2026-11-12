@@ -4,7 +4,11 @@
  * re-arm.
  */
 import { describe, expect, test } from "bun:test";
-import { type BlockedPr, projectBlocked } from "../scripts/lib/blocked-move.ts";
+import {
+  blockedLine,
+  type BlockedPr,
+  projectBlocked,
+} from "../scripts/lib/blocked-move.ts";
 import type {
   BlockedFields,
   CanonicalState,
@@ -12,6 +16,8 @@ import type {
   Issue,
 } from "../scripts/lib/tracker/port.ts";
 import { DEFAULT_LABELS } from "../../../shared/pr-labels/projection.ts";
+import { parseTrackerConfig } from "../scripts/lib/tracker/config.ts";
+import { jiraModel } from "../scripts/lib/tracker/jira/model.ts";
 
 const LABELS = { ...DEFAULT_LABELS, enabled: true };
 const KEYS = {
@@ -96,6 +102,53 @@ const parked = (over: Partial<BlockedPr> = {}): BlockedPr => ({
 });
 
 const NOW = () => new Date("2026-11-11T09:30:00Z");
+
+test("projects a type-specific blocked state and returns through that type's workflow", async () => {
+  const config = parseTrackerConfig({
+    issue_tracker: {
+      adapter: "jira",
+      jira: {
+        states_by_type: {
+          Epic: { blocked: "Waiting", in_progress: "Delivery" },
+        },
+      },
+    },
+  });
+  const model = jiraModel(config.states, config.jira);
+  const fake = fresh({ "ENG-123": "Delivery" });
+  const base = fakeTracker(fake, {
+    ...NAMES,
+    blocked: "Waiting",
+    in_progress: "Delivery",
+  });
+  const tracker = {
+    ...base,
+    stateName: model.stateName,
+    stateMaps: model.stateMaps,
+    async getIssue(key: string) {
+      const found = await base.getIssue(key);
+      return found === null ? null : { ...found, nativeType: "Epic" };
+    },
+  };
+  expect(
+    (await projectBlocked(tracker, KEYS, LABELS, parked(), NOW)).map(
+      (o) => o.outcome,
+    ),
+  ).toEqual(["blocked"]);
+  expect(fake.states.get("ENG-123")).toBe("Waiting");
+  expect(
+    (
+      await projectBlocked(
+        tracker,
+        KEYS,
+        LABELS,
+        parked({ projected: { state: "driving" } }),
+        NOW,
+      )
+    ).map((o) => o.outcome),
+  ).toEqual(["returned"]);
+  expect(fake.states.get("ENG-123")).toBe("Delivery");
+});
 
 describe("a tracker with a blocked state", () => {
   test("a park moves the linked item, comments with the class and the reason, and writes the fields", async () => {
@@ -282,4 +335,24 @@ test("a tracker without a blocked state reads and writes nothing", async () => {
   ).toEqual([]);
   expect(fake.calls).toEqual([]);
   expect(fake.states.get("ENG-123")).toBe("In Progress");
+});
+
+test("reports an item whose workflow has no blocked state", async () => {
+  const fake = fresh({ "ENG-123": "In Progress" });
+  const tracker = fakeTracker(fake, NAMES);
+  tracker.stateName = ((state: CanonicalState, issue?: Issue) =>
+    issue?.identifier === "ENG-123" && state === "blocked"
+      ? null
+      : (NAMES[state] ?? null)) as never;
+  const [outcome] = await projectBlocked(tracker, KEYS, LABELS, parked(), NOW);
+  expect(outcome).toMatchObject({
+    item: "ENG-123",
+    outcome: "skipped",
+    detail: "ENG-123: blocked is absent from its workflow",
+  });
+  expect(outcome).toBeDefined();
+  if (outcome === undefined) return;
+  expect(blockedLine(7, outcome)).toContain(
+    "blocked is absent from its workflow",
+  );
 });
