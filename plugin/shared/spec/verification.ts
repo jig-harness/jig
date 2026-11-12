@@ -34,9 +34,13 @@ function commandText(marked: MarkdownLine): string {
   // is significant (an escaped space) and stays.
   const candidate = text.trimEnd();
   const opening = /^`+/.exec(candidate)?.[0];
-  const closing = /`+$/.exec(candidate)?.[0];
+  let closingLength = 0;
+  while (candidate[candidate.length - 1 - closingLength] === "`")
+    closingLength++;
+  const closing = "`".repeat(closingLength);
   if (
     opening !== undefined &&
+    closingLength > 0 &&
     opening === closing &&
     candidate.length > opening.length + closing.length
   ) {
