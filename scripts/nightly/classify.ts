@@ -50,7 +50,7 @@ export function outcomes(report: JunitReport): Outcome[] {
 }
 
 /** The status bun exits with when tests fail, the only one the baseline can excuse. */
-export const TEST_FAILURE_STATUS = 1;
+const TEST_FAILURE_STATUS = 1;
 
 /** A terminal colour code, which bun writes only to a terminal. */
 const COLOUR = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");

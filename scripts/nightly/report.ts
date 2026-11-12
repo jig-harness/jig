@@ -92,24 +92,27 @@ const isStale = (value: unknown): value is StaleEntry =>
 
 const VERDICTS = ["passed", "known", "new", "unexplained"];
 
+const isTests = (value: unknown, each: (item: unknown) => boolean) =>
+  Array.isArray(value) && value.every(each);
+
 /** Whether `value` is a whole result as classify.ts writes it. */
 function isResult(value: unknown): value is NightlyResult {
+  if (!isRecord(value)) return false;
+  const named = typeof value.job === "string";
+  const where = (PLATFORMS as readonly string[]).includes(
+    String(value.platform),
+  );
+  const ended =
+    Number.isInteger(value.status) && VERDICTS.includes(String(value.verdict));
+  const said = value.detail === undefined || typeof value.detail === "string";
   return (
-    isRecord(value) &&
-    typeof value.job === "string" &&
-    typeof value.platform === "string" &&
-    (PLATFORMS as readonly string[]).includes(value.platform) &&
-    typeof value.status === "number" &&
-    Number.isInteger(value.status) &&
-    typeof value.verdict === "string" &&
-    VERDICTS.includes(value.verdict) &&
-    (value.detail === undefined || typeof value.detail === "string") &&
-    Array.isArray(value.newFailures) &&
-    value.newFailures.every(isTest) &&
-    Array.isArray(value.knownFailures) &&
-    value.knownFailures.every(isTest) &&
-    Array.isArray(value.stale) &&
-    value.stale.every(isStale)
+    named &&
+    where &&
+    ended &&
+    said &&
+    isTests(value.newFailures, isTest) &&
+    isTests(value.knownFailures, isTest) &&
+    isTests(value.stale, isStale)
   );
 }
 
@@ -136,7 +139,7 @@ export function readResults(dir: string): {
 }
 
 /** Text as one Markdown code span, whatever it holds: one line, fenced by more backticks than any run in it. */
-export function code(text: string): string {
+function code(text: string): string {
   const flat = text.replace(/\s+/g, " ").trim();
   const longest = Math.max(
     0,

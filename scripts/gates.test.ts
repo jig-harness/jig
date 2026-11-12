@@ -1556,7 +1556,7 @@ function suiteRunner(
 ): [string, WorkflowContract] {
   const website = suite === "website/**";
   if (workflow !== "gates.yml")
-    return [website ? "website" : "drive-pr-suite", { on }];
+    return [website ? "website" : "drive-pr-suite", { on, nightly: true }];
   return website
     ? [gateJob, { ...PR_WEBSITE_SUITE, on }]
     : ["drive-pr-suite", { ...PR_SUITE, on }];

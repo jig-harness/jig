@@ -61,29 +61,42 @@ function piece(source: string, i: number, template: boolean): Piece {
 
 const HEX = /^[0-9a-fA-F]+$/;
 
-/** The escape sequence at `i`, a backslash: its character, and where it ends. */
-function readEscape(source: string, i: number): { text: string; next: number } {
-  const next = source[i + 1] ?? "";
-  const fixed = (length: number) => {
-    const digits = source.slice(i + 2, i + 2 + length);
-    return digits.length === length && HEX.test(digits)
-      ? {
-          text: String.fromCharCode(parseInt(digits, 16)),
-          next: i + 2 + length,
-        }
-      : undefined;
+type Step = { text: string; next: number };
+
+/** The character `length` hex digits after the `\x` or `\u` at `i` spell, when they are all there. */
+function fixedEscape(
+  source: string,
+  i: number,
+  length: number,
+): Step | undefined {
+  const digits = source.slice(i + 2, i + 2 + length);
+  if (digits.length !== length || !HEX.test(digits)) return undefined;
+  return {
+    text: String.fromCharCode(parseInt(digits, 16)),
+    next: i + 2 + length,
   };
-  if (next === "x") return fixed(2) ?? { text: next, next: i + 2 };
-  if (next === "u") {
-    if (source[i + 2] === "{") {
-      const close = source.indexOf("}", i + 3);
-      const digits = close < 0 ? "" : source.slice(i + 3, close);
-      const point = HEX.test(digits) ? parseInt(digits, 16) : Infinity;
-      if (point <= 0x10ffff)
-        return { text: String.fromCodePoint(point), next: close + 1 };
-    }
-    return fixed(4) ?? { text: next, next: i + 2 };
-  }
+}
+
+/** The code point `\u{…}` at `i` spells, when it is well formed. */
+function braceEscape(source: string, i: number): Step | undefined {
+  const close = source.indexOf("}", i + 3);
+  const digits = close < 0 ? "" : source.slice(i + 3, close);
+  const point = HEX.test(digits) ? parseInt(digits, 16) : Infinity;
+  if (point > 0x10ffff) return undefined;
+  return { text: String.fromCodePoint(point), next: close + 1 };
+}
+
+/** The escape sequence at `i`, a backslash: its character, and where it ends. */
+function readEscape(source: string, i: number): Step {
+  const next = source[i + 1] ?? "";
+  const plain = { text: next, next: i + 2 };
+  if (next === "x") return fixedEscape(source, i, 2) ?? plain;
+  if (next === "u")
+    return (
+      (source[i + 2] === "{" ? braceEscape(source, i) : undefined) ??
+      fixedEscape(source, i, 4) ??
+      plain
+    );
   if (next === "\r" && source[i + 2] === "\n") return { text: "", next: i + 3 };
   return { text: ESCAPES[next] ?? (next === "\n" ? "" : next), next: i + 2 };
 }
