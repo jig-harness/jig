@@ -251,12 +251,10 @@ const areaReason: Check = (issue, policy) => {
 };
 
 // An epic is a container: closing it needs its children closed, which a
-// batch does not do. The label is the declared marker; the open children
-// catch an unlabelled one.
-const containerReason: Check = (issue, policy) =>
-  issue.labels.includes(policy.epicLabel) || issue.hasOpenChildren
-    ? { kind: "has-open-children" }
-    : null;
+// batch does not do. Its label or issue type is the declared marker; the
+// open children catch an unmarked one.
+const containerReason: Check = (issue) =>
+  issue.isEpic || issue.hasOpenChildren ? { kind: "has-open-children" } : null;
 
 const stateReason: Check = (issue, policy) => {
   const standing = stateStanding(issue.state, policy);

@@ -62,6 +62,8 @@ export interface ConfigContext {
   keys: IssueKeys | null;
   /** `review.taxonomy.epic_label`. */
   epicLabel: string | null;
+  /** `issue_tracker.labels.epic_types`: issue types that mark an epic. */
+  epicTypes: string[];
   /** `review.taxonomy.provenance_label`. */
   followupLabel: string | null;
   /** `review.taxonomy.repos`: the labels that name a repository. */
@@ -76,6 +78,7 @@ export const EMPTY_CONTEXT: ConfigContext = {
   root: null,
   keys: null,
   epicLabel: null,
+  epicTypes: [],
   followupLabel: null,
   repositoryLabels: [],
   catalogPath: null,
@@ -161,6 +164,7 @@ export function overlayContext(root: string): ConfigContext {
     // Only a label the consumer named counts: an unnamed follow-up label
     // means follow-ups are not measured, not that the default is measured.
     epicLabel: labels.declared.has("epic") ? labels.epic : null,
+    epicTypes: labels.epicTypes,
     followupLabel: labels.declared.has("followup") ? labels.followup : null,
     repositoryLabels: repositoryLabelsOf(config),
     catalogPath: at(stringAt(overlay, "drive", "change_areas_catalog")),
@@ -220,6 +224,8 @@ export interface FleetHealthConfig {
   keys: IssueKeys | null;
   labels: {
     epic: string;
+    /** Issue types that mark an epic beside its label (`issue_tracker.labels.epic_types`). */
+    epicTypes: string[];
     /** `null`: follow-ups are not measured. */
     followup: string | null;
     /** `null`: the delivery-system share and its issues are not measured. */
@@ -308,6 +314,7 @@ function parseLabels(
   const repositories = optLabelList(obj, "repositories", "labels");
   return {
     epic: epic ?? ctx.epicLabel ?? "epic",
+    epicTypes: ctx.epicTypes,
     followup: followup === undefined ? ctx.followupLabel : followup,
     deliverySystem: delivery ?? null,
     repositories: repositories ?? ctx.repositoryLabels,

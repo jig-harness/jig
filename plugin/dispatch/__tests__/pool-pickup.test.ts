@@ -472,6 +472,7 @@ describe("who made a pool item ready", () => {
       state: { id: "s-todo", name: "Todo", type: "unstarted" },
       assignee: null,
       labels: [],
+      isEpic: false,
       hasOpenChildren: false,
       truncated: [],
     };
@@ -517,6 +518,7 @@ describe("the pool's guards", () => {
     state: { id: "s-todo", name: "Todo", type: "unstarted" },
     assignee: null,
     labels: [],
+    isEpic: false,
     hasOpenChildren: false,
     truncated: [],
   };

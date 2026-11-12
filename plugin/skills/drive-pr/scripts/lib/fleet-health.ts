@@ -1004,7 +1004,7 @@ export function buildReport(input: ReportInput): FleetHealthReport {
     if (s !== null) signals.push(s);
   }
   for (const pr of input.prs) {
-    const epics = epicsOfPr(pr, input.issues, cfg.labels.epic);
+    const epics = epicsOfPr(pr, input.issues, cfg.labels);
     const depth = input.depthByPr.get(pr.number);
     if (depth !== undefined) {
       const s = followupDepthSignal(pr, depth, epics, cfg);
@@ -1076,7 +1076,7 @@ export function buildReport(input: ReportInput): FleetHealthReport {
       .map((p) => ({
         number: p.number,
         state: p.state,
-        epics: epicsOfPr(p, input.issues, input.cfg.labels.epic),
+        epics: epicsOfPr(p, input.issues, input.cfg.labels),
         heads: p.rounds.length,
         postReviewShare: p.postReviewShare,
         threads: p.threads,

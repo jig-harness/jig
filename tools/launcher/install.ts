@@ -360,7 +360,7 @@ function checkConfigFile(
       config,
     );
     configStep(config, () => {
-      getTracker(parsed.tracker, { home, env });
+      getTracker(parsed.tracker, { home, env, repos: parsed.repos });
       validateRoutes(parsed, parsed.providers.map(getProvider));
     });
     plan.good(

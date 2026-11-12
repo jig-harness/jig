@@ -137,7 +137,6 @@ describe("served pickups", () => {
     f.tracker.listRelations = async () => [];
     const read = await readServedPickups(f.tracker, people, {
       cache: f.cache,
-      epic: "epic",
       nowMs: 1,
       headroom: true,
     });
@@ -154,7 +153,6 @@ describe("served pickups", () => {
     f.tracker.getIssue = async () => null;
     const read = await readServedPickups(f.tracker, people, {
       cache: f.cache,
-      epic: "epic",
       nowMs: 1,
       headroom: true,
     });
@@ -171,7 +169,6 @@ describe("served pickups", () => {
     const f = fake();
     const read = await readServedPickups(f.tracker, people, {
       cache: f.cache,
-      epic: "epic",
       nowMs: 1,
       headroom: true,
     });
@@ -206,7 +203,6 @@ describe("served pickups", () => {
       s.includes("in_progress") ? [claimed] : [held];
     const read = await readServedPickups(f.tracker, people, {
       cache: f.cache,
-      epic: "epic",
       nowMs: 1,
       headroom: true,
     });
@@ -241,7 +237,6 @@ describe("served pickups", () => {
       s.includes("blocked") ? [epic] : [];
     const read = await readServedPickups(f.tracker, people, {
       cache: f.cache,
-      epic: "epic",
       nowMs: 1,
       headroom: true,
     });
@@ -267,7 +262,6 @@ describe("served pickups", () => {
     };
     const read = await readServedPickups(f.tracker, people, {
       cache: f.cache,
-      epic: "epic",
       nowMs: 1,
       headroom: true,
     });
@@ -281,7 +275,6 @@ describe("served pickups", () => {
     };
     const read = await readServedPickups(f.tracker, people, {
       cache: f.cache,
-      epic: "epic",
       nowMs: 1,
       headroom: true,
     });
@@ -322,7 +315,6 @@ describe("served pickups", () => {
     };
     const read = await readServedPickups(f.tracker, people, {
       cache: f.cache,
-      epic: "epic",
       nowMs: 1,
       headroom: true,
     });
@@ -338,14 +330,12 @@ describe("served pickups", () => {
     const f = fake();
     await readServedPickups(f.tracker, people, {
       cache: f.cache,
-      epic: "epic",
       nowMs: 1,
       headroom: true,
     });
     f.calls.length = 0;
     await readServedPickups(f.tracker, people, {
       cache: f.cache,
-      epic: "epic",
       nowMs: 2,
       headroom: true,
     });

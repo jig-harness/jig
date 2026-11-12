@@ -21,6 +21,11 @@ import {
 } from "../scripts/lib/tracker/facets/values.ts";
 import { labelCodec } from "../scripts/lib/tracker/facets/label.ts";
 import {
+  type CoreTracker,
+  withFacets,
+} from "../scripts/lib/tracker/facets/tracker.ts";
+import type { NewIssue } from "../scripts/lib/tracker/port.ts";
+import {
   type LinearTransport,
   linearTracker,
 } from "../scripts/lib/tracker/linear.ts";
@@ -449,6 +454,33 @@ describe("the facets on Linear and Jira, with today's behaviour", () => {
       labelIds: ["l-bug", "l-small"],
       priority: 2,
     });
+  });
+
+  it("resolves an adapter's preview of a write through the facet conversion the write makes", async () => {
+    const { t } = linear();
+    const seen: unknown[] = [];
+    const config = parseTrackerConfig({
+      issue_tracker: { adapter: "linear", team: "ENG" },
+    });
+    const wrapped = withFacets(
+      {
+        ...t,
+        filedAs: async (i: NewIssue) => {
+          seen.push(i);
+          return { labels: i.labels, nativeType: null };
+        },
+      } as unknown as CoreTracker,
+      resolveFacets(facetInputs(config), TAXONOMY),
+      new Set(),
+    );
+    const filed = await wrapped.filedAs?.({
+      title: "x",
+      description: "",
+      labels: [],
+      type: "bug",
+    });
+    expect(filed?.labels).toEqual(["bug"]);
+    expect(seen).toEqual([{ title: "x", description: "", labels: ["bug"] }]);
   });
 
   it("keeps priority in labels on Linear where a store names them", async () => {

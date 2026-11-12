@@ -100,7 +100,6 @@ function tick(
 ) {
   const options: ServedOptions = {
     cache,
-    epic: "epic",
     nowMs: T0 + minutes * 60_000,
     headroom: true,
     views,

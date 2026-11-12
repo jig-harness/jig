@@ -6,8 +6,9 @@
 // check.ts holds a branch to the rules before one.
 import { ChangelogError } from "./errors.ts";
 import { posix } from "node:path";
+import { declarationProblems } from "./consumer-actions.ts";
 import type { Format } from "./formats.ts";
-import { blocks, fenced } from "./markdown-blocks.ts";
+import { blocks, codeSpans, fenced } from "./markdown-blocks.ts";
 
 /** How far a note moves the version, as semantic versioning names it. */
 export type Bump = "patch" | "minor" | "major";
@@ -554,6 +555,7 @@ export function parseNote(
   ]);
   errors.push(...[...markdown].map((why) => `${file}: ${why}`));
   if (format.credits) errors.push(...creditProblems(file, lead, sections));
+  errors.push(...declarationProblems(file, [...sections.values()].flat()));
   // Only a note otherwise sound is released, so only its links need placing.
   if (!errors.length)
     for (const text of [lead, ...[...sections.values()].flat()])
@@ -653,40 +655,4 @@ function inProse(text: string, edit: (prose: string) => string): string {
             .join(""),
     )
     .join("");
-}
-
-/**
- * `text` split into prose and code spans, the code spans at odd indexes. A
- * span opens with a run of backticks and closes at the next run exactly as
- * long; a run nothing closes is literal text. In prose a backslash escapes
- * the character after it, so `\\\`` opens nothing; inside a span it does not.
- */
-function codeSpans(text: string): string[] {
-  const parts: string[] = [];
-  let start = 0;
-  let i = 0;
-  while (i < text.length) {
-    if (text[i] === "\\") {
-      i += 2;
-      continue;
-    }
-    if (text[i] !== "`") {
-      i++;
-      continue;
-    }
-    let end = i;
-    while (text[end] === "`") end++;
-    const close = new RegExp(`(?<!\`)\`{${end - i}}(?!\`)`, "g");
-    close.lastIndex = end;
-    const found = close.exec(text);
-    if (!found) {
-      i = end;
-      continue;
-    }
-    const after = found.index + found[0].length;
-    parts.push(text.slice(start, i), text.slice(i, after));
-    start = i = after;
-  }
-  parts.push(text.slice(start));
-  return parts;
 }

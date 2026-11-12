@@ -14,8 +14,10 @@ must do, what it is advised to do, and what does not apply, each with the
 place that shows why. A person is told once, and files the repository's own
 tracker item when they choose.
 
-This is the design of [plan.md](plan.md) item 43 (issue #566). Nothing is
-built yet. The pieces it joins already exist: change notes and their
+This is the design of [plan.md](plan.md) item 43 (issue #566). The note form
+and the record exist: the changelog check validates a declaration, and the
+release step derives `plugin/consumer-actions.json`. The check, its dispatch
+stage and its skill do not exist yet. The other pieces it joins already exist: change notes and their
 `**Breaking:**` marker ([changes/README.md](../changes/README.md)), the
 audit's `since` and `deprecated` marks on configuration fields
 ([config-schema.yaml](../plugin/skills/audit/config-schema.yaml)), `jig doctor`
@@ -100,15 +102,20 @@ release does not change it, and a dismissal a repository committed keeps
 matching. Two entries in one release with the same description and the same
 declaration are one action; the same description with a different declaration
 is two actions with two ids, so neither obligation is lost and a dismissal
-applies to one. The changelog check refuses two entries that differ only in
-their declaration's whitespace.
+applies to one. The changelog check refuses two entries that declare one action
+written differently (in whitespace, or in the order of their levels or
+hints).
 
 ### The record in the plugin
 
 The release step already writes each note's entries into CHANGELOG.md. It
-also derives a **consumer-actions record**, `plugin/consumer-actions.json`: for
-each release that has at least one action, its version, and each action's id,
-strength, levels, text and hints. Releases without an action are not listed,
+also derives a **consumer-actions record**, `plugin/consumer-actions.json`
+(the path is Jig's `changelog.consumer_actions_record`; the changelog skill
+names none), from the changelog's released sections, since the notes are gone
+once released: for each release that has at least one action or retraction,
+its version, each action's id, strength, levels, description, instruction and
+hints, and the ids it retracts. The record's format is in the
+[changelog skill's scripts reference](../plugin/skills/changelog/scripts/README.md#the-consumer-actions-record). Releases without an action are not listed,
 so the file grows by the number of releases that ask something, not by every
 release. It is a derived file (regenerated, never edited by hand, with a
 freshness check beside the other derived files,
@@ -419,8 +426,8 @@ asks. Neither runs the other.
 - **Matching prose by meaning.** It would produce misses that read as "not
   applicable". A note author names the phrase.
 
-The decision to record the version in the repository is written down as an ADR
-in the first build step.
+The decision to record the version in the repository is
+[ADR-0017](../docs/adr/ADR-0017-a-repository-records-the-jig-version-it-reconciled.md).
 
 ## Build order
 
@@ -430,7 +437,9 @@ One pull request per step, each shippable alone:
    `**Detect:**` grammar and ids, the changelog check's validation and its
    `changelog.consumer_actions` setting, the `changes/README.md` section, the
    release step deriving `plugin/consumer-actions.json` with its freshness
-   check, and the decision record (ADR-0015) for `jig.reconciled`. Done when a
+   check, and the decision record
+   ([ADR-0017](../docs/adr/ADR-0017-a-repository-records-the-jig-version-it-reconciled.md))
+   for `jig.reconciled`. Done when a
    fixture note with each form passes, a malformed one fails, a Breaking entry
    without an action fails only where the setting is on, and the derived
    record matches the notes.

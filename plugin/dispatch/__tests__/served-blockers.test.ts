@@ -68,7 +68,6 @@ function world(spec: Spec) {
   const read = (extra: Record<string, unknown> = {}) =>
     readServedPickups(tracker, people, {
       cache,
-      epic: "epic",
       nowMs: 1,
       headroom: true,
       ...extra,

@@ -352,6 +352,7 @@ export function facetInputs(config: TrackerConfig): FacetInputs {
     types: config.types,
     bugLabels: config.labels.bug,
     epic: config.labels.epic,
+    epicTypes: config.labels.epicTypes,
     priorityLabels:
       config.adapter === "github" ? config.github.priorityLabels : null,
     priorityLabelsDeclared: config.github.priorityLabelsDeclared,

@@ -21,6 +21,49 @@ describe("Jira authentication before protected reads", () => {
       expect(error.unavailable).toBe(false);
     });
 
+  it("names the account scopes when the gateway refuses the profile read for its scope", async () => {
+    const { client } = jira(
+      routes({
+        "GET myself": httpFailure(
+          401,
+          new Headers(),
+          '{"code":401,"message":"Unauthorized; scope does not match"}',
+          "GET myself",
+        ),
+      }),
+    );
+    const refused = client.issue("ENG-1");
+    await expect(refused).rejects.toThrow("JIRA_BEARER_TOKEN");
+    await expect(refused).rejects.toThrow(
+      "read:jira-user scope, or all of the granular read:application-role:jira, read:group:jira, read:user:jira and read:avatar:jira scopes",
+    );
+  });
+
+  it("names the account scopes when the profile read is refused for any reason", () => {
+    const error = httpFailure(
+      401,
+      new Headers(),
+      '{"errorMessages":["Unauthorized"]}',
+      "GET myself",
+    );
+    expect(error.message).toContain("read:jira-user");
+  });
+
+  it("names the account scopes when Jira says a scope does not match elsewhere", () => {
+    const error = httpFailure(
+      403,
+      new Headers(),
+      '{"code":403,"message":"Unauthorized; scope does not match"}',
+      "GET issue/ENG-1",
+    );
+    expect(error.message).toContain("read:jira-user");
+  });
+
+  it("leaves the account scopes out of a refusal that is not about them", () => {
+    const error = httpFailure(403, new Headers(), "refused", "GET issue/ENG-1");
+    expect(error.message).not.toContain("read:jira-user");
+  });
+
   for (const fields of [false, true]) {
     it(`refuses anonymous reads before ${fields ? "field resolution" : "an issue's 404"}`, async () => {
       const { client, calls } = jira(
