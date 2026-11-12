@@ -391,6 +391,24 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.212.1] - 2026-11-12
+
+### Changed
+
+- The Jira adapter's documentation, after a run against a live Jira Cloud site: `JIRA_BEARER_TOKEN` and `JIRA_TOKEN_COMMAND` take an API token with scopes as well as an OAuth access token, so a credential broker can hand out scoped tokens; `issue_tracker.jira.api_base` distinguishes Atlassian's documented use of `tenant_info` for finding a cloud ID from the lack of a versioned REST API contract, and says that an OAuth app reads the cloud ID from `oauth/token/accessible-resources`; and `issue_tracker.jira.link_types` says that a link type whose outward side means "has to be done before" reads as `Blocks` does and takes no `inverted`.
+
+### Fixed
+
+- `jig dispatch` no longer reports every item a served person has in
+  progress as a stalled pickup. A person moves their own work and epics to
+  in progress too, so a served person's item is watched for a stall only
+  when a pickup of this host claimed it; the rest read as
+  `claimed-by-person` and stay off the dashboard's needs. A dispatched
+  pickup's `tracker.ts claim` notes the claim on the pickup's launch record
+  as it lands, so a pickup that claims and ends between two ticks is still
+  watched. Items claimed
+  through `dispatch.identity` are watched as before.
+
 ## [0.212.0] - 2026-11-12
 
 A served person's blocked items and assigned epics now keep the line moving.
@@ -7359,7 +7377,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.212.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.212.1...HEAD
+[0.212.1]: https://github.com/jig-harness/jig/compare/v0.212.0...v0.212.1
 [0.212.0]: https://github.com/jig-harness/jig/compare/v0.211.0...v0.212.0
 [0.211.0]: https://github.com/jig-harness/jig/compare/v0.210.2...v0.211.0
 [0.210.2]: https://github.com/jig-harness/jig/compare/v0.210.1...v0.210.2
