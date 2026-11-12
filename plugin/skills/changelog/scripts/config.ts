@@ -549,6 +549,7 @@ function refuseWrittenPlaceholders(
   if (
     record !== null &&
     (record === OVERLAY_RELPATH ||
+      record === ".git" ||
       record.startsWith(".git/") ||
       posix.dirname(record) === config.notesDir)
   )

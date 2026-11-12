@@ -278,6 +278,9 @@ describe("the configuration", () => {
     expect(() =>
       resolvedFor(keep, { ...version, consumer_actions_record: "p.json" }),
     ).toThrow("a file the release writes");
+    expect(() =>
+      resolvedFor(keep, { ...version, consumer_actions_record: ".git" }),
+    ).toThrow("repository metadata");
     const common = repository({
       "CHANGELOG.md": COMMON_CHANGELOG,
       "p.json": MANIFEST("1.2.0"),

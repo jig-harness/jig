@@ -86,11 +86,14 @@ const NEAR_MARKER =
 
 /**
  * A marker written with single emphasis or the colon outside it, followed
- * by what a declaration says next (`**Consumer action** required at …`): an
- * ordinary bold term in prose does not read that way.
+ * by what a declaration says next (`**Consumer action** required at …`,
+ * `none.`, `retracts …`), unescaped: an ordinary bold term in prose does not
+ * read that way.
  */
-const NEAR_DECLARATION =
-  /(\*{1,2}|_{1,2})\s*consumer[\s_-]*actions?\s*:?\s*\1\s*:?\s+(?:required|advised|none|retracts)\b/gi;
+const NEAR_DECLARATION = new RegExp(
+  `${UNESCAPED}(\\*{1,2}|_{1,2})\\s*consumer[\\s_-]*actions?\\s*:?\\s*\\1\\s*:?\\s+(?:(?:required|advised)\\s+at\\s+\\S|none\\.|retracts\\s+\\S)`,
+  "gi",
+);
 
 /** An action's id: a released version, `#` and eight hexadecimal digits. */
 export const ACTION_ID = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.+-]+)?#[0-9a-f]{8}$/;
@@ -329,19 +332,22 @@ function nested(raw: string, at: number): boolean {
     /^\s*(?:[-*+]|\d+[.)])\s+$/.test(raw.slice(lineStart, at))
   )
     return true;
-  let content: number | null = null;
+  // The content columns of the nested bullets enclosing each line.
+  const enclosing: number[] = [];
+  const leave = (indent: number): void => {
+    while (enclosing.length && enclosing[enclosing.length - 1]! > indent)
+      enclosing.pop();
+  };
   for (const line of raw.slice(0, lineStart).split("\n").slice(1)) {
     if (!line.trim()) continue;
+    const indent = line.length - line.trimStart().length;
+    leave(indent);
     const bullet = /^(\s*)(?:[-*+]|\d+[.)])\s+/.exec(line);
-    if (bullet) content = bullet[0].length;
-    else if (
-      content !== null &&
-      line.length - line.trimStart().length < content
-    )
-      content = null;
+    if (bullet) enclosing.push(bullet[0].length);
   }
-  const indent = raw.slice(lineStart, at).length;
-  return content !== null && lineStart > 0 && indent >= content;
+  const markerLine = raw.slice(lineStart);
+  leave(markerLine.length - markerLine.trimStart().length);
+  return lineStart > 0 && enclosing.length > 0;
 }
 
 /**

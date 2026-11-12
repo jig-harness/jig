@@ -480,6 +480,28 @@ describe("review hardening", () => {
     expect(own.ok).toBe(true);
   });
 
+  test("nesting follows every enclosing list level and the line's own indentation", () => {
+    expect(
+      readDeclaration(
+        `- Parent.\n  - Child.\n    - Grandchild.\n    **Consumer action:** ${ACTION}`,
+      ).ok,
+    ).toBe(false);
+    expect(
+      readDeclaration(
+        `- Parent.\n  - Child.\n  Parent text. **Consumer action:** ${ACTION}`,
+      ).ok,
+    ).toBe(true);
+  });
+
+  test("a bold term or an escaped example is not a nearly written marker", () => {
+    expect(
+      strict("The **Consumer action** required by this release is shown."),
+    ).toEqual([]);
+    expect(
+      strict("Change. \\*Consumer action:* required at machine. Upgrade."),
+    ).toEqual([]);
+  });
+
   test("a Detect list before the declaration is refused", () => {
     expect(
       strict(

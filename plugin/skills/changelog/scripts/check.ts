@@ -531,7 +531,7 @@ export function checkNotes(options: CheckOptions): CheckResult {
   // A changelog whose released declarations cannot be read is its own
   // finding, and leaves the retractions unchecked rather than all refused.
   const released =
-    options.record || options.consumerActions
+    options.record || (options.consumerActions && !options.format.credits)
       ? releasedIds(branch.now(options.changelog), options.format)
       : ok(null);
   if (!released.ok)
