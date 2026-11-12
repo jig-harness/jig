@@ -181,6 +181,8 @@ async function applyOne(
   records: KeptStewardRecord[],
 ): Promise<void> {
   if (kept.value.kind === "order") return;
+  if (kept.effect === "refused") return;
+  if (kept.value.kind !== "need" && !availableRecord(state, kept)) return;
   const digest = readStewardDigest(kept.run, state.root);
   if (!digest.ok) {
     observation.opened.report.unplaced.push({
@@ -202,7 +204,6 @@ async function applyOne(
   }
   if (kept.value.kind === "need")
     return applyNeed(state, observation, kept, kept.value, digest.value);
-  if (!availableRecord(state, kept)) return;
   switch (kept.value.kind) {
     case "resume":
       return resumeSteward(state, observation, kept.id, kept.value);
