@@ -184,6 +184,15 @@ test("reports a dead registered scope, then collects a recreated root without an
   expect(existsSync(f.root)).toBe(false);
 });
 
+test("collects an absent registered root from its durable registration", async () => {
+  const f = setup();
+  rmSync(f.root, { recursive: true });
+  const result = await collect(f, true);
+  expect(
+    result.receipt.resources.find((line) => line.resource === f.root),
+  ).toMatchObject({ outcome: "collected" });
+});
+
 test("a nested legacy owner vetoes collection of a recreated registered root", async () => {
   const f = setup();
   rmSync(f.root, { recursive: true });
@@ -195,6 +204,37 @@ test("a nested legacy owner vetoes collection of a recreated registered root", a
   ).toMatchObject({
     outcome: "refused",
     reason: "a scope owner in the subtree is alive",
+  });
+  expect(existsSync(f.root)).toBe(true);
+});
+
+test("an exited unregistered nested legacy owner vetoes collection", async () => {
+  const f = setup();
+  const nested = join(f.root, "nested");
+  mkdirSync(nested);
+  const owner = Bun.spawnSync(
+    [
+      process.execPath,
+      "-e",
+      `
+        const { writeScratchOwner } = await import(${JSON.stringify(resolve(import.meta.dir, "../../shared/scratch-owner.ts"))});
+        writeScratchOwner(${JSON.stringify(nested)});
+      `,
+    ],
+    {
+      env: { ...process.env },
+      stdout: "pipe",
+      stderr: "pipe",
+      timeout: 30_000,
+    },
+  );
+  expectSpawnExit(owner, 0);
+  const result = await collect(f, true);
+  expect(
+    result.receipt.resources.find((line) => line.resource === f.root),
+  ).toMatchObject({
+    outcome: "unverified",
+    reason: "legacy owner scope lacks a durable fixture registration",
   });
   expect(existsSync(f.root)).toBe(true);
 });

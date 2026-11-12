@@ -37,6 +37,19 @@ type ScanFailure = {
   ok: false;
   failure: Failure<"timed-out" | "unreadable-owner">;
 };
+function ownerRootsOf(proof: Proof): string[] {
+  if (
+    typeof proof.details !== "object" ||
+    proof.details === null ||
+    !("ownerRoots" in proof.details)
+  )
+    return [];
+  const { ownerRoots } = proof.details as { ownerRoots?: unknown };
+  return Array.isArray(ownerRoots) &&
+    ownerRoots.every((root) => typeof root === "string")
+    ? ownerRoots
+    : [];
+}
 /**
  * Walk without following links; a scope is live when ANY nested owner lives.
  * A walk past its deadline fails `timed-out`, and an owner record that is no
@@ -54,12 +67,14 @@ export function scratchProof(
   if (lstatSync(root).isSymbolicLink())
     return ok({ state: "finding", reason: "scratch root is a symbolic link" });
   let owners = 0;
+  const ownerRoots: string[] = [];
   let newest = 0;
   let live = false;
   let unknown = false;
   const inspectOwner = (path: string): void => {
     const owner = readScratchOwner(path);
     owners++;
+    ownerRoots.push(path);
     const current = rows.find((row) => row.pid === owner.pid);
     if (owner.start === null || (current && !current.start)) unknown = true;
     else if (current?.start === owner.start && !current.stat.startsWith("Z"))
@@ -100,25 +115,33 @@ export function scratchProof(
     return ok({
       state: "live",
       reason: "a scope owner in the subtree is alive",
+      details: { ownerRoots },
     });
   if (unknown)
     return ok({
       state: "unverified",
       reason: "a scope owner's process identity is unreadable",
+      details: { ownerRoots },
     });
   // A nested scope cannot supply the missing registration of its parent.
   if (!readdirSync(root).includes(SCRATCH_OWNER_FILE))
     return ok({
       state: "finding",
       reason: "scratch scope has no owner record",
+      details: { ownerRoots },
     });
   if (now - newest < idleDays * 86_400_000)
-    return ok({ state: "live", reason: "scratch idle guard has not elapsed" });
+    return ok({
+      state: "live",
+      reason: "scratch idle guard has not elapsed",
+      details: { ownerRoots },
+    });
   return ok({
     state: "dead",
     reason: `${owners} recorded scope owner(s) exited; idle guard elapsed`,
     reportOnly:
       "scratch is report-only until fixture registration proves every holder gone",
+    details: { ownerRoots },
   });
 }
 export function scratchKind(
@@ -199,18 +222,21 @@ export function scratchKind(
         // ownership vetoes below it. A recreated registered root may omit its
         // legacy owner file, but a live, unreadable, or malformed nested
         // legacy owner still prevents recursive removal.
-        let legacy: Outcome<Proof, "timed-out" | "unreadable-owner">;
+        let legacy: Outcome<Proof, "timed-out" | "unreadable-owner"> | null =
+          null;
         try {
-          legacy = scratchProof(resource.id, await processTable(), idleDays);
+          if (lstatSync(resource.id, { throwIfNoEntry: false }))
+            legacy = scratchProof(resource.id, await processTable(), idleDays);
         } catch (error) {
           return {
             state: "unverified",
             reason: error instanceof Error ? error.message : String(error),
           };
         }
-        if (!legacy.ok)
+        if (legacy && !legacy.ok)
           return { state: "unverified", reason: legacy.failure.reason };
         if (
+          legacy &&
           legacy.value.state !== "dead" &&
           !(
             legacy.value.state === "finding" &&
@@ -231,6 +257,16 @@ export function scratchKind(
           return {
             state: "unverified",
             reason: "fixture scope registration disappeared",
+          };
+        const ownerRoots = legacy?.ok ? ownerRootsOf(legacy.value) : [];
+        if (
+          !ownerRoots.every((ownerRoot) =>
+            scopes.some((scope) => scope.root === ownerRoot),
+          )
+        )
+          return {
+            state: "unverified",
+            reason: "legacy owner scope lacks a durable fixture registration",
           };
         memberships.set(resource.id, scopes);
         return fixtureScratchProof(resource.id, scopes, idleDays);
