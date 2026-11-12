@@ -378,6 +378,10 @@ describe("work that is not a batch item", () => {
     expect(
       excludeReason(issue("ENG-1", { labels: [...base, "epic"] }), P, none),
     ).toEqual({ kind: "has-open-children" });
+    // An epic by its issue type carries no label: the tracker marks it.
+    expect(excludeReason(issue("ENG-1", { isEpic: true }), P, none)).toEqual({
+      kind: "has-open-children",
+    });
     expect(
       excludeReason(issue("ENG-1", { hasOpenChildren: true }), P, none),
     ).toEqual({ kind: "has-open-children" });

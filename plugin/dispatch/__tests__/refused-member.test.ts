@@ -114,6 +114,7 @@ describe("a batch pickup the start rules refused one member of", () => {
         state: { id: "s", name: "Todo", type: "unstarted" },
         assignee: { id: "a", name: "alex" },
         labels: ["area:tools"],
+        isEpic: false,
         hasOpenChildren: false,
         truncated: [],
       },

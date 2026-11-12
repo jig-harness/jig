@@ -80,6 +80,7 @@ test("a pickup cannot resume after closure, unreadable state or a configured hol
     state: { id: "s", name: "In progress", type: "started" },
     assignee: { id: "a", name: "alex" },
     labels: [],
+    isEpic: false,
     hasOpenChildren: false,
     truncated: [],
   };

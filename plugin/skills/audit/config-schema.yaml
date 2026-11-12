@@ -701,6 +701,13 @@ fields:
   issue_tracker.labels.epic:
     type: string
     read_by: [do-item, resolve-review-comments, drive-pr, work-batch, file-issue, reflect, dispatch]
+  issue_tracker.labels.epic_types:
+    type: list
+    items: string
+    distinct: true
+    nonempty: true
+    read_by: [do-item, resolve-review-comments, drive-pr, work-batch, file-issue, reflect, dispatch]
+    since: next
   issue_tracker.labels.hitl:
     type: string
     read_by: [do-item, decide, work-batch]

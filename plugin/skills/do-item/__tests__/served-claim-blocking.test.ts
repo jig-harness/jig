@@ -22,6 +22,7 @@ function world(chain: string[] = ["#1", "#2", "#3"]) {
       identifier: key,
       parent: null,
       labels: labels.get(key) ?? [],
+      isEpic: (labels.get(key) ?? []).includes("epic"),
       state: started.has(key)
         ? { name: "In Progress", type: "started" }
         : { name: "Todo", type: "unstarted" },
@@ -29,6 +30,7 @@ function world(chain: string[] = ["#1", "#2", "#3"]) {
     poolIssue: async (key: string) => ({
       identifier: key,
       labels: labels.get(key) ?? [],
+      isEpic: (labels.get(key) ?? []).includes("epic"),
       truncated: [],
       assignee: holders.get(key)?.[0] ?? null,
       hasOpenChildren: false,

@@ -209,9 +209,6 @@ async function readPairs(
   return { pairs, skipped };
 }
 
-const isEpic = (issue: PoolIssue, facets: Facets) =>
-  issue.labels.some((l) => fold(l) === fold(facets.epic));
-
 function emptyReport(
   phase: MoveReport["phase"],
   apply: boolean,
@@ -582,7 +579,7 @@ function retirePlan(
     }
     if (
       f === "size" &&
-      isEpic(pair.src, sides.sourceFacets) &&
+      pair.src.isEpic &&
       facetValue(pair.src, f) === null &&
       facetValue(pair.dst, f) === null
     )
