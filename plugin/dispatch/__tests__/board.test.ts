@@ -14,6 +14,7 @@ import {
   observeBoard,
   readBoard,
   readyActions,
+  rulesOf,
   UNKNOWN_WAIT_MS,
 } from "../lib/board.ts";
 import type { DrivenPr } from "../lib/types.ts";
@@ -387,4 +388,15 @@ it("reports an invalid optional board pattern without throwing", async () => {
   );
   expect(r.ok).toBe(false);
   expect(r.reason).toContain("review");
+});
+
+it("a known reviewer app brings its check name when the repository names none", () => {
+  const rules = rulesOf({ review: { reviewer_app: "coderabbitai" } });
+  expect(rules.reviewerCheck.test("CodeRabbit")).toBe(true);
+  expect(rules.reviewerCheck.test("AI review")).toBe(false);
+  const named = rulesOf({
+    review: { reviewer_app: "coderabbitai", reviewer_check_pattern: "^Own$" },
+  });
+  expect(named.reviewerCheck.test("Own")).toBe(true);
+  expect(rulesOf({ review: {} }).reviewerCheck.test("AI review")).toBe(true);
 });
