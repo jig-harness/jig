@@ -88,7 +88,11 @@ export async function changed(
   repo: RepoTarget,
   ctx: PickupContext,
   key: string,
-  served?: { servedPerson?: string; ancestorEpic?: string },
+  served?: {
+    servedPerson?: string;
+    ancestorEpic?: string;
+    blockingFor?: string;
+  },
 ): Promise<{ issue: PoolIssue } | { why: string }> {
   const issue =
     served?.servedPerson === undefined
@@ -99,6 +103,7 @@ export async function changed(
           served.servedPerson,
           served.ancestorEpic,
           ctx.servedPolicy,
+          served.blockingFor,
         );
   if (typeof issue === "string") return { why: issue };
   // Item keys repeat across repositories: only this repository's records hold it.
@@ -175,14 +180,7 @@ async function launchOne(
   };
   const beforeBatch = await checkBatch();
   if (beforeBatch !== null) return waits(action, beforeBatch);
-  const served = {
-    ...(typeof action.evidence.servedPerson === "string"
-      ? { servedPerson: action.evidence.servedPerson }
-      : {}),
-    ...(typeof action.evidence.ancestorEpic === "string"
-      ? { ancestorEpic: action.evidence.ancestorEpic }
-      : {}),
-  };
+  const served = servedEvidence(action);
   const before = await changed(state, repo, ctx, action.target, served);
   if ("why" in before) return waits(action, before.why);
   const admitted = await admitAccount(
@@ -257,6 +255,20 @@ async function launchOne(
   return { ...launched, detail: `${launched.detail}; ${route.detail}` };
 }
 
+/** The optional served-item facts which a pickup preserves in its launch record. */
+function servedEvidence(action: Action): {
+  servedPerson?: string;
+  ancestorEpic?: string;
+  blockingFor?: string;
+} {
+  const { ancestorEpic, blockingFor, servedPerson } = action.evidence;
+  return {
+    ...(typeof servedPerson === "string" ? { servedPerson } : {}),
+    ...(typeof ancestorEpic === "string" ? { ancestorEpic } : {}),
+    ...(typeof blockingFor === "string" ? { blockingFor } : {}),
+  };
+}
+
 /** The pickup's own deadline, in whole seconds. */
 function deadlineSec(ctx: PickupContext): number {
   return Math.ceil(ctx.section.pickupDeadlineMs / 1000);
@@ -327,6 +339,7 @@ async function retryPending(
             record.servedPerson,
             record.ancestorEpic,
             ctx.servedPolicy,
+            record.blockingFor,
           );
     const batchBlock = await pendingBatchBlock(state, repo, ctx, record);
     const blocked =

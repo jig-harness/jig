@@ -411,7 +411,25 @@ notification goes out. A repository whose tracker team no other repository
 shares still needs a default for it once it has the scope. A GitHub repository
 reading its own issues needs no label, since its tracker is already its own.
 
-The Queue view names holds: an open blocker reads "waiting on #N";
+A served item held only by open blockers starts its blockers instead of
+waiting on work nobody does: an open, not-started, unassigned blocker of this
+repository's scope, with no `hitl`, `manual-ops` or `jig:hold`, and no epic, is
+picked up first (to three links from the assigned item), claimed with
+`tracker.ts claim --for <person> --blocking <item>` and assigned to the person.
+A blocker assigned to someone else, in progress, held, an epic or another
+repository's is never taken: the item stays waiting and names it with its
+reason. GitHub Issues adds the person rather than replacing an assignee, then
+checks that the resulting assignee list contains only that person; a concurrent
+assignee makes the pickup refuse without restoring anyone. Linear and Jira
+have one assignee, so they assign first and verify the assignment from history;
+when that check finds a concurrent assignee was replaced, they conditionally
+make a best-effort restoration and refuse the pickup. A tracker without either
+operation leaves the blocker for a person to assign. An assigned epic without an execution plan works one child at a time,
+none while a child of it is in progress; an epic none of whose open children
+can start reports one reason.
+
+The Queue view names holds: an open blocker reads "waiting on #N" (with
+"picked up first" or why it was left);
 `hitl`, `hitl:*`, `manual-ops` and `jig:hold` read "needs a person to start".
 Eligible items are ranked by priority, the work they unblock, epic order,
 size and age. Assignment provenance, relations and children are cached

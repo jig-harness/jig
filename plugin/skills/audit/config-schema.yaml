@@ -773,7 +773,7 @@ fields:
   do_item.execution_plan_block:
     type: string
     default: execution-plan-v1
-    read_by: [do-item]
+    read_by: [do-item, dispatch]
   do_item.work_types:
     type: map
     values_type: { type: map, values_type: any }
