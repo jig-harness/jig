@@ -352,7 +352,10 @@ Every later tracker call branches on this recorded value rather than
 re-deciding, so a run never calls the script on a host that only has the
 native integration, or the reverse.
 
-**If not found**: display the error with the script's suggestions.
+**If the read fails**: display the error and any suggestions the script returns.
+The script keeps exit `2` and `found: false` for both absent and unreadable
+issues: JSON `reason: "not-found"` carries key and team suggestions;
+`reason: "read-failed"` names the tracker failure without those suggestions.
 
 **exact** — **Type the item.** Write the issue JSON to `issue.json` with the
 file-writing tool (from the native transport: its `title`, its label names

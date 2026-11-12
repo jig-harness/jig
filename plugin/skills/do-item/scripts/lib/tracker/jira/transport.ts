@@ -297,6 +297,8 @@ function headerOf(
   header: Outcome<string, CredentialCode>,
   signal: AbortSignal | undefined,
 ): string {
+  if (!header.ok && header.failure.code === "token-command-unavailable")
+    throw new JiraApiError(header.failure.reason, { unavailable: true });
   if (cancelled(signal)) throw abortedError(signal);
   if (!header.ok)
     throw new JiraApiError(header.failure.reason, {
@@ -371,17 +373,22 @@ function leasedSender(
     if (res.status === 401) {
       const renewed = await lease.renew(bound);
       if (renewed !== null) {
-        await bodyText(res, bound, what);
-        header = headerOf(renewed, bound);
-        key = keyOf(header);
-        budget.governor?.admit("jira", key);
-        res = await send(
-          fetchImpl,
-          url,
-          requestInit(request, header, bound),
-          bound,
-          what,
-        );
+        try {
+          await bodyText(res, bound, what);
+          header = headerOf(renewed, bound);
+          key = keyOf(header);
+          budget.governor?.admit("jira", key);
+          res = await send(
+            fetchImpl,
+            url,
+            requestInit(request, header, bound),
+            bound,
+            what,
+          );
+          if (res.status === 401) lease.refuseRenewal();
+        } finally {
+          lease.settleRenewal();
+        }
       }
     }
     const refused = observeLimit(res, key, what, budget);
@@ -425,6 +432,7 @@ export function httpTransport(
     const bound =
       signal === undefined ? deadline : AbortSignal.any([deadline, signal]);
     const lease = await authorization.lease(bound);
+    if (cancelled(signal)) throw abortedError(signal);
     const res = await retryRead(
       leasedSender(base, request, lease, bound, fetchImpl, budget),
       request.method === "GET" || request.idempotent === true,
