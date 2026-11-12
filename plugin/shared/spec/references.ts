@@ -13,6 +13,7 @@ import { isAbsolute, join, posix, relative, sep } from "node:path";
 import { swallow } from "../errors.ts";
 import { spawn, withoutLeakyGitEnv } from "../guarded-git-spawn.ts";
 import type { BodySectionKind, SpecAdapter } from "./adapter.ts";
+import { DEFAULT_VERIFICATION_SECTION } from "./config.ts";
 import {
   HEADING,
   headingKey,
@@ -52,7 +53,11 @@ function headingOf(line: string): { level: number; title: string } | null {
  * heading in it, and the heading of each of its occurrences (kind
  * `heading`), since a heading ends the entry above it.
  */
-export function bodySections(body: string, specHeading: string): BodySection[] {
+export function bodySections(
+  body: string,
+  specHeading: string,
+  verificationHeading = DEFAULT_VERIFICATION_SECTION,
+): BodySection[] {
   const names = new Map<BodySectionKind, BodySection>();
   const want = new Map<string, [BodySectionKind, string]>([
     [
@@ -64,6 +69,7 @@ export function bodySections(body: string, specHeading: string): BodySection[] {
       ["acceptance", INLINE_HEADINGS.acceptance],
     ],
     [headingKey(specHeading), ["spec", specHeading]],
+    [headingKey(verificationHeading), ["verification", verificationHeading]],
   ]);
   const section = (title: string): BodySection | null => {
     const known = want.get(headingKey(title));
