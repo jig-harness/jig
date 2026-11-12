@@ -23,8 +23,8 @@ nobody gave, a park): left alone, the second kind waits forever.
 you, Running, Queue and History, opened work and decisions must be readable
 in any phone browser, with visible controls to copy commands and answer
 lines and open pull requests or issues. The phone stays read-only and
-needs neither Orca nor keyboard shortcuts. The hub's
-[phone scope and access contract](hub.md#phone-scope-and-access) defines
+needs neither Orca nor keyboard shortcuts. The dashboard's
+[phone scope and access contract](dispatch-dashboard.md#phone-scope-and-access) defines
 the exclusions, supported setup, availability and phone acceptance checks.
 They apply to the board as it ships in stage 1.
 
@@ -53,9 +53,9 @@ history view says how long ready work waited and how much was lost.
 This is the design of [plan.md](plan.md) item 36. It builds on item 33,
 [the dispatcher](dark-factory-dispatch.md), every step of which is built:
 the tick, its ledger classes, the serialized areas and the outcome log the
-board reads. The [hub](../GLOSSARY.md), the page the dashboard grows into
-([hub.md](hub.md), item 42), builds the board as its first stage, adds the
-round, the threads by bot and not a bot and the CI hold to the status row,
+board reads. The [dispatch dashboard](../GLOSSARY.md)'s design
+([dispatch-dashboard.md](dispatch-dashboard.md), item 42) builds the board
+as its first stage, adds the round, the threads by bot and not a bot and the CI hold to the status row,
 and lets a tick for one repository refresh its part of the line.
 The [dispatcher reference](../plugin/README.md#the-dispatcher) describes
 how the page shows it: the five views,
@@ -311,7 +311,7 @@ hint with its detail on hover, tap or focus, as the page's other hints do:
 The merge mark is the one derived state among them: the predicate's
 answer, so "why is this not ready" is answered on the card. Every hint ends
 with the tick it was read at. The round, the CI hold and the split threads
-are the hub's ([hub.md](hub.md#a-piece-of-work-and-its-views)):
+are the dashboard's ([dispatch-dashboard.md](dispatch-dashboard.md#a-piece-of-work-and-its-views)):
 
 - **Round.** The ledger's `rounds[]` keeps the last 10 rounds, so every
   machine shows them, not only the one that launched the drive. A ledger
@@ -568,7 +568,7 @@ fire inside a text field:
 | / and ? | filter the view; list the keys |
 
 The palette is a dialog with `aria-activedescendant`, so a screen reader
-follows its choice. The rest of the visual design comes from the hub's
+follows its choice. The rest of the visual design comes from the dashboard's
 design round ([Build order](#build-order)), which starts from these views.
 
 The page stays as it is in what it never does: it holds no merge button
@@ -597,14 +597,15 @@ separate state roots, each served by its own dashboard instance; a shared
 root with per-repository scoping on every dashboard read is not offered
 until that scoping is specified and enforced.
 
-The page that grows from the dashboard is the [hub](hub.md), which serves
-the board beside its other views and is reached in other ways: a host's
-hub listens on loopback with no token and only answers reads, a laptop's
-hub reads each host over SSH (Secure Shell), and a phone reaches a host's hub through an
-recommended HTTPS front on a private network that names the viewer and scopes what
-each person sees ([hub.md § Where it runs](hub.md#where-it-runs)). Until
-the hub serves it, the board is read as above, with the hub design's
-explicit private-HTTP fallback for phones. Responsive layout alone does
+The dashboard's later stages ([dispatch-dashboard.md](dispatch-dashboard.md))
+serve the board beside its other views and reach it in other ways: a
+host's dashboard listens on loopback with no token and only answers reads,
+a laptop's dashboard reads each host over SSH (Secure Shell), and a phone
+reaches a host's dashboard through a recommended HTTPS front on a private
+network that names the viewer and scopes what each person sees
+([dispatch-dashboard.md § Where it runs](dispatch-dashboard.md#where-it-runs)).
+Until those stages are built, the board is read as above, with the
+dashboard design's explicit private-HTTP fallback for phones. Responsive layout alone does
 not complete the access requirement.
 
 The [Jig panel in Orca](orca-integration.md#the-jig-plugin-for-orca) is a
@@ -612,7 +613,7 @@ second reader. It reads the same line through the plugin's worker, which
 runs `jig` as the person on their own machine, so it has no listen address
 and no token, and nothing outside Orca's window reaches it. Its inbox panel
 shows the cards that wait on the person running Orca there, and the board
-itself opens on the hub in Orca's browser.
+itself opens on the dashboard in Orca's browser.
 
 The person the dispatcher reaches is the board's first reader, but not the
 only person who merges or approves. A merge-now card names no merger: the
@@ -701,9 +702,9 @@ the rest; 10 failing checks a card, with the count of the rest; the stood
 down group as its count and its 20 newest. A line written by a tick from
 before the board has no `board`, and the page says the board appears at the
 next tick rather than placing cards itself. The line stays at version 1:
-`board` and the hub's other additions are optional fields, and the line's
+`board` and the dashboard's other additions are optional fields, and the line's
 `minReader` names the oldest reader that can still read it
-([hub.md § The source feed](hub.md#the-source-feed-from-a-host-to-a-hub)).
+([dispatch-dashboard.md § The source feed](dispatch-dashboard.md#the-source-feed-from-a-host-to-a-dashboard)).
 
 A tick for one repository, such as one `jig send` wakes, replaces that
 repository's part of the line and leaves the rest as the last tick wrote
@@ -730,7 +731,7 @@ bytes, so a board grown slow or costly is seen from one tick to the next.
 
 ## Build order
 
-The [hub](hub.md#build-order) builds these steps as its first stage, in the
+The [dashboard design](dispatch-dashboard.md#build-order) builds these steps as its first stage, in the
 order its build order gives: the drive ledger carries its rounds before
 step 2 shows them, and the line takes a tick for one repository before
 step 4.
@@ -797,13 +798,13 @@ step 4.
    hand shows in Driven as claimed, a tick for one repository keeps the
    other repositories' cards and column times, and a tick at the design
    size keeps the line within its bounds.
-5. **The design round** is the hub's
-   ([hub.md § Build order](hub.md#build-order)): one brief from
+5. **The design round** is the dashboard's
+   ([dispatch-dashboard.md § Build order](dispatch-dashboard.md#build-order)): one brief from
    [`design-brief-builder`](../plugin/skills/design-brief-builder/SKILL.md)
-   for the whole hub, starting from the five views, from the fixtures of
+   for the whole dashboard, starting from the five views, from the fixtures of
    steps 2 to 4. It keeps this design's scenarios (a quiet line, a full
    merge queue, a morning of backward moves and a long Needs you) at
-   desktop and phone widths, light and dark, and adds the hub's. The round
+   desktop and phone widths, light and dark, and adds the dashboard's. The round
    lands under [`prototypes/`](prototypes/rubric.md) with its scorecard,
    which covers every scenario, width and theme.
 6. **The Running and Queue views as the round designed them**, every
@@ -823,9 +824,9 @@ step 4.
   route, so a person's click runs the drive's pinned merge command as that
   person, in their own app
   ([orca-integration.md](orca-integration.md#the-jig-plugin-for-orca)).
-  The hub gains one in its third stage, on a laptop and behind proof that
+  The dashboard gains one in its third stage, on a laptop and behind proof that
   a person is there
-  ([hub.md § When the hub writes](hub.md#when-the-hub-writes)).
+  ([dispatch-dashboard.md § When the dashboard writes](dispatch-dashboard.md#when-the-dashboard-writes)).
 - **Moving a card by hand.** A column is derived from the records, so a
   dragged card would be overruled at the next tick. A person moves work by
   acting on its record: answering, labelling `hold` or `drive`, merging.
@@ -871,5 +872,5 @@ Critiqued by four reviewers with fresh context (subagents that did not
 write it, as a critical chief technology officer, a security auditor, a
 performance engineer and a cost optimizer) on 2026-11-04 against commit
 `08703e16`.
-What the hub adds to it was critiqued with the hub's design on 2026-11-06
-([hub.md § Review](hub.md#review)).
+What the dashboard design adds to it was critiqued with that design on 2026-11-06
+([dispatch-dashboard.md § Review](dispatch-dashboard.md#review)).

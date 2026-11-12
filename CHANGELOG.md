@@ -391,6 +391,18 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.210.1] - 2026-11-12
+
+### Changed
+
+- The planned page for watching and steering the line, which grows from the
+  dispatch dashboard, keeps the name dispatch dashboard: its design is now
+  [design/dispatch-dashboard.md](design/dispatch-dashboard.md), and the
+  [phone access guide](plugin/phone-access.md) links there. The glossary
+  entry Hub becomes Dispatch dashboard, and the commands, settings and
+  record the design plans are named `jig dashboard`, `dashboard.*` and
+  `operator-conversation`. Nothing that is built changes.
+
 ## [0.210.0] - 2026-11-11
 
 ### Added
@@ -7235,7 +7247,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.210.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.210.1...HEAD
+[0.210.1]: https://github.com/jig-harness/jig/compare/v0.210.0...v0.210.1
 [0.210.0]: https://github.com/jig-harness/jig/compare/v0.209.0...v0.210.0
 [0.209.0]: https://github.com/jig-harness/jig/compare/v0.208.0...v0.209.0
 [0.208.0]: https://github.com/jig-harness/jig/compare/v0.207.0...v0.208.0

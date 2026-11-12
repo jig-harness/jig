@@ -2209,27 +2209,29 @@ make, use the entry's term instead.
   instruction and after showing what it would write, and holds no state of
   its own, so any session on any machine can be the operator. *Avoid:*
   orchestrator, lead agent.
-- **Hub** — the page a person watches and steers the execution line from,
-  and the `jig hub` process that serves it: what is safe to merge, what
-  waits on the person, what runs and what is queued, each *piece of work*
-  on a card, a page per piece of work with its thread,
+- **Dispatch dashboard** — the page a person watches and steers the
+  execution line from, and the process that serves it. Today
+  `jig dispatch dashboard` serves one host's *dispatcher*: what is safe to
+  merge, what waits on the person, what runs and what is queued. Planned:
+  each *piece of work* on a card, a page per piece of work with its thread,
   and a chat with the *operator* that explains and drafts and never sends.
-  Each machine serves its own. A host's hub answers reads only, on its
-  loopback address; a laptop's reads each host over *SSH* through the
+  Each machine serves its own. A host's dashboard answers reads only, on
+  its loopback address; a laptop's reads each host over *SSH* through the
   *source feed* and serves the page to any browser, Orca's among them. It
   keeps no copy of the line, only the person's conversation with the
   operator, and nothing the line does waits on it
-  ([ADR-0013](docs/adr/ADR-0013-records-not-a-daemon.md)). It grows from
-  the *dispatcher*'s dashboard. Planned: [design/hub.md](design/hub.md).
-- **Piece of work** — what the *hub* shows as one card and one thread: a
+  ([ADR-0013](docs/adr/ADR-0013-records-not-a-daemon.md)). Not the *shared
+  control plane*, which would serve many hosts. See
+  [design/dispatch-dashboard.md](design/dispatch-dashboard.md).
+- **Piece of work** — what the *dispatch dashboard* shows as one card and one thread: a
   tracker item, the pull request it opens and that pull request's
   follow-up, joined by their aliases (the item key, the branch name, the
   pull request), each join with the evidence for it. A pull request with no
   item is one, and so is an item with no pull request yet. Each of its
   stations has an *address*. See
-  [design/hub.md](design/hub.md#a-piece-of-work-and-its-views).
+  [design/dispatch-dashboard.md](design/dispatch-dashboard.md#a-piece-of-work-and-its-views).
 - **QR code** (quick response code) — a square barcode a phone camera can
-  scan to open an address. The *hub*'s planned sharing path encodes its
+  scan to open an address. The *dispatch dashboard*'s planned sharing path encodes its
   private, token-free address; scanning transfers the address and does not
   authenticate the reader.
 - **Secure context** — a page environment the browser considers trustworthy,
@@ -2238,23 +2240,23 @@ make, use the entry's term instead.
   clipboard require it, and may also require permission. An unencrypted web connection to another
   machine's private address does not qualify just because the network is
   encrypted. A phone reads
-  the *hub* through its encrypted private-network front for this reason. See
+  the *dispatch dashboard* through its encrypted private-network front for this reason. See
   [MDN's secure-context definition](https://developer.mozilla.org/en-US/docs/Web/Security/Defenses/Secure_Contexts).
 - **Private-network front** — a layer that publishes a
-  machine's *hub* from its loopback address to a private network, with a
+  machine's *dispatch dashboard* from its loopback address to a private network, with a
   certificate and the viewer's identity, so a phone can open the page;
   called a front for short. Tailscale Serve is its first implementation: it
-  names the viewer in a request header, which the hub trusts only on a
+  names the viewer in a request header, which the dashboard trusts only on a
   socket that only Tailscale's daemon reaches, and carries each person's
-  scope from the private network's access grants, which the hub applies to
+  scope from the private network's access grants, which the dashboard applies to
   every answer. A reverse proxy with an identity
   provider, or an *SSH* tunnel, does the same job. A front never publishes
-  to the open internet, and it does not let the hub write. See
-  [design/hub.md](design/hub.md#a-front-on-a-private-network).
+  to the open internet, and it does not let the dashboard write. See
+  [design/dispatch-dashboard.md](design/dispatch-dashboard.md#a-front-on-a-private-network).
 - **Shared control plane** — one service that would serve many hosts: it
   reads the forge and the tracker once for all of them, hands out work that
   each host pulls when a slot frees, and serves the *source feed* over
-  connections the hosts open, so neither the *hub* nor a host's records
+  connections the hosts open, so neither the *dispatch dashboard* nor a host's records
   change when it joins. Each host's *dispatcher* is Jig's first
   *control plane*; handing out work goes past
   [ADR-0013](docs/adr/ADR-0013-records-not-a-daemon.md), so the shared one
@@ -2262,25 +2264,25 @@ make, use the entry's term instead.
   written down, among them that a host keeps authority over what it did,
   that nothing launches without the winning claim, and that a person's act
   carries that person's credential. See
-  [design/hub.md](design/hub.md#toward-a-shared-control-plane).
-- **Source feed** — the protocol through which one *hub* reads another
+  [design/dispatch-dashboard.md](design/dispatch-dashboard.md#toward-a-shared-control-plane).
+- **Source feed** — the protocol through which one *dispatch dashboard* reads another
   machine's records: a snapshot, then the changes since a cursor, each
   record in its *record envelope* and stamped with the host it came from
   and a visibility class (safe on the forge, for one person's machines, or
   for this machine only). Its first transport is
-  `ssh <host> jig hub rpc`, JSON lines over *SSH*; a *shared control plane*
+  `ssh <host> jig dashboard feed`, JSON lines over *SSH*; a *shared control plane*
   would serve the same feed over a connection the host opens. Not the
-  *views API*, which a page uses to talk to its own hub. See
-  [design/hub.md](design/hub.md#the-source-feed-from-a-host-to-a-hub).
-- **Views API** — the protocol between the *hub*'s page and the hub that
+  *views API*, which a page uses to talk to its own server. See
+  [design/dispatch-dashboard.md](design/dispatch-dashboard.md#the-source-feed-from-a-host-to-a-dashboard).
+- **Views API** — the protocol between the *dispatch dashboard*'s page and the server that
   serves it: a `hello` that names the protocol version, the viewer and each
   source's state; the reads that draw each view, Needs you and Running
   among them, and each
   *piece of work*'s page; and a stream of changes the page resumes from its
   last cursor. Every answer is a value or a coded failure
   ([ADR-0012](docs/adr/ADR-0012-failures-as-values.md)). The page talks to
-  no other machine; its hub reads the others through the *source feed*.
-  See [design/hub.md](design/hub.md#the-views-api-from-a-page-to-its-hub).
+  no other machine; its server reads the others through the *source feed*.
+  See [design/dispatch-dashboard.md](design/dispatch-dashboard.md#the-views-api-from-a-page-to-its-server).
 - **Notices workspace** — the workspace the *dispatcher* keeps per
   repository, on a branch of the default branch, where every notification
   for that repository goes, unless the repository names another workspace
