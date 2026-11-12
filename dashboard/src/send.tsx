@@ -26,6 +26,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { cardAnswerComments } from "../../plugin/shared/decisions/answer-record.ts";
+import { cardAnswerText } from "../../plugin/shared/decision-card.ts";
 import { BROWSER_HOST } from "../../plugin/shared/records/writer-shape.ts";
 import { announce } from "./copy.tsx";
 import {
@@ -58,8 +59,8 @@ type Phase =
   | { kind: "sending" }
   | { kind: "failed"; reason: string };
 
-/** A send in flight, or one that may have posted: `text` is the answer it carried, so only a send of that same answer is held back. */
-type SendState = "sending" | { uncertain: string; text: string };
+/** A send in flight, or one whose decisions may have posted: `texts` holds each such decision's answer by key, so only a send of that same answer to that decision is held back. */
+type SendState = "sending" | { uncertain: string; texts: Map<string, string> };
 
 const sends = new Map<string, SendState>();
 const sendListeners = new Set<() => void>();
@@ -85,10 +86,10 @@ function useSendState(key: string): SendState | null {
 
 function finishSend(
   key: string,
-  uncertain: { reason: string; text: string } | null,
+  uncertain: { reason: string; texts: Map<string, string> } | null,
 ): void {
-  if (uncertain === null) sends.delete(key);
-  else sends.set(key, { uncertain: uncertain.reason, text: uncertain.text });
+  if (uncertain === null || uncertain.texts.size === 0) sends.delete(key);
+  else sends.set(key, { uncertain: uncertain.reason, texts: uncertain.texts });
   changedSends();
 }
 
@@ -131,6 +132,7 @@ function partialNote(
   const parts: string[] = [];
   if (done > 0) parts.push("the answers before it were posted");
   if (uncertain) parts.push(`${key} may or may not have been posted`);
+  else parts.push(`${key} was refused and not posted`);
   if (rest.length > 0)
     parts.push(`not attempted: ${rest.map((c) => c.key).join(", ")}`);
   const said = parts.join("; ");
@@ -149,7 +151,12 @@ export async function postAll(
   comments: Array<{ key: string; body: string }>,
   urls: string[],
   held: () => boolean,
-): Promise<{ refused: string | null; uncertain: boolean }> {
+): Promise<{
+  refused: string | null;
+  uncertain: boolean;
+  /** The decision whose comment may have posted; `null` when none. */
+  uncertainKey: string | null;
+}> {
   for (const comment of comments) {
     if (!held())
       return {
@@ -158,18 +165,23 @@ export async function postAll(
           .map((c) => c.key)
           .join(", ")}.`,
         uncertain: false,
+        uncertainKey: null,
       };
     const posted = await postComment(token, to, comment.body);
     if (!posted.ok) {
       const uncertain =
         posted.status === null || !POSTED_NOTHING.has(posted.status);
-      const rest = comments.slice(urls.length + (uncertain ? 1 : 0));
+      const rest = comments.slice(urls.length + 1);
       const note = partialNote(urls.length, comment.key, uncertain, rest);
-      return { refused: `${sendRefusal(posted, to)}${note}`, uncertain };
+      return {
+        refused: `${sendRefusal(posted, to)}${note}`,
+        uncertain,
+        uncertainKey: uncertain ? comment.key : null,
+      };
     }
     urls.push(posted.value);
   }
-  return { refused: null, uncertain: false };
+  return { refused: null, uncertain: false, uncertainKey: null };
 }
 
 /** The card's Send, while a token is kept, its decisions are a drive's on github.com and the page came over a safe path. */
@@ -184,7 +196,13 @@ export function useSend(need: NeedView, picking: Picking): Sending | null {
   const send = () => {
     if (phase.kind === "sending" || sending === "sending") return;
     const commit = picking.sendGate();
-    if (commit !== null && sending !== null && sending.text === commit.text)
+    if (
+      commit !== null &&
+      sending !== null &&
+      commit.answers.some(
+        (a) => sending.texts.get(a.key) === cardAnswerText(a.answer, a.digest),
+      )
+    )
       return;
     // The token may have been forgotten in another tab since the card drew.
     const token = keptToken();
@@ -197,6 +215,9 @@ export function useSend(need: NeedView, picking: Picking): Sending | null {
     );
     const urls: string[] = [];
     const generation = tokenGeneration();
+    const earlier = sends.get(key);
+    const earlierUncertain =
+      earlier !== undefined && earlier !== "sending" ? earlier : null;
     sends.set(key, "sending");
     changedSends();
     setPhase({ kind: "sending" });
@@ -210,24 +231,30 @@ export function useSend(need: NeedView, picking: Picking): Sending | null {
             .slice(0, done)
             .map((c) => c.body)
             .join("\n\n");
-    const settle = (refused: string | null, uncertain: boolean) => {
+    const settle = (refused: string | null, uncertainKey: string | null) => {
       if (urls.length > 0)
         keepSent(need.repo, need.target, {
           text: sentText(urls.length),
           urls,
           at: Date.now(),
         });
+      // Another decision's earlier uncertainty outlives this send; this send's
+      // own decisions are settled by it, apart from the one that may have posted.
+      const priorReason = earlierUncertain?.uncertain ?? "";
+      const texts = new Map(earlierUncertain?.texts ?? []);
+      for (const a of commit.answers) texts.delete(a.key);
+      const unsure = commit.answers.find((a) => a.key === uncertainKey);
+      if (unsure !== undefined)
+        texts.set(unsure.key, cardAnswerText(unsure.answer, unsure.digest));
+      const reason =
+        uncertainKey !== null && refused !== null ? refused : priorReason;
+      finishSend(key, { reason, texts });
       if (refused === null) {
         setPhase({ kind: "idle" });
-        finishSend(key, null);
         announce(`Sent the answers for ${need.target} as ${token.login}`);
         return;
       }
       setPhase({ kind: "failed", reason: refused });
-      finishSend(
-        key,
-        uncertain ? { reason: refused, text: commit.text } : null,
-      );
       announce(`Not sent: ${refused}`);
     };
     void postAll(
@@ -237,11 +264,13 @@ export function useSend(need: NeedView, picking: Picking): Sending | null {
       urls,
       () => tokenGeneration() === generation,
     ).then(
-      ({ refused, uncertain }) => settle(refused, uncertain),
+      ({ refused, uncertainKey }) => settle(refused, uncertainKey),
       () =>
         settle(
           "The page lost the connection to GitHub mid-send. Open the pull request and check before sending again.",
-          true,
+          comments[urls.length]?.key ??
+            comments[comments.length - 1]?.key ??
+            null,
         ),
     );
   };

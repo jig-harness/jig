@@ -30,7 +30,11 @@ describe("posting a card's comments", () => {
     answers(201, 201, 201);
     const urls: string[] = [];
     const out = await postAll("t", to, comments, urls, () => true);
-    expect(out).toEqual({ refused: null, uncertain: false });
+    expect(out).toEqual({
+      refused: null,
+      uncertain: false,
+      uncertainKey: null,
+    });
     expect(urls).toHaveLength(3);
   });
 
@@ -40,7 +44,10 @@ describe("posting a card's comments", () => {
     const out = await postAll("t", to, comments, urls, () => true);
     expect(urls).toHaveLength(1);
     expect(out.uncertain).toBe(false);
-    expect(out.refused).toContain("not attempted: b, c");
+    expect(out.refused).toContain("b was refused and not posted");
+    expect(out.refused).toContain("not attempted: c");
+    expect(out.refused).not.toContain("not attempted: b");
+    expect(out.uncertainKey).toBeNull();
   });
 
   it("keeps an uncertain decision apart from those never attempted", async () => {
@@ -48,6 +55,7 @@ describe("posting a card's comments", () => {
     const urls: string[] = [];
     const out = await postAll("t", to, comments, urls, () => true);
     expect(out.uncertain).toBe(true);
+    expect(out.uncertainKey).toBe("b");
     expect(out.refused).toContain("b may or may not have been");
     expect(out.refused).toContain("not attempted: c");
     expect(out.refused).not.toContain("not attempted: b");
