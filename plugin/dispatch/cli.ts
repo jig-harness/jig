@@ -42,8 +42,8 @@ import {
   withDefault,
 } from "../shared/vendor/optique.mjs";
 import { DEFAULT_PORT, dashboardMain } from "./dashboard.ts";
+import { dashboardAccess } from "./dashboard-access.ts";
 import {
-  dashboardAccess,
   dashboardInstall,
   dashboardStatus,
   scheduledDashboard,
@@ -368,7 +368,7 @@ const dashboard = command(
   }),
   {
     brief: message`Serve one page over the outcome log, filtered by time, repository, stage, account and class.`,
-    description: message`Listens on the machine file's dashboard.listen, an address in the private or loopback ranges, until stopped; prints its URL with the token a request needs. It reads the log when the page asks and writes nothing.`,
+    description: message`Listens on the machine file's dashboard.listen, an address in the private or loopback ranges, until stopped; prints its URL with the token a request needs. It reads the log when the page asks and writes nothing. --access prints the installed reader's URL, or the token-free address of a front named as dashboard.front with its QR code.`,
   },
 );
 
