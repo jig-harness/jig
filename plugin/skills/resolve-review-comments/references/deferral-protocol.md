@@ -256,7 +256,15 @@ files each through the tracker interface (`issue_tracker.adapter`) with the
 `followup` role's label and every facet the tracker keeps: the type the entry
 records, the priority its severity maps to (`unknown` as medium) and the
 size it names, else `small`. The issue's description carries the severity
-and the category. It replaces each entry with its issue's link. Run it from
+and the category. Where the repository's label taxonomy requires a group
+beyond the size (a `repo` group, say), it adds that group's label from the
+change-area catalog (`drive.change_areas_catalog`): the tracker labels of the
+areas whose own globs match the file the review thread is on, never the
+areas they imply, and only when those areas carry exactly one label of the
+group. It never guesses one: a summary finding (on no file), a file no area
+covers, or areas carrying none of the group's labels or more than one, leaves
+the entry in the section for a person to file through `/jig:file-issue`,
+naming the group, and the other entries are filed. It replaces each entry with its issue's link. Run it from
 the repository's own post-merge step, or on a pull request closed without
 merging:
 
@@ -312,7 +320,8 @@ is why batches are keyed per PR *and* Type (see above).
 Through the tracker interface (`file-deferred.ts`) the type, the priority
 and the size are the issue's facets, written wherever the tracker keeps
 each (`issue_tracker.facets`), so the script names no type, size or priority
-label itself.
+label itself. The other required groups' labels come from the change-area
+catalog, as [Deferral without a tracker](#deferral-without-a-tracker) says.
 
 ### Parent
 

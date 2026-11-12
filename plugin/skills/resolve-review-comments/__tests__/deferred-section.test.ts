@@ -72,6 +72,9 @@ function fakeForge(initial: string): PrBodyForge & {
   writes: number;
   answered: AnswerComment[];
   failWrites: boolean;
+  /** The file each review thread is on, by its first comment. */
+  paths: Map<string, string>;
+  pathReads: number;
 } {
   let clock = 0;
   const state: PrBody = {
@@ -85,8 +88,14 @@ function fakeForge(initial: string): PrBodyForge & {
     writes: 0,
     answered: [] as AnswerComment[],
     failWrites: false,
+    paths: new Map<string, string>(),
+    pathReads: 0,
     async answers() {
       return forge.answered;
+    },
+    async threadPaths() {
+      forge.pathReads += 1;
+      return forge.paths;
     },
     async read() {
       forge.beforeRead.shift()?.(state);

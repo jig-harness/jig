@@ -15,7 +15,14 @@
  * tracker interface, `issue_tracker.adapter`) with the label of the
  * `followup` role and every facet: the type the entry records, the priority
  * its severity maps to (`lib/severity-priority.ts`, `unknown` as medium) and
- * the size it names, else `small`. The tracker already holding an issue whose
+ * the size it names, else `small`. A label of each other group the
+ * repository's label taxonomy requires, which the filing check inside
+ * `createIssue` asks for, is derived from the change-area catalog's tracker
+ * projection for the areas covering the file a review thread is on
+ * (`lib/deferred-labels.ts`); an entry whose group cannot be derived with
+ * certainty (a summary finding, a file no area covers, areas that carry no
+ * label of the group or more than one) is left for a person, naming the
+ * group. The tracker already holding an issue whose
  * body carries the entry's identity line (its source url and fingerprint; a
  * run stopped after filing it) reuses that issue rather than filing twice.
  * An entry that records no type or severity, written before entries
@@ -60,11 +67,19 @@ import {
   facetValueOf,
   usable,
 } from "../../do-item/scripts/lib/tracker/facets/config.ts";
+import { readTaxonomy } from "../../do-item/scripts/lib/tracker/facets/complete.ts";
 import { openTracker } from "../../do-item/scripts/lib/tracker/index.ts";
 import type {
   NewIssue,
   Tracker,
 } from "../../do-item/scripts/lib/tracker/port.ts";
+import type { Taxonomy } from "../../file-issue/scripts/lib/taxonomy.ts";
+import {
+  type CatalogSource,
+  configuredCatalog,
+  entryLabels,
+  unfilledGroups,
+} from "./lib/deferred-labels.ts";
 import {
   type DeferredEntry,
   DeferredSectionError,
@@ -161,12 +176,18 @@ export function entryFacets(
   return out;
 }
 
+/** What an entry is filed as: its facets and its labels. */
+interface Plan {
+  facets: Pick<NewIssue, "type" | "priority" | "size">;
+  labels: string[];
+}
+
 /** The issue an entry becomes. */
 function issueFor(
   entry: DeferredEntry,
   pr: string,
   prUrl: string,
-  label: string,
+  labels: string[],
   facets: Pick<NewIssue, "type" | "priority" | "size">,
 ): NewIssue {
   const quote = entry.text
@@ -188,7 +209,7 @@ function issueFor(
       identityLine(entry),
       textLine(entry),
     ].join("\n"),
-    labels: [label],
+    labels,
     ...facets,
   };
 }
@@ -351,6 +372,10 @@ export async function fileDeferred(
     label: string;
     /** The repository's facets, which it has and their values; `null` with no tracker. */
     facets: Facets | null;
+    /** The repository's label taxonomy, whose required groups an issue carries a label of; absent or `null` with none. */
+    taxonomy?: Taxonomy | null;
+    /** The change-area catalog those labels are derived from, read only when a group needs one; the configured one by default. */
+    catalog?: () => CatalogSource;
     dryRun?: boolean;
     noTrackerWhy?: string;
     onFiled?: (f: Filing) => void;
@@ -364,7 +389,8 @@ export async function fileDeferred(
     forPerson: [],
     why: null,
   };
-  const open = fileable(deferredEntries(body), opts.facets, result);
+  const plan = planner(forge, pr, opts);
+  const open = await fileable(deferredEntries(body), plan, result);
   const skipped = whyNotFiling(tracker, opts);
   if (tracker === null || skipped !== null) {
     result.remaining = open;
@@ -374,15 +400,15 @@ export async function fileDeferred(
   for (const [i, initial] of open.entries()) {
     const entry = await stillOpen(forge, pr, initial);
     if (entry === null) continue;
-    const facets = entryFacets(entry, opts.facets);
-    if ("why" in facets) {
-      result.forPerson.push({ entry, why: facets.why });
+    const planned = await plan(entry);
+    if ("why" in planned) {
+      result.forPerson.push({ entry, why: planned.why });
       continue;
     }
     const step = await fileOne(forge, tracker, pr, entry, {
       ...opts,
       url,
-      facets,
+      plan: planned,
     });
     if (step.why === null) {
       result.filed.push(step.filing);
@@ -398,19 +424,58 @@ export async function fileDeferred(
 }
 
 /**
- * The unfiled entries this run can file; each it cannot (no type or
- * severity recorded, or a value the repository lacks) goes to `result`'s
- * `forPerson`, with why.
+ * What each entry is filed as, or why a person files it. The review threads'
+ * files are read once, and the catalog once, the first time an entry needs a
+ * label derived; a repository whose taxonomy requires no other group reads
+ * neither.
  */
-function fileable(
+function planner(
+  forge: PrBodyForge,
+  pr: string,
+  opts: {
+    label: string;
+    facets: Facets | null;
+    taxonomy?: Taxonomy | null;
+    catalog?: () => CatalogSource;
+  },
+): (entry: DeferredEntry) => Promise<Plan | { why: string }> {
+  const taxonomy = opts.taxonomy ?? null;
+  let paths: Promise<Map<string, string>> | undefined;
+  let catalog: CatalogSource | undefined;
+  const readCatalog = () => {
+    catalog ??= (opts.catalog ?? configuredCatalog)();
+    return catalog;
+  };
+  return async (entry) => {
+    const facets = entryFacets(entry, opts.facets);
+    if ("why" in facets) return facets;
+    let path: string | null = null;
+    if (
+      unfilledGroups(opts.label, taxonomy).length > 0 &&
+      entry.fingerprint === undefined
+    ) {
+      paths ??= forge.threadPaths(pr);
+      path = (await paths).get(entry.source) ?? null;
+    }
+    const labels = entryLabels(opts.label, path, taxonomy, readCatalog);
+    return "why" in labels ? labels : { facets, labels: labels.labels };
+  };
+}
+
+/**
+ * The unfiled entries this run can file; each it cannot (no type or
+ * severity recorded, a value the repository lacks, or a required group whose
+ * label cannot be derived) goes to `result`'s `forPerson`, with why.
+ */
+async function fileable(
   entries: DeferredEntry[],
-  facets: Facets | null,
+  plan: (entry: DeferredEntry) => Promise<Plan | { why: string }>,
   result: FileDeferredResult,
-): DeferredEntry[] {
+): Promise<DeferredEntry[]> {
   const open: DeferredEntry[] = [];
   for (const entry of entries) {
     if (entry.filed !== undefined) continue;
-    const found = entryFacets(entry, facets);
+    const found = await plan(entry);
     if ("why" in found) result.forPerson.push({ entry, why: found.why });
     else open.push(entry);
   }
@@ -439,9 +504,8 @@ async function fileOne(
   pr: string,
   entry: DeferredEntry,
   opts: {
-    label: string;
     url: string;
-    facets: Pick<NewIssue, "type" | "priority" | "size">;
+    plan: Plan;
     onFiled?: (f: Filing) => void;
   },
 ): Promise<
@@ -452,7 +516,7 @@ async function fileOne(
     got = await issueOf(
       tracker,
       entry,
-      issueFor(entry, pr, opts.url, opts.label, opts.facets),
+      issueFor(entry, pr, opts.url, opts.plan.labels, opts.plan.facets),
     );
   } catch (err) {
     return { filing: null, why: `the tracker refused: ${message(err)}` };
@@ -513,11 +577,12 @@ function answered(m: DeferredReply): string {
   return "thread" in m ? m.thread : `the summary finding ${m.fingerprint}`;
 }
 
-/** The configured tracker, its follow-up label and facets, or why none can file. */
+/** The configured tracker, its follow-up label, facets and label taxonomy, or why none can file. */
 function configuredTracker(): {
   tracker: Tracker | null;
   label: string;
   facets: Facets | null;
+  taxonomy: Taxonomy | null;
   why?: string;
 } {
   try {
@@ -526,12 +591,14 @@ function configuredTracker(): {
       tracker: openTracker(config),
       label: config.labels.followup,
       facets: facetsOf(config, consumerRoot()),
+      taxonomy: readTaxonomy(consumerRoot(), config.taxonomy),
     };
   } catch (err) {
     return {
       tracker: null,
       label: "pr-followup",
       facets: null,
+      taxonomy: null,
       why: `no tracker adapter can file: ${message(err)}`,
     };
   }
@@ -581,7 +648,7 @@ async function main(): Promise<number> {
   const pr = rest[0] ?? "";
   if (rest.length !== 1 || !/^\d+$/.test(pr))
     fail(2, "usage: file-deferred.ts <PR> [--dry-run]");
-  const { tracker, label, facets, why } = configuredTracker();
+  const { tracker, label, facets, taxonomy, why } = configuredTracker();
   const forge = ghPrBodyForge();
   let code: number;
   let missing: DeferredReply[];
@@ -589,6 +656,7 @@ async function main(): Promise<number> {
     const r = await fileDeferred(forge, tracker, pr, {
       label,
       facets,
+      taxonomy,
       dryRun,
       ...(why === undefined ? {} : { noTrackerWhy: why }),
       onFiled: (f) =>

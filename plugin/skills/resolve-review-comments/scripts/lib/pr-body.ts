@@ -71,6 +71,8 @@ export interface PrBodyForge {
   read(pr: string): Promise<PrBody>;
   write(pr: string, body: string): Promise<void>;
   answers(pr: string): Promise<AnswerComment[]>;
+  /** The file each review thread is on, by the thread's first comment. */
+  threadPaths(pr: string): Promise<Map<string, string>>;
 }
 
 /** A fingerprint as `answer-summary-finding.ts` writes it into its marker. */
@@ -142,6 +144,20 @@ const THREADS_QUERY = `query($owner: String!, $name: String!, $pr: Int!, $endCur
   }
 }`;
 
+/** Each review thread's first comment and the file it is on. */
+const THREAD_PATHS_QUERY = `query($owner: String!, $name: String!, $pr: Int!, $endCursor: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $pr) {
+      reviewThreads(first: 100, after: $endCursor) {
+        pageInfo { hasNextPage endCursor }
+        nodes { path comments(first: 1) { nodes { url } } }
+      }
+    }
+  }
+}`;
+
+const THREAD_PATHS_JQ = `.data.repository.pullRequest.reviewThreads.nodes[] | {thread: .comments.nodes[0].url, path} | @json`;
+
 /**
  * Each resolved thread's first comment, whether its comments were cut at the
  * page, and its replies, one JSON object per line. A cut thread is refused
@@ -189,6 +205,9 @@ const isThreadLine = (v: unknown): v is ThreadLine =>
   typeof v.truncated === "boolean" &&
   Array.isArray(v.replies) &&
   v.replies.every(isComment);
+
+const isThreadPath = (v: unknown): v is { thread: string; path: string } =>
+  isRecord(v) && typeof v.thread === "string" && typeof v.path === "string";
 
 async function gh(args: string[], stdin?: string): Promise<string> {
   const r = await ghCall(args, {
@@ -278,6 +297,28 @@ export function ghPrBodyForge(): PrBodyForge {
         ),
         ...comments,
       ];
+    },
+    async threadPaths(pr) {
+      const lines = jsonLines(
+        await gh([
+          "api",
+          "graphql",
+          "--paginate",
+          "-f",
+          `query=${THREAD_PATHS_QUERY}`,
+          "-F",
+          "owner={owner}",
+          "-F",
+          "name={repo}",
+          "-F",
+          `pr=${pr}`,
+          "--jq",
+          THREAD_PATHS_JQ,
+        ]),
+        isThreadPath,
+        `pull request #${pr}'s review threads could not be read`,
+      );
+      return new Map(lines.map((l) => [l.thread, l.path]));
     },
   };
 }
