@@ -212,8 +212,8 @@ are named by canonical keys (`in_progress`, `in_review`, …) that
   project on one site (`issue_tracker.team` is the project key,
   `issue_tracker.jira.site` the site). It uses Jira's REST API version 3,
   at the site or through Atlassian's API gateway
-  (`issue_tracker.jira.api_base`), signed with an OAuth access token
-  (`JIRA_BEARER_TOKEN`, or one `JIRA_TOKEN_COMMAND` prints) or with
+  (`issue_tracker.jira.api_base`), signed with a Bearer token, an OAuth access token or an API token with
+  scopes (`JIRA_BEARER_TOKEN`, or one `JIRA_TOKEN_COMMAND` prints), or with
   `JIRA_EMAIL` and `JIRA_API_TOKEN`, an Atlassian account's email address
   and an API token made for it
   ([`credential.ts`](skills/do-item/scripts/lib/tracker/jira/credential.ts)),

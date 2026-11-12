@@ -210,6 +210,8 @@ function planRepo(
     ]),
     new Set(input.claimed.map((c) => c.key)),
     new Set(input.pickups.map((p) => p.key)),
+    undefined,
+    new Set(input.claimed.filter((c) => c.served === true).map((c) => c.key)),
   );
 }
 

@@ -59,29 +59,3 @@ export function latestArms(records: ReadRecord[]): Set<string> {
       : null,
   );
 }
-
-/**
- * The ids of each item's latest pickup record: while it is unreleased it is
- * the only thing that keeps the item from being picked up again, so it stays
- * until `releaseEnded` has seen the item leave the dispatch states. A batch
- * pickup is the latest record of every member it names, not only its anchor:
- * a later pickup anchored on the same item must not displace the evidence
- * (a refusal) of the members it left out.
- */
-export function latestPickups(records: ReadRecord[]): Set<string> {
-  const latest = new Map<string, ReadRecord>();
-  for (const r of records) {
-    if (r.record.action !== "pickup") continue;
-    const members = r.record.batchItems?.map((i) => i.key) ?? [];
-    for (const key of new Set([String(r.record.item), ...members])) {
-      const k = `${r.record.repo}\0${key}`;
-      const seen = latest.get(k);
-      if (seen === undefined || r.record.createdAt >= seen.record.createdAt)
-        latest.set(k, r);
-    }
-  }
-  const ids = new Set<string>();
-  for (const { record } of latest.values())
-    if (!record.released) ids.add(record.id);
-  return ids;
-}

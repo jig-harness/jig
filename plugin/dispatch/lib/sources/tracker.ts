@@ -413,7 +413,8 @@ export async function readPickups(
         ? null
         : [
             ...new Map(
-              [...factory.claimed, ...extra.claimed].map((i) => [i.key, i]),
+              // The identity's own reading wins: its claims are dispatch's whoever is served.
+              [...extra.claimed, ...factory.claimed].map((i) => [i.key, i]),
             ).values(),
           ],
   };
