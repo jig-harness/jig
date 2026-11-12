@@ -111,7 +111,7 @@ The skill reads them at run time from `.config/jig.yaml`:
 |-------|--------------|-------------|
 | `issue_tracker.adapter` | Which tracker adapter the scripts use: `github` for GitHub Issues (the logged-in `gh` command-line client; its settings are under `issue_tracker.github`, [configuration reference](../../CONFIGURATION.md#issue_tracker)) `linear` (credentials from `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, else a logged-in `linear` command-line client), or `jira` for Jira Cloud (credentials from `JIRA_BEARER_TOKEN`, else `JIRA_TOKEN_COMMAND`, else `JIRA_EMAIL` and `JIRA_API_TOKEN`; its settings are under `issue_tracker.jira`, `site` required, `api_base` for Atlassian's API gateway). A plan file kept in the repository is planned, [ROADMAP item 12](https://github.com/jig-harness/jig/blob/main/ROADMAP.md#12-more-tracker-adapters) | `github` |
 | `issue_tracker.team` | Linear and Jira: the team (Linear) or project (Jira) the repository files into, as the prefix its issue keys carry (`ENG` for `ENG-123`) | Required on Linear and Jira: the tracker scripts stop with a message naming this field. Not used on GitHub Issues. A file that sets it without naming `issue_tracker.adapter` is refused, since the default adapter has no team: add `adapter: linear` or `adapter: jira` |
-| `issue_tracker.states` | Map from canonical state keys to the tracker's own state names | Each key title-cased, e.g. `in_progress` → "In Progress"; `pr_open` stays unset, and nothing moves an item there |
+| `issue_tracker.states` | Map from canonical state keys to the tracker's own state names | Each key title-cased, e.g. `in_progress` → "In Progress"; `pr_open` and `blocked` stay unset, and nothing moves an item there |
 | `issue_tracker.file_command` | How to file a new issue (e.g. a slash command) | Ask the user to file it |
 | `issue_tracker.labels` | The repository's label for each role the skill acts on (see the table below) | The default names below |
 | `issue_tracker.types` | The repository's work types and the types and labels that mark each (see [Step 1](#step-1-fetch-the-issue)) | `bug`, `feature`, `improvement`, `task`, `spike`; `bug` marked by `issue_tracker.labels.bug`, the others by `<type>` and `type:<type>` |
@@ -136,11 +136,14 @@ Every field, its type and its default are in the plugin's
 [configuration reference](../../CONFIGURATION.md).
 
 Canonical state keys are `backlog`, `todo`, `in_progress`, `in_review`,
-`done`, `canceled`, and optionally `triage`, `pr_open`, `ops_pending` and
-`duplicate`. `pr_open` is active work whose pull request is open; `in_review`
-is merged and parked. `pr_open` alone has no default name: unset, nothing
-moves an item there, and a transition to `pr_open` prints `skipped` and
-writes nothing.
+`done`, `canceled`, and optionally `triage`, `pr_open`, `blocked`,
+`ops_pending` and `duplicate`. `pr_open` is active work whose pull request
+is open; `in_review` is merged and parked. `blocked` is started work whose
+drive stopped with only parked work left: the drive-ledger projection moves
+an item there and back ([configuration reference](../../CONFIGURATION.md#issue_tracker)),
+never this skill, and a claim refuses an item in it. `pr_open` and
+`blocked` have no default name: unset, nothing moves an item there, and a
+transition to either prints `skipped` and writes nothing.
 This document names states by key; read "`in_progress`" as "the tracker's
 name for it from `issue_tracker.states`".
 
@@ -726,7 +729,8 @@ implementation. Skip this check for issues about the repository's own code.
    loss stands the claim down after its writes.
 
    Exit `0` is the claim. Exit `3` is a refusal, nothing written: the issue
-   is already `in_progress` or assigned to someone else; its state is not
+   is already `in_progress`, `pr_open` or `blocked`, or assigned to someone
+   else; its state is not
    one `do_item.claim_from` lets work start from (`"why": "state"`); the
    repository's `do_item.preflight_command` refused it (`"why": "preflight"`
    in the JSON, its reason on stderr: that command runs inside `claim`,
@@ -1574,7 +1578,7 @@ data flow, not an executable harness API.
 > |-----------|---------------|
 > | Every sub-issue is `done`, or `canceled`/`duplicate` (abandoned, never completing) | `done` — capped at `ops_pending` if the **parent itself** carries `manual-ops`, and at `do_item.post_merge_state` when that is not `done` |
 > | Every sub-issue is merged-and-parked (`done`, `ops_pending`, `in_review`) or abandoned | The least advanced of those (any sub-issue in `in_review` → `in_review`; otherwise `ops_pending`) |
-> | Any sub-issue still in progress, with its pull request open (`pr_open`), to do or blocked | Keep `in_progress`; continue with Step 4b |
+> | Any sub-issue still in progress, with its pull request open (`pr_open`), to do or blocked (`blocked`, or blocked by another issue) | Keep `in_progress`; continue with Step 4b |
 >
 > A sub-issue in the tracker's name for `pr_open` is active work even where
 > that name is shared with `in_review`: the tracker cannot say whether its

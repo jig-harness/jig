@@ -92,6 +92,7 @@ const CANONICAL_STANDING: Record<CanonicalState, StateStanding> = {
   todo: "open",
   in_progress: "started",
   pr_open: "started",
+  blocked: "started",
   in_review: "started",
   ops_pending: "started",
   done: "closed",
@@ -109,6 +110,9 @@ export function stateStanding(
   state: IssueState,
   policy: BatchPolicy,
 ): StateStanding {
+  // A configured blocked name is started work whatever category the tracker files it under.
+  if (policy.stateNames[state.name.trim().toLowerCase()] === "blocked")
+    return "started";
   if ((CLOSED_STATE_TYPES as readonly string[]).includes(state.type))
     return "closed";
   if (state.type === "started") return "started";

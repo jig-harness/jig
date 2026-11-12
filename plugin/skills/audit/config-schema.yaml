@@ -69,6 +69,7 @@ strict:
   - issue_tracker.jira.priorities
   - issue_tracker.jira.resolutions
   - issue_tracker.jira.link_types
+  - issue_tracker.jira.blocked_fields
   - docs.index
   - resolve_conflicts
   - review.lenses
@@ -591,8 +592,8 @@ fields:
     repository_only: true
   issue_tracker.states:
     type: map
-    keys: [triage, backlog, todo, in_progress, pr_open, in_review, ops_pending, done, canceled, duplicate]
-    read_by: [do-item, work-batch, dispatch]
+    keys: [triage, backlog, todo, in_progress, pr_open, blocked, in_review, ops_pending, done, canceled, duplicate]
+    read_by: [do-item, drive-pr, work-batch, dispatch]
   issue_tracker.github.repository:
     type: string
     pattern: "^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$"
@@ -670,6 +671,12 @@ fields:
     nonempty: true
     read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
     since: 0.192.0
+  issue_tracker.jira.blocked_fields:
+    type: map
+    keys: [reason, since]
+    values_type: string
+    read_by: [do-item, drive-pr, dispatch]
+    since: 0.211.0
   issue_tracker.labels.epic:
     type: string
     read_by: [do-item, resolve-review-comments, drive-pr, work-batch, file-issue, reflect, dispatch]
