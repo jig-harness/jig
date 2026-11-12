@@ -172,6 +172,75 @@ consumer repository three pull requests that touch one serialized area
 over a night are re-driven one at a time, the held ones carrying the
 `held` label until each leads.
 
+### 50. What the line hands a person: each class of need settled at its source
+
+Most of what the dispatcher hands a person is not a decision: a flaky
+check that spent both CI-repair passes, a check that fails by design under
+the CI hold, a stage that ended without recording a result, work that
+landed in a pull request its item was not linked to, one host fault raised
+once per repository or per pull request. The registry's decisions wait
+behind them. [design/need-classes.md](need-classes.md) has how it works:
+every need belongs to a class, and each class is settled at the first place
+that applies: at its source, by the tick's own rule, by a steward record,
+by a person's answer to a framed decision, or by a person alone. It builds
+on item 46's framed needs and answers. What it will build, one pull request
+per issue in the design's order:
+
+- **CI repair.** The drive reads a held-head check as held
+  (`ci.hold_sentinels` naming the ones M13's shape misses) and parks once
+  under `reviewer-posture` when only advisory checks fail
+  (`ci.advisory_checks`); the repair passes become `drive.ci_repair_rounds`.
+- **Host faults.** One host need per cause (`failures.group`); a
+  follow-up's run again also covers a failed result write and waits for the
+  host's health check (`failures.rerun_died`); a tracker credential probe
+  per account with one host need (`preflight`); missing dispatch labels
+  created by the tick; a repository's CI checking what the tick reads from
+  it.
+- **Pickups.** A stall counted only for an item a launch or claim marker
+  took (`dispatch.stalled_scope`); an item moved to `pr_open` when an open
+  pull request on its launch's branch names it; a stalled pickup's unpushed
+  work relaunched once in its own tree to push and record
+  (`dispatch.stalled_relaunch`); an epic never taken as a pickup; a
+  held-then-released item re-queued.
+- **The steward.** First its digest's missing facts and its no-result rate;
+  then, under
+  [ADR-0018](../docs/adr/ADR-0018-the-steward-proposes-within-a-remit-the-host-widens.md),
+  the `settle`, `redrive` and `rerun-checks` records, each an opt-in of the
+  host (`steward.remit`) that the tick applies only on its own reads.
+- **Releases.** A releasing commit's failed gates re-run once and every
+  untagged release reported (`changelog.release.rerun_failed_gates`); a
+  follow-up recording the release owed and finishing, with one need per
+  release.
+- **Re-drives.** The re-drives per head as configuration
+  (`dispatch.redrive`, capped by the host's `redrive_max`); a pass that
+  stands down recording why; the conflict round recognising a squash-merged
+  stacked base; a pass that ended with a background task pending restarted;
+  a re-arm or takeover refused as a usage error not launched again.
+- **Held checkouts.** An idle holder detached where the host opts in
+  (`detach_idle_holders`), its unpushed commits first kept on a local
+  rescue branch (`rescue_unpushed`).
+- **Follow-ups.** The routine question classes as configuration
+  (`dispatch.followup_routine`).
+
+Done when each build-order issue's acceptance holds, staged in tests where
+the case is rare, and on a dispatch host over a week: a drive whose only
+failing check is a held-head check converges, and one whose only failing
+checks are advisory parks once with no repair pass spent; a follow-up whose
+result write failed is run again once after the health check passes and no
+person is asked; one session-runtime failure across every repository shows
+as one host need; a pull request on a pickup's branch moves its item to
+`pr_open` and raises no stall; a stalled pickup with unpushed commits is
+relaunched once in its tree and records its result; a held-then-released
+item is picked up again; fewer than one steward pass in twenty ends without
+submitting, and its digest names each target's tree state, pass output,
+linked pull requests and check history; on a host that opts in, a `settle`
+record links a stalled item to its pull request with a comment naming the
+reversal, and in a repository at `attended` the same record becomes a framed
+need; an untagged release raises one need, not one per merge; a credential
+failure on one account raises one host need and holds that account's
+tracker stages; and every need that reached a person that week was framed,
+or, where only a person can act, raised once for its cause.
+
 ### 36. The dispatch board: what is driven and what is ready to merge
 
 The merge is the one stage of the execution line that stays a person's, and
