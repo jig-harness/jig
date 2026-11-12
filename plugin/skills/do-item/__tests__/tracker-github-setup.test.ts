@@ -395,7 +395,7 @@ describe("GitHub transport", () => {
       `);
       expectSpawnExit({ exitCode: r.code, stdout: r.out, stderr: r.err }, 0);
       expect(JSON.parse(r.out)).toEqual({
-        args: ["api", "graphql", "--input", "-"],
+        args: ["api", "graphql", "--include", "--input", "-"],
         variables: { n: 1 },
       });
     });
