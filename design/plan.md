@@ -836,8 +836,8 @@ The Jira adapter also gains what a large shared project needs: pools scoped
 to chosen issue types, several link types per relation (a planning app's
 dependency links beside "Blocks"), state names per issue type, Bearer tokens
 with the Atlassian API gateway and a token command for a credential broker,
-retries of rate-limited reads that honour `Retry-After` (shared with the
-GitHub transport), and a refused credential named as such.
+and retries of rate-limited reads that honour `Retry-After` (shared with the
+GitHub transport).
 
 ### 27. Work types: depth by kind of work
 
