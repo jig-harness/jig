@@ -112,6 +112,9 @@ describe("dashboard.front in the machine file", () => {
     for (const front of [
       "https://127.0.0.1:8443/",
       "https://[::1]:8443/",
+      "https://[::ffff:127.0.0.1]/",
+      "https://[::ffff:7f00:1]/",
+      "https://[::ffff:7fff:ffff]/",
       "https://localhost:8443/",
       "https://app.localhost/",
       "https://localhost.localdomain/",

@@ -35,18 +35,24 @@ function inV4(address: string): boolean {
   });
 }
 
+/** The IPv4 address inside either spelling of an IPv4-mapped IPv6 address. */
+function mappedV4(address: string): string | null {
+  const lower = address.toLowerCase();
+  const dotted = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(lower);
+  if (dotted !== null) return dotted[1] as string;
+  const hexadecimal = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(lower);
+  if (hexadecimal === null) return null;
+  const high = Number.parseInt(hexadecimal[1] as string, 16);
+  const low = Number.parseInt(hexadecimal[2] as string, 16);
+  return `${high >> 8}.${high & 0xff}.${low >> 8}.${low & 0xff}`;
+}
+
 /** IPv6: loopback, unique local (`fc00::/7`) and link local (`fe80::/10`). */
 function inV6(address: string): boolean {
   const lower = address.toLowerCase();
   if (lower === "::1") return true;
-  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(lower);
-  if (mapped !== null) return inV4(mapped[1] as string);
-  const mappedHex = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(lower);
-  if (mappedHex !== null) {
-    const high = Number.parseInt(mappedHex[1] as string, 16);
-    const low = Number.parseInt(mappedHex[2] as string, 16);
-    return inV4(`${high >> 8}.${high & 0xff}.${low >> 8}.${low & 0xff}`);
-  }
+  const mapped = mappedV4(lower);
+  if (mapped !== null) return inV4(mapped);
   const first = Number.parseInt(lower.split(":")[0] || "0", 16);
   return (first & 0xfe00) === 0xfc00 || (first & 0xffc0) === 0xfe80;
 }
@@ -64,7 +70,7 @@ export function isLoopback(listen: Listen): boolean {
   const kind = isIP(listen.host);
   if (kind === 4) return listen.host.startsWith("127.");
   const lower = listen.host.toLowerCase();
-  return lower === "::1" || /^::ffff:127(\.\d+){3}$/.test(lower);
+  return lower === "::1" || mappedV4(lower)?.startsWith("127.") === true;
 }
 
 /** The host name of a `Host` header (`name`, `name:port`, `[v6]:port`), lower-cased; `null` when it is empty. */
