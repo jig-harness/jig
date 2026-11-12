@@ -191,8 +191,8 @@ export function httpFailure(
   ].join("; ");
   const message = `Jira API HTTP ${status} on ${what}: ${said === "" ? text.slice(0, 300) : said}`;
   const refused = status === 401 || status === 403;
-  // The gateway answers a token that lacks a scope with this phrase alone,
-  // and a refused profile read is the first a token missing them meets.
+  // Atlassian's gateway says only "scope does not match" when a token lacks
+  // a scope, and the profile read is the first request every client sends.
   const scopes =
     refused &&
     (what === "GET myself" || /scope does not match/i.test(`${said} ${text}`));

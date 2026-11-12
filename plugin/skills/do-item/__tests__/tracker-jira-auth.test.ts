@@ -39,6 +39,16 @@ describe("Jira authentication before protected reads", () => {
     );
   });
 
+  it("names the account scopes when the profile read is refused for any reason", () => {
+    const error = httpFailure(
+      401,
+      new Headers(),
+      '{"errorMessages":["Unauthorized"]}',
+      "GET myself",
+    );
+    expect(error.message).toContain("read:jira-user");
+  });
+
   it("names the account scopes when Jira says a scope does not match elsewhere", () => {
     const error = httpFailure(
       403,
