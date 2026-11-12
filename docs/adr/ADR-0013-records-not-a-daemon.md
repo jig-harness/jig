@@ -4,13 +4,13 @@ type: adr
 status: draft
 description: "Jig's components share registered records on the machine, in the working tree and on the forge and tracker, and each derives what to do from records it does not own; no resident daemon or message bus coordinates them, one resident reader per machine may serve a person's view of them, and the record names the conditions for reopening that"
 lifecycle: permanent
-version: "1.1"
-last_updated: 2026-11-07
+version: "1.2"
+last_updated: 2026-11-11
 owner: maintainers
 decision_date: 2026-11-04
 supersedes: ~
 superseded_by: ~
-tags: [adr, records, dispatcher, drive, dark-factory, hub]
+tags: [adr, records, dispatcher, drive, dark-factory, dashboard]
 ---
 
 # ADR-0013: Components share records, not a daemon
@@ -53,8 +53,8 @@ weigh against it.
   for Orca runs a tick when an agent waits, blocks or finishes
   ([design/orca-integration.md](../../design/orca-integration.md#the-jig-plugin-for-orca)),
   with the machine's timer catching what an event misses.
-- **A person needs one view of the line.** The [hub](../../GLOSSARY.md)
-  ([design/hub.md](../../design/hub.md)) shows every
+- **A person needs one view of the line.** The [dispatch dashboard](../../GLOSSARY.md)
+  ([design/dispatch-dashboard.md](../../design/dispatch-dashboard.md)) shows every
   [piece of work](../../GLOSSARY.md) across a person's machines, and a page
   that stays open needs a process that stays up to answer it. That process
   reads records and answers; it coordinates nothing, so it is not the
@@ -77,7 +77,7 @@ only its own: the dispatcher reads the drive ledger, the tracker and the
 running sessions, and keeps only what it did. No resident daemon or message
 bus coordinates them.
 
-One resident reader per machine is allowed: the hub, which serves a
+One resident reader per machine is allowed: the dashboard, which serves a
 person's view of the line. It listens on loopback (127.0.0.1, which nothing
 outside the machine reaches) or on a socket only a
 [private-network front](../../GLOSSARY.md) reaches, and opens every
@@ -86,8 +86,8 @@ the line never waits on it, so stopping it changes nothing the line does. A
 write it makes for a person is one of the records the line already reads,
 written as that person
 ([ADR-0014](ADR-0014-addresses-are-derived-and-requests-are-records.md)).
-The hub is the dispatcher's dashboard grown, so Jig still has one kind of
-listening server, not a second beside it.
+It is the dispatcher's own dashboard with more views, so Jig still has one
+kind of listening server, not a second beside it.
 
 ## Alternatives considered
 
@@ -119,7 +119,7 @@ listening server, not a second beside it.
   carries it, a tick or a round behind.
 - Every record is polled; a change is noticed at the next read, not pushed.
 - The registry is one more thing a change must update, held by its gate.
-- A machine that serves the hub keeps one more process running, restarted
+- A machine that serves the dashboard keeps one more process running, restarted
   when its installed copy changes. The line does not need it; the page
   does.
 
@@ -132,14 +132,14 @@ Reopen this when one of these holds:
 - a nudge to a running session needs a connection rather than a keystroke
   into its terminal;
 - someone outside a host must be told that a dispatching host has stopped;
-- a second person acts through a host's hub, or needs a scope Jig itself
+- a second person acts through a host's dashboard, or needs a scope Jig itself
   keeps rather than one a private-network front's grant carries.
 
 Then build a small control-plane service with a database, which the hosts
 write to and a person reads, not a bus. A service that only keeps the
 hosts' records and serves them to readers fits this decision. The
 [shared control plane](../../GLOSSARY.md)
-([design/hub.md § Toward a shared control plane](../../design/hub.md#toward-a-shared-control-plane))
+([design/dispatch-dashboard.md § Toward a shared control plane](../../design/dispatch-dashboard.md#toward-a-shared-control-plane))
 also hands the hosts their work, which is coordinating them, so it needs a
 decision record of its own that supersedes this one where it declines a
 coordinator.
@@ -152,6 +152,6 @@ the registry does not hold, and a registry entry the code no longer names.
 The gate parses source with oxc-parser rather than a tokenizer because regular
 expressions, division and nested template expressions determine where SQL
 string and template literals begin and end.
-That no component opens a listening socket other than the dashboard's,
-which the hub grows from, is not checked, nor that the hub listens only on
+That no component opens a listening socket other than the dashboard's is
+not checked, nor that the dashboard listens only on
 loopback or on a front's socket; review holds both.
