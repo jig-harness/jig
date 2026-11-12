@@ -394,6 +394,16 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.215.0] - 2026-11-12
+
+### Added
+
+- Jira workflows can use state names per issue type through
+  `issue_tracker.jira.states_by_type`. Each type overlays the repository's
+  state map; `null` marks a state absent, so its move is skipped and reported.
+  Parent roll-up uses each child's workflow and the parent's own target,
+  and `tracker.ts states` prints every configured type's effective map.
+
 ## [0.214.2] - 2026-11-12
 
 ### Fixed
@@ -7455,7 +7465,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.214.2...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.215.0...HEAD
+[0.215.0]: https://github.com/jig-harness/jig/compare/v0.214.2...v0.215.0
 [0.214.2]: https://github.com/jig-harness/jig/compare/v0.214.1...v0.214.2
 [0.214.1]: https://github.com/jig-harness/jig/compare/v0.214.0...v0.214.1
 [0.214.0]: https://github.com/jig-harness/jig/compare/v0.213.1...v0.214.0

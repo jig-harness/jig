@@ -668,7 +668,7 @@ fields:
     type: map
     values_type: { type: map, values_type: any }
     read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
-    since: next
+    since: 0.215.0
   issue_tracker.jira.pool_issue_types:
     type: list
     items: string
