@@ -137,6 +137,22 @@ a released section the reviewer reads the diff.
    or the step to take: "**Breaking:** the `--out` flag is now `--output`;
    rename it in scripts."
 
+   **Ask, for every change to what the repository releases: does a user have
+   to do anything?** When they must or should, declare a [consumer action](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+   after the entry's description, in the form
+   [README.md § Consumer actions](README.md#consumer-actions) gives:
+   `**Consumer action:** required|advised at <level>[, <level>]. <instruction>`
+   (levels `machine`, `configuration`, `instructions`; at most 400
+   characters), then optionally `**Detect:**` and code-span hints
+   (`config:<key>`, `config:!<key>`, `text:<phrase>`, `file:<glob>`,
+   `plugin-source:old|path|project-scope`). Write `**Consumer action:** none.`
+   when the entry asks nothing, and `**Consumer action:** retracts <id>.` to
+   withdraw an earlier release's action. Write the marker exactly, in the
+   entry itself, not a nested item. The check refuses a malformed declaration
+   in any note; where `changelog.consumer_actions` is `true` it also refuses a
+   breaking entry without one, a near-miss marker (`**Consumer Action:**`)
+   and a `**Detect:**` with no declaration.
+
 6. **Add a summary only when it helps, and only with `release`.** Text before
    the first `###` section is the release's summary; a note without `release`
    may not have one. In Common Changelog it is the release's single notice, one
@@ -429,7 +445,8 @@ root, and prints the plugin version it ran as.
 | `bun "${CLAUDE_SKILL_DIR}/scripts/convert.ts" --dry-run` | Options: `--base <ref>`, `--dry-run` and `--json`. Turns a branch that edited the changelog or the version itself into one with a note ([§ Converting a branch](#converting-a-branch)). Exit 0 converted, nothing to convert or `not configured`; 1 a refusal; 2 a usage error. |
 | `bun "${CLAUDE_SKILL_DIR}/scripts/tag.ts"` | Options: `--json` and `--rerun`. The tag plan: each version owed a tag (a release heading, no tag on `origin`, and newer than the newest `<tag_prefix>x.y.z` tag there; with no such tag, only the newest heading), its **releasing commit** (the first commit on the integration branch's first-parent line whose changelog has its heading) and its state: `ready` (every required check on that commit passed, and no older owed version is `pending` or `rerun`: versions are tagged oldest first), `pending` (a check has not finished, or the version waits for an older one), `rerun` (a check was cancelled and its workflow run not yet run again), `failed` (left for a person, a re-run GitHub refused included; it holds no newer version back, and once a newer one is tagged it is no longer owed a tag nor listed) or `imported` (its heading came in one commit with others, so it is tagged by hand if at all). The required checks are `ci.required_checks` in the integration branch's own `.config/jig.yaml`, else the branch's rules. A neutral or skipped check run passes only when its workflow run succeeded (skipped in a cancelled run is cancelled), or when no workflow run reported it. It never makes a tag; `--rerun` re-runs the `rerun` entries' workflow runs once. Exit 0 a plan (nothing owed and `not configured` included), 1 a version failed, a refused re-run included (the plan, `ready` list included, is still printed), 2 a usage error, a shallow clone, no required checks known, or git or GitHub could not answer. |
 | `bun "${CLAUDE_SKILL_DIR}/scripts/release-access.ts" --app <slug>` | Options: `--app <slug>` or `--app-id <id>`, plus `--repo <owner/repo>` and `--json`. Whether the release App can reach the integration branch in the configured mode, and force pushes and deletion stay blocked for it ([§ Setup](#setup)). Reads rulesets (every page) and classic protection; changes nothing. Exit 0 every requirement holds (or `not configured`), 1 one fails, 3 none fails but one is unknown (GitHub withheld a bypass list: a repository administrator must run it), 2 a usage error or GitHub could not be read. |
-| `bun "${CLAUDE_SKILL_DIR}/scripts/release.ts" --dry-run` | Options: `--dry-run`, `--json` and `--date YYYY-MM-DD`. The release step: writes the waiting notes into the changelog, moves the version, fills the placeholders, runs `after_version`, deletes the notes. Writes files only; it never commits, tags or pushes. CI runs it after a merge; run it yourself only with `--dry-run` to preview. Exit 1 for a malformed note or a step that failed (version files that disagree, `after_version`, no `origin` for Common Changelog links); 2 for a usage error, an invalid configuration or an unreadable file. |
+| `bun "${CLAUDE_SKILL_DIR}/scripts/consumer-actions-record.ts" --check` | Options: `--write` or `--check`. Where `changelog.consumer_actions_record` names a file, derives the consumer-actions record from the changelog's released sections ([scripts reference](scripts/README.md#the-consumer-actions-record)): `--check` fails when the committed file differs, `--write` regenerates it. The release step rewrites it in every release, so never edit it by hand. Exit 0 fresh, written or `not configured`, 1 stale or a malformed declaration in a released section, 2 a usage error or an invalid configuration. |
+| `bun "${CLAUDE_SKILL_DIR}/scripts/release.ts" --dry-run` | Options: `--dry-run`, `--json` and `--date YYYY-MM-DD`. The release step: writes the waiting notes into the changelog, moves the version, fills the placeholders, rewrites the consumer-actions record where one is configured, runs `after_version`, deletes the notes. Writes files only; it never commits, tags or pushes. CI runs it after a merge; run it yourself only with `--dry-run` to preview. Exit 1 for a malformed note or a step that failed (version files that disagree, `after_version`, no `origin` for Common Changelog links); 2 for a usage error, an invalid configuration or an unreadable file. |
 
 The check holds a branch to the `changelog:` section **as the base holds it**,
 not as the branch has it, so a pull request cannot weaken its own check. A
@@ -445,7 +462,8 @@ is documented, with its default, in the
 [configuration reference](../../CONFIGURATION.md#changelog). `file` is the one
 field that turns the skill on. Besides `file`: `format`, `notes_dir`, `version`,
 `release_paths`, `note_paths`, `placeholders`, `after_version`, `unreleased`,
-`authors`, `tag_prefix` and `release.push` / `release.branch`. The integration
+`authors`, `tag_prefix`, `release.push` / `release.branch`,
+`consumer_actions` and `consumer_actions_record`. The integration
 branch is `repository.base_branch`, else the hosting service's default branch.
 Outside the section, `tag.ts` and `status.ts` read `ci.required_checks`, the
 checks a releasing commit must pass before its tag, from the integration
