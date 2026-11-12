@@ -12,6 +12,31 @@ async function waitsOn(tracker: Tracker, key: string): Promise<string[]> {
 /** How many items one level reads at once. */
 const READ_WIDTH = 4;
 
+/** The items not yet `seen` that any of `level` waits on, read `READ_WIDTH` at a time. */
+async function nextLevel(
+  tracker: Tracker,
+  level: readonly string[],
+  seen: ReadonlySet<string>,
+): Promise<Set<string>> {
+  const next = new Set<string>();
+  for (let at = 0; at < level.length; at += READ_WIDTH) {
+    const batch = level.slice(at, at + READ_WIDTH);
+    const read = await Promise.all(batch.map((k) => waitsOn(tracker, k)));
+    for (const key of read.flat()) if (!seen.has(key)) next.add(key);
+  }
+  return next;
+}
+
+/** The members of `keys` the path may continue through. */
+async function accepted(
+  keys: ReadonlySet<string>,
+  through: (key: string) => Promise<boolean>,
+): Promise<string[]> {
+  const kept: string[] = [];
+  for (const key of keys) if (await through(key)) kept.push(key);
+  return kept;
+}
+
 /**
  * Whether `blocker` is one of the items `blocked` waits on, directly or
  * through at most `PULL_DEPTH` `blocked_by` links. `through` vets each item the
@@ -28,16 +53,10 @@ export async function blocksWithin(
   const seen = new Set<string>([blocked]);
   let level = [blocked];
   for (let depth = 0; depth < PULL_DEPTH && level.length > 0; depth++) {
-    const next = new Set<string>();
-    for (let at = 0; at < level.length; at += READ_WIDTH)
-      for (const keys of await Promise.all(
-        level.slice(at, at + READ_WIDTH).map((k) => waitsOn(tracker, k)),
-      ))
-        for (const key of keys) if (!seen.has(key)) next.add(key);
+    const next = await nextLevel(tracker, level, seen);
     if (next.has(blocker)) return true;
     for (const key of next) seen.add(key);
-    level = [];
-    for (const key of next) if (await through(key)) level.push(key);
+    level = await accepted(next, through);
   }
   return false;
 }
