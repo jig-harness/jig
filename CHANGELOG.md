@@ -391,6 +391,15 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.213.1] - 2026-11-12
+
+### Fixed
+
+- CONFIGURATION.md's `accounts[].vendor` now says a drive's pass on a
+  `codex` account runs on the standard tier of `routing.models.codex` (by
+  default `terra`, given as `gpt-5.6-terra`), the tier name routing uses,
+  rather than the execution tier.
+
 ## [0.213.0] - 2026-11-12
 
 ### Added
@@ -7404,7 +7413,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.213.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.213.1...HEAD
+[0.213.1]: https://github.com/jig-harness/jig/compare/v0.213.0...v0.213.1
 [0.213.0]: https://github.com/jig-harness/jig/compare/v0.212.1...v0.213.0
 [0.212.1]: https://github.com/jig-harness/jig/compare/v0.212.0...v0.212.1
 [0.212.0]: https://github.com/jig-harness/jig/compare/v0.211.0...v0.212.0
