@@ -128,6 +128,10 @@ export interface OpenedRepo {
 export interface Tracked {
   servedPolicy?: import("./sources/served.ts").ServedPolicy;
   keys: IssueKeys | null;
+  /** The configured adapter (`issue_tracker.adapter`); `null` when the tracker configuration does not read. */
+  adapter: string | null;
+  /** For GitHub Issues, the repository the issues are in (`owner/name`); `null` for any other tracker. */
+  issueRepository: string | null;
   pickups: WantedItem[];
   /** `null` when the claimed items could not be read. */
   claimed: ClaimedItem[] | null;
@@ -511,6 +515,8 @@ async function readTracker(
 ): Promise<Tracked> {
   const tracked: Tracked = {
     keys: null,
+    adapter: null,
+    issueRepository: null,
     pickups: [],
     claimed: null,
     tracker: null,
@@ -518,11 +524,15 @@ async function readTracker(
   try {
     const config = trackerConfigOf(values, repo.slug);
     tracked.keys = issueKeysOf(config);
+    tracked.adapter = config.adapter;
+    tracked.issueRepository =
+      config.adapter === "github" ? config.github.repository : null;
     const item = values.do_item as
       | { execution_plan_block?: unknown }
       | undefined;
     const scope = scopeOf(values);
     tracked.servedPolicy = {
+      epic: config.labels.epic,
       hitl: config.labels.hitl,
       manualOps: config.labels.manualOps,
       ...(typeof item?.execution_plan_block === "string"
