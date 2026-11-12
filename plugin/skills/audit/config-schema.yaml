@@ -96,6 +96,9 @@ null_refused:
   - repository
   - repository.remote
   - drive
+  - file_issue
+  - file_issue.sweep
+  - file_issue.sweep.move
 
 # Sections a skill refuses outright, with what to do instead.
 refused:

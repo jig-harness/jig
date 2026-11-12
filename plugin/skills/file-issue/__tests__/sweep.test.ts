@@ -1,4 +1,5 @@
 import { failureLine } from "../scripts/lib/pace.ts";
+import { sweepSettings } from "../scripts/lib/sweep-settings.ts";
 import { describe, expect, it } from "bun:test";
 import { pacedWriter, WriteRefused } from "../scripts/lib/pace.ts";
 import {
@@ -570,5 +571,42 @@ describe("the sweep with move: false", () => {
     });
     expect(report.commented).toEqual(["#10", "#11", "#15"]);
     expect(report.marked).toEqual([]);
+  });
+
+  it("classifies marked issues past the cap instead of counting them as remaining", async () => {
+    const repo = setup();
+    const { tracker } = repo.view(LABEL_SECTION);
+    const opts = { apply: true, move: false, retired: none };
+    await sweep(tracker, {
+      ...opts,
+      limits: { moves: 3 },
+      writer: pacedWriter(fakeClock()),
+    });
+    const writes = repo.writes.length;
+    const again = await sweep(tracker, {
+      ...opts,
+      limits: { moves: 1 },
+      writer: pacedWriter(fakeClock()),
+    });
+    expect(again.commented).toEqual([]);
+    expect(again.marked).toEqual(["#10", "#11", "#15"]);
+    expect(repo.writes).toHaveLength(writes);
+    expect(sweepLines(again).join("\n")).toContain(
+      "3 already commented on; 0 remain",
+    );
+  });
+});
+
+describe("the sweep's settings", () => {
+  it("refuse an explicit null instead of reading it as the default", () => {
+    expect(sweepSettings({}).move).toBe(true);
+    expect(() => sweepSettings({ file_issue: null })).toThrow();
+    expect(() => sweepSettings({ file_issue: { sweep: null } })).toThrow();
+    expect(() =>
+      sweepSettings({ file_issue: { sweep: { move: null } } }),
+    ).toThrow();
+    expect(sweepSettings({ file_issue: { sweep: { move: false } } }).move).toBe(
+      false,
+    );
   });
 });

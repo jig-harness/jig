@@ -367,7 +367,17 @@ export async function sweep(
     report.skipped.length;
   const one = report.move ? moveOne : commentOne;
   for (const issue of report.listed) {
-    if (spent() >= budget) break;
+    if (spent() >= budget) {
+      if (report.move) break;
+      // Past the cap nothing more is written, but a marked issue needs no
+      // comment, so it is classified (a read) rather than counted as remaining.
+      const read = await attempt(issue, report, async () => {
+        if (await marked(tracker, issue, opts))
+          report.marked.push(issue.identifier);
+      });
+      if (!read) break;
+      continue;
+    }
     if (
       !(await attempt(issue, report, () => one(tracker, issue, opts, report)))
     )
