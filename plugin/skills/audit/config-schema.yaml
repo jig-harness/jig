@@ -676,7 +676,7 @@ fields:
     keys: [reason, since]
     values_type: string
     read_by: [do-item, drive-pr, dispatch]
-    since: next
+    since: 0.211.0
   issue_tracker.labels.epic:
     type: string
     read_by: [do-item, resolve-review-comments, drive-pr, work-batch, file-issue, reflect, dispatch]
