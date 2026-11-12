@@ -130,6 +130,48 @@ describe("a quiet row and a copy that predates the quiet columns", () => {
     expect(next.renewals).toBe(1);
     expect(next.quietAt).toBeNull();
   });
+
+  it("keeps each inferred renewal through repeated older-copy failure and quiet cycles", () => {
+    const root = stateRootForTest();
+    const tick = {
+      repo: "",
+      key: "ticks /d",
+      kind: "tick" as const,
+      target: "ticks of o/d",
+    };
+    recordFailure(
+      tick,
+      "a",
+      Date.parse("2026-11-06T10:00:00.000Z"),
+      SETTINGS,
+      root,
+    );
+    for (const [cycle, minute] of [
+      [1, 10],
+      [2, 30],
+    ] as const) {
+      quietFailure("", tick.key, `2026-11-06T10:${minute}:00.000Z`, root);
+      stateDb(root)
+        .query(
+          "UPDATE failures SET count = count + 1, last_at = ? WHERE key = ?",
+        )
+        .run(`2026-11-06T10:${minute + 5}:00.000Z`, tick.key);
+      expect(readFailures("", root)[0]?.renewals).toBe(cycle);
+    }
+    quietFailure("", tick.key, "2026-11-06T10:50:00.000Z", root);
+    const stored = stateDb(root)
+      .query("SELECT renewals FROM failures WHERE key = ?")
+      .get(tick.key) as { renewals: number };
+    expect(stored.renewals).toBe(2);
+    const next = recordFailure(
+      tick,
+      "b",
+      Date.parse("2026-11-06T11:00:00.000Z"),
+      SETTINGS,
+      root,
+    );
+    expect(next.renewals).toBe(3);
+  });
 });
 
 describe("a repository's book of its actions", () => {

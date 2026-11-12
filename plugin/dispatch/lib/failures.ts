@@ -254,7 +254,9 @@ export function clearFailure(
 /**
  * A tick that read the row's repository succeeded at `at`: the row keeps
  * its count and goes quiet until its next failure. Nothing when no row
- * stands under the key.
+ * stands under the key. A quiet that a later failure from a copy predating
+ * the quiet columns already ended is counted as its renewal here, so the
+ * renewal outlives the new quiet that replaces it (`fromStored`).
  */
 export function quietFailure(
   repo: string,
@@ -263,7 +265,11 @@ export function quietFailure(
   root = stateRoot(),
 ): void {
   stateDb(root)
-    .query("UPDATE failures SET quiet_at = ? WHERE repo = ? AND key = ?")
+    .query(
+      `UPDATE failures SET quiet_at = ?,
+         renewals = renewals + (quiet_at IS NOT NULL AND quiet_at < last_at)
+       WHERE repo = ? AND key = ?`,
+    )
     .run(at, repo, key);
 }
 
