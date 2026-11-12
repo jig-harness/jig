@@ -86,6 +86,45 @@ describe("verification commands", () => {
     expect(summary(result)).toContain("5 verification commands");
   });
 
+  test("preserves command-significant whitespace and only unwraps complete code spans", async () => {
+    const { root } = scratchRepo("spec-verification-");
+    const result = await resolveSpec(
+      issue(
+        [
+          "## Verification",
+          "```sh",
+          "printf '%s\\n' a\\ ",
+          "```",
+          "`echo hello",
+          "echo hello`",
+          "`echo` `hello`",
+          "``echo `hello` ``",
+        ].join("\n"),
+      ),
+      root,
+      { env: NO_USER_LAYER },
+    );
+    expect(result.verification.map((v) => v.text)).toEqual([
+      "printf '%s\\n' a\\ ",
+      "`echo hello",
+      "echo hello`",
+      "`echo` `hello`",
+      "echo `hello` ",
+    ]);
+  });
+
+  test("assigns duplicate command ids without rescanning earlier suffixes", async () => {
+    const { root } = scratchRepo("spec-verification-");
+    const result = await resolveSpec(
+      issue(["## Verification", ...Array(20).fill("bun test")].join("\n")),
+      root,
+      { env: NO_USER_LAYER },
+    );
+    expect(result.verification.at(-1)?.id).toBe(
+      `${result.verification[0]?.id}~20`,
+    );
+  });
+
   test("uses the configured heading with the same matching rules as Spec", async () => {
     const { root } = scratchRepo("spec-verification-");
     put(root, ".config/jig.yaml", "specs:\n  verification_section: Checks\n");

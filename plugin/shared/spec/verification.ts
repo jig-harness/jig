@@ -27,18 +27,34 @@ function commandText(marked: MarkdownLine): string {
   )
     return "";
   const raw = marked.raw ?? marked.line;
-  let text = afterColumn(raw, marked.contentColumn ?? 0).trim();
+  let text = afterColumn(raw, marked.contentColumn ?? 0).trimStart();
   if (marked.kind === "code") return text;
   if (marked.depth !== undefined) text = text.replace(/^\[[ xX]\]\s+/, "");
-  return /^(`+)(.*)\1$/.exec(text)?.[2] ?? text;
+  const opening = /^`+/.exec(text)?.[0];
+  const closing = /`+$/.exec(text)?.[0];
+  if (
+    opening !== undefined &&
+    opening === closing &&
+    !text.slice(opening.length, -closing.length).includes(opening)
+  )
+    return text.slice(opening.length, -closing.length);
+  return text.trimEnd();
 }
 
 /** A stable command id; repeated commands keep separate entries. */
-function commandId(text: string, taken: Set<string>): string {
+function commandId(
+  text: string,
+  taken: Set<string>,
+  nextSuffix: Map<string, number>,
+): string {
   const base = `verify-${createHash("sha256").update(text).digest("hex").slice(0, 8)}`;
   let id = base;
-  for (let n = 2; taken.has(id); n++) id = `${base}~${n}`;
+  for (let n = nextSuffix.get(base) ?? 2; taken.has(id); n++) {
+    id = `${base}~${n}`;
+    nextSuffix.set(base, n + 1);
+  }
   taken.add(id);
+  nextSuffix.set(base, nextSuffix.get(base) ?? 2);
   return id;
 }
 
@@ -47,10 +63,11 @@ export function verificationCommands(
 ): SpecEntry[] {
   const commands: SpecEntry[] = [];
   const taken = new Set<string>();
+  const nextSuffix = new Map<string, number>();
   for (const marked of lines) {
     const text = commandText(marked);
     if (text === "") continue;
-    commands.push({ id: commandId(text, taken), text });
+    commands.push({ id: commandId(text, taken, nextSuffix), text });
   }
   return commands;
 }

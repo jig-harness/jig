@@ -404,7 +404,8 @@ by default, including commands inside code), and a path only inside the reposito
 not ignore; it fetches no web link and writes nothing. Nothing later in this
 procedure depends on the result: an empty one, or an exit other than `0` (a
 `specs` configuration it cannot use, which it names), is shown and the
-pickup goes on.
+pickup goes on. A successful result is retained for the delegation prompt,
+where its verification commands are handed to the implementer.
 
 ### Step 2: Check for prior scout findings
 
@@ -1902,4 +1903,4 @@ record how it ended. In such a pass:
 | `linked-pr.ts` | Read whether each item's linked pull request merged, for the roll-up under a shared review name (Step 5a) | One or more issue keys | JSON `{ "<KEY>": { pullRequest, pulls, reason } }`, `pullRequest` one of `merged`, `open`, `none`, `unreadable` |
 | `pr-plan.ts` | Apply the pull-request policy: a branch name and the base to cut it from, or the plan for opening the current branch's PR | `branch --issue "<KEY>" --title <title> [--issue-json <file>]`, or `open [--issue "<KEY>"] [--issue-json <file>] [--stack-on <branch>] [--accept-oversize <reason>]` | Branch name and base, or the plan (text or `--json`); exit `3` when the policy refuses |
 | `intent-chain.ts` | Write the Refocus intent-chain snapshot (Step 3.5); `--clear-session` removes this session's copy | `IntentChainInput` JSON (stdin or `--input`); nothing with `--clear-session` | Snapshot files and a JSON summary (`path`, `sessionPath`, `pickupId`, `chars`, `arm`, `truncated`, `pointerErrors`); with `--clear-session`, `{ sessionPath, removed }` |
-| `${CLAUDE_SKILL_DIR}/../../shared/spec/resolve.ts` | Resolve the requirements, acceptance criteria and tasks the issue carries or links (Step 1) | Issue JSON (`--input` or stdin), optional `--summary` | JSON `{ sources, requirements, acceptance, tasks, unresolved }`, or with `--summary` as text: the counts, every requirement, criterion and task with its key and text, the sources and the unresolved references |
+| `${CLAUDE_SKILL_DIR}/../../shared/spec/resolve.ts` | Resolve the requirements, acceptance criteria, tasks and verification commands the issue carries or links (Step 1) | Issue JSON (`--input` or stdin), optional `--summary` | JSON `{ sources, requirements, acceptance, tasks, verification, unresolved }`, or with `--summary` as text: the counts, every requirement, criterion, task and verification command with its key and text, the sources and the unresolved references |
