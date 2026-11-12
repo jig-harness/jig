@@ -360,21 +360,21 @@ function linePenalty(line: readonly boolean[]): number {
   return score;
 }
 
-/** Rule 2 (each 2x2 block of one colour) and rule 4 (dark share away from half). */
+/** Rule 2 (each 2x2 block of one color) and rule 4 (dark share away from half). */
 function blockAndBalancePenalty(canvas: Canvas): number {
   const { size } = canvas;
   let score = 0;
   let dark = 0;
   for (let y = 0; y < size; y++)
     for (let x = 0; x < size; x++) {
-      const colour = canvas.isDark(x, y);
-      if (colour) dark++;
+      const color = canvas.isDark(x, y);
+      if (color) dark++;
       if (
         x < size - 1 &&
         y < size - 1 &&
-        colour === canvas.isDark(x + 1, y) &&
-        colour === canvas.isDark(x, y + 1) &&
-        colour === canvas.isDark(x + 1, y + 1)
+        color === canvas.isDark(x + 1, y) &&
+        color === canvas.isDark(x, y + 1) &&
+        color === canvas.isDark(x + 1, y + 1)
       )
         score += 3;
     }
@@ -423,30 +423,55 @@ export function encodeQr(text: string): Outcome<QrMatrix, "too-long"> {
 /** The light margin around the code that a scanner needs, in modules. */
 export const QUIET_ZONE = 4;
 
-/** Each pair of modules a text cell draws, by whether the upper and the lower one is dark. */
+/** Each pair of modules a text cell draws without color, by whether the upper and the lower one is dark. */
 const GLYPHS = [
   ["█", "▀"],
   ["▄", " "],
 ] as const;
 
 /**
- * The code as terminal text, two module rows per line, with a quiet zone of
- * `QUIET_ZONE` modules. As `qrencode -t UTF8` does, a light module is drawn
- * as ink (`█`, or the half `▀`/`▄` that is light) and a dark module as a
- * space: on a terminal with light text on a dark background that shows the
- * code dark on light, as scanners expect. On a light background the code
- * shows inverted, which most phone cameras still read; the address printed
- * with it is the fallback for those that do not.
+ * The 256-color palette's black (16) and white (231), as foreground and as
+ * background, by whether a module is dark. They sit in the palette's fixed
+ * color cube, which terminals draw as given rather than from their theme;
+ * 256 colors are what xterm-compatible terminals read, the basic eight colors'
+ * "white" is often a theme's grey.
  */
-export function renderQr(matrix: QrMatrix): string[] {
+const FOREGROUND = ["38;5;231", "38;5;16"] as const;
+const BACKGROUND = ["48;5;231", "48;5;16"] as const;
+const RESET = "\x1b[0m";
+
+/** The cell's upper module as the `▀`'s ink and its lower as the background, so every module's color is set. */
+function paintedCell(upper: 0 | 1, lower: 0 | 1): string {
+  return `\x1b[${FOREGROUND[upper]};${BACKGROUND[lower]}m▀`;
+}
+
+/**
+ * The code as terminal text, two module rows per line, with a quiet zone of
+ * `QUIET_ZONE` modules.
+ *
+ * With `color`, every cell sets its own colors (`paintedCell`): dark modules
+ * black, light modules and the quiet zone white, whatever the terminal's
+ * theme, and each line ends by resetting them. Without it (`NO_COLOR`), the
+ * drawing follows `qrencode -t UTF8`: a light module is ink (`█`, or the half
+ * `▀`/`▄` that is light) and a dark module a space, which shows the code dark
+ * on light on a terminal with a dark background and inverted on a light one.
+ * The address printed with it is the fallback either way.
+ */
+export function renderQr(
+  matrix: QrMatrix,
+  options: { color: boolean },
+): string[] {
   const span = matrix.size + 2 * QUIET_ZONE;
-  const dark = (x: number, y: number) =>
+  const dark = (x: number, y: number): 0 | 1 =>
     matrix.modules[y - QUIET_ZONE]?.[x - QUIET_ZONE] === true ? 1 : 0;
+  const cell = options.color
+    ? paintedCell
+    : (upper: 0 | 1, lower: 0 | 1) => GLYPHS[upper][lower];
   const lines: string[] = [];
   for (let y = 0; y < span; y += 2) {
     let line = "";
-    for (let x = 0; x < span; x++) line += GLYPHS[dark(x, y)][dark(x, y + 1)];
-    lines.push(line);
+    for (let x = 0; x < span; x++) line += cell(dark(x, y), dark(x, y + 1));
+    lines.push(options.color ? line + RESET : line);
   }
   return lines;
 }

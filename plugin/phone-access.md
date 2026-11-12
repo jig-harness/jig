@@ -107,8 +107,9 @@ without it.
    entry, and stays out otherwise. `front` is the address the front
    publishes in step 3, with the port you choose there; the dashboard does not
    serve on it, it only prints it for the phone (step 5). It is refused
-   unless it is an `https:` address with no token, password, query or
-   fragment in it. The reader stops when its configuration changes and the
+   unless it is an `https:` address with no user name, password, query or
+   fragment. It is printed exactly as written, so it must not carry a token
+   in its path either. The reader stops when its configuration changes and the
    timer starts it again (allow up to two minutes); check with `--status`.
 
 3. **Publish it on a separate HTTPS port.** Port 443 may already serve
@@ -149,9 +150,11 @@ without it.
    square barcode a phone camera reads) of the same address. The code holds
    only the address, never a token: scanning it opens the page, and the front
    still decides who may see it. The text is the fallback when scanning
-   fails, and the only output into a pipe or a terminal that cannot draw the
-   code. The code is drawn light on dark, which reads best on a terminal with
-   a dark background; most phone cameras also read it inverted. With the
+   fails, and the only output into a pipe, a terminal that cannot draw the
+   code or one too narrow for it. The code sets its own colors, black on
+   white, whatever the terminal's theme. With `NO_COLOR` set it is drawn in
+   plain characters the way `qrencode -t UTF8` draws, which reads best on a
+   terminal with a dark background; the text is the fallback there too. With the
    phone signed in to the tailnet, scan the code or type the address in the
    phone's ordinary browser. Confirm the browser shows an address with no
    token in it, and bookmark it. Then run the [phone checks](#phone-checks).

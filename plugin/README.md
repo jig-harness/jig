@@ -964,9 +964,11 @@ and the private access record live under `~/.local/state/jig/dispatch/dashboard/
 With a private-network front named as `dashboard.front`, `--access` prints
 that front's token-free HTTPS address instead, and on a terminal draws a
 [QR code](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (a
-square barcode a phone camera reads) of the same address below it. The code
-holds only the address: the front still signs the viewer in. Into a pipe, a
-file or a `TERM=dumb` terminal it prints the address alone. Without a front,
+square barcode a phone camera reads) of the same address below it, black on
+white in colors it sets itself (in plain characters under `NO_COLOR`). The
+code holds only the address: the front still signs the viewer in. Into a
+pipe, a file, a `TERM=dumb` terminal or one too narrow for the code it
+prints the address alone. Without a front,
 `--access` prints the private URL as before, draws no code for it, since it
 carries a token, and says on standard error how to set up a front.
 

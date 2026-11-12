@@ -14,7 +14,7 @@ import {
   machineConfigPath,
   readMachineConfig,
 } from "./lib/machine-config.ts";
-import { encodeQr, renderQr } from "./lib/qr.ts";
+import { encodeQr, QUIET_ZONE, renderQr } from "./lib/qr.ts";
 
 /** What the command writes where, and its exit code. */
 interface AccessReport {
@@ -23,10 +23,14 @@ interface AccessReport {
   code: number;
 }
 
-/** The standard output's terminal: whether it is one, and its `TERM`. */
+/** The standard output's terminal: whether it is one, its `TERM`, `NO_COLOR` and width. */
 export interface AccessTerminal {
   isTTY: boolean;
   term: string | undefined;
+  /** `NO_COLOR`: any nonempty value draws the code without colors (no-color.org). */
+  noColor: string | undefined;
+  /** The terminal's width in characters, when it is known. */
+  columns: number | undefined;
 }
 
 /** Where the setup of a front is written down, for a person reading a terminal. */
@@ -37,28 +41,57 @@ function drawable(terminal: AccessTerminal): boolean {
   return terminal.isTTY && terminal.term !== "dumb";
 }
 
+/** The code's lines for the front's address, or why none is drawn; neither where the output is no terminal that draws one. */
+function drawnCode(
+  front: string,
+  terminal: AccessTerminal,
+): { lines: string[]; note: string[] } {
+  if (!drawable(terminal)) return { lines: [], note: [] };
+  const code = encodeQr(front);
+  if (!code.ok)
+    return { lines: [], note: [`No QR code: ${code.failure.reason}.`] };
+  const width = code.value.size + 2 * QUIET_ZONE;
+  if (terminal.columns !== undefined && terminal.columns < width)
+    return {
+      lines: [],
+      note: [
+        `No QR code: it needs a terminal ${width} columns wide, and this one has ${terminal.columns}. Widen it and run --access again, or carry the address over as text.`,
+      ],
+    };
+  const color = (terminal.noColor ?? "") === "";
+  return {
+    lines: [
+      ...renderQr(code.value, { color }),
+      "The code holds only this address; the front still signs the viewer in.",
+    ],
+    note: [],
+  };
+}
+
+/** A hint, never a refusal, when the front's name is not one the dashboard answers to: a front may send another `Host`. */
+function hostHint(front: string, allowedHosts: readonly string[]): string[] {
+  const host = new URL(front).hostname.replace(/^\[(.*)\]$/, "$1");
+  return allowedHosts.includes(host)
+    ? []
+    : [
+        `${host} is not in dashboard.allowed_hosts. A front that forwards requests under its own name needs it there, or the dashboard answers 403; one that sends a Host the dashboard already allows needs nothing.`,
+      ];
+}
+
 /** The front's address on standard output, first, then its code where the terminal draws one. */
 function frontReport(
   front: string,
+  allowedHosts: readonly string[],
   reader: Outcome<{ url: string }, string>,
   terminal: AccessTerminal,
 ): AccessReport {
-  const stdout = [front];
-  const stderr: string[] = [];
-  if (drawable(terminal)) {
-    const code = encodeQr(front);
-    if (code.ok)
-      stdout.push(
-        ...renderQr(code.value),
-        "The code holds only this address; the front still signs the viewer in.",
-      );
-    else stderr.push(`No QR code: ${code.failure.reason}.`);
-  }
+  const code = drawnCode(front, terminal);
+  const stderr = [...code.note, ...hostHint(front, allowedHosts)];
   if (!reader.ok)
     stderr.push(
-      "The dashboard reader behind the front is not confirmed running, so the address shows no page yet; check it with jig dispatch dashboard --status.",
+      `The dashboard reader behind the front is not confirmed running (${reader.failure.reason}), so the address may show no page yet; check it with jig dispatch dashboard --status.`,
     );
-  return { stdout, stderr, code: 0 };
+  return { stdout: [front, ...code.lines], stderr, code: 0 };
 }
 
 /** Why no code is drawn and how a phone gets a token-free address, by whether the reader asks for a token. */
@@ -98,8 +131,14 @@ export function accessReport(
   terminal: AccessTerminal,
   machinePath: string,
 ): AccessReport {
-  const front = machine.ok ? (machine.value?.dashboardFront ?? null) : null;
-  if (front !== null) return frontReport(front, reader, terminal);
+  const config = machine.ok ? machine.value : null;
+  if (config?.dashboardFront != null)
+    return frontReport(
+      config.dashboardFront,
+      config.dashboardAllowedHosts,
+      reader,
+      terminal,
+    );
   const report: AccessReport = reader.ok
     ? { stdout: [reader.value.url], stderr: [], code: 0 }
     : { stdout: [], stderr: [reader.failure.reason], code: 1 };
@@ -119,7 +158,12 @@ export function dashboardAccess(): number {
   const report = accessReport(
     readMachineConfig(),
     readAccess(),
-    { isTTY: process.stdout.isTTY === true, term: process.env.TERM },
+    {
+      isTTY: process.stdout.isTTY === true,
+      term: process.env.TERM,
+      noColor: process.env.NO_COLOR,
+      columns: process.stdout.columns,
+    },
     machineConfigPath(),
   );
   for (const line of report.stdout) console.log(line);

@@ -51,7 +51,6 @@
  * default.
  */
 import { readFileSync } from "node:fs";
-import { isIP } from "node:net";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { isMapping, jigHome } from "../../shared/config-layers.ts";
@@ -59,13 +58,9 @@ import { OPEN_LIMIT_MS } from "../../shared/orca-workspace/limits.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { DEFAULT_DISPATCHER_SHARE } from "../../shared/tracker-budget.ts";
 import { load } from "../../shared/yaml.ts";
+import { FRONT_RULES, shownFront } from "./dashboard-front.ts";
 import { FAILURE_DEFAULTS, type FailureSettings } from "./failures.ts";
-import {
-  isLoopback,
-  isPrivateAddress,
-  type Listen,
-  parseListen,
-} from "./listen.ts";
+import { isLoopback, type Listen, parseListen } from "./listen.ts";
 import { type LoadSettings, loadSettings } from "./load-config.ts";
 import { type ServedPerson, servedPeople } from "./serve-config.ts";
 
@@ -866,43 +861,14 @@ function dashboardAllowedHosts(value: unknown): Checked<string[]> {
   return ok(names.value.map((name) => name.toLowerCase()));
 }
 
-/** Whether a front's host can be reached from a phone: a name other than `localhost`, or a private address other than loopback. */
-function reachableFront(host: string): boolean {
-  if (isIP(host) === 0) return !/(^|\.)localhost\.?$/.test(host);
-  return isPrivateAddress(host) && !isLoopback({ host, port: null });
-}
-
-/** What a front's address must hold to, each with why an address that does not is refused. */
-const FRONT_RULES: ReadonlyArray<[(url: URL, raw: string) => boolean, string]> =
-  [
-    [
-      (url) => url.protocol === "https:",
-      "is not an https: address: a front gives the phone an encrypted page",
-    ],
-    [
-      (url) => url.username === "" && url.password === "",
-      "carries a user or password, and the address holds no credential",
-    ],
-    [
-      (url, raw) => url.search === "" && !raw.includes("?"),
-      "carries a query, and the address holds no token",
-    ],
-    [
-      (url, raw) => url.hash === "" && !raw.includes("#"),
-      "carries a fragment, and the address holds no token",
-    ],
-    [
-      (url) => reachableFront(url.hostname.replace(/^\[(.*)\]$/, "$1")),
-      "names no host a phone reaches privately: a front's address is a name, or an address in the private ranges dashboard.listen accepts, other than loopback",
-    ],
-  ];
-
 /**
  * The address a front publishes for a phone to open: an absolute `https:`
- * URL with no user, password, query or fragment, so no credential can ride
- * in it, whose host is a name or a private, non-loopback address. A name is
- * taken as written: Jig never resolves it, nor infers how far it reaches.
- * Only a tokenless dashboard has a front to name.
+ * URL with no user name, password, query or fragment, and no escaped query
+ * or parameter in its path, whose host is a name or a private address other
+ * than loopback and link-local. It is printed as configured, so it must not
+ * carry a token anywhere. A name is taken as written: Jig never resolves it,
+ * nor infers how far it reaches. Only a tokenless dashboard has a front to
+ * name.
  */
 function dashboardFront(
   value: unknown,
@@ -912,10 +878,13 @@ function dashboardFront(
   if (given === undefined || given === null) return ok(null);
   const address = text(given, "dashboard.front");
   if (!address.ok) return address;
-  const refuse = (why: string) =>
-    invalid(`dashboard.front: ${address.value} ${why}`);
-  if (!URL.canParse(address.value)) return refuse("is not an absolute URL");
+  if (!URL.canParse(address.value))
+    return invalid(
+      "dashboard.front is not an absolute URL (its value is withheld, since it may hold a credential)",
+    );
   const url = new URL(address.value);
+  const refuse = (why: string) =>
+    invalid(`dashboard.front: ${shownFront(url)} ${why}`);
   const broken = FRONT_RULES.find(([holds]) => !holds(url, address.value));
   if (broken !== undefined) return refuse(broken[1]);
   if (requireToken)

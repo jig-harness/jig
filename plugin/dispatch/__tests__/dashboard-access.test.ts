@@ -8,16 +8,23 @@ import { ownIdentity } from "../../shared/liveness.ts";
 import { failed, ok } from "../../shared/outcome.ts";
 import { type AccessTerminal, accessReport } from "../dashboard-access.ts";
 import { parseMachineConfigText } from "../lib/machine-config.ts";
-import { decodeModules, parseDrawn } from "./qr-oracle.ts";
+import { decodeModules, ESC, parseDrawn } from "./qr-oracle.ts";
 
 const JIG = resolve(import.meta.dir, "../../jig.ts");
 const BUNFIG = resolve(import.meta.dir, "../bunfig.toml");
 const FRONT = "https://host.tailnet.ts.net:8443/";
 const TOKEN_URL = "http://100.64.0.7:8765/?token=0123456789abcdef";
 const MACHINE_PATH = "/home/person/.jig/dispatch.yaml";
-const TTY: AccessTerminal = { isTTY: true, term: "xterm-256color" };
-const PIPE: AccessTerminal = { isTTY: false, term: "xterm-256color" };
+const TTY: AccessTerminal = {
+  isTTY: true,
+  term: "xterm-256color",
+  noColor: undefined,
+  columns: undefined,
+};
+const PIPE: AccessTerminal = { ...TTY, isTTY: false };
 const GLYPHS = /^[█▀▄ ]+$/;
+const HINT =
+  "The code holds only this address; the front still signs the viewer in.";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -62,30 +69,52 @@ describe("dashboard.front in the machine file", () => {
     );
   });
 
-  it("refuses an address that is not https:, or that could carry a credential", () => {
+  it("refuses an address that is not https:, or that could carry a credential, and never repeats a credential", () => {
     const refusals: Array<[string, string]> = [
-      ["host.tailnet.ts.net:8443", "is not an https: address"],
-      ["not a url", "is not an absolute URL"],
-      ["http://host.tailnet.ts.net:8443/", "is not an https: address"],
-      ["https://me:secret@host.tailnet.ts.net/", "carries a user or password"],
-      ["https://me@host.tailnet.ts.net/", "carries a user or password"],
-      ["https://host.tailnet.ts.net/?token=abc", "carries a query"],
+      ["host.tailnet.ts.net:8443?token=SECRET", "is not an https: address"],
+      ["SECRET not a url", "is not an absolute URL"],
+      ["http://me:pw@host.tailnet.ts.net:8443/", "is not an https: address"],
+      ["https://me:pw@host.tailnet.ts.net/", "carries a user name or password"],
+      [
+        "https://SECRET@host.tailnet.ts.net/",
+        "carries a user name or password",
+      ],
+      ["https://host.tailnet.ts.net/?token=SECRET", "carries a query"],
       ["https://host.tailnet.ts.net/?", "carries a query"],
-      ["https://host.tailnet.ts.net/#token=abc", "carries a fragment"],
+      ["https://host.tailnet.ts.net/#token=SECRET", "carries a fragment"],
       ["https://host.tailnet.ts.net/#", "carries a fragment"],
+      ["https://host.tailnet.ts.net/a;token=SECRET", "in its path"],
+      ["https://host.tailnet.ts.net/%3Ftoken=SECRET", "in its path"],
+      ["https://host.tailnet.ts.net/x%3ftoken=SECRET", "in its path"],
+      ["https://host.tailnet.ts.net/%23token=SECRET", "in its path"],
+      ["https://127.0.0.1/?token=SECRET", "carries a query"],
     ];
     for (const [front, reason] of refusals) {
-      const refused = frontOf(front);
-      expect(refused).toContain(`dashboard.front: ${front} ${reason}`);
+      const refused = String(frontOf(front));
+      expect(refused).toContain("dashboard.front");
+      expect(refused).toContain(reason);
+      expect(refused).not.toContain("SECRET");
+      expect(refused).not.toContain("pw");
     }
+    expect(frontOf("https://me:pw@host.tailnet.ts.net/a")).toContain(
+      "dashboard.front: https://host.tailnet.ts.net/a (the rest of it withheld)",
+    );
+    expect(frontOf("http://host.tailnet.ts.net/a")).toContain(
+      "dashboard.front: http://host.tailnet.ts.net/a is not an https: address",
+    );
   });
 
-  it("refuses a loopback or public address, and takes a name as written", () => {
+  it("refuses a loopback, link-local or public address, and takes a name as written", () => {
     for (const front of [
       "https://127.0.0.1:8443/",
       "https://[::1]:8443/",
       "https://localhost:8443/",
       "https://app.localhost/",
+      "https://localhost.localdomain/",
+      "https://ip6-localhost/",
+      "https://ip6-loopback/",
+      "https://[fe80::1]/",
+      "https://[febf::1]/",
       "https://8.8.8.8/",
       "https://[2001:db8::1]/",
     ])
@@ -118,34 +147,69 @@ describe("what --access prints", () => {
     "no readable live dashboard access record; inspect --status",
   );
 
-  it("prints the front's address, then its code and what the code holds, on a terminal", () => {
-    const report = accessReport(withFront, reader, TTY, MACHINE_PATH);
-    expect(report.code).toBe(0);
-    expect(report.stderr).toEqual([]);
-    expect(report.stdout[0]).toBe(FRONT);
+  it("prints the front's address, then its code in set colors and what the code holds, on a terminal", () => {
+    for (const noColor of [undefined, ""]) {
+      const terminal = { ...TTY, noColor };
+      const report = accessReport(withFront, reader, terminal, MACHINE_PATH);
+      expect(report.code).toBe(0);
+      expect(report.stderr).toEqual([]);
+      expect(report.stdout[0]).toBe(FRONT);
+      const drawn = report.stdout.slice(1, -1);
+      expect(drawn.length).toBeGreaterThan(10);
+      for (const line of drawn) expect(line).toContain(`${ESC}[38;5;`);
+      expect(decodeDrawn(drawn)).toBe(FRONT);
+      expect(report.stdout.at(-1)).toBe(HINT);
+      expect(JSON.stringify(report)).not.toContain("token=");
+    }
+  });
+
+  it("draws the code in plain glyphs under NO_COLOR", () => {
+    const terminal = { ...TTY, noColor: "1" };
+    const report = accessReport(withFront, reader, terminal, MACHINE_PATH);
     const drawn = report.stdout.slice(1, -1);
-    expect(drawn.length).toBeGreaterThan(10);
     for (const line of drawn) expect(line).toMatch(GLYPHS);
     expect(decodeDrawn(drawn)).toBe(FRONT);
-    expect(report.stdout.at(-1)).toBe(
-      "The code holds only this address; the front still signs the viewer in.",
-    );
-    expect(JSON.stringify(report)).not.toContain("token=");
+  });
+
+  it("draws no code on a terminal narrower than the code, and says so", () => {
+    // The address takes version 3: 29 modules and the quiet zone, 37 columns.
+    const narrow = { ...TTY, columns: 36 };
+    const report = accessReport(withFront, reader, narrow, MACHINE_PATH);
+    expect(report.stdout).toEqual([FRONT]);
+    expect(report.stderr).toHaveLength(1);
+    expect(report.stderr[0]).toContain("37 columns wide");
+    const wide = { ...TTY, columns: 37 };
+    expect(
+      accessReport(withFront, reader, wide, MACHINE_PATH).stdout.at(-1),
+    ).toBe(HINT);
   });
 
   it("prints the address alone where the output is not a terminal, or the terminal is dumb", () => {
-    for (const terminal of [PIPE, { isTTY: true, term: "dumb" }]) {
+    for (const terminal of [PIPE, { ...TTY, term: "dumb" }]) {
       const report = accessReport(withFront, reader, terminal, MACHINE_PATH);
       expect(report).toEqual({ stdout: [FRONT], stderr: [], code: 0 });
     }
   });
 
-  it("prints the front's address without a reader, and says where to check it", () => {
+  it("prints the front's address without a reader, with the reader's reason and where to check it", () => {
     const report = accessReport(withFront, noReader, PIPE, MACHINE_PATH);
     expect(report.stdout).toEqual([FRONT]);
     expect(report.code).toBe(0);
     expect(report.stderr).toHaveLength(1);
+    expect(report.stderr[0]).toContain(noReader.failure.reason);
     expect(report.stderr[0]).toContain("jig dispatch dashboard --status");
+  });
+
+  it("hints, without refusing, when the front's name is not among the allowed hosts", () => {
+    const unlisted = machine(`${TOKENLESS}  front: ${FRONT}\n`);
+    const report = accessReport(unlisted, reader, PIPE, MACHINE_PATH);
+    expect(report.stdout).toEqual([FRONT]);
+    expect(report.code).toBe(0);
+    expect(report.stderr).toHaveLength(1);
+    expect(report.stderr[0]).toContain(
+      "host.tailnet.ts.net is not in dashboard.allowed_hosts",
+    );
+    expect(report.stderr[0]).toContain("403");
   });
 
   it("without a front, prints the reader's URL as before, says why, and draws no code", () => {
@@ -219,7 +283,8 @@ function home(machineFile: string, readerUrl?: string) {
     if (
       value !== undefined &&
       !key.startsWith("JIG_") &&
-      !key.startsWith("DRIVE_PR_")
+      !key.startsWith("DRIVE_PR_") &&
+      key !== "NO_COLOR"
     )
       environment[key] = value;
   return {
@@ -311,9 +376,10 @@ describe.skipIf(
     }
     const lines = output.split(/\r?\n/);
     expect(lines[0]).toBe(FRONT);
-    const drawn = lines.filter((line) => GLYPHS.test(line));
+    const drawn = lines.slice(1, lines.indexOf(HINT));
+    expect(drawn.length).toBeGreaterThan(10);
     expect(decodeDrawn(drawn)).toBe(FRONT);
-    expect(output).toContain("the front still signs the viewer in");
+    expect(output).toContain("is not in dashboard.allowed_hosts");
     expect(output).toContain("jig dispatch dashboard --status");
   }, 60_000);
 });
