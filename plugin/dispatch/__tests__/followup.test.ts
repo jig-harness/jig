@@ -224,6 +224,74 @@ describe("jig dispatch --apply follows up a merge", () => {
     expect(claudeRuns(w)).toHaveLength(1);
   });
 
+  it("carries out a person's answer to a failed follow-up's decision once, and hands the follow-up run again the answer", async () => {
+    const { w, ws } = fixture();
+    const [launched] = launches(await applyTick(w, false));
+    const id = String(launched?.record);
+    await waitFor("the pass", () => claudeRuns(w).length === 1);
+    writeFileSync(
+      join(w.dir, "claude-said"),
+      "I cannot tag the release.\nQuestion: which version does this merge ship in?\n",
+    );
+    writeFileSync(join(w.dir, "claude-exit"), "1");
+    await waitFor("the exit", () => exitWritten(w, id));
+    w.setWorkspaces([]);
+    await applyTick(w, false);
+    const read = await w.dispatch(["line", "--json"]);
+    expectSpawnExit(read, 0);
+    const line = (JSON.parse(read.stdout) as { value: { line: LineSnapshot } })
+      .value.line;
+    const need = line.needs.find((n) => n.target === "PR #9");
+    const [decision] = need?.decisions ?? [];
+    expect(decision).toMatchObject({
+      key: "followup",
+      answer: { station: "followup", framedBy: "dispatcher" },
+    });
+    expect(markers(w)).toHaveLength(1);
+    w.setComments(9, [
+      ...comments(w),
+      {
+        ...forgeComment(
+          9_001,
+          `answer followup: choose Run it again [${decision?.digest}]`,
+          "maintainer",
+          "OWNER",
+        ),
+        created_at: "2026-11-12T11:00:00Z",
+        updated_at: "2026-11-12T11:00:00Z",
+        html_url: `https://github.com/${SLUG}/pull/9#issuecomment-9001`,
+      },
+    ]);
+    const answered = await applyTick(w, false);
+    expect(markers(w)).toEqual([]);
+    expect(answered.repos[0]?.actions).toContainEqual(
+      expect.objectContaining({
+        target: "PR #9",
+        answered: expect.objectContaining({
+          acted: expect.objectContaining({
+            option: "Run it again",
+            outcome: "done",
+          }),
+        }),
+      }),
+    );
+    w.setWorkspaces([{ branch: HEAD, linkedPR: 9, path: ws }]);
+    const again = launches(await applyTick(w, false));
+    expect(again).toEqual([
+      expect.objectContaining({ action: "followup", target: "PR #9" }),
+    ]);
+    const record = readRecord(String(again[0]?.record), dispatchState(w));
+    expect(record?.answered).toMatchObject({
+      option: "Run it again",
+      recommended: false,
+      by: "maintainer",
+    });
+    await waitFor("the run again", () => claudeRuns(w).length === 2);
+    expect(claudeRuns(w)[1]?.argv.at(-1)).toContain(
+      "A person answered the decision an earlier session of this work stopped on",
+    );
+  });
+
   it("stops a pass at its deadline with the tool commands it started, and settles the slot only after", async () => {
     const { w } = fixture();
     w.env.DRIVE_PR_PASS_TIMEOUT = "1";

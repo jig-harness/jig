@@ -48,7 +48,7 @@ export function decisionOf(park: {
   decision?: ParkedDecision;
   person?: string;
   key: string;
-  kind: "thread" | "finding";
+  kind: LineDecision["kind"];
   lines: string[];
   answers?: ReadAnswer[];
   stale?: ReadAnswer[];

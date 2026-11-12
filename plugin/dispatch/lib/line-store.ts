@@ -121,6 +121,14 @@ const DECISION_FIELDS: Fields = {
     })(value),
   answerState: (value) =>
     value === undefined || value === "stale" || value === "disputed",
+  answer: (value) =>
+    value === undefined ||
+    hasFields(value, {
+      station: (v) => v === "drive" || v === "followup" || v === "pickup",
+      address: isString,
+      on: (v) => v === "pull-request" || v === "issue" || v === "tracker",
+      framedBy: (v) => v === "session" || v === "dispatcher",
+    }),
 };
 
 /** What the sessions view reads of each thread sample. */

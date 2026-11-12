@@ -16,10 +16,20 @@
  * tick starts the item again once `time` (ISO 8601, at most a day ahead)
  * has passed, and asks no person.
  *
+ * `failed --decision <file>` (`-` for standard input) is a pass that stopped
+ * for a person and framed what it asks: a `parked-decision/v1` record, the
+ * decision a drive's park holds, checked by the same checker and kept with
+ * the result and its digest (`lib/framed-result.ts`). The need the tick
+ * shows for it carries that decision, answered as a park is. A decision
+ * that does not pass the check records nothing, so the pass can fix it and
+ * run the command again.
+ *
  * Exit codes: 0 recorded; 2 usage, no such record, a token that is not the
- * record's, or a drive's record; 3 the record already has a result.
+ * record's, a drive's record, or a decision the check refuses; 3 the record
+ * already has a result.
  */
 import { derivedNext, type NextOwner } from "./lib/next-owner.ts";
+import { framedResultOf } from "./lib/framed-result.ts";
 import { timingSafeEqual } from "node:crypto";
 import {
   type LaunchRecord,
@@ -33,7 +43,7 @@ import {
 } from "./lib/launches.ts";
 
 const USAGE =
-  "usage: jig dispatch result <record> <token> done|failed [--pr <number> | --none <reason>] | failed (--refused <updated-at> [--key <item>])... --reason <reason>... | waits --until <time>";
+  "usage: jig dispatch result <record> <token> done|failed [--pr <number> | --none <reason>] | failed --decision <file|-> | failed (--refused <updated-at> [--key <item>])... --reason <reason>... | waits --until <time>";
 /** The longest a pickup may wait on a rate limit: a tracker's window is an hour or less. */
 const MAX_WAIT_MS = 24 * 60 * 60_000;
 /** The record already has a result, which stands. */
@@ -304,6 +314,49 @@ export function resultMain(argv: string[], root?: string): number {
       ...(record.item === null ? { pr: record.pr } : { item: record.item }),
       result,
       ...(until === null ? {} : { until }),
+      next,
+    }),
+  );
+  return 0;
+}
+
+/**
+ * `<record> <token> failed --decision <file>`: a pass that stopped for a
+ * person records `failed` with the decision it framed, `text` being the
+ * decision's JSON. A decision the check refuses records nothing (exit 2,
+ * every problem named), so the pass can fix it and send it again.
+ */
+export function framedResultMain(
+  id: string,
+  token: string,
+  result: string,
+  text: string,
+  root?: string,
+): number {
+  const record = ownRecord(id, token, root);
+  if (record === null) return 2;
+  if (result !== "failed") {
+    console.error(
+      "jig dispatch result: --decision is a stop for a person's: record it with failed",
+    );
+    return 2;
+  }
+  const framed = framedResultOf(text, new Date().toISOString());
+  if (!framed.ok) {
+    console.error(
+      `jig dispatch result: the decision was not recorded: ${framed.failure.reason}`,
+    );
+    return 2;
+  }
+  const next = derivedNext(record.action, "gates failed", "result failed");
+  if (!recordResult(id, "failed", root, next, null, undefined, framed.value))
+    return already(id, root);
+  console.log(
+    JSON.stringify({
+      record: id,
+      ...(record.item === null ? { pr: record.pr } : { item: record.item }),
+      result: "failed",
+      decision: framed.value.digest,
       next,
     }),
   );

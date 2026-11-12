@@ -1351,6 +1351,16 @@ make, use the entry's term instead.
   other decision the agent takes itself and records where a person can
   reverse it
   ([ADR-0010](docs/adr/ADR-0010-parking-is-reserved-for-registry-classes.md)).
+- **Session-framed decision, dispatcher-framed decision** — the *framed
+  decision* a need on the dispatcher's line carries when it is not a
+  *park*. A **session-framed decision** is the one a dispatched follow-up's
+  or pickup's pass recorded with its result when it stopped for a person. A
+  **dispatcher-framed decision** is one the *tick* frames for a cause it
+  detects itself (a failed follow-up, a stalled pickup, a checkout another
+  tree holds, a drive handed to a person, a stuck launch record), from the
+  facts that identify it, with a fixed set of options that are steps the
+  tick carries out once a person chooses one
+  ([design](design/structured-answers.md#every-need-framed)).
 - **Decision class** — one row of the *HITL* registry, named by a short
   slug (`merge`, `scope`, `human-thread`, …): a kind of decision that must
   stay a person's. A repository lists its classes in

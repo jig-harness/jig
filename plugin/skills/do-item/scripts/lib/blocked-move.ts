@@ -36,6 +36,8 @@ import type { IssueKeys } from "./tracker/keys.ts";
 import {
   CANONICAL_STATES,
   type CanonicalState,
+  type StateContext,
+  trackerStateMaps,
   CLOSED_STATE_TYPES,
   type Tracker,
 } from "./tracker/port.ts";
@@ -58,13 +60,14 @@ export interface BlockedPr {
 /** What happened to one linked item. */
 export interface BlockedOutcome {
   item: string;
-  outcome: "blocked" | "returned" | "kept" | "refused";
+  outcome: "blocked" | "returned" | "kept" | "skipped" | "refused";
   detail: string;
 }
 
 type BlockTracker = Pick<
   Tracker,
   | "stateName"
+  | "stateMaps"
   | "getIssue"
   | "issueComments"
   | "transition"
@@ -84,10 +87,11 @@ function message(error: unknown): string {
 function canonicalOf(
   tracker: Pick<Tracker, "stateName">,
   name: string,
+  context: StateContext,
 ): CanonicalState | null {
   return (
     CANONICAL_STATES.find((s) => {
-      const configured = tracker.stateName(s);
+      const configured = tracker.stateName(s, context);
       return configured !== null && same(configured, name);
     }) ?? null
   );
@@ -95,11 +99,11 @@ function canonicalOf(
 
 /** Why the projection leaves this pull request's items as they are; `null` to project them. */
 export function standsAside(
-  tracker: Pick<Tracker, "stateName">,
+  tracker: Pick<Tracker, "stateName" | "stateMaps">,
   labels: LabelConfig,
   pr: Pick<BlockedPr, "labels" | "projected">,
 ): string | null {
-  if (tracker.stateName("blocked") === null)
+  if (trackerStateMaps(tracker).every((map) => map.blocked === null))
     return "issue_tracker.states.blocked is not set";
   if (wantOf(pr.projected) === "none") return "its ledger gives no state";
   if (hasCommand(labels, pr.labels, "hold"))
@@ -150,7 +154,13 @@ async function projectItem(
     const issue = await tracker.getIssue(key);
     if (issue === null)
       return { item: key, outcome: "refused", detail: `${key} does not read` };
-    const canonical = canonicalOf(tracker, issue.state.name);
+    if (tracker.stateName("blocked", issue) === null)
+      return {
+        item: key,
+        outcome: "skipped",
+        detail: `${key}: blocked is absent from its workflow`,
+      };
+    const canonical = canonicalOf(tracker, issue.state.name, issue);
     const isBlocked = canonical === "blocked";
     // The comments are read only where a write may follow.
     if ((want === "blocked") === isBlocked)
@@ -194,7 +204,13 @@ async function projectItem(
         decision.marker,
         now,
       );
-    return await unblock(tracker, pr.pr, key, decision.to as CanonicalState);
+    return await unblock(
+      tracker,
+      pr.pr,
+      key,
+      decision.to as CanonicalState,
+      issue,
+    );
   } catch (error) {
     return { item: key, outcome: "refused", detail: message(error) };
   }
@@ -253,8 +269,9 @@ async function unblock(
   pr: number,
   key: string,
   to: CanonicalState,
+  context: StateContext,
 ): Promise<BlockedOutcome> {
-  const name = tracker.stateName(to);
+  const name = tracker.stateName(to, context);
   if (name === null)
     return {
       item: key,

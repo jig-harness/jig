@@ -26,6 +26,7 @@
  * before the adapter is chosen; only the Jira adapter requires `site`.
  */
 
+import { parseStatesByType, type StatesByType } from "./state-maps.ts";
 import { isRecord } from "../../../../../../shared/guards.ts";
 import { TrackerConfigError } from "../config-error.ts";
 import { firstRepeat, nonEmpty, settingsSection } from "../settings-fields.ts";
@@ -54,6 +55,7 @@ export interface JiraSettings {
   /** `https://api.atlassian.com/ex/jira/<cloud id>`, no trailing slash; `null` = the site. */
   apiBase: string | null;
   issueType: string;
+  statesByType: StatesByType;
   /** `null` = the project's one sub-task type. */
   subtaskType: string | null;
   priorities: Record<PriorityName, string>;
@@ -74,6 +76,7 @@ export type BlockedFieldRole = (typeof BLOCKED_FIELD_ROLES)[number];
 export type BlockedFieldNames = Record<BlockedFieldRole, string | null>;
 
 const FIELDS = [
+  "states_by_type",
   "site",
   "api_base",
   "issue_type",
@@ -383,6 +386,7 @@ function blockedFieldsOf(v: unknown): BlockedFieldNames {
 export function parseJiraSettings(raw: unknown): JiraSettings {
   const section = sectionOf(raw);
   return {
+    statesByType: parseStatesByType(section.states_by_type),
     site: siteOf(section.site),
     apiBase: apiBaseOf(section.api_base),
     issueType:

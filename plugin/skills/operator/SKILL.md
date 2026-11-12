@@ -240,6 +240,8 @@ are not proof that full CI passed.
 | approve a parked question (take its recommendation) | `jig send drive@<owner>/<name> <PR> answer <key> --approve --dry-run` |
 | choose one option of a parked question | `jig send drive@<owner>/<name> <PR> answer <key> --choose '<option>' --dry-run` |
 | approve every parked question it may approve at once | `jig send drive@<owner>/<name> <PR> answer --all --approve --dry-run` |
+| approve a failed follow-up's decision (the key `jig ask --waiting` shows; a pickup's need is answered through `pickup@` and its item, a stopped drive's through `drive@`) | `jig send followup@<owner>/<name> <PR> answer <key> --approve --dry-run` |
+| choose one option of a need's decision | `jig send followup@<owner>/<name> <PR> answer <key> --choose '<option>' --dry-run` |
 | pause a drive | `jig send drive@<owner>/<name> <PR> pause --dry-run` |
 | hold a drive's pushes | `jig send drive@<owner>/<name> <PR> hold-push --dry-run` |
 | withdraw a pause | `jig send drive@<owner>/<name> <PR> resume pause --dry-run` |

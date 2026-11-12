@@ -382,6 +382,10 @@ export interface Action {
   release?: StaleClaim;
   /** For a follow-up's routine run again: the earlier question and the classes whose standing answers its prompt gives. */
   standing?: StandingAnswer;
+  /** For a need whose pass stopped for a person: the decision it framed with its result (`framed-result.ts`). */
+  framed?: import("./framed-result.ts").FramedResult;
+  /** For a need with a framed decision: the answers the tick read for it and its step on the one that counts (`station-answers.ts`). */
+  answered?: import("./station-answers.ts").StationAnswered;
 }
 
 /** What `--apply` did with one stale follow-up claim. */
@@ -626,7 +630,8 @@ export interface RepoReport {
   /** Targets that need nothing from the tick, by class: a pull request's ledger class, a pickup's, or a follow-up's. */
   quiet: Array<{
     target: string;
-    class: LedgerClass | PickupClass | FollowupClass;
+    /** `answered-hold`: a need a person answered Leave it to me, kept off Needs you for its facts (`station-answers.ts`). */
+    class: LedgerClass | PickupClass | FollowupClass | "answered-hold";
     why: string;
   }>;
 }
@@ -679,14 +684,15 @@ export interface LabelReport {
 
 /**
  * One item the projection moved to or out of `blocked`: `written` when the
- * tracker took it, `failed` when it refused it (tried again next tick),
+ * tracker took it, `skipped` when its workflow has no blocked state,
+ * `failed` when it refused it (tried again next tick),
  * `waits` when the tick's time was spent or the ledger changed since the
  * tick read it (`item` is then `null`: no item was read).
  */
 export interface BlockedWrite {
   target: string;
   item: string | null;
-  outcome: "written" | "failed" | "waits";
+  outcome: "written" | "skipped" | "failed" | "waits";
   detail: string;
 }
 
