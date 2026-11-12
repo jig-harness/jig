@@ -15,6 +15,7 @@ import {
 } from "../../do-item/scripts/lib/tracker/facets/config.ts";
 import {
   CLOSED_STATE_TYPES,
+  type CanonicalState,
   type Facet,
   type PoolIssue,
   type PoolQuery,
@@ -207,7 +208,7 @@ export function fakeTracker(
     team: "ENG",
     queries,
     childReads,
-    stateName: (s) => s,
+    stateName: (s: CanonicalState) => s,
     reach: () => Promise.resolve(),
     getIssue: unsupported("getIssue"),
     listComments: unsupported("listComments"),

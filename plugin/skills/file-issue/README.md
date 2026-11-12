@@ -190,6 +190,14 @@ is working it. The comment goes first and carries a hidden marker, so a
 run that stopped before the move finishes it next time without a second
 comment.
 
+Where only a person may move a ready issue back, set
+`file_issue.sweep.move: false` ([configuration
+reference](../../CONFIGURATION.md#file_issue)): the sweep then posts the
+same comment and marker and leaves each issue in its state. Such an issue
+stays in every later listing, so one that already carries the marker for
+what it lacks is passed over before the run's budget is counted, and is
+never commented on twice.
+
 It reads one tracker census within a minute, shared across the listing
 pages and the started-issue list. The listing holds at most 20 pages of
 100 incomplete issues; this bounds the report, not the size of that census.

@@ -28,6 +28,7 @@
  * The tick writes nothing to the tracker: `do-item`'s claim does.
  */
 import { renderBranchName } from "../../../skills/drive-pr/scripts/lib/pr-policy.ts";
+import { carried, returnCarried } from "../station-answer-store.ts";
 import type { IssueKeys } from "../../../skills/do-item/scripts/lib/tracker/keys.ts";
 import type {
   PoolIssue,
@@ -257,9 +258,22 @@ async function launchOne(
     marker: null,
     sessionId: sessionIdFor(vendor),
     mark: named.mark,
+    ...carried(repo.slug, action.target, id),
   };
-  const launched = headless(await startRecord(state, record, slots), record);
+  const launched = headless(await startOrReturn(state, record, slots), record);
   return { ...launched, detail: `${launched.detail}; ${route.detail}` };
+}
+
+/** Start the record; a launch that did not start hands the answer it was given back to the next one. */
+async function startOrReturn(
+  state: ApplyState,
+  record: LaunchRecord,
+  slots: Parameters<typeof startRecord>[2],
+): Promise<LaunchOutcome> {
+  const started = await startRecord(state, record, slots);
+  if (started.outcome !== "launched" && started.outcome !== "retried")
+    returnCarried(record.id, state.root);
+  return started;
 }
 
 /** The optional served-item facts which a pickup preserves in its launch record. */

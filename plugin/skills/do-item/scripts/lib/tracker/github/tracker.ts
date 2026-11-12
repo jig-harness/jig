@@ -614,7 +614,7 @@ export function gitHubTracker(client: Client): Tracker {
       ctx.board?.statusField ?? null,
       model.stateLabels,
     ]),
-    stateName: (state) => model.stateName(state),
+    stateName: model.stateName,
 
     async reach(signal) {
       await client.repositoryId(signal);

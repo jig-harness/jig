@@ -522,7 +522,48 @@ until the runtime can bind it to an account.
 ```sh
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> done|failed [--pr <number> | --none <reason>]
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> waits --until <time>
+bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> failed --decision <file>
 ```
+
+#### Every need is a decision
+
+A pass that stops for a person frames what it asks, as a drive frames a
+park: it writes a `parked-decision/v1` record (the question, two or more
+options each with what it changes and costs, the one it recommends and
+why, the class, the steps a person must take and what it already did) and
+records `failed --decision <file>`, which checks the record as a park's is
+and keeps it with the result; a record the check refuses records nothing,
+so the pass fixes it and sends it again. The need it raises (a failed
+follow-up, a pickup's question) carries that decision. For what the tick
+finds itself it frames the decision from the facts that identify it, with
+options it can carry out, each set ending with **Leave it to me** (no step,
+and the need leaves Needs you until its facts change):
+
+| Need | Key | The other options, and what the tick does |
+| --- | --- | --- |
+| a failed follow-up, or a stale claim again | `followup` | **Run it again**: deletes the follow-up's marker, so a later tick starts it again with your note in its prompt; **Record it done**: marks the existing marker done in place |
+| a stalled pickup, or a pickup's question it did not frame | `pickup` | **Release the claim**: moves the item back to the first state a pickup starts from, so a later tick picks it up afresh |
+| a checkout the workspace runtime does not list holds the launch's branch | `checkout` | **Detach the checkout**: detaches it at its commit, only when it is idle (clean, its commits on the remote, no drive or process in it) |
+| a drive handed to a person, or stopped with no cause | `drive` | **Re-arm the drive**: adds the `rearm` label |
+| a launch record stuck pending | `launch` | **Clear the record**: as `jig dispatch clear` does |
+
+A double claim, an unanswered nudge and an item assigned by someone who
+cannot write keep their free text. Answer a need's decision as a park is
+answered, in a comment on its pull request or forge issue (`answer
+followup: approve [<digest>]`), copied from the dashboard or sent with
+`jig send followup@owner/name#456 answer followup --approve --decision
+<digest>`. The tick of the host that owns the repository reads the
+comments each tick, counts an answer only from an author the forge
+vouches for, never its own login, and only when it names the decision's
+current digest and every person who answered chose the same option, then
+carries out the option once: it checks again that the step still may run
+(the stage is on, no hold label, the marker unchanged, no session holds the
+work, no open pull request carries the item, the checkout idle) and
+otherwise refuses with the reason, which the need shows; answering again
+tries again. A decision a pass framed starts that stage again (the
+follow-up's marker deleted, or the item released), and the session started
+next is handed the option you chose, narrowed by your note. Answers on an
+item of a tracker other than the forge are not read yet.
 
 **The steward** (the `steward` stage, with `steward.enabled: true` in the
 machine file) inspects what the rules leave stopped, under the owner host's
@@ -1392,6 +1433,7 @@ jig send <station>@<owner>/<name>#<key> <verb> [arguments] [--dry-run] [--as <lo
 | `rearm` | `drive` | the `rearm` dispatch label for a stopped drive | the dispatcher's next tick, which re-arms it on an admitted account in the existing worktree |
 | `hold`, `release` | `drive`, `followup` | the `hold` dispatch label, added or removed | the dispatcher's next tick, which keeps every stage off a held pull request |
 | `answer <key> <text>`, `answer <key> --approve`, `answer <key> --choose <option>`, `answer --all --approve` | `drive` | a comment on the pull request whose first line is `answer <key>: <text>`, or `answer <key>: approve [<digest>]` and `answer <key>: choose <option> [<digest>]` for a structured answer, one comment per item for `--all` | the re-arm, which hands the answer to the drive's passes as your verdict |
+| `answer <key> --approve`, `answer <key> --choose <option>` | `followup`, `pickup`, `drive` | for a need's decision other than a park's (a follow-up's, a pickup's, or the dispatcher's own framing), the same structured comment on the pull request, or on the item where the items are the forge's issues | the dispatcher's next tick on the host that owns the repository, which carries out the option once (see [Every need is a decision](#every-need-is-a-decision)) |
 | `pause`, `resume <hold-push\|pause\|stop>`, `stop`, `hold-push` | `drive` | a directive in the [mailbox](skills/drive-pr/README.md) of the working tree that holds the drive on this machine | the driver: `hold-push` before each push, `pause` and `stop` at its next round boundary |
 
 **It checks before it writes.** It reads the address first, through `jig
@@ -1409,6 +1451,9 @@ ask`'s readers, and refuses (exit `1`) a request the station cannot take:
   comments, a parked thread's replies) was read; a structured answer
   naming an option the park does not offer, `--approve` on a park with no
   recommendation, and one whose digest is no longer the park's (below);
+  to a need's decision, an answer whose key no need of the address carries
+  in this machine's newest line, your own words (the tick carries out an
+  option), and an item on a tracker other than the forge;
 - a mailbox directive already in force, a `resume` with nothing to withdraw,
   a drive no driver on this machine holds, and a drive another host holds,
   which it names: a directive reaches a driver on this machine only, so

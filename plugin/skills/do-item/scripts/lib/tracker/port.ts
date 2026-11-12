@@ -62,14 +62,36 @@ export type RequiredState = Exclude<CanonicalState, OptionalState>;
 export type StateNames = Record<RequiredState, string> &
   Record<OptionalState, string | null>;
 
-/** The tracker's name for `state`; `null` only for an optional state left unset. */
-export type StateNameOf = <S extends CanonicalState>(
-  state: S,
-) => S extends OptionalState ? string | null : string;
+/** A workflow map; a type may explicitly omit any state. */
+export type StateMap = Record<CanonicalState, string | null>;
+
+/** The native issue type, independently of the repository's work-type facet. */
+export type StateContext = string | { nativeType: string | null } | null;
+
+/** With issue context, any state may be absent from that workflow. */
+export interface StateNameOf {
+  <S extends CanonicalState>(
+    state: S,
+  ): S extends OptionalState ? string | null : string;
+  (state: CanonicalState, issue: StateContext): string | null;
+}
 
 /** `StateNameOf` over a configured mapping. */
 export function stateNameIn(states: StateNames): StateNameOf {
   return ((state: CanonicalState) => states[state]) as StateNameOf;
+}
+
+/** Every workflow map, or the repository map for adapters with one workflow. */
+export function trackerStateMaps(
+  tracker: Pick<Tracker, "stateName" | "stateMaps">,
+): StateMap[] {
+  return (
+    tracker.stateMaps?.() ?? [
+      Object.fromEntries(
+        CANONICAL_STATES.map((state) => [state, tracker.stateName(state)]),
+      ) as StateMap,
+    ]
+  );
 }
 
 /**
@@ -79,16 +101,46 @@ export function stateNameIn(states: StateNames): StateNameOf {
  * out: merged items wait under that name too, and would read as stalled work.
  */
 export function workingStates(
-  tracker: Pick<Tracker, "stateName">,
+  tracker: Pick<Tracker, "stateName" | "stateMaps">,
+  context?: StateContext,
 ): CanonicalState[] {
-  const prOpen = tracker.stateName("pr_open")?.trim().toLowerCase();
-  const parked = [
-    tracker.stateName("in_review"),
-    tracker.stateName("ops_pending"),
-  ].map((n) => n.trim().toLowerCase());
-  return prOpen === undefined || parked.includes(prOpen)
-    ? ["in_progress"]
-    : ["in_progress", "pr_open"];
+  const maps =
+    context === undefined
+      ? trackerStateMaps(tracker)
+      : [
+          Object.fromEntries(
+            CANONICAL_STATES.map((state) => [
+              state,
+              tracker.stateName(state, context),
+            ]),
+          ) as StateMap,
+        ];
+  const working = new Set<CanonicalState>();
+  for (const map of maps) {
+    if (map.in_progress !== null) working.add("in_progress");
+    const prOpen = map.pr_open?.trim().toLowerCase();
+    const parked = [map.in_review, map.ops_pending].map((name) =>
+      name?.trim().toLowerCase(),
+    );
+    if (prOpen !== undefined && !parked.includes(prOpen))
+      working.add("pr_open");
+  }
+  return ["in_progress", "pr_open"].filter((state) =>
+    working.has(state as CanonicalState),
+  ) as CanonicalState[];
+}
+
+/** Whether this issue is actively worked in its own workflow. */
+export function isWorkingIssue(
+  tracker: Pick<Tracker, "stateName" | "stateMaps">,
+  issue: Pick<PoolIssue, "nativeType" | "state">,
+): boolean {
+  const context = issue.nativeType ?? null;
+  return workingStates(tracker, context).some(
+    (state) =>
+      tracker.stateName(state, context)?.trim().toLowerCase() ===
+      issue.state.name.trim().toLowerCase(),
+  );
 }
 
 /**
@@ -104,6 +156,8 @@ export interface IssueState {
 
 /** A related issue as a listing returns it (a child, a parent). */
 export interface IssueSummary {
+  /** The tracker's native issue type, where workflows depend on it. */
+  nativeType?: string | null;
   identifier: string;
   title: string;
   state: IssueState;
@@ -275,6 +329,8 @@ export const CLOSED_STATE_TYPES = [
  * states of one category), and a claim re-check compares ids.
  */
 export interface PoolIssue {
+  /** The tracker's own issue type when the adapter has type-specific workflows. */
+  nativeType?: string | null;
   /** Complete labels hidden by ordinary pool display, for migration validation. */
   hiddenLabels?: string[];
   /** Nonempty native/field stores whose values have no canonical mapping. Never overwrite them through a canonical move. */
@@ -628,6 +684,8 @@ export interface Tracker {
   readonly readinessKey?: string;
   /** The tracker's own name for a canonical state; `null` for an optional state left unset. */
   stateName: StateNameOf;
+  /** Every effective workflow map, including the repository default; absent for one workflow. */
+  stateMaps?(): StateMap[];
   /**
    * Resolves when the tracker answers for this team: the credential works and
    * the team (Linear) or repository (GitHub) exists. Reads no issue. An

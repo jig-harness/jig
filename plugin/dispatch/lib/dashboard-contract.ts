@@ -51,9 +51,12 @@ export interface LineDecision {
   decision?: import("../../shared/decisions/park.ts").ParkedDecision;
   /** The named person; absent on older parks. Routing does not restrict answers. */
   person?: string;
-  /** The thread or finding the answer goes to: `answer <key>: …`. */
+  /** The thread or finding the answer goes to, or a station's key (`followup`, `pickup`, `checkout`, `drive`, `launch`): `answer <key>: …`. */
   key: string;
+  /** `thread`: answered by a reply on its review thread; `finding`: by an `answer <key>:` line in a comment, which a station's decision is too. */
   kind: "thread" | "finding";
+  /** For a need's decision other than a park's (`shared/decisions/station.ts`): the station `jig send` answers it through, where the answer comment goes, and who framed it. Absent on a park's decision. */
+  answer?: import("../../shared/decisions/station.ts").StationAnswer;
   /** The decision as the drive recorded it, one entry per line: Markdown with `## Question`, `## Options`, `## Recommended` and so on, or a sentence for a park from before parks were framed. */
   lines: string[];
   /** Its first line's question; `null` when the lines hold none in the drive's form. */
@@ -70,6 +73,13 @@ export interface LineDecision {
   answers?: import("../../shared/decision-card.ts").ShownAnswer[];
   /** Why those answers do not settle it; absent when it has none. */
   answerState?: import("../../shared/decision-card.ts").AnswerState;
+  /** For a need's decision: the answer the tick acted on, once, and how its step went (`null` while it has not written it); absent when no answer counted. */
+  acted?: {
+    option: string;
+    author: string;
+    outcome: "done" | "refused" | "held" | null;
+    detail: string | null;
+  };
 }
 
 /** A park on a ledger the tick read, kept so the next tick can tell how it left (`park-events.ts`). */

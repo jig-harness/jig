@@ -474,7 +474,10 @@ export function withFacets(
 
   return {
     ...rest,
-    configKey: JSON.stringify(facets),
+    configKey:
+      core.configKey === undefined
+        ? JSON.stringify(facets)
+        : JSON.stringify([core.configKey, facets]),
     async getIssue(key) {
       const issue = await rest.getIssue(key);
       return issue === null ? null : withValues(issue);

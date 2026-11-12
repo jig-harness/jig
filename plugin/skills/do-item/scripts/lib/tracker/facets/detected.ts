@@ -192,7 +192,7 @@ export function defaultedTracker(inputs: DefaultInputs): Tracker {
   }
   return {
     ...base,
-    stateName: (state) => base.stateName(state),
+    stateName: base.stateName,
     getIssue: (key) => on((t) => t.getIssue(key)),
     openIssues: (query) => on((t) => t.openIssues(query)),
     openChildren: (key) => on((t) => t.openChildren(key)),

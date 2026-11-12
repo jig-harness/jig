@@ -85,8 +85,8 @@ export function reportOperations(
   client: Client,
   stores: Pick<JiraFacetStores, "read">,
 ): ReportOps {
-  const { model, project } = client;
-  const open = openClause(model.stateName("blocked"));
+  const { model, project, settings } = client;
+  const open = openClause(model.stateNames("blocked"));
   const ownKey = new RegExp(`^${project}-\\d+$`);
 
   function stateType(issue: JiraIssue): string {
@@ -204,7 +204,9 @@ export function reportOperations(
       const found = await searchPages(
         client.transport,
         `parent in ${keyList(batch)} AND ${open}${ORDER}`,
-        ["parent"],
+        Object.keys(settings.statesByType).length === 0
+          ? ["parent"]
+          : ["parent", "status", "issuetype"],
         `open children of ${batch.join(", ")}`,
         signal,
       );
@@ -213,11 +215,40 @@ export function reportOperations(
           child.fields,
           `issue ${String(child.key)}.fields`,
         );
+        if (
+          Object.keys(settings.statesByType).length > 0 &&
+          !isOpenChild(fields, String(child.key))
+        )
+          continue;
         if (fields.parent !== null && typeof fields.parent === "object")
           out.add(String((fields.parent as Record<string, unknown>).key));
       }
     }
     return out;
+  }
+
+  /** Check a child against its own type after a union status query. */
+  function isOpenChild(fields: Record<string, unknown>, key: string): boolean {
+    const status = record(fields.status, `issue ${key}.status`);
+    const category = record(
+      status.statusCategory,
+      `issue ${key}.status.statusCategory`,
+    );
+    const issueType = record(fields.issuetype, `issue ${key}.issuetype`);
+    if (
+      typeof status.name !== "string" ||
+      typeof category.key !== "string" ||
+      typeof issueType.name !== "string"
+    )
+      throw new JiraApiError(
+        `issue ${key}: its child state or issue type is unreadable`,
+      );
+    const read = model.read({
+      status: { id: "", name: status.name, category: category.key },
+      issueType: { name: issueType.name },
+      resolution: null,
+    });
+    return !["completed", "canceled", "duplicate"].includes(read.state.type);
   }
 
   async function pools(
@@ -232,6 +263,7 @@ export function reportOperations(
       const { state } = model.read(issue);
       return {
         identifier: issue.key,
+        nativeType: issue.issueType?.name ?? null,
         title: issue.title,
         url: issue.url,
         priority: model.priorityOf(issue.priority),
@@ -302,7 +334,7 @@ export function reportOperations(
     const names = [
       ...new Set(
         states
-          .map((s) => model.stateName(s))
+          .flatMap((s) => model.stateNames(s))
           .filter((n): n is string => n !== null),
       ),
     ];
@@ -367,7 +399,7 @@ export function reportOperations(
         inProject(
           project,
           await label(l, signal),
-          startedClause(model.stateName("blocked")),
+          startedClause(model.stateNames("blocked")),
         ),
         `started issues labelled '${l}'`,
         signal,
@@ -498,7 +530,12 @@ export function reportOperations(
         ),
         `the pool of ${query.withSomeOf.map((l) => stringList(l)).join(" and ")}`,
       );
-      return pools(read);
+      return pools(
+        read.filter(
+          (issue) =>
+            !["completed", "canceled", "duplicate"].includes(stateType(issue)),
+        ),
+      );
     },
 
     async openChildren(key) {
@@ -508,10 +545,15 @@ export function reportOperations(
 
     async openPopulation(signal) {
       return pools(
-        await client.search(
-          inProject(project, open, ...(await scope(signal))),
-          `open issues of ${project}`,
-          signal,
+        (
+          await client.search(
+            inProject(project, open, ...(await scope(signal))),
+            `open issues of ${project}`,
+            signal,
+          )
+        ).filter(
+          (issue) =>
+            !["completed", "canceled", "duplicate"].includes(stateType(issue)),
         ),
         signal,
       );
