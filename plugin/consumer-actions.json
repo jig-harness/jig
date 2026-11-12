@@ -1,0 +1,5 @@
+{
+  "$comment": "Derived from the changelog's released sections by the changelog skill (consumer-actions-record.ts); the release step rewrites it, so never edit it by hand.",
+  "schema": 1,
+  "releases": []
+}

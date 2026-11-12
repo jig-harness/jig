@@ -58,6 +58,10 @@ export interface ChangelogConfig {
   authors: boolean;
   tagPrefix: string;
   release: { push: "direct" | "pull-request"; branch: string };
+  /** Whether a breaking entry must declare a consumer action (consumer-actions.ts). */
+  consumerActions: boolean;
+  /** Where the release step derives the consumer-actions record; null: no record. */
+  consumerActionsRecord: string | null;
 }
 
 /** Every field of the section, as the schema and CONFIGURATION.md list them. */
@@ -75,6 +79,8 @@ export const FIELDS = [
   "tag_prefix",
   "release.push",
   "release.branch",
+  "consumer_actions",
+  "consumer_actions_record",
 ] as const;
 
 export const DEFAULTS = {
@@ -83,6 +89,7 @@ export const DEFAULTS = {
   tagPrefix: "v",
   push: "direct",
   branch: "changelog-release",
+  consumerActions: false,
 } as const;
 
 const WORKFLOWS = ".github/workflows/";
@@ -325,6 +332,18 @@ function refuseUnknownKeys(section: Record<string, unknown>): void {
       );
 }
 
+/** The consumer-actions record's path; null when unset. Never a workflow, which the release may not write. */
+function recordSetting(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  const field = "changelog.consumer_actions_record";
+  const path = place(field, value, "file");
+  if (reachesWorkflows(path))
+    throw new ChangelogError(
+      `${field}: ${path} is a workflow under ${WORKFLOWS}, which the release may not change`,
+    );
+  return path;
+}
+
 /** The `after_version` command; null when unset. */
 function commandSetting(value: unknown): string | null {
   if (value === undefined || value === null) return null;
@@ -376,6 +395,12 @@ export function parseChangelogSection(
       "text a tag name may start with",
     ),
     release,
+    consumerActions: flag(
+      "changelog.consumer_actions",
+      section.consumer_actions,
+      DEFAULTS.consumerActions,
+    ),
+    consumerActionsRecord: recordSetting(section.consumer_actions_record),
   };
   if (section.file === undefined) return null;
   config.file = place("changelog.file", section.file, "file");
@@ -489,6 +514,12 @@ export function changes(
   compare("tag_prefix", before.tagPrefix, after.tagPrefix);
   compare("release.push", before.release.push, after.release.push);
   compare("release.branch", before.release.branch, after.release.branch);
+  compare("consumer_actions", before.consumerActions, after.consumerActions);
+  compare(
+    "consumer_actions_record",
+    before.consumerActionsRecord,
+    after.consumerActionsRecord,
+  );
   return out;
 }
 
@@ -501,15 +532,34 @@ export interface Resolved extends NotesConfig {
 
 /**
  * A placeholder's globs may not reach a file the release writes itself (the
- * changelog or a version file): its text would be computed twice.
+ * changelog, a version file or the consumer-actions record): its text would be
+ * computed twice. Nor may the record be the changelog or a version file.
  */
 function refuseWrittenPlaceholders(
   config: ChangelogConfig,
   version: VersionSource,
 ): void {
+  const versionFiles =
+    version.kind === "files" ? version.files.map((f) => f.path) : [];
+  const record = config.consumerActionsRecord;
+  if (record !== null && [config.file, ...versionFiles].includes(record))
+    throw new ChangelogError(
+      `changelog.consumer_actions_record: ${record} is a file the release writes as the changelog or a version file; name a file of its own`,
+    );
+  if (
+    record !== null &&
+    (record === OVERLAY_RELPATH ||
+      record === ".git" ||
+      record.startsWith(".git/") ||
+      posix.dirname(record) === config.notesDir)
+  )
+    throw new ChangelogError(
+      `changelog.consumer_actions_record: ${record} is the configuration, repository metadata or a place the release reads change notes from; name a file of its own`,
+    );
   const written = [
     config.file,
-    ...(version.kind === "files" ? version.files.map((f) => f.path) : []),
+    ...versionFiles,
+    ...(record === null ? [] : [record]),
   ];
   for (const { files } of config.placeholders)
     for (const pattern of files) {
@@ -544,6 +594,10 @@ export function resolve(
   if (format === null)
     throw new ChangelogError(
       `${config.file} does not say which format it is in (an ## [Unreleased] heading or a link to keepachangelog.com is Keep a Changelog; a link to common-changelog.org is Common Changelog): set changelog.format to ${FORMAT_IDS.join(" or ")}`,
+    );
+  if (config.consumerActionsRecord !== null && format.credits)
+    throw new ChangelogError(
+      `changelog.consumer_actions_record: the record is derived from the changelog's entries as the notes wrote them, and ${format.id} appends a reference and authors to each: leave the field out, or keep the changelog in keep-a-changelog`,
     );
   const pullRequest = config.release.push === "pull-request";
   const version = resolveVersionSource(config.version, read);
