@@ -16,6 +16,9 @@
  * transaction, under SQLite's write lock (two copies opening a database at
  * once migrate it once). A change to a schema adds an entry and never edits
  * one a released plugin ran. The version is `PRAGMA user_version`.
+ * Migration digests distinguish histories at the same version. Legacy
+ * databases are structurally verified before a baseline is recorded; that
+ * baseline does not prove which SQL or data changes previously ran.
  *
  * **The minimum reader.** A database also records, in its `db_meta` row, the
  * lowest schema version a reader must know to use it. Each migration declares
@@ -47,6 +50,13 @@ import { chmodSync, existsSync, mkdirSync, statSync } from "node:fs";
 import { dirname } from "node:path";
 import { swallow } from "../errors.ts";
 import { failed, ok, type Outcome } from "../outcome.ts";
+import {
+  baselineMigrations,
+  needsHistory,
+  recordMigration,
+  verifyMigrations,
+} from "./migrations.ts";
+import { sourceDatabaseRefusal } from "./source.ts";
 
 /** How long a write waits for another connection's transaction to end. */
 const BUSY_MS = 10_000;
@@ -69,7 +79,11 @@ export interface DatabaseSpec {
 }
 
 /** Why a database could not be opened. */
-export type OpenCode = "newer-schema" | "unopenable";
+export type OpenCode =
+  | "newer-schema"
+  | "unopenable"
+  | "migration-history"
+  | "source-state";
 
 /** The meta row: the instance id, and the version and minimum reader it was written for. */
 const META = `
@@ -132,12 +146,18 @@ function recordedMinimum(db: Database, version: number): number {
 function refusal(
   db: Database,
   spec: DatabaseSpec,
-): Outcome<never, "newer-schema"> | null {
+): Outcome<never, OpenCode> | null {
   const version = userVersion(db);
   const known = spec.migrations.length;
-  if (version <= known) return null;
+  if (version <= known) {
+    const verified = verifyMigrations(db, spec, version);
+    return verified.ok ? null : verified;
+  }
   const minReader = recordedMinimum(db, version);
-  if (minReader <= known) return null;
+  if (minReader <= known) {
+    const verified = verifyMigrations(db, spec, version);
+    return verified.ok ? null : verified;
+  }
   return failed(
     "newer-schema",
     `${spec.path} is at state schema version ${version}, which a newer plugin wrote and which needs a reader of version ${minReader} or later; this plugin knows version ${known}. Update the plugin, or move the file aside to start a new one`,
@@ -150,18 +170,19 @@ function refusal(
  * read again under the write lock, since another process may have migrated
  * it first.
  */
-function migrate(
-  db: Database,
-  spec: DatabaseSpec,
-): Outcome<null, "newer-schema"> {
+function migrate(db: Database, spec: DatabaseSpec): Outcome<null, OpenCode> {
   return db
-    .transaction((): Outcome<null, "newer-schema"> => {
+    .transaction((): Outcome<null, OpenCode> => {
       const refused = refusal(db, spec);
       if (refused !== null) return refused;
       const known = spec.migrations.length;
       const version = userVersion(db);
-      for (let v = version; v < known; v++)
-        db.run(spec.migrations[v]?.sql as string);
+      baselineMigrations(db, spec, version);
+      for (let v = version; v < known; v++) {
+        const migration = spec.migrations[v] as Migration;
+        db.run(migration.sql);
+        recordMigration(db, migration, v + 1);
+      }
       const now = Math.max(version, known);
       if (now !== version) db.run(`PRAGMA user_version = ${now}`);
       db.run(META);
@@ -189,10 +210,28 @@ function migrate(
 /** Whether the database needs a write before it is current: a migration, or its meta row. */
 function needsWrite(db: Database, spec: DatabaseSpec): boolean {
   const version = userVersion(db);
+  if (needsHistory(db, version)) return true;
   if (version < spec.migrations.length) return true;
   if (version > spec.migrations.length) return false;
   const meta = metaRow(db);
   return meta === null || meta.version !== version;
+}
+
+/** The compatibility decision and its write requirement read one SQLite snapshot. */
+function inspectDatabase(
+  db: Database,
+  spec: DatabaseSpec,
+): {
+  readonly refusal: Outcome<never, OpenCode> | null;
+  readonly write: boolean;
+} {
+  return db.transaction(() => {
+    const refused = refusal(db, spec);
+    return {
+      refusal: refused,
+      write: refused === null && needsWrite(db, spec),
+    };
+  })();
 }
 
 interface Open {
@@ -242,14 +281,14 @@ function connect(spec: DatabaseSpec): Outcome<Database, OpenCode> {
     );
   }
   try {
-    const refused = refusal(db, spec);
-    if (refused !== null) {
+    const inspected = inspectDatabase(db, spec);
+    if (inspected.refusal !== null) {
       db.close();
-      return refused;
+      return inspected.refusal;
     }
     db.run("PRAGMA journal_mode = WAL");
     db.run("PRAGMA foreign_keys = ON");
-    if (needsWrite(db, spec)) {
+    if (inspected.write) {
       const migrated = migrate(db, spec);
       if (!migrated.ok) {
         db.close();
@@ -267,6 +306,28 @@ function connect(spec: DatabaseSpec): Outcome<Database, OpenCode> {
   return ok(db);
 }
 
+/** Re-check a held connection after another process or caller changed its schema. */
+function refreshConnection(
+  db: Database,
+  spec: DatabaseSpec,
+): Outcome<Database, OpenCode> {
+  try {
+    const inspected = inspectDatabase(db, spec);
+    if (inspected.refusal !== null) return inspected.refusal;
+    if (inspected.write) {
+      const migrated = migrate(db, spec);
+      if (!migrated.ok) return migrated;
+    }
+    return ok(db);
+  } catch (error) {
+    return failed(
+      "unopenable",
+      `${spec.path} cannot be opened: ${error instanceof Error ? error.message : String(error)}`,
+      error,
+    );
+  }
+}
+
 /**
  * The database at `spec.path`, opened once per process: created and migrated
  * to this copy's schema when it is new or older, used as it is when a newer
@@ -276,26 +337,10 @@ function connect(spec: DatabaseSpec): Outcome<Database, OpenCode> {
  * been removed or replaced.
  */
 export function openDatabase(spec: DatabaseSpec): Outcome<Database, OpenCode> {
+  const sourceRefusal = sourceDatabaseRefusal(spec.path);
+  if (sourceRefusal !== null) return sourceRefusal;
   const reused = cached(spec.path);
-  if (reused !== null) {
-    // Another process may have migrated the file since it was opened, and
-    // this call may ask for another schema than the one that opened it.
-    try {
-      const refused = refusal(reused, spec);
-      if (refused !== null) return refused;
-      if (needsWrite(reused, spec)) {
-        const migrated = migrate(reused, spec);
-        if (!migrated.ok) return migrated;
-      }
-    } catch (error) {
-      return failed(
-        "unopenable",
-        `${spec.path} cannot be opened: ${error instanceof Error ? error.message : String(error)}`,
-        error,
-      );
-    }
-    return ok(reused);
-  }
+  if (reused !== null) return refreshConnection(reused, spec);
   const opened = connect(spec);
   if (!opened.ok) return opened;
   const id = fileId(spec.path);
@@ -324,20 +369,22 @@ export interface ReadOnlyDatabase {
 export function openReadOnly(
   spec: DatabaseSpec,
 ): Outcome<ReadOnlyDatabase | null, OpenCode> {
+  const sourceRefusal = sourceDatabaseRefusal(spec.path);
+  if (sourceRefusal !== null) return sourceRefusal;
   if (!existsSync(spec.path)) return ok(null);
   let db: Database | undefined;
   try {
     db = new Database(spec.path, { readonly: true });
     db.run(`PRAGMA busy_timeout = ${BUSY_MS}`);
-    const refused = refusal(db, spec);
-    if (refused !== null) {
+    const inspected = inspectDatabase(db, spec);
+    if (inspected.refusal !== null) {
       db.close();
-      return refused;
+      return inspected.refusal;
     }
     return ok({
       db,
       version: userVersion(db),
-      behind: needsWrite(db, spec),
+      behind: inspected.write,
     });
   } catch (error) {
     db?.close();
@@ -357,6 +404,7 @@ export function closeDatabase(path: string): void {
 
 /** The schema version of the database at `path`, read without migrating it; `null` when it cannot be read. */
 export function schemaVersion(path: string): number | null {
+  if (sourceDatabaseRefusal(path) !== null) return null;
   try {
     const db = new Database(path, { readonly: true });
     try {
