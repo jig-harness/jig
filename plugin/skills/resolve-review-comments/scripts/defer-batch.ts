@@ -224,6 +224,7 @@ import {
 } from "../../../shared/consumer.ts";
 import {
   DEFAULT_TRACKER_LABELS,
+  isEpic,
   parseTrackerLabels,
 } from "../../../shared/tracker-labels.ts";
 import { fail, readStdinAll, runMain } from "../../../shared/cli.ts";
@@ -311,7 +312,6 @@ const labels = (() => {
   }
 })();
 export const PROVENANCE_LABEL = labels.followup;
-export const EPIC_LABEL = labels.epic;
 export const BATCH_REPOS = consumer.taxonomy?.repos ?? [];
 export const BATCH_TYPES = consumer.taxonomy?.types ?? [];
 export const REVIEW_CATEGORIES = consumer.taxonomy?.categories ?? [];
@@ -2416,9 +2416,8 @@ export async function runDeferBatch(
     // PARENTLESS, discarding the real parent the table asks for. The epic label
     // (`issue_tracker.labels.epic`) exists for exactly this question, so ask
     // it.
-    const originatingIsEpic = issue.labels.nodes.some(
-      (n) => n.name === EPIC_LABEL,
-    );
+    const names = issue.labels.nodes.map((n) => n.name);
+    const originatingIsEpic = isEpic({ labels: names }, labels);
     if (!args.noParent && !originatingIsEpic && issue.parent) {
       parentId = issue.parent.id;
     }
@@ -2429,7 +2428,7 @@ export async function runDeferBatch(
       projectId = issue.project?.id;
       projectMilestoneId = issue.projectMilestone?.id;
     }
-    inherited = inheritedContextLabels(issue.labels.nodes.map((n) => n.name));
+    inherited = inheritedContextLabels(names);
   } else {
     assertNotAborted(signal, "the team lookup");
     const data = await linear(

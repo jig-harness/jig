@@ -137,6 +137,8 @@ export interface BatchPolicy extends WorkBatchSettings {
   /** A label starting with one of these is solo-only too (the `<hitl>:` facets). */
   soloFlagPrefixes: string[];
   epicLabel: string;
+  /** `issue_tracker.labels.epic_types`: issue types that mark an epic. */
+  epicTypes: string[];
   followupLabel: string;
   /** The repository label a batch item must carry; `null` = not checked. */
   repoLabel: string | null;
@@ -500,6 +502,7 @@ export function batchPolicy(
     soloFlags,
     soloFlagPrefixes: [`${labels.hitl}:`],
     epicLabel: labels.epic,
+    epicTypes: labels.epicTypes,
     followupLabel: labels.followup,
     repoLabel,
     repoLabelImplied:

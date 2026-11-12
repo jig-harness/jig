@@ -701,6 +701,13 @@ fields:
   issue_tracker.labels.epic:
     type: string
     read_by: [do-item, resolve-review-comments, drive-pr, work-batch, file-issue, reflect, dispatch]
+  issue_tracker.labels.epic_types:
+    type: list
+    items: string
+    distinct: true
+    nonempty: true
+    read_by: [do-item, resolve-review-comments, drive-pr, work-batch, file-issue, reflect, dispatch]
+    since: 0.220.0
   issue_tracker.labels.hitl:
     type: string
     read_by: [do-item, decide, work-batch]
@@ -851,6 +858,13 @@ fields:
     read_by: [do-item]
     repository_only: true
     since: 0.100.0
+  specs.verification_section:
+    type: string
+    pattern: "^[ \\t]*[^#\\s][^\\r\\n]*$"
+    default: Verification
+    read_by: [do-item]
+    repository_only: true
+    since: 0.222.0
 
   workspace_name.template:
     type: string

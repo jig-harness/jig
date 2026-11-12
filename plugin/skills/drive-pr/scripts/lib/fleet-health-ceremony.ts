@@ -4,8 +4,17 @@ import type {
   IssueFact,
   WindowSpec,
 } from "../../../do-item/scripts/lib/tracker/port.ts";
+import {
+  type EpicRecognition,
+  isEpic,
+} from "../../../../shared/tracker-labels.ts";
 /** The default epic label, when a caller names none. */
 export const DEFAULT_EPIC_LABEL = "epic";
+/** The default epic: the default label, no issue types. */
+const DEFAULT_EPIC: EpicRecognition = {
+  epic: DEFAULT_EPIC_LABEL,
+  epicTypes: [],
+};
 
 /** Everything the sensor needs to know about one PR. */
 export interface PrFact {
@@ -39,12 +48,12 @@ export interface PrFact {
  * to no epic at all.
  */
 export function epicOf(
-  issue: Pick<IssueFact, "id" | "labels" | "ancestors">,
-  epicLabel: string = DEFAULT_EPIC_LABEL,
+  issue: Pick<IssueFact, "id" | "labels" | "nativeType" | "ancestors">,
+  epic: EpicRecognition = DEFAULT_EPIC,
 ): string | null {
-  if (issue.labels.includes(epicLabel)) return issue.id;
+  if (isEpic(issue, epic)) return issue.id;
   for (const a of issue.ancestors) {
-    if (a.labels.includes(epicLabel)) return a.id;
+    if (isEpic(a, epic)) return a.id;
   }
   return null;
 }
@@ -95,13 +104,13 @@ export function inWindow(iso: string | null, w: WindowSpec): boolean {
 export function epicsOfPr(
   pr: Pick<PrFact, "issueRefs">,
   issues: ReadonlyMap<string, IssueFact>,
-  epicLabel: string = DEFAULT_EPIC_LABEL,
+  by: EpicRecognition = DEFAULT_EPIC,
 ): string[] {
   const out = new Set<string>();
   for (const ref of pr.issueRefs) {
     const issue = issues.get(ref);
     if (issue === undefined) continue;
-    const epic = epicOf(issue, epicLabel);
+    const epic = epicOf(issue, by);
     if (epic !== null) out.add(epic);
   }
   return [...out].sort((a, b) => a.localeCompare(b));
@@ -149,7 +158,7 @@ function collectPrUnits(
   unitsFor: (epic: string) => EpicUnits,
 ): void {
   const { cfg, window: w } = input;
-  const epicLabel = cfg.labels.epic;
+  const by = cfg.labels;
   for (const pr of input.prs) {
     const merged =
       pr.state === "MERGED" &&
@@ -162,7 +171,7 @@ function collectPrUnits(
       (at, i) => i + 1 > cfg.ceremony.freeRounds && inWindow(at, w),
     ).length;
     if (!merged && rearms === 0 && beyond === 0) continue;
-    for (const epic of epicsOfPr(pr, input.issues, epicLabel))
+    for (const epic of epicsOfPr(pr, input.issues, by))
       addPrActivity(unitsFor(epic), pr.number, { merged, rearms, beyond });
   }
 }
@@ -185,9 +194,9 @@ function collectIssueUnits(
   unitsFor: (epic: string) => EpicUnits,
 ): void {
   const { cfg, window: w } = input;
-  const epicLabel = cfg.labels.epic;
+  const by = cfg.labels;
   for (const issue of input.followups) {
-    const e = epicOf(issue, epicLabel);
+    const e = epicOf(issue, by);
     if (e !== null && inWindow(issue.createdAt, w))
       unitsFor(e).ceremony.followupsMinted.push(issue.id);
   }
@@ -196,12 +205,12 @@ function collectIssueUnits(
   // charging an epic twice for the same issue would inflate every ratio.
   const followupIds = new Set(input.followups.map((i) => i.id));
   for (const issue of input.sdlcIssues) {
-    const e = epicOf(issue, epicLabel);
+    const e = epicOf(issue, by);
     // An epic itself is not ceremony inside its own tree (nor is a follow-up
     // already counted above).
     if (
       e !== null &&
-      !issue.labels.includes(epicLabel) &&
+      !isEpic(issue, by) &&
       !followupIds.has(issue.id) &&
       inWindow(issue.createdAt, w)
     ) {
@@ -216,15 +225,15 @@ function collectCompletedUnits(
   unitsFor: (epic: string) => EpicUnits,
 ): void {
   const { cfg, window: w } = input;
-  const epicLabel = cfg.labels.epic;
+  const by = cfg.labels;
   for (const issue of input.completed) {
     if (
       (cfg.labels.followup !== null &&
         issue.labels.includes(cfg.labels.followup)) ||
-      issue.labels.includes(epicLabel)
+      isEpic(issue, by)
     )
       continue;
-    const e = epicOf(issue, epicLabel);
+    const e = epicOf(issue, by);
     if (
       e !== null &&
       issue.stateType === "completed" &&
@@ -270,7 +279,7 @@ export function unattributedCeremony(input: UnitsInput): number {
   const { cfg, window: w } = input;
   let n = 0;
   for (const pr of input.prs) {
-    if (epicsOfPr(pr, input.issues, cfg.labels.epic).length > 0) continue;
+    if (epicsOfPr(pr, input.issues, cfg.labels).length > 0) continue;
     n += (pr.driveRearms ?? []).filter((at) => inWindow(at, w)).length;
     n += pr.rounds.filter(
       (at, i) => i + 1 > cfg.ceremony.freeRounds && inWindow(at, w),
@@ -280,8 +289,7 @@ export function unattributedCeremony(input: UnitsInput): number {
   for (const issue of [...input.followups, ...input.sdlcIssues]) {
     if (seen.has(issue.id)) continue;
     seen.add(issue.id);
-    if (epicOf(issue, cfg.labels.epic) === null && inWindow(issue.createdAt, w))
-      n++;
+    if (epicOf(issue, cfg.labels) === null && inWindow(issue.createdAt, w)) n++;
   }
   return n;
 }

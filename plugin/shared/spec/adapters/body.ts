@@ -1,10 +1,13 @@
 /**
  * The `body` adapter: requirements, acceptance criteria and tasks written in
- * the work item's own body. Every repository has it.
+ * the work item's own body, and proposed verification commands. Every repository has it.
  *
  * The resolver hands it one recognised section at a time: the section the
  * configuration names (`## Spec` by default), `## Requirements` or
- * `## Acceptance criteria`. It reads the ids the text's own conventions give:
+ * `## Acceptance criteria`, or the configured verification heading
+ * (`## Verification` by default). Verification reads each nonempty content
+ * line as a proposed command, including code; its ids are derived from the
+ * exact command text. Other sections read the ids the text's conventions give:
  *
  * - a leading id of capital letters, a hyphen and a number (`FR-001`,
  *   `AC-1`, `NFR-2.1`), bare or wrapped in `**`, `` ` `` or `[]`; `FR`, `NFR`
@@ -35,6 +38,7 @@ import type {
   SpecReference,
 } from "../adapter.ts";
 import { type MarkdownLine, trimEndOf } from "../markdown.ts";
+import { verificationCommands } from "../verification.ts";
 
 const ID = "[A-Z][A-Z0-9]*-\\d+(?:\\.\\d+)*";
 const REQUIREMENT_ID = /^(?:FR|NFR|REQ)-\d+(?:\.\d+)*$/;
@@ -205,12 +209,21 @@ function servedRequirement(text: string): string | null {
   return named.size === 1 ? ([...named][0] ?? null) : null;
 }
 
-/** Read one section's classified lines into the three lists. */
+/** Read one section's classified lines into the lists. */
 function readSection(
   lines: readonly MarkdownLine[],
   section: BodySectionKind,
 ): AdapterRead {
-  const read: AdapterRead = { requirements: [], acceptance: [], tasks: [] };
+  const read: AdapterRead = {
+    requirements: [],
+    acceptance: [],
+    tasks: [],
+    verification: [],
+  };
+  if (section === "verification") {
+    read.verification = verificationCommands(lines);
+    return read;
+  }
   const taken = new Set<string>();
   const all = blocks(lines);
   if (all.length === 0) return read;

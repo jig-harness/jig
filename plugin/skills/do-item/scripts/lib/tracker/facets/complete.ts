@@ -1,8 +1,9 @@
 /**
  * The filing check (design/tracker-facets.md, "Checked inside the write"):
  * a new issue carries a type, a priority (1 to 4) and a size, for each facet
- * the repository has, with no size asked of an issue carrying the epic
- * label, and a label of every other required group of its label taxonomy
+ * the repository has, with no size asked of an epic (one carrying the epic
+ * label, or filed as an issue type `issue_tracker.labels.epic_types` lists),
+ * and a label of every other required group of its label taxonomy
  * (file-issue's label check), the size group's requirement being met by the
  * size facet wherever it is kept.
  *
@@ -22,8 +23,8 @@ import {
   SIZE_GROUP,
 } from "../../../../../file-issue/scripts/lib/validate.ts";
 import { type NewIssue, type Tracker, TrackerRequestError } from "../port.ts";
+import { isEpic } from "../../../../../../shared/tracker-labels.ts";
 import { type Facets, usable } from "./config.ts";
-import { fold } from "./values.ts";
 
 /**
  * What a new issue lacks: `type`, `priority` and `size` for the facets the
@@ -34,17 +35,29 @@ export function incompleteness(
   issue: NewIssue,
   facets: Facets,
   taxonomy: Taxonomy | null,
+  filed?: { labels: string[]; nativeType: string | null },
 ): string[] {
   const missing: string[] = [];
   if (usable(facets.type) && (issue.type ?? "").trim() === "")
     missing.push("type");
   if ((issue.priority ?? 0) === 0) missing.push("priority");
-  const epic = issue.labels.some((l) => fold(l) === fold(facets.epic));
+  const epic = isEpic(
+    filed ?? { labels: issue.labels, nativeType: nativeTypeOf(issue, facets) },
+    facets,
+  );
   if (usable(facets.size) && !epic && (issue.size ?? "").trim() === "")
     missing.push("size");
   if (taxonomy !== null)
     missing.push(...missingGroups(issue.labels, taxonomy, [SIZE_GROUP]));
   return missing;
+}
+
+/** The issue type a new issue is filed as, where its type facet is the issue type. */
+function nativeTypeOf(issue: NewIssue, facets: Facets): string | null {
+  const slot = facets.type;
+  if (!usable(slot) || slot.store !== "native" || issue.type === undefined)
+    return null;
+  return slot.map?.toTracker(issue.type) ?? issue.type;
 }
 
 /** The repository's label taxonomy, `null` when absent, or a refusal when invalid. */
@@ -106,6 +119,9 @@ export function checkedTracker(
         issue,
         facets,
         typeof taxonomy === "function" ? taxonomy() : taxonomy,
+        // The adapter's own resolution of the write: a child's issue type
+        // and a type kept as a label differ from the facet's plain value.
+        await tracker.filedAs?.(issue),
       );
       if (missing.length > 0)
         throw new TrackerRequestError("invalid", incompleteRefusal(missing));

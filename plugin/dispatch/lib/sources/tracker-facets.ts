@@ -125,13 +125,10 @@ export async function readFacetStores(
   }
 }
 
-const fold = (s: string) => s.trim().toLowerCase();
-
 /** Whether an item lacks `facet`; an epic needs no size. */
-function lacks(issue: PoolIssue, facet: Facet, epic: string): boolean {
+function lacks(issue: PoolIssue, facet: Facet): boolean {
   if (facet === "priority") return issue.priority === 0;
-  if (facet === "size" && issue.labels.some((l) => fold(l) === fold(epic)))
-    return false;
+  if (facet === "size" && issue.isEpic) return false;
   return issue[facet] === null;
 }
 
@@ -143,13 +140,12 @@ function lacks(issue: PoolIssue, facet: Facet, epic: string): boolean {
 export function facetGaps(
   issues: ReadonlyArray<PoolIssue>,
   stores: ReadonlyArray<FacetStoreLine>,
-  epic: string,
 ): Array<{ key: string; missing: Facet[] }> {
   const kept = stores.filter((s) => s.store !== null).map((s) => s.facet);
   return issues
     .map((i) => ({
       key: i.identifier,
-      missing: kept.filter((f) => lacks(i, f, epic)),
+      missing: kept.filter((f) => lacks(i, f)),
     }))
     .filter((g) => g.missing.length > 0);
 }

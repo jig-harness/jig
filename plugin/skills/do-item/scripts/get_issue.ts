@@ -8,14 +8,16 @@
  *   a GitHub issue also by its number or web address)
  * Output: JSON with the issue's details, labels, its facets (`type` and
  *   `size`, `null` for none, and `priority`, 0 for none), the tracker's own
- *   issue type (`nativeType`, `null` where there is none), children and
+ *   issue type (`nativeType`, `null` where there is none), whether it is an
+ *   epic (`isEpic`: the epic label, or an issue type
+ *   `issue_tracker.labels.epic_types` lists), children and
  *   `sub_issue_analysis`
  *
  * Usage:
  *     bun get_issue.ts <issue-key> [--verbose]
  *
- * Exit codes: 0 found, 2 not found (or the tracker unreachable, or its
- * answer unusable), 1 unexpected error (no tracker configured).
+ * Exit codes: 0 found, 2 absent or unreadable (JSON `reason` distinguishes
+ * `not-found` from `read-failed`), 1 unexpected error (no tracker configured).
  *
  * The tracker comes from `issue_tracker` in the consumer overlay
  * (`lib/tracker/`).
@@ -175,6 +177,7 @@ export function issueResult(
     priority: issue.priority,
     size: issue.size,
     nativeType: issue.nativeType,
+    isEpic: issue.isEpic,
     url: issue.url,
     parent: issue.parent,
     children,
@@ -229,14 +232,14 @@ function analyzeChildren(
 
 function notFound(
   issueId: string,
-  why: string,
   keys: IssueKeys | null,
 ): Record<string, unknown> {
   // A tracker that reads a bare number keys issues by number alone (GitHub).
   const byNumber = keys?.normalize("123") != null;
   return {
-    error: `Issue ${issueId} not found${why === "" ? "" : `: ${why}`}`,
+    error: `Issue ${issueId} not found`,
     found: false,
+    reason: "not-found",
     suggestions: [
       byNumber
         ? `Check the issue number (e.g. ${keys?.example}, 123 or the issue's web address)`
@@ -250,12 +253,10 @@ function notFound(
 }
 
 /**
- * Fetch one issue. An issue the tracker does not have, an answer whose shape
- * cannot be read, and a tracker that cannot be reached are all reported as
- * not found, with the reason: the caller's next step is the same (fall back
- * to the tracker's own integration, or stop), and an unusable answer must
- * never read as a found issue with empty fields. The key is read as a person
- * may give it (`keys.normalize`) and passed on as given when it is not one.
+ * Fetch one issue. A missing issue carries key hints; a refused or unreadable
+ * tracker answer carries its failure without suggesting a different key.
+ * Both keep `found: false`, so callers that require a found issue stop.
+ * The key is normalized where the configured tracker recognizes it.
  */
 export async function getIssue(
   input: string,
@@ -268,9 +269,13 @@ export async function getIssue(
     issue = await tracker.getIssue(issueId);
   } catch (err) {
     const why = err instanceof Error ? err.message : String(err);
-    return notFound(issueId, why, keys);
+    return {
+      error: `Issue ${issueId} could not be read: ${why}`,
+      found: false,
+      reason: "read-failed",
+    };
   }
-  if (issue === null) return notFound(issueId, "", keys);
+  if (issue === null) return notFound(issueId, keys);
   const stateNames = Object.fromEntries(
     CANONICAL_STATES.map((s) => [s, tracker.stateName(s, issue)]),
   ) as StateMap;
@@ -312,7 +317,7 @@ async function main(): Promise<number> {
 /** What `--verbose` says on stderr about the issue read. */
 function describe(result: Record<string, unknown>): void {
   if (result.found !== true) {
-    console.error(`Not found: ${String(result.error)}`);
+    console.error(String(result.error));
     return;
   }
   console.error(`Found: ${String(result.title)}`);

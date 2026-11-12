@@ -634,8 +634,7 @@ export async function runFleetHealth(
   };
   const unattributed = mergedInWindow.filter(
     (f) =>
-      f.productPr === true &&
-      epicsOfPr(f, issueCache, cfg.labels.epic).length === 0,
+      f.productPr === true && epicsOfPr(f, issueCache, cfg.labels).length === 0,
   ).length;
   caveats.push(
     ...(Object.keys(cfg.ceremony.unmeasured).length === 0
