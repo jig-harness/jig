@@ -14,6 +14,8 @@ import { readPickups } from "../lib/sources/tracker.ts";
 import type { DispatchSection } from "../lib/types.ts";
 import { TrackerRateLimited } from "../../shared/tracker-budget.ts";
 import type { Tracker } from "../../skills/do-item/scripts/lib/tracker/port.ts";
+import { linearTracker } from "../../skills/do-item/scripts/lib/tracker/linear.ts";
+import { parseTrackerConfig } from "../../skills/do-item/scripts/lib/tracker/config.ts";
 import { renderExecutionPlan } from "../../skills/do-item/scripts/lib/execution-plan.ts";
 import { FakeLinear } from "./served-linear-fake.ts";
 
@@ -180,6 +182,33 @@ describe("a served queue's cost in tracker requests", () => {
     );
   });
 
+  it("ignores a change to another team's issue assigned to the same person", async () => {
+    const fake = queue();
+    const tracker = fake.tracker();
+    const cache = memoryCache();
+    await tick(tracker, cache, 0);
+    fake.add({ identifier: "OTHER-1", assignee: PERSON, updatedAt: at(1) });
+    const mark = fake.count();
+    await tick(tracker, cache, 2);
+    expect(fake.requests.slice(mark)).toEqual(["TrackerChanges"]);
+  });
+
+  it("reports an incomplete answer when more issues changed than one probe page holds", async () => {
+    const fake = queue();
+    const tracker = fake.tracker();
+    const keys = [...fake.issues.keys()];
+    const ask = () =>
+      (tracker.changedSince as NonNullable<Tracker["changedSince"]>)({
+        since: at(0),
+        identity: PERSON,
+        keys,
+      });
+    for (let n = 1; n <= 50; n++) fake.touch(`ENG-${300 + n}`, at(1));
+    expect((await ask()).complete).toBe(true);
+    fake.touch("ENG-401", at(1));
+    expect((await ask()).complete).toBe(false);
+  });
+
   it("reads the queue whole again every quarter hour, even when the probe sees nothing", async () => {
     const fake = queue();
     const tracker = fake.tracker();
@@ -339,5 +368,73 @@ describe("a served queue's cost in tracker requests", () => {
     );
     expect(read.limitedUntil).toBe(new Date(reset).toISOString());
     expect(read.wanted).toHaveLength(50);
+  });
+});
+
+/** A team of 300 issues, ten of which a read names, the rest recently updated bystanders. */
+function crowdedTeam(): FakeLinear {
+  const fake = new FakeLinear();
+  for (let n = 1; n <= 300; n++)
+    fake.add({ identifier: `ENG-${n}`, updatedAt: at(5) });
+  return fake;
+}
+
+describe("reads by key in a team with many other issues", () => {
+  it("reads the named keys in one request, not the team's pages", async () => {
+    const fake = crowdedTeam();
+    const keys = Array.from({ length: 10 }, (_, i) => `ENG-${i * 20 + 1}`);
+    const read = await fake.tracker().poolIssues?.(keys);
+    expect([...(read?.keys() ?? [])].sort()).toEqual([...keys].sort());
+    expect(fake.requests).toEqual(["TrackerPoolIssues"]);
+  });
+
+  it("reads 120 keys in three requests", async () => {
+    const fake = crowdedTeam();
+    const keys = Array.from({ length: 120 }, (_, i) => `ENG-${i + 1}`);
+    await fake.tracker().poolIssues?.(keys);
+    expect(fake.requests).toEqual(Array(3).fill("TrackerPoolIssues"));
+  });
+
+  it("stops when the filter matches more than the keys named", async () => {
+    const fake = crowdedTeam();
+    // Linear matches the whole team when a bare `{ team, number }` sits in an `or`.
+    const tracker = linearTracker({
+      team: "ENG",
+      states: parseTrackerConfig({}).states,
+      transport: (query, variables, signal) =>
+        fake.transport(
+          query,
+          {
+            ...variables,
+            filter: {
+              or: [{ team: { key: { eq: "ENG" } }, number: { in: [1] } }],
+            },
+          },
+          signal,
+        ),
+    });
+    await expect(tracker.poolIssues?.(["ENG-1", "ENG-2"])).rejects.toThrow(
+      /paging past its keys/,
+    );
+    expect(fake.requests.length).toBeLessThanOrEqual(3);
+  });
+
+  it("does not take a bystander's update for a change to what the reading depends on", async () => {
+    const fake = crowdedTeam();
+    fake.add({ identifier: "ENG-900", assignee: PERSON, updatedAt: at(0) });
+    const since = at(1);
+    const answer = await fake.tracker().changedSince?.({
+      since,
+      identity: PERSON,
+      keys: ["ENG-1", "ENG-2"],
+    });
+    expect(answer?.keys).toEqual(["ENG-1", "ENG-2"]);
+    expect(answer?.complete).toBe(true);
+    const none = await fake.tracker().changedSince?.({
+      since,
+      identity: PERSON,
+      keys: ["ENG-900"],
+    });
+    expect(none?.keys).toEqual([]);
   });
 });
