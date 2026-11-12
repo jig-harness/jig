@@ -60,9 +60,8 @@ const track = async () => {
 };
 
 afterEach(async () => {
-  // A failure can precede every capture in the test body; the generation
-  // directory still names the fixture processes until it is removed below.
-  await track();
+  // Only identities captured while the fixture owned them: the pid files
+  // outlive their processes, so reading them here could adopt a reused pid.
   await signalIdentityTargets(tracked, "SIGKILL");
   tracked = [];
   rmSync(cwd, { recursive: true, force: true });
@@ -173,6 +172,7 @@ const logSize = () => {
   return existsSync(file) ? readFileSync(file).length : 0;
 };
 const untilLogSize = async (size: number, deadline: number) => {
+  await track();
   while (logSize() < size) {
     await track();
     expect(Date.now()).toBeLessThan(deadline);
