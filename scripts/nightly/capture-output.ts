@@ -65,24 +65,35 @@ export async function captureOutput(args: string[]): Promise<number> {
   const handlers = signals.map((signal) => [signal, forward(signal)] as const);
   for (const [signal, handler] of handlers) process.on(signal, handler);
   const tail = new Tail();
+  const reader = child.stderr.getReader();
   try {
     const drained = (async () => {
-      for await (const chunk of child.stderr) {
-        process.stderr.write(chunk);
-        tail.push(chunk);
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) return;
+        process.stderr.write(value);
+        tail.push(value);
       }
     })();
     const status = await child.exited;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let expired = false;
     await Promise.race([
       drained.catch(() => undefined),
       new Promise((done) => {
-        timer = setTimeout(done, DRAIN_GRACE_MS);
+        timer = setTimeout(() => {
+          expired = true;
+          done(undefined);
+        }, DRAIN_GRACE_MS);
       }),
     ]);
     clearTimeout(timer);
+    // Closing the read end lets this process exit while a descendant still
+    // holds the write end.
+    if (expired) await reader.cancel().catch(() => undefined);
     return status;
   } finally {
+    reader.cancel().catch(() => undefined);
     for (const [signal, handler] of handlers) process.off(signal, handler);
     writeFileSync(tailFile, tail.text());
   }

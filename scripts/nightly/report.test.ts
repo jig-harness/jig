@@ -164,7 +164,10 @@ describe("the nightly run's report", () => {
       ],
     });
     expect(text).toContain(`case ${LIST_LIMIT - 1}\`\n- and 3 more`);
-    expect(text).not.toContain(`case ${LIST_LIMIT}\n`);
+    expect(text).not.toContain(`case ${LIST_LIMIT}\``);
+    expect(text.match(/^- `a\.test\.ts`: `case \d+`$/gm)).toHaveLength(
+      LIST_LIMIT,
+    );
   });
 
   test("a test name is rendered as one code span, never as active Markdown", () => {
@@ -191,6 +194,26 @@ describe("the nightly run's report", () => {
     );
   });
 
+  test("a body cut to the limit keeps every code span whole", () => {
+    const name = `@someone [x](https://example.com)${"x".repeat(61_000)}`;
+    const newFailures = [{ file: "a.test.ts", name }];
+    const { text } = buildReport({
+      ...base,
+      jobs: [job("gates (macos)", "failure")],
+      results: [
+        result({
+          job: "gates (macos)",
+          status: 1,
+          verdict: "new",
+          newFailures,
+        }),
+      ],
+    });
+    expect(text.length).toBeLessThan(60_200);
+    for (const row of text.split("\n").filter((l) => l.startsWith("- ")))
+      expect(row.match(/`/g)?.length ?? 0).toBe(4);
+  });
+
   test("a stale entry names the platform it recovered on", () => {
     const { text } = buildReport({
       ...base,
@@ -212,9 +235,13 @@ describe("the nightly run's report", () => {
       results: [],
     };
     expect(buildReport(quiet).red).toBe(false);
-    expect(buildReport({ ...quiet, unreadable: ["x.json"] }).red).toBe(true);
+    expect(buildReport(quiet).incomplete).toBe(false);
+    const unreadable = buildReport({ ...quiet, unreadable: ["x.json"] });
+    expect(unreadable.red).toBe(true);
+    expect(unreadable.incomplete).toBe(true);
     const failed = buildReport({ ...quiet, downloadFailed: true });
     expect(failed.red).toBe(true);
+    expect(failed.incomplete).toBe(true);
     expect(failed.text).toContain("could not be downloaded");
   });
 

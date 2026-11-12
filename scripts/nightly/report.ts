@@ -138,9 +138,13 @@ export function readResults(dir: string): {
   return { results, unreadable };
 }
 
-/** Text as one Markdown code span, whatever it holds: one line, fenced by more backticks than any run in it. */
+/** The longest name or file path a list shows; more is cut before it is wrapped. */
+const NAME_LIMIT = 300;
+
+/** Text as one Markdown code span, whatever it holds: one line, at most NAME_LIMIT characters, fenced by more backticks than any run in it. */
 function code(text: string): string {
-  const flat = text.replace(/\s+/g, " ").trim();
+  const all = text.replace(/\s+/g, " ").trim();
+  const flat = all.length > NAME_LIMIT ? `${all.slice(0, NAME_LIMIT)}...` : all;
   const longest = Math.max(
     0,
     ...(flat.match(/`+/g) ?? []).map((r) => r.length),
@@ -201,14 +205,17 @@ export interface ReportInput {
 /** Whether the run failed, and its report in Markdown. */
 export function buildReport(input: ReportInput): {
   red: boolean;
+  /** The results were not all read: the job's own status must say so. */
+  incomplete: boolean;
   text: string;
 } {
   const failed = input.jobs.filter((job) => !PASSING.has(job.conclusion ?? ""));
+  const incomplete =
+    input.unreadable.length > 0 || input.downloadFailed === true;
   const red =
     failed.length > 0 ||
     input.results.some((r) => r.status !== 0) ||
-    input.unreadable.length > 0 ||
-    input.downloadFailed === true;
+    incomplete;
   const byJob = (name: string) => input.results.filter((r) => r.job === name);
   const sha = input.sha.slice(0, 12);
   const out: string[] = [
@@ -264,11 +271,14 @@ export function buildReport(input: ReportInput): {
       `Result files that could not be read: ${input.unreadable.join(", ")}.`,
     );
   const text = out.join("\n");
+  // Cut between lines: each rendered code span sits whole on one line.
+  const cut = text.lastIndexOf("\n", BODY_LIMIT);
   return {
     red,
+    incomplete,
     text:
       text.length > BODY_LIMIT
-        ? `${text.slice(0, BODY_LIMIT)}\n\n(cut short; the run's job summaries hold the rest)`
+        ? `${text.slice(0, cut > 0 ? cut : BODY_LIMIT)}\n\n(cut short; the run's job summaries hold the rest)`
         : text,
   };
 }
@@ -302,7 +312,9 @@ async function main(): Promise<number> {
   console.log(
     `tracking issue: ${outcome.action}${outcome.issue ? ` #${outcome.issue.id}` : ""}`,
   );
-  return 0;
+  // The issue is reconciled first; a report that could not read every result
+  // also fails this job, so the workflow is red as the issue says.
+  return report.incomplete ? 1 : 0;
 }
 
 if (import.meta.main) cli(main);
