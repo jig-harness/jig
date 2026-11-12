@@ -27,6 +27,7 @@ function issue(key: string): PoolIssue {
     assignee: { id: "a", name: "alex" },
     labels: [],
     hasOpenChildren: false,
+    isEpic: false,
     truncated: [],
   };
 }
