@@ -76,7 +76,6 @@ function answerFingerprint(a: {
   return cardAnswerLines(a.key, a.answer, a.digest).join("\n");
 }
 /** The key an answer's uncertainty is kept under: the writer too (by the readers' case-insensitive identity), since another writer's comment does not supersede it. */
-/** The key an answer's uncertainty is kept under: the writer too, since another writer's comment does not supersede it. */
 function uncertainKeyOf(login: string, key: string): string {
   return `${login.toLowerCase()}\n${key}`;
 }

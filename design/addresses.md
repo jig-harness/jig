@@ -483,10 +483,11 @@ whichever comes later.
 The thread's additions are built in the dashboard's steps
 ([dispatch-dashboard.md § Build order](dispatch-dashboard.md#build-order)): resolved parks in the drive
 ledger in its stage 1, and the entry ids, the question's and the answer's
-fields, the fold by aliases and the list of threads in its stage 2. Its
-stage 3 adds to the `drive-answer` record `jig send` writes, beside the
-envelope, the plan id, the dry run's digest and the kind of proof that a
-person is present, with `via: dashboard`. Item 46 adds, as payload fields of the
+fields, the fold by aliases and the list of threads in its stage 2. A
+parked question's answer is not part of a plan: the dashboard posts it as a
+comment, and the `drive-answer` record carries no plan id, dry-run digest
+or proof of presence for it
+([structured-answers.md](structured-answers.md)). Item 46 adds, as payload fields of the
 same version, the decision digest and the option a structured answer
 chose, and the question's options and the answer's choice to the thread
 ([structured-answers.md](structured-answers.md)).
