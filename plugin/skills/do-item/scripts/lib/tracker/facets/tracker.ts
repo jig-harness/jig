@@ -590,6 +590,13 @@ function batchedReads(
   ) => T & FacetValues & { isEpic: boolean },
 ): Pick<Tracker, "poolIssues" | "queueIssues" | "queueIssuesByKey"> {
   const { poolIssues, queueIssues, queueIssuesByKey } = core;
+  const queued = (q: CoreQueueIssue) => ({
+    ...withValues(q),
+    parent:
+      q.parent === null
+        ? null
+        : { ...q.parent, issue: withValues(q.parent.issue) },
+  });
   return {
     ...(poolIssues === undefined
       ? {}
@@ -607,13 +614,7 @@ function batchedReads(
           async queueIssues(identity, states, options) {
             const signal = readSignal(options);
             refuseStopped(signal);
-            return (await queueIssues(identity, states, signal)).map((q) => ({
-              ...withValues(q),
-              parent:
-                q.parent === null
-                  ? null
-                  : { ...q.parent, issue: withValues(q.parent.issue) },
-            }));
+            return (await queueIssues(identity, states, signal)).map(queued);
           },
         }),
     ...(queueIssuesByKey === undefined
@@ -623,18 +624,7 @@ function batchedReads(
             const signal = readSignal(options);
             refuseStopped(signal);
             const read = await queueIssuesByKey(keys, signal);
-            return new Map(
-              [...read].map(([k, q]) => [
-                k,
-                {
-                  ...withValues(q),
-                  parent:
-                    q.parent === null
-                      ? null
-                      : { ...q.parent, issue: withValues(q.parent.issue) },
-                },
-              ]),
-            );
+            return new Map([...read].map(([k, q]) => [k, queued(q)]));
           },
         }),
   };

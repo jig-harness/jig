@@ -29,6 +29,7 @@ import {
   type CoreFacetReport,
   type CoreIssue,
   type CorePoolIssue,
+  type CoreQueueIssue,
   type CoreTracker,
   withFacets,
 } from "./facets/tracker.ts";
@@ -394,6 +395,15 @@ function estimatedBatches(
   ) => Promise<CorePoolIssue>,
 ): Pick<CoreTracker, "poolIssues" | "queueIssues" | "queueIssuesByKey"> {
   const { poolIssues, queueIssues, queueIssuesByKey } = core;
+  const queued =
+    (signal?: AbortSignal) => async (q: WithEstimate<CoreQueueIssue>) => ({
+      ...q,
+      ...(await pool(q, signal)),
+      parent:
+        q.parent === null
+          ? null
+          : { ...q.parent, issue: await pool(q.parent.issue, signal) },
+    });
   return {
     ...(poolIssues === undefined
       ? {}
@@ -415,19 +425,7 @@ function estimatedBatches(
       : {
           async queueIssues(identity, states, signal) {
             const read = await queueIssues(identity, states, signal);
-            return Promise.all(
-              read.map(async (q) => ({
-                ...q,
-                ...(await pool(q, signal)),
-                parent:
-                  q.parent === null
-                    ? null
-                    : {
-                        ...q.parent,
-                        issue: await pool(q.parent.issue, signal),
-                      },
-              })),
-            );
+            return Promise.all(read.map(queued(signal)));
           },
         }),
     ...(queueIssuesByKey === undefined
@@ -437,23 +435,9 @@ function estimatedBatches(
             const read = [...(await queueIssuesByKey(keys, signal))];
             return new Map(
               await Promise.all(
-                read.map(async ([k, q]) => {
-                  const issue = await pool(q, signal);
-                  return [
-                    k,
-                    {
-                      ...q,
-                      ...issue,
-                      parent:
-                        q.parent === null
-                          ? null
-                          : {
-                              ...q.parent,
-                              issue: await pool(q.parent.issue, signal),
-                            },
-                    },
-                  ] as const;
-                }),
+                read.map(
+                  async ([k, q]) => [k, await queued(signal)(q)] as const,
+                ),
               ),
             );
           },

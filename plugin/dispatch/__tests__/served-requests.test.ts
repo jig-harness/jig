@@ -376,6 +376,25 @@ describe("a served queue's cost in tracker requests", () => {
   });
 });
 
+/** A tracker over `fake` whose key filters are the bare `{ team, number }` groups Linear answers with the whole team. */
+function bareGroupTracker(fake: FakeLinear): Tracker {
+  return linearTracker({
+    team: "ENG",
+    states: parseTrackerConfig({}).states,
+    transport: (query, variables, signal) =>
+      fake.transport(
+        query,
+        {
+          ...variables,
+          filter: {
+            or: [{ team: { key: { eq: "ENG" } }, number: { in: [1] } }],
+          },
+        },
+        signal,
+      ),
+  });
+}
+
 /** A team of 300 issues, ten of which a read names, the rest recently updated bystanders. */
 function crowdedTeam(): FakeLinear {
   const fake = new FakeLinear();
@@ -403,21 +422,7 @@ describe("reads by key in a team with many other issues", () => {
   it("stops when the filter matches more than the keys named", async () => {
     const fake = crowdedTeam();
     // Linear matches the whole team when a bare `{ team, number }` sits in an `or`.
-    const tracker = linearTracker({
-      team: "ENG",
-      states: parseTrackerConfig({}).states,
-      transport: (query, variables, signal) =>
-        fake.transport(
-          query,
-          {
-            ...variables,
-            filter: {
-              or: [{ team: { key: { eq: "ENG" } }, number: { in: [1] } }],
-            },
-          },
-          signal,
-        ),
-    });
+    const tracker = bareGroupTracker(fake);
     await expect(tracker.poolIssues?.(["ENG-1", "ENG-2"])).rejects.toThrow(
       /paging past its keys/,
     );
@@ -540,21 +545,7 @@ describe("queueIssuesByKey", () => {
 
   it("stops when the filter matches more than the keys named", async () => {
     const fake = crowdedTeam();
-    const tracker = linearTracker({
-      team: "ENG",
-      states: parseTrackerConfig({}).states,
-      transport: (query, variables, signal) =>
-        fake.transport(
-          query,
-          {
-            ...variables,
-            filter: {
-              or: [{ team: { key: { eq: "ENG" } }, number: { in: [1] } }],
-            },
-          },
-          signal,
-        ),
-    });
+    const tracker = bareGroupTracker(fake);
     await expect(tracker.queueIssuesByKey?.(["ENG-1"])).rejects.toThrow(
       /paging past its keys/,
     );

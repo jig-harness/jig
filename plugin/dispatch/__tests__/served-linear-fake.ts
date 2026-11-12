@@ -34,6 +34,27 @@ const firstPage = (nodes: unknown[], size: number) => ({
   pageInfo: { hasNextPage: nodes.length > size, endCursor: null },
   nodes: nodes.slice(0, size),
 });
+/** One page of a connection as the query asks: its page size, the cursor an offset. */
+function paged<T>(
+  all: T[],
+  query: string,
+  variables: Record<string, unknown>,
+  field: "issues" | "children",
+  node: (item: T) => unknown,
+) {
+  const size = Number(
+    new RegExp(`${field}\\(first: (\\d+)`).exec(query)?.[1] ?? 50,
+  );
+  const from = Number(variables.after ?? 0);
+  const more = from + size < all.length;
+  return {
+    pageInfo: {
+      hasNextPage: more,
+      endCursor: more ? String(from + size) : null,
+    },
+    nodes: all.slice(from, from + size).map(node),
+  };
+}
 const page = (nodes: unknown[]) => ({
   pageInfo: { hasNextPage: false, endCursor: null },
   nodes,
@@ -181,18 +202,10 @@ export class FakeLinear {
             this.assignedTo(i, and[1] as Record<string, unknown>) &&
             states.includes(i.state.name),
         );
-        // Pages as the query asks: its page size, the cursor an offset.
-        const size = Number(/issues\(first: (\d+)/.exec(query)?.[1] ?? 50);
-        const from = Number(variables.after ?? 0);
-        const more = from + size < nodes.length;
         return {
-          issues: {
-            pageInfo: {
-              hasNextPage: more,
-              endCursor: more ? String(from + size) : null,
-            },
-            nodes: nodes.slice(from, from + size).map((i) => this.queueNode(i)),
-          },
+          issues: paged(nodes, query, variables, "issues", (i) =>
+            this.queueNode(i),
+          ),
         };
       }
       case "TrackerPool": {
@@ -272,33 +285,17 @@ export class FakeLinear {
       case "TrackerPoolIssues": {
         const groups = (filter.or ?? []) as Array<Record<string, unknown>>;
         const nodes = all.filter((i) => groups.some((g) => this.inGroup(i, g)));
-        const size = Number(/issues\(first: (\d+)/.exec(query)?.[1] ?? 50);
-        const from = Number(variables.after ?? 0);
-        const more = from + size < nodes.length;
         return {
-          issues: {
-            pageInfo: {
-              hasNextPage: more,
-              endCursor: more ? String(from + size) : null,
-            },
-            nodes: nodes.slice(from, from + size).map((i) => this.pool(i)),
-          },
+          issues: paged(nodes, query, variables, "issues", (i) => this.pool(i)),
         };
       }
       case "TrackerQueueByKey": {
         const groups = (filter.or ?? []) as Array<Record<string, unknown>>;
         const nodes = all.filter((i) => groups.some((g) => this.inGroup(i, g)));
-        const size = Number(/issues\(first: (\d+)/.exec(query)?.[1] ?? 50);
-        const from = Number(variables.after ?? 0);
-        const more = from + size < nodes.length;
         return {
-          issues: {
-            pageInfo: {
-              hasNextPage: more,
-              endCursor: more ? String(from + size) : null,
-            },
-            nodes: nodes.slice(from, from + size).map((i) => this.queueNode(i)),
-          },
+          issues: paged(nodes, query, variables, "issues", (i) =>
+            this.queueNode(i),
+          ),
         };
       }
       case "TrackerOpenChildren": {
@@ -307,19 +304,11 @@ export class FakeLinear {
             c.parent === String(variables.id) &&
             !["completed", "canceled"].includes(c.state.type),
         );
-        // Pages as the query asks: its page size, the cursor an offset.
-        const size = Number(/children\(first: (\d+)/.exec(query)?.[1] ?? 50);
-        const from = Number(variables.after ?? 0);
-        const more = from + size < children.length;
         return {
           issue: {
-            children: {
-              pageInfo: {
-                hasNextPage: more,
-                endCursor: more ? String(from + size) : null,
-              },
-              nodes: children.slice(from, from + size).map((c) => this.pool(c)),
-            },
+            children: paged(children, query, variables, "children", (c) =>
+              this.pool(c),
+            ),
           },
         };
       }
