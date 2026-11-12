@@ -87,7 +87,8 @@ write it makes for a person is one of the records the line already reads,
 written as that person
 ([ADR-0014](ADR-0014-addresses-are-derived-and-requests-are-records.md)).
 It is the dispatcher's own dashboard with more views, so Jig still has one
-kind of listening server, not a second beside it.
+kind of listening server beside the hub ([ADR-0016](ADR-0016-an-optional-hub-for-hosts-that-keep-authority.md)),
+not a second beside it.
 
 ## Alternatives considered
 
@@ -155,6 +156,6 @@ the registry does not hold, and a registry entry the code no longer names.
 The gate parses source with oxc-parser rather than a tokenizer because regular
 expressions, division and nested template expressions determine where SQL
 string and template literals begin and end.
-That no component opens a listening socket other than the dashboard's is
-not checked, nor that the dashboard listens only on
+That no component opens a listening socket other than the dashboard's, or
+the hub's where one runs, is not checked, nor that the dashboard listens only on
 loopback or on a front's socket; review holds both.

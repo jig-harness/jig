@@ -257,8 +257,12 @@ The hub's claims sit in front of them:
   the forge wins and the host ends its grant.
 - **Pickups get a claim before a session opens.** The shared target widens
   from a pull request to a work key, an item's key as well, so two hosts
-  dispatching one repository's pickups no longer both open a workspace for
-  one item. The tracker claim inside `do-item` stays the fence.
+  dispatching one repository's pickups are less likely to both open a
+  workspace for one item. Two hosts can still each read themselves as the
+  holder, for instance after a hub outage; the tracker claim inside
+  `do-item` stays the fence, and it arbitrates between hosts only with
+  `do_item.claim_marker` set, best effort on a lagging listing. The
+  dispatcher's double-claim watch is the backstop.
 - **A silent host's claims lapse in the hub, not on the forge.** A lease
   the host stopped renewing lapses, and the hub grants that work to
   another host. The forge's own marker is not reinterpreted: an unfinished
@@ -303,9 +307,15 @@ must never hold a duty at once, since a host cut off from the hub alone
 would otherwise keep its duty while the hub names another. So the owner
 holds its duty under a lease of its own, renewed with each call, and a
 host does an owner's effects (notices, label and board writes, the
-steward, reflection findings) only while its lease is current. The hub
-names a new owner only after the old lease has lapsed, and an owner whose
-renewals fail stops doing the effects when its lease would have lapsed.
+steward, reflection findings) only while its lease is current. A host
+starts an effect only when at least a drain margin of the lease remains,
+a margin longer than the effect's own deadline, and stops starting
+effects when renewal fails. The hub names a new owner only after the old
+lease has lapsed and one drain margin more, so an effect begun in time has
+finished before the next owner starts. The residual risk is an effect that
+outruns its own deadline, such as a forge write that stalls past it: two
+such writes of one notice or label are repeats the forge shows, not
+damage, and a notice carries a key so a second is dropped.
 While the hub is unreachable a host does only the effects that are safe
 to repeat, such as reading, and does none of the rest until it reaches
 the hub again, or until a person's machine file says the host owns the
@@ -406,7 +416,10 @@ strategy the built-ins lack can be added without changing them.
 
 The hub serves the source feed, so a dashboard that names the hub as its
 source shows every enrolled host's work, each fact stamped with its host,
-and its Needs you covers them all. A phone reaches the hub's page through
+and its Needs you covers them all. The hub's machine runs a dashboard server of its own that names the
+hub as its source and serves the page; the hub's front routes to that
+server, never to the hub's protocol port, so the page still talks only to
+its own dashboard server. A phone reaches that page through
 a private-network front, as it reaches a host's page today
 ([dispatch-dashboard.md § A front on a private network](dispatch-dashboard.md#a-front-on-a-private-network)),
 and sees every host at once. The views API between a page and its own
@@ -479,7 +492,10 @@ repositories through one hub spend, together, about what one host spends
 alone, and a hub stopped mid-tick costs that tick nothing but its
 receipt's note and the owner duties a host cannot do without its lease.
 
-**Stage 2: claims with leases, and a silent host noticed.** The hub's
+**Stage 2: claims with leases, and a silent host noticed**, once
+[ADR-0016](../docs/adr/ADR-0016-an-optional-hub-for-hosts-that-keep-authority.md)
+is approved, since grants and owner leases coordinate hosts, which
+[ADR-0013](../docs/adr/ADR-0013-records-not-a-daemon.md) declines. The hub's
 implementation of `SharedRecords` in front of the fences, pickup claims,
 leases and their renewal, the replay after an outage, the owner named by
 `hello` with its lease, the restart quarantine, and the silent-host notice.

@@ -84,7 +84,8 @@ flowchart LR
   PH[a phone's browser] -->|private-network front:<br/>HTTPS, read-only| HH
   HH -.->|the host calls it:<br/>reports| HB[the hub, optional:<br/>every enrolled host]
   LH -.->|source feed over HTTPS| HB
-  PH -.->|or the hub's front:<br/>every host, read-only| HB
+  PH -.->|or the hub's front:<br/>every host, read-only| HD[jig dashboard on the hub's machine]
+  HD -.->|source feed| HB
   HH --> HR[(host records:<br/>line, log, drives)]
   LH --> LR[(laptop records,<br/>conversations)]
   HH -->|reads| F[(forge and tracker)]
