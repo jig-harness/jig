@@ -140,7 +140,13 @@ interface Stored {
   renewals: number;
 }
 
+/**
+ * A failure written by a copy that predates the quiet columns moves
+ * `last_at` and leaves `quiet_at` where it was, so a quiet that `last_at` has
+ * passed is over, and counts as one renewal.
+ */
 function fromStored(r: Stored): FailureRow {
+  const ended = r.quiet_at !== null && r.quiet_at < r.last_at;
   return {
     repo: r.repo,
     key: r.key,
@@ -151,8 +157,8 @@ function fromStored(r: Stored): FailureRow {
     lastAt: r.last_at,
     reason: r.reason,
     nextAtMs: r.next_at_ms,
-    quietAt: r.quiet_at,
-    renewals: r.renewals,
+    quietAt: ended ? null : r.quiet_at,
+    renewals: r.renewals + (ended ? 1 : 0),
   };
 }
 
@@ -195,6 +201,7 @@ export function recordFailure(
     const before = db
       .query(`SELECT ${COLUMNS} FROM failures WHERE repo = ? AND key = ?`)
       .get(of.repo, of.key) as Stored | null;
+    const prior = before ? fromStored(before) : null;
     const count = (before?.count ?? 0) + 1;
     const next = isActionKind(of.kind)
       ? nowMs + backoffAfter(count, settings)
@@ -207,7 +214,7 @@ export function recordFailure(
       reason: said,
       nextAtMs: next,
       quietAt: null,
-      renewals: (before?.renewals ?? 0) + (before?.quiet_at ? 1 : 0),
+      renewals: prior ? prior.renewals + (prior.quietAt === null ? 0 : 1) : 0,
     };
     db.query(
       `INSERT INTO failures (${COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

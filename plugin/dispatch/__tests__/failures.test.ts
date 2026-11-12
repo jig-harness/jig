@@ -21,11 +21,12 @@ import {
   backoffAfter,
   FAILURE_DEFAULTS,
   type FailureRow,
+  quietFailure,
   readFailures,
   recordFailure,
 } from "../lib/failures.ts";
 import type { MachineRepository } from "../lib/machine-config.ts";
-import { closeStateDb } from "../lib/state.ts";
+import { closeStateDb, stateDb } from "../lib/state.ts";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -91,6 +92,43 @@ describe("the failure ledger's wait", () => {
       root,
     );
     expect(row.nextAtMs).toBe(5_000);
+  });
+});
+
+describe("a quiet row and a copy that predates the quiet columns", () => {
+  it("ends the quiet when an older copy's failure moves last_at without touching quiet_at, and counts it as one renewal that the next failure keeps", () => {
+    const root = stateRootForTest();
+    const tick = {
+      repo: "",
+      key: "ticks /c",
+      kind: "tick" as const,
+      target: "ticks of o/c",
+    };
+    recordFailure(
+      tick,
+      "a",
+      Date.parse("2026-11-06T10:00:00.000Z"),
+      SETTINGS,
+      root,
+    );
+    quietFailure("", tick.key, "2026-11-06T10:05:00.000Z", root);
+    expect(readFailures("", root)[0]?.quietAt).toBe("2026-11-06T10:05:00.000Z");
+    // What an older copy's conflict update does: count and last_at only.
+    stateDb(root)
+      .query("UPDATE failures SET count = count + 1, last_at = ? WHERE key = ?")
+      .run("2026-11-06T10:10:00.000Z", tick.key);
+    const [after] = readFailures("", root);
+    expect(after?.quietAt).toBeNull();
+    expect(after?.renewals).toBe(1);
+    const next = recordFailure(
+      tick,
+      "b",
+      Date.parse("2026-11-06T10:15:00.000Z"),
+      SETTINGS,
+      root,
+    );
+    expect(next.renewals).toBe(1);
+    expect(next.quietAt).toBeNull();
   });
 });
 
