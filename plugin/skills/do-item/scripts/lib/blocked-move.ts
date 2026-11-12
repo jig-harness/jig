@@ -41,6 +41,7 @@ import {
   CLOSED_STATE_TYPES,
   type Tracker,
 } from "./tracker/port.ts";
+import { isoOf } from "../../../../shared/time.ts";
 
 /** One pull request as the projection reads it. */
 export interface BlockedPr {
@@ -118,7 +119,7 @@ export async function projectBlocked(
   keys: Pick<IssueKeys, "source" | "normalize">,
   labels: LabelConfig,
   pr: BlockedPr,
-  now: () => Date = () => new Date(),
+  now: () => Temporal.Instant = () => Temporal.Now.instant(),
   /** Asked before each item's reads and writes: `false` when the caller's ledger is no longer the current one. */
   stillOurs: () => Promise<boolean> = async () => true,
 ): Promise<BlockedOutcome[]> {
@@ -147,7 +148,7 @@ async function projectItem(
   pr: BlockedPr,
   want: ReturnType<typeof wantOf>,
   key: string,
-  now: () => Date,
+  now: () => Temporal.Instant,
   stillOurs: () => Promise<boolean>,
 ): Promise<BlockedOutcome> {
   try {
@@ -222,7 +223,7 @@ async function block(
   key: string,
   fromName: string,
   marker: BlockedMarker,
-  now: () => Date,
+  now: () => Temporal.Instant,
 ): Promise<BlockedOutcome> {
   await tracker.transition(key, "blocked");
   try {
@@ -255,7 +256,7 @@ async function block(
   }
   const fields = await writeFields(tracker, key, {
     reason: blockedReason(pr.causes),
-    since: now().toISOString(),
+    since: isoOf(now()),
   });
   return {
     item: key,

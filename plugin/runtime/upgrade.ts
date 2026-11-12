@@ -44,6 +44,7 @@ import {
 } from "./refresh.ts";
 import { installedScript, pluginPrograms } from "./scheduler.ts";
 import { liveForeignClaim, writeStampWhen } from "./upgrade-stamp.ts";
+import { currentIso } from "../shared/time.ts";
 
 /** What `jig upgrade` did: each harness, then each installed job and the `jig` command. */
 interface UpgradeResult {
@@ -291,7 +292,7 @@ async function stampManual(result: UpgradeResult): Promise<void> {
               : `${h.harness} at ${h.version}`,
           )
           .join("; ")}`,
-        at: new Date().toISOString(),
+        at: currentIso(),
         ...(moved?.before !== undefined && moved.version !== undefined
           ? { from: moved.before, to: moved.version }
           : {}),

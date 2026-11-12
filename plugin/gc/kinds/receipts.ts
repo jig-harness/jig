@@ -3,6 +3,7 @@ import { exclusiveGcLock } from "../../shared/gc-lock.ts";
 import { ok, type Outcome } from "../../shared/outcome.ts";
 import { readReceipt, receiptPaths, stateRoot } from "../receipts.ts";
 import type { CollectionKind, Proof, Receipt } from "../types.ts";
+import { currentMs, parseMs } from "../../shared/time.ts";
 
 function scopeKey(kind: {
   name: string;
@@ -74,7 +75,7 @@ export function receiptsKind(days: number, root = stateRoot()): CollectionKind {
           state: "unverified",
           reason: "run did not record completion; preserve its action evidence",
         };
-      if (Date.now() - Date.parse(candidate.startedAt) < days * 86_400_000)
+      if (currentMs() - parseMs(candidate.startedAt) < days * 86_400_000)
         return {
           state: "live",
           reason: "receipt retention guard has not elapsed",

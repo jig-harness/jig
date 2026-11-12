@@ -29,6 +29,7 @@ import {
   type TickReceipt,
   writeReceipt,
 } from "../receipts.ts";
+import { isoOf } from "../../shared/time.ts";
 
 const roots: string[] = [];
 function root(): string {
@@ -44,12 +45,12 @@ afterEach(() => {
 });
 
 function receipt(day: string, repoPath: string, since: string): TickReceipt {
-  const at = new Date(`${day}T10:00:00Z`);
+  const at = Temporal.Instant.from(`${day}T10:00:00Z`);
   return {
     version: 1,
     runId: newRunId(at),
-    startedAt: at.toISOString(),
-    finishedAt: at.toISOString(),
+    startedAt: isoOf(at),
+    finishedAt: isoOf(at),
     completed: true,
     apply: false,
     exitStatus: 0,

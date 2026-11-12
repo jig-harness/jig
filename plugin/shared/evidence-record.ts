@@ -25,6 +25,7 @@ import {
   caseResult,
   parseJunitReport,
 } from "./junit-report.ts";
+import { isoFromMs } from "./time.ts";
 
 export const DEFAULT_OUTPUT_LINES = 60;
 export const DEFAULT_TIMEOUT_MINUTES = 30;
@@ -256,7 +257,7 @@ function reportText(
   if (stat.mtimeMs < Math.floor(startedMs / 1000) * 1000)
     return {
       status: "stale",
-      problem: `written ${new Date(stat.mtimeMs).toISOString()}, before the run began`,
+      problem: `written ${isoFromMs(stat.mtimeMs)}, before the run began`,
     };
   const text = readBounded(fd);
   return text === undefined

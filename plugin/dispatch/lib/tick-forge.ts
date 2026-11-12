@@ -44,6 +44,7 @@ import type {
   RepoReport,
   RepoTarget,
 } from "./types.ts";
+import { currentMs } from "../../shared/time.ts";
 
 /** What the forge gave one repository's tick. */
 export interface ForgeRead {
@@ -169,7 +170,7 @@ export async function readForge(
     );
     const since = report.followupSince as string;
     out.read = new Set(toRead.map((p) => p.number));
-    const observedMs = Date.now();
+    const observedMs = currentMs();
     const merges =
       section.followupCommand === null
         ? null

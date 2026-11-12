@@ -54,6 +54,7 @@ import { pickupReads, type PickupReads } from "../pickup-reads.ts";
 import { queueHold, rankQueue, type QueueItem } from "../queue-rank.ts";
 import { failureText } from "../text.ts";
 import type { ClaimedItem, Unplaced, WantedItem } from "../types.ts";
+import { isoFromMs } from "../../../shared/time.ts";
 
 interface Metadata {
   updatedAt: string;
@@ -153,10 +154,10 @@ export function limitedRow(
   limited: TrackerRateLimited,
   view: Pick<ServedView, "readAt"> | null = null,
 ): Unplaced {
-  const until = new Date(limited.resetAt).toISOString();
+  const until = isoFromMs(limited.resetAt);
   const kept =
     view !== null && view.readAt > 0
-      ? `; the queue shown is the reading of ${new Date(view.readAt).toISOString()}`
+      ? `; the queue shown is the reading of ${isoFromMs(view.readAt)}`
       : "";
   return {
     target: `${tracker.adapter} ${tracker.team}`,
@@ -274,7 +275,7 @@ export async function readServedPickups(
   }
   if (limited !== null) {
     out.unplaced.push(limitedRow(tracker, limited.error, limited.view));
-    out.limitedUntil = new Date(limited.error.resetAt).toISOString();
+    out.limitedUntil = isoFromMs(limited.error.resetAt);
   }
   for (const c of candidates) {
     const serial = shared.serials.get(c.issue.identifier);

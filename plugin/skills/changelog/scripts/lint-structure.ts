@@ -14,6 +14,7 @@ import {
   plain,
 } from "./markdown-tree.ts";
 import { headingLines, locate } from "./source-lines.ts";
+import { isCalendarDate } from "../../../shared/time.ts";
 
 /** One rule a finding names: its id and where the format's specification states it. */
 export interface Rule {
@@ -224,17 +225,7 @@ export const opensWithTitle = (changelog: Changelog): boolean => {
  * that exists.
  */
 export function isDate(date: string): boolean {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
-  if (!m) return false;
-  const [year, month, day] = [Number(m[1]), Number(m[2]), Number(m[3])];
-  // Date.UTC reads years 0 to 99 as 1900 to 1999; setUTCFullYear does not.
-  const at = new Date(0);
-  at.setUTCFullYear(year, month - 1, day);
-  return (
-    at.getUTCFullYear() === year &&
-    at.getUTCMonth() === month - 1 &&
-    at.getUTCDate() === day
-  );
+  return isCalendarDate(date);
 }
 
 /** A Semantic Versioning 2.0.0 version, from the specification's own expression. */

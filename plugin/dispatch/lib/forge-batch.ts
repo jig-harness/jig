@@ -38,6 +38,7 @@ import { OVERLAY_RELPATH } from "../../shared/config-layers.ts";
 import { ghCall, ghRepoEnv } from "../../skills/drive-pr/scripts/lib/proc.ts";
 import { checksFail } from "./automation.ts";
 import type { RepoTarget } from "./types.ts";
+import { currentMs } from "../../shared/time.ts";
 
 /** Pull requests per page: the forge charges three points for a page this size. */
 const PAGE = 50;
@@ -396,7 +397,7 @@ function addPage(read: RepositoryRead, answer: unknown): Read<string | null> {
 export async function readRepository(
   path: string,
 ): Promise<Outcome<RepositoryRead, "unreadable">> {
-  const startedAtMs = Date.now();
+  const startedAtMs = currentMs();
   const first = await page(path, null);
   if (!first.ok) return first;
   const repository = field(first.value, "data", "repository");
@@ -447,7 +448,7 @@ export async function readComments(
   const read: CommentsRead = {
     comments: new Map(),
     overflow: [],
-    startedAtMs: Date.now(),
+    startedAtMs: currentMs(),
     pages: 0,
     cost: 0,
   };

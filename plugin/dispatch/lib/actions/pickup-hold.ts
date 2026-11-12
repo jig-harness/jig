@@ -34,6 +34,7 @@ import {
 import { holdsItem } from "../launch-pickups.ts";
 import { refusalOf } from "../pickup-refusal.ts";
 import { RUNNING_STATES, type SessionsReport } from "../runtime/port.ts";
+import { currentMs, isoFromMs, parseMs } from "../../../shared/time.ts";
 
 export type PickupHold =
   | { kind: "none" }
@@ -71,7 +72,7 @@ export function settleAgents(
     if (found === undefined || RUNNING_STATES.has(found.agent.state)) continue;
     const ended: LaunchState = {
       kind: "ended",
-      exit: { at: new Date(nowMs).toISOString(), code: null, signal: null },
+      exit: { at: isoFromMs(nowMs), code: null, signal: null },
       process: state.process,
       agent: found.agent.state,
     };
@@ -122,15 +123,15 @@ function recordsOf(item: string, records: ReadRecord[]): ReadRecord[] {
 /** Whether the item changed after its refusal: its `updatedAt` is later than the one the rules saw. */
 function changedSince(updatedAt: string | undefined, seen: string): boolean {
   if (updatedAt === undefined) return false;
-  const now = Date.parse(updatedAt);
-  return Number.isFinite(now) && now > Date.parse(seen);
+  const now = parseMs(updatedAt);
+  return Number.isFinite(now) && now > parseMs(seen);
 }
 
 export function pickupHold(
   item: string,
   records: ReadRecord[],
   updatedAt?: string,
-  nowMs = Date.now(),
+  nowMs = currentMs(),
 ): PickupHold {
   const mine = recordsOf(item, records);
   const holding = mine.find((r) => holds(r.state));
@@ -141,7 +142,7 @@ export function pickupHold(
     return { kind: "none" };
   // A pass the tracker's rate limit stopped waits for the reset, then starts again.
   if (latest.result === "waits" && latest.waitsUntil !== undefined)
-    return Date.parse(latest.waitsUntil) > nowMs
+    return parseMs(latest.waitsUntil) > nowMs
       ? {
           kind: "held",
           record: latest,

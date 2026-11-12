@@ -6,6 +6,7 @@ import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { run } from "../../shared/proc.ts";
 import { gcGit as git, gitEnvironment } from "../git.ts";
 import type { WorktreeRequest } from "./worktree-evidence.ts";
+import { currentMs } from "../../shared/time.ts";
 
 const COMMIT = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
 export async function ancestry(
@@ -249,17 +250,17 @@ export async function processHolder(path: string): Promise<boolean | null> {
 export function worktreeActivity(
   path: string,
   admin: string,
-  deadline = Date.now() + 30_000,
+  deadline = currentMs() + 30_000,
 ): Outcome<number, "timed-out"> {
   let newest = 0;
   const late = () =>
     failed("timed-out", "Worktree activity scan exceeded its deadline");
   // Checked per entry: one flat directory can hold enough files to overrun.
   const walk = (dir: string): boolean => {
-    if (Date.now() > deadline) return false;
+    if (currentMs() > deadline) return false;
     newest = Math.max(newest, lstatSync(dir).mtimeMs);
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      if (Date.now() > deadline) return false;
+      if (currentMs() > deadline) return false;
       const child = join(dir, entry.name);
       newest = Math.max(newest, lstatSync(child).mtimeMs);
       if (entry.isDirectory() && !walk(child)) return false;
@@ -272,7 +273,7 @@ export function worktreeActivity(
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
-  return ok(Date.now() - newest);
+  return ok(currentMs() - newest);
 }
 export async function aheadOfBase(
   root: string,

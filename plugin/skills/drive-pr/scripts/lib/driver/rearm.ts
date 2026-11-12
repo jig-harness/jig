@@ -65,6 +65,7 @@ import { QUOTA_PARKED_EXIT } from "./settings.ts";
 
 import { provisionalDuties, provisionalNotice } from "./rearm-provisional.ts";
 import { humanVerdictNotice } from "./human-answer-notice.ts";
+import { parseMs } from "../../../../../shared/time.ts";
 export { humanVerdictNotice, NOTICE_MAX } from "./human-answer-notice.ts";
 
 /**
@@ -101,7 +102,10 @@ export function quotaRefusal(
   windowReopened: boolean,
 ): number | undefined {
   if (state === null) return undefined;
-  return admitQuotaRearm(state, agent, windowReopened, new Date()) ?? undefined;
+  return (
+    admitQuotaRearm(state, agent, windowReopened, Temporal.Now.instant()) ??
+    undefined
+  );
 }
 
 /** The drive state, or `null` when it cannot be read (the gate then refuses). */
@@ -134,12 +138,12 @@ export function admitQuotaRearm(
   state: DriveState,
   agent: string[],
   windowReopened: boolean,
-  now: Date,
+  now: Temporal.Instant,
 ): number | null {
   const park = state.quotaPark;
   if (park === null) return null;
   const pr = String(state.pr);
-  if (park.resetAt !== null && Date.parse(park.resetAt) <= now.getTime()) {
+  if (park.resetAt !== null && parseMs(park.resetAt) <= now.epochMilliseconds) {
     console.error(
       `re-arm: PR #${pr} was quota-parked, and its window reset at ${park.resetAt}; driving on.`,
     );
@@ -417,11 +421,11 @@ export async function recordDriveEvent(
 export function quotaRearmCause(
   state: DriveState,
   windowReopened: boolean,
-  now: Date,
+  now: Temporal.Instant,
 ): string | null {
   const park = state.quotaPark;
   if (park === null) return null;
-  if (park.resetAt !== null && Date.parse(park.resetAt) <= now.getTime())
+  if (park.resetAt !== null && parseMs(park.resetAt) <= now.epochMilliseconds)
     return "quota-reset";
   return windowReopened ? "window-reopened" : "quota-account";
 }

@@ -26,6 +26,7 @@ import { join } from "node:path";
 import { swallow } from "./errors.ts";
 import { JigError } from "./outcome.ts";
 import { inTransaction, type Migration, openDatabase } from "./records/db.ts";
+import { currentMs, isoFromMs } from "./time.ts";
 
 /** How long a credential stays limited when the refusal named no reset. */
 export const FALLBACK_LIMIT_MS = 15 * 60_000;
@@ -73,7 +74,7 @@ export class TrackerRateLimited extends JigError<"tracker-rate-limited"> {
   constructor(adapter: string, resetAt: number, reason: string) {
     super(
       "tracker-rate-limited",
-      `${adapter}'s rate limit for this credential is spent until ${new Date(resetAt).toISOString()}: ${reason}`,
+      `${adapter}'s rate limit for this credential is spent until ${isoFromMs(resetAt)}: ${reason}`,
     );
     this.resetAt = resetAt;
     this.adapter = adapter;
@@ -298,7 +299,7 @@ export function budgetGovernor(
   store: BudgetStore,
   opts: { clock?: () => number; share?: () => number | null } = {},
 ): BudgetGovernor {
-  const clock = opts.clock ?? Date.now;
+  const clock = opts.clock ?? currentMs;
   const share = opts.share ?? currentShare;
   return {
     admit(adapter, key) {

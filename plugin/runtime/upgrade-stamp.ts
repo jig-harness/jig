@@ -36,6 +36,7 @@ import {
   upgradeSettings,
   writeWhole,
 } from "./upgrade-record.ts";
+import { parseMs } from "../shared/time.ts";
 
 /** The stamp's schema version. */
 const STAMP_VERSION = 1;
@@ -71,7 +72,7 @@ function isStamp(value: unknown): value is UpgradeStamp {
     (value.outcome === "running"
       ? typeof value.detail === "string" && typeof value.at === "string"
       : isScheduledUpgrade(value)) &&
-    Number.isFinite(Date.parse(value.at as string))
+    Number.isFinite(parseMs(value.at as string))
   );
 }
 

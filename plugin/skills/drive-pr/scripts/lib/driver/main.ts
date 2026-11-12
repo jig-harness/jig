@@ -99,6 +99,7 @@ import {
 } from "./../pass-args.ts";
 
 import type { DriveState } from "./../state/schema.ts";
+import { currentIso } from "../../../../../shared/time.ts";
 
 /**
  * Refuse a PR that is not a canonical number. Digits, checked here rather
@@ -299,7 +300,7 @@ async function drive(ctx: { pr: string; dryRun: boolean }): Promise<number> {
     pr,
     worktree: rootRes.code === 0 ? rootRes.stdout.trim() : "",
     log: logPath,
-    started: new Date().toISOString(),
+    started: currentIso(),
     account,
     model: pass.model,
     permissionMode: pass.args.permission.mode,

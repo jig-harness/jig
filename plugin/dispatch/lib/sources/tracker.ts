@@ -48,6 +48,7 @@ import type {
   Unplaced,
   WantedItem,
 } from "../types.ts";
+import { currentMs } from "../../../shared/time.ts";
 
 export interface TrackerReading {
   read: RecordRead;
@@ -217,7 +218,7 @@ async function readAssigned(
   const states = section.states as CanonicalState[];
   if (
     bound !== undefined &&
-    (bound.signal.aborted || Date.now() >= bound.deadline)
+    (bound.signal.aborted || currentMs() >= bound.deadline)
   )
     return failed(
       "stopped",

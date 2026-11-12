@@ -143,7 +143,7 @@ export async function handleFailedReviewPass(
   round: number,
   passHandle: RunHandle | null,
   context: DriveRoundContext,
-  passStartedAt: Date,
+  passStartedAt: Temporal.Instant,
   preexistingSessions: ReadonlySet<string>,
   prepared: PreparedSpawn | null,
   preexistingSnapshot: QuotaSnapshot,
@@ -167,7 +167,7 @@ export async function handleFailedReviewPass(
   // both the adapters' future-timestamp rejection and the sleep/stop
   // decision below, rather than each reading the clock separately a few
   // lines apart for what is, in substance, one detect-then-decide step.
-  const now = new Date();
+  const now = Temporal.Now.instant();
   const block = detectQuotaBlock(
     {
       cwd: process.cwd(),

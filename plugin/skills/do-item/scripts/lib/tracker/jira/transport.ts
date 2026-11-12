@@ -35,6 +35,7 @@ import {
   jiraAuthorization,
   resolveJiraCredential,
 } from "./credential.ts";
+import { currentMs } from "../../../../../../shared/time.ts";
 
 /** How to repair an absent or refused Jira credential. */
 export const JIRA_CREDENTIAL_HELP =
@@ -299,7 +300,7 @@ function observeLimit(
   budget: CallBudget,
 ): TrackerRateLimited | null {
   if (response.status !== 429 || budget.governor === undefined) return null;
-  const until = limitedUntil(Date.now(), response.headers);
+  const until = limitedUntil(currentMs(), response.headers);
   const why = `Jira refused ${what} (HTTP 429)`;
   budget.governor.observe(key, { limitedUntil: until, why });
   return until >= budget.deadlineAt
@@ -382,7 +383,7 @@ export function httpTransport(
     const what = `${request.method} ${request.path}`;
     // One deadline for the whole call: the token command, the request, a
     // renewal and the request sent again all spend the same budget.
-    const budget = { governor, deadlineAt: Date.now() + JIRA_TIMEOUT_MS };
+    const budget = { governor, deadlineAt: currentMs() + JIRA_TIMEOUT_MS };
     const deadline = AbortSignal.timeout(JIRA_TIMEOUT_MS);
     const bound =
       signal === undefined ? deadline : AbortSignal.any([deadline, signal]);
@@ -397,7 +398,7 @@ export function httpTransport(
     });
     const text = await bodyText(res, bound, what);
     if (res.status === 429 && governor !== undefined) {
-      const until = limitedUntil(Date.now(), res.headers);
+      const until = limitedUntil(currentMs(), res.headers);
       throw new TrackerRateLimited(
         "jira",
         until,

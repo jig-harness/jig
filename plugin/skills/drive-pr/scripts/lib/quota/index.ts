@@ -23,6 +23,7 @@ import type {
   QuotaAdapter,
   QuotaBlock,
 } from "./types.ts";
+import { isoOf } from "../../../../../shared/time.ts";
 
 export type {
   DetectOpts,
@@ -79,7 +80,11 @@ export function maxSleepMs(): number {
  * whichever block it would refuse to sleep through wins, and between two
  * sleepable blocks the longer wait wins.
  */
-function moreRestrictive(a: QuotaBlock, b: QuotaBlock, now: Date): QuotaBlock {
+function moreRestrictive(
+  a: QuotaBlock,
+  b: QuotaBlock,
+  now: Temporal.Instant,
+): QuotaBlock {
   const planA = planFor(a, now);
   const planB = planFor(b, now);
   if (planA.action !== planB.action) return planA.action === "stop" ? a : b;
@@ -126,8 +131,8 @@ export function detectQuotaBlock(
       best = found;
       continue;
     }
-    const foundAt = found.observedAt.getTime();
-    const bestAt = best.observedAt.getTime();
+    const foundAt = found.observedAt.epochMilliseconds;
+    const bestAt = best.observedAt.epochMilliseconds;
     if (foundAt > bestAt) {
       best = found;
     } else if (foundAt === bestAt) {
@@ -240,14 +245,14 @@ export function prepareQuotaSpawn(
 }
 
 export type QuotaPlan =
-  | { action: "sleep"; until: Date; ms: number; block: QuotaBlock }
+  | { action: "sleep"; until: Temporal.Instant; ms: number; block: QuotaBlock }
   | { action: "stop"; why: string; block: QuotaBlock };
 
 /**
  * Turn a block into the driver's move. `now` is injected rather than read so
  * the tests pin the arithmetic instead of racing it.
  */
-export function planFor(block: QuotaBlock, now: Date): QuotaPlan {
+export function planFor(block: QuotaBlock, now: Temporal.Instant): QuotaPlan {
   if (block.window !== "short") {
     return {
       action: "stop",
@@ -265,7 +270,7 @@ export function planFor(block: QuotaBlock, now: Date): QuotaPlan {
       block,
     };
   }
-  const rawMs = block.resetAt.getTime() - now.getTime();
+  const rawMs = block.resetAt.epochMilliseconds - now.epochMilliseconds;
   // A reset that has already passed — the window reopened between the pass
   // dying and this check, OR `nextWallClock()`'s own minute-granularity "at or
   // after" comparison resolved to the CURRENT minute, whose second-0 instant
@@ -287,7 +292,6 @@ export function planFor(block: QuotaBlock, now: Date): QuotaPlan {
 
 /** One-line, log-shaped rendering of a block — the same text in every surface. */
 export function describe(block: QuotaBlock): string {
-  const reset =
-    block.resetAt === null ? "unresolved" : block.resetAt.toISOString();
+  const reset = block.resetAt === null ? "unresolved" : isoOf(block.resetAt);
   return `${block.vendor} ${block.window}-window quota wall (resets ${reset}): ${block.evidence}`;
 }

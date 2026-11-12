@@ -29,6 +29,7 @@ import { draftSkippingReviewers } from "./overlay.ts";
 import { readTimeline } from "./pr-timeline.ts";
 import { runTitleSays, reviewerProfile } from "./reviewer-profiles.ts";
 import { type CheckRun, checkRunsFor } from "./status/evidence.ts";
+import { parseMs } from "../../../../shared/time.ts";
 
 /**
  * The newest `ready_for_review` event's time on `events`: `{ readyAt: null }`
@@ -48,8 +49,8 @@ export function readyMarkedAt(
     const { event: kind, created_at: at } = event as Record<string, unknown>;
     if (typeof kind !== "string") return null;
     if (kind !== "ready_for_review") continue;
-    if (typeof at !== "string" || !Number.isFinite(Date.parse(at))) return null;
-    if (newest === null || Date.parse(at) > Date.parse(newest)) newest = at;
+    if (typeof at !== "string" || !Number.isFinite(parseMs(at))) return null;
+    if (newest === null || parseMs(at) > parseMs(newest)) newest = at;
   }
   return { readyAt: newest };
 }
@@ -87,8 +88,8 @@ export function draftSkipperPending(
   )
     return `${app}'s newest check run on ${head} has not completed successfully (${newest.status}, ${newest.conclusion ?? "no conclusion"})`;
   if (readyAt === null) return null;
-  const started = Date.parse(newest.started ?? "");
-  return Number.isFinite(started) && started >= Date.parse(readyAt)
+  const started = parseMs(newest.started ?? "");
+  return Number.isFinite(started) && started >= parseMs(readyAt)
     ? null
     : `${app}'s newest check run on ${head} started ${newest.started ?? "at an unreadable time"}, before the pull request was marked Ready at ${readyAt}`;
 }

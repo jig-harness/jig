@@ -56,6 +56,7 @@ import type {
   RepoReport,
   WantedItem,
 } from "./types.ts";
+import { isoFromMs } from "../../shared/time.ts";
 
 export interface PickupInput {
   /** The repository's `owner/name`, which every notification names. */
@@ -299,7 +300,7 @@ function planClaimed(
     evidence: {
       title: item.title,
       state: item.state,
-      idleSince: new Date(since).toISOString(),
+      idleSince: isoFromMs(since),
       ...(held.kind === "free" && held.evidence !== null
         ? { finishedSessions: held.evidence }
         : {}),
@@ -307,7 +308,7 @@ function planClaimed(
     cause: "stalled",
     notice: pickupNotice(
       input.slug,
-      `${item.key} stalled, idle since ${new Date(since).toISOString()}`,
+      `${item.key} stalled, idle since ${isoFromMs(since)}`,
       `${item.key} (${item.title}): ${reason}`,
     ),
   });
@@ -410,7 +411,7 @@ function planWaiting(input: PickupInput, plan: PickupPlan): void {
       cause: "waiting",
       notice: pickupNotice(
         input.slug,
-        `${target} waiting, record ${record.id} since ${new Date(since).toISOString()}`,
+        `${target} waiting, record ${record.id} since ${isoFromMs(since)}`,
         `${target}: the ${record.action} session in ${found.workspace.path} ${reason}`,
       ),
       workspace: found.workspace.path,

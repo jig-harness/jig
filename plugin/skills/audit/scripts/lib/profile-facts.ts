@@ -15,6 +15,7 @@ import { load } from "../../../../shared/yaml.ts";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { run } from "./repo.ts";
+import { isoOf } from "../../../../shared/time.ts";
 
 /** Distinct commit authors, people and automation counted apart. */
 export interface Contributors {
@@ -137,15 +138,11 @@ export function countPeople(authors: CommitAuthor[]): number {
  */
 function commitAuthors(
   root: string,
-  since: Date,
+  since: Temporal.Instant,
 ): CommitAuthor[] | { reason: string } {
   const log = run(
     "git",
-    [
-      "log",
-      `--since-as-filter=${since.toISOString()}`,
-      "--format=%ct%x09%aN%x09%aE",
-    ],
+    ["log", `--since-as-filter=${isoOf(since)}`, "--format=%ct%x09%aN%x09%aE"],
     { cwd: root },
   );
   if (log.code !== 0)
@@ -168,11 +165,11 @@ function commitAuthors(
  */
 function contributors(
   root: string,
-  now: Date,
+  now: Temporal.Instant,
 ): { counts: Contributors } | { reason: string } {
-  const authors = commitAuthors(root, new Date(now.getTime() - 365 * DAY_MS));
+  const authors = commitAuthors(root, now.subtract({ hours: 365 * 24 }));
   if (!Array.isArray(authors)) return authors;
-  const cutoff = (now.getTime() - 90 * DAY_MS) / 1000;
+  const cutoff = (now.epochMilliseconds - 90 * DAY_MS) / 1000;
   const people = authors.filter((a) => !isAutomationAuthor(a.name, a.email));
   const automation = authors.filter((a) => isAutomationAuthor(a.name, a.email));
   const shallow = run("git", ["rev-parse", "--is-shallow-repository"], {
@@ -721,7 +718,7 @@ function soloLite(
 export function profileFacts(
   root: string,
   files: string[],
-  now = new Date(),
+  now = Temporal.Now.instant(),
   declared?: string,
 ): ProfileFacts {
   const history = contributors(root, now);

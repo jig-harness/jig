@@ -92,6 +92,13 @@ here reaches every repository at once.
   `dispatch/` and `gc/`,
   `bun run gates` fails any other throw (`scripts/check-throws.ts`); the
   skill scripts keep their own error handling.
+- **Time is Temporal** ([ADR-0018](../docs/adr/ADR-0018-time-is-temporal.md)).
+  Read the clock, parse and write moments through `shared/time.ts`
+  (`currentMs`, `currentIso`, `isoFromMs`, `parseMs`) and hold a moment as a
+  `Temporal.Instant`; a stored string is UTC to the millisecond, never a bare
+  `Instant.toString()`. A `Date` appears only where a library hands one over,
+  and `bun run quality`'s `legacy-time` counter fails a new one. A test pins
+  the time with `setSystemTime` or the injected `Clock`, not `spyOn(Date, "now")`.
 - **Skills call each other by sibling path** (`../<skill>/scripts/…`), never
   through a path in the consumer repository.
 - **A runtime-specific capability names its fallback**

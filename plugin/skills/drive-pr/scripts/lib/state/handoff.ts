@@ -45,6 +45,7 @@ import { drivenBranchName } from "../driven-branch.ts";
 import { git, gitIdentityEnv } from "../proc.ts";
 import { atomicWrite } from "./fsutil.ts";
 import type { DriveState } from "./schema.ts";
+import { currentMs } from "../../../../../shared/time.ts";
 
 /**
  * The boundary between the machine half of the handoff and the agent-authored
@@ -342,7 +343,7 @@ export async function resolveIntentChainFile(
 function touch(file: string): void {
   try {
     withFileLock(`${file}.lock`, () => {
-      const now = new Date();
+      const now = currentMs() / 1000;
       utimesSync(file, now, now);
     });
   } catch {

@@ -76,6 +76,7 @@ export {
   unwrapResponse,
 } from "./linear-transport.ts";
 import { LinearApiError, type LinearTransport } from "./linear-transport.ts";
+import { isoFromMs, parseMs } from "../../../../../shared/time.ts";
 
 // ── Shape helpers ──────────────────────────────────────────────────────────
 
@@ -277,7 +278,7 @@ export function parseIssueFact(raw: unknown): IssueFact {
     throw new ShapeError(
       `issue ${raw.identifier}.createdAt: expected a non-empty string`,
     );
-  if (!Number.isFinite(Date.parse(raw.createdAt)))
+  if (!Number.isFinite(parseMs(raw.createdAt)))
     throw new ShapeError(`issue ${raw.identifier}: createdAt is malformed`);
   if (!isRecord(raw.state) || typeof raw.state.type !== "string")
     throw new ShapeError(`issue ${raw.identifier}: no readable state.type`);
@@ -286,7 +287,7 @@ export function parseIssueFact(raw: unknown): IssueFact {
   if (
     raw.completedAt !== null &&
     (typeof raw.completedAt !== "string" ||
-      !Number.isFinite(Date.parse(raw.completedAt)))
+      !Number.isFinite(parseMs(raw.completedAt)))
   )
     throw new ShapeError(`issue ${raw.identifier}: completedAt is malformed`);
   // A present non-string title or description is malformed; coercing it to ''
@@ -460,7 +461,7 @@ function parseChildActivity(
     !isRecord(c) ||
     typeof c.identifier !== "string" ||
     typeof c.updatedAt !== "string" ||
-    !Number.isFinite(Date.parse(c.updatedAt)) ||
+    !Number.isFinite(parseMs(c.updatedAt)) ||
     !isRecord(c.state) ||
     typeof c.state.type !== "string"
   )
@@ -500,7 +501,7 @@ export function parseLabelledNode(
   // completed-in-window count and read as fewer completions.
   if (
     state.type === "completed" &&
-    (completedAt === null || Number.isNaN(Date.parse(completedAt)))
+    (completedAt === null || Number.isNaN(parseMs(completedAt)))
   )
     throw new ShapeError(
       `labelled issue ${n.identifier}: completed but completedAt is missing or not a valid timestamp`,
@@ -673,8 +674,8 @@ function parseRelation(
 
 function isoRange(w: WindowSpec): { gte: string; lt: string } {
   return {
-    gte: new Date(w.sinceMs).toISOString(),
-    lt: new Date(w.untilMs).toISOString(),
+    gte: isoFromMs(w.sinceMs),
+    lt: isoFromMs(w.untilMs),
   };
 }
 
@@ -958,7 +959,7 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
           !isRecord(raw.state) ||
           raw.state.type !== "started" ||
           typeof raw.startedAt !== "string" ||
-          !Number.isFinite(Date.parse(raw.startedAt))
+          !Number.isFinite(parseMs(raw.startedAt))
         )
           throw new ShapeError(`Unreadable started '${label}' issue`);
         const children = await pageAll(

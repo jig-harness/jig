@@ -31,6 +31,7 @@ import {
   requests,
   worktreeActivity,
 } from "./worktree-git.ts";
+import { currentMs } from "../../shared/time.ts";
 
 export interface WorktreePolicy {
   remote: string;
@@ -92,7 +93,7 @@ async function operation(admin: string): Promise<string | null> {
 /** The ignored-content scan's failure once its deadline has passed. */
 type Late = { ok: false; failure: { code: "timed-out"; reason: string } };
 function late(deadline: number): Late | null {
-  return Date.now() > deadline
+  return currentMs() > deadline
     ? failed("timed-out", "Ignored-content scan exceeded its deadline")
     : null;
 }
@@ -150,7 +151,7 @@ function rebuildInputs(root: string): boolean {
 export function classifyIgnored(
   root: string,
   paths: string[],
-  deadline = Date.now() + 30_000,
+  deadline = currentMs() + 30_000,
 ): Outcome<IgnoredContent, "timed-out"> {
   const inputs = rebuildInputs(root);
   const rebuildable: string[] = [];

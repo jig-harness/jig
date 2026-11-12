@@ -6,6 +6,7 @@
  */
 
 import type { FacetReadOptions } from "../port.ts";
+import { currentMs } from "../../../../../../shared/time.ts";
 
 /** A facet read stopped by its caller's signal or its deadline. */
 export class FacetReadStopped extends Error {}
@@ -20,7 +21,7 @@ export function readSignal(
   const parts: AbortSignal[] = [];
   if (options?.signal !== undefined) parts.push(options.signal);
   if (options?.deadline !== undefined) {
-    const left = options.deadline - Date.now();
+    const left = options.deadline - currentMs();
     parts.push(
       left <= 0
         ? AbortSignal.abort(

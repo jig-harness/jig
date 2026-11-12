@@ -129,6 +129,7 @@ import type {
   StaleCause,
   WaitingPark,
 } from "../types.ts";
+import { parseMs } from "../../../shared/time.ts";
 
 /** What the head of a pull request's base branch read as. */
 type BaseHead = { oid: string } | { unreadable: string };
@@ -440,7 +441,7 @@ function runningClass(
   nowMs: number,
   windowMs: number,
 ): Classified {
-  const beat = Date.parse(ledger.driver.heartbeat);
+  const beat = parseMs(ledger.driver.heartbeat);
   if (!Number.isFinite(beat))
     return { class: "unplaced", why: "its heartbeat is unreadable" };
   const age = minutesBetween(beat, nowMs);
@@ -523,7 +524,7 @@ function ledgerEvidence(
   nowMs: number,
   forge: PrFacts,
 ): Evidence {
-  const beat = Date.parse(ledger.driver.heartbeat);
+  const beat = parseMs(ledger.driver.heartbeat);
   return {
     ...stopEvidence(ledger, forge),
     driverActor: ledger.driver.actor,

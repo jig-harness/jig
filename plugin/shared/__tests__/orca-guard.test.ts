@@ -186,7 +186,9 @@ describe("the heartbeat", () => {
 describe("the admission", () => {
   it("writes the envelope, the path and the holder, and release deletes it", () => {
     const root = scratch();
-    const now = new Date("2026-11-05T12:00:00.000Z");
+    const now = Temporal.Instant.from(
+      "2026-11-05T12:00:00.000Z",
+    ).epochMilliseconds;
     const holder = ownIdentity();
     const admission = admit(PATH, root, now, holder);
     if (!admission.ok) throw new Error(admission.failure.reason);
@@ -226,7 +228,7 @@ describe("the admission", () => {
     expect(second.ok ? null : second.failure.code).toBe("held");
     if (first.ok) first.value.release();
 
-    const stale = admit(PATH, root, new Date(), deadHolder());
+    const stale = admit(PATH, root, undefined, deadHolder());
     expect(stale.ok).toBe(true);
     const taken = admit(PATH, root);
     if (!taken.ok) throw new Error(taken.failure.reason);
@@ -264,7 +266,7 @@ describe("the admission", () => {
   it("leaves a dead holder's admission whose path or key does not bind to its slot", () => {
     const root = scratch();
     const file = join(root, "admissions", `${guardKey(PATH)}.json`);
-    const dead = admit(PATH, root, new Date(), deadHolder());
+    const dead = admit(PATH, root, undefined, deadHolder());
     if (!dead.ok) throw new Error(dead.failure.reason);
     const good = JSON.parse(readFileSync(file, "utf8"));
     for (const damaged of [
@@ -287,7 +289,7 @@ describe("the admission", () => {
     "admits exactly one of several collectors racing for %s",
     async (_name, seeded) => {
       const root = scratch();
-      if (seeded) admit(PATH, root, new Date(), deadHolder());
+      if (seeded) admit(PATH, root, undefined, deadHolder());
       const signals = scratch();
       const script = join(signals, "contender.ts");
       writeFileSync(

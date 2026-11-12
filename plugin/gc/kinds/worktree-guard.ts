@@ -15,6 +15,7 @@ import {
   sweepLaunches,
 } from "../../shared/orca-guard.ts";
 import type { CollectionKind, Resource } from "../types.ts";
+import { currentMs } from "../../shared/time.ts";
 
 export type Collected = Awaited<ReturnType<CollectionKind["collect"]>>;
 
@@ -42,8 +43,8 @@ const SWEEP_EVERY_MS = 600_000;
 
 function sweepOncePerRun(root: string): void {
   const last = swept.get(root);
-  if (last !== undefined && Date.now() - last < SWEEP_EVERY_MS) return;
-  swept.set(root, Date.now());
+  if (last !== undefined && currentMs() - last < SWEEP_EVERY_MS) return;
+  swept.set(root, currentMs());
   sweepLaunches(root);
 }
 

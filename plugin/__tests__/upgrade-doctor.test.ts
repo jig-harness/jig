@@ -19,6 +19,7 @@ import { expectSpawnExit } from "../../lib/test-helpers/expect-spawn-exit.ts";
 import { writeFakeProgram } from "../../lib/test-helpers/fake-program.ts";
 import { skipsOnWindows } from "../../lib/test-helpers/windows-skip.ts";
 import { newRunId, writeReceipt } from "../dispatch/receipts.ts";
+import { isoOf } from "../shared/time.ts";
 import { orcaInstalledName } from "../shared/orca.ts";
 import { type Machine, machine, SCHEDULERS } from "./lifecycle-fixtures.ts";
 
@@ -29,13 +30,13 @@ const onWindows = skipsOnWindows(
 
 /** A finished dispatcher tick's receipt, with its exit status. */
 function dispatchReceipt(m: Machine, exitStatus: number): void {
-  const now = new Date();
+  const now = Temporal.Now.instant();
   writeReceipt(
     {
       version: 1,
       runId: newRunId(now),
-      startedAt: now.toISOString(),
-      finishedAt: now.toISOString(),
+      startedAt: isoOf(now),
+      finishedAt: isoOf(now),
       completed: true,
       apply: true,
       exitStatus,

@@ -36,6 +36,7 @@ import { OVERLAY_RELPATH } from "../../shared/config-layers.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { checksFail } from "./automation.ts";
 import type { MergedPr, RepoTarget } from "./types.ts";
+import { parseMs } from "../../shared/time.ts";
 
 /** The most pull requests one listing reads; a full page means a partial read. */
 const PR_LIMIT = 1000;
@@ -512,12 +513,12 @@ export async function mergedSince(
   if (!listing.ok) return listing;
   const listed = listing.value;
   for (const p of listed)
-    if (p.mergedAt === undefined || !Number.isFinite(Date.parse(p.mergedAt)))
+    if (p.mergedAt === undefined || !Number.isFinite(parseMs(p.mergedAt)))
       return unreadable(
         `merged pull request #${p.number} has no valid merge time`,
       );
   const merged = listed
-    .filter((p) => Date.parse(p.mergedAt as string) >= Date.parse(since))
+    .filter((p) => parseMs(p.mergedAt as string) >= parseMs(since))
     .map((p) => ({
       number: p.number,
       url: p.url,

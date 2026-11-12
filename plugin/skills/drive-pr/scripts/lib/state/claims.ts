@@ -29,6 +29,7 @@ import { randomBytes } from "node:crypto";
 import { ExitError } from "../cli.ts";
 import { driveDb } from "./db.ts";
 import type { PathLock } from "./lock.ts";
+import { currentIso, currentMs, parseMs } from "../../../../../shared/time.ts";
 
 const CLAIM_STALE_MIN_DEFAULT = 10;
 
@@ -126,7 +127,7 @@ export function claimCreate(ref: ClaimRef, token: string): boolean {
     drive.db.run(
       `INSERT INTO claims (clone, pr, kind, key, token, at) VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT (clone, pr, kind, key) DO NOTHING`,
-      [drive.clone, ref.pr, ref.kind, ref.key, token, new Date().toISOString()],
+      [drive.clone, ref.pr, ref.kind, ref.key, token, currentIso()],
     ).changes === 1
   );
 }
@@ -140,7 +141,7 @@ export function claimExists(ref: ClaimRef): boolean {
 export function claimIsLive(ref: ClaimRef): boolean {
   const r = row(ref);
   if (r === null) return false;
-  return Date.now() - Date.parse(r.at) <= claimStaleMin() * 60_000;
+  return currentMs() - parseMs(r.at) <= claimStaleMin() * 60_000;
 }
 
 /** Whether the claim exists under exactly `token`. */
@@ -155,7 +156,7 @@ export function claimTouch(ref: ClaimRef, token: string): boolean {
   return (
     drive.db.run(
       "UPDATE claims SET at = ? WHERE clone = ? AND pr = ? AND kind = ? AND key = ? AND token = ?",
-      [new Date().toISOString(), drive.clone, ref.pr, ref.kind, ref.key, token],
+      [currentIso(), drive.clone, ref.pr, ref.kind, ref.key, token],
     ).changes === 1
   );
 }

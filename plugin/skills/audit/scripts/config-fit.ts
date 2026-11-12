@@ -2227,7 +2227,7 @@ export async function configFit(opts: {
   report.profile_facts = profileFacts(
     opts.root,
     files,
-    new Date(),
+    Temporal.Now.instant(),
     auditRecord(opts.recordPath)?.profile,
   );
   Object.assign(report.facts, profileFactLines(report.profile_facts));

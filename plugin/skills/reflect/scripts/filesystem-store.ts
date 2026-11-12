@@ -43,6 +43,7 @@ import {
   type StoredEvent,
 } from "./lib/events.ts";
 import { appendInput, sinceInput } from "./lib/store-io.ts";
+import { isoOf } from "../../../shared/time.ts";
 
 const TEMP_PREFIX = ".tmp-";
 
@@ -103,8 +104,8 @@ function placeWithoutReplacing(temp: string, final: string): void {
   }
 }
 
-function fileName(now: Date): { month: string; name: string } {
-  const iso = now.toISOString();
+function fileName(now: Temporal.Instant): { month: string; name: string } {
+  const iso = isoOf(now);
   const month = iso.slice(0, 7);
   const time = iso.slice(0, 19).replaceAll("-", "").replaceAll(":", "");
   return { month, name: `${time}Z-${randomBytes(8).toString("hex")}.jsonl` };
@@ -122,7 +123,7 @@ async function append(folder: string): Promise<number> {
     console.log(JSON.stringify({ stored: [] }));
     return 0;
   }
-  const { month, name } = fileName(new Date());
+  const { month, name } = fileName(Temporal.Now.instant());
   const dir = join(folder, month);
   try {
     mkdirSync(dir, { recursive: true });

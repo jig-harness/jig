@@ -25,7 +25,7 @@ export interface TickOptions {
   /** Launch what the machine file enables; needs `machine`. */
   apply?: boolean;
   machine?: MachineConfig | null;
-  now?: Date;
+  now?: Temporal.Instant;
   runtime?: SessionRuntime;
   /** How many reads the observe phase keeps in flight (`pool.ts`). */
   poolSize?: number;

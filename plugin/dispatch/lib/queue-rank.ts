@@ -1,5 +1,6 @@
 /** The queue's hold and ordering rules, independent of the tracker and runtime. */
 import type { PoolIssue } from "../../skills/do-item/scripts/lib/tracker/port.ts";
+import { parseMs } from "../../shared/time.ts";
 
 /** Rules in precedence order; an unset priority follows low. */
 const QUEUE_ORDER = [
@@ -63,7 +64,7 @@ export function compareQueue(a: QueueItem, b: QueueItem): number {
     size:
       (SIZE[a.issue.size?.toLowerCase() ?? ""] ?? 5) -
       (SIZE[b.issue.size?.toLowerCase() ?? ""] ?? 5),
-    createdAt: Date.parse(a.issue.createdAt) - Date.parse(b.issue.createdAt),
+    createdAt: parseMs(a.issue.createdAt) - parseMs(b.issue.createdAt),
   };
   for (const key of QUEUE_ORDER)
     if (values[key] && Number.isFinite(values[key])) return values[key];

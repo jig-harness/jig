@@ -149,6 +149,7 @@ import {
   TrackerRequestError,
 } from "./lib/tracker/port.ts";
 import { labelsAsConfig } from "../../../shared/tracker-labels.ts";
+import { isoFromMs } from "../../../shared/time.ts";
 
 const USAGE = `usage:
   tracker.ts children <issue-key>
@@ -784,7 +785,7 @@ function reportFailure(error: unknown): number {
   if (isUsage(error)) return usage(error.message);
   if (isRateLimited(error)) {
     console.error(
-      `RATE-LIMITED until ${new Date(error.resetAt).toISOString()}: ${error.message}`,
+      `RATE-LIMITED until ${isoFromMs(error.resetAt)}: ${error.message}`,
     );
     return RATE_LIMITED_EXIT;
   }

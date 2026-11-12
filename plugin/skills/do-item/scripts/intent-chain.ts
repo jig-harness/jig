@@ -72,6 +72,7 @@ import {
   writePickup,
 } from "./lib/intent-chain-pickup.ts";
 import { issueKeysOrNull } from "./lib/tracker/keys.ts";
+import { currentMs } from "../../../shared/time.ts";
 
 /** Hard ceiling on the rendered snapshot, in characters (code points). */
 export const BUDGET = 4000;
@@ -839,7 +840,7 @@ function pruneStale(dir: string): void {
   } catch {
     return;
   }
-  const now = Date.now();
+  const now = currentMs();
   for (const name of entries) {
     if (!name.endsWith(".md")) continue;
     const path = join(dir, name);

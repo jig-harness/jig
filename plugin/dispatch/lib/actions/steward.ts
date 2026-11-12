@@ -36,6 +36,7 @@ import {
   replay,
   accountBlocked,
 } from "./launch.ts";
+import { currentIso, currentMs } from "../../../shared/time.ts";
 
 export async function applySteward(
   state: ApplyState,
@@ -76,7 +77,7 @@ export async function applySteward(
   const digest = await digestOf(state, observation);
   const hash = digestHash(digest);
   if (
-    stewardRuns(null, state.root).filter((r) => r.at > Date.now() - 3_600_000)
+    stewardRuns(null, state.root).filter((r) => r.at > currentMs() - 3_600_000)
       .length >= 3
   )
     return skip("the host's hourly steward budget is spent");
@@ -84,7 +85,7 @@ export async function applySteward(
     !stewardDue(
       hash,
       stewardRuns(repo.slug, state.root),
-      Date.now(),
+      currentMs(),
       config.everyMs,
     )
   )
@@ -109,7 +110,7 @@ export async function applySteward(
     return skip(admitted.outcome.detail);
   }
   const { slots } = admitted;
-  const id = newRecordId(new Date());
+  const id = newRecordId();
   const named = dispatched("steward", "line", id);
   const openedWorkspace = await openedFor(
     state,
@@ -154,7 +155,7 @@ export async function applySteward(
     codexBypass: state.codexOptIn.on,
     replaces: null,
     facts: hash,
-    createdAt: new Date().toISOString(),
+    createdAt: currentIso(),
     workspace: openedWorkspace.workspace,
     attempts: [],
     agentId: null,
@@ -167,7 +168,7 @@ export async function applySteward(
     sessionId: sessionIdFor(vendor),
     mark: named.mark,
   };
-  keepStewardRun(id, digest, Date.now(), state.root);
+  keepStewardRun(id, digest, currentMs(), state.root);
   report.launches.push(await startRecord(state, record, slots));
   report.steward = { status: "pass recorded and launch attempted", hash };
 }

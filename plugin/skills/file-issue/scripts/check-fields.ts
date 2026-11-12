@@ -80,6 +80,7 @@ import {
 } from "./lib/sections.ts";
 import { sweepSettings } from "./lib/sweep-settings.ts";
 import { sweep, sweepLines } from "./lib/sweep.ts";
+import { currentIso } from "../../../shared/time.ts";
 
 const USAGE = `usage:
   check-fields.ts [check] [--yes] [--json] [--retired-from <file>]
@@ -286,7 +287,7 @@ async function preview(
     source,
     target: targetEntries,
     moved,
-    previewedAt: new Date().toISOString(),
+    previewedAt: currentIso(),
     snapshots: {},
     changes: [],
   };
@@ -409,7 +410,7 @@ async function moveLocked(opts: MoveOptions): Promise<number> {
   const report = await runPhase(opts, sides, {
     record,
     save: (r: MoveRecord) => writeMoveRecord(opts.record, r),
-    now: () => new Date().toISOString(),
+    now: () => currentIso(),
     progress: (line: string) => console.error(line),
   });
   print(opts.json, report, moveLines(report, record, sides));

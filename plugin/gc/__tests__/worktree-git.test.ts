@@ -368,8 +368,8 @@ test("the deadline expiring mid-traversal stops the walk of a collapsed director
   // `packages`, and one per entry in each.
   const scan = (ticks: number) => {
     let reads = 0;
-    const clock = spyOn(Date, "now").mockImplementation(() =>
-      ++reads <= ticks ? 0 : 2,
+    const clock = spyOn(Temporal.Now, "instant").mockImplementation(() =>
+      Temporal.Instant.fromEpochMilliseconds(++reads <= ticks ? 0 : 2),
     );
     try {
       return classifyIgnored(root, ["website/"], 1);

@@ -1,4 +1,5 @@
 import { swallow } from "../../../../../shared/errors.ts";
+import { currentMs, parseHttpDateMs } from "../../../../../shared/time.ts";
 
 /** Bounded retries for requests their builders explicitly identify as reads. */
 interface RetryAnswer {
@@ -12,7 +13,7 @@ export async function retryRead<T extends RetryAnswer>(
   idempotent: boolean,
   signal: AbortSignal,
   wait = waitForRetry,
-  now = Date.now,
+  now = currentMs,
 ): Promise<T> {
   for (let attempt = 0; ; attempt++) {
     signal.throwIfAborted();
@@ -61,13 +62,13 @@ export async function discardBody(
 /** Retry-After permits either nonnegative seconds or an HTTP date. */
 export function retryAfterSeconds(
   headers: Headers,
-  now = Date.now,
+  now = currentMs,
 ): number | null {
   const header = headers.get("retry-after");
   if (header === null || header.trim() === "") return null;
   const seconds = Number(header);
   if (Number.isFinite(seconds)) return seconds >= 0 ? seconds : null;
-  const date = Date.parse(header);
+  const date = parseHttpDateMs(header);
   return Number.isFinite(date) ? Math.max(0, date - now()) / 1000 : null;
 }
 

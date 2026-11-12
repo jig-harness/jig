@@ -67,7 +67,7 @@ export interface QuotaBlock {
    * could not resolve an instant. `null` is never "reopens now": every
    * consumer treats an unresolved reset as unsleepable, the same as `weekly`.
    */
-  resetAt: Date | null;
+  resetAt: Temporal.Instant | null;
   /**
    * When the EVIDENCE was recorded — the record's own `timestamp` field, not
    * `resetAt`. This is what "newest wall across every vendor" means: an
@@ -76,7 +76,7 @@ export interface QuotaBlock {
    * resolved a reset instant, regardless of which one was actually seen more
    * recently.
    */
-  observedAt: Date;
+  observedAt: Temporal.Instant;
   /**
    * The verbatim evidence, trimmed to one line — the vendor's own wording, so
    * a log or a handoff shows what was actually read rather than this module's
@@ -101,7 +101,7 @@ export interface DetectOpts {
    * from THIS pass's wall, and a drive re-armed after an earlier block would
    * immediately re-read that stale block and park itself again.
    */
-  since: Date;
+  since: Temporal.Instant;
   /**
    * The instant detection is running, injected rather than read inline so a
    * test can pin it. A transcript or rollout is append-only but not
@@ -112,7 +112,7 @@ export interface DetectOpts {
    * unrelated pass failure to stale evidence. Bounded above by `now` plus a
    * small allowance for real clock skew between the writer and this process.
    */
-  now: Date;
+  now: Temporal.Instant;
   /**
    * Every session file that ALREADY EXISTED when the pass was spawned —
    * `snapshotQuotaSessions`, called immediately before the spawn. Evidence
@@ -246,8 +246,8 @@ export function detectionTimeBounds(opts: Pick<DetectOpts, "since" | "now">): {
   untilMs: number;
 } {
   return {
-    sinceFloorMs: Math.floor(opts.since.getTime() / 1000) * 1000,
-    untilMs: opts.now.getTime() + MAX_CLOCK_SKEW_MS,
+    sinceFloorMs: Math.floor(opts.since.epochMilliseconds / 1000) * 1000,
+    untilMs: opts.now.epochMilliseconds + MAX_CLOCK_SKEW_MS,
   };
 }
 
@@ -387,7 +387,7 @@ export function maxCandidateScanMs(): number {
  * circuit breakers are tested deterministically: no test needs to
  * manufacture `MAX_CANDIDATE_FILES_SCANNED` files or wait real milliseconds
  * for `maxCandidateScanMs()` to elapse. Production call sites pass their own
- * `scanned` counter and `Date.now()` twice (once to compute `deadlineAt`,
+ * `scanned` counter and `currentMs()` twice (once to compute `deadlineAt`,
  * once here) — this function itself reads no clock and counts nothing, so
  * it cannot drift from what its caller actually measured.
  */

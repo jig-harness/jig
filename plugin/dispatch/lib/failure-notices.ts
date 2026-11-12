@@ -32,6 +32,7 @@ import { failingNotice } from "./notices.ts";
 import type { TickContext } from "./tick-context.ts";
 import type { OpenedRepo } from "./tick-observe.ts";
 import type { Action, FailureCause, NotifyCause, RecordName } from "./types.ts";
+import { isoFromMs } from "../../shared/time.ts";
 
 const FAILURE_CAUSES: ReadonlySet<NotifyCause> = new Set<FailureCause>([
   "action-failing",
@@ -119,7 +120,7 @@ function causeOf(
       since: row.firstAt,
       last: row.reason,
       ...(isActionKind(row.kind)
-        ? { row: row.key, next: new Date(row.nextAtMs).toISOString() }
+        ? { row: row.key, next: isoFromMs(row.nextAtMs) }
         : {}),
     },
     cause,
@@ -132,7 +133,7 @@ function actionCause(slug: string, row: FailureRow): Action {
   const { what, record } = actionOf(row);
   return causeOf(slug, row, "action-failing", record, [
     `${what} has failed ${times(row.count)} in a row since ${row.firstAt}. The last failure: ${sentence(row.reason)}`,
-    `The tick backs off between tries, the next at ${new Date(row.nextAtMs).toISOString()}, and keeps trying while the action is wanted; this notice retires once it succeeds or is no longer wanted. ${RECEIPT}`,
+    `The tick backs off between tries, the next at ${isoFromMs(row.nextAtMs)}, and keeps trying while the action is wanted; this notice retires once it succeeds or is no longer wanted. ${RECEIPT}`,
   ]);
 }
 

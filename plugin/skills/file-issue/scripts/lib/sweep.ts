@@ -34,6 +34,7 @@ import type {
   Tracker,
 } from "../../../do-item/scripts/lib/tracker/port.ts";
 import { failureLine, type Writer, WriteRefused } from "./pace.ts";
+import { currentMs } from "../../../../shared/time.ts";
 
 export const SWEEP_LIMITS = { pages: 20, pageSize: 100, moves: 50 } as const;
 
@@ -150,7 +151,7 @@ async function readAll(
   const limit = opts.limits?.pageSize ?? SWEEP_LIMITS.pageSize;
   const read = {
     census: {},
-    deadline: Date.now() + 60_000,
+    deadline: currentMs() + 60_000,
     ...(opts.writer.signal === undefined ? {} : { signal: opts.writer.signal }),
   };
   let after: string | null = null;

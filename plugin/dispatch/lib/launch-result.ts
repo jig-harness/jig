@@ -7,6 +7,7 @@ import { derivedNext, type NextOwner } from "./next-owner.ts";
 import { sessionResultClass } from "./session-result-class.ts";
 import { inTransaction, stateDb } from "./state.ts";
 import type { FramedResult } from "./framed-result.ts";
+import { currentIso } from "../../shared/time.ts";
 
 /**
  * Record a session's or a follow-up pass's answer: true when this call wrote it,
@@ -36,7 +37,7 @@ export function recordResult(
       )
       .run(
         result === "waits" ? "failed" : result,
-        framed?.at ?? new Date().toISOString(),
+        framed?.at ?? currentIso(),
         next === null ? null : JSON.stringify(next),
         until ?? null,
         refused,

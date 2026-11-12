@@ -94,6 +94,7 @@ import type {
   RepoTarget,
   WantedItem,
 } from "./types.ts";
+import { isoFromMs } from "../../shared/time.ts";
 
 /** What the observe phase needs: the run's options, the runtime, the tick's clock and this machine's launch records. */
 export interface ObserveContext {
@@ -243,7 +244,7 @@ function followupStart(
     options.followupSince ??
     entry?.followupSince ??
     previousFollowupSince(path) ??
-    new Date(nowMs).toISOString()
+    isoFromMs(nowMs)
   );
 }
 

@@ -2729,6 +2729,12 @@ make, use the entry's term instead.
   alive; one submitted to Orca stays until the removal is known to have
   settled, since the owner dying or the call failing does not say whether
   Orca finished.
+- **Temporal** — the platform's date and time API, which Jig's code uses
+  instead of `Date`: an `Instant` is a moment, a `ZonedDateTime` a moment
+  on a named calendar, a `PlainDate` a day, a `Duration` a length, all
+  immutable. Jig's helpers write a moment as an ISO 8601 string in UTC to
+  the millisecond
+  ([ADR-0018](docs/adr/ADR-0018-time-is-temporal.md)).
 
 ## External precondition
 

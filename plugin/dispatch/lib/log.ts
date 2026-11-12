@@ -49,6 +49,7 @@ import {
 } from "./launches.ts";
 import { sessionResultClass } from "./session-result-class.ts";
 import { existingStateDb, stateDb } from "./state.ts";
+import { parseInstant, parseMs } from "../../shared/time.ts";
 
 /**
  * The closed list of outcome classes. An answer that fits more than one
@@ -144,8 +145,8 @@ export function logFile(at: string, root = stateRoot()): string {
 
 /** A time's month, `<year>-<month>` in UTC. */
 export function monthOf(at: string): string {
-  const d = new Date(at);
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+  const { year, month } = parseInstant(at).toZonedDateTimeISO("UTC");
+  return `${year}-${String(month).padStart(2, "0")}`;
 }
 
 function isClass(value: unknown): value is OutcomeClass {
@@ -182,7 +183,7 @@ function isRow(value: unknown): value is LogRow {
   return (
     isMapping(value) &&
     ROW_TEXT.every((k) => typeof value[k] === "string") &&
-    Number.isFinite(Date.parse(value.at as string)) &&
+    Number.isFinite(parseMs(value.at as string)) &&
     kindReads(value)
   );
 }
@@ -223,7 +224,7 @@ export function insertRow(db: Database, row: LogRow): boolean {
       row.key,
       row.kind,
       row.at,
-      Date.parse(row.at),
+      parseMs(row.at),
       row.repo,
       row.stage,
       row.account,
@@ -282,7 +283,7 @@ export function lastEnded(
   );
   return ended.reduce<EndedRow | null>(
     (newest, r) =>
-      newest === null || Date.parse(r.at) >= Date.parse(newest.at) ? r : newest,
+      newest === null || parseMs(r.at) >= parseMs(newest.at) ? r : newest,
     null,
   );
 }
@@ -383,7 +384,7 @@ function wallAtEnd(r: ReadRecord, endedAt: string): string | null {
   const latest = r.record.episodes?.at(-1);
   if (latest === undefined || !latest.last) return null;
   const stood =
-    latest.resetAt === null || Date.parse(latest.resetAt) > Date.parse(endedAt);
+    latest.resetAt === null || parseMs(latest.resetAt) > parseMs(endedAt);
   return stood
     ? `waiting on a usage-limit wall since ${latest.observedAt} (resets ${latest.resetAt ?? "at an unknown time"}): ${latest.evidence}`
     : null;
@@ -497,7 +498,7 @@ export function endedRow(
     record.redrive == null
       ? placed.reason
       : `${placed.reason}; re-drive of ${redriven}: ${record.redrive.cause}`;
-  const duration = Date.parse(endedAt) - Date.parse(record.createdAt);
+  const duration = parseMs(endedAt) - parseMs(record.createdAt);
   const start = record.round ?? null;
   return {
     kind: "ended",

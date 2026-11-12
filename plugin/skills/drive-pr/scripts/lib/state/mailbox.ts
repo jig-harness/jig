@@ -134,6 +134,7 @@ import {
   writeAllSync,
 } from "./fsutil.ts";
 import { fileLock } from "./file-lock.ts";
+import { currentIso, parseMs } from "../../../../../shared/time.ts";
 
 export const MAILBOX_DIRNAME = "drive-mailbox";
 
@@ -235,7 +236,7 @@ function newId(): string {
 }
 
 function nowIso(): string {
-  return new Date().toISOString();
+  return currentIso();
 }
 
 /** `readLeaseForFence`'s absent/unreadable/ok split, ported for this module. */
@@ -304,8 +305,7 @@ export function parseInboxMessage(v: unknown): InboxMessage | null {
   if (typeof v !== "object" || v === null) return null;
   const r = v as Record<string, unknown>;
   if (!isNonEmptyString(r.id)) return null;
-  if (!isNonEmptyString(r.ts) || !Number.isFinite(Date.parse(r.ts)))
-    return null;
+  if (!isNonEmptyString(r.ts) || !Number.isFinite(parseMs(r.ts))) return null;
   if (!isNonEmptyString(r.from)) return null;
   if (!isNonEmptyString(r.pr)) return null;
   if (r.kind === "note") {
@@ -382,8 +382,7 @@ export function parseOutboxRecord(v: unknown): OutboxRecord | null {
   if (typeof v !== "object" || v === null) return null;
   const r = v as Record<string, unknown>;
   if (!isNonEmptyString(r.id)) return null;
-  if (!isNonEmptyString(r.ts) || !Number.isFinite(Date.parse(r.ts)))
-    return null;
+  if (!isNonEmptyString(r.ts) || !Number.isFinite(parseMs(r.ts))) return null;
   if (!isNonEmptyString(r.pr)) return null;
   const base = { id: r.id, ts: r.ts, pr: r.pr };
   if (r.status === "ack")

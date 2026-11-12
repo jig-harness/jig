@@ -13,6 +13,7 @@ import {
   type Outcome,
 } from "../../shared/outcome.ts";
 import type { CollectionKind, Proof, Resource } from "../types.ts";
+import { currentMs } from "../../shared/time.ts";
 
 /** Why a scratch scan stopped short. */
 type ScanFailure = {
@@ -28,8 +29,8 @@ export function scratchProof(
   root: string,
   rows: ProcessRow[] | null,
   idleDays: number,
-  now = Date.now(),
-  deadline = Date.now() + 30_000,
+  now = currentMs(),
+  deadline = currentMs() + 30_000,
 ): Outcome<Proof, "timed-out" | "unreadable-owner"> {
   if (rows === null)
     return ok({ state: "unverified", reason: "process table unavailable" });
@@ -50,7 +51,7 @@ export function scratchProof(
   // The scan holds the kind's lock; an unbounded tree, or one flat directory
   // of many files, must not stall it.
   const late = () =>
-    Date.now() > deadline
+    currentMs() > deadline
       ? failed("timed-out", "Scratch scan exceeded its deadline")
       : null;
   const walk = (path: string): ScanFailure | null => {

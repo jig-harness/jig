@@ -26,6 +26,7 @@ import {
   FALLBACK_LIMIT_MS,
   TrackerRateLimited,
 } from "../../../../../shared/tracker-budget.ts";
+import { currentMs } from "../../../../../shared/time.ts";
 
 export const LINEAR_API = "https://api.linear.app/graphql";
 export const LINEAR_TIMEOUT_MS = 30_000;
@@ -157,7 +158,7 @@ export function linearAnswer(
   headers: Headers,
   status: number,
   body: unknown,
-  now = Date.now(),
+  now = currentMs(),
 ): BudgetAnswer {
   const answer: BudgetAnswer = {};
   const requests = window(headers, "requests");
@@ -316,7 +317,7 @@ export function cliTransport(
     }
     if (rateLimitedBody(body))
       settle(governed, {
-        limitedUntil: Date.now() + FALLBACK_LIMIT_MS,
+        limitedUntil: currentMs() + FALLBACK_LIMIT_MS,
         why: "Linear refused the request (RATELIMITED)",
       });
     // A failed invocation is a failure even when its output parses: report

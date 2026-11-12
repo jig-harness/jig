@@ -24,6 +24,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { ANY_KEY_SOURCE } from "./tracker/keys.ts";
+import { currentMs } from "../../../../shared/time.ts";
 
 export const PICKUP_MAX_BYTES = 64 * 1024;
 export const PICKUP_TOKEN_RE = /^[a-f0-9]{64}$/;
@@ -83,7 +84,7 @@ export function withFileLock<T>(
   fn: () => T,
   waitMs = lockWaitMs(),
 ): T {
-  const deadline = Date.now() + waitMs;
+  const deadline = currentMs() + waitMs;
   const token = randomUUID();
   for (;;) {
     try {
@@ -92,7 +93,7 @@ export function withFileLock<T>(
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
       if (reclaimStaleLock(lock)) continue;
-      if (Date.now() >= deadline)
+      if (currentMs() >= deadline)
         throw new Error(`timed out waiting for lock ${lock}`);
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
     }
@@ -111,7 +112,7 @@ export function withFileLock<T>(
 /** True when the lock slot is free to retry (reclaimed, or already gone). */
 function reclaimStaleLock(lock: string): boolean {
   try {
-    if (Date.now() - lstatSync(lock).mtimeMs <= LOCK_STALE_MS) return false;
+    if (currentMs() - lstatSync(lock).mtimeMs <= LOCK_STALE_MS) return false;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return true;
     throw error;
@@ -125,7 +126,7 @@ function reclaimStaleLock(lock: string): boolean {
   }
   // The inode moved is the one judged, not the one stat'd above: a rival may
   // have reclaimed and re-created the lock in between.
-  if (Date.now() - lstatSync(aside).mtimeMs > LOCK_STALE_MS) {
+  if (currentMs() - lstatSync(aside).mtimeMs > LOCK_STALE_MS) {
     unlinkSync(aside);
     return true;
   }
@@ -206,7 +207,7 @@ export interface ReadPickupOptions {
 export function readPickup(
   chainDir: string,
   token: string,
-  { allowExpired = false, now = Date.now() }: ReadPickupOptions = {},
+  { allowExpired = false, now = currentMs() }: ReadPickupOptions = {},
 ): PickupSnapshot {
   if (!PICKUP_TOKEN_RE.test(token)) throw new Error("invalid pickup token");
   const file = join(chainDir, "pickups", `${token}.json`);
@@ -329,7 +330,7 @@ export function renewPickup(
   const dir = join(chainDir, "pickups");
   withFileLock(join(dir, LOCK_FILE), () => {
     if (verify) readPickup(chainDir, token, { allowExpired: true });
-    const now = new Date();
+    const now = currentMs() / 1000;
     utimesSync(join(dir, `${token}.json`), now, now);
   });
 }
@@ -338,7 +339,7 @@ export function renewPickup(
  * token-named envelopes and abandoned publication temporaries; links,
  * unrelated files and recent files survive.
  */
-export function prunePickups(chainDir: string, now = Date.now()): void {
+export function prunePickups(chainDir: string, now = currentMs()): void {
   const dir = join(chainDir, "pickups");
   let names: string[];
   try {

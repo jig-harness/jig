@@ -36,6 +36,7 @@ import {
 } from "../plugin/shared/process-table.ts";
 import { signalIdentityTargets } from "../plugin/shared/process-tree.ts";
 import { partitionProcessTree } from "../plugin/shared/process-uncertainty.ts";
+import { currentMs } from "../plugin/shared/time.ts";
 
 export type Identity = Pick<ProcessRow, "pid" | "start">;
 type Table = (timeoutSec?: number) => Promise<ProcessRow[] | null>;
@@ -196,8 +197,8 @@ async function reap(
   deps: ReapDeps,
   captured: readonly Identity[],
 ): Promise<ReapReport | null> {
-  const deadline = Date.now() + (deps.timeoutMs ?? 10_000);
-  const remaining = () => Math.max(0, deadline - Date.now());
+  const deadline = currentMs() + (deps.timeoutMs ?? 10_000);
+  const remaining = () => Math.max(0, deadline - currentMs());
   const read = deps.table ?? processTable;
   // Each read gets what is left of the deadline, and none starts after it.
   const table: Table = async () => {

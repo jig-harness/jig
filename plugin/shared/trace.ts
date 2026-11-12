@@ -6,6 +6,7 @@ import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 
 import { errnoCode, swallow } from "./errors.ts";
+import { currentIso, currentMs, isoFromMs, parseMs } from "./time.ts";
 
 /** Stable child-process diagnostic code for incomplete forge accounting. */
 export const FORGE_ACCOUNTING_UNAVAILABLE = "jig-forge-accounting-unavailable";
@@ -74,7 +75,7 @@ export async function span<T>(
     traceId: parent.traceId,
     spanId: randomBytes(8).toString("hex"),
   };
-  const start = new Date();
+  const start = currentIso();
   const clock = performance.now();
   let status = "ok";
   try {
@@ -90,7 +91,7 @@ export async function span<T>(
         ? resolve(process.env.JIG_TRACE_FILE)
         : join(
             traceDirectory(),
-            start.toISOString().slice(0, 10),
+            start.slice(0, 10),
             `${current.traceId}.jsonl`,
           );
       mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
@@ -101,7 +102,7 @@ export async function span<T>(
           span_id: current.spanId,
           parent_id: parent.spanId || null,
           name,
-          start: start.toISOString(),
+          start,
           duration_ms: performance.now() - clock,
           status,
           attrs,
@@ -139,13 +140,13 @@ function removeDay(
 /** Expire complete UTC trace days older than fourteen days; dry runs only report. */
 export function reapTraceDays(
   del: boolean,
-  now = Date.now(),
+  now = currentMs(),
   directory = traceDirectory(),
   remove: (path: string) => void = removeTraceDay,
 ): { days: string[]; failures: string[] } {
   const days: string[] = [];
   const failures: string[] = [];
-  const cutoff = new Date(now - 14 * 86_400_000).toISOString().slice(0, 10);
+  const cutoff = isoFromMs(now - 14 * 86_400_000).slice(0, 10);
   try {
     // Oldest first, so failures report in the same order on every filesystem.
     const entries = readdirSync(directory, { withFileTypes: true }).sort(
@@ -158,10 +159,10 @@ export function reapTraceDays(
         entry.name >= cutoff
       )
         continue;
-      const timestamp = Date.parse(`${entry.name}T00:00:00Z`);
+      const timestamp = parseMs(`${entry.name}T00:00:00Z`);
       if (
         !Number.isFinite(timestamp) ||
-        new Date(timestamp).toISOString().slice(0, 10) !== entry.name
+        isoFromMs(timestamp).slice(0, 10) !== entry.name
       )
         continue;
       days.push(entry.name);

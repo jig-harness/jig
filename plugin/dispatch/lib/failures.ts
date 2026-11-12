@@ -33,6 +33,7 @@
  */
 import { stateRoot } from "../receipts.ts";
 import { inTransaction, stateDb } from "./state.ts";
+import { currentMs, isoFromMs } from "../../shared/time.ts";
 
 /** What a row counts the failures of. */
 export type FailureKind =
@@ -178,7 +179,7 @@ export function recordFailure(
   root = stateRoot(),
 ): FailureRow {
   const db = stateDb(root);
-  const at = new Date(nowMs).toISOString();
+  const at = isoFromMs(nowMs);
   const said = oneSentence(reason);
   return inTransaction(db, () => {
     const before = db
@@ -277,16 +278,14 @@ export function entryOf(row: FailureRow): FailureEntry {
     count: row.count,
     since: row.firstAt,
     last: row.reason,
-    ...(isActionKind(row.kind)
-      ? { nextTry: new Date(row.nextAtMs).toISOString() }
-      : {}),
+    ...(isActionKind(row.kind) ? { nextTry: isoFromMs(row.nextAtMs) } : {}),
   };
 }
 
 /** Why an action whose row is `row` is not tried now; `null` when it is due. */
 function backingOff(row: FailureRow, nowMs: number): string | null {
   if (!isActionKind(row.kind) || row.nextAtMs <= nowMs) return null;
-  return `backing off after ${row.count} failure${row.count === 1 ? "" : "s"} in a row since ${row.firstAt} (the last: ${row.reason}); next try at ${new Date(row.nextAtMs).toISOString()}`;
+  return `backing off after ${row.count} failure${row.count === 1 ? "" : "s"} in a row since ${row.firstAt} (the last: ${row.reason}); next try at ${isoFromMs(row.nextAtMs)}`;
 }
 
 /**
@@ -337,7 +336,7 @@ export function actionBook(
     standing: (key) => rows.has(key),
     waits: (key) => {
       const row = rows.get(key);
-      return row === undefined ? null : backingOff(row, Date.now());
+      return row === undefined ? null : backingOff(row, currentMs());
     },
     ran: (of, failure) =>
       write(() => {
@@ -349,7 +348,7 @@ export function actionBook(
         }
         rows.set(
           of.key,
-          recordFailure({ ...of, repo }, failure, Date.now(), settings, root),
+          recordFailure({ ...of, repo }, failure, currentMs(), settings, root),
         );
       }),
     wanted: (kind, keys, unobserved) =>

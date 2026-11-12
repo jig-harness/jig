@@ -310,6 +310,7 @@ import {
   withoutSuperseded,
   workflowRunsBehind,
 } from "./lib/status/workflow-runs.ts";
+import { parseMs } from "../../../shared/time.ts";
 
 function usage(): void {
   console.error(`usage: drive-state.ts <command> [PR] [flags]
@@ -1396,7 +1397,7 @@ async function main(): Promise<number> {
         !isGitSha(a.sha) ||
         a.actorName === "" ||
         /\r|\n/.test(a.actorName) ||
-        !Number.isFinite(Date.parse(a.createdAt))
+        !Number.isFinite(parseMs(a.createdAt))
       ) {
         fail(
           2,
@@ -1512,7 +1513,7 @@ async function main(): Promise<number> {
       // strictly AFTER a real push (§ 3 → § 6), so the push already happened
       // whether or not THIS actor currently holds anything to stamp a SHA onto.
       await store.update((s) => ({
-        ...withProgress(s, "push-landed", new Date()),
+        ...withProgress(s, "push-landed", Temporal.Now.instant()),
         held: s.held.map((h) => {
           if (h.actor !== me) return h;
           if (
@@ -1855,7 +1856,9 @@ async function main(): Promise<number> {
         // of `'push-landed'` above, which genuinely does run strictly after a
         // real push (the two calls shared one label that was only accurate for
         // one of them).
-        await store.update((s) => withProgress(s, "ci-verified", new Date()));
+        await store.update((s) =>
+          withProgress(s, "ci-verified", Temporal.Now.instant()),
+        );
         return 0;
       } finally {
         if (remoteHeartbeat !== null) clearInterval(remoteHeartbeat);
@@ -2887,7 +2890,7 @@ async function main(): Promise<number> {
           // empty-batch no-op and the contended-claim refusal above, so this
           // call is a genuine drain, never a no-op.
           const next: DriveState = {
-            ...withProgress(state, "held-drained", new Date()),
+            ...withProgress(state, "held-drained", Temporal.Now.instant()),
             held: [],
           };
           store.write(next);
@@ -3031,7 +3034,7 @@ async function main(): Promise<number> {
         // no-op `return 0` above (`--if-comment-url` mismatch, a missing key
         // with `--if-present`), so this branch is a genuine release.
         const next: DriveState = {
-          ...withProgress(state, "held-drained", new Date()),
+          ...withProgress(state, "held-drained", Temporal.Now.instant()),
           held: state.held.filter((h) => h.key !== a.key),
         };
         store.write(next);
@@ -3080,7 +3083,9 @@ async function main(): Promise<number> {
         "progress",
       );
       if (delaySec > 0) await sleep(delaySec);
-      await store.update((s) => withProgress(s, a.phaseArg, new Date()));
+      await store.update((s) =>
+        withProgress(s, a.phaseArg, Temporal.Now.instant()),
+      );
       return 0;
     }
 

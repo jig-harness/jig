@@ -30,6 +30,7 @@ import {
   identifierFromBranchName,
   prCaptureFileName,
 } from "./state/handoff.ts";
+import { currentMs } from "../../../../shared/time.ts";
 
 /** A snapshot is budgeted at 4000 characters by the writer; this bound only
  * refuses a file that is not one, rather than copy something unbounded. */
@@ -196,7 +197,7 @@ export function captureIntentChain(input: CaptureInput): CaptureResult {
     try {
       renewed = withFileLock(pinLock(pin), () => {
         if (!pinIsValid(pin)) return false;
-        const now = new Date();
+        const now = currentMs() / 1000;
         utimesSync(pin, now, now);
         return true;
       });

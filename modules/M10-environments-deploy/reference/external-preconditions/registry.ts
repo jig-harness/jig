@@ -54,19 +54,22 @@ function text(value: unknown, label: string): asserts value is string {
   if (typeof value !== "string" || !value.trim())
     throw new PreconditionError(`${label} must be nonempty text`);
 }
-/** UTC calendar date, including round-trip validation (Date.parse alone rolls February over). */
+/**
+ * Midnight UTC of a calendar date; a day that does not exist (2026-02-30) is
+ * rejected, never rolled over.
+ */
 export function expiry(value: unknown): number {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value))
     throw new PreconditionError(
       "waiver expires must be a quoted YYYY-MM-DD UTC date",
     );
-  const timestamp = Date.parse(`${value}T00:00:00.000Z`);
-  if (
-    !Number.isFinite(timestamp) ||
-    new Date(timestamp).toISOString().slice(0, 10) !== value
-  )
+  try {
+    return Temporal.PlainDate.from(value, {
+      overflow: "reject",
+    }).toZonedDateTime("UTC").epochMilliseconds;
+  } catch {
     throw new PreconditionError("waiver expires must be a valid calendar date");
-  return timestamp;
+  }
 }
 function keys(
   value: Record<string, unknown>,
@@ -220,7 +223,7 @@ export async function runRegistry(
   const observations: Observation[] = [];
   for (const entry of registry.preconditions)
     observations.push(await observe(entry, options));
-  const now = options.now ?? Date.now();
+  const now = options.now ?? Temporal.Now.instant().epochMilliseconds;
   const entries = registry.preconditions.map((entry, index): EntryReport => {
     const observation = observations[index] as Observation;
     return {

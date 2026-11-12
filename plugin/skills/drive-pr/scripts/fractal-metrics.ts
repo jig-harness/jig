@@ -118,6 +118,7 @@ import {
   samplePr,
 } from "./lib/sample.ts";
 import { gitDeps, labelRecord } from "./self-inflicted.ts";
+import { currentMs, isoFromMs, parseMs } from "../../../shared/time.ts";
 
 const DAY_MS = 86_400_000;
 const DEFAULT_DAYS = 37;
@@ -191,7 +192,7 @@ export interface RunResult {
 }
 
 function isoDate(ms: number): string {
-  return new Date(ms).toISOString().slice(0, 10);
+  return isoFromMs(ms).slice(0, 10);
 }
 
 async function mapLimit<T, R>(
@@ -271,7 +272,7 @@ export async function runScoreboard(
   deps: RunDeps,
 ): Promise<RunResult> {
   const nowMs = deps.nowMs();
-  const untilMs = Date.parse(`${opts.until}T00:00:00Z`);
+  const untilMs = parseMs(`${opts.until}T00:00:00Z`);
   const sinceMs = untilMs - opts.days * DAY_MS;
   const prSinceMs = untilMs - opts.prDays * DAY_MS;
   const gaps: string[] = [];
@@ -304,7 +305,7 @@ export async function runScoreboard(
     }
     // Outcomes are frozen at the window's end when that end is in the past, so
     // a reply added after the window cannot rewrite a recorded window's mix.
-    const asOf = untilMs <= nowMs ? new Date(untilMs).toISOString() : undefined;
+    const asOf = untilMs <= nowMs ? isoFromMs(untilMs) : undefined;
     const failed: number[] = [];
     const samples: PrSample[] = [];
     const records = (
@@ -457,11 +458,11 @@ export async function runScoreboard(
     gaps,
     scoreboard: {
       version: 1,
-      generatedAt: new Date(nowMs).toISOString(),
+      generatedAt: isoFromMs(nowMs),
       window: {
-        until: new Date(untilMs).toISOString(),
-        pr: { since: new Date(prSinceMs).toISOString(), days: opts.prDays },
-        linear: { since: new Date(sinceMs).toISOString(), days: opts.days },
+        until: isoFromMs(untilMs),
+        pr: { since: isoFromMs(prSinceMs), days: opts.prDays },
+        linear: { since: isoFromMs(sinceMs), days: opts.days },
       },
       pr,
       mergeConflicts,
@@ -758,7 +759,7 @@ function conflictInputs(
 async function main(): Promise<number> {
   // One read feeds both the default window end and every `nowMs` below, so a
   // UTC-midnight crossing mid-run cannot make them disagree.
-  const startMs = Date.now();
+  const startMs = currentMs();
   const args = parseArgs(process.argv.slice(2), startMs);
   const repo = args.skipPrs ? null : await resolveRepo();
   const root = args.skipPrs ? "" : await repoRoot();

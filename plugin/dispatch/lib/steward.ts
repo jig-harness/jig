@@ -9,6 +9,7 @@ import { stateDb } from "./state.ts";
 import type { Action, DrivenPr } from "./types.ts";
 import type { FailureRow } from "./failures.ts";
 import type { LineLoad } from "./dashboard-contract.ts";
+import { currentIso, currentMs } from "../../shared/time.ts";
 
 export const STEWARD_DEADLINE_SEC = 900;
 export const STEWARD_RESUME =
@@ -316,7 +317,7 @@ export function submitStewardRecords(
       db.query("UPDATE steward_runs SET submitted = 1 WHERE id = ?").run(run);
       db.query(
         "UPDATE launches SET result = 'done', result_at = ? WHERE id = ? AND result IS NULL",
-      ).run(new Date().toISOString(), run);
+      ).run(currentIso(), run);
       return "submitted" as const;
     })();
   });
@@ -366,7 +367,7 @@ export function markStewardEffect(
     .query(
       "UPDATE steward_records SET effect = ?, effect_at_ms = ? WHERE id = ? AND effect IS NULL",
     )
-    .run(effect, Date.now(), id);
+    .run(effect, currentMs(), id);
 }
 
 export function releaseStewardRecord(id: number, root = stateRoot()): void {
