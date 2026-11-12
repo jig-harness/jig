@@ -57,6 +57,21 @@ async function latestAssigner(
   return latest.author;
 }
 
+/** A changelog entry's author as an assigner or a mover, with its trust; a deleted account is untrusted. */
+export async function authorOf(
+  client: Client,
+  author: Record<string, unknown> | null,
+): Promise<Assigner> {
+  if (author === null || typeof author.accountId !== "string")
+    return { id: "", name: "a deleted account", trusted: false };
+  const name = typeof author.displayName === "string" ? author.displayName : "";
+  return {
+    id: author.accountId,
+    name: name || author.accountId,
+    trusted: await client.trusted(author),
+  };
+}
+
 export function assignerOperations(
   client: Client,
 ): Pick<Tracker, "assignedBy"> {
@@ -64,16 +79,7 @@ export function assignerOperations(
     async assignedBy(key, assignee) {
       const issue = await client.mustIssue(key);
       const who = await wantedAccount(client, issue, assignee);
-      const author = await latestAssigner(client, issue.key, who);
-      if (author === null || typeof author.accountId !== "string")
-        return { id: "", name: "a deleted account", trusted: false };
-      const name =
-        typeof author.displayName === "string" ? author.displayName : "";
-      return {
-        id: author.accountId,
-        name: name || author.accountId,
-        trusted: await client.trusted(author),
-      } satisfies Assigner;
+      return authorOf(client, await latestAssigner(client, issue.key, who));
     },
   };
 }

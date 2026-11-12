@@ -322,6 +322,15 @@ export function estimateStore(
         },
         assignedIssues: async (identity, states, signal) =>
           pools(await core.assignedIssues(identity, states, signal), signal),
+        ...(core.unassignedIssues === undefined
+          ? {}
+          : {
+              unassignedIssues: async (states, signal) =>
+                pools(
+                  (await core.unassignedIssues?.(states, signal)) ?? [],
+                  signal,
+                ),
+            }),
         ...estimatedBatches(core, pool),
         openPopulation: async (signal) =>
           pools(await core.openPopulation(signal), signal),

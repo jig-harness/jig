@@ -1,6 +1,9 @@
 /** The audit's warning when the claim's start states and the dispatcher's differ. */
 import { describe, expect, it } from "bun:test";
-import { claimFromFindings } from "../scripts/lib/claim-fit.ts";
+import {
+  claimFromFindings,
+  poolClaimFindings,
+} from "../scripts/lib/claim-fit.ts";
 
 describe("claimFromFindings", () => {
   it("says nothing unless both lists are set", () => {
@@ -32,5 +35,35 @@ describe("claimFromFindings", () => {
     });
     expect(finding?.message).toContain("picks up from backlog");
     expect(finding?.message).toContain("allows in_review");
+  });
+});
+
+describe("poolClaimFindings", () => {
+  it("says nothing unless both lists are set, or when the claim allows every pool state", () => {
+    expect(
+      poolClaimFindings({ dispatch: { pool: { states: ["todo"] } } }),
+    ).toEqual([]);
+    expect(
+      poolClaimFindings({
+        do_item: { claim_from: ["todo", "backlog"] },
+        dispatch: { pool: { states: ["todo"] } },
+      }),
+    ).toEqual([]);
+  });
+
+  it("warns, naming each pool state the claim refuses", () => {
+    expect(
+      poolClaimFindings({
+        do_item: { claim_from: ["todo"] },
+        dispatch: { pool: { states: ["todo", "backlog"] } },
+      }),
+    ).toEqual([
+      {
+        id: "rule:dispatch.pool.states",
+        severity: "warning",
+        message:
+          "dispatch.pool.states names backlog, which do_item.claim_from refuses, so every pickup from there is launched only to be refused",
+      },
+    ]);
   });
 });
