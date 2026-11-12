@@ -50,6 +50,7 @@ export type FixtureProof = {
 };
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const MAX_RECORDS = 100_000;
+const MAX_RECORD_BYTES = 64 * 1024;
 function testFixtureRegistryRoot(home = homedir()): string {
   return join(home, ".local", "state", "jig", "test-fixtures-v1");
 }
@@ -172,7 +173,12 @@ function claimFixtureIdentity(file: string, identity: string): boolean {
   return true;
 }
 function regular(file: string): boolean {
-  return lstatSync(file).isFile();
+  const stat = lstatSync(file);
+  return stat.isFile() && stat.size <= MAX_RECORD_BYTES;
+}
+function readRecord(file: string): string | null {
+  if (!regular(file)) return null;
+  return readFileSync(file, "utf8");
 }
 function nodeState(value: unknown): value is NodeRecord["state"] {
   return value === "registered" || value === "pending" || value === "opaque";
@@ -181,8 +187,9 @@ function opaqueKind(value: unknown): value is NodeRecord["opaqueReason"] {
   return value === undefined || value === "native" || value === "prior-work";
 }
 function nodeRecord(file: string): NodeRecord | null {
-  if (!regular(file)) return null;
-  const value: unknown = JSON.parse(readFileSync(file, "utf8"));
+  const text = readRecord(file);
+  if (text === null) return null;
+  const value: unknown = JSON.parse(text);
   if (!isRecord(value) || value.version !== 1) return null;
   const { state, parent, identity, opaqueReason } = value;
   if (!nodeState(state)) return null;
@@ -198,8 +205,9 @@ function nodeRecord(file: string): NodeRecord | null {
   };
 }
 function scopeRecord(file: string, registry: string): FixtureScope | null {
-  if (!regular(file)) return null;
-  const value: unknown = JSON.parse(readFileSync(file, "utf8"));
+  const text = readRecord(file);
+  if (text === null) return null;
+  const value: unknown = JSON.parse(text);
   return isRecord(value) &&
     value.version === 1 &&
     typeof value.root === "string" &&
@@ -303,7 +311,8 @@ function validClaim(registry: string, entry: Dirent): boolean {
   const id = entry.name.slice(0, -6);
   if (!UUID.test(id) || !entry.isFile()) return false;
   const node = nodeRecord(join(registry, `${id}.json`));
-  const identity = readFileSync(join(registry, entry.name), "utf8");
+  const identity = readRecord(join(registry, entry.name));
+  if (identity === null) return false;
   if (!node || !decodeIdentity(identity)) return false;
   return node.state !== "registered" || node.identity === identity;
 }
@@ -324,12 +333,21 @@ function registryNodes(registry: string): Map<string, NodeRecord> | null {
   const directory = join(registry, "nodes");
   if (!lstatSync(directory).isDirectory()) return null;
   const nodes = new Map<string, NodeRecord>();
+  const claims = new Set<string>();
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     if (!within(budget)) return null;
     const parsed = registryEntry(directory, entry);
     if (!parsed) return null;
     if (parsed.kind === "node") nodes.set(parsed.id, parsed.node);
+    else if (entry.name.endsWith(".claim")) claims.add(entry.name.slice(0, -6));
   }
+  if (
+    [...nodes].some(
+      ([id, node]) =>
+        node.parent !== null && node.state === "registered" && !claims.has(id),
+    )
+  )
+    return null;
   return linkedParents(nodes, budget.deadline) ? nodes : null;
 }
 /** One validated closed graph, shared by the proof and the registered-child reaper. */

@@ -8,6 +8,7 @@ import { encodeIdentity, ownIdentity } from "../liveness.ts";
 import {
   acknowledgeFixtureLaunch,
   beginFixtureLaunch,
+  readClosedFixtureMembership,
   registerFixtureScope,
 } from "../test-fixture-registry.ts";
 
@@ -74,6 +75,17 @@ test("an unfinished publication cannot transfer its immutable claim to another p
   expect(JSON.parse(other.stdout.toString())).toMatchObject({
     ok: false,
     failure: { code: "fixture-acknowledgement" },
+  });
+});
+test("a registered child without its durable claim leaves membership unverified", () => {
+  const f = fixture();
+  expect(acknowledgeFixtureLaunch(f.launch)).toEqual({ ok: true, value: true });
+  rmSync(join(f.launch.registry, "nodes", `${f.launch.node}.claim`));
+  expect(
+    readClosedFixtureMembership(join(f.base, "scope"), f.launch.registry),
+  ).toMatchObject({
+    ok: false,
+    failure: { code: "fixture-proof" },
   });
 });
 test("concurrent acknowledgements cannot overwrite another process's membership", async () => {
