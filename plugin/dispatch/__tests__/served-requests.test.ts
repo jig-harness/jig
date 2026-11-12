@@ -526,3 +526,36 @@ describe("queueIssuesByKey", () => {
     expect(fake.requests.length).toBeLessThanOrEqual(3);
   });
 });
+
+describe("a nested epic's parents on the tick after a cold one", () => {
+  /** An epic assigned to the person, a sub-epic nobody holds, and `n` leaves under the sub-epic. */
+  function nested(n: number): FakeLinear {
+    const fake = new FakeLinear();
+    fake.add({
+      identifier: "ENG-1",
+      assignee: PERSON,
+      labels: ["epic"],
+      description: "The epic.",
+    });
+    fake.add({
+      identifier: "ENG-2",
+      parent: "ENG-1",
+      labels: ["epic"],
+      description: "The sub-epic.",
+    });
+    for (let c = 1; c <= n; c++)
+      fake.add({ identifier: `ENG-${10 + c}`, parent: "ENG-2" });
+    return fake;
+  }
+
+  it("reads no parent again when nothing changed", async () => {
+    const fake = nested(30);
+    const tracker = fake.tracker();
+    const cache = memoryCache();
+    const first = await tick(tracker, cache, 0);
+    expect(first.wanted).toHaveLength(1);
+    const before = fake.count();
+    await tick(tracker, cache, 2);
+    expect(fake.requests.slice(before)).toEqual(["TrackerChanges"]);
+  });
+});

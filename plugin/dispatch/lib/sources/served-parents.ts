@@ -39,16 +39,21 @@ async function body(
   cache: PickupReads,
   reads: ParentReads,
 ): Promise<Body | null> {
+  const key = `${trackerScope(tracker)}:parent-plan:${issue.identifier}`;
+  const kept = cache.get<Body>(key);
+  const fresh = issue.updatedAt && kept?.updatedAt === issue.updatedAt;
   const carried = reads.parentBody?.(issue.identifier);
-  if (carried !== undefined && carried.issue.updatedAt === issue.updatedAt)
-    return {
+  if (carried !== undefined && carried.issue.updatedAt === issue.updatedAt) {
+    const value = {
       updatedAt: issue.updatedAt ?? "",
       description: carried.description,
       parent: carried.parent,
     };
-  const key = `${trackerScope(tracker)}:parent-plan:${issue.identifier}`;
-  const kept = cache.get<Body>(key);
-  if (issue.updatedAt && kept?.updatedAt === issue.updatedAt) return kept;
+    // Kept for a tick whose reads carry no parents (the kept reading is reused).
+    if (issue.updatedAt && !fresh) cache.set(key, value);
+    return value;
+  }
+  if (fresh && kept) return kept;
   const read = () => tracker.getIssue(issue.identifier);
   const full = await (reads.once === undefined
     ? read()
@@ -70,9 +75,18 @@ async function parentOf(
   cache: PickupReads,
   reads: ParentReads,
 ): Promise<{ parent: string | null } | null> {
+  const key = `${trackerScope(tracker)}:parent-of:${issue.identifier}`;
+  const kept = cache.get<{ updatedAt: string; parent: string | null }>(key);
+  const fresh = issue.updatedAt && kept?.updatedAt === issue.updatedAt;
   const held = reads.held?.(issue.identifier);
-  if (held !== undefined && held.parent !== undefined)
-    return { parent: held.parent?.issue.identifier ?? null };
+  if (held !== undefined && held.parent !== undefined) {
+    const parent = held.parent?.issue.identifier ?? null;
+    // Kept for a tick whose reads carry no parents (the kept reading is reused).
+    if (issue.updatedAt && !fresh)
+      cache.set(key, { updatedAt: issue.updatedAt, parent });
+    return { parent };
+  }
+  if (fresh && kept) return { parent: kept.parent };
   const full = await body(tracker, issue, cache, reads);
   return full === null ? null : { parent: full.parent };
 }
