@@ -980,6 +980,8 @@ changelog:
 | `changelog.tag_prefix` | text | `v` | changelog | What a version's tag puts before it |
 | `changelog.release.push` | `direct`, `pull-request` | `direct` | changelog | How the release reaches the integration branch: the workflow template's `push` job pushes the release commit onto it (`direct`) or force-pushes it to `release.branch` and opens or updates the release pull request (`pull-request`, which refuses `unreleased: write`). The branch check reads it from the base to recognise a release pull request; `release-access.ts` checks what the mode needs of the branch rules; `release.ts --json` prints it for the workflow |
 | `changelog.release.branch` | branch name | `changelog-release` | changelog | `pull-request` mode: the branch the release pull request comes from, regenerated from scratch on every push to the integration branch. A pull request from it is checked as a release pull request (the base's value counts); `release-access.ts` checks that the App can create and force-push it |
+| `changelog.consumer_actions` | `true`, `false` | `false` | changelog | `true`: the branch check requires every breaking entry of a note the branch adds (one marked `**Breaking:**`, `**Breaking**` or `**Breaking.**`, in any case) to declare a [consumer action](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) with `**Consumer action:**`, `none` included ([the form](skills/changelog/README.md#consumer-actions)). It also refuses a near-miss marker (`**Consumer Action:**`, `**Consumer action**:`) and a `**Detect:**` with no declaration, which a repository with the field off reads as text. A declaration's form is checked wherever a note carries one, whatever this field says |
+| `changelog.consumer_actions_record` | path of a file, relative to the root | No record | changelog | Where the consumer-actions record is derived: the JSON list of every consumer action the changelog's released sections declare, with its id. The release step rewrites it in the release commit, and the skill's `scripts/consumer-actions-record.ts --check` fails when the committed file is not what the changelog derives (`--write` regenerates it). Keep a Changelog only: Common Changelog appends a reference and authors to each entry, so the field is refused there. It may not be the changelog, a version file or a workflow, and a placeholder's globs may not reach it |
 
 The integration branch is not a field of this section: it is
 `repository.base_branch`, else the hosting service's default branch (in a CI
@@ -2031,6 +2033,8 @@ changelog:
   release:
     push: direct                         # direct | pull-request
     branch: changelog-release
+  consumer_actions: true                 # a breaking entry declares a consumer action
+  consumer_actions_record: consumer-actions.json  # Keep a Changelog only
 code_stats:
   areas:                                 # ordered, first match wins; replaces the default areas
     - name: product
