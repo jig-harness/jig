@@ -58,8 +58,18 @@ describe("the Linear transport's request budget", () => {
     const reset = now + 20 * 60_000;
     const read = linearAnswer(new Headers(headers(1200, reset)), 200, {}, now);
     expect(read).toEqual({
-      requests: { limit: 2500, remaining: 1200, resetAt: reset },
-      complexity: { limit: 3_000_000, remaining: 2_900_000, resetAt: reset },
+      requests: {
+        limit: 2500,
+        remaining: 1200,
+        resetAt: reset,
+        refillMs: 3_600_000,
+      },
+      complexity: {
+        limit: 3_000_000,
+        remaining: 2_900_000,
+        resetAt: reset,
+        refillMs: 3_600_000,
+      },
     });
     const refused = linearAnswer(
       new Headers(headers(0, reset)),
@@ -117,6 +127,53 @@ describe("the Linear transport's request budget", () => {
     });
     expect(() => dispatcher.admit("linear", key)).toThrow(/share \(50%\)/);
     expect(() => pass.admit("linear", key)).not.toThrow();
+  });
+
+  it("lets the dispatcher send again once a continuously refilling window refills past its share", () => {
+    let now = Date.parse("2026-11-10T12:00:00Z");
+    const store = memoryBudgetStore();
+    const key = credentialKey("linear", "lin_api_c");
+    const dispatcher = budgetGovernor(store, {
+      clock: () => now,
+      share: () => 0.5,
+    });
+    // The answer left 1,240 of 2,500; the reset it names is an hour of refill away.
+    dispatcher.observe(key, {
+      requests: {
+        limit: 2500,
+        remaining: 1240,
+        resetAt: now + 3_600_000,
+        refillMs: 3_600_000,
+      },
+    });
+    const refused = (() => {
+      try {
+        dispatcher.admit("linear", key);
+        return null;
+      } catch (error) {
+        return error as TrackerRateLimited;
+      }
+    })();
+    expect(refused).toBeInstanceOf(TrackerRateLimited);
+    // 11 requests refill in about 16 seconds, not an hour.
+    expect((refused as TrackerRateLimited).resetAt - now).toBeLessThan(20_000);
+    now += 20_000;
+    expect(() => dispatcher.admit("linear", key)).not.toThrow();
+  });
+
+  it("keeps a window that resets whole walled until its reset", () => {
+    let now = Date.parse("2026-11-10T12:00:00Z");
+    const store = memoryBudgetStore();
+    const key = credentialKey("linear", "lin_api_d");
+    const dispatcher = budgetGovernor(store, {
+      clock: () => now,
+      share: () => 0.5,
+    });
+    dispatcher.observe(key, {
+      requests: { limit: 2500, remaining: 1240, resetAt: now + 3_600_000 },
+    });
+    now += 20_000;
+    expect(() => dispatcher.admit("linear", key)).toThrow(/share \(50%\)/);
   });
 
   it("records a refusal the command-line client reports, for the fallback period", async () => {

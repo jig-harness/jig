@@ -39,6 +39,12 @@ export interface BudgetWindow {
   remaining: number | null;
   /** When the window resets, epoch milliseconds. */
   resetAt: number | null;
+  /**
+   * How long the tracker takes to refill an empty window, when it refills
+   * continuously (Linear's leaky bucket) rather than all at once at the
+   * reset; absent for a window that resets whole.
+   */
+  refillMs?: number | null;
 }
 
 /** What the machine knows of one credential's budget. */
@@ -138,11 +144,12 @@ const orNull = (v: unknown, ok: (n: number) => boolean): boolean =>
 
 function validWindow(w: unknown): w is BudgetWindow {
   if (typeof w !== "object" || w === null) return false;
-  const { limit, remaining, resetAt } = w as Record<string, unknown>;
+  const { limit, remaining, resetAt, refillMs } = w as Record<string, unknown>;
   return (
     orNull(limit, (n) => n >= 0) &&
     orNull(remaining, () => true) &&
-    orNull(resetAt, (n) => n >= 0)
+    orNull(resetAt, (n) => n >= 0) &&
+    (refillMs === undefined || orNull(refillMs, (n) => n > 0))
   );
 }
 
@@ -266,6 +273,33 @@ function merged(
   return next;
 }
 
+/**
+ * What a window holds at `now`: its last reading, and for a window that
+ * refills continuously, what has refilled since that reading.
+ */
+function holds(w: BudgetWindow, readAt: number, now: number): number | null {
+  if (w.remaining === null) return null;
+  if (w.refillMs == null || w.limit === null) return w.remaining;
+  const refilled = ((now - readAt) * w.limit) / w.refillMs;
+  return Math.min(w.limit, w.remaining + refilled);
+}
+
+/**
+ * When a window next holds more than `floor`: its reset, or for a window
+ * that refills continuously, when the refill gets it past the floor (the
+ * reset a tracker names for such a window is a full refill away).
+ */
+function usableAt(
+  w: BudgetWindow & { resetAt: number },
+  held: number,
+  floor: number,
+  now: number,
+): number {
+  if (w.refillMs == null || w.limit === null || w.limit <= 0) return w.resetAt;
+  const wait = ((floor + 1 - held) * w.refillMs) / w.limit;
+  return Math.min(w.resetAt, now + Math.ceil(wait) + 1000);
+}
+
 /** The window that stops the dispatcher, if one does: spent, or at its share. */
 function spentWindow(
   record: BudgetRecord,
@@ -276,19 +310,22 @@ function spentWindow(
     ["requests", record.requests],
     ["complexity", record.complexity],
   ] as const) {
-    if (w.remaining === null || w.resetAt === null || w.resetAt <= now)
-      continue;
-    if (w.remaining <= 0)
-      return { resetAt: w.resetAt, why: `no ${name} left in the window` };
-    if (
-      share !== null &&
-      w.limit !== null &&
-      w.remaining <= w.limit * (1 - share)
-    )
+    const held = holds(w, record.observedAt, now);
+    if (held === null || w.resetAt === null || w.resetAt <= now) continue;
+    const window = { ...w, resetAt: w.resetAt };
+    if (held <= 0)
       return {
-        resetAt: w.resetAt,
-        why: `the dispatcher's share (${Math.round(share * 100)}%) of the ${name} window is spent; ${w.remaining} of ${w.limit} are left to passes and people`,
+        resetAt: usableAt(window, held, 0, now),
+        why: `no ${name} left in the window`,
       };
+    if (share !== null && w.limit !== null) {
+      const floor = w.limit * (1 - share);
+      if (held <= floor)
+        return {
+          resetAt: usableAt(window, held, floor, now),
+          why: `the dispatcher's share (${Math.round(share * 100)}%) of the ${name} window is spent; ${Math.floor(held)} of ${w.limit} are left to passes and people`,
+        };
+    }
   }
   return null;
 }

@@ -29,6 +29,8 @@ import {
 
 export const LINEAR_API = "https://api.linear.app/graphql";
 export const LINEAR_TIMEOUT_MS = 30_000;
+/** How long Linear's rate limits take to refill from empty. */
+const LINEAR_REFILL_MS = 3_600_000;
 
 /**
  * A GraphQL request; resolves to the response's `data`. An aborted `signal`
@@ -123,9 +125,11 @@ function window(headers: Headers, kind: string): BudgetWindow | undefined {
   const limit = headerNumber(headers, `x-ratelimit-${kind}-limit`);
   const remaining = headerNumber(headers, `x-ratelimit-${kind}-remaining`);
   const resetAt = headerNumber(headers, `x-ratelimit-${kind}-reset`);
+  // Linear's limits are leaky buckets: each refills over an hour, and the
+  // reset it names is a full refill away from the answer.
   return limit === null && remaining === null && resetAt === null
     ? undefined
-    : { limit, remaining, resetAt };
+    : { limit, remaining, resetAt, refillMs: LINEAR_REFILL_MS };
 }
 
 /**
