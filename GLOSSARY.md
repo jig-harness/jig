@@ -2179,6 +2179,13 @@ make, use the entry's term instead.
   Orca is its first implementation
   ([ADR-0011](docs/adr/ADR-0011-the-dispatcher-targets-orca-first.md)); a
   *workspace runtime* becomes another by implementing the same methods.
+- **Program status** — the state a program reports to its own terminal
+  through [OSC (Operating System Command) 7501](https://www.superlogical.com/rex/docs/build/program-status):
+  `idle`, `working`, `blocked`, `done` or `error`. A blocked report can say
+  whether it needs permission, an answer or authentication. A *workspace
+  runtime* may expose those reports to Jig's *session runtime*. The agent
+  reports its own status; Jig's commands do not emit it, since drives and
+  dispatch ticks run detached and rarely hold a terminal.
 - **Headless pass** — a non-interactive agent run: it receives a task,
   works without a person replying in a chat session, and exits with a result.
   The *dispatcher* can start a follow-up this way on its chosen account
@@ -2243,9 +2250,10 @@ make, use the entry's term instead.
   stations has an *address*. See
   [design/dispatch-dashboard.md](design/dispatch-dashboard.md#a-piece-of-work-and-its-views).
 - **QR code** (quick response code) — a square barcode a phone camera can
-  scan to open an address. The *dispatch dashboard*'s planned sharing path encodes its
-  private, token-free address; scanning transfers the address and does not
-  authenticate the reader.
+  scan to open an address. `jig dispatch dashboard --access` draws one of
+  the *dispatch dashboard*'s private, token-free front address
+  ([plugin/phone-access.md](plugin/phone-access.md)); scanning transfers the
+  address and does not authenticate the reader.
 - **Secure context** — a page environment the browser considers trustworthy,
   normally because it was delivered over an encrypted web connection or
   from the browser's own loopback address. Browser APIs such as the
@@ -2256,13 +2264,11 @@ make, use the entry's term instead.
   [MDN's secure-context definition](https://developer.mozilla.org/en-US/docs/Web/Security/Defenses/Secure_Contexts).
 - **Private-network front** — a layer that publishes a
   machine's *dispatch dashboard* from its loopback address to a private network, with a
-  certificate and the viewer's identity, so a phone can open the page;
-  called a front for short. Tailscale Serve is its first implementation: it
-  names the viewer in a request header, which the dashboard trusts only on a
-  socket that only Tailscale's daemon reaches, and carries each person's
-  scope from the private network's access grants, which the dashboard applies to
-  every answer. A reverse proxy with an identity
-  provider, or an *SSH* tunnel, does the same job. A front never publishes
+  certificate, so a phone can open the page; called a front for short.
+  Tailscale Serve is its first implementation: it can name the viewer in a
+  request header, but the dashboard does not use that identity for
+  per-repository access control. A reverse proxy with an identity provider,
+  or an *SSH* tunnel, does the same job. A front never publishes
   to the open internet, and it does not let the dashboard write. See
   [design/dispatch-dashboard.md](design/dispatch-dashboard.md#a-front-on-a-private-network).
 - **Hub** — Jig's *shared control plane*: `jig hub serve`, one process with

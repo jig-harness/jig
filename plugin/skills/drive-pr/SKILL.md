@@ -1315,7 +1315,7 @@ pre-commit hook runs a long suite, a push that runs the pre-push suite), use the
 **foreground wait**. It is two calls, launched once and waited on as often as
 the ceiling requires, all inside this turn.
 
-Launch — one call, returns at once. On POSIX, `foreground-wait.ts` keeps the
+Launch — one call, returns as soon as the command has started. On POSIX, `foreground-wait.ts` keeps the
 command in the pass's own process group, so the pass's deadline and stop
 signals reach it. On Windows, the runner starts independently so it survives
 the launcher, and its recorded creation identity joins the pass's cancellation

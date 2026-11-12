@@ -286,10 +286,15 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
         }`;
         let data: unknown;
         try {
-          data = await client.transport(query, {
-            owner: home.owner,
-            name: home.name,
-          });
+          data = await client.transport(
+            query,
+            {
+              owner: home.owner,
+              name: home.name,
+            },
+            undefined,
+            true,
+          );
         } catch (err) {
           // A number that is no issue (absent, or a pull request) is absent
           // from the answer; GitHub reports it beside the issues it found.

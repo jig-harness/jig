@@ -37,6 +37,7 @@
  *   listen: 100.64.0.7:8765
  *   require_token: true     # false only with a loopback listen: a front authenticates
  *   allowed_hosts: []       # host names that front forwards under (tokenless only)
+ *   # front: https://host.example.ts.net:8443/ # that front's token-free address (tokenless only)
  * records:
  *   shared: forge
  * send: true
@@ -57,6 +58,7 @@ import { OPEN_LIMIT_MS } from "../../shared/orca-workspace/limits.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { DEFAULT_DISPATCHER_SHARE } from "../../shared/tracker-budget.ts";
 import { load } from "../../shared/yaml.ts";
+import { FRONT_RULES, shownFront } from "./dashboard-front.ts";
 import { FAILURE_DEFAULTS, type FailureSettings } from "./failures.ts";
 import { isLoopback, type Listen, parseListen } from "./listen.ts";
 import { type LoadSettings, loadSettings } from "./load-config.ts";
@@ -142,6 +144,8 @@ export interface MachineConfig {
   dashboardRequireToken: boolean;
   /** The host names a front forwards under (`dashboard.allowed_hosts`), lower-cased; empty unless the file lists some. */
   dashboardAllowedHosts: string[];
+  /** The token-free HTTPS address a private-network front publishes for the dashboard (`dashboard.front`), in its canonical form; `null` unless the file names one, which only `require_token: false` accepts. */
+  dashboardFront: string | null;
   /** Where the records another host reads are shared (`records.shared`). */
   sharedRecords: SharedMedium;
   /** Whether `jig send` may write a request from this machine (`send`); `true` unless the file says `false`. */
@@ -190,7 +194,7 @@ const TOP_KEYS = [
   "load",
   "tracker_share",
 ];
-const DASHBOARD_KEYS = ["listen", "require_token", "allowed_hosts"];
+const DASHBOARD_KEYS = ["listen", "require_token", "allowed_hosts", "front"];
 const FAILURES_KEYS = ["backoff", "backoff_max", "notify_after"];
 const RECORDS_KEYS = ["shared"];
 const REPOSITORY_KEYS = ["path", "stages", "followup_since", "owner"];
@@ -723,6 +727,7 @@ function surfaces(
     | "dashboardListen"
     | "dashboardRequireToken"
     | "dashboardAllowedHosts"
+    | "dashboardFront"
     | "sharedRecords"
     | "send"
     | "changeProbe"
@@ -736,6 +741,8 @@ function surfaces(
   if (!requireToken.ok) return requireToken;
   const allowedHosts = dashboardAllowedHosts(top.dashboard);
   if (!allowedHosts.ok) return allowedHosts;
+  const front = dashboardFront(top.dashboard, requireToken.value);
+  if (!front.ok) return front;
   const sharedRecords = records(top.records);
   if (!sharedRecords.ok) return sharedRecords;
   const send = flag(top.send, "send", true);
@@ -747,6 +754,7 @@ function surfaces(
     dashboardListen: dashboardListen.value,
     dashboardRequireToken: requireToken.value,
     dashboardAllowedHosts: allowedHosts.value,
+    dashboardFront: front.value,
     sharedRecords: sharedRecords.value,
     send: send.value,
     changeProbe: changeProbe.value,
@@ -851,6 +859,39 @@ function dashboardAllowedHosts(value: unknown): Checked<string[]> {
   );
   if (!names.ok) return names;
   return ok(names.value.map((name) => name.toLowerCase()));
+}
+
+/**
+ * The address a front publishes for a phone to open: an absolute `https:`
+ * URL with no user name, password, query or fragment, and no escaped query
+ * or parameter in its path, whose host is a name or a private address other
+ * than loopback and link-local. It is printed in URL-canonical form, so it must not
+ * carry a token anywhere. A name is taken as written: Jig never resolves it,
+ * nor infers how far it reaches. Only a tokenless dashboard has a front to
+ * name.
+ */
+function dashboardFront(
+  value: unknown,
+  requireToken: boolean,
+): Checked<string | null> {
+  const given = isMapping(value) ? value.front : undefined;
+  if (given === undefined || given === null) return ok(null);
+  const address = text(given, "dashboard.front");
+  if (!address.ok) return address;
+  if (!URL.canParse(address.value))
+    return invalid(
+      "dashboard.front is not an absolute URL (its value is withheld, since it may hold a credential)",
+    );
+  const url = new URL(address.value);
+  const refuse = (why: string) =>
+    invalid(`dashboard.front: ${shownFront(url)} ${why}`);
+  const broken = FRONT_RULES.find(([holds]) => !holds(url, address.value));
+  if (broken !== undefined) return refuse(broken[1]);
+  if (requireToken)
+    return refuse(
+      "needs dashboard.require_token: false, since a front's address carries no token and only a dashboard that asks for none answers it",
+    );
+  return ok(url.href);
 }
 
 /**
