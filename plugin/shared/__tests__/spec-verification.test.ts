@@ -99,6 +99,8 @@ describe("verification commands", () => {
           "echo hello`",
           "`echo` `hello`",
           "``echo `hello` ``",
+          "`bun test`  ",
+          "``printf '%s' '```'``",
         ].join("\n"),
       ),
       root,
@@ -110,6 +112,8 @@ describe("verification commands", () => {
       "echo hello`",
       "`echo` `hello`",
       "echo `hello` ",
+      "bun test",
+      "printf '%s' '```'",
     ]);
   });
 

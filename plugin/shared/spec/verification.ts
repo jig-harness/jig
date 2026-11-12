@@ -30,15 +30,16 @@ function commandText(marked: MarkdownLine): string {
   let text = afterColumn(raw, marked.contentColumn ?? 0).trimStart();
   if (marked.kind === "code") return text;
   if (marked.depth !== undefined) text = text.replace(/^\[[ xX]\]\s+/, "");
+  text = text.trimEnd();
   const opening = /^`+/.exec(text)?.[0];
   const closing = /`+$/.exec(text)?.[0];
-  if (
-    opening !== undefined &&
-    opening === closing &&
-    !text.slice(opening.length, -closing.length).includes(opening)
-  )
-    return text.slice(opening.length, -closing.length);
-  return text.trimEnd();
+  if (opening !== undefined && opening === closing) {
+    const inside = text.slice(opening.length, -closing.length);
+    // Only a maximal run of exactly the opening length closes a span.
+    const runs = inside.match(/`+/g) ?? [];
+    if (!runs.some((run) => run.length === opening.length)) return inside;
+  }
+  return text;
 }
 
 /** A stable command id; repeated commands keep separate entries. */
