@@ -365,4 +365,33 @@ describe("reviewBodyReport", () => {
     expect(parsed.declared).toEqual(plain.declared);
     expect(parsed.ids).toEqual(plain.ids);
   });
+
+  it("opens no section from a heading quoted after a backtick line that opens no fence", () => {
+    const base = fixture("current-outside-diff");
+    const plain = parseCodeRabbitBody(base);
+    const parsed = parseCodeRabbitBody(
+      base.replace(
+        "The separator treats",
+        "Quote ```\n**Nitpick comments: 2**\n``` and `x` here. The separator treats",
+      ),
+    );
+    expect(parsed.declared).toEqual(plain.declared);
+    expect(parsed.ids).toEqual(plain.ids);
+  });
+
+  it("reads an escaped tag as text, opening or closing", () => {
+    const base = fixture("current-outside-diff");
+    const plain = parseCodeRabbitBody(base);
+    for (const tag of ["\\<details> here", "\\</details> here"]) {
+      const parsed = parseCodeRabbitBody(
+        base.replace(
+          "The separator treats",
+          `Escape ${tag}. The separator treats`,
+        ),
+      );
+      expect(parsed.entries[0]?.id).toBe(plain.entries[0]?.id);
+      expect(parsed.entries[0]?.text).toContain(`Escape ${tag}`);
+      expect(parsed.entries.length).toBe(plain.entries.length);
+    }
+  });
 });

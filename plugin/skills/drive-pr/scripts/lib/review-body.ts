@@ -87,6 +87,9 @@ const SCAFFOLD =
 /** A code fence: three or more backticks or tildes. */
 const FENCE = /^(`{3,}|~{3,})(.*)$/;
 
+/** The ASCII punctuation a backslash escapes. */
+const ESCAPABLE = /^[!-/:-@[-`{-~]$/;
+
 /** A blockquote's markers, which a callout puts before every line. */
 const QUOTE = /^\s*(?:>[ \t]?)+/;
 
@@ -137,20 +140,39 @@ function endSection(st: ParseState): void {
 }
 
 /**
+ * Whether `trimmed` can open a code block: a fence whose backtick info string
+ * holds no backtick, since a line that does is inline code.
+ */
+function opensFence(trimmed: string): boolean {
+  const m = trimmed.match(FENCE);
+  return m !== null && !(m[1]?.[0] === "`" && m[2]?.includes("`"));
+}
+
+/**
  * A line of fenced code, kept in the entry it belongs to; false for any other.
  * A block closes on a fence of its opener's character, at least as long, with
  * nothing after it, so a shorter fence inside it is code.
  */
 function fenced(st: ParseState, line: string, trimmed: string): boolean {
-  const m = trimmed.match(FENCE);
-  const open = st.fence;
-  if (open === null && m === null) return false;
-  // A backtick fence's info string holds no backtick: the line is inline code.
-  if (open === null && m?.[1]?.[0] === "`" && m[2]?.includes("`")) return false;
-  if (open === null) st.fence = m?.[1] ?? null;
-  else if (m && closesFence(open, m[1] ?? "", m[2] ?? "")) st.fence = null;
+  if (st.fence === null && !opensFence(trimmed)) return false;
+  st.fence = fenceAfter(st.fence, trimmed.match(FENCE));
   if (st.entry?.depth === st.depth) st.entry.text.push(line);
   return true;
+}
+
+/** The fence still open after a line, given the one open before it. */
+function fenceAfter(
+  open: string | null,
+  m: RegExpMatchArray | null,
+): string | null {
+  if (open === null) return m?.[1] ?? null;
+  return m && closesFence(open, m[1] ?? "", m[2] ?? "") ? null : open;
+}
+
+/** A backslash pair as markup sees it: nothing for a backtick, `_` for other escaped punctuation. */
+function escaped(pair: string): string {
+  if (pair[1] === "`") return "";
+  return ESCAPABLE.test(pair[1] ?? "") ? "_" : pair;
 }
 
 /**
@@ -167,8 +189,9 @@ function withoutCode(st: ParseState, text: string): string {
     if (c === "`") {
       i = takeRun(st, text, i);
     } else if (st.span === 0 && c === "\\" && i + 1 < text.length) {
-      // A backslash escape: the next character is literal, a backtick included.
-      if (text[i + 1] !== "`") out += text.slice(i, i + 2);
+      // A backslash escape: the next character is literal, a backtick
+      // included. Escaped punctuation is masked so no tag or marker reads it.
+      out += escaped(text.slice(i, i + 2));
       i += 2;
     } else {
       if (st.span === 0) out += c;
@@ -199,7 +222,7 @@ function hasCloser(
   if (hasRun(text, from, size)) return true;
   for (let k = st.index + 1; k < st.lines.length; k++) {
     const next = (st.lines[k] ?? "").replace(QUOTE, "").trim();
-    if (next === "" || FENCE.test(next)) return false;
+    if (next === "" || opensFence(next)) return false;
     if (hasRun(next, 0, size)) return true;
   }
   return false;
@@ -314,6 +337,17 @@ function opensStructure(
   );
 }
 
+function count(text: string, re: RegExp): number {
+  return text.match(re)?.length ?? 0;
+}
+
+/** The entry id `markup` is the line of, recorded in the body's ids. */
+function noteId(st: ParseState, markup: string): string | undefined {
+  const id = markup.trim().match(ENTRY_ID)?.[1];
+  if (id !== undefined && !st.ids.includes(id)) st.ids.push(id);
+  return id;
+}
+
 function step(st: ParseState, raw: string): void {
   const quoted = QUOTE.test(raw);
   const line = raw.replace(QUOTE, "").trimEnd();
@@ -327,9 +361,8 @@ function step(st: ParseState, raw: string): void {
   // locations, which only the raw text shows.
   const continuesSpan = st.span !== 0;
   const markup = withoutCode(st, trimmed);
-  const id = markup.trim().match(ENTRY_ID)?.[1];
-  if (id !== undefined && !st.ids.includes(id)) st.ids.push(id);
-  const opens = markup.match(/<details\b/g)?.length ?? 0;
+  const id = noteId(st, markup);
+  const opens = count(markup, /<details\b/g);
   st.depth += opens;
   const structural = opensStructure(
     st,
@@ -337,7 +370,7 @@ function step(st: ParseState, raw: string): void {
     continuesSpan,
   );
   if (!structural && opens === 0) appendText(st, line, trimmed, id);
-  st.depth -= markup.match(/<\/details>/g)?.length ?? 0;
+  st.depth -= count(markup, /<\/details>/g);
   leaveClosed(st);
 }
 
