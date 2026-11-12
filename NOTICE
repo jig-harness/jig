@@ -99,6 +99,11 @@ plugin/skills/audit/scripts/report/lucide/LICENSE
   Lucide icons, ISC License, Copyright (c) 2026 Lucide Icons and
   Contributors; the icons derived from Feather, MIT License, Copyright (c)
   2013-present Cole Bemis
+design/prototypes/dispatch-dashboard/vendor/lucide.LICENSE
+  Lucide icons (lucide-react 1.66.0 paths inlined in the dispatch dashboard design
+  prototype pages), ISC License, Copyright (c) 2026 Lucide Icons and
+  Contributors; the icons derived from Feather, MIT License, Copyright (c)
+  2013-present Cole Bemis
 design/prototypes/dispatch-dashboard/vendor/LICENSE
   React and ReactDOM 18.3.1 (production builds, loaded by the dispatch
   dashboard design prototype), MIT License, Copyright (c) Facebook, Inc.

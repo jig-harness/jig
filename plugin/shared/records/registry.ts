@@ -814,6 +814,15 @@ const FORGE: RecordKind[] = [
     ],
     version: 0,
   },
+  {
+    name: "coderabbit-review-body",
+    medium: "forge",
+    owner: `${DRIVE}lib/review-body.ts`,
+    foreign: "CodeRabbit",
+    at: "the sections of findings in the body of CodeRabbit's pull-request reviews, each entry marked with its id",
+    markers: ["cr-comment:v"],
+    version: 0,
+  },
 ];
 
 const TRACKER: RecordKind[] = [
@@ -861,6 +870,14 @@ const TRACKER: RecordKind[] = [
     owner: "skills/do-item/scripts/lib/tracker/github/related-migration.ts",
     at: "a legacy comment on a GitHub issue relating it to another, read until the migration marks it superseded",
     markers: ["jig:related", "jig:related-superseded"],
+    version: 0,
+  },
+  {
+    name: "tracker-blocked",
+    medium: "tracker",
+    owner: "skills/do-item/scripts/lib/blocked-move.ts",
+    at: "a comment on an item the drive-ledger projection moved to blocked, naming its pull request, the stop and the state it left",
+    markers: ["jig:blocked"],
     version: 0,
   },
   {

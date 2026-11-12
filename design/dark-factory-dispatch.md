@@ -208,7 +208,7 @@ when it fails. The phase names are the ones a receipt times.
 | `plan` | `tick-plan.ts` | everything above, the follow-up outcomes, the idle clock, the nudges | the idle clock, released pickups, settled nudges, the follow-up outcomes it settles | a write the database refuses is a defect: it stops this repository in phase `plan` |
 | `log` | `tick-settle.ts` | the ended launch records, the ledgers | one outcome row per ended record, with its end | reported; the record is kept until its row lands |
 | `apply` | `tick-apply.ts` | each target read again just before its launch, the failure ledger | the launch record, the forge claim or marker, the runtime's launch, nudges, notices, the failure ledger | per action: refused, reported, tried again next tick; a nudge, notice, claim end or marker answer that keeps failing backs off (see Failures) |
-| `labels` | `tick-labels.ts` | the ledgers, each written pull request's ledger read again just before its write, the failure ledger | the state labels on pull requests, the failure ledger | per write, reported; one whose ledger changed since the tick read it waits for a later tick; one that keeps failing backs off (see Failures) |
+| `labels` | `tick-labels.ts` | the ledgers, each written pull request's ledger read again just before its write, the failure ledger | the state labels on pull requests, the linked items' `blocked` state where the repository names it, the failure ledger | per write, reported; one whose ledger changed since the tick read it waits for a later tick; one that keeps failing backs off (see Failures) |
 | `shared` | `tick-shared.ts` | the shared records' reads and writes this turn | none | none |
 | Close (`close`) | `tick.ts`, `tick-settle.ts`, `tick-reads.ts`, `tick-line.ts` | the receipt, the launch records, the forge's rate limit as the tick started (put on every repository's report) | outcome rows for repositories not read and not held by another tick, the failure ledger's rows for each repository read and for the tick, the month files, the line (each repository's part by a tick that read it; the machine's part by a tick the timer asked for every repository of the machine file), the receipt | a part that reports its failure is said on the receipt, which stays complete; exit status 1; a budget that does not read is reported as unreadable. A defect in a closing step marks the receipt not completed |
 
@@ -946,6 +946,15 @@ confirms or corrects.
   killed drive left behind, is corrected at the next tick. A ledger the tick cannot read leaves the labels as they are.
   Only the states listed here are kept by this projection, so a state a
   later stage owns, which no ledger produces, is never touched by it.
+  Where the repository names `issue_tracker.states.blocked`, the projection
+  has one tracker output beside the label: each item an open managed pull
+  request links (`Closes`/`Refs <KEY>`) goes to `blocked` while its state is
+  parked, with a comment naming each park's class and reason and a marker
+  recording the state it left, and back to that state once its state is
+  driving, converged or stale. The tick writes it after the labels, under
+  the same `--apply`, ownership and ledger re-read rules, and leaves a pull
+  request serialization holds; the drive writes it with its own label. A
+  stop blocks an item once, so an item a person moved out stays out.
 - **Commands**, written by a person and read by the tick: `drive` on an
   open pull request with no ledger asks for one, and the plan arms a drive
   on it as a re-arm (`drive.ts <PR> -- <pass>` on an admitted account),
@@ -1884,11 +1893,11 @@ so the dashboard and `jig dispatch log` read while a tick writes. Its
 schema carries a version: a database at an older one is migrated forward
 in one transaction, and one a newer plugin wrote is refused, with its
 version named, by every command that opens it. The dashboard's server
-opens it through the reader that migrates it until the hub's first stage
-(its step 4) makes the server, and the hub it grows into, open it
-read-only, never migrating it and showing a schema older or newer than
+opens it through the reader that migrates it until the dashboard design's
+first stage (its step 5) makes the server, and every later stage's, open
+it read-only, never migrating it and showing a schema older or newer than
 their own as such
-([hub.md § Install and upgrade](hub.md#install-and-upgrade)).
+([dispatch-dashboard.md § Install and upgrade](dispatch-dashboard.md#install-and-upgrade)).
 
 What another host must know of this host's launches is not kept here: it
 is published as shared records on the forge (see Several hosts). The local
@@ -2121,7 +2130,7 @@ The first is the **line**, one row of the state database (`tick_line`): the
 needs, the accounts with their slots and walls, the sessions, the queue and the
 repositories as a tick found them, with that tick's receipt. A tick that read
 every repository the machine file lists replaces it at its end. A tick for one
-repository leaves it, until the hub's first stage (its step 6) lets that tick
+repository leaves it, until the dashboard's first stage (its step 6) lets that tick
 replace only that repository's part (its needs, sessions and queue, and its
 entry among the repositories, stamped with that tick's run and read time) and
 leave the rest to the full ticks: the line's own times, the accounts and the
@@ -2171,22 +2180,23 @@ into the host is opened beyond the network the host already trusts. The
 URL it prints carries a token minted at start, and a request without it is
 refused: these records name repositories, items and accounts.
 
-The dashboard grows into the [hub](hub.md), which `jig install hub`
-installs as a resident reader where Orca's browser or a
+The dashboard's later stages ([dispatch-dashboard.md](dispatch-dashboard.md))
+add `jig install dashboard`, which installs it as a resident reader where
+Orca's browser or a
 [private-network front](../GLOSSARY.md) reaches a host's page: it holds no
 request, no component reads from it and the line never waits on it, so
 stopping it changes nothing the line does, and it opens every database
 read-only and never migrates one
-([hub.md § A reader, not a daemon](hub.md#a-reader-not-a-daemon)). The
-dispatcher itself stays without a resident process. The hub's server on a
+([dispatch-dashboard.md § A reader, not a daemon](dispatch-dashboard.md#a-reader-not-a-daemon)). The
+dispatcher itself stays without a resident process. The dashboard's server on a
 host listens on loopback, or on a socket only a front reaches, and needs
 no token, since every way in from another machine authenticates the person
-first. From the hub's second stage
-`jig dispatch dashboard` starts that server; once the hub's front is built,
+first. From the dashboard's second stage
+`jig dispatch dashboard` starts that server; once the dashboard's front is built,
 the dashboard drops the private-address bind (`dashboard.listen`) and the
 token in its URL, a machine file that still sets `dashboard.listen` gets a
 warning naming the front, and a phone reaches the page through the front
-([hub.md § Where it runs](hub.md#where-it-runs)).
+([dispatch-dashboard.md § Where it runs](dispatch-dashboard.md#where-it-runs)).
 
 Each read answers with its value or a coded failure with a reason for a person,
 and a bug is caught once around the routes and logged with its stack
@@ -2577,5 +2587,5 @@ Critiqued in two rounds by reviewers with fresh context (subagents that
 did not write it): the whole design on 2026-10-30 against commit
 `c2c8083e`, and the Control section, written after that round, on
 2026-10-31 against commit `de08d1ce`.
-What the hub adds to it was critiqued with the hub's design on 2026-11-06
-([hub.md § Review](hub.md#review)).
+What the dashboard design adds to it was critiqued with that design on 2026-11-06
+([dispatch-dashboard.md § Review](dispatch-dashboard.md#review)).

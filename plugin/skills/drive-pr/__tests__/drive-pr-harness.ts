@@ -270,6 +270,7 @@ export interface Fixture {
     state: string;
     commit_id: string;
     submitted_at?: string;
+    body?: string;
   }>;
   statuses?: Array<{ context: string; state: string; description: string }>;
   /** Statuses reachable only on a SECOND API page — i.e. only with --paginate. */
