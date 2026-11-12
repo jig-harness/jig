@@ -136,6 +136,23 @@ describe("settleStationAnswers", () => {
     expect(takeCarried(SLUG, "PR #12", "r-2", dir)).toBeNull();
   });
 
+  it("keeps the answer the next session is handed when the tick dies between the step's effect and its outcome", async () => {
+    const dir = root();
+    const action = failedFollowup();
+    const comment = said(`answer followup: approve [${digestOf(action)}]`);
+    const p = ports([comment]);
+    p.rerunFollowup = async () => {
+      throw new Error("the tick died after the marker was deleted");
+    };
+    await expect(
+      settle(reportOf({ actions: [action] }), p, dir),
+    ).rejects.toThrow("died");
+    expect(takeCarried(SLUG, "PR #12", "r-1", dir)).toMatchObject({
+      option: "Run it again",
+      url: comment.url,
+    });
+  });
+
   it("acts on no answer from the dispatcher's own login or an author the forge does not vouch for", async () => {
     const dir = root();
     const action = failedFollowup();

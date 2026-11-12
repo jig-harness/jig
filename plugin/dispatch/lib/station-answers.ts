@@ -279,6 +279,27 @@ const STARTS_SESSION: ReadonlySet<StationOptionId | "session"> = new Set([
   "release",
 ]);
 
+/** The step a counted answer takes, or `undefined` when it names none the dispatcher carries out. */
+function stepOf(
+  decision: LineDecision,
+  counted: PendingAnswer,
+): StationOptionId | "session" | undefined {
+  return decision.answer?.framedBy === "session"
+    ? "session"
+    : stationOptionId(counted.choice?.option ?? "");
+}
+
+/** What the session a step starts is handed; `null` for a step that starts none. */
+function carryOf(
+  step: StationOptionId | "session" | undefined,
+  decision: LineDecision,
+  counted: PendingAnswer,
+): CarriedAnswer | null {
+  return step !== undefined && STARTS_SESSION.has(step)
+    ? carriedOf(decision, counted)
+    : null;
+}
+
 /** Run the counted answer's step once, and keep how it ended. */
 async function act(
   action: Action & { cause: NeedCause },
@@ -289,10 +310,7 @@ async function act(
   root: string | undefined,
 ): Promise<ActedAnswer> {
   const choice = counted.choice?.option ?? "";
-  const step: StationOptionId | "session" | undefined =
-    decision.answer?.framedBy === "session"
-      ? "session"
-      : stationOptionId(choice);
+  const step = stepOf(decision, counted);
   const outcome =
     step === undefined
       ? refused(`${choice} is not an option the dispatcher carries out`)
@@ -301,10 +319,7 @@ async function act(
         : await dispatcherStep(step, action, ports);
   const ended = !outcome.ok ? "refused" : step === "hold" ? "held" : "done";
   const detail = outcome.ok ? outcome.value : outcome.failure.reason;
-  const carry =
-    outcome.ok && step !== undefined && STARTS_SESSION.has(step)
-      ? carriedOf(decision, counted)
-      : null;
+  const carry = outcome.ok ? carryOf(step, decision, counted) : null;
   finishAnswer(row, ended, detail, carry, root);
   return {
     option: choice,
@@ -406,7 +421,11 @@ async function actedOn(
   };
   const prior = actedAnswer(row, root);
   if (prior !== null) return settleInterrupted(row, prior, root);
-  return claimAnswer(row, root)
+  return claimAnswer(
+    row,
+    carryOf(stepOf(decision, counted), decision, counted),
+    root,
+  )
     ? act(action, decision, counted, row, ports, root)
     : actedAnswer(row, root);
 }

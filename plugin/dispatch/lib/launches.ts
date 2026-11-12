@@ -165,8 +165,9 @@ export interface LaunchRecord {
   /** A pickup's route: the model and effort its implementer delegate is to run on (an interactive pickup's session itself ran on them); `null` when the route named none. */
   model: string | null;
   effort: string | null;
-  /** A pickup's ended record no longer holds its item: the item left the dispatch states since. */
+  /** A pickup's ended record no longer holds its item: the item left the dispatch states since; `releasedItems` lists the batch members a person's answer released alone. */
   released: boolean;
+  releasedItems?: string[];
   /** A pickup's members seen claimed (in progress) after the record ended: each releases only after it returns to the dispatch states. Absent until then. */
   claimedItems?: string[];
   /** @deprecated Kept for records written before claimedItems tracked batch members separately. */

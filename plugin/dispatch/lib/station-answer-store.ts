@@ -51,13 +51,23 @@ export interface AnswerRow {
   option: string;
 }
 
-/** Claim `row` for its step: `true` when this call claimed it, `false` when a tick already had. */
-export function claimAnswer(row: AnswerRow, root = stateRoot()): boolean {
+/**
+ * Claim `row` for its step: `true` when this call claimed it, `false` when a
+ * tick already had. The answer a session the step starts is handed (`carry`)
+ * is kept with the claim, before the step's effect, so a tick that dies
+ * between the effect and its outcome still leaves the next launch the answer;
+ * a step that ends refused takes it back (`finishAnswer`).
+ */
+export function claimAnswer(
+  row: AnswerRow,
+  carry: CarriedAnswer | null = null,
+  root = stateRoot(),
+): boolean {
   const done = stateDb(root)
     .query(
       `INSERT OR IGNORE INTO station_answers
-       (repo, target, key, digest, answer, author, option, claimed_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+       (repo, target, key, digest, answer, author, option, claimed_at, carry)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       row.repo,
@@ -68,6 +78,7 @@ export function claimAnswer(row: AnswerRow, root = stateRoot()): boolean {
       row.author,
       row.option,
       new Date().toISOString(),
+      carry === null ? null : JSON.stringify(carry),
     );
   return done.changes === 1;
 }

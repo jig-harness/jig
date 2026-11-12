@@ -55,6 +55,7 @@ export function optionalLaunchFields(value: Record<string, unknown>): boolean {
     (value.stewardDecision === undefined ||
       Number.isSafeInteger(value.stewardDecision)) &&
     optionalStrings(value.claimedItems) &&
+    optionalStrings(value.releasedItems) &&
     optionalSeconds(value.passTimeoutSec) &&
     optionalBooleans(value, [
       "rearmConsumed",

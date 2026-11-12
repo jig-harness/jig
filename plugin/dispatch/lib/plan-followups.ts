@@ -413,6 +413,8 @@ function endedHere(
   marker: FollowupMarker & { run: { kind: "tick" } },
   found: ReadRecord | undefined,
 ): "done" | "failed" | null {
+  // A marker a person's answer marked done settles the follow-up, whatever this host's records of the run say.
+  if (marker.run.outcome === "done") return "done";
   const ended = endedAs(input, pr, marker.run.record, found);
   if (ended !== null || found !== undefined) return ended;
   return marker.run.outcome ?? null;

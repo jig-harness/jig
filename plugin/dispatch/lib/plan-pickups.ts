@@ -41,6 +41,7 @@ import {
   type ReadRecord,
   targetOf,
 } from "./launches.ts";
+import { holdsItem } from "./launch-pickups.ts";
 import { pickupNotice } from "./notices.ts";
 import { questionOf } from "./session.ts";
 import {
@@ -328,7 +329,7 @@ function questionAsked(
         r.record.action === "pickup" &&
         (r.record.item === item.key ||
           r.record.batchItems?.some((i) => i.key === item.key) === true) &&
-        !r.record.released,
+        holdsItem(r.record, item.key),
     )
     .sort((a, b) => a.record.createdAt.localeCompare(b.record.createdAt))
     .at(-1);

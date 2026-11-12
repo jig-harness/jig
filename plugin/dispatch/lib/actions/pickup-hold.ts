@@ -31,6 +31,7 @@ import {
   type ReadRecord,
   writeRecord,
 } from "../launches.ts";
+import { holdsItem } from "../launch-pickups.ts";
 import { refusalOf } from "../pickup-refusal.ts";
 import { RUNNING_STATES, type SessionsReport } from "../runtime/port.ts";
 
@@ -136,7 +137,8 @@ export function pickupHold(
   if (holding !== undefined)
     return { kind: "held", record: holding, why: describe(holding) };
   const latest = mine.at(-1);
-  if (latest === undefined || latest.record.released) return { kind: "none" };
+  if (latest === undefined || !holdsItem(latest.record, item))
+    return { kind: "none" };
   // A pass the tracker's rate limit stopped waits for the reset, then starts again.
   if (latest.result === "waits" && latest.waitsUntil !== undefined)
     return Date.parse(latest.waitsUntil) > nowMs

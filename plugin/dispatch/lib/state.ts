@@ -396,6 +396,14 @@ export const MIGRATIONS: readonly Migration[] = [
     WHERE carry IS NOT NULL AND consumed_by IS NULL;
   `,
   },
+  {
+    // A discarded launch's give-back of the answer it took (`returnCarried`): the rows a launch record consumed.
+    additive: true,
+    sql: `
+  CREATE INDEX station_answers_consumed ON station_answers (consumed_by)
+    WHERE consumed_by IS NOT NULL;
+  `,
+  },
 ];
 
 /** The schema version this plugin writes. */

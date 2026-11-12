@@ -37,6 +37,7 @@ import { readMarkers } from "./followup-marker.ts";
 import { pullRequestLabels } from "./forge.ts";
 import { holding } from "./holding.ts";
 import { commandLabel, hasCommand } from "./labels.ts";
+import { holdsItem } from "./launch-pickups.ts";
 import {
   inspectRow,
   readEnded,
@@ -231,11 +232,16 @@ function releaseRecord(
   const { record } = ended;
   if (record.action !== "pickup" || record.repo !== inputs.repo.slug)
     return `launch record ${id} is not a pickup of ${inputs.repo.slug}`;
-  const members = record.batchItems?.map((i) => i.key) ?? [record.item];
+  const members: string[] = record.batchItems?.map((i) => i.key) ?? [
+    record.item ?? "",
+  ];
   if (!members.includes(item))
     return `launch record ${id} is not a pickup of ${item}`;
-  if (record.released) return null;
-  record.released = true;
+  if (!holdsItem(record, item)) return null;
+  // Only the member answered is released; its siblings keep the question they wait on.
+  const released = [...(record.releasedItems ?? []), item];
+  record.releasedItems = released;
+  if (members.every((m) => released.includes(m))) record.released = true;
   writeRecord(record, root);
   return null;
 }
