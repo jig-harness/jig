@@ -236,6 +236,7 @@ describe("jig ask against the dispatcher's database", () => {
     edit(
       file,
       "DROP TABLE pickup_claims",
+      `DELETE FROM db_migrations WHERE version = ${SCHEMA_VERSION}`,
       `PRAGMA user_version = ${SCHEMA_VERSION - 1}`,
     );
     const before = readFileSync(file);
