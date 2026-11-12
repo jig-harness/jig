@@ -27,8 +27,11 @@
  * `command-exit: 124`.
  *
  * Usage:
- *   foreground-wait.ts launch -- <command> [args...]   returns at once
+ *   foreground-wait.ts launch -- <command> [args...]   returns once started
  *   foreground-wait.ts wait [--max-sec N]              default 540
+ *
+ * `launch` returns once the runner has started the command, so a later
+ * cancellation of the runner's tree reaches it (lib/foreground-start.ts).
  *
  * STATE. Every launch owns one generation directory,
  * `.context/foreground-wait/gen-<n>/` (gitignored), holding that launch's log,
@@ -51,7 +54,9 @@
  * `kill(pid, 0)` forever. RESIDUAL, stated rather than closed: a descendant
  * that outlives BOTH the runner and the command (re-parented to init) is
  * invisible here, as is a command started in the instant between `spawn` and
- * the runner publishing `cmd.pid` if the runner is killed in that instant.
+ * the runner publishing `cmd.pid` if the runner is killed in that instant, and
+ * a command the runner starts after a cancellation that began while `launch`
+ * was still waiting for it has captured the runner's tree.
  * Exit 21 therefore says "no recorded process is alive", not "everything the
  * command started has stopped" — the caller's own post-check (`git log`,
  * `finish-round.ts` idempotence) stays the authority before relaunching.
@@ -64,6 +69,7 @@ import {
   claimGenerationLauncher,
   ownsGenerationLauncher,
 } from "./lib/foreground-claim.ts";
+import { handOffToRunner } from "./lib/foreground-start.ts";
 import { liveOrUnknownTargets } from "../../../shared/process-uncertainty.ts";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -93,11 +99,9 @@ import {
 import {
   beginProcessRegistration,
   clearPendingProcessRegistration,
-  handoffProcessRegistration,
   publishProcessIdentity,
   processCompletionPath,
   publishProcessCompletion,
-  processIdentityCompleted,
 } from "../../../shared/process-registry.ts";
 import { signalIdentityTargets } from "../../../shared/process-tree.ts";
 import {
@@ -130,6 +134,8 @@ const CANCEL_BUDGET_MS = testPacing(
   30_000,
   100,
 );
+/** The runner binds itself within the cancel budget plus one bounded read. */
+const START_BUDGET_MS = CANCEL_BUDGET_MS + 10_000;
 const DEFAULT_DEADLINE_SEC = 5400;
 const DEADLINE_ENV = "DRIVE_PR_FOREGROUND_WAIT_TIMEOUT";
 /** Most bytes the runner retains in the log; the rest is dropped and said so. */
@@ -423,29 +429,6 @@ function blocksAdmission(dir: string, settled: SettledRecords): boolean {
     : unrecordedClaimRunning(dir);
 }
 
-/** Complete the handoff while the child handle still proves ownership. */
-async function recordRunnerIdentity(
-  registry: string | undefined,
-  entry: string,
-  runner: ReturnType<typeof spawn>,
-  dir: string,
-): Promise<void> {
-  if (!registry || runner.pid === undefined) return;
-  const authority = processCompletionPath(registry, entry);
-  const identity = { pid: runner.pid, start: "", resultFile: authority };
-  await handoffProcessRegistration(
-    registry,
-    entry,
-    runner.pid,
-    () => processIdentityCompleted(identity),
-    () =>
-      runner.exitCode === null &&
-      runner.signalCode === null &&
-      readResult(dir) === null,
-    { resultFile: authority },
-  );
-}
-
 interface StartedRunner {
   runner: ReturnType<typeof spawn>;
   registry: string | undefined;
@@ -553,11 +536,14 @@ async function launch(argv: string[]): Promise<number> {
       );
       return 3;
     }
-    await recordRunnerIdentity(
-      started.registry,
-      started.entry,
+    await handOffToRunner(
       started.runner,
-      dir,
+      started,
+      {
+        commandStarted: () => readPid(dir, "cmd.pid") !== null,
+        settled: () => readResult(dir) !== null,
+      },
+      START_BUDGET_MS,
     );
     console.log(
       `foreground-wait: launched (gen ${next}, runner pid ${started.runner.pid})`,

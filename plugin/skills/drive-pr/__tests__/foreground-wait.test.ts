@@ -795,16 +795,15 @@ describe("foreground-wait.ts", () => {
         await sleepMs(20);
       expect(pidOf("cmd.pid")).not.toBeNull();
       const commandPid = pidOf("cmd.pid") as number;
-      // The runner can concurrently own an enumeration subprocess; only an
-      // explicit command identity proves this cancellation fixture is ready.
-      let targets = await captureProcessTree(recorded.pid);
+      // The command starts a descendant; a tree captured before it would
+      // orphan it when the command is killed. The runner can own a transient
+      // enumeration subprocess, so the command's own tree says when.
       while (
-        !targets?.some((target) => target.pid === commandPid) &&
+        ((await captureProcessTree(commandPid))?.length ?? 0) < 2 &&
         Date.now() < readyDeadline
-      ) {
+      )
         await sleepMs(20);
-        targets = await captureProcessTree(recorded.pid);
-      }
+      const targets = await captureProcessTree(recorded.pid);
       const command = targets?.find((target) => target.pid === commandPid);
       expect(command?.start).toBeTruthy();
       expect(await forceIdentityTargetsAndWitness(targets ?? [])).toBe(true);

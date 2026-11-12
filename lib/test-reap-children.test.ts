@@ -131,6 +131,51 @@ test("a captured descendant init adopted is killed with its own descendants; a r
   expect(killed.map(([pid]) => pid)).toEqual([301, 300]);
 });
 
+/** A row of process group `pgid`. */
+function member(pid: number, ppid: number, pgid: number): ProcessRow {
+  return { ...row(pid, ppid), pgid };
+}
+
+test("an orphan of the group the process leads is killed, wherever an ancestor adopted it; a pipeline's other commands and other groups are not", async () => {
+  // 1 init; 50 a subreaper; 60 the shell; 100 the test process, leading
+  // group 100. 400 is the next command of a pipeline 100 leads, and 401 what
+  // that command started.
+  const { killed, deps } = killable([
+    row(1, 0),
+    member(50, 1, 50),
+    member(60, 50, 60),
+    member(100, 60, 100),
+    member(101, 100, 100),
+    member(300, 50, 100),
+    member(301, 300, 100),
+    member(302, 50, 302),
+    member(400, 60, 100),
+    member(401, 400, 100),
+    member(500, 1, 100),
+  ]);
+  const report = await reapSurvivingDescendants(100, deps);
+  expect(report).toEqual({
+    signalled: [101, 301, 300, 500],
+    unreadable: [],
+    survived: [],
+  });
+  expect(killed.map(([pid]) => pid)).toEqual([101, 301, 300, 500]);
+});
+
+test("a process that does not lead its group takes no other member of it", async () => {
+  const { killed, deps } = killable([
+    row(1, 0),
+    member(50, 1, 50),
+    member(60, 50, 60),
+    member(100, 60, 60),
+    member(101, 100, 60),
+    member(300, 50, 60),
+  ]);
+  const report = await reapSurvivingDescendants(100, deps);
+  expect(report).toEqual({ signalled: [101], unreadable: [], survived: [] });
+  expect(killed.map(([pid]) => pid)).toEqual([101]);
+});
+
 test("a reap of named identities kills each live one with its descendants, and no process it was not named", async () => {
   const { killed, deps } = killable([
     row(1, 0),
@@ -449,11 +494,14 @@ type Identity = { pid: number; start: string };
  * preload under test did: the identities the probe writes to the owned file
  * before it relies on the preload, and those captured from outside while the
  * run lasts. All of them are killed by identity afterwards, never by bare
- * pid, so a pid the system has since reused is left alone.
+ * pid, so a pid the system has since reused is left alone. With `parallel`,
+ * the probe runs beside a second, empty file under `--parallel`, so each runs
+ * in a worker process of its own, as the repository's suite does.
  */
 async function withProbe(
   source: (identityFile: string, dir: string, ownedFile: string) => string,
   check: (stderr: string, identity: Identity) => Promise<void>,
+  { parallel = false } = {},
 ) {
   const root = fileURLToPath(new URL("..", import.meta.url));
   const dir = mkdtempSync(join(tmpdir(), "jig-test-reap-"));
@@ -461,9 +509,21 @@ async function withProbe(
   const ownedFile = join(dir, "owned.json");
   const probe = join(dir, "probe.test.ts");
   writeFileSync(probe, source(identityFile, dir, ownedFile));
+  const files = [probe];
+  if (parallel) {
+    const companion = join(dir, "companion.test.ts");
+    writeFileSync(
+      companion,
+      `import { test } from "bun:test";\ntest("runs beside the probe", () => {});\n`,
+    );
+    files.push(companion);
+  }
   const owned = new Map<string, Identity>();
   let identity: Identity | undefined;
-  const run = Bun.spawn([process.execPath, "test", probe], {
+  const command = parallel
+    ? [process.execPath, "test", `--parallel=${files.length}`, ...files]
+    : [process.execPath, "test", probe];
+  const run = Bun.spawn(command, {
     cwd: root,
     stdout: "pipe",
     stderr: "pipe",
@@ -596,6 +656,55 @@ test("orphans a grandchild", async () => {
           `test-reap: killed 1 process(es) a test left running (pid ${identity.pid})`,
         );
       },
+    );
+  },
+  90_000,
+);
+
+// A launcher that starts a supervisor and exits at once, as a command a test
+// runs often does: the grandchild is orphaned within one capture interval, so
+// no capture names it. A `--parallel` worker leads its own process group,
+// which the orphan keeps, so the reap still finds it there.
+orphanTest(
+  "a parallel worker run with the repository's preloads reaps a grandchild orphaned before any capture",
+  async () => {
+    await withProbe(
+      (identityFile, dir, ownedFile) => {
+        const pidFile = join(dir, "grandchild");
+        const childSource = `const g = Bun.spawn([process.execPath, '-e', '${idle}'], { stdout: 'ignore', stderr: 'ignore' }); require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(g.pid)); process.exit(0)`;
+        return `import { test } from "bun:test";
+import { readFileSync, writeFileSync } from "node:fs";
+import { processTable } from ${JSON.stringify(tableModule)};
+test("orphans a grandchild at once", async () => {
+  const child = Bun.spawn([process.execPath, "-e", ${JSON.stringify(childSource)}], { stdout: "ignore", stderr: "ignore" });
+  await child.exited;
+  const pid = Number(readFileSync(${JSON.stringify(pidFile)}, "utf8"));
+  const deadline = Date.now() + 20_000;
+  let identity;
+  while (!identity && Date.now() < deadline) {
+    const row = (await processTable())?.find((r) => r.pid === pid && r.start !== "");
+    identity = row && { pid: row.pid, start: row.start };
+    if (!identity) await Bun.sleep(50);
+  }
+  if (!identity) throw new Error("the grandchild's identity could not be read");
+  writeFileSync(${JSON.stringify(ownedFile)}, JSON.stringify([identity]));
+  writeFileSync(${JSON.stringify(identityFile)}, JSON.stringify(identity));
+}, 30_000);
+`;
+      },
+      async (stderr, identity) => {
+        expect(stderr).toContain(
+          `test-reap: killed 1 process(es) a test left running (pid ${identity.pid})`,
+        );
+        const deadline = Date.now() + 15_000;
+        let gone = await identityTargetsGone([identity]);
+        while (!gone && Date.now() < deadline) {
+          await Bun.sleep(50);
+          gone = await identityTargetsGone([identity]);
+        }
+        expect(gone).toBe(true);
+      },
+      { parallel: true },
     );
   },
   90_000,

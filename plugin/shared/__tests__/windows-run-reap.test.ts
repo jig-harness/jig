@@ -13,7 +13,7 @@ const foreground = resolve(
 function fixture(proc: string): string {
   return `
     import { mock } from 'bun:test';
-    import { readFileSync, readdirSync } from 'node:fs';
+    import { existsSync, readFileSync, readdirSync } from 'node:fs';
     import { join } from 'node:path';
     const lifecyclePath = ${JSON.stringify(join(shared, "windows-process.ts"))};
     const original = (await import(lifecyclePath)).windowsProcessLifecycle;
@@ -40,14 +40,26 @@ function fixture(proc: string): string {
     const root = join(process.cwd(), '.context', 'foreground-wait');
     const generation = readdirSync(root).find(name => name.startsWith('gen-'));
     const runner = Number(readFileSync(join(root,generation,'runner.pid'),'utf8'));
+    const commandFile = join(root,generation,'cmd.pid');
+    const command = existsSync(commandFile) ? Number(readFileSync(commandFile,'utf8')) : null;
     const { processTable } = await import(${JSON.stringify(join(shared, "process-table.ts"))});
+    const { signalIdentityTargets } = await import(${JSON.stringify(join(shared, "process-tree.ts"))});
     const rows = await processTable();
-    if (rows === null || rows.some(row => row.pid === runner && !row.stat.startsWith('Z'))) throw new Error('registered runner survived reap');
-    console.log('registered runner reaped; groupSurvived=true');
+    if (rows === null) throw new Error('the process table could not be read');
+    const live = (pid) => rows.find(row => row.pid === pid && !row.stat.startsWith('Z'));
+    // Launch returned before the reap began, so the runner had started its command.
+    if (command === null) throw new Error('the runner had not started its command when launch returned');
+    const survivor = live(command);
+    if (survivor) {
+      await signalIdentityTargets([survivor], 'SIGKILL');
+      throw new Error('the command survived the reap of its registered runner');
+    }
+    if (live(runner)) throw new Error('registered runner survived reap');
+    console.log('registered runner and its command reaped; groupSurvived=true');
   `;
 }
 
-test("Windows normal-exit reaping reports registered runners in groupSurvived", () => {
+test("Windows normal-exit reaping reports registered runners in groupSurvived and ends the command each started", () => {
   const cwd = mkdtempSync(join(tmpdir(), "windows-run-reap-"));
   try {
     const result = Bun.spawnSync(
@@ -62,7 +74,7 @@ test("Windows normal-exit reaping reports registered runners in groupSurvived", 
     );
     expectSpawnExit(result, 0);
     expect(result.stdout.toString()).toContain(
-      "registered runner reaped; groupSurvived=true",
+      "registered runner and its command reaped; groupSurvived=true",
     );
   } finally {
     rmSync(cwd, { recursive: true, force: true });
