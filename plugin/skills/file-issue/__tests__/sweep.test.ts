@@ -609,4 +609,9 @@ describe("the sweep's settings", () => {
       false,
     );
   });
+  it("refuse a timestamp where a mapping belongs", () => {
+    const date = new Date("2026-11-12");
+    expect(() => sweepSettings({ file_issue: date })).toThrow();
+    expect(() => sweepSettings({ file_issue: { sweep: date } })).toThrow();
+  });
 });

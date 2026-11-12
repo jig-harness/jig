@@ -7,7 +7,7 @@
  * reading it as the default would put a user's `move: false` back to moving.
  */
 import { withSource } from "../../../../shared/consumer.ts";
-import { isRecord } from "../../../../shared/guards.ts";
+import { isMapping } from "../../../../shared/config-layers.ts";
 import { SectionError } from "./sections.ts";
 
 export interface SweepSettings {
@@ -22,7 +22,7 @@ function mapping(
   keys: readonly string[],
 ): Record<string, unknown> | null {
   if (section === undefined) return null;
-  if (!isRecord(section)) refuse(values, `${path} must be a mapping`);
+  if (!isMapping(section)) refuse(values, `${path} must be a mapping`);
   for (const key of Object.keys(section))
     if (!keys.includes(key)) refuse(values, `${path}.${key} is not a field`);
   return section;
