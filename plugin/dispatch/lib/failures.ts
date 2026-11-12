@@ -80,6 +80,8 @@ export interface FailureRow {
   nextAtMs: number;
   /** When a tick that read a wake-up row's repository succeeded after its last failure; `null` while none has. */
   quietAt: string | null;
+  /** How many times a failure ended the row's quiet: each is a new notification's identity. */
+  renewals: number;
 }
 
 /** The machine file's `failures` settings. */
@@ -135,6 +137,7 @@ interface Stored {
   reason: string;
   next_at_ms: number;
   quiet_at: string | null;
+  renewals: number;
 }
 
 function fromStored(r: Stored): FailureRow {
@@ -149,11 +152,12 @@ function fromStored(r: Stored): FailureRow {
     reason: r.reason,
     nextAtMs: r.next_at_ms,
     quietAt: r.quiet_at,
+    renewals: r.renewals,
   };
 }
 
 const COLUMNS =
-  "repo, key, kind, target, count, first_at, last_at, reason, next_at_ms, quiet_at";
+  "repo, key, kind, target, count, first_at, last_at, reason, next_at_ms, quiet_at, renewals";
 
 /** Every row, or those of one repository. */
 export function readFailures(repo?: string, root = stateRoot()): FailureRow[] {
@@ -203,13 +207,15 @@ export function recordFailure(
       reason: said,
       nextAtMs: next,
       quietAt: null,
+      renewals: (before?.renewals ?? 0) + (before?.quiet_at ? 1 : 0),
     };
     db.query(
-      `INSERT INTO failures (${COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO failures (${COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (repo, key) DO UPDATE SET kind = excluded.kind,
          target = excluded.target, count = excluded.count,
          last_at = excluded.last_at, reason = excluded.reason,
-         next_at_ms = excluded.next_at_ms, quiet_at = excluded.quiet_at`,
+         next_at_ms = excluded.next_at_ms, quiet_at = excluded.quiet_at,
+         renewals = excluded.renewals`,
     ).run(
       row.repo,
       row.key,
@@ -221,6 +227,7 @@ export function recordFailure(
       row.reason,
       row.nextAtMs,
       row.quietAt,
+      row.renewals,
     );
     return row;
   });

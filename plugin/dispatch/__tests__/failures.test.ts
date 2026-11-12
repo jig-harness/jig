@@ -164,6 +164,7 @@ function row(
     reason: "the forge refused it",
     nextAtMs: Date.parse("2026-11-06T10:36:00.000Z"),
     quietAt: null,
+    renewals: 0,
     ...fields,
   };
 }

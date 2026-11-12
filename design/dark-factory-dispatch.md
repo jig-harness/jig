@@ -1842,8 +1842,10 @@ try:
   cause it last recorded did not stop that tick. The next wake-up of that
   repository decides: a failure counts on from the kept count and
   escalates again at once past the threshold, and a success removes the
-  row. Its notice retires while it is quiet, so a failure after it is
-  told again at once rather than on `dispatch.renotify_after`. A wake-up
+  row. Its notice retires while it is quiet, and a failure after it is a
+  new notice with its own identity, so it is told again at once rather than
+  on `dispatch.renotify_after`, even where the destination still holds the
+  earlier one. A wake-up
   that fails every time is still told, while one that is rarely woken
   stops asking about a cause that is gone.
 

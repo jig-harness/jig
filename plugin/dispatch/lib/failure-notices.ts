@@ -112,7 +112,9 @@ function causeOf(
 ): Action {
   // Every repository's row has the key `repository`: its path tells them apart.
   const what = row.kind === "repository" ? `repository ${row.repo}` : row.key;
-  const key = `${what} failing since ${row.firstAt}`;
+  // A failure that ended a quiet is a new notice: the destination may still hold the one before it.
+  const again = row.renewals > 0 ? ` (again ${row.renewals})` : "";
+  const key = `${what} failing since ${row.firstAt}${again}`;
   return {
     stage: "notify",
     target: row.target,

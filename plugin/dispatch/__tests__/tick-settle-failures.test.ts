@@ -170,6 +170,10 @@ describe("a wake-up's row after a sweep that read its repository", () => {
     const [row] = readFailures(undefined, root);
     expect(row?.count).toBe(4);
     expect(row?.quietAt).toBeNull();
+    expect(row?.renewals).toBe(1);
+    expect([...hostNoticeKeys(readFailures(undefined, root))][0]).toContain(
+      "(again 1)",
+    );
     expect(wake.receipt.failures?.escalated.map((e) => e.key)).toEqual([
       "ticks /a",
     ]);

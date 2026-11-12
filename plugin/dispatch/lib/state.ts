@@ -405,9 +405,12 @@ export const MIGRATIONS: readonly Migration[] = [
   `,
   },
   {
-    // When a tick that read a wake-up row's repository last succeeded after its last failure (`quietFailure`). A row an earlier release wrote has none.
+    // When a tick that read a wake-up row's repository last succeeded after its last failure (`quietFailure`), and how many times a failure has ended that quiet (`recordFailure`). A row an earlier release wrote has none.
     additive: true,
-    sql: "ALTER TABLE failures ADD COLUMN quiet_at TEXT;",
+    sql: `
+    ALTER TABLE failures ADD COLUMN quiet_at TEXT;
+    ALTER TABLE failures ADD COLUMN renewals INTEGER NOT NULL DEFAULT 0;
+  `,
   },
 ];
 
