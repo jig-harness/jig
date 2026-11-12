@@ -117,6 +117,16 @@ describe("verification commands", () => {
     ]);
   });
 
+  test("keeps a line of only backticks instead of unwrapping it to nothing", async () => {
+    const { root } = scratchRepo("spec-verification-");
+    const result = await resolveSpec(
+      issue(["## Verification", "`", "``"].join("\n")),
+      root,
+      { env: NO_USER_LAYER },
+    );
+    expect(result.verification.map((v) => v.text)).toEqual(["`", "``"]);
+  });
+
   test("assigns duplicate command ids without rescanning earlier suffixes", async () => {
     const { root } = scratchRepo("spec-verification-");
     const result = await resolveSpec(

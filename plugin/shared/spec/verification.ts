@@ -33,7 +33,11 @@ function commandText(marked: MarkdownLine): string {
   text = text.trimEnd();
   const opening = /^`+/.exec(text)?.[0];
   const closing = /`+$/.exec(text)?.[0];
-  if (opening !== undefined && opening === closing) {
+  if (
+    opening !== undefined &&
+    opening === closing &&
+    text.length > opening.length + closing.length
+  ) {
     const inside = text.slice(opening.length, -closing.length);
     // Only a maximal run of exactly the opening length closes a span.
     const runs = inside.match(/`+/g) ?? [];
