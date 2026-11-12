@@ -855,12 +855,7 @@ describe("buildLine", () => {
     expect(line.needs).toEqual([
       expect.objectContaining({
         stuckRecord: stuck.record.id,
-        decisions: [
-          expect.objectContaining({
-            key: "launch",
-            decisionClass: "launch-recovery",
-          }),
-        ],
+        decisions: [expect.objectContaining({ key: "launch" })],
       }),
     ]);
   });

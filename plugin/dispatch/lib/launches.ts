@@ -47,7 +47,7 @@
  */
 import { optionalLaunchFields } from "./launch-record-options.ts";
 import { readNext, type NextOwner } from "./next-owner.ts";
-import { type FramedResult, readFramedResult } from "./framed-result.ts";
+import { type FramedResult, framedOf } from "./framed-result.ts";
 import {
   type PickupRefusal,
   readRefusal,
@@ -493,12 +493,6 @@ export interface LaunchRow {
   result_decision?: string | null;
 }
 
-/** A row's framed decision, as a read record carries it: absent when it has none. */
-function framedOf(row: LaunchRow): { framed?: FramedResult } {
-  const framed = readFramedResult(row.result_decision);
-  return framed === null ? {} : { framed };
-}
-
 /** The tick's part of a row, with its samples and episodes; `null` when it does not read as a record. */
 export function recordOf(
   row: LaunchRow,
@@ -601,7 +595,7 @@ export function readEnded(id: string, root = stateRoot()): ReadRecord | null {
     next: readNext(row.result_next),
     ...waitsOf(row),
     refusal: readRefusal(row.refusal),
-    ...framedOf(row),
+    ...framedOf(row.result_decision),
   };
 }
 
@@ -789,7 +783,7 @@ export async function readLaunches(
       next: readNext(row.result_next),
       ...waitsOf(row),
       refusal: readRefusal(row.refusal),
-      ...framedOf(row),
+      ...framedOf(row.result_decision),
     });
   }
   return { records, unreadable };

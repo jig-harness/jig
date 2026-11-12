@@ -32,7 +32,7 @@ import {
   answerLine,
   postAnswerComment,
 } from "../../skills/drive-pr/scripts/lib/answer-comment.ts";
-import type { ParkedItem } from "../../skills/drive-pr/scripts/lib/state/park-frame.ts";
+import { stationItem } from "../../dispatch/lib/station-answers.ts";
 import type { AskContext } from "../../ask/lib/station.ts";
 import type { AnswerRequest } from "./answer-request.ts";
 import { optionInFull, resolveChoice } from "./answer-choice.ts";
@@ -40,22 +40,6 @@ import { asFlag, type Sender, TICK } from "./answer-parks.ts";
 import { type Planned, refused } from "./plan.ts";
 
 type OneAnswer = Extract<AnswerRequest, { all: false }>;
-
-/** Before any park: a decision the tick framed binds its answers by its digest. */
-const EPOCH = "1970-01-01T00:00:00.000Z";
-
-/** The parked item the shared reader and writer read a need's decision as. */
-function itemOf(decision: LineDecision): ParkedItem {
-  return {
-    key: decision.key,
-    kind: "finding",
-    reason: decision.question ?? decision.key,
-    round: 0,
-    at: decision.parkedAt ?? EPOCH,
-    ...(decision.decision === undefined ? {} : { decision: decision.decision }),
-    ...(decision.digest === undefined ? {} : { digest: decision.digest }),
-  };
-}
 
 /** The target a need of `ctx`'s address has on the line. */
 function targetOf(ctx: AskContext): string {
@@ -78,6 +62,22 @@ function postTarget(
     : { repo: issue[1] ?? "", number: Number(issue[2]) };
 }
 
+/** The needs of `ctx`'s address in this machine's newest line, or why there is no line to read. */
+function lineNeeds(ctx: AskContext): LineNeed[] | string {
+  const root = ctx.dispatcher;
+  if (root === null)
+    return "this machine never dispatched, so it has no line to read the need's decision from; answer on the host that dispatches the repository";
+  const line = readLine(root);
+  if (!line.ok)
+    return `the decision cannot be read from this machine's line: ${line.failure.reason}`;
+  if (line.value === null)
+    return "the decision cannot be read from this machine's line: no tick has written one yet";
+  const target = targetOf(ctx);
+  return line.value.needs.filter(
+    (n) => n.repo === ctx.address.repo && n.target === target,
+  );
+}
+
 /**
  * The plan of an answer to a need's decision keyed `request.key`, or
  * `null` when a drive's address has no such need, so its parks answer it.
@@ -87,25 +87,9 @@ export function planStationAnswer(
   request: OneAnswer,
   sender: Sender,
 ): Planned | null {
-  const root = ctx.dispatcher;
   const drive = ctx.address.station === "drive";
-  if (root === null)
-    return drive
-      ? null
-      : refused(
-          "this machine never dispatched, so it has no line to read the need's decision from; answer on the host that dispatches the repository",
-        );
-  const line = readLine(root);
-  if (!line.ok || line.value === null)
-    return drive
-      ? null
-      : refused(
-          `the decision cannot be read from this machine's line: ${line.ok ? "no tick has written one yet" : line.failure.reason}`,
-        );
-  const target = targetOf(ctx);
-  const needs = line.value.needs.filter(
-    (n) => n.repo === ctx.address.repo && n.target === target,
-  );
+  const needs = lineNeeds(ctx);
+  if (typeof needs === "string") return drive ? null : refused(needs);
   const keyed = needs.flatMap((n) =>
     n.decisions
       .filter((d) => d.answer !== undefined)
@@ -114,13 +98,36 @@ export function planStationAnswer(
   const found = keyed.find(
     (k) => k.decision.key.toLowerCase() === request.key.toLowerCase(),
   );
-  if (found === undefined)
-    return drive
-      ? null
-      : refused(
-          `${ctx.name} has no need waiting on a decision keyed ${request.key} in this machine's newest line${keyed.length === 0 ? "" : `; its keys are ${keyed.map((k) => k.decision.key).join(", ")}`}`,
-        );
-  return planFound(ctx, request, sender, found.need, found.decision);
+  if (found !== undefined)
+    return planFound(ctx, request, sender, found.need, found.decision);
+  if (drive) return null;
+  const keys =
+    keyed.length === 0
+      ? ""
+      : `; its keys are ${keyed.map((k) => k.decision.key).join(", ")}`;
+  return refused(
+    `${ctx.name} has no need waiting on a decision keyed ${request.key} in this machine's newest line${keys}`,
+  );
+}
+
+/** Why the answer cannot be sent to `decision` as it stands; `null` when it can. */
+function answerFault(
+  request: OneAnswer,
+  sender: Sender,
+  need: LineNeed,
+  decision: LineDecision,
+): string | null {
+  const { key } = request;
+  if (decision.answer?.on === "tracker")
+    return `${need.target}'s item is on a tracker other than the forge, where answers are not read yet; settle it on the tracker by hand`;
+  const digest = decision.digest;
+  if (digest === undefined)
+    return `${key}'s decision has no digest to bind an answer to`;
+  if (request.decision !== undefined && request.decision !== digest)
+    return `--decision ${request.decision} is not the digest of ${key}'s decision now: its facts changed since you read it, and nothing is sent; run the dry run again and send the command it prints`;
+  if (request.decision === undefined && !sender.dryRun)
+    return "name the decision you read: run this with --dry-run, read the option it shows, then send the command it prints, which names the decision's digest with --decision";
+  return null;
 }
 
 function planFound(
@@ -130,33 +137,16 @@ function planFound(
   need: LineNeed,
   decision: LineDecision,
 ): Planned {
-  const { key } = request;
-  if (decision.answer?.on === "tracker")
-    return refused(
-      `${need.target}'s item is on a tracker other than the forge, where answers are not read yet; settle it on the tracker by hand`,
-    );
-  if (request.form.kind === "free")
+  const { key, form } = request;
+  if (form.kind === "free")
     return refused(
       `the tick carries out an option of ${key}'s decision, not words: answer with --approve or --choose, after a --dry-run shows the options and the digest`,
     );
-  const digest = decision.digest;
-  if (digest === undefined)
-    return refused(`${key}'s decision has no digest to bind an answer to`);
-  if (request.decision !== undefined && request.decision !== digest)
-    return refused(
-      `--decision ${request.decision} is not the digest of ${key}'s decision now: its facts changed since you read it, and nothing is sent; run the dry run again and send the command it prints`,
-    );
-  if (request.decision === undefined && !sender.dryRun)
-    return refused(
-      "name the decision you read: run this with --dry-run, read the option it shows, then send the command it prints, which names the decision's digest with --decision",
-    );
-  const item = itemOf(decision);
-  const resolved = resolveChoice(
-    item,
-    request.form,
-    request.note,
-    sender.login,
-  );
+  const fault = answerFault(request, sender, need, decision);
+  if (fault !== null) return refused(fault);
+  const digest = decision.digest ?? "";
+  const item = stationItem(decision);
+  const resolved = resolveChoice(item, form, request.note, sender.login);
   if (!resolved.ok) return resolved;
   const { option, recommended, text, parts } = resolved.value;
   const posted = postTarget(ctx, need);
@@ -171,7 +161,7 @@ function planFound(
   const command = `${stationSendCommand(
     { address: ctx.name },
     key,
-    request.form.kind === "approve"
+    form.kind === "approve"
       ? { form: "approve" }
       : { form: "choose", option: option.name },
     digest,

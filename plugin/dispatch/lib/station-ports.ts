@@ -5,7 +5,7 @@
  *
  * | Step | Checks first | Does |
  * | --- | --- | --- |
- * | run a follow-up again | the `followup` stage is on; no hold label; the earliest trusted marker is still the one the need names, the tick's, not marked done; no session holds the pull request | deletes that marker, so a later tick starts the follow-up again |
+ * | run a follow-up again | the `followup` stage is on; no hold label; the earliest trusted marker is still the one the need names, this host's tick's, not marked done; no session holds the pull request | deletes that marker, so a later tick starts the follow-up again |
  * | record a follow-up done | the same | deletes that marker and posts a marker marked done in its place, as a follow-up run by hand leaves |
  * | release a pickup's claim | the `pickup` stage is on; the tracker reads; no session holds the item; the line knows of no open pull request that carries it | moves the item to the first state a pickup starts from |
  * | detach a checkout | it is idle: clean, every commit on the remote, no drive or process in it (`shared/idle-holder.ts`) | detaches it at its commit, as an open does an idle holder |
@@ -121,6 +121,8 @@ async function markerMoved(
     return `marker comment ${marker} no longer claims the follow-up of PR #${pr}`;
   if (first.run.kind !== "tick")
     return `marker comment ${marker} is not the tick's`;
+  if (first.run.host !== undefined && first.run.host !== inputs.shared.host)
+    return `marker comment ${marker} is host ${first.run.host}'s, which settles its own follow-up`;
   return first.run.outcome === "done"
     ? `marker comment ${marker} is marked done`
     : null;
@@ -156,14 +158,22 @@ async function release(
       );
 }
 
+/** The marker deleted once every check a follow-up step makes holds, or why it was not. */
+async function checkedRelease(
+  inputs: StationInputs,
+  pr: number,
+  marker: number,
+): Promise<Outcome<void, "refused">> {
+  const fault = await followupFault(inputs, pr, marker);
+  return fault === null ? release(inputs, pr, marker) : refused(fault);
+}
+
 async function rerunFollowup(
   inputs: StationInputs,
   pr: number,
   marker: number,
 ): Promise<Outcome<string, "refused">> {
-  const fault = await followupFault(inputs, pr, marker);
-  if (fault !== null) return refused(fault);
-  const released = await release(inputs, pr, marker);
+  const released = await checkedRelease(inputs, pr, marker);
   return released.ok
     ? ok(
         `deleted marker comment ${marker}; a later tick starts the follow-up of PR #${pr} again`,
@@ -176,9 +186,7 @@ async function doneFollowup(
   pr: number,
   marker: number,
 ): Promise<Outcome<string, "refused">> {
-  const fault = await followupFault(inputs, pr, marker);
-  if (fault !== null) return refused(fault);
-  const released = await release(inputs, pr, marker);
+  const released = await checkedRelease(inputs, pr, marker);
   if (!released.ok) return released;
   const target = { repo: inputs.repo.slug, pr };
   const after = `deleted marker comment ${marker}, so a later tick starts the follow-up again unless one is marked done`;

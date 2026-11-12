@@ -9,6 +9,7 @@
  */
 import type {
   LineAccount,
+  LineDecision,
   LineLinks,
   LineNeed,
   LineQueued,
@@ -165,11 +166,37 @@ function isNeed(action: Action): action is Action & { cause: NeedCause } {
   );
 }
 
+/** The act the steward proposed for a need, when it names one of the closed list. */
+function stewardAct(action: Action): NeedAct | undefined {
+  const steward = action.evidence.stewardAct;
+  return typeof steward === "string" &&
+    (NEED_ACTS as readonly string[]).includes(steward)
+    ? (steward as NeedAct)
+    : undefined;
+}
+
+/** A need's decisions: a park's drive's unanswered parks, else the one its pass or the tick framed (`line-station.ts`). */
+function decisionsOf(
+  view: RepoView,
+  action: Action & { cause: NeedCause },
+  pr: number | null,
+  stuck: boolean,
+): { decisions: LineDecision[]; framed: boolean } {
+  if (action.cause === "parked")
+    return {
+      decisions: stuck ? [] : (view.drive(pr)?.waiting ?? []).map(decisionOf),
+      framed: false,
+    };
+  const station = stationDecision(action, view.station);
+  return station === null
+    ? { decisions: [], framed: false }
+    : { decisions: [station], framed: true };
+}
+
 /**
- * A need's open decisions and its act. A park's are its drive's unanswered
- * parks; any other need carries the decision its pass framed or the tick
- * frames (`line-station.ts`), whose class names its act; a need with neither
- * keeps the act the steward proposed for it, else its cause's.
+ * A need's open decisions and its act: a framed decision's class names the
+ * act; a need with none keeps the act the steward proposed for it, else its
+ * cause's, a stuck launch record nobody framed being investigated.
  */
 function needDecisions(
   view: RepoView,
@@ -177,31 +204,18 @@ function needDecisions(
   pr: number | null,
 ): Pick<LineNeed, "decisions"> & { act: NonNullable<LineNeed["act"]> } {
   const stuck = text(action.evidence, "stuck") !== null;
-  const parks =
-    stuck || action.cause !== "parked"
-      ? []
-      : (view.drive(pr)?.waiting ?? []).map(decisionOf);
-  const station =
-    action.cause === "parked" ? null : stationDecision(action, view.station);
-  const decisions = station === null ? parks : [station];
-  const steward = action.evidence.stewardAct;
-  const proposed =
-    typeof steward === "string" &&
-    (NEED_ACTS as readonly string[]).includes(steward)
-      ? (steward as NeedAct)
-      : undefined;
+  const { decisions, framed } = decisionsOf(view, action, pr, stuck);
+  const proposed = stewardAct(action);
+  const own = action.cause === "parked" || framed || stuck;
   return {
     decisions,
     act:
-      action.cause !== "parked" &&
-      station === null &&
-      !stuck &&
-      proposed !== undefined
+      !own && proposed !== undefined
         ? proposed
         : actOfNeed({
             cause: action.cause,
             decisionClass: decisions[0]?.decisionClass ?? null,
-            stuck: stuck && station === null,
+            stuck: stuck && !framed,
           }),
   };
 }

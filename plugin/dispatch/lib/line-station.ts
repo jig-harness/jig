@@ -77,60 +77,79 @@ function stationOfStage(stage: string | null): AnswerStation | null {
   return null;
 }
 
-/** The facts the tick frames a need's decision from; `null` for a cause it frames none for. */
-function factsOf(
-  action: Action & { cause: NeedCause },
+type NeedAction = Action & { cause: NeedCause };
+
+function followupFailedFacts(action: NeedAction): StationFacts | null {
+  const pr = prOf(action.target);
+  const { evidence } = action;
+  return pr === null
+    ? null
+    : {
+        kind: "followup-failed",
+        pr,
+        record: text(evidence, "record"),
+        marker: count(evidence, "marker"),
+        question: text(evidence, "question"),
+      };
+}
+
+function followupStaleFacts(action: NeedAction): StationFacts | null {
+  const pr = prOf(action.target);
+  const marker = count(action.evidence, "marker");
+  return pr === null || marker === null
+    ? null
+    : {
+        kind: "followup-stale",
+        pr,
+        marker,
+        released: count(action.evidence, "released"),
+      };
+}
+
+function stalledFacts(
+  action: NeedAction,
   ctx: StationContext,
 ): StationFacts | null {
-  const { evidence, target } = action;
-  const pr = prOf(target);
-  const stuck = text(evidence, "stuck");
-  const record = text(evidence, "record");
+  return prOf(action.target) !== null
+    ? null
+    : {
+        kind: "stalled",
+        item: action.target,
+        state: text(action.evidence, "state") ?? "a dispatch state",
+        carriedBy: ctx.carriedBy(action.target),
+      };
+}
+
+function pickupQuestionFacts(action: NeedAction): StationFacts | null {
+  const record = text(action.evidence, "record");
+  const question = text(action.evidence, "question");
+  return prOf(action.target) !== null || record === null || question === null
+    ? null
+    : { kind: "pickup-question", item: action.target, record, question };
+}
+
+/** How each cause the tick frames reads its facts. */
+const FACTS: Partial<
+  Record<
+    NeedCause,
+    (action: NeedAction, ctx: StationContext) => StationFacts | null
+  >
+> = {
+  "followup-failed": followupFailedFacts,
+  "followup-stale": followupStaleFacts,
+  stalled: stalledFacts,
+  "pickup-question": pickupQuestionFacts,
+  "needs-person": (action) => needsPersonFacts(action, prOf(action.target)),
+  "stopped-unknown": (action) => needsPersonFacts(action, prOf(action.target)),
+};
+
+/** The facts the tick frames a need's decision from; `null` for a cause it frames none for. */
+function factsOf(action: NeedAction, ctx: StationContext): StationFacts | null {
+  const stuck = text(action.evidence, "stuck");
+  const record = text(action.evidence, "record");
   if (stuck !== null && record !== null)
-    return { kind: "launch", target, record };
-  switch (action.cause) {
-    case "followup-failed":
-      return pr === null
-        ? null
-        : {
-            kind: "followup-failed",
-            pr,
-            record,
-            marker: count(evidence, "marker"),
-            question: text(evidence, "question"),
-          };
-    case "followup-stale": {
-      const marker = count(evidence, "marker");
-      return pr === null || marker === null
-        ? null
-        : {
-            kind: "followup-stale",
-            pr,
-            marker,
-            released: count(evidence, "released"),
-          };
-    }
-    case "stalled":
-      return pr !== null
-        ? null
-        : {
-            kind: "stalled",
-            item: target,
-            state: text(evidence, "state") ?? "a dispatch state",
-            carriedBy: ctx.carriedBy(target),
-          };
-    case "pickup-question": {
-      const question = text(evidence, "question");
-      return pr !== null || record === null || question === null
-        ? null
-        : { kind: "pickup-question", item: target, record, question };
-    }
-    case "needs-person":
-    case "stopped-unknown":
-      return needsPersonFacts(action, pr);
-    default:
-      return null;
-  }
+    return { kind: "launch", target: action.target, record };
+  return FACTS[action.cause]?.(action, ctx) ?? null;
 }
 
 function needsPersonFacts(

@@ -65,15 +65,15 @@ export interface StationAnswered {
 }
 
 /** What the reading of one decision's comments found. */
-export interface AnswerReading {
+interface AnswerReading {
   answers: PendingAnswer[];
   state?: AnswerState;
   /** The answer every person agrees on, a structured one naming the current digest; absent when none counts. */
   counted?: PendingAnswer;
 }
 
-/** The parked item the shared reader reads a station's decision as. */
-function itemOf(decision: LineDecision): ParkedItem {
+/** The parked item the shared reader and `jig send` read a station's decision as. */
+export function stationItem(decision: LineDecision): ParkedItem {
   return {
     key: decision.key,
     kind: "finding",
@@ -90,12 +90,12 @@ function itemOf(decision: LineDecision): ParkedItem {
  * dispatcher's own login's left out; an answer that names no digest, or
  * another, is stale.
  */
-export function readStationAnswers(
+function readStationAnswers(
   decision: LineDecision,
   comments: readonly CommentLike[],
   self: string | null,
 ): AnswerReading {
-  const item = itemOf(decision);
+  const item = stationItem(decision);
   const mine = self?.toLowerCase() ?? null;
   const parsed = comments
     .filter((c) => c.author.toLowerCase() !== mine)
@@ -181,42 +181,52 @@ function followupStep(
     : ports.rerunFollowup(pr, marker);
 }
 
+const notHere = (why: string) => Promise.resolve(refused(why));
+
+/** Each dispatcher option's step on a need, by option id. */
+const DISPATCHER_STEPS: Readonly<
+  Record<
+    StationOptionId,
+    (
+      action: Action,
+      ports: StationPorts,
+      pr: number | null,
+    ) => Promise<Outcome<string, "refused">>
+  >
+> = {
+  hold: () => Promise.resolve({ ok: true, value: "left to a person" }),
+  rerun: (action, ports) => followupStep(action, ports, false),
+  done: (action, ports) => followupStep(action, ports, true),
+  release: (action, ports, pr) =>
+    pr === null
+      ? ports.releasePickup(action.target)
+      : notHere("only an item's claim is released"),
+  detach: (action, ports) => {
+    const branch = evidenceText(action, "branch");
+    const path = evidenceText(action, "holder");
+    return branch === null || path === null
+      ? notHere("the need names no checkout to detach")
+      : ports.detachCheckout(action.target, branch, path);
+  },
+  rearm: (_action, ports, pr) =>
+    pr === null
+      ? notHere("only a pull request's drive is re-armed")
+      : ports.rearmDrive(pr),
+  clear: (action, ports) => {
+    const record = evidenceText(action, "record");
+    return record === null
+      ? notHere("the need names no launch record")
+      : ports.clearRecord(record);
+  },
+};
+
 /** The step a dispatcher's option takes on `action`'s need. */
 function dispatcherStep(
   id: StationOptionId,
   action: Action,
   ports: StationPorts,
 ): Promise<Outcome<string, "refused">> {
-  const pr = prOf(action.target);
-  switch (id) {
-    case "hold":
-      return Promise.resolve({ ok: true, value: "left to a person" });
-    case "rerun":
-      return followupStep(action, ports, false);
-    case "done":
-      return followupStep(action, ports, true);
-    case "release":
-      return pr === null
-        ? ports.releasePickup(action.target)
-        : Promise.resolve(refused("only an item's claim is released"));
-    case "detach": {
-      const branch = evidenceText(action, "branch");
-      const path = evidenceText(action, "holder");
-      return branch === null || path === null
-        ? Promise.resolve(refused("the need names no checkout to detach"))
-        : ports.detachCheckout(action.target, branch, path);
-    }
-    case "rearm":
-      return pr === null
-        ? Promise.resolve(refused("only a pull request's drive is re-armed"))
-        : ports.rearmDrive(pr);
-    case "clear": {
-      const record = evidenceText(action, "record");
-      return record === null
-        ? Promise.resolve(refused("the need names no launch record"))
-        : ports.clearRecord(record);
-    }
-  }
+  return DISPATCHER_STEPS[id](action, ports, prOf(action.target));
 }
 
 /** The step a pass's own decision takes: its stage started again, its next session handed the option chosen. */
@@ -320,6 +330,80 @@ function isStationNeed(
   );
 }
 
+/** Where one need's answers are read, and what they are read against. */
+interface Framed {
+  action: Action & { cause: NeedCause };
+  decision: LineDecision;
+  digest: string;
+  where: { repo: string; number: number };
+}
+
+/** A need's decision and where its answers are, or `null` when its answers are not read. */
+function framedOf(
+  action: Action,
+  slug: string,
+  context: StationContext,
+  ports: StationPorts,
+): Framed | null {
+  if (!isStationNeed(action)) return null;
+  const decision = stationDecision(action, context);
+  const digest = decision?.digest;
+  if (decision === null || digest === undefined) return null;
+  const where = whereAnswered(action, decision, slug, ports);
+  return where === null ? null : { action, decision, digest, where };
+}
+
+/** The step on `counted` as its row holds it, the step run now when no tick ran it yet. */
+async function actedOn(
+  framed: Framed,
+  counted: PendingAnswer,
+  slug: string,
+  ports: StationPorts,
+  root: string | undefined,
+): Promise<ActedAnswer | null> {
+  const { action, decision, digest } = framed;
+  const row: AnswerRow = {
+    repo: slug,
+    target: action.target,
+    key: decision.key,
+    digest,
+    answer: `${counted.url} ${counted.at}`,
+    author: counted.author,
+    option: counted.choice?.option ?? "",
+  };
+  const prior = actedAnswer(row, root);
+  if (prior !== null) return prior;
+  return claimAnswer(row, root)
+    ? act(action, decision, counted, row, ports, root)
+    : actedAnswer(row, root);
+}
+
+/** Read one need's answers onto its action and act on the one that counts; whether it was answered Leave it to me. */
+async function settleOne(
+  framed: Framed,
+  slug: string,
+  ports: StationPorts,
+  root: string | undefined,
+): Promise<boolean> {
+  const { action, decision, digest, where } = framed;
+  const listed = await ports.comments(where.repo, where.number);
+  if (!listed.ok) {
+    action.answered = { digest, answers: [], unread: listed.failure.reason };
+    return false;
+  }
+  const read = readStationAnswers(decision, listed.value, ports.self);
+  const answered: StationAnswered = {
+    digest,
+    answers: read.answers.map(answerView),
+    ...(read.state === undefined ? {} : { state: read.state }),
+  };
+  action.answered = answered;
+  if (read.counted === undefined) return false;
+  const acted = await actedOn(framed, read.counted, slug, ports, root);
+  if (acted !== null) answered.acted = acted;
+  return acted?.outcome === "held";
+}
+
 /**
  * Read the answers to every framed need of `report` and act on the one
  * that counts, once; a need answered Leave it to me moves to the report's
@@ -334,42 +418,9 @@ export async function settleStationAnswers(
 ): Promise<void> {
   const held = new Set<Action>();
   for (const action of report.actions) {
-    if (!isStationNeed(action)) continue;
-    const decision = stationDecision(action, context);
-    const digest = decision?.digest;
-    if (decision === null || digest === undefined) continue;
-    const where = whereAnswered(action, decision, slug, ports);
-    if (where === null) continue;
-    const listed = await ports.comments(where.repo, where.number);
-    if (!listed.ok) {
-      action.answered = { digest, answers: [], unread: listed.failure.reason };
-      continue;
-    }
-    const read = readStationAnswers(decision, listed.value, ports.self);
-    const answered: StationAnswered = {
-      digest,
-      answers: read.answers.map(answerView),
-      ...(read.state === undefined ? {} : { state: read.state }),
-    };
-    action.answered = answered;
-    const counted = read.counted;
-    if (counted === undefined) continue;
-    const row: AnswerRow = {
-      repo: slug,
-      target: action.target,
-      key: decision.key,
-      digest,
-      answer: `${counted.url} ${counted.at}`,
-      author: counted.author,
-      option: counted.choice?.option ?? "",
-    };
-    const acted =
-      actedAnswer(row, root) ??
-      (claimAnswer(row, root)
-        ? await act(action, decision, counted, row, ports, root)
-        : actedAnswer(row, root));
-    if (acted !== null) answered.acted = acted;
-    if (acted?.outcome === "held") held.add(action);
+    const framed = framedOf(action, slug, context, ports);
+    if (framed !== null && (await settleOne(framed, slug, ports, root)))
+      held.add(action);
   }
   if (held.size === 0) return;
   report.actions = report.actions.filter((a) => !held.has(a));

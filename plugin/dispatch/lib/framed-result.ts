@@ -71,7 +71,7 @@ export function framedResultOf(
 }
 
 /** A kept decision as a reader takes it; `null` for none, or one that does not read. */
-export function readFramedResult(
+function readFramedResult(
   json: string | null | undefined,
 ): FramedResult | null {
   if (json == null) return null;
@@ -91,4 +91,12 @@ export function readFramedResult(
     typeof value.at === "string"
     ? { decision: value.decision, digest: value.digest, at: value.at }
     : null;
+}
+
+/** A launch row's kept decision, as a read record carries it: absent when it has none. */
+export function framedOf(json: string | null | undefined): {
+  framed?: FramedResult;
+} {
+  const framed = readFramedResult(json);
+  return framed === null ? {} : { framed };
 }

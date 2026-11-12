@@ -26,7 +26,7 @@
 import type { ParkedDecision, ParkedOption } from "./park.ts";
 
 /** The key a station's decision is answered by, one per kind of need: `answer <key>: …`. */
-export const STATION_KEYS = [
+const STATION_KEYS = [
   "followup",
   "pickup",
   "checkout",
@@ -109,7 +109,7 @@ const OPTIONS: Readonly<Record<StationOptionId, Omit<ParkedOption, "id">>> = {
 };
 
 /** The option the tick carries out for `id`, as a decision states it. */
-export function stationOption(id: StationOptionId): ParkedOption {
+function stationOption(id: StationOptionId): ParkedOption {
   return { id, ...OPTIONS[id] };
 }
 
