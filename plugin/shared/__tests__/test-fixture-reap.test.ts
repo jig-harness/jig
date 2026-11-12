@@ -38,7 +38,12 @@ function fixture(owner = identity(500_000_000), child = identity(500_000_001)) {
   const scopeName = `scope-${createHash("sha256").update(resolve(root)).digest("hex")}.json`;
   writeFileSync(
     join(registry, scopeName),
-    JSON.stringify({ version: 1, root, createdAt: new Date().toISOString() }),
+    JSON.stringify({
+      version: 1,
+      root,
+      createdAt: new Date().toISOString(),
+      registeredBy: encodeIdentity(owner),
+    }),
   );
   for (const [node, parent, who] of [
     [ownerNode, null, owner],
