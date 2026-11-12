@@ -241,15 +241,26 @@ describe("Linear attachments", () => {
       files.put("http://storage.example/a", {}, new Uint8Array()),
     ).rejects.toThrow("not an HTTPS upload address");
     for (const url of [
+      "https://upload.attacker.example/put",
+      "https://evilstorage.googleapis.com.attacker.example/put",
+      "https://storage.googleapis.com:8443/put",
       "https://127.0.0.1/upload",
       "https://[::1]/upload",
       "https://localhost/upload",
       "https://build.internal/upload",
     ])
       await expect(files.put(url, {}, new Uint8Array())).rejects.toThrow(
-        "public host",
+        "Linear's file storage",
       );
     expect(asked).toEqual([]);
+    await files.put(
+      "https://storage.googleapis.com/linear-uploads/x?sig=1",
+      {},
+      new Uint8Array(),
+    );
+    expect(asked).toEqual([
+      "https://storage.googleapis.com/linear-uploads/x?sig=1",
+    ]);
   });
 
   it("names the uploaded address when attaching it fails", async () => {

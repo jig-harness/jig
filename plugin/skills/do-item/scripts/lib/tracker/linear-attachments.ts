@@ -28,6 +28,9 @@ import {
 /** The host Linear stores uploaded files on; only it is sent the API key. */
 export const LINEAR_UPLOAD_HOST = "uploads.linear.app";
 
+/** The hosts, and their subdomains, a signed upload address may name. */
+const LINEAR_STORAGE_HOSTS = ["storage.googleapis.com", "linear.app"];
+
 const PAGE = 100;
 
 const ATTACHMENT_FIELDS = "id title subtitle url createdAt metadata";
@@ -88,20 +91,17 @@ function isLinearUpload(url: string): boolean {
 }
 
 /**
- * Whether `url` is HTTPS on a named public host: not an IP literal, a
- * single-label name or a local or internal one, so a signed address cannot
- * point the file at the machine's own network.
+ * Whether `url` is HTTPS, on the default port, on a host Linear's file store
+ * signs addresses for: Google Cloud Storage or Linear's own domain. Only
+ * those named hosts receive the file, so a response that names any other
+ * destination, whatever its DNS says, is refused.
  */
-function isPublicHttps(url: string): boolean {
+function isLinearStorage(url: string): boolean {
   if (!URL.canParse(url)) return false;
   const u = new URL(url);
-  if (u.protocol !== "https:") return false;
+  if (u.protocol !== "https:" || u.port !== "") return false;
   const host = u.hostname.toLowerCase().replace(/\.$/, "");
-  if (host.startsWith("[") || /^[\d.]+$/.test(host)) return false;
-  return (
-    host.includes(".") &&
-    !/\.(localhost|local|internal|lan|home|corp|intranet)$/.test(host)
-  );
+  return LINEAR_STORAGE_HOSTS.some((h) => host === h || host.endsWith(`.${h}`));
 }
 
 function bounded(signal: AbortSignal | undefined): AbortSignal {
@@ -116,9 +116,9 @@ export function linearFiles(
 ): LinearFiles {
   return {
     async put(url, headers, bytes, signal) {
-      if (!isPublicHttps(url))
+      if (!isLinearStorage(url))
         throw new LinearApiError(
-          `${url} is not an HTTPS upload address on a public host; the file is not sent to it`,
+          `${url} is not an HTTPS upload address on Linear's file storage; the file is not sent to it`,
           null,
         );
       const res = await fetchImpl(url, {
