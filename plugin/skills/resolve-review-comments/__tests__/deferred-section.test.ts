@@ -799,6 +799,34 @@ describe("file-deferred.ts files each entry through the tracker", () => {
     expect(old?.filed).toBeUndefined();
   });
 
+  test("an entry whose issue an interrupted run filed is recorded though it can no longer be planned", async () => {
+    const forge = fakeForge(
+      withDeferredEntry("", {
+        source: THREAD,
+        finding: FINDING,
+        reason: "r",
+      }).body,
+    );
+    const [entry] = deferredEntries(forge.state.body);
+    const { t, calls } = trackerThatFiles([
+      {
+        number: 7,
+        body: `Filed by file-deferred.ts.\n\n${identityLine({ source: THREAD })}\n${textLine({ text: entry?.text ?? "" })}`,
+      },
+    ]);
+    const r = await fileDeferred(forge, t, "42", {
+      label: "pr-followup",
+      facets: FACETS,
+    });
+    expect(r.why).toBeNull();
+    expect(r.forPerson).toEqual([]);
+    expect(r.filed).toEqual([
+      expect.objectContaining({ key: "#7", reused: true }),
+    ]);
+    expect(calls.filter((c) => c.op === "TrackerCreate")).toHaveLength(0);
+    expect(deferredEntries(forge.state.body)[0]?.filed?.key).toBe("#7");
+  });
+
   test("leaves an entry whose type the repository does not have for a person", () => {
     const entry = { ...REC, source: THREAD, text: "t", type: "spike" };
     expect(entryFacets(entry, FACETS)).toEqual({

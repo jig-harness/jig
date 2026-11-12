@@ -362,6 +362,26 @@ async function issueOf(
 }
 
 /**
+ * `plan`, except that an entry the tracker already holds an issue for needs
+ * only recording, so it is planned with no labels or facets.
+ */
+function planHolding(
+  plan: (entry: DeferredEntry) => Promise<Plan | { why: string }>,
+  tracker: Tracker | null,
+  opts: { dryRun?: boolean },
+): (entry: DeferredEntry) => Promise<Plan | { why: string }> {
+  return async (entry) => {
+    const planned = await plan(entry);
+    return "why" in planned &&
+      tracker !== null &&
+      !opts.dryRun &&
+      (await alreadyFiled(tracker, entry)) !== null
+      ? { facets: {}, labels: [] }
+      : planned;
+  };
+}
+
+/**
  * File every unfiled entry of the pull request's section through `tracker`.
  * `onFiled` hears of each filing before its entry is replaced.
  */
@@ -390,7 +410,7 @@ export async function fileDeferred(
     forPerson: [],
     why: null,
   };
-  const plan = planner(forge, pr, opts);
+  const plan = planHolding(planner(forge, pr, opts), tracker, opts);
   const open = await fileable(deferredEntries(body), plan, result);
   const skipped = whyNotFiling(tracker, opts);
   if (tracker === null || skipped !== null) {
@@ -472,7 +492,8 @@ function planner(
 /**
  * The unfiled entries this run can file; each it cannot (no type or
  * severity recorded, a value the repository lacks, or a required group whose
- * label cannot be derived) goes to `result`'s `forPerson`, with why.
+ * label cannot be derived) goes to `result`'s `forPerson`, with why, unless
+ * the tracker already holds its issue, which needs only recording.
  */
 async function fileable(
   entries: DeferredEntry[],
