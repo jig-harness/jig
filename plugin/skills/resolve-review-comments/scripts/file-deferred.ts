@@ -368,17 +368,11 @@ async function issueOf(
 function planHolding(
   plan: (entry: DeferredEntry) => Promise<Plan | { why: string }>,
   tracker: Tracker | null,
-  opts: { dryRun?: boolean },
 ): (entry: DeferredEntry) => Promise<Plan | { why: string }> {
-  return async (entry) => {
-    const planned = await plan(entry);
-    return "why" in planned &&
-      tracker !== null &&
-      !opts.dryRun &&
-      (await alreadyFiled(tracker, entry)) !== null
+  return async (entry) =>
+    tracker !== null && (await alreadyFiled(tracker, entry)) !== null
       ? { facets: {}, labels: [] }
-      : planned;
-  };
+      : plan(entry);
 }
 
 /**
@@ -410,7 +404,7 @@ export async function fileDeferred(
     forPerson: [],
     why: null,
   };
-  const plan = planHolding(planner(forge, pr, opts), tracker, opts);
+  const plan = planHolding(planner(forge, pr, opts), tracker);
   const open = await fileable(deferredEntries(body), plan, result);
   const skipped = whyNotFiling(tracker, opts);
   if (tracker === null || skipped !== null) {
