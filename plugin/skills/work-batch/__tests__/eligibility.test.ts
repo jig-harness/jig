@@ -522,3 +522,29 @@ describe("a pr_open state with no category", () => {
     }
   });
 });
+
+describe("a blocked state with no category", () => {
+  it("stands as started work, never as a batch candidate", () => {
+    const p = policy({
+      issue_tracker: {
+        adapter: "linear",
+        team: "ENG",
+        states: { blocked: "Blocked" },
+      },
+    });
+    expect(stateStanding({ name: "Blocked", type: "" }, p)).toBe("started");
+  });
+
+  it("stands as started work under a recognised open category too", () => {
+    const p = policy({
+      issue_tracker: {
+        adapter: "linear",
+        team: "ENG",
+        states: { blocked: "Blocked" },
+      },
+    });
+    expect(stateStanding({ name: "Blocked", type: "unstarted" }, p)).toBe(
+      "started",
+    );
+  });
+});

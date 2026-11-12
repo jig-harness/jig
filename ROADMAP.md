@@ -169,8 +169,7 @@ Jig itself keeps a person merging
 A team states the rules its agent work follows, and every Jig skill that
 claims, moves or closes an item keeps them. Work starts only when a check
 the team supplies passes and only from the states the team allows. The
-board shows stopped work as blocked, with a reason. The dispatcher can also
-pick up from an unassigned ready pool. Every rule is optional, and a team
+dispatcher can also pick up from an unassigned ready pool. Every rule is optional, and a team
 that sets none keeps today's behaviour.
 
 ### 48. Fitting the drive to a repository's reviewer

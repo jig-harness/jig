@@ -13,7 +13,7 @@
 import { isRecord } from "../../../../../../shared/guards.ts";
 import { TrackerConfigError } from "../config-error.ts";
 import { PRIORITY_NAMES, type PriorityName } from "../facets/values.ts";
-import { nonEmpty, settingsSection } from "../settings-fields.ts";
+import { firstRepeat, nonEmpty, settingsSection } from "../settings-fields.ts";
 
 export { PRIORITY_NAMES, type PriorityName };
 
@@ -126,9 +126,7 @@ function priorityLabelsOf(v: unknown): Record<PriorityName, string> {
     labels[key as PriorityName] = nonEmpty(name, at);
   }
   const names = PRIORITY_NAMES.map((p) => labels[p]);
-  const twice = names.find(
-    (n, i) => names.findIndex((m) => m.toLowerCase() === n.toLowerCase()) !== i,
-  );
+  const twice = firstRepeat(names);
   if (twice !== undefined)
     throw new TrackerConfigError(
       field("priority_labels"),

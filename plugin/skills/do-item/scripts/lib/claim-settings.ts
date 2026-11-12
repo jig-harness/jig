@@ -29,6 +29,17 @@ export interface ClaimSettings {
   claimMarker: boolean;
 }
 
+/**
+ * States a claim never starts from. The claim moves an item to in_progress,
+ * and an item in pr_open already has a pull request: either is someone's. An
+ * item in blocked waits on a person's answer.
+ */
+const CLAIM_FROM_BARRED: readonly (readonly [string, string])[] = [
+  ["in_progress", "an item there is already someone's"],
+  ["pr_open", "an item there is already someone's"],
+  ["blocked", "an item there waits on a person's answer"],
+];
+
 function claimFrom(value: unknown): CanonicalState[] | null {
   if (value === undefined || value === null) return null;
   if (
@@ -41,13 +52,11 @@ function claimFrom(value: unknown): CanonicalState[] | null {
     );
   if (new Set(value).size !== value.length)
     throw new ClaimSettingsError("do_item.claim_from lists a state twice");
-  // The claim moves an item to in_progress, and an item in pr_open already has
-  // a pull request: either is someone's.
-  for (const s of ["in_progress", "pr_open"])
-    if (value.includes(s))
-      throw new ClaimSettingsError(
-        `do_item.claim_from cannot list ${s}: an item there is already someone's`,
-      );
+  const barred = CLAIM_FROM_BARRED.find(([state]) => value.includes(state));
+  if (barred)
+    throw new ClaimSettingsError(
+      `do_item.claim_from cannot list ${barred[0]}: ${barred[1]}`,
+    );
   return value as CanonicalState[];
 }
 

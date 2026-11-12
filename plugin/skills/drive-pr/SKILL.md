@@ -778,7 +778,12 @@ outlives the session that spawned it, so its console is not where you look:
   or `held`, nothing on a pull request carrying `hold` or `held`, and never
   a new label. Best effort: `gh` calls under `ghCall`'s deadline, the edit
   only when the labels disagree; a refusal is one `labels:` line on stderr
-  and never changes the exit. A pass never writes a state label.
+  and never changes the exit. A pass never writes a state label. Where
+  `issue_tracker.states.blocked` is set, the same write moves each item the
+  pull request links (`Closes`/`Refs <KEY>`) to `blocked` on a `parked`
+  stop, with each park's class and reason, and back to the state it left
+  on `driving` (`do-item/scripts/lib/blocked-move.ts`), under the same
+  rules; a pass never moves one.
 - **Relocating the state dir** — `$DRIVE_PR_STATE_DIR` relocates the state
   root: the database and one `<clone-key>/` directory per clone (the hash of
   its persisted [universally unique identifier](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (UUID); linked worktrees share it). The driver exports its resolved

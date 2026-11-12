@@ -2364,7 +2364,10 @@ make, use the entry's term instead.
   when it ends (followed-up, followup-failed), and the dispatcher at every
   *tick*, which also writes stale and held (from the *serialized areas*)
   and corrects any label that disagrees. No writer reads a state label to
-  decide what to start, and none creates one: a one-time setup does. Beside
+  decide what to start, and none creates one: a one-time setup does. Where
+  a repository names a `blocked` tracker state, the same projection moves
+  the items a parked pull request links to `blocked`, and back once its
+  drive runs again. Beside
   them the dispatcher keeps marker labels without the prefix: the
   *owed-steps label* and `automation` (*automation pull request*). A person
   adds the commands: `drive` asks the dispatcher to drive a pull request

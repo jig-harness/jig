@@ -138,6 +138,11 @@ below; for the rest:
 - nothing: `5`, a pull request no longer open; `20`, whose ledger is the
   successor's; and a stop with no exit and no person's stop recorded.
 
+Where the repository names `issue_tracker.states.blocked`, a stop labelled
+parked also moves the items the pull request links to `blocked`, and the
+next arm's driving label moves them back
+([configuration reference](../../../CONFIGURATION.md#issue_tracker)).
+
 
 
 ## Repair rounds
