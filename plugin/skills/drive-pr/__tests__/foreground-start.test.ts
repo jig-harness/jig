@@ -198,11 +198,25 @@ test("a launch that ran out of budget ends a command the runner started but had 
       windows: "preserved",
       posix: "ended",
     });
-    expect(
-      (await identityTargetsGone(tree as NonNullable<typeof tree>))
-        ? "ended"
-        : "preserved",
-    ).toBe(outcome);
+    if (outcome === "ended") {
+      expect(await identityTargetsGone(tree as NonNullable<typeof tree>)).toBe(
+        true,
+      );
+    } else {
+      // Preserved means the runner is live and still supervises every
+      // captured process under its original creation identity, read from a
+      // readable snapshot.
+      expect(alive(runner)).toBe(true);
+      const after = await captureProcessTree(runner.pid as number);
+      expect(after).not.toBeNull();
+      for (const target of tree as NonNullable<typeof tree>) {
+        expect(
+          (after ?? []).some(
+            (row) => row.pid === target.pid && row.start === target.start,
+          ),
+        ).toBe(true);
+      }
+    }
     expect(recorded).toEqual([outcome === "ended"]);
   } finally {
     await signalIdentityTargets(
