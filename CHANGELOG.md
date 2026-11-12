@@ -394,6 +394,12 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.223.1] - 2026-11-12
+
+### Fixed
+
+- The dispatcher checks the steward's cadence and hourly cap before reading the queue for its digest, so a tick the cadence or the cap rules out reads nothing for it. The digest reuses the queued items the tick already read, and reads the rest only while the tick's deadline leaves room for the launch's preparation and the launch: when time runs out or a read fails, the steward waits for a later tick instead of holding up the tick.
+
 ## [0.223.0] - 2026-11-12
 
 ### Added
@@ -7701,7 +7707,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.223.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.223.1...HEAD
+[0.223.1]: https://github.com/jig-harness/jig/compare/v0.223.0...v0.223.1
 [0.223.0]: https://github.com/jig-harness/jig/compare/v0.222.1...v0.223.0
 [0.222.1]: https://github.com/jig-harness/jig/compare/v0.222.0...v0.222.1
 [0.222.0]: https://github.com/jig-harness/jig/compare/v0.221.2...v0.222.0
