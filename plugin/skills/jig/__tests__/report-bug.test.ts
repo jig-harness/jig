@@ -24,6 +24,7 @@ import {
   replacementsFor,
   searchArgs,
   searchUrl,
+  splitFacetLabels,
 } from "../scripts/report-bug.ts";
 
 const script = join(import.meta.dir, "..", "scripts", "report-bug.ts");
@@ -337,6 +338,7 @@ test("the draft is titled by skill and symptom, with the form's channel answer",
   expect(result.body).toContain(
     "### Last version it worked in\n\n_No response_\n",
   );
+  expect(result.labels).toEqual(["jig"]);
   expect(fileArgs(result)).toEqual([
     "issue",
     "create",
@@ -345,12 +347,42 @@ test("the draft is titled by skill and symptom, with the form's channel answer",
     "--title",
     "drive-pr: parks in <repository-name>",
     "--label",
-    "bug",
-    "--label",
     "jig",
+    "--type",
+    "Bug",
     "--body-file",
     "-",
   ]);
+});
+
+test("a draft's type, priority and size labels are dropped, whatever their case", () => {
+  const labels = [
+    "bug",
+    "jig",
+    "small",
+    "priority: high",
+    "Priority:Urgent",
+    "type:feature",
+    "XL",
+    "area:plugin",
+  ];
+  expect(splitFacetLabels(labels)).toEqual({
+    kept: ["jig", "area:plugin"],
+    dropped: [
+      "bug",
+      "small",
+      "priority: high",
+      "Priority:Urgent",
+      "type:feature",
+      "XL",
+    ],
+  });
+  const args = fileArgs({ title: "t", labels });
+  expect(args.filter((_, i) => args[i - 1] === "--label")).toEqual([
+    "jig",
+    "area:plugin",
+  ]);
+  expect(fileArgs({ title: "t", labels }, false)).not.toContain("--type");
 });
 
 test("the search covers closed issues, and has an address to search by hand", () => {
@@ -515,27 +547,31 @@ test("with gh not logged in, file prints the form address and does not search", 
 });
 
 /**
- * A `gh` that files the issue as #900, logs every call's arguments to
- * `calls.log`, and answers the type's edit with `edit` (a shell fragment).
+ * A `gh` that logs every call's arguments to `calls.log`, answers an issue
+ * search with no issue, and answers a create with `create` (a shell fragment
+ * run with the arguments in `$*`) as #900 when it does not say otherwise.
  */
-function filingGh(dir: string, edit: string): void {
+function filingGh(
+  dir: string,
+  create = "echo https://github.com/jig-harness/jig/issues/900",
+): void {
   writeFakeProgram(
     join(dir, "gh"),
     [
       "#!/bin/sh",
       `echo "$*" >> "${join(dir, "calls.log").replaceAll("\\", "/")}"`,
-      'if [ "$1 $2" = "issue create" ]; then cat >/dev/null; echo "https://github.com/jig-harness/jig/issues/900"; exit 0; fi',
-      `if [ "$1 $2" = "issue edit" ]; then ${edit}; fi`,
+      'if [ "$1 $2" = "issue list" ]; then echo "[]"; exit 0; fi',
+      `if [ "$1 $2" = "issue create" ]; then cat >/dev/null; ${create}; exit $?; fi`,
       "exit 7",
     ].join("\n"),
   );
 }
 
-function fileDraft(dir: string) {
+function fileDraft(dir: string, labels = ["bug"]) {
   const draft = join(dir, "draft.json");
   writeFileSync(
     draft,
-    JSON.stringify({ title: "t", body: "b", labels: ["bug"], url: "u" }),
+    JSON.stringify({ title: "t", body: "b", labels, url: "u" }),
   );
   return Bun.spawnSync([process.execPath, script, "file", draft], {
     env: { ...process.env, PATH: `${dir}${delimiter}${process.env.PATH}` },
@@ -544,26 +580,39 @@ function fileDraft(dir: string) {
   });
 }
 
-test("file gives the new issue the issue type Bug", () => {
+function calls(dir: string): string[] {
+  return readFileSync(join(dir, "calls.log"), "utf8").trim().split("\n");
+}
+
+test("file creates the issue with the issue type Bug and no facet label", () => {
   const dir = mkdtempSync(join(tmpdir(), "jig-report-bug-"));
-  filingGh(dir, "exit 0");
-  const run = fileDraft(dir);
+  filingGh(dir);
+  const run = fileDraft(dir, ["bug", "jig", "small", "priority: high"]);
   expectSpawnExit(run, 0);
   expect(run.stdout.toString()).toContain(
     "https://github.com/jig-harness/jig/issues/900",
   );
-  const calls = readFileSync(join(dir, "calls.log"), "utf8");
-  expect(calls).toContain(
-    "issue edit https://github.com/jig-harness/jig/issues/900 --type Bug",
-  );
-  expect(run.stderr.toString()).not.toContain("without the issue type");
+  expect(calls(dir)).toEqual([
+    "issue create --repo jig-harness/jig --title t --label jig --type Bug --body-file -",
+  ]);
+  const err = run.stderr.toString();
+  expect(err).toContain("dropped the labels bug, small, priority: high");
+  expect(err).not.toContain("without the issue type");
+});
+
+test("a draft with no facet label drops nothing", () => {
+  const dir = mkdtempSync(join(tmpdir(), "jig-report-bug-"));
+  filingGh(dir);
+  const run = fileDraft(dir, ["jig"]);
+  expectSpawnExit(run, 0);
+  expect(run.stderr.toString()).toBe("");
 });
 
 test("an account that may not set issue types still files, and is told so", () => {
   const dir = mkdtempSync(join(tmpdir(), "jig-report-bug-"));
   filingGh(
     dir,
-    "echo 'GraphQL: the viewer may not set the issue type' >&2; exit 1",
+    `case "$*" in *"--type Bug"*) echo 'GraphQL: the viewer may not set the issue type' >&2; exit 1;; *) echo https://github.com/jig-harness/jig/issues/900;; esac`,
   );
   const run = fileDraft(dir);
   expectSpawnExit(run, 0);
@@ -572,5 +621,18 @@ test("an account that may not set issue types still files, and is told so", () =
   );
   expect(run.stderr.toString()).toContain(
     "filed without the issue type Bug (GraphQL: the viewer may not set the issue type)",
+  );
+  const filed = calls(dir).filter((c) => c.startsWith("issue create"));
+  expect(filed).toHaveLength(2);
+  expect(filed[1]).not.toContain("--type");
+});
+
+test("a failure that does not name the type is not filed again without it", () => {
+  const dir = mkdtempSync(join(tmpdir(), "jig-report-bug-"));
+  filingGh(dir, "echo 'HTTP 502: bad gateway' >&2; exit 1");
+  const run = fileDraft(dir);
+  expectSpawnExit(run, 1);
+  expect(calls(dir).filter((c) => c.startsWith("issue create"))).toHaveLength(
+    1,
   );
 });

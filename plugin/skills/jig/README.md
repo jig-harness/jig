@@ -18,7 +18,7 @@ itself: it names the skill that does.
 ## Reporting a Jig bug
 
 A Jig bug is an issue on [jig-harness/jig](https://github.com/jig-harness/jig/issues),
-labelled `bug` and of the issue type Bug, in the fields of its bug form: plugin version, the channel
+of the issue type Bug, in the fields of its bug form: plugin version, the channel
 it was installed from, the last version it worked in, what happened, what
 was expected, and the agent tool and operating system. The skill first
 decides whether the fault is Jig's at all (a configuration error, the

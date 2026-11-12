@@ -30,11 +30,13 @@
  *                    urlOmitted, replaced }
  *   bun report-bug.ts file <draft file>
  *     File the draft on Jig's tracker and print the new issue's address.
- *     The issue is then given the issue type Bug, as the bug form gives
- *     it; an account GitHub does not let set issue types (or a `gh` too
- *     old to set one) leaves it without, which is said on stderr and is
- *     no failure: the type, the priority and the size are set when the
- *     issue is triaged.
+ *     The issue is created with the issue type Bug, as the bug form gives
+ *     it, and with no type, priority or size label: Jig's repository keeps
+ *     those in fields, so a draft's such labels are dropped, which is said
+ *     on stderr. An account GitHub does not let set issue types (or a `gh`
+ *     too old to set one) files the issue without the type, which is said
+ *     on stderr and is no failure: the type, the priority and the size are
+ *     set when the issue is triaged.
  *
  * The plugin version is read from this copy's manifest, the operating system
  * from the machine. Before anything is printed, every text the agent gave has
@@ -71,14 +73,20 @@ import { pluginVersion } from "../../../shared/plugin-version.ts";
 /** Jig's own repository, where its issues are filed. */
 export const JIG_REPOSITORY = "jig-harness/jig";
 
-/** The label the bug form applies. */
-export const BUG_LABEL = "bug";
-
 /** The repository label (`review.repo_label`) the bug form applies. */
 export const REPO_LABEL = "jig";
 
 /** The issue type the bug form applies. */
 export const BUG_TYPE = "Bug";
+
+/**
+ * The labels of the type, priority and size facets, which Jig's repository
+ * keeps in the issue type and the Priority and Effort fields: the default
+ * label of every value of each facet, and the taxonomy's types. An open issue
+ * there carries none of them. Matched ignoring case.
+ */
+const FACET_LABEL =
+  /^(?:bug|feature|improvement|task|spike|docs|chore|infra|type:.*|priority:.*|xs|small|medium|large|xl)$/i;
 
 /** The answers of the bug form's channel field, by the short name `--channel` takes. */
 export const CHANNELS: Record<string, string> = {
@@ -423,7 +431,7 @@ export function draft(
   return {
     repository: JIG_REPOSITORY,
     title,
-    labels: [BUG_LABEL, REPO_LABEL],
+    labels: [REPO_LABEL],
     body: body(fields),
     url: form.url,
     urlComplete: form.complete,
@@ -450,8 +458,23 @@ export function searchArgs(words: string): string[] {
   ];
 }
 
-/** The `gh` arguments that file `d`, its body read from stdin. */
-export function fileArgs(d: Pick<Draft, "title" | "labels">): string[] {
+/** `labels` split into those Jig's repository keeps and its facet labels, which it does not. */
+export function splitFacetLabels(labels: string[]): {
+  kept: string[];
+  dropped: string[];
+} {
+  const dropped = labels.filter((label) => FACET_LABEL.test(label.trim()));
+  return { kept: labels.filter((label) => !dropped.includes(label)), dropped };
+}
+
+/**
+ * The `gh` arguments that file `d`, its body read from stdin: its labels but
+ * for the facet ones, and the issue type Bug unless `withType` is false.
+ */
+export function fileArgs(
+  d: Pick<Draft, "title" | "labels">,
+  withType = true,
+): string[] {
   return [
     "issue",
     "create",
@@ -459,15 +482,11 @@ export function fileArgs(d: Pick<Draft, "title" | "labels">): string[] {
     JIG_REPOSITORY,
     "--title",
     d.title,
-    ...d.labels.flatMap((label) => ["--label", label]),
+    ...splitFacetLabels(d.labels).kept.flatMap((label) => ["--label", label]),
+    ...(withType ? ["--type", BUG_TYPE] : []),
     "--body-file",
     "-",
   ];
-}
-
-/** The `gh` arguments that give the issue at `url` the issue type Bug. */
-export function typeArgs(url: string): string[] {
-  return ["issue", "edit", url, "--type", BUG_TYPE];
 }
 
 /** Jig's issues page searched for `words`, for a machine without a working `gh`. */
@@ -803,35 +822,34 @@ function runFile(argv: string[]): number {
   }
   const d = asDraft(parsed);
   if (!d) fail(2, `${path} is not a draft this script wrote`);
-  const run = gh(fileArgs(d), d.body);
+  const { dropped } = splitFacetLabels(d.labels);
+  if (dropped.length > 0)
+    process.stderr.write(
+      `dropped the label${dropped.length === 1 ? "" : "s"} ${dropped.join(", ")}: Jig's repository keeps type, priority and size in fields, which are set when the issue is triaged\n`,
+    );
+  let run = gh(fileArgs(d), d.body);
+  if (run.status !== 0 && typeRefused(run, d.title)) {
+    const reason = (why(run).split("\n")[0] ?? "").trim().slice(0, 200);
+    run = gh(fileArgs(d, false), d.body);
+    if (run.status === 0)
+      process.stderr.write(
+        `filed without the issue type ${BUG_TYPE} (${reason}); it is set when the issue is triaged\n`,
+      );
+  }
   if (run.status !== 0) reportFilingFailure(d, run);
   process.stdout.write(run.stdout);
-  setBugType(String(run.stdout));
   return 0;
 }
 
 /**
- * Give the issue `gh issue create` printed the address of the issue type
- * Bug. Filed apart from the issue, so an account that may not set types
- * still files; a refusal is one line on stderr, never a failure.
+ * Whether `gh` failed to create the issue because of its type (an account
+ * that may not set one, a `gh` that has no `--type`), so that filing again
+ * without the type is safe: it names the type, and no issue of this title
+ * exists, since a failure after the issue was created must not file it twice.
  */
-function setBugType(created: string): void {
-  const url = created
-    .split("\n")
-    .map((l) => l.trim())
-    .findLast((l) => l.startsWith("https://"));
-  if (url === undefined) {
-    process.stderr.write(
-      `filed without the issue type ${BUG_TYPE}: gh printed no issue address; it is set when the issue is triaged\n`,
-    );
-    return;
-  }
-  const run = gh(typeArgs(url));
-  if (run.status === 0) return;
-  const reason = (why(run).split("\n")[0] ?? "").trim().slice(0, 200);
-  process.stderr.write(
-    `filed without the issue type ${BUG_TYPE} (${reason}); it is set when the issue is triaged\n`,
-  );
+function typeRefused(run: ReturnType<typeof gh>, title: string): boolean {
+  if (precedesCreation(run) || !/\btype\b/i.test(why(run))) return false;
+  return findFiled(title) === null;
 }
 
 async function main(): Promise<number> {
