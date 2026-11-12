@@ -101,11 +101,16 @@ export function assignerOperations(
 ): Pick<Tracker, "assignedBy"> {
   async function writes(login: string): Promise<boolean> {
     const data = record(
-      await client.transport(COLLABORATOR, {
-        owner: client.home.owner,
-        name: client.home.name,
-        login,
-      }),
+      await client.transport(
+        COLLABORATOR,
+        {
+          owner: client.home.owner,
+          name: client.home.name,
+          login,
+        },
+        undefined,
+        true,
+      ),
       "data",
     );
     const collaborators = record(
@@ -130,11 +135,16 @@ export function assignerOperations(
       const ref = client.ref(key);
       refuseForeign(client, ref, key);
       const data = record(
-        await client.transport(ASSIGNMENTS, {
-          owner: ref.owner,
-          name: ref.name,
-          number: ref.number,
-        }),
+        await client.transport(
+          ASSIGNMENTS,
+          {
+            owner: ref.owner,
+            name: ref.name,
+            number: ref.number,
+          },
+          undefined,
+          true,
+        ),
         "data",
       );
       const issue = record(

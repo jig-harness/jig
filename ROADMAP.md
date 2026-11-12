@@ -264,10 +264,8 @@ change.
 A plan file kept in the repository, beside Linear, GitHub Issues and
 Jira. The [tracker interface](GLOSSARY.md) first gains attaching a file,
 the one operation the skills need that the interface does not have yet, and
-the workspace launcher learns to open GitHub issues. On Jira, a team can
-scope work to chosen issue types and read dependencies from several link
-types. Each issue type can have its own workflow states. A team can sign in
-with a scoped or brokered token instead of a personal one.
+the workspace launcher learns to open GitHub issues. On Jira, each issue
+type can have its own workflow states.
 
 ### 27. Work types: depth by kind of work
 

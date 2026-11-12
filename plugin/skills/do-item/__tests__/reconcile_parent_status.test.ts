@@ -521,6 +521,19 @@ describe("isReconcileInputShape", () => {
     expect(isReconcileInputShape({ parentLabels: [] })).toBe(false);
   });
 
+  it("accepts each pull request fact and refuses any other", () => {
+    const withFact = (pullRequest: unknown) => ({
+      parentLabels: [],
+      children: [
+        { state: { name: "In Review", type: "started" }, pullRequest },
+      ],
+    });
+    for (const fact of ["merged", "open", "none", "unreadable"])
+      expect(isReconcileInputShape(withFact(fact))).toBe(true);
+    expect(isReconcileInputShape(withFact("closed"))).toBe(false);
+    expect(isReconcileInputShape(withFact(true))).toBe(false);
+  });
+
   it("rejects a non-boolean found/truncated", () => {
     expect(isReconcileInputShape({ ...valid, found: "yes" })).toBe(false);
     expect(isReconcileInputShape({ ...valid, truncated: 1 })).toBe(false);

@@ -41,6 +41,7 @@ point differs per tool.
 | Herdr | Jig's Herdr plugin ([`tools/herdr/plugin`](../../tools/herdr/README.md#the-worktree-hooks)) answers `worktree.created` by running `.config/worktree-hooks/create` inside the worktree the event names (`data.worktree.path` in `HERDR_PLUGIN_EVENT_JSON`); `tools/herdr/workspace.ts open` waits for it before starting an agent, and runs it itself where the plugin is not installed | `tools/herdr/workspace.ts remove` resolves the worktree, runs `.config/worktree-hooks/remove` inside it and parks its reflection findings on the machine that holds it, and removes it through `herdr worktree remove` only when both succeed | Herdr runs a plugin's commands in the plugin's own directory, so a create hook that read its working directory would give every worktree the same identity and port slot; `worktree.removed` fires after the checkout is gone, so it can only notify, never park |
 | Orca | the [Orca workspace tool](../../tools/orca/README.md)'s `open` (the launcher's `orca` provider) runs `.config/worktree-hooks/create` inside the new worktree once its branch is named, before the agent starts, and marks the run in the worktree's git directory so it runs once; a worktree created in the Orca app runs Orca's own setup hook instead (Settings → Repository, or `scripts.setup` in the repository's `orca.yaml`), which can name the same file | `tools/orca/workspace.ts remove` runs `.config/worktree-hooks/remove` inside the worktree, parks its reflection findings when the clone is on this machine, and removes it through `orca worktree rm` only when both succeed; Orca's own delete runs an `orca.yaml` archive hook only when asked (`--run-hooks`) and has no other pre-remove point | Orca names a new branch after the worktree under its own prefix, so the tool renames it before the hook runs; Orca reads the branch from git and follows |
 | Worktrunk | a blocking `pre-start` hook in the repository's `.config/wt.toml` (`pre-start = ".config/worktree-hooks/create"`); Worktrunk runs it inside the new worktree, before any `post-start` hook runs | a blocking `pre-remove` hook (`pre-remove = ".config/worktree-hooks/remove"`) runs inside the worktree being removed, before it is deleted; its failure aborts the removal, so unsent reflection findings are parked or the worktree stays, provided the hook ran | Worktrunk asks before it first runs a repository's project hooks, and again when one changes; declining skips every project command for the operation and the removal continues, so the hook must be approved before the first removal and after each change to it, because a refusal is not a removal veto and deletes the git directory holding unsent findings; `post-remove` runs in the primary worktree after the checkout is gone, so it can only notify, never park |
+| [Rex](https://www.superlogical.com/rex/docs) — watched | no worktree concept: a wrapper would create the worktree, run its create hook inside it, then open a Rex session in it | a wrapper would run the remove hook inside the worktree, park its unsent reflection findings, and remove it only when both succeed | Jig ships no Rex provider; its [program status](../../GLOSSARY.md) and provider revisit conditions are assessed below |
 | another [workspace runtime](../../GLOSSARY.md) (such as Conductor) | the runtime's post-create / workspace-setup hook | the runtime's pre-remove / teardown hook | the runtime already brackets a session — the natural home for both |
 | `direnv` / per-directory env | `.envrc` calls `allocate-port.ts` on entry and exports `PORT` | none (no teardown event) | derived ports mean no cleanup is needed |
 | tmux / shell session per worktree | shell rc sources a per-worktree env file | a shell `EXIT` trap prints the reflection nudge | lightweight; good when there is no formal manager |
@@ -48,6 +49,40 @@ point differs per tool.
 Because ports are **derived**, the create hook is convenience, not correctness:
 any dev script can call `allocate-port.ts` directly and get the identical port
 without a hook having fired.
+
+### Rex: conditions for reconsidering a provider
+
+Assessment dated 2026-11-11: Rex is a candidate [workspace runtime](../../GLOSSARY.md),
+with no supported Jig integration. Its [command line](https://www.superlogical.com/rex/docs/automate/cli)
+offers machine-readable output, stable identifiers, waiting, capture, input and
+events; its [server API](https://www.superlogical.com/rex/docs/automate/server-api)
+describes its own methods. These are useful seams for running an agent in a
+worktree a wrapper owns.
+
+Reconsider a provider when each prerequisite can be checked:
+
+- A stable release is available; Rex is currently in beta.
+- A Linux or iOS client is in testing. The [installation guide](https://www.superlogical.com/rex/docs/installation)
+  currently limits client testing to macOS; Linux availability is server-only.
+- A published licence or an open-source core establishes the terms for use.
+- Authentication goes beyond trusting how a caller reaches the server.
+  The [remote-access guide](https://www.superlogical.com/rex/docs/linux/remote-access)
+  currently relies on Tailscale identity or a private connection such as an
+  SSH socket forward while fuller authentication is planned.
+
+The first integration would be a [workspace provider](../../GLOSSARY.md) for
+the [launcher](../../tools/launcher/README.md#providers). The dispatcher's
+[session runtime](../../GLOSSARY.md) would follow only once Jig supplies the
+subscription-account binding itself: Rex's operating-system accounts do not
+provide the subscription-account roster and session binding the dispatcher
+needs ([ADR-0011](../../docs/adr/ADR-0011-the-dispatcher-targets-orca-first.md)).
+
+Also revisit reading [program status](../../GLOSSARY.md) as the
+agent's reported state when a supported runtime exposes it: in `sessions`
+and in `steer`'s check that the agent still waits before sending an answer.
+Rex exposes status records through the terminal block's `program_status`
+method ([Lua API](https://www.superlogical.com/rex/docs/reference/lua)),
+reachable through `block.method` in its server API.
 
 ## Package managers — the wrong-root-install footgun
 

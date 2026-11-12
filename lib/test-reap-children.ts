@@ -5,7 +5,8 @@
 // capture that names them can miss (an identity that cannot be read, a
 // deadline that passes before the tree is complete), and a test whose own
 // timeout fires never reaches its teardown at all. When the test process then
-// exits, the init process adopts whatever it left, and the orphan idles for
+// exits, whatever it left is adopted by init, or by the nearest subreaper
+// above it (a per-user service manager is one), and the orphan idles for
 // good. Measured on one laptop: 82 idle `bun -e setInterval` fixtures, the
 // oldest four hours old.
 //
@@ -16,13 +17,16 @@
 // grandchild whose leader exited has left the tree by teardown. The test
 // process therefore also captures its descendants' identities as it runs
 // (`captureDescendants`), and the reap kills a captured identity, with its
-// own descendants, wherever init has adopted it. A process orphaned between
-// two captures — a child that starts a grandchild and exits within one
-// capture interval — was never seen and is not reaped; the host sweep covers
-// it. The identity rules are process-tree.ts's: a row whose creation
-// identity cannot be read is never signalled, so a reused pid is never
-// somebody else's process, and a process counts as gone once it is absent,
-// a zombie, or a different process under the same pid. Every process the
+// own descendants, wherever it was adopted. A process orphaned between two
+// captures — a child that starts a grandchild and exits within one capture
+// interval — was never seen; it is still found when the test process leads
+// its own process group, as each `bun test --parallel` worker does, since an
+// orphan keeps its group (`adoptedGroupMembers`). Otherwise it is not
+// reaped, and the host sweep covers it. The identity rules are
+// process-tree.ts's: a row whose creation identity cannot be read is never
+// signalled, so a reused pid is never somebody else's process, and a process
+// counts as gone once it is absent, a zombie, or a different process under
+// the same pid. Every process the
 // reap has seen is accounted for — signalled, left alone as unreadable, or
 // reported as surviving — and one deadline bounds every process-table read
 // it makes.
@@ -110,8 +114,10 @@ function liveOrUnreadable(
 }
 
 /**
- * Kill every surviving descendant of `pid`, and every identity in `captured`
- * that is still alive wherever it was adopted, with its own descendants.
+ * Kill every surviving descendant of `pid`, every identity in `captured`
+ * that is still alive wherever it was adopted, and, when `pid` leads its
+ * process group, every member of that group orphaned out of its tree
+ * (`adoptedGroupMembers`), each with its own descendants.
  * Reports the pids signalled, the processes left alone because their
  * identity could not be read (a captured identity whose row has become
  * unreadable included), and the targets not witnessed gone; null when the
@@ -217,7 +223,8 @@ async function reap(
 }
 
 /**
- * `pid`'s descendants, when there is a `pid`, and every captured identity's
+ * `pid`'s descendants and the members of its group orphaned out of its tree,
+ * when there is a `pid`, and every captured identity's
  * live process with its descendants, split into the readable targets and the
  * unreadable pids.
  */
@@ -242,7 +249,11 @@ function collectTargets(
     for (const row of tree.uncertain)
       if (!taken.has(row.pid)) unknown.add(row.pid);
   };
-  if (pid !== null) take(pid);
+  if (pid !== null) {
+    take(pid);
+    for (const row of adoptedGroupMembers(pid, rows))
+      if (!taken.has(row.pid)) take(row.pid);
+  }
   // A captured identity whose row is now unreadable is taken too: its
   // partition reports it, and what it started, as unreadable.
   for (const identity of captured) {
@@ -257,6 +268,41 @@ function collectTargets(
   const depth = depthsIn(rows);
   targets.sort((a, b) => depth(a.pid) - depth(b.pid));
   return { targets, unreadable };
+}
+
+/**
+ * The live members of the process group `pid` leads that were orphaned out
+ * of its tree: a process keeps its group when its parent exits, and is
+ * adopted by init or by a subreaper, either of them an ancestor of `pid`.
+ * They are what `pid`'s descendants left behind, however soon after starting
+ * them they exited. None when `pid` does not lead its group, whose members
+ * its leader may have started apart from `pid`. A member whose parent is
+ * `pid`'s own parent is left alone, since a shell runs the other commands of
+ * a pipeline that `pid` leads in the same group; an orphan adopted by that
+ * parent, when it is a subreaper, is therefore not found here.
+ */
+function adoptedGroupMembers(
+  pid: number,
+  rows: readonly ProcessRow[],
+): ProcessRow[] {
+  const byPid = new Map(rows.map((row) => [row.pid, row]));
+  const self = byPid.get(pid);
+  if (!self || self.pgid !== pid) return [];
+  const ancestors = new Set<number>();
+  for (
+    let row = byPid.get(self.ppid);
+    row && !ancestors.has(row.pid);
+    row = byPid.get(row.ppid)
+  )
+    ancestors.add(row.pid);
+  ancestors.delete(self.ppid);
+  return rows.filter(
+    (row) =>
+      row.pgid === pid &&
+      row.pid !== pid &&
+      ancestors.has(row.ppid) &&
+      !row.stat.startsWith("Z"),
+  );
 }
 
 /** How many ancestors each pid has in `rows`. */

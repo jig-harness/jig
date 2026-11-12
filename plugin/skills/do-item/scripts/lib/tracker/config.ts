@@ -119,7 +119,8 @@ export const TEAM_KEY_PATTERN = /^[A-Z][A-Z0-9]*$/;
  * documents. Naming `pr_open` like `in_review` (and `ops_pending` with it)
  * is a tracker with one review status, used while the pull request is open
  * and after the merge; that shared name reads back as `pr_open`, active
- * work, since the tracker cannot say whether the pull request merged.
+ * work, since the tracker cannot say whether the pull request merged. The
+ * parent roll-up tells the two apart by the child's linked pull request.
  * `pr_open` shares a name only together with `in_review`.
  */
 const ALIASABLE_STATES: ReadonlyArray<ReadonlyArray<CanonicalState>> = [
