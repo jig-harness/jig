@@ -554,13 +554,16 @@ test("with gh not logged in, file prints the form address and does not search", 
 function filingGh(
   dir: string,
   create = "echo https://github.com/jig-harness/jig/issues/900",
+  list = "echo '[]'",
+  view = `echo '{"issueType":{"name":"Bug"}}'`,
 ): void {
   writeFakeProgram(
     join(dir, "gh"),
     [
       "#!/bin/sh",
       `echo "$*" >> "${join(dir, "calls.log").replaceAll("\\", "/")}"`,
-      'if [ "$1 $2" = "issue list" ]; then echo "[]"; exit 0; fi',
+      `if [ "$1 $2" = "issue list" ]; then ${list}; exit $?; fi`,
+      `if [ "$1 $2" = "issue view" ]; then ${view}; exit $?; fi`,
       `if [ "$1 $2" = "issue create" ]; then cat >/dev/null; ${create}; exit $?; fi`,
       "exit 7",
     ].join("\n"),
@@ -594,6 +597,7 @@ test("file creates the issue with the issue type Bug and no facet label", () => 
   );
   expect(calls(dir)).toEqual([
     "issue create --repo jig-harness/jig --title t --label jig --type Bug --body-file -",
+    "issue view https://github.com/jig-harness/jig/issues/900 --json issueType",
   ]);
   const err = run.stderr.toString();
   expect(err).toContain("dropped the labels bug, small, priority: high");
@@ -632,6 +636,61 @@ test("a failure that does not name the type is not filed again without it", () =
   filingGh(dir, "echo 'HTTP 502: bad gateway' >&2; exit 1");
   const run = fileDraft(dir);
   expectSpawnExit(run, 1);
+  expect(calls(dir).filter((c) => c.startsWith("issue create"))).toHaveLength(
+    1,
+  );
+});
+
+test("an account whose create drops the type without an error is told so", () => {
+  const dir = mkdtempSync(join(tmpdir(), "jig-report-bug-"));
+  filingGh(dir, undefined, undefined, `echo '{"issueType":null}'`);
+  const run = fileDraft(dir);
+  expectSpawnExit(run, 0);
+  expect(run.stderr.toString()).toContain("filed without the issue type Bug");
+});
+
+test("an older gh with no --type files without it", () => {
+  const dir = mkdtempSync(join(tmpdir(), "jig-report-bug-"));
+  filingGh(
+    dir,
+    `case "$*" in *"--type Bug"*) echo 'unknown flag: --type' >&2; exit 1;; *) echo https://github.com/jig-harness/jig/issues/900;; esac`,
+  );
+  const run = fileDraft(dir);
+  expectSpawnExit(run, 0);
+  expect(run.stderr.toString()).toContain(
+    "filed without the issue type Bug (unknown flag: --type)",
+  );
+});
+
+test("a type failure after the issue was created does not file it again", () => {
+  const dir = mkdtempSync(join(tmpdir(), "jig-report-bug-"));
+  filingGh(
+    dir,
+    "echo 'GraphQL: issue type not readable' >&2; exit 1",
+    `echo '[{"number":900,"title":"t","state":"OPEN","url":"https://github.com/jig-harness/jig/issues/900"}]'`,
+  );
+  const run = fileDraft(dir);
+  expectSpawnExit(run, 1);
+  expect(run.stderr.toString()).toContain(
+    "The issue exists already, so do not file it again: https://github.com/jig-harness/jig/issues/900",
+  );
+  expect(calls(dir).filter((c) => c.startsWith("issue create"))).toHaveLength(
+    1,
+  );
+});
+
+test("a type failure with no way to look for the issue does not file it again", () => {
+  const dir = mkdtempSync(join(tmpdir(), "jig-report-bug-"));
+  filingGh(
+    dir,
+    "echo 'GraphQL: issue type not readable' >&2; exit 1",
+    "exit 1",
+  );
+  const run = fileDraft(dir);
+  expectSpawnExit(run, 1);
+  expect(run.stderr.toString()).toContain(
+    "Whether the issue was created is unknown",
+  );
   expect(calls(dir).filter((c) => c.startsWith("issue create"))).toHaveLength(
     1,
   );

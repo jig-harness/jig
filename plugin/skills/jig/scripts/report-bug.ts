@@ -747,8 +747,10 @@ export function fallbackUrl(d: Pick<Draft, "title" | "body">): {
 
 /**
  * After a failed `gh issue create`, which may have created the issue before
- * the call failed: the address of an issue of this exact title, `null` when
- * there is none, `undefined` when the search could not be made.
+ * the call failed: the address of an issue of this exact title among the
+ * account's newest, `null` when there is none, `undefined` when the listing
+ * could not be made. It lists rather than searches, since GitHub's search
+ * index lags behind a new issue.
  */
 function findFiled(title: string): string | null | undefined {
   const run = gh([
@@ -760,10 +762,8 @@ function findFiled(title: string): string | null | undefined {
     "all",
     "--author",
     "@me",
-    "--search",
-    `${title} in:title`,
     "--limit",
-    "20",
+    "30",
     "--json",
     "number,title,state,url",
   ]);
@@ -822,23 +822,40 @@ function runFile(argv: string[]): number {
   }
   const d = asDraft(parsed);
   if (!d) fail(2, `${path} is not a draft this script wrote`);
-  const { dropped } = splitFacetLabels(d.labels);
-  if (dropped.length > 0)
-    process.stderr.write(
-      `dropped the label${dropped.length === 1 ? "" : "s"} ${dropped.join(", ")}: Jig's repository keeps type, priority and size in fields, which are set when the issue is triaged\n`,
-    );
-  let run = gh(fileArgs(d), d.body);
-  if (run.status !== 0 && typeRefused(run, d.title)) {
-    const reason = (why(run).split("\n")[0] ?? "").trim().slice(0, 200);
-    run = gh(fileArgs(d, false), d.body);
-    if (run.status === 0)
-      process.stderr.write(
-        `filed without the issue type ${BUG_TYPE} (${reason}); it is set when the issue is triaged\n`,
-      );
-  }
+  say(droppedNote(d.labels));
+  const { run, typed } = createIssue(d);
   if (run.status !== 0) reportFilingFailure(d, run);
   process.stdout.write(run.stdout);
+  if (typed) say(untypedNote(String(run.stdout)));
   return 0;
+}
+
+function say(note: string | null): void {
+  if (note !== null) process.stderr.write(`${note}\n`);
+}
+
+/** What the facet labels dropped from a draft are told as, `null` when there are none. */
+function droppedNote(labels: string[]): string | null {
+  const { dropped } = splitFacetLabels(labels);
+  if (dropped.length === 0) return null;
+  return `dropped the label${dropped.length === 1 ? "" : "s"} ${dropped.join(", ")}: Jig's repository keeps type, priority and size in fields, which are set when the issue is triaged`;
+}
+
+/**
+ * Create the issue with its type; when `gh` refuses because of the type,
+ * create it without, saying so. `typed` is whether the type was asked for.
+ */
+function createIssue(d: Draft): { run: ReturnType<typeof gh>; typed: boolean } {
+  const run = gh(fileArgs(d), d.body);
+  if (run.status === 0 || !typeRefused(run, d.title))
+    return { run, typed: true };
+  const reason = (why(run).split("\n")[0] ?? "").trim().slice(0, 200);
+  const retry = gh(fileArgs(d, false), d.body);
+  if (retry.status === 0)
+    say(
+      `filed without the issue type ${BUG_TYPE} (${reason}); it is set when the issue is triaged`,
+    );
+  return { run: retry, typed: false };
 }
 
 /**
@@ -850,6 +867,30 @@ function runFile(argv: string[]): number {
 function typeRefused(run: ReturnType<typeof gh>, title: string): boolean {
   if (precedesCreation(run) || !/\btype\b/i.test(why(run))) return false;
   return findFiled(title) === null;
+}
+
+/**
+ * The note for an issue `gh issue create --type` printed the address of when
+ * it has no issue type: an account that may not set one can be filed without
+ * it and no error. `null` when it has one, or `gh` cannot read it.
+ */
+function untypedNote(created: string): string | null {
+  const url = created
+    .split("\n")
+    .map((l) => l.trim())
+    .findLast((l) => l.startsWith("https://"));
+  if (url === undefined) return null;
+  const run = gh(["issue", "view", url, "--json", "issueType"]);
+  if (run.status !== 0) return null;
+  try {
+    const parsed: unknown = JSON.parse(String(run.stdout));
+    return isMapping(parsed) && parsed.issueType === null
+      ? `filed without the issue type ${BUG_TYPE}: the account may not set one; it is set when the issue is triaged`
+      : null;
+  } catch (error) {
+    swallow(error, "issue type unreadable; the report is filed");
+    return null;
+  }
 }
 
 async function main(): Promise<number> {
