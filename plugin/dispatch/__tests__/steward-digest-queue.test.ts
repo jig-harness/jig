@@ -114,12 +114,17 @@ function digest(repo: string): StewardDigest {
 }
 
 describe("the scheduler reads nothing before cadence and cap rule a run out", () => {
-  const root = mkdtempSync(join(tmpdir(), "steward-order-"));
+  const roots: string[] = [];
+  const freshRoot = () => {
+    const root = mkdtempSync(join(tmpdir(), "steward-order-"));
+    roots.push(root);
+    return root;
+  };
   afterAll(() => {
     closeStateDb();
-    rmSync(root, { recursive: true, force: true });
+    for (const root of roots) rmSync(root, { recursive: true, force: true });
   });
-  function stateAt(): Parameters<typeof applySteward>[0] {
+  function stateAt(root: string): Parameters<typeof applySteward>[0] {
     return {
       root,
       records: [],
@@ -138,6 +143,7 @@ describe("the scheduler reads nothing before cadence and cap rule a run out", ()
     } as unknown as Parameters<typeof applySteward>[1];
   }
   test("an unelapsed cadence reads no digest", async () => {
+    const root = freshRoot();
     keepStewardRun(
       "recent",
       digest("example-org/order"),
@@ -145,13 +151,17 @@ describe("the scheduler reads nothing before cadence and cap rule a run out", ()
       root,
     );
     let reads = 0;
-    await applySteward(stateAt(), observation(), async () => {
+    const seen = observation();
+    await applySteward(stateAt(root), seen, async () => {
       reads++;
       throw new Error("digest read");
     });
     expect(reads).toBe(0);
+    expect(seen.opened.report.steward?.status).toContain("cadence");
   });
   test("a spent host-wide hourly cap reads no digest", async () => {
+    // Its own root: the repository has no run, so only the host-wide cap can stop it.
+    const root = freshRoot();
     for (const i of [1, 2, 3])
       keepStewardRun(
         `other-${i}`,
@@ -160,10 +170,14 @@ describe("the scheduler reads nothing before cadence and cap rule a run out", ()
         root,
       );
     let reads = 0;
-    await applySteward(stateAt(), observation(), async () => {
+    const seen = observation();
+    await applySteward(stateAt(root), seen, async () => {
       reads++;
       throw new Error("digest read");
     });
     expect(reads).toBe(0);
+    expect(seen.opened.report.steward?.status).toBe(
+      "the host's hourly steward budget is spent",
+    );
   });
 });

@@ -184,7 +184,7 @@ const QUEUE_READ_MS = 60_000;
  * admission. A digest that cannot be completed is a failure, since a
  * partial queue would hash as changed input.
  */
-export async function digestOf(
+async function digestOf(
   state: ApplyState,
   observation: RepoObservation,
 ): Promise<Outcome<StewardDigest, QueueFailure>> {

@@ -157,7 +157,7 @@ export function timeLeftMs(state: ApplyState): number | null {
   return allowed - (Date.now() - state.startedAt);
 }
 
-/** The runtime calls a launch needs before it: the account's identity check, the workspace open and the identity check after it. */
+/** The runtime-timeout calls a launch needs before it: the account's identity check, the repository lookup and the identity check after the open. The open itself runs on the workspace timeout. */
 const PREPARATION_CALLS = 3;
 
 /** What the tick has left for reads that still leaves a runtime launch its preparation and its room; `null` for a tick that keeps no start. */
@@ -169,7 +169,8 @@ export function readRoomMs(state: ApplyState): number | null {
         settleMs(
           state.machine.runtimeTimeoutMs,
           PREPARATION_CALLS + LAUNCH_CALLS,
-        );
+        ) -
+        settleMs(state.machine.workspaceTimeoutMs);
 }
 
 /**
