@@ -217,6 +217,23 @@ function needsWrite(db: Database, spec: DatabaseSpec): boolean {
   return meta === null || meta.version !== version;
 }
 
+/** The compatibility decision and its write requirement read one SQLite snapshot. */
+function inspectDatabase(
+  db: Database,
+  spec: DatabaseSpec,
+): {
+  readonly refusal: Outcome<never, OpenCode> | null;
+  readonly write: boolean;
+} {
+  return db.transaction(() => {
+    const refused = refusal(db, spec);
+    return {
+      refusal: refused,
+      write: refused === null && needsWrite(db, spec),
+    };
+  })();
+}
+
 interface Open {
   db: Database;
   dev: number;
@@ -264,14 +281,14 @@ function connect(spec: DatabaseSpec): Outcome<Database, OpenCode> {
     );
   }
   try {
-    const refused = refusal(db, spec);
-    if (refused !== null) {
+    const inspected = inspectDatabase(db, spec);
+    if (inspected.refusal !== null) {
       db.close();
-      return refused;
+      return inspected.refusal;
     }
     db.run("PRAGMA journal_mode = WAL");
     db.run("PRAGMA foreign_keys = ON");
-    if (needsWrite(db, spec)) {
+    if (inspected.write) {
       const migrated = migrate(db, spec);
       if (!migrated.ok) {
         db.close();
@@ -295,9 +312,9 @@ function refreshConnection(
   spec: DatabaseSpec,
 ): Outcome<Database, OpenCode> {
   try {
-    const refused = refusal(db, spec);
-    if (refused !== null) return refused;
-    if (needsWrite(db, spec)) {
+    const inspected = inspectDatabase(db, spec);
+    if (inspected.refusal !== null) return inspected.refusal;
+    if (inspected.write) {
       const migrated = migrate(db, spec);
       if (!migrated.ok) return migrated;
     }
@@ -359,15 +376,15 @@ export function openReadOnly(
   try {
     db = new Database(spec.path, { readonly: true });
     db.run(`PRAGMA busy_timeout = ${BUSY_MS}`);
-    const refused = refusal(db, spec);
-    if (refused !== null) {
+    const inspected = inspectDatabase(db, spec);
+    if (inspected.refusal !== null) {
       db.close();
-      return refused;
+      return inspected.refusal;
     }
     return ok({
       db,
       version: userVersion(db),
-      behind: needsWrite(db, spec),
+      behind: inspected.write,
     });
   } catch (error) {
     db?.close();
