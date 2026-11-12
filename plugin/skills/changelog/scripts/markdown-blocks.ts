@@ -1,6 +1,7 @@
 // The block structure of a Markdown file as far as a changelog needs it:
-// where its headings are, with fenced code blocks left out. Shared by the
-// note reader (change-notes.ts) and the writers of each format.
+// where its headings are, with fenced code blocks left out, and where an
+// entry's code spans are. Shared by the note reader (change-notes.ts), the
+// consumer-action reader (consumer-actions.ts) and the writers of each format.
 
 export interface Block {
   title: string;
@@ -75,4 +76,40 @@ export function blocks(
       text: p.lines.join("\n").trim(),
     })),
   };
+}
+
+/**
+ * `text` split into prose and code spans, the code spans at odd indexes. A
+ * span opens with a run of backticks and closes at the next run exactly as
+ * long; a run nothing closes is literal text. In prose a backslash escapes
+ * the character after it, so `\\\`` opens nothing; inside a span it does not.
+ */
+export function codeSpans(text: string): string[] {
+  const parts: string[] = [];
+  let start = 0;
+  let i = 0;
+  while (i < text.length) {
+    if (text[i] === "\\") {
+      i += 2;
+      continue;
+    }
+    if (text[i] !== "`") {
+      i++;
+      continue;
+    }
+    let end = i;
+    while (text[end] === "`") end++;
+    const close = new RegExp(`(?<!\`)\`{${end - i}}(?!\`)`, "g");
+    close.lastIndex = end;
+    const found = close.exec(text);
+    if (!found) {
+      i = end;
+      continue;
+    }
+    const after = found.index + found[0].length;
+    parts.push(text.slice(start, i), text.slice(i, after));
+    start = i = after;
+  }
+  parts.push(text.slice(start));
+  return parts;
 }

@@ -2,7 +2,7 @@
 
 The commands behind [`/jig:changelog`](../README.md): the branch check, the
 whole-changelog check, the
-release step, the conversion of a branch, the status report, the tag plan and
+release step, the [consumer-actions record](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), the conversion of a branch, the status report, the tag plan and
 the release-access check. They read the repository's `changelog:`
 section of `.config/jig.yaml` ([the configuration
 reference](../../../CONFIGURATION.md#changelog)), so none takes the notes folder,
@@ -110,7 +110,15 @@ commit dates, which two merges can share and an author can set), and:
    `JIG_AFTER_VERSION_TIMEOUT_SEC` seconds (1800 by default). A process it
    leaves running in the background when it returns is stopped, and the
    release fails (POSIX only).
-6. Deletes the notes it wrote, last, so a failing `after_version` leaves them.
+6. Where `changelog.consumer_actions_record` names a file, the release derives
+   the [consumer-actions record](#the-consumer-actions-record) from the
+   changelog it is about to write, before any file is written, and writes it
+   with the changelog and the version files (so `after_version`, step 5, finds
+   the record already written, and a change that command makes to the
+   changelog is not derived again), so the record and the release share one
+   commit. A malformed declaration in a released section, or a record path
+   that goes through a symbolic link, stops the release.
+7. Deletes the notes it wrote, last, so a failing `after_version` leaves them.
 
 It computes every file before writing the first, and writes nothing when a note
 is malformed, the version files disagree, a version cannot be set, two notices
@@ -138,6 +146,75 @@ note asked for a release, `notes` are the notes written and `waiting` the notes
 left for a release, `changelog` is the changelog's path and `release` is
 `{ "push", "branch" }` from `changelog.release`.
 
+## The consumer-actions record
+
+```sh
+bun consumer-actions-record.ts [--root <dir>] --check
+bun consumer-actions-record.ts [--root <dir>] --write
+```
+
+Reads the changelog's released sections (never Unreleased), finds every
+entry's `**Consumer action:**` declaration of a
+[consumer action](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+([the form](../README.md#consumer-actions); `consumer-actions.ts` reads it)
+and derives the record at `changelog.consumer_actions_record`:
+
+```json
+{
+  "$comment": "Derived from the changelog's released sections ...",
+  "schema": 1,
+  "releases": [
+    {
+      "version": "1.3.0",
+      "actions": [
+        {
+          "id": "1.3.0#3fa9c2b1",
+          "strength": "required",
+          "levels": ["machine", "instructions"],
+          "description": "**Breaking:** A stopped drive is re-armed by the dispatcher, not by hand.",
+          "instruction": "Remove the manual restart step from runbooks.",
+          "hints": [{ "kind": "text", "value": "restart the drive" }]
+        }
+      ],
+      "retracts": []
+    }
+  ]
+}
+```
+
+- `schema` is the record's format version; a reader refuses one it does not
+  know.
+- `releases` lists, oldest first, only the releases with at least one action
+  or retraction, so the record starts at the first release that declares one.
+  An entry that declares `none`, or nothing, adds nothing.
+- An action's `levels` are distinct and in the order `machine`,
+  `configuration`, `instructions`, whatever order the entry names them in. Its
+  `description` is the entry's text before the declaration and its
+  `instruction` the text after the levels, each with its list marker dropped
+  and whitespace collapsed. A hint is `{ "kind", "value" }`; a `config:` hint
+  also has `"absent"`, true for `config:!key`. The hints are listed once
+  each, sorted by their `kind:value` text.
+- An entry is the list item and the lines indented under it: a paragraph or a
+  link reference definition after a blank line ends it, so the file's
+  comparison links never join the last entry of the oldest release.
+- The `id` is the version, `#` and the first eight hexadecimal digits of the
+  SHA-256 of the JSON array `[description, strength, levels, instruction,
+  hints]`, each hint written `kind:value` (`config:!key` for an absent key).
+  It does not depend on the entry's position. Two entries with the same id in
+  one release are one action; the same description with another declaration
+  is another action with another id.
+- `retracts` lists the ids an entry of the release withdraws with
+  `**Consumer action:** retracts <id>.`
+
+`--write` writes the file; `--check` fails when the committed file is not what
+the changelog derives. Both fail on a malformed declaration in a released
+section, naming its version. Exit 0 written, fresh or `not configured` (no
+`changelog.consumer_actions_record`), 1 stale or malformed, 2 a usage error,
+an invalid configuration or an unreadable file. The field is refused in a
+Common Changelog repository, whose release step appends a reference and the
+authors to every entry, and for a path that is the changelog, a version file
+or a workflow.
+
 ## The branch check
 
 ```sh
@@ -154,7 +231,14 @@ and what is under it, never a longer name that starts the same (`plugin` holds
 `plugin/x`, not `plugin-docs/x`), and a file moved out of a path counts as a
 change to it. In Common Changelog a `**Breaking:**` entry needs `release: major`
 (`minor` before 1.0.0), a note whose commits are all by bots needs `authors:`, and
-a summary is refused when a note waiting on the base has one. Correcting an
+a summary is refused when a note waiting on the base has one. Every waiting
+note's consumer-action declarations must read, and two entries of the waiting
+notes that declare the same action written differently are refused. With the
+base's `consumer_actions: true`, every breaking entry of a note the branch adds
+carries a declaration, and a marker nearly written or a `**Detect:**` with no
+declaration is refused; with its `consumer_actions_record`, a `retracts` in
+such a note names an action the changelog has released, and a released
+declaration the record cannot read is a finding of its own. Correcting an
 earlier release's text stays allowed, and so does correcting or removing an
 entry already under Unreleased: each is rare and touches lines no other branch
 does. Adding a section or an entry to Unreleased is refused, and so is deleting
