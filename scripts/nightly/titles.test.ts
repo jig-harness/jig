@@ -34,6 +34,29 @@ describe("finding a recorded test in the source", () => {
     expect(found.patterns.map(String)).toEqual(["/^a [^]* case of note$/"]);
   });
 
+  test("decodes the escapes of the language, not just the quotes", () => {
+    const found = literals(
+      [
+        'test("\\u0061 \\x62 \\u{63} \\u{1F600}!", () => {});',
+        "test('line\\\ncontinued', () => {});",
+      ].join("\n"),
+    );
+    expect([...found.plain]).toEqual(["a b c \u{1F600}!", "linecontinued"]);
+  });
+
+  test("a commented-out import supplies no titles", () => {
+    const root = repo({
+      "lib/shared.ts":
+        'export const t = () => test("a shared title here", () => {});\n',
+      "lib/a.test.ts":
+        '// import { t } from "./shared.ts";\n/* import "./shared.ts" */\n',
+      "lib/b.test.ts": 'import { t } from "./shared.ts";\n',
+    });
+    const titles = new TitleIndex(root);
+    expect(titles.has("lib/a.test.ts", "a shared title here")).toBe(false);
+    expect(titles.has("lib/b.test.ts", "a shared title here")).toBe(true);
+  });
+
   test("a title made mostly of placeholders matches nothing", () => {
     expect(
       literals("test(`$" + "{a}: $" + "{b}`, () => {});").patterns,

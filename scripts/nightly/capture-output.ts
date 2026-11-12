@@ -2,12 +2,18 @@
 // the last part of it in a file once the command ends: scripts/test.ts reads
 // bun's closing summary there on the nightly run (classify.ts). Standard
 // input and output are the command's own. The exit status is the command's;
-// an interrupt or termination is passed on to it, and its end awaited.
+// an interrupt or termination is passed on to it, and its end awaited. Once
+// the command has exited, what its standard error still holds is read for at
+// most DRAIN_GRACE_MS, since a descendant that kept the pipe open would
+// otherwise hold the run until the job's time limit.
 //
 // Usage: bun scripts/nightly/capture-output.ts <tail-file> <command> [args...]
 import { writeFileSync } from "node:fs";
 import { cli } from "../../lib/cli.ts";
 import { NightlyError } from "./baseline.ts";
+
+/** How long the output is read after the command exits. */
+export const DRAIN_GRACE_MS = 2_000;
 
 /** How much of the end of the output is kept: the summary is its last lines. */
 export const TAIL_BYTES = 64 * 1024;
@@ -60,11 +66,22 @@ export async function captureOutput(args: string[]): Promise<number> {
   for (const [signal, handler] of handlers) process.on(signal, handler);
   const tail = new Tail();
   try {
-    for await (const chunk of child.stderr) {
-      process.stderr.write(chunk);
-      tail.push(chunk);
-    }
-    return await child.exited;
+    const drained = (async () => {
+      for await (const chunk of child.stderr) {
+        process.stderr.write(chunk);
+        tail.push(chunk);
+      }
+    })();
+    const status = await child.exited;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      drained.catch(() => undefined),
+      new Promise((done) => {
+        timer = setTimeout(done, DRAIN_GRACE_MS);
+      }),
+    ]);
+    clearTimeout(timer);
+    return status;
   } finally {
     for (const [signal, handler] of handlers) process.off(signal, handler);
     writeFileSync(tailFile, tail.text());

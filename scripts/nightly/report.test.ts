@@ -70,7 +70,7 @@ describe("the nightly run's report", () => {
       "| [gates (windows, 3/7)](https://github.com/team/project/actions/runs/1/job/20) | failure: 1 new test failure(s) |",
     );
     expect(text).toContain(
-      "#### gates (windows, 3/7)\n\n- `lib/a.test.ts`: outer > breaks on Windows",
+      "#### gates (windows, 3/7)\n\n- `lib/a.test.ts`: `outer > breaks on Windows`",
     );
     expect(text).not.toContain("gates (macos)");
   });
@@ -141,7 +141,7 @@ describe("the nightly run's report", () => {
     expect(red).toBe(false);
     expect(text).toContain("passed.");
     expect(text).toContain(
-      "Remove these entries from `.config/nightly-baseline.yaml`:\n\n- `plugin/dispatch/__tests__/a.test.ts`: notifies 'once' (#818)",
+      "Remove these entries from `.config/nightly-baseline.yaml`:\n\n- `plugin/dispatch/__tests__/a.test.ts`: `` notifies `once` `` on macos (#818)",
     );
     expect(text).not.toContain("| Job |");
   });
@@ -163,8 +163,59 @@ describe("the nightly run's report", () => {
         }),
       ],
     });
-    expect(text).toContain(`case ${LIST_LIMIT - 1}\n- and 3 more`);
+    expect(text).toContain(`case ${LIST_LIMIT - 1}\`\n- and 3 more`);
     expect(text).not.toContain(`case ${LIST_LIMIT}\n`);
+  });
+
+  test("a test name is rendered as one code span, never as active Markdown", () => {
+    const { text } = buildReport({
+      ...base,
+      jobs: [job("gates (macos)", "failure")],
+      results: [
+        result({
+          platform: "macos",
+          job: "gates (macos)",
+          status: 1,
+          verdict: "new",
+          newFailures: [
+            {
+              file: "a.test.ts",
+              name: "pings @someone, see #12\n[x](http://e)",
+            },
+          ],
+        }),
+      ],
+    });
+    expect(text).toContain(
+      "- `a.test.ts`: `pings @someone, see #12 [x](http://e)`",
+    );
+  });
+
+  test("a stale entry names the platform it recovered on", () => {
+    const { text } = buildReport({
+      ...base,
+      jobs: [job("gates (windows, 1/2)", "success")],
+      results: [
+        result({
+          verdict: "passed",
+          stale: [{ file: "a.test.ts", name: "recovers", issue: "#1" }],
+        }),
+      ],
+    });
+    expect(text).toContain("`recovers` on windows (#1)");
+  });
+
+  test("an unreadable result or a failed download turns the run red and says so", () => {
+    const quiet = {
+      ...base,
+      jobs: [job("gates (macos)", "success")],
+      results: [],
+    };
+    expect(buildReport(quiet).red).toBe(false);
+    expect(buildReport({ ...quiet, unreadable: ["x.json"] }).red).toBe(true);
+    const failed = buildReport({ ...quiet, downloadFailed: true });
+    expect(failed.red).toBe(true);
+    expect(failed.text).toContain("could not be downloaded");
   });
 
   test("reads every result file, and names one it cannot read", () => {
@@ -177,6 +228,16 @@ describe("the nightly run's report", () => {
     const { results, unreadable } = readResults(dir);
     expect(results).toHaveLength(1);
     expect(unreadable).toEqual(["result-b.json", "result-c.json"]);
+    const whole = result({});
+    for (const [name, broken] of [
+      ["no-status", { ...whole, status: undefined }],
+      ["bad-verdict", { ...whole, verdict: "fine" }],
+      ["bad-platform", { ...whole, platform: "plan9" }],
+      ["bad-failure", { ...whole, newFailures: [{}] }],
+      ["bad-stale", { ...whole, stale: [{ file: "a", name: "b" }] }],
+    ] as const)
+      writeFileSync(join(dir, `${name}.json`), JSON.stringify(broken));
+    expect(readResults(dir).unreadable).toHaveLength(7);
     expect(readResults(join(dir, "missing"))).toEqual({
       results: [],
       unreadable: [],

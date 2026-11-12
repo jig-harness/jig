@@ -2,7 +2,8 @@
 // baseline (baseline.ts): a failing test the baseline records for this
 // platform is known; any other is new. The invocation passes when it failed
 // only on known tests, and bun's report and its closing summary agree that
-// those were all its failures. A failure the report cannot explain (a crash,
+// those were all its failures, and the invocation exited with bun's status for
+// failing tests; any other status (a signal, a crash) is never excused. A failure the report cannot explain (a crash,
 // a lock that refused to admit the run, a test file that failed to load,
 // which bun counts but leaves out of its JUnit report, an error between
 // tests) keeps the invocation's own status: the baseline excuses named tests,
@@ -10,8 +11,9 @@
 //
 // A recorded test that passed here is stale: its entry should go. Only what
 // ran in this invocation counts, so a shard never calls another shard's
-// entries stale. A recorded hook failure, `(unnamed)`, is stale when its file
-// ran and no hook in it failed.
+// entries stale. A recorded hook failure, `(unnamed)`, is stale when a test in
+// its scope ran and no hook in its file failed; the report does not say which
+// hooks ran, so a scope with no test that ran is left alone.
 import {
   caseResult,
   type CaseResult,
@@ -46,6 +48,9 @@ export function outcomes(report: JunitReport): Outcome[] {
     };
   });
 }
+
+/** The status bun exits with when tests fail, the only one the baseline can excuse. */
+export const TEST_FAILURE_STATUS = 1;
 
 /** A terminal colour code, which bun writes only to a terminal. */
 const COLOUR = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
@@ -127,14 +132,26 @@ function staleEntries(
   const passed = new Set(
     ran.filter((o) => o.result === "passed").map((o) => testKey(o)),
   );
-  const filesRun = new Set(
-    ran.filter((o) => o.result !== "skipped").map((o) => o.file),
+  const ranTests = ran.filter((o) => o.result !== "skipped");
+  const failedHookFiles = new Set(
+    ran
+      .filter((o) => o.result === "failed" && isUnnamed(o.name))
+      .map((o) => o.file),
   );
+  // Whether a test ran in the scope an `(unnamed)` entry's name opens: the
+  // block before it, or the whole file.
+  const scopeRan = (entry: BaselineEntry) => {
+    const blocks = entry.name.split(" > ").slice(0, -1).join(" > ");
+    return ranTests.some(
+      (o) =>
+        o.file === entry.file && (!blocks || o.name.startsWith(`${blocks} > `)),
+    );
+  };
   return recorded
     .filter((entry) => !failed.has(testKey(entry)))
     .filter((entry) =>
       isUnnamed(entry.name)
-        ? filesRun.has(entry.file)
+        ? scopeRan(entry) && !failedHookFiles.has(entry.file)
         : passed.has(testKey(entry)),
     )
     .map(({ file, name, issue }) => ({ file, name, issue }));
@@ -146,6 +163,8 @@ function unexplained(
   failedCases: number,
   summary: Summary | undefined,
 ): string | undefined {
+  if (status !== TEST_FAILURE_STATUS)
+    return `the suite exited ${status}, not ${TEST_FAILURE_STATUS}, the status of failing tests: it was stopped or crashed`;
   if (!failedCases)
     return `the suite exited ${status} but its report records no failing test`;
   if (!summary)

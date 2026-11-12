@@ -1271,7 +1271,10 @@ const onlyKeys = (value: object, allowed: Set<string>) =>
   Object.keys(value).every((key) => allowed.has(key));
 
 function suiteJobShapeAllowed(job: SuiteJob, contract: SuiteContract) {
-  if (!onlyKeys(job, SUITE_JOB_KEYS) || !nightlyEnvAllowed(job.env, "job"))
+  if (
+    !onlyKeys(job, SUITE_JOB_KEYS) ||
+    !nightlyEnvAllowed(job.env, "job", contract.nightly)
+  )
     return false;
   if (job.if !== contract.if || job.needs !== contract.needs) return false;
   const strategy = job.strategy;
@@ -1313,7 +1316,7 @@ function runsSuite(job: SuiteJob, dir: string, contract: SuiteContract = {}) {
   return (job.steps ?? []).some(
     (step) =>
       onlyKeys(step, stepKeys) &&
-      nightlyEnvAllowed(step.env, "step") &&
+      nightlyEnvAllowed(step.env, "step", contract.nightly) &&
       step.if === contract.stepIf &&
       typeof step.run === "string" &&
       (step.run.trim() === `bun run test ./${dir}` ||
@@ -1511,7 +1514,7 @@ test("a suite counts as run only in an allowlisted workflow", async () => {
       concurrency: { group: "nightly", "cancel-in-progress": true },
       jobs: { suite: { ...all, steps: [{ run: sharded }] } },
     };
-    const nightly = { on: NIGHTLY_TRIGGERS };
+    const nightly = { on: NIGHTLY_TRIGGERS, nightly: true };
     expect(workflowRunsSuite(workflow, "suite", dir, nightly)).toBe(true);
     expect(workflowRunsSuite(workflow, "other", dir, nightly)).toBe(false);
     for (const extra of [
@@ -1620,7 +1623,10 @@ test("every suite the gate job leaves out runs in a CI job of its own or a selec
       ["drive-pr-suite-windows", "windows"],
     ] as const) {
       expect(
-        workflowRunsSuite(nightly, job, dir, { on: NIGHTLY_TRIGGERS }),
+        workflowRunsSuite(nightly, job, dir, {
+          on: NIGHTLY_TRIGGERS,
+          nightly: true,
+        }),
       ).toBe(true);
       expect(nightly.jobs[job]?.["runs-on"]).toContain(platform);
     }

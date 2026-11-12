@@ -1,6 +1,12 @@
 // What gates.yml and nightly.yml must hold for the separate suites to run, which
 // gates.test.ts compares them with.
-export type SuiteContract = { if?: string; needs?: string; stepIf?: string };
+export type SuiteContract = {
+  if?: string;
+  needs?: string;
+  stepIf?: string;
+  /** Whether the suite may set the nightly's baseline environment: only a nightly contract does. */
+  nightly?: boolean;
+};
 
 // On pull requests the drive-pr suite runs when its area is affected, the CI
 // hold is off and the event is not another label's, after the job that
@@ -38,7 +44,9 @@ export const NIGHTLY_TRIGGERS = {
 // failures fail the suite: the job names itself, and the step names the
 // baseline `bun run gates` checks (scripts/check-nightly-baseline.ts) and a
 // folder for its results. Any other variable, or another baseline file, does
-// not count.
+// not count, and a contract that is not the nightly's (`nightly` unset) takes
+// none of them, since a pull request's suite must not be able to excuse its
+// own failures.
 const NIGHTLY_ENV: Record<"job" | "step", Record<string, RegExp>> = {
   job: { JIG_NIGHTLY_JOB: /^[^\n]+$/ },
   step: {
@@ -49,10 +57,12 @@ const NIGHTLY_ENV: Record<"job" | "step", Record<string, RegExp>> = {
 export function nightlyEnvAllowed(
   env: unknown,
   scope: "job" | "step",
+  nightly = false,
 ): boolean {
   if (env === undefined) return true;
   if (typeof env !== "object" || env === null || Array.isArray(env))
     return false;
+  if (!nightly) return Object.keys(env).length === 0;
   const allowed = NIGHTLY_ENV[scope];
   return Object.entries(env).every(([name, value]) => {
     const shape = allowed[name];
@@ -73,7 +83,7 @@ export function runsEveryShard(
 ): boolean {
   const sharded = run.match(
     new RegExp(
-      `^bun run test --shard=\\$\\{\\{ matrix\\.shard \\}\\}/([1-9][0-9]*) \\./${dir.replace(/[.]/g, "\\.")}$`,
+      `^bun run test --shard=\\$\\{\\{ matrix\\.shard \\}\\}/([1-9][0-9]*) \\./${dir.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&")}$`,
     ),
   );
   if (!sharded) return false;

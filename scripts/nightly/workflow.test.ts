@@ -26,7 +26,7 @@ test("each job names itself to its results as GitHub names it", () => {
     );
 });
 
-test("each job's test step names the baseline and a results folder, and every job keeps its results", () => {
+test("each job's gate or suite step names the baseline and a results folder, other test steps are named, and every job keeps its results", () => {
   for (const [id, job] of testJobs) {
     const runsTests = steps(job).filter(
       (step) =>
@@ -39,6 +39,21 @@ test("each job's test step names the baseline and a results folder, and every jo
     expect({ id, classified: classified.length }).toEqual({
       id,
       classified: 1,
+    });
+    // Any other test step is a smoke check that reports through the job's own
+    // outcome, not through named failures: it is the one step the workflow
+    // names here, so an added test step that reports nothing fails this test.
+    const unclassified = runsTests
+      .filter((step) => !classified.includes(step))
+      .map((step) => step.run);
+    expect({ id, unclassified }).toEqual({
+      id,
+      unclassified:
+        id === "platform-gates"
+          ? [
+              "bun run test --timeout 60000 tools/plugin/powershell-smoke.test.ts --test-name-pattern PowerShell",
+            ]
+          : [],
     });
     expect(classified[0]?.env).toMatchObject({
       [BASELINE_ENV]: ".config/nightly-baseline.yaml",

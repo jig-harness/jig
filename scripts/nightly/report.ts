@@ -19,7 +19,7 @@ import {
   ghProcess,
   type GhTransport,
 } from "../../modules/M10-environments-deploy/reference/external-preconditions/deadline.ts";
-import { NightlyError, type TestId } from "./baseline.ts";
+import { NightlyError, PLATFORMS, type TestId } from "./baseline.ts";
 import type { NightlyResult, StaleEntry } from "./classify.ts";
 import { githubTracking, reconcileTrackingIssue } from "./tracking-issue.ts";
 
@@ -82,14 +82,34 @@ export function listJobs(
   return (value.jobs as Job[]).filter((job) => job.status === "completed");
 }
 
+const isTest = (value: unknown): value is TestId =>
+  isRecord(value) &&
+  typeof value.file === "string" &&
+  typeof value.name === "string";
+
+const isStale = (value: unknown): value is StaleEntry =>
+  isTest(value) && typeof (value as Partial<StaleEntry>).issue === "string";
+
+const VERDICTS = ["passed", "known", "new", "unexplained"];
+
+/** Whether `value` is a whole result as classify.ts writes it. */
 function isResult(value: unknown): value is NightlyResult {
   return (
     isRecord(value) &&
     typeof value.job === "string" &&
+    typeof value.platform === "string" &&
+    (PLATFORMS as readonly string[]).includes(value.platform) &&
+    typeof value.status === "number" &&
+    Number.isInteger(value.status) &&
     typeof value.verdict === "string" &&
-    ["newFailures", "knownFailures", "stale"].every((key) =>
-      Array.isArray(value[key]),
-    )
+    VERDICTS.includes(value.verdict) &&
+    (value.detail === undefined || typeof value.detail === "string") &&
+    Array.isArray(value.newFailures) &&
+    value.newFailures.every(isTest) &&
+    Array.isArray(value.knownFailures) &&
+    value.knownFailures.every(isTest) &&
+    Array.isArray(value.stale) &&
+    value.stale.every(isStale)
   );
 }
 
@@ -115,10 +135,24 @@ export function readResults(dir: string): {
   return { results, unreadable };
 }
 
-const line = (test: TestId & Partial<StaleEntry>) =>
-  `- \`${test.file}\`: ${test.name.replaceAll("`", "'")}${test.issue ? ` (${test.issue})` : ""}`;
+/** Text as one Markdown code span, whatever it holds: one line, fenced by more backticks than any run in it. */
+export function code(text: string): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  const longest = Math.max(
+    0,
+    ...(flat.match(/`+/g) ?? []).map((r) => r.length),
+  );
+  const fence = "`".repeat(longest + 1);
+  const pad = flat.startsWith("`") || flat.endsWith("`") ? " " : "";
+  return `${fence}${pad}${flat}${pad}${fence}`;
+}
 
-function capped(tests: (TestId & Partial<StaleEntry>)[]): string[] {
+type Listed = TestId & Partial<StaleEntry> & { platform?: string };
+
+const line = (test: Listed) =>
+  `- ${code(test.file)}: ${code(test.name)}${test.platform ? ` on ${test.platform}` : ""}${test.issue ? ` (${test.issue.replace(/\s+/g, " ")})` : ""}`;
+
+function capped(tests: Listed[]): string[] {
   const shown = tests.slice(0, LIST_LIMIT).map(line);
   if (tests.length > LIST_LIMIT)
     shown.push(`- and ${tests.length - LIST_LIMIT} more`);
@@ -157,6 +191,8 @@ export interface ReportInput {
   jobs: Job[];
   results: NightlyResult[];
   unreadable: string[];
+  /** The result artifacts could not be downloaded. */
+  downloadFailed?: boolean;
 }
 
 /** Whether the run failed, and its report in Markdown. */
@@ -165,7 +201,11 @@ export function buildReport(input: ReportInput): {
   text: string;
 } {
   const failed = input.jobs.filter((job) => !PASSING.has(job.conclusion ?? ""));
-  const red = failed.length > 0 || input.results.some((r) => r.status !== 0);
+  const red =
+    failed.length > 0 ||
+    input.results.some((r) => r.status !== 0) ||
+    input.unreadable.length > 0 ||
+    input.downloadFailed === true;
   const byJob = (name: string) => input.results.filter((r) => r.job === name);
   const sha = input.sha.slice(0, 12);
   const out: string[] = [
@@ -198,7 +238,14 @@ export function buildReport(input: ReportInput): {
         ...capped(byJob(job).flatMap((r) => r.newFailures)),
       );
   }
-  const stale = input.results.flatMap((r) => r.stale);
+  if (input.downloadFailed)
+    out.push(
+      "",
+      "The test results could not be downloaded, so the new failures and the stale baseline entries below, if any, are incomplete.",
+    );
+  const stale = input.results.flatMap((r) =>
+    r.stale.map((entry) => ({ ...entry, platform: r.platform })),
+  );
   if (stale.length)
     out.push(
       "",
@@ -240,6 +287,7 @@ async function main(): Promise<number> {
     jobs: listJobs(api, env),
     results,
     unreadable,
+    downloadFailed: env.JIG_NIGHTLY_DOWNLOAD === "failure",
   });
   console.log(report.text);
   if (env.GITHUB_STEP_SUMMARY)

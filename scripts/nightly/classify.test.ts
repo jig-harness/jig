@@ -178,10 +178,28 @@ describe("a nightly invocation's failures against the baseline", () => {
       /counted 4 failure\(s\) but its report lists 3/,
     ],
   ])("a failed run with %s keeps its status", (_what, overrides, detail) => {
-    const result = classify(input({ status: 3, ...overrides }));
-    expect(result.status).toBe(3);
+    const result = classify(input({ status: 1, ...overrides }));
+    expect(result.status).toBe(1);
     expect(result.verdict).toBe("unexplained");
     expect(result.detail).toMatch(detail);
+  });
+
+  test("an abnormal exit is never excused, even beside a complete report", () => {
+    const result = classify(input({ status: 137 }));
+    expect(result).toMatchObject({ status: 137, verdict: "unexplained" });
+    expect(result.detail).toMatch(/exited 137/);
+  });
+
+  test("a hook entry goes stale only when a test ran in its scope and no hook in the file failed", () => {
+    const nested = entry("lib/a.test.ts", "never ran > (unnamed)");
+    const sibling = entry("lib/a.test.ts", "outer > inner > (unnamed)");
+    const stale = (entries: BaselineEntry[]) =>
+      classify(input({ status: 0, entries })).stale.map((s) => s.name);
+    // The file ran, but nothing ran under "never ran".
+    expect(stale([nested])).toEqual([]);
+    // A hook elsewhere in the file failed: the report cannot say it was not this one.
+    expect(stale([sibling])).toEqual([]);
+    expect(stale([entry("lib/b.test.ts", "(unnamed)")])).toEqual(["(unnamed)"]);
   });
 
   test("a run that passed stays passed, whatever its report", () => {

@@ -56,7 +56,35 @@ function piece(source: string, i: number, template: boolean): Piece {
   if (template && source.startsWith("${", i))
     return { split: skipInterpolation(source, i) };
   if (c !== "\\") return { text: c, next: i + 1 };
+  return readEscape(source, i);
+}
+
+const HEX = /^[0-9a-fA-F]+$/;
+
+/** The escape sequence at `i`, a backslash: its character, and where it ends. */
+function readEscape(source: string, i: number): { text: string; next: number } {
   const next = source[i + 1] ?? "";
+  const fixed = (length: number) => {
+    const digits = source.slice(i + 2, i + 2 + length);
+    return digits.length === length && HEX.test(digits)
+      ? {
+          text: String.fromCharCode(parseInt(digits, 16)),
+          next: i + 2 + length,
+        }
+      : undefined;
+  };
+  if (next === "x") return fixed(2) ?? { text: next, next: i + 2 };
+  if (next === "u") {
+    if (source[i + 2] === "{") {
+      const close = source.indexOf("}", i + 3);
+      const digits = close < 0 ? "" : source.slice(i + 3, close);
+      const point = HEX.test(digits) ? parseInt(digits, 16) : Infinity;
+      if (point <= 0x10ffff)
+        return { text: String.fromCodePoint(point), next: close + 1 };
+    }
+    return fixed(4) ?? { text: next, next: i + 2 };
+  }
+  if (next === "\r" && source[i + 2] === "\n") return { text: "", next: i + 3 };
   return { text: ESCAPES[next] ?? (next === "\n" ? "" : next), next: i + 2 };
 }
 
@@ -151,10 +179,28 @@ const IMPORT =
   /(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s+)(["'])(\.{1,2}\/[^"']+)\1/g;
 const EXTENSIONS = ["", ".ts", ".tsx", ".js", ".mjs", "/index.ts"];
 
+/** `source` with each comment replaced by a space: a commented-out import imports nothing. */
+function withoutComments(source: string): string {
+  let out = "";
+  let i = 0;
+  while (i < source.length) {
+    const past = commentEnd(source, i);
+    if (past !== undefined) {
+      out += " ";
+      i = past;
+    } else if (QUOTES.has(source[i] ?? "")) {
+      const { end } = readLiteral(source, i);
+      out += source.slice(i, end);
+      i = end;
+    } else out += source[i++];
+  }
+  return out;
+}
+
 /** The relative imports of `file` that resolve to a file under `root`. */
 function imports(root: string, file: string, source: string): string[] {
   const found: string[] = [];
-  for (const match of source.matchAll(IMPORT)) {
+  for (const match of withoutComments(source).matchAll(IMPORT)) {
     const base = resolve(dirname(file), match[2] ?? "");
     const path = EXTENSIONS.map((ext) => base + ext).find(
       (candidate) => existsSync(candidate) && statSync(candidate).isFile(),
