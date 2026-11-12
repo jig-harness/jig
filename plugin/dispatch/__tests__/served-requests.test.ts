@@ -183,6 +183,33 @@ describe("a served queue's cost in tracker requests", () => {
     );
   });
 
+  it("ignores a change to another team's issue assigned to the same person", async () => {
+    const fake = queue();
+    const tracker = fake.tracker();
+    const cache = memoryCache();
+    await tick(tracker, cache, 0);
+    fake.add({ identifier: "OTHER-1", assignee: PERSON, updatedAt: at(1) });
+    const mark = fake.count();
+    await tick(tracker, cache, 2);
+    expect(fake.requests.slice(mark)).toEqual(["TrackerChanges"]);
+  });
+
+  it("reports an incomplete answer when more issues changed than one probe page holds", async () => {
+    const fake = queue();
+    const tracker = fake.tracker();
+    const keys = [...fake.issues.keys()];
+    const ask = () =>
+      (tracker.changedSince as NonNullable<Tracker["changedSince"]>)({
+        since: at(0),
+        identity: PERSON,
+        keys,
+      });
+    for (let n = 1; n <= 50; n++) fake.touch(`ENG-${300 + n}`, at(1));
+    expect((await ask()).complete).toBe(true);
+    fake.touch("ENG-401", at(1));
+    expect((await ask()).complete).toBe(false);
+  });
+
   it("reads the queue whole again every quarter hour, even when the probe sees nothing", async () => {
     const fake = queue();
     const tracker = fake.tracker();

@@ -232,8 +232,12 @@ export class FakeLinear {
           if (i.updatedAt <= since) return false;
           return or.some((c) => {
             const clauses = c.and as Array<Record<string, unknown>> | undefined;
-            const assignee = clauses?.find((x) => "assignee" in x);
-            if (assignee !== undefined) return this.assignedTo(i, assignee);
+            if (clauses?.some((x) => "assignee" in x))
+              return clauses.every((x) =>
+                "assignee" in x
+                  ? this.assignedTo(i, x)
+                  : this.inGroup(i, { and: [x] }),
+              );
             if ("parent" in c) {
               const parent =
                 i.parent === null ? undefined : this.issues.get(i.parent);
@@ -245,10 +249,11 @@ export class FakeLinear {
             return this.inGroup(i, c);
           });
         });
+        const size = Number(/issues\(first: (\d+)/.exec(query)?.[1] ?? 50);
         return {
           issues: {
-            pageInfo: { hasNextPage: false },
-            nodes: nodes.map((i) => ({
+            pageInfo: { hasNextPage: nodes.length > size },
+            nodes: nodes.slice(0, size).map((i) => ({
               identifier: i.identifier,
               updatedAt: i.updatedAt,
             })),
