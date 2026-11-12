@@ -2475,6 +2475,13 @@ make, use the entry's term instead.
   an action that keeps failing and tells a person once the count passes a
   threshold; it never says what to do, which each tick still derives, and
   a row goes when its action succeeds or is no longer wanted.
+- **Quiet (failure-ledger row)** — the state of a single-repository tick's
+  row in the failure ledger after a tick that read that repository whole
+  exited 0: the row keeps its count but nothing escalates it, and its notice
+  retires with its suppression record, until a tick of its own scope fails
+  again. Quieting differs from clearing, which removes the row and its count
+  when a tick of that scope itself exits 0, and from notification
+  suppression, which only holds back a repeat of a notice already told.
 - **Recurring class** — a bad outcome class (any but converged, merged and
   parked for a person) of one stage on one repository in the *outcome log* on
   at least three of the last seven days of the host's clock, counting the rows

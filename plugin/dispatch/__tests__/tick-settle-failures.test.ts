@@ -15,7 +15,8 @@ import {
   recordFailure,
 } from "../lib/failures.ts";
 import type { MachineConfig } from "../lib/machine-config.ts";
-import { closeStateDb } from "../lib/state.ts";
+import { hostNoticeKeys } from "../lib/failure-notices.ts";
+import { closeStateDb, stateDb } from "../lib/state.ts";
 import type { TickContext } from "../lib/tick-context.ts";
 import { finalizeTickFailure, settleFailures } from "../lib/tick-settle.ts";
 import type { TickReceipt } from "../receipts.ts";
@@ -141,6 +142,20 @@ describe("a wake-up's row after a sweep that read its repository", () => {
     expect(row?.count).toBe(3);
     expect(row?.quietAt).not.toBeNull();
     expect(receipt.failures).toBeUndefined();
+  });
+
+  it("releases the suppression of its notice, told at another repository's home", () => {
+    const { root, context, receipt } = world(["/a", "/b"]);
+    failingWakeUp(root, "/a");
+    const [key] = hostNoticeKeys(readFailures(undefined, root));
+    const db = stateDb(root);
+    db.query(
+      "INSERT INTO notices (repo, key, target, workspace, at, lasting) VALUES (?, ?, ?, ?, ?, 0)",
+    ).run("o/b", key as string, "t", "w", new Date().toISOString());
+    settleFailures(receipt, context);
+    finalizeTickFailure(receipt, context);
+    const left = db.query("SELECT key FROM notices").all();
+    expect(left).toEqual([]);
   });
 
   it("counts on from its kept count and escalates again when the next wake-up fails", () => {
