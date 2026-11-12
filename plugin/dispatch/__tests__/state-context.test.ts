@@ -56,7 +56,7 @@ it("never serves a type-specific blocked item, including fresh launch checks", a
   const result = await readServedPickups(
     tracker,
     [{ name: "Alex", forge: ["alex"], tracker: { jira: "alex" } }],
-    { epic: "epic", nowMs: 1, headroom: true },
+    { nowMs: 1, headroom: true },
   );
   expect(result.wanted).toEqual([]);
 });

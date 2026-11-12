@@ -65,6 +65,7 @@ describe("GitHub adapter: reading an issue", () => {
       priority: 2,
       size: null,
       nativeType: "Bug",
+      isEpic: false,
       parent: { identifier: "#3", title: "Issue 3" },
       children: [
         {

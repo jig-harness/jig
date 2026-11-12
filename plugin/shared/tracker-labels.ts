@@ -15,13 +15,19 @@
  * names is an error, since the skills would then disagree about which issues
  * are epics or follow-ups.
  *
+ * An epic is also recognized by the tracker's own issue type:
+ * `issue_tracker.labels.epic_types` lists the native types (Jira's Epic, a
+ * GitHub issue type) whose issues read as epics beside those carrying the
+ * label. `isEpic` is the one test for it; nothing else compares an issue's
+ * labels or type with the epic role.
+ *
  * Lives beside the review skill's configuration reader because every skill
  * that reads labels already depends on this directory, and it on none of
  * them.
  */
 import { isRecord } from "./guards.ts";
 
-export const LABEL_ROLES = [
+const LABEL_ROLES = [
   "epic",
   "hitl",
   "manual_ops",
@@ -33,9 +39,17 @@ export const LABEL_ROLES = [
 ] as const;
 export type LabelRole = (typeof LABEL_ROLES)[number];
 
+/** The key beside the roles that names the native types of an epic. */
+const EPIC_TYPES = "epic_types";
+
+/** Every key `issue_tracker.labels` takes: the roles and `epic_types`. */
+export const LABEL_KEYS: readonly string[] = [...LABEL_ROLES, EPIC_TYPES];
+
 export interface TrackerLabels {
   /** Marks an issue as an epic whose sub-issues are worked one at a time. */
   epic: string;
+  /** Native issue types whose issues read as epics; empty when unset. */
+  epicTypes: string[];
   /** The human-in-the-loop flag; its facets are `<hitl>:<stakeholder>`. */
   hitl: string;
   /** A step a person must perform outside the code (deploy, provisioning). */
@@ -67,20 +81,67 @@ const DEFAULT_LABELS = {
 /** The facets of the human-in-the-loop flag that an epic may hand off. */
 const EXTRACTABLE_HITL_FACETS = ["legal", "tactical"] as const;
 
+const fold = (s: string) => s.trim().toLowerCase();
+
+/** How an epic is recognized: its label, or one of its native issue types. */
+export interface EpicRecognition {
+  epic: string;
+  epicTypes: ReadonlyArray<string>;
+}
+
+/**
+ * Whether an issue is an epic: it carries the epic label, or its tracker's
+ * own issue type is one of `epicTypes`, each matched ignoring case. The one
+ * test every skill asks, through an issue's `isEpic` where the tracker
+ * interface sets it, so a type-derived epic is never written the label.
+ */
+export function isEpic(
+  issue: { labels: ReadonlyArray<string>; nativeType?: string | null },
+  by: EpicRecognition,
+): boolean {
+  const label = fold(by.epic);
+  if (issue.labels.some((l) => fold(l) === label)) return true;
+  const type = issue.nativeType;
+  return (
+    typeof type === "string" && by.epicTypes.some((t) => fold(t) === fold(type))
+  );
+}
+
+/**
+ * The issue types a read by `label` also takes: the epic's types when
+ * `label` is the epic label, else none.
+ */
+export function epicTypesOfLabel(
+  label: string,
+  by: EpicRecognition,
+): ReadonlyArray<string> {
+  return fold(label) === fold(by.epic) ? by.epicTypes : [];
+}
+
+/** `issue_tracker.labels.epic_types`, none when absent. */
+function epicTypesOf(raw: Record<string, unknown>): string[] {
+  const at = `issue_tracker.labels.${EPIC_TYPES}`;
+  return raw[EPIC_TYPES] === undefined
+    ? []
+    : labelList(raw[EPIC_TYPES], at, "issue type").map((t) => t.trim());
+}
+
 function oneLabel(value: unknown, field: string): string {
   if (typeof value !== "string" || value.trim() === "")
     throw new Error(`${field} must be a nonempty label name`);
   return value;
 }
 
-function labelList(value: unknown, field: string): string[] {
+function labelList(value: unknown, field: string, what = "label"): string[] {
   if (
     !Array.isArray(value) ||
     value.length === 0 ||
     value.some((l) => typeof l !== "string" || l.trim() === "") ||
-    new Set(value).size !== value.length
+    new Set(value.map(fold)).size !== value.length
   )
-    throw new Error(`${field} must be a list of distinct nonempty label names`);
+    throw new Error(
+      `${field} must be a list of distinct nonempty ${what} names`,
+    );
   return value as string[];
 }
 
@@ -106,9 +167,9 @@ export function parseTrackerLabels(
     );
   const raw = (rawLabels ?? {}) as Record<string, unknown>;
   for (const key of Object.keys(raw))
-    if (!(LABEL_ROLES as readonly string[]).includes(key))
+    if (!LABEL_KEYS.includes(key))
       throw new Error(
-        `issue_tracker.labels.${key} is not a label role (${LABEL_ROLES.join(", ")})`,
+        `issue_tracker.labels.${key} is not a label role (${LABEL_ROLES.join(", ")}) or ${EPIC_TYPES}`,
       );
 
   // The legacy fields are read under reviewConfig()'s own shape rules, so
@@ -147,6 +208,7 @@ export function parseTrackerLabels(
   };
 
   const epic = single("epic", "epic_label");
+  const epicTypes = epicTypesOf(raw);
   const hitl = single("hitl");
   const manualOps = single("manual_ops");
   const followup = single("followup", "provenance_label");
@@ -169,6 +231,7 @@ export function parseTrackerLabels(
   }
   return {
     epic,
+    epicTypes,
     hitl,
     manualOps,
     followup,
@@ -183,12 +246,16 @@ export function parseTrackerLabels(
 /** The labels with every role at its default. */
 export const DEFAULT_TRACKER_LABELS: TrackerLabels = parseTrackerLabels({});
 
-/** The vocabulary as JSON-ready role → label, the shape `issue_tracker.labels` takes. */
+/**
+ * The vocabulary as JSON-ready role → label, the shape `issue_tracker.labels`
+ * takes, with `epic_types` when the epic is also read from issue types.
+ */
 export function labelsAsConfig(
   labels: TrackerLabels,
-): Record<LabelRole, string | string[]> {
+): Record<LabelRole, string | string[]> & { epic_types?: string[] } {
   return {
     epic: labels.epic,
+    ...(labels.epicTypes.length === 0 ? {} : { epic_types: labels.epicTypes }),
     hitl: labels.hitl,
     manual_ops: labels.manualOps,
     followup: labels.followup,

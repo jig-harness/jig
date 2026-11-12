@@ -443,6 +443,21 @@ export function jiraTracker(client: Client): Tracker {
     ...stateChangeOperations(client),
     ...claimOperations(client),
 
+    async filedAs(issue) {
+      const parent =
+        issue.parent === undefined
+          ? null
+          : await client.mustIssue(issue.parent);
+      const facet = await stores.create(issue, {
+        issueType: await issueTypeUnder(parent),
+        top: parent === null,
+      });
+      return {
+        labels: [...new Set([...issue.labels, ...facet.add])],
+        nativeType: facet.issueType,
+      };
+    },
+
     async createIssue(issue) {
       requireTitle(issue.title);
       checkPriority(issue.priority);

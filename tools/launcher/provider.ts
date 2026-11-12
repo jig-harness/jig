@@ -19,6 +19,8 @@ export interface OpenRequest {
   prompt: string;
   /** The launcher's cache file for the issue, on this machine. */
   cacheFile: string;
+  /** Namespace that separates tracker identities with the same issue key. */
+  cacheNamespace?: string;
   /**
    * True when this launch could not write the cache file (it warned): the
    * file is then missing, or an earlier launch's.

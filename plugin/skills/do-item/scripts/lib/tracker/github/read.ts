@@ -71,7 +71,9 @@ export function issueFields(board: Board | null): string {
 }
 
 /**
- * The issue's type, read only where an issue is fetched alone: GraphQL's
+ * The issue's type, read where an issue is fetched alone, and by every read
+ * where the type facet is the issue type or `issue_tracker.labels.epic_types`
+ * marks an epic by it: GraphQL's
  * `Issue.issueType`, an `IssueType` whose `name` is the type the repository's
  * organization defines (`Bug`, `Feature`, `Task` by default), or `null` when
  * the issue has none or its owner has no issue types.
@@ -84,10 +86,13 @@ export function nativeTypeOf(v: unknown, where: string): string | null {
   return str(record(v, `${where}.issueType`).name, `${where}.issueType.name`);
 }
 
-/** The parent chain of an issue, `depth` deep, with each ancestor's labels. */
-export function ancestorFields(depth: number): string {
+/**
+ * The parent chain of an issue, `depth` deep, with each ancestor's labels,
+ * and its issue type with `withType`.
+ */
+export function ancestorFields(depth: number, withType = false): string {
   if (depth === 0) return "";
-  return `parent { number repository { nameWithOwner } ${LABELS} ${ancestorFields(depth - 1)} }`;
+  return `parent { number repository { nameWithOwner } ${LABELS} ${withType ? ISSUE_TYPE : ""} ${ancestorFields(depth - 1, withType)} }`;
 }
 
 // ── Records ────────────────────────────────────────────────────────────────
@@ -289,8 +294,12 @@ export function parseAncestors(
   ctx: ReadContext,
   model: GitHubModel,
   where: string,
-): Array<{ id: string; labels: string[] }> {
-  const out: Array<{ id: string; labels: string[] }> = [];
+): Array<{ id: string; labels: string[]; nativeType: string | null }> {
+  const out: Array<{
+    id: string;
+    labels: string[];
+    nativeType: string | null;
+  }> = [];
   let p: unknown = raw.parent;
   while (p !== null && p !== undefined) {
     const node = record(p, `${where} ancestor`);
@@ -302,7 +311,11 @@ export function parseAncestors(
           `${where} ancestor label`,
         ),
     );
-    out.push({ id: key, labels: model.visibleLabels(labels) });
+    out.push({
+      id: key,
+      labels: model.visibleLabels(labels),
+      nativeType: nativeTypeOf(node.issueType, `${where} ancestor ${key}`),
+    });
     p = node.parent;
   }
   return out;

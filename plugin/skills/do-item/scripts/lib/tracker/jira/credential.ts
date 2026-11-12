@@ -3,8 +3,9 @@
  * carries. A credential comes from the environment only, never from the
  * repository's configuration, and the first of these that is set is used:
  *
- * 1. `JIRA_BEARER_TOKEN`: an OAuth 2.0 access token, sent as
- *    `Authorization: Bearer`.
+ * 1. `JIRA_BEARER_TOKEN`: an OAuth 2.0 access token, or an API token with
+ *    scopes, sent as `Authorization: Bearer`; Atlassian's API gateway
+ *    accepts both this way.
  * 2. `JIRA_TOKEN_COMMAND`: a command that prints such a token on standard
  *    output, as `gh auth token` does, so a
  *    credential broker holds the secret and the environment holds only the
@@ -49,7 +50,7 @@ export type CredentialCode =
   | "cancelled";
 
 const NO_CREDENTIAL =
-  "no Jira credential: set JIRA_BEARER_TOKEN to an OAuth access token, JIRA_TOKEN_COMMAND to a command that prints one, or JIRA_EMAIL and JIRA_API_TOKEN to an Atlassian account's email and API token";
+  "no Jira credential: set JIRA_BEARER_TOKEN to an OAuth access token or an API token with scopes, JIRA_TOKEN_COMMAND to a command that prints one, or JIRA_EMAIL and JIRA_API_TOKEN to an Atlassian account's email and API token";
 
 /** The credential the environment holds, the first of the three that is set. */
 export function resolveJiraCredential(

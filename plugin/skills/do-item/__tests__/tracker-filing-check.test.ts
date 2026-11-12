@@ -76,6 +76,21 @@ describe("the filing check inside createIssue", () => {
         taxonomy,
       ),
     ).toEqual([]);
+    // The adapter's resolved filing form decides the exemption, not the facet value.
+    expect(
+      incompleteness(issue({ labels: ["jig"] }, ["size"]), facets, taxonomy, {
+        labels: ["jig", "epic"],
+        nativeType: null,
+      }),
+    ).toEqual([]);
+    expect(
+      incompleteness(
+        issue({ labels: ["jig", "epic"] }, ["size"]),
+        facets,
+        taxonomy,
+        { labels: ["jig"], nativeType: "Task" },
+      ),
+    ).toEqual(["size"]);
     const noTaxonomy = resolveFacets(
       facetInputs(parseTrackerConfig({ issue_tracker: { adapter: "github" } })),
       null,

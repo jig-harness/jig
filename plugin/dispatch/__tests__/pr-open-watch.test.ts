@@ -27,6 +27,7 @@ function item(key: string, state: string): PoolIssue {
     state: { id: state, name: state, type: "started" },
     assignee: { id: "u", name: "factory" },
     labels: [],
+    isEpic: false,
     hasOpenChildren: false,
     truncated: [],
     type: null,

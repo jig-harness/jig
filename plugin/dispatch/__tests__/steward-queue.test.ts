@@ -24,6 +24,7 @@ function item(
       createdAt: "2026-01-01",
       assignee: { id: "a", name: "alex" },
       labels: [],
+      isEpic: false,
       hasOpenChildren: false,
       truncated: [],
     },
