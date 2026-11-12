@@ -26,7 +26,10 @@ import {
   useSyncExternalStore,
 } from "react";
 import { cardAnswerComments } from "../../plugin/shared/decisions/answer-record.ts";
-import { cardAnswerText } from "../../plugin/shared/decision-card.ts";
+import {
+  type CardAnswer,
+  cardAnswerLines,
+} from "../../plugin/shared/decision-card.ts";
 import { BROWSER_HOST } from "../../plugin/shared/records/writer-shape.ts";
 import { announce } from "./copy.tsx";
 import {
@@ -59,8 +62,19 @@ type Phase =
   | { kind: "sending" }
   | { kind: "failed"; reason: string };
 
-/** A send in flight, or one whose decisions may have posted: `texts` holds each such decision's answer by key, so only a send of that same answer to that decision is held back. */
-type SendState = "sending" | { uncertain: string; texts: Map<string, string> };
+/** A send in flight, or one whose decisions may have posted: `texts` holds every answer of each such decision that may have posted, by key, so only a send of one of those same answers to that decision is held back. */
+type SendState =
+  | "sending"
+  | { uncertain: string; texts: Map<string, string[]> };
+
+/** One decision's whole answer as posted: its answer line and its note line, so a changed condition is a changed answer. */
+function answerFingerprint(a: {
+  key: string;
+  digest?: string;
+  answer: CardAnswer;
+}): string {
+  return cardAnswerLines(a.key, a.answer, a.digest).join("\n");
+}
 
 const sends = new Map<string, SendState>();
 const sendListeners = new Set<() => void>();
@@ -86,7 +100,7 @@ function useSendState(key: string): SendState | null {
 
 function finishSend(
   key: string,
-  uncertain: { reason: string; texts: Map<string, string> } | null,
+  uncertain: { reason: string; texts: Map<string, string[]> } | null,
 ): void {
   if (uncertain === null || uncertain.texts.size === 0) sends.delete(key);
   else sends.set(key, { uncertain: uncertain.reason, texts: uncertain.texts });
@@ -114,6 +128,8 @@ export interface Sending {
   ready: boolean;
   /** Whether the last send may have posted, so the person checks the pull request before sending that answer again. */
   uncertain: boolean;
+  /** Why an earlier send may have posted, while it is unchecked. */
+  uncertainReason: string | null;
   send: () => void;
   /** The person checked the pull request: lets the held-back answer send again. */
   checked: () => void;
@@ -199,8 +215,8 @@ export function useSend(need: NeedView, picking: Picking): Sending | null {
     if (
       commit !== null &&
       sending !== null &&
-      commit.answers.some(
-        (a) => sending.texts.get(a.key) === cardAnswerText(a.answer, a.digest),
+      commit.answers.some((a) =>
+        sending.texts.get(a.key)?.includes(answerFingerprint(a)),
       )
     )
       return;
@@ -238,14 +254,21 @@ export function useSend(need: NeedView, picking: Picking): Sending | null {
           urls,
           at: Date.now(),
         });
-      // Another decision's earlier uncertainty outlives this send; this send's
-      // own decisions are settled by it, apart from the one that may have posted.
+      // Earlier uncertainty stays until a comment posted for the same
+      // decision supersedes it; a decision this send refused or never
+      // attempted keeps what it had, and the one that may have posted adds
+      // its answer beside it.
       const priorReason = earlierUncertain?.uncertain ?? "";
-      const texts = new Map(earlierUncertain?.texts ?? []);
-      for (const a of commit.answers) texts.delete(a.key);
+      const texts = new Map(
+        [...(earlierUncertain?.texts ?? [])].map(([k, v]) => [k, [...v]]),
+      );
+      for (const a of commit.answers.slice(0, urls.length)) texts.delete(a.key);
       const unsure = commit.answers.find((a) => a.key === uncertainKey);
-      if (unsure !== undefined)
-        texts.set(unsure.key, cardAnswerText(unsure.answer, unsure.digest));
+      if (unsure !== undefined) {
+        const said = texts.get(unsure.key) ?? [];
+        const mine = answerFingerprint(unsure);
+        texts.set(unsure.key, said.includes(mine) ? said : [...said, mine]);
+      }
       const reason =
         uncertainKey !== null && refused !== null ? refused : priorReason;
       finishSend(key, { reason, texts });
@@ -274,18 +297,23 @@ export function useSend(need: NeedView, picking: Picking): Sending | null {
         ),
     );
   };
+  // The latest send's own result shows first; the uncertainty that outlives
+  // it shows beside it (`uncertainReason`), or alone once nothing failed.
+  const uncertainReason =
+    sending !== null && sending !== "sending" ? sending.uncertain : null;
   const currentPhase: Phase =
     sending === "sending"
       ? { kind: "sending" }
-      : sending === null || !("uncertain" in sending)
+      : phase.kind === "failed" || uncertainReason === null
         ? phase
-        : { kind: "failed", reason: sending.uncertain };
+        : { kind: "failed", reason: uncertainReason };
   return {
     to,
     login: kept.login,
     phase: currentPhase,
     ready: picking.commit.picked > 0,
-    uncertain: sending !== null && sending !== "sending",
+    uncertain: uncertainReason !== null,
+    uncertainReason,
     send,
     checked: () => finishSend(key, null),
   };
@@ -377,6 +405,13 @@ export function SendSaid({
       {sending.phase.kind === "failed" ? (
         <p className="decFault" role="alert">
           Not sent: {sending.phase.reason}
+        </p>
+      ) : null}
+      {sending.uncertainReason !== null &&
+      sending.phase.kind === "failed" &&
+      sending.phase.reason !== sending.uncertainReason ? (
+        <p className="decFault" role="alert">
+          Still unchecked: {sending.uncertainReason}
         </p>
       ) : null}
       {sending.uncertain ? (
