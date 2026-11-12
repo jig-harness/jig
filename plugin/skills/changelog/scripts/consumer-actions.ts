@@ -17,6 +17,7 @@
 // failure with its reason, never a throw.
 import { failed, ok, type Outcome } from "../../../shared/outcome.ts";
 import { codeSpans } from "./markdown-blocks.ts";
+import { parseBlocks, plain } from "./markdown-tree.ts";
 
 /** How strongly an action asks: the repository is wrong until it acts, or better for acting. */
 export const STRENGTHS = ["required", "advised"] as const;
@@ -320,33 +321,23 @@ function readBody(body: string): Outcome<Declaration> {
   return readAction(body);
 }
 
+const MARK_SENTINEL = "JIGCONSUMERACTIONMARK";
+
 /**
- * Whether the marker at `at` belongs to a nested list item rather than the
- * entry itself: it sits on the line of a nested bullet, or sits on a
- * later line indented into the content of a nested bullet above it.
+ * Whether the marker at `at` in `entry` belongs to a nested list item rather
+ * than the entry itself, as the Markdown parser reads the list: the marker is
+ * replaced by a sentinel, and it is the entry's own only when the sentinel
+ * renders in a paragraph of the entry's item, not inside a list nested in it.
  */
-function nested(raw: string, at: number): boolean {
-  const lineStart = raw.lastIndexOf("\n", at) + 1;
-  if (
-    lineStart > 0 &&
-    /^\s*(?:[-*+]|\d+[.)])\s+/.test(raw.slice(lineStart, at))
-  )
-    return true;
-  // The content columns of the nested bullets enclosing each line.
-  const enclosing: number[] = [];
-  const leave = (indent: number): void => {
-    while ((enclosing.at(-1) ?? 0) > indent) enclosing.pop();
-  };
-  for (const line of raw.slice(0, lineStart).split("\n").slice(1)) {
-    if (!line.trim()) continue;
-    const indent = line.length - line.trimStart().length;
-    leave(indent);
-    const bullet = /^(\s*)(?:[-*+]|\d+[.)])\s+/.exec(line);
-    if (bullet) enclosing.push(bullet[0].length);
-  }
-  const markerLine = raw.slice(lineStart);
-  leave(markerLine.length - markerLine.trimStart().length);
-  return lineStart > 0 && enclosing.length > 0;
+function nested(entry: string, at: number, end: number): boolean {
+  const marked = `${entry.slice(0, at)}${MARK_SENTINEL}${entry.slice(end)}`;
+  const [list] = parseBlocks(marked);
+  if (list?.k !== "list") return false;
+  const own = list.items[0] ?? [];
+  return !own.some(
+    (block) =>
+      block.k === "paragraph" && plain(block.inline).includes(MARK_SENTINEL),
+  );
 }
 
 /**
@@ -366,7 +357,8 @@ export function readDeclaration(entry: string): Outcome<Declared | null> {
   const [rawMark] = proseMatches(raw, MARKER);
   if (mark === undefined || rawMark === undefined)
     return malformed("an entry declares one **Consumer action:**");
-  if (nested(raw, rawMark.at))
+  const shift = entry.length - raw.length;
+  if (nested(entry, rawMark.at + shift, rawMark.end + shift))
     return malformed(
       "a **Consumer action:** follows the entry's own description, not a nested list item",
     );

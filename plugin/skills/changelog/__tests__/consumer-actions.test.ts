@@ -474,8 +474,12 @@ describe("review hardening", () => {
       `- Parent.\n  - Child.\n    **Consumer action:** ${ACTION}`,
     );
     expect(read.ok).toBe(false);
-    const own = readDeclaration(
+    const lazy = readDeclaration(
       `- Parent.\n  - Child.\n  **Consumer action:** ${ACTION}`,
+    );
+    expect(lazy.ok).toBe(false);
+    const own = readDeclaration(
+      `- Parent.\n  - Child.\n\n  **Consumer action:** ${ACTION}`,
     );
     expect(own.ok).toBe(true);
   });
@@ -490,6 +494,14 @@ describe("review hardening", () => {
       readDeclaration(
         `- Parent.\n  - Child.\n  Parent text. **Consumer action:** ${ACTION}`,
       ).ok,
+    ).toBe(false);
+    expect(
+      readDeclaration(
+        `- Parent.\n  - Child.\n\n  Parent text. **Consumer action:** ${ACTION}`,
+      ).ok,
+    ).toBe(true);
+    expect(
+      readDeclaration(`- Released in\n  2026. **Consumer action:** none.`).ok,
     ).toBe(true);
   });
 

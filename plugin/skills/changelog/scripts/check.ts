@@ -546,7 +546,10 @@ export function checkNotes(options: CheckOptions): CheckResult {
       {
         required: options.consumerActions ?? false,
         released: released.ok ? released.value : null,
-        unverifiable: !options.record && options.format.credits,
+        unverifiable:
+          !!options.consumerActions &&
+          !options.record &&
+          options.format.credits,
       },
     ),
   );
