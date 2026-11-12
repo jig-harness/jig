@@ -1,5 +1,11 @@
 import { describe, expect, it } from "bun:test";
-import { mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+} from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
@@ -585,6 +591,22 @@ describe("a Bearer credential at an Atlassian Cloud site", () => {
       expect(urls).toEqual([]);
     },
   );
+
+  it("refuses JIRA_TOKEN_COMMAND without running it", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "jira-token-"));
+    try {
+      const marker = join(dir, "ran");
+      const command = `"${process.execPath}" -e "require('node:fs').writeFileSync(process.argv[1], 'x')" "${marker}"`;
+      const { impl } = sent();
+      const err = await failure(
+        defaultTransport(SITE, { JIRA_TOKEN_COMMAND: command }, impl)(request),
+      );
+      expect(err.message).toContain("issue_tracker.jira.api_base");
+      expect(existsSync(marker)).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 
   it("is sent through the gateway", async () => {
     const { urls, impl } = sent();
