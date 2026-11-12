@@ -85,11 +85,12 @@ export function claimAnswer(
       );
     if (done.changes !== 1) return false;
     // A newer answer to the same decision supersedes the earlier ones'
-    // carries, interrupted rows included: an older option must not become a
-    // later session's instructions.
+    // carries, interrupted rows included and whatever framing they answered:
+    // an older option must not become a later session's instructions.
     db.query(
       `UPDATE station_answers SET carry = NULL
-       WHERE repo = ? AND target = ? AND key = ? AND digest = ? AND answer != ?
+       WHERE repo = ? AND target = ? AND key = ?
+         AND NOT (digest = ? AND answer = ?)
          AND carry IS NOT NULL AND consumed_by IS NULL`,
     ).run(row.repo, row.target, row.key, row.digest, row.answer);
     return true;

@@ -310,4 +310,34 @@ describe("settleStationAnswers", () => {
     expect(takeCarried(SLUG, "PR #12", "r-1", dir)?.option).toBe("Second");
     expect(takeCarried(SLUG, "PR #12", "r-2", dir)).toBeNull();
   });
+
+  it("retires an interrupted carry when the same decision is answered under a replacement framing without one", () => {
+    const dir = root();
+    const row = (digest: string, answer: string, option: string) => ({
+      repo: SLUG,
+      target: "PR #12",
+      key: "followup",
+      digest,
+      answer,
+      author: "maintainer",
+      option,
+    });
+    const carried: CarriedAnswer = {
+      question: "q?",
+      option: "Release it",
+      recommended: false,
+      changes: "",
+      costs: "",
+      note: "release now",
+      by: "maintainer",
+      url: `https://github.com/${SLUG}/pull/12#issuecomment-1`,
+    };
+    expect(claimAnswer(row("d1", "a 1", "Release it"), carried, dir)).toBe(
+      true,
+    );
+    expect(claimAnswer(row("d2", "b 2", "Leave it to me"), null, dir)).toBe(
+      true,
+    );
+    expect(takeCarried(SLUG, "PR #12", "r-1", dir)).toBeNull();
+  });
 });
