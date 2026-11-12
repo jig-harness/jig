@@ -249,9 +249,13 @@ Once the pull request opens, the skill posts the comment linking it on the
 item, then moves the item there, before the drive arms. The parent roll-up
 reads `pr_open` as work still in progress, not as merged: `in_review` keeps
 that meaning. A tracker with one review status, used while the pull request
-is open and after the merge, gives `pr_open` and `in_review` the same name;
-an item in it then reads as `pr_open`, since the tracker cannot say whether
-its pull request merged. Without `pr_open`, nothing moves before the merge.
+is open and after the merge, gives `pr_open` and `in_review` the same name.
+The tracker cannot say which wait an item under that name is in, so the
+roll-up asks the code host (`scripts/linked-pr.ts`): an item whose linked
+pull request merged reads as `in_review`, and one whose pull request is
+open, that has none, or whose pull request cannot be read reads as
+`pr_open`. Under distinct names nothing is read from the code host. Without
+`pr_open`, nothing moves before the merge.
 
 After the merge, the item moves to `done`, or to `ops_pending` while a
 manual step remains. A team whose `done` means merged and verified by
