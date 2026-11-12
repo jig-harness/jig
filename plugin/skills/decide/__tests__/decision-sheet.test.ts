@@ -15,10 +15,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { type Element, Window } from "happy-dom";
 import { gitIdentityEnv } from "../../drive-pr/scripts/lib/proc.ts";
-import {
-  sheetAttachmentTitle,
-  staleSheetAttachments,
-} from "../scripts/decision-sheet/attachments.ts";
+import { parseAttachRequest } from "../../do-item/scripts/lib/attachment-ops.ts";
 import {
   checkFreshness,
   citedPaths,
@@ -1119,27 +1116,6 @@ describe("trigger rule", () => {
     });
 });
 
-describe("attachment replacement", () => {
-  const title = sheetAttachmentTitle("ENG-210");
-  const rows = [
-    { id: "old", title },
-    { id: "pr", title: "feat: something" },
-    { id: "new", title },
-    { id: "untitled", title: null },
-  ];
-
-  it("deletes every older sheet and nothing else", () => {
-    expect(staleSheetAttachments(rows, "new")).toEqual(["old"]);
-  });
-
-  it("refuses when the new sheet is not on the issue, or is not a sheet", () => {
-    expect(() => staleSheetAttachments(rows, "missing")).toThrow(
-      /not on the issue/,
-    );
-    expect(() => staleSheetAttachments(rows, "pr")).toThrow(/not titled/);
-  });
-});
-
 describe("freshness guard", () => {
   it("extracts repository paths from claim sources", () => {
     const source = pilot();
@@ -1237,6 +1213,11 @@ describe("CLI", () => {
     expect(summary.trigger.sheet).toBe(true);
     const html = readFileSync(join(out, "ENG-210-decision-sheet.html"), "utf8");
     expect(summary.attachment.size).toBe(Buffer.byteLength(html));
+    // `tracker.ts attach` takes the summary as it stands.
+    const request = parseAttachRequest(r.stdout);
+    expect(request.path).toBe(join(out, "ENG-210-decision-sheet.html"));
+    expect(request.replace).toBe(true);
+    expect(request.size).toBe(Buffer.byteLength(html));
     expect(readFileSync(join(out, "ENG-210-comment.md"), "utf8")).toContain(
       "ENG-210-decision-sheet.html",
     );
@@ -1521,23 +1502,6 @@ describe("CLI: freshness, flags and the helper commands", () => {
       staleRepo("src/a.ts"),
     );
     expect(r.status).toBe(0);
-  });
-
-  it("stale-attachments reads an issue from stdin", () => {
-    const issue = {
-      attachments: [
-        { id: "a1", title: sheetAttachmentTitle("ENG-1") },
-        { id: "a2", title: sheetAttachmentTitle("ENG-1") },
-        { id: "pr", title: "feat: x" },
-      ],
-    };
-    const r = run(
-      ["stale-attachments", "--keep", "a2"],
-      REPO_ROOT,
-      JSON.stringify(issue),
-    );
-    expect(r.status).toBe(0);
-    expect(JSON.parse(r.stdout)).toEqual(["a1"]);
   });
 
   it("trigger accepts hitl: prefixes and rejects a label that is not a facet", () => {

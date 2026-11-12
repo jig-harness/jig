@@ -719,7 +719,7 @@ describe("get_issue.ts reads the issue through the tracker", () => {
       '{"errors":[{"message":"Entity not found: Issue"}],"data":null}',
     ],
   ] as const) {
-    it(`${what} is reported as not found, not as exit 1`, () => {
+    it(`${what} is reported as absent or unreadable with exit 2`, () => {
       const r = run(payload);
       expect({ what, status: r.status, found: r.json.found }).toEqual({
         what,

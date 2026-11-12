@@ -24,6 +24,7 @@ import { stateRoot } from "../receipts.ts";
 import {
   type FailureRow,
   type FailureSettings,
+  escalates,
   isActionKind,
   readFailures,
 } from "./failures.ts";
@@ -90,11 +91,14 @@ const RECEIPT =
 /** What the key of a host failure's notice starts with, in place of a repository's slug. */
 export const HOST_NOTICE = "host";
 
-/** The notice keys of the rows of this host's own failures: those of its repositories' turns and of its ticks. */
+/** The notice keys of the rows of this host's own failures: those of its repositories' turns and of its ticks, a quiet row's left out. */
 export function hostNoticeKeys(rows: readonly FailureRow[]): Set<string> {
   return new Set(
     rows
-      .filter((r) => r.kind === "tick" || r.kind === "repository")
+      .filter(
+        (r) =>
+          (r.kind === "tick" || r.kind === "repository") && r.quietAt === null,
+      )
       .map((r) => hostCause(HOST_NOTICE, r).notice?.key as string),
   );
 }
@@ -109,7 +113,9 @@ function causeOf(
 ): Action {
   // Every repository's row has the key `repository`: its path tells them apart.
   const what = row.kind === "repository" ? `repository ${row.repo}` : row.key;
-  const key = `${what} failing since ${row.firstAt}`;
+  // A failure that ended a quiet is a new notice: the destination may still hold the one before it.
+  const again = row.renewals > 0 ? ` (again ${row.renewals})` : "";
+  const key = `${what} failing since ${row.firstAt}${again}`;
   return {
     stage: "notify",
     target: row.target,
@@ -146,7 +152,7 @@ function hostCause(slug: string, row: FailureRow): Action {
     ]);
   return causeOf(slug, row, "ticks-failing", "runtime", [
     `This host's dispatcher ${row.target} have exited 1 ${times(row.count)} in a row since ${row.firstAt}. The last failure: ${sentence(row.reason)}`,
-    `Read the latest receipt and the tick's journal for what failed; this notice retires at the first such tick that exits 0. ${RECEIPT}`,
+    `Read the latest receipt and the tick's journal for what failed; this notice retires at the first such tick that exits 0, or at the first tick that reads that repository whole and exits 0. ${RECEIPT}`,
   ]);
 }
 
@@ -181,7 +187,7 @@ export function failureCauses(
   machine: Pick<MachineConfig, "repositories" | "failures">,
 ): Action[] {
   const settings: FailureSettings = failureSettings(machine);
-  const due = (r: FailureRow) => r.count >= settings.notifyAfter;
+  const due = (r: FailureRow) => escalates(r, settings);
   const actions = rows
     .filter(
       (r) =>

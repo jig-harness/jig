@@ -12,6 +12,7 @@ import {
   targetOf,
 } from "../launches.ts";
 import { loadReport } from "../load.ts";
+import { failed, ok, type Outcome } from "../../../shared/outcome.ts";
 import { questionOf, sessionIdFor } from "../session.ts";
 import { stateDb } from "../state.ts";
 import { dispatched } from "../runtime/port.ts";
@@ -21,9 +22,11 @@ import {
   STEWARD_DEADLINE_SEC,
   stewardDue,
   stewardRuns,
+  stewardWaits,
   type StewardDigest,
 } from "../steward.ts";
-import type { RepoObservation } from "../tick-observe.ts";
+import type { PoolIssue } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
+import type { RepoObservation, Tracked } from "../tick-observe.ts";
 import type { Action } from "../types.ts";
 import {
   admitAccount,
@@ -35,12 +38,14 @@ import {
   replayable,
   replay,
   accountBlocked,
+  readRoomMs,
 } from "./launch.ts";
 import { currentIso, currentMs } from "../../../shared/time.ts";
 
 export async function applySteward(
   state: ApplyState,
   observation: RepoObservation,
+  readDigest: typeof digestOf = digestOf,
 ): Promise<void> {
   const { opened, forge } = observation;
   const { repo, report } = opened;
@@ -74,24 +79,20 @@ export async function applySteward(
     return skip("a steward pass already holds this repository");
   if (!forge.ok || report.records.some((r) => !r.ok))
     return skip("the digest's records did not all read");
-  const digest = await digestOf(state, observation);
-  const hash = digestHash(digest);
   if (
     stewardRuns(null, state.root).filter((r) => r.at > currentMs() - 3_600_000)
       .length >= 3
   )
     return skip("the host's hourly steward budget is spent");
-  if (
-    !stewardDue(
-      hash,
-      stewardRuns(repo.slug, state.root),
-      currentMs(),
-      config.everyMs,
-    )
-  )
-    return skip(
-      "input is unchanged, cadence has not elapsed or hourly budget is spent",
-    );
+  const runs = stewardRuns(repo.slug, state.root);
+  if (stewardWaits(runs, currentMs(), config.everyMs))
+    return skip("cadence has not elapsed or hourly budget is spent");
+  const read = await readDigest(state, observation);
+  if (!read.ok) return skip(read.failure.reason);
+  const digest = read.value;
+  const hash = digestHash(digest);
+  if (!stewardDue(hash, runs, currentMs(), config.everyMs))
+    return skip("input is unchanged since the last pass");
   const action: Action = {
     stage: "steward",
     target: "the steward",
@@ -173,23 +174,27 @@ export async function applySteward(
   report.steward = { status: "pass recorded and launch attempted", hash };
 }
 
-/** Reuse the tick's evidence and keep the digest separate from launch admission. */
+/** Why the steward's queue could not be completed this tick. */
+type QueueFailure = "out-of-time" | "unread";
+
+/** The longest one queued item's read may take. */
+const QUEUE_READ_MS = 60_000;
+
+/**
+ * Reuse the tick's evidence and keep the digest separate from launch
+ * admission. A digest that cannot be completed is a failure, since a
+ * partial queue would hash as changed input.
+ */
 async function digestOf(
   state: ApplyState,
   observation: RepoObservation,
-): Promise<StewardDigest> {
+): Promise<Outcome<StewardDigest, QueueFailure>> {
   const { opened, tracked, forge } = observation;
   const { repo, report } = opened;
-  const queue = [];
-  if (tracked.tracker !== null)
-    for (const item of tracked.pickups) {
-      const issue = await tracked.tracker.poolIssue(
-        item.key,
-        AbortSignal.timeout(60_000),
-      );
-      if (issue !== null) queue.push(issue);
-    }
-  return {
+  const read = await stewardQueue(tracked, () => readRoomMs(state));
+  if (!read.ok) return read;
+  const queue = read.value;
+  return ok({
     version: 1,
     repo: repo.slug,
     drives: forge.drives.map((pr) => ({
@@ -222,5 +227,47 @@ async function digestOf(
         )
         .all(repo.slug) as Array<{ row: string }>
     ).map((r) => JSON.parse(r.row)),
-  };
+  });
+}
+
+/**
+ * The steward's queue: a queued item the observe phase already read is not
+ * read again, and the rest are read one at a time within `room`, what the
+ * tick has left before its launch (`null` for a tick that keeps no start).
+ * A queue that time ran out on, or whose read failed, is a failure.
+ */
+export async function stewardQueue(
+  tracked: Pick<Tracked, "pickups" | "tracker">,
+  room: () => number | null,
+): Promise<Outcome<PoolIssue[], QueueFailure>> {
+  const queue: PoolIssue[] = [];
+  for (const item of tracked.pickups) {
+    if (item.queueIssue !== undefined) {
+      queue.push(item.queueIssue);
+      continue;
+    }
+    if (tracked.tracker === null) continue;
+    const left = room();
+    if (left !== null && left <= 0)
+      return failed(
+        "out-of-time",
+        "the tick deadline has no room for the steward's queue reads",
+      );
+    const issue = await tracked.tracker
+      .poolIssue(
+        item.key,
+        AbortSignal.timeout(Math.min(QUEUE_READ_MS, left ?? QUEUE_READ_MS)),
+      )
+      .then(
+        (read) => ({ read }),
+        () => null,
+      );
+    if (issue === null)
+      return failed(
+        "unread",
+        `the queued item ${item.key} did not read for the steward's digest`,
+      );
+    if (issue.read !== null) queue.push(issue.read);
+  }
+  return ok(queue);
 }

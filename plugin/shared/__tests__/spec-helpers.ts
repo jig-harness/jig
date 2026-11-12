@@ -87,7 +87,12 @@ export function stub(
       let text = "";
       for (const file of await ref.files.list(signal))
         text += await ref.files.read(file, signal);
-      const out: AdapterRead = { requirements: [], acceptance: [], tasks: [] };
+      const out: AdapterRead = {
+        requirements: [],
+        acceptance: [],
+        tasks: [],
+        verification: [],
+      };
       for (const line of text.split("\n").filter(Boolean)) {
         const [id = "", ...rest] = line.split(" ");
         const req = /FR-\d+/.exec(rest.join(" "))?.[0] ?? null;
@@ -103,5 +108,9 @@ export function stub(
 
 /** The configuration that runs exactly `names`, with the default heading. */
 export function only(...names: string[]): SpecsConfig {
-  return { adapters: names, bodySection: "Spec" };
+  return {
+    adapters: names,
+    bodySection: "Spec",
+    verificationSection: "Verification",
+  };
 }

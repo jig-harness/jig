@@ -1,6 +1,17 @@
 import { describe, expect, it } from "bun:test";
-import { httpFailure } from "../scripts/lib/tracker/jira/transport.ts";
-import { issue, jira, MEMBER, routes } from "./jira-fixtures.ts";
+import { jiraAuthorization } from "../scripts/lib/tracker/jira/credential.ts";
+import {
+  httpTransport,
+  httpFailure,
+} from "../scripts/lib/tracker/jira/transport.ts";
+import {
+  GATEWAY,
+  issue,
+  jira,
+  MEMBER,
+  routes,
+  tokenRun,
+} from "./jira-fixtures.ts";
 
 describe("Jira authentication before protected reads", () => {
   for (const status of [401, 403])
@@ -20,6 +31,49 @@ describe("Jira authentication before protected reads", () => {
       );
       expect(error.unavailable).toBe(false);
     });
+
+  it("names the account scopes when the gateway refuses the profile read for its scope", async () => {
+    const { client } = jira(
+      routes({
+        "GET myself": httpFailure(
+          401,
+          new Headers(),
+          '{"code":401,"message":"Unauthorized; scope does not match"}',
+          "GET myself",
+        ),
+      }),
+    );
+    const refused = client.issue("ENG-1");
+    await expect(refused).rejects.toThrow("JIRA_BEARER_TOKEN");
+    await expect(refused).rejects.toThrow(
+      "read:jira-user scope, or all of the granular read:application-role:jira, read:group:jira, read:user:jira and read:avatar:jira scopes",
+    );
+  });
+
+  it("names the account scopes when the profile read is refused for any reason", () => {
+    const error = httpFailure(
+      401,
+      new Headers(),
+      '{"errorMessages":["Unauthorized"]}',
+      "GET myself",
+    );
+    expect(error.message).toContain("read:jira-user");
+  });
+
+  it("names the account scopes when Jira says a scope does not match elsewhere", () => {
+    const error = httpFailure(
+      403,
+      new Headers(),
+      '{"code":403,"message":"Unauthorized; scope does not match"}',
+      "GET issue/ENG-1",
+    );
+    expect(error.message).toContain("read:jira-user");
+  });
+
+  it("leaves the account scopes out of a refusal that is not about them", () => {
+    const error = httpFailure(403, new Headers(), "refused", "GET issue/ENG-1");
+    expect(error.message).not.toContain("read:jira-user");
+  });
 
   for (const fields of [false, true]) {
     it(`refuses anonymous reads before ${fields ? "field resolution" : "an issue's 404"}`, async () => {
@@ -122,5 +176,51 @@ describe("Jira authentication before protected reads", () => {
       "GET myself",
       "GET issue/ENG-1",
     ]);
+  });
+});
+
+describe("Jira audit reach authentication", () => {
+  for (const projectStatus of [404, 200])
+    it(`refuses a credential before the project's HTTP ${projectStatus}`, async () => {
+      const { t, calls } = jira(
+        routes({
+          "GET myself": httpFailure(
+            401,
+            new Headers(),
+            "refused",
+            "GET myself",
+          ),
+          "GET project/ENG":
+            projectStatus === 404
+              ? httpFailure(404, new Headers(), "hidden", "GET project/ENG")
+              : {},
+        }),
+      );
+      await expect(t.reach()).rejects.toThrow("JIRA_API_TOKEN");
+      expect(calls.map((c) => c.route)).toEqual(["GET myself"]);
+    });
+
+  it("renews a stale command token before checking the project", async () => {
+    let runs = 0;
+    const auth = jiraAuthorization(
+      { kind: "command", argv: ["broker"] },
+      {
+        runner: async () => tokenRun(++runs === 1 ? "stale" : "fresh"),
+      },
+    );
+    const paths: string[] = [];
+    const transport = httpTransport(GATEWAY, auth, (async (url, init) => {
+      const path = new URL(String(url)).pathname.split("/rest/api/3/")[1];
+      paths.push(String(path));
+      if (new Headers(init?.headers).get("Authorization") === "Bearer stale")
+        return new Response("refused", { status: 401 });
+      return Response.json(path === "myself" ? MEMBER : {});
+    }) as typeof fetch);
+    const { t } = jira((call) =>
+      transport({ method: call.method, path: call.path }),
+    );
+    await t.reach();
+    expect(runs).toBe(2);
+    expect(paths).toEqual(["myself", "myself", "project/ENG"]);
   });
 });

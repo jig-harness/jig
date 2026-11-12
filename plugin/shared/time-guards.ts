@@ -6,8 +6,10 @@
  */
 
 /** A string `Date` can read as a time. */
+import { parseMs } from "./time.ts";
+
 export function isTime(value: unknown): value is string {
-  return typeof value === "string" && Number.isFinite(Date.parse(value));
+  return typeof value === "string" && Number.isFinite(parseMs(value));
 }
 
 /** A zone the browser can show times in: one its formatter accepts, which is wider than the names it lists. */
@@ -28,5 +30,5 @@ export function isZone(value: unknown): value is string {
 export function isSpan(startedAt: string, span: unknown): span is number {
   if (typeof span !== "number" || !Number.isFinite(span) || span < 0)
     return false;
-  return Number.isFinite(new Date(Date.parse(startedAt) + span).getTime());
+  return Number.isFinite(new Date(parseMs(startedAt) + span).getTime());
 }

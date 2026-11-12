@@ -41,6 +41,13 @@ import { currentMs } from "../../../../../../shared/time.ts";
 export const JIRA_CREDENTIAL_HELP =
   "Check JIRA_BEARER_TOKEN or JIRA_TOKEN_COMMAND, or JIRA_EMAIL and JIRA_API_TOKEN. Create an API token at https://id.atlassian.com/manage-profile/security/api-tokens and ensure the account or token has access to the Jira site.";
 
+/**
+ * The scopes a scoped or OAuth token needs to read the account it acts as
+ * (`myself`), which the adapter does before any issue or search read.
+ */
+export const JIRA_ACCOUNT_SCOPE_HELP =
+  "A scoped API token or an OAuth access token also needs the classic read:jira-user scope, or all of the granular read:application-role:jira, read:group:jira, read:user:jira and read:avatar:jira scopes, to read the account it acts as.";
+
 export const JIRA_TIMEOUT_MS = 30_000;
 
 /** The page size every listing asks for. */
@@ -54,6 +61,10 @@ export interface JiraRequest {
   body?: unknown;
   /** A read-only POST, such as search/jql; GETs are reads by definition. */
   idempotent?: boolean;
+  /** A multipart form sent instead of `body`: a file upload, which Jira takes only with its no-check header. */
+  form?: FormData;
+  /** Resolve to the answer's body as bytes rather than JSON: a file's content. */
+  bytes?: boolean;
 }
 
 /**
@@ -184,9 +195,15 @@ export function httpFailure(
     ...Object.entries(errors).map(([k, v]) => `${k}: ${v}`),
   ].join("; ");
   const message = `Jira API HTTP ${status} on ${what}: ${said === "" ? text.slice(0, 300) : said}`;
+  const refused = status === 401 || status === 403;
+  // Atlassian's gateway says only "scope does not match" when a token lacks
+  // a scope, and the profile read is the first request every client sends.
+  const scopes =
+    refused &&
+    (what === "GET myself" || /scope does not match/i.test(`${said} ${text}`));
   return new JiraApiError(
-    status === 401 || status === 403
-      ? `${message}; ${JIRA_CREDENTIAL_HELP}`
+    refused
+      ? `${message}; ${JIRA_CREDENTIAL_HELP}${scopes ? ` ${JIRA_ACCOUNT_SCOPE_HELP}` : ""}`
       : message,
     {
       status,
@@ -216,10 +233,14 @@ function requestInit(
     redirect: "manual",
     signal: bound,
   };
-  if (request.body !== undefined) {
+  if (request.form !== undefined) {
+    headers["X-Atlassian-Token"] = "no-check";
+    init.body = request.form;
+  } else if (request.body !== undefined) {
     headers["Content-Type"] = "application/json";
     init.body = JSON.stringify(request.body);
   }
+  if (request.bytes === true) headers.Accept = "*/*";
   return init;
 }
 
@@ -255,11 +276,30 @@ async function bodyText(
   }
 }
 
+/** A successful answer's body as bytes; one lost while reading fails the read. */
+async function fileBytes(
+  res: Response,
+  signal: AbortSignal | undefined,
+  what: string,
+): Promise<Uint8Array> {
+  try {
+    return new Uint8Array(await res.arrayBuffer());
+  } catch (err) {
+    if (cancelled(signal)) throw abortedError(signal);
+    throw new JiraApiError(
+      `Jira answer lost while reading the file on ${what}: ${err instanceof Error ? err.message : String(err)}`,
+      { unavailable: true, answerLost: true, status: res.status },
+    );
+  }
+}
+
 /** The header to send, or the credential's failure as the adapter's error. */
 function headerOf(
   header: Outcome<string, CredentialCode>,
   signal: AbortSignal | undefined,
 ): string {
+  if (!header.ok && header.failure.code === "token-command-unavailable")
+    throw new JiraApiError(header.failure.reason, { unavailable: true });
   if (cancelled(signal)) throw abortedError(signal);
   if (!header.ok)
     throw new JiraApiError(header.failure.reason, {
@@ -334,17 +374,22 @@ function leasedSender(
     if (res.status === 401) {
       const renewed = await lease.renew(bound);
       if (renewed !== null) {
-        await bodyText(res, bound, what);
-        header = headerOf(renewed, bound);
-        key = keyOf(header);
-        budget.governor?.admit("jira", key);
-        res = await send(
-          fetchImpl,
-          url,
-          requestInit(request, header, bound),
-          bound,
-          what,
-        );
+        try {
+          await bodyText(res, bound, what);
+          header = headerOf(renewed, bound);
+          key = keyOf(header);
+          budget.governor?.admit("jira", key);
+          res = await send(
+            fetchImpl,
+            url,
+            requestInit(request, header, bound),
+            bound,
+            what,
+          );
+          if (res.status === 401) lease.refuseRenewal();
+        } finally {
+          lease.settleRenewal();
+        }
       }
     }
     const refused = observeLimit(res, key, what, budget);
@@ -388,6 +433,7 @@ export function httpTransport(
     const bound =
       signal === undefined ? deadline : AbortSignal.any([deadline, signal]);
     const lease = await authorization.lease(bound);
+    if (cancelled(signal)) throw abortedError(signal);
     const res = await retryRead(
       leasedSender(base, request, lease, bound, fetchImpl, budget),
       request.method === "GET" || request.idempotent === true,
@@ -396,6 +442,10 @@ export function httpTransport(
       if (cancelled(signal)) throw abortedError(signal);
       throw err;
     });
+    if (request.bytes === true && res.ok) {
+      answered = true;
+      return fileBytes(res, bound, what);
+    }
     const text = await bodyText(res, bound, what);
     if (res.status === 429 && governor !== undefined) {
       const until = limitedUntil(currentMs(), res.headers);

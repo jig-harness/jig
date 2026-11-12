@@ -10,7 +10,8 @@
  * what failed in a row (`settleFailures`): each repository this tick read
  * whose turn was refused, stopped by a defect or found a record that did not
  * read, and the tick itself when it exits 1. A repository read whole, and a
- * tick that exits 0, clears its row. Only a tick with `--apply` and a
+ * tick that exits 0, clears its row; a tick that exits 0 also quiets the
+ * wake-up rows of the other repositories it read whole. Only a tick with `--apply` and a
  * machine file counts: a person's report changes nothing there.
  */
 import { resolve } from "node:path";
@@ -18,12 +19,16 @@ import { swallow } from "../../shared/errors.ts";
 import {
   clearFailure,
   entryOf,
+  escalates,
   isActionKind,
+  quietFailure,
   readFailures,
   recordFailure,
 } from "./failures.ts";
 import { failureSettings, type MachineConfig } from "./machine-config.ts";
 import { failureText } from "./text.ts";
+import { hostNoticeKeys } from "./failure-notices.ts";
+import { stateDb } from "./state.ts";
 import { mergedNotClosed } from "./forge.ts";
 import { logEnded } from "./log-ended.ts";
 import { aboutTargets } from "./line.ts";
@@ -344,8 +349,10 @@ function settleTick(
     return scope.key;
   }
   context.tickSettledExit = receipt.exitStatus;
-  if (receipt.exitStatus === 0) clearFailure("", scope.key, root);
-  else if (receipt.exitStatus === 1)
+  if (receipt.exitStatus === 0) {
+    clearFailure("", scope.key, root);
+    quietWakeUps(receipt, scope.key, root, nowMs);
+  } else if (receipt.exitStatus === 1)
     recordFailure(
       { repo: "", ...scope, kind: "tick" },
       tickFailure(receipt),
@@ -354,6 +361,31 @@ function settleTick(
       root,
     );
   return null;
+}
+
+/**
+ * A tick that exits 0 quiets the wake-up rows of the other repositories it
+ * read whose turn succeeded: their cause is gone from every step they share
+ * with it, but only a wake-up of their own clears their count, so a
+ * wake-up that keeps failing between succeeding sweeps is still told.
+ */
+function quietWakeUps(
+  receipt: TickReceipt,
+  own: string,
+  root: string,
+  nowMs: number,
+): void {
+  const at = isoFromMs(nowMs);
+  const rows = readFailures(undefined, root);
+  const release = stateDb(root).query("DELETE FROM notices WHERE key = ?");
+  for (const r of receipt.repos) {
+    const key = `ticks ${resolve(r.path)}`;
+    if (key === own || repoFailure(r) !== null) continue;
+    quietFailure("", key, at, root);
+    // The notice was told at whichever repository was its destination: its record goes with the quiet, or a failure after it would still be suppressed there.
+    for (const row of rows.filter((w) => w.repo === "" && w.key === key))
+      for (const notice of hostNoticeKeys([row])) release.run(notice);
+  }
 }
 
 /** Put the ledger's rows that back off or are notified on the receipt. */
@@ -371,7 +403,7 @@ function reportFailures(
   const backingOff = rows.filter(
     (r) => isActionKind(r.kind) && r.nextAtMs > nowMs,
   );
-  const escalated = rows.filter((r) => r.count >= settings.notifyAfter);
+  const escalated = rows.filter((r) => escalates(r, settings));
   delete receipt.failures;
   if (backingOff.length > 0 || escalated.length > 0)
     receipt.failures = {

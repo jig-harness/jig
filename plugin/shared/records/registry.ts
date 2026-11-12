@@ -85,7 +85,7 @@ const STATE_DIR = "~/.local/state/jig/drive-pr/<clone>/";
 const DRIVE_DB_FILE = "~/.local/state/jig/drive-pr/state.sqlite";
 const DISPATCH_DIR = "~/.local/state/jig/dispatch/";
 /** The dispatcher's database schema version (`dispatch/lib/state.ts`'s `SCHEMA_VERSION`). */
-const DISPATCH_DB = 27;
+const DISPATCH_DB = 28;
 /** The drive's database schema version (`skills/drive-pr/scripts/lib/state/db.ts`'s `DRIVE_DB_VERSION`). */
 const DRIVE_DB = 5;
 const RRC = "skills/resolve-review-comments/scripts/";
@@ -896,6 +896,14 @@ const TRACKER: RecordKind[] = [
     owner: "skills/do-item/scripts/lib/tracker/github/related-migration.ts",
     at: "a legacy comment on a GitHub issue relating it to another, read until the migration marks it superseded",
     markers: ["jig:related", "jig:related-superseded"],
+    version: 0,
+  },
+  {
+    name: "tracker-attachment",
+    medium: "tracker",
+    owner: "skills/do-item/scripts/lib/tracker/github/attachments.ts",
+    at: "a comment on a GitHub issue holding a file attached to it, the file's text or a link to a hosted copy, where GitHub Issues has no file upload",
+    markers: ["jig:attachment"],
     version: 0,
   },
   {

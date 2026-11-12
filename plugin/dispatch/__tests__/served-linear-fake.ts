@@ -133,12 +133,21 @@ export class FakeLinear {
     };
   }
 
-  /** Whether an issue matches one `{ team, number in }` group. */
+  /**
+   * Whether an issue matches one `{ and: [{ team }, { number in }] }` group.
+   * Linear drops the `number` clause of a bare `{ team, number }` element
+   * of an `or` and matches the whole team, so the fake does too.
+   */
   private inGroup(i: FakeIssue, g: Record<string, unknown>): boolean {
-    const team = (g.team as { key: { eq: string } }).key.eq;
-    const numbers = (g.number as { in: number[] }).in;
+    const clauses = (g.and as Array<Record<string, unknown>> | undefined) ?? [
+      { team: g.team },
+    ];
     const [prefix, n] = i.identifier.split("-");
-    return prefix === team && numbers.includes(Number(n));
+    return clauses.every((c) => {
+      if ("team" in c)
+        return prefix === (c.team as { key: { eq: string } }).key.eq;
+      return (c.number as { in: number[] }).in.includes(Number(n));
+    });
   }
 
   private assignedTo(i: FakeIssue, clause: Record<string, unknown>): boolean {
@@ -214,12 +223,21 @@ export class FakeLinear {
         };
       }
       case "TrackerChanges": {
-        const since = (filter.updatedAt as { gt: string }).gt;
-        const or = (filter.or ?? []) as Array<Record<string, unknown>>;
+        const [{ updatedAt }, { or }] = filter.and as [
+          { updatedAt: { gt: string } },
+          { or: Array<Record<string, unknown>> },
+        ];
+        const since = updatedAt.gt;
         const nodes = all.filter((i) => {
           if (i.updatedAt <= since) return false;
           return or.some((c) => {
-            if ("assignee" in c) return this.assignedTo(i, c);
+            const clauses = c.and as Array<Record<string, unknown>> | undefined;
+            if (clauses?.some((x) => "assignee" in x))
+              return clauses.every((x) =>
+                "assignee" in x
+                  ? this.assignedTo(i, x)
+                  : this.inGroup(i, { and: [x] }),
+              );
             if ("parent" in c) {
               const parent =
                 i.parent === null ? undefined : this.issues.get(i.parent);
@@ -231,10 +249,11 @@ export class FakeLinear {
             return this.inGroup(i, c);
           });
         });
+        const size = Number(/issues\(first: (\d+)/.exec(query)?.[1] ?? 50);
         return {
           issues: {
-            pageInfo: { hasNextPage: false },
-            nodes: nodes.map((i) => ({
+            pageInfo: { hasNextPage: nodes.length > size },
+            nodes: nodes.slice(0, size).map((i) => ({
               identifier: i.identifier,
               updatedAt: i.updatedAt,
             })),
@@ -243,12 +262,18 @@ export class FakeLinear {
       }
       case "TrackerPoolIssues": {
         const groups = (filter.or ?? []) as Array<Record<string, unknown>>;
+        const nodes = all.filter((i) => groups.some((g) => this.inGroup(i, g)));
+        const size = Number(/issues\(first: (\d+)/.exec(query)?.[1] ?? 50);
+        const from = Number(variables.after ?? 0);
+        const more = from + size < nodes.length;
         return {
-          issues: page(
-            all
-              .filter((i) => groups.some((g) => this.inGroup(i, g)))
-              .map((i) => this.pool(i)),
-          ),
+          issues: {
+            pageInfo: {
+              hasNextPage: more,
+              endCursor: more ? String(from + size) : null,
+            },
+            nodes: nodes.slice(from, from + size).map((i) => this.pool(i)),
+          },
         };
       }
       case "TrackerPoolIssue": {

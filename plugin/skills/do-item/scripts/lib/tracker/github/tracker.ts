@@ -56,6 +56,7 @@ import { keyOf, repoOf, slug } from "./refs.ts";
 import { assignerOperations } from "./assigner.ts";
 import { stateChangeOperations } from "./state-change.ts";
 import { claimOperations } from "./claim.ts";
+import { gitHubAttachments } from "./attachments.ts";
 import { reportOperations } from "./reports.ts";
 import {
   ADD_RELATES_TO,
@@ -699,6 +700,7 @@ export function gitHubTracker(client: Client): Tracker {
     ...assignerOperations(client),
     ...stateChangeOperations(client),
     ...claimOperations(client),
+    ...gitHubAttachments(client),
 
     async createIssue(issue) {
       requireTitle(issue.title);

@@ -89,6 +89,19 @@ export function recordBelongsToDigest(
   }
 }
 
+/** The cadence or the rolling hourly cap rules a run out whatever the input: checked before the digest is read. */
+export function stewardWaits(
+  runs: readonly { at: number }[],
+  now: number,
+  every: number,
+): boolean {
+  const latest = [...runs].sort((a, b) => b.at - a.at)[0];
+  return (
+    (latest !== undefined && (now - latest.at < every || latest.at > now)) ||
+    runs.filter((r) => r.at > now - 3_600_000).length >= 3
+  );
+}
+
 /** A changed input, the cadence and a rolling hourly cap must all permit a run. */
 export function stewardDue(
   hash: string,
@@ -97,12 +110,7 @@ export function stewardDue(
   every: number,
 ): boolean {
   const latest = [...runs].sort((a, b) => b.at - a.at)[0];
-  return (
-    !(
-      latest &&
-      (latest.hash === hash || now - latest.at < every || latest.at > now)
-    ) && runs.filter((r) => r.at > now - 3_600_000).length < 3
-  );
+  return !stewardWaits(runs, now, every) && latest?.hash !== hash;
 }
 
 /** Times in receipts and measured gauges do not turn unchanged work into a new digest. */

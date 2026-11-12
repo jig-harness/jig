@@ -46,6 +46,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { issueFileName } from "../launcher/cache.ts";
 import { errnoCode, swallow } from "../../plugin/shared/errors.ts";
 import { CLAIM_WAIT_MS } from "../../plugin/shared/orca-workspace/limits.ts";
 import { AGENT_NAME } from "./agent.ts";
@@ -62,7 +63,7 @@ import type { Spawned } from "./spawn.ts";
 import { currentMs } from "../../plugin/shared/time.ts";
 
 /** What a kickoff key may look like: it names files. */
-export const KICKOFF_KEY = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+export const KICKOFF_KEY = /^(?:#[1-9][0-9]*|[A-Za-z0-9][A-Za-z0-9._-]{0,63})$/;
 export { CLAIM_WAIT_MS };
 /** The bound on submitting the prompt. */
 export const PROMPT_TIMEOUT_MS = 45_000;
@@ -115,7 +116,7 @@ export function receiptDir(
   assertKey(key);
   if (!AGENT_NAME.test(agentName))
     throw new HerdrError(`"${agentName}" is not a Herdr agent name`);
-  return join(kickoffDir(ctx), "receipts", key, agentName);
+  return join(kickoffDir(ctx), "receipts", issueFileName(key), agentName);
 }
 
 /** The generations a receipt directory holds, lowest first; [] for none. */
@@ -130,7 +131,7 @@ function receiptGenerations(dir: string): number[] {
 
 function claimDir(ctx: Context, key: string): string {
   assertKey(key);
-  return join(kickoffDir(ctx), "claims", key);
+  return join(kickoffDir(ctx), "claims", issueFileName(key));
 }
 
 /** The prompt's first line: what an earlier kickoff shows in the transcript. */
@@ -242,7 +243,7 @@ function nextStep(
  * superseded by the record of the claim it replaced.
  */
 function highestReceipt(ctx: Context, key: string): number {
-  const dir = join(kickoffDir(ctx), "receipts", key);
+  const dir = join(kickoffDir(ctx), "receipts", issueFileName(key));
   let agents: string[];
   try {
     agents = readdirSync(dir);
