@@ -121,6 +121,22 @@ export interface Sending {
 /** The refusals `sendRefusal` says posted nothing; any other outcome may have created the comment. */
 const POSTED_NOTHING = new Set([401, 403, 404, 410, 422]);
 
+/** What the person is told of the rest of a card when one of its comments was refused. */
+function partialNote(
+  done: number,
+  key: string,
+  uncertain: boolean,
+  rest: Array<{ key: string }>,
+): string {
+  const parts: string[] = [];
+  if (done > 0) parts.push("the answers before it were posted");
+  if (uncertain) parts.push(`${key} may or may not have been posted`);
+  if (rest.length > 0)
+    parts.push(`not attempted: ${rest.map((c) => c.key).join(", ")}`);
+  const said = parts.join("; ");
+  return said === "" ? "" : ` ${said.charAt(0).toUpperCase()}${said.slice(1)}.`;
+}
+
 /**
  * Posts each comment in order, into `urls` so the links posted survive a
  * failure; why the first refused one was not, and whether that one may
@@ -147,16 +163,9 @@ export async function postAll(
     if (!posted.ok) {
       const uncertain =
         posted.status === null || !POSTED_NOTHING.has(posted.status);
-      const rest = comments
-        .slice(urls.length + (uncertain ? 1 : 0))
-        .map((c) => c.key);
-      const done =
-        urls.length === 0 && !uncertain
-          ? ""
-          : ` ${urls.length === 0 ? "No answer before it was posted" : "The answers before it were posted"}${
-              uncertain ? `; ${comment.key} may or may not have been` : ""
-            }${rest.length === 0 ? "" : `; not attempted: ${rest.join(", ")}`}.`;
-      return { refused: `${sendRefusal(posted, to)}${done}`, uncertain };
+      const rest = comments.slice(urls.length + (uncertain ? 1 : 0));
+      const note = partialNote(urls.length, comment.key, uncertain, rest);
+      return { refused: `${sendRefusal(posted, to)}${note}`, uncertain };
     }
     urls.push(posted.value);
   }
