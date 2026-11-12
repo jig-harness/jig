@@ -123,6 +123,7 @@ import {
 } from "../../docs/scripts/lib/settings.ts";
 import {
   DEFAULT_BODY_SECTION,
+  DEFAULT_VERIFICATION_SECTION,
   parseSpecsConfig,
   SPECS_FIELDS,
 } from "../../../shared/spec/config.ts";
@@ -434,6 +435,7 @@ describe("the reading skills", () => {
       "repository.remote": DEFAULT_REMOTE,
       "review.scanner_apps": DEFAULT_SCANNER_APPS,
       "specs.body_section": DEFAULT_BODY_SECTION,
+      "specs.verification_section": DEFAULT_VERIFICATION_SECTION,
       "routing.raise.reviews": parseRouting({}, parseWorkTypes({})).raise
         .reviews,
       "workspace_name.template": DEFAULT_WORKSPACE_TEMPLATE,
