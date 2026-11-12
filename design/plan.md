@@ -567,16 +567,12 @@ and an item that fails a rule is refused before anything is written.
 
 The drive reads a reviewer that reviews through the forge's own [review
 objects](../GLOSSARY.md) (CodeRabbit, for one) from its latest review and
-its check run on the head, and counts that reviewer's inline threads as its
-work. It does not read the findings such a reviewer puts only in the
-review's own body (CodeRabbit's nitpick and outside-the-diff sections), so a
-drive can converge with them unanswered. What it will build:
+its check run on the head. It counts inline threads and findings in every
+review body whose format the built-in reviewer profile names; CodeRabbit
+is the first. Each body finding must be answered before convergence.
 
-- **The review body's findings.** The newest review's body read as findings
-  the drive must answer, the way it reads the sticky comment's bullets: one
-  finding per entry, answerable with `answer-summary-finding.ts`, with a built-in parser
-  for CodeRabbit's sections; another reviewer's body is not parsed until it
-  has a format of its own.
+What remains:
+
 - **The CI repair command's trust boundary.** The repair step reads
   `ci.log_command` from the default branch, but `runRepoCommand` runs it
   with the pull request's checkout as its working directory, so a
