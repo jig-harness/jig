@@ -180,7 +180,9 @@ test("GitHub refuses mismatched issues and omits incomplete comments", async () 
   );
 });
 
-test("GitHub caches issue dependencies from both directions", async () => {
+const API = "https://api.github.com/repos";
+
+async function readLinked(blockedBy: () => unknown, blocking: () => unknown) {
   const tracker = githubTracker(
     {
       home: "/tmp",
@@ -190,8 +192,8 @@ test("GitHub caches issue dependencies from both directions", async () => {
     {
       async run(args) {
         if (args[0]?.endsWith("/comments")) return [[]];
-        if (args[0]?.endsWith("/blocked_by")) return [[{ number: 7 }]];
-        if (args[0]?.endsWith("/blocking")) return [[{ number: 8 }]];
+        if (args[0]?.endsWith("/blocked_by")) return blockedBy();
+        if (args[0]?.endsWith("/blocking")) return blocking();
         return { number: 123, title: "right", body: null, assignees: [] };
       },
     },
@@ -204,8 +206,43 @@ test("GitHub caches issue dependencies from both directions", async () => {
     signal: AbortSignal.timeout(1000),
   });
   expect("unavailable" in result).toBe(false);
-  if ("unavailable" in result) return;
-  expect(result.cache?.linked_issue_ids).toEqual(["#7", "#8"]);
+  if ("unavailable" in result) throw new Error("unavailable");
+  return result;
+}
+
+test("GitHub caches issue dependencies from both directions, qualifying foreign repositories", async () => {
+  const result = await readLinked(
+    () => [[{ number: 7, repository_url: `${API}/acme/service` }]],
+    () => [
+      [
+        { number: 7, repository_url: `${API}/acme/other` },
+        { number: 8, repository_url: `${API}/Acme/Service` },
+      ],
+    ],
+  );
+  expect(result.cache?.linked_issue_ids).toEqual(["#7", "acme/other#7", "#8"]);
+});
+
+test("GitHub keeps one dependency direction when the other fails", async () => {
+  const result = await readLinked(
+    () => [[{ number: 7, repository_url: `${API}/acme/service` }]],
+    () => {
+      throw new Error("boom");
+    },
+  );
+  expect(result.cache?.linked_issue_ids).toEqual(["#7"]);
+  expect(result.warnings.join("\n")).toContain("dependencies/blocking");
+});
+
+test("GitHub skips a malformed dependency and keeps its valid siblings", async () => {
+  const result = await readLinked(
+    () => [
+      [{ number: 7 }, { number: 9, repository_url: `${API}/acme/service` }],
+    ],
+    () => [[]],
+  );
+  expect(result.cache?.linked_issue_ids).toEqual(["#9"]);
+  expect(result.warnings.join("\n")).toContain("skipped");
 });
 
 test("equal issue numbers in different repositories keep separate caches", async () => {

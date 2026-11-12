@@ -162,44 +162,59 @@ async function cacheComments(
   }
 }
 
+const REPOSITORY_URL = /\/repos\/([^/]+\/[^/]+)$/;
+
+/** `#n` for an issue in the workspace repository, `owner/repo#n` for another. */
+function relatedKey(issue: unknown, repository: string): string {
+  const number = isRecord(issue) ? issue.number : undefined;
+  if (typeof number !== "number" || !Number.isSafeInteger(number) || number < 1)
+    throw new GithubTrackerError("malformed related issue");
+  const url = isRecord(issue) ? issue.repository_url : undefined;
+  const owner = typeof url === "string" ? REPOSITORY_URL.exec(url)?.[1] : null;
+  if (owner === undefined || owner === null)
+    throw new GithubTrackerError("related issue names no repository");
+  return owner.toLowerCase() === repository.toLowerCase()
+    ? `#${number}`
+    : `${owner}#${number}`;
+}
+
 /** Read both supported GitHub issue-dependency directions when available. */
 async function cacheRelationships(
   run: Run,
   endpoint: string,
+  repository: string,
   signal: AbortSignal,
   cache: ContextCache,
   warnings: string[],
 ): Promise<void> {
-  try {
-    const pages = await Promise.all(
-      ["dependencies/blocked_by", "dependencies/blocking"].map((suffix) =>
-        run([`${endpoint}/${suffix}`, "--paginate", "--slurp"], signal),
-      ),
-    );
-    const linked = new Set<string>();
-    for (const response of pages) {
+  const linked = new Set<string>();
+  for (const suffix of ["dependencies/blocked_by", "dependencies/blocking"]) {
+    try {
+      const response = await run(
+        [`${endpoint}/${suffix}`, "--paginate", "--slurp"],
+        signal,
+      );
       if (
         !Array.isArray(response) ||
         response.some((page) => !Array.isArray(page))
       )
         throw new GithubTrackerError("malformed relationship pages");
       for (const issue of response.flat()) {
-        const number = isRecord(issue) ? issue.number : undefined;
-        if (
-          !Number.isSafeInteger(number) ||
-          typeof number !== "number" ||
-          number < 1
-        )
-          throw new GithubTrackerError("malformed related issue");
-        linked.add(`#${number}`);
+        try {
+          linked.add(relatedKey(issue, repository));
+        } catch (error) {
+          warnings.push(
+            `A ${suffix} entry for ${cache.identifier} was skipped (${describe(error)})`,
+          );
+        }
       }
+    } catch (error) {
+      warnings.push(
+        `Relationships ${suffix} for ${cache.identifier} were not read in full (${describe(error)}); that direction's linked issue context is unavailable`,
+      );
     }
-    cache.linked_issue_ids = [...linked];
-  } catch (error) {
-    warnings.push(
-      `Relationships for ${cache.identifier} were not read in full (${describe(error)}); linked issue context is unavailable`,
-    );
   }
+  cache.linked_issue_ids = [...linked];
 }
 
 function assignedTo(assignees: unknown, login: string): boolean {
@@ -300,6 +315,7 @@ export function githubTracker(
         await cacheRelationships(
           run,
           endpoint,
+          repository,
           request.signal,
           cache,
           warnings,
