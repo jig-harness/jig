@@ -388,6 +388,14 @@ export const MIGRATIONS: readonly Migration[] = [
   );
   `,
   },
+  {
+    // The next session's lookup of the answer it is handed (`takeCarried`): a target's carried answers no launch has taken, newest first.
+    additive: true,
+    sql: `
+  CREATE INDEX station_answers_carry ON station_answers (repo, target, claimed_at)
+    WHERE carry IS NOT NULL AND consumed_by IS NULL;
+  `,
+  },
 ];
 
 /** The schema version this plugin writes. */

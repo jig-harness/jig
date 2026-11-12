@@ -28,7 +28,7 @@
  * The tick writes nothing to the tracker: `do-item`'s claim does.
  */
 import { renderBranchName } from "../../../skills/drive-pr/scripts/lib/pr-policy.ts";
-import { carried } from "../station-answer-store.ts";
+import { carried, returnCarried } from "../station-answer-store.ts";
 import type { IssueKeys } from "../../../skills/do-item/scripts/lib/tracker/keys.ts";
 import type {
   PoolIssue,
@@ -253,7 +253,11 @@ async function launchOne(
     mark: named.mark,
     ...carried(repo.slug, action.target, id),
   };
-  const launched = headless(await startRecord(state, record, slots), record);
+  const started = await startRecord(state, record, slots);
+  // A launch that did not start hands its answer back to the next one.
+  if (started.outcome !== "launched" && started.outcome !== "retried")
+    returnCarried(record.id, state.root);
+  const launched = headless(started, record);
   return { ...launched, detail: `${launched.detail}; ${route.detail}` };
 }
 

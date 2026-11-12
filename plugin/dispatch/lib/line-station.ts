@@ -116,6 +116,7 @@ function stalledFacts(
         kind: "stalled",
         item: action.target,
         state: text(action.evidence, "state") ?? "a dispatch state",
+        idleSince: text(action.evidence, "idleSince"),
         carriedBy: ctx.carriedBy(action.target),
       };
 }

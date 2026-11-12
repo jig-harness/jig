@@ -6,7 +6,7 @@
  * | Step | Checks first | Does |
  * | --- | --- | --- |
  * | run a follow-up again | the `followup` stage is on; no hold label; the earliest trusted marker is still the one the need names, this host's tick's, not marked done; no session holds the pull request | deletes that marker, so a later tick starts the follow-up again |
- * | record a follow-up done | the same | deletes that marker and posts a marker marked done in its place, as a follow-up run by hand leaves |
+ * | record a follow-up done | the same | marks that marker done where it stands, as a follow-up run by hand leaves it |
  * | release a pickup's claim | the `pickup` stage is on; the tracker reads; no session holds the item; the line knows of no open pull request that carries it | moves the item to the first state a pickup starts from |
  * | detach a checkout | it is idle: clean, every commit on the remote, no drive or process in it (`shared/idle-holder.ts`) | detaches it at its commit, as an open does an idle holder |
  * | re-arm a drive | the `rearm` stage is on; the dispatch labels are on; no hold label | adds the rearm label, a person's command the tick then carries out |
@@ -31,14 +31,18 @@ import {
 } from "../../shared/orca-workspace/port.ts";
 import { localContext, withLimit } from "../../shared/orca-workspace/runner.ts";
 import { listComments } from "../../shared/records/forge-claims.ts";
-import { localWriter } from "../../shared/records/writer.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { stateRoot } from "../receipts.ts";
 import { readMarkers } from "./followup-marker.ts";
 import { pullRequestLabels } from "./forge.ts";
 import { holding } from "./holding.ts";
 import { commandLabel, hasCommand } from "./labels.ts";
-import { inspectRow, removeRecordIf } from "./launches.ts";
+import {
+  inspectRow,
+  readEnded,
+  removeRecordIf,
+  writeRecord,
+} from "./launches.ts";
 import { writeCommandLabel } from "./requests.ts";
 import type { SessionsReport, Workspace } from "./runtime/port.ts";
 import type { SharedContext } from "./shared-launches.ts";
@@ -186,48 +190,24 @@ async function doneFollowup(
   pr: number,
   marker: number,
 ): Promise<Outcome<string, "refused">> {
-  const released = await checkedRelease(inputs, pr, marker);
-  if (!released.ok) return released;
-  const target = { repo: inputs.repo.slug, pr };
-  const after = `deleted marker comment ${marker}, so a later tick starts the follow-up again unless one is marked done`;
-  const claimed = await inputs.shared.records.claim(target, {
-    stage: "followup",
-    pr,
-    run: "manual",
-    action: "followup",
-    record: null,
-    host: null,
-    owner: null,
-    writer: localWriter("forge", inputs.login),
-  });
-  if (!claimed.ok)
-    return refused(
-      `${after}, but its done marker was not posted: ${claimed.failure.reason}`,
-    );
-  const seen = claimed.value;
-  if (seen.kind === "done")
-    return ok(
-      `deleted marker comment ${marker}; marker comment ${seen.id} is marked done`,
-    );
-  if (seen.kind !== "holds") {
-    // Another claim stands, or the read-back failed: the marker posted here holds nothing, so it goes.
-    if ("id" in seen) await inputs.shared.records.release(target, seen.id);
-    return refused(
-      `${after}, but its done marker did not stand (${seen.kind})`,
-    );
-  }
-  const ended = await inputs.shared.records.end(target, "followup", seen.id, {
-    state: "ended",
-    at: new Date().toISOString(),
-    exit: null,
-    outcome: "done",
-  });
+  const fault = await followupFault(inputs, pr, marker);
+  if (fault !== null) return refused(fault);
+  // The marker is marked done where it stands, so it blocks a new run throughout and is never missing between steps.
+  const ended = await inputs.shared.records.end(
+    { repo: inputs.repo.slug, pr },
+    "followup",
+    marker,
+    {
+      state: "ended",
+      at: new Date().toISOString(),
+      exit: null,
+      outcome: "done",
+    },
+  );
   return ended.ok
-    ? ok(
-        `deleted marker comment ${marker} and posted marker comment ${seen.id} marked done`,
-      )
+    ? ok(`marked marker comment ${marker} of PR #${pr} done`)
     : refused(
-        `posted marker comment ${seen.id}, but it could not be marked done: ${ended.failure.reason}`,
+        `marker comment ${marker} could not be marked done and stands as it was: ${ended.failure.reason}`,
       );
 }
 
@@ -239,9 +219,31 @@ function startState(section: DispatchSection): CanonicalState | null {
     : null;
 }
 
+/** Mark the ended pickup record `id` released, so the item is launched again; why it could not be, or `null`. */
+function releaseRecord(
+  inputs: StationInputs,
+  item: string,
+  id: string,
+): string | null {
+  const root = inputs.root ?? stateRoot();
+  const ended = readEnded(id, root);
+  if (ended === null) return `launch record ${id} is not an ended record`;
+  const { record } = ended;
+  if (record.action !== "pickup" || record.repo !== inputs.repo.slug)
+    return `launch record ${id} is not a pickup of ${inputs.repo.slug}`;
+  const members = record.batchItems?.map((i) => i.key) ?? [record.item];
+  if (!members.includes(item))
+    return `launch record ${id} is not a pickup of ${item}`;
+  if (record.released) return null;
+  record.released = true;
+  writeRecord(record, root);
+  return null;
+}
+
 async function releasePickup(
   inputs: StationInputs,
   item: string,
+  recordId: string | null,
 ): Promise<Outcome<string, "refused">> {
   const off = stageOff(inputs, "pickup");
   if (off !== null) return refused(off);
@@ -251,6 +253,17 @@ async function releasePickup(
   if (state === null)
     return refused(
       "the repository's dispatch section names no state a pickup starts from",
+    );
+  let current: Awaited<ReturnType<Tracker["getIssue"]>>;
+  try {
+    current = await tracker.getIssue(item);
+  } catch (error) {
+    return refused(`${item} did not read: ${failureText(error)}`);
+  }
+  if (current === null) return refused(`${item} is gone from the tracker`);
+  if (["completed", "canceled", "duplicate"].includes(current.state.type))
+    return refused(
+      `${item} is now ${current.state.name}, not a claim to release`,
     );
   const carried = inputs.links?.prsOf(item) ?? null;
   if (carried === null)
@@ -263,21 +276,36 @@ async function releasePickup(
     );
   const held = await sessionHolds(inputs, (w) => w.items.includes(item), item);
   if (held !== null) return refused(held);
-  try {
-    await tracker.transition(item, state, AbortSignal.timeout(60_000));
-  } catch (error) {
-    return refused(
-      `the tracker did not move ${item} to ${state}: ${failureText(error)}`,
-    );
+  const unclaimed = ["backlog", "unstarted", "triage"].includes(
+    current.state.type,
+  );
+  if (!unclaimed) {
+    try {
+      await tracker.transition(item, state, AbortSignal.timeout(60_000));
+    } catch (error) {
+      return refused(
+        `the tracker did not move ${item} to ${state}: ${failureText(error)}`,
+      );
+    }
   }
-  return ok(`moved ${item} to ${state}; a later tick picks it up afresh`);
+  const unreleased =
+    recordId === null ? null : releaseRecord(inputs, item, recordId);
+  if (unreleased !== null) return refused(`${item} is free, but ${unreleased}`);
+  return ok(
+    unclaimed
+      ? `${item} was not claimed; released its ended launch record, so a later tick picks it up afresh`
+      : `moved ${item} to ${state}; a later tick picks it up afresh`,
+  );
 }
 
 function detachCheckout(
   inputs: StationInputs,
   branch: string,
   path: string,
+  stage: string | null,
 ): Promise<Outcome<string, "refused">> {
+  const off = stage === null ? null : stageOff(inputs, stage);
+  if (off !== null) return Promise.resolve(refused(off));
   const host = withLimit(
     // The detach's own line goes to the step's outcome, not the tick's log.
     localContext(() => undefined),
@@ -335,6 +363,12 @@ async function clearRecord(
   if (row === null) return refused(`launch record ${id} is gone`);
   if (row.state.kind !== "pending" || row.record === null)
     return refused(`launch record ${id} is ${row.state.kind}, not stuck`);
+  const { action } = row.record;
+  const off =
+    action === "pickup" || action === "followup"
+      ? stageOff(inputs, action)
+      : null;
+  if (off !== null) return refused(off);
   if (retryable(row.record))
     return refused(`launch record ${id}'s launch can still be retried`);
   return removeRecordIf(id, row, root)
@@ -353,9 +387,9 @@ export function stationPorts(inputs: StationInputs): StationPorts {
     },
     rerunFollowup: (pr, marker) => rerunFollowup(inputs, pr, marker),
     doneFollowup: (pr, marker) => doneFollowup(inputs, pr, marker),
-    releasePickup: (item) => releasePickup(inputs, item),
-    detachCheckout: (_target, branch, path) =>
-      detachCheckout(inputs, branch, path),
+    releasePickup: (item, record = null) => releasePickup(inputs, item, record),
+    detachCheckout: (_target, branch, path, stage = null) =>
+      detachCheckout(inputs, branch, path, stage),
     rearmDrive: (pr) => rearmDrive(inputs, pr),
     clearRecord: (record) => clearRecord(inputs, record),
   };

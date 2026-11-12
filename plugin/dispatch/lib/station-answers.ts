@@ -42,6 +42,7 @@ import type { PendingAnswer } from "../../skills/drive-pr/scripts/lib/state/pass
 import type { LineDecision, NeedCause } from "./dashboard-contract.ts";
 import { type StationContext, stationDecision } from "./line-station.ts";
 import {
+  claimedAt,
   type ActedAnswer,
   actedAnswer,
   type AnswerRow,
@@ -133,11 +134,16 @@ export interface StationPorts {
     marker: number,
   ): Promise<Outcome<string, "refused">>;
   doneFollowup(pr: number, marker: number): Promise<Outcome<string, "refused">>;
-  releasePickup(item: string): Promise<Outcome<string, "refused">>;
+  /** `record` is the ended pickup's launch record the need names, released with the claim. */
+  releasePickup(
+    item: string,
+    record?: string | null,
+  ): Promise<Outcome<string, "refused">>;
   detachCheckout(
     target: string,
     branch: string,
     path: string,
+    stage?: string | null,
   ): Promise<Outcome<string, "refused">>;
   rearmDrive(pr: number): Promise<Outcome<string, "refused">>;
   clearRecord(record: string): Promise<Outcome<string, "refused">>;
@@ -199,14 +205,19 @@ const DISPATCHER_STEPS: Readonly<
   done: (action, ports) => followupStep(action, ports, true),
   release: (action, ports, pr) =>
     pr === null
-      ? ports.releasePickup(action.target)
+      ? ports.releasePickup(action.target, evidenceText(action, "record"))
       : notHere("only an item's claim is released"),
   detach: (action, ports) => {
     const branch = evidenceText(action, "branch");
     const path = evidenceText(action, "holder");
     return branch === null || path === null
       ? notHere("the need names no checkout to detach")
-      : ports.detachCheckout(action.target, branch, path);
+      : ports.detachCheckout(
+          action.target,
+          branch,
+          path,
+          evidenceText(action, "stage"),
+        );
   },
   rearm: (_action, ports, pr) =>
     pr === null
@@ -237,7 +248,7 @@ function sessionStep(
   if (action.cause === "followup-failed")
     return followupStep(action, ports, false);
   return prOf(action.target) === null
-    ? ports.releasePickup(action.target)
+    ? ports.releasePickup(action.target, evidenceText(action, "record"))
     : Promise.resolve(refused("only an item's pickup is started again"));
 }
 
@@ -353,6 +364,28 @@ function framedOf(
   return where === null ? null : { action, decision, digest, where };
 }
 
+/** How long a claimed answer may have no outcome before its step is taken to have been interrupted. */
+const INTERRUPTED_AFTER_MS = 10 * 60_000;
+
+/**
+ * An answer claimed long ago with no outcome: its step stopped partway (a
+ * crash, a thrown port call). Whether its effect landed cannot be told from
+ * here, so it ends refused, saying so, rather than standing unreported; a
+ * person who answers again, as a new comment, has it carried out afresh.
+ */
+function settleInterrupted(
+  row: AnswerRow,
+  prior: ActedAnswer,
+  root: string | undefined,
+): ActedAnswer {
+  const age = Date.now() - Date.parse(claimedAt(row, root) ?? "");
+  if (prior.outcome !== null || !(age > INTERRUPTED_AFTER_MS)) return prior;
+  const detail =
+    "the tick stopped partway through this step, so whether it took effect is not known; check the need's facts, and answer again to have it carried out afresh";
+  finishAnswer(row, "refused", detail, null, root);
+  return { ...prior, outcome: "refused", detail };
+}
+
 /** The step on `counted` as its row holds it, the step run now when no tick ran it yet. */
 async function actedOn(
   framed: Framed,
@@ -372,7 +405,7 @@ async function actedOn(
     option: counted.choice?.option ?? "",
   };
   const prior = actedAnswer(row, root);
-  if (prior !== null) return prior;
+  if (prior !== null) return settleInterrupted(row, prior, root);
   return claimAnswer(row, root)
     ? act(action, decision, counted, row, ports, root)
     : actedAnswer(row, root);

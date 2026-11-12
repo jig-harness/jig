@@ -146,6 +146,8 @@ export type StationFacts =
       kind: "stalled";
       item: string;
       state: string;
+      /** When the item last moved, which tells this stall from a later one in the same state; `null` when the need names none. */
+      idleSince?: string | null;
       /** The open pull requests that carry the item; `null` when the tick could not tell. */
       carriedBy: readonly number[] | null;
     }
@@ -272,7 +274,7 @@ function stalled(
     free
       ? "No session holds the item and no pull request carries its work, so starting it afresh is the way it moves again."
       : "A pull request may already carry the item's work, so a person checks it before the item starts again.",
-    `The item is in ${f.state} with no running session. ${carried}`,
+    `The item is in ${f.state}${f.idleSince == null ? "" : ` since ${f.idleSince}`} with no running session. ${carried}`,
   );
 }
 

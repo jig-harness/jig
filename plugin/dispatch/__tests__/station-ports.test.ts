@@ -20,6 +20,7 @@ function inputs(fields: Partial<StationInputs> = {}): StationInputs & {
 } {
   const moved: string[] = [];
   const tracker = {
+    getIssue: async () => ({ state: { name: "In Progress", type: "started" } }),
     transition: async (key: string, state: string) => {
       moved.push(`${key} ${state}`);
     },
@@ -60,6 +61,28 @@ describe("the steps on a person's answer", () => {
       value: expect.stringContaining("moved #513 to todo"),
     });
     expect(i.moved).toEqual(["#513 todo"]);
+  });
+
+  it("moves nothing for an item no longer in progress, and refuses one the tracker has completed", async () => {
+    const i = inputs();
+    for (const [type, moves] of [
+      ["unstarted", 0],
+      ["completed", 0],
+    ] as const) {
+      (i.tracker as unknown as { getIssue: unknown }).getIssue = async () => ({
+        state: { name: "x", type },
+      });
+      const r = await stationPorts(i).releasePickup("#513");
+      expect(r.ok).toBe(type === "unstarted");
+      expect(i.moved.length).toBe(moves);
+    }
+  });
+
+  it("refuses to detach a checkout whose launch stage is off", async () => {
+    const r = await stationPorts(
+      inputs({ enabled: new Set(["followup"]) }),
+    ).detachCheckout("#513", "513", "/srv/work/web-513", "pickup");
+    expect(reasonOf(r)).toContain("the pickup stage is off");
   });
 
   it("refuses a release the stage, a carrying pull request, an unread link or a session stops, moving nothing", async () => {

@@ -124,6 +124,22 @@ export function actedAnswer(
   return { ...found, outcome };
 }
 
+/** When the tick claimed the answer of `row`; `null` when it has not. */
+export function claimedAt(
+  row: Omit<AnswerRow, "author" | "option">,
+  root = stateRoot(),
+): string | null {
+  const found = stateDb(root)
+    .query(
+      `SELECT claimed_at FROM station_answers
+       WHERE repo = ? AND target = ? AND key = ? AND digest = ? AND answer = ?`,
+    )
+    .get(row.repo, row.target, row.key, row.digest, row.answer) as {
+    claimed_at: string;
+  } | null;
+  return found?.claimed_at ?? null;
+}
+
 function carriedOf(json: string | null): CarriedAnswer | null {
   if (json === null) return null;
   let value: unknown;
@@ -178,6 +194,15 @@ export function takeCarried(
     );
     return carriedOf(found.carry);
   });
+}
+
+/** Give back the answer taken for launch record `record`, whose launch was discarded, so the next launch of its target is handed it. */
+export function returnCarried(record: string, root = stateRoot()): void {
+  stateDb(root)
+    .query(
+      "UPDATE station_answers SET consumed_by = NULL WHERE consumed_by = ?",
+    )
+    .run(record);
 }
 
 /** The answer a person gave the decision this target's earlier session stopped on, taken for launch record `id`, as the record carries it; nothing when there is none. */

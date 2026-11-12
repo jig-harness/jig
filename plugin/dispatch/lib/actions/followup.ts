@@ -42,7 +42,7 @@ import type {
   SharedTarget,
 } from "../../../shared/records/shared.ts";
 import { localWriter } from "../../../shared/records/writer.ts";
-import { carried } from "../station-answer-store.ts";
+import { carried, returnCarried } from "../station-answer-store.ts";
 import { admittedVendor, type Slots } from "../accounts.ts";
 import { holding } from "../holding.ts";
 import { sessionIdFor } from "../session.ts";
@@ -399,10 +399,16 @@ async function claimAndLaunch(
 ): Promise<LaunchOutcome> {
   const name = slots.account.name;
   const before = outOfTime(state);
-  if (before !== null) return waits(action, before, name);
+  if (before !== null) {
+    returnCarried(record.id, state.root);
+    return waits(action, before, name);
+  }
   holdRecord(state, record, slots);
   const lost = await claim(state, repo, ctx, record);
-  if (lost !== null) return refused(action, lost, name);
+  if (lost !== null) {
+    returnCarried(record.id, state.root);
+    return refused(action, lost, name);
+  }
   const after = outOfTime(state);
   if (after === null) return headless(await launchHeld(state, record), record);
   // Past the deadline nothing launches: the claim goes back rather than wait on a later tick's replay.
@@ -414,6 +420,7 @@ async function claimAndLaunch(
     record.marker as number,
     after,
   );
+  returnCarried(record.id, state.root);
   return waits(action, gone, name);
 }
 
