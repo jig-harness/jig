@@ -221,11 +221,10 @@ function ghHeaders(stdout: string): {
   headers: Headers;
   body: string;
 } {
-  const separator = stdout.includes("\r\n\r\n") ? "\r\n\r\n" : "\n\n";
-  const headerEnd = stdout.indexOf(separator);
-  if (headerEnd === -1)
+  const separator = /\r?\n\r?\n/.exec(stdout);
+  if (separator === null || separator.index === undefined)
     return { status: 200, headers: new Headers(), body: stdout };
-  const headerLines = stdout.slice(0, headerEnd).split(/\r?\n/);
+  const headerLines = stdout.slice(0, separator.index).split(/\r?\n/);
   const statusLine = headerLines.shift() ?? "";
   const status = Number(statusLine.split(" ")[1]);
   if (!statusLine.startsWith("HTTP/") || !Number.isInteger(status))
@@ -239,7 +238,7 @@ function ghHeaders(stdout: string): {
   return {
     status,
     headers,
-    body: stdout.slice(headerEnd + separator.length),
+    body: stdout.slice(separator.index + separator[0].length),
   };
 }
 

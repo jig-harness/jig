@@ -266,6 +266,19 @@ describe("GitHub command-line retries", () => {
   }
 });
 
+it("parses GitHub CLI's mixed-newline headerless response", async () => {
+  const transport = ghTransport(async () => ({
+    code: 0,
+    stdout: 'HTTP/2.0 200 OK\n\r\n{"data":{"ok":true}}',
+    stderr: "",
+    stderrTail: "",
+    timedOut: false,
+    bufferExceeded: false,
+    spawnFailed: false,
+  }));
+  await expect(transport("query { ok }", {})).resolves.toEqual({ ok: true });
+});
+
 it("preserves failed gh response metadata", async () => {
   const transport = ghTransport(async () => ({
     code: 1,
