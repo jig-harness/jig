@@ -607,11 +607,22 @@ export function jiraClient(opts: ClientOptions): Client {
           `not a Jira issue key: ${key}`,
         );
       // No project clause: an Epic's children may live in other projects.
-      return client.search(
-        `${[`parent = ${key}`, ...(open ? [openClause(model.stateName("blocked"))] : [])].join(" AND ")}${ORDER}`,
-        `children of ${key}`,
-        signal,
-      );
+      return client
+        .search(
+          `${[`parent = ${key}`, ...(open ? [openClause(model.stateNames("blocked"))] : [])].join(" AND ")}${ORDER}`,
+          `children of ${key}`,
+          signal,
+        )
+        .then((issues) =>
+          open
+            ? issues.filter(
+                (issue) =>
+                  !["completed", "canceled", "duplicate"].includes(
+                    model.read(issue).state.type,
+                  ),
+              )
+            : issues,
+        );
     },
 
     async comments(key, signal) {

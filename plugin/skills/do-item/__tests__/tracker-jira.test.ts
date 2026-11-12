@@ -112,12 +112,14 @@ describe("Jira adapter: reading an issue", () => {
       children: [
         {
           identifier: "ENG-13",
+          nativeType: "Task",
           title: "Issue ENG-13",
           state: { name: "In Review", type: "started" },
           labels: [],
         },
         {
           identifier: "ENG-14",
+          nativeType: "Task",
           title: "Issue ENG-14",
           state: { name: "Canceled", type: "canceled" },
           labels: [],

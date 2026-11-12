@@ -321,7 +321,10 @@ export async function freshServedPickup(
 ): Promise<PoolIssue | string> {
   try {
     const issue = await tracker.poolIssue(key);
-    if (issue === null || !ready(issue, tracker.stateName("blocked")))
+    if (
+      issue === null ||
+      !ready(issue, tracker.stateName("blocked", issue.nativeType ?? null))
+    )
       return "the served item is no longer open and not started";
     if (policy.repoScope?.invalid !== undefined)
       return `the repository scope is invalid: ${policy.repoScope.invalid}`;
@@ -562,7 +565,8 @@ function leavesNode(
   const walkedEpic = issue.isEpic && issue.hasOpenChildren && !closed(issue);
   if (
     seen.has(issue.identifier) ||
-    (!ready(issue, tracker.stateName("blocked")) && !walkedEpic)
+    (!ready(issue, tracker.stateName("blocked", issue.nativeType ?? null)) &&
+      !walkedEpic)
   )
     return true;
   return (
@@ -665,7 +669,7 @@ async function placeLeaf(
   const { tracker, options, cache, view } = ctx;
   const { issue } = candidate;
   if (
-    !ready(issue, tracker.stateName("blocked")) ||
+    !ready(issue, tracker.stateName("blocked", issue.nativeType ?? null)) ||
     otherRepoLabel(issue.labels, options.repoScope) !== null
   )
     return;
@@ -884,7 +888,8 @@ async function heldReason(
     manualOps: options.manualOps,
     repoScope: options.repoScope,
     canAssign: tracker.assignUnassigned !== undefined,
-    blockedState: tracker.stateName("blocked"),
+    blockedState: (item) =>
+      tracker.stateName("blocked", item.nativeType ?? null),
   });
   // A tracker that cannot assign without replacing a concurrent assignee refuses the claim, so no launch is spent on it; each blocker is still explained.
   if (pull.pulled.length > 0 && tracker.assignUnassigned === undefined)
@@ -916,7 +921,10 @@ async function freshPulledAuthority(
   if (issue.hasOpenChildren || issue.isEpic)
     return "the pulled blocker has become an epic";
   const origin = await tracker.poolIssue(blockingFor);
-  if (origin === null || !ready(origin, tracker.stateName("blocked")))
+  if (
+    origin === null ||
+    !ready(origin, tracker.stateName("blocked", origin.nativeType ?? null))
+  )
     return `${blockingFor}, which it blocks, is no longer open and not started`;
   if (queueHold({ issue: origin, blockers: [], unblocks: 0 }, policy) !== null)
     return `${blockingFor}, which it blocks, needs a person to start`;
@@ -936,7 +944,8 @@ async function freshPulledAuthority(
         hitl: policy.hitl,
         manualOps: policy.manualOps,
         repoScope: policy.repoScope,
-        blockedState: tracker.stateName("blocked"),
+        blockedState: (item) =>
+          tracker.stateName("blocked", item.nativeType ?? null),
       }) === null &&
       (await servedParentHold(
         tracker,

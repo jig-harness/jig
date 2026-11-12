@@ -22,6 +22,8 @@ import {
   type PoolIssue,
   type Tracker,
   workingStates,
+  isWorkingIssue,
+  trackerStateMaps,
 } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
 import { failed, ok, type Outcome } from "../../../shared/outcome.ts";
 import { failureText } from "../text.ts";
@@ -66,12 +68,16 @@ async function readClaimed(
       identity,
       workingStates(tracker),
     );
-    return issues.map((i) => ({
-      key: i.identifier,
-      title: i.title,
-      url: i.url,
-      state: i.state.name,
-    }));
+    return issues
+      .filter(
+        (i) => tracker.stateMaps === undefined || isWorkingIssue(tracker, i),
+      )
+      .map((i) => ({
+        key: i.identifier,
+        title: i.title,
+        url: i.url,
+        state: i.state.name,
+      }));
   } catch (error) {
     if (isRateLimited(error)) throw error;
     return {
@@ -85,7 +91,11 @@ async function readClaimed(
 /** The tracker's names for the working states, for messages. */
 function workingNames(tracker: Tracker): string {
   return [
-    ...new Set(workingStates(tracker).map((s) => tracker.stateName(s))),
+    ...new Set(
+      trackerStateMaps(tracker)
+        .flatMap((map) => workingStates(tracker).map((state) => map[state]))
+        .filter((name) => name !== null),
+    ),
   ].join(" or ");
 }
 

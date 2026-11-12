@@ -60,6 +60,9 @@ import {
 import { afterWait } from "./tick-plan.ts";
 import { aboutTargets } from "./line.ts";
 import { endOwnClaims } from "./tick-shared.ts";
+import { stationContextOf } from "./line-station.ts";
+import { settleStationAnswers } from "./station-answers.ts";
+import { stationPorts } from "./station-ports.ts";
 import type { ActionBook } from "./failures.ts";
 import type {
   ApplyStage,
@@ -170,6 +173,25 @@ export async function actObserved(
       context.lineInputs.get(report.path),
       report.unplaced,
     ),
+    answers: () => {
+      const lineInput = context.lineInputs.get(report.path);
+      return settleStationAnswers(
+        repo.slug,
+        report,
+        stationContextOf(repo.slug, lineInput),
+        stationPorts({
+          repo,
+          enabled: opened.stages,
+          section,
+          shared: ctx,
+          login: forge.login,
+          tracker: observation.tracked.tracker,
+          issueRepository: observation.tracked.issueRepository,
+          links: lineInput?.links,
+          sessions: () => readSessions(context.runtime, repo, observation.join),
+        }),
+      );
+    },
   };
   context.pending.push({
     apply: (group) =>
@@ -221,6 +243,8 @@ interface ApplyInputs {
   book: ActionBook | null;
   /** A target's title and link as this tick's reads gave them (`aboutTargets`). */
   about: (target: string) => { title: string | null; url: string | null };
+  /** Read the answers to the needs' framed decisions and act on the ones that count (`station-answers.ts`). */
+  answers: () => Promise<void>;
 }
 
 /**
@@ -358,6 +382,8 @@ async function applyStages(
   await guard("notify", async () => {
     // A launch a busy holder refused is notified in the same tick, as a nudge left unanswered is.
     report.actions.push(...holderActions(repo.slug, report.launches));
+    // A person's answer to a need's decision is acted on by the host that owns the repository, before it is notified again.
+    if (inputs.shared.owner) await inputs.answers();
     // A host that does not own the repository never notifies for it: the owner does, once.
     if (enabled.has("notify") && inputs.shared.owner)
       await applyNotices(apply, repo, report, inputs.sessions, {

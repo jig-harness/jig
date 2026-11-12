@@ -30,11 +30,13 @@ import {
   CANONICAL_STATES,
   type Issue,
   type IssueState,
-  type StateNames,
+  type IssueSummary,
+  type StateMap,
   type Tracker,
 } from "./lib/tracker/port.ts";
 
 interface ChildOut {
+  nativeType?: string | null;
   identifier: string;
   title: string;
   state: IssueState;
@@ -79,9 +81,12 @@ const COMPLETED_STATE_NAMES = new Set([
  */
 export function stateNameEquals(
   name: string | undefined,
-  configured: string,
+  configured: string | null,
 ): boolean {
-  return (name ?? "").trim().toLowerCase() === configured.trim().toLowerCase();
+  return (
+    configured !== null &&
+    (name ?? "").trim().toLowerCase() === configured.trim().toLowerCase()
+  );
 }
 
 /**
@@ -100,7 +105,7 @@ export function stateNameEquals(
  */
 export function classifyChildState(
   state: Partial<IssueState> | undefined,
-  stateNames?: Readonly<StateNames>,
+  stateNames?: Readonly<StateMap>,
 ): "completed" | "abandoned" | "incomplete" {
   const type = (state?.type ?? "").toLowerCase();
   if (KNOWN_STATE_TYPES.has(type)) {
@@ -125,23 +130,30 @@ export function classifyChildState(
   return "incomplete";
 }
 
+/** Child facts kept in the script transport's stable output shape. */
+function childOut(c: IssueSummary): ChildOut {
+  return {
+    identifier: c.identifier,
+    title: c.title,
+    state: c.state,
+    ...(c.nativeType === undefined ? {} : { nativeType: c.nativeType }),
+    ...(c.labels === undefined
+      ? {}
+      : { labels: c.labels.map((name) => ({ name })) }),
+  };
+}
+
 /**
  * The script's JSON answer for one issue. `stateNames` are the tracker's own
  * names for the canonical states, read when a child's state has no category.
  */
 export function issueResult(
   issue: Issue,
-  stateNames?: Readonly<StateNames>,
+  stateNames?: Readonly<StateMap>,
+  childStateNames?: (child: ChildOut) => Readonly<StateMap>,
 ): Record<string, unknown> {
   // Child labels keep the `{ name }` shape `reconcile_parent_status.ts` reads.
-  const children: ChildOut[] = issue.children.map((c) => ({
-    identifier: c.identifier,
-    title: c.title,
-    state: c.state,
-    ...(c.labels === undefined
-      ? {}
-      : { labels: c.labels.map((name) => ({ name })) }),
-  }));
+  const children = issue.children.map(childOut);
   const result: Record<string, unknown> = {
     found: true,
     id: issue.id,
@@ -173,36 +185,49 @@ export function issueResult(
     project: issue.project,
   };
 
-  if (children.length > 0) {
-    const completed: ChildOut[] = [];
-    const abandoned: ChildOut[] = [];
-    const incomplete: ChildOut[] = [];
-    for (const child of children) {
-      const bucket = classifyChildState(child.state, stateNames);
-      if (bucket === "completed") completed.push(child);
-      else if (bucket === "abandoned") abandoned.push(child);
-      else incomplete.push(child);
-    }
-    // The denominator is the work that could still complete: abandoned
-    // children count in neither the numerator nor the denominator.
-    const eligible = children.length - abandoned.length;
-    result.sub_issue_analysis = {
-      total: children.length,
-      completed: completed.length,
-      abandoned: abandoned.length,
-      incomplete: incomplete.length,
-      progress_percent:
-        eligible === 0 ? 100 : Math.round((completed.length / eligible) * 100),
-      completed_issues: completed,
-      abandoned_issues: abandoned,
-      incomplete_issues: incomplete,
-      next_issue: incomplete[0] ?? null,
-      all_complete: incomplete.length === 0,
-    };
-  } else {
-    result.sub_issue_analysis = { total: 0, has_sub_issues: false };
-  }
+  result.sub_issue_analysis = analyzeChildren(
+    children,
+    stateNames,
+    childStateNames,
+  );
   return result;
+}
+
+/** Completion counts use the native workflow vocabulary of each child. */
+function analyzeChildren(
+  children: ChildOut[],
+  stateNames?: Readonly<StateMap>,
+  childStateNames?: (child: ChildOut) => Readonly<StateMap>,
+): Record<string, unknown> {
+  if (children.length === 0) return { total: 0, has_sub_issues: false };
+  const completed: ChildOut[] = [];
+  const abandoned: ChildOut[] = [];
+  const incomplete: ChildOut[] = [];
+  for (const child of children) {
+    const bucket = classifyChildState(
+      child.state,
+      childStateNames?.(child) ?? stateNames,
+    );
+    if (bucket === "completed") completed.push(child);
+    else if (bucket === "abandoned") abandoned.push(child);
+    else incomplete.push(child);
+  }
+  // The denominator is the work that could still complete: abandoned
+  // children count in neither the numerator nor the denominator.
+  const eligible = children.length - abandoned.length;
+  return {
+    total: children.length,
+    completed: completed.length,
+    abandoned: abandoned.length,
+    incomplete: incomplete.length,
+    progress_percent:
+      eligible === 0 ? 100 : Math.round((completed.length / eligible) * 100),
+    completed_issues: completed,
+    abandoned_issues: abandoned,
+    incomplete_issues: incomplete,
+    next_issue: incomplete[0] ?? null,
+    all_complete: incomplete.length === 0,
+  };
 }
 
 function notFound(
@@ -250,9 +275,19 @@ export async function getIssue(
   }
   if (issue === null) return notFound(issueId, "", keys);
   const stateNames = Object.fromEntries(
-    CANONICAL_STATES.map((s) => [s, tracker.stateName(s)]),
-  ) as StateNames;
-  return issueResult(issue, stateNames);
+    CANONICAL_STATES.map((s) => [s, tracker.stateName(s, issue)]),
+  ) as StateMap;
+  return issueResult(
+    issue,
+    stateNames,
+    (child) =>
+      Object.fromEntries(
+        CANONICAL_STATES.map((state) => [
+          state,
+          tracker.stateName(state, child.nativeType ?? null),
+        ]),
+      ) as StateMap,
+  );
 }
 
 async function main(): Promise<number> {

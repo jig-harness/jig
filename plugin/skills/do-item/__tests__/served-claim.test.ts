@@ -80,6 +80,25 @@ test("inherits a writer's assignment two levels above", async () => {
   ).toBe("claimed");
   expect(w.writes).toEqual(["assign", "start"]);
 });
+test("an inherited type with no start state refuses before assigning the child", async () => {
+  const w = world(true);
+  const read = w.tracker.getIssue;
+  w.tracker.getIssue = async (key) => {
+    const issue = await read(key);
+    return issue === null ? null : { ...issue, nativeType: "Epic" };
+  };
+  const stateName = w.tracker.stateName;
+  w.tracker.stateName = ((state, context) =>
+    state === "in_progress" && context !== undefined
+      ? null
+      : stateName(state)) as typeof stateName;
+  Object.assign(w.tracker, { adapter: "jira" });
+  expect(
+    await claimServedIssue(w.tracker, "#1", { person: "dana", ancestor: "#3" }),
+  ).toMatchObject({ outcome: "refused", why: "state" });
+  expect(w.writes).toEqual([]);
+  expect(w.holders.get("#1")).toEqual([]);
+});
 test("refuses holds and conflicting intermediate assignees without writing", async () => {
   const w = world(true);
   w.hold();

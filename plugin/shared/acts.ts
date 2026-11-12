@@ -44,6 +44,13 @@ const CLASS_ACTS: Readonly<Record<string, NeedAct>> = {
   rules: "Authorize",
   "reviewer-posture": "Authorize",
   "human-thread": "Reply",
+  // The dispatcher's own framings of a need (`decisions/station.ts`): each
+  // option is a step the tick carries out once a person chooses it.
+  "followup-recovery": "Decide",
+  "pickup-recovery": "Decide",
+  "checkout-recovery": "Decide",
+  "drive-recovery": "Decide",
+  "launch-recovery": "Decide",
 };
 
 /**
@@ -83,9 +90,10 @@ const CAUSE_ACTS: Readonly<Record<string, NeedAct>> = {
 };
 
 /**
- * The act a need asks for: a stuck launch record is investigated, a park
- * asks for its oldest decision's class's act, and any other cause for its
- * own. An unknown cause reads Decide.
+ * The act a need asks for: a stuck launch record nobody framed is
+ * investigated, a park or any need that carries a framed decision asks for
+ * its oldest decision's class's act, and any other cause for its own. An
+ * unknown cause reads Decide.
  */
 export function actOfNeed(need: {
   cause: string;
@@ -93,7 +101,8 @@ export function actOfNeed(need: {
   stuck?: boolean;
 }): NeedAct {
   if (need.stuck === true) return "Investigate";
-  if (need.cause === "parked") return actOfClass(need.decisionClass);
+  if (need.cause === "parked" || need.decisionClass != null)
+    return actOfClass(need.decisionClass);
   return ownAct(CAUSE_ACTS, need.cause) ?? "Decide";
 }
 

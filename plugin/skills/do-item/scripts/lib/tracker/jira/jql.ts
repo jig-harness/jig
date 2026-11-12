@@ -54,10 +54,28 @@ export function inProject(project: string, ...clauses: string[]): string {
  * or is the configured blocked status, which the model reads as open whatever
  * category the site files it under.
  */
-export function openClause(blocked: string | null | undefined): string {
-  return blocked === null || blocked === undefined
-    ? "statusCategory != Done"
-    : `(statusCategory != Done OR status = ${quote(blocked)})`;
+export function openClause(
+  blocked: string | null | undefined | string[],
+): string {
+  return statusClause("statusCategory != Done", blocked);
+}
+
+/** Add the workflow's blocked names to a status-category predicate. */
+function statusClause(
+  category: string,
+  blocked: string | null | undefined | string[],
+): string {
+  const names = Array.isArray(blocked)
+    ? blocked
+    : blocked == null
+      ? []
+      : [blocked];
+  if (names.length === 0) return category;
+  const clause =
+    names.length === 1
+      ? `status = ${quote(names[0] as string)}`
+      : `status in ${stringList(names)}`;
+  return `(${category} OR ${clause})`;
 }
 
 /**
@@ -65,10 +83,10 @@ export function openClause(blocked: string | null | undefined): string {
  * configured blocked status, which the model reads as started whatever
  * category the site files it under.
  */
-export function startedClause(blocked: string | null | undefined): string {
-  return blocked === null || blocked === undefined
-    ? 'statusCategory = "In Progress"'
-    : `(statusCategory = "In Progress" OR status = ${quote(blocked)})`;
+export function startedClause(
+  blocked: string | null | undefined | string[],
+): string {
+  return statusClause('statusCategory = "In Progress"', blocked);
 }
 
 /**

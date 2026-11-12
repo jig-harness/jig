@@ -44,11 +44,13 @@ import {
   type OptionalState,
   type RequiredState,
   type StateNames,
+  type StateMap,
 } from "./port.ts";
 import { TrackerConfigError } from "./config-error.ts";
 import { type GitHubSettings, parseGitHubSettings } from "./github/settings.ts";
 import { gitHubModel } from "./github/model.ts";
 import { type JiraSettings, parseJiraSettings } from "./jira/settings.ts";
+import { jiraStateMaps } from "./jira/state-maps.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
 import {
   entryLabels,
@@ -148,9 +150,10 @@ const JIRA_CLOSED: ReadonlyArray<CanonicalState> = [
  * active child as parked.
  */
 function refuseAmbiguousStates(
-  states: StateNames,
+  states: StateMap,
   adapter: string,
   jira: JiraSettings,
+  at = "issue_tracker.states",
 ): void {
   const r = jira.resolutions;
   const resolved =
@@ -172,11 +175,28 @@ function refuseAmbiguousStates(
         (sharing.includes("pr_open") && !sharing.includes("in_review")))
     )
       throw new TrackerConfigError(
-        `issue_tracker.states.${s}`,
-        `issue_tracker.states.${sharing[0]} and issue_tracker.states.${s} both name '${name}'; each state needs its own name`,
+        `${at}.${s}`,
+        `${at}.${sharing[0]} and ${at}.${s} both name '${name}'; each state needs its own name`,
       );
     seen.set(key, sharing);
   }
+}
+
+/** Validate the repository map and each Jira type's effective workflow. */
+function refuseWorkflowAmbiguity(
+  states: StateMap,
+  adapter: string,
+  jira: JiraSettings,
+): void {
+  refuseAmbiguousStates(states, adapter, jira);
+  if (adapter !== "jira") return;
+  for (const [type, map] of Object.entries(jiraStateMaps(states, jira)))
+    refuseAmbiguousStates(
+      map,
+      adapter,
+      jira,
+      `issue_tracker.jira.states_by_type.${type}`,
+    );
 }
 
 /**
@@ -400,7 +420,7 @@ export function parseTrackerConfig(
     facets,
     section.jira,
   );
-  refuseAmbiguousStates(states, adapter, jira);
+  refuseWorkflowAmbiguity(states, adapter, jira);
   refuseSharedLabels(adapter, states, github);
   return {
     adapter,

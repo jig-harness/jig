@@ -65,7 +65,7 @@ import { markerMain } from "./marker.ts";
 import { probeMain } from "./probe-command.ts";
 import { readReceipt, receiptPaths, type TickReceipt } from "./receipts.ts";
 import { upgradeLine } from "../runtime/upgrade-record.ts";
-import { refusedResultMain, resultMain } from "./result.ts";
+import { framedResultMain, refusedResultMain, resultMain } from "./result.ts";
 import { runTick } from "./tick.ts";
 
 /** Exit when another tick holds the lock. */
@@ -217,6 +217,11 @@ const result = command(
     until: optional(
       option("--until", string({ metavar: "TIME" }), {
         description: message`With waits: when the tracker's rate limit resets (ISO 8601); the item starts again after it.`,
+      }),
+    ),
+    decision: optional(
+      option("--decision", string({ metavar: "FILE" }), {
+        description: message`With failed: the framed decision the pass stopped on, a parked-decision/v1 record as JSON in FILE, or - for standard input; checked as a park's is.`,
       }),
     ),
   }),
@@ -525,10 +530,42 @@ function refusedResult(
   });
 }
 
+/** `failed --decision <file|->`: the decision's text read, then recorded with the result. */
+async function decisionResult(
+  args: Extract<Subcommand, { action: "result" }> & { decision: string },
+): Promise<number> {
+  if (
+    [args.pr, args.none, args.until].some((v) => v !== undefined) ||
+    args.refused.length > 0 ||
+    args.keys.length > 0 ||
+    args.reasons.length > 0
+  ) {
+    console.error(
+      "jig dispatch result: --decision is a failed pass's; it takes no --pr, --none, --until or --refused",
+    );
+    return 2;
+  }
+  let text: string;
+  try {
+    text =
+      args.decision === "-"
+        ? await Bun.stdin.text()
+        : await Bun.file(args.decision).text();
+  } catch (error) {
+    console.error(
+      `jig dispatch result: the decision could not be read from ${args.decision === "-" ? "standard input" : args.decision}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return 2;
+  }
+  return framedResultMain(args.record, args.token, args.outcome, text);
+}
+
 /** Forward a session result and its mutually exclusive handoff arguments. */
 function sessionResultMain(
   args: Extract<Subcommand, { action: "result" }>,
-): number {
+): number | Promise<number> {
+  if (args.decision !== undefined)
+    return decisionResult({ ...args, decision: args.decision });
   if (
     [args.pr, args.none, args.until].filter((v) => v !== undefined).length > 1
   ) {

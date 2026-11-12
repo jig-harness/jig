@@ -21,6 +21,7 @@
 import {
   CLOSED_STATE_TYPES,
   type CanonicalState,
+  type Issue,
   type Tracker,
 } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
@@ -56,7 +57,8 @@ export async function writeCommandLabel(
 export type AssignTracker = Pick<
   Tracker,
   "user" | "assignees" | "assign" | "transition" | "getIssue"
->;
+> &
+  Partial<Pick<Tracker, "stateName">>;
 
 /** What a request says of its move once it has happened, for a failure after it. */
 function movedNote(moved: boolean): string {
@@ -96,7 +98,7 @@ export async function assignPickup(
   key: string,
   identity: string,
   move: CanonicalState | null,
-  moveFor: (stateName: string) => CanonicalState | null,
+  moveFor: (stateName: string, issue: Issue) => CanonicalState | null,
 ): Promise<Outcome<void, "refused">> {
   let moved = false;
   try {
@@ -119,12 +121,17 @@ export async function assignPickup(
         "refused",
         `${key} is now ${now.state.name}, a closed state, so it was neither moved nor assigned to ${identity}`,
       );
-    if (moveFor(now.state.name) !== move)
+    if (moveFor(now.state.name, now) !== move)
       return failed(
         "refused",
         `${key} is now ${now.state.name}, which changes the move this request planned, so it was neither moved nor assigned to ${identity}; send it again`,
       );
     if (move !== null) {
+      if (tracker.stateName?.(move, now) === null)
+        return failed(
+          "refused",
+          `${key}'s workflow has no ${move} state, so it was neither moved nor assigned to ${identity}`,
+        );
       await tracker.transition(key, move);
       moved = true;
     }
