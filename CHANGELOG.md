@@ -394,6 +394,19 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.214.2] - 2026-11-12
+
+### Fixed
+
+- `drive-pr`'s foreground wait (`foreground-wait.ts launch`) now returns only
+  once its runner has started the command, or settled without starting it.
+  It used to return while the runner was still starting up, so a
+  cancellation of the pass's recorded runners that began right after the
+  launch could end the runner just before it started the command, which then
+  ran on with nothing supervising it. On Windows a drive cancels a pass's
+  runners that way when the pass ends or is stopped; on other systems the
+  stop signals the pass's process group, which the command is in.
+
 ## [0.214.1] - 2026-11-12
 
 ### Fixed
@@ -7442,7 +7455,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.214.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.214.2...HEAD
+[0.214.2]: https://github.com/jig-harness/jig/compare/v0.214.1...v0.214.2
 [0.214.1]: https://github.com/jig-harness/jig/compare/v0.214.0...v0.214.1
 [0.214.0]: https://github.com/jig-harness/jig/compare/v0.213.1...v0.214.0
 [0.213.1]: https://github.com/jig-harness/jig/compare/v0.213.0...v0.213.1
