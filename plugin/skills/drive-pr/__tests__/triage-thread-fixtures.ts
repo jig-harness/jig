@@ -112,7 +112,7 @@ case "$*" in
   *"reviewThreads(first:"*)
     [ -f "$F/threads-fail" ] && { echo "gh-stub: simulated thread list failure" >&2; exit 1; }
     if [ -f "$F/threads.json" ]; then cat "$F/threads.json"; else
-      printf '%s' '{"data":{"node":{"path":"src/a.ts","pullRequest":{"reviewThreads":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[]}}}}}'
+      printf '%s' '{"data":{"viewer":{"login":"maintainer"},"node":{"path":"src/a.ts","pullRequest":{"reviewThreads":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[]}}}}}'
     fi
     exit 0 ;;
   *"node(id:"*)
@@ -138,6 +138,7 @@ interface CommentFixture {
   authorType?: "User" | "Bot";
   body: string;
   url?: string;
+  createdAt?: string;
 }
 
 let fixtureSeq = 0;
@@ -368,6 +369,8 @@ export function writeThreads(
         author: { login: c.author, __typename: c.authorType ?? "User" },
         authorAssociation: c.authorAssociation,
         body: c.body,
+        createdAt: c.createdAt ?? "2025-12-01T00:00:00Z",
+        url: `https://example.invalid/pull/1#discussion_${t.id}`,
       })),
     },
   }));
@@ -378,7 +381,10 @@ export function writeThreads(
   writeFileSync(
     join(dir, "threads.json"),
     JSON.stringify({
-      data: { node: { path, pullRequest: { reviewThreads } } },
+      data: {
+        viewer: { login: "maintainer" },
+        node: { path, pullRequest: { reviewThreads } },
+      },
     }),
   );
 }

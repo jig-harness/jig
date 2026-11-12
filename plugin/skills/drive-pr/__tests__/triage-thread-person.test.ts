@@ -75,7 +75,7 @@ describe("triage-thread.ts and a person's thread on the same file", () => {
     const r = runTriage(["PRRT_bot", "999"], ACCEPTED, dir, stateDir);
     expectSpawnExit(r, 5);
     expect(postedCount(dir)).toBe(0);
-    expect(r.stderr).toContain(`resolved thread at ${FILE}`);
+    expect(r.stderr).toContain(`resolved thread PRRT_person`);
     expect(r.stderr).toContain("these models stay configurable");
     expect(r.stderr).not.toContain("applied in abc1234");
   });
@@ -86,6 +86,24 @@ describe("triage-thread.ts and a person's thread on the same file", () => {
     seedRuling(stateDir, "fix-now");
     expectSpawnExit(runTriage(["PRRT_bot", "999"], ACCEPTED, dir, stateDir), 0);
     expect(postedCount(dir)).toBe(1);
+  });
+
+  it("refuses under a fix-now ruling recorded before a person spoke again on the file", () => {
+    const { dir, stateDir } = writeFixtureDir();
+    botFinding(dir, [
+      {
+        ...ruling,
+        comments: [
+          {
+            ...person("Ruling, then a reversal."),
+            createdAt: "2026-02-01T00:00:00Z",
+          },
+        ],
+      },
+    ]);
+    seedRuling(stateDir, "fix-now");
+    expectSpawnExit(runTriage(["PRRT_bot", "999"], ACCEPTED, dir, stateDir), 5);
+    expect(postedCount(dir)).toBe(0);
   });
 
   it("still refuses under an escalate ruling, which parks the thread instead", () => {

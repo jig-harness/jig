@@ -8,11 +8,18 @@ import {
   type ReviewThread,
 } from "../scripts/lib/person-threads.ts";
 
-const comment = (type: string, association: string, body: string) => ({
-  login: type === "Bot" ? "review-bot" : "maintainer",
+const comment = (
+  type: string,
+  association: string,
+  body: string,
+  login = type === "Bot" ? "review-bot" : "maintainer",
+) => ({
+  login,
   type,
   association,
   body,
+  at: "2026-01-01T00:00:00Z",
+  url: "https://example.invalid/c",
 });
 
 function thread(over: Partial<ReviewThread>): ReviewThread {
@@ -40,6 +47,7 @@ describe("personsWords", () => {
           comment("Bot", "OWNER", "A bot's note."),
         ],
       }),
+      "maintainer",
     );
     expect(words.map((w) => w.body)).toEqual([
       "**accepted** is what I want here.",
@@ -54,7 +62,26 @@ describe("personsWords", () => {
         comment("User", "OWNER", "**rejected** — intended."),
       ],
     });
-    expect(personsWords(t)).toEqual([]);
+    expect(personsWords(t, "maintainer")).toEqual([]);
+  });
+});
+
+describe("personsWords and the drive's login", () => {
+  it("reads another login's outcome-prefixed reply as a person's verdict", () => {
+    const t = thread({
+      comments: [
+        comment("Bot", "NONE", "Finding."),
+        comment(
+          "User",
+          "MEMBER",
+          "**rejected** — keep these configurable.",
+          "other",
+        ),
+      ],
+    });
+    expect(personsWords(t, "maintainer").map((w) => w.login)).toEqual([
+      "other",
+    ]);
   });
 });
 
@@ -78,11 +105,24 @@ describe("personThreadsOn", () => {
     comments: [comment("Bot", "NONE", "x")],
   });
 
+  it("counts only words posted after a ruling's time, and a time it cannot read as after", () => {
+    const old = thread({
+      id: "PRRT_old",
+      comments: [comment("User", "OWNER", "Old.")],
+    });
+    const found = (since: string) =>
+      personThreadsOn([old], "PRRT_self", "a.md", "maintainer", since);
+    expect(found("2026-02-01T00:00:00Z")).toEqual([]);
+    expect(found("2025-12-01T00:00:00Z")).toHaveLength(1);
+    expect(found("not a time")).toHaveLength(1);
+  });
+
   it("lists the other threads on the file a person spoke on, and those it could not read whole", () => {
     const found = personThreadsOn(
       [mine, ruling, elsewhere, long, quiet],
       "PRRT_self",
       "a.md",
+      "maintainer",
     );
     expect(found.map((p) => [p.truncated, p.words.map((w) => w.body)])).toEqual(
       [
@@ -97,6 +137,7 @@ describe("pageFrom", () => {
   const page = (pageInfo: unknown, nodes: unknown[] = []) =>
     JSON.stringify({
       data: {
+        viewer: { login: "maintainer" },
         node: {
           path: "a.md",
           pullRequest: { reviewThreads: { pageInfo, nodes } },
@@ -107,6 +148,7 @@ describe("pageFrom", () => {
   it("reads a last page, and a page that names its next cursor", () => {
     expect(pageFrom(page({ hasNextPage: false, endCursor: null }))).toEqual({
       path: "a.md",
+      viewer: "maintainer",
       threads: [],
       endCursor: null,
     });
@@ -134,6 +176,23 @@ describe("pageFrom", () => {
     expect(pageFrom(page({ hasNextPage: true, endCursor: "" }))).toBeNull();
     expect(pageFrom(page({}))).toBeNull();
     expect(pageFrom(page({ hasNextPage: false }, [{ id: "T" }]))).toBeNull();
+    const whole = {
+      id: "T",
+      path: "a.md",
+      isResolved: false,
+      comments: { pageInfo: { hasNextPage: false }, nodes: [null] },
+    };
+    expect(pageFrom(page({ hasNextPage: false }, [whole]))).toBeNull();
+    expect(
+      pageFrom(
+        page({ hasNextPage: false }, [
+          { ...whole, comments: { nodes: [] }, path: null },
+        ]),
+      ),
+    ).toBeNull();
+    expect(
+      pageFrom(JSON.stringify({ data: { node: { pullRequest: {} } } })),
+    ).toBeNull();
   });
 });
 
@@ -141,18 +200,34 @@ describe("refusalLines", () => {
   it("names each thread's state, place and a person's words, then what to do next", () => {
     const lines = refusalLines("PRRT_bot", "a.md", [
       {
+        id: "PRRT_p",
+        url: "https://example.invalid/p",
         line: 3,
         isResolved: true,
         truncated: false,
-        words: [comment("User", "OWNER", "Keep\nit.")],
+        words: [
+          comment(
+            "User",
+            "OWNER",
+            `Keep\nit. ${"x".repeat(400)} Never disable it.`,
+          ),
+        ],
       },
-      { line: null, isResolved: false, truncated: true, words: [] },
+      {
+        id: "PRRT_q",
+        url: "",
+        line: null,
+        isResolved: false,
+        truncated: true,
+        words: [],
+      },
     ]);
-    expect(lines[1]).toBe(
-      '  - resolved thread at a.md:3: maintainer: "Keep it."',
+    expect(lines[1]).toContain(
+      "resolved thread PRRT_p (https://example.invalid/p) at a.md:3: maintainer:",
     );
+    expect(lines[1]).toEndWith('Never disable it."');
     expect(lines[2]).toBe(
-      "  - open thread at a.md: more than 100 comments, read it on the pull request",
+      "  - open thread PRRT_q at a.md: more than 100 comments, read it on the pull request",
     );
     expect(lines.join("\n")).toContain("review arbiter");
   });
