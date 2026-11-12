@@ -493,6 +493,32 @@ describe("review hardening", () => {
     ).toBe(true);
   });
 
+  test("a marker after description text on a nested bullet's own line is refused", () => {
+    expect(
+      readDeclaration(`- Parent.\n  - Child. **Consumer action:** ${ACTION}`)
+        .ok,
+    ).toBe(false);
+  });
+
+  test("a periodless none in another emphasis is refused; ordinary prose is not", () => {
+    expect(strict("Change. *Consumer action:* none")).not.toEqual([]);
+    expect(strict("Change. **Consumer action** none")).not.toEqual([]);
+    expect(strict("The **Consumer action** none of us wrote.")).toEqual([]);
+  });
+
+  test("a retraction is refused where released ids cannot be read", () => {
+    const retract = branchRules(
+      [
+        {
+          file: "changes/x.md",
+          items: ["- Change. **Consumer action:** retracts 1.2.3#ffffffff."],
+        },
+      ],
+      { required: true, released: null, unverifiable: true },
+    );
+    expect(retract).not.toEqual([]);
+  });
+
   test("a bold term or an escaped example is not a nearly written marker", () => {
     expect(
       strict("The **Consumer action** required by this release is shown."),

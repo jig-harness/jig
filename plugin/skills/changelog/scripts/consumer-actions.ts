@@ -91,7 +91,7 @@ const NEAR_MARKER =
  * read that way.
  */
 const NEAR_DECLARATION = new RegExp(
-  `${UNESCAPED}(\\*{1,2}|_{1,2})\\s*consumer[\\s_-]*actions?\\s*:?\\s*\\1\\s*:?\\s+(?:(?:required|advised)\\s+at\\s+\\S|none\\.|retracts\\s+\\S)`,
+  `${UNESCAPED}(\\*{1,2}|_{1,2})\\s*consumer[\\s_-]*actions?\\s*:?\\s*\\1\\s*:?\\s+(?:(?:required|advised)\\s+at\\s+\\S|none(?:\\.|\\s*$)|retracts\\s+\\S)`,
   "gi",
 );
 
@@ -322,14 +322,14 @@ function readBody(body: string): Outcome<Declaration> {
 
 /**
  * Whether the marker at `at` belongs to a nested list item rather than the
- * entry itself: it follows a nested bullet on its own line, or sits on a
+ * entry itself: it sits on the line of a nested bullet, or sits on a
  * later line indented into the content of a nested bullet above it.
  */
 function nested(raw: string, at: number): boolean {
   const lineStart = raw.lastIndexOf("\n", at) + 1;
   if (
     lineStart > 0 &&
-    /^\s*(?:[-*+]|\d+[.)])\s+$/.test(raw.slice(lineStart, at))
+    /^\s*(?:[-*+]|\d+[.)])\s+/.test(raw.slice(lineStart, at))
   )
     return true;
   // The content columns of the nested bullets enclosing each line.
@@ -503,6 +503,8 @@ export interface BranchRules {
   required: boolean;
   /** The ids of the released actions, when the repository derives a record; null when it does not. */
   released: Set<string> | null;
+  /** The format's released entries cannot be read for ids, so no retraction can be checked and none is accepted. */
+  unverifiable?: boolean;
 }
 
 /** What one entry of a branch's note is refused for under `rules`; null when nothing. */
@@ -516,6 +518,8 @@ function branchProblem(item: string, rules: BranchRules): string | null {
       ? "a breaking entry says what a consumer does: add `**Consumer action:**` after its description, `none.` included (changelog.consumer_actions is on)"
       : null;
   const { declaration } = read.value;
+  if (declaration.kind === "retracts" && rules.unverifiable)
+    return `retracts ${declaration.id}, which this changelog format cannot confirm: its released entries carry no readable consumer-action ids`;
   return declaration.kind === "retracts" &&
     rules.released !== null &&
     !rules.released.has(declaration.id)
