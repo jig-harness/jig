@@ -78,7 +78,7 @@ function assignments(nodes: unknown[], key: string): Assignment[] {
   });
 }
 
-function refuseForeign(
+export function refuseForeign(
   client: Client,
   ref: { owner: string; name: string },
   key: string,
@@ -96,40 +96,42 @@ function loginsOf(nodes: unknown, key: string): string[] {
   );
 }
 
+/** Whether `login` can write to the home repository: an admin, maintainer or writer. */
+export async function canWrite(
+  client: Client,
+  login: string,
+): Promise<boolean> {
+  const data = record(
+    await client.transport(
+      COLLABORATOR,
+      {
+        owner: client.home.owner,
+        name: client.home.name,
+        login,
+      },
+      undefined,
+      true,
+    ),
+    "data",
+  );
+  const collaborators = record(
+    record(data.repository, "repository").collaborators,
+    "repository.collaborators",
+  );
+  if (!Array.isArray(collaborators.edges))
+    throw new GitHubApiError("repository.collaborators: edges missing");
+  return collaborators.edges.some((e) => {
+    const edge = record(e, "collaborator");
+    return (
+      same(str(record(edge.node, "collaborator.node").login, "login"), login) &&
+      WRITERS.has(String(edge.permission))
+    );
+  });
+}
+
 export function assignerOperations(
   client: Client,
 ): Pick<Tracker, "assignedBy"> {
-  async function writes(login: string): Promise<boolean> {
-    const data = record(
-      await client.transport(
-        COLLABORATOR,
-        {
-          owner: client.home.owner,
-          name: client.home.name,
-          login,
-        },
-        undefined,
-        true,
-      ),
-      "data",
-    );
-    const collaborators = record(
-      record(data.repository, "repository").collaborators,
-      "repository.collaborators",
-    );
-    if (!Array.isArray(collaborators.edges))
-      throw new GitHubApiError("repository.collaborators: edges missing");
-    return collaborators.edges.some((e) => {
-      const edge = record(e, "collaborator");
-      return (
-        same(
-          str(record(edge.node, "collaborator.node").login, "login"),
-          login,
-        ) && WRITERS.has(String(edge.permission))
-      );
-    });
-  }
-
   return {
     async assignedBy(key, assignee) {
       const ref = client.ref(key);
@@ -182,7 +184,7 @@ export function assignerOperations(
       return {
         id: latest.actor,
         name: latest.actor,
-        trusted: await writes(latest.actor),
+        trusted: await canWrite(client, latest.actor),
       } satisfies Assigner;
     },
   };

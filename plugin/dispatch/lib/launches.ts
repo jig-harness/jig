@@ -32,11 +32,9 @@
  * | no claim | pending |
  *
  * Pending, alive and unknown records hold their stage and their account's
- * slot; an unknown or a pending record whose launch cannot be retried
- * holds them until a person clears it (`jig dispatch clear`). An
- * interactive session's record is also read beside its agent
- * (`actions/pickup-hold.ts`): while its wrapper is alive, the record ends
- * when the runtime reports the agent finished.
+ * slot; an unknown or a pending record whose launch cannot be retried holds
+ * them until a person clears it (`jig dispatch clear`). An interactive
+ * session's record also ends with its agent (`actions/pickup-hold.ts`).
  *
  * What Control adds while the record runs and when it ends: a drive's
  * unresolved-thread count per ledger round (`samples`, the
@@ -150,6 +148,8 @@ export interface LaunchRecord {
   ancestorEpic?: string;
   /** For a pickup of a blocker pulled forward: the served item it blocks, whose authority the claim re-reads. */
   blockingFor?: string;
+  /** For a pickup from the ready pool: the launch re-reads it as one, so a later assignment cannot move it to the assigned lane. */
+  pooled?: boolean;
   batchItems?: import("./queue-batch.ts").BatchItem[];
   /** For a headless pass: whether the tick admitted it on a host opted in to Codex's bypass. A Codex pass carries the bypass only when this is `true`; the wrapper does not read the setting itself, since it can read another user layer from the tick's. */
   codexBypass?: boolean;

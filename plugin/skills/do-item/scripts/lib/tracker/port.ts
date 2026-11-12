@@ -360,9 +360,11 @@ export interface PoolIssue {
 
 /**
  * Who made an issue's current assignment, as `assignedBy` reads it from the
- * tracker's history. `trusted` is set when that user may start work on the
- * team's issues: a non-guest member of the team (Linear), or someone with
- * write access to the repository (GitHub).
+ * tracker's history, or its latest move into its current state, as
+ * `stateChangedBy` reads it. `trusted` is set when that user may start work
+ * on the team's issues: a non-guest member of the team (Linear), someone
+ * with write access to the repository (GitHub), or a person's Atlassian
+ * account that can be assigned issues in the project (Jira).
  */
 export interface Assigner {
   id: string;
@@ -673,6 +675,13 @@ export interface Tracker {
    * alike. Absent when the adapter applies none.
    */
   readonly configKey?: string;
+  /**
+   * Identifies the settings that decide who made an item ready and what
+   * blocks it (a GitHub board, Jira's link types): a reading kept under one
+   * key is valid for another tracker with the same key only. Absent when
+   * the adapter has none.
+   */
+  readonly readinessKey?: string;
   /** The tracker's own name for a canonical state; `null` for an optional state left unset. */
   stateName: StateNameOf;
   /** Every effective workflow map, including the repository default; absent for one workflow. */
@@ -818,6 +827,25 @@ export interface Tracker {
    * assignment, so an unknown assigner is never read as a trusted one.
    */
   assignedBy(key: string, assignee?: string): Promise<Assigner>;
+  /**
+   * This team's open issues assigned to nobody in one of `states`, inside
+   * the tracker's pool scope (`issue_tracker.jira.pool_issue_types` on
+   * Jira): the candidates of a ready pool. An empty `states` throws.
+   * Optional: a tracker without it has no pool.
+   */
+  unassignedIssues?(
+    states: ReadonlyArray<CanonicalState>,
+    options?: FacetReadOptions,
+  ): Promise<PoolIssue[]>;
+  /**
+   * Who made the issue's latest move into the state it is in now, from the
+   * tracker's history; the issue's creator when the history holds no move
+   * into it, since the issue was then created there. Throws with the reason
+   * when the history cannot be read in full, or the state is one whose
+   * moves the tracker does not record, so an unknown mover is never read as
+   * a trusted one. Optional, beside `unassignedIssues`.
+   */
+  stateChangedBy?(key: string): Promise<Assigner>;
   /**
    * One page of this team's open issues not in triage and not yet started
    * that lack a value for a facet of `missing` (no size asked of an epic) or

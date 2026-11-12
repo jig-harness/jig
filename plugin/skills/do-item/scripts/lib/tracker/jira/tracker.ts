@@ -54,6 +54,7 @@ import {
 } from "../requests.ts";
 import { markdownToAdf } from "./adf.ts";
 import { assignerOperations } from "./assigner.ts";
+import { stateChangeOperations } from "./state-change.ts";
 import { blockedFieldsBody } from "./blocked-fields.ts";
 import { claimOperations } from "./claim.ts";
 import type { Client, IssueTypeMeta, RelationLink } from "./client.ts";
@@ -312,6 +313,7 @@ export function jiraTracker(client: Client): Tracker {
     configKey: JSON.stringify(settings.statesByType),
     team: project,
     instance: client.site,
+    readinessKey: JSON.stringify(settings.linkTypes),
     stateName: model.stateName,
     stateMaps: model.stateMaps,
 
@@ -437,6 +439,7 @@ export function jiraTracker(client: Client): Tracker {
 
     ...reportOperations(client, stores),
     ...assignerOperations(client),
+    ...stateChangeOperations(client),
     ...claimOperations(client),
 
     async createIssue(issue) {
