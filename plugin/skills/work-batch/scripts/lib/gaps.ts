@@ -174,8 +174,9 @@ const show = (labels: readonly string[]) =>
 
 /**
  * What a gap's labels already say will hold it back once it has what it
- * lacks. Only label-visible blockers: an unlabelled epic shows as a bare
- * row, so a bare row means "no known blocker", not "batchable".
+ * lacks. Only blockers the issue itself shows: its labels, and an epic
+ * issue type when the adapter reports one. An epic with neither shows as a
+ * bare row, so a bare row means "no known blocker", not "batchable".
  */
 function gapBlockers(gap: LabellingGap, policy: BatchPolicy): string[] {
   const { labels } = gap;
