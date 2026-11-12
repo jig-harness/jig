@@ -136,7 +136,10 @@ describe("drives-read-only.ts --json", () => {
 
   it("declines a database one schema behind, naming why, and leaves it unchanged", async () => {
     const { stateDir, db } = drivenClone();
-    edit(db, `PRAGMA user_version = ${DRIVE_DB_VERSION - 1}`);
+    edit(
+      db,
+      `DELETE FROM db_migrations WHERE version = ${DRIVE_DB_VERSION}; PRAGMA user_version = ${DRIVE_DB_VERSION - 1}`,
+    );
     const before = readFileSync(db);
     const r = await list(stateDir);
     expectSpawnExit(r, 4);
