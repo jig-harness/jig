@@ -1578,9 +1578,10 @@ make, use the entry's term instead.
   (`review.reviewer_evidence: review_object`,
   [terminal states](plugin/skills/drive-pr/references/terminal-states.md#a-reviewer-that-submits-pull-request-reviews)).
 - **Summary-only finding** — a review finding that appears only in the
-  reviewer's *sticky comment* because it could not be anchored to a diff line,
-  so it creates no thread. A loop that counted only threads would report
-  *convergence* with a real finding unanswered; the drive enumerates these and
+  reviewer's *sticky comment*, or in the body of its *review object*, because
+  it could not be anchored to a diff line, so it creates no thread. A loop
+  that counted only threads would report *convergence* with a real finding
+  unanswered; the drive enumerates these and
   answers each with a top-level comment
   ([drive-pr](plugin/skills/drive-pr/SKILL.md)).
 - **Precision bar** — the pre-committed threshold of measured precision an

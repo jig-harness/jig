@@ -167,8 +167,11 @@ it has nothing new to say about. A run titled `Review paused…` or `Review
 skipped…` stops the drive with `REVIEW_SKIPPED` (`22`), naming which, except
 a draft skip, which on a draft converges on its own work (the drive marks it
 Ready and waits for the review that summons) and on a Ready PR waits for the
-review. CodeRabbit is the
-built-in case: `review.reviewer_app: coderabbitai` alone sets all of it
+review. The findings such a reviewer puts only in its review's body
+(CodeRabbit's outside-diff, nitpick, duplicate and follow-up comments) are summary-only
+findings, answered like a sticky's, for a reviewer whose built-in profile
+names a body format (today CodeRabbit); another review-object reviewer's
+bodies are not read. CodeRabbit is the built-in case: `review.reviewer_app: coderabbitai` alone sets all of it
 ([terminal-states.md § A reviewer that submits pull-request reviews](references/terminal-states.md#a-reviewer-that-submits-pull-request-reviews)).
 
 `arm-drive.ts` refuses a configuration whose reviewer evidence the drive

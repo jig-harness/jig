@@ -806,6 +806,15 @@ const FORGE: RecordKind[] = [
     ],
     version: 0,
   },
+  {
+    name: "coderabbit-review-body",
+    medium: "forge",
+    owner: `${DRIVE}lib/review-body.ts`,
+    foreign: "CodeRabbit",
+    at: "the sections of findings in the body of CodeRabbit's pull-request reviews, each entry marked with its id",
+    markers: ["cr-comment:v"],
+    version: 0,
+  },
 ];
 
 const TRACKER: RecordKind[] = [

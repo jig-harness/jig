@@ -20,6 +20,13 @@
 export const REVIEWER_EVIDENCE = ["sticky", "review_object"] as const;
 export type ReviewerEvidence = (typeof REVIEWER_EVIDENCE)[number];
 
+/**
+ * The review-body formats Jig reads findings from (`review-body.ts`): the
+ * findings a review-object reviewer puts in its review's body and in no
+ * thread.
+ */
+export type ReviewBodyFormat = "coderabbit";
+
 /** What Jig knows of one reviewer. */
 export interface ReviewerProfile {
   /** Its check run's name, as an anchored pattern. */
@@ -27,19 +34,23 @@ export interface ReviewerProfile {
   evidence: ReviewerEvidence;
   /** Whether it skips draft pull requests by default. */
   skipsDrafts: boolean;
+  /** The format of its review bodies' findings; none, its bodies are not read. */
+  bodyFormat?: ReviewBodyFormat;
 }
 
 /**
  * The built-in profiles. CodeRabbit (`coderabbitai`, posting as
  * `coderabbitai[bot]`): one check run named `CodeRabbit` per head, reviews
- * as pull-request review objects, and draft pull requests skipped unless its
- * own configuration says otherwise.
+ * as pull-request review objects, draft pull requests skipped unless its
+ * own configuration says otherwise, and its outside-diff, nitpick, duplicate
+ * and follow-up comments in its reviews' bodies.
  */
 export const REVIEWER_PROFILES: Readonly<Record<string, ReviewerProfile>> = {
   coderabbitai: {
     checkPattern: "^CodeRabbit$",
     evidence: "review_object",
     skipsDrafts: true,
+    bodyFormat: "coderabbit",
   },
 };
 
