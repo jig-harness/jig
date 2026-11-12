@@ -394,6 +394,27 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.221.0] - 2026-11-12
+
+### Added
+
+- The workspace launcher supports GitHub Issues beside Linear, including issue numbers, keys and web addresses, with repository routing and separate context caches for each GitHub repository.
+
+### Fixed
+
+- Launcher cache files and Herdr kickoff claims use `issue-123` for a GitHub key such as `#123`, while preserving team keys.
+- The Jira adapter's error when no credential is set says that
+  `JIRA_BEARER_TOKEN`, and the token `JIRA_TOKEN_COMMAND` prints, may be an
+  OAuth access token or an API token with scopes, as the configuration
+  reference says. It said an OAuth access token only, so someone holding a
+  scoped API token read it as the wrong kind of credential.
+- When Jira refuses the adapter's read of the account it acts as, or says a
+  token's scope does not match, the error now names the scopes a scoped or
+  OAuth token needs for that read: the classic `read:jira-user`, or all of
+  the granular `read:application-role:jira`, `read:group:jira`,
+  `read:user:jira` and `read:avatar:jira`. Before, it said only to check the
+  credential.
+
 ## [0.220.0] - 2026-11-12
 
 ### Added
@@ -7612,7 +7633,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.220.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.221.0...HEAD
+[0.221.0]: https://github.com/jig-harness/jig/compare/v0.220.0...v0.221.0
 [0.220.0]: https://github.com/jig-harness/jig/compare/v0.219.0...v0.220.0
 [0.219.0]: https://github.com/jig-harness/jig/compare/v0.218.1...v0.219.0
 [0.218.1]: https://github.com/jig-harness/jig/compare/v0.218.0...v0.218.1

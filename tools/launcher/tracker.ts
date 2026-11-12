@@ -14,6 +14,8 @@ import type { ContextCache, FallbackEnvironment } from "./cache.ts";
 export interface ReadRequest {
   /** The issue key, e.g. `ENG-123`. */
   issue: string;
+  /** Original argument, before tracker normalization. */
+  originalIssue?: string;
   /** The label group whose value names the repository. */
   repoLabelGroup: string;
   /** Filled into the cache where the read leaves a field empty. */
@@ -54,6 +56,10 @@ export type AssignResult =
 export interface Tracker {
   /** The name `tracker:` uses. */
   readonly name: string;
+  /** Validate and normalize a tracker-specific number, key or URL. */
+  normalizeIssue?(input: string): string;
+  /** Separate repositories whose issue numbers share the same key. */
+  cacheNamespace?(input: string): string;
   /** What the tracker passed in the launcher's environment. */
   readonly launchEnvironment: FallbackEnvironment;
   /**
@@ -64,6 +70,7 @@ export interface Tracker {
 }
 
 export interface TrackerOptions {
+  repos?: Record<string, Record<string, unknown>>;
   home: string;
   env: Record<string, string | undefined>;
 }

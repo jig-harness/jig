@@ -808,10 +808,7 @@ the changelog by hand.
 A plan file kept in the repository, beside Linear, GitHub Issues and Jira.
 It waits on the open decisions below. For every adapter to work end to end,
 the deferral step (item 10) uses the [tracker interface](../GLOSSARY.md)'s
-operations. The workspace launcher and the
-Herdr kickoff open Linear issues only: a GitHub key (`#123`) needs a
-launcher tracker for GitHub Issues and the key's file name (`issue-123`)
-where they name a cache file or a claim.
+operations.
 [plugin/EXTENDING.md](../plugin/EXTENDING.md#issue-tracker) lists what
 still assumes Linear.
 

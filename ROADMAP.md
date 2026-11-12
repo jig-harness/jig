@@ -267,7 +267,7 @@ change.
 ### 12. More tracker adapters
 
 A plan file kept in the repository, beside Linear, GitHub Issues and
-Jira, and the workspace launcher learns to open GitHub issues.
+Jira.
 
 ### 27. Work types: depth by kind of work
 

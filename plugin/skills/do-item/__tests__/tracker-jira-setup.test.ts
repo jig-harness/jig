@@ -461,7 +461,7 @@ describe.each(MODES)("Jira transport: $name", (mode) => {
       failure: {
         code: "no-credential",
         reason:
-          "no Jira credential: set JIRA_BEARER_TOKEN to an OAuth access token, JIRA_TOKEN_COMMAND to a command that prints one, or JIRA_EMAIL and JIRA_API_TOKEN to an Atlassian account's email and API token",
+          "no Jira credential: set JIRA_BEARER_TOKEN to an OAuth access token or an API token with scopes, JIRA_TOKEN_COMMAND to a command that prints one, or JIRA_EMAIL and JIRA_API_TOKEN to an Atlassian account's email and API token",
       },
     });
     expect(
