@@ -200,10 +200,17 @@ records that reconsideration, and it is settled before stage 1 starts.
   its repository, key and generation: a key is unique only within its
   repository, so the hub stores a record under host, incarnation,
   repository, kind and key. That tuple names the record, not one update of
-  it: a rewrite in place carries a higher generation and replaces the stored
-  copy, a report of a generation the hub already holds counts once, and one
-  of a lower generation is refused as a stale replay and never moves the
-  acknowledgement past an update the hub did not keep. The host
+  it. Each host stamps every report with a replication revision, a counter
+  per incarnation that advances whenever the host observes a body that
+  differs from the one it last reported for that record, whatever that
+  record's own generation says: the generation Jig writes is one past the
+  highest the writer read, so two writers can leave different bodies at the
+  same generation, and the revision is what orders what the one host saw.
+  The hub replaces the stored copy with a report of a higher revision, counts
+  a report of a revision it already holds once, and refuses one of a lower
+  revision as a stale replay that never moves the acknowledgement past an
+  update the hub did not keep. The record's own generation is stored for
+  display and never decides the replacement. The host
   keeps a durable checkpoint of what the hub acknowledged, per incarnation,
   and a tick resends everything after it; after `hello` shows a hub with no
   memory of the host's incarnation (a deleted database) the host backfills
