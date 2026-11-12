@@ -187,11 +187,16 @@ async function endUnansweringRunner(
       resolve(true);
     });
   });
+  // Without a freeze the runner may spawn the command after a capture, so
+  // nothing can be ended safely: leave the runner as the command's supervisor
+  // (it checks the cancel request again after it spawns) and report the
+  // uncertainty. An exited runner no longer proves who owns its pid.
   const freeze = pid !== undefined && process.platform !== "win32";
-  if (freeze && !exited()) runner.kill("SIGSTOP");
-  const tree = pid === undefined ? null : await progress.captureRunnerTree();
-  if (tree === null) {
-    if (freeze && !exited()) runner.kill("SIGCONT");
+  if (!freeze || exited()) return { witnessed: false, started: false };
+  runner.kill("SIGSTOP");
+  const tree = await progress.captureRunnerTree();
+  if (tree === null || exited()) {
+    if (!exited()) runner.kill("SIGCONT");
     return { witnessed: false, started: false };
   }
   runner.kill("SIGKILL");

@@ -165,14 +165,14 @@ test("a launch that ran out of budget ends a command the runner started but had 
     { stdio: "ignore" },
   );
   let tree: Awaited<ReturnType<typeof captureProcessTree>> = null;
-  const deadline = Date.now() + 20_000;
-  while (Date.now() < deadline) {
-    tree = await captureProcessTree(runner.pid as number);
-    if (tree && tree.length > 1) break;
-    await Bun.sleep(50);
-  }
-  expect(tree?.length).toBeGreaterThan(1);
   try {
+    const deadline = Date.now() + 20_000;
+    while (Date.now() < deadline) {
+      tree = await captureProcessTree(runner.pid as number);
+      if (tree && tree.length > 1) break;
+      await Bun.sleep(50);
+    }
+    expect(tree?.length).toBeGreaterThan(1);
     const status = await handOffToRunner(
       runner,
       { registry: undefined, entry: "x" },
