@@ -67,6 +67,9 @@ describe("dashboard.front in the machine file", () => {
     expect(frontOf("https://[fd7a:115c::1]:8443/")).toBe(
       "https://[fd7a:115c::1]:8443/",
     );
+    expect(frontOf("https://[::ffff:100.64.0.7]/")).toBe(
+      "https://[::ffff:6440:7]/",
+    );
   });
 
   it("refuses an address that is not https:, or that could carry a credential, and never repeats a credential", () => {
@@ -84,6 +87,7 @@ describe("dashboard.front in the machine file", () => {
       ["https://host.tailnet.ts.net/#token=SECRET", "carries a fragment"],
       ["https://host.tailnet.ts.net/#", "carries a fragment"],
       ["https://host.tailnet.ts.net/a;token=SECRET", "in its path"],
+      ["https://host.tailnet.ts.net/a%3Btoken=SECRET", "in its path"],
       ["https://host.tailnet.ts.net/%3Ftoken=SECRET", "in its path"],
       ["https://host.tailnet.ts.net/x%3ftoken=SECRET", "in its path"],
       ["https://host.tailnet.ts.net/%23token=SECRET", "in its path"],
@@ -249,6 +253,27 @@ describe("what --access prints", () => {
     expect(report.stderr.join("\n")).toContain("on this host only");
     expect(report.stderr.join("\n")).toContain("dashboard.front");
     expect(report.stderr.join("\n")).not.toContain("credential");
+  });
+
+  it("describes an old reader from its printed URL while renewal is pending", () => {
+    const oldReader = ok({ url: TOKEN_URL, configuration: "old" });
+    const report = accessReport(
+      machine(TOKENLESS),
+      oldReader,
+      TTY,
+      MACHINE_PATH,
+    );
+    expect(report.stderr.join("\n")).toContain("private-HTTP fallback");
+    expect(report.stderr.join("\n")).toContain("credential");
+    expect(report.stderr.join("\n")).not.toContain("on this host only");
+  });
+
+  it("reports a configured front whose reader is awaiting renewal", () => {
+    const oldReader = ok({ url: TOKEN_URL, configuration: "old" });
+    const report = accessReport(withFront, oldReader, PIPE, MACHINE_PATH);
+    expect(report.stderr.join("\n")).toContain(
+      "does not match the current configuration",
+    );
   });
 
   it("with a machine file that does not validate, prints the reader's URL as before and why the file is refused", () => {

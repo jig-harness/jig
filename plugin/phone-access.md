@@ -106,9 +106,9 @@ without it.
    `allowed_hosts` alone. Another front or another name needs its own
    entry, and stays out otherwise. `front` is the address the front
    publishes in step 3, with the port you choose there; the dashboard does not
-   serve on it, it only prints it for the phone (step 5). It is refused
+   serve on it, it only prints its URL-canonical form for the phone (step 5). It is refused
    unless it is an `https:` address with no user name, password, query or
-   fragment. It is printed exactly as written, so it must not carry a token
+   fragment. Its canonical form must not carry a token
    in its path either. The reader stops when its configuration changes and the
    timer starts it again (allow up to two minutes); check with `--status`.
 

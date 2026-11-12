@@ -7,7 +7,7 @@
  * on, which is never drawn as a code.
  */
 import type { Outcome } from "../shared/outcome.ts";
-import { readAccess } from "./dashboard-reader.ts";
+import { readAccess, readerSettings } from "./dashboard-reader.ts";
 import {
   type MachineConfig,
   type MachineConfigCode,
@@ -82,8 +82,9 @@ function hostHint(front: string, allowedHosts: readonly string[]): string[] {
 function frontReport(
   front: string,
   allowedHosts: readonly string[],
-  reader: Outcome<{ url: string }, string>,
+  reader: Outcome<{ url: string; configuration?: string }, string>,
   terminal: AccessTerminal,
+  configurationMatches: boolean,
 ): AccessReport {
   const code = drawnCode(front, terminal);
   const stderr = [...code.note, ...hostHint(front, allowedHosts)];
@@ -91,16 +92,18 @@ function frontReport(
     stderr.push(
       `The dashboard reader behind the front is not confirmed running (${reader.failure.reason}), so the address may show no page yet; check it with jig dispatch dashboard --status.`,
     );
+  else if (!configurationMatches)
+    stderr.push(
+      "The dashboard reader does not match the current configuration and is waiting for renewal; check it with jig dispatch dashboard --status.",
+    );
   return { stdout: [front, ...code.lines], stderr, code: 0 };
 }
 
 /** Why no code is drawn and how a phone gets a token-free address, by whether the reader asks for a token. */
-function fallbackNote(
-  requireToken: boolean,
-  printed: boolean,
-  machinePath: string,
-): string[] {
-  if (!requireToken)
+function fallbackNote(url: string | null, machinePath: string): string[] {
+  const printed = url !== null;
+  const parsed = url === null ? null : new URL(url);
+  if (parsed?.search === "")
     return [
       ...(printed
         ? [
@@ -127,17 +130,28 @@ function fallbackNote(
  */
 export function accessReport(
   machine: Outcome<MachineConfig | null, MachineConfigCode>,
-  reader: Outcome<{ url: string }, string>,
+  reader: Outcome<{ url: string; configuration?: string }, string>,
   terminal: AccessTerminal,
   machinePath: string,
 ): AccessReport {
   const config = machine.ok ? machine.value : null;
+  const configurationMatches =
+    reader.ok &&
+    (reader.value.configuration === undefined ||
+      (config?.dashboardListen != null &&
+        reader.value.configuration ===
+          readerSettings(
+            config.dashboardListen,
+            config.dashboardRequireToken,
+            config.dashboardAllowedHosts,
+          )));
   if (config?.dashboardFront != null)
     return frontReport(
       config.dashboardFront,
       config.dashboardAllowedHosts,
       reader,
       terminal,
+      configurationMatches,
     );
   const report: AccessReport = reader.ok
     ? { stdout: [reader.value.url], stderr: [], code: 0 }
@@ -145,11 +159,7 @@ export function accessReport(
   if (!machine.ok) report.stderr.push(machine.failure.reason);
   else
     report.stderr.push(
-      ...fallbackNote(
-        machine.value?.dashboardRequireToken ?? true,
-        reader.ok,
-        machinePath,
-      ),
+      ...fallbackNote(reader.ok ? reader.value.url : null, machinePath),
     );
   return report;
 }

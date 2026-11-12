@@ -41,6 +41,12 @@ function inV6(address: string): boolean {
   if (lower === "::1") return true;
   const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(lower);
   if (mapped !== null) return inV4(mapped[1] as string);
+  const mappedHex = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(lower);
+  if (mappedHex !== null) {
+    const high = Number.parseInt(mappedHex[1] as string, 16);
+    const low = Number.parseInt(mappedHex[2] as string, 16);
+    return inV4(`${high >> 8}.${high & 0xff}.${low >> 8}.${low & 0xff}`);
+  }
   const first = Number.parseInt(lower.split(":")[0] || "0", 16);
   return (first & 0xfe00) === 0xfc00 || (first & 0xffc0) === 0xfe80;
 }

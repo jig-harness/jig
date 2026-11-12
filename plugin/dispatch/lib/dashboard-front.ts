@@ -20,7 +20,7 @@ function reachableFront(host: string): boolean {
 }
 
 /** A path that spells a query or a fragment escaped, or a parameter (`;`), which could carry a token. */
-const PATH_TOKEN = /%3f|%23|;/i;
+const PATH_TOKEN = /%3f|%23|%3b|;/i;
 
 /** What a front's address must hold to, each with why an address that does not is refused. */
 export const FRONT_RULES: ReadonlyArray<

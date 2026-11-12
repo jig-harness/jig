@@ -2238,13 +2238,11 @@ make, use the entry's term instead.
   [MDN's secure-context definition](https://developer.mozilla.org/en-US/docs/Web/Security/Defenses/Secure_Contexts).
 - **Private-network front** — a layer that publishes a
   machine's *dispatch dashboard* from its loopback address to a private network, with a
-  certificate and the viewer's identity, so a phone can open the page;
-  called a front for short. Tailscale Serve is its first implementation: it
-  names the viewer in a request header, which the dashboard trusts only on a
-  socket that only Tailscale's daemon reaches, and carries each person's
-  scope from the private network's access grants, which the dashboard applies to
-  every answer. A reverse proxy with an identity
-  provider, or an *SSH* tunnel, does the same job. A front never publishes
+  certificate, so a phone can open the page; called a front for short.
+  Tailscale Serve is its first implementation: it can name the viewer in a
+  request header, but the dashboard does not use that identity for
+  per-repository access control. A reverse proxy with an identity provider,
+  or an *SSH* tunnel, does the same job. A front never publishes
   to the open internet, and it does not let the dashboard write. See
   [design/dispatch-dashboard.md](design/dispatch-dashboard.md#a-front-on-a-private-network).
 - **Shared control plane** — one service that would serve many hosts: it

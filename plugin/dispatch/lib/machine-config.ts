@@ -37,7 +37,7 @@
  *   listen: 100.64.0.7:8765
  *   require_token: true     # false only with a loopback listen: a front authenticates
  *   allowed_hosts: []       # host names that front forwards under (tokenless only)
- *   front: https://host.example.ts.net:8443/   # that front's token-free address (tokenless only)
+ *   # front: https://host.example.ts.net:8443/ # that front's token-free address (tokenless only)
  * records:
  *   shared: forge
  * send: true
@@ -865,7 +865,7 @@ function dashboardAllowedHosts(value: unknown): Checked<string[]> {
  * The address a front publishes for a phone to open: an absolute `https:`
  * URL with no user name, password, query or fragment, and no escaped query
  * or parameter in its path, whose host is a name or a private address other
- * than loopback and link-local. It is printed as configured, so it must not
+ * than loopback and link-local. It is printed in URL-canonical form, so it must not
  * carry a token anywhere. A name is taken as written: Jig never resolves it,
  * nor infers how far it reaches. Only a tokenless dashboard has a front to
  * name.
