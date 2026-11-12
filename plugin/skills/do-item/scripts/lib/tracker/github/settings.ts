@@ -14,9 +14,9 @@ import { isRecord } from "../../../../../../shared/guards.ts";
 import { TrackerConfigError } from "../config-error.ts";
 import { PRIORITY_NAMES, type PriorityName } from "../facets/values.ts";
 import {
-  firstRepeat,
   nameList,
   nonEmpty,
+  refuseSharedNames,
   settingsSection,
 } from "../settings-fields.ts";
 
@@ -130,13 +130,12 @@ function priorityLabelsOf(v: unknown): Record<PriorityName, string[]> {
       );
     labels[key as PriorityName] = nameList(name, at, "label");
   }
-  const names = PRIORITY_NAMES.flatMap((p) => labels[p]);
-  const twice = firstRepeat(names);
-  if (twice !== undefined)
-    throw new TrackerConfigError(
-      field("priority_labels"),
-      `${field("priority_labels")} names '${twice}' twice; each priority needs its own label`,
-    );
+  refuseSharedNames(
+    field("priority_labels"),
+    PRIORITY_NAMES.map((p) => [p, labels[p]] as const),
+    "label",
+    new Set(Object.keys(v ?? {})),
+  );
   return labels;
 }
 

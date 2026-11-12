@@ -13,7 +13,13 @@ import { everyName, valueMap } from "../scripts/lib/tracker/facets/values.ts";
 import { gitHubModel } from "../scripts/lib/tracker/github/model.ts";
 import { jiraModel } from "../scripts/lib/tracker/jira/model.ts";
 import { parseJiraSettings } from "../scripts/lib/tracker/jira/settings.ts";
-import { JIG_TAXONOMY } from "./github-fixtures.ts";
+import {
+  gitHub,
+  issueNode,
+  JIG_TAXONOMY,
+  oneIssue,
+  repoLabels,
+} from "./github-fixtures.ts";
 import { issue, jira, page, routes } from "./jira-fixtures.ts";
 
 /** A site's eight priorities, onto Jig's four. */
@@ -132,9 +138,11 @@ describe("issue_tracker.jira.priorities: several names per priority", () => {
   it("refuses a name repeated across two priorities", () => {
     expect(() =>
       parseJiraSettings({
-        priorities: { urgent: ["Blocker", "High"], high: "High" },
+        priorities: { urgent: ["Blocker", "High"] },
       }),
-    ).toThrow("issue_tracker.jira.priorities names 'High' twice");
+    ).toThrow(
+      "issue_tracker.jira.priorities gives urgent and high the one priority 'High' (high's default)",
+    );
     expect(() =>
       parseJiraSettings({ priorities: { low: ["Lowest", "lowest"] } }),
     ).toThrow("names 'lowest' twice");
@@ -205,7 +213,9 @@ describe("issue_tracker.jira.resolutions: several names per closed state", () =>
       parseJiraSettings({
         resolutions: { canceled: ["Won't Do", "Duplicate"] },
       }),
-    ).toThrow("issue_tracker.jira.resolutions names 'Duplicate' twice");
+    ).toThrow(
+      "gives canceled and duplicate the one resolution 'Duplicate' (duplicate's default)",
+    );
   });
 
   it("lets the closed states share one status only while every resolution differs", () => {
@@ -214,7 +224,9 @@ describe("issue_tracker.jira.resolutions: several names per closed state", () =>
     ).not.toThrow();
     expect(() =>
       jiraConfig({ resolutions: { canceled: ["Won't Do", "Done"] } }, ONE_DONE),
-    ).toThrow("issue_tracker.jira.resolutions names 'Done' twice");
+    ).toThrow(
+      "gives done and canceled the one resolution 'Done' (done's default)",
+    );
   });
 });
 
@@ -295,6 +307,19 @@ describe("a type map with several names per type", () => {
     expect(size.map?.toTracker("large")).toBe("5");
   });
 
+  it("refuses a listed type label issue_tracker.types gives another type", () => {
+    const section = (labels: Record<string, unknown>) => ({
+      types: { feature: ["feat", "story"], bug: ["bug"] },
+      facets: { type: { store: "label", labels } },
+    });
+    expect(() =>
+      typeOf(section({ feature: ["feat", "story"], bug: "bug" })),
+    ).not.toThrow();
+    expect(() =>
+      typeOf(section({ feature: "feat", bug: ["bug", "story"] })),
+    ).toThrow("keeps type bug in the label 'story'");
+  });
+
   it("refuses a name repeated across two types", () => {
     expect(() =>
       typeOf({
@@ -347,6 +372,98 @@ describe("issue_tracker.github.priority_labels: several labels per priority", ()
           github: { priority_labels: { urgent: ["P0", "P1"], high: "P1" } },
         },
       }),
-    ).toThrow("names 'P1' twice");
+    ).toThrow("gives urgent and high the one label 'P1'");
+  });
+});
+
+describe("today's priority keys beside a facet entry, both with lists", () => {
+  it("accepts the same list, and refuses a list that differs in an alias or its order", () => {
+    const rest = { high: "P1", medium: "P2", low: "P3" };
+    const github = (urgent: unknown, labels: unknown) =>
+      parseTrackerConfig({
+        issue_tracker: {
+          github: { priority_labels: { urgent, ...rest } },
+          facets: {
+            priority: { store: "label", labels: { urgent: labels, ...rest } },
+          },
+        },
+      });
+    expect(
+      github(["P0", "sev:1"], ["P0", "sev:1"]).github.priorityLabels.urgent,
+    ).toEqual(["P0", "sev:1"]);
+    for (const labels of [["sev:1", "P0"], "P0", ["P0", "sev:2"]])
+      expect(() => github(["P0", "sev:1"], labels)).toThrow(
+        "keep one, or make them agree",
+      );
+    const jiraBoth = (priorities: unknown, values: unknown) =>
+      jiraConfig(
+        { priorities: { urgent: priorities } },
+        {
+          facets: { priority: { store: "native", values: { urgent: values } } },
+        },
+      );
+    expect(
+      jiraBoth(["Blocker", "Highest"], ["blocker", "highest"]).jira.priorities
+        .urgent,
+    ).toEqual(["blocker", "highest"]);
+    expect(() => jiraBoth(["Blocker", "Highest"], "Blocker")).toThrow(
+      "keep one, or make them agree",
+    );
+  });
+
+  it("refuses a name the facet entry gives one priority and today's key another", () => {
+    expect(() =>
+      jiraConfig(
+        { priorities: { high: "Major" } },
+        {
+          facets: {
+            priority: {
+              store: "native",
+              values: { urgent: ["Blocker", "Major"] },
+            },
+          },
+        },
+      ),
+    ).toThrow(
+      "issue_tracker.facets.priority.values gives urgent and high the one priority 'Major'",
+    );
+    expect(() =>
+      jiraConfig(
+        {},
+        {
+          facets: {
+            priority: {
+              store: "native",
+              values: { urgent: ["Blocker", "High"] },
+            },
+          },
+        },
+      ),
+    ).toThrow("gives urgent and high the one tracker value 'high'");
+  });
+});
+
+describe("a GitHub priority change through a listed label", () => {
+  it("takes an alias label off and writes the first label", async () => {
+    const { t, calls } = gitHub(
+      (c) => {
+        if (c.op === "TrackerIssue")
+          return oneIssue(issueNode({ number: 5, labels: ["sev:1", "bug"] }));
+        if (c.op === "TrackerLabels") return repoLabels("bug", "sev:1", "P1");
+        return {};
+      },
+      {
+        issue_tracker: {
+          github: { priority_labels: { urgent: ["P0", "sev:1"], high: "P1" } },
+        },
+      },
+    );
+    await t.updateIssue("#5", { priority: 2 });
+    expect(
+      calls.find((c) => c.op === "TrackerAddLabels")?.variables.labelIds,
+    ).toEqual(["LA_2_P1"]);
+    expect(
+      calls.find((c) => c.op === "TrackerRemoveLabels")?.variables.labelIds,
+    ).toEqual(["LA_1_sev:1"]);
   });
 });

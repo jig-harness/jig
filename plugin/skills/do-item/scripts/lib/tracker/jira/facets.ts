@@ -253,7 +253,7 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
       const hits = everyName(s.map).filter(
         ([, t]) => t.trim() !== "" && Number(t) === n,
       );
-      if (hits.length > 1) return null;
+      if (new Set(hits.map(([v]) => v)).size > 1) return null;
     }
     const exact = s.map?.fromTracker(raw) ?? null;
     if (

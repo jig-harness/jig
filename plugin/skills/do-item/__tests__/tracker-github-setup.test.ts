@@ -116,7 +116,10 @@ describe("issue_tracker.github", () => {
       { priority_labels: { p1: "x" } },
       "priority_labels.p1 is not a priority",
     );
-    refuse({ priority_labels: { urgent: "P", high: "p" } }, "names 'p' twice");
+    refuse(
+      { priority_labels: { urgent: "P", high: "p" } },
+      "gives urgent and high the one label 'p'",
+    );
     refuse({ colour: "red" }, "issue_tracker.github.colour is not a field");
   });
 

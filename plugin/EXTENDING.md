@@ -224,15 +224,17 @@ are named by canonical keys (`in_progress`, `in_review`, …) that
     ignoring case; a status no name matches is read by its status category
     (To Do: not started, In Progress: started, Done: completed). `done`,
     `canceled` and `duplicate` are told apart by their status, or, where
-    they share one, by the resolution `issue_tracker.jira.resolutions` names,
-    which the adapter sets on the transition into it when the transition's
+    they share one, by the resolution `issue_tracker.jira.resolutions` names
+    (any of a state's listed resolutions), the first of which the adapter
+    sets on the transition into it when the transition's
     screen has a resolution field. A move takes one transition, the one out
     of the current status into a status of the state's name, and is refused,
     naming the transitions there are, when none or several match. A
     workflow suits this with a status per state the repository uses,
     transitions into In Progress, In Review and Done that any status can
     take, and a resolution field on the Done transition's screen;
-  - priority is a Jira priority (`issue_tracker.jira.priorities`); a Jira
+  - priority is a Jira priority (`issue_tracker.jira.priorities`, any of a
+    priority's listed names read as it, the first written); a Jira
     issue always has one, so moving an issue to no priority is refused, and
     one with another priority reads as none;
   - type is labels, the issue type, or a custom field, and size labels or a

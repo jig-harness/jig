@@ -36,6 +36,7 @@ import {
   firstRepeat,
   nameList,
   nonEmpty,
+  refuseSharedNames,
   settingsSection,
 } from "../settings-fields.ts";
 import { PRIORITY_NAMES, type PriorityName } from "../github/settings.ts";
@@ -205,12 +206,12 @@ function namesOf<K extends string>(
       );
     out[key as K] = nameList(value, at, what);
   }
-  const twice = firstRepeat(keys.flatMap((k) => out[k]));
-  if (twice !== undefined)
-    throw new TrackerConfigError(
-      field(name),
-      `${field(name)} names '${twice}' twice; each needs its own name`,
-    );
+  refuseSharedNames(
+    field(name),
+    keys.map((k) => [k, out[k]] as const),
+    what,
+    new Set(Object.keys(v ?? {})),
+  );
   return out;
 }
 

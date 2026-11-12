@@ -129,7 +129,7 @@ export function checkLinearFacets(facets: Facets): void {
   if (sized.size > 0 && sized.size < size.values.length)
     throw new TrackerConfigError(
       `${at}.values`,
-      `${at}.values names the estimate of ${named.map(([v]) => v).join(", ")} but not of ${size.values.filter((v) => !named.some(([n]) => n === v)).join(", ")}; name every size's estimate, or none to map the sizes onto the team's scale in order`,
+      `${at}.values names the estimate of ${[...sized].join(", ")} but not of ${size.values.filter((v) => !sized.has(v)).join(", ")}; name every size's estimate, or none to map the sizes onto the team's scale in order`,
     );
   for (const [v, t] of named)
     if (

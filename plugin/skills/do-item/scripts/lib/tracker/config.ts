@@ -60,7 +60,7 @@ import {
   resolveFacets,
 } from "./facets/config.ts";
 import { fold, namesIn, PRIORITY_NAMES } from "./facets/values.ts";
-import { firstRepeat } from "./settings-fields.ts";
+import { firstRepeat, refuseSharedNames } from "./settings-fields.ts";
 import { DEFAULT_TAXONOMY } from "../../../../file-issue/scripts/lib/config.ts";
 
 export interface TrackerConfig {
@@ -315,6 +315,12 @@ function withFacetPriorities(
       );
     priorities[p] = names;
   }
+  refuseSharedNames(
+    "issue_tracker.facets.priority.values",
+    PRIORITY_NAMES.map((p) => [p, priorities[p]] as const),
+    "priority",
+    new Set([...Object.keys(values).map(fold), ...Object.keys(declared)]),
+  );
   return { ...jira, priorities };
 }
 

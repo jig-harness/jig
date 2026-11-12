@@ -586,8 +586,8 @@ function refuseSharedLabels(
 }
 
 /**
- * Refuse type labels named here that `issue_tracker.types`, also set, gives
- * other labels: the two would disagree about which label is a type's.
+ * Refuse a type label named here that `issue_tracker.types`, also set, does
+ * not give that type: the two would disagree about which label is a type's.
  */
 function refuseDisagreement(
   type: ResolvedFacet,
@@ -602,8 +602,10 @@ function refuseDisagreement(
   )
     return;
   for (const [value, labels] of type.labels ?? []) {
-    const label = labels[0] as string;
-    if (!today(value).some((l) => fold(l) === fold(label)))
+    const label = labels.find(
+      (label) => !today(value).some((l) => fold(l) === fold(label)),
+    );
+    if (label !== undefined)
       throw new TrackerConfigError(
         at("type"),
         `${at("type")} keeps type ${value} in the label '${label}', but issue_tracker.types marks it with ${today(value).join(", ")}; keep one, or make them agree`,
