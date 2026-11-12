@@ -273,6 +273,74 @@ describe("jig dispatch --apply picks up assigned items", () => {
     expect(orcaCalls(w, "terminal", "create")).toHaveLength(1);
   });
 
+  it("notifies a pass that framed its question with its result, as a need carrying that decision", async () => {
+    const w = fixture();
+    const id = String(launches(await applyTick(w, false))[0]?.record);
+    const token = readRecord(id, dispatchState(w))?.token ?? "";
+    await waitFor("the pass", () => claudeRuns(w).length === 1);
+    writeFileSync(join(w.dir, "claude-said"), "The scouts are done.\n");
+    writeFileSync(join(w.dir, "claude-exit"), "1");
+    await waitFor("the exit", () => exitWritten(w, id));
+    const decision = {
+      schema: "parked-decision/v1",
+      class: "scope",
+      call: {
+        id: "a",
+        question: "Should the export keep the old column?",
+        options: [
+          {
+            id: "keep",
+            name: "Keep it",
+            summary: "The column stays.",
+            pay: ["A wider export."],
+          },
+          {
+            id: "drop",
+            name: "Drop it",
+            summary: "The column goes.",
+            pay: ["Readers of it break."],
+          },
+        ],
+        recommended: "keep",
+        why: "Readers of the column still exist.",
+      },
+      steps: [],
+      alreadyDone: "The scouts ran.",
+    };
+    const file = join(w.root, "decision.json");
+    writeFileSync(file, JSON.stringify(decision));
+    expectSpawnExit(
+      await w.dispatch(["result", id, token, "failed", "--decision", file]),
+      0,
+    );
+
+    const after = await applyTick(w, false);
+    expect(launches(after)).toEqual([]);
+    expect(after.repos[0]?.actions).toContainEqual(
+      expect.objectContaining({
+        target: "#12",
+        cause: "pickup-question",
+        evidence: expect.objectContaining({
+          question: "Should the export keep the old column?",
+        }),
+      }),
+    );
+    const answer = await w.dispatch(["line", "--json"]);
+    expectSpawnExit(answer, 0);
+    const parsed = JSON.parse(answer.stdout) as {
+      value: { line: LineSnapshot };
+    };
+    const need = parsed.value.line.needs.find((n) => n.target === "#12");
+    expect(need?.act).toBe("Decide");
+    expect(need?.decisions[0]).toMatchObject({
+      key: "pickup",
+      kind: "finding",
+      question: "Should the export keep the old column?",
+      decisionClass: "scope",
+      answer: { station: "pickup", framedBy: "session", on: "issue" },
+    });
+  });
+
   it("notifies the question of a pass that claimed the item before it stopped", async () => {
     const w = fixture();
     const id = String(launches(await applyTick(w, false))[0]?.record);

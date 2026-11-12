@@ -1575,6 +1575,21 @@ The tick notifies any other failed follow-up with the question, classed as
 parked for a person; the marker stays, so nothing starts it again until a
 person settles it.
 
+A pass that stops for a person also frames what it asks: it records
+`failed` with a `parked-decision/v1` record (`jig dispatch result … failed
+--decision <file>`), checked as a park's decision is and kept with the
+result and its digest, and the need it raises carries that decision. For
+the needs the tick detects itself (a failed follow-up, a stalled pickup, a
+checkout an unlisted tree holds, a drive the ledger handed to a person, a
+stuck launch record) the tick frames the decision from the facts that
+identify the occurrence, with fixed options it can carry out. A person
+answers either in a word, `approve` or `choose <option>` with the digest,
+on the need's pull request or forge issue, and the tick carries out the
+chosen option once, after checking its preconditions again; a
+session-framed answer starts that stage again and is handed to its next
+session. The rules are in [structured-answers.md § Every need
+framed](structured-answers.md#every-need-framed).
+
 ### The agent behind a session
 
 The agent a launched session runs in (Claude Code or Codex today) is the
@@ -1634,8 +1649,10 @@ waits on the authenticated Windows smoke.
 
 - **Merge**, or arm a merge: a person merges
   ([ADR-0003](../docs/adr/ADR-0003-a-person-merges.md)).
-- **Answer a park.** A parked question is a person's; the tick notifies and
-  waits for the answer on the pull request.
+- **Answer a park, or any need's decision.** A parked question, and the
+  decision a need carries, are a person's; the tick notifies and waits for
+  the answer on the pull request or the item, and never counts a comment
+  of its own login as one.
 - **Stop a driver that is making progress.** It takes over only a driver
   whose ledger heartbeat is past the lease window: one this machine's launch
   record or another host's launch claim started, or one no launch started
@@ -1645,7 +1662,8 @@ waits on the authenticated Windows smoke.
   progress, or runs in a clone this machine's doctor cannot read, is
   reported, never taken over.
 - **Re-arm a drive a person may have stopped** (an explicit mailbox stop or
-  pause), or relaunch a stalled pickup.
+  pause), or relaunch a stalled pickup, unless a person's answer to the
+  need's decision chose that step.
 - **Keep a converged pull request current with its base.** It re-drives a
   converged pull request on mechanical facts only: the forge reports
   it conflicting with its base, or its head moved past the head the drive
@@ -1654,8 +1672,11 @@ waits on the authenticated Windows smoke.
   CI run for a pull request the merge would take cleanly.
 - **Pass the flags the skills reserve for a person**: `--window-reopened`
   and `clear-lease`.
-- **Write to the tracker.** The item's own state is the claim, and `do-item`
-  sets it. What it writes to the forge is the follow-up marker and, where a
+- **Write to the tracker** of its own accord. The item's own state is the
+  claim, and `do-item` sets it; the one exception is a stalled pickup's
+  claim a person's answer chose to release, which moves the item back to
+  the state a pickup starts from. What it writes to the forge is the
+  follow-up marker, the rearm label a person's answer chose and, where a
   repository turns dispatch labels on, the state labels.
 - **Read a state label to decide a launch.** A state label is derived from
   the ledger and written; what the tick starts comes from the ledger alone.
@@ -1721,7 +1742,9 @@ row was written when it was first sent.
 **On the dashboard.** The board's What needs you lists every cause the plan
 notifies, whether or not it has been sent: its pull request or item, the
 cause, the question when the stage stated one (a park's framed decisions, a
-follow-up's `Question:`), how long it has waited (from the stop's last
+follow-up's `Question:`), the framed decision every need but a few carries
+(its pass's or the tick's, with the answers read for it and the step the
+tick took on one), how long it has waited (from the stop's last
 ledger write, else the first send, else the first tick that saw it) and the
 workspace it was sent to. It is the one view over the line's waits, read
 from the same plan the notifications come from, so the two never disagree.

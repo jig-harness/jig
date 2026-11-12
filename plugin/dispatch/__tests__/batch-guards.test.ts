@@ -169,3 +169,33 @@ it("keeps an unclaimed batch member held after a sibling was claimed", () => {
     w.close();
   }
 });
+it("holds the unanswered members of a batch when one member is released alone", () => {
+  const w = world();
+  try {
+    const record = earlierRecord(w, {
+      id: "2026-11-09T00-00-01-000Z-test",
+      account: "a",
+      action: "pickup",
+      pr: null,
+      item: "#1",
+      batchItems: [
+        { key: "#1", person: "alex" },
+        { key: "#2", person: "alex" },
+      ],
+    });
+    const read: ReadRecord = {
+      record,
+      state: {
+        kind: "ended",
+        exit: { at: "2026-11-09T00:00:00Z", code: 0, signal: null },
+        process: null,
+      },
+      result: "failed",
+    };
+    record.releasedItems = ["#1"];
+    expect(pickupHold("#1", [read]).kind).toBe("none");
+    expect(pickupHold("#2", [read]).kind).toBe("ended");
+  } finally {
+    w.close();
+  }
+});

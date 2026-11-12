@@ -9,6 +9,7 @@
  */
 import type {
   LineAccount,
+  LineDecision,
   LineLinks,
   LineNeed,
   LineQueued,
@@ -23,6 +24,11 @@ import { pullUrl } from "./forge.ts";
 import { itemBases, itemLinkFrom } from "../../shared/item-links.ts";
 import { actOfNeed, NEED_ACTS, type NeedAct } from "../../shared/acts.ts";
 import { decisionOf } from "./line-decision.ts";
+import {
+  type StationContext,
+  stationContextOf,
+  stationDecision,
+} from "./line-station.ts";
 export { decisionOf } from "./line-decision.ts";
 import { holds, targetOf } from "./launches.ts";
 import { isFailureCause } from "./failure-notices.ts";
@@ -160,31 +166,56 @@ function isNeed(action: Action): action is Action & { cause: NeedCause } {
   );
 }
 
-/** A need's open decisions and its act: a stuck launch record has no decisions and is investigated. */
+/** The act the steward proposed for a need, when it names one of the closed list. */
+function stewardAct(action: Action): NeedAct | undefined {
+  const steward = action.evidence.stewardAct;
+  return typeof steward === "string" &&
+    (NEED_ACTS as readonly string[]).includes(steward)
+    ? (steward as NeedAct)
+    : undefined;
+}
+
+/** A need's decisions: a park's drive's unanswered parks, else the one its pass or the tick framed (`line-station.ts`). */
+function decisionsOf(
+  view: RepoView,
+  action: Action & { cause: NeedCause },
+  pr: number | null,
+  stuck: boolean,
+): { decisions: LineDecision[]; framed: boolean } {
+  if (action.cause === "parked")
+    return {
+      decisions: stuck ? [] : (view.drive(pr)?.waiting ?? []).map(decisionOf),
+      framed: false,
+    };
+  const station = stationDecision(action, view.station);
+  return station === null
+    ? { decisions: [], framed: false }
+    : { decisions: [station], framed: true };
+}
+
+/**
+ * A need's open decisions and its act: a framed decision's class names the
+ * act; a need with none keeps the act the steward proposed for it, else its
+ * cause's, a stuck launch record nobody framed being investigated.
+ */
 function needDecisions(
   view: RepoView,
   action: Action & { cause: NeedCause },
   pr: number | null,
 ): Pick<LineNeed, "decisions"> & { act: NonNullable<LineNeed["act"]> } {
   const stuck = text(action.evidence, "stuck") !== null;
-  const decisions = stuck
-    ? []
-    : (view.drive(pr)?.waiting ?? []).map(decisionOf);
-  const steward = action.evidence.stewardAct;
-  const proposed =
-    typeof steward === "string" &&
-    (NEED_ACTS as readonly string[]).includes(steward)
-      ? (steward as NeedAct)
-      : undefined;
+  const { decisions, framed } = decisionsOf(view, action, pr, stuck);
+  const proposed = stewardAct(action);
+  const own = action.cause === "parked" || framed || stuck;
   return {
     decisions,
     act:
-      action.cause !== "parked" && !stuck && proposed !== undefined
+      !own && proposed !== undefined
         ? proposed
         : actOfNeed({
             cause: action.cause,
             decisionClass: decisions[0]?.decisionClass ?? null,
-            stuck,
+            stuck: stuck && !framed,
           }),
   };
 }
@@ -269,6 +300,11 @@ class RepoView {
 
   drive(pr: number | null): DrivenPr | undefined {
     return pr === null ? undefined : this.drives.get(pr);
+  }
+
+  /** What a need's framed decision reads beside its action (`line-station.ts`). */
+  get station(): StationContext {
+    return stationContextOf(this.slug, this.input);
   }
 
   title(target: string, evidence: Evidence = {}): string | null {

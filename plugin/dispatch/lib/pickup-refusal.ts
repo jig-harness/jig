@@ -102,3 +102,12 @@ export function refusalOf(
   if (refusal.members === undefined) return refusal;
   return refusal.members.find((m) => m.key === item) ?? null;
 }
+
+/** When a `waits` result lets the pickup start again, as the launch row carries it. */
+export function waitsOf(row: {
+  result?: string | null;
+  result_until?: string | null;
+}): { waitsUntil?: string } {
+  const until = row.result_until ?? null;
+  return row.result === "failed" && until !== null ? { waitsUntil: until } : {};
+}

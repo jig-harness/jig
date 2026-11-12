@@ -1833,11 +1833,20 @@ record how it ended. In such a pass:
   ambiguous requirement, a `hitl` clarification and the pre-push "cannot
   tell" branch each need a person. Carry out every step that does not
   depend on the answer (scouts, findings, the tracker comment a `hitl` item
-  gets), then stop: record `failed` with the command the prompt names, and
-  end the output with one line that starts `Question:` and states what the
-  person must decide, with no secret or personal data in it. The
-  dispatcher keeps that line and notifies it as a need; it does not start
-  the item again until the item leaves the dispatch states and comes back.
+  gets), then stop. Frame the decision as a `parked-decision/v1` record
+  (the shape the prompt gives, with the
+  [writing rules for text that asks a human to decide](../decide/references/human-call-elaboration.md#writing-rules-for-text-that-asks-a-human-to-decide)),
+  write it to a file and record `failed --decision <file>` with the command
+  the prompt names; when the command refuses the record, fix what it names
+  and run it again, and when you cannot frame the decision record `failed`
+  without it. Either way end the output with one line that starts
+  `Question:` and states what the person must decide, with no secret or
+  personal data in it. The dispatcher shows the decision as a need a
+  person answers in a word; it does not start the item again until the
+  person's answer releases it, or the item leaves the dispatch states and
+  comes back. A later pass started on the answer is handed the option the
+  person chose: carry it out as the decision states it, narrowed by their
+  note and never wider.
 - **A tracker's rate limit is a wait, not a question.** A tracker script
   that exits `5` (`RATE-LIMITED until <time>` on stderr) while the claim
   has not returned success stops the pass: record `waits` with the time it

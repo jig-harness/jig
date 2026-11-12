@@ -12,11 +12,28 @@ const framed: Action = {
   evidence: { stewardAct: "Reply", stewardAsk: "Which file name?" },
 };
 
-test("the line shows the steward's act and ask", () => {
-  const line = buildLine(input({ reports: [report({ actions: [framed] })] }));
+test("the line shows the steward's act and ask on a need the tick frames no decision for", () => {
+  const line = buildLine(
+    input({
+      reports: [
+        report({
+          actions: [{ ...framed, cause: "double-claim", target: "#12" }],
+        }),
+      ],
+    }),
+  );
   expect(line.needs[0]).toMatchObject({
     act: "Reply",
     question: "Which file name?",
+  });
+});
+
+test("the line keeps the steward's ask beside the decision the tick frames, whose class names the act", () => {
+  const line = buildLine(input({ reports: [report({ actions: [framed] })] }));
+  expect(line.needs[0]).toMatchObject({
+    act: "Decide",
+    question: "Which file name?",
+    decisions: [expect.objectContaining({ key: "drive" })],
   });
 });
 
