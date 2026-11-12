@@ -814,9 +814,29 @@ describe("file-deferred.ts files each entry through the tracker", () => {
         body: `Filed by file-deferred.ts.\n\n${identityLine({ source: THREAD })}\n${textLine({ text: entry?.text ?? "" })}`,
       },
     ]);
+    forge.threadPaths = async () => {
+      throw new Error("the review threads were consulted");
+    };
     const r = await fileDeferred(forge, t, "42", {
       label: "pr-followup",
       facets: FACETS,
+      taxonomy: {
+        types: JIG_TAXONOMY.types,
+        statuses: [],
+        flags: [],
+        categories: [],
+        groups: [
+          {
+            id: "repo",
+            required: true,
+            notRequiredOn: [],
+            labels: ["repo:web", "repo:api"],
+          },
+        ],
+      },
+      catalog: () => {
+        throw new Error("the catalog was consulted");
+      },
     });
     expect(r.why).toBeNull();
     expect(r.forPerson).toEqual([]);

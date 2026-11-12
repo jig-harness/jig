@@ -240,6 +240,13 @@ const sameEntry = (a: DeferredEntry, b: DeferredEntry): boolean =>
 const message = (err: unknown): string =>
   err instanceof Error ? err.message : String(err);
 
+/** An issue the tracker holds for an entry, which then needs only recording. */
+interface Held {
+  identifier: string;
+  url: string | null;
+  sameText: boolean;
+}
+
 /**
  * An issue the tracker already holds for the entry: one whose body carries
  * its identity line as a line of its own. An issue that only mentions the
@@ -249,11 +256,7 @@ const message = (err: unknown): string =>
 async function alreadyFiled(
   tracker: Tracker,
   entry: DeferredEntry,
-): Promise<{
-  identifier: string;
-  url: string | null;
-  sameText: boolean;
-} | null> {
+): Promise<Held | null> {
   const identity = identityLine(entry);
   const text = textLine(entry);
   for (const hit of await tracker.searchIssues(entry.source, {
@@ -333,27 +336,35 @@ async function stillOpen(
   return now === undefined || now.filed !== undefined ? null : now;
 }
 
+type Got = {
+  issue: { identifier: string; url: string | null };
+  reused: boolean;
+  stale: boolean;
+};
+
 /**
- * The issue for `entry`: one the tracker already holds, else `draft` filed.
- * `stale` marks a held issue filed from an earlier text of the entry, which
- * must not replace the corrected entry.
+ * The issue for a `Held` one: reused, never searched for again, so it cannot
+ * lead to a creation. `stale` marks one filed from an earlier text of the
+ * entry, which must not replace the corrected entry.
+ */
+const heldIssue = (found: Held): Got => ({
+  issue: { identifier: found.identifier, url: found.url },
+  reused: true,
+  stale: !found.sameText,
+});
+
+/**
+ * The issue for `entry` when none was held: one a fresh search finds (the
+ * guard against a duplicate), else `draft` filed.
  */
 async function issueOf(
   tracker: Tracker,
   entry: DeferredEntry,
   draft: ReturnType<typeof issueFor>,
-): Promise<{
-  issue: { identifier: string; url: string | null };
-  reused: boolean;
-  stale: boolean;
-}> {
+): Promise<Got> {
   const found = await alreadyFiled(tracker, entry);
   return found !== null
-    ? {
-        issue: { identifier: found.identifier, url: found.url },
-        reused: true,
-        stale: !found.sameText,
-      }
+    ? heldIssue(found)
     : {
         issue: await tracker.createIssue(draft),
         reused: false,
@@ -361,18 +372,22 @@ async function issueOf(
       };
 }
 
-/**
- * `plan`, except that an entry the tracker already holds an issue for needs
- * only recording, so it is planned with no labels or facets.
- */
-function planHolding(
+/** An unfiled entry this run files: the issue the tracker holds for it, else how a new one is filed. */
+type Open =
+  | { entry: DeferredEntry; held: Held; plan: null }
+  | { entry: DeferredEntry; held: null; plan: Plan };
+
+type How = { held: Held } | { held: null; plan: Plan };
+
+/** How `entry` is filed: as the issue it was found to hold, else as its plan, or why a person files it. */
+async function howToFile(
+  initial: Open,
+  entry: DeferredEntry,
   plan: (entry: DeferredEntry) => Promise<Plan | { why: string }>,
-  tracker: Tracker | null,
-): (entry: DeferredEntry) => Promise<Plan | { why: string }> {
-  return async (entry) =>
-    tracker !== null && (await alreadyFiled(tracker, entry)) !== null
-      ? { facets: {}, labels: [] }
-      : plan(entry);
+): Promise<How | { why: string }> {
+  if (initial.held !== null) return { held: initial.held };
+  const next = await plan(entry);
+  return "why" in next ? next : { held: null, plan: next };
 }
 
 /**
@@ -404,26 +419,26 @@ export async function fileDeferred(
     forPerson: [],
     why: null,
   };
-  const plan = planHolding(planner(forge, pr, opts), tracker);
-  const open = await fileable(deferredEntries(body), plan, result);
+  const plan = planner(forge, pr, opts);
+  const open = await fileable(deferredEntries(body), tracker, plan, result);
   const skipped = whyNotFiling(tracker, opts);
   if (tracker === null || skipped !== null) {
-    result.remaining = open;
+    result.remaining = open.map((o) => o.entry);
     if (open.length > 0) result.why = skipped;
     return result;
   }
   for (const [i, initial] of open.entries()) {
-    const entry = await stillOpen(forge, pr, initial);
+    const entry = await stillOpen(forge, pr, initial.entry);
     if (entry === null) continue;
-    const planned = await plan(entry);
-    if ("why" in planned) {
-      result.forPerson.push({ entry, why: planned.why });
+    const how = await howToFile(initial, entry, plan);
+    if ("why" in how) {
+      result.forPerson.push({ entry, why: how.why });
       continue;
     }
     const step = await fileOne(forge, tracker, pr, entry, {
       ...opts,
       url,
-      plan: planned,
+      how,
     });
     if (step.why === null) {
       result.filed.push(step.filing);
@@ -431,7 +446,7 @@ export async function fileDeferred(
     }
     const held = step.filing === null ? [] : [step.filing];
     result.unrecorded.push(...held);
-    result.remaining = open.slice(i + held.length);
+    result.remaining = open.slice(i + held.length).map((o) => o.entry);
     result.why = step.why;
     return result;
   }
@@ -486,20 +501,27 @@ function planner(
 /**
  * The unfiled entries this run can file; each it cannot (no type or
  * severity recorded, a value the repository lacks, or a required group whose
- * label cannot be derived) goes to `result`'s `forPerson`, with why, unless
- * the tracker already holds its issue, which needs only recording.
+ * label cannot be derived) goes to `result`'s `forPerson`, with why. An entry
+ * the tracker already holds an issue for needs only recording, so it is not
+ * planned, and carries that issue forward.
  */
 async function fileable(
   entries: DeferredEntry[],
+  tracker: Tracker | null,
   plan: (entry: DeferredEntry) => Promise<Plan | { why: string }>,
   result: FileDeferredResult,
-): Promise<DeferredEntry[]> {
-  const open: DeferredEntry[] = [];
+): Promise<Open[]> {
+  const open: Open[] = [];
   for (const entry of entries) {
     if (entry.filed !== undefined) continue;
+    const held = tracker === null ? null : await alreadyFiled(tracker, entry);
+    if (held !== null) {
+      open.push({ entry, held, plan: null });
+      continue;
+    }
     const found = await plan(entry);
     if ("why" in found) result.forPerson.push({ entry, why: found.why });
-    else open.push(entry);
+    else open.push({ entry, held: null, plan: found });
   }
   return open;
 }
@@ -527,19 +549,29 @@ async function fileOne(
   entry: DeferredEntry,
   opts: {
     url: string;
-    plan: Plan;
+    /** The issue the tracker holds, or how a new one is filed. */
+    how: How;
     onFiled?: (f: Filing) => void;
   },
 ): Promise<
   { filing: Filing; why: null } | { filing: Filing | null; why: string }
 > {
-  let got: Awaited<ReturnType<typeof issueOf>>;
+  let got: Got;
   try {
-    got = await issueOf(
-      tracker,
-      entry,
-      issueFor(entry, pr, opts.url, opts.plan.labels, opts.plan.facets),
-    );
+    got =
+      opts.how.held !== null
+        ? heldIssue(opts.how.held)
+        : await issueOf(
+            tracker,
+            entry,
+            issueFor(
+              entry,
+              pr,
+              opts.url,
+              opts.how.plan.labels,
+              opts.how.plan.facets,
+            ),
+          );
   } catch (err) {
     return { filing: null, why: `the tracker refused: ${message(err)}` };
   }
