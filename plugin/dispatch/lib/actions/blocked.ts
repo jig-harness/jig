@@ -17,7 +17,10 @@ import {
   projectBlocked,
 } from "../../../skills/do-item/scripts/lib/blocked-move.ts";
 import type { IssueKeys } from "../../../skills/do-item/scripts/lib/tracker/keys.ts";
-import type { Tracker } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
+import {
+  type Tracker,
+  trackerStateMaps,
+} from "../../../skills/do-item/scripts/lib/tracker/port.ts";
 import type { Contention } from "../contention.ts";
 import {
   type LabelChange,
@@ -114,7 +117,7 @@ export async function writeBlocked(
 ): Promise<BlockedWrite[]> {
   const { tracker, keys } = input;
   if (!mode.apply || tracker === null || keys === null) return [];
-  if (tracker.stateName("blocked") === null) return [];
+  if (!trackerStateMaps(tracker).some((map) => map.blocked !== null)) return [];
   const out: BlockedWrite[] = [];
   const byNumber = new Map(input.open.map((p) => [p.number, p]));
   for (const drive of [...input.drives].sort((a, b) => a.number - b.number)) {
