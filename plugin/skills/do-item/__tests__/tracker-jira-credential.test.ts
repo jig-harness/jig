@@ -341,6 +341,21 @@ describe("JIRA_TOKEN_COMMAND", () => {
     expect(runs.length).toBe(3);
   });
 
+  it("keeps a shared replacement protected when one waiter gives up", async () => {
+    const { runs, runner } = printing("old", "replacement", "third");
+    const auth = command(runner);
+    const first = await auth.lease();
+    const second = await auth.lease();
+    await first.renew(new AbortController().signal);
+    await second.renew();
+    first.settleRenewal();
+    const later = await auth.lease();
+    expect(await later.renew()).toBeNull();
+    expect(runs.length).toBe(2);
+    second.refuseRenewal();
+    second.settleRenewal();
+  });
+
   it("can renew a replacement that Jira previously accepted", async () => {
     const { runs, runner } = printing("old", "accepted", "fresh");
     const { impl } = statuses(401, 200, 401, 200);

@@ -9,11 +9,17 @@
  * that names the store in force.
  */
 
+import { JIRA_TIMEOUT_MS } from "../../../do-item/scripts/lib/tracker/jira/transport.ts";
 import type { Tracker } from "../../../do-item/scripts/lib/tracker/port.ts";
 import type { Finding } from "./schema.ts";
 
-/** How long one question to the tracker may take. */
-const ANSWER_MS = 30_000;
+/**
+ * How long one question to the tracker may take: longer than one request's
+ * own deadline, so an adapter that stalls on its credential (a token command
+ * that prints nothing) reports that itself before this deadline ends the wait
+ * with a bare refusal that names no cause.
+ */
+export const ANSWER_MS = JIRA_TIMEOUT_MS + 5_000;
 
 /** `ask`'s answer, or a refusal once it has given none within the time allowed. */
 async function within<T>(ask: (signal: AbortSignal) => Promise<T>): Promise<T> {

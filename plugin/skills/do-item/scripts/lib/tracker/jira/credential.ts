@@ -276,7 +276,8 @@ function commandAuthorization(
     failed: boolean;
     refused: boolean;
     replacement: boolean;
-    verifying: boolean;
+    /** Requests still waiting to learn whether Jira takes this run's token. */
+    verifiers: number;
   }
   const program = programOf(argv);
   let generation = 0;
@@ -296,7 +297,7 @@ function commandAuthorization(
       failed: false,
       refused: false,
       replacement,
-      verifying: false,
+      verifiers: 0,
     };
     current = run;
     void run.header.then((h) => {
@@ -309,31 +310,38 @@ function commandAuthorization(
     signal?: AbortSignal,
   ): Promise<JiraLease> => {
     let renewed: Run | null = null;
+    let counted = false;
+    const verify = (next: Run): Run => {
+      renewed = next;
+      if (!counted) {
+        counted = true;
+        next.verifiers++;
+      }
+      return next;
+    };
     return {
       header: await until(run.header, signal, program),
       refuseRenewal: () => {
         if (renewed !== null) renewed.refused = true;
       },
       settleRenewal: () => {
-        if (renewed !== null) renewed.verifying = false;
+        if (renewed !== null && counted) renewed.verifiers--;
+        counted = false;
       },
       renew: (renewSignal) => {
         // A later generation already replaced the one this lease holds.
         if (current !== null && current.generation > run.generation) {
-          renewed = current;
-          return until(current.header, renewSignal, program);
+          return until(verify(current).header, renewSignal, program);
         }
         // A replacement refused in turn stays refused for this process.
-        if (run.refused || (run.replacement && run.verifying)) {
+        if (run.refused || (run.replacement && run.verifiers > 0)) {
           run.refused = true;
           return Promise.resolve(null);
         }
         // No one is waiting once the request has ended: start no new run.
         if (renewSignal?.aborted)
           return Promise.resolve(stopped(renewSignal, program));
-        renewed = start(true);
-        renewed.verifying = true;
-        return until(renewed.header, renewSignal, program);
+        return until(verify(start(true)).header, renewSignal, program);
       },
     };
   };

@@ -4,7 +4,8 @@ import type {
   FacetStoreReport,
   Tracker,
 } from "../../do-item/scripts/lib/tracker/port.ts";
-import { facetFindings } from "../scripts/lib/tracker-fit.ts";
+import { JIRA_TIMEOUT_MS } from "../../do-item/scripts/lib/tracker/jira/transport.ts";
+import { ANSWER_MS, facetFindings } from "../scripts/lib/tracker-fit.ts";
 
 /** A tracker of `adapter` whose `facetStores` reports `facets`, recording what it was asked. */
 function tracker(
@@ -84,5 +85,11 @@ describe("where the audited tracker keeps each facet", () => {
     const jira = tracker([], "jira");
     expect(await facetFindings(jira.t)).toEqual([]);
     expect(jira.asked).toEqual([]);
+  });
+});
+
+describe("the audit's deadline for one question to the tracker", () => {
+  test("outlasts a Jira request's own, which names a stalled token command", () => {
+    expect(ANSWER_MS).toBeGreaterThan(JIRA_TIMEOUT_MS);
   });
 });
