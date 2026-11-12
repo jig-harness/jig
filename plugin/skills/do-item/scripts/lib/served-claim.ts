@@ -1,5 +1,9 @@
 /** Served pickups preserve the person's assignment and revalidate inherited authority live. */
-import { type ClaimResult, claimFromRefusal } from "./claim.ts";
+import {
+  type ClaimResult,
+  blockedStateRefusal,
+  claimFromRefusal,
+} from "./claim.ts";
 import { blocksWithin } from "./blocker-chain.ts";
 import { servedParentHold } from "../../../../dispatch/lib/sources/served-parents.ts";
 import type {
@@ -329,8 +333,9 @@ async function stateBeforeAssignment(
   key: string,
   options: ServedClaim,
 ): Promise<ClaimResult | null> {
-  if (!options.claimFrom) return null;
+  if (!options.claimFrom && tracker.stateName("blocked") === null) return null;
   const current = await tracker.getIssue(key);
+  if (current === null && !options.claimFrom) return null;
   if (current === null)
     return {
       outcome: "refused",
@@ -338,7 +343,12 @@ async function stateBeforeAssignment(
       why: "state",
       reason: `${key} could not be read, so its state is not known to be in claim_from`,
     };
-  return claimFromRefusal(tracker, key, current.state.name, options.claimFrom);
+  return (
+    blockedStateRefusal(tracker, key, current.state.name) ??
+    (options.claimFrom
+      ? claimFromRefusal(tracker, key, current.state.name, options.claimFrom)
+      : null)
+  );
 }
 
 /**
@@ -353,6 +363,14 @@ function startStateRefusal(
   state: string,
   options: ServedClaim,
 ): ClaimResult | null {
+  const blocked = blockedStateRefusal(tracker, key, state);
+  if (blocked && options.ancestor)
+    return {
+      outcome: "stood_down",
+      issue: key,
+      reason: `${key} changed before it could be started: it is now blocked; queue must refresh`,
+    };
+  if (blocked) return blocked;
   const outside = options.claimFrom
     ? claimFromRefusal(tracker, key, state, options.claimFrom)
     : null;
@@ -398,6 +416,23 @@ async function startedStandDown(
   };
 }
 
+/** A read of the item's own state: `blocked` is never a claim state, before or after an assignment. */
+async function blockedNow(
+  tracker: Tracker,
+  key: string,
+): Promise<ClaimResult | null> {
+  if (tracker.stateName("blocked") === null) return null;
+  const current = await tracker.getIssue(key);
+  return current ? blockedStateRefusal(tracker, key, current.state.name) : null;
+}
+
+const refusedAssigned = (key: string, reason: string): ClaimResult => ({
+  outcome: "refused",
+  issue: key,
+  why: "assigned",
+  reason,
+});
+
 /**
  * An inherited pickup (an ancestor's or a blocker's) assigns the unassigned
  * item first. Returns the refusal or stand-down that ends the claim, null when
@@ -409,12 +444,7 @@ async function assignInherited(
   user: TrackerUser,
   options: ServedClaim,
 ): Promise<ClaimResult | null> {
-  const refused = (reason: string): ClaimResult => ({
-    outcome: "refused",
-    issue: key,
-    why: "assigned",
-    reason,
-  });
+  const refused = (reason: string) => refusedAssigned(key, reason);
   const assignUnassigned = tracker.assignUnassigned;
   const inherits = Boolean(options.ancestor || options.blocking);
   if (inherits && !assignUnassigned)
@@ -422,6 +452,8 @@ async function assignInherited(
       "this tracker cannot safely assign an inherited pickup without replacing a concurrent assignee",
     );
   // Re-read the entire authorization immediately before changing the child.
+  const blocked = await blockedNow(tracker, key);
+  if (blocked) return blocked;
   const problem = await validateClaim(tracker, key, user, options);
   if (problem) return refused(problem);
   if (!inherits || !assignUnassigned) return null;
@@ -442,14 +474,10 @@ async function claimServed(
   options: ServedClaim,
 ): Promise<ClaimResult> {
   const user = await tracker.user(options.person);
-  const refused = (reason: string): ClaimResult => ({
-    outcome: "refused",
-    issue: key,
-    why: "assigned",
-    reason,
-  });
+  const blocked = await blockedNow(tracker, key);
+  if (blocked) return blocked;
   const problem = await validateClaim(tracker, key, user, options);
-  if (problem) return refused(problem);
+  if (problem) return refusedAssigned(key, problem);
   const assigned = await assignInherited(tracker, key, user, options);
   if (assigned) return assigned;
   const before = await tracker.getIssue(key);

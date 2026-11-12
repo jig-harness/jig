@@ -391,6 +391,149 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.211.0] - 2026-11-12
+
+### Added
+
+- The drive reads the findings a review-object reviewer puts only in its
+  review's body, never in a thread: CodeRabbit's outside-diff, nitpick,
+  duplicate and follow-up comments. Each is a summary-only finding, listed by
+  `summary-findings.ts` and answered with `answer-summary-finding.ts`, so a
+  drive no longer converges with one unread. Every CodeRabbit nitpick now
+  needs an answer before the drive converges, so expect a round to answer
+  them. Every review on the pull request is read, since a later review does
+  not repeat an earlier one's entries. An entry Jig cannot read (a section
+  that declares more entries, or an entry id no entry read took) is reported
+  as a finding to answer. Only a format a built-in reviewer profile names is
+  read; CodeRabbit's is the first.
+- An optional `blocked` state in `issue_tracker.states`, for a board that
+  shows stopped work as blocked. With it set and the pull request state
+  labels on (`dispatch.labels.enabled`), a drive that stops with only parked
+  work left (the `jig:parked` label) moves each item its pull request links
+  with `Closes <KEY>` or `Refs <KEY>` to `blocked`, with a comment naming
+  each park's class (`autonomy.park_classes`) and its reason, and a marker
+  recording the state the item left. Once the park is answered and the drive
+  runs again, the item returns to that state. The drive moves the items when
+  it writes its own state label, and the dispatcher's `--apply` run corrects
+  them, under the labels' rules: only where the tracker disagrees, best
+  effort, never on a pull request carrying `jig:hold` or `jig:held`. A stop
+  blocks an item once, so an item a person moves out of `blocked` stays
+  where they put it. A claim refuses an item in `blocked`, a served queue
+  never offers one, `work-batch` reads it as started, the parent roll-up
+  reads it as work in progress, and `dispatch.states` may not list it.
+  Unset, nothing is read or moved.
+- `issue_tracker.jira.blocked_fields` (`reason`, `since`): on Jira, the
+  fields a blocked item gets, written when it moves to `blocked` and cleared
+  when it returns.
+
+### Changed
+
+- The planned page for watching and steering the line, which grows from the
+  dispatch dashboard, keeps the name dispatch dashboard: its design is now
+  [design/dispatch-dashboard.md](design/dispatch-dashboard.md), and the
+  [phone access guide](plugin/phone-access.md) links there. The glossary
+  entry Hub becomes Dispatch dashboard, and the commands, settings and
+  record the design plans are named `jig dashboard`, `dashboard.*` and
+  `operator-conversation`. Nothing that is built changes.
+- NOTICE lists the Lucide icons that the dispatch dashboard design prototype pages carry, with their ISC licence file beside the prototype's other vendored code.
+
+### Fixed
+
+- The dispatcher's park counts include final resolution receipts when a pull request that held parks merges or closes between ticks. Missing receipts remain uncounted, and failed final reads retry on a later tick.
+
+## [0.210.2] - 2026-11-12
+
+### Fixed
+
+- The Jira adapter refuses a `JIRA_BEARER_TOKEN` or `JIRA_TOKEN_COMMAND`
+  credential for an Atlassian Cloud site (`*.atlassian.net`) when
+  `issue_tracker.jira.api_base` is not set, before it sends a request, and
+  says the setting is needed. Before, the site answered a bare `Jira API HTTP
+  403`. A self-hosted site named in `JIRA_ALLOWED_HOSTS` is left alone, and a
+  403 on its first request now names the credential variable.
+
+## [0.210.1] - 2026-11-12
+
+### Changed
+
+- The planned page for watching and steering the line, which grows from the
+  dispatch dashboard, keeps the name dispatch dashboard: its design is now
+  [design/dispatch-dashboard.md](design/dispatch-dashboard.md), and the
+  [phone access guide](plugin/phone-access.md) links there. The glossary
+  entry Hub becomes Dispatch dashboard, and the commands, settings and
+  record the design plans are named `jig dashboard`, `dashboard.*` and
+  `operator-conversation`. Nothing that is built changes.
+
+## [0.210.0] - 2026-11-11
+
+### Added
+
+- `drive-pr` reads an AI reviewer that submits pull-request reviews instead of
+  a summary comment with a reviewed-SHA stamp (`review.reviewer_evidence:
+review_object`). A review naming the head, or the reviewer's check run
+  completed on the head with no later review, is a review of the head; a run
+  titled `Review paused…` or `Review skipped…` stops the drive with
+  `REVIEW_SKIPPED` (`22`), the reason naming which and quoting the title. On
+  a draft the reviewer skips, the draft converges on its own work, and the
+  drive marks it Ready and waits for that review
+  ([terminal states](plugin/skills/drive-pr/references/terminal-states.md#a-reviewer-that-submits-pull-request-reviews)).
+- CodeRabbit is a built-in reviewer: `review.reviewer_app: coderabbitai`
+  alone sets its check name (`^CodeRabbit$`) and its evidence, for the drive
+  and for the dispatcher's merge-ready board.
+- `review.draft_skipping_reviewers` names the reviewers that skip drafts; the
+  merge-ready announcement waits (exit `4`) until each has run on the head
+  since the pull request was last marked Ready; the list is read from the base
+  branch's file, never the pull request's own
+  ([fields](plugin/CONFIGURATION.md#review)).
+- `arm-drive.ts` refuses a configuration whose reviewer evidence the drive
+  cannot read (`review_object` without `review.reviewer_app` where a reviewer is expected, or `sticky` for
+  CodeRabbit), and the audit reports it as an error, rather than a drive
+  waiting in `AWAITING_REVIEWER` until its timeout.
+
+### Fixed
+
+- The merge-ready announcement no longer vouches for a head a reviewer that
+  skips drafts has not looked at since the pull request was marked Ready,
+  where `review.draft_skipping_reviewers` names that reviewer.
+
+## [0.209.0] - 2026-11-11
+
+### Added
+
+- The Jira adapter signs in with more than an account's email and API
+  token. `JIRA_BEARER_TOKEN` sends an OAuth access token as
+  `Authorization: Bearer`, and `JIRA_TOKEN_COMMAND` names a command that
+  prints one, as `gh auth token` does, so a credential broker or vault holds
+  the token and the environment holds only the command: the adapter runs it
+  once per process under a deadline, runs it once more when Jira answers
+  401, and names the variable when it fails. The first set wins:
+  `JIRA_BEARER_TOKEN`, then `JIRA_TOKEN_COMMAND`, then `JIRA_EMAIL` with
+  `JIRA_API_TOKEN`
+  ([environment variables](plugin/CONFIGURATION.md#environment-variables)).
+- `issue_tracker.jira.api_base` sends the Jira adapter's requests through
+  Atlassian's API gateway, `https://api.atlassian.com/ex/jira/<cloud id>`,
+  which OAuth access tokens and API tokens with scopes require; a token with
+  scopes goes in `JIRA_API_TOKEN` beside `JIRA_EMAIL`. Only that address
+  shape is accepted, redirects are still never followed, and `site` still
+  builds every issue's link
+  ([`issue_tracker`](plugin/CONFIGURATION.md#issue_tracker)).
+
+## [0.208.0] - 2026-11-11
+
+The dispatch dashboard can be installed on a phone as an app.
+
+### Added
+
+- The dashboard's page names a web app manifest (`/manifest.webmanifest`) and
+  its icons (`/icons/*`), and sets a theme colour for each colour scheme, so
+  Chrome on Android offers **Install app** for it. The installed app opens in
+  its own window at the dashboard's root address, with no token in any address.
+  A dashboard that asks for a token refuses the manifest with every other
+  request without the token, so only a dashboard served without a token, behind
+  an HTTPS front, is offered for install. The
+  [phone access guide](plugin/phone-access.md#install-it-as-an-app) has the
+  steps and the check.
+
 ## [0.207.0] - 2026-11-11
 
 ### Added
@@ -7165,7 +7308,13 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.207.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.211.0...HEAD
+[0.211.0]: https://github.com/jig-harness/jig/compare/v0.210.2...v0.211.0
+[0.210.2]: https://github.com/jig-harness/jig/compare/v0.210.1...v0.210.2
+[0.210.1]: https://github.com/jig-harness/jig/compare/v0.210.0...v0.210.1
+[0.210.0]: https://github.com/jig-harness/jig/compare/v0.209.0...v0.210.0
+[0.209.0]: https://github.com/jig-harness/jig/compare/v0.208.0...v0.209.0
+[0.208.0]: https://github.com/jig-harness/jig/compare/v0.207.0...v0.208.0
 [0.207.0]: https://github.com/jig-harness/jig/compare/v0.206.0...v0.207.0
 [0.206.0]: https://github.com/jig-harness/jig/compare/v0.205.0...v0.206.0
 [0.205.0]: https://github.com/jig-harness/jig/compare/v0.204.0...v0.205.0

@@ -1,6 +1,6 @@
 /**
  * The parent-status decision over the repository's own vocabulary: its
- * state names and labels, the optional `pr_open` state, and
+ * state names and labels, the optional `pr_open` and `blocked` states, and
  * `do_item.post_merge_state`.
  */
 
@@ -289,6 +289,30 @@ describe("reconcileParentStatus with pr_open", () => {
       verdict: "set_status",
       parentState: "in_review",
     });
+  });
+});
+
+describe("reconcileParentStatus with blocked", () => {
+  const vocabulary = {
+    ...DEFAULT_VOCABULARY,
+    states: { ...DEFAULT_VOCABULARY.states, blocked: "Blocked" },
+  };
+
+  it("a blocked child holds its parent in progress, with or without a category", () => {
+    for (const blocked of [
+      child("Blocked", { type: "started" }),
+      child("Blocked", { type: "unstarted" }),
+      child("Blocked"),
+    ])
+      expect(
+        reconcileParentStatus(
+          {
+            parentLabels: [],
+            children: [blocked, child("Done", { type: "completed" })],
+          },
+          vocabulary,
+        ),
+      ).toMatchObject({ verdict: "keep_in_progress", parentState: null });
   });
 });
 

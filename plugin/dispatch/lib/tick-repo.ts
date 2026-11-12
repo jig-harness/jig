@@ -23,6 +23,7 @@ import { actObserved } from "./tick-apply.ts";
 import { allRecords, emptyReport, type TickContext } from "./tick-context.ts";
 import { projectObserved } from "./tick-labels.ts";
 import { lineInputOf } from "./tick-line.ts";
+import { finalParkLedgers } from "./final-park-ledgers.ts";
 import {
   type OpenedRepo,
   observeRepo,
@@ -83,11 +84,23 @@ export async function observeTurn(
     timer,
   );
   const { forge, tracked, sessions } = observation;
+  const finalParks =
+    opened.owner && forge.ok
+      ? await timer.time("forge", () =>
+          finalParkLedgers(
+            opened.repo.slug,
+            forge.open,
+            forge.login,
+            context.reads.comments,
+            opened.report,
+          ),
+        )
+      : [];
   // Observations belong to the tick even when a later phase fails.
-  context.lineInputs.set(
-    path,
-    lineInputOf(forge.drives, forge, tracked, sessions),
-  );
+  context.lineInputs.set(path, {
+    ...lineInputOf(forge.drives, forge, tracked, sessions),
+    finalParks,
+  });
   return { turn, opened, observation };
 }
 

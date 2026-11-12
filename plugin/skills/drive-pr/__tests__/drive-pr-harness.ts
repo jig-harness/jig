@@ -260,6 +260,17 @@ export interface Fixture {
     completed_at?: string;
     /** Links the check to its workflow run in `workflow-runs.json`. */
     check_suite?: { id: number };
+    /** The run's `output.title`; default `No findings`. */
+    title?: string;
+  }>;
+  /** Pull-request reviews (`pulls/{n}/reviews`), as the forge lists them. */
+  reviews?: Array<{
+    id: number;
+    user: { login: string };
+    state: string;
+    commit_id: string;
+    submitted_at?: string;
+    body?: string;
   }>;
   statuses?: Array<{ context: string; state: string; description: string }>;
   /** Statuses reachable only on a SECOND API page — i.e. only with --paginate. */
@@ -586,6 +597,34 @@ export let scratchOther: { dir: string; head: string };
  * temp directory then operates on the REAL repository, committing into it and
  * rewriting its index. Scrub before touching any scratch repo.
  */
+/**
+ * The environment of an announcement run for PR #999 in the scratch repo at
+ * `cwd`, whose base-branch policy (`$DRIVE_PR_POLICY_BASE`) names the
+ * draft-skipping reviewers `env`'s `JIG__REVIEW__DRAFT_SKIPPING_REVIEWERS`
+ * lists (none when absent). The commit is dangling, so HEAD does not move.
+ */
+export function announcePolicyEnv(
+  cwd: string,
+  env: Record<string, string> = {},
+): Record<string, string> {
+  const { JIG__REVIEW__DRAFT_SKIPPING_REVIEWERS: skippers, ...rest } = env;
+  const clean = gitCleanEnv();
+  const git = (input: string, ...args: string[]) =>
+    Bun.spawnSync(["git", ...args], {
+      cwd,
+      env: clean,
+      stdin: Buffer.from(input),
+    })
+      .stdout.toString()
+      .trim();
+  const yaml = `review:\n  draft_skipping_reviewers: ${skippers ?? "[]"}\n`;
+  const blob = git(yaml, "hash-object", "-w", "--stdin");
+  const sub = git(`100644 blob ${blob}\tjig.yaml\n`, "mktree");
+  const root = git(`040000 tree ${sub}\t.config\n`, "mktree");
+  const commit = git("", "commit-tree", root, "-m", "base policy");
+  return { ...rest, DRIVE_PR_TARGET: "999", DRIVE_PR_POLICY_BASE: commit };
+}
+
 export function gitCleanEnv(): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env)) {
@@ -2051,6 +2090,7 @@ for a in "$@"; do
       else emit "$F/issue-comments.json"; fi
       exit 0 ;;
     *pulls/*/comments*)  emit "$F/pull-comments.json"; exit 0 ;;
+    *pulls/*/reviews*)   emit "$F/reviews.json"; exit 0 ;;
   esac
 done
 echo "gh-stub: unhandled api call $*" >&2
@@ -2331,7 +2371,7 @@ export function writeFixture(
       ].map((c, i) => ({
         ...c,
         head_sha: head,
-        output: { title: "No findings" },
+        output: { title: c.title ?? "No findings" },
         app: { slug: c.app },
         // DESCENDING: GitHub lists check-runs newest-first and the newest carries
         // the HIGHEST id, which is what the reduction orders by.
@@ -2342,6 +2382,7 @@ export function writeFixture(
     });
   w("workflow-runs.json", { workflow_runs: [] });
   w("timeline.json", []);
+  w("reviews.json", f.reviews ?? []);
   w("metrics-meta.json", {
     data: {
       repository: {

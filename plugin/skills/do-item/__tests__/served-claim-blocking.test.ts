@@ -170,6 +170,7 @@ test("stands down, not refuses, when a blocker leaves claim_from after its assig
   const names: Record<string, string> = {
     todo: "Todo",
     in_progress: "In Progress",
+    blocked: "Blocked",
   };
   const tracker = w.tracker as unknown as Record<string, unknown>;
   tracker.stateName = (s: string) => names[s] ?? "Backlog";

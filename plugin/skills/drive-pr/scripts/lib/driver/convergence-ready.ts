@@ -242,6 +242,23 @@ export async function settleConvergedReady(
     // this needs a fresh top-level look, not mechanical repetition.
     return 1;
   }
+  // Converged on a draft the expected reviewer skips (`review-object.ts`),
+  // which this drive left a draft (`--keep-draft`, `mark_ready: never`, or a
+  // person's earlier return to draft): that reviewer has reviewed nothing,
+  // so this is not convergence. A marked draft re-gated above instead.
+  const reviewer = status.reviewer as { reviewedShaSource?: unknown } | null;
+  if (reviewer?.reviewedShaSource === "draft-skip") {
+    console.error(
+      `converged on draft PR #${context.pr}, but its AI reviewer skips drafts and has reviewed nothing,`,
+    );
+    console.error(
+      "  and this drive leaves the PR a draft — not reporting convergence. Mark it Ready",
+    );
+    console.error(
+      `  for review (gh pr ready ${context.pr}) and re-run the drive, which then waits for that review.`,
+    );
+    return 4;
+  }
 
   return null;
 }

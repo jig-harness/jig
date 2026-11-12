@@ -26,6 +26,7 @@ import type { ClaimDiag } from "./claim.ts";
 import { inspectLock, prLockName } from "./driver/locks.ts";
 import { driveState } from "./driver/paths.ts";
 import { labelDrive } from "./driver/state-labels.ts";
+import { stopKey } from "../../../../shared/pr-labels/blocked.ts";
 import { helperTimeoutSeconds, pidAlive, run, tsArgv } from "./proc.ts";
 import { worktreePathKey } from "./state/actor.ts";
 import { driveDb, inTransaction } from "./state/db.ts";
@@ -338,6 +339,8 @@ async function markGuarded(
         stopped: exit,
         byPerson,
         verifiedSha: found.ledger.verifiedSha,
+        stop: stopKey(found.ledger.driver.started, found.ledger.round),
+        parks: found.ledger.parked,
       });
       return "done";
     }

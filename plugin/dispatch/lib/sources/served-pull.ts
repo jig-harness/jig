@@ -11,8 +11,12 @@ import { otherRepoLabel, type RepoScope } from "./served-repo.ts";
 const closedType = (type: string) =>
   ["completed", "canceled", "duplicate"].includes(type);
 export const closed = (i: PoolIssue) => closedType(i.state.type);
-export const ready = (i: PoolIssue) =>
-  !closed(i) && ["triage", "backlog", "unstarted"].includes(i.state.type);
+/** Not started, and not in the tracker's `blocked` state (`blockedState`, whatever category the tracker gives it): only the drive-ledger projection or a person moves an item out of it. */
+export const ready = (i: PoolIssue, blockedState: string | null = null) =>
+  !closed(i) &&
+  ["triage", "backlog", "unstarted"].includes(i.state.type) &&
+  (blockedState === null ||
+    i.state.name.trim().toLowerCase() !== blockedState.trim().toLowerCase());
 
 export interface OpenBlocker {
   key: string;
@@ -55,6 +59,8 @@ export interface PullPolicy {
   repoScope?: RepoScope | undefined;
   /** False when the tracker cannot assign a blocker itself: a qualifying one awaits a person. */
   canAssign?: boolean | undefined;
+  /** The tracker's name for its `blocked` state, when it has one. */
+  blockedState?: string | null | undefined;
 }
 
 /**
@@ -72,7 +78,8 @@ export function whyNotPulled(
   if (blocker.assignee !== null) return `assigned to ${blocker.assignee.name}`;
   if (blocker.labels.includes(policy.epic) || blocker.hasOpenChildren)
     return "an epic; assign it to start it";
-  if (!ready(blocker)) return `in ${blocker.state.name}`;
+  if (!ready(blocker, policy.blockedState ?? null))
+    return `in ${blocker.state.name}`;
   if (otherRepoLabel(blocker.labels, policy.repoScope) !== null)
     return "another repository's";
   const held = queueHold({ issue: blocker, blockers: [], unblocks: 0 }, policy);
@@ -108,7 +115,7 @@ export function pullBlockers(
     const why =
       depth >= PULL_DEPTH
         ? "too many links from the assigned item"
-        : ready(blocked)
+        : ready(blocked, policy.blockedState ?? null)
           ? whyNotPulled(b.issue, policy)
           : `${blocked.identifier} is not open`;
     if (why !== null || b.issue === null) return `${b.key} (${why})`;
