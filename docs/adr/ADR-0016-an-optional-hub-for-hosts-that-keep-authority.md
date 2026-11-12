@@ -57,7 +57,11 @@ It keeps these rules:
 
 - **No level of use requires it.** The skills never call it, the
   dispatcher runs without it, and a host whose hub does not answer reads
-  and claims by itself, as it does without one.
+  and claims by itself, as it does without one. The one exception is an
+  owner's duties (notices, labels, board writes, steward, reflection
+  findings): they run only under a lease the hub grants, so while it
+  does not answer a host does the duties that are safe to repeat and
+  waits for the rest.
 - **A host keeps authority over what it did.** The hub keeps copies of
   what hosts report and never edits one, keeps no phase of its own, and
   derives every column and thread when it is read.
@@ -77,7 +81,7 @@ It keeps these rules:
 For enrolled hosts, this supersedes ADR-0013 where it declines a
 coordinator: the hub's offers suggest which host takes which work. Every
 host that is not enrolled, and every host while its hub is unreachable,
-stays under ADR-0013 alone. ADR-0011's refusal of an inbound route holds
+stays under ADR-0013 alone, except for the owner duties above. ADR-0011's refusal of an inbound route holds
 for every host; the hub, which is not a host, may receive the forge's and
 the tracker's webhooks, as hints that never replace its periodic reads.
 
@@ -120,8 +124,8 @@ own stage 1 design, which records its choice here before it starts.
 - Hosts dispatching the same repositories spend about one host's reads
   between them.
 - A stopped host is noticed: a person is told, and its leases lapse, so
-  the hub grants its work to another host, which takes it over by the
-  forge's own path.
+  the hub grants its work to another host, which takes a drive over by the
+  forge's own path; a silent host's follow-up is named for a person.
 - One repository's pickups can be dispatched from several hosts.
 - One dashboard and one phone page show every enrolled host's work.
 

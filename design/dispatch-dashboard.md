@@ -843,7 +843,16 @@ its 1.104 command line, not yet with the dashboard.
   chat runs on the laptop alone.
 - **Laptop to hub.** A laptop's dashboard reaches the hub through the
   hub's front, named by the person's tailnet login like any viewer
-  ([The source feed](#the-source-feed-from-a-host-to-a-dashboard)).
+  ([The source feed](#the-source-feed-from-a-host-to-a-dashboard)). A hub
+  on a tagged server has no owner, so a person who runs the fleet is
+  named by a grant carrying `{fleet: true}` beside the scope, under the
+  same app capability. `fleet` is the hub's owner view: receipts,
+  accounts, walls, workspaces, terminals and paths of every host whose
+  repositories the scope names, so `receipt.get` and the paths the
+  workspace opening needs reach a laptop through the front. The hub
+  checks it per reported host, against the approved scope the host
+  enrolled with. Without `fleet` a viewer gets public facts only, as
+  above.
 - **It does not unblock writes.** Tailscale says who is looking, not whose
   forge login writes. Phone access remains read-only; desktop
   writes still wait for item 40.

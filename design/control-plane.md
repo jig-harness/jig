@@ -17,8 +17,9 @@ reads the forge and the tracker once for every host enrolled in it. It
 also grants claims with leases, so a silent host's work goes to another
 host, offers work to whichever host has a free slot, tells a person when a
 host stops and serves one view of every host's work. A host that never enrolls loses
-nothing, and a host whose hub is unreachable works exactly as it does
-today.
+nothing, and a host whose hub is unreachable works as it does today, bar
+the owner duties that wait for the hub's lease
+([Owner duties](#owner-duties)).
 
 This is the design of [plan.md](plan.md) item 49. Nothing of it is built.
 It answers the conditions on which
@@ -107,8 +108,12 @@ nothing requires it.
   the tracker, and its copies of host records come back when each host
   backfills after its next `hello`
   ([`report`](#the-host-protocol)). A lost lease lapses on its own, and the fence behind it still
-  holds. So deleting the hub's database costs a fresh enrollment of each
-  host and nothing that the line depends on.
+  holds. A hub started with no database waits out a quarantine as long as
+  the longest lease it ever grants before it grants an owner duty or a new
+  claim, since a host may still hold an unexpired lease the hub no longer
+  remembers; reads, reports and enrollment go on meanwhile. So deleting the
+  hub's database costs a fresh enrollment of each host and a quarantine
+  of one lease lifetime, and nothing that the line depends on.
 - **It keeps what it serves**, comment text included, on the machine the
   organization chose, as each host's own records do. Reading the text
   through on each request instead would spend the reads the hub exists to
@@ -259,9 +264,12 @@ The hub's claims sit in front of them:
   another host. The forge's own marker is not reinterpreted: an unfinished
   claim still fences a launch for every reader, the skills included, since
   they never consult the hub. A replacement that holds a hub grant
-  therefore still takes the forge's own path past the old claim: a drive's
-  takeover, which needs its ledger's heartbeat past the lease window, and a
-  follow-up's existing marker arbitration. A lapsed lease alone never
+  therefore still takes the forge's own path past the old claim, which
+  exists for a drive alone: its takeover, which needs its ledger's
+  heartbeat past the lease window. A follow-up's marker has no such path:
+  the earlier trusted marker keeps precedence, so a silent host's
+  unfinished follow-up is not recovered automatically, and the hub names it
+  in the stopped-host notice for a person. A lapsed lease alone never
   releases a forge claim. Making an unfinished claim cease to fence for
   every reader needs a change to the shared records protocol that every
   reader understands, and is its own item. A host that is not enrolled
@@ -279,8 +287,9 @@ Writing no forge claim at all, with the hub as the only fence, is left out
 A host that has not called the hub for three of its own tick intervals is
 reported silent: on the hub's page, through the source feed as a card on
 every dashboard that reads the hub, and once as a notice to the people the
-hub's configuration names. The hub does nothing to the silent host's work.
-Its leases lapse on their own, and its sessions, if they still run, keep
+hub's configuration names. The hub does nothing to the silent host's work;
+the notice lists its unfinished follow-ups, which no other host can resume
+by itself. Its leases lapse on their own, and its sessions, if they still run, keep
 running.
 
 ### Owner duties
@@ -300,7 +309,10 @@ renewals fail stops doing the effects when its lease would have lapsed.
 While the hub is unreachable a host does only the effects that are safe
 to repeat, such as reading, and does none of the rest until it reaches
 the hub again, or until a person's machine file says the host owns the
-repository without a hub, as today. The duties stay on hosts; moving any
+repository without a hub, as today. This is the one exception to "works
+as it does today": it is stated in the levels above, in ADR-0016's
+decision and in stage 1's and stage 2's acceptance, so an implementation
+never restores a duty during a partition. The duties stay on hosts; moving any
 of them into the hub itself waits until a duty is shown to need it.
 
 ### Handing out work
@@ -336,23 +348,40 @@ strategy the built-ins lack can be added without changing them.
   and a change area another launch holds. These follow the fences and the
   tick's own admission, so no policy can turn them off.
 - **Then an ordered list of rankers.** A policy is a list of rankers, each
-  named, with settings of its own. Every ranker gives each candidate a
-  value; candidates are ordered by the first ranker, ties broken by the
-  second, and so on. The `weighted` ranker combines other rankers' values
+  named, with settings of its own. A ranker is either about the work
+  (`queue`, `age`, `facet`, `repository-share`) and gives each candidate
+  a value, or about the host (`affinity`, `free-slots`, `load`,
+  `host-preference`) and compares the hosts eligible for a candidate.
+  Candidates are ordered by the work rankers, the first deciding and the
+  next breaking ties. The `weighted` ranker combines other rankers' values
   with weights, for a team that wants a blend rather than an order.
-- **The default policy** is `queue` (the queue's order, as the tracker
-  and the steward set it), then `affinity` (the host that already holds the
-  work's workspace or ran its last round), then `free-slots` (the host with
-  the most free slots).
+- **Then an allocation, by the host rankers.** A host is eligible for a
+  candidate when it passes the filters and has called within one of its
+  tick intervals. The hub offers a candidate to the requesting host only
+  when no other eligible host ranks ahead of it under the host rankers,
+  in the same order of first and tie-breaking. So a host with fewer free
+  slots no longer takes work first by asking first, and a host that is the
+  only eligible one is always offered it.
+- **One list across repositories.** Each repository's candidates are
+  ordered under the policy that repository names, and the lists are
+  merged by taking one candidate from each repository in turn, repositories
+  ordered by the age of the oldest waiting candidate at their head, then
+  by name. A merged order is therefore deterministic and fixtures can
+  assert it.
+- **The default policy** is the work ranker `queue` (the queue's order, as
+  the tracker and the steward set it), then the host rankers `affinity`
+  (the host that already holds the work's workspace or ran its last round)
+  and `free-slots` (the host with the most free slots).
 - **More built-ins join behind the same interface**, each a ranker added
   with no change to the others or to the hub's callers. Likely ones:
-  - `age`, longest waiting first;
+  - `age`, longest waiting first (a work ranker);
   - `facet`, by a priority or size the tracker keeps
     ([tracker-facets.md](tracker-facets.md));
   - `repository-share`, so one repository's long queue does not starve
     the others;
-  - `host-preference`, hosts a repository or an item asks for;
-  - `load`, the host whose load factor is lowest.
+  - `host-preference`, hosts a repository or an item asks for (a host
+    ranker);
+  - `load`, the host whose load factor is lowest (a host ranker).
 - **A ranker of a team's own: `command`.** It runs a program the hub's
   settings name, hands it the host and the candidates with their facts as
   JSON on standard input, and reads back an order or a value per candidate
@@ -448,12 +477,14 @@ tick and the change probe use the hub when the machine file names one, and
 fall back when it does not answer. Done when two hosts dispatching the same
 repositories through one hub spend, together, about what one host spends
 alone, and a hub stopped mid-tick costs that tick nothing but its
-receipt's note.
+receipt's note and the owner duties a host cannot do without its lease.
 
 **Stage 2: claims with leases, and a silent host noticed.** The hub's
 implementation of `SharedRecords` in front of the fences, pickup claims,
 leases and their renewal, the replay after an outage, the owner named by
-`hello`, and the silent-host notice.
+`hello` with its lease, the restart quarantine, and the silent-host notice.
+Done when no two hosts do an owner's effects at once through a partition
+and a restart of the hub.
 
 **Stage 3: one view of every host.** `report`, the hub's copies of host
 records, the source feed served from them, and the dashboard reading it,
