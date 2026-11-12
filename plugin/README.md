@@ -871,7 +871,12 @@ the re-arm left beside it, never from the park's disappearance alone:
 whether a note narrowed it and how long the park waited for its answer;
 `park-provisional` for a park handed on to be decided provisionally; and
 `park-removed` for a park the line held that left with no receipt
-(withdrawn or framed again; a park on a pull request no longer open is not counted). A park
+(withdrawn or framed again on an open pull request). When a pull request
+that held parks leaves the open listing, the owner host reads its final
+ledger once and counts the receipts it supports under the same occurrence
+keys. A failed read leaves its parks held for a later tick; a successful
+read retires them. A park with no final receipt stays uncounted, including
+when the ledger cut receipts. A park
 raised and answered between two ticks is counted from its receipt, and no
 park is counted twice. A stop the classifier cannot
 place is logged as `unknown`, never dropped, so a reason that recurs among

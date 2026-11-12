@@ -30,6 +30,7 @@ function guards() {
   const ctx = {
     tracker: {
       adapter: "github",
+      stateName: () => null,
       poolIssue: async () => issue,
       getIssue: async () => ({ ...issue, parent: null, description: "" }),
       listRelations: async () => [],

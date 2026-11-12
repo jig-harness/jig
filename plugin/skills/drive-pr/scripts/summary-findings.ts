@@ -27,6 +27,10 @@ import { TRUSTED_ASSOCIATIONS } from "../../../shared/trusted-authors.ts";
  *               line"; if fewer than N were classified above, the shortfall is
  *               reported rather than rounded down. Fail closed — an
  *               unexplained gap must block convergence, not vanish into it.
+ *   review-body a review-object reviewer writes no sticky: its findings are
+ *               the entries in every one of its reviews' bodies
+ *               (`lib/review-body.ts`), with an `unaccounted` slot for each
+ *               entry the parser cannot read.
  *
  * "Answered" is mechanical, never inferred from prose: a top-level comment
  * carrying `<!-- drive-pr-addressed: <fingerprint> -->`. `answer-summary-finding.ts`
@@ -50,16 +54,27 @@ import { TRUSTED_ASSOCIATIONS } from "../../../shared/trusted-authors.ts";
  * Exits 0 with the report on stdout; 1 if the PR's comments cannot be read.
  */
 
-import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { fingerprintOf } from "./lib/finding-fingerprint.ts";
 import { cachedRepoView } from "./lib/gh-conditional.ts";
 import {
   isReviewerLogin,
   reviewedShaMarker,
+  reviewerApp,
+  reviewerEvidence,
   reviewerExpected,
   stickyMarker,
 } from "./lib/overlay.ts";
 import { ghCall } from "./lib/proc.ts";
+import { reviewBodyReport } from "./lib/review-body.ts";
+import {
+  type ReviewerPosition,
+  reviewerPosition,
+} from "./lib/reviewer-position.ts";
+import {
+  type ReviewBodyFormat,
+  reviewerProfile,
+} from "./lib/reviewer-profiles.ts";
+import { reviewsBy } from "./lib/status/review-object.ts";
 import {
   headerOf,
   SEVERITY_FIELD,
@@ -67,7 +82,7 @@ import {
   stickySeverityOf,
 } from "./lib/severity-formats.ts";
 
-export { severityOf };
+export { fingerprintOf, type ReviewerPosition, reviewerPosition, severityOf };
 
 // ── Pure parsing (unit-tested directly; no network) ─────────────────────────
 
@@ -88,7 +103,7 @@ export interface BacklogEntry {
 
 export interface SummaryFinding {
   fingerprint: string;
-  source: "backlog" | "body" | "unaccounted";
+  source: "backlog" | "body" | "review-body" | "unaccounted";
   path: string;
   line: number | null;
   severity: string;
@@ -269,40 +284,6 @@ export function parseMarkerPayload(raw: string): MarkerPayload {
  * moved under us.
  */
 export const MARKER_SAFE_FINGERPRINT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
-
-/**
- * Stable key for a finding the reviewer did not fingerprint itself. Content-
- * derived on purpose: keying on the sticky comment id would be *too* stable
- * (the comment is upserted, so slot N stays "answered" after its finding
- * changed), and keying on the reviewed SHA would be too volatile (every push
- * would re-ask a standing wont-fix).
- *
- * Hashes the WHOLE text, never a prefix. The reviewer opens findings with
- * repeated severity/rationale boilerplate, so two distinct findings on one path
- * can share their first N characters; on a truncating hash they collide, `push()`
- * drops the second silently, and one answer marker then clears both — convergence
- * over live work. A prefix bounds nothing worth bounding here: the input is
- * already in memory and the digest is fixed-width either way.
- *
- * The LINE is in the key for the same reason, one axis over. Text alone is not
- * an identity: a finding class the reviewer emits per occurrence — a
- * hand-maintained tally, a missing guard, an unbounded call — reads identically
- * on every line it fires at, and this very PR has produced such a pair. Two live
- * occurrences would then collapse into one item that `push()` dedupes, and
- * answering it drives the count to zero while the sibling stays live. `path` and
- * `line` are separated by their own delimiter so `a.ts|4` + `0|text` cannot hash
- * as `a.ts|40` + `text`.
- */
-export function fingerprintOf(
-  path: string,
-  line: number | null,
-  text: string,
-): string {
-  return createHash("sha256")
-    .update(`${path}|${line ?? ""}|${text}`)
-    .digest("hex")
-    .slice(0, 16);
-}
 
 /**
  * A PRESENT marker must decode to a well-formed array of well-formed entries or
@@ -1313,107 +1294,6 @@ async function gh(args: string[]): Promise<string> {
 }
 
 /**
- * Where the reviewer's own reviewed head sits relative to `sha`, the head a
- * fix-dependent marker names.
- *
- * A position rather than a boolean, because `collectAddressed` has to tell a
- * reviewer STRICTLY BEHIND the fix (its review predates the commit, so it
- * cannot have judged it — the marker stands for any finding) from one sitting
- * exactly ON it (it has read that head, which falsifies the answer for a fresh
- * finding but not for a carried-forward backlog entry) — and both from
- * everything else.
- *
- * `unknown` is the one value that is NOT a statement about the reviewer at all:
- * it says the MARKER's own SHA resolves to no commit here, so there is nothing
- * to be behind or at. It is separate from `past` only because the winddown
- * exemption ignores position by design, and had to be stopped from ignoring an
- * undated marker with it (`collectAddressed`). Everywhere else the two behave
- * identically — neither is `behind` or `at`, so neither honours a marker on its
- * own.
- *
- * The question is NOT "is `sha` an ancestor of the reviewed head". Asking it
- * that way has only one safe answer and three unsafe ones, because a PR branch
- * can be rebased or force-pushed: the reviewed head then need not descend from
- * the marker's commit at all, `--is-ancestor` says "no", and the marker is read
- * as "the reviewer has not seen this fix yet" — so it keeps suppressing a
- * finding the reviewer is re-emitting on the rewritten branch, which is false
- * convergence by the exact route the expiry exists to close. Ahead, divergent,
- * or unanswerable are therefore one position — `past` — and re-ask the finding.
- * Re-asking costs one round; the alternative costs a live finding.
- *
- * BOTH revisions are resolved through git before anything is compared, and that
- * is a correctness requirement rather than hygiene. `reviewedShaFrom` accepts
- * `[0-9a-f]{7,40}`, so the reviewer may stamp an ABBREVIATED SHA; deciding the
- * equal case by raw string comparison (as this did while it was a boolean) then
- * misses it and falls through to `--is-ancestor`, which exits 0 for two equal
- * commits — reporting the reviewer as strictly behind a fix it is sitting
- * exactly on. Under the `at` grace that would silently extend a backlog-only
- * exemption to every finding, so equality is git's answer, not the string's.
- *
- * `git merge-base --is-ancestor` needs no network, and its exit status carries
- * more than the pass/fail a caller tends to assume:
- *
- *   0     the reviewed head is an ancestor of `sha`, and the two are already
- *         known to differ, so strictly behind. `behind`.
- *   1     it is not: ahead, or divergent after a rewrite. `past`.
- *   ≥2    git could not answer: an unknown SHA, a shallow clone, not a repo.
- *         `past`.
- *
- * Reading a non-zero as `behind` would let every error case retire the finding
- * on the strength of a check that did not run — a shallow CI checkout would
- * silently restore the content-keyed suppression this exists to remove. So an
- * error is `past`, as are a missing reviewed SHA, a reviewed SHA git cannot
- * resolve, and a git that will not spawn; a MARKER SHA git cannot resolve is
- * `unknown`, which is stricter still. Every one of them withholds the marker
- * and blocks convergence.
- */
-export type ReviewerPosition = "behind" | "at" | "past" | "unknown";
-
-export function reviewerPosition(
-  sha: string,
-  reviewedSha?: string,
-): ReviewerPosition {
-  if (!reviewedSha) return "past";
-  try {
-    // `^{commit}` so a revision that resolves to some other object type is a
-    // non-answer rather than an id that can never equal a commit's.
-    const commitId = (rev: string): string | null => {
-      const r = spawnSync("git", ["rev-parse", "--verify", `${rev}^{commit}`], {
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "ignore"],
-      });
-      // A signalled or unspawnable child reports a null status, not a number.
-      if (r.status !== 0) return null;
-      return r.stdout.trim() || null;
-    };
-    const to = commitId(sha);
-    // The MARKER's own SHA not resolving is a different failure from every
-    // other one here, and the only one that has to be told apart: the others
-    // say "the reviewer's position relative to this fix is unknown", which
-    // `past` answers correctly, while this one says the marker names nothing
-    // datable AT ALL. The winddown exemption deliberately ignores position —
-    // that is its whole point — so folding this case into `past` handed it an
-    // undated marker to honour, contradicting the "never exempt from the
-    // dating requirement" contract in `AddressedOptions.winddownDeferred`
-    //. Distinct value, checked there.
-    if (!to) return "unknown";
-    const from = commitId(reviewedSha);
-    if (!from) return "past";
-    if (from === to) return "at";
-    const { status } = spawnSync(
-      "git",
-      ["merge-base", "--is-ancestor", from, to],
-      { stdio: "ignore" },
-    );
-    // Same null-status reasoning: an answer git did not give must land in
-    // `past` like every other unknown here, never be read as the ancestor case.
-    return status === 0 ? "behind" : "past";
-  } catch {
-    return "past";
-  }
-}
-
-/**
  * The reviewer's sticky summary comment, if any: the last comment from the
  * reviewer's login carrying the sticky marker. With `configuredOnly` (the
  * drive's gate, `--configured-reviewer-only`), a repository that names no AI
@@ -1480,6 +1360,45 @@ function markerSourcesOf(
       body: c.body ?? "",
       authorAssociation: c.author_association ?? "",
     }));
+}
+
+/**
+ * The format of the review-object reviewer's review bodies, whose entries are
+ * its summary-only findings; none for a reviewer that writes a sticky, or
+ * whose profile names no format.
+ */
+function reviewBodyFormat(): ReviewBodyFormat | undefined {
+  if (reviewerEvidence() !== "review_object") return undefined;
+  return reviewerProfile(reviewerApp())?.bodyFormat;
+}
+
+/**
+ * Print the report of a review-object reviewer, which writes no sticky: its
+ * summary-only findings are the entries in the bodies of its reviews
+ * (`lib/review-body.ts`), each dated against the newest review that carries
+ * it. Exits 1 when its reviews cannot be read.
+ */
+async function printReviewBodyReport(
+  pr: number,
+  repo: string,
+  comments: IssueComment[],
+  format: ReviewBodyFormat,
+): Promise<number> {
+  const login = `${reviewerApp()}[bot]`;
+  const [owner = "", name = ""] = repo.split("/");
+  const reviews = await reviewsBy(owner, name, String(pr), login);
+  if (reviews === null) {
+    console.error(`summary-findings: cannot read ${login}'s reviews of #${pr}`);
+    return 1;
+  }
+  const sources = markerSourcesOf(comments);
+  const addressedAt = (commit: string) =>
+    collectAddressed(sources, {
+      reviewerPosition: (sha) => reviewerPosition(sha, commit),
+    });
+  const report = { pr, login, format, reviews, addressedAt };
+  console.log(JSON.stringify(reviewBodyReport(report)));
+  return 0;
 }
 
 async function main(): Promise<number> {
@@ -1640,6 +1559,10 @@ async function main(): Promise<number> {
     );
     return 0;
   }
+
+  const bodyFormat = reviewBodyFormat();
+  if (bodyFormat !== undefined)
+    return printReviewBodyReport(prNumber, repo, issueComments, bodyFormat);
 
   // No sticky comment means the reviewer has posted no summary — there are no
   // summary-only findings to answer. That is a real zero, not an unknown: the

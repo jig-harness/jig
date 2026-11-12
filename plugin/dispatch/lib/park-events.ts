@@ -9,7 +9,7 @@
  * | --- | --- |
  * | a receipt whose identity the line has not ingested, whether or not the line held its park | `park-answered`, or `park-provisional` for one handed on to be decided provisionally |
  * | a park the line held that is gone, with no receipt for it | `park-removed` |
- * | a park the line held on a pull request no longer open | none: it is dropped without a row |
+ * | a park on a pull request no longer open | its final receipts count; without a receipt it leaves without a row |
  *
  * So a park raised and answered between two ticks is counted from its
  * receipt, and a park withdrawn or framed again is never counted as
@@ -70,6 +70,13 @@ export interface ParkRepo {
   /** The open pull requests; `null` when the forge's listing did not read. */
   open: number[] | null;
   drives: DrivenPr[];
+  /** Final ledgers read only for accounting, never drive planning. */
+  finalParks?: FinalParks[];
+}
+
+export interface FinalParks {
+  number: number;
+  parks: LedgerParks;
 }
 
 /** What the line carries from the tick before. */
@@ -207,7 +214,7 @@ function removedRow(
 /** Every receipt the repository's ledgers list, by identity, with the pull request it is on. */
 function receiptsOf(
   slug: string,
-  read: ReadonlyMap<number, DrivenPr>,
+  read: ReadonlyMap<number, { number: number; parks?: LedgerParks }>,
 ): Map<string, { pr: number; receipt: ResolutionReceipt }> {
   const out = new Map<string, { pr: number; receipt: ResolutionReceipt }>();
   for (const d of read.values())
@@ -225,7 +232,7 @@ type Gone =
   | "withdrawn"
   /** The tick cannot tell how it left: keep it as held. */
   | "unknown"
-  /** Its pull request left the open listing; its final receipts are not read, so no row claims how it left. */
+  /** Its final ledger was read: no receipt means no row claims how it left. */
   | "closed";
 
 function goneHow(
@@ -233,11 +240,15 @@ function goneHow(
   read: ReadonlyMap<number, DrivenPr>,
   pr: number,
 ): Gone {
+  if (repo.open !== null && !repo.open.includes(pr))
+    return repo.finalParks?.some((p) => p.number === pr) || !repo.owner
+      ? "closed"
+      : "unknown";
   const d = read.get(pr);
   if (d !== undefined)
     // Receipts the size cut dropped may have been the answer to this park.
     return d.parks?.receiptsCut === true ? "unknown" : "withdrawn";
-  return repo.open !== null && !repo.open.includes(pr) ? "closed" : "unknown";
+  return "unknown";
 }
 
 /** One repository's parks, ingested receipts and rows. */
@@ -253,7 +264,13 @@ function repoOutcomes(
   );
   const parks = [...read.values()].flatMap((d) => parksOf(repo.slug, d));
   const held = new Set(parks.map(identityOf));
-  const receipts = receiptsOf(repo.slug, read);
+  const receipts = receiptsOf(
+    repo.slug,
+    new Map<number, { number: number; parks?: LedgerParks }>([
+      ...read,
+      ...(repo.finalParks ?? []).map((p) => [p.number, p] as const),
+    ]),
+  );
   const before = new Set(memory.ingested ?? []);
   const ingested = repo.owner ? [...receipts.keys()] : [];
   const rows = ingested

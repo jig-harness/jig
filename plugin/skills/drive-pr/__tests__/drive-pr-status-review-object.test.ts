@@ -7,8 +7,11 @@
  */
 
 import { describe, expect, it } from "bun:test";
+import { readFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import { fingerprintOf } from "../scripts/lib/finding-fingerprint.ts";
+import { parseCodeRabbitBody } from "../scripts/lib/review-body.ts";
 import {
   binDir,
   type CheckRunFixture,
@@ -39,21 +42,40 @@ function rabbit(over: Partial<CheckRunFixture> = {}): CheckRunFixture {
   };
 }
 
-function review(commit: string, id = 1, at = "2026-11-11T09:04:00Z") {
+function review(
+  commit: string,
+  id = 1,
+  at = "2026-11-11T09:04:00Z",
+  body = "",
+) {
   return {
     id,
     user: { login: LOGIN },
     state: "COMMENTED",
     commit_id: commit,
     submitted_at: at,
+    body,
   };
+}
+
+/** A CodeRabbit review body (`fixtures/coderabbit/`) and its findings' keys. */
+function rabbitBody(name: string) {
+  const body = readFileSync(
+    join(import.meta.dir, "fixtures", "coderabbit", `${name}.md`),
+    "utf8",
+  );
+  const keys = parseCodeRabbitBody(body).entries.map((e) =>
+    fingerprintOf(e.path, e.lines, e.text),
+  );
+  return { body, keys };
 }
 
 async function gate(f: Fixture, env: Record<string, string> = CODERABBIT) {
   const r = await probe({ threads: [], reviewedSha: null, ...f }, [], { env });
   const reviewer = r.json.reviewer as Record<string, unknown>;
+  const work = r.json.work as Record<string, unknown>;
   const stdout = JSON.stringify(r.json);
-  return { ...r, stdout, reason: String(r.json.reason ?? ""), reviewer };
+  return { ...r, stdout, reason: String(r.json.reason ?? ""), reviewer, work };
 }
 
 describe("a review-object reviewer (CodeRabbit's profile)", () => {
@@ -168,6 +190,11 @@ describe("a review-object reviewer (CodeRabbit's profile)", () => {
       reviews: [{ ...review(HEAD), commit_id: "not-a-sha" }],
     });
     expect(r.state).toBe("INDETERMINATE");
+    const bodiless = await gate({
+      checkRuns: [rabbit()],
+      reviews: [{ ...review(HEAD), body: 7 as unknown as string }],
+    });
+    expect(bodiless.state).toBe("INDETERMINATE");
   });
 
   it("an explicit sticky evidence keeps the comment protocol", async () => {
@@ -177,6 +204,53 @@ describe("a review-object reviewer (CodeRabbit's profile)", () => {
     );
     expect(r.state).toBe("AWAITING_REVIEWER");
     expect(r.reviewer.reviewedShaSource).toBe("check-run");
+  });
+});
+
+describe("a review-object reviewer's findings in its review body", () => {
+  it("does not converge over an outside-diff finding until it is answered", async () => {
+    const { body, keys } = rabbitBody("pipe-fields-outside-diff");
+    const reviews = [review(HEAD, 2, undefined, body)];
+    const open = await gate({ checkRuns: [rabbit()], reviews });
+    expect(open.state).toBe("ROUND_READY");
+    expect(open.work.summaryUnaddressed).toBe(1);
+    const answered = await gate({
+      checkRuns: [rabbit()],
+      reviews,
+      addressed: keys,
+    });
+    expect(answered.state).toBe("CONVERGED");
+    expect(answered.work.summaryFindings).toBe(1);
+  });
+
+  it("reads the findings of every review it submitted", async () => {
+    const earlier = rabbitBody("grouped-sections");
+    const actionable = rabbitBody("current-actionable");
+    const outside = rabbitBody("current-outside-diff");
+    const r = await gate({
+      checkRuns: [rabbit()],
+      reviews: [
+        review(PREV, 1, undefined, earlier.body),
+        review(HEAD, 2, undefined, actionable.body),
+        review(HEAD, 3, undefined, outside.body),
+      ],
+      addressed: [...earlier.keys, ...actionable.keys],
+    });
+    expect(r.state).toBe("ROUND_READY");
+    expect(r.work.summaryFindings).toBe(6);
+    expect(r.work.summaryUnaddressed).toBe(1);
+  });
+
+  it("keeps an earlier review's findings open when its run on the head added no review", async () => {
+    const r = await gate({
+      checkRuns: [rabbit()],
+      reviews: [
+        review(PREV, 1, "2026-11-11T08:00:00Z", rabbitBody("duplicate").body),
+      ],
+    });
+    expect(r.reviewer.reviewedShaSource).toBe("review-check-run");
+    expect(r.state).toBe("ROUND_READY");
+    expect(r.work.summaryUnaddressed).toBe(2);
   });
 });
 

@@ -54,11 +54,12 @@ import {
 } from "../requests.ts";
 import { markdownToAdf } from "./adf.ts";
 import { assignerOperations } from "./assigner.ts";
+import { blockedFieldsBody } from "./blocked-fields.ts";
 import { claimOperations } from "./claim.ts";
 import type { Client, IssueTypeMeta, RelationLink } from "./client.ts";
 import { jiraFacetStores } from "./facets.ts";
 import { type JiraIssue, record, str } from "./read.ts";
-import { fieldOfLabel, inProject, OPEN, quote } from "./jql.ts";
+import { fieldOfLabel, inProject, openClause, quote } from "./jql.ts";
 import { isResolvedState } from "./model.ts";
 import { reportOperations } from "./reports.ts";
 import { LINKED_RELATIONS, type LinkedRelation } from "./settings.ts";
@@ -519,6 +520,35 @@ export function jiraTracker(client: Client): Tracker {
       await transport({ method: "PUT", path: path(issue.key), body }, signal);
     },
 
+    async writeBlockedFields(key, value, signal) {
+      signal?.throwIfAborted();
+      const discovery = client.blockedFields();
+      let onAbort: (() => void) | undefined;
+      const fields = await (signal === undefined
+        ? discovery
+        : Promise.race([
+            discovery,
+            new Promise<never>((_, reject) => {
+              onAbort = () => reject(signal.reason);
+              signal.addEventListener("abort", onAbort, { once: true });
+            }),
+          ]).finally(() => {
+            if (onAbort !== undefined)
+              signal.removeEventListener("abort", onAbort);
+          }));
+      if (fields.length === 0) return false;
+      signal?.throwIfAborted();
+      await transport(
+        {
+          method: "PUT",
+          path: path(key),
+          body: { fields: blockedFieldsBody(fields, value) },
+        },
+        signal,
+      );
+      return true;
+    },
+
     async listLabels() {
       const names = await siteLabels();
       names.sort((a, b) => a.localeCompare(b));
@@ -532,7 +562,9 @@ export function jiraTracker(client: Client): Tracker {
         inProject(
           project,
           match,
-          ...(opts.includeClosed === true ? [] : [OPEN]),
+          ...(opts.includeClosed === true
+            ? []
+            : [openClause(model.stateName("blocked"))]),
         ),
         `issues containing '${text}'`,
       );

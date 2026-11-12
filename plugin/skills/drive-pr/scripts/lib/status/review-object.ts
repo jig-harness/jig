@@ -25,18 +25,18 @@ import { ghCall } from "../proc.ts";
 import { runTitleSays } from "../reviewer-profiles.ts";
 import type { CheckRun } from "./evidence.ts";
 
-/** One pull-request review: its id, the commit it reviewed and when. */
+/** One pull-request review: its id, the commit it reviewed, when, its body. */
 export interface ReviewObject {
   id: number;
   commit: string;
   submittedAt: string;
+  body: string;
 }
 
 /**
  * The newest review `login` submitted on PR `pr`: `{ review: null }` when it
  * submitted none, `null` when the reviews cannot be read or one of that
- * login's is malformed. A pending review is a draft only its author sees and
- * is passed over.
+ * login's is malformed.
  */
 export async function latestReviewBy(
   owner: string,
@@ -44,6 +44,21 @@ export async function latestReviewBy(
   pr: string,
   login: string,
 ): Promise<{ review: ReviewObject | null } | null> {
+  const reviews = await reviewsBy(owner, repo, pr, login);
+  return reviews === null ? null : { review: reviews.at(-1) ?? null };
+}
+
+/**
+ * Every review `login` submitted on PR `pr`, oldest first; `null` when the
+ * reviews cannot be read or one of that login's is malformed. A pending
+ * review is a draft only its author sees and is passed over.
+ */
+export async function reviewsBy(
+  owner: string,
+  repo: string,
+  pr: string,
+  login: string,
+): Promise<ReviewObject[] | null> {
   const r = await ghCall([
     "api",
     "--paginate",
@@ -56,14 +71,13 @@ export async function latestReviewBy(
   );
   const pages = decoded.ok ? decoded.value : null;
   if (!Array.isArray(pages) || !pages.every(Array.isArray)) return null;
-  let newest: ReviewObject | null = null;
+  const reviews: ReviewObject[] = [];
   for (const raw of pages.flat() as unknown[]) {
     const review = reviewOf(raw, login);
     if (review === "malformed") return null;
-    if (review !== null && (newest === null || review.id > newest.id))
-      newest = review;
+    if (review !== null) reviews.push(review);
   }
-  return { review: newest };
+  return reviews.sort((a, b) => a.id - b.id);
 }
 
 /**
@@ -81,7 +95,14 @@ function reviewOf(
   const { id, commit_id: commit, submitted_at: at } = raw;
   if (typeof id !== "number" || typeof commit !== "string") return "malformed";
   if (!/^[0-9a-f]{40}$/.test(commit)) return "malformed";
-  return { id, commit, submittedAt: typeof at === "string" ? at : "" };
+  const body = raw.body ?? "";
+  if (typeof body !== "string") return "malformed";
+  return {
+    id,
+    commit,
+    submittedAt: typeof at === "string" ? at : "",
+    body,
+  };
 }
 
 /** What the witness says of the head. */

@@ -391,6 +391,79 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.211.0] - 2026-11-12
+
+### Added
+
+- The drive reads the findings a review-object reviewer puts only in its
+  review's body, never in a thread: CodeRabbit's outside-diff, nitpick,
+  duplicate and follow-up comments. Each is a summary-only finding, listed by
+  `summary-findings.ts` and answered with `answer-summary-finding.ts`, so a
+  drive no longer converges with one unread. Every CodeRabbit nitpick now
+  needs an answer before the drive converges, so expect a round to answer
+  them. Every review on the pull request is read, since a later review does
+  not repeat an earlier one's entries. An entry Jig cannot read (a section
+  that declares more entries, or an entry id no entry read took) is reported
+  as a finding to answer. Only a format a built-in reviewer profile names is
+  read; CodeRabbit's is the first.
+- An optional `blocked` state in `issue_tracker.states`, for a board that
+  shows stopped work as blocked. With it set and the pull request state
+  labels on (`dispatch.labels.enabled`), a drive that stops with only parked
+  work left (the `jig:parked` label) moves each item its pull request links
+  with `Closes <KEY>` or `Refs <KEY>` to `blocked`, with a comment naming
+  each park's class (`autonomy.park_classes`) and its reason, and a marker
+  recording the state the item left. Once the park is answered and the drive
+  runs again, the item returns to that state. The drive moves the items when
+  it writes its own state label, and the dispatcher's `--apply` run corrects
+  them, under the labels' rules: only where the tracker disagrees, best
+  effort, never on a pull request carrying `jig:hold` or `jig:held`. A stop
+  blocks an item once, so an item a person moves out of `blocked` stays
+  where they put it. A claim refuses an item in `blocked`, a served queue
+  never offers one, `work-batch` reads it as started, the parent roll-up
+  reads it as work in progress, and `dispatch.states` may not list it.
+  Unset, nothing is read or moved.
+- `issue_tracker.jira.blocked_fields` (`reason`, `since`): on Jira, the
+  fields a blocked item gets, written when it moves to `blocked` and cleared
+  when it returns.
+
+### Changed
+
+- The planned page for watching and steering the line, which grows from the
+  dispatch dashboard, keeps the name dispatch dashboard: its design is now
+  [design/dispatch-dashboard.md](design/dispatch-dashboard.md), and the
+  [phone access guide](plugin/phone-access.md) links there. The glossary
+  entry Hub becomes Dispatch dashboard, and the commands, settings and
+  record the design plans are named `jig dashboard`, `dashboard.*` and
+  `operator-conversation`. Nothing that is built changes.
+- NOTICE lists the Lucide icons that the dispatch dashboard design prototype pages carry, with their ISC licence file beside the prototype's other vendored code.
+
+### Fixed
+
+- The dispatcher's park counts include final resolution receipts when a pull request that held parks merges or closes between ticks. Missing receipts remain uncounted, and failed final reads retry on a later tick.
+
+## [0.210.2] - 2026-11-12
+
+### Fixed
+
+- The Jira adapter refuses a `JIRA_BEARER_TOKEN` or `JIRA_TOKEN_COMMAND`
+  credential for an Atlassian Cloud site (`*.atlassian.net`) when
+  `issue_tracker.jira.api_base` is not set, before it sends a request, and
+  says the setting is needed. Before, the site answered a bare `Jira API HTTP
+  403`. A self-hosted site named in `JIRA_ALLOWED_HOSTS` is left alone, and a
+  403 on its first request now names the credential variable.
+
+## [0.210.1] - 2026-11-12
+
+### Changed
+
+- The planned page for watching and steering the line, which grows from the
+  dispatch dashboard, keeps the name dispatch dashboard: its design is now
+  [design/dispatch-dashboard.md](design/dispatch-dashboard.md), and the
+  [phone access guide](plugin/phone-access.md) links there. The glossary
+  entry Hub becomes Dispatch dashboard, and the commands, settings and
+  record the design plans are named `jig dashboard`, `dashboard.*` and
+  `operator-conversation`. Nothing that is built changes.
+
 ## [0.210.0] - 2026-11-11
 
 ### Added
@@ -7235,7 +7308,10 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.210.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.211.0...HEAD
+[0.211.0]: https://github.com/jig-harness/jig/compare/v0.210.2...v0.211.0
+[0.210.2]: https://github.com/jig-harness/jig/compare/v0.210.1...v0.210.2
+[0.210.1]: https://github.com/jig-harness/jig/compare/v0.210.0...v0.210.1
 [0.210.0]: https://github.com/jig-harness/jig/compare/v0.209.0...v0.210.0
 [0.209.0]: https://github.com/jig-harness/jig/compare/v0.208.0...v0.209.0
 [0.208.0]: https://github.com/jig-harness/jig/compare/v0.207.0...v0.208.0

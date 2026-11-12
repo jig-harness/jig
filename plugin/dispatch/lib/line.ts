@@ -30,6 +30,7 @@ import { boardUnread, readyOf } from "./line-ready.ts";
 import { needWorkspace } from "./line-workspace.ts";
 import type { MachineConfig } from "./machine-config.ts";
 import type { SessionsReport } from "./runtime/port.ts";
+import type { FinalParks } from "./park-events.ts";
 import { stuckWhy, type UnclaimedClock } from "./stuck-launches.ts";
 import type { WorkLinks } from "./work-links.ts";
 import type {
@@ -47,6 +48,7 @@ const RECENT_TICKS = 288;
 /** What one repository's tick read beside its report. */
 export interface RepoLineInput {
   drives: DrivenPr[];
+  finalParks?: FinalParks[];
   /** The open pull requests the forge listed; `null` when its listing did not read. */
   open?: number[] | null;
   /** Every pull request and item the tick read a title or a link for. */

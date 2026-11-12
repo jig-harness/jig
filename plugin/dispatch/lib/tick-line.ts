@@ -202,6 +202,7 @@ function parkRepos(
           false,
         open: input?.open ?? null,
         drives: input?.drives ?? [],
+        finalParks: input?.finalParks ?? [],
       },
     ];
   });

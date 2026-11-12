@@ -401,8 +401,8 @@ notice runs out of room it never cuts a chosen option or a note: the
 decisions share what is left, and each that is cut names the kept file that
 holds it whole. The pass records the item's outcome as it does today,
 and its reply names the option and who chose it. Once the ledger keeps
-resolved parks (the hub's first stage,
-[hub.md § Build order](hub.md#build-order)), each keeps its choice beside
+resolved parks (the dashboard's first stage,
+[dispatch-dashboard.md § Build order](dispatch-dashboard.md#build-order)), each keeps its choice beside
 its answer.
 
 Whether a pass applied the chosen option is not checked by a script: what
@@ -611,9 +611,9 @@ Each surface's commit:
 
 | Surface | Commit | Waits on |
 | --- | --- | --- |
-| Dashboard | `c` copies, `p` opens the pull request, the person pastes | nothing |
+| Dashboard, today | `c` copies, `p` opens the pull request, the person pastes | nothing |
 | Orca panel | Send runs `jig send` once for each decision's active answer, a free answer with its words | nothing |
-| The hub | Commit, behind proof that a person is there | its third stage, item 40 |
+| Dashboard, from stage 3 | Commit, behind proof that a person is there | its third stage, item 40 |
 | Terminal | `jig ask --waiting` numbers the options; `jig send` names one | nothing |
 
 ### Reading answers
@@ -646,7 +646,7 @@ in the old form.
   entry carries its `choice` and note, or `free: true`, or `stale` with the
   digest it named. These
   are added fields under `ask`'s version 1, as
-  [addresses.md](addresses.md#what-the-thread-gains-for-the-hub) grows the
+  [addresses.md](addresses.md#what-the-thread-gains-for-the-dashboard) grows the
   thread.
 - **The line and the dashboard.** A parked need whose answers are stale or
   disputed keeps its act and says which, with the options.
@@ -673,7 +673,7 @@ in the old form.
   counted as removed, not answered. The ledger is on the pull request, so a
   re-arm on any host is counted, as far as the owner's tick ran to see it.
   The receipts are the ledger's `resolvedParks`, the last 10 (the receipts one re-arm just wrote are all kept, even past 10), which are also
-  the resolved parks the hub's first stage keeps, and the first thing the
+  the resolved parks the dashboard's first stage keeps, and the first thing the
   ledger cuts as it nears its size limit. A receipt keeps each consumed
   answer without its body, which the kept answers hold for the pass. The
   comparison runs in every tick, whole or partial, for each repository
@@ -684,7 +684,11 @@ in the old form.
   park handed on to be decided provisionally at the `wide` level) and
   `park-removed`, each keyed by its park occurrence, so none is counted
   twice. A held park on a ledger the tick could not read stays held for a
-  later tick, and one on a pull request no longer open is not counted. A park unparked by hand leaves no receipt and is counted as
+  later tick. When a pull request that held parks leaves the open listing,
+  the owner host reads its final ledger once, retrying a failed read on a
+  later tick, and counts the resolution receipts it supports under the same
+  occurrence keys. A park with no receipt on that final ledger stays
+  uncounted, including when the ledger cut receipts. A park unparked by hand on an open pull request leaves no receipt and is counted as
   removed.
 - **Recommendation acceptance.** `jig dispatch log --acceptance` reports,
   per class and repository, how many parks were answered, how many with the
@@ -748,15 +752,15 @@ answer cannot be undone wait on proof that a person answered:
     rules out today and that would need a decision of its own, and its
     webhook secret must be out of reach of every pass, so not on a host that
     runs them.
-  - **A passkey on the hub**, in the hub's third stage
-    ([hub.md § When the hub writes](hub.md#when-the-hub-writes)).
+  - **A passkey on the dashboard**, in the dashboard's third stage
+    ([dispatch-dashboard.md § When the dashboard writes](dispatch-dashboard.md#when-the-dashboard-writes)).
 
 ### Records
 
 The drive ledger's row in [plugin/RECORDS.md](../plugin/RECORDS.md) gains
 each park's `digest` and the resolution receipt of each park a re-arm unparked. The `drive-answer` row gains the line's digest
 suffix and the payload fields `decision` (the digest)
-and `choice` (the option's name and the form). The hub's third stage ([hub.md § Build order](hub.md#build-order)) adds
+and `choice` (the option's name and the form). The dashboard's third stage ([dispatch-dashboard.md § Build order](dispatch-dashboard.md#build-order)) adds
 the plan id, the dry run's digest and the kind of proof to the same record
 ([addresses.md](addresses.md)); both add payload fields under version 1, so
 neither waits on the other.

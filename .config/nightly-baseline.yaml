@@ -1,0 +1,597 @@
+# The nightly run's known-failure baseline: the tests known to fail on macOS
+# or Windows, each group with the reason they fail and the issue that owns
+# the fix. The nightly workflow (.github/workflows/nightly.yml) names this
+# file to `bun run test` (scripts/test.ts): a test stage that fails only on
+# tests recorded here for its platform passes; a failure not recorded here
+# fails it, and the run's tracking issue names the test. A recorded test that
+# passes is reported as stale in the run, and its entry is removed, so the
+# list only shrinks: add an entry only for a test that already fails on main,
+# with the issue that will fix it. A test that cannot pass on a platform for
+# want of a capability the platform lacks is skipped through the shared skip
+# helpers (lib/test-helpers/windows-skip.ts) instead.
+#
+# Each group holds a platform (linux, macos or windows), the owning issue as
+# "#<number>", the reason, and the tests: each test file's path from the
+# repository root, with the full names of its failing tests as bun prints
+# them, `describe` titles first, joined by " > ". A hook that fails outside
+# any test is "(unnamed)". `bun run gates` checks the format and that every
+# entry still names a test in its file (scripts/check-nightly-baseline.ts).
+version: 1
+groups:
+  - platform: macos
+    issue: "#818"
+    reason: "The dispatcher's suite fails on macOS: equality and not-empty assertions across the notify, takeover, follow-up and launch-claim cases, and waits for a pass that time out."
+    tests:
+      plugin/dispatch/__tests__/busy-holder.test.ts:
+        - "jig dispatch with a checkout Orca does not list holding the head branch > refuses while it is in use, notifies a person once, and opens past it once it is idle"
+      plugin/dispatch/__tests__/change-probe-wake.test.ts:
+        - "jig dispatch probe --apply > runs the tick of the repository a new review comment landed on, and none the next minute"
+        - "jig dispatch probe --apply > wakes nothing and exits 1 when the forge does not answer"
+      plugin/dispatch/__tests__/codex.test.ts:
+        - "jig dispatch --apply picks up an item on a Codex account > starts a headless Codex pass with the bypass, bound through CODEX_HOME, and keeps the route for the implementer"
+      plugin/dispatch/__tests__/drift.test.ts:
+        - "stage drift > reports a drive whose unresolved threads rose across two rounds as drifting, and notifies it once"
+      plugin/dispatch/__tests__/failed-rearm.test.ts:
+        - "a failed re-arm > of a pull request behind its branch is held, notified once with both heads and the recovery"
+      plugin/dispatch/__tests__/failure-ledger.test.ts:
+        - "jig dispatch backs off a label write that keeps failing > waits between tries, notifies a person once past three failures in a row, and clears the row once the write succeeds"
+        - "jig dispatch tells a person about a repository whose turn keeps failing > notifies after three failing ticks in a row, and one tick that reads it whole clears the row and retires the notice"
+      plugin/dispatch/__tests__/followup-death.test.ts:
+        - "runs a follow-up that died again once, past its stale failed marker, and hands a second death to a person"
+      plugin/dispatch/__tests__/followup-lane.test.ts:
+        - "names the accounts for a follow-up no admitted account has a free slot for"
+        - "names the lane's cap for a follow-up the host already runs enough of"
+        - "starts a drive's launch and the follow-ups up to the lane's budget in one tick, inside its deadline, and names the lane's budget for the rest"
+      plugin/dispatch/__tests__/followup-replay.test.ts:
+        - "a follow-up whose launch never ran after its marker was posted > is notified as needing a person, once, when an earlier marker means the replay cannot be proven safe, and launched by nothing until it is cleared"
+      plugin/dispatch/__tests__/followup.test.ts:
+        - "jig dispatch --apply follows up a merge > starts a headless follow-up pass bound to the admitted account, and the report and launch record say so"
+      plugin/dispatch/__tests__/load-tick.test.ts:
+        - "jig dispatch reads the host's load each tick > with enforcement and one drive's headroom left, admits the re-arm and holds the pickup"
+        - "jig dispatch reads the host's load each tick > without enforcement starts the launch a gauge refuses, and reports it as one it would hold"
+      plugin/dispatch/__tests__/naming.test.ts:
+        - "jig dispatch names what it starts > keeps the marks when a notification goes to the notices workspace, leaving the drive's own workspace as it was"
+        - "jig dispatch names what it starts > names a follow-up's new workspace and its tab, and keeps the mark on the record"
+        - "jig dispatch names what it starts > names a re-arm's new workspace and its tab, and keeps the mark on the record"
+      plugin/dispatch/__tests__/no-cause-stops.test.ts:
+        - "no recorded cause > re-arms three times, then notifies once with the handoff"
+      plugin/dispatch/__tests__/notices-retire.test.ts:
+        - "jig dispatch --apply retires the notices workspace > closes a new notices workspace's terminals, and keeps it while its cause stands unread"
+        - "jig dispatch --apply retires the notices workspace > does not run the repository's create hook in it, so what a hook installs never keeps it"
+        - "jig dispatch --apply retires the notices workspace > keeps a checkout switched to a different clean branch during retirement"
+        - "jig dispatch --apply retires the notices workspace > keeps a lasting cause whose target is out-of-scope"
+        - "jig dispatch --apply retires the notices workspace > keeps a lasting cause whose target is unplaced"
+        - "jig dispatch --apply retires the notices workspace > keeps a lasting cause whose target is withheld"
+        - "jig dispatch --apply retires the notices workspace > keeps card changes after the first reread: {\"comment\":\"Personal notes\"}"
+        - "jig dispatch --apply retires the notices workspace > keeps card changes after the first reread: {\"unread\":true}"
+        - "jig dispatch --apply retires the notices workspace > keeps personal notes appended to a dispatcher notice"
+        - "jig dispatch --apply retires the notices workspace > leaves it for a person when git shows changes in it"
+        - "jig dispatch --apply retires the notices workspace > leaves it for a person when its comment is not the dispatcher's"
+        - "jig dispatch --apply retires the notices workspace > preserves personal files hidden by assume-unchanged"
+        - "jig dispatch --apply retires the notices workspace > preserves personal files hidden by ignored"
+        - "jig dispatch --apply retires the notices workspace > preserves personal files hidden by skip-worktree"
+        - "jig dispatch --apply retires the notices workspace > prunes ownership snapshots when their workspace leaves the runtime"
+        - "jig dispatch --apply retires the notices workspace > refuses an unread mark of false"
+        - "jig dispatch --apply retires the notices workspace > refuses an unread mark of null"
+        - "jig dispatch --apply retires the notices workspace > refuses an unread mark of undefined"
+        - "jig dispatch --apply retires the notices workspace > refuses removal when the final read reveals {\"agents\":[{\"paneKey\":\"tab:pane\",\"state\":\"running\"}]}"
+        - "jig dispatch --apply retires the notices workspace > refuses removal when the final read reveals {\"unverifiableTerminalCount\":1}"
+        - "jig dispatch --apply retires the notices workspace > refuses removal when the final read reveals {\"worktreeId\":\"replacement-workspace\"}"
+        - "jig dispatch --apply retires the notices workspace > removes it at the first read tick when dispatch.notices_linger is 0s"
+        - "jig dispatch --apply retires the notices workspace > removes it once read for the linger, and opens no new one for the cause already sent"
+        - "jig dispatch --apply retires the notices workspace > removes it unread once every cause it carried is gone"
+        - "jig dispatch --apply retires the notices workspace > reports an initial terminal close failure with its safe manual retry"
+        - "jig dispatch --apply retires the notices workspace > restarts linger after an unknown listed unread mark false"
+        - "jig dispatch --apply retires the notices workspace > restarts linger after an unknown listed unread mark null"
+        - "jig dispatch --apply retires the notices workspace > restarts linger after an unknown listed unread mark undefined"
+        - "jig dispatch --apply retires the notices workspace > restarts linger when the runtime observes an unread card"
+        - "jig dispatch --apply retires the notices workspace > restarts the linger after an unread tick that holds personal content"
+      plugin/dispatch/__tests__/notify.test.ts:
+        - "jig dispatch --apply notifies a person > keeps a suppression record while its pull request is outside the label scope"
+        - "jig dispatch --apply notifies a person > notifies a parked drive once across three ticks in the notices workspace, naming the drive's own, and re-arms it at the tick after the answer"
+        - "jig dispatch --apply notifies a person > repeats a read notice on %s within its budget and records exact ownership"
+        - "jig dispatch --apply notifies a person > sends a message again when the workspace's comment did not take it"
+        - "jig dispatch --apply notifies a person > sends a notice once only when renotify_after is zero"
+        - "jig dispatch --apply notifies a person > sends every cause to the notices workspace in one message, even where the pull request's own workspace could take it"
+      plugin/dispatch/__tests__/orphan-takeover.test.ts:
+        - "a silent driver no launch started > is taken over once this clone's doctor reads its holder DEAD"
+        - "a silent driver no launch started > is taken over once this clone's doctor reads its holder WEDGED"
+      plugin/dispatch/__tests__/pickup.test.ts:
+        - "jig dispatch --apply picks up assigned items > does not pick an item up again once its pass ended without claiming it"
+        - "jig dispatch --apply picks up assigned items > gives an assigned todo item exactly one headless do-item pass across three ticks, on Orca's own answer"
+        - "jig dispatch --apply picks up assigned items > holds a pickup its start rules refused, with the reason, until the item changes"
+        - "jig dispatch --apply picks up assigned items > keeps the route on the record for the implementer, and runs the pass without it"
+        - "jig dispatch --apply picks up assigned items > names the item's new workspace and its tab as dispatched, and keeps the mark on its record"
+        - "jig dispatch --apply picks up assigned items > notifies a pass that stopped on a question, with the question, as a need, and starts nothing again"
+        - "jig dispatch --apply picks up assigned items > notifies the question of a pass that claimed the item before it stopped"
+        - "jig dispatch --apply picks up assigned items > records a pickup's opened pull request though the merged listing fails"
+        - "jig dispatch --apply picks up assigned items > remembers a claim seen while the pass runs, so the item's return releases the record"
+        - "jig dispatch --apply picks up assigned items > runs the pass under dispatch.pickup_deadline"
+        - "jig dispatch --apply picks up assigned items > starts served work without a factory identity and preserves the claim context"
+        - "jig dispatch result > records a session's answer once, under its own record's token only"
+        - "jig dispatch result > requires a nonempty no-PR reason and rejects contradictory or invalid handoffs"
+        - "jig dispatch result > takes --refused only on a pickup's failed, with a time and a reason"
+      plugin/dispatch/__tests__/redrive-conflict.test.ts:
+        - "a parked drive whose pull request conflicts with its base > goes back to a person, its park and its conflict, when the re-drive leaves it parked at the same pair"
+        - "a parked drive whose pull request conflicts with its base > is re-driven once for the pair of heads, carrying stale rather than parked while it is owed"
+        - "a parked drive whose pull request conflicts with its base > needs a person once the re-drive stops 9 at the same pair, and is re-driven again when the base moves"
+        - "a parked drive whose pull request conflicts with its base > stays parked while the forge reports it mergeable or is still computing"
+        - "jig dispatch --apply re-drives a drive that stopped on a conflict > gives a converged re-drive that stops 9 one more attempt under the new key, then tells a person"
+        - "jig dispatch --apply re-drives a drive that stopped on a conflict > makes a new attempt when the base moves, and when the head moves, and tells a person of each stop"
+        - "jig dispatch --apply re-drives a drive that stopped on a conflict > reads another exit of a re-drive as the table says for that exit"
+        - "jig dispatch --apply re-drives a drive that stopped on a conflict > tells a person once when its own re-drive stops 9 at the same change, and launches nothing more"
+        - "jig dispatch --apply re-drives a drive that stopped on a conflict > tells a person when its re-drive ended without a stop of its own, the ledger still stopped 9"
+      plugin/dispatch/__tests__/redrive-infra.test.ts:
+        - "jig dispatch --apply re-drives an infrastructure failure that persisted > tells a person once the stops outlast the re-drives"
+      plugin/dispatch/__tests__/redrive-mechanical.test.ts:
+        - "jig dispatch --apply re-drives a stall and a spent CI-repair budget > keeps a generic exit 1 a person's"
+        - "jig dispatch --apply re-drives a stall and a spent CI-repair budget > re-arms a stop 14 once per head, then tells a person, saying when the pull request conflicts"
+        - "jig dispatch --apply re-drives a stall and a spent CI-repair budget > re-arms a stop 21 once per head, then tells a person, saying when the pull request conflicts"
+        - "jig dispatch --apply re-drives a stall and a spent CI-repair budget > re-drives a stall that left work only in the tree it stalled in"
+      plugin/dispatch/__tests__/redrive-recovery.test.ts:
+        - "jig dispatch --apply re-drives a recovery stop > re-arms a failure on a conflicting pull request once per head and base head, then tells a person"
+        - "jig dispatch --apply re-drives a recovery stop > re-arms a pass deadline once per head, counted against the budget, then tells a person"
+        - "jig dispatch --apply re-drives a recovery stop > re-drives a pass deadline that left work only in the tree it stopped in"
+        - "jig dispatch --apply re-drives a recovery stop > spends one budget across a no-cause re-arm, a pass deadline and a conflicting failure"
+      plugin/dispatch/__tests__/shared-hosts.test.ts:
+        - "two hosts dispatching one repository > leaves the notifications and the history rows to the host that owns the repository"
+      plugin/dispatch/__tests__/silent-takeover.test.ts:
+        - "jig dispatch --apply and a silent driver no launch started > does not take a silent drive over again after a takeover the doctor's reading started ended"
+        - "jig dispatch --apply and a silent driver no launch started > keeps a settled takeover settled when the doctor reads its holder dead"
+        - "jig dispatch --apply and a silent driver no launch started > takes it over where this host shows its run ended, once per ledger facts"
+        - "jig dispatch --apply and a silent driver no launch started > tells a person once, and does not take it over, when its driver's clone is on another host"
+        - "jig dispatch --apply and a silent driver no launch started > tells a person, and does not take it over, while its driver's pid still runs"
+      plugin/dispatch/__tests__/stage-defect.test.ts:
+        - "a defect in one stage of a repository's --apply > stops that stage only: the tick's other launches start, and the receipt and the outcome log carry the defect"
+      plugin/dispatch/__tests__/stale-claims.test.ts:
+        - "jig dispatch --apply releases a stale follow-up claim > notifies a person, never releasing a second time, when a claim on the pull request goes stale again"
+      plugin/dispatch/__tests__/steer.test.ts:
+        - "the continue nudge > nudges a session waiting after its account's wall reopened exactly once across three ticks"
+      plugin/dispatch/__tests__/steward-tick.test.ts:
+        - "steward tick integration > a transient recovery waits for an account, then launches once and spends the shared recovery budget"
+        - "steward tick integration > owner schedules a complex-model pass under a 15 minute deadline, and unchanged input never schedules another"
+        - "steward tick integration > records submitted by a pass wait until a later tick, and a forged human-stop rearm is consumed without launching"
+      plugin/dispatch/__tests__/throughput.test.ts:
+        - "fills available capacity and still opens notices: {\"slots\":1,\"starts\":1,\"reason\":\"no account has a free slot\"}"
+        - "fills available capacity and still opens notices: {\"slots\":8,\"starts\":3,\"reason\":\"per-tick budget\"}"
+        - "starts an adoption in its first tick despite ten follow-ups, even with only one launch open per tick"
+      plugin/dispatch/__tests__/unclaimed-launch.test.ts:
+        - "a launch answered as started that no wrapper claimed > is notified as needing a person once past unclaimed_after, then suppressed, and cleared by jig dispatch clear"
+      plugin/dispatch/__tests__/unclean-tree.test.ts:
+        - "honors an explicit rearm request on a needs-person stop in the existing tree"
+        - "recovers an original tree that is detached, found by its pull request link"
+  - platform: macos
+    issue: "#818"
+    reason: "Gate-set tests outside the dispatcher fail on macOS: linked-worktree paths in gc, tab and lens-brief contents, and Git's refusal text."
+    tests:
+      plugin/gc/__tests__/integration.test.ts:
+        - "an entry spelling the clone through a symbolic link is the same clone"
+        - "install from a linked worktree registers the primary checkout and resolves roots from it"
+        - "install replaces and uninstall removes an entry naming a linked worktree"
+      plugin/shared/__tests__/orca-tabs.test.ts:
+        - "closing a subject's earlier tabs > closes only the same subject's tabs in the same worktree, never the new one"
+      plugin/skills/review/__tests__/lens-runner.test.ts:
+        - "a selected lens's brief holds the lens, the diff, the touched files and the base's instruction files"
+      tools/plugin/bootstrap-git.test.ts:
+        - "real Git refuses dirty source despite inherited configuration and core.worktree"
+  - platform: macos
+    issue: "#818"
+    reason: "The dashboard's browser suites find no Chromium in the Playwright cache, though the job requires a browser."
+    tests:
+      dashboard/browser-interactions.test.ts:
+        - "a browser is available where one is required"
+      dashboard/browser-keys.test.ts:
+        - "a browser is available where one is required"
+      dashboard/browser-links.test.ts:
+        - "a browser is available where one is required"
+      dashboard/browser-load.test.ts:
+        - "a browser is available where one is required"
+      dashboard/browser-needs.test.ts:
+        - "a browser is available where one is required"
+      dashboard/browser-picks.test.ts:
+        - "a browser is available where one is required"
+      dashboard/browser-retention.test.ts:
+        - "a browser is available where one is required"
+      dashboard/browser-ticks.test.ts:
+        - "a browser is available where one is required"
+      dashboard/browser.test.ts:
+        - "a browser is available where one is required"
+  - platform: macos
+    issue: "#816"
+    reason: "policy-base.ts exports no base commit on macOS, so the drive cannot read its ceiling there."
+    tests:
+      plugin/skills/drive-pr/__tests__/policy-base.test.ts:
+        - "policy-base.ts > bounds a stacked base by the integration branch's policy"
+        - "policy-base.ts > bounds a stacked base even when the pull request names that base as the integration branch"
+        - "policy-base.ts > exports the base branch's commit, and the drive reads its ceiling there"
+        - "policy-base.ts > fails closed when the base cannot be fetched, rather than reading a stale ref"
+        - "policy-base.ts > takes the integration branch the default branch's configuration declares, not the remote default"
+  - platform: windows
+    issue: "#819"
+    reason: "The drive-pr suite fails on Windows: attach exits 2 where 0 is expected, messages spell paths with backslashes or short temporary names, driver-presence and lock cases, and loop-control cases that time out."
+    tests:
+      plugin/skills/drive-pr/__tests__/attach-place-env.test.ts:
+        - "destinationEnv > in another tree, keeps a drive's variables that name the destination"
+        - "destinationEnv > keeps a drive's variables that name the same tree"
+      plugin/skills/drive-pr/__tests__/attach-pr-pass.test.ts:
+        - "attach-pr.ts in a pass of the drive that holds the tree > --place refuses a qualified reference to the drive's own PR"
+        - "attach-pr.ts in a pass of the drive that holds the tree > attaches, as its driver's attach does"
+      plugin/skills/drive-pr/__tests__/attach-pr-place.test.ts:
+        - "attach-pr.ts --place > creates a tree from the primary checkout under the clone's roots, not this session's overlay"
+        - "attach-pr.ts --place > creates another repository's tree under that clone's roots, not this session's overlay"
+        - "attach-pr.ts --place > from another working tree drives from that tree"
+        - "attach-pr.ts --place > from the primary checkout creates a tree under gc.worktree_roots"
+        - "attach-pr.ts --place > places another repository's PR in the clone `clones` maps it to"
+        - "attach-pr.ts --place > refuses a mapped clone of another repository, or on another host"
+        - "attach-pr.ts --place > reuses a tree it created when the attach there did not finish"
+        - "attach-pr.ts --place > with DRIVE_PR_ATTACH=off places the tree as it stands"
+      plugin/skills/drive-pr/__tests__/attach-pr.test.ts:
+        - "a detached tree's record > answers the PR when there is no branch to ask gh about"
+        - "a detached tree's record > gives way to the branch once no other tree holds it"
+        - "a detached tree's record > is removed when the tree is attached by name"
+        - "a detached tree's record > keeps a tree at the head with uncommitted edits detached once the branch is free"
+        - "a detached tree's record > keeps a tree with its own commits detached"
+        - "a detached tree's record > keeps answering for the drive's own commit and once it is pushed"
+        - "a detached tree's record > leaves a tree at the head with its uncommitted edits while another holds the branch"
+        - "a detached tree's record > leaves a tree past the head with its uncommitted edits in place"
+        - "a detached tree's record > stops answering once the tree holds a stacked PR's pushed head"
+        - "a detached tree's record > stops answering once the tree is detached somewhere else"
+        - "attach-pr.ts attaches > a tree already on the head branch, leaving what it holds uncommitted"
+        - "attach-pr.ts attaches > a tree detached past the base, whose commits a remote branch holds"
+        - "attach-pr.ts attaches > again through its record, catching up to a newer head"
+        - "attach-pr.ts attaches > the head branch by name when no working tree holds it"
+        - "attach-pr.ts attaches > the head commit detached when another tree holds the branch"
+        - "attach-pr.ts attaches > the remote head detached when a missing registered tree holds local work"
+        - "attach-pr.ts attaches > through the configured remote, whatever origin names"
+        - "attach-pr.ts refuses > a branch that has diverged from the PR's head"
+        - "attach-pr.ts refuses > a detached head whose commits no branch or remote holds"
+        - "attach-pr.ts refuses > a local branch with commits the PR's head lacks"
+        - "attach-pr.ts refuses > a tree in an unfinished git operation"
+        - "attach-pr.ts refuses > a tree with uncommitted changes"
+        - "attach-pr.ts refuses > leaves no driver lock behind once it has attached"
+        - "attach-pr.ts refuses > to move the clone's primary checkout off its branch"
+        - "attach-pr.ts refuses > when the tree holding the branch has commits the PR's head lacks"
+        - "attach-pr.ts refuses > when the tree holding the branch has uncommitted changes"
+      plugin/skills/drive-pr/__tests__/ci-hold-doctor.test.ts:
+        - "CI hold doctor evidence gathering > names the evidence cause for {\"branchReason\":\"checked out on 'other', not this PR's head branch 'feature'\"}"
+        - "CI hold doctor evidence gathering > names the evidence cause for {\"gitFailure\":\"HEAD\"}"
+        - "CI hold doctor evidence gathering > names the evidence cause for {\"gitFailure\":\"status\"}"
+        - "CI hold doctor evidence gathering > names the evidence cause for {\"operationReadFailure\":true}"
+        - "CI hold doctor evidence gathering > names the evidence cause for {\"reviewState\":\"AWAITING_REVIEWER\"}"
+        - "CI hold doctor evidence gathering > names the evidence cause for {\"reviewState\":\"INDETERMINATE\"}"
+        - "CI hold doctor evidence gathering > names the evidence cause for {\"reviewState\":\"UNSUPPORTED_CLI\"}"
+        - "CI hold doctor evidence gathering > passes installed sibling helper paths to the review evaluator"
+        - "CI hold doctor evidence gathering > reconciles a running forge ledger with a stopped local identity and offers direct release"
+        - "CI hold doctor evidence gathering > uses a released driver record after normal lease cleanup"
+      plugin/skills/drive-pr/__tests__/ci-hold-listing.test.ts:
+        - "plain listing [\"--json\"] does not query the forge for a live held drive"
+        - "plain listing [] does not query the forge for a live held drive"
+      plugin/skills/drive-pr/__tests__/ci-hold-recovery-witness.test.ts:
+        - "keeps a termination witness after ledger settlement until the CI hold is released"
+        - "retains a termination witness for unreadable saved state \"{\""
+        - "retains a termination witness for unreadable saved state {\"pr\":123,\"rounds\":0,\"lastCountedHead\":\"\",\"attempts\":0,\"attemptsHead\":\"\",\"lastReflectedRound\":0,\"lastReflectedAttempts\":0,\"verifiedSha\":\"\",\"phase\":\"\",\"readyMarkedRound\":0,\"ciHold\":\"held\",\"parked\":[],\"held\":[],\"lastEscalatedRound\":0,\"lastEscalatedInvariant\":\"\",\"roundPaths\":[],\"lastProgressAt\":\"\",\"quotaPark\":null,\"drivenBranch\":null}"
+        - "retains a termination witness for unreadable saved state {}"
+      plugin/skills/drive-pr/__tests__/claim-host.test.ts:
+        - "a driver lock's host > judges a lock taken under this host's earlier name by its pid"
+        - "a driver lock's host > leaves a lock from another host id unanswerable, even under this host's name"
+        - "a driver lock's host > records this machine's host id beside its name and platform, and reads it back"
+      plugin/skills/drive-pr/__tests__/drive-pr-drive-converged.test.ts:
+        - "drive.ts loop control > the converged clean-tree check refuses on a git TIMEOUT rather than hanging"
+      plugin/skills/drive-pr/__tests__/drive-pr-drive-lock.test.ts:
+        - "drive.ts loop control > single-instance lock > a LIVE pid that stopped refreshing is a recycled pid, not a driver"
+        - "drive.ts loop control > single-instance lock > a lock whose holder is DEAD is recovered at once, without a wall-clock guess"
+        - "drive.ts loop control > single-instance lock > recovers a stale lock and leaves nothing behind"
+        - "drive.ts loop control > single-instance lock > refreshes a FILE-BACKED account identity after a CI-repair pass too, not only after an ordinary one"
+        - "drive.ts loop control > single-instance lock > retries every held lock independently, not just the first one to reach `fresh`"
+      plugin/skills/drive-pr/__tests__/drive-pr-drive-pickup-guards.test.ts:
+        - "drive.ts --take-over admits and refuses by the holder > admits a dead holder whose tree is clean, recording it DEAD"
+        - "drive.ts --take-over admits and refuses by the holder > admits a dead holder whose tree no longer exists, saying what it lost"
+        - "drive.ts --take-over admits and refuses by the holder > carries a stamped hold over and re-holds the unstamped one unconfirmed, posting nothing"
+        - "drive.ts --take-over admits and refuses by the holder > names the verdict and prints the --take-over command when a plain arm meets a WEDGED holder"
+        - "drive.ts --take-over admits and refuses by the holder > refuses a holder with stale progress while its pass is running"
+        - "drive.ts --take-over admits and refuses by the holder > refuses a stale lock whose process is still alive"
+      plugin/skills/drive-pr/__tests__/drive-pr-drive-pickup.test.ts:
+        - "drive.ts --take-over > refuses a dead holder on this machine while its tree holds leftovers"
+        - "drive.ts --take-over > stops a WEDGED holder, records the takeover, reconciles, and reopens an unlanded hold"
+        - "drive.ts re-arms a quota-parked drive only from another account > never reads a token fingerprint as the account on either side"
+      plugin/skills/drive-pr/__tests__/drive-pr-drive-rounds.test.ts:
+        - "drive.ts loop control > carries the round budget across process restarts"
+        - "drive.ts loop control > kills a pass that outlives --pass-timeout and exits PASS_DEADLINE"
+        - "drive.ts loop control > mailbox round control > resumes a paused drive, then accepts a stop after its active pass finishes"
+      plugin/skills/drive-pr/__tests__/drive-pr-findings-session-tokens.test.ts:
+        - "assert-post-allowed.ts (the external-mutation fence) > $DRIVE_PR_STATE_DIR_IDENTITY — the driver-established baseline > fails CLOSED when the database was deleted and created again BEFORE the pass started"
+      plugin/skills/drive-pr/__tests__/drive-pr-missing-tree.test.ts:
+        - "a dead driver's removed or unreadable worktree > admits a missing recorded path and explains recovery from the remote head"
+        - "a dead driver's removed or unreadable worktree > does not diagnose a living process with an old heartbeat and missing tree as DEAD"
+        - "a dead driver's removed or unreadable worktree > refuses an existing registered worktree when git malformed fails"
+        - "a dead driver's removed or unreadable worktree > refuses an existing registered worktree when git status fails"
+        - "a dead driver's removed or unreadable worktree > refuses an existing registered worktree when git worktree fails"
+      plugin/skills/drive-pr/__tests__/drive-pr-status-skipped-head.test.ts:
+        - "drive-status.ts over a head the reviewer skipped > converges when a base edit shifts a file's hunk when git quotes its name in the patch header"
+      plugin/skills/drive-pr/__tests__/drive-pr-takeover-binding.test.ts:
+        - "drive.ts --take-over reopening unverified holds > re-holds an unverified thread unconfirmed with no reply, and records a hold that changed apart"
+        - "drives.ts --stop --expect-started > refuses a holder of another acquisition with exit 3, and stops the one it names"
+      plugin/skills/drive-pr/__tests__/driver-observation.test.ts:
+        - "durable driver observations > accepts an acquisition-bound lock with an omitted Windows creation time"
+        - "durable driver observations > does not mistake a live or unidentifiable driver for a dead one"
+        - "durable driver observations > does not release a successor installed while reconciliation holds the PR slot"
+        - "durable driver observations > keeps separate paths for successive acquisitions"
+        - "durable driver observations > persists pass identity without clearing a prior unknown launch (%s)"
+        - "durable driver observations > preserves a successor that replaced the observed lock nonce"
+        - "durable driver observations > recovers only a complete acquisition whose observed work has ended"
+        - "durable driver observations > rejects a retained target whose creation identity was never captured"
+        - "durable driver observations > retains a surviving pass identity or any live member of its group"
+        - "durable driver observations > rolls back the recovery reservation when publishing its released witness fails"
+        - "durable driver observations > withholds recovery for a retained helper read in another timezone"
+        - "durable driver observations > withholds recovery for absent, damaged, pending and uncertain records"
+        - "durable driver observations > withholds recovery for an unreadable table or foreign process namespace"
+        - "durable driver observations > withholds recovery for malformed retained records"
+        - "durable driver observations > withholds recovery for pending or still-running registered work"
+      plugin/skills/drive-pr/__tests__/driver-presence.test.ts:
+        - "driverPresence > knows nothing of a run this host's database does not record"
+        - "driverPresence > reads a driver still holding its lock as present, and one with no observation as unknown"
+        - "driverPresence > reads a released driver as gone once its pid no longer runs"
+      plugin/skills/drive-pr/__tests__/driver-stop-completion.test.ts:
+        - "an acknowledgement the driver cannot append keeps its locks=false"
+        - "an acknowledgement the driver cannot append keeps its locks=true"
+      plugin/skills/drive-pr/__tests__/drives.test.ts:
+        - "gatherWorktreeLeftovers > a clean repo WITH a resolvable upstream and nothing ahead reports all-false leftovers"
+        - "gatherWorktreeLeftovers > a local commit ahead of the pushed upstream is reported as unpushed"
+        - "gatherWorktreeLeftovers > an uncommitted change is reported, unpushed and unconcludedOp untouched"
+        - "gatherWorktreeLeftovers > an unconcluded MERGE_HEAD is named, independent of uncommitted/unpushed state"
+        - "printHuman surfaces DEAD_WITH_LEFTOVERS on a stale row > a dead driver whose worktree still has an unconcluded merge prints the leftovers reason and recovery, not just \"the next drive recovers it\""
+      plugin/skills/drive-pr/__tests__/infra-recovery.test.ts:
+        - "moveHead > commits an empty commit when the branch is not behind its base, and pushes it"
+        - "moveHead > hands a base merge to the next validated round, with no empty commit"
+      plugin/skills/drive-pr/__tests__/morning-report.test.ts:
+        - "drives.ts --report > a recent local ledger cannot keep an exited matching driver running"
+      plugin/skills/drive-pr/__tests__/override-isolation.test.ts:
+        - "the inherited mutation fence accepts its driver's database and refuses another"
+      plugin/skills/drive-pr/__tests__/pass-args-host.test.ts:
+        - "drive.pass_args on each side > a host that opted in, and a repository's empty list: the file is refused, naming the field"
+        - "drive.pass_args on each side > a host that opted in, and a repository's own mode: the file is refused, naming the field"
+        - "drive.pass_args on each side > a repository's null: the file is refused, naming the field"
+        - "drive.pass_args on each side > no host setting, and a repository that asks for bypass: the file is refused, naming the field"
+        - "drive.pass_args on each side > no host setting, and a repository's empty list: the file is refused, naming the field"
+      plugin/skills/drive-pr/__tests__/policy-base.test.ts:
+        - "policy-base.ts > bounds a stacked base by the integration branch's policy"
+        - "policy-base.ts > bounds a stacked base even when the pull request names that base as the integration branch"
+        - "policy-base.ts > exports the base branch's commit, and the drive reads its ceiling there"
+        - "policy-base.ts > fails closed when the base cannot be fetched, rather than reading a stale ref"
+        - "policy-base.ts > leaves the variable empty when the base is not in the clone, and the drive fails closed"
+        - "policy-base.ts > takes the integration branch the default branch's configuration declares, not the remote default"
+      plugin/skills/drive-pr/__tests__/terminal-states-dispatch.test.ts:
+        - "the consistency check over dispatcher files > passes a file that reads the registry"
+        - "the registry import > binds a runtime value from the registry itself"
+        - "the registry import > is an import declaration, not a comment or a string"
+      plugin/skills/drive-pr/__tests__/tree-drivers.test.ts:
+        - "treeDrivers > cannot tell for a clone whose state directory has no database"
+        - "treeDrivers > cannot tell for a clone with a drive identity and no state at this root"
+        - "treeDrivers > names a live driver holding the tree's lock, and none once it is released"
+        - "treeDrivers > names a live session lease of the tree"
+      plugin/skills/drive-pr/__tests__/worktree-identity.test.ts:
+        - "a database's identity is stable, and a database created again has another"
+  - platform: windows
+    issue: "#819"
+    reason: "A file's hook cannot remove a test's temporary directory on Windows while a child process still holds it open (EBUSY)."
+    tests:
+      plugin/skills/drive-pr/__tests__/announce-ready.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/attach-pr-drive.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/attach-pr-pass.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/attach-pr-place.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/attach-pr.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/ci-hold-adopt.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/ci-hold-diagnosis.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/ci-policy.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/drive-pr-drive-converged.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/drive-pr-drive-entry.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/drive-pr-drive-ledger.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/drive-pr-drive-lock-pass.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/drive-pr-drive-lock.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/drive-pr-drive-pickup-guards.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/drive-pr-drive-pickup.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/drive-pr-drive-ready.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/drive-pr-drive-rounds.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/drive-pr-drive-signals.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/drive-pr-findings-finish-round-batch.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/drive-pr-findings-finish-round-push.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/drive-pr-findings-finish-round-refusals.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/drive-pr-findings-finish-round-triage.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/drive-pr-findings.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/drive-pr-missing-tree.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/drive-pr-quota-wall-account.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/drive-pr-rearm-answers.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/drive-pr-round.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/drive-pr-state-remote-mutation-lock.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/drive-pr-state-sessionless-trees.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/drive-pr-status-convergence-evidence.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/drive-pr-status-convergence-head.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/drive-pr-status-round-paths.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/drive-pr-status-undispatched.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/drive-pr-status.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/drive-pr-takeover-binding.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/drive-state-database.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/drive-stop-request.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/drives.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/inherited-merge-round.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/lock.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/override-isolation.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/override-live-drivers.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/reap-state.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/reconcile-replied-threads.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/repository-isolation.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/round-plan-cli.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/scanner-sweep-guard.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/seed-handoff.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/triage-thread.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/unpushed-advice.test.ts:
+        - "(unnamed)"
+      plugin/skills/drive-pr/__tests__/worktree-identity.test.ts:
+        - "(unnamed)"
+  - platform: windows
+    issue: "#319"
+    reason: "Gate-set tests added since the last Windows fix fail on Windows: exit codes, path spellings (backslashes, short temporary names) and files still open when a test removes them."
+    tests:
+      lib/test-env.test.ts:
+        - "the runner and preload isolate inherited git hook variables"
+      plugin/gc/__tests__/integration.test.ts:
+        - "a report from a linked worktree reads that checkout's own declaration"
+        - "collect from a linked worktree selects the primary checkout's entry"
+        - "install from a linked worktree registers the primary checkout and resolves roots from it"
+        - "install previews without writing a machine file or job"
+        - "install proposes the configured remote, not origin"
+        - "install replaces and uninstall removes an entry naming a linked worktree"
+        - "install takes the repository's base branch without reading the remote's HEAD"
+      plugin/shared/__tests__/evidence.test.ts:
+        - "the store > is namespaced by the clone, not by its folder name alone"
+      plugin/shared/__tests__/idle-holder.test.ts:
+        - "holderVerdict > a live driver or lease keeps it busy, and one that cannot be read does too"
+      plugin/shared/__tests__/orca-guard.test.ts:
+        - "launch markers > keep the worktree when the markers cannot be listed"
+      plugin/shared/__tests__/orca-workspace-git.test.ts:
+        - "against a real clone > the worktree holding a branch is found"
+      plugin/shared/__tests__/orca-workspace-holder.test.ts:
+        - "openBranch with a checkout Orca does not list holding the branch > detaches an idle one at its commit and opens a new worktree on the branch"
+        - "openBranch with a checkout Orca does not list holding the branch > refuses a busy one, naming it and what keeps it busy, and leaves it holding the branch"
+        - "openBranch with a checkout Orca does not list holding the branch > refuses every such checkout, with how to show it, when the port cannot read what drives a tree"
+      plugin/shared/__tests__/orca-workspace-runner.test.ts:
+        - "commands run with untranslated messages"
+      plugin/shared/__tests__/orca.test.ts:
+        - "orcaCommand > comes from its terminal's environment"
+        - "orcaCommandOrInstalled > is the terminal's command when Orca named one"
+      plugin/shared/__tests__/records-db.test.ts:
+        - "(unnamed)"
+        - "openDatabase > reopens a database whose file was replaced, under another instance"
+      plugin/shared/__tests__/session-overrides.test.ts:
+        - "the configuration the tab reads > removes the Electron controls a terminal's own environment carries"
+      plugin/shared/__tests__/skill-resolve.test.ts:
+        - "skillSearch > reads the tools' homes from the environment"
+      plugin/shared/__tests__/spec-resolve.test.ts:
+        - "the specs configuration > reads the repository's heading and refuses what it cannot use, naming the file"
+      plugin/shared/__tests__/wake-reclaim.test.ts:
+        - "serializes reclaimers before removing a dead waiter's file"
+      plugin/skills/audit/__tests__/config-fit-link-paths.test.ts:
+        - "a command spelled with final sigma reaches the sigma entry"
+        - "a hard link does not hide the sigma entry a final sigma reaches"
+      plugin/skills/audit/__tests__/config-fit.test.ts:
+        - "the configuration file > a gate script CI only mentions, or runs with arguments that cannot be kept, is suggested as such"
+        - "the configuration file > a gate script CI runs is the suggested gate command, ahead of a package script"
+        - "the configuration file > an environment the workflow, job or step sets leaves a CI-run gate script unsettled"
+      plugin/skills/changelog/__tests__/lint.test.ts:
+        - "the command's refusals > refuses a root that is not a git repository's top level"
+      plugin/skills/do-item/__tests__/release-implementer-worktree.test.ts:
+        - "does not inherit git location overrides while inspecting a delegate"
+        - "holds the delegate when the submodule index matcher fails"
+        - "includes the failed git read's exit and stderr in a held report"
+        - "keeps an unfinished operation and refuses the session's own tree"
+        - "keeps dirty submodules even when repository settings hide them"
+        - "keeps hidden changes inside initialized submodules"
+        - "keeps tracked and untracked local changes and names the release commands"
+        - "keeps unpushed commits even when a local tracking ref claims otherwise"
+        - "refuses a different branch, primary tree and another clone"
+        - "releases a delegate behind its remote and keeps one with hidden index changes"
+        - "releases the clean pushed delegate branch so another worktree can take it"
+      plugin/skills/do-item/__tests__/tracker-facets-default.test.ts:
+        - "detection's cache > is off when asked, and under a test run unless a folder is named"
+      plugin/skills/do-item/__tests__/tracker-github-setup.test.ts:
+        - "GitHub transport > through gh > reports the errors of a failed run whose output parses"
+      plugin/skills/docs/__tests__/gates.test.ts:
+        - "a gate killed by a signal > is failed, not a scan with findings"
+      plugin/skills/docs/__tests__/one-pass.test.ts:
+        - "what the repository configures or lacks > an unknown field or a missing configured path is refused with its source"
+      plugin/skills/resolve-review-comments/__tests__/scanner-annotations.test.ts:
+        - "list-scanner-annotations.ts > exits 0 with nothing printed where the default scanner does not run"
+        - "list-scanner-annotations.ts > exits 1 when the annotations do not hold the count the run reports"
+        - "list-scanner-annotations.ts > exits 1 when the check-run listing does not hold the total it reports"
+        - "list-scanner-annotations.ts > exits 1 when the check-run listing holds no page"
+        - "list-scanner-annotations.ts > exits 1 when the head has more check suites than the listing covers"
+        - "list-scanner-annotations.ts > exits 3 when the head moves while listing"
+        - "list-scanner-annotations.ts > exits 3 while the scanner is still running"
+        - "list-scanner-annotations.ts > prints a finding two runs report as one line naming both places"
+        - "list-scanner-annotations.ts > prints every finding across pages and exits 0 once the scanner analysed the head"
+      plugin/skills/resolve-review-comments/__tests__/scripts-rounds.test.ts:
+        - "await-round.ts review rounds > a converged --no-count probe neither settles the rounds nor fires the prompt"
+        - "await-round.ts review rounds > an empty REFLECT_THRESHOLD takes the documented default"
+        - "await-round.ts review rounds > counts a round per distinct head, not per invocation"
+        - "await-round.ts review rounds > does not count a round when the head cannot be resolved"
+        - "await-round.ts review rounds > keeps counting across heads in a hand-driven loop with no driver"
+        - "await-round.ts review rounds > keeps the round count when the journal cannot take it, and says so"
+        - "await-round.ts review rounds > nudges structural escalation on every counted round past the threshold"
+        - "await-round.ts review rounds > with reflection off, settles the rounds without asking for a reflection"
+        - "await-round.ts review rounds > with reflection on, notes the round count and asks for /jig:reflect at wind-down, and settles the rounds"
+      scripts/validation-plan.test.ts:
+        - "review routing preserves closure, deduplication, deleted paths and strict schema"
+        - "the configured review command accepts Jig's catalog and keeps full gates"
+      tools/plugin/bootstrap-powershell.test.ts:
+        - "Windows preview checks auth and registration without installer or profile writes"
+  - platform: windows
+    issue: "#319"
+    reason: "The dashboard's browser suites find no Chromium in the Playwright cache, though the job requires a browser."
+    tests:
+      dashboard/browser-interactions.test.ts:
+        - "a browser is available where one is required"
+      dashboard/browser-keys.test.ts:
+        - "a browser is available where one is required"
+      dashboard/browser-links.test.ts:
+        - "a browser is available where one is required"
+      dashboard/browser-load.test.ts:
+        - "a browser is available where one is required"
+      dashboard/browser-needs.test.ts:
+        - "a browser is available where one is required"
+      dashboard/browser-picks.test.ts:
+        - "a browser is available where one is required"
+      dashboard/browser-retention.test.ts:
+        - "a browser is available where one is required"
+      dashboard/browser-ticks.test.ts:
+        - "a browser is available where one is required"
+      dashboard/browser.test.ts:
+        - "a browser is available where one is required"

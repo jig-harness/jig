@@ -43,8 +43,27 @@ export function inProject(project: string, ...clauses: string[]): string {
   return `${[`project = ${project}`, ...clauses].join(" AND ")}${ORDER}`;
 }
 
-/** The JQL for an open issue: one whose status is not in the Done category. */
-export const OPEN = "statusCategory != Done";
+/**
+ * The JQL for an open issue: one whose status is not in the Done category,
+ * or is the configured blocked status, which the model reads as open whatever
+ * category the site files it under.
+ */
+export function openClause(blocked: string | null | undefined): string {
+  return blocked === null || blocked === undefined
+    ? "statusCategory != Done"
+    : `(statusCategory != Done OR status = ${quote(blocked)})`;
+}
+
+/**
+ * The JQL for a started issue: one in the In Progress category, or the
+ * configured blocked status, which the model reads as started whatever
+ * category the site files it under.
+ */
+export function startedClause(blocked: string | null | undefined): string {
+  return blocked === null || blocked === undefined
+    ? 'statusCategory = "In Progress"'
+    : `(statusCategory = "In Progress" OR status = ${quote(blocked)})`;
+}
 
 /**
  * `ms` as a JQL date, `yyyy-MM-dd HH:mm`, in `timeZone` (an IANA name, as
