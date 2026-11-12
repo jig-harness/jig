@@ -93,7 +93,7 @@ function spanContinues(
       )
     )
       return false;
-    for (let column = 0; column < line.length;) {
+    for (let column = 0; column < line.length; ) {
       const found = backtickRun(line, column);
       if (found === "") {
         column++;
@@ -155,7 +155,7 @@ function commentState(
   state: { comment: boolean; span: string | null },
 ): void {
   const line = lines[lineIndex] ?? "";
-  for (let at = 0; at < line.length;) {
+  for (let at = 0; at < line.length; ) {
     if (state.comment) at = stepComment(line, at, state);
     else if (state.span !== null) at = stepSpan(line, at, state);
     else at = stepText(lines, lineIndex, at, state);
@@ -178,12 +178,18 @@ function quotePrefix(line: string): { depth: number; length: number } {
   return { depth, length: at };
 }
 
-type Fence = { marker: string; quoteDepth: number };
+/** An open fence: its marker, the quote depth it opened at, and the column of the list item holding it (0 outside a list), which a less indented line ends it with. */
+type Fence = { marker: string; quoteDepth: number; base: number };
 
-/** Whether a line closes the open fence: the same character, at least as long, and nothing after it. */
+/** A line's indent, a tab counted as four spaces. */
+function indentOf(text: string): number {
+  return /^\s*/.exec(text.replace(/\t/g, "    "))?.[0].length ?? 0;
+}
+
+/** Whether a line closes the open fence: the same character, at most three spaces past its list item's text, at least as long, and nothing after it. */
 function closesFence(text: string, fence: Fence): boolean {
   let start = 0;
-  while (start < 3 && text[start] === " ") start++;
+  while (start < fence.base + 3 && text[start] === " ") start++;
   const char = text[start];
   if (char !== fence.marker[0]) return false;
   let end = start;
@@ -193,10 +199,21 @@ function closesFence(text: string, fence: Fence): boolean {
 
 /** The fence a line opens, if it does. */
 function openedFence(text: string, quoteDepth: number): Fence | null {
-  const open = /^ {0,3}(?:(?:[-*+]|\d{1,9}[.)])[ \t]+)?(`{3,}|~{3,})/.exec(
-    text,
-  );
-  return open === null ? null : { marker: open[1] ?? "", quoteDepth };
+  const open = /^( {0,3}(?:[-*+]|\d{1,9}[.)])[ \t]+)?(`{3,}|~{3,})/.exec(text);
+  return open === null
+    ? null
+    : { marker: open[2] ?? "", quoteDepth, base: open[1]?.length ?? 0 };
+}
+
+/** Whether a line leaves the container holding the open fence: a shallower quote, or a line less indented than the list item's text. */
+function leavesContainer(
+  fence: Fence,
+  line: string,
+  prefix: { depth: number; length: number },
+): boolean {
+  if (prefix.depth < fence.quoteDepth) return true;
+  const held = fence.quoteDepth === 0 ? line : line.slice(prefix.length);
+  return fence.base > 0 && held.trim() !== "" && indentOf(held) < fence.base;
 }
 
 /** Remove blockquote containers before the shared reader sees their Markdown, without changing a quote that is literal text inside a top-level fence or comment. */
@@ -207,7 +224,7 @@ function withoutBlockquoteContainers(body: string): string {
   const lines = body.split(/\r?\n/);
   for (const [lineIndex, line] of lines.entries()) {
     const prefix = quotePrefix(line);
-    if (fence !== null && prefix.depth < fence.quoteDepth) {
+    if (fence !== null && leavesContainer(fence, line, prefix)) {
       visible.push(fence.marker);
       fence = null;
     }

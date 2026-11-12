@@ -117,6 +117,22 @@ describe("a team key", () => {
           ["ENG-5"],
         ],
         [
+          "ends a list fence with its list and accepts an indented closing fence",
+          [
+            "- ~~~",
+            "  example",
+            "> ~~~",
+            "> Closes ENG-1",
+            "> ~~~",
+            "",
+            "100. ~~~",
+            "     Closes ENG-2",
+            "     ~~~",
+            "Closes ENG-3",
+          ],
+          ["ENG-3"],
+        ],
+        [
           "is not read from multiline inline code, and accepts a longer closing fence",
           ["`Fixes", "ENG-1`", "```", "Closes ENG-2", "````", "Closes ENG-3"],
           ["ENG-3"],
