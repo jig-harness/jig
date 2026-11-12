@@ -13,42 +13,63 @@ const texts = (r: Awaited<ReturnType<typeof resolveBody>>) =>
   r.verification.map((v) => v.text);
 
 describe("verification commands", () => {
-  test("drops list prefixes on indented code opened after a marker", async () => {
-    const result = await resolveBody(
+  const textCases: Array<[string, string[], string[]]> = [
+    [
+      "drops list prefixes on indented code opened after a marker",
       [
-        "## Verification",
         "-     bun test",
         "- -     bun run check",
         "```sh",
         "-     preserve",
         "```",
-      ].join("\n"),
-    );
-    expect(texts(result)).toEqual([
-      "bun test",
-      "bun run check",
-      "-     preserve",
-    ]);
-  });
-  test("removes compact nested list markers without changing fenced markers", async () => {
-    const result = await resolveBody(
+      ],
+      ["bun test", "bun run check", "-     preserve"],
+    ],
+    [
+      "removes compact nested list markers without changing fenced markers",
       [
-        "## Verification",
         "- - bun test",
         "- 1. `bun run check`",
         "```sh",
         "- - preserve",
         "--flag",
         "```",
-      ].join("\n"),
-    );
-    expect(texts(result)).toEqual([
-      "bun test",
-      "bun run check",
-      "- - preserve",
-      "--flag",
-    ]);
-  });
+      ],
+      ["bun test", "bun run check", "- - preserve", "--flag"],
+    ],
+    [
+      "preserves command-significant whitespace and only unwraps complete code spans",
+      [
+        "```sh",
+        "printf '%s\\n' a\\ ",
+        "```",
+        "`echo hello",
+        "echo hello`",
+        "`echo` `hello`",
+        "``echo `hello` ``",
+        "`bun test`  ",
+        "``printf '%s' '```'``",
+      ],
+      [
+        "printf '%s\\n' a\\ ",
+        "`echo hello",
+        "echo hello`",
+        "`echo` `hello`",
+        "echo `hello` ",
+        "bun test",
+        "printf '%s' '```'",
+      ],
+    ],
+  ];
+  for (const [name, lines, expected] of textCases) {
+    test(name, async () => {
+      const result = await resolveBody(
+        ["## Verification", ...lines].join("\n"),
+      );
+      expect(texts(result)).toEqual(expected);
+    });
+  }
+
   test("reads list items and fenced lines, preserving command text and source keys", async () => {
     const result = await resolveBody(
       [
@@ -78,32 +99,6 @@ describe("verification commands", () => {
       expect(summary(result)).toContain(`${v.key}: ${v.text}`);
     }
     expect(summary(result)).toContain("5 verification commands");
-  });
-
-  test("preserves command-significant whitespace and only unwraps complete code spans", async () => {
-    const result = await resolveBody(
-      [
-        "## Verification",
-        "```sh",
-        "printf '%s\\n' a\\ ",
-        "```",
-        "`echo hello",
-        "echo hello`",
-        "`echo` `hello`",
-        "``echo `hello` ``",
-        "`bun test`  ",
-        "``printf '%s' '```'``",
-      ].join("\n"),
-    );
-    expect(texts(result)).toEqual([
-      "printf '%s\\n' a\\ ",
-      "`echo hello",
-      "echo hello`",
-      "`echo` `hello`",
-      "echo `hello` ",
-      "bun test",
-      "printf '%s' '```'",
-    ]);
   });
 
   test("keeps a line of only backticks instead of unwrapping it to nothing", async () => {
