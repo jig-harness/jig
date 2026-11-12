@@ -182,6 +182,9 @@ changes are marked **Breaking** and say what a consumer changes.
   tests divided by the lines of code in the code-stats skill's default area,
   the figure its report states beside both counts.
 - M0’s discovery-budget check accepts `--commands <dir>` to include legacy command descriptions in the shared skill listing, with nested names, fallback descriptions, exclusions and skill shadowing.
+- M12 records Rex as a workspace runtime to watch, with conditions for
+  reconsidering a provider. The glossary defines the program status a
+  program reports to its terminal through OSC 7501.
 
 ### Changed
 
@@ -390,6 +393,13 @@ changes are marked **Breaking** and say what a consumer changes.
   under it.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
+
+## [0.214.1] - 2026-11-12
+
+### Fixed
+
+- Jira and GitHub tracker reads retry HTTP 429 and 503 responses up to three times, respecting Retry-After, cancellation and the original call deadline. Read-only searches can retry; writes never do. Credential rate-limit holds continue to prevent requests before their reset.
+- GitHub tracker reads correctly parse headerless responses emitted with mixed line endings by the GitHub CLI.
 
 ## [0.214.0] - 2026-11-12
 
@@ -7432,7 +7442,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.214.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.214.1...HEAD
+[0.214.1]: https://github.com/jig-harness/jig/compare/v0.214.0...v0.214.1
 [0.214.0]: https://github.com/jig-harness/jig/compare/v0.213.1...v0.214.0
 [0.213.1]: https://github.com/jig-harness/jig/compare/v0.213.0...v0.213.1
 [0.213.0]: https://github.com/jig-harness/jig/compare/v0.212.1...v0.213.0
