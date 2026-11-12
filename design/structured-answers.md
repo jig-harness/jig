@@ -684,7 +684,11 @@ in the old form.
   park handed on to be decided provisionally at the `wide` level) and
   `park-removed`, each keyed by its park occurrence, so none is counted
   twice. A held park on a ledger the tick could not read stays held for a
-  later tick, and one on a pull request no longer open is not counted. A park unparked by hand leaves no receipt and is counted as
+  later tick. When a pull request that held parks leaves the open listing,
+  the owner host reads its final ledger once, retrying a failed read on a
+  later tick, and counts the resolution receipts it supports under the same
+  occurrence keys. A park with no receipt on that final ledger stays
+  uncounted, including when the ledger cut receipts. A park unparked by hand on an open pull request leaves no receipt and is counted as
   removed.
 - **Recommendation acceptance.** `jig dispatch log --acceptance` reports,
   per class and repository, how many parks were answered, how many with the
