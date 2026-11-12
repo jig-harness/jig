@@ -812,10 +812,7 @@ which `decide` and `explain` now do through the Linear MCP tools or the
 `linear` command. The deferral step (item 10), `decide`, `explain` and
 `do-item`'s instructions then use the interface's operations, and
 `do-item`'s parent-status reconciliation reads the interface's answers
-instead of Linear's on its native path too. The workspace launcher and the
-Herdr kickoff open Linear issues only: a GitHub key (`#123`) needs a
-launcher tracker for GitHub Issues and the key's file name (`issue-123`)
-where they name a cache file or a claim.
+instead of Linear's on its native path too.
 [plugin/EXTENDING.md](../plugin/EXTENDING.md#issue-tracker) lists what
 still assumes Linear.
 

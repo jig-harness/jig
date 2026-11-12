@@ -38,6 +38,7 @@
  * own environment does not.
  */
 import { join } from "node:path";
+import { createHash } from "node:crypto";
 import { isRecord } from "../../../lib/record.ts";
 import { assertHost, runToolOnHost } from "../../herdr/remote.ts";
 import { openLimitMs, TRANSPORT_MS } from "../../herdr/limits.ts";
@@ -293,8 +294,24 @@ export function openArgs(
     "--prompt",
     prompt,
     "--key",
-    request.issue,
+    kickoffKey(request),
   ];
+}
+
+/**
+ * Keep Herdr's kickoff claim scoped to the tracker identity. Tracker keys
+ * such as GitHub's #123 are only unique inside their repository, whereas a
+ * Herdr host can serve several repositories.
+ */
+export function kickoffKey(
+  request: Pick<OpenRequest, "issue" | "cacheNamespace">,
+): string {
+  if (request.cacheNamespace === undefined) return request.issue;
+  const digest = createHash("sha256")
+    .update(`${request.cacheNamespace}\u0000${request.issue}`)
+    .digest("hex")
+    .slice(0, 16);
+  return `issue-${digest}`;
 }
 
 export interface HerdrDeps {

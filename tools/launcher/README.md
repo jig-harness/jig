@@ -79,7 +79,7 @@ because the tracker starts the launcher before any repository is known.
 | `provider` | `conductor` | Which workspace provider opens the issue: one name, or a list in order of preference. |
 | `skill` | `/jig:do-item` | The slash command the first prompt starts with; the issue key follows it. |
 | `repo_label_group` | `Repo` | The tracker label group whose value names the repository. |
-| `repos` | none | Repository label → that repository's settings, one entry per provider. |
+| `repos` | none | Repository label → settings per provider and, for GitHub, the tracker repository. |
 | `defaults` | none | Provider → the settings every repository label starts from; `{label}` in them is the label. |
 
 ```yaml
@@ -160,10 +160,11 @@ repos:
    whole read has a 30 second budget.
 2. Assign the issue to the API key's owner unless it is already theirs. This
    runs after the reads with its own 10 second budget, and a failure only warns.
-3. Write `~/.cache/conductor-linear/<KEY>.json` (mode 600, replaced whole so no
+3. Write `~/.cache/conductor-linear/<file-key>.json` (mode 600, replaced whole so no
    reader sees a partial file). The directory name is historical: it predates a
    second launcher and every launcher shares it so the issue-pickup skill needs
-   no per-launcher branch.
+   no per-launcher branch. The file key is `issue-123` for `#123` and stays
+   `ENG-123` for a team key.
 4. Choose the repository from the label and the provider from the
    repository's entries, and hand the prompt to the provider,
    which has 30 seconds to open the workspace unless it sets its own budget
@@ -197,11 +198,52 @@ refetch path for it, so the valid entries are kept.
 
 ## Trackers
 
-A tracker reads and assigns the issue; see [tracker.ts](tracker.ts). Linear
-([trackers/linear.ts](trackers/linear.ts)) is the only one, and the installer
-wires Linear's desktop app. To add one, add `trackers/<name>.ts` exporting a
-`Tracker` and register it in `trackers/index.ts`; the launch code does not
-change.
+A tracker reads and assigns the issue; see [tracker.ts](tracker.ts). The
+registered trackers are Linear ([trackers/linear.ts](trackers/linear.ts)) and
+GitHub Issues ([trackers/github.ts](trackers/github.ts)). The installer wires
+Linear's desktop app; GitHub launches run the same entry point from a shell
+with an authenticated `gh` on `PATH` (`gh auth login`).
+
+For GitHub, set `tracker: github` and give each repository entry a `github`
+mapping with exactly `repository: owner/repository`. Unknown keys are refused
+before any workspace opens. The issue URL selects the repository's entry;
+with exactly one GitHub repository configured a number or `#number` works too.
+No repository is guessed from the current directory or from a label.
+
+```yaml
+tracker: github
+provider: [orca, herdr, conductor]
+repos:
+  service:
+    github: {repository: acme/service}
+    orca: service
+    herdr: {path: ~/dev/service}
+    conductor: service
+```
+
+```sh
+bun tools/launcher/launch.ts '#123'
+bun tools/launcher/launch.ts 123
+bun tools/launcher/launch.ts https://github.com/acme/service/issues/123
+```
+
+These all pass `#123` and its title to the provider and name the context file
+`issue-123.json`. GitHub comments are read in full with pagination; an incomplete
+read leaves the comments out so the pickup reads them itself. An unreadable
+issue keeps the configured repository route. GitHub caches live under
+`~/.cache/conductor-linear/github/<owner>/<repository>/issue-123.json`, so
+repositories with the same issue number keep separate context. Assignment
+adds the authenticated user and checks GitHub's confirmation; a failed assignment
+warns and continues.
+
+Use provider settings without a `branch` template containing `{slug}` for
+GitHub issues: the existing providers restrict those templates to team keys.
+Orca's attempt to link an issue through its Linear integration may warn; the
+workspace and its prompt still open.
+
+To add a tracker, add `trackers/<name>.ts` exporting a `Tracker` and register
+it in `trackers/index.ts`. A tracker that accepts URLs or bare numbers supplies
+`normalizeIssue`; the original input is also handed to its reader.
 
 ## Providers
 

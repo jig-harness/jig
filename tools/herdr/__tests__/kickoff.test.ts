@@ -622,3 +622,24 @@ describe("kickoff", () => {
     }
   });
 });
+
+test("GitHub kickoff keys use their file name for claims and receipts", () => {
+  const ctx = fakeContext({});
+  try {
+    const generation = acquireClaim(ctx, "#123", 0);
+    expect(
+      existsSync(
+        join(ctx.stateDir, "kickoff", "claims", "issue-123", generation),
+      ),
+    ).toBe(true);
+    expect(receiptDir(ctx, "#123", A)).toBe(
+      join(ctx.stateDir, "kickoff", "receipts", "issue-123", A),
+    );
+    expect(receiptDir(ctx, "ENG-123", A)).toBe(
+      join(ctx.stateDir, "kickoff", "receipts", "ENG-123", A),
+    );
+    releaseClaim(ctx, "#123", generation);
+  } finally {
+    rmSync(ctx.stateDir, { recursive: true, force: true });
+  }
+});

@@ -8,8 +8,14 @@
  * skill's, not a tracker's: every tracker fills the same fields.
  */
 import { mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { writeFileAtomic } from "./files.ts";
+
+/** A cache namespace cannot safely name a directory under the cache root. */
+class CachePathError extends Error {
+  override name = "CachePathError";
+  readonly code = "invalid-cache-namespace";
+}
 
 /** The launcher context file: what the issue-pickup skill reads. */
 export interface ContextCache {
@@ -58,7 +64,7 @@ export function fallbackCache(
  * An issue key as trackers write them (`ENG-123`). It names a file, so anything
  * that could leave the cache directory (a separator, `..`) is refused.
  */
-const ISSUE_KEY = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+const ISSUE_KEY = /^(?:#[1-9][0-9]*|[A-Za-z0-9][A-Za-z0-9_-]*)$/;
 
 export function isIssueKey(issueId: string): boolean {
   return ISSUE_KEY.test(issueId);
@@ -67,7 +73,7 @@ export function isIssueKey(issueId: string): boolean {
 export function assertIssueKey(issueId: string): void {
   if (!isIssueKey(issueId))
     throw new Error(
-      `"${issueId}" is not an issue key (letters, digits, "-" and "_" only)`,
+      `"${issueId}" is not an issue key (a #positive-number or letters, digits, "-" and "_" only)`,
     );
 }
 
@@ -78,9 +84,19 @@ export function cacheDir(home: string): string {
   return join(home, ".cache", "conductor-linear");
 }
 
-export function cachePath(home: string, issueId: string): string {
+export function cachePath(
+  home: string,
+  issueId: string,
+  namespace = "",
+): string {
   assertIssueKey(issueId);
-  return join(cacheDir(home), `${issueId}.json`);
+  if (
+    namespace !== "" &&
+    (!/^[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*$/.test(namespace) ||
+      namespace.split("/").some((part) => part === "." || part === ".."))
+  )
+    throw new CachePathError("Invalid cache namespace");
+  return join(cacheDir(home), namespace, `${issueFileName(issueId)}.json`);
 }
 
 /**
@@ -92,9 +108,15 @@ export function writeCache(
   home: string,
   issueId: string,
   cache: ContextCache,
+  namespace = "",
 ): string {
-  const path = cachePath(home, issueId);
-  mkdirSync(cacheDir(home), { recursive: true, mode: 0o700 });
+  const path = cachePath(home, issueId, namespace);
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   writeFileAtomic(path, JSON.stringify(cache), 0o600);
   return path;
+}
+
+/** A key safe to use as a file name; tracker keys stay intact in content. */
+export function issueFileName(key: string): string {
+  return /^#[1-9][0-9]*$/.test(key) ? `issue-${key.slice(1)}` : key;
 }
