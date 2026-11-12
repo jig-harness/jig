@@ -258,7 +258,7 @@ fields:
     nonempty: true
     read_by: [dispatch]
     repository_only: true
-    since: next
+    since: 0.217.0
 
   gates.command:
     type: command
