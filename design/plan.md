@@ -345,9 +345,15 @@ can be undone; a card with a row per
 decision, where `j`, `1`, `c` picks the recommendation and copies it, a
 pick staying local and undoable until it is committed; then, with item
 40's first proof that a person answered, the attested classes (`destructive`, `release`, `legal` by
-default), and the same forms for a follow-up's question, a loosened
-ratchet's evidence and a pickup only a person may start. One pull request
-per step, in the design's order; the first moves the shared
+default); every need on the dispatch dashboard framed as a decision, the
+one its follow-up's or pickup's pass recorded with its result or one the
+tick frames for a cause it detects (a failed follow-up, a stalled pickup, a
+checkout an unlisted tree holds, a drive handed to a person, a stuck launch
+record) with options it carries out once on a person's answer, sent through
+`jig send` to the follow-up's, the pickup's or the drive's station; and the
+same forms for a loosened ratchet's evidence, a pickup only a person may
+start and answers on a tracker other than the forge. One pull request per
+step, in the design's order; the first moves the shared
 model.
 
 Done when a park answered `approve` hands its pass the recommended option
@@ -359,7 +365,10 @@ leave the item waiting; the panel, `jig ask` and the dashboard show the
 same options and choice for one park; a sheet and a park use the same
 option type, every existing sheet renders unchanged, and a field added to
 the model shows on the card and in `jig ask`; a card of two decisions copies
-one comment answering both; and `jig dispatch log` reports, per
+one comment answering both; every need but a double claim, an unanswered
+nudge and an item assigned by someone who cannot write carries a framed
+decision, and an answer to a decision the tick framed has its step carried
+out once, or refused with why; and `jig dispatch log` reports, per
 class, how many parks were approved as recommended and how long they
 waited.
 
@@ -540,24 +549,9 @@ close items by one fixed rule, so a team whose rules differ keeps them in
 hooks and scripts outside Jig, where an agent can skip them. This item
 lets a repository state those rules as configuration that every skill which
 claims, moves or closes an item honours. Every setting is optional, and an
-unset one keeps today's behaviour. What it will build, one pull request per
-step:
-
-- **Start.** A precondition command (`do_item.preflight_command`) that the
-  claim script runs before it claims, for `do-item`, `work-batch` and the
-  dispatcher's pickups alike; the dispatcher's tick never runs it, and
-  shows a refusal as a hold until the item changes. It runs through the
-  repository-command runner the facets design specifies for its command
-  store ([tracker-facets.md](tracker-facets.md#later-the-command-store):
-  set by the repository only, read from the default branch, bounded by a
-  timeout); whichever of the two steps lands first builds that runner. The
-  states a claim may start from (`do_item.claim_from`; unset, a claim
-  keeps today's rule and is not limited to `dispatch.states`), and a claim
-  marker naming the session, host and branch.
-- **Pool pickup.** The dispatcher picks up unassigned items in a ready
-  pool as a served lane, trusting who made an item ready. A pool requires
-  the claim marker, which arbitrates, best effort, between the hosts that pick up from it
-  ([claims across hosts](dark-factory-dispatch.md#the-records-it-reads)).
+unset one keeps today's behaviour. Its settings are built
+([CHANGELOG.md](../CHANGELOG.md)); what remains is a run on a working
+repository, owed by a person.
 
 Done when a repository on Jira with all of these set runs an item from its
 ready pool to a merged pull request without a hook or script of its own,
@@ -776,9 +770,8 @@ a facet that needs it.
 Changes to the design follow from a Jira team's use. An issue of a
 listed native type (`issue_tracker.labels.epic_types`) reads as an epic on
 every adapter with issue types, replacing the non-goal that kept the epic a
-label. Every value map reads any of several names and writes the first, for
-priorities, types and Jira's resolutions. And the weekly sweep can comment
-on an incomplete issue without moving it back to triage.
+label. And the weekly sweep can comment on an incomplete issue without
+moving it back to triage.
 
 Done when a repository on each adapter files and reads all three in its
 configured store, and Jig's own repository keeps them in GitHub's fields
@@ -827,9 +820,6 @@ launcher tracker for GitHub Issues and the key's file name (`issue-123`)
 where they name a cache file or a claim.
 [plugin/EXTENDING.md](../plugin/EXTENDING.md#issue-tracker) lists what
 still assumes Linear.
-
-The Jira adapter also gains state names per issue type, for a large shared
-project whose issue types follow different workflows.
 
 ### 27. Work types: depth by kind of work
 

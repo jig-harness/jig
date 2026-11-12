@@ -14,6 +14,7 @@
 import { launchOf } from "../../shared/launched-session.ts";
 import { attempt, failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { stateRoot } from "../receipts.ts";
+import { holdsItem } from "./launch-pickups.ts";
 import { isLaunchRecord, isRecordId, type LaunchRecord } from "./launches.ts";
 import { inTransaction, stateDb } from "./state.ts";
 
@@ -68,7 +69,7 @@ export function notePickupClaim(
 function refusal(record: LaunchRecord, key: string): string | null {
   if (record.action !== "pickup")
     return `launch record ${record.id} is a ${record.action}'s, not a pickup's`;
-  if (record.released)
+  if (!holdsItem(record, key))
     return `launch record ${record.id} no longer holds its item`;
   const members = record.batchItems?.map((i) => i.key) ?? [record.item];
   return members.includes(key)

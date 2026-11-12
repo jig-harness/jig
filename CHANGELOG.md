@@ -394,6 +394,89 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.218.0] - 2026-11-12
+
+### Added
+
+- Every tracker value map takes a list of names per value, read in any of
+  them and written as the first; a plain name keeps its meaning. A Jira site
+  with more priorities than Jig's four reads each as one of them
+  (`issue_tracker.jira.priorities: { urgent: [Blocker, Critical, Highest] }`),
+  a closed state reads from any of its resolutions
+  (`issue_tracker.jira.resolutions: { canceled: ["Won't Do", "Won't Fix"] }`),
+  and a type, priority or size kept in issue types, fields or labels reads
+  from several (`issue_tracker.facets.type.values: { feature: [Story, Improvement] }`),
+  as do `issue_tracker.github.priority_labels`. A name listed for two values
+  is refused when the configuration is read
+  ([CONFIGURATION.md](plugin/CONFIGURATION.md#issue_tracker)).
+
+## [0.217.0] - 2026-11-12
+
+### Added
+
+- The dispatcher can pick up from a ready pool: set `dispatch.pool.states`
+  and the unassigned open items in those states (inside
+  `issue_tracker.jira.pool_issue_types` on Jira) are pickups beside the
+  items assigned to `dispatch.identity`, ranked by the queue's rules. An
+  item is picked up only when the latest move into its state was made by a
+  person who can write to the repository (its creator, where it was created
+  there; on Jira never an app's account, Jira Automation's included); an
+  item anyone else made ready shows in the Queue view with who moved it and
+  never starts. An item with an open blocker (on Jira, through any link type
+  `issue_tracker.jira.link_types` configures), or one that cannot be read,
+  waits, the Queue view naming the blocker, until the blocker closes. The
+  pickup's claim assigns the item to the factory identity,
+  so `do_item.preflight_command`, `do_item.claim_from` and the claim marker
+  apply. A pool is refused without `dispatch.identity` and without
+  `do_item.claim_marker: true`, the token that decides between hosts taking
+  from the same pool. On GitHub, a pool state on a board needs the
+  `Status` field, whose changes GitHub records.
+- The tracker interface reads a ready pool on GitHub Issues, Linear and
+  Jira: the open issues assigned to nobody in given states
+  (`unassignedIssues`), and who made an issue's latest move into its
+  current state (`stateChangedBy`), with that person's trust as
+  `assignedBy` judges an assigner.
+- The audit warns when `dispatch.pool.states` names a state
+  `do_item.claim_from` refuses.
+
+### Fixed
+
+- The dispatcher reports a refused steward record only on the tick that refuses it and skips stored digest reads for settled records. Continuing needs keep their steward framing, and retained records still witness the decision.
+
+## [0.216.0] - 2026-11-12
+
+Every need on the dispatch dashboard's Needs you is now a framed decision a person answers in a word, and the dispatcher carries out the option they choose.
+
+### Added
+
+- A dispatched follow-up's or pickup's pass that stops for a person frames what it asks and records it with its result: `jig dispatch result <record> <token> failed --decision <file>` takes a `parked-decision/v1` record, checked as a drive's park is, and keeps it with the result and its digest. The need it raises carries that decision; a pass that cannot frame still ends on its `Question:` line, whose words still show ([Every need is a decision](plugin/README.md#every-need-is-a-decision)).
+- For the needs the dispatcher finds itself it frames the decision from the facts that identify them, with options it can carry out: a failed follow-up (Run it again, Record it done), a stalled pickup or an unframed pickup question (Release the claim), a checkout an unlisted tree holds (Detach the checkout, only when it is idle), a drive handed to a person (Re-arm the drive), a stuck launch record (Clear the record), each with Leave it to me. The line's decisions name the station that answers them, its address and where the answer comment goes (`LineDecision.answer`), and `shared/decisions/station.ts` holds the answer format every surface imports.
+- `jig send followup@…`, `pickup@…` and `drive@… answer <key> --approve|--choose <option> --decision <digest>` answer a need's decision with the same comment a person can type on the pull request or forge issue.
+- The tick on the host that owns the repository reads those answers and carries out the chosen option once, after checking again that it still may (the stage is on, no hold label, the marker unchanged, no session holds the work, no open pull request carries the item, the checkout idle), and otherwise refuses with the reason the need shows. It counts only answers that name the decision's current digest, from authors the forge vouches for and never its own login. A session it starts on an answer is handed the option chosen, narrowed by the person's note. The state database gains the `station_answers` table and the launch record's `result_decision` column.
+- `file-issue`'s weekly sweep can leave issues where they are: with
+  `file_issue.sweep.move: false` in `.config/jig.yaml`,
+  `check-fields.ts check --yes` posts its comment on each incomplete issue
+  and moves none back to triage, for a lane where only a person may move a
+  ready issue back. An issue that already carries the comment's marker is
+  passed over before the run's budget of 50 is counted, so a second run
+  neither comments on it again nor spends its budget on it. `file_issue` is
+  a new configuration section, documented in CONFIGURATION.md and checked by
+  the audit.
+
+### Changed
+
+- A need that carries a framed decision takes its act from the decision's class (the dispatcher's own framings read Decide), in place of the cause's act or a steward's proposed one.
+
+## [0.215.0] - 2026-11-12
+
+### Added
+
+- Jira workflows can use state names per issue type through
+  `issue_tracker.jira.states_by_type`. Each type overlays the repository's
+  state map; `null` marks a state absent, so its move is skipped and reported.
+  Parent roll-up uses each child's workflow and the parent's own target,
+  and `tracker.ts states` prints every configured type's effective map.
+
 ## [0.214.2] - 2026-11-12
 
 ### Fixed
@@ -7455,7 +7538,11 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.214.2...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.218.0...HEAD
+[0.218.0]: https://github.com/jig-harness/jig/compare/v0.217.0...v0.218.0
+[0.217.0]: https://github.com/jig-harness/jig/compare/v0.216.0...v0.217.0
+[0.216.0]: https://github.com/jig-harness/jig/compare/v0.215.0...v0.216.0
+[0.215.0]: https://github.com/jig-harness/jig/compare/v0.214.2...v0.215.0
 [0.214.2]: https://github.com/jig-harness/jig/compare/v0.214.1...v0.214.2
 [0.214.1]: https://github.com/jig-harness/jig/compare/v0.214.0...v0.214.1
 [0.214.0]: https://github.com/jig-harness/jig/compare/v0.213.1...v0.214.0

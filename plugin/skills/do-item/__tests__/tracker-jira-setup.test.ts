@@ -37,20 +37,21 @@ const fieldOf = (f: () => unknown): string | null => {
 describe("issue_tracker.jira", () => {
   it("fills in the defaults", () => {
     expect(parseJiraSettings({ site: `${SITE}/` })).toEqual({
+      statesByType: {},
       site: SITE,
       apiBase: null,
       issueType: "Task",
       subtaskType: null,
       priorities: {
-        urgent: "Highest",
-        high: "High",
-        medium: "Medium",
-        low: "Low",
+        urgent: ["Highest"],
+        high: ["High"],
+        medium: ["Medium"],
+        low: ["Low"],
       },
       resolutions: {
-        done: "Done",
-        canceled: "Won't Do",
-        duplicate: "Duplicate",
+        done: ["Done"],
+        canceled: ["Won't Do"],
+        duplicate: ["Duplicate"],
       },
       linkTypes: {
         blocks: [{ name: "Blocks", inverted: false }],
@@ -153,7 +154,7 @@ describe("issue_tracker.jira", () => {
       priorities: { urgent: " Highest " },
       link_types: { blocks: " Blocks\t" },
     });
-    expect(s.priorities.urgent).toBe("Highest");
+    expect(s.priorities.urgent).toEqual(["Highest"]);
     expect(s.linkTypes.blocks).toEqual([{ name: "Blocks", inverted: false }]);
   });
 

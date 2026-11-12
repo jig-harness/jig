@@ -98,6 +98,11 @@ decision it answers, so an approval of an older version does not count.
 On the dashboard a person moves to a card with `j` and `k` and
 presses `1` to pick the recommendation. A pick stays on the page and can be
 undone, and one comment can answer all of a pull request's decisions.
+Everything else the line waits on a person for comes framed the same way.
+A follow-up or a pickup that stops frames its own question. For what the
+dispatcher finds itself, such as a failed follow-up, a stalled pickup or a
+stopped drive, it offers the steps it can take. It takes the one a person
+chooses, once.
 Jig also reports how often each kind of decision follows the
 recommendation, so a team can see which decisions still need a person.
 Later, decisions that cannot be undone, such as a release, will need proof
@@ -168,9 +173,11 @@ Jig itself keeps a person merging
 
 A team states the rules its agent work follows, and every Jig skill that
 claims, moves or closes an item keeps them. Work starts only when a check
-the team supplies passes and only from the states the team allows. The
-dispatcher can also pick up from an unassigned ready pool. Every rule is optional, and a team
-that sets none keeps today's behaviour.
+the team supplies passes and only from the states the team allows, and the
+dispatcher can pick up from an unassigned ready pool. Every rule is
+optional, and a team that sets none keeps today's behaviour. The rules are
+built; what remains is proving them on a team's own Jira project, from its
+ready pool to a merged pull request.
 
 ### 48. Fitting the drive to a repository's reviewer
 
@@ -241,9 +248,8 @@ leave priority and size to triage. The weekly check can move an issue missing an
 triage while it has not been started. Jira's issue-type and custom-field
 stores and Linear's estimate are built; still to come are live checks of
 those stores. Also to come: an epic recognised by its issue type as well as
-its label. Several tracker names will read as one value, such as a site's
-seven priorities onto Jig's four. The weekly check will be able to comment
-without moving an issue.
+its label. The weekly check will be able to comment without moving an
+issue.
 
 ### 43. Consumer actions: which Jig changes a repository must act on
 
@@ -264,8 +270,7 @@ change.
 A plan file kept in the repository, beside Linear, GitHub Issues and
 Jira. The [tracker interface](GLOSSARY.md) first gains attaching a file,
 the one operation the skills need that the interface does not have yet, and
-the workspace launcher learns to open GitHub issues. On Jira, each issue
-type can have its own workflow states.
+the workspace launcher learns to open GitHub issues.
 
 ### 27. Work types: depth by kind of work
 

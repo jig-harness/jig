@@ -78,6 +78,8 @@ strict:
   - docs
   - dispatch
   - specs
+  - file_issue
+  - file_issue.sweep
   - work_batch
   - work_batch.ranking
   - workspace_name
@@ -94,6 +96,9 @@ null_refused:
   - repository
   - repository.remote
   - drive
+  - file_issue
+  - file_issue.sweep
+  - file_issue.sweep.move
 
 # Sections a skill refuses outright, with what to do instead.
 refused:
@@ -246,6 +251,14 @@ fields:
     read_by: [dispatch]
     repository_only: true
     since: 0.138.0
+  dispatch.pool.states:
+    type: list
+    items: { type: enum, values: [triage, backlog, todo, in_review, ops_pending, done, canceled, duplicate] }
+    distinct: true
+    nonempty: true
+    read_by: [dispatch]
+    repository_only: true
+    since: 0.217.0
 
   gates.command:
     type: command
@@ -620,6 +633,7 @@ fields:
   issue_tracker.github.priority_labels:
     type: map
     keys: [urgent, high, medium, low]
+    values_type: any
     read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch, resolve-review-comments]
     since: 0.82.0
   issue_tracker.jira.site:
@@ -646,11 +660,13 @@ fields:
   issue_tracker.jira.priorities:
     type: map
     keys: [urgent, high, medium, low]
+    values_type: any
     read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
     since: 0.111.0
   issue_tracker.jira.resolutions:
     type: map
     keys: [done, canceled, duplicate]
+    values_type: any
     read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
     since: 0.111.0
   issue_tracker.jira.link_types:
@@ -664,6 +680,11 @@ fields:
     values_type: string
     read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
     since: 0.145.0
+  issue_tracker.jira.states_by_type:
+    type: map
+    values_type: { type: map, values_type: any }
+    read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
+    since: 0.215.0
   issue_tracker.jira.pool_issue_types:
     type: list
     items: string
@@ -905,6 +926,11 @@ fields:
     default: 1
     read_by: [work-batch]
     since: 0.57.0
+  file_issue.sweep.move:
+    type: boolean
+    default: true
+    read_by: [file-issue]
+    since: 0.216.0
 
   routing.complex_flags:
     type: list

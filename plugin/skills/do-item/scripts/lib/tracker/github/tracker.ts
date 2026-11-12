@@ -54,6 +54,7 @@ import {
 } from "./read.ts";
 import { keyOf, repoOf, slug } from "./refs.ts";
 import { assignerOperations } from "./assigner.ts";
+import { stateChangeOperations } from "./state-change.ts";
 import { claimOperations } from "./claim.ts";
 import { reportOperations } from "./reports.ts";
 import {
@@ -608,7 +609,12 @@ export function gitHubTracker(client: Client): Tracker {
   const tracker: CoreTracker = {
     adapter: "github",
     team: slug(home),
-    stateName: (state) => model.stateName(state),
+    readinessKey: JSON.stringify([
+      ctx.board?.url ?? null,
+      ctx.board?.statusField ?? null,
+      model.stateLabels,
+    ]),
+    stateName: model.stateName,
 
     async reach(signal) {
       await client.repositoryId(signal);
@@ -690,6 +696,7 @@ export function gitHubTracker(client: Client): Tracker {
 
     ...reportOperations(client, { comments, children }),
     ...assignerOperations(client),
+    ...stateChangeOperations(client),
     ...claimOperations(client),
 
     async createIssue(issue) {

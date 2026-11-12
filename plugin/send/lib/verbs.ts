@@ -11,7 +11,7 @@
  * | `drive` | `drive` | the `drive` command label |
  * | `rearm` | `drive` | the `rearm` command label for a stopped drive |
  * | `hold`, `release` | `drive`, `followup` | the `hold` command label, added or removed |
- * | `answer <key> <text>`, `answer <key> --approve\|--choose <option>`, `answer --all --approve` | `drive` | a comment `answer <key>: <text>` per item (`answer-request.ts`) |
+ * | `answer <key> <text>`, `answer <key> --approve\|--choose <option>`, `answer --all --approve` | `drive`, `followup`, `pickup` | a comment `answer <key>: <text>` per item (`answer-request.ts`); to a need's decision other than a park's, `--approve` or `--choose` on its pull request or forge issue (`answer-station.ts`) |
  * | `pause`, `resume <directive>`, `stop`, `hold-push` | `drive` | a mailbox directive |
  *
  * A person's command (every verb but the mailbox's) is refused in a session
@@ -65,7 +65,11 @@ const SPECS: Record<Verb, VerbSpec> = {
   rearm: { stations: ["drive"], person: true, args: "" },
   hold: { stations: ["drive", "followup"], person: true, args: "" },
   release: { stations: ["drive", "followup"], person: true, args: "" },
-  answer: { stations: ["drive"], person: true, args: ANSWER_ARGS },
+  answer: {
+    stations: ["drive", "followup", "pickup"],
+    person: true,
+    args: ANSWER_ARGS,
+  },
   pause: { stations: ["drive"], person: false, args: "" },
   resume: {
     stations: ["drive"],

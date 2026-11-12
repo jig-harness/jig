@@ -85,7 +85,7 @@ const STATE_DIR = "~/.local/state/jig/drive-pr/<clone>/";
 const DRIVE_DB_FILE = "~/.local/state/jig/drive-pr/state.sqlite";
 const DISPATCH_DIR = "~/.local/state/jig/dispatch/";
 /** The dispatcher's database schema version (`dispatch/lib/state.ts`'s `SCHEMA_VERSION`). */
-const DISPATCH_DB = 23;
+const DISPATCH_DB = 27;
 /** The drive's database schema version (`skills/drive-pr/scripts/lib/state/db.ts`'s `DRIVE_DB_VERSION`). */
 const DRIVE_DB = 5;
 const RRC = "skills/resolve-review-comments/scripts/";
@@ -288,6 +288,11 @@ const DISPATCHER: RecordKind[] = [
     "load_samples",
   ),
   dispatchTable("dispatch-failure", "dispatch/lib/failures.ts", "failures"),
+  dispatchTable(
+    "dispatch-station-answer",
+    "dispatch/lib/station-answer-store.ts",
+    "station_answers",
+  ),
   dispatchTable(
     "dispatch-steward-run",
     "dispatch/lib/steward.ts",
@@ -852,6 +857,13 @@ const TRACKER: RecordKind[] = [
     "dispatch-pickup-assignment",
     "dispatch/lib/requests.ts",
     "the item assigned to the factory identity in a dispatch state, which a person writes by hand or with `jig send`",
+    0,
+  ),
+  plain(
+    "tracker",
+    "dispatch-pool-readiness",
+    "dispatch/lib/sources/ready-pool.ts",
+    "an unassigned item a person moved into a ready-pool state, read with who made the move",
     0,
   ),
   plain(

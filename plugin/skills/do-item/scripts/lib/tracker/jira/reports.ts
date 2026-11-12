@@ -9,7 +9,7 @@
  * matches words, and a marker it missed would be a lost finding.
  *
  * The candidate pools and the populations (`openIssues`, `assignedIssues`,
- * `openPopulation`, which the facet census counts, and an `issuesInWindow`
+ * `unassignedIssues`, `openPopulation`, which the facet census counts, and an `issuesInWindow`
  * that names no label) are limited to `issue_tracker.jira.pool_issue_types`
  * where it is set. Reads by key, an issue's children and the reads a label
  * defines are not: an epic's accounting needs every type its label carries.
@@ -65,6 +65,7 @@ type ReportOps = Pick<
   | "openChildren"
   | "poolIssue"
   | "assignedIssues"
+  | "unassignedIssues"
   | "openPopulation"
 >;
 
@@ -84,8 +85,8 @@ export function reportOperations(
   client: Client,
   stores: Pick<JiraFacetStores, "read">,
 ): ReportOps {
-  const { model, project } = client;
-  const open = openClause(model.stateName("blocked"));
+  const { model, project, settings } = client;
+  const open = openClause(model.stateNames("blocked"));
   const ownKey = new RegExp(`^${project}-\\d+$`);
 
   function stateType(issue: JiraIssue): string {
@@ -203,7 +204,9 @@ export function reportOperations(
       const found = await searchPages(
         client.transport,
         `parent in ${keyList(batch)} AND ${open}${ORDER}`,
-        ["parent"],
+        Object.keys(settings.statesByType).length === 0
+          ? ["parent"]
+          : ["parent", "status", "issuetype"],
         `open children of ${batch.join(", ")}`,
         signal,
       );
@@ -212,11 +215,40 @@ export function reportOperations(
           child.fields,
           `issue ${String(child.key)}.fields`,
         );
+        if (
+          Object.keys(settings.statesByType).length > 0 &&
+          !isOpenChild(fields, String(child.key))
+        )
+          continue;
         if (fields.parent !== null && typeof fields.parent === "object")
           out.add(String((fields.parent as Record<string, unknown>).key));
       }
     }
     return out;
+  }
+
+  /** Check a child against its own type after a union status query. */
+  function isOpenChild(fields: Record<string, unknown>, key: string): boolean {
+    const status = record(fields.status, `issue ${key}.status`);
+    const category = record(
+      status.statusCategory,
+      `issue ${key}.status.statusCategory`,
+    );
+    const issueType = record(fields.issuetype, `issue ${key}.issuetype`);
+    if (
+      typeof status.name !== "string" ||
+      typeof category.key !== "string" ||
+      typeof issueType.name !== "string"
+    )
+      throw new JiraApiError(
+        `issue ${key}: its child state or issue type is unreadable`,
+      );
+    const read = model.read({
+      status: { id: "", name: status.name, category: category.key },
+      issueType: { name: issueType.name },
+      resolution: null,
+    });
+    return !["completed", "canceled", "duplicate"].includes(read.state.type);
   }
 
   async function pools(
@@ -231,6 +263,7 @@ export function reportOperations(
       const { state } = model.read(issue);
       return {
         identifier: issue.key,
+        nativeType: issue.issueType?.name ?? null,
         title: issue.title,
         url: issue.url,
         priority: model.priorityOf(issue.priority),
@@ -285,6 +318,46 @@ export function reportOperations(
     return clause === null ? [] : [clause];
   };
 
+  /** This project's issues in one of `states`, narrowed by the clause `who` builds, inside the pool scope. */
+  async function inStates(
+    states: ReadonlyArray<CanonicalState>,
+    who: () => Promise<string>,
+    where: string,
+    signal?: AbortSignal,
+  ): Promise<CorePoolIssue[]> {
+    if (states.length === 0)
+      throw new TrackerRequestError(
+        "invalid",
+        "a query of issues by state needs at least one state",
+      );
+    if (signal?.aborted === true) throw abortedError(signal);
+    const names = [
+      ...new Set(
+        states
+          .flatMap((s) => model.stateNames(s))
+          .filter((n): n is string => n !== null),
+      ),
+    ];
+    if (names.length === 0) return [];
+    const read = await client.search(
+      inProject(
+        project,
+        await who(),
+        `status in ${stringList(names)}`,
+        ...(await scope(signal)),
+      ),
+      where,
+      signal,
+    );
+    const wanted = new Set<CanonicalState>(states);
+    return pools(
+      read.filter((i) => {
+        const s = model.read(i).canonical;
+        return s !== null && wanted.has(s);
+      }),
+      signal,
+    );
+  }
   return {
     async issuesByKeys(keys) {
       const own = keys.filter((k) => ownKey.test(k));
@@ -326,7 +399,7 @@ export function reportOperations(
         inProject(
           project,
           await label(l, signal),
-          startedClause(model.stateName("blocked")),
+          startedClause(model.stateNames("blocked")),
         ),
         `started issues labelled '${l}'`,
         signal,
@@ -457,7 +530,12 @@ export function reportOperations(
         ),
         `the pool of ${query.withSomeOf.map((l) => stringList(l)).join(" and ")}`,
       );
-      return pools(read);
+      return pools(
+        read.filter(
+          (issue) =>
+            !["completed", "canceled", "duplicate"].includes(stateType(issue)),
+        ),
+      );
     },
 
     async openChildren(key) {
@@ -467,10 +545,15 @@ export function reportOperations(
 
     async openPopulation(signal) {
       return pools(
-        await client.search(
-          inProject(project, open, ...(await scope(signal))),
-          `open issues of ${project}`,
-          signal,
+        (
+          await client.search(
+            inProject(project, open, ...(await scope(signal))),
+            `open issues of ${project}`,
+            signal,
+          )
+        ).filter(
+          (issue) =>
+            !["completed", "canceled", "duplicate"].includes(stateType(issue)),
         ),
         signal,
       );
@@ -485,37 +568,20 @@ export function reportOperations(
     },
 
     async assignedIssues(identity, states, signal) {
-      if (states.length === 0)
-        throw new TrackerRequestError(
-          "invalid",
-          "an assigned-issues query needs at least one state",
-        );
-      if (signal?.aborted === true) throw abortedError(signal);
-      const names = [
-        ...new Set(
-          states
-            .map((s) => model.stateName(s))
-            .filter((n): n is string => n !== null),
-        ),
-      ];
-      if (names.length === 0) return [];
-      const accountId = await client.accountId(identity, signal);
-      const read = await client.search(
-        inProject(
-          project,
-          `assignee = ${quote(accountId)}`,
-          `status in ${stringList(names)}`,
-          ...(await scope(signal)),
-        ),
+      return inStates(
+        states,
+        async () =>
+          `assignee = ${quote(await client.accountId(identity, signal))}`,
         `issues assigned to ${identity}`,
         signal,
       );
-      const wanted = new Set<CanonicalState>(states);
-      return pools(
-        read.filter((i) => {
-          const s = model.read(i).canonical;
-          return s !== null && wanted.has(s);
-        }),
+    },
+
+    async unassignedIssues(states, signal) {
+      return inStates(
+        states,
+        async () => `assignee is EMPTY AND ${open}`,
+        `unassigned issues of ${project}`,
         signal,
       );
     },

@@ -28,6 +28,7 @@
  * The tick writes nothing to the tracker: `do-item`'s claim does.
  */
 import { renderBranchName } from "../../../skills/drive-pr/scripts/lib/pr-policy.ts";
+import { carried, returnCarried } from "../station-answer-store.ts";
 import type { IssueKeys } from "../../../skills/do-item/scripts/lib/tracker/keys.ts";
 import type {
   PoolIssue,
@@ -89,6 +90,7 @@ export async function changed(
   ctx: PickupContext,
   key: string,
   served?: {
+    pooled?: boolean;
     servedPerson?: string;
     ancestorEpic?: string;
     blockingFor?: string;
@@ -96,7 +98,13 @@ export async function changed(
 ): Promise<{ issue: PoolIssue } | { why: string }> {
   const issue =
     served?.servedPerson === undefined
-      ? await freshPickup(ctx.tracker, ctx.section, key)
+      ? await freshPickup(
+          ctx.tracker,
+          ctx.section,
+          key,
+          ctx.servedPolicy,
+          served?.pooled,
+        )
       : await freshServedPickup(
           ctx.tracker,
           key,
@@ -250,19 +258,34 @@ async function launchOne(
     marker: null,
     sessionId: sessionIdFor(vendor),
     mark: named.mark,
+    ...carried(repo.slug, action.target, id),
   };
-  const launched = headless(await startRecord(state, record, slots), record);
+  const launched = headless(await startOrReturn(state, record, slots), record);
   return { ...launched, detail: `${launched.detail}; ${route.detail}` };
+}
+
+/** Start the record; a launch that did not start hands the answer it was given back to the next one. */
+async function startOrReturn(
+  state: ApplyState,
+  record: LaunchRecord,
+  slots: Parameters<typeof startRecord>[2],
+): Promise<LaunchOutcome> {
+  const started = await startRecord(state, record, slots);
+  if (started.outcome !== "launched" && started.outcome !== "retried")
+    returnCarried(record.id, state.root);
+  return started;
 }
 
 /** The optional served-item facts which a pickup preserves in its launch record. */
 function servedEvidence(action: Action): {
+  pooled?: boolean;
   servedPerson?: string;
   ancestorEpic?: string;
   blockingFor?: string;
 } {
-  const { ancestorEpic, blockingFor, servedPerson } = action.evidence;
+  const { ancestorEpic, blockingFor, servedPerson, pooled } = action.evidence;
   return {
+    ...(pooled === true ? { pooled: true } : {}),
     ...(typeof servedPerson === "string" ? { servedPerson } : {}),
     ...(typeof ancestorEpic === "string" ? { ancestorEpic } : {}),
     ...(typeof blockingFor === "string" ? { blockingFor } : {}),
@@ -332,7 +355,13 @@ async function retryPending(
     const unauthorized = servedAuthorization(state, ctx, record, item);
     const fresh =
       record.servedPerson === undefined
-        ? await freshPickup(ctx.tracker, ctx.section, item)
+        ? await freshPickup(
+            ctx.tracker,
+            ctx.section,
+            item,
+            ctx.servedPolicy,
+            record.pooled,
+          )
         : await freshServedPickup(
             ctx.tracker,
             item,
@@ -365,7 +394,12 @@ export async function applyPickups(
 ): Promise<void> {
   const wanted = report.actions.filter((a) => a.stage === "pickup");
   await retryPending(state, repo, report, ctx);
-  for (const action of wanted.some((a) => a.evidence.servedPerson !== undefined)
+  // A served or pooled queue is ranked (assigned before pool, then the
+  // queue's own order), so it launches in that order; only the unranked
+  // factory pickups rotate.
+  for (const action of wanted.some(
+    (a) => a.evidence.servedPerson !== undefined || a.evidence.pooled === true,
+  )
     ? wanted
     : rotated(state, wanted, "targets"))
     report.launches.push(await launchOne(state, repo, action, ctx));

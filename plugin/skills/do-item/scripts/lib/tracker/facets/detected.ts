@@ -192,7 +192,7 @@ export function defaultedTracker(inputs: DefaultInputs): Tracker {
   }
   return {
     ...base,
-    stateName: (state) => base.stateName(state),
+    stateName: base.stateName,
     getIssue: (key) => on((t) => t.getIssue(key)),
     openIssues: (query) => on((t) => t.openIssues(query)),
     openChildren: (key) => on((t) => t.openChildren(key)),
@@ -203,6 +203,21 @@ export function defaultedTracker(inputs: DefaultInputs): Tracker {
       refuseBlocked(s);
       return s.tracker.assignedIssues(identity, states, options);
     },
+    ...(base.unassignedIssues === undefined
+      ? {}
+      : {
+          async unassignedIssues(states, options) {
+            const s = await settle(readSignal(options));
+            refuseBlocked(s);
+            const read = s.tracker.unassignedIssues;
+            if (read === undefined)
+              throw new TrackerRequestError(
+                "invalid",
+                "this tracker reads no ready pool",
+              );
+            return read(states, options);
+          },
+        }),
     ledger: (query, onPage) => on((t) => t.ledger(query, onPage), ["priority"]),
     createIssue: (issue) => write((t) => t.createIssue(issue)),
     updateIssue: (key, patch, signal) =>

@@ -154,6 +154,24 @@ describe("the tick's blocked output", () => {
     ]);
   });
 
+  it("preserves a workflow-specific skipped projection in its receipt", async () => {
+    const out = await writeBlocked(input([drive(7)]), mode, async () => [
+      {
+        item: "#107",
+        outcome: "skipped",
+        detail: "#107: blocked is absent from its workflow",
+      },
+    ]);
+    expect(out).toEqual([
+      {
+        target: "PR #7",
+        item: "#107",
+        outcome: "skipped",
+        detail: "#107: blocked is absent from its workflow",
+      },
+    ]);
+  });
+
   it("reads nothing without --apply, without the state, or for a pull request serialization holds", async () => {
     let calls = 0;
     const project = async () => {

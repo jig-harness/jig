@@ -41,6 +41,7 @@ import {
   type ReadRecord,
   targetOf,
 } from "./launches.ts";
+import { holdsItem } from "./launch-pickups.ts";
 import { pickupNotice } from "./notices.ts";
 import { questionOf } from "./session.ts";
 import {
@@ -328,7 +329,7 @@ function questionAsked(
         r.record.action === "pickup" &&
         (r.record.item === item.key ||
           r.record.batchItems?.some((i) => i.key === item.key) === true) &&
-        !r.record.released,
+        holdsItem(r.record, item.key),
     )
     .sort((a, b) => a.record.createdAt.localeCompare(b.record.createdAt))
     .at(-1);
@@ -338,7 +339,12 @@ function questionAsked(
     latest.result === "waits"
   )
     return null;
-  const question = questionOf(latest.state);
+  // A pass that framed its decision asks its question there, whether or not it also ended on a question line.
+  const question =
+    questionOf(latest.state) ??
+    (latest.result === "failed"
+      ? (latest.framed?.decision.call.question ?? null)
+      : null);
   if (question === null) return null;
   const { record } = latest;
   const reason = `the pickup stopped on a question for a person: ${question}`;
@@ -356,6 +362,7 @@ function questionAsked(
       question,
     },
     cause: "pickup-question",
+    ...(latest.framed === undefined ? {} : { framed: latest.framed }),
     notice: pickupNotice(
       slug,
       `${item.key} question, record ${record.id}`,
@@ -419,13 +426,17 @@ function pickupAction(
     stage: "pickup",
     target: item.key,
     record: "tracker",
-    reason: `assigned to ${item.assignee} by ${item.assignedBy}, in ${item.state}, with no running session`,
+    reason:
+      item.pooled === true
+        ? `unassigned in the ready pool (${item.state}), made ready by ${item.assignedBy}, with no running session; its claim assigns it to ${item.assignee}`
+        : `assigned to ${item.assignee} by ${item.assignedBy}, in ${item.state}, with no running session`,
     evidence: {
       title: item.title,
       url: item.url,
       state: item.state,
       assignee: item.assignee,
       assignedBy: item.assignedBy,
+      ...(item.pooled === true ? { pooled: true } : {}),
       ...(item.servedPerson === undefined
         ? {}
         : { servedPerson: item.servedPerson }),

@@ -15,6 +15,7 @@
  */
 
 import type {
+  CanonicalState,
   CommentFact,
   FoundComment,
   IssueFact,
@@ -56,6 +57,7 @@ type ReportOps = Pick<
   | "openChildren"
   | "poolIssue"
   | "assignedIssues"
+  | "unassignedIssues"
   | "openPopulation"
   | "facetReport"
 >;
@@ -224,6 +226,48 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
       labels: model.visibleLabels(issue.labels),
       truncated: issue.labelsTruncated ? ["labels"] : [],
     };
+  }
+
+  /**
+   * The issues in one of `states`, narrowed by `listing`. The state is a
+   * label or a board column, so it is applied locally; the listing is
+   * open-only unless a closed state is asked for.
+   */
+  async function inStates(
+    states: ReadonlyArray<CanonicalState>,
+    listing: { assignee?: string; openOnly?: true },
+    signal?: AbortSignal,
+  ): Promise<CorePoolIssue[]> {
+    if (states.length === 0)
+      throw new TrackerRequestError(
+        "invalid",
+        "a query of issues by state needs at least one state",
+      );
+    const { openOnly, ...query } = listing;
+    const closed =
+      openOnly !== true && states.some((s) => CLOSED_STATES.has(s));
+    const open = openOnly === true || states.some((s) => !CLOSED_STATES.has(s));
+    const read = await client.list(
+      {
+        states: [
+          ...(open ? ["OPEN" as const] : []),
+          ...(closed ? ["CLOSED" as const] : []),
+        ],
+        ...query,
+      },
+      OPEN_CHILDREN,
+      signal,
+    );
+    return pools(
+      read.filter(
+        ({ issue }) =>
+          (openOnly !== true || issue.open) &&
+          states.includes(
+            model.stateOf({ ...issue, labels: wholeLabels(issue) }),
+          ),
+      ),
+      signal,
+    );
   }
 
   return {
@@ -470,34 +514,12 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
     facetReport: (options) => client.facets.report(options),
 
     async assignedIssues(identity, states, signal) {
-      if (states.length === 0)
-        throw new TrackerRequestError(
-          "invalid",
-          "an assigned-issues query needs at least one state",
-        );
-      // The state is a label or a board column, so it is applied locally;
-      // the listing is open-only unless a closed state is asked for.
-      const closed = states.some((s) => CLOSED_STATES.has(s));
-      const open = states.some((s) => !CLOSED_STATES.has(s));
-      const read = await client.list(
-        {
-          states: [
-            ...(open ? ["OPEN" as const] : []),
-            ...(closed ? ["CLOSED" as const] : []),
-          ],
-          assignee: identity,
-        },
-        OPEN_CHILDREN,
-        signal,
-      );
-      return pools(
-        read.filter(({ issue }) =>
-          states.includes(
-            model.stateOf({ ...issue, labels: wholeLabels(issue) }),
-          ),
-        ),
-        signal,
-      );
+      return inStates(states, { assignee: identity }, signal);
+    },
+
+    async unassignedIssues(states, signal) {
+      const read = await inStates(states, { openOnly: true }, signal);
+      return read.filter((i) => i.assignee === null);
     },
   };
 }

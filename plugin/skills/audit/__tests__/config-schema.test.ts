@@ -128,6 +128,7 @@ import {
   SPECS_FIELDS,
 } from "../../../shared/spec/config.ts";
 import { ADAPTERS } from "../../../shared/spec/registry.ts";
+import { sweepSettings } from "../../file-issue/scripts/lib/sweep-settings.ts";
 import { runScript } from "./helpers.ts";
 
 const plugin = join(import.meta.dir, "..", "..", "..");
@@ -283,6 +284,10 @@ test("its complete example's work_batch section passes the skill", () => {
   expect(() => parseWorkBatchSection(example, batchSizes)).not.toThrow();
 });
 
+test("its complete example's file_issue section passes the skill", () => {
+  expect(sweepSettings(completeExample()).move).toBe(false);
+});
+
 describe("the reading skills", () => {
   test("accept the value sets the schema lists", () => {
     expect(field("pull_requests.stacking")?.values).toEqual([
@@ -431,6 +436,7 @@ describe("the reading skills", () => {
       "work_batch.max_items": DEFAULT_MAX_ITEMS,
       "work_batch.ranking.provenance": DEFAULT_RANKING.provenance,
       "work_batch.ranking.shared_area_label": DEFAULT_RANKING.sharedAreaLabel,
+      "file_issue.sweep.move": sweepSettings({}).move,
       "resolve_conflicts.hotspot_min_merges": DEFAULT_HOTSPOT_MIN_MERGES,
       "repository.remote": DEFAULT_REMOTE,
       "review.scanner_apps": DEFAULT_SCANNER_APPS,

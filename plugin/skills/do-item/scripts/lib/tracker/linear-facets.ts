@@ -34,7 +34,7 @@ import {
 } from "./facets/tracker.ts";
 import { TrackerConfigError } from "./config-error.ts";
 import { readSignal, refuseStopped } from "./facets/bounds.ts";
-import { fold, PRIORITY_NAMES } from "./facets/values.ts";
+import { everyName, fold, PRIORITY_NAMES } from "./facets/values.ts";
 import { type Facet, type Tracker, TrackerRequestError } from "./port.ts";
 import { ShapeError } from "./linear-shapes.ts";
 import type { LinearTransport } from "./linear.ts";
@@ -114,7 +114,10 @@ export function checkLinearFacets(facets: Facets): void {
   // onto other numbers could not be honoured in either direction.
   if (facets.priority.store === "native")
     for (const [i, name] of PRIORITY_NAMES.entries())
-      if (facets.priority.map?.toTracker(name) !== String(i + 1))
+      if (
+        facets.priority.map?.toTracker(name) !== String(i + 1) ||
+        everyName(facets.priority.map).filter(([v]) => v === name).length !== 1
+      )
         throw new TrackerConfigError(
           "issue_tracker.facets.priority.values",
           "issue_tracker.facets.priority.values cannot remap Linear's native priority, which is always urgent 1 to low 4; keep priority in labels to name other values",
@@ -122,10 +125,11 @@ export function checkLinearFacets(facets: Facets): void {
   const size = facets.size;
   if (!usable(size) || size.store !== "native") return;
   const named = namedPoints(size);
-  if (named.length > 0 && named.length < size.values.length)
+  const sized = new Set(named.map(([v]) => v));
+  if (sized.size > 0 && sized.size < size.values.length)
     throw new TrackerConfigError(
       `${at}.values`,
-      `${at}.values names the estimate of ${named.map(([v]) => v).join(", ")} but not of ${size.values.filter((v) => !named.some(([n]) => n === v)).join(", ")}; name every size's estimate, or none to map the sizes onto the team's scale in order`,
+      `${at}.values names the estimate of ${[...sized].join(", ")} but not of ${size.values.filter((v) => !sized.has(v)).join(", ")}; name every size's estimate, or none to map the sizes onto the team's scale in order`,
     );
   for (const [v, t] of named)
     if (
@@ -176,11 +180,12 @@ async function readScale(
   };
 }
 
-/** The sizes `values` names, each with the point it names. */
+/**
+ * The sizes `values` names, each with every point it names, the written one
+ * first.
+ */
 function namedPoints(size: ResolvedFacet): Array<readonly [string, string]> {
-  return (size.map?.entries ?? []).filter(([v]) =>
-    (size.named ?? []).includes(v),
-  );
+  return everyName(size.map).filter(([v]) => (size.named ?? []).includes(v));
 }
 
 /** Each size's point on `scale`: named in `values`, else the sizes in order from 1. */
@@ -210,12 +215,17 @@ function sizePoints(
       );
     return [v, n] as const;
   });
-  if (new Set(out.map(([, n]) => n)).size !== out.length)
-    throw new TrackerRequestError(
-      "unresolved",
-      `${at}.values gives two sizes one point of ${shown}`,
-    );
-  return out;
+  const owner = new Map<number, string>();
+  for (const [v, n] of out)
+    if ((owner.get(n) ?? v) !== v)
+      throw new TrackerRequestError(
+        "unresolved",
+        `${at}.values gives two sizes one point of ${shown}`,
+      );
+    else owner.set(n, v);
+  return out.filter(
+    ([v, n], i) => out.findIndex(([w, m]) => w === v && m === n) === i,
+  );
 }
 
 /** Where size is kept on a Linear team: in the estimate where `facets` say so. */
@@ -322,6 +332,15 @@ export function estimateStore(
         },
         assignedIssues: async (identity, states, signal) =>
           pools(await core.assignedIssues(identity, states, signal), signal),
+        ...(core.unassignedIssues === undefined
+          ? {}
+          : {
+              unassignedIssues: async (states, signal) =>
+                pools(
+                  (await core.unassignedIssues?.(states, signal)) ?? [],
+                  signal,
+                ),
+            }),
         ...estimatedBatches(core, pool),
         openPopulation: async (signal) =>
           pools(await core.openPopulation(signal), signal),

@@ -1343,6 +1343,16 @@ make, use the entry's term instead.
   other decision the agent takes itself and records where a person can
   reverse it
   ([ADR-0010](docs/adr/ADR-0010-parking-is-reserved-for-registry-classes.md)).
+- **Session-framed decision, dispatcher-framed decision** — the *framed
+  decision* a need on the dispatcher's line carries when it is not a
+  *park*. A **session-framed decision** is the one a dispatched follow-up's
+  or pickup's pass recorded with its result when it stopped for a person. A
+  **dispatcher-framed decision** is one the *tick* frames for a cause it
+  detects itself (a failed follow-up, a stalled pickup, a checkout another
+  tree holds, a drive handed to a person, a stuck launch record), from the
+  facts that identify it, with a fixed set of options that are steps the
+  tick carries out once a person chooses one
+  ([design](design/structured-answers.md#every-need-framed)).
 - **Decision class** — one row of the *HITL* registry, named by a short
   slug (`merge`, `scope`, `human-thread`, …): a kind of decision that must
   stay a person's. A repository lists its classes in
@@ -2505,6 +2515,13 @@ make, use the entry's term instead.
   unassigned item under an epic assigned to them, is ranked and picked up
   beside the *factory identity*'s, and the pickup keeps them as the
   item's assignee ([served pickups](plugin/README.md#the-dispatcher)).
+- **Ready pool** — the tracker states a team leaves validated items in,
+  unassigned, for whoever takes them first. A repository names them in
+  `dispatch.pool.states`, and the *dispatcher* picks up an item there when
+  the person who made the latest move into its state can write to the
+  repository; the pickup's claim assigns it to the *factory identity*, and
+  the claim marker decides between hosts that take the same item
+  ([dispatch.pool](plugin/CONFIGURATION.md#dispatch)).
 - **Steward** — the agent pass a *dispatcher*'s host starts every 20
   minutes, when its input changed, to read what is stopped and waiting on
   the line and propose what to do about it: re-arm a drive once when its

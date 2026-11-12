@@ -13,6 +13,10 @@
  *     pool_issue_types: [Task, Bug]     # default: every type
  *     blocked_fields: { reason: "Blocked Reason", since: "Blocked Since" }
  *
+ * A priority or a resolution may list several names,
+ * `urgent: [Blocker, Critical, Highest]`: each is read as that priority or
+ * closed state, and the first is written.
+ *
  * A relation in `link_types` may name several link types, each a name or
  * `{ name, inverted }`: `[Blocks, { name: "Depends", inverted: true }]`.
  *
@@ -26,9 +30,16 @@
  * before the adapter is chosen; only the Jira adapter requires `site`.
  */
 
+import { parseStatesByType, type StatesByType } from "./state-maps.ts";
 import { isRecord } from "../../../../../../shared/guards.ts";
 import { TrackerConfigError } from "../config-error.ts";
-import { firstRepeat, nonEmpty, settingsSection } from "../settings-fields.ts";
+import {
+  firstRepeat,
+  nameList,
+  nonEmpty,
+  refuseSharedNames,
+  settingsSection,
+} from "../settings-fields.ts";
 import { PRIORITY_NAMES, type PriorityName } from "../github/settings.ts";
 
 export { PRIORITY_NAMES, type PriorityName };
@@ -54,10 +65,13 @@ export interface JiraSettings {
   /** `https://api.atlassian.com/ex/jira/<cloud id>`, no trailing slash; `null` = the site. */
   apiBase: string | null;
   issueType: string;
+  statesByType: StatesByType;
   /** `null` = the project's one sub-task type. */
   subtaskType: string | null;
-  priorities: Record<PriorityName, string>;
-  resolutions: Record<ResolvedState, string>;
+  /** Each priority's names: every one is read as it, the first is written. */
+  priorities: Record<PriorityName, string[]>;
+  /** Each closed state's resolutions: every one is read as it, the first is written. */
+  resolutions: Record<ResolvedState, string[]>;
   /** Each relation's link types; the first is the one a new link gets. */
   linkTypes: Record<LinkedRelation, LinkTypeEntry[]>;
   /** A field's name or id → the prefix of the labels its values become. */
@@ -74,6 +88,7 @@ export type BlockedFieldRole = (typeof BLOCKED_FIELD_ROLES)[number];
 export type BlockedFieldNames = Record<BlockedFieldRole, string | null>;
 
 const FIELDS = [
+  "states_by_type",
   "site",
   "api_base",
   "issue_type",
@@ -165,16 +180,21 @@ function apiBaseOf(v: unknown): string | null {
 }
 
 /**
- * A mapping of `keys` to names over `defaults`; each name must differ from
- * the others, ignoring case, since two keys named alike read back as one.
+ * A mapping of `keys` to a name or a list of names, over `defaults`. Every
+ * name in every list must differ from the others, ignoring case, since a
+ * name given twice would read back as two keys.
  */
 function namesOf<K extends string>(
   v: unknown,
   name: string,
   keys: ReadonlyArray<K>,
   defaults: Record<K, string>,
-): Record<K, string> {
-  const out = { ...defaults };
+  what: string,
+): Record<K, string[]> {
+  const out = Object.fromEntries(keys.map((k) => [k, [defaults[k]]])) as Record<
+    K,
+    string[]
+  >;
   if (v !== undefined && v !== null && !isRecord(v))
     throw new TrackerConfigError(
       field(name),
@@ -187,18 +207,14 @@ function namesOf<K extends string>(
         at,
         `${at} is not one of ${keys.join(", ")}`,
       );
-    out[key as K] = nonEmpty(value, at).trim();
+    out[key as K] = nameList(value, at, what);
   }
-  const values = keys.map((k) => out[k]);
-  const twice = values.find(
-    (n, i) =>
-      values.findIndex((m) => m.toLowerCase() === n.toLowerCase()) !== i,
+  refuseSharedNames(
+    field(name),
+    keys.map((k) => [k, out[k]] as const),
+    what,
+    new Set(Object.keys(v ?? {})),
   );
-  if (twice !== undefined)
-    throw new TrackerConfigError(
-      field(name),
-      `${field(name)} names '${twice}' twice; each needs its own name`,
-    );
   return out;
 }
 
@@ -383,6 +399,7 @@ function blockedFieldsOf(v: unknown): BlockedFieldNames {
 export function parseJiraSettings(raw: unknown): JiraSettings {
   const section = sectionOf(raw);
   return {
+    statesByType: parseStatesByType(section.states_by_type),
     site: siteOf(section.site),
     apiBase: apiBaseOf(section.api_base),
     issueType:
@@ -398,12 +415,14 @@ export function parseJiraSettings(raw: unknown): JiraSettings {
       "priorities",
       PRIORITY_NAMES,
       DEFAULT_PRIORITIES,
+      "priority",
     ),
     resolutions: namesOf(
       section.resolutions,
       "resolutions",
       RESOLVED_STATES,
       DEFAULT_RESOLUTIONS,
+      "resolution",
     ),
     linkTypes: linkTypesOf(section.link_types),
     fieldLabels: fieldLabelsOf(section.field_labels),

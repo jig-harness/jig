@@ -460,6 +460,7 @@ describe("Jira adapter: candidate pools", () => {
     );
     expect(calls[2]?.body.fields).toEqual(["parent"]);
     expect(pool[0]).toEqual({
+      nativeType: "Task",
       identifier: "ENG-1",
       title: "Issue ENG-1",
       url: "https://example.atlassian.net/browse/ENG-1",

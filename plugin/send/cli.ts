@@ -83,7 +83,7 @@ export const sendCommand = command(
   object({
     words: multiple(
       argument(string({ metavar: "WORD" }), {
-        description: message`The address (station@owner/name#key, or the address and its key as two words: drive@jig 456), then the verb and its arguments. The verbs: assign (pickup); drive, rearm, answer <key> <text>, answer <key> --approve|--choose <option>, answer --all --approve, pause, resume <hold-push|pause|stop>, stop, hold-push (drive); hold, release (drive, followup).`,
+        description: message`The address (station@owner/name#key, or the address and its key as two words: drive@jig 456), then the verb and its arguments. The verbs: assign (pickup); drive, rearm, answer <key> <text>, answer --all --approve, pause, resume <hold-push|pause|stop>, stop, hold-push (drive); answer <key> --approve|--choose <option> (drive, followup, pickup); hold, release (drive, followup).`,
       }),
     ),
     approve: option("--approve", {

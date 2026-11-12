@@ -13,6 +13,8 @@
 import {
   CANONICAL_STATES,
   type CanonicalState,
+  type StateContext,
+  type PoolIssue,
   type Tracker,
   TrackerRequestError,
   type TrackerUser,
@@ -71,9 +73,10 @@ function names(users: TrackerUser[]): string {
 export function canonicalStatesOf(
   tracker: Pick<ClaimTracker, "stateName">,
   name: string,
+  context: StateContext = null,
 ): CanonicalState[] {
   return CANONICAL_STATES.filter((s) => {
-    const mapped = tracker.stateName(s);
+    const mapped = tracker.stateName(s, context);
     return mapped !== null && sameName(mapped, name);
   });
 }
@@ -89,12 +92,13 @@ export function claimFromRefusal(
   key: string,
   stateName: string,
   claimFrom: readonly CanonicalState[] | null,
+  context: StateContext = null,
 ): ClaimResult | null {
   if (claimFrom === null) return null;
-  const states = canonicalStatesOf(tracker, stateName);
+  const states = canonicalStatesOf(tracker, stateName, context);
   if (states.some((s) => claimFrom.includes(s))) return null;
   const allowed = claimFrom
-    .map((s) => `${s} (${tracker.stateName(s)})`)
+    .map((s) => `${s} (${tracker.stateName(s, context)})`)
     .join(", ");
   return {
     outcome: "refused",
@@ -112,8 +116,9 @@ export function blockedStateRefusal(
   tracker: Pick<ClaimTracker, "stateName">,
   key: string,
   stateName: string,
+  context: StateContext = null,
 ): ClaimResult | null {
-  const blocked = tracker.stateName("blocked");
+  const blocked = tracker.stateName("blocked", context);
   if (blocked === null || !sameName(stateName, blocked)) return null;
   return {
     outcome: "refused",
@@ -139,32 +144,9 @@ export async function claimIssue(
   const before = await tracker.poolIssue(key);
   if (before === null)
     throw new TrackerRequestError("unresolved", `issue ${key} does not exist`);
-  const started = tracker.stateName("in_progress");
-  if (sameName(before.state.name, started))
-    return {
-      outcome: "refused",
-      issue: key,
-      why: "in_progress",
-      reason: `${key} is already ${started}: another session holds it`,
-    };
-  // The state this claim acts on: a block that landed while it waited refuses here.
-  const blocked = blockedStateRefusal(tracker, key, before.state.name);
-  if (blocked !== null) return blocked;
-  const outside = claimFromRefusal(
-    tracker,
-    key,
-    before.state.name,
-    rules.claimFrom,
-  );
-  if (outside !== null) return outside;
-  const prOpen = tracker.stateName("pr_open");
-  if (prOpen !== null && sameName(before.state.name, prOpen))
-    return {
-      outcome: "refused",
-      issue: key,
-      why: "pr_open",
-      reason: `${key} is ${prOpen}: its pull request is open`,
-    };
+  const admission = startAdmission(tracker, key, before, rules);
+  if ("refusal" in admission) return admission.refusal;
+  const started = admission.started;
   const holders = await tracker.assignees(key);
   const others = holders.filter((u) => u.id !== me.id);
   if (others.length > 0)
@@ -198,4 +180,55 @@ export async function claimIssue(
       reason: `another change landed first: ${key} is now ${after?.state.name ?? "gone"}, not ${started}`,
     };
   return { outcome: "claimed", issue: key, claimant: me, state: started };
+}
+
+/** Refuse unavailable, held or disallowed start states before an assignment. */
+function startAdmission(
+  tracker: ClaimTracker,
+  key: string,
+  before: PoolIssue,
+  rules: ClaimRules,
+): { started: string } | { refusal: ClaimResult } {
+  const context = before.nativeType ?? null;
+  const started = tracker.stateName("in_progress", context);
+  if (started === null)
+    return {
+      refusal: {
+        outcome: "refused",
+        issue: key,
+        why: "state",
+        reason: `${key} has no in_progress state in its workflow`,
+      },
+    };
+  if (sameName(before.state.name, started))
+    return {
+      refusal: {
+        outcome: "refused",
+        issue: key,
+        why: "in_progress",
+        reason: `${key} is already ${started}: another session holds it`,
+      },
+    };
+  // The state this claim acts on: a block that landed while it waited refuses here.
+  const blocked = blockedStateRefusal(tracker, key, before.state.name, context);
+  if (blocked !== null) return { refusal: blocked };
+  const outside = claimFromRefusal(
+    tracker,
+    key,
+    before.state.name,
+    rules.claimFrom,
+    context,
+  );
+  if (outside !== null) return { refusal: outside };
+  const prOpen = tracker.stateName("pr_open", context);
+  if (prOpen !== null && sameName(before.state.name, prOpen))
+    return {
+      refusal: {
+        outcome: "refused",
+        issue: key,
+        why: "pr_open",
+        reason: `${key} is ${prOpen}: its pull request is open`,
+      },
+    };
+  return { started };
 }

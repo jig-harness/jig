@@ -32,11 +32,9 @@
  * | no claim | pending |
  *
  * Pending, alive and unknown records hold their stage and their account's
- * slot; an unknown or a pending record whose launch cannot be retried
- * holds them until a person clears it (`jig dispatch clear`). An
- * interactive session's record is also read beside its agent
- * (`actions/pickup-hold.ts`): while its wrapper is alive, the record ends
- * when the runtime reports the agent finished.
+ * slot; an unknown or a pending record whose launch cannot be retried holds
+ * them until a person clears it (`jig dispatch clear`). An interactive
+ * session's record also ends with its agent (`actions/pickup-hold.ts`).
  *
  * What Control adds while the record runs and when it ends: a drive's
  * unresolved-thread count per ledger round (`samples`, the
@@ -47,10 +45,12 @@
  */
 import { optionalLaunchFields } from "./launch-record-options.ts";
 import { readNext, type NextOwner } from "./next-owner.ts";
+import { type FramedResult, framedOf } from "./framed-result.ts";
 import {
   type PickupRefusal,
   readRefusal,
   type RefusedMember,
+  waitsOf,
 } from "./pickup-refusal.ts";
 
 export type { PickupRefusal, RefusedMember };
@@ -148,6 +148,8 @@ export interface LaunchRecord {
   ancestorEpic?: string;
   /** For a pickup of a blocker pulled forward: the served item it blocks, whose authority the claim re-reads. */
   blockingFor?: string;
+  /** For a pickup from the ready pool: the launch re-reads it as one, so a later assignment cannot move it to the assigned lane. */
+  pooled?: boolean;
   batchItems?: import("./queue-batch.ts").BatchItem[];
   /** For a headless pass: whether the tick admitted it on a host opted in to Codex's bypass. A Codex pass carries the bypass only when this is `true`; the wrapper does not read the setting itself, since it can read another user layer from the tick's. */
   codexBypass?: boolean;
@@ -163,8 +165,9 @@ export interface LaunchRecord {
   /** A pickup's route: the model and effort its implementer delegate is to run on (an interactive pickup's session itself ran on them); `null` when the route named none. */
   model: string | null;
   effort: string | null;
-  /** A pickup's ended record no longer holds its item: the item left the dispatch states since. */
+  /** A pickup's ended record no longer holds its item: the item left the dispatch states since; `releasedItems` lists the batch members a person's answer released alone. */
   released: boolean;
+  releasedItems?: string[];
   /** A pickup's members seen claimed (in progress) after the record ended: each releases only after it returns to the dispatch states. Absent until then. */
   claimedItems?: string[];
   /** @deprecated Kept for records written before claimedItems tracked batch members separately. */
@@ -210,6 +213,8 @@ export interface LaunchRecord {
   routineTags?: boolean;
   /** For a follow-up's routine run again: the question the earlier pass stopped on and the classes whose standing answers its prompt gives; absent on any other record. */
   standing?: StandingAnswer | null;
+  /** The answer a person gave the decision an earlier session of this target stopped on, which this session is handed (`station-answer-store.ts`). */
+  answered?: import("./station-answer-store.ts").CarriedAnswer;
 }
 
 /** A drive's unresolved review threads at one ledger round. */
@@ -283,6 +288,8 @@ export interface ReadRecord {
   waitsUntil?: string;
   /** A pickup the repository's start rules refused, recorded with its `failed` result; absent otherwise. */
   refusal?: PickupRefusal | null;
+  /** The framed decision the pass recorded with its `failed` result, when it stopped for a person; absent otherwise. */
+  framed?: FramedResult;
 }
 
 /** A launch record id: the time it was made, and a random suffix. */
@@ -483,6 +490,8 @@ export interface LaunchRow {
   /** A pickup that waits on a tracker's rate limit: when it may start again. */
   result_until?: string | null;
   refusal?: string | null;
+  /** A pass's framed decision, recorded with its `failed` result (`framed-result.ts`). */
+  result_decision?: string | null;
 }
 
 /** The tick's part of a row, with its samples and episodes; `null` when it does not read as a record. */
@@ -594,6 +603,7 @@ export function readEnded(id: string, root = stateRoot()): ReadRecord | null {
     next: readNext(row.result_next),
     ...waitsOf(row),
     refusal: readRefusal(row.refusal),
+    ...framedOf(row.result_decision),
   };
 }
 
@@ -610,12 +620,6 @@ export function asResult(
 ): SessionResult | null {
   if (value === "failed" && until !== null) return "waits";
   return value === "done" || value === "failed" ? value : null;
-}
-
-/** When a `waits` result lets the pickup start again, as the row carries it. */
-function waitsOf(row: LaunchRow): { waitsUntil?: string } {
-  const until = row.result_until ?? null;
-  return row.result === "failed" && until !== null ? { waitsUntil: until } : {};
 }
 
 /** A record's recorded answer; `null` when none. */
@@ -781,6 +785,7 @@ export async function readLaunches(
       next: readNext(row.result_next),
       ...waitsOf(row),
       refusal: readRefusal(row.refusal),
+      ...framedOf(row.result_decision),
     });
   }
   return { records, unreadable };

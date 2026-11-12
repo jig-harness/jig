@@ -21,8 +21,8 @@
  *       site: https://example.atlassian.net
  *       issue_type: Task
  *       subtask_type: Sub-task
- *       priorities: { urgent: Highest, high: High, medium: Medium, low: Low }
- *       resolutions: { done: Done, canceled: Won't Do, duplicate: Duplicate }
+ *       priorities: { urgent: [Blocker, Highest], high: High, medium: Medium, low: Low }
+ *       resolutions: { done: Done, canceled: [Won't Do, Won't Fix], duplicate: Duplicate }
  *       link_types: { blocks: [Blocks, { name: Depends, inverted: true }], related: Relates }
  *       field_labels: { Size: "size:" }
  *       pool_issue_types: [Task, Bug]
@@ -44,11 +44,13 @@ import {
   type OptionalState,
   type RequiredState,
   type StateNames,
+  type StateMap,
 } from "./port.ts";
 import { TrackerConfigError } from "./config-error.ts";
 import { type GitHubSettings, parseGitHubSettings } from "./github/settings.ts";
 import { gitHubModel } from "./github/model.ts";
 import { type JiraSettings, parseJiraSettings } from "./jira/settings.ts";
+import { jiraStateMaps } from "./jira/state-maps.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
 import {
   entryLabels,
@@ -59,7 +61,8 @@ import {
   readTaxonomyValues,
   resolveFacets,
 } from "./facets/config.ts";
-import { fold, PRIORITY_NAMES } from "./facets/values.ts";
+import { fold, namesIn, PRIORITY_NAMES } from "./facets/values.ts";
+import { firstRepeat, refuseSharedNames } from "./settings-fields.ts";
 import { DEFAULT_TAXONOMY } from "../../../../file-issue/scripts/lib/config.ts";
 
 export interface TrackerConfig {
@@ -148,15 +151,15 @@ const JIRA_CLOSED: ReadonlyArray<CanonicalState> = [
  * active child as parked.
  */
 function refuseAmbiguousStates(
-  states: StateNames,
+  states: StateMap,
   adapter: string,
   jira: JiraSettings,
+  at = "issue_tracker.states",
 ): void {
   const r = jira.resolutions;
   const resolved =
     adapter === "jira" &&
-    new Set([r.done, r.canceled, r.duplicate].map((n) => n.toLowerCase()))
-      .size === 3;
+    firstRepeat([...r.done, ...r.canceled, ...r.duplicate]) === undefined;
   const groups = resolved
     ? [...ALIASABLE_STATES.filter((g) => !g.includes("canceled")), JIRA_CLOSED]
     : ALIASABLE_STATES;
@@ -172,11 +175,28 @@ function refuseAmbiguousStates(
         (sharing.includes("pr_open") && !sharing.includes("in_review")))
     )
       throw new TrackerConfigError(
-        `issue_tracker.states.${s}`,
-        `issue_tracker.states.${sharing[0]} and issue_tracker.states.${s} both name '${name}'; each state needs its own name`,
+        `${at}.${s}`,
+        `${at}.${sharing[0]} and ${at}.${s} both name '${name}'; each state needs its own name`,
       );
     seen.set(key, sharing);
   }
+}
+
+/** Validate the repository map and each Jira type's effective workflow. */
+function refuseWorkflowAmbiguity(
+  states: StateMap,
+  adapter: string,
+  jira: JiraSettings,
+): void {
+  refuseAmbiguousStates(states, adapter, jira);
+  if (adapter !== "jira") return;
+  for (const [type, map] of Object.entries(jiraStateMaps(states, jira)))
+    refuseAmbiguousStates(
+      map,
+      adapter,
+      jira,
+      `issue_tracker.jira.states_by_type.${type}`,
+    );
 }
 
 /**
@@ -191,16 +211,17 @@ function refuseSharedLabels(
 ): void {
   if (adapter !== "github") return;
   const { stateLabels } = gitHubModel(states, github);
-  for (const [priority, label] of Object.entries(github.priorityLabels)) {
-    const state = stateLabels.find(
-      (l) => l.trim().toLowerCase() === label.trim().toLowerCase(),
-    );
-    if (state !== undefined)
-      throw new TrackerConfigError(
-        `issue_tracker.github.priority_labels.${priority}`,
-        `issue_tracker.github.priority_labels.${priority} names '${label}', which is also the label of a state in issue_tracker.states; a priority needs a label of its own`,
+  for (const [priority, labels] of Object.entries(github.priorityLabels))
+    for (const label of labels) {
+      const state = stateLabels.find(
+        (l) => l.trim().toLowerCase() === label.trim().toLowerCase(),
       );
-  }
+      if (state !== undefined)
+        throw new TrackerConfigError(
+          `issue_tracker.github.priority_labels.${priority}`,
+          `issue_tracker.github.priority_labels.${priority} names '${label}', which is also the label of a state in issue_tracker.states; a priority needs a label of its own`,
+        );
+    }
 }
 
 /**
@@ -271,18 +292,22 @@ function withFacetPriorityLabels(
     return github;
   const labels = { ...github.priorityLabels };
   for (const p of PRIORITY_NAMES)
-    labels[p] = entryLabels(entry, p, () => [labels[p]])[0] as string;
+    labels[p] = entryLabels(entry, p, () => labels[p]);
   const declared = isRecord(raw) && raw.priority_labels !== undefined;
   const differs = PRIORITY_NAMES.find(
-    (p) => fold(labels[p]) !== fold(github.priorityLabels[p]),
+    (p) => !sameNames(labels[p], github.priorityLabels[p]),
   );
   if (declared && differs !== undefined)
     throw new TrackerConfigError(
       "issue_tracker.facets.priority",
-      `issue_tracker.facets.priority keeps ${differs} in '${labels[differs]}', but issue_tracker.github.priority_labels.${differs} names '${github.priorityLabels[differs]}'; keep one, or make them agree`,
+      `issue_tracker.facets.priority keeps ${differs} in '${labels[differs].join("', '")}', but issue_tracker.github.priority_labels.${differs} names '${github.priorityLabels[differs].join("', '")}'; keep one, or make them agree`,
     );
   return { ...github, priorityLabels: labels };
 }
+
+/** Whether two lists name the same things in the same order, ignoring case. */
+const sameNames = (a: ReadonlyArray<string>, b: ReadonlyArray<string>) =>
+  a.length === b.length && a.every((n, i) => fold(n) === fold(b[i] as string));
 
 /**
  * On Jira, a native priority's `values` are the Jira priorities;
@@ -299,17 +324,23 @@ function withFacetPriorities(
   const declared =
     isRecord(raw) && isRecord(raw.priorities) ? raw.priorities : {};
   const priorities = { ...jira.priorities };
-  for (const [key, name] of Object.entries(values)) {
+  for (const [key, listed] of Object.entries(values)) {
     const p = PRIORITY_NAMES.find((n) => fold(n) === fold(key));
     if (p === undefined) continue;
-    const own = declared[p];
-    if (typeof own === "string" && fold(own) !== fold(name))
+    const names = [...namesIn(listed)];
+    if (declared[p] !== undefined && !sameNames(jira.priorities[p], names))
       throw new TrackerConfigError(
         `issue_tracker.facets.priority.values.${key}`,
-        `issue_tracker.facets.priority.values.${key} names '${name}', but issue_tracker.jira.priorities.${p} names '${own}'; keep one, or make them agree`,
+        `issue_tracker.facets.priority.values.${key} names '${names.join("', '")}', but issue_tracker.jira.priorities.${p} names '${jira.priorities[p].join("', '")}'; keep one, or make them agree`,
       );
-    priorities[p] = name;
+    priorities[p] = names;
   }
+  refuseSharedNames(
+    "issue_tracker.facets.priority.values",
+    PRIORITY_NAMES.map((p) => [p, priorities[p]] as const),
+    "priority",
+    new Set([...Object.keys(values).map(fold), ...Object.keys(declared)]),
+  );
   return { ...jira, priorities };
 }
 
@@ -399,7 +430,7 @@ export function parseTrackerConfig(
     facets,
     section.jira,
   );
-  refuseAmbiguousStates(states, adapter, jira);
+  refuseWorkflowAmbiguity(states, adapter, jira);
   refuseSharedLabels(adapter, states, github);
   return {
     adapter,

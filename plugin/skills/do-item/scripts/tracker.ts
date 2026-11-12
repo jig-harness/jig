@@ -103,6 +103,7 @@
  * session.
  */
 
+import { jiraStateMaps } from "./lib/tracker/jira/state-maps.ts";
 import { readFile } from "node:fs/promises";
 import { isRateLimited } from "../../../shared/tracker-budget.ts";
 import { claimServedIssue } from "./lib/served-claim.ts";
@@ -474,7 +475,16 @@ const OPERATIONS: Record<string, Operation> = {
     arity: 0,
     takes: "no argument",
     indent: true,
-    run: async () => ownTrackerConfig().states,
+    run: async () => {
+      const config = ownTrackerConfig();
+      const byType =
+        config.adapter === "jira"
+          ? jiraStateMaps(config.states, config.jira)
+          : {};
+      return Object.keys(byType).length === 0
+        ? config.states
+        : { ...config.states, states_by_type: byType };
+    },
   },
   "issue-states": {
     arity: 0,
@@ -515,13 +525,25 @@ const OPERATIONS: Record<string, Operation> = {
         }
       }
       const tracker = openTracker();
-      const name = tracker.stateName(state as CanonicalState);
+      const issue =
+        tracker.adapter === "jira"
+          ? await tracker.getIssue(key as string)
+          : null;
+      if (tracker.adapter === "jira" && issue === null)
+        throw new TrackerRequestError(
+          "unresolved",
+          `issue ${key} does not exist`,
+        );
+      const name =
+        issue === null
+          ? tracker.stateName(state as CanonicalState)
+          : tracker.stateName(state as CanonicalState, issue);
       if (name === null)
         return {
           issue: key,
           state,
           name,
-          skipped: `issue_tracker.states.${state} is not set`,
+          skipped: `${issue?.nativeType == null ? "issue_tracker.states" : `issue_tracker.jira.states_by_type.${issue.nativeType}`}.${state} is not set`,
         };
       await tracker.transition(key as string, state as CanonicalState);
       return { issue: key, state, name };

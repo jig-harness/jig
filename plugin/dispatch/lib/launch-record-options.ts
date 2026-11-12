@@ -1,6 +1,7 @@
 /** Backward-compatible validation of optional launch-record fields. */
 import { isMapping } from "../../shared/config-layers.ts";
 import { isStandingAnswer } from "./routine-questions.ts";
+import { isCarriedAnswer } from "./station-answer-store.ts";
 
 function optionalText(value: unknown): boolean {
   return value === undefined || value === null || typeof value === "string";
@@ -54,9 +55,11 @@ export function optionalLaunchFields(value: Record<string, unknown>): boolean {
     (value.stewardDecision === undefined ||
       Number.isSafeInteger(value.stewardDecision)) &&
     optionalStrings(value.claimedItems) &&
+    optionalStrings(value.releasedItems) &&
     optionalSeconds(value.passTimeoutSec) &&
     optionalBooleans(value, [
       "rearmConsumed",
+      "pooled",
       "codexBypass",
       "headless",
       "routineTags",
@@ -65,6 +68,7 @@ export function optionalLaunchFields(value: Record<string, unknown>): boolean {
     (value.standing === undefined ||
       value.standing === null ||
       isStandingAnswer(value.standing)) &&
+    (value.answered === undefined || isCarriedAnswer(value.answered)) &&
     optionalTime(value.endedAt) &&
     optionalTime(value.cancelledAt) &&
     optionalTime(value.openedAt) &&
