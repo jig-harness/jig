@@ -37,6 +37,8 @@ function item(
     state: { id: "s", name: "Todo", type: "unstarted" },
     assignee: { id: "u", name: "factory" },
     labels,
+    // As the tracker reads it: the epic label, ignoring case.
+    isEpic: labels.some((l) => l.toLowerCase() === "epic"),
     hasOpenChildren: false,
     truncated: [],
     ...facets,
@@ -119,7 +121,6 @@ describe("the tick's tracker record and the issue facets", () => {
     );
     const reading = await readPickups(() => fake.tracker, section, {
       bound: later,
-      epic: "epic",
     });
     expect(reading.read.ok).toBe(true);
     expect(reading.read.facets?.stores).toEqual([
@@ -143,7 +144,6 @@ describe("the tick's tracker record and the issue facets", () => {
     const before = Date.now();
     await readPickups(() => fake.tracker, section, {
       bound: later,
-      epic: "epic",
     });
     expect(fake.calls[0]).toBe("facetStores");
     const [options] = fake.options;
@@ -168,7 +168,6 @@ describe("the tick's tracker record and the issue facets", () => {
     );
     const reading = await readPickups(() => fake.tracker, section, {
       bound: later,
-      epic: "epic",
     });
     expect(reading.read.facets?.gaps).toEqual([]);
   });
@@ -185,7 +184,6 @@ describe("the tick's tracker record and the issue facets", () => {
     );
     const reading = await readPickups(() => fake.tracker, section, {
       bound: () => facetBound(Date.now() + 400),
-      epic: "epic",
     });
     expect(reading.read.facets?.failed).toBe(
       "stopped at the tick's deadline: the request was cancelled",
@@ -201,7 +199,6 @@ describe("the tick's tracker record and the issue facets", () => {
     const bound = facetBound(undefined);
     await readPickups(() => fake.tracker, section, {
       bound: () => bound,
-      epic: "epic",
     });
     expect(fake.options[0]?.deadline).toBeLessThan(bound.deadline);
     expect(fake.assigned[0]?.signal).toBe(bound.signal);
@@ -212,7 +209,6 @@ describe("the tick's tracker record and the issue facets", () => {
     const fake = fakeTracker([], async () => LABEL_STORES);
     const reading = await readPickups(() => fake.tracker, section, {
       bound: () => facetBound(Date.now() - 1),
-      epic: "epic",
     });
     expect(fake.calls).not.toContain("facetStores");
     expect(reading.read.facets?.failed).toContain(
@@ -226,7 +222,6 @@ describe("the tick's tracker record and the issue facets", () => {
     });
     const reading = await readPickups(() => fake.tracker, section, {
       bound: later,
-      epic: "epic",
     });
     const failed = reading.read.facets?.failed ?? "";
     expect(failed.startsWith("detection read failed: ")).toBe(true);

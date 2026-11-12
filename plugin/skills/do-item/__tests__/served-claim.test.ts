@@ -24,6 +24,7 @@ function world(inherited = false) {
             ? { identifier: "#3" }
             : null,
       labels: key === "#1" && held ? ["hitl:legal"] : ["epic"],
+      isEpic: !(key === "#1" && held),
       state: {
         name: key === "#1" && writes.includes("start") ? "In Progress" : "Todo",
         type:
@@ -461,6 +462,7 @@ test("a direct claim whose state leaves claim_from before any write keeps the st
     identifier: "#1",
     parent: { identifier: "#2" },
     labels: ["epic"],
+    isEpic: true,
     state: { name: "Backlog", type: "unstarted" },
   });
   expect(
@@ -477,6 +479,7 @@ test("a direct claim whose final state is started but outside claim_from refuses
     identifier: "#1",
     parent: { identifier: "#2" },
     labels: ["epic"],
+    isEpic: true,
     state: { name: "In Review", type: "started" },
   });
   expect(

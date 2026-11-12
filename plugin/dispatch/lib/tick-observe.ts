@@ -532,7 +532,6 @@ async function readTracker(
       | undefined;
     const scope = scopeOf(values);
     tracked.servedPolicy = {
-      epic: config.labels.epic,
       hitl: config.labels.hitl,
       manualOps: config.labels.manualOps,
       ...(typeof item?.execution_plan_block === "string"
@@ -559,7 +558,7 @@ async function readTracker(
         return tracked.tracker;
       },
       section,
-      { bound: () => facetBound(deadline), epic: config.labels.epic },
+      { bound: () => facetBound(deadline) },
       {
         people,
         nowMs,

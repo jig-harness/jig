@@ -8,6 +8,7 @@ import { openRequest } from "./test-request.ts";
 import {
   branchFor,
   herdrProvider,
+  kickoffKey,
   loginShellPath,
   parseRepo,
   slugOf,
@@ -56,6 +57,13 @@ describe("settings", () => {
       "repos.app.herdr",
     );
   });
+});
+
+test("Herdr kickoff claims separate identical keys from different tracker namespaces", () => {
+  expect(
+    kickoffKey({ issue: "#123", cacheNamespace: "github/acme/one" }),
+  ).not.toBe(kickoffKey({ issue: "#123", cacheNamespace: "github/acme/two" }));
+  expect(kickoffKey({ issue: "ENG-1" })).toBe("ENG-1");
 });
 
 describe("the branch", () => {

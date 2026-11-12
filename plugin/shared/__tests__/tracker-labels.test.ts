@@ -6,6 +6,8 @@
 import { describe, expect, it } from "bun:test";
 import {
   DEFAULT_TRACKER_LABELS,
+  epicTypesOfLabel,
+  isEpic,
   labelsAsConfig,
   parseTrackerLabels,
 } from "../tracker-labels.ts";
@@ -149,5 +151,56 @@ describe("parseTrackerLabels", () => {
       labelsAsConfig(DEFAULT_TRACKER_LABELS),
     );
     expect(labels(null).declared.size).toBe(0);
+  });
+});
+
+describe("epic_types", () => {
+  it("is empty and printed nowhere unless set", () => {
+    expect(DEFAULT_TRACKER_LABELS.epicTypes).toEqual([]);
+    expect(labelsAsConfig(DEFAULT_TRACKER_LABELS)).not.toHaveProperty(
+      "epic_types",
+    );
+  });
+
+  it("reads the issue types beside the epic label, and prints them with it", () => {
+    const read = labels({ epic: "initiative", epic_types: ["Epic"] });
+    expect(read.epicTypes).toEqual(["Epic"]);
+    expect(labelsAsConfig(read)).toMatchObject({
+      epic: "initiative",
+      epic_types: ["Epic"],
+    });
+  });
+
+  it("refuses a list that is empty, repeats a name or holds a non-name", () => {
+    for (const bad of [
+      [],
+      ["Epic", "Epic"],
+      ["Epic", " epic "],
+      [""],
+      "Epic",
+      [3],
+    ])
+      expect(() => labels({ epic_types: bad })).toThrow(
+        "issue_tracker.labels.epic_types must be a list of distinct nonempty issue type names",
+      );
+  });
+});
+
+describe("isEpic", () => {
+  const by = { epic: "epic", epicTypes: ["Epic"] };
+
+  it("is the epic label, or a listed native type, each ignoring case", () => {
+    expect(isEpic({ labels: ["Epic"] }, by)).toBe(true);
+    expect(isEpic({ labels: [], nativeType: "EPIC" }, by)).toBe(true);
+    expect(isEpic({ labels: ["bug"], nativeType: "Story" }, by)).toBe(false);
+    expect(isEpic({ labels: [], nativeType: null }, by)).toBe(false);
+    expect(
+      isEpic({ labels: [], nativeType: "Epic" }, { ...by, epicTypes: [] }),
+    ).toBe(false);
+  });
+
+  it("names the types a read by the epic label also takes", () => {
+    expect(epicTypesOfLabel("EPIC", by)).toEqual(["Epic"]);
+    expect(epicTypesOfLabel("pr-followup", by)).toEqual([]);
   });
 });
