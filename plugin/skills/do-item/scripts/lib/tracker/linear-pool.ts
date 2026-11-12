@@ -296,7 +296,7 @@ export function assignedOperations(
       ),
     unassignedIssues: (wanted, signal) =>
       inStates(
-        { assignee: { null: true } },
+        { and: [{ assignee: { null: true } }, OPEN] },
         wanted,
         `unassigned issues of ${team}`,
         signal,

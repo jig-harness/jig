@@ -16,6 +16,7 @@
  */
 import type { ServedPerson } from "../serve-config.ts";
 import { type PickupReads, pickupReads } from "../pickup-reads.ts";
+import { within } from "./bounded.ts";
 import { freshPoolPickup, readPoolPickups } from "./ready-pool.ts";
 import { limitedRow, readServedPickups, type ServedPolicy } from "./served.ts";
 import {
@@ -192,22 +193,6 @@ async function trustedAndClaimed(
   }
 }
 
-/** `read`, or a rejection once `bound` has ended it. */
-async function within<T>(read: Promise<T>, bound: FacetBound): Promise<T> {
-  let stop: (() => void) | undefined;
-  const stopped = new Promise<never>((_, reject) => {
-    stop = () => reject(new Error("stopped at the tick's deadline"));
-    if (bound.signal.aborted) stop();
-    else bound.signal.addEventListener("abort", stop, { once: true });
-  });
-  read.catch(() => undefined);
-  try {
-    return await Promise.race([read, stopped]);
-  } finally {
-    if (stop !== undefined) bound.signal.removeEventListener("abort", stop);
-  }
-}
-
 /**
  * The items assigned to `identity`, held to `bound` when there is one: not
  * started once it has ended (`stopped`), and given its signal so the
@@ -332,8 +317,12 @@ export async function freshPickup(
   section: DispatchSection,
   key: string,
   policy?: ServedPolicy,
+  pooled?: boolean,
 ): Promise<PoolIssue | string> {
   if (section.identity === null) return "dispatch.identity is no longer set";
+  // A pool pickup stays one: an assignment since the plan read it must not
+  // move it to the assigned lane, whose checks are the assigner's alone.
+  if (pooled === true) return freshPoolPickup(tracker, section, key, policy);
   let issues: PoolIssue[];
   try {
     issues = await tracker.assignedIssues(
@@ -389,7 +378,7 @@ export async function readPickups(
   const once = () => (tracker ??= open());
   const factory = withPool(
     await readFactoryPickups(once, section, facets),
-    await readPool(once, section, served),
+    await readPool(once, section, served, facets?.bound()),
     once,
   );
   if (served === undefined || served.people.length === 0) return factory;
@@ -445,6 +434,7 @@ async function readPool(
   open: () => Tracker,
   section: DispatchSection,
   served: (ServedPolicy & { cache?: PickupReads }) | undefined,
+  bound?: FacetBound,
 ): Promise<Awaited<ReturnType<typeof readPoolPickups>> | null> {
   if (section.pool === undefined || section.identity === null) return null;
   return readPoolPickups(
@@ -452,6 +442,7 @@ async function readPool(
     section,
     served,
     served === undefined ? undefined : (served.cache ?? pickupReads),
+    bound,
   );
 }
 

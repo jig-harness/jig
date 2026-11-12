@@ -148,6 +148,8 @@ export interface LaunchRecord {
   ancestorEpic?: string;
   /** For a pickup of a blocker pulled forward: the served item it blocks, whose authority the claim re-reads. */
   blockingFor?: string;
+  /** For a pickup from the ready pool: the launch re-reads it as one, so a later assignment cannot move it to the assigned lane. */
+  pooled?: boolean;
   batchItems?: import("./queue-batch.ts").BatchItem[];
   /** For a headless pass: whether the tick admitted it on a host opted in to Codex's bypass. A Codex pass carries the bypass only when this is `true`; the wrapper does not read the setting itself, since it can read another user layer from the tick's. */
   codexBypass?: boolean;

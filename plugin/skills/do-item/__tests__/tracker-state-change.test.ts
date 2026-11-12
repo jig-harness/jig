@@ -131,6 +131,19 @@ describe("GitHub adapter: ready-pool reads", () => {
     ).toBe(false);
   });
 
+  it("names who took a higher state label off, exposing the issue's state", async () => {
+    const events = timeline([
+      labelled("Backlog", "dana", "2026-10-01T00:00:00Z"),
+      labelled("In Progress", "dana", "2026-10-02T00:00:00Z"),
+      unlabelled("In Progress", "outsider", "2026-10-03T00:00:00Z"),
+    ]);
+    const mover = await poolReads(on(["Backlog"], events, "READ").t).movedBy(
+      "#5",
+    );
+    expect(mover.name).toBe("outsider");
+    expect(mover.trusted).toBe(false);
+  });
+
   it("names who took the last state label off an issue in the state that carries none", async () => {
     const events = timeline([
       labelled("In Progress", "dana", "2026-10-01T00:00:00Z"),
@@ -261,7 +274,14 @@ describe("Linear adapter: ready-pool reads", () => {
     expect(calls[0]?.filter).toEqual({
       and: [
         { team: { key: { eq: "ENG" } } },
-        { assignee: { null: true } },
+        {
+          and: [
+            { assignee: { null: true } },
+            {
+              state: { type: { nin: ["completed", "canceled", "duplicate"] } },
+            },
+          ],
+        },
         { state: { name: { in: ["Todo"] } } },
       ],
     });

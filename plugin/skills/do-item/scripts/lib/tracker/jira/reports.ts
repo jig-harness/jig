@@ -538,7 +538,7 @@ export function reportOperations(
     async unassignedIssues(states, signal) {
       return inStates(
         states,
-        async () => "assignee is EMPTY",
+        async () => `assignee is EMPTY AND ${open}`,
         `unassigned issues of ${project}`,
         signal,
       );

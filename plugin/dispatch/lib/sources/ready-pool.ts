@@ -23,6 +23,8 @@ import type {
 import type { PickupReads } from "../pickup-reads.ts";
 import { queueHold, rankQueue } from "../queue-rank.ts";
 import { failureText } from "../text.ts";
+import { ended, within } from "./bounded.ts";
+import type { FacetBound } from "./tracker-facets.ts";
 import type { DispatchSection, Unplaced, WantedItem } from "../types.ts";
 import type { ServedPolicy } from "./served.ts";
 import {
@@ -56,6 +58,8 @@ function stateNames(tracker: Tracker, pool: { states: string[] }): string {
 
 /** Why the item is not this repository's to start now, or `null` when it is; `"leave"` for another checkout's item. */
 function heldOut(issue: PoolIssue, policy: ServedPolicy): string | null {
+  if (policy.repoScope?.invalid !== undefined)
+    return `the repository scope is invalid: ${policy.repoScope.invalid}`;
   if (otherRepoLabel(issue.labels, policy.repoScope) !== null) return "leave";
   const unlabeled = unlabeledOutcome(
     issue.labels,
@@ -107,12 +111,14 @@ function moverReader(
   tracker: Tracker,
   stateChangedBy: NonNullable<Tracker["stateChangedBy"]>,
   cache: PickupReads | undefined,
+  bound: FacetBound | undefined,
 ): (issue: PoolIssue) => Promise<Assigner> {
   return async (issue) => {
     const key = `${trackerScope(tracker)}:pool:${issue.identifier}`;
     const kept = cache?.get<{ updatedAt: string; by: Assigner }>(key);
     if (issue.updatedAt && kept?.updatedAt === issue.updatedAt) return kept.by;
-    const by = await stateChangedBy.call(tracker, issue.identifier);
+    const asked = stateChangedBy.call(tracker, issue.identifier);
+    const by = await (bound === undefined ? asked : within(asked, bound));
     if (issue.updatedAt) cache?.set(key, { updatedAt: issue.updatedAt, by });
     return by;
   };
@@ -181,6 +187,7 @@ async function placeAll(
   team: string,
   issues: readonly PoolIssue[],
   policy: ServedPolicy,
+  bound: FacetBound | undefined,
 ): Promise<{
   reading: Omit<PoolReading, "states" | "wanted">;
   ranked: Array<{ issue: PoolIssue; by: string }>;
@@ -191,6 +198,16 @@ async function placeAll(
   };
   const candidates: Array<{ issue: PoolIssue; by: string }> = [];
   for (const issue of issues) {
+    if (ended(bound)) {
+      reading.unplaced.push({
+        target: issue.identifier,
+        title: issue.title,
+        url: issue.url,
+        record: "tracker",
+        reason: `in the ready pool (${issue.state.name}), but the tick's deadline passed before who made it ready was read`,
+      });
+      continue;
+    }
     let one: Awaited<ReturnType<typeof placed>>;
     try {
       one = await placed(read, team, issue, policy);
@@ -221,6 +238,7 @@ export async function readPoolPickups(
   section: DispatchSection,
   policy: ServedPolicy = {},
   cache?: PickupReads,
+  bound?: FacetBound,
 ): Promise<PoolReading> {
   const { pool, identity } = section;
   if (pool === undefined || identity === null) return NONE;
@@ -232,10 +250,41 @@ export async function readPoolPickups(
       names,
       `dispatch.pool is set, but the ${tracker.adapter} adapter reads no ready pool: nothing is picked up from it`,
     );
-  const read = moverReader(tracker, stateChangedBy, cache);
+  if (policy.repoScope?.invalid !== undefined)
+    return unread(
+      tracker,
+      names,
+      `the ready pool (${names}) is not read: the repository scope is invalid: ${policy.repoScope.invalid}`,
+    );
+  const read = moverReader(tracker, stateChangedBy, cache, bound);
   let issues: PoolIssue[];
   try {
-    issues = await unassignedIssues.call(tracker, pool.states);
+    // The claim assigns the item to the credential's user: it must be the
+    // identity the pool is attributed to and monitored under.
+    const [factory, viewer] = await Promise.all([
+      tracker.user(identity),
+      tracker.viewer(),
+    ]);
+    if (factory.id !== viewer.id)
+      return unread(
+        tracker,
+        names,
+        `the ready pool (${names}) is not read: the tracker credential acts as ${viewer.name}, not as the dispatch identity ${identity}, so a claim would assign pool items to the wrong user`,
+      );
+    if (ended(bound))
+      return unread(
+        tracker,
+        names,
+        `the ready pool (${names}) could not be read: the tick's deadline passed before the read could start`,
+      );
+    const listing = unassignedIssues.call(
+      tracker,
+      pool.states,
+      bound === undefined
+        ? undefined
+        : { signal: bound.signal, deadline: bound.deadline },
+    );
+    issues = await (bound === undefined ? listing : within(listing, bound));
   } catch (error) {
     if (isRateLimited(error)) return { ...NONE, states: names, limited: error };
     return unread(
@@ -244,7 +293,7 @@ export async function readPoolPickups(
       `the ready pool (${names}) could not be read: ${failureText(error)}`,
     );
   }
-  const out = await placeAll(read, tracker.team, issues, policy);
+  const out = await placeAll(read, tracker.team, issues, policy, bound);
   return {
     ...out.reading,
     states: names,
@@ -288,6 +337,16 @@ export async function freshPoolPickup(
   if (held === "leave")
     return "it carries another repository's label, or no repository label places it here";
   if (held !== null) return held;
+  try {
+    // Pool membership as the listing defines it (open, in the tracker's pool
+    // scope): a keyed read applies no scope, so an item moved out of it
+    // since the plan is found missing here.
+    const members = await tracker.unassignedIssues?.(pool.states);
+    if (members !== undefined && !members.some((m) => m.identifier === key))
+      return "it is no longer in the ready pool's scope";
+  } catch (error) {
+    return `the ready pool cannot be read again: ${failureText(error)}`;
+  }
   try {
     const by = await tracker.stateChangedBy(key);
     if (!by.trusted)

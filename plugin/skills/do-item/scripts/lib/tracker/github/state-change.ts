@@ -59,9 +59,13 @@ const STATUS_FIELD = "Status";
 
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
-/** What puts an issue in its state: its label added, every state label gone, or the board's option set. */
+/**
+ * What puts an issue in its state: its label added or any state label
+ * changed (the state is the furthest-along label, so removing a higher one
+ * exposes this one), every state label gone, or the board's option set.
+ */
 type Target =
-  | { label: string }
+  | { label: string; stateLabels: string[] }
   | { unlabeled: string[] }
   | { option: string; board: string };
 
@@ -80,7 +84,9 @@ function movesInto(
   if (kind === "ReopenedEvent") return true;
   const label = () => str(record(node.label, "label").name, "label.name");
   if (kind === "LabeledEvent" && "label" in target)
-    return same(label(), target.label);
+    return target.stateLabels.some((l) => same(l, label()));
+  if (kind === "UnlabeledEvent" && "label" in target)
+    return target.stateLabels.some((l) => same(l, label()));
   if (kind === "UnlabeledEvent" && "unlabeled" in target)
     return target.unlabeled.some((l) => same(l, label()));
   return (
@@ -119,7 +125,9 @@ export function stateChangeOperations(
   function targetOf(key: string, state: OpenState, status: string | null) {
     if (ctx.board === null) {
       const label = model.stateLabel(state);
-      return label === null ? { unlabeled: model.stateLabels } : { label };
+      return label === null
+        ? { unlabeled: model.stateLabels }
+        : { label, stateLabels: model.stateLabels };
     }
     if (!same(ctx.board.statusField, STATUS_FIELD))
       throw new TrackerRequestError(

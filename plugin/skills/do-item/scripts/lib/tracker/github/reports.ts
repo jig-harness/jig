@@ -235,7 +235,7 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
    */
   async function inStates(
     states: ReadonlyArray<CanonicalState>,
-    listing: { assignee?: string },
+    listing: { assignee?: string; openOnly?: true },
     signal?: AbortSignal,
   ): Promise<CorePoolIssue[]> {
     if (states.length === 0)
@@ -243,24 +243,28 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
         "invalid",
         "a query of issues by state needs at least one state",
       );
-    const closed = states.some((s) => CLOSED_STATES.has(s));
-    const open = states.some((s) => !CLOSED_STATES.has(s));
+    const { openOnly, ...query } = listing;
+    const closed =
+      openOnly !== true && states.some((s) => CLOSED_STATES.has(s));
+    const open = openOnly === true || states.some((s) => !CLOSED_STATES.has(s));
     const read = await client.list(
       {
         states: [
           ...(open ? ["OPEN" as const] : []),
           ...(closed ? ["CLOSED" as const] : []),
         ],
-        ...listing,
+        ...query,
       },
       OPEN_CHILDREN,
       signal,
     );
     return pools(
-      read.filter(({ issue }) =>
-        states.includes(
-          model.stateOf({ ...issue, labels: wholeLabels(issue) }),
-        ),
+      read.filter(
+        ({ issue }) =>
+          (openOnly !== true || issue.open) &&
+          states.includes(
+            model.stateOf({ ...issue, labels: wholeLabels(issue) }),
+          ),
       ),
       signal,
     );
@@ -514,7 +518,7 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
     },
 
     async unassignedIssues(states, signal) {
-      const read = await inStates(states, {}, signal);
+      const read = await inStates(states, { openOnly: true }, signal);
       return read.filter((i) => i.assignee === null);
     },
   };

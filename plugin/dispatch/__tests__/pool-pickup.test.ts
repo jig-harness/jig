@@ -37,7 +37,7 @@ import {
 } from "../../skills/do-item/__tests__/jira-fixtures.ts";
 import { dispatchSection } from "../lib/section.ts";
 import type { PickupReads } from "../lib/pickup-reads.ts";
-import { readPoolPickups } from "../lib/sources/ready-pool.ts";
+import { freshPoolPickup, readPoolPickups } from "../lib/sources/ready-pool.ts";
 import { freshPickup, readPickups } from "../lib/sources/tracker.ts";
 import type { DispatchSection } from "../lib/types.ts";
 
@@ -185,6 +185,8 @@ describe("a pool pickup across two hosts", () => {
             };
           case "TrackerViewer":
             return { viewer: user("factory") };
+          case "TrackerUser":
+            return { user: user("factory") };
           case "TrackerAssignees":
             return {
               repository: {
@@ -287,8 +289,8 @@ describe("a pool pickup across two hosts", () => {
       switch (op) {
         case "TrackerPool": {
           const clauses = (variables.filter as { and: unknown[] }).and;
-          const unassigned = clauses.some(
-            (c) => JSON.stringify(c) === '{"assignee":{"null":true}}',
+          const unassigned = clauses.some((c) =>
+            JSON.stringify(c).includes('"assignee":{"null":true}'),
           );
           const named = JSON.stringify(clauses.at(-1));
           const listed =
@@ -306,6 +308,8 @@ describe("a pool pickup across two hosts", () => {
           };
         case "TrackerViewer":
           return { viewer: ME };
+        case "TrackerUsers":
+          return { users: { nodes: [ME] } };
         case "TrackerAssignee":
           return { issue: { id: "uuid-4", assignee: item.assignee } };
         case "TrackerPoolIssue":
@@ -529,6 +533,8 @@ describe("who made a pool item ready", () => {
       adapter: "linear",
       team: "ENG",
       stateName: (s: string) => (s === "todo" ? "Todo" : null),
+      user: async () => ({ id: "u-f", name: "Factory" }),
+      viewer: async () => ({ id: "u-f", name: "Factory" }),
       unassignedIssues: async () => [current],
       stateChangedBy: async (key: string) => {
         reads.push(key);
@@ -546,5 +552,87 @@ describe("who made a pool item ready", () => {
     current = { ...issue, updatedAt: "2026-10-02T00:00:00.000Z" };
     expect(await wanted()).toEqual(["ENG-9"]);
     expect(reads).toEqual(["ENG-9", "ENG-9"]);
+  });
+});
+
+describe("the pool's guards", () => {
+  const issue: PoolIssue = {
+    identifier: "ENG-9",
+    title: "t",
+    url: null,
+    priority: 0,
+    type: null,
+    size: null,
+    createdAt: "2026-09-01T00:00:00.000Z",
+    updatedAt: "2026-10-01T00:00:00.000Z",
+    state: { id: "s-todo", name: "Todo", type: "unstarted" },
+    assignee: null,
+    labels: [],
+    hasOpenChildren: false,
+    truncated: [],
+  };
+  const trackerOf = (over: Record<string, unknown> = {}) =>
+    ({
+      adapter: "linear",
+      team: "ENG",
+      stateName: (s: string) => (s === "todo" ? "Todo" : null),
+      user: async () => ({ id: "u-f", name: "Factory" }),
+      viewer: async () => ({ id: "u-f", name: "Factory" }),
+      unassignedIssues: async () => [issue],
+      poolIssue: async () => issue,
+      stateChangedBy: async () => ({ id: "u-d", name: "Dana", trusted: true }),
+      ...over,
+    }) as unknown as Tracker;
+  const section = poolSection("factory@example.invalid");
+
+  it("reads nothing under an invalid repository scope", async () => {
+    const read = await readPoolPickups(trackerOf(), section, {
+      repoScope: { invalid: "two labels" } as never,
+    });
+    expect(read.wanted).toEqual([]);
+    expect(read.failed).toBe(true);
+    expect(read.unplaced[0]?.reason).toContain("repository scope is invalid");
+  });
+
+  it("reads nothing when the credential is not the dispatch identity", async () => {
+    const read = await readPoolPickups(
+      trackerOf({ viewer: async () => ({ id: "u-x", name: "Someone" }) }),
+      section,
+    );
+    expect(read.wanted).toEqual([]);
+    expect(read.unplaced[0]?.reason).toContain("not as the dispatch identity");
+  });
+
+  it("launches a pooled pickup only as a pool item, though it was assigned since", async () => {
+    const assigned = { ...issue, assignee: { id: "u-f", name: "Factory" } };
+    const tracker = trackerOf({
+      poolIssue: async () => assigned,
+      assignedIssues: async () => [assigned],
+      assignedBy: async () => ({ id: "u-d", name: "Dana", trusted: true }),
+    });
+    expect(typeof (await freshPickup(tracker, section, "ENG-9"))).toBe(
+      "object",
+    );
+    expect(
+      await freshPickup(tracker, section, "ENG-9", undefined, true),
+    ).toContain("is assigned to");
+  });
+
+  it("refuses a launch of an item that left the pool's scope", async () => {
+    const tracker = trackerOf({ unassignedIssues: async () => [] });
+    expect(await freshPoolPickup(tracker, section, "ENG-9")).toContain(
+      "no longer in the ready pool's scope",
+    );
+  });
+
+  it("stops reading who made items ready once the tick's bound ends", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const read = await readPoolPickups(trackerOf(), section, {}, undefined, {
+      signal: controller.signal,
+      deadline: Date.now() + 1000,
+    } as never);
+    expect(read.wanted).toEqual([]);
+    expect(read.failed).toBe(true);
   });
 });
