@@ -536,7 +536,7 @@ async function launch(argv: string[]): Promise<number> {
       );
       return 3;
     }
-    await handOffToRunner(
+    return await handOffToRunner(
       started.runner,
       started,
       {
@@ -544,11 +544,8 @@ async function launch(argv: string[]): Promise<number> {
         settled: () => readResult(dir) !== null,
       },
       START_BUDGET_MS,
-    );
-    console.log(
       `foreground-wait: launched (gen ${next}, runner pid ${started.runner.pid})`,
     );
-    return 0;
   }
 }
 

@@ -34,6 +34,12 @@ function fixture(proc: string): string {
     const parent = ${JSON.stringify(`
       const launched = Bun.spawnSync([process.execPath, ${JSON.stringify(foreground)}, 'launch', '--', process.execPath, '-e', 'setInterval(() => {},1000)'], {stdout:'pipe',stderr:'pipe'});
       if (launched.exitCode !== 0) { process.stderr.write(launched.stderr); process.exit(1); }
+      const fs = require('node:fs');
+      const gens = fs.readdirSync('.context/foreground-wait').filter(n => n.startsWith('gen-'));
+      const cmd = Number(fs.readFileSync('.context/foreground-wait/' + gens[0] + '/cmd.pid', 'utf8'));
+      const { processTable } = await import(${JSON.stringify(join(shared, "process-table.ts"))});
+      const row = ((await processTable()) ?? []).find(r => r.pid === cmd);
+      fs.writeFileSync('.context/foreground-wait/' + gens[0] + '/cmd.identity', JSON.stringify({ pid: cmd, start: row?.start ?? '' }));
     `)};
     const result = await run([process.execPath, '-e', parent], {reapGroup:true});
     if (result.code !== 0 || result.groupSurvived !== true) throw new Error(JSON.stringify(result));
@@ -49,7 +55,12 @@ function fixture(proc: string): string {
     const live = (pid) => rows.find(row => row.pid === pid && !row.stat.startsWith('Z'));
     // Launch returned before the reap began, so the runner had started its command.
     if (command === null) throw new Error('the runner had not started its command when launch returned');
-    const survivor = live(command);
+    // The identity recorded while the launch still owned the command: a reused
+    // pid is another process and is neither the survivor nor ours to kill.
+    const recorded = JSON.parse(readFileSync(join(root,generation,'cmd.identity'),'utf8'));
+    if (!recorded.start) throw new Error('the command identity could not be read');
+    const found = live(command);
+    const survivor = found && found.start === recorded.start ? found : undefined;
     if (survivor) {
       await signalIdentityTargets([survivor], 'SIGKILL');
       throw new Error('the command survived the reap of its registered runner');

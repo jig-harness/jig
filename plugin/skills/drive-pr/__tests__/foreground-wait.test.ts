@@ -798,11 +798,13 @@ describe("foreground-wait.ts", () => {
       // The command starts a descendant; a tree captured before it would
       // orphan it when the command is killed. The runner can own a transient
       // enumeration subprocess, so the command's own tree says when.
-      while (
-        ((await captureProcessTree(commandPid))?.length ?? 0) < 2 &&
-        Date.now() < readyDeadline
-      )
-        await sleepMs(20);
+      let commandTree = await captureProcessTree(commandPid);
+      for (; (commandTree?.length ?? 0) < 2 && Date.now() < readyDeadline; )
+        commandTree = await sleepMs(20).then(() =>
+          captureProcessTree(commandPid),
+        );
+      const descendant = commandTree?.find((t) => t.pid !== commandPid);
+      expect(descendant?.start).toBeTruthy();
       const targets = await captureProcessTree(recorded.pid);
       const command = targets?.find((target) => target.pid === commandPid);
       expect(command?.start).toBeTruthy();
@@ -824,6 +826,7 @@ describe("foreground-wait.ts", () => {
         if (remaining) await sleepMs(20);
       }
       expect(remaining).toBe(false);
+      expect(await identityTargetsGone([descendant as never])).toBe(true);
       // Children are stopped first. The runner may publish their failure
       // before its own kill arrives, or die before publishing a result.
       const expected = existsSync(join(latestGen(), "result.json")) ? 30 : 21;

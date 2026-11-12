@@ -27,16 +27,20 @@ export interface RunnerProgress {
  * Record the runner's identity while the child handle still proves
  * ownership, then wait until the runner has started the command, settled
  * without it, or exited. `startBudgetMs` bounds the wait: the runner binds
- * its own identity first, and settles with a result when it cannot. A runner
- * that has done none of these by then is said so on stderr; `wait` reports
- * what it goes on to do.
+ * its own identity first, and settles with a result when it cannot. Returns
+ * the exit status of `launch`: 0 after printing `launchedLine`, or
+ * 1 (after saying so) when the budget ran out with none of these having happened; the
+ * runner is then ended here, since returning with it live would leave it free
+ * to start the command after `launch` reported failure, unless the command
+ * started in that instant.
  */
 export async function handOffToRunner(
   runner: Runner,
   registration: { registry: string | undefined; entry: string },
   progress: RunnerProgress,
   startBudgetMs: number,
-): Promise<void> {
+  launchedLine: string,
+): Promise<number> {
   const { registry, entry } = registration;
   const exited = () => runner.exitCode !== null || runner.signalCode !== null;
   if (registry && runner.pid !== undefined) {
@@ -54,11 +58,16 @@ export async function handOffToRunner(
   const deadline = Date.now() + startBudgetMs;
   while (!progress.commandStarted() && !progress.settled() && !exited()) {
     if (Date.now() >= deadline) {
+      if (exited()) break;
+      runner.kill("SIGKILL");
+      if (progress.commandStarted()) break;
       console.error(
-        `foreground-wait: the runner had not started the command within ${startBudgetMs / 1000}s; \`wait\` reports what it does`,
+        `foreground-wait: launch failed: the runner had not started the command within ${startBudgetMs / 1000}s`,
       );
-      return;
+      return 1;
     }
     await new Promise((resolve) => setTimeout(resolve, START_POLL_MS));
   }
+  console.log(launchedLine);
+  return 0;
 }
