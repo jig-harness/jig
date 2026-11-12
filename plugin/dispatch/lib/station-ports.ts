@@ -240,6 +240,30 @@ function releaseRecord(
   return null;
 }
 
+/** Why an open pull request stops a release of `item`, or that none can be told; `null` when none carries it. */
+function carryFault(inputs: StationInputs, item: string): string | null {
+  const carried = inputs.links?.prsOf(item) ?? null;
+  if (carried === null)
+    return `whether an open pull request carries ${item} cannot be told this tick`;
+  return carried.length > 0
+    ? `open pull request ${carried.map((p) => `#${p.number}`).join(", ")} carries ${item}`
+    : null;
+}
+
+/** Move `item` to `state`; why the tracker did not, or `null`. */
+async function moveTo(
+  tracker: Tracker,
+  item: string,
+  state: CanonicalState,
+): Promise<string | null> {
+  try {
+    await tracker.transition(item, state, AbortSignal.timeout(60_000));
+    return null;
+  } catch (error) {
+    return `the tracker did not move ${item} to ${state}: ${failureText(error)}`;
+  }
+}
+
 async function releasePickup(
   inputs: StationInputs,
   item: string,
@@ -265,29 +289,15 @@ async function releasePickup(
     return refused(
       `${item} is now ${current.state.name}, not a claim to release`,
     );
-  const carried = inputs.links?.prsOf(item) ?? null;
-  if (carried === null)
-    return refused(
-      `whether an open pull request carries ${item} cannot be told this tick`,
-    );
-  if (carried.length > 0)
-    return refused(
-      `open pull request ${carried.map((p) => `#${p.number}`).join(", ")} carries ${item}`,
-    );
+  const carriedBy = carryFault(inputs, item);
+  if (carriedBy !== null) return refused(carriedBy);
   const held = await sessionHolds(inputs, (w) => w.items.includes(item), item);
   if (held !== null) return refused(held);
   const unclaimed = ["backlog", "unstarted", "triage"].includes(
     current.state.type,
   );
-  if (!unclaimed) {
-    try {
-      await tracker.transition(item, state, AbortSignal.timeout(60_000));
-    } catch (error) {
-      return refused(
-        `the tracker did not move ${item} to ${state}: ${failureText(error)}`,
-      );
-    }
-  }
+  const stuck = unclaimed ? null : await moveTo(tracker, item, state);
+  if (stuck !== null) return refused(stuck);
   const unreleased =
     recordId === null ? null : releaseRecord(inputs, item, recordId);
   if (unreleased !== null) return refused(`${item} is free, but ${unreleased}`);

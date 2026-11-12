@@ -253,12 +253,20 @@ async function launchOne(
     mark: named.mark,
     ...carried(repo.slug, action.target, id),
   };
+  const launched = headless(await startOrReturn(state, record, slots), record);
+  return { ...launched, detail: `${launched.detail}; ${route.detail}` };
+}
+
+/** Start the record; a launch that did not start hands the answer it was given back to the next one. */
+async function startOrReturn(
+  state: ApplyState,
+  record: LaunchRecord,
+  slots: Parameters<typeof startRecord>[2],
+): Promise<LaunchOutcome> {
   const started = await startRecord(state, record, slots);
-  // A launch that did not start hands its answer back to the next one.
   if (started.outcome !== "launched" && started.outcome !== "retried")
     returnCarried(record.id, state.root);
-  const launched = headless(started, record);
-  return { ...launched, detail: `${launched.detail}; ${route.detail}` };
+  return started;
 }
 
 /** The optional served-item facts which a pickup preserves in its launch record. */
