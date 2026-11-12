@@ -21,6 +21,11 @@ export interface RunnerProgress {
   commandStarted: () => boolean;
   /** The runner has published a result, with or without starting the command. */
   settled: () => boolean;
+  /**
+   * End a command the runner started, with its tree, and say whether there
+   * was one. Called only after the runner is dead, so nothing can start it later.
+   */
+  stopStartedCommand: () => Promise<boolean>;
 }
 
 /**
@@ -30,9 +35,9 @@ export interface RunnerProgress {
  * its own identity first, and settles with a result when it cannot. Returns
  * the exit status of `launch`: 0 after printing `launchedLine`, or
  * 1 (after saying so) when the budget ran out with none of these having happened; the
- * runner is then ended here, since returning with it live would leave it free
- * to start the command after `launch` reported failure, unless the command
- * started in that instant.
+ * runner is then ended here and waited for, since returning with it live would
+ * leave it free to start the command after `launch` reported failure; a command
+ * it started in that instant is ended with it.
  */
 export async function handOffToRunner(
   runner: Runner,
@@ -59,8 +64,20 @@ export async function handOffToRunner(
   while (!progress.commandStarted() && !progress.settled() && !exited()) {
     if (Date.now() >= deadline) {
       if (exited()) break;
+      const gone = new Promise<void>((resolve) =>
+        runner.once("exit", () => resolve()),
+      );
       runner.kill("SIGKILL");
-      if (progress.commandStarted()) break;
+      await gone;
+      // The runner may have started the command just before it died, and the
+      // supervisor that held its deadline died with it: end that command too
+      // rather than report success over an unsupervised one.
+      if (await progress.stopStartedCommand()) {
+        console.error(
+          "foreground-wait: launch failed: the runner started the command as the start budget ran out; both were ended",
+        );
+        return 1;
+      }
       console.error(
         `foreground-wait: launch failed: the runner had not started the command within ${startBudgetMs / 1000}s`,
       );

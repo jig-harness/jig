@@ -687,9 +687,9 @@ test("orphans a grandchild at once", async () => {
     if (!identity) await Bun.sleep(50);
   }
   if (!identity) throw new Error("the grandchild's identity could not be read");
-  // A capture that named it first would reap it by identity, not by group.
-  const named = globalThis[Symbol.for("jig.test-reap.captured")]().some((c) => c.pid === pid);
-  if (named) throw new Error("a capture named the grandchild before it was orphaned");
+  // A sampling tick before the launcher exited may have named it, which would
+  // reap it by identity rather than by group: forget that, so only the group can.
+  globalThis[Symbol.for("jig.test-reap.forget")](pid);
   writeFileSync(${JSON.stringify(ownedFile)}, JSON.stringify([identity]));
   writeFileSync(${JSON.stringify(identityFile)}, JSON.stringify(identity));
 }, 30_000);

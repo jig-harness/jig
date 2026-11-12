@@ -53,6 +53,15 @@ Object.defineProperty(globalThis, Symbol.for("jig.test-reap.captured"), {
   value: () => [...captured.values()],
 });
 
+// Drop what a capture recorded about one pid, for a test that needs the
+// uncaptured state however the sampler happened to be scheduled.
+Object.defineProperty(globalThis, Symbol.for("jig.test-reap.forget"), {
+  value: (pid: number) => {
+    for (const [key, entry] of captured)
+      if (entry.pid === pid) captured.delete(key);
+  },
+});
+
 afterEach(async () => {
   if (Date.now() - lastCapture >= CAPTURE_INTERVAL_MS) await capture();
 }, HOOK_TIMEOUT_MS);

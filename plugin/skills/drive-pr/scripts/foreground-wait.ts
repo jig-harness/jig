@@ -103,7 +103,10 @@ import {
   processCompletionPath,
   publishProcessCompletion,
 } from "../../../shared/process-registry.ts";
-import { signalIdentityTargets } from "../../../shared/process-tree.ts";
+import {
+  captureProcessTree,
+  signalIdentityTargets,
+} from "../../../shared/process-tree.ts";
 import {
   liveTargets,
   type PsRow,
@@ -542,6 +545,14 @@ async function launch(argv: string[]): Promise<number> {
       {
         commandStarted: () => readPid(dir, "cmd.pid") !== null,
         settled: () => readResult(dir) !== null,
+        stopStartedCommand: async () => {
+          const pid = readPid(dir, "cmd.pid");
+          if (pid === null) return false;
+          const targets = await captureProcessTree(pid);
+          if (targets) await signalIdentityTargets(targets, "SIGKILL");
+          else if (process.platform !== "win32") signalPid(pid, "SIGKILL");
+          return true;
+        },
       },
       START_BUDGET_MS,
       `foreground-wait: launched (gen ${next}, runner pid ${started.runner.pid})`,
