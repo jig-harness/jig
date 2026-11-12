@@ -533,6 +533,17 @@ describe("review hardening", () => {
     ).toBe(false);
   });
 
+  test("an entry using every sentinel candidate is refused, not misread", () => {
+    let every = "";
+    for (let code = 0xe000; code <= 0xf8ff; code++)
+      every += String.fromCharCode(code);
+    expect(
+      readDeclaration(
+        `- Parent ${every}.\n  - Child. **Consumer action:** ${ACTION}`,
+      ).ok,
+    ).toBe(false);
+  });
+
   test("a periodless none in another emphasis is refused; ordinary prose is not", () => {
     expect(strict("Change. *Consumer action:* none")).not.toEqual([]);
     expect(strict("Change. **Consumer action** none")).not.toEqual([]);

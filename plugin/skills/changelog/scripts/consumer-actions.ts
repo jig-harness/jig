@@ -324,16 +324,17 @@ function readBody(body: string): Outcome<Declaration> {
 /**
  * A one-character sentinel (a private-use code point, which emphasis cannot
  * split) that neither the entry's source nor its rendered text contains, so
- * nothing the entry says, however written, can collide with it.
+ * nothing the entry says, however written, can collide with it; null when
+ * the entry uses every candidate, so no sentinel is free.
  */
-function sentinelAbsentFrom(entry: string): string {
+function sentinelAbsentFrom(entry: string): string | null {
   const rendered = prose(parseBlocks(entry));
   for (let code = 0xe000; code <= 0xf8ff; code++) {
     const sentinel = String.fromCharCode(code);
     if (!entry.includes(sentinel) && !rendered.includes(sentinel))
       return sentinel;
   }
-  return "\ue000";
+  return null;
 }
 
 /**
@@ -341,9 +342,11 @@ function sentinelAbsentFrom(entry: string): string {
  * than the entry itself, as the Markdown parser reads the list: the marker is
  * replaced by a sentinel, and it is the entry's own only when the sentinel
  * renders in a paragraph of the entry's item, not inside a list nested in it.
+ * Null when no sentinel is free, which leaves the nesting unverifiable.
  */
-function nested(entry: string, at: number, end: number): boolean {
+function nested(entry: string, at: number, end: number): boolean | null {
   const sentinel = sentinelAbsentFrom(entry);
+  if (sentinel === null) return null;
   const marked = `${entry.slice(0, at)}${sentinel}${entry.slice(end)}`;
   const [list] = parseBlocks(marked);
   if (list?.k !== "list") return false;
@@ -372,7 +375,12 @@ export function readDeclaration(entry: string): Outcome<Declared | null> {
   if (mark === undefined || rawMark === undefined)
     return malformed("an entry declares one **Consumer action:**");
   const shift = entry.length - raw.length;
-  if (nested(entry, rawMark.at + shift, rawMark.end + shift))
+  const inList = nested(entry, rawMark.at + shift, rawMark.end + shift);
+  if (inList === null)
+    return malformed(
+      "an entry that uses every private-use character cannot be checked for a nested **Consumer action:**",
+    );
+  if (inList)
     return malformed(
       "a **Consumer action:** follows the entry's own description, not a nested list item",
     );
