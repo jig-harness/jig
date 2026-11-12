@@ -458,13 +458,23 @@ export function searchArgs(words: string): string[] {
   ];
 }
 
-/** `labels` split into those Jig's repository keeps and its facet labels, which it does not. */
+/**
+ * `labels` split into those Jig's repository keeps and its facet labels,
+ * which it does not. `gh` reads a comma in a label as a separator, so each
+ * entry is split there first.
+ */
 export function splitFacetLabels(labels: string[]): {
   kept: string[];
   dropped: string[];
 } {
-  const dropped = labels.filter((label) => FACET_LABEL.test(label.trim()));
-  return { kept: labels.filter((label) => !dropped.includes(label)), dropped };
+  const each = labels
+    .flatMap((label) => label.split(","))
+    .map((label) => label.trim())
+    .filter((label) => label !== "");
+  return {
+    kept: each.filter((label) => !FACET_LABEL.test(label)),
+    dropped: each.filter((label) => FACET_LABEL.test(label)),
+  };
 }
 
 /**
@@ -654,6 +664,7 @@ interface Issue {
   title: string;
   state: string;
   url: string;
+  createdAt?: unknown;
 }
 
 function isIssue(value: unknown): value is Issue {
@@ -745,14 +756,22 @@ export function fallbackUrl(d: Pick<Draft, "title" | "body">): {
   return { url, omitted, split: fields !== null };
 }
 
+/** How many of the account's newest issues `findFiled` lists. */
+const FILED_WINDOW = 30;
+
+/** Clock skew allowed between this machine and GitHub when dating an attempt. */
+const SKEW_MS = 60_000;
+
 /**
  * After a failed `gh issue create`, which may have created the issue before
  * the call failed: the address of an issue of this exact title among the
- * account's newest, `null` when there is none, `undefined` when the listing
- * could not be made. It lists rather than searches, since GitHub's search
- * index lags behind a new issue.
+ * account's newest, `null` when there is none, `undefined` when the outcome
+ * cannot be known: the listing could not be made or read, had an entry of an
+ * unexpected shape, or filled its window with issues newer than the attempt
+ * (`since`) so that an older match could lie beyond it. It lists rather than
+ * searches, since GitHub's search index lags behind a new issue.
  */
-function findFiled(title: string): string | null | undefined {
+function findFiled(title: string, since: Date): string | null | undefined {
   const run = gh([
     "issue",
     "list",
@@ -763,17 +782,21 @@ function findFiled(title: string): string | null | undefined {
     "--author",
     "@me",
     "--limit",
-    "30",
+    String(FILED_WINDOW),
     "--json",
-    "number,title,state,url",
+    "number,title,state,url,createdAt",
   ]);
   if (run.status !== 0) return undefined;
   try {
     const parsed: unknown = JSON.parse(String(run.stdout));
-    const match = (Array.isArray(parsed) ? parsed : [])
-      .filter(isIssue)
-      .find((i) => i.title === title);
-    return match ? match.url : null;
+    if (!Array.isArray(parsed) || !parsed.every(isIssue)) return undefined;
+    const match = parsed.find((i) => i.title === title);
+    if (match) return match.url;
+    if (parsed.length < FILED_WINDOW) return null;
+    const oldest = Math.min(
+      ...parsed.map((i) => Date.parse(String(i.createdAt))),
+    );
+    return oldest < since.getTime() - SKEW_MS ? null : undefined;
   } catch (error) {
     swallow(error, "search output unreadable; creation outcome unknown");
     return undefined;
@@ -781,9 +804,13 @@ function findFiled(title: string): string | null | undefined {
 }
 
 /** Report why `gh issue create` failed and what to do instead; never returns. */
-function reportFilingFailure(d: Draft, run: ReturnType<typeof gh>): never {
+function reportFilingFailure(
+  d: Draft,
+  run: ReturnType<typeof gh>,
+  since: Date,
+): never {
   const reason = `could not file with gh: ${why(run)}`;
-  const existing = precedesCreation(run) ? null : findFiled(d.title);
+  const existing = precedesCreation(run) ? null : findFiled(d.title, since);
   if (existing === undefined)
     fail(
       1,
@@ -823,8 +850,8 @@ function runFile(argv: string[]): number {
   const d = asDraft(parsed);
   if (!d) fail(2, `${path} is not a draft this script wrote`);
   say(droppedNote(d.labels));
-  const { run, typed } = createIssue(d);
-  if (run.status !== 0) reportFilingFailure(d, run);
+  const { run, typed, since } = createIssue(d);
+  if (run.status !== 0) reportFilingFailure(d, run, since);
   process.stdout.write(run.stdout);
   if (typed) say(untypedNote(String(run.stdout)));
   return 0;
@@ -845,17 +872,22 @@ function droppedNote(labels: string[]): string | null {
  * Create the issue with its type; when `gh` refuses because of the type,
  * create it without, saying so. `typed` is whether the type was asked for.
  */
-function createIssue(d: Draft): { run: ReturnType<typeof gh>; typed: boolean } {
+function createIssue(d: Draft): {
+  run: ReturnType<typeof gh>;
+  typed: boolean;
+  since: Date;
+} {
+  const since = new Date();
   const run = gh(fileArgs(d), d.body);
-  if (run.status === 0 || !typeRefused(run, d.title))
-    return { run, typed: true };
+  if (run.status === 0 || !typeRefused(run, d.title, since))
+    return { run, typed: true, since };
   const reason = (why(run).split("\n")[0] ?? "").trim().slice(0, 200);
   const retry = gh(fileArgs(d, false), d.body);
   if (retry.status === 0)
     say(
       `filed without the issue type ${BUG_TYPE} (${reason}); it is set when the issue is triaged`,
     );
-  return { run: retry, typed: false };
+  return { run: retry, typed: false, since };
 }
 
 /**
@@ -864,32 +896,39 @@ function createIssue(d: Draft): { run: ReturnType<typeof gh>; typed: boolean } {
  * without the type is safe: it names the type, and no issue of this title
  * exists, since a failure after the issue was created must not file it twice.
  */
-function typeRefused(run: ReturnType<typeof gh>, title: string): boolean {
+function typeRefused(
+  run: ReturnType<typeof gh>,
+  title: string,
+  since: Date,
+): boolean {
   if (precedesCreation(run) || !/\btype\b/i.test(why(run))) return false;
-  return findFiled(title) === null;
+  return findFiled(title, since) === null;
 }
 
 /**
  * The note for an issue `gh issue create --type` printed the address of when
  * it has no issue type: an account that may not set one can be filed without
- * it and no error. `null` when it has one, or `gh` cannot read it.
+ * it and no error, or when it cannot be read back, so the reporter is never
+ * silent about an unverified type. `null` only when it has one.
  */
 function untypedNote(created: string): string | null {
+  const unverified = `could not verify the issue type ${BUG_TYPE} of the filed issue; check it at triage`;
   const url = created
     .split("\n")
     .map((l) => l.trim())
     .findLast((l) => l.startsWith("https://"));
-  if (url === undefined) return null;
+  if (url === undefined) return unverified;
   const run = gh(["issue", "view", url, "--json", "issueType"]);
-  if (run.status !== 0) return null;
+  if (run.status !== 0) return unverified;
   try {
     const parsed: unknown = JSON.parse(String(run.stdout));
-    return isMapping(parsed) && parsed.issueType === null
+    if (!isMapping(parsed) || !("issueType" in parsed)) return unverified;
+    return parsed.issueType === null
       ? `filed without the issue type ${BUG_TYPE}: the account may not set one; it is set when the issue is triaged`
       : null;
   } catch (error) {
     swallow(error, "issue type unreadable; the report is filed");
-    return null;
+    return unverified;
   }
 }
 

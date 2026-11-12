@@ -695,3 +695,92 @@ test("a type failure with no way to look for the issue does not file it again", 
     1,
   );
 });
+
+test("labels joined by commas are split before the facet ones are dropped", () => {
+  expect(splitFacetLabels(["jig,bug,small", "priority: high, extra"])).toEqual({
+    kept: ["jig", "extra"],
+    dropped: ["bug", "small", "priority: high"],
+  });
+  expect(
+    fileArgs({ title: "t", labels: ["small,jig,bug"] }).filter(
+      (a) => a === "--label",
+    ),
+  ).toHaveLength(1);
+});
+
+test.each([
+  ["an object", "{}"],
+  ["an entry with no number", `[{"title":"t"}]`],
+])(
+  "a type failure whose listing is %s is not filed again",
+  (_name, listing) => {
+    const dir = mkdtempSync(join(tmpdir(), "jig-report-bug-"));
+    filingGh(
+      dir,
+      "echo 'GraphQL: issue type not readable' >&2; exit 1",
+      `echo '${listing}'`,
+    );
+    const run = fileDraft(dir);
+    expectSpawnExit(run, 1);
+    expect(run.stderr.toString()).toContain(
+      "Whether the issue was created is unknown",
+    );
+    expect(calls(dir).filter((c) => c.startsWith("issue create"))).toHaveLength(
+      1,
+    );
+  },
+);
+
+test("a type failure with a full window of newer issues is not filed again", () => {
+  const dir = mkdtempSync(join(tmpdir(), "jig-report-bug-"));
+  const newer = Array.from({ length: 30 }, (_v, i) => ({
+    number: i + 1,
+    title: `other ${i}`,
+    state: "OPEN",
+    url: `https://github.com/jig-harness/jig/issues/${i + 1}`,
+    createdAt: new Date(Date.now() + 60_000).toISOString(),
+  }));
+  filingGh(
+    dir,
+    "echo 'GraphQL: issue type not readable' >&2; exit 1",
+    `echo '${JSON.stringify(newer)}'`,
+  );
+  const run = fileDraft(dir);
+  expectSpawnExit(run, 1);
+  expect(run.stderr.toString()).toContain(
+    "Whether the issue was created is unknown",
+  );
+});
+
+test("a full window reaching back before the attempt still files without the type", () => {
+  const dir = mkdtempSync(join(tmpdir(), "jig-report-bug-"));
+  const older = Array.from({ length: 30 }, (_v, i) => ({
+    number: i + 1,
+    title: `other ${i}`,
+    state: "OPEN",
+    url: `https://github.com/jig-harness/jig/issues/${i + 1}`,
+    createdAt: "2020-01-01T00:00:00Z",
+  }));
+  filingGh(
+    dir,
+    `case "$*" in *"--type Bug"*) echo 'GraphQL: the viewer may not set the issue type' >&2; exit 1;; *) echo https://github.com/jig-harness/jig/issues/900;; esac`,
+    `echo '${JSON.stringify(older)}'`,
+  );
+  const run = fileDraft(dir);
+  expectSpawnExit(run, 0);
+  expect(run.stderr.toString()).toContain("filed without the issue type Bug");
+});
+
+test.each([
+  ["a failed read-back", "exit 1"],
+  ["a malformed read-back", "echo '[]'"],
+  ["a read-back with no type field", "echo '{}'"],
+])("%s warns that the type could not be verified", (_name, view) => {
+  const dir = mkdtempSync(join(tmpdir(), "jig-report-bug-"));
+  filingGh(dir, undefined, undefined, view);
+  const run = fileDraft(dir);
+  expectSpawnExit(run, 0);
+  expect(run.stderr.toString()).toContain(
+    "could not verify the issue type Bug",
+  );
+});
