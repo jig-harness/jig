@@ -197,8 +197,12 @@ function closesFence(text: string, fence: Fence): boolean {
   return end - start >= fence.marker.length && text.slice(end).trim() === "";
 }
 
-/** The fence a line opens, if it does. */
-function openedFence(text: string, quoteDepth: number): Fence | null {
+/** The fence a line opens, if it does; a bare fence indented at least to the enclosing list item's text belongs to that item. */
+function openedFence(
+  text: string,
+  quoteDepth: number,
+  listColumn: number,
+): Fence | null {
   const open = /^( {0,3}(?:[-*+]|\d{1,9}[.)])[ \t]+| {0,3})(`{3,}|~{3,})/.exec(
     text,
   );
@@ -207,8 +211,23 @@ function openedFence(text: string, quoteDepth: number): Fence | null {
     : {
         marker: open[2] ?? "",
         quoteDepth,
-        base: open[1]?.trim() === "" ? 0 : (open[1]?.length ?? 0),
+        base:
+          open[1]?.trim() === ""
+            ? indentOf(open[1] ?? "") >= listColumn
+              ? listColumn
+              : 0
+            : (open[1]?.length ?? 0),
       };
+}
+
+/** The column of the text of the list item a line starts or continues, 0 once a less indented line ends the item. */
+function listColumnAfter(text: string, column: number): number {
+  const item = /^( {0,3})([-*+]|\d{1,9}[.)])([ \t]+)\S/.exec(text);
+  if (item !== null)
+    return (
+      (item[1]?.length ?? 0) + (item[2]?.length ?? 0) + (item[3]?.length ?? 0)
+    );
+  return text.trim() !== "" && indentOf(text) < column ? 0 : column;
 }
 
 /** Whether a line leaves the container holding the open fence: a shallower quote, or a line less indented than the list item's text. */
@@ -227,6 +246,7 @@ function withoutBlockquoteContainers(body: string): string {
   let fence = null as Fence | null;
   const state = { comment: false, span: null as string | null };
   const visible: string[] = [];
+  let listColumn = 0;
   const lines = body.split(/\r?\n/);
   for (const [lineIndex, line] of lines.entries()) {
     const prefix = quotePrefix(line);
@@ -242,7 +262,8 @@ function withoutBlockquoteContainers(body: string): string {
       continue;
     }
     visible.push(text);
-    fence = state.comment ? null : openedFence(text, prefix.depth);
+    listColumn = listColumnAfter(text, listColumn);
+    fence = state.comment ? null : openedFence(text, prefix.depth, listColumn);
     if (fence === null) commentState(lines, lineIndex, state);
   }
   return visible.join("\n");
