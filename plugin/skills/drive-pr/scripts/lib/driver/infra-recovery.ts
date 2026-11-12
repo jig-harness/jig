@@ -62,6 +62,8 @@ export interface FailingChecks {
   statusNames: string[] | null;
   /** The workflow runs behind them, the report's `failingRuns`. */
   runs: unknown;
+  /** The failing commit statuses and their URLs, the report's `failingStatuses`. */
+  statuses?: unknown;
 }
 
 /** What one re-run answered: re-run, refused by the forge, or failed to ask. */

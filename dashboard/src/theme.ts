@@ -52,6 +52,22 @@ export function themeSearch(search: string, theme: Theme): string {
   return withParam(search, "theme", theme);
 }
 
+/**
+ * The browser bar's colour follows the chosen theme: the page names one
+ * `theme-color` per device scheme, so a choice keeps only the matching one in
+ * force, and `auto` gives each its own scheme back.
+ */
+export function syncBarColour(theme: Theme, doc: Document = document): void {
+  for (const meta of doc.querySelectorAll<HTMLMetaElement>(
+    'meta[name="theme-color"]',
+  )) {
+    const own = meta.dataset.media ?? meta.media;
+    meta.dataset.media = own;
+    const scheme = own.includes("dark") ? "dark" : "light";
+    meta.media = theme === "auto" ? own : theme === scheme ? "all" : "not all";
+  }
+}
+
 /** The theme, and how to change it. */
 export function useTheme(): [Theme, (theme: Theme) => void] {
   const [theme, setTheme] = useState(() =>
@@ -60,6 +76,7 @@ export function useTheme(): [Theme, (theme: Theme) => void] {
   useEffect(() => {
     // The document's own scheme too, so what lies past the page's edge matches it.
     document.documentElement.style.colorScheme = schemeOf(theme);
+    syncBarColour(theme);
     // Auto without a choice leaves the address as it was.
     if (theme !== "auto") replaceParam("theme", theme);
   }, [theme]);

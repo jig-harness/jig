@@ -17,7 +17,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { type ClaimTracker, claimIssue } from "../scripts/lib/claim.ts";
-import { readClaimMarker } from "../scripts/lib/claim-marker.ts";
+import {
+  claimMarkerBody,
+  readClaimMarker,
+} from "../scripts/lib/claim-marker.ts";
 import { parseTrackerConfig } from "../scripts/lib/tracker/config.ts";
 import {
   type LinearTransport,
@@ -93,6 +96,20 @@ describe("claimIssue", () => {
       issue: "#5",
       why: "pr_open",
       reason: "#5 is Awaiting Review: its pull request is open",
+    });
+    expect(log).toEqual([]);
+  });
+
+  it("refuses an issue the projection blocked, from the state the claim itself reads", async () => {
+    const states = parseTrackerConfig({
+      issue_tracker: { states: { blocked: "Blocked" } },
+    }).states;
+    const { tracker, log } = memory("Blocked", [], undefined, states);
+    const out = await claimIssue(tracker, "#5");
+    expect(out).toMatchObject({
+      outcome: "refused",
+      issue: "#5",
+      why: "blocked",
     });
     expect(log).toEqual([]);
   });
@@ -342,9 +359,14 @@ describe("tracker.ts claim", () => {
       committed?: string;
       /** Requests the fake tracker records, by operation. */
       seen?: string[];
+      /** The item's comments before the claim, as GitHub's comment nodes. */
+      comments?: Array<Record<string, unknown>>;
+      /** Fail the claim's comment post. */
+      failComment?: boolean;
     } = {},
   ) {
     let state = { labels, logins };
+    const comments = [...(extra.comments ?? [])];
     const writeOps: string[] = [];
     const user = (login: string) => ({ id: `U_${login}`, login });
     const server = Bun.serve({
@@ -388,9 +410,26 @@ describe("tracker.ts claim", () => {
         if (op === "TrackerAssign") writeOps.push(op);
         if (op === "TrackerAddLabels") writeOps.push(op);
         if (op !== undefined) extra.seen?.push(op);
-        if (op === "TrackerComment") {
+        if (op === "TrackerComment" && extra.failComment !== true) {
           writeOps.push(`${op} ${String(variables.body)}`);
+          comments.push({
+            id: `IC_${comments.length + 1}`,
+            body: String(variables.body),
+            createdAt: new Date().toISOString(),
+            authorAssociation: "NONE",
+            viewerDidAuthor: true,
+          });
           data = { addComment: { clientMutationId: null } };
+        }
+        if (op === "TrackerComments")
+          data = {
+            repository: { issue: { id: "I_5", comments: conn(comments) } },
+          };
+        if (op === "TrackerDeleteComment") {
+          writeOps.push(`${op} ${String(variables.id)}`);
+          const at = comments.findIndex((c) => c.id === variables.id);
+          if (at >= 0) comments.splice(at, 1);
+          data = { deleteIssueComment: { clientMutationId: null } };
         }
         if (op === "TrackerAssign") {
           const input = variables.input as { assigneeIds: string[] };
@@ -494,7 +533,7 @@ describe("tracker.ts claim", () => {
     expect(JSON.parse(out.stdout).outcome).toBe("claimed");
   });
 
-  it("posts the claim marker after a claim with do_item.claim_marker", async () => {
+  it("posts the claim marker before the claim's writes with do_item.claim_marker", async () => {
     const out = await cli([], [], undefined, {
       committed: "do_item:\n  claim_marker: true\n",
       env: { CLAUDE_CODE_SESSION_ID: "session-1" },
@@ -502,7 +541,7 @@ describe("tracker.ts claim", () => {
     expectSpawnExit(out, 0);
     expect(JSON.parse(out.stdout)).toMatchObject({
       outcome: "claimed",
-      marker: { posted: true },
+      marker: { posted: true, confirmed: true },
     });
     const comment = out.writes.find((w) => w.startsWith("TrackerComment "));
     expect(comment).toBeDefined();
@@ -513,8 +552,59 @@ describe("tracker.ts claim", () => {
     expect(
       readClaimMarker((comment as string).slice("TrackerComment ".length)),
     ).toMatchObject({ session: "session-1", claimant: "factory" });
-    // The comment follows the claim's own writes.
-    expect(out.writes.indexOf(comment as string)).toBe(out.writes.length - 1);
+    // The marker comes first, then the claim's own writes.
+    expect(out.writes).toEqual([
+      comment as string,
+      "TrackerAssign",
+      "TrackerAddLabels",
+    ]);
+  });
+
+  it("refuses with exit 3, writing nothing to the item, when another claim's marker is earlier", async () => {
+    const theirs = claimMarkerBody({
+      attempt: "other-host",
+      session: "session-2",
+      branch: "main",
+      claimant: "factory",
+      at: new Date().toISOString(),
+    });
+    const out = await cli([], [], undefined, {
+      committed: "do_item:\n  claim_marker: true\n",
+      comments: [
+        {
+          id: "IC_0",
+          body: theirs,
+          createdAt: new Date(Date.now() - 60_000).toISOString(),
+          authorAssociation: "MEMBER",
+          viewerDidAuthor: false,
+        },
+      ],
+    });
+    expectSpawnExit(out, 3);
+    expect(JSON.parse(out.stdout)).toMatchObject({
+      outcome: "refused",
+      why: "marker",
+    });
+    expect(out.stderr).toContain("another claim's marker on #5 is earlier");
+    // Its own marker posted, then withdrawn; the item untouched.
+    expect(out.writes.map((w) => w.split(" ")[0])).toEqual([
+      "TrackerComment",
+      "TrackerDeleteComment",
+    ]);
+  });
+
+  it("refuses with exit 3, writing nothing, when its marker cannot be posted", async () => {
+    const out = await cli([], [], undefined, {
+      committed: "do_item:\n  claim_marker: true\n",
+      failComment: true,
+    });
+    expectSpawnExit(out, 3);
+    expect(JSON.parse(out.stdout)).toMatchObject({
+      outcome: "refused",
+      why: "marker",
+    });
+    expect(out.stderr).toContain("could not be posted");
+    expect(out.writes).toEqual([]);
   });
 
   it("posts no marker without do_item.claim_marker", async () => {

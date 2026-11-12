@@ -12,7 +12,11 @@
  * pickup's launch makes just before it starts.
  */
 import type { ServedPerson } from "../serve-config.ts";
-import { readServedPickups } from "./served.ts";
+import { limitedRow, readServedPickups } from "./served.ts";
+import {
+  isRateLimited,
+  type TrackerRateLimited,
+} from "../../../shared/tracker-budget.ts";
 import {
   type CanonicalState,
   type PoolIssue,
@@ -69,6 +73,7 @@ async function readClaimed(
       state: i.state.name,
     }));
   } catch (error) {
+    if (isRateLimited(error)) throw error;
     return {
       target: `items in ${workingNames(tracker)}`,
       record: "tracker",
@@ -103,7 +108,11 @@ async function byTrustedAssigner(
   tracker: Tracker,
   issues: ReadonlyArray<PoolIssue>,
   identity: string,
-): Promise<{ wanted: WantedItem[]; unplaced: Unplaced[] }> {
+): Promise<{
+  wanted: WantedItem[];
+  unplaced: Unplaced[];
+  limited?: TrackerRateLimited;
+}> {
   const wanted: WantedItem[] = [];
   const unplaced: Unplaced[] = [];
   for (const issue of issues) {
@@ -111,6 +120,9 @@ async function byTrustedAssigner(
     try {
       by = await tracker.assignedBy(issue.identifier, identity);
     } catch (error) {
+      if (isRateLimited(error)) {
+        return { wanted: [], unplaced, limited: error };
+      }
       unplaced.push({
         target: issue.identifier,
         title: issue.title,
@@ -142,6 +154,37 @@ async function byTrustedAssigner(
     });
   }
   return { wanted, unplaced };
+}
+
+/**
+ * The assigned items split by who assigned them, and the claimed items; the
+ * tracker's rate limit, when either read met it, instead of a reading
+ * the limit cut short.
+ */
+async function trustedAndClaimed(
+  tracker: Tracker,
+  identity: string,
+  issues: ReadonlyArray<PoolIssue>,
+): Promise<
+  | { limited: TrackerRateLimited }
+  | {
+      wanted: WantedItem[];
+      unplaced: Unplaced[];
+      claimed: Awaited<ReturnType<typeof readClaimed>>;
+    }
+> {
+  const { wanted, unplaced, limited } = await byTrustedAssigner(
+    tracker,
+    issues,
+    identity,
+  );
+  if (limited !== undefined) return { limited };
+  try {
+    return { wanted, unplaced, claimed: await readClaimed(tracker, identity) };
+  } catch (error) {
+    if (isRateLimited(error)) return { limited: error };
+    throw error;
+  }
 }
 
 /** `read`, or a rejection once `bound` has ended it. */
@@ -235,6 +278,8 @@ async function readFactoryPickups(
       ? undefined
       : await readFacetStores(tracker, reportBound(bound));
   const assigned = await readAssigned(tracker, identity, section, bound);
+  if (!assigned.ok && isRateLimited(assigned.failure.cause))
+    return limitedFactory(tracker, identity, assigned.failure.cause, stores);
   if (!assigned.ok)
     return {
       read: {
@@ -249,12 +294,10 @@ async function readFactoryPickups(
       claimed: null,
     };
   const issues = assigned.value;
-  const { wanted, unplaced } = await byTrustedAssigner(
-    tracker,
-    issues,
-    identity,
-  );
-  const claimed = await readClaimed(tracker, identity);
+  const read = await trustedAndClaimed(tracker, identity, issues);
+  if ("limited" in read)
+    return limitedFactory(tracker, identity, read.limited, stores);
+  const { wanted, unplaced, claimed } = read;
   if (!Array.isArray(claimed)) unplaced.push(claimed);
   const record =
     stores === undefined || facets === undefined
@@ -324,6 +367,7 @@ export async function readPickups(
     manualOps?: string;
     executionPlanBlock?: string;
     repoScope?: import("./served-repo.ts").RepoScope;
+    views?: import("./served-reads.ts").ServedViews;
     unlabeled?: import("./served-repo.ts").UnlabeledMode;
     trackerNamespace?: string;
   },
@@ -343,6 +387,7 @@ export async function readPickups(
       ? {}
       : { executionPlanBlock: served.executionPlanBlock }),
     ...(served.repoScope === undefined ? {} : { repoScope: served.repoScope }),
+    ...(served.views === undefined ? {} : { views: served.views }),
     ...(served.unlabeled === undefined ? {} : { unlabeled: served.unlabeled }),
     ...(served.trackerNamespace === undefined
       ? {}
@@ -358,14 +403,57 @@ export async function readPickups(
       ...extra.wanted,
       ...factory.wanted.filter((i) => !keys.has(i.key)),
     ],
-    unplaced: [...factory.unplaced, ...extra.unplaced],
+    unplaced: onceEach([...factory.unplaced, ...extra.unplaced]),
+    // A queue the rate limit stopped part way, or one that failed to read,
+    // was not read whole: its claims are not known, so no ended pickup is released or judged on it.
     claimed:
-      factory.claimed === null
+      factory.claimed === null ||
+      extra.limitedUntil !== undefined ||
+      extra.incomplete === true
         ? null
         : [
             ...new Map(
-              [...factory.claimed, ...extra.claimed].map((i) => [i.key, i]),
+              // The identity's own reading wins: its claims are dispatch's whoever is served.
+              [...extra.claimed, ...factory.claimed].map((i) => [i.key, i]),
             ).values(),
           ],
   };
+}
+
+/**
+ * The factory's reading when the tracker's rate limit refused it: one
+ * limited row, no record failed (the wall is not the repository's failure),
+ * and no claims, so nothing is released or judged stalled on a reading
+ * that was not taken.
+ */
+function limitedFactory(
+  tracker: Tracker,
+  identity: string,
+  limited: Parameters<typeof limitedRow>[1],
+  stores: FacetRecord | undefined,
+): TrackerReading {
+  return {
+    read: {
+      record: "tracker",
+      source: `${tracker.adapter} ${tracker.team}`,
+      ok: true,
+      detail: `the items assigned to ${identity} wait for the tracker's rate limit to reset`,
+      ...(stores === undefined ? {} : { facets: stores }),
+    },
+    wanted: [],
+    unplaced: [limitedRow(tracker, limited)],
+    claimed: null,
+  };
+}
+
+/** The rows, a tracker's rate-limit row kept once whichever read met the limit first. */
+function onceEach(rows: Unplaced[]): Unplaced[] {
+  const limited = new Set<string>();
+  return rows.filter((row) => {
+    if (!row.reason.startsWith("the tracker is rate limited until"))
+      return true;
+    if (limited.has(row.target)) return false;
+    limited.add(row.target);
+    return true;
+  });
 }

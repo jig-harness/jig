@@ -12,6 +12,7 @@ import {
   readConfig,
   withSource,
 } from "../../../../shared/consumer.ts";
+import { splitCommandWords } from "../../../../shared/command-words.ts";
 import { isMapping, jigHome } from "../../../../shared/config-layers.ts";
 import { notionId } from "./notion/ids.ts";
 
@@ -91,22 +92,11 @@ export function expandPath(raw: string, root = consumerRoot()): string {
   return expandPathWith(raw, root, homedir());
 }
 
-/**
- * Split a command line into words: spaces separate them, single or double
- * quotes keep spaces inside one, and no shell runs it, so the same setting
- * behaves alike on every operating system.
- */
+/** Split a command line into words without a shell (`splitCommandWords`). */
 export function splitWords(line: string): string[] {
-  const words: string[] = [];
-  // A word is a run of unquoted non-space characters and quoted stretches.
-  const word = /(?:[^\s'"]+|'[^']*'|"[^"]*")+/g;
-  for (const match of line.matchAll(word))
-    words.push(match[0].replace(/'([^']*)'|"([^"]*)"/g, "$1$2"));
-  const rest = line.replace(word, "");
-  const unclosed = /['"]/.exec(rest);
-  if (unclosed !== null)
-    throw new SettingError(`unclosed ${unclosed[0]} in "${line}"`);
-  return words;
+  const words = splitCommandWords(line);
+  if (!words.ok) throw new SettingError(`${words.failure.reason} in "${line}"`);
+  return words.value;
 }
 
 const KNOWN = [

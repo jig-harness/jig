@@ -17,7 +17,11 @@ import {
   writeRecord,
 } from "../../dispatch/lib/launches.ts";
 import { writeRow } from "../../dispatch/lib/log.ts";
-import { closeStateDb, statePath } from "../../dispatch/lib/state.ts";
+import {
+  closeStateDb,
+  SCHEMA_VERSION,
+  statePath,
+} from "../../dispatch/lib/state.ts";
 import { closeDatabase } from "../../shared/records/db.ts";
 import {
   DRIVE_DB_VERSION,
@@ -28,6 +32,7 @@ import { putLock } from "../../skills/drive-pr/__tests__/state-rows.ts";
 import { stoppedLedger } from "../../dispatch/__tests__/fixtures.ts";
 import { ledgerBody } from "../../skills/drive-pr/__tests__/ledger-forge-fixtures.ts";
 import type { AskAnswer } from "../lib/answer.ts";
+import { launchesWhere } from "../lib/local.ts";
 import {
   type AskWorld,
   askWorld,
@@ -119,14 +124,27 @@ function edit(path: string, ...sql: string[]): void {
   raw.close();
 }
 
-/** What the dispatcher's schema at version 8 lacks of the later migrations: the log's `target`, a notice's `sent_at`, the follow-up releases and the pending content. */
+/** Remove every dispatch schema addition after version 8 and its recorded migration evidence. */
 const BEFORE_TARGET = [
   "DROP INDEX log_target",
   "ALTER TABLE log DROP COLUMN target",
   "ALTER TABLE notices DROP COLUMN sent_at",
   "DROP TABLE followup_releases",
   "ALTER TABLE notices_content DROP COLUMN pending",
+  "DROP TABLE reflection_findings",
+  "DROP TABLE merge_reads",
+  "ALTER TABLE launches DROP COLUMN result_next",
+  "ALTER TABLE followup_outcomes DROP COLUMN asked",
+  "DROP TABLE load_samples",
+  "DROP TABLE failures",
+  "DROP TABLE pickup_reads",
+  "DROP TABLE steward_records",
+  "DROP TABLE steward_runs",
+  "ALTER TABLE launches DROP COLUMN refusal",
+  "ALTER TABLE launches DROP COLUMN result_until",
   "PRAGMA user_version = 8",
+  "UPDATE db_meta SET version = 8",
+  "DELETE FROM db_migrations WHERE version > 8",
 ];
 
 function userVersion(path: string): number {
@@ -210,6 +228,34 @@ describe("jig ask against the dispatcher's database", () => {
     expect(answer.last).toBeNull();
     expect(readFileSync(file).equals(before)).toBe(true);
   });
+
+  it("reads launch records from a pre-pickup-claims schema without migrating it", async () => {
+    const w = world();
+    seed(w);
+    const file = statePath(w.state);
+    edit(
+      file,
+      "DROP TABLE pickup_claims",
+      `DELETE FROM db_migrations WHERE version = ${SCHEMA_VERSION}`,
+      `PRAGMA user_version = ${SCHEMA_VERSION - 1}`,
+    );
+    const before = readFileSync(file);
+
+    const answer = await askNine(w);
+    const launches = await launchesWhere(w.state, () => true);
+    expect(launches.ok && launches.value.records).toContainEqual(
+      expect.objectContaining({
+        record: expect.objectContaining({ id: RECORD }),
+      }),
+    );
+    expect(answer.sources.records).toContainEqual({
+      record: "dispatch-launch",
+      read: true,
+      local: true,
+    });
+    expect(readFileSync(file).equals(before)).toBe(true);
+    expect(userVersion(file)).toBe(SCHEMA_VERSION - 1);
+  });
 });
 
 describe("jig ask against the drive's database", () => {
@@ -222,8 +268,10 @@ describe("jig ask against the drive's database", () => {
     closeDatabase(file);
     edit(
       file,
-      "DROP TABLE review_rounds",
+      "DROP TABLE cancelled_ci",
       `PRAGMA user_version = ${DRIVE_DB_VERSION - 1}`,
+      `UPDATE db_meta SET version = ${DRIVE_DB_VERSION - 1}`,
+      `DELETE FROM db_migrations WHERE version > ${DRIVE_DB_VERSION - 1}`,
     );
     const before = readFileSync(file);
 

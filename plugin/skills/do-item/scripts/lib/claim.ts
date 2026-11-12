@@ -34,13 +34,22 @@ export type ClaimResult =
     }
   | {
       /**
-       * Nothing was written: someone already holds the issue, its state is
-       * not one `do_item.claim_from` lets work start from, or the
-       * repository's `do_item.preflight_command` refused it.
+       * Nothing was written to the item's assignee or state: someone already
+       * holds the issue, its state is not one `do_item.claim_from` lets work
+       * start from, the repository's `do_item.preflight_command` refused
+       * it, or, with `do_item.claim_marker`, another claim's marker is
+       * earlier or this claim's own could not be posted and read back.
        */
       outcome: "refused";
       issue: string;
-      why: "in_progress" | "pr_open" | "assigned" | "state" | "preflight";
+      why:
+        | "in_progress"
+        | "pr_open"
+        | "assigned"
+        | "state"
+        | "preflight"
+        | "blocked"
+        | "marker";
       reason: string;
       /** A preflight refusal: the item's `updatedAt` as the command saw it. */
       updatedAt?: string;
@@ -98,6 +107,22 @@ export function claimFromRefusal(
   };
 }
 
+/** The refusal of a claim from the tracker's `blocked` state; `null` otherwise. */
+export function blockedStateRefusal(
+  tracker: Pick<ClaimTracker, "stateName">,
+  key: string,
+  stateName: string,
+): ClaimResult | null {
+  const blocked = tracker.stateName("blocked");
+  if (blocked === null || !sameName(stateName, blocked)) return null;
+  return {
+    outcome: "refused",
+    issue: key,
+    why: "blocked",
+    reason: `${key} is ${blocked}: its drive stopped on parked work, and only the drive's projection or a person moves it out`,
+  };
+}
+
 /** What a repository's configuration adds to a claim's own rules. */
 export interface ClaimRules {
   /** `do_item.claim_from`: the canonical states work may start from; `null` keeps every open state. */
@@ -122,6 +147,9 @@ export async function claimIssue(
       why: "in_progress",
       reason: `${key} is already ${started}: another session holds it`,
     };
+  // The state this claim acts on: a block that landed while it waited refuses here.
+  const blocked = blockedStateRefusal(tracker, key, before.state.name);
+  if (blocked !== null) return blocked;
   const outside = claimFromRefusal(
     tracker,
     key,

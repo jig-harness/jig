@@ -29,11 +29,13 @@
  * (triage, backlog, unstarted, started) nor closed, is an error, never `open`.
  *
  * `claim` starts an issue for the identity the tracker's credential acts
- * as: it refuses an issue already in `in_progress` or assigned to anyone
- * else (exit 3, nothing written), assigns it to that identity and moves it
+ * as: it refuses an issue already in `in_progress`, in `pr_open` or
+ * `blocked`, or assigned to anyone else (exit 3, nothing written), assigns it to that identity and moves it
  * to `in_progress`, then reads it again and stands down (exit 4) when
  * another claim landed first. The reason is printed on stderr and in the
- * JSON on stdout.
+ * JSON on stdout. In a pickup the dispatcher started (`JIG_LAUNCH` names
+ * its launch record), a claim that landed is noted on that record, so the
+ * dispatcher counts the item as its pickup's however soon the pass ends.
  *
  * Where the repository's default branch sets `do_item.preflight_command`,
  * `claim` first runs it, before the claim lock and any write, with the
@@ -43,13 +45,18 @@
  * exit, or a run past its deadline, refuses too. Where the repository sets
  * `do_item.claim_from`, an item in a state outside it, or in a status that
  * maps to no canonical state, is refused (exit 3, `"why": "state"`). With
- * `do_item.claim_marker`, a successful claim posts the claim marker
- * (`lib/claim-marker.ts`); `"marker"` in the JSON says whether it was posted.
+ * `do_item.claim_marker`, the claim posts the claim marker
+ * (`lib/claim-marker.ts`) before it writes, and of the markers on the item
+ * the earliest wins (`lib/claim-token.ts`): a claim that finds an earlier
+ * one, or cannot post and read back its own, refuses (exit 3,
+ * `"why": "marker"`, nothing written to the item), and one that finds an
+ * earlier one after it wrote stands down (exit 4). `"marker"` in the JSON
+ * says whether the read after the write confirmed it.
  *
  * Canonical states: backlog, todo, in_progress, in_review, done, canceled,
- * and where the consumer uses them triage, pr_open, ops_pending, duplicate.
- * A transition to an optional state the consumer leaves unset (`pr_open`)
- * writes nothing and prints `skipped` with the reason.
+ * and where the consumer uses them triage, pr_open, blocked, ops_pending,
+ * duplicate. A transition to an optional state the consumer leaves unset
+ * (`pr_open`, `blocked`) writes nothing and prints `skipped` with the reason.
  *
  * `transition … --post-merge` marks the post-merge rule's move: a move to
  * `done` is refused (exit 3, nothing written) when `do_item.post_merge_state`
@@ -88,26 +95,36 @@
  * Output: JSON on stdout. Exit codes: 0 done, 2 usage (input the operation
  * cannot take), 1 the operation failed (the reason on stderr), a label,
  * project or issue that does not resolve to exactly one included; for
- * `claim`, 3 refused and 4 stood down; for `transition --post-merge`, 3
- * refused.
+ * `claim`, 3 refused and 4 stood down; 5 the tracker's rate limit for this
+ * credential is spent, with the time it resets on stderr
+ * (`RATE-LIMITED until <time>`): the request it names was not sent or was
+ * refused. A claim refused part way may have written its first step; the
+ * dispatcher's stall check then reports the item as claimed with no
+ * session.
  */
 
 import { readFile } from "node:fs/promises";
+import { isRateLimited } from "../../../shared/tracker-budget.ts";
 import { claimServedIssue } from "./lib/served-claim.ts";
 import { withClaimLock } from "./lib/claim-lock.ts";
 import { claimIssue } from "./lib/claim.ts";
+import { blockedClaimRefusal } from "./lib/blocked-claim.ts";
 import { getIssue } from "./get_issue.ts";
 import {
   claimPreflightCommand,
   preflightClaim,
   unreadablePreflight,
 } from "./lib/preflight.ts";
-import { claimSettingsFromDefaultBranch } from "./lib/claim-settings.ts";
 import {
-  claimBranch,
-  claimMarkerBody,
-  claimSession,
-} from "./lib/claim-marker.ts";
+  claimPlanBlockFromDefaultBranch,
+  claimSettingsFromDefaultBranch,
+} from "./lib/claim-settings.ts";
+import { claimBranch, claimSession } from "./lib/claim-marker.ts";
+import { claimWithMarker } from "./lib/claim-token.ts";
+import {
+  NOT_DISPATCHED,
+  notePickupClaim,
+} from "../../../dispatch/lib/pickup-claim.ts";
 import { consumerRoot, readOverlay } from "../../../shared/consumer.ts";
 import { syncPlanBlocks } from "./lib/plan-blocks.ts";
 import { executionPlanBlock } from "./select_execution_issue.ts";
@@ -358,6 +375,7 @@ async function claim(
   key: string,
   person: string | undefined,
   ancestor: string | undefined,
+  blocking: string | undefined,
 ): Promise<unknown> {
   const config = ownTrackerConfig();
   const shape = issueKeysOf(config);
@@ -370,6 +388,11 @@ async function claim(
   const read = await claimSettingsFromDefaultBranch(root, overlay);
   if (!read.ok) return unreadablePreflight(normalized, read.failure.reason);
   const settings = read.value;
+  // Only a pulled-blocker claim enforces the epic plan; any other claim never reads it.
+  const planBlock =
+    person && blocking ? await claimPlanBlockFromDefaultBranch(root) : null;
+  if (planBlock !== null && !planBlock.ok)
+    return unreadablePreflight(normalized, planBlock.failure.reason);
   // Before the lock and before any write: a refusal leaves nothing behind.
   const command = await claimPreflightCommand(root, overlay);
   if (!command.ok)
@@ -381,50 +404,66 @@ async function claim(
           getIssue(normalized, tracker, shape),
         );
   if (refusal !== null) return refusal;
-  const result = await withClaimLock(claimLockKey(tracker, normalized), () => {
-    const ancestorKey = ancestor
-      ? (shape?.normalize(ancestor) ?? ancestor)
-      : undefined;
-    return person
-      ? claimServedIssue(tracker, normalized, {
-          person,
-          ...(ancestorKey ? { ancestor: ancestorKey } : {}),
-          epicLabel: config.labels.epic,
-          hitlLabel: config.labels.hitl,
-          manualOpsLabel: config.labels.manualOps,
-          claimFrom: settings.claimFrom,
-        })
-      : claimIssue(tracker, key, { claimFrom: settings.claimFrom });
-  });
-  if (result.outcome !== "claimed" || !settings.claimMarker) return result;
-  return { ...result, marker: await postClaimMarker(tracker, result, root) };
+  const blocked = await blockedClaimRefusal(tracker, normalized);
+  if (blocked !== null) return blocked;
+  const result = await withClaimLock(
+    claimLockKey(tracker, normalized),
+    async () => {
+      // The projection may have blocked the item while the claim waited for the lock.
+      const stale = await blockedClaimRefusal(tracker, normalized);
+      if (stale !== null) return stale;
+      const ancestorKey = ancestor
+        ? (shape?.normalize(ancestor) ?? ancestor)
+        : undefined;
+      const body = () =>
+        person
+          ? claimServedIssue(tracker, normalized, {
+              person,
+              ...(ancestorKey ? { ancestor: ancestorKey } : {}),
+              ...(blocking
+                ? { blocking: shape?.normalize(blocking) ?? blocking }
+                : {}),
+              epicLabel: config.labels.epic,
+              hitlLabel: config.labels.hitl,
+              manualOpsLabel: config.labels.manualOps,
+              ...(planBlock?.ok && planBlock.value !== undefined
+                ? { executionPlanBlock: planBlock.value }
+                : {}),
+              claimFrom: settings.claimFrom,
+            })
+          : claimIssue(tracker, normalized, { claimFrom: settings.claimFrom });
+      if (!settings.claimMarker) return body();
+      // The marker names who the item will be assigned to, before it is.
+      const claimant = person
+        ? (await tracker.user(person)).name
+        : (await tracker.viewer()).name;
+      return claimWithMarker(
+        tracker,
+        normalized,
+        { session: claimSession(), branch: await claimBranch(root), claimant },
+        body,
+      );
+    },
+  );
+  if (result.outcome === "claimed") noteDispatchedClaim(result.issue);
+  return result;
 }
 
 /**
- * Post the claim marker on a claimed item. A failed post leaves the claim
- * standing: it is reported, with the reason, beside the claim.
+ * In a pickup the dispatcher started, note the claim on its launch record, so
+ * the dispatcher counts the item as its pickup's however soon the pass ends.
+ * A failed note leaves the claim standing: it is reported beside it.
  */
-async function postClaimMarker(
-  tracker: ReturnType<typeof openTracker>,
-  claim: { issue: string; claimant: { name: string } },
-  root: string,
-): Promise<{ posted: true } | { posted: false; reason: string }> {
-  const body = claimMarkerBody({
-    session: claimSession(),
-    branch: await claimBranch(root),
-    claimant: claim.claimant.name,
-    at: new Date().toISOString(),
-  });
-  try {
-    await tracker.postComment(claim.issue, body);
-    return { posted: true };
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
+function noteDispatchedClaim(issue: string): void {
+  const noted = notePickupClaim(issue);
+  if (!noted.ok)
     console.error(
-      `the claim marker was not posted on ${claim.issue}: ${reason}`,
+      `the claim of ${issue} was not noted for the dispatcher: ${noted.failure.reason}`,
     );
-    return { posted: false, reason };
-  }
+  else if (!noted.value.noted && noted.value.why !== NOT_DISPATCHED)
+    console.error(
+      `the claim of ${issue} was not noted for the dispatcher: ${noted.value.why}`,
+    );
 }
 
 /** `claim`'s exit codes: refused before any write, stood down after the re-read. */
@@ -506,22 +545,30 @@ const OPERATIONS: Record<string, Operation> = {
       const ancestorFlags = [...flags].filter((f) =>
         f.startsWith("--ancestor"),
       );
+      const blockingFlags = [...flags].filter((f) =>
+        f.startsWith("--blocking"),
+      );
       if (
         forFlags.some((f) => !f.startsWith("--for=") || f.length === 6) ||
         ancestorFlags.some(
           (f) => !f.startsWith("--ancestor=") || f.length === 11,
         ) ||
+        blockingFlags.some(
+          (f) => !f.startsWith("--blocking=") || f.length === 11,
+        ) ||
         forFlags.length > 1 ||
-        ancestorFlags.length > 1
+        ancestorFlags.length > 1 ||
+        blockingFlags.length > 1
       )
         throw new UsageError(
-          "claim accepts one nonempty --for=PERSON and --ancestor=ISSUE",
+          "claim accepts one nonempty --for=PERSON, --ancestor=ISSUE and --blocking=ISSUE",
         );
       const person = forFlags[0]?.slice(6);
       const ancestor = ancestorFlags[0]?.slice(11);
-      if (ancestor && !person)
-        throw new UsageError("--ancestor requires --for");
-      return claim(key as string, person, ancestor);
+      const blocking = blockingFlags[0]?.slice(11);
+      if ((ancestor || blocking) && !person)
+        throw new UsageError("--ancestor and --blocking require --for");
+      return claim(key as string, person, ancestor, blocking);
     },
     exitOf: (out) => {
       const result = out as Awaited<ReturnType<typeof claimIssue>>;
@@ -697,7 +744,9 @@ function operationArguments(op: Operation, name: string, rest: string[]) {
       !allowed.has(flag) &&
       !(
         name === "claim" &&
-        (/^--for=.+/.test(flag) || /^--ancestor=.+/.test(flag))
+        (/^--for=.+/.test(flag) ||
+          /^--ancestor=.+/.test(flag) ||
+          /^--blocking=.+/.test(flag))
       ),
   );
   if (unknown.length)
@@ -707,8 +756,17 @@ function operationArguments(op: Operation, name: string, rest: string[]) {
   return { args, flags: new Set(flags) };
 }
 
+/** The exit code of an operation the tracker's rate limit stopped. */
+const RATE_LIMITED_EXIT = 5;
+
 function reportFailure(error: unknown): number {
   if (isUsage(error)) return usage(error.message);
+  if (isRateLimited(error)) {
+    console.error(
+      `RATE-LIMITED until ${new Date(error.resetAt).toISOString()}: ${error.message}`,
+    );
+    return RATE_LIMITED_EXIT;
+  }
   console.error(
     `ERROR: ${error instanceof Error ? error.message : String(error)}`,
   );
@@ -717,7 +775,7 @@ function reportFailure(error: unknown): number {
 
 /** Normalize valued claim options before generic positional/flag validation. */
 function normalizeClaimOptions(rest: string[]): void {
-  for (const flag of ["--for", "--ancestor"]) {
+  for (const flag of ["--for", "--ancestor", "--blocking"]) {
     const index = rest.indexOf(flag);
     if (index === -1) continue;
     const value = rest[index + 1];
@@ -725,7 +783,7 @@ function normalizeClaimOptions(rest: string[]): void {
       throw new UsageError(`${flag} requires an identity or issue key`);
     rest.splice(index, 2, `${flag}=${value}`);
   }
-  for (const flag of ["--for=", "--ancestor="])
+  for (const flag of ["--for=", "--ancestor=", "--blocking="])
     if (rest.filter((v) => v.startsWith(flag)).length > 1)
       throw new UsageError("duplicate claim option");
 }

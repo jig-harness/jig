@@ -364,6 +364,10 @@ describe("a database a newer copy migrated", () => {
         "CREATE TABLE IF NOT EXISTS newer_things (id INTEGER PRIMARY KEY)",
       );
       db.run(`PRAGMA user_version = ${newer}`);
+      db.run("INSERT INTO db_migrations VALUES (?, ?, 'applied')", [
+        newer,
+        "future migration digest",
+      ]);
       db.run("UPDATE db_meta SET version = ?, min_reader = ? WHERE id = 1", [
         newer,
         minReader,

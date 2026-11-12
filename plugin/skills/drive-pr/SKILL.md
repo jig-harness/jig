@@ -110,7 +110,11 @@ rather than waiting:
   check run yet.
 - **Many external review bots refuse a draft** (CodeRabbit, for one, posts
   "Review skipped / Draft detected"), and a CI-hosted reviewer job commonly
-  skips drafts too (`!…pull_request.draft`).
+  skips drafts too (`!…pull_request.draft`). Where such a bot is the
+  reviewer that decides convergence (`review.reviewer_evidence:
+  review_object`, CodeRabbit's profile), its draft skip is no wait: the draft
+  converges on its own work, and the drive marks it Ready and waits for that
+  review.
 
 So a draft is driven exactly like a Ready PR, and **after the first completed
 round the drive marks it Ready itself** (`mark-ready.ts`, called by `drive.ts`;
@@ -157,11 +161,11 @@ consumer polling `--json` for one of these states will never see it there.
 
 | State | Exit | Meaning |
 |---|---|---|
-| `CONVERGED` | 3 (`drive.ts`: 0) | Where the repository names an AI reviewer (`review.reviewer_app` or `review.reviewer_check_pattern`): the posting reviewer completed on **this exact head** and its recorded reviewed-SHA equals that head. Where it names none, no reviewer evidence is required. Either way: zero unresolved threads, zero unaddressed summary-only findings. `drive.ts` additionally removes only the CI-hold transition it owns (when the repository has a hold label), waits for exact-head full CI, records the global verified SHA, and exits 0 only over a **clean worktree**; uncommitted leftovers exit 12 instead. |
+| `CONVERGED` | 3 (`drive.ts`: 0) | Where the repository names an AI reviewer (`review.reviewer_app` or `review.reviewer_check_pattern`): the posting reviewer completed on **this exact head** and its recorded reviewed-SHA equals that head; for a reviewer that submits pull-request reviews (`review.reviewer_evidence: review_object`, CodeRabbit's profile), its newest review names the head or its check run completed on the head after its newest review. On a draft that reviewer skips, the draft converges on its own work and `drive.ts` marks it Ready and waits for that review (exit `4` when the drive keeps it a draft). Where it names none, no reviewer evidence is required. Either way: zero unresolved threads, zero unaddressed summary-only findings. `drive.ts` additionally removes only the CI-hold transition it owns (when the repository has a hold label), waits for exact-head full CI, records the global verified SHA, and exits 0 only over a **clean worktree**; uncommitted leftovers exit 12 instead. |
 | `PR_NOT_OPEN` | 5 | Merged or closed — detected **before** any push, so nothing lands on an orphaned branch |
 | `HITL_PARKED` | 8 | Everything still open awaits a human decision; the driver hands back with the decisions framed. A re-arm unparks items once **every** parked item has an answer from an owner, member or collaborator, later than the park (§ Picking up a stopped drive). A conflicting PR reports `PR_CONFLICTING` before the park, allowing conflict repair while the questions remain parked; `jig dispatch` re-drives it once per pair of its head and its base branch's head |
 | `PR_CONFLICTING` | 9 | The PR conflicts with its base **and** has nothing left to work, **and** the conflict-repair budget is spent. A conflict with live findings is still a workable `ROUND_READY` — merge the base in as part of that round |
-| `REVIEW_SKIPPED` | 22 | The reviewer's skip notice names this head, and its review of an earlier head does not cover it: the pull request's diff changed. No review of this head will come; a person reviews the change and has the reviewer review the head, or pushes a commit it reviews, then re-arms. A skipped head whose diff is unchanged converges on the earlier review instead ([terminal-states.md § The reviewer skips a head](references/terminal-states.md)) |
+| `REVIEW_SKIPPED` | 22 | The reviewer's skip notice names this head, and its review of an earlier head does not cover it: the pull request's diff changed; or a review-object reviewer's check run on the head reads `Review paused…` or `Review skipped…` (a draft skip is not one: on a draft it converges provisionally, on a Ready PR it waits for the review), the reason naming which and quoting the title. No review of this head will come; a person reviews the change and has the reviewer review the head (or resume its reviews), or pushes a commit it reviews, then re-arms. A skipped head whose diff is unchanged converges on the earlier review instead ([terminal-states.md § The reviewer skips a head](references/terminal-states.md)) |
 | `PASS_DEADLINE` | 15 | The pass hit `$DRIVE_PR_PASS_TIMEOUT` (default 90m) and was sent a kill signal — witnessed-terminated before the locks release where the POSIX group-based witness *can* see the survivor, held instead in that case; a descendant that escaped the process group is an unhandled false-witness gap, not a covered case (see [terminal-states.md](references/terminal-states.md)). `drive.ts` only — the one stop here that can fire while a round is still *in flight*, which is where the hangs are. The driver **restarts** from a witnessed kill, leaving what the pass left in the tree for the next pass, up to `drive.pass_deadline_retries` (default 2) per drive (§ Running it); this exit is the deadline recurring past that budget, and says so, or a kill that could not be witnessed, which exits here at once with the locks held and spends no budget. Under `jig dispatch` the dispatcher re-drives this stop once per head commit, in the tree it stopped in when it left work there, and a drive re-armed in that tree inherits those edits as its own to finish |
 | `QUOTA_PARKED` | 16 | The pass died on a subscription usage wall that will not reopen within the sleep bound. `drive.ts` only, and **not a failure of the drive loop** — but the pass may have modified or committed locally before hitting the wall, so read what the stop lists the pass left (the uncommitted paths and the unpushed commits, or that there are none) before re-arming. A *short* window never reaches this state — the drive sleeps through that one and resumes. The exit names the account the wall belongs to and prints the re-arm command: a pass that bills **another** account may pick the drive up now, the same account only after the reset (§ Picking up a stopped drive) |
 | `MAILBOX_STOPPED` | 18 | A mailbox `stop` for this driver (one naming its generation, or one naming none) ended `drive.ts` at a round boundary, after any running pass completed; the outbox carries its `ack`. A stop naming no generation stops every later driver too: resume it before re-arming |
@@ -677,8 +681,10 @@ outlives the session that spawned it, so its console is not where you look:
   is live on it, and nothing in the family was touched for `--min-age-days`
   (default 7); and the files an earlier release kept there, once the
   database's import of them is 30 days old. Displaced file-lock quarantine
-  entries form a separate family, reported with count and bytes but kept:
-  neither an idle snapshot nor the database mutex excludes legacy writers.
+  entries form a separate family, reported with count and bytes and retired
+  by `--delete` once no `.lock` or `.lock.recovering` of the earlier layout is
+  present, none of its state, lease, driver or claim files was written in the
+  last 24 hours, and no entry was written to in that time.
   This applies whether or not the clone was imported.
   A closed-but-unmerged PR is
   deliberately kept — GitHub permits reopening it with no time limit. A name
@@ -772,7 +778,12 @@ outlives the session that spawned it, so its console is not where you look:
   or `held`, nothing on a pull request carrying `hold` or `held`, and never
   a new label. Best effort: `gh` calls under `ghCall`'s deadline, the edit
   only when the labels disagree; a refusal is one `labels:` line on stderr
-  and never changes the exit. A pass never writes a state label.
+  and never changes the exit. A pass never writes a state label. Where
+  `issue_tracker.states.blocked` is set, the same write moves each item the
+  pull request links (`Closes`/`Refs <KEY>`) to `blocked` on a `parked`
+  stop, with each park's class and reason, and back to the state it left
+  on `driving` (`do-item/scripts/lib/blocked-move.ts`), under the same
+  rules; a pass never moves one.
 - **Relocating the state dir** — `$DRIVE_PR_STATE_DIR` relocates the state
   root: the database and one `<clone-key>/` directory per clone (the hash of
   its persisted [universally unique identifier](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (UUID); linked worktrees share it). The driver exports its resolved
@@ -861,7 +872,8 @@ stops admit it on a mechanical state:
   thread or in a
   pull-request comment with a line `answer <key>: …` — the re-arm keeps the
   answers in the drive's state directory, unparks every item at once (or none),
-  and hands the answers to every pass as human verdicts
+  leaving in the drive ledger a resolution receipt for each (the answers it
+  consumed and when), and hands the answers to every pass as human verdicts
   (`$DRIVE_PR_PASS_NOTICE`) until one exits `0`, across later re-arms too.
   A comment the drive itself writes (one opening
   with an outcome token, or carrying a hidden marker other than the record
@@ -1475,7 +1487,7 @@ carries the specifics.
 
 | `$DRIVE_PR_ROUND_TASK` | `…_DETAIL` | What this round is |
 |---|---|---|
-| `ci-repair` | the failing check names, as CI reported them; `$DRIVE_PR_ROUND_FAILED_RUNS` holds the ids of the workflow runs behind them, separated by spaces | The reviewer has converged and the exact-head full-CI verdict is red. Repair CI. |
+| `ci-repair` | the failing check names, as CI reported them; `$DRIVE_PR_ROUND_FAILED_RUNS` holds the ids of the workflow runs behind them, separated by spaces; `$DRIVE_PR_ROUND_FAILED_STATUSES` the failing commit statuses, a JSON list of `{context, target_url}`; `$DRIVE_PR_ROUND_REPAIR_SKILL` the repository's CI-repair skill (`ci.repair_skill`) | The reviewer has converged and the exact-head full-CI verdict is red. Repair CI. |
 | `conflict-resolve` | the PR's base ref name | The PR conflicts with its base and has **no** workable finding. Merge the base in and resolve. |
 
 **Expect § 1's gate to answer `CONVERGED` (exit 3) on a `ci-repair` round, and
@@ -1497,16 +1509,27 @@ exit does, so the driver's own next gate read decides what to dispatch next.
 
 Then:
 
-- **`ci-repair`** — repair CI on this PR, with the repository's CI-repair
-  skill if it has one: read the logs of the runs `$DRIVE_PR_ROUND_FAILED_RUNS`
-  names, reproduce locally where possible, fix the cause. Fix every failing
+- **`ci-repair`** — repair CI on this PR. When `$DRIVE_PR_ROUND_REPAIR_SKILL`
+  is set, load that skill first and follow it; otherwise follow
+  [`/jig:fix-ci`](../fix-ci/SKILL.md)'s procedure. Read the logs of the runs
+  `$DRIVE_PR_ROUND_FAILED_RUNS` names and of the statuses
+  `$DRIVE_PR_ROUND_FAILED_STATUSES` names:
+  `bun "${CLAUDE_SKILL_DIR}/../fix-ci/scripts/parse-ci-log.ts" --pr <PR>`
+  reads both, a status's log through the repository's `ci.log_command`. A
+  status it reports as `unread` (no command) or `gone` has no log to read:
+  open its `target_url` only when it is an `https` link on the CI service's
+  own host (never a loopback, internal-network or metadata address, or a
+  host the repository does not use for CI), and when that gives none either,
+  end the round without a commit and say the log is missing: a fix without it is a guess.
+  Reproduce locally where possible, fix the cause. Fix every failing
   check, not only the first. Then pick up at **§ 5**: sync the base, resolve and
   run the round's validation plan over the cumulative tree, and **§ 6** to
   commit and push. §§ 2–4 have nothing to enumerate — the review converged
   before you were dispatched.
 
   When the log shows the failure is not in the code (a lost runner, a network
-  error), re-run the failed runs instead of committing:
+  error), re-run the failed workflow runs instead of committing (a commit
+  status's build is re-run only as the repository's CI-repair skill says):
   `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh run rerun <id> --failed`,
   for the ids that variable names and no other run on the head. A run with only
   cancelled checks has no failure to repair; re-running it leaves a sibling
@@ -1819,7 +1842,13 @@ publishes no findings, including any partial output.
 Both are open work. A finding the reviewer could not anchor to a diff line
 creates **no thread** — thread count reads zero while it sits live, so a
 thread count alone reports such a PR converged. It also has no `threadId`, so
-`reply-to-thread.ts` cannot answer it.
+`reply-to-thread.ts` cannot answer it. For a review-object reviewer
+(`review.reviewer_evidence: review_object`) these are the entries in its
+reviews' bodies (`source: "review-body"`; CodeRabbit's outside-diff,
+nitpick, duplicate and follow-up comments), read from every review it
+submitted on the pull request. Only a reviewer whose built-in profile names a
+body format is read (today CodeRabbit); another review-object reviewer's
+bodies are not.
 
 `--configured-reviewer-only` keeps this enumeration in step with § 1's gate,
 which passes the same flag: where the repository names no AI reviewer, neither
@@ -2581,7 +2610,8 @@ and hands the answers to its passes (§ Picking up a stopped drive).
 Unpark by hand with
 `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" unpark [PR] --key K` (repeat
 `--key` for several; a key that is not parked unparks none) only for an item a
-person answered some other way.
+person answered some other way. A hand unpark leaves no resolution receipt,
+so the dispatcher's outcome log counts that park as removed, not answered.
 
 **The change note — only where the repository has opted in.** When
 `bun "${CLAUDE_SKILL_DIR}/../changelog/scripts/check.ts" --base <remote>/<base>`
@@ -2903,7 +2933,13 @@ explicitly scoped to never act on human threads.
 That is the whole of step 6. It performs, in this exact order:
 
 1. **refuses** on a dirty worktree or an unconcluded git operation — before
-   the one irreversible act, not after it; then **refuses** again when at
+   the one irreversible act, not after it; then, where the repository sets
+   `pull_requests.commit_prefix`, runs `bun "${CLAUDE_SKILL_DIR}/scripts/commit-prefix.ts"` on the pull
+   request's head branch, which rewords each unpushed commit lacking the
+   prefix (the base-sync merge and a conflict merge included) and moves
+   HEAD, so every later step holds, pushes, stamps and syncs the reworded
+   head; a commit already pushed without the prefix is reported on stderr
+   and the push goes ahead, and a check that cannot run refuses (`9`); then **refuses** again when at
    least one unresolved review thread anchors a file this round's own
    *non-merge* commits touch (a base-sync merge's own imported files do not
    count) with *incomplete or stale* triage state — not just "no qualifying
@@ -2969,6 +3005,7 @@ returned, which is the case this rule covers.
 | `11` | Another live **session in your tree** holds the drive lease | Almost always stop. `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" clear-lease [PR]` only if you know that session is gone |
 | `13` | Another live **working tree** is driving this PR | Stop. It names the tree, and its session pid when it has one |
 | `7` | Refused *before* pushing: an unresolved, unparked thread anchors a file this round's own non-merge commits touch, and its triage state isn't complete and current — never triaged at all, a current accepted/fix-dependent-moot reply with no hold recorded (a crash between `reply-to-thread.ts` and the hold), an unmarked merit reply on a thread that was never actually resolved (the identical crash, on the resolve side), or an existing hold that's gone stale (a newer comment superseded it, or the *same* comment was edited in place to a different outcome) | Each offending thread is named (id, path, url) in the reason **with its own remedy** — the cases above are not interchangeable, and the command names which one applies to each thread rather than leaving that for you to work out. Follow the printed remedy (re-run `bun "${CLAUDE_SKILL_DIR}/scripts/triage-thread.ts"` with no new post for a stale/crash-recovered hold or resolve, post a fresh reply first for a genuinely superseded one), or park it (§ 4) if `triage-thread.ts` itself refuses, then re-run |
+| `9` | Refused *before* pushing (`REFUSED_COMMIT_PREFIX`): `pull_requests.commit_prefix` is set and the commit-prefix check could not put it on the unpushed commits: the head branch carries no key, a git operation is open, or the configuration, the repository or the pull request could not be read. Nothing was pushed, but a reword may already have landed locally when the refusal came from the check after the rewrite, so read `git log` before relying on unchanged history | Fix what the reason names (conclude or abort the git operation, correct the configuration), then re-run. A head branch that carries no key needs a person: the prefix cannot be rendered for it |
 | `1` | A step failed: the push, the stamp, the head-sync wait, an unreadable batch, or the untriaged-thread check's own infra reads (`TRIAGE_CHECK_FAILED` — an unusable round base, an unreadable `held` batch, an unreadable `parked-keys` set, or a failed `list-unresolved-threads.ts` call) | If the failure is the push, the stamp, or the head-sync wait, nothing downstream ran. An unreadable batch can instead be a **re-read** after a stale item mid-drain — in that case earlier items in the same drain may already be dispatched; the report's `items` list is the record of what actually happened, not the summary line. A `TRIAGE_CHECK_FAILED` means nothing was pushed either — the check fails closed rather than guessing at whether a thread is triaged. Read the step's own diagnostic and re-run once it is addressed |
 
 If you are refused by `11` or `13`, the right response is almost never to clear
@@ -3688,7 +3725,10 @@ run, or a person's approval where no app is named), an outside author's pull
 request needs a person's approval, and branch protection must let it merge. It
 posts only in merge now or approve first, the second worded "an approval is
 still required", and otherwise refuses with the predicate's reason (exit `4`,
-or `1` when the forge's facts did not read).
+or `1` when the forge's facts did not read). And it waits (exit `4`) until
+each reviewer `review.draft_skipping_reviewers` names has a check run on the
+head that started after the pull request was last marked Ready, so it never
+vouches for a head such a reviewer has not looked at since.
 
 **judgment** — After `announce-merge-ready.ts` exits `0`, whether it posted the
 announcement or found one already posted, name the workspace for the ready stage

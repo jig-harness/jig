@@ -83,6 +83,7 @@ function pickupPrompt(
     | "vendor"
     | "servedPerson"
     | "ancestorEpic"
+    | "blockingFor"
     | "batchItems"
   >,
 ): string {
@@ -96,13 +97,18 @@ function pickupPrompt(
 
 /** How a pickup records its end, once. */
 function pickupResultLines(
-  record: Pick<LaunchRecord, "id" | "token">,
+  record: Pick<LaunchRecord, "id" | "token" | "batchItems">,
 ): string[] {
+  const refused =
+    record.batchItems === undefined
+      ? `- the claim was refused by the repository's start rules (exit 3 with "why": "preflight" and an "updatedAt" in its JSON): ${resultCommand(record, "failed")} --refused <its updatedAt> --reason "<its reason>"`
+      : `- a member's claim was refused by the repository's start rules (exit 3 with "why": "preflight" and an "updatedAt" in its JSON): ${resultCommand(record, "failed")} --refused <its updatedAt> --key <its issue> --reason "<its reason>", repeating the three for each member refused; only those members are held`;
   return [
     "When you stop, record how the pickup ended, once:",
     `- its pull request is open and its drive armed: ${resultCommand(record, "done")} --pr <the pull request number>`,
     `- no pull request was needed (a duplicate or work already made): ${resultCommand(record, "done")} --none "<why>"`,
-    `- the claim was refused by the repository's start rules (exit 3 with "why": "preflight" and an "updatedAt" in its JSON): ${resultCommand(record, "failed")} --refused <its updatedAt> --reason "<its reason>"`,
+    refused,
+    `- the tracker refused a request for its rate limit (a tracker script exited 5, naming the time it resets) before your claim of the item succeeded: ${resultCommand(record, "waits")} --until <that time>; ask no question, the dispatcher starts the item again after the reset`,
     `- you stopped short of that (another refusal, a question, a failure): ${resultCommand(record, "failed")}`,
   ];
 }
@@ -117,6 +123,7 @@ function pickupPassPrompt(
     | "vendor"
     | "servedPerson"
     | "ancestorEpic"
+    | "blockingFor"
     | "batchItems"
     | "stewardResume"
     | "stewardContext"
@@ -150,7 +157,7 @@ function pickupPassPrompt(
     ...(record.servedPerson === undefined || record.stewardResume !== undefined
       ? []
       : [
-          `Claim this served assignment using tracker.ts claim ${shellQuote(record.item ?? "")} --for ${shellQuote(record.servedPerson)}${record.ancestorEpic === undefined ? "" : ` --ancestor ${shellQuote(record.ancestorEpic)}`}; preserve the person as the only assignee. A refusal stops the pickup.`,
+          `Claim this served assignment using tracker.ts claim ${shellQuote(record.item ?? "")} --for ${shellQuote(record.servedPerson)}${record.ancestorEpic === undefined ? "" : ` --ancestor ${shellQuote(record.ancestorEpic)}`}${record.blockingFor === undefined ? "" : ` --blocking ${shellQuote(record.blockingFor)}`}; preserve the person as the only assignee. A refusal stops the pickup.`,
         ]),
     "",
     "jig dispatch started this headless pass for an item assigned to the factory identity; nobody is at the keyboard, and nobody can answer a question while it runs.",
@@ -227,7 +234,8 @@ function followupPrompt(record: LaunchRecord): string {
     "jig dispatch started this headless pass for the follow-up of a merged pull request; nobody is at the keyboard, and nobody can answer a question while it runs.",
     `It claimed the follow-up with the marker comment ${marker} on the pull request. That claim is this pass's: post no marker of your own. Before each act that writes outside the pull request (an issue closed, a tag pushed), check that you still hold the claim, and stop on any nonzero exit (an earlier marker, an unreadable forge, a missing marker): ${jigCommand(["marker", "check", pr, "--comment", marker, "--repo", record.repo])}`,
     "Leave routine local housekeeping (branch retention, retired workspaces and scratch notes) to periodic cleanup, even when no collector covers a leftover yet. Do not ask a person about it or treat it as an incomplete arm or a failed result. Evidence of unlanded work or an active operational problem still belongs in the follow-up.",
-    `Where a step needs a person's decision, do not guess: carry out what does not depend on it, then stop, and end your output with one line that starts "${QUESTION_PREFIX}" and states what the person must decide, with no secret or personal data in it. The dispatcher sends that line to a person.`,
+    "A step the merge owes that only a person can take or authorize (a live check against a real service, a rollout to another repository, an organization's setting, an operational action, a release gate that failed) is no reason to stop: report it as owed by a person, file it as an item where your authority covers filing, and count its arm settled. Filing the follow-up items you drafted needs nobody's leave either.",
+    `Where an arm you may carry out cannot go on without a person's decision, do not guess: carry out what does not depend on it, then stop, and end your output with one line that starts "${QUESTION_PREFIX}" and states what the person must decide, with no secret or personal data in it. The dispatcher sends that line to a person.`,
     ...routineLines(record),
     "When you stop, record how the follow-up ended, once:",
     `- every arm is settled, what you may carry out carried out and the rest reported: ${resultCommand(record, "done")}`,

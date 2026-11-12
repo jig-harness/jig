@@ -15,6 +15,7 @@ import {
   type NeedAct,
 } from "../../plugin/shared/acts.ts";
 import { uniqueLogins } from "../../plugin/shared/forge-logins.ts";
+import { answerStateWords } from "../../plugin/shared/decision-card.ts";
 import { ago, clock, plural } from "./format.ts";
 import { type DecisionRow, decisionRows } from "./picking.ts";
 import { noLinkText } from "./links.ts";
@@ -41,6 +42,8 @@ export interface NeedView {
   otherOptions: LineOption[];
   /** The steps for a person, as a checklist in the fold. */
   steps: string[];
+  /** What the answers that keep a decision waiting say, stale or disputed, one line per decision that has any. */
+  answerNotes: string[];
   /** Who it waits on, as the parks name them; empty when no record names anyone. */
   people: string[];
   target: string;
@@ -101,6 +104,15 @@ function goLabelOf(n: LineNeed): string {
   )
     return "Open the pull request";
   return "Answer on the pull request";
+}
+
+/** Each decision's waiting answers in words, named by its key when the need has several. */
+function answerNotes(decisions: LineDecision[]): string[] {
+  return decisions.flatMap((d) => {
+    const said = answerStateWords(d.answerState, d.answers ?? []);
+    if (said === null) return [];
+    return [decisions.length > 1 ? `${d.key}: ${said}` : said];
+  });
 }
 
 function decisionText(decisions: LineDecision[]): string | null {
@@ -164,6 +176,7 @@ export function needView(n: LineNeed, clockNow: Clock): NeedView {
     recommended,
     otherOptions: options.filter((o) => o !== recommended),
     steps: [...new Set(n.decisions.flatMap((d) => d.steps ?? []))],
+    answerNotes: answerNotes(n.decisions),
     people: needPeople(n),
     target: n.target,
     title: n.title,

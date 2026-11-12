@@ -17,6 +17,7 @@ import { TrackerConfigError } from "../config-error.ts";
 import { defaultFacets, type Facets } from "../facets/config.ts";
 import { TrackerRequestError } from "../port.ts";
 import { adfToMarkdown } from "./adf.ts";
+import { type BlockedField, resolveBlockedFields } from "./blocked-fields.ts";
 import {
   type FacetField,
   facetFieldStores,
@@ -35,12 +36,13 @@ import {
 } from "./read.ts";
 
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
-import { KEY, ORDER, OPEN, quote } from "./jql.ts";
+import { KEY, ORDER, openClause, quote } from "./jql.ts";
 import type { JiraModel } from "./model.ts";
 import type { JiraSettings, LinkedRelation } from "./settings.ts";
 import {
   abortedError,
   JiraApiError,
+  JIRA_CREDENTIAL_HELP,
   type JiraTransport,
   offsetPages,
   searchPages,
@@ -58,7 +60,13 @@ export interface JiraComment {
 export interface ChangelogEntry {
   createdAt: string;
   author: Record<string, unknown> | null;
-  items: Array<{ fieldId: string; to: string | null }>;
+  items: Array<{
+    fieldId: string;
+    from: string | null;
+    to: string | null;
+    /** Whether the tracker stated both sides; an absent side is not `null`. */
+    explicit: boolean;
+  }>;
 }
 
 /** A link type the configuration names, with the words for its two sides. */
@@ -142,6 +150,12 @@ export interface Client {
    * no facet is kept in one.
    */
   facetFields(signal?: AbortSignal): Promise<FacetField[]>;
+  /**
+   * The fields `issue_tracker.jira.blocked_fields` names, each resolved to
+   * exactly one field of the site; read once, and without a request when
+   * none is configured.
+   */
+  blockedFields(): Promise<BlockedField[]>;
   /**
    * The fields on the create screen of an issue type of the project, each
    * with the values it allows (`null` where it lists none); read once per
@@ -286,16 +300,22 @@ function matchOf(
   if (holdsRichText(schema))
     throw new TrackerConfigError(
       at,
-      `${at}: the field '${name}' holds rich text, which does not read as a label; only single-line text, number, select, checkbox and labels fields do`,
+      `${at}: the field '${name}' holds rich text, which does not read as a label; only single-line text, number, select, checkbox, labels and version fields do`,
     );
   if (type === "string") return null;
   if (type === "number") return "number";
   if (type === "option") return "string";
-  if (type === "array" && (items === "option" || items === "string"))
+  // A version field (Fix versions, Affects versions, a version picker): each
+  // version by its name, which JQL matches as a quoted string.
+  if (type === "version") return "string";
+  if (
+    type === "array" &&
+    (items === "option" || items === "string" || items === "version")
+  )
     return "string";
   throw new TrackerConfigError(
     at,
-    `${at}: the field '${name}' is of type ${JSON.stringify(type)}${items === undefined ? "" : ` of ${JSON.stringify(items)}`}; only single-line text, number, select, checkbox and labels fields read as labels`,
+    `${at}: the field '${name}' is of type ${JSON.stringify(type)}${items === undefined ? "" : ` of ${JSON.stringify(items)}`}; only single-line text, number, select, checkbox, labels and version fields read as labels`,
   );
 }
 
@@ -400,6 +420,7 @@ export function jiraClient(opts: ClientOptions): Client {
   let labelFields: Promise<FieldLabel[]> | undefined;
   let allFields: Promise<SiteField[]> | undefined;
   let storeFields: Promise<FacetField[]> | undefined;
+  let stateFields: Promise<BlockedField[]> | undefined;
   const readTypes = sharedRead(async (own): Promise<IssueTypeMeta[]> => {
     const values = await offsetPages(
       transport,
@@ -434,7 +455,15 @@ export function jiraClient(opts: ClientOptions): Client {
 
   /** The credential's own profile, read once. */
   function myself(): Promise<Record<string, unknown>> {
-    me ??= (async () => record(await get("myself"), "myself"))();
+    me ??= (async () => {
+      const raw = await get("myself");
+      const profile = record(raw, "myself");
+      if (typeof profile.accountId !== "string" || !profile.accountId.trim())
+        throw new JiraApiError(
+          `Jira did not identify an authenticated account; ${JIRA_CREDENTIAL_HELP}`,
+        );
+      return profile;
+    })();
     me.catch(() => {
       me = undefined;
     });
@@ -468,15 +497,20 @@ export function jiraClient(opts: ClientOptions): Client {
   /** The site's fields, read once for every resolver that needs them. */
   function siteFields(): Promise<SiteField[]> {
     allFields ??= (async () => {
+      await myself();
       const raw = await get("field");
       if (!Array.isArray(raw))
         throw new JiraApiError("fields of the site: expected a list");
       return raw.map((f, i) => {
         const r = record(f, `fields[${i}]`);
+        const clauseNames = Array.isArray(r.clauseNames)
+          ? r.clauseNames.filter((c): c is string => typeof c === "string")
+          : [];
         return {
           id: str(r.id, `fields[${i}].id`),
           name: str(r.name, `fields[${i}].name`),
           schema: r.schema,
+          ...(clauseNames.length === 0 ? {} : { clauseNames }),
         };
       });
     })();
@@ -512,6 +546,11 @@ export function jiraClient(opts: ClientOptions): Client {
     facets: opts.facets ?? defaultFacets("jira"),
 
     async issue(key, signal) {
+      if (signal?.aborted === true) throw abortedError(signal);
+      const authenticated = myself();
+      await (signal === undefined
+        ? authenticated
+        : until(authenticated, signal));
       // Resolved before the issue's own 404 handler: a failed field read is
       // not a missing issue.
       const read = (await fieldsToRead(signal)).join(",");
@@ -548,6 +587,11 @@ export function jiraClient(opts: ClientOptions): Client {
     },
 
     async search(jql, where, signal, fields) {
+      if (signal?.aborted === true) throw abortedError(signal);
+      const authenticated = myself();
+      await (signal === undefined
+        ? authenticated
+        : until(authenticated, signal));
       const extra = await client.fieldLabels(signal);
       const facet = await client.facetFields(signal);
       const read = fields ?? (await fieldsToRead(signal));
@@ -564,7 +608,7 @@ export function jiraClient(opts: ClientOptions): Client {
         );
       // No project clause: an Epic's children may live in other projects.
       return client.search(
-        `${[`parent = ${key}`, ...(open ? [OPEN] : [])].join(" AND ")}${ORDER}`,
+        `${[`parent = ${key}`, ...(open ? [openClause(model.stateName("blocked"))] : [])].join(" AND ")}${ORDER}`,
         `children of ${key}`,
         signal,
       );
@@ -612,7 +656,9 @@ export function jiraClient(opts: ClientOptions): Client {
             const item = record(it, `${where}.items[${j}]`);
             return {
               fieldId: String(item.fieldId ?? item.field ?? ""),
+              from: optStr(item.from, `${where}.items[${j}].from`),
               to: optStr(item.to, `${where}.items[${j}].to`),
+              explicit: item.from !== undefined && item.to !== undefined,
             };
           }),
         };
@@ -726,7 +772,11 @@ export function jiraClient(opts: ClientOptions): Client {
             configured: name,
             id: f.id,
             name: f.name,
-            clause: clauseOf(f.id),
+            // A system field's JQL name can differ from its id
+            // (`fixVersion` for `fixVersions`); a custom field's is cf[n].
+            clause: f.id.startsWith("customfield_")
+              ? clauseOf(f.id)
+              : (f.clauseNames?.[0] ?? f.id),
             prefix,
             match: matchOf(f.schema, at, f.name),
           };
@@ -748,6 +798,18 @@ export function jiraClient(opts: ClientOptions): Client {
         storeFields = undefined;
       });
       return signal === undefined ? storeFields : until(storeFields, signal);
+    },
+
+    blockedFields() {
+      const names = settings.blockedFields;
+      if (names.reason === null && names.since === null)
+        return Promise.resolve([]);
+      stateFields ??= (async () =>
+        resolveBlockedFields(names, await siteFields()))();
+      stateFields.catch(() => {
+        stateFields = undefined;
+      });
+      return stateFields;
     },
 
     createMeta(issueTypeId, signal) {

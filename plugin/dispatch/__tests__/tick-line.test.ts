@@ -325,6 +325,36 @@ describe("the line a tick leaves", () => {
     expect(Object.keys(entry?.repos[0]?.phasesMs ?? {})).toContain("forge");
   });
 
+  it("links a pull request's row to the issues the forge says it closes and its description's closing line, and names the repository's tracker", async () => {
+    const w = fixture();
+    w.setPrs("open", [
+      {
+        ...openPr(7, HEAD),
+        body: "Fixes #4\n\nFollows #5.",
+        closingIssuesReferences: {
+          pageInfo: { hasNextPage: false },
+          nodes: [
+            { number: 3, repository: { nameWithOwner: SLUG } },
+            { number: 9, repository: { nameWithOwner: "example-org/other" } },
+          ],
+        },
+      },
+    ]);
+    machineFile(w, [account(w, "a", "a@example.com")]);
+    const receipt = await tick(w);
+    await waitFor("the exit", () =>
+      exitWritten(w, receipt.repos[0]?.launches[0]?.record ?? ""),
+    );
+    const line = storedLine(w)?.line;
+    expect(line?.repos[0]?.tracker).toEqual({ adapter: "github" });
+    expect(line?.sessions[0]?.target).toBe("PR #7");
+    expect(line?.sessions[0]?.links?.items.map((i) => i.key)).toEqual([
+      "#4",
+      "#3",
+    ]);
+    expect(line?.sessions[0]?.links?.prs).toEqual([]);
+  });
+
   it("is left as it was by a tick for one repository out of the machine file's, which only adds itself to the recent ticks", async () => {
     const w = fixture();
     machineFile(w, [account(w, "a", "a@example.com")]);

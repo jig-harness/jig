@@ -12,8 +12,6 @@
 import { ACTS } from "../../skills/drive-pr/scripts/lib/merge-ready.ts";
 import { NEED_ACTS } from "../../shared/acts.ts";
 import { isDecisionDigest } from "../../shared/decisions/digest.ts";
-import { Database } from "bun:sqlite";
-import { existsSync } from "node:fs";
 import { isMapping } from "../../shared/config-layers.ts";
 import { attempt, failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { pluginVersion } from "../../shared/plugin-version.ts";
@@ -21,7 +19,7 @@ import { isSpan, isTime, isZone } from "../../shared/time-guards.ts";
 import { stateRoot } from "../receipts.ts";
 import type { LineSnapshot, StateAnswer } from "./dashboard-contract.ts";
 import { hostTimeZone } from "./host-time.ts";
-import { SCHEMA_VERSION, stateDb, statePath } from "./state.ts";
+import { readOnlyStateDb, SCHEMA_VERSION, stateDb } from "./state.ts";
 
 /**
  * Run `work`, which reads the stored line and writes a merge of it, under the
@@ -100,9 +98,29 @@ const DECISION_FIELDS: Fields = {
       changes: nullOr(isString),
       costs: nullOr(isString),
       recommended: (v) => typeof v === "boolean",
+      number: (v) => v === undefined || isNumber(v),
     })(value),
   steps: (value) =>
     value === undefined || (Array.isArray(value) && value.every(isString)),
+  answers: (value) =>
+    value === undefined ||
+    listOf({
+      author: isString,
+      at: isString,
+      url: isString,
+      digest: (v) => v === undefined || isString(v),
+      stale: (v) => v === undefined || hasFields(v, { digest: isString }),
+      choice: (v) =>
+        v === undefined ||
+        hasFields(v, {
+          option: isString,
+          recommended: (r) => typeof r === "boolean",
+          form: (f) => f === "approve" || f === "choose",
+          note: (n) => n === undefined || isString(n),
+        }),
+    })(value),
+  answerState: (value) =>
+    value === undefined || value === "stale" || value === "disputed",
 };
 
 /** What the sessions view reads of each thread sample. */
@@ -277,6 +295,18 @@ const LINE_FIELDS: Fields = {
     })(value),
   load: (value) => value === undefined || hasFields(value, LOAD_FIELDS),
   repos: listOf(ENTRY_FIELDS.repos),
+  parks: (value) =>
+    value === undefined ||
+    listOf({
+      repo: isString,
+      pr: isNumber,
+      key: isString,
+      kind: (v) => v === "thread" || v === "finding",
+      parkedAt: (v) => v === undefined || isTime(v),
+      class: nullOr(isString),
+    })(value),
+  ingested: (value) =>
+    value === undefined || (Array.isArray(value) && value.every(isString)),
 };
 
 /** Whether the spans the page adds to the tick's start (and to each other) stay times it can show; `value` has passed `LINE_FIELDS`. */
@@ -303,28 +333,6 @@ function isLine(value: unknown): value is LineSnapshot {
 
 type Stored = { runId: string; line: string; receipt: string };
 
-/** Why a database a newer plugin wrote needs a newer reader, as the shared opener refuses it; `null` when this copy reads it. */
-function newerSchema(db: Database, path: string): string | null {
-  const { user_version: version } = db.query("PRAGMA user_version").get() as {
-    user_version: number;
-  };
-  if (version <= SCHEMA_VERSION) return null;
-  const meta = db
-    .query(
-      "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'db_meta'",
-    )
-    .get()
-    ? (db
-        .query("SELECT version, min_reader FROM db_meta WHERE id = 1")
-        .get() as { version: number; min_reader: number } | null)
-    : null;
-  const minReader =
-    meta !== null && meta.version === version ? meta.min_reader : version;
-  return minReader > SCHEMA_VERSION
-    ? `${path} is at state schema version ${version}, which needs a reader of version ${minReader} or later; this plugin knows version ${SCHEMA_VERSION}`
-    : null;
-}
-
 /**
  * The stored row, read through a read-only connection: opening the state
  * database for writing would migrate an older schema and take SQLite's write
@@ -336,40 +344,30 @@ function stored(
   root: string,
   what: string,
 ): Outcome<Stored | null, "line-unreadable"> {
-  const read = attempt(
-    "line-unreadable",
-    what,
-    (): { row: Stored | null } | { newer: string } => {
-      const path = statePath(root);
-      if (!existsSync(path)) return { row: null };
-      const db = new Database(path, { readonly: true });
-      try {
-        db.run("PRAGMA busy_timeout = 10000");
-        const newer = newerSchema(db, path);
-        if (newer !== null) return { newer };
-        const table = db
+  const opened = readOnlyStateDb(root);
+  if (!opened.ok)
+    return failed("line-unreadable", `${what}: ${opened.failure.reason}`);
+  if (opened.value === null) return ok(null);
+  const { db } = opened.value;
+  const read = attempt("line-unreadable", what, (): Stored | null => {
+    try {
+      const table = db
+        .query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")
+        .get("tick_line");
+      if (table === null) return null;
+      return (
+        (db
           .query(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+            "SELECT run_id AS runId, line, receipt FROM tick_line WHERE id = 1",
           )
-          .get("tick_line");
-        if (table === null) return { row: null };
-        return {
-          row:
-            (db
-              .query(
-                "SELECT run_id AS runId, line, receipt FROM tick_line WHERE id = 1",
-              )
-              .get() as Stored | null | undefined) ?? null,
-        };
-      } finally {
-        db.close();
-      }
-    },
-  );
+          .get() as Stored | null | undefined) ?? null
+      );
+    } finally {
+      db.close();
+    }
+  });
   if (!read.ok) return read;
-  return "newer" in read.value
-    ? failed("line-unreadable", `${what}: ${read.value.newer}`)
-    : ok(read.value.row);
+  return ok(read.value);
 }
 
 /** The stored line; `null` before a tick wrote one. */

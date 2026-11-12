@@ -11,6 +11,7 @@ import {
 } from "../scripts/lib/tracker/config.ts";
 import { resolveFacets } from "../scripts/lib/tracker/facets/config.ts";
 import { markdownToAdf } from "../scripts/lib/tracker/jira/adf.ts";
+import type { TokenRun } from "../scripts/lib/tracker/jira/credential.ts";
 import { type Client, jiraClient } from "../scripts/lib/tracker/jira/client.ts";
 import { jiraModel } from "../scripts/lib/tracker/jira/model.ts";
 import { jiraTracker } from "../scripts/lib/tracker/jira/tracker.ts";
@@ -21,6 +22,23 @@ import type {
 import type { Tracker } from "../scripts/lib/tracker/port.ts";
 
 export const SITE = "https://example.atlassian.net";
+
+/** The Atlassian API gateway's address for one site, as `api_base` names it. */
+export const GATEWAY =
+  "https://api.atlassian.com/ex/jira/11223344-a1b2-c3d4-e5f6-001122334455";
+
+/** A token command's run that printed `stdout` and exited `code`. */
+export const tokenRun = (
+  stdout: string,
+  over: Partial<TokenRun> = {},
+): TokenRun => ({
+  code: 0,
+  stdout,
+  stderr: "",
+  timedOut: false,
+  spawnFailed: false,
+  ...over,
+});
 
 export interface Call {
   /** `GET issue/ENG-1` */
@@ -44,6 +62,8 @@ export const jqlOf = (c: Call) => String(c.body.jql ?? "");
  */
 export function routes(table: Record<string, unknown>): Answer {
   return (call, n) => {
+    if (!Object.hasOwn(table, call.route) && call.route === "GET myself")
+      return { ...MEMBER, timeZone: "UTC" };
     if (!Object.hasOwn(table, call.route))
       return new Error(`unexpected request ${call.route}`);
     const v = table[call.route];

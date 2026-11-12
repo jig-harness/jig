@@ -31,8 +31,7 @@
  * rows once, at the first open that finds no `imports` row for the clone
  * (`import.ts`), and its files are left where they are.
  */
-import { Database } from "bun:sqlite";
-import { existsSync } from "node:fs";
+import type { Database } from "bun:sqlite";
 import { basename, dirname, join } from "node:path";
 import { swallow } from "../../../../../shared/errors.ts";
 import {
@@ -255,14 +254,9 @@ export interface ImportRecord {
  */
 export function peekImport(stateDir: string): ImportRecord | null {
   const path = dbPathFor(stateDir);
-  if (!existsSync(path)) return null;
-  let db: Database;
-  try {
-    db = new Database(path, { readonly: true });
-  } catch (err) {
-    swallow(err, "the drive's database could not be opened read-only");
-    return null;
-  }
+  const opened = openReadOnly({ path, migrations: MIGRATIONS });
+  if (!opened.ok || opened.value === null) return null;
+  const { db } = opened.value;
   try {
     const row = db
       .query("SELECT at, skipped FROM imports WHERE clone = ?")

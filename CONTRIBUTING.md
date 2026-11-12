@@ -325,10 +325,15 @@ their own subprocesses; bounding file workers keeps those fixtures within
 their deadlines when several workspaces run checks on one machine.
 
 CI runs the same command on Linux for every pull request
-(`.github/workflows/gates.yml`); the catalog decides which of its jobs and
-steps a pull request needs. macOS and Windows run once a day against `main`
+(`.github/workflows/gates.yml`) as parallel legs, one for every stage but the
+tests and several that split the test files between them
+(`JIG_GATES_PART` and `JIG_GATES_TEST_SHARD`, scripts/gates.ts), so a format or
+lint failure reports in minutes, not after the suite; the catalog decides which
+of its jobs and steps a pull request needs. macOS and Windows run once a day against `main`
 (`.github/workflows/nightly.yml`), and on demand from the Actions tab for a
-branch likely to break on one of them. A new top-level file or directory gets an area in the catalog
+branch likely to break on one of them; their known failures are recorded as
+described in [Known failures on the nightly run](#known-failures-on-the-nightly-run).
+A new top-level file or directory gets an area in the catalog
 in the same pull request.
 
 Scope differs per gate, and each check script's header comment states exactly
@@ -372,9 +377,42 @@ establish the App's access. The workflow never repairs host settings.
 
 Locally, `JIG_GATES_SKIP_SEPARATE_SUITES=1 bun run gates` leaves out the long
 drive-pr suite and the website's tests, which CI runs in the drive-pr job and
-in the gate-set job's website steps; run
+in the gate-set job's website steps (its checks leg); run
 the test files for what you changed, and let CI run the rest. The website's
 tests need `bun install` inside `website/` first.
+
+### Known failures on the nightly run
+
+The nightly run holds its tests against a *known-failure baseline*
+([GLOSSARY.md](GLOSSARY.md)), `.config/nightly-baseline.yaml`: the tests that
+fail on macOS or Windows today, grouped by platform, each group with the
+reason and the issue that owns the fix. Each test step of the nightly names
+the file in `JIG_NIGHTLY_BASELINE`, and `bun run test`
+([`scripts/test.ts`](scripts/test.ts), with
+[`scripts/nightly/`](scripts/nightly/)) then:
+
+- passes a step whose failing tests are all recorded for its platform, and
+  fails one with any failure the baseline does not record, naming it;
+- keeps a step red when its failures cannot all be tied to named tests in
+  the test report, such as a test file that failed to load;
+- reports a recorded test that passed as stale, in a warning and in the job
+  summary, without failing the step.
+
+The run's last job reads how every job ended and keeps one tracking issue:
+a failing run on `main` opens it, or comments on it, with the run link, each
+job that failed and how, the new failures and the stale entries; the next
+passing run comments with its link and closes it. A run dispatched on
+another branch leaves the issue alone.
+
+The baseline only shrinks. Remove an entry once its test passes, or when the
+nightly reports it stale; add one only for a test that already fails on
+`main`, with the issue that will fix it. A test that cannot pass on a
+platform because the platform lacks what it needs is skipped through the
+shared skip helpers (`lib/test-helpers/windows-skip.ts`) instead. A test's
+name is bun's: its file from the repository root and its `describe` titles
+and its own joined by ` > `; a hook failing outside a test is `(unnamed)`.
+`bun run gates` fails on an entry whose test can no longer be found
+(`scripts/check-nightly-baseline.ts`).
 
 ### Where Jig's gates fall short
 

@@ -85,7 +85,7 @@ const STATE_DIR = "~/.local/state/jig/drive-pr/<clone>/";
 const DRIVE_DB_FILE = "~/.local/state/jig/drive-pr/state.sqlite";
 const DISPATCH_DIR = "~/.local/state/jig/dispatch/";
 /** The dispatcher's database schema version (`dispatch/lib/state.ts`'s `SCHEMA_VERSION`). */
-const DISPATCH_DB = 21;
+const DISPATCH_DB = 23;
 /** The drive's database schema version (`skills/drive-pr/scripts/lib/state/db.ts`'s `DRIVE_DB_VERSION`). */
 const DRIVE_DB = 5;
 const RRC = "skills/resolve-review-comments/scripts/";
@@ -213,6 +213,11 @@ const DRIVE_STATE: RecordKind[] = [
 const DISPATCHER: RecordKind[] = [
   dispatchTable("dispatch-launch", "dispatch/lib/launches.ts", "launches"),
   dispatchTable(
+    "dispatch-pickup-claim",
+    "dispatch/lib/pickup-claim.ts",
+    "pickup_claims",
+  ),
+  dispatchTable(
     "dispatch-thread-sample",
     "dispatch/lib/expectations.ts",
     "thread_samples",
@@ -293,6 +298,14 @@ const DISPATCHER: RecordKind[] = [
     "dispatch/lib/steward.ts",
     "steward_records",
   ),
+  {
+    name: "tracker-budget",
+    medium: "machine",
+    owner: "shared/tracker-budget.ts",
+    at: "~/.local/state/jig/tracker/budget.sqlite",
+    table: "tracker_budget",
+    version: 1,
+  },
   plain(
     "machine",
     "dispatch-receipt",
@@ -366,6 +379,14 @@ const DISPATCHER: RecordKind[] = [
 ];
 
 const MACHINE: RecordKind[] = [
+  {
+    name: "db-migration",
+    medium: "machine",
+    owner: "shared/records/migrations.ts",
+    at: "every component's SQLite database: migration digests and whether each was applied or structurally baselined",
+    table: "db_migrations",
+    version: 1,
+  },
   {
     name: "db-meta",
     medium: "machine",
@@ -798,9 +819,27 @@ const FORGE: RecordKind[] = [
     ],
     version: 0,
   },
+  {
+    name: "coderabbit-review-body",
+    medium: "forge",
+    owner: `${DRIVE}lib/review-body.ts`,
+    foreign: "CodeRabbit",
+    at: "the sections of findings in the body of CodeRabbit's pull-request reviews, each entry marked with its id",
+    markers: ["cr-comment:v"],
+    version: 0,
+  },
 ];
 
 const TRACKER: RecordKind[] = [
+  {
+    name: "do-item-pr-association",
+    medium: "tracker",
+    owner: "skills/do-item/scripts/lib/linked-pr.ts",
+    foreign: "the session following the do-item skill",
+    at: "the opening comment on an item",
+    markers: ["do-item-pr"],
+    version: 0,
+  },
   plain(
     "tracker",
     "tracker-claim",
@@ -845,6 +884,14 @@ const TRACKER: RecordKind[] = [
     owner: "skills/do-item/scripts/lib/tracker/github/related-migration.ts",
     at: "a legacy comment on a GitHub issue relating it to another, read until the migration marks it superseded",
     markers: ["jig:related", "jig:related-superseded"],
+    version: 0,
+  },
+  {
+    name: "tracker-blocked",
+    medium: "tracker",
+    owner: "skills/do-item/scripts/lib/blocked-move.ts",
+    at: "a comment on an item the drive-ledger projection moved to blocked, naming its pull request, the stop and the state it left",
+    markers: ["jig:blocked"],
     version: 0,
   },
   {

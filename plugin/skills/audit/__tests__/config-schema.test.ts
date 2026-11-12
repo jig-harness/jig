@@ -38,6 +38,7 @@ import {
   GITHUB_STATE_SOURCES,
   PRIORITY_NAMES,
 } from "../../do-item/scripts/lib/tracker/github/settings.ts";
+import { REVIEWER_EVIDENCE } from "../../drive-pr/scripts/lib/reviewer-profiles.ts";
 import {
   ARM_DRIVE_MODES,
   DEFAULT_ARM_DRIVE,
@@ -52,6 +53,7 @@ import {
   PASS_MODEL_PATTERN,
 } from "../../drive-pr/scripts/lib/overlay.ts";
 import { DEFAULT_HOTSPOT_MIN_MERGES } from "../../resolve-conflicts/scripts/lib/classify.ts";
+import { SKILL_NAME_PATTERN } from "../../../shared/ci-status.ts";
 import { DEFAULT_REMOTE } from "../../../shared/consumer.ts";
 import {
   BOARD_CONFIG_KEYS,
@@ -287,10 +289,14 @@ describe("the reading skills", () => {
     ]);
     expect(field("pull_requests.open_as")?.values).toEqual([...OPEN_AS]);
     expect(field("do_item.arm_drive")?.values).toEqual([...ARM_DRIVE_MODES]);
+    expect(field("review.reviewer_evidence")?.values).toEqual([
+      ...REVIEWER_EVIDENCE,
+    ]);
     expect(field("do_item.post_merge_state")?.values).toEqual([
       ...POST_MERGE_STATES,
     ]);
     expect(field("drive.pass_model")?.pattern).toBe(PASS_MODEL_PATTERN.source);
+    expect(field("ci.repair_skill")?.pattern).toBe(SKILL_NAME_PATTERN.source);
     expect(field("drive.pass_args")?.items).toEqual({
       type: "string",
       pattern: PASS_ARG_PATTERN.source,

@@ -16,7 +16,9 @@
  * The workflow states the skills reason about, by role rather than by the
  * tracker's own name. `issue_tracker.states` maps each to the tracker's name.
  * `pr_open` is the active work whose pull request is open; `in_review` is
- * merged and parked.
+ * merged and parked. `blocked` is started work whose drive stopped on parked
+ * work: only the drive-ledger projection or a person moves an item into or
+ * out of it, and a claim never starts from it.
  */
 export const CANONICAL_STATES = [
   "triage",
@@ -24,6 +26,7 @@ export const CANONICAL_STATES = [
   "todo",
   "in_progress",
   "pr_open",
+  "blocked",
   "in_review",
   "ops_pending",
   "done",
@@ -47,6 +50,7 @@ export type CanonicalState = (typeof CANONICAL_STATES)[number];
  */
 export const OPTIONAL_STATES = [
   "pr_open",
+  "blocked",
 ] as const satisfies ReadonlyArray<CanonicalState>;
 
 export type OptionalState = (typeof OPTIONAL_STATES)[number];
@@ -156,6 +160,14 @@ export interface Issue extends FacetValues {
   project: string | null;
 }
 
+/** Why and since when an item is blocked, as the blocked fields carry it. */
+export interface BlockedFields {
+  /** One line: the park class and its reason. */
+  reason: string;
+  /** ISO 8601, UTC. */
+  since: string;
+}
+
 export interface IssueComment {
   body: string;
   createdAt?: string;
@@ -184,6 +196,8 @@ export interface IssueFact {
 }
 
 export interface CommentFact {
+  /** The tracker's own id for the comment, which `deleteComment` takes. */
+  id?: string;
   body: string;
   createdAt: string;
   /**
@@ -534,6 +548,46 @@ export interface IssueRelation {
   issue: string;
 }
 
+// ── Served queues ──────────────────────────────────────────────────────────
+
+/** A relation as a queue read carries it, with the other issue's state category; `null` when the read did not carry it. */
+export interface QueueRelation extends IssueRelation {
+  state: string | null;
+}
+
+/** An issue's parent as a queue read carries it: its pool form, its description, and its own parent's key. */
+export interface QueueParent {
+  issue: PoolIssue;
+  description: string;
+  parent: string | null;
+}
+
+/**
+ * An assigned issue with what the served walk reads of it, in the same
+ * request: its relations with each other issue's state, and its parent.
+ */
+export interface QueueIssue extends PoolIssue {
+  /** Every relation, both directions; `null` when the read could not take them all (`listRelations` reads them). */
+  relations: QueueRelation[] | null;
+  /** The parent; `null` when it has none. */
+  parent: QueueParent | null;
+}
+
+/** Which issues `changedSince` looks at: those assigned to `identity`, and those named by `keys` or whose parent is. */
+export interface ChangeQuery {
+  /** An ISO 8601 time: issues updated after it count. */
+  since: string;
+  identity: string;
+  keys: ReadonlyArray<string>;
+}
+
+/** What `changedSince` found: the issues that changed, whether that list is all of them, and the latest update among them. */
+export interface ChangeAnswer {
+  keys: string[];
+  complete: boolean;
+  latest: string | null;
+}
+
 /** A label an issue can carry, with the group it belongs to; `null` = none. */
 export interface TrackerLabel {
   name: string;
@@ -552,6 +606,17 @@ export interface Tracker {
    * repository (`owner/name`) on GitHub.
    */
   readonly team: string;
+  /**
+   * Which installation `team` belongs to, when the same team key can exist on
+   * more than one (a Jira site). Absent when the adapter has a single one.
+   */
+  readonly instance?: string;
+  /**
+   * Identifies the configuration that shapes the issues it returns (facet
+   * stores and mappings); two trackers with equal keys and state names read
+   * alike. Absent when the adapter applies none.
+   */
+  readonly configKey?: string;
   /** The tracker's own name for a canonical state; `null` for an optional state left unset. */
   stateName: StateNameOf;
   /**
@@ -579,6 +644,17 @@ export interface Tracker {
    * `signal` ends the request in flight and starts no further one.
    */
   postComment(issue: string, body: string, signal?: AbortSignal): Promise<void>;
+  /**
+   * Write the fields a repository names for a blocked item
+   * (`issue_tracker.jira.blocked_fields`), or clear them with `null`.
+   * Absent on an adapter with no such fields; `false` when the repository
+   * names none, so nothing was written.
+   */
+  writeBlockedFields?(
+    key: string,
+    value: BlockedFields | null,
+    signal?: AbortSignal,
+  ): Promise<boolean>;
 
   // ── Fleet metrics ──
   /** Issues of this team named by key; a key that resolves to nothing is absent. */
@@ -600,8 +676,15 @@ export interface Tracker {
     issueLabel: string;
     createdIn: WindowSpec;
   }): Promise<FoundComment[]>;
-  /** Every comment on one issue, with its trust, and the issue's tracker id. */
+  /**
+   * Every comment on one issue, with its trust, and the issue's tracker id,
+   * in the order the tracker created them: two readers of one issue list its
+   * comments in the same order, which the claim marker's earliest-wins rule
+   * rests on.
+   */
   issueComments(key: string): Promise<IssueComments>;
+  /** Delete a comment of the issue by its id (`CommentFact.id`). */
+  deleteComment(key: string, id: string): Promise<void>;
   /**
    * The issues carrying `label`, or (when given) in `project`: the union, one
    * population. Throws when the label or project does not resolve to exactly
@@ -632,6 +715,33 @@ export interface Tracker {
   openChildren(key: string): Promise<PoolIssue[]>;
   /** One issue in pool form, whatever its state; `null` when it does not exist. */
   poolIssue(key: string, signal?: AbortSignal): Promise<PoolIssue | null>;
+  /**
+   * Several issues in pool form, in as few requests as the tracker allows;
+   * every key is in the answer, `null` for one that does not exist. Optional:
+   * `poolIssuesOf` reads one at a time where an adapter has none.
+   */
+  poolIssues?(
+    keys: ReadonlyArray<string>,
+    signal?: AbortSignal,
+  ): Promise<Map<string, PoolIssue | null>>;
+  /**
+   * `assignedIssues` with each issue's relations and parent, in one paged
+   * request. Optional: the served walk reads them one by one without it.
+   */
+  queueIssues?(
+    identity: string,
+    states: ReadonlyArray<CanonicalState>,
+    options?: FacetReadOptions,
+  ): Promise<QueueIssue[]>;
+  /**
+   * Whether any issue a served reading depended on changed since a time, in
+   * one request (the tracker change probe). Optional: without it every
+   * reading is a full one.
+   */
+  changedSince?(
+    query: ChangeQuery,
+    signal?: AbortSignal,
+  ): Promise<ChangeAnswer>;
   /**
    * This team's issues assigned to `identity` (a GitHub login; a Linear
    * user's email or display name) in one of `states`. An empty `states`
@@ -687,7 +797,13 @@ export interface Tracker {
   assignees(key: string): Promise<TrackerUser[]>;
   /** Assign the issue to `user` alone, replacing any other assignee. */
   assign(key: string, user: TrackerUser): Promise<void>;
-  /** Add an assignee only to an unassigned issue, never replacing a racing assignee. False means refresh the queue. */
+  /**
+   * Assign an unassigned issue to `user` without losing a racing assignee:
+   * GitHub adds the assignee; Linear and Jira, whose issues hold one
+   * assignee and which offer no conditional write, assign and then verify
+   * through the issue's history that the assignment replaced nobody, putting
+   * back anyone it did replace. False means refresh the queue.
+   */
   assignUnassigned?(key: string, user: TrackerUser): Promise<boolean>;
   /**
    * The user an identity names, in the form `dispatch.identity` takes (a

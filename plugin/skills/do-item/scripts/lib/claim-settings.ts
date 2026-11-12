@@ -16,6 +16,7 @@ import { JigError, type Outcome } from "../../../../shared/outcome.ts";
 import { defaultBranchSettings } from "../../../../shared/repo-command.ts";
 import { doItemSection } from "./overlay.ts";
 import { CANONICAL_STATES, type CanonicalState } from "./tracker/port.ts";
+import { executionPlanBlock } from "../select_execution_issue.ts";
 
 /** The `do_item` section holds a claim setting the claim cannot use. */
 export class ClaimSettingsError extends JigError<"invalid-claim-setting"> {
@@ -29,6 +30,17 @@ export interface ClaimSettings {
   claimMarker: boolean;
 }
 
+/**
+ * States a claim never starts from. The claim moves an item to in_progress,
+ * and an item in pr_open already has a pull request: either is someone's. An
+ * item in blocked waits on a person's answer.
+ */
+const CLAIM_FROM_BARRED: readonly (readonly [string, string])[] = [
+  ["in_progress", "an item there is already someone's"],
+  ["pr_open", "an item there is already someone's"],
+  ["blocked", "an item there waits on a person's answer"],
+];
+
 function claimFrom(value: unknown): CanonicalState[] | null {
   if (value === undefined || value === null) return null;
   if (
@@ -41,13 +53,11 @@ function claimFrom(value: unknown): CanonicalState[] | null {
     );
   if (new Set(value).size !== value.length)
     throw new ClaimSettingsError("do_item.claim_from lists a state twice");
-  // The claim moves an item to in_progress, and an item in pr_open already has
-  // a pull request: either is someone's.
-  for (const s of ["in_progress", "pr_open"])
-    if (value.includes(s))
-      throw new ClaimSettingsError(
-        `do_item.claim_from cannot list ${s}: an item there is already someone's`,
-      );
+  const barred = CLAIM_FROM_BARRED.find(([state]) => value.includes(state));
+  if (barred)
+    throw new ClaimSettingsError(
+      `do_item.claim_from cannot list ${barred[0]}: ${barred[1]}`,
+    );
   return value as CanonicalState[];
 }
 
@@ -104,6 +114,45 @@ export async function claimSettingsFromDefaultBranch(
     failure: {
       code: "unreadable",
       reason: `do_item.claim_from and do_item.claim_marker are read from the default branch, which could not be read: ${read.failure.reason}`,
+    },
+  };
+}
+
+function namedBlock(overlay: Record<string, unknown> | null): string {
+  try {
+    return executionPlanBlock(overlay);
+  } catch (err) {
+    throw new ClaimSettingsError(
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+}
+
+/**
+ * The execution-plan block name a claim authorizes against: the default
+ * branch's, so a branch cannot select a different fenced block than the one
+ * that holds the human gates. When the default branch cannot be read, the
+ * claim is refused whatever the working tree sets: the trusted selector is
+ * unknown, and the working tree's choice cannot stand in for it.
+ */
+export async function claimPlanBlockFromDefaultBranch(
+  root: string,
+): Promise<Outcome<string, "unreadable">> {
+  const read = await defaultBranchSettings(root, "do_item", [
+    "execution_plan_block",
+  ]);
+  if (read.ok)
+    return {
+      ok: true,
+      value: namedBlock({
+        do_item: { execution_plan_block: read.value.execution_plan_block },
+      }),
+    };
+  return {
+    ok: false,
+    failure: {
+      code: "unreadable",
+      reason: `do_item.execution_plan_block is read from the default branch, which could not be read: ${read.failure.reason}`,
     },
   };
 }

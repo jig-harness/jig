@@ -27,7 +27,7 @@ export interface QueueItem {
 }
 export function queueHold(
   item: QueueItem,
-  policy: { hitl?: string; manualOps?: string } = {},
+  policy: { hitl?: string | undefined; manualOps?: string | undefined } = {},
 ): string | null {
   if (item.issue.truncated.length > 0) return "the tracker read is incomplete";
   if (

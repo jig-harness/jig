@@ -411,13 +411,51 @@ notification goes out. A repository whose tracker team no other repository
 shares still needs a default for it once it has the scope. A GitHub repository
 reading its own issues needs no label, since its tracker is already its own.
 
-The Queue view names holds: an open blocker reads "waiting on #N";
+A served item held only by open blockers starts its blockers instead of
+waiting on work nobody does: an open, not-started, unassigned blocker of this
+repository's scope, with no `hitl`, `manual-ops` or `jig:hold`, and no epic, is
+picked up first (to three links from the assigned item), claimed with
+`tracker.ts claim --for <person> --blocking <item>` and assigned to the person.
+A blocker assigned to someone else, in progress, held, an epic or another
+repository's is never taken: the item stays waiting and names it with its
+reason. GitHub Issues adds the person rather than replacing an assignee, then
+checks that the resulting assignee list contains only that person; a concurrent
+assignee makes the pickup refuse without restoring anyone. Linear and Jira
+have one assignee, so they assign first and verify the assignment from history;
+when that check finds a concurrent assignee was replaced, they conditionally
+make a best-effort restoration and refuse the pickup. A tracker without either
+operation leaves the blocker for a person to assign. An assigned epic without an execution plan works one child at a time,
+none while a child of it is in progress; an epic none of whose open children
+can start reports one reason.
+
+The Queue view names holds: an open blocker reads "waiting on #N" (with
+"picked up first" or why it was left);
 `hitl`, `hitl:*`, `manual-ops` and `jig:hold` read "needs a person to start".
 Eligible items are ranked by priority, the work they unblock, epic order,
 size and age. Assignment provenance, relations and children are cached
-until the item's update time changes. Assignment lists refresh with
-headroom and at least every 15 minutes. Served forge logins also join the
+until the item's update time changes. Served forge logins also join the
 pull-request adoption authors.
+
+A served queue costs the tracker a handful of requests a tick. On Linear,
+one paged query reads a person's assignments with each one's relations
+(and the related issue's state) and its parent (with its description); the
+issues the walk still needs by key, such as an execution plan's steps,
+leave together in one lookup. The reading is kept between ticks, and a
+tick first asks the tracker, in one request, whether any issue it depended
+on, any child of one, or any issue newly assigned to the person changed
+since: when nothing did, the tick reuses the reading whole, and when
+something did, it reads the queue again and only the issues that changed.
+The reading is taken whole every 15 minutes regardless, and a tick with no
+free slot reuses one younger than that without asking. Every repository of
+the machine file that names the same tracker, team and person shares one
+reading per tick.
+
+Every process on the host shares each tracker credential's request budget
+(`tracker_share` in [the machine's dispatch file](CONFIGURATION.md#the-machines-dispatch-file)).
+While the tracker refuses the credential for its rate limit, no request
+leaves the host before the reset it named: a tick reports the tracker once
+as rate limited until then, the queue it shows is the last reading, and
+the pickups it would launch wait.
 
 Before launching, the tick rechecks the item and admits an account. The
 pass runs through the account-bound wrapper under `dispatch.pickup_deadline`;
@@ -426,10 +464,17 @@ to its implementer. Its prompt ends by asking the session to record
 how it ended, `jig dispatch result <record> <token> done|failed`, which
 refuses another record's token and a second answer. A completed pickup adds
 `--pr <number>` for the pull request it opened, or `--none "<reason>"` when
-no pull request was needed. A `done` without either is refused. A pickup
+no pull request was needed. A `done` without either is refused. A pickup the
+tracker's rate limit stopped before it claimed the item (a tracker script
+exits `5`) records `waits --until <time>` instead (after the claim the pass
+waits for the reset within its deadline, else records `failed`): the item is held until that time, with no
+question for a person, and the first tick after it launches the item again. A pickup
 whose claim the repository's start rules (`do_item.preflight_command`)
 refused records `failed --refused <updated-at> --reason <reason>`, and the dispatcher
-shows the item as held with that reason until the item changes. Every ended
+shows the item as held with that reason until the item changes. A batch
+pickup names each refused member with `--key <item>` beside its `--refused`:
+only those members are held, each until it changes, and the rest of the
+batch is picked up again without them. Every ended
 launch's outcome keeps its next owner: a station address, a person and their
 act, or nobody with a reason. `jig ask` shows this as `last.next`; older
 outcomes that did not keep it say it was not recorded. A converged drive
@@ -439,9 +484,19 @@ slot while the runtime reports its agent working or waiting, and gives it
 back when the agent finishes. `do-item` claims the item itself
 (`tracker.ts claim`: refused when the item is already in progress or
 assigned to someone else, and abandoned when a re-read shows another claim
-landed first), so the tick never writes to the tracker. A claimed item
+landed first), so the tick never writes to the tracker. Hosts that serve
+one person, or pick up from one queue, claim with the same identity, so
+only the claim marker tells their claims apart: with
+`do_item.claim_marker` set, of two hosts claiming one item the one whose
+marker is earliest claims it and the other refuses, usually with nothing
+written (best effort: a lagging listing can let both win, and a later loss
+stands a claim down after its writes)
+([do-item's start rules](skills/do-item/README.md#the-repositorys-own-start-rules)).
+Without it, claims serialize on one host only. A claimed item
 with no running session for longer than `dispatch.stalled_after` is
-reported as stalled and never relaunched; an item more than one running
+reported as stalled and never relaunched (a served person's item only when
+a pickup of the host claimed it: the rest of their work in progress is
+their own); an item more than one running
 session joins to is reported as a double claim; a session waiting longer
 than `dispatch.blocked_after` is reported.
 
@@ -453,6 +508,7 @@ until the runtime can bind it to an account.
 
 ```sh
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> done|failed [--pr <number> | --none <reason>]
+bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> waits --until <time>
 ```
 
 **The steward** (the `steward` stage, with `steward.enabled: true` in the
@@ -526,11 +582,18 @@ death is notified. A pass that cannot finish without a person stops and
 ends its output with a line starting `Question:`; the notification carries
 that question, and the outcome log counts it as parked for a person. A
 question that is only one of the dispatcher's fixed **routine question
-classes** carries the class's tag (`Question: [local-leftover] …`: a local
-branch or worktree the pass may not delete without asking), and such a
-follow-up is run again once, within the same budget, with the class's
-standing answer in its prompt (keep it, list it, finish the rest and record
-done); unlike a death's run again, it has no 6-hour age limit. A follow-up
+classes** carries the class's tag, and such a follow-up is run again once,
+within the same budget, with the class's standing answer in its prompt:
+
+| Tag | The question | The standing answer |
+|---|---|---|
+| `local-leftover` | a local branch or worktree the pass may not delete without asking | keep it, list it |
+| `person-owed` | who takes, authorizes or scopes a step only a person can: a live check, a rollout to another repository, an organization's setting, an operational action, a failed release gate | take none of it; report it as owed and file one item for it in this repository's tracker |
+| `drafted-items` | whether to file the follow-up items the pass drafted itself | file them as drafted |
+
+Each answer ends with finishing the other arms and recording done. A step
+only a person can take is no reason to stop in the first place: the pass
+reports it as owed, files it, and counts the arm settled; unlike a death's run again, it has no 6-hour age limit. A follow-up
 that failed before passes tagged their questions is run again once with
 every class's standing answer; an outcome whose retry evidence the dispatcher
 kept needs no launch record, while an older one needs its record still on the
@@ -818,7 +881,24 @@ launch, each nudge with whether it arrived, and a
 stopped one stage of a repository's `--apply` (event `defect`, with no
 class), which stops that stage only: the repository's other stages launch
 in the same tick, the receipt lists it under the repository's
-`stageDefects`, and its stack goes to the tick's error output. A stop the classifier cannot
+`stageDefects`, and its stack goes to the tick's error output. On the host
+that owns the repository, each park that leaves its drive ledger is an
+event row too, read from the
+[resolution receipt](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+the re-arm left beside it, never from the park's disappearance alone:
+`park-answered` with the class, the form of the answers (`approve`,
+`choose` or `free`), whether the option chosen was the recommended one,
+whether a note narrowed it and how long the park waited for its answer;
+`park-provisional` for a park handed on to be decided provisionally; and
+`park-removed` for a park the line held that left with no receipt
+(withdrawn or framed again on an open pull request). When a pull request
+that held parks leaves the open listing, the owner host reads its final
+ledger once and counts the receipts it supports under the same occurrence
+keys. A failed read leaves its parks held for a later tick; a successful
+read retires them. A park with no final receipt stays uncounted, including
+when the ledger cut receipts. A park
+raised and answered between two ticks is counted from its receipt, and no
+park is counted twice. A stop the classifier cannot
 place is logged as `unknown`, never dropped, so a reason that recurs among
 those rows is what a new class is made from.
 
@@ -826,8 +906,19 @@ those rows is what a new class is made from.
 `--jsonl` as JSON lines:
 
 ```sh
-bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch log [--since <date>] [--jsonl]
+bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch log [--since <date>] [--jsonl] [--acceptance]
 ```
+
+With `--acceptance` it prints, instead of the rows, one line per repository
+and decision class over the parked decisions the log counted: how many
+parks, how many were answered, how many of those chose the recommended
+option with no note, and the median wait for an answer (`--jsonl` prints one
+JSON object per line). It counts parks that have left their ledger, so a
+park still waiting is not in it, and `--since` selects by when the log
+recorded the park's end, not when it was parked: the resolution time for a
+park answered or handed on, the time a tick noticed the park was withdrawn
+for one removed. It is evidence for deciding whether a class should
+stay a park, and nothing acts on it.
 
 Every run also adds the rows it wrote to a copy, one file per month,
 `~/.local/state/jig/dispatch/log-<year>-<month>.jsonl`, which never
@@ -915,7 +1006,9 @@ installed-copy lookup), and renews at the launcher's
 24-hour deadline even without an update. Transient registry failures keep the
 current reader serving and retry the lookup. Each renewal rotates the token;
 run `--access` again for the new URL. The command does not install a private
-network front or open a public listener.
+network front or open a public listener. To open the page from a phone over
+private HTTPS, or over private HTTP with its limits, follow
+[phone-access.md](phone-access.md).
 
 To verify availability on the configured host, first wait for `--status` to
 report a healthy reader and note its pid. End the terminal session, reconnect
@@ -936,7 +1029,8 @@ writes nothing to the host:
   (merge now, approve first, update next), each merge now card with its
   merge command pinned to the verified head; **Needs you**, the parks, stops
   and stalled pickups waiting on a person, with the question and the
-  recommendation in place and the whole decision one tap away; **Running**,
+  recommendation in place, what any stale or disputed answer that keeps a
+  decision waiting chose, and the whole decision one tap away; **Running**,
   each account's slots and the sessions in them, with their evidence; and
   **Queue**, what comes next and why. The page opens on Merge while merge now
   holds a pull request, else on Needs you, and while it holds one every other
@@ -1025,6 +1119,15 @@ workspaces. It is `null` when none is known or the records are ambiguous.
 It never falls back to the notices workspace: `notified.workspace` still
 names where the notification went. This is an additive version-1 field;
 readers treat its absence in an older snapshot as unknown.
+Each entry in `line.repos` carries `tracker`, the adapter its configuration
+names (`{"adapter":"linear"}`), and each row of `needs`, `sessions`, `queue`
+and `ready` carries `links`: for a pull request, the items its branch names,
+its description closes (`Closes`, `Fixes`, `Resolves`) or the forge says it
+closes; for an item, the open pull requests that do. Both are additive
+version-1 fields too, read from the tick's one query of the repository's
+open pull requests with no request of their own. A row has no `links` when
+the tick could not tell, such as when that query did not read in full or
+the pull request is no longer open, so an empty list means none.
 Its exit codes:
 
 - `0`: the answer is printed. Its `line` is `null` when no tick has written
@@ -1208,7 +1311,15 @@ decision in the drive ledger), an `answer` (an `answer <key>:` line from an
 author the forge vouches for), a `launch` and an `outcome`. Every entry has
 `at`, `kind`, `from`, `to`, `text` (the record's own words) and `record`
 (its kind and a link or a path); one read only from this machine's records
-says so. It prints the newest 20 entries, oldest first, and says how many
+says so. A `question` from a framed decision also carries its `key`, its
+`digest` and its `options`, each with its `number` (the recommended option
+is 1, the rest follow in the decision's order), its `name`, whether it is
+`recommended`, what it `changes` and `costs` and its `details`; an `answer`
+carries its `key` and, read through the same rule as the re-arm, the
+`choice` it made (the option, whether it is the recommended one, and the
+form) with its `note`, or `free: true` for an answer in the person's own
+words, or `stale` with the digest of the earlier framing it named. The
+dashboard shows the same options and choices for the same park. It prints the newest 20 entries, oldest first, and says how many
 it left out; `--since <date>` keeps every entry from that date on and
 `--all` every entry. Printed for a person, `text` has its control
 characters removed; in JSON it is a string like any other, and nothing in a
@@ -1485,7 +1596,7 @@ open; the guide lists the evidence it needs.
 | **git** | 2.36 or later (`--path-format` for absolute paths and `git worktree list -z`; `resolve-conflicts` needs 2.41, to reconstruct automatic merge results and read attributes from the index with `--attr-source`, and its history report 2.43, or 2.45 in a partial clone) | Every skill that reads the repository |
 | **GitHub CLI** (`gh`), signed in with access to the repositories you work on | 2.48 or later (`gh api --slurp`) | Every skill that works on pull requests. Jig supports GitHub as its only forge ([extending](EXTENDING.md#forge-github)) |
 | **The `gh-stack` extension** | Any | Only `pull_requests.stacking: native` |
-| **Issue-tracker access** | — | `do-item`, and `drive-pr`'s tracker reads. With the default GitHub adapter, the signed-in `gh` above and nothing more. With the Linear adapter: `LINEAR_API_KEY` or `LINEAR_API_TOKEN` in the environment, or the Linear MCP server or `linear` command line tool signed in. With the Jira adapter: `JIRA_EMAIL` and `JIRA_API_TOKEN` in the environment, an Atlassian account's email address and an API token made for it |
+| **Issue-tracker access** | — | `do-item`, and `drive-pr`'s tracker reads. With the default GitHub adapter, the signed-in `gh` above and nothing more. With the Linear adapter: `LINEAR_API_KEY` or `LINEAR_API_TOKEN` in the environment, or the Linear MCP server or `linear` command line tool signed in. With the Jira adapter: `JIRA_EMAIL` and `JIRA_API_TOKEN` in the environment, an Atlassian account's email address and an API token made for it, or an OAuth access token or an API token with scopes in `JIRA_BEARER_TOKEN`, or a command that prints one in `JIRA_TOKEN_COMMAND` ([environment variables](CONFIGURATION.md#environment-variables)) |
 
 Most skills do not check these versions when they run: an older tool fails
 on the command it lacks. The `resolve-conflicts` history report is the
@@ -1721,8 +1832,9 @@ Issues, the default, the key is the repository's own
 team is set. A drive does not need an AI reviewer: without one it
 converges on review threads and CI alone. A repository that has one names it
 with `review.reviewer_app` (or `review.reviewer_check_pattern`), and the drive
-then also waits for the check run, sticky comment and reviewed-commit marker
-described in the
+then also waits for the check run, sticky comment and reviewed-commit marker,
+or for a reviewer that submits pull-request reviews (CodeRabbit, named by
+`reviewer_app: coderabbitai` alone) its review of the head, as described in the
 [drive-pr README](skills/drive-pr/README.md#consumer-configuration). Add a
 field only when its default does not fit. The
 [configuration reference](CONFIGURATION.md) lists every field, including the

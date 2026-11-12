@@ -36,11 +36,15 @@ export async function batchSafePickups(
     const flags = new Set([...catalog.values()].flatMap((area) => area.flags));
     return items.map((item) => ({
       ...item,
-      batchAllowed: !(item.queueIssue?.labels ?? []).some((label) => {
-        if (flags.has(label)) return true;
-        const area = routing.codeareaAreas[label.toLowerCase()];
-        return area !== undefined && (catalog.get(area)?.flags.length ?? 0) > 0;
-      }),
+      batchAllowed:
+        item.batchAllowed !== false &&
+        !(item.queueIssue?.labels ?? []).some((label) => {
+          if (flags.has(label)) return true;
+          const area = routing.codeareaAreas[label.toLowerCase()];
+          return (
+            area !== undefined && (catalog.get(area)?.flags.length ?? 0) > 0
+          );
+        }),
     }));
   } catch {
     return refused();

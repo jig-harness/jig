@@ -1,9 +1,12 @@
 /**
  * Jira Cloud's REST API (version 3), for the Jira tracker adapter.
  *
- * Every request goes to `<site>/rest/api/3/<path>` over HTTPS with Basic
- * authentication from an Atlassian account's email and API token
- * (`JIRA_EMAIL`, `JIRA_API_TOKEN`), and is bounded by `JIRA_TIMEOUT_MS`.
+ * Every request goes to `<base>/rest/api/3/<path>` over HTTPS, where the
+ * base is the site, or the Atlassian API gateway's address for it
+ * (`issue_tracker.jira.api_base`); it carries the header the credential in
+ * the environment gives (`credential.ts`), never follows a redirect, and is
+ * bounded by `JIRA_TIMEOUT_MS`. A 401 is answered by sending the request
+ * once more, with a renewed header, when the credential can be renewed.
  * Tests of the adapter pass a fake transport.
  *
  * Two pagers read a listing to its end: Jira's offset pages (`startAt`,
@@ -13,8 +16,27 @@
  * list moved under it, and a shorter population is never presented as whole.
  */
 
+import {
+  type BudgetGovernor,
+  credentialKey,
+  defaultGovernor,
+  FALLBACK_LIMIT_MS,
+  TrackerRateLimited,
+} from "../../../../../../shared/tracker-budget.ts";
 import { swallow } from "../../../../../../shared/errors.ts";
 import { isRecord } from "../../../../../../shared/guards.ts";
+import type { Outcome } from "../../../../../../shared/outcome.ts";
+import {
+  type CredentialCode,
+  type JiraAuthorization,
+  type JiraCredential,
+  jiraAuthorization,
+  resolveJiraCredential,
+} from "./credential.ts";
+
+/** How to repair an absent or refused Jira credential. */
+export const JIRA_CREDENTIAL_HELP =
+  "Check JIRA_BEARER_TOKEN or JIRA_TOKEN_COMMAND, or JIRA_EMAIL and JIRA_API_TOKEN. Create an API token at https://id.atlassian.com/manage-profile/security/api-tokens and ensure the account or token has access to the Jira site.";
 
 export const JIRA_TIMEOUT_MS = 30_000;
 
@@ -41,8 +63,8 @@ export type JiraTransport = (
 
 /**
  * Jira answered with an error, or could not be asked. `notFound` is a 404;
- * `unavailable` a request that could not be made or answered (no
- * credential, the network, an expired token, a rate limit, a server error),
+ * `unavailable` a request that could not be made or answered (the
+ * network, a rate limit, a server error),
  * which a caller may report as "try later". `errorMessages` and `errors`
  * are Jira's own error body, also carried in the message.
  */
@@ -96,8 +118,8 @@ export function abortedError(signal: AbortSignal): JiraApiError {
 }
 
 /** The address of a request, its query encoded. */
-export function requestUrl(site: string, request: JiraRequest): string {
-  const url = new URL(`${site}/rest/api/3/${request.path}`);
+export function requestUrl(base: string, request: JiraRequest): string {
+  const url = new URL(`${base}/rest/api/3/${request.path}`);
   for (const [k, v] of Object.entries(request.query ?? {}))
     url.searchParams.set(k, String(v));
   return url.toString();
@@ -135,7 +157,17 @@ function retryAfterOf(headers: Headers): number | null {
   return Number.isFinite(seconds) && seconds >= 0 ? seconds : null;
 }
 
-/** What an error status means, with Jira's own words. */
+/** The longest a `Retry-After` may limit a credential; a larger ask is not believed. */
+const MAX_LIMIT_MS = 24 * 3_600_000;
+
+/** When a 429 limits the credential until: the header's wait, bounded, else the fallback. */
+function limitedUntil(now: number, headers: Headers): number {
+  const wait = retryAfterOf(headers);
+  const ms = wait === null ? FALLBACK_LIMIT_MS : wait * 1000;
+  return now + (ms > MAX_LIMIT_MS ? FALLBACK_LIMIT_MS : ms);
+}
+
+/** What an error status means, with Jira's own words and credential recovery guidance when refused. */
 export function httpFailure(
   status: number,
   headers: Headers,
@@ -147,12 +179,15 @@ export function httpFailure(
     ...errorMessages,
     ...Object.entries(errors).map(([k, v]) => `${k}: ${v}`),
   ].join("; ");
+  const message = `Jira API HTTP ${status} on ${what}: ${said === "" ? text.slice(0, 300) : said}`;
   return new JiraApiError(
-    `Jira API HTTP ${status} on ${what}: ${said === "" ? text.slice(0, 300) : said}`,
+    status === 401 || status === 403
+      ? `${message}; ${JIRA_CREDENTIAL_HELP}`
+      : message,
     {
       status,
       notFound: status === 404,
-      unavailable: status === 401 || status === 429 || status >= 500,
+      unavailable: status === 429 || status >= 500,
       retryAfterSec: retryAfterOf(headers),
       errorMessages,
       errors,
@@ -160,22 +195,12 @@ export function httpFailure(
   );
 }
 
-/** The credential from the environment, or `null` when either half is missing. */
-export function resolveJiraCredential(
-  env = process.env,
-): { email: string; token: string } | null {
-  const email = env.JIRA_EMAIL?.trim();
-  const token = env.JIRA_API_TOKEN?.trim();
-  return email && token ? { email, token } : null;
-}
-
-/** The `fetch` options of a request. */
+/** The `fetch` options of a request, bounded by `bound`, the call's deadline. */
 function requestInit(
   request: JiraRequest,
   authorization: string,
-  signal: AbortSignal | undefined,
+  bound: AbortSignal,
 ): RequestInit {
-  const timeout = AbortSignal.timeout(JIRA_TIMEOUT_MS);
   const headers: Record<string, string> = {
     Accept: "application/json",
     Authorization: authorization,
@@ -185,7 +210,7 @@ function requestInit(
     headers,
     // A redirect would carry the credential to another host.
     redirect: "manual",
-    signal: signal === undefined ? timeout : AbortSignal.any([timeout, signal]),
+    signal: bound,
   };
   if (request.body !== undefined) {
     headers["Content-Type"] = "application/json";
@@ -226,53 +251,174 @@ async function bodyText(
   }
 }
 
-/** HTTPS transport to `site`; each call bounded by `JIRA_TIMEOUT_MS`. */
+/** The header to send, or the credential's failure as the adapter's error. */
+function headerOf(
+  header: Outcome<string, CredentialCode>,
+  signal: AbortSignal | undefined,
+): string {
+  if (cancelled(signal)) throw abortedError(signal);
+  if (!header.ok)
+    throw new JiraApiError(header.failure.reason, {
+      unavailable: header.failure.code === "token-command-unavailable",
+    });
+  return header.value;
+}
+
+/** Sends one request; a request that could not be made fails as unreachable. */
+async function send(
+  fetchImpl: typeof fetch,
+  url: string,
+  init: RequestInit,
+  signal: AbortSignal | undefined,
+  what: string,
+): Promise<Response> {
+  try {
+    return await fetchImpl(url, init);
+  } catch (err) {
+    if (cancelled(signal)) throw abortedError(signal);
+    throw new JiraApiError(
+      `Jira API unreachable on ${what}: ${err instanceof Error ? err.message : String(err)}`,
+      { unavailable: true, answerLost: true },
+    );
+  }
+}
+
+/**
+ * HTTPS transport to `base`, the site or its API gateway address; each call
+ * bounded as a whole by `JIRA_TIMEOUT_MS`. A 401 renews the header once, when the
+ * credential can be renewed, and sends the request again with it: a 401 is
+ * refused before the request is acted on, so a write is not doubled. With
+ * `governor` (the machine's request budget), a call is refused locally while
+ * the credential is rate limited, and an HTTP 429 limits it until its
+ * `Retry-After`. The budget names the credential by the header it resolves to,
+ * however it was supplied; it is hashed, never stored.
+ */
 export function httpTransport(
-  site: string,
-  credential: { email: string; token: string },
+  base: string,
+  authorization: JiraAuthorization,
   fetchImpl: typeof fetch = fetch,
+  governor?: BudgetGovernor,
+  firstRefusal?: string,
 ): JiraTransport {
-  const basic = Buffer.from(`${credential.email}:${credential.token}`);
-  const authorization = `Basic ${basic.toString("base64")}`;
+  // Until one request succeeds, a 403 carries `firstRefusal`: a credential
+  // the host does not take is refused on the first request.
+  let answered = false;
+  const keyOf = (header: string) => credentialKey("jira", `${base} ${header}`);
   return async (request, signal) => {
     if (cancelled(signal)) throw abortedError(signal);
     const what = `${request.method} ${request.path}`;
-    let res: Response;
-    try {
-      res = await fetchImpl(
-        requestUrl(site, request),
-        requestInit(request, authorization, signal),
-      );
-    } catch (err) {
-      if (cancelled(signal)) throw abortedError(signal);
-      throw new JiraApiError(
-        `Jira API unreachable on ${what}: ${err instanceof Error ? err.message : String(err)}`,
-        { unavailable: true, answerLost: true },
-      );
+    const url = requestUrl(base, request);
+    // One deadline for the whole call: the token command, the request, a
+    // renewal and the request sent again all spend the same budget.
+    const deadline = AbortSignal.timeout(JIRA_TIMEOUT_MS);
+    const bound =
+      signal === undefined ? deadline : AbortSignal.any([deadline, signal]);
+    const lease = await authorization.lease(bound);
+    let header = headerOf(lease.header, signal);
+    // The key belongs to this call's own attempt: a shared one would record a
+    // refusal against whichever credential a concurrent call resolved last.
+    let key = keyOf(header);
+    governor?.admit("jira", key);
+    let res = await send(
+      fetchImpl,
+      url,
+      requestInit(request, header, bound),
+      signal,
+      what,
+    );
+    if (res.status === 401) {
+      const renewed = await lease.renew(bound);
+      if (renewed !== null) {
+        await bodyText(res, signal, what);
+        header = headerOf(renewed, signal);
+        key = keyOf(header);
+        governor?.admit("jira", key);
+        res = await send(
+          fetchImpl,
+          url,
+          requestInit(request, header, bound),
+          signal,
+          what,
+        );
+      }
     }
     const text = await bodyText(res, signal, what);
-    if (!res.ok) throw httpFailure(res.status, res.headers, text, what);
+    if (res.status === 429 && governor !== undefined) {
+      const until = limitedUntil(Date.now(), res.headers);
+      const why = `Jira refused ${what} (HTTP 429)`;
+      governor.observe(key, { limitedUntil: until, why });
+      throw new TrackerRateLimited("jira", until, why);
+    }
+    if (!res.ok) {
+      const failure = httpFailure(res.status, res.headers, text, what);
+      if (res.status !== 403 || answered || firstRefusal === undefined)
+        throw failure;
+      throw new JiraApiError(`${failure.message} (${firstRefusal})`, {
+        status: failure.status,
+        retryAfterSec: failure.retryAfterSec,
+        errorMessages: failure.errorMessages,
+        errors: failure.errors,
+      });
+    }
+    answered = true;
     return answerBody(text, res.status, what);
   };
 }
 
 /**
- * The transport the environment supports. A missing credential fails the
- * first request rather than the opening, so reading keys works offline.
+ * The transport the environment's credential supports, to `base`. A missing
+ * or unreadable credential fails the first request rather than the opening,
+ * so reading keys works offline.
  */
 export function defaultTransport(
-  site: string,
-  env = process.env,
+  base: string,
+  env: Record<string, string | undefined> = process.env,
+  fetchImpl: typeof fetch = fetch,
 ): JiraTransport {
   const credential = resolveJiraCredential(env);
-  if (credential === null)
+  if (!credential.ok) {
+    const { reason } = credential.failure;
     return async () => {
-      throw new JiraApiError(
-        "JIRA_EMAIL and JIRA_API_TOKEN must hold an Atlassian account's email and API token",
-        { unavailable: true },
-      );
+      throw new JiraApiError(`${reason}; ${JIRA_CREDENTIAL_HELP}`);
     };
-  return httpTransport(site, credential);
+  }
+  const refusal = bearerOnSite(credential.value, base);
+  if (refusal !== null)
+    return async () => {
+      throw new JiraApiError(refusal);
+    };
+  const variable = bearerVariable(credential.value);
+  return httpTransport(
+    base,
+    jiraAuthorization(credential.value),
+    fetchImpl,
+    defaultGovernor(),
+    variable === null || new URL(base).hostname === "api.atlassian.com"
+      ? undefined
+      : `the Bearer token from ${variable} was refused by ${new URL(base).hostname}; check that this host accepts a Bearer token at its own address`,
+  );
+}
+
+/** The variable that supplies a Bearer token, `null` for any other credential. */
+function bearerVariable(credential: JiraCredential): string | null {
+  if (credential.kind === "bearer") return "JIRA_BEARER_TOKEN";
+  if (credential.kind === "command") return "JIRA_TOKEN_COMMAND";
+  return null;
+}
+
+/**
+ * Why a Bearer credential cannot go to `base`, `null` when it can. An
+ * Atlassian Cloud site answers a Bearer token with a 403 that names no
+ * cause: those tokens belong to the API gateway (`issue_tracker.jira.api_base`).
+ * A site another host serves, allowed through `JIRA_ALLOWED_HOSTS`, may take
+ * a personal access token at its own address and is left alone.
+ */
+function bearerOnSite(credential: JiraCredential, base: string): string | null {
+  const variable = bearerVariable(credential);
+  if (variable === null) return null;
+  if (!new URL(base).hostname.toLowerCase().endsWith(".atlassian.net"))
+    return null;
+  return `${variable} gives a Bearer token, which Atlassian Cloud accepts only through its API gateway, not at ${new URL(base).hostname}: set issue_tracker.jira.api_base to https://api.atlassian.com/ex/jira/<cloud id>`;
 }
 
 // ── Pagers ─────────────────────────────────────────────────────────────────

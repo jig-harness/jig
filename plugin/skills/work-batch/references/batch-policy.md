@@ -190,3 +190,9 @@ cannot be read segment by segment (braces spanning a `/`) is counted in.
   lands in one. Where the tracker is one GitHub repository's and the
   taxonomy names no other repository, an issue need not carry the label: it
   belongs to the repository by being in the tracker.
+- **One base per batch.** A pull request opens against one base, and with
+  `pull_requests.base_rules` declared an issue's labels choose it (a release
+  line, or the integration branch). The script does not read the rule, so
+  step 2 of the skill compares the issues' bases and splits a batch whose
+  issues choose different ones: otherwise every change lands on the base the
+  highest-priority issue selects.

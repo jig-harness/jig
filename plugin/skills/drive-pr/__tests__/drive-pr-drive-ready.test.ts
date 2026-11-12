@@ -24,6 +24,7 @@ import {
   runDriveIn,
   state,
 } from "./drive-loop-harness.ts";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 import { claimRow, putClaim } from "./state-rows.ts";
 
@@ -671,6 +672,62 @@ describe("drive.ts loop control", () => {
       readFileSync(join(dir, "ready-calls"), "utf8").trim().split("\n"),
     ).toHaveLength(1);
   }, 120_000);
+
+  describe("a draft the expected reviewer skips (CodeRabbit's profile)", () => {
+    const skipped = () => ({
+      threads: [],
+      reviewedSha: null,
+      head: scratchClean.head,
+      isDraft: true,
+      checkRuns: [
+        {
+          name: "CodeRabbit",
+          app: "coderabbitai",
+          status: "completed",
+          conclusion: "skipped",
+          title: "Review skipped: draft pull request",
+          started: "2026-11-11T09:00:00Z",
+        },
+      ],
+    });
+    const env = { env: { DRIVE_PR_REVIEWER_APP: "coderabbitai" } };
+
+    it("marks it Ready, then waits for the review that summons", async () => {
+      const { dir, stateDir } = writeFixture(skipped());
+      const r = await runDriveIn(
+        dir,
+        stateDir,
+        [
+          "--no-head-sync",
+          "--timeout",
+          "5",
+          "--interval",
+          "5",
+          "--",
+          ...PASS_LOUD,
+        ],
+        undefined,
+        env,
+      );
+      expect(readFileSync(join(dir, "ready-calls"), "utf8").trim()).toBe("999");
+      expect(r.stderr).toContain("draft skip");
+      expectSpawnExit({ ...r, stdout: "" }, 4);
+    }, 120_000);
+
+    it("does not report convergence while the drive keeps it a draft", async () => {
+      const { dir, stateDir } = writeFixture(skipped());
+      const r = await runDriveIn(
+        dir,
+        stateDir,
+        ["--no-head-sync", "--keep-draft", "--", ...PASS_LOUD],
+        undefined,
+        env,
+      );
+      expectSpawnExit({ ...r, stdout: "" }, 4);
+      expect(r.stderr).toContain("skips drafts and has reviewed nothing");
+      expect(existsSync(join(dir, "ready-calls"))).toBe(false);
+    });
+  });
 
   it("--keep-draft suppresses the transition entirely", async () => {
     const { dir, stateDir } = writeFixture({

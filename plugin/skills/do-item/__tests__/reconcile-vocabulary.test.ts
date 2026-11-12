@@ -1,6 +1,6 @@
 /**
  * The parent-status decision over the repository's own vocabulary: its
- * state names and labels, the optional `pr_open` state, and
+ * state names and labels, the optional `pr_open` and `blocked` states, and
  * `do_item.post_merge_state`.
  */
 
@@ -234,23 +234,11 @@ describe("reconcileParentStatus with pr_open", () => {
     ).toBe("keep_in_progress");
   });
 
-  it("reads a name pr_open shares with in_review as active work, never as merged", () => {
-    const r = reconcileParentStatus(
-      {
-        parentLabels: [],
-        children: [started("In Review"), child("Done", { type: "completed" })],
-      },
-      withPrOpen("In Review"),
-    );
-    expect(r.verdict).toBe("keep_in_progress");
-    expect(r.parentState).toBeNull();
-  });
-
-  it("keeps an epic in progress after every child merged, under one review status with post_merge_state in_review", () => {
-    // Each merged child waits under the name pr_open shares with in_review,
-    // which reads back as pr_open: the roll-up cannot see that it merged.
-    const vocabulary = {
-      ...withPrOpen("In Review"),
+  describe("under a name pr_open shares with in_review", () => {
+    // One review status, held while the pull request is open and again
+    // after the merge until a person closes the item.
+    const shared = {
+      ...DEFAULT_VOCABULARY,
       states: {
         ...DEFAULT_VOCABULARY.states,
         pr_open: "In Review",
@@ -258,23 +246,95 @@ describe("reconcileParentStatus with pr_open", () => {
       },
       postMergeState: "in_review" as const,
     };
-    const merged = [started("In Review"), started("In Review")];
-    expect(
-      reconcileParentStatus({ parentLabels: [], children: merged }, vocabulary),
-    ).toMatchObject({ verdict: "keep_in_progress", parentState: null });
-    // Once a person closes the children, the epic is capped at in_review.
+    const underShared = (
+      pullRequest?: ReconcileChildInput["pullRequest"],
+    ): ReconcileChildInput => ({
+      ...started("In Review"),
+      ...(pullRequest === undefined ? {} : { pullRequest }),
+    });
+
+    it("rolls an epic whose children have all merged up to in_review", () => {
+      expect(
+        reconcileParentStatus(
+          {
+            parentLabels: [],
+            children: [underShared("merged"), underShared("merged")],
+          },
+          shared,
+        ),
+      ).toMatchObject({
+        verdict: "set_status",
+        parentState: "in_review",
+        parentStateName: "In Review",
+      });
+    });
+
+    it("reads a merged child beside a done one as in_review", () => {
+      expect(
+        reconcileParentStatus(
+          {
+            parentLabels: [],
+            children: [
+              underShared("merged"),
+              child("Done", { type: "completed" }),
+            ],
+          },
+          shared,
+        ),
+      ).toMatchObject({ verdict: "set_status", parentState: "in_review" });
+    });
+
+    for (const [what, fact] of [
+      ["whose pull request is still open", "open"],
+      ["with no linked pull request", "none"],
+      ["whose pull request could not be read", "unreadable"],
+      ["with no pull request fact", undefined],
+    ] as const) {
+      it(`keeps the epic in progress for a child ${what}`, () => {
+        const r = reconcileParentStatus(
+          {
+            parentLabels: [],
+            children: [underShared("merged"), underShared(fact)],
+          },
+          shared,
+        );
+        expect(r).toMatchObject({
+          verdict: "keep_in_progress",
+          parentState: null,
+        });
+        expect(r.reason).toContain('its pullRequest fact is not "merged"');
+      });
+    }
+
+    it("still caps at in_review once a person closes the children", () => {
+      expect(
+        reconcileParentStatus(
+          {
+            parentLabels: [],
+            children: [
+              child("Done", { type: "completed" }),
+              child("Done", { type: "completed" }),
+            ],
+          },
+          shared,
+        ),
+      ).toMatchObject({ verdict: "set_status", parentState: "in_review" });
+    });
+  });
+
+  it("ignores a merged pull request fact under a distinct pr_open name", () => {
     expect(
       reconcileParentStatus(
         {
           parentLabels: [],
           children: [
-            child("Done", { type: "completed" }),
+            { ...started("Awaiting Review"), pullRequest: "merged" },
             child("Done", { type: "completed" }),
           ],
         },
-        vocabulary,
+        withPrOpen("Awaiting Review"),
       ),
-    ).toMatchObject({ verdict: "set_status", parentState: "in_review" });
+    ).toMatchObject({ verdict: "keep_in_progress", parentState: null });
   });
 
   it("caps at in_review, as before, while pr_open is unset", () => {
@@ -289,6 +349,30 @@ describe("reconcileParentStatus with pr_open", () => {
       verdict: "set_status",
       parentState: "in_review",
     });
+  });
+});
+
+describe("reconcileParentStatus with blocked", () => {
+  const vocabulary = {
+    ...DEFAULT_VOCABULARY,
+    states: { ...DEFAULT_VOCABULARY.states, blocked: "Blocked" },
+  };
+
+  it("a blocked child holds its parent in progress, with or without a category", () => {
+    for (const blocked of [
+      child("Blocked", { type: "started" }),
+      child("Blocked", { type: "unstarted" }),
+      child("Blocked"),
+    ])
+      expect(
+        reconcileParentStatus(
+          {
+            parentLabels: [],
+            children: [blocked, child("Done", { type: "completed" })],
+          },
+          vocabulary,
+        ),
+      ).toMatchObject({ verdict: "keep_in_progress", parentState: null });
   });
 });
 

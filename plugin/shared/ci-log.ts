@@ -223,7 +223,19 @@ export function parseCiErrors(
     if (found !== null && !byKey.has(found.key))
       byKey.set(found.key, found.entry);
   }
-  const errors = [...byKey.values()].sort(
+  return summarizeCiErrors([...byKey.values()], runId);
+}
+
+/**
+ * `errors` as one reading: sorted into fix order (a stable sort, so entries of
+ * one category keep their order), counted per category, with the files they
+ * name. Lets errors read from several logs be printed as one.
+ */
+export function summarizeCiErrors(
+  entries: readonly CiError[],
+  runId = "",
+): ParseResult {
+  const errors = [...entries].sort(
     (a, b) => PRIORITY[a.category] - PRIORITY[b.category],
   );
   const summary: Partial<Record<Category, number>> = {};

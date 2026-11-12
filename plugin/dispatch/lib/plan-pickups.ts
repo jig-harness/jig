@@ -13,7 +13,10 @@
  * - A claimed item (in the in-progress state) with no running session for
  *   longer than `dispatch.stalled_after` is a stalled pickup: reported,
  *   never relaunched, since a relaunch would start a second implementer on
- *   a claimed item.
+ *   a claimed item. A served person's item is a pickup's claim only when a
+ *   pickup of this machine claimed it: its claim, noted on its launch record
+ *   where `tracker.ts claim` made it (`pickup-claim.ts`), or seen while it
+ *   ran. The rest of their work in progress is their own, and quiet.
  * - A session this machine launched that the runtime reports waiting for
  *   longer than `dispatch.blocked_after` is reported; it keeps its slot.
  * - An item whose latest pickup pass ended on a question, without recording
@@ -27,6 +30,7 @@ import { batchPickups } from "./queue-batch.ts";
 import {
   agentOf,
   holdingRecords,
+  pickupClaimed,
   type PickupHold,
   pickupHold,
 } from "./actions/pickup-hold.ts";
@@ -156,7 +160,7 @@ export function planPickups(input: PickupInput): PickupPlan {
       plan.actions.push(doubleClaim(input.slug, item, count, evidence, who));
       continue;
     }
-    const hold = pickupHold(item.key, launches, item.updatedAt);
+    const hold = pickupHold(item.key, launches, item.updatedAt, input.nowMs);
     if (hold.kind === "held") {
       plan.running.push({
         target: item.key,
@@ -246,6 +250,20 @@ function planClaimed(
     });
     return;
   }
+  const pickup = pickupHold(item.key, input.launches, undefined, input.nowMs);
+  // A rate-limit wait holds an ended pickup, which claims nothing by waiting.
+  const endedUnclaimed =
+    (pickup.kind === "ended" ||
+      (pickup.kind === "held" && pickup.record.result === "waits")) &&
+    !pickupClaimed(pickup.record.record, item.key);
+  if (item.served === true && (pickup.kind === "none" || endedUnclaimed)) {
+    plan.quiet.push({
+      target: item.key,
+      class: "claimed-by-person",
+      why: `in ${item.state}, started by its served person: no pickup of this machine claimed it`,
+    });
+    return;
+  }
   if (held.kind === "unknown") {
     plan.idleKeep.push(item.key);
     plan.unplaced.push({
@@ -314,7 +332,12 @@ function questionAsked(
     )
     .sort((a, b) => a.record.createdAt.localeCompare(b.record.createdAt))
     .at(-1);
-  if (latest === undefined || latest.result === "done") return null;
+  if (
+    latest === undefined ||
+    latest.result === "done" ||
+    latest.result === "waits"
+  )
+    return null;
   const question = questionOf(latest.state);
   if (question === null) return null;
   const { record } = latest;
@@ -409,6 +432,9 @@ function pickupAction(
       ...(item.ancestorEpic === undefined
         ? {}
         : { ancestorEpic: item.ancestorEpic }),
+      ...(item.blockingFor === undefined
+        ? {}
+        : { blockingFor: item.blockingFor }),
       ...(finishedSessions === null
         ? {}
         : { finishedSessions: finishedSessions }),

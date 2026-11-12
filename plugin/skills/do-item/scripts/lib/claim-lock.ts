@@ -5,10 +5,10 @@ import { withFileLock } from "../../../../shared/file-lock.ts";
 import type { ClaimResult } from "./claim.ts";
 
 /** This machine-local lock is not a tracker conditional write or a cross-host lease. */
-export async function withClaimLock(
+export async function withClaimLock<T extends { outcome: string }>(
   key: string,
-  body: () => Promise<ClaimResult>,
-): Promise<ClaimResult> {
+  body: () => Promise<T>,
+): Promise<T | ClaimResult> {
   // Claims for one tracker issue share a short lock across worktrees. The
   // caller supplies the canonical adapter/team/issue identity, so unrelated
   // repositories do not serialize each other.

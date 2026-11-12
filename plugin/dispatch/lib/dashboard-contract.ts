@@ -23,6 +23,12 @@ import type {
 } from "../../skills/drive-pr/scripts/lib/merge-ready.ts";
 import type { NeedAct } from "../../shared/acts.ts";
 
+/** The work a row is linked to: for a pull request, the items it closes or was opened from; for an item, the open pull requests that do. Absent from a line written before it was kept, and when the tick could not tell (`work-links.ts`). */
+export interface LineLinks {
+  items: Array<{ key: string; url: string | null }>;
+  prs: Array<{ number: number; url: string }>;
+}
+
 /** One option of a framed decision, as the drive recorded it. */
 export interface LineOption {
   details?: import("../../shared/decisions/model.ts").OptionDetail[];
@@ -33,6 +39,8 @@ export interface LineOption {
   costs: string | null;
   /** Whether the record's `## Recommended` names it. */
   recommended: boolean;
+  /** Its place on a card, the recommended option first (`shared/decision-card.ts`); absent from a line written before it was kept. */
+  number?: number;
 }
 
 /** One decision a parked drive waits on, as the drive framed it. */
@@ -58,6 +66,25 @@ export interface LineDecision {
   options?: LineOption[];
   /** The record's steps for a person, each a command or a named action; empty for `None.`. Absent from a line written before it was kept. */
   steps?: string[];
+  /** The answers that keep it waiting, each person's latest (`shared/decision-card.ts`); absent when it has none. */
+  answers?: import("../../shared/decision-card.ts").ShownAnswer[];
+  /** Why those answers do not settle it; absent when it has none. */
+  answerState?: import("../../shared/decision-card.ts").AnswerState;
+}
+
+/** A park on a ledger the tick read, kept so the next tick can tell how it left (`park-events.ts`). */
+export interface LinePark {
+  repo: string;
+  pr: number;
+  key: string;
+  kind: "thread" | "finding";
+  digest?: string;
+  /** When it was parked: with the key and digest, the occurrence's identity; absent on a park from before parks were timed. */
+  parkedAt?: string;
+  /** The class it was parked under; `null` when it names none. */
+  class: string | null;
+  /** The answers the tick read for it, each person's latest; absent when it read none. */
+  answers?: import("../../shared/decision-card.ts").ShownAnswer[];
 }
 
 /** How a cause's notification went, at the newest tick. */
@@ -93,6 +120,7 @@ export interface LineNeed {
   /** Where to act on it; `null` when no record gives a link. */
   url: string | null;
   title: string | null;
+  links?: LineLinks;
   /** When the cause began, as far as the records say: a stop's last ledger write, else its first notification, else this tick. */
   since: string;
   /** The tick's reason, verbatim. */
@@ -153,6 +181,7 @@ export interface LineSession {
   item: string | null;
   url: string | null;
   title: string | null;
+  links?: LineLinks;
   createdAt: string;
   /** The launch record's state. `unknown`: its claim is from another boot or does not read; it holds its slot until a person clears it. */
   launch: "pending" | "alive" | "unknown";
@@ -215,6 +244,7 @@ export interface LineQueued {
   item: string | null;
   url: string | null;
   title: string | null;
+  links?: LineLinks;
   /** The record's own reason, verbatim. */
   why: string;
   /** Whether a converged drive went stale: finished well once, and the world moved. */
@@ -235,9 +265,13 @@ export interface LineQueued {
 export interface LineRepo {
   /** `null` when the forge could not say which repository the path is. */
   slug: string | null;
+  /** The slug this path last had, kept while reports find none, so a repeated failure still recovers it. */
+  lastSlug?: string;
   path: string;
   /** The stages the machine file enables for it. */
   stages: string[];
+  /** Its configured tracker (`issue_tracker.adapter`: `github`, `linear`, `jira`, …; GitHub when the configuration names none); `null` when its tracker configuration does not read; absent from a line written before it was kept, and when the tick could not open the repository. */
+  tracker?: { adapter: string } | null;
   /** Why nothing could be dispatched for it; `null` when it was read. */
   refused: string | null;
   /** The records that did not read at the newest tick. */
@@ -265,6 +299,7 @@ export interface LineReady {
   url: string;
   /** Its title: text the pull request's author wrote, shown as quoted text. */
   title: string;
+  links?: LineLinks;
   /** The head the drive verified. */
   head: string;
   place: Placement;
@@ -415,6 +450,10 @@ export interface LineSnapshot {
   /** The host's load as the tick read it, and what it held or would hold; absent from a line written before the load factor. */
   load?: LineLoad;
   repos: LineRepo[];
+  /** Every park on the ledgers the tick read, and those it held before whose ledger it could not read; absent from a line written before parks were kept. */
+  parks?: LinePark[];
+  /** The resolution receipts the tick has written to the outcome log, by park occurrence, while a ledger it read still lists them. */
+  ingested?: string[];
 }
 
 /** `GET /state`. */

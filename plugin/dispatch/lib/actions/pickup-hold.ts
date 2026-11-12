@@ -12,11 +12,16 @@
  *   it too: a session that stopped without claiming the item (a refusal, a
  *   crash, a question) is not launched again until the item leaves the
  *   dispatch states (`releaseEnded`) and comes back; an item claimed meanwhile is released when it returns;
+ * - except a record whose pass recorded `waits` (the tracker's rate limit
+ *   stopped it): it holds the item until the time it names, and the item is
+ *   launched again after it, with no person asked;
  * - a record whose claim the repository's start rules refused (its
  *   `refusal`) holds the item, with the reason, only until the item's
  *   `updatedAt` moves past the time the rules saw: a person changed the
  *   item, so it is picked up again. An item read without an `updatedAt`
- *   keeps the rule above.
+ *   keeps the rule above. A batch pass that named the members the rules
+ *   refused holds only those, each on its own `updatedAt`; the rest of the
+ *   batch is free to be picked up, and batched, again.
  */
 import {
   holds,
@@ -26,6 +31,7 @@ import {
   type ReadRecord,
   writeRecord,
 } from "../launches.ts";
+import { refusalOf } from "../pickup-refusal.ts";
 import { RUNNING_STATES, type SessionsReport } from "../runtime/port.ts";
 
 export type PickupHold =
@@ -123,6 +129,7 @@ export function pickupHold(
   item: string,
   records: ReadRecord[],
   updatedAt?: string,
+  nowMs = Date.now(),
 ): PickupHold {
   const mine = recordsOf(item, records);
   const holding = mine.find((r) => holds(r.state));
@@ -130,7 +137,19 @@ export function pickupHold(
     return { kind: "held", record: holding, why: describe(holding) };
   const latest = mine.at(-1);
   if (latest === undefined || latest.record.released) return { kind: "none" };
-  const refusal = latest.refusal ?? null;
+  // A pass the tracker's rate limit stopped waits for the reset, then starts again.
+  if (latest.result === "waits" && latest.waitsUntil !== undefined)
+    return Date.parse(latest.waitsUntil) > nowMs
+      ? {
+          kind: "held",
+          record: latest,
+          why: `launch record ${latest.record.id} waits for the tracker's rate limit to reset at ${latest.waitsUntil}; the item starts again after it`,
+        }
+      : { kind: "none" };
+  const recorded = latest.refusal ?? null;
+  const refusal = recorded === null ? null : refusalOf(recorded, item);
+  // The pass named the members it refused, and this is not one of them.
+  if (recorded !== null && refusal === null) return { kind: "none" };
   if (refusal !== null && updatedAt !== undefined) {
     if (changedSince(updatedAt, refusal.updatedAt)) return { kind: "none" };
     return {
@@ -171,6 +190,7 @@ export function releaseEnded(
   claimed: ReadonlySet<string> = new Set(),
   returned: ReadonlySet<string> = new Set(),
   root?: string,
+  served: ReadonlySet<string> = new Set(),
 ): void {
   for (const r of records) {
     const { record } = r;
@@ -181,7 +201,18 @@ export function releaseEnded(
     // back among the dispatch states by the time the record ends.
     const members = record.batchItems?.map((i) => i.key) ?? [item];
     const claimedMembers = members.filter((key) => claimed.has(key));
-    if (claimedMembers.length > 0) noteClaims(record, claimedMembers, root);
+    // The dispatch identity's own claimed item can only be this pickup's
+    // claim, seen while it ran or after it ended. A served person starts their
+    // own work too: their claim counts only while this pickup's process runs,
+    // never from a reservation not yet started or once the pickup has ended.
+    const provable = claimedMembers.filter(
+      (key) =>
+        !served.has(key) ||
+        r.state.kind === "alive" ||
+        r.state.kind === "unknown",
+    );
+    if (provable.length > 0 && r.state.kind !== "pending")
+      noteClaims(record, provable, root);
     if (claimedMembers.length > 0 || holds(r.state)) continue;
     if (keepsWanted(record, members, wanted, returned)) continue;
     record.released = true;
@@ -203,6 +234,11 @@ function wantsRecord(
 /** Whether this batch member was seen claimed after its record ended. */
 function wasClaimed(record: LaunchRecord, item: string): boolean {
   return record.claimedItems?.includes(item) ?? record.claimedSeen === true;
+}
+
+/** Whether this ended pickup actually claimed this item, rather than merely attempting it. */
+export function pickupClaimed(record: LaunchRecord, item: string): boolean {
+  return wasClaimed(record, item);
 }
 
 /** Remember the batch members seen claimed, without marking their siblings. */

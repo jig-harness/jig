@@ -5,7 +5,7 @@
  *
  * | Table | One row per | Its key carries |
  * | --- | --- | --- |
- * | `launches` | session the dispatcher started | the record's id; its `claim`, `exit` and `result` are each written once, by an update that only fills an empty column; a pickup's `refusal` is written with its `result` |
+ * | `launches` | session the dispatcher started | the record's id; its `claim`, `exit` and `result` are each written once, by an update that only fills an empty column; a pickup that waits on a tracker's rate limit has `result` `failed` and the reset in `result_until`; a pickup's `refusal` is written with its `result` |
  * | `thread_samples` | drive and ledger round | the count recorded the first tick that sees the round |
  * | `waiting_episodes` | interactive session and wall | a later wall is a new episode, the same one is read again |
  * | `notices` | repository and notification cause | once per cause, until the cause goes; its first send, and its last, which a repeat is timed from |
@@ -68,7 +68,8 @@ const STATE_FILE = "state.sqlite";
  * database runs them all. A change to the schema adds an entry, says whether
  * it is additive, and never edits one a released plugin ran.
  */
-const MIGRATIONS: readonly Migration[] = [
+/** The dispatcher schema's ordered migrations, shared with historical-schema fixtures. */
+export const MIGRATIONS: readonly Migration[] = [
   {
     additive: false,
     sql: `
@@ -344,6 +345,23 @@ const MIGRATIONS: readonly Migration[] = [
     additive: true,
     sql: "ALTER TABLE launches ADD COLUMN refusal TEXT;",
   },
+  {
+    additive: true,
+    sql: "ALTER TABLE launches ADD COLUMN result_until TEXT;",
+  },
+  {
+    // A pickup claim is acknowledged at the tracker boundary. It must not
+    // share the tick-owned record JSON: a tick can still be writing an older
+    // snapshot when the pickup claims its item.
+    additive: true,
+    sql: `
+  CREATE TABLE pickup_claims (
+    launch TEXT NOT NULL REFERENCES launches(id) ON DELETE CASCADE,
+    item TEXT NOT NULL,
+    PRIMARY KEY (launch, item)
+  );
+  `,
+  },
 ];
 
 /** The schema version this plugin writes. */
@@ -390,6 +408,8 @@ export function stateDb(root = stateRoot()): Database {
   const opened = openDatabase({ path, migrations: MIGRATIONS });
   if (opened.ok) return opened.value;
   const { code, reason, cause } = opened.failure;
+  if (code === "migration-history" || code === "source-state")
+    throw new ExitError(USAGE_EXIT, reason, { cause });
   if (code === "newer-schema")
     throw new ExitError(USAGE_EXIT, reason, {
       cause: new StateVersionError(path, schemaVersion(path) ?? 0, reason),

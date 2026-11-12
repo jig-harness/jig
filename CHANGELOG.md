@@ -391,6 +391,469 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.213.0] - 2026-11-12
+
+### Added
+
+- `do-item`'s `scripts/linked-pr.ts` reads whether each item's linked pull
+  request merged, finding it through the pull-request link in the item's
+  comments or the `Closes <KEY>` / `Refs <KEY>` line in a pull request's
+  body. A read that fails answers `unreadable`, which never moves an epic.
+
+### Changed
+
+- A tracker with one review status, where `issue_tracker.states` gives
+  `pr_open` and `in_review` the same name, no longer keeps its epics in
+  progress after every child has merged. `do-item`'s parent roll-up (Step
+  5a, which `work-batch after-merge` and the post-merge follow-up run too)
+  reads each child under that name by its linked pull request: merged into
+  the integration branch, it counts as `in_review`, merged and parked; open,
+  missing, or unreadable, it counts as `pr_open` and keeps the epic in
+  progress. With `do_item.post_merge_state: in_review`, an epic whose
+  children have all merged now rolls up to `in_review`. Distinct names read
+  nothing from the code host and behave as before.
+
+### Fixed
+
+- Require an explicit tracker-comment association when a pull request has no issue-link line, so unrelated pull request mentions cannot advance an item.
+- Require trusted authors for explicit tracker-comment association markers, regardless of repository-name casing, and ignore quoted or code-example association evidence.
+
+## [0.212.1] - 2026-11-12
+
+### Changed
+
+- The Jira adapter's documentation, after a run against a live Jira Cloud site: `JIRA_BEARER_TOKEN` and `JIRA_TOKEN_COMMAND` take an API token with scopes as well as an OAuth access token, so a credential broker can hand out scoped tokens; `issue_tracker.jira.api_base` distinguishes Atlassian's documented use of `tenant_info` for finding a cloud ID from the lack of a versioned REST API contract, and says that an OAuth app reads the cloud ID from `oauth/token/accessible-resources`; and `issue_tracker.jira.link_types` says that a link type whose outward side means "has to be done before" reads as `Blocks` does and takes no `inverted`.
+
+### Fixed
+
+- `jig dispatch` no longer reports every item a served person has in
+  progress as a stalled pickup. A person moves their own work and epics to
+  in progress too, so a served person's item is watched for a stall only
+  when a pickup of this host claimed it; the rest read as
+  `claimed-by-person` and stay off the dashboard's needs. A dispatched
+  pickup's `tracker.ts claim` notes the claim on the pickup's launch record
+  as it lands, so a pickup that claims and ends between two ticks is still
+  watched. Items claimed
+  through `dispatch.identity` are watched as before.
+
+## [0.212.0] - 2026-11-12
+
+A served person's blocked items and assigned epics now keep the line moving.
+
+### Added
+
+- The dispatch dashboard's line now says which work each row is linked to
+  and which tracker each repository uses, for the page and for any program
+  that reads `jig dispatch line --json`. A pull request's row carries the
+  tracker items its branch names, its description closes (`Closes`, `Fixes`,
+  `Resolves`) or GitHub says it closes; an item's row carries the open pull
+  requests that do; each repository carries its configured tracker adapter.
+  The tick reads them from the query of open pull requests it already makes,
+  which now also asks for each pull request's closing issues: one more of
+  the forge's rate points per page of 50 pull requests. A row the tick could
+  not tell about carries no links rather than an empty list. The page shows
+  nothing new yet.
+- Dispatch starts the open blocker of a served item that nobody has assigned, so the item stops waiting on work no one is doing. A blocker qualifies when it is open, not started, unassigned, in this repository's scope, not an epic and free of `hitl`, `manual-ops` and `jig:hold`; blockers of blockers are followed to three links, and a pulled blocker is never batched. The blocked item reads "waiting on #N (picked up first)", and a blocker that does not qualify is named with its reason, for example "(assigned to sam)". `tracker.ts claim` takes `--blocking <item>` for such a pickup and re-reads the item's authority and the live `blocked_by` chain before it assigns the blocker to the served person. GitHub Issues adds the served person and checks that the resulting assignee list contains only that person, refusing when a concurrent assignee remains. Linear and Jira assign first, then verify from history that they replaced nobody; when they find a replaced concurrent assignee, they conditionally make a best-effort restoration and refuse the pickup.
+- An epic none of whose open children can start reports one reason: how many children it has and the first one's hold.
+
+### Changed
+
+- An assigned epic without an execution plan works one child at a time, the top-ranked one, and none while a child of it is in progress, as `do-item` works an epic. An execution plan that lists several eligible steps keeps its parallelism.
+- A served item held by an open blocker names the blocker's assignee or state in the Queue view instead of only its key.
+- A pulled blocker's claim re-reads the epic execution plans of the item it blocks, the blocker itself and every item between, with the plan block named by the default branch's configuration. A tracker that cannot assign still names each blocker's own reason.
+- **Breaking:** development checkouts refuse databases in the operating-system
+  user's live Jig state directory. Run an installed release for live operations,
+  or use an isolated home or explicit database path for development. A legacy
+  database newer than a reader must first be opened by a plugin that knows its
+  full schema before additive compatibility is available.
+
+### Fixed
+
+- Jira verifies the credential before reading fields, issues or searches, so
+  anonymous reads cannot look like missing data. OAuth tokens need Jira's
+  classic `read:jira-user` scope, or the granular scope alternative, for that
+  identity check; add the applicable set before upgrading a token that only
+  read issues. Any refused Jira request names the supported environment
+  variables and where to create an API token, while a timed-out token broker
+  remains a temporary-unavailability error.
+- The dispatch dashboard now ignores closing-key examples in Markdown code,
+  recognises complete comma-separated closing lists, and leaves links unknown
+  when GitHub returns only part of a pull request's closing references.
+- The dashboard now treats adapter names that match JavaScript inherited
+  properties as unknown adapter names.
+- SQLite state records each migration's identity and refuses conflicting
+  histories at the same version. Legacy databases are structurally checked
+  before a baseline is recorded, so a missing dispatch result column is
+  reported before a result write; existing divergent state still needs an
+  operator's repair.
+
+## [0.211.0] - 2026-11-12
+
+### Added
+
+- The drive reads the findings a review-object reviewer puts only in its
+  review's body, never in a thread: CodeRabbit's outside-diff, nitpick,
+  duplicate and follow-up comments. Each is a summary-only finding, listed by
+  `summary-findings.ts` and answered with `answer-summary-finding.ts`, so a
+  drive no longer converges with one unread. Every CodeRabbit nitpick now
+  needs an answer before the drive converges, so expect a round to answer
+  them. Every review on the pull request is read, since a later review does
+  not repeat an earlier one's entries. An entry Jig cannot read (a section
+  that declares more entries, or an entry id no entry read took) is reported
+  as a finding to answer. Only a format a built-in reviewer profile names is
+  read; CodeRabbit's is the first.
+- An optional `blocked` state in `issue_tracker.states`, for a board that
+  shows stopped work as blocked. With it set and the pull request state
+  labels on (`dispatch.labels.enabled`), a drive that stops with only parked
+  work left (the `jig:parked` label) moves each item its pull request links
+  with `Closes <KEY>` or `Refs <KEY>` to `blocked`, with a comment naming
+  each park's class (`autonomy.park_classes`) and its reason, and a marker
+  recording the state the item left. Once the park is answered and the drive
+  runs again, the item returns to that state. The drive moves the items when
+  it writes its own state label, and the dispatcher's `--apply` run corrects
+  them, under the labels' rules: only where the tracker disagrees, best
+  effort, never on a pull request carrying `jig:hold` or `jig:held`. A stop
+  blocks an item once, so an item a person moves out of `blocked` stays
+  where they put it. A claim refuses an item in `blocked`, a served queue
+  never offers one, `work-batch` reads it as started, the parent roll-up
+  reads it as work in progress, and `dispatch.states` may not list it.
+  Unset, nothing is read or moved.
+- `issue_tracker.jira.blocked_fields` (`reason`, `since`): on Jira, the
+  fields a blocked item gets, written when it moves to `blocked` and cleared
+  when it returns.
+
+### Changed
+
+- The planned page for watching and steering the line, which grows from the
+  dispatch dashboard, keeps the name dispatch dashboard: its design is now
+  [design/dispatch-dashboard.md](design/dispatch-dashboard.md), and the
+  [phone access guide](plugin/phone-access.md) links there. The glossary
+  entry Hub becomes Dispatch dashboard, and the commands, settings and
+  record the design plans are named `jig dashboard`, `dashboard.*` and
+  `operator-conversation`. Nothing that is built changes.
+- NOTICE lists the Lucide icons that the dispatch dashboard design prototype pages carry, with their ISC licence file beside the prototype's other vendored code.
+
+### Fixed
+
+- The dispatcher's park counts include final resolution receipts when a pull request that held parks merges or closes between ticks. Missing receipts remain uncounted, and failed final reads retry on a later tick.
+
+## [0.210.2] - 2026-11-12
+
+### Fixed
+
+- The Jira adapter refuses a `JIRA_BEARER_TOKEN` or `JIRA_TOKEN_COMMAND`
+  credential for an Atlassian Cloud site (`*.atlassian.net`) when
+  `issue_tracker.jira.api_base` is not set, before it sends a request, and
+  says the setting is needed. Before, the site answered a bare `Jira API HTTP
+  403`. A self-hosted site named in `JIRA_ALLOWED_HOSTS` is left alone, and a
+  403 on its first request now names the credential variable.
+
+## [0.210.1] - 2026-11-12
+
+### Changed
+
+- The planned page for watching and steering the line, which grows from the
+  dispatch dashboard, keeps the name dispatch dashboard: its design is now
+  [design/dispatch-dashboard.md](design/dispatch-dashboard.md), and the
+  [phone access guide](plugin/phone-access.md) links there. The glossary
+  entry Hub becomes Dispatch dashboard, and the commands, settings and
+  record the design plans are named `jig dashboard`, `dashboard.*` and
+  `operator-conversation`. Nothing that is built changes.
+
+## [0.210.0] - 2026-11-11
+
+### Added
+
+- `drive-pr` reads an AI reviewer that submits pull-request reviews instead of
+  a summary comment with a reviewed-SHA stamp (`review.reviewer_evidence:
+review_object`). A review naming the head, or the reviewer's check run
+  completed on the head with no later review, is a review of the head; a run
+  titled `Review paused…` or `Review skipped…` stops the drive with
+  `REVIEW_SKIPPED` (`22`), the reason naming which and quoting the title. On
+  a draft the reviewer skips, the draft converges on its own work, and the
+  drive marks it Ready and waits for that review
+  ([terminal states](plugin/skills/drive-pr/references/terminal-states.md#a-reviewer-that-submits-pull-request-reviews)).
+- CodeRabbit is a built-in reviewer: `review.reviewer_app: coderabbitai`
+  alone sets its check name (`^CodeRabbit$`) and its evidence, for the drive
+  and for the dispatcher's merge-ready board.
+- `review.draft_skipping_reviewers` names the reviewers that skip drafts; the
+  merge-ready announcement waits (exit `4`) until each has run on the head
+  since the pull request was last marked Ready; the list is read from the base
+  branch's file, never the pull request's own
+  ([fields](plugin/CONFIGURATION.md#review)).
+- `arm-drive.ts` refuses a configuration whose reviewer evidence the drive
+  cannot read (`review_object` without `review.reviewer_app` where a reviewer is expected, or `sticky` for
+  CodeRabbit), and the audit reports it as an error, rather than a drive
+  waiting in `AWAITING_REVIEWER` until its timeout.
+
+### Fixed
+
+- The merge-ready announcement no longer vouches for a head a reviewer that
+  skips drafts has not looked at since the pull request was marked Ready,
+  where `review.draft_skipping_reviewers` names that reviewer.
+
+## [0.209.0] - 2026-11-11
+
+### Added
+
+- The Jira adapter signs in with more than an account's email and API
+  token. `JIRA_BEARER_TOKEN` sends an OAuth access token as
+  `Authorization: Bearer`, and `JIRA_TOKEN_COMMAND` names a command that
+  prints one, as `gh auth token` does, so a credential broker or vault holds
+  the token and the environment holds only the command: the adapter runs it
+  once per process under a deadline, runs it once more when Jira answers
+  401, and names the variable when it fails. The first set wins:
+  `JIRA_BEARER_TOKEN`, then `JIRA_TOKEN_COMMAND`, then `JIRA_EMAIL` with
+  `JIRA_API_TOKEN`
+  ([environment variables](plugin/CONFIGURATION.md#environment-variables)).
+- `issue_tracker.jira.api_base` sends the Jira adapter's requests through
+  Atlassian's API gateway, `https://api.atlassian.com/ex/jira/<cloud id>`,
+  which OAuth access tokens and API tokens with scopes require; a token with
+  scopes goes in `JIRA_API_TOKEN` beside `JIRA_EMAIL`. Only that address
+  shape is accepted, redirects are still never followed, and `site` still
+  builds every issue's link
+  ([`issue_tracker`](plugin/CONFIGURATION.md#issue_tracker)).
+
+## [0.208.0] - 2026-11-11
+
+The dispatch dashboard can be installed on a phone as an app.
+
+### Added
+
+- The dashboard's page names a web app manifest (`/manifest.webmanifest`) and
+  its icons (`/icons/*`), and sets a theme colour for each colour scheme, so
+  Chrome on Android offers **Install app** for it. The installed app opens in
+  its own window at the dashboard's root address, with no token in any address.
+  A dashboard that asks for a token refuses the manifest with every other
+  request without the token, so only a dashboard served without a token, behind
+  an HTTPS front, is offered for install. The
+  [phone access guide](plugin/phone-access.md#install-it-as-an-app) has the
+  steps and the check.
+
+## [0.207.0] - 2026-11-11
+
+### Added
+
+- A served person's epic children now start on Linear and Jira too. An
+  inherited claim (`claim --for <person> --ancestor <epic>`) assigns the
+  unassigned child, then checks the item's history to confirm the
+  assignment replaced nobody. If it did replace someone, it puts them back
+  and stands down. Neither tracker offers a write that applies only to an
+  unassigned item, so before this the claim refused there.
+
+### Changed
+
+- `do_item.claim_marker` now serializes claims across hosts. The claim
+  posts its marker before it writes the item's assignee or state, then
+  reads the item's markers back. Of the markers posted within 10 minutes of
+  its own, the earliest wins. A claim that finds an earlier marker, or that
+  cannot post or read back its own, removes its marker and refuses (exit 3,
+  `"why": "marker"`), with nothing written to the item. A claim that finds
+  an earlier marker only after writing stands down (exit 4). Turn the
+  setting on wherever more than one host picks up from one queue; left
+  unset, claims serialize on one host only.
+- With `do_item.claim_marker` set, a marker that cannot be posted now
+  refuses the claim, where it used to leave the claim standing. The claim's
+  `"marker"` JSON now reports `confirmed`: whether the read after the write
+  confirmed that the claim still holds the earliest marker.
+- A served batch pickup that the repository's start rules
+  (`do_item.preflight_command`) refused for one member now holds only that
+  member. The pass records `jig dispatch result <record> <token> failed
+  --refused <updated-at> --key <item> --reason <reason>`, repeating
+  `--refused` and `--key` for each member refused. The dispatcher holds each
+  named member until its own `updatedAt` moves, and picks the rest of the
+  batch up again without them. A single-item pickup, and a refusal recorded
+  without `--key`, are held as before: on one time for the whole pickup.
+
+## [0.206.0] - 2026-11-11
+
+### Added
+
+- `pull_requests.base_rules` chooses a pull request's base from the item's
+  labels, for a product whose fixes land on a maintained release line: the
+  first rule one of whose labels the item carries names the base, and the
+  integration branch is the fallback. `pr-plan.ts branch` prints the base
+  to cut the branch from, `pr-plan.ts open` opens against it, names the rule
+  that chose it and refuses a base the remote does not have, and do-item
+  cuts the branch from it. A label may come from a Jira field through
+  `issue_tracker.jira.field_labels`, such as `fixversion:2.4` from Fix
+  versions.
+- `issue_tracker.jira.field_labels` reads a version field (Fix versions,
+  Affects versions, a version picker) as one label per version, by its
+  name, and selects by it in JQL. The audit now resolves every entry
+  against the site, and reports a field it does not name once or whose
+  values do not read as labels.
+- `pull_requests.title_format: pattern` with `pull_requests.title_pattern`
+  (`{key}` and `{summary}`, such as `{key}: {summary}`) for a team whose
+  tracker key leads every title: `pr-plan.ts open` prints the title rendered
+  for the issue, and the audit checks the pattern against the titles of the
+  last thirty merged pull requests.
+- `pull_requests.commit_prefix` (such as `"{key}: "`, the key read from the
+  branch name) for an organisation that refuses commits without a tracker
+  key on its protected branches. `drive-pr/scripts/commit-prefix.ts` rewords
+  each unpushed commit that lacks it, merge commits included, and reports a
+  pushed one. drive-pr's `finish-round.ts` runs it before every round's
+  push, before anything records the head, and refuses the push (exit `9`)
+  when the check cannot run; fix-ci, resolve-conflicts and do-item run it
+  before they push.
+- The audit warns of a base `pull_requests.base_rules` names that the
+  repository does not have.
+
+### Changed
+
+- `pr-plan.ts branch` prints the base on a second line
+  (`base: <branch> (<source>)`), and `--json` adds `base` and `baseSource`;
+  a caller that read its whole output as the branch name reads the first
+  line. With `pull_requests.base_rules` declared, `branch` and `open` need
+  `--issue-json`.
+
+## [0.205.0] - 2026-11-11
+
+### Added
+
+- A drive repairs CI that reports as GitHub commit statuses rather than
+  GitHub Actions runs (Jenkins through its GitHub Branch Source plugin, for
+  one). Its CI-repair pass is told each failing status with the page it
+  links to (`DRIVE_PR_ROUND_FAILED_STATUSES`, beside the failed runs), and
+  `/jig:fix-ci --pr <n>` reads every failing status on the pull request's
+  head. Two `ci` fields serve such a repository: `ci.log_command` prints a
+  status's failed log (it reads `{context, target_url}` on stdin, and exits 3
+  when the log is gone), a command the repository supplies, run as its
+  default branch sets it, and `ci.repair_skill` names the skill the repair
+  pass loads first. The audit reports a `ci.repair_skill` that resolves to no
+  installed skill. See [CONFIGURATION.md](plugin/CONFIGURATION.md#ci).
+- `jig dispatch log --acceptance` reports, per repository and decision class,
+  how many parked decisions the outcome log counted, how many were answered,
+  how many of those took the recommended option with no note, and the median
+  wait for an answer, over the parks that have been settled (`--jsonl` prints
+  one JSON object a line, `--since` limits the period by the time the log recorded the park's end: its
+  resolution, or for a withdrawn park the tick that noticed it) It is evidence for deciding whether a class should stay a
+  person's; nothing acts on it.
+
+### Changed
+
+- A commit status in state `error` whose description says the build was
+  aborted reads as cancelled, as a cancelled check run does: the drive waits
+  for a new status and spends no CI-repair pass on it, and `fix-ci` leaves it
+  out of the failures it reports.
+
+## [0.204.0] - 2026-11-11
+
+### Added
+
+- `pull_requests.title_format: pattern` with `pull_requests.title_pattern`
+  states a pull-request title that leads with the tracker key, for
+  repositories whose protected branches refuse a commit without one. The
+  pattern has the placeholders `{key}` and `{summary}`, each once, such as
+  `{key}: {summary}`. `pr-plan.ts open --issue ENG-12` prints the title as
+  `ENG-12: <summary>`, and the audit warns when fewer than 80% of the
+  integration branch's last 30 commit subjects follow the pattern. Leaving
+  `title_format` unset keeps today's derived convention.
+
+## [0.203.0] - 2026-11-11
+
+The dispatcher stays within a tracker's rate limit: a served queue costs a
+handful of requests a tick instead of one per blocker and parent, and a
+spent limit stops every request on the host until the reset.
+
+### Added
+
+- A request budget per tracker credential, shared by every process on the
+  host (`~/.local/state/jig/tracker/budget.sqlite`, keyed by a hash of the
+  credential). The Linear transport reads the request and complexity
+  windows from every answer; Linear's `RATELIMITED` refusal, and a Jira
+  HTTP 429, mark the credential limited until the reset, and no request
+  leaves the host before it: the call fails at once with the reset time.
+- `tracker_share` in the machine's dispatch file: the share of each
+  window the tick's own tracker reads may use (default `0.5`), leaving the
+  rest to the passes it starts and to people.
+- One query per served queue on Linear: the assignments with their
+  relations (and each related issue's state) and their parent (with its
+  description), and one batched lookup by key for the rest, such as an
+  execution plan's steps.
+- A tracker change probe on Linear: one request asks whether any issue the
+  last reading depended on, a child of one, or a new assignment changed;
+  when nothing did the reading is reused whole, and it is taken whole again
+  every 15 minutes. Every repository naming the same tracker, team and
+  person shares one reading per tick. A served queue of 50 assignments with
+  blockers and parents costs one request on a quiet tick and two or three
+  when an issue changed, where it cost about a hundred per repository.
+- `jig dispatch result <record> <token> waits --until <time>`: a pickup
+  pass the tracker's rate limit stopped before it claimed the item records
+  it (after the claim it waits within its deadline or records `failed`),
+  and the item starts
+  again after the reset with no question for a person. Tracker scripts exit
+  `5` (`RATE-LIMITED until <time>` on stderr) when the limit refuses them.
+
+### Fixed
+
+- A tick that meets a rate-limited tracker reports the tracker once as
+  limited until the reset, keeps showing the queue it last read, and its
+  pickups wait, where every served item was reported unplaced and every
+  tick kept sending the refused requests.
+
+## [0.202.1] - 2026-11-11
+
+### Fixed
+
+- The drive state reaper retires the displaced file-lock quarantine entries of
+  the releases before the database (`<lock>.stale.<generation>`) with
+  `--delete`, instead of only reporting them: once no lock of the earlier
+  layout is present, none of its state, lease, driver or claim files was
+  written in the last 24 hours, and no entry is younger than that. A clone
+  that was never imported is covered too. The README's upgrade section says
+  when they go.
+
+## [0.202.0] - 2026-11-11
+
+### Added
+
+- A guide for opening the dispatch dashboard from a phone
+  ([plugin/phone-access.md](https://github.com/jig-harness/jig/blob/main/plugin/phone-access.md)):
+  a private HTTPS address through Tailscale Serve, or through an
+  authenticated reverse proxy without Tailscale or Orca, with no token in the
+  address; the private-HTTP fallback and what it costs; the owner-only
+  boundary; how to undo it; and a verification record. The record's rows are
+  marked not yet run until a person runs them on a phone.
+
+## [0.201.0] - 2026-11-11
+
+### Added
+
+- `jig ask … --thread --json` shows what a parked decision offers and what each person chose: a `question` entry from a framed decision carries its `key`, its [decision digest](GLOSSARY.md) and its `options`, each numbered with the recommended option first, and an `answer` entry carries its `key` and the `choice` it made with its `note`, or `free: true` for an answer in the person's own words, or `stale` with the digest of the earlier framing it named. See [plugin/README.md § Asking a station](plugin/README.md#asking-a-station-where-it-stands).
+- The dashboard's Needs you card says what the answers that keep a decision waiting chose, and whether they are stale or [disputed](GLOSSARY.md), with the same options and choices `jig ask` shows for that park.
+- When a re-arm unparks answered items, it leaves a [resolution receipt](GLOSSARY.md) for each in the drive ledger (`resolvedParks`, the last 10, or every one a single re-arm wrote when it unparked more): the park's key, digest and the time it was parked, the answers it consumed, the outcome and the times. `drive-state.ts unpark --stdin` writes them in the same change that removes the parks.
+- The outcome log counts how each park left its ledger, on the host that owns the repository: `park-answered` (with the class, the answers' form, whether the recommended option was chosen, whether a note narrowed it and how long the park waited), `park-provisional`, and `park-removed` for a park that left with no receipt. A park raised and answered between two ticks is counted, and none is counted twice. See [plugin/README.md § The dispatcher](plugin/README.md#the-dispatcher).
+
+## [0.200.1] - 2026-11-11
+
+### Fixed
+
+- The manual-operations label (`manual-ops` by default) is created purple, and
+  a test keeps it apart from the red `jig:parked` and `jig:followup-failed`:
+  a pull request that owes a step outside the code is not stopped or blocked.
+  A repository that created the label in red keeps that color until someone
+  changes it (`gh label edit manual-ops --color 5319e7`).
+
+## [0.200.0] - 2026-11-11
+
+### Changed
+
+- A dispatched follow-up no longer fails on a step only a person can take
+  after the merge (a live check against a real service, a rollout to another
+  repository, an organization's setting, an operational action, a failed
+  release gate): its pass reports the step as owed, files it, and records
+  done. Two routine question classes join `local-leftover`: `person-owed`,
+  answered by reporting and filing the step, and `drafted-items`, answered by
+  filing the follow-up items the pass drafted. A follow-up that stops on
+  either is run again once with that answer instead of waiting for a person.
+
+## [0.199.1] - 2026-11-11
+
+### Fixed
+
+- `jig` launcher stops a plugin lookup cleanly when it receives a termination signal during startup.
+
 ## [0.199.0] - 2026-11-11
 
 ### Added
@@ -6941,7 +7404,27 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.199.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.213.0...HEAD
+[0.213.0]: https://github.com/jig-harness/jig/compare/v0.212.1...v0.213.0
+[0.212.1]: https://github.com/jig-harness/jig/compare/v0.212.0...v0.212.1
+[0.212.0]: https://github.com/jig-harness/jig/compare/v0.211.0...v0.212.0
+[0.211.0]: https://github.com/jig-harness/jig/compare/v0.210.2...v0.211.0
+[0.210.2]: https://github.com/jig-harness/jig/compare/v0.210.1...v0.210.2
+[0.210.1]: https://github.com/jig-harness/jig/compare/v0.210.0...v0.210.1
+[0.210.0]: https://github.com/jig-harness/jig/compare/v0.209.0...v0.210.0
+[0.209.0]: https://github.com/jig-harness/jig/compare/v0.208.0...v0.209.0
+[0.208.0]: https://github.com/jig-harness/jig/compare/v0.207.0...v0.208.0
+[0.207.0]: https://github.com/jig-harness/jig/compare/v0.206.0...v0.207.0
+[0.206.0]: https://github.com/jig-harness/jig/compare/v0.205.0...v0.206.0
+[0.205.0]: https://github.com/jig-harness/jig/compare/v0.204.0...v0.205.0
+[0.204.0]: https://github.com/jig-harness/jig/compare/v0.203.0...v0.204.0
+[0.203.0]: https://github.com/jig-harness/jig/compare/v0.202.1...v0.203.0
+[0.202.1]: https://github.com/jig-harness/jig/compare/v0.202.0...v0.202.1
+[0.202.0]: https://github.com/jig-harness/jig/compare/v0.201.0...v0.202.0
+[0.201.0]: https://github.com/jig-harness/jig/compare/v0.200.1...v0.201.0
+[0.200.1]: https://github.com/jig-harness/jig/compare/v0.200.0...v0.200.1
+[0.200.0]: https://github.com/jig-harness/jig/compare/v0.199.1...v0.200.0
+[0.199.1]: https://github.com/jig-harness/jig/compare/v0.199.0...v0.199.1
 [0.199.0]: https://github.com/jig-harness/jig/compare/v0.198.0...v0.199.0
 [0.198.0]: https://github.com/jig-harness/jig/compare/v0.197.4...v0.198.0
 [0.197.4]: https://github.com/jig-harness/jig/compare/v0.197.3...v0.197.4

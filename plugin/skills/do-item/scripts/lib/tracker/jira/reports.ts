@@ -36,11 +36,12 @@ import {
   KEY,
   keyList,
   noLabel,
-  OPEN,
+  openClause,
   ORDER,
   quote,
   since,
   someLabel,
+  startedClause,
   stringList,
   widened,
 } from "./jql.ts";
@@ -84,6 +85,7 @@ export function reportOperations(
   stores: Pick<JiraFacetStores, "read">,
 ): ReportOps {
   const { model, project } = client;
+  const open = openClause(model.stateName("blocked"));
   const ownKey = new RegExp(`^${project}-\\d+$`);
 
   function stateType(issue: JiraIssue): string {
@@ -200,7 +202,7 @@ export function reportOperations(
       const batch = keys.slice(i, i + BATCH);
       const found = await searchPages(
         client.transport,
-        `parent in ${keyList(batch)} AND ${OPEN}${ORDER}`,
+        `parent in ${keyList(batch)} AND ${open}${ORDER}`,
         ["parent"],
         `open children of ${batch.join(", ")}`,
         signal,
@@ -324,7 +326,7 @@ export function reportOperations(
         inProject(
           project,
           await label(l, signal),
-          'statusCategory = "In Progress"',
+          startedClause(model.stateName("blocked")),
         ),
         `started issues labelled '${l}'`,
         signal,
@@ -383,6 +385,7 @@ export function reportOperations(
       const comments = [];
       for (const c of await client.comments(issue.key))
         comments.push({
+          id: c.id,
           body: c.body,
           createdAt: c.createdAt,
           trusted: await client.trusted(c.author),
@@ -447,7 +450,7 @@ export function reportOperations(
       const read = await client.search(
         inProject(
           project,
-          OPEN,
+          open,
           ...(await scope()),
           ...query.withSomeOf.map((l) => someLabel(l, fields)),
           ...(none.length === 0 ? [] : [noLabel(none, fields)]),
@@ -465,7 +468,7 @@ export function reportOperations(
     async openPopulation(signal) {
       return pools(
         await client.search(
-          inProject(project, OPEN, ...(await scope(signal))),
+          inProject(project, open, ...(await scope(signal))),
           `open issues of ${project}`,
           signal,
         ),

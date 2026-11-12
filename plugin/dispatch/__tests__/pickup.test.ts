@@ -567,6 +567,49 @@ describe("jig dispatch result", () => {
     expect(readResult(id, dispatchState(w))).toBe("failed");
   });
 
+  it("takes --key beside --refused only for the pickup's own items, paired", async () => {
+    const w = fixture();
+    const id = String(launches(await applyTick(w, false))[0]?.record);
+    const token = readRecord(id, dispatchState(w))?.token ?? "";
+    const time = "2026-01-02T00:00:00Z";
+    for (const args of [
+      ["--key", "#12", "--reason", "why"],
+      ["--refused", time, "--key", "#99", "--reason", "why"],
+      ["--refused", time, "--key", "#12", "--key", "#12", "--reason", "why"],
+      ["--refused", time, "--refused", time, "--key", "#12", "--reason", "w"],
+      ["--refused", time, "--refused", time, "--reason", "why"],
+      ["--refused", time, "--reason", "a", "--reason", "b"],
+    ]) {
+      const r = await w.dispatch(["result", id, token, "failed", ...args]);
+      expectSpawnExit(r, 2);
+      expect(readResult(id, dispatchState(w))).toBeNull();
+    }
+    const r = await w.dispatch([
+      "result",
+      id,
+      token,
+      "failed",
+      "--refused",
+      time,
+      "--key",
+      "#12",
+      "--reason",
+      "names another  repository",
+    ]);
+    expectSpawnExit(r, 0);
+    const member = {
+      key: "#12",
+      updatedAt: time,
+      reason: "names another repository",
+    };
+    expect(JSON.parse(r.stdout).refused).toEqual({
+      reason: member.reason,
+      updatedAt: time,
+      members: [member],
+    });
+    expect(readResult(id, dispatchState(w))).toBe("failed");
+  });
+
   it("records a session's answer once, under its own record's token only", async () => {
     const w = fixture();
     const id = String(launches(await applyTick(w, false))[0]?.record);

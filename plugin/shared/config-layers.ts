@@ -95,9 +95,12 @@ export const REPOSITORY_ONLY_FIELDS: readonly string[] = [
   "issue_tracker.github.repository",
   "issue_tracker.github.project",
   "issue_tracker.jira.site",
+  "issue_tracker.jira.api_base",
   "review.repo_slug",
   "review.repo_label",
   "ci.required_checks",
+  // A command the repository supplies, run as its default branch sets it.
+  "ci.log_command",
   // The repository's autonomy ceiling and its human-in-the-loop classes: a
   // person may choose a level up to the ceiling, never move it.
   "autonomy.max_level",

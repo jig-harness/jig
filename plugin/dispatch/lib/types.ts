@@ -89,6 +89,8 @@ export interface ClaimedItem {
   /** Its link as the tracker listing gave it; absent where a reader gives none. */
   url?: string | null;
   state: string;
+  /** Read for a served person rather than `dispatch.identity`: a person starts their own work too, so only this machine's pickup record makes the claim dispatch's. */
+  served?: true;
 }
 
 /** An item the tracker wants picked up, with the evidence for it. */
@@ -101,6 +103,8 @@ export interface WantedItem {
   assignedBy: string;
   servedPerson?: string;
   ancestorEpic?: string;
+  /** For a blocker pulled forward: the served item it blocks, which carries the authority. */
+  blockingFor?: string;
   batchAllowed?: boolean;
   queueIssue?: import("../../skills/do-item/scripts/lib/tracker/port.ts").PoolIssue;
   queueRank?: { unblocks: number; epicOrder?: number };
@@ -112,12 +116,13 @@ export interface WantedItem {
 export type { LedgerClass } from "../../shared/pr-labels/projection.ts";
 import type { LedgerClass } from "../../shared/pr-labels/projection.ts";
 
-/** How a pickup that needs nothing reads: its last session ended, the repository's start rules refused its claim, or its claimed item is idle but not yet stalled. */
+/** How a pickup that needs nothing reads: its last session ended, the repository's start rules refused its claim, its claimed item is idle but not yet stalled, or a served person started the item themselves. */
 export type PickupClass =
   | "pickup-ended"
   | "pickup-refused"
   | "claimed-idle"
-  | "claimed";
+  | "claimed"
+  | "claimed-by-person";
 
 /** How a merged pull request whose follow-up needs nothing reads: done, or held by a run a person started. */
 export type FollowupClass = "followup-done" | "followup-held";
@@ -130,6 +135,8 @@ export interface WaitingPark {
   stale?: import("../../skills/drive-pr/scripts/lib/state/pass-handoff.ts").PendingAnswer[];
   /** The latest answers that disagree, which keep the item waiting. */
   disputed?: import("../../skills/drive-pr/scripts/lib/state/pass-handoff.ts").PendingAnswer[];
+  /** Every person's latest answer to it, stale ones included; absent when it has none. */
+  answers?: import("../../skills/drive-pr/scripts/lib/state/pass-handoff.ts").PendingAnswer[];
   decision?: import("../../shared/decisions/park.ts").ParkedDecision;
   person?: string;
   key: string;
@@ -205,6 +212,8 @@ export interface DrivenPr {
   evidence: Evidence;
   /** For a `parked` ledger: the decisions still unanswered. */
   waiting?: WaitingPark[];
+  /** For a ledger that read: every park it holds and the receipts of those re-arms unparked (`park-events.ts`). */
+  parks?: import("./park-events.ts").LedgerParks;
   /** For a `stale` ledger: what its stop does not settle. */
   stale?: StaleCause;
   /** Its labels, read only where the repository turns dispatch labels on. */
@@ -664,6 +673,21 @@ export interface LabelReport {
     cause?: NotifyCause;
   }>;
   writes: LabelWrite[];
+  /** The tracker moves to and out of `blocked` (`actions/blocked.ts`); absent where the repository does not name that state, or nothing was moved. */
+  blocked?: BlockedWrite[];
+}
+
+/**
+ * One item the projection moved to or out of `blocked`: `written` when the
+ * tracker took it, `failed` when it refused it (tried again next tick),
+ * `waits` when the tick's time was spent or the ledger changed since the
+ * tick read it (`item` is then `null`: no item was read).
+ */
+export interface BlockedWrite {
+  target: string;
+  item: string | null;
+  outcome: "written" | "failed" | "waits";
+  detail: string;
 }
 
 /** One repository's shared records in a tick (`shared-launches.ts`). */

@@ -50,6 +50,7 @@ import {
 } from "./../state/pass-handoff.ts";
 
 import { resolveStateDir } from "./../state/store.ts";
+import type { ConsumedVerdict } from "./../state/resolution-receipt.ts";
 
 import { swallow } from "../../../../../shared/errors.ts";
 
@@ -307,12 +308,14 @@ export async function admitAnsweredParks(
   }
   // Bound to the parks whose answers were read: a park replaced under the
   // same key, or added, while the comments were read refuses the whole set.
+  // The consumed verdicts on stdin become each park's resolution receipt.
   const parkedAt = new Map(state.parked.map((p) => [p.key, p.at ?? ""]));
   const res = await run(
     tsArgv(driveState, [
       "unpark",
       pr,
       "--every",
+      "--stdin",
       ...fresh.flatMap((v) => [
         "--key",
         v.key,
@@ -320,12 +323,25 @@ export async function admitAnsweredParks(
         parkedAt.get(v.key) ?? "",
       ]),
     ]),
-    { stderr: "inherit", timeoutSec: helperTimeoutSeconds() },
+    {
+      stdin: JSON.stringify(fresh.map(consumedOf)),
+      stderr: "inherit",
+      timeoutSec: helperTimeoutSeconds(),
+    },
   );
   if (res.code !== 0)
     return recoverFailedUnpark(pr, res.code, carried, fresh, file);
   await announceUnparked(pr, fresh, file);
   return rearmNotice([...carried, ...fresh], file);
+}
+
+/** What `unpark --stdin` keeps of a verdict for its receipt. */
+function consumedOf(v: PendingVerdict): ConsumedVerdict {
+  return {
+    key: v.key,
+    answers: v.answers,
+    ...(v.provisional === true ? { provisional: true as const } : {}),
+  };
 }
 
 /**

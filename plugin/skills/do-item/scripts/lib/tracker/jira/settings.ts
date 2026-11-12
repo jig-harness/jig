@@ -3,6 +3,7 @@
  *
  *   jira:
  *     site: https://example.atlassian.net   # required
+ *     api_base: https://api.atlassian.com/ex/jira/<cloud id>   # default: the site
  *     issue_type: Task          # the type a new issue gets
  *     subtask_type: Sub-task    # default: the project's one sub-task type
  *     priorities: { urgent: Highest, high: High, medium: Medium, low: Low }
@@ -10,9 +11,16 @@
  *     link_types: { blocks: Blocks, related: Relates, duplicate: Duplicate }
  *     field_labels: { Size: "size:" }   # a field's values read as labels
  *     pool_issue_types: [Task, Bug]     # default: every type
+ *     blocked_fields: { reason: "Blocked Reason", since: "Blocked Since" }
  *
  * A relation in `link_types` may name several link types, each a name or
  * `{ name, inverted }`: `[Blocks, { name: "Depends", inverted: true }]`.
+ *
+ * `api_base` sends every request through Atlassian's API gateway, which a
+ * scoped API token or an OAuth token calls; `site` still names the site, and
+ * builds every issue's browse link. Only the gateway's host, and only its
+ * Jira path for one cloud id, is accepted: `JIRA_ALLOWED_HOSTS` does not
+ * widen it.
  *
  * The section is parsed whatever the adapter, so a mistyped field is refused
  * before the adapter is chosen; only the Jira adapter requires `site`.
@@ -20,7 +28,7 @@
 
 import { isRecord } from "../../../../../../shared/guards.ts";
 import { TrackerConfigError } from "../config-error.ts";
-import { nonEmpty, settingsSection } from "../settings-fields.ts";
+import { firstRepeat, nonEmpty, settingsSection } from "../settings-fields.ts";
 import { PRIORITY_NAMES, type PriorityName } from "../github/settings.ts";
 
 export { PRIORITY_NAMES, type PriorityName };
@@ -43,6 +51,8 @@ export interface LinkTypeEntry {
 export interface JiraSettings {
   /** `https://<name>.atlassian.net`, no trailing slash; `null` = not set. */
   site: string | null;
+  /** `https://api.atlassian.com/ex/jira/<cloud id>`, no trailing slash; `null` = the site. */
+  apiBase: string | null;
   issueType: string;
   /** `null` = the project's one sub-task type. */
   subtaskType: string | null;
@@ -54,10 +64,18 @@ export interface JiraSettings {
   fieldLabels: Record<string, string>;
   /** The issue types every pool and population is limited to; empty = every type. */
   poolIssueTypes: string[];
+  /** The fields, by name or id, a blocked item's reason and start are written to; each `null` = not written. */
+  blockedFields: BlockedFieldNames;
 }
+
+/** What a blocked item's fields say: its reason, and since when. */
+export const BLOCKED_FIELD_ROLES = ["reason", "since"] as const;
+export type BlockedFieldRole = (typeof BLOCKED_FIELD_ROLES)[number];
+export type BlockedFieldNames = Record<BlockedFieldRole, string | null>;
 
 const FIELDS = [
   "site",
+  "api_base",
   "issue_type",
   "subtask_type",
   "priorities",
@@ -65,6 +83,7 @@ const FIELDS = [
   "link_types",
   "field_labels",
   "pool_issue_types",
+  "blocked_fields",
 ];
 
 /** The issue type a new issue gets when none is configured. */
@@ -124,6 +143,25 @@ function siteOf(v: unknown): string | null {
       `${field("site")} must be an Atlassian Cloud site (*.atlassian.net); another host receives the credential only when JIRA_ALLOWED_HOSTS names it (got ${JSON.stringify(site)})`,
     );
   return site.replace(/\/$/, "");
+}
+
+/**
+ * Atlassian's API gateway for one Jira Cloud site: that host, that path and
+ * a cloud id (letters, digits and hyphens), nothing else; no port, no
+ * user, no query and no further path.
+ */
+const API_BASE =
+  /^https:\/\/api\.atlassian\.com\/ex\/jira\/[A-Za-z0-9][A-Za-z0-9-]{0,63}\/?$/;
+
+function apiBaseOf(v: unknown): string | null {
+  if (v === undefined || v === null) return null;
+  const base = nonEmpty(v, field("api_base"));
+  if (!API_BASE.test(base))
+    throw new TrackerConfigError(
+      field("api_base"),
+      `${field("api_base")} must be Atlassian's API gateway address for the site, https://api.atlassian.com/ex/jira/<cloud id>, and nothing else (got ${JSON.stringify(base)})`,
+    );
+  return base.replace(/\/$/, "");
 }
 
 /**
@@ -231,9 +269,7 @@ function linkTypesOf(v: unknown): Record<LinkedRelation, LinkTypeEntry[]> {
     );
   }
   const names = LINKED_RELATIONS.flatMap((r) => out[r].map((e) => e.name));
-  const twice = names.find(
-    (n, i) => names.findIndex((m) => m.toLowerCase() === n.toLowerCase()) !== i,
-  );
+  const twice = firstRepeat(names);
   if (twice !== undefined)
     throw new TrackerConfigError(
       at,
@@ -308,11 +344,47 @@ function fieldLabelsOf(v: unknown): Record<string, string> {
   return out;
 }
 
+/**
+ * `blocked_fields`: the field each role is written to when the drive-ledger
+ * projection moves an item to `blocked`, by name or id; a role left out is
+ * not written. Both naming one field is refused.
+ */
+function blockedFieldsOf(v: unknown): BlockedFieldNames {
+  const at = field("blocked_fields");
+  const out: BlockedFieldNames = { reason: null, since: null };
+  if (v === undefined || v === null) return out;
+  if (!isRecord(v))
+    throw new TrackerConfigError(
+      at,
+      `${at} must be a mapping of reason and since to a field's name or id`,
+    );
+  for (const [key, value] of Object.entries(v)) {
+    const where = `${at}.${key}`;
+    if (!(BLOCKED_FIELD_ROLES as readonly string[]).includes(key))
+      throw new TrackerConfigError(
+        where,
+        `${where} is not one of ${BLOCKED_FIELD_ROLES.join(", ")}`,
+      );
+    out[key as BlockedFieldRole] = nonEmpty(value, where).trim();
+  }
+  if (
+    out.reason !== null &&
+    out.since !== null &&
+    out.reason.toLowerCase() === out.since.toLowerCase()
+  )
+    throw new TrackerConfigError(
+      at,
+      `${at} names '${out.reason}' for both reason and since; each needs its own field`,
+    );
+  return out;
+}
+
 /** Validate `issue_tracker.jira`. */
 export function parseJiraSettings(raw: unknown): JiraSettings {
   const section = sectionOf(raw);
   return {
     site: siteOf(section.site),
+    apiBase: apiBaseOf(section.api_base),
     issueType:
       section.issue_type === undefined || section.issue_type === null
         ? DEFAULT_ISSUE_TYPE
@@ -336,6 +408,7 @@ export function parseJiraSettings(raw: unknown): JiraSettings {
     linkTypes: linkTypesOf(section.link_types),
     fieldLabels: fieldLabelsOf(section.field_labels),
     poolIssueTypes: poolIssueTypesOf(section.pool_issue_types),
+    blockedFields: blockedFieldsOf(section.blocked_fields),
   };
 }
 
@@ -347,4 +420,9 @@ export function requireSite(settings: JiraSettings): string {
       `${field("site")} is not set; it names the Jira Cloud site, such as https://example.atlassian.net`,
     );
   return settings.site;
+}
+
+/** Where requests go: the API gateway when `api_base` is set, else the site. */
+export function requestBase(settings: JiraSettings): string {
+  return settings.apiBase ?? requireSite(settings);
 }

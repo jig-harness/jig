@@ -131,15 +131,19 @@ as the sole assignee, and moves the item in progress. With
 `--ancestor <epic-key>`, it walks the current ancestry, rejects holds or
 conflicting assignees, and checks the ancestor epic's assignment. GitHub
 adds the person to an unassigned child without replacing a concurrent
-assignee; a detected race stands down and refreshes the queue. Inherited
-claims on Linear and Jira are refused because their assignment APIs cannot
-add a person without replacing an assignee.
+assignee. Linear and Jira hold one assignee and have no write that applies
+only to an unassigned item, so there the claim assigns the child, then reads
+the item's history: if the assignment replaced someone who was assigned in
+between, it puts them back. Either way a detected race stands down and
+refreshes the queue.
 
 Command-line claims share a machine-local mutex across worktrees and
-re-read authority before writing. This does not serialize claims on
-separate hosts: simultaneous claims for the same person can still both
-pass. A tracker state transition is not a cross-host lease; the dispatcher's
-double-claim watch remains necessary.
+re-read authority before writing. That does not serialize claims on
+separate hosts: two hosts claiming for the same person write the same
+assignee and state, so the re-read cannot tell them apart. The claim marker
+can (`do_item.claim_marker`, below): set it wherever more than one host
+picks up from one queue. The dispatcher's double-claim watch stays as the
+backstop.
 
 ### The repository's own start rules
 
@@ -163,9 +167,17 @@ More settings narrow a claim, read from the default branch like the command, so 
 may start from: an item in any other state, or in a status that maps to no
 canonical state, is refused with nothing written, so a side state a team
 uses as its record of why work stopped is never cleared by a claim.
-`do_item.claim_marker` posts a marker comment on each claimed item naming
-the session, the host and the branch, so other tools reading the tracker
-can tell which session holds it. The settings are in the
+`do_item.claim_marker` posts a marker comment on each item a claim starts,
+naming the session, the host and the branch, so other tools reading the
+tracker can tell which session holds it. The claim posts it before it
+writes anything else and reads the item's markers back. When another
+claim's marker posted in the last 10 minutes is earlier, it removes its own
+and refuses, with nothing written to the item. It does the same when its
+marker cannot be posted or read back. That makes the marker the token two
+hosts claiming one item agree on. The tracker offers no conditional write
+for a comment, so two claims whose reads each miss the other's marker can
+both win; the read after the claim narrows that to the claim's own few
+seconds. The settings are in the
 [configuration](../../CONFIGURATION.md#do_item).
 
 ## Requirements and platforms
@@ -237,9 +249,13 @@ Once the pull request opens, the skill posts the comment linking it on the
 item, then moves the item there, before the drive arms. The parent roll-up
 reads `pr_open` as work still in progress, not as merged: `in_review` keeps
 that meaning. A tracker with one review status, used while the pull request
-is open and after the merge, gives `pr_open` and `in_review` the same name;
-an item in it then reads as `pr_open`, since the tracker cannot say whether
-its pull request merged. Without `pr_open`, nothing moves before the merge.
+is open and after the merge, gives `pr_open` and `in_review` the same name.
+The tracker cannot say which wait an item under that name is in, so the
+roll-up asks the code host (`scripts/linked-pr.ts`): an item whose linked
+pull request merged reads as `in_review`, and one whose pull request is
+open, that has none, or whose pull request cannot be read reads as
+`pr_open`. Under distinct names nothing is read from the code host. Without
+`pr_open`, nothing moves before the merge.
 
 After the merge, the item moves to `done`, or to `ops_pending` while a
 manual step remains. A team whose `done` means merged and verified by
@@ -252,6 +268,19 @@ the item on merge whatever the skill does. Every post-merge move passes
 setting forbids; a person's own move without the flag still works. The
 [configuration reference](../../CONFIGURATION.md#do_item) has both
 settings.
+
+## Stopped work
+
+A team whose board shows stopped work as blocked can name an optional
+`blocked` state in `issue_tracker.states`. With the pull request state
+labels on (`dispatch.labels.enabled`), a drive that stops with only parked
+work left moves each item its pull request links to `blocked`, with a
+comment naming each park's class and reason; on Jira it also writes the
+fields `issue_tracker.jira.blocked_fields` names. Once the park is answered
+and the drive runs again, the item returns to the state it left. This
+skill never moves an item into or out of `blocked`, and its claim refuses
+an item there. The [configuration reference](../../CONFIGURATION.md#issue_tracker)
+has the rules.
 
 ## Continuing work
 

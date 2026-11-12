@@ -21,6 +21,7 @@ import {
 import { forgeComment } from "../../skills/drive-pr/__tests__/ledger-forge-fixtures.ts";
 import { MARKER } from "../lib/followup-marker.ts";
 import { readOutcomes } from "../lib/followup-outcomes.ts";
+import { ROUTINE_QUESTIONS } from "../lib/routine-questions.ts";
 import {
   claimRecord,
   readRecord,
@@ -114,7 +115,10 @@ async function released(w: World, id: string, why: string): Promise<void> {
 }
 
 /** The run again a later tick starts: its record and the prompt its pass got. */
-async function rerun(w: World): Promise<{ id: string; prompt: string }> {
+async function rerun(
+  w: World,
+  routine = "local-leftover",
+): Promise<{ id: string; prompt: string }> {
   const runs = claudeRuns(w).length;
   const [launched] = launches(await applyTick(w, false));
   expect(launched).toMatchObject({ action: "followup", outcome: "launched" });
@@ -122,13 +126,21 @@ async function rerun(w: World): Promise<{ id: string; prompt: string }> {
   await waitFor("the run again", () => claudeRuns(w).length === runs + 1);
   const record = readRecord(id, dispatchState(w));
   expect(record?.facts).toBe(
-    "recovery: routine local-leftover, merged 2026-10-31T12:00:00Z",
+    `recovery: routine ${routine}, merged 2026-10-31T12:00:00Z`,
   );
   return { id, prompt: claudeRuns(w).at(-1)?.argv.at(-1) ?? "" };
 }
 
+/** Every class's id, as a run again of a follow-up that failed before passes tagged their questions names them. */
+const EVERY_CLASS = ROUTINE_QUESTIONS.map((q) => q.id).join(", ");
+
 const STANDING =
   "keep it, list it in the result, finish every other arm and record done";
+
+/** Every class's standing answer: a prompt that names every class gives each of them. */
+function expectEveryAnswer(prompt: string): void {
+  for (const q of ROUTINE_QUESTIONS) expect(prompt).toContain(q.answer);
+}
 
 it("runs a follow-up that stopped on a routine question again once, with the standing answer, and it ends done", async () => {
   const w = fixture();
@@ -162,6 +174,26 @@ it("runs a follow-up that stopped on a routine question again once, with the sta
     expect.objectContaining({ target: "PR #9", class: "followup-done" }),
   );
   expect(claudeRuns(w)).toHaveLength(2);
+}, 180_000);
+
+it("tells the pass a step owed by a person is no reason to stop, and runs one that stopped on it again with that answer", async () => {
+  const w = fixture();
+  const first = await stops(
+    w,
+    "Question: [person-owed] who runs the live check against the tracker?",
+  );
+  const told = claudeRuns(w).at(-1)?.argv.at(-1) ?? "";
+  expect(told).toContain("is no reason to stop: report it as owed by a person");
+  expect(told).toContain("- person-owed: ");
+  expect(told).toContain("- drafted-items: ");
+  await released(w, first, "stopped on a routine question (person-owed)");
+
+  const { prompt } = await rerun(w, "person-owed");
+  expect(prompt).toContain("who runs the live check against the tracker?");
+  expect(prompt).toContain(
+    "take none of it; report it as owed by a person, file one item for it",
+  );
+  expect(prompt).not.toContain(STANDING);
 }, 180_000);
 
 it("hands a second failure of the same follow-up to a person, with its question", async () => {
@@ -263,10 +295,10 @@ it("runs a follow-up whose launch record failed before passes tagged their quest
   oldRecord(w);
   failedMarker(w, OLD);
   await released(w, OLD, "failed before passes tagged their questions");
-  const { prompt } = await rerun(w);
+  const { prompt } = await rerun(w, EVERY_CLASS);
   expect(prompt).toContain("keep the branch feature/9-done?");
   expect(prompt).toContain("Where it stopped on one of these classes");
-  expect(prompt).toContain(STANDING);
+  expectEveryAnswer(prompt);
 }, 120_000);
 
 /** A person's notice of PR #9's failed follow-up, from a tick that starts nothing and keeps the marker. */
@@ -362,8 +394,8 @@ it("keeps what an earlier release's outcome row lacks before releasing the marke
   // The launch record expires; the kept answer alone carries the run again.
   removeRecord(OLD, dispatchState(w));
   expect(readRecord(OLD, dispatchState(w))).toBeNull();
-  const { prompt } = await rerun(w);
-  expect(prompt).toContain(STANDING);
+  const { prompt } = await rerun(w, EVERY_CLASS);
+  expectEveryAnswer(prompt);
 }, 120_000);
 
 it("hands a follow-up whose outcome record's question does not read to a person even while its launch record from before the tags is on the host", async () => {

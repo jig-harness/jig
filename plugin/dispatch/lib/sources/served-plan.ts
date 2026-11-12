@@ -9,6 +9,22 @@ import {
 } from "../../../skills/do-item/scripts/lib/execution-plan.ts";
 import { failureText } from "../text.ts";
 
+/** Every issue a plan names (its steps and its edges' predecessors), after `first`, once each. */
+export function planKeys(
+  description: string,
+  block: string | undefined,
+  first: readonly string[] = [],
+): string[] {
+  const plan = readExecutionPlan(description, block);
+  return [
+    ...new Set([
+      ...first,
+      ...(plan?.steps.map((s) => s.issue) ?? []),
+      ...(plan?.edges.map((e) => e.from) ?? []),
+    ]),
+  ];
+}
+
 export interface ServedPlan {
   present: boolean;
   order: string[];
@@ -48,7 +64,19 @@ export function servedPlan(
         holds: {},
         error: `Execution plan contradicts the tracker's blocks: ${contradictions.join("; ")}`,
       };
-    const order = eligibleIssues(plan, live, []);
+    // A blocker outside the plan is the queue's to hold or pull; only the plan's own steps order it.
+    const steps = new Set(plan.steps.map((s) => s.issue));
+    const inPlan: Record<string, LiveIssue> = {};
+    for (const [key, item] of Object.entries(live))
+      inPlan[key] = {
+        ...item,
+        blockedBy: Array.isArray(item.blockedBy)
+          ? item.blockedBy.filter(
+              (b) => steps.has(b) || live[b]?.state === "completed",
+            )
+          : item.blockedBy,
+      };
+    const order = eligibleIssues(plan, inPlan, []);
     const holds: Record<string, string> = {};
     for (const step of plan.steps)
       if (!order.includes(step.issue))

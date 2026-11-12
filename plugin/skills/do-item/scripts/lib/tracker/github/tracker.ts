@@ -120,6 +120,9 @@ export const M = {
   comment: `mutation TrackerComment($subjectId: ID!, $body: String!) {
     addComment(input: { subjectId: $subjectId, body: $body }) { clientMutationId }
   }`,
+  deleteComment: `mutation TrackerDeleteComment($id: ID!) {
+    deleteIssueComment(input: { id: $id }) { clientMutationId }
+  }`,
   close: `mutation TrackerClose($issueId: ID!, $stateReason: IssueClosedStateReason, $duplicateIssueId: ID) {
     closeIssue(input: { issueId: $issueId, stateReason: $stateReason, duplicateIssueId: $duplicateIssueId }) { issue { id } }
   }`,
@@ -168,6 +171,7 @@ const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 const NODE_ID = /^I_[A-Za-z0-9_-]+$/;
 
 export interface CommentNode {
+  id: string;
   body: string;
   createdAt: string;
   trusted: boolean;
@@ -211,6 +215,7 @@ export function gitHubTracker(client: Client): Tracker {
         if (!Number.isFinite(Date.parse(createdAt)))
           throw new GitHubApiError(`issue ${key}: an unreadable comment node`);
         return {
+          id: str(n.id, `comments of ${key}[${i}].id`),
           body: str(n.body, `comments of ${key}[${i}].body`),
           createdAt,
           // The viewer's own comments too: a bot token's writes carry no
@@ -676,6 +681,11 @@ export function gitHubTracker(client: Client): Tracker {
           "the comment was cancelled before it was sent",
         );
       await client.transport(M.comment, { subjectId, body }, signal);
+    },
+
+    async deleteComment(key, id) {
+      refuseForeign(key, "comment");
+      await client.transport(M.deleteComment, { id });
     },
 
     ...reportOperations(client, { comments, children }),

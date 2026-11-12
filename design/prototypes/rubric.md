@@ -13,7 +13,7 @@ success criteria list; the rest are not scored.
 | Above the fold | At the widest configured width, the brief's above-the-fold content is visible with no horizontal scroll. |
 | Keyboard | Every control and link is reachable and operable from the keyboard in document order, with visible focus. |
 | Contrast | Every text pair meets WCAG 2.2 AA in both themes; every status role survives greyscale. |
-| Weight | The design is drawable as one HTML document with inline vector graphics and stylesheets; it needs no run-time library to render. |
+| Weight | The design is buildable with the page's own stack and adds no library. |
 | Truth | Nothing on the page claims a capability the backend does not have; every number on it is derived from the rows it summarizes. |
 | Vocabulary | The operator vocabulary is small, its mapping from the recorded sets is stated, and every recorded name stays findable. |
 | Reshaping | The information architecture changes between contrasting states, not only its badges. |
@@ -26,10 +26,10 @@ success criteria list; the rest are not scored.
 
 Some blocks have a scope a bundle can read two ways, so it is stated:
 
-- **Weight** scores the design as it would be built for production. A
-  prototype that renders through its design tool's page runtime does not fail
-  the block for that; the scorecard names the runtime dependency beside the
-  row.
+- **Weight** scores the design as it would be built for production, on the
+  page's own stack. A prototype that renders through its design tool's page
+  runtime does not fail the block for that; the scorecard names the runtime
+  dependency beside the row. The page's size in bytes is not scored.
 - **Truth** scores what the page claims about the backend. A capability the
   backend does not yet have may appear in the design only when the bundle's
   handoff lists it as a server ask; the scorecard names those asks beside the

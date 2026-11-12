@@ -44,6 +44,7 @@ test("the gate set runs its cheap stages first and --fast runs only those", asyn
     "bun scripts/check-workflow-safety.ts",
     "bun scripts/check-workflow-conventions.ts",
     "bun scripts/check-schedules-declared.ts",
+    "bun scripts/check-nightly-baseline.ts",
     "bun scripts/check-lifecycle-map.ts",
     "bun scripts/check-changelog.ts",
     "bun scripts/check-audit-fit.ts",
@@ -55,4 +56,32 @@ test("the gate set runs its cheap stages first and --fast runs only those", asyn
     "bun scripts/check-skill-shell-neutrality.ts",
     "bun scripts/check-voice.ts",
   ]);
+});
+
+test("the checks and tests parts together run every stage of the full set once", async () => {
+  const { plan, partOf, PART_ENV, testStage } = await import("./gates.ts");
+  const test = testStage(["suite/**"], () => []);
+  const full = plan(false, test).map((stage) => stage.name);
+  const checks = plan(false, test, "checks").map((stage) => stage.name);
+  const tests = plan(false, test, "tests").map((stage) => stage.name);
+  expect(tests).toEqual([test.name]);
+  expect(checks).not.toContain(test.name);
+  expect([...checks, ...tests].sort()).toEqual([...full].sort());
+  // The fast set is the same whatever part is named.
+  expect(plan(true, test, "tests")).toEqual(plan(true, test));
+  expect(partOf({})).toBeUndefined();
+  expect(partOf({ [PART_ENV]: "" })).toBeUndefined();
+  expect(partOf({ [PART_ENV]: "checks" })).toBe("checks");
+  expect(partOf({ [PART_ENV]: "tests" })).toBe("tests");
+  // A misspelling is refused, not read as "run nothing".
+  for (const bad of ["test", "Tests", " tests", "all"])
+    expect(() => partOf({ [PART_ENV]: bad })).toThrow(PART_ENV);
+});
+
+test("a run names its part in the closing line", async () => {
+  const { summary } = await import("./gates.ts");
+  const green = [{ name: "bun run lint", status: 0 }];
+  expect(summary(green, false, "tests")).toBe("tests gates passed");
+  expect(summary(green, false, "checks")).toBe("checks gates passed");
+  expect(summary(green, false)).toBe("all gates passed");
 });

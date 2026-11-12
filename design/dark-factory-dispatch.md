@@ -208,7 +208,7 @@ when it fails. The phase names are the ones a receipt times.
 | `plan` | `tick-plan.ts` | everything above, the follow-up outcomes, the idle clock, the nudges | the idle clock, released pickups, settled nudges, the follow-up outcomes it settles | a write the database refuses is a defect: it stops this repository in phase `plan` |
 | `log` | `tick-settle.ts` | the ended launch records, the ledgers | one outcome row per ended record, with its end | reported; the record is kept until its row lands |
 | `apply` | `tick-apply.ts` | each target read again just before its launch, the failure ledger | the launch record, the forge claim or marker, the runtime's launch, nudges, notices, the failure ledger | per action: refused, reported, tried again next tick; a nudge, notice, claim end or marker answer that keeps failing backs off (see Failures) |
-| `labels` | `tick-labels.ts` | the ledgers, each written pull request's ledger read again just before its write, the failure ledger | the state labels on pull requests, the failure ledger | per write, reported; one whose ledger changed since the tick read it waits for a later tick; one that keeps failing backs off (see Failures) |
+| `labels` | `tick-labels.ts` | the ledgers, each written pull request's ledger read again just before its write, the failure ledger | the state labels on pull requests, the linked items' `blocked` state where the repository names it, the failure ledger | per write, reported; one whose ledger changed since the tick read it waits for a later tick; one that keeps failing backs off (see Failures) |
 | `shared` | `tick-shared.ts` | the shared records' reads and writes this turn | none | none |
 | Close (`close`) | `tick.ts`, `tick-settle.ts`, `tick-reads.ts`, `tick-line.ts` | the receipt, the launch records, the forge's rate limit as the tick started (put on every repository's report) | outcome rows for repositories not read and not held by another tick, the failure ledger's rows for each repository read and for the tick, the month files, the line (each repository's part by a tick that read it; the machine's part by a tick the timer asked for every repository of the machine file), the receipt | a part that reports its failure is said on the receipt, which stays complete; exit status 1; a budget that does not read is reported as unreadable. A defect in a closing step marks the receipt not completed |
 
@@ -609,7 +609,31 @@ tracker identities; a repository's file cannot add to it), and wherever the
 not-started item a person with write access assigned to a
 [served person](../GLOSSARY.md), whatever its state, and each unassigned
 open item under an epic assigned to one, nested epics walked level by
-level, with `jig:hold` and `hitl` keeping an item waiting. Every repository's tick reads the same assigned list from a shared tracker namespace, so an item that carries another repository's label (one of `review.taxonomy.repos` other than this repository's `review.repo_label`) is left to that repository's checkout, neither wanted nor reported as held, and refused again at the launch recheck. An item no repository label places is started only by the repository the machine file's `serve_defaults` names for the tracker namespace, and reported once as needing a repository label where none is named, so that several repositories reading one tracker never start it together. Their pull
+level, with `jig:hold` and `hitl` keeping an item waiting.
+
+A served item held only by open blockers does not wait on work nobody
+does. Each blocker that is open, not started, unassigned, free of the
+holds above, an item of this repository's scope and not an epic is wanted in
+its place, on the served item's authority: the pickup's claim carries the
+item it blocks (`claim --blocking`), re-reads that item's assignment by a
+repository writer (or its epic ancestry) and the live `blocked_by` chain at
+the write, refuses a blocker that has acquired an assignee, and assigns it to
+the served person only where the tracker can make the required check. GitHub
+Issues adds an assignee and checks that the resulting list contains only the
+served person, so a concurrent assignee makes it refuse without replacing or
+restoring anyone. Linear and Jira hold one assignee, so they verify the write
+from history; when that check finds a replaced concurrent assignee, they
+conditionally make a best-effort restoration and refuse the pickup. The walk follows the blockers of a pulled blocker to three
+links from the assigned item and ends at a cycle. A blocker that is assigned
+to someone else, in progress, an epic, held, another repository's or unreadable
+is never started on the strength of the relation, since anyone with write
+access to the tracker can add one: the blocked item waits, and its reason
+names the blocker and why it was left. Epics are worked one child at a time:
+without an execution plan only the top-ranked child of an epic is wanted, and
+none while another child is in progress, as `do-item` works an epic; a plan
+that lists several eligible steps sets its own order and parallelism. An epic
+none of whose open children can start reports one reason of its own, so the
+queue says why the epic is idle. Every repository's tick reads the same assigned list from a shared tracker namespace, so an item that carries another repository's label (one of `review.taxonomy.repos` other than this repository's `review.repo_label`) is left to that repository's checkout, neither wanted nor reported as held, and refused again at the launch recheck. An item no repository label places is started only by the repository the machine file's `serve_defaults` names for the tracker namespace, and reported once as needing a repository label where none is named, so that several repositories reading one tracker never start it together. Their pull
 requests are adopted as `dispatch.adopt.authors` adopts a repository's own.
 The tick ranks those items by rules as data, shows each item it holds out
 with its reason, and starts the next within the host's load factor; the
@@ -618,6 +642,31 @@ as its assignee, so the stalled and double-claim watches read the served
 people's in-progress items as they read the factory identity's. How the
 ranking, the cheap reads and the claim work is in
 [served pickups](../plugin/README.md#the-dispatcher).
+
+**Claims across hosts.** The claim lock serializes the claims of one
+machine only. Two hosts that serve one person claim an item with the same
+identity, so their tracker writes are identical, and the claim's re-read
+cannot tell which one holds it. The tracker offers no conditional write
+for an assignment, a state or a comment, so no tracker write can be the
+lease either. The claim marker (`do_item.claim_marker`) is the token
+between hosts instead, ruled by the earliest-wins rule the forge's claim
+records already use. A claim posts its marker before it writes the item,
+reads the item's markers back, and of the trusted markers posted within
+ten minutes of its own the earliest wins. A claim that finds an earlier
+one, or cannot post or read back its own, withdraws its marker and
+refuses, with nothing written to the item. After writing, it reads the
+markers again and stands down if an earlier one has appeared. The marker
+stays optional: a repository whose queue only one host picks up from
+needs none, and unset, claims serialize on one host only. Two claims whose
+read-backs each miss the other's marker can still both win; the read after
+the write narrows that to the claims' own length, and the dispatcher's
+double-claim watch stays as the backstop. The pool pickup (plan item 47),
+where several hosts take unassigned items from one ready pool, will
+require the marker: a pool configured without `do_item.claim_marker` will
+be refused. Inherited claims on Linear and Jira, whose issues hold one
+assignee, assign and then verify through the item's history that the
+assignment replaced nobody, putting back anyone it did replace
+([served pickups](../plugin/README.md#the-dispatcher)).
 
 **The forge.** The tick lists the repository's open pull requests and reads
 each one's comments for the ledger's marker, as the drive itself does; it
@@ -921,6 +970,15 @@ confirms or corrects.
   killed drive left behind, is corrected at the next tick. A ledger the tick cannot read leaves the labels as they are.
   Only the states listed here are kept by this projection, so a state a
   later stage owns, which no ledger produces, is never touched by it.
+  Where the repository names `issue_tracker.states.blocked`, the projection
+  has one tracker output beside the label: each item an open managed pull
+  request links (`Closes`/`Refs <KEY>`) goes to `blocked` while its state is
+  parked, with a comment naming each park's class and reason and a marker
+  recording the state it left, and back to that state once its state is
+  driving, converged or stale. The tick writes it after the labels, under
+  the same `--apply`, ownership and ledger re-read rules, and leaves a pull
+  request serialization holds; the drive writes it with its own label. A
+  stop blocks an item once, so an item a person moved out stays out.
 - **Commands**, written by a person and read by the tick: `drive` on an
   open pull request with no ledger asks for one, and the plan arms a drive
   on it as a re-arm (`drive.ts <PR> -- <pass>` on an admitted account),
@@ -1085,6 +1143,7 @@ jig dispatch install [--interval 5m] --yes        # the timer
 jig dispatch receipts                             # past ticks
 jig dispatch result <record> <token> done|failed  # a session's or a follow-up pass's answer
 jig dispatch result <record> <token> failed --refused <updated-at> --reason <reason>  # a pickup the start rules refused
+jig dispatch result <record> <token> failed --refused <updated-at> --key <item> --reason <reason>  # one refused batch member; repeat --refused and --key per member
 ```
 
 A tick without `--apply` prints every action it would take, each with the
@@ -1858,11 +1917,11 @@ so the dashboard and `jig dispatch log` read while a tick writes. Its
 schema carries a version: a database at an older one is migrated forward
 in one transaction, and one a newer plugin wrote is refused, with its
 version named, by every command that opens it. The dashboard's server
-opens it through the reader that migrates it until the hub's first stage
-(its step 4) makes the server, and the hub it grows into, open it
-read-only, never migrating it and showing a schema older or newer than
+opens it through the reader that migrates it until the dashboard design's
+first stage (its step 5) makes the server, and every later stage's, open
+it read-only, never migrating it and showing a schema older or newer than
 their own as such
-([hub.md § Install and upgrade](hub.md#install-and-upgrade)).
+([dispatch-dashboard.md § Install and upgrade](dispatch-dashboard.md#install-and-upgrade)).
 
 What another host must know of this host's launches is not kept here: it
 is published as shared records on the forge (see Several hosts). The local
@@ -1902,7 +1961,9 @@ cannot close, is in
   it; that host writes the follow-up's answer onto it once its launch record
   ends, as it writes a launch's end.
 - **A pickup's claim** is the tracker claim `do-item` makes, which every
-  host already reads; nothing is published for it here.
+  host already reads; nothing is published for it here. Between hosts that
+  claim with one identity, its claim marker on the item decides which holds
+  it ([claims across hosts](#the-records-it-reads)).
 - **A launch's end** is written by the host that made the claim, onto the
   claim's own comment: its exit, or why it died. The wrapper writes it right
   after it records the stage's exit, so other hosts read it when the launch
@@ -2044,7 +2105,9 @@ falls in, unless the file already holds a row with that key: the file is
 written whole with them and renamed into place, so a tick that stops
 mid-copy leaves the copy as it was and the next adds the same rows once.
 `jig dispatch log [--since <date>] [--jsonl]` prints the log as text,
-`--jsonl` as the lines the month files hold. The follow-up's outcome record (see Receipts) stays
+`--jsonl` as the lines the month files hold; `--acceptance` reports instead,
+per repository and class, how often parked decisions followed the
+recommendation ([structured-answers.md](structured-answers.md#showing-what-was-decided)). The follow-up's outcome record (see Receipts) stays
 what it is: it settles whether a merged pull request still wants a
 follow-up, and the tick reads it; the ended row for the same launch is the
 analysis record, read only by people and the dashboard, and the tick never
@@ -2091,7 +2154,7 @@ The first is the **line**, one row of the state database (`tick_line`): the
 needs, the accounts with their slots and walls, the sessions, the queue and the
 repositories as a tick found them, with that tick's receipt. A tick that read
 every repository the machine file lists replaces it at its end. A tick for one
-repository leaves it, until the hub's first stage (its step 6) lets that tick
+repository leaves it, until the dashboard's first stage (its step 6) lets that tick
 replace only that repository's part (its needs, sessions and queue, and its
 entry among the repositories, stamped with that tick's run and read time) and
 leave the rest to the full ticks: the line's own times, the accounts and the
@@ -2141,22 +2204,23 @@ into the host is opened beyond the network the host already trusts. The
 URL it prints carries a token minted at start, and a request without it is
 refused: these records name repositories, items and accounts.
 
-The dashboard grows into the [hub](hub.md), which `jig install hub`
-installs as a resident reader where Orca's browser or a
+The dashboard's later stages ([dispatch-dashboard.md](dispatch-dashboard.md))
+add `jig install dashboard`, which installs it as a resident reader where
+Orca's browser or a
 [private-network front](../GLOSSARY.md) reaches a host's page: it holds no
 request, no component reads from it and the line never waits on it, so
 stopping it changes nothing the line does, and it opens every database
 read-only and never migrates one
-([hub.md § A reader, not a daemon](hub.md#a-reader-not-a-daemon)). The
-dispatcher itself stays without a resident process. The hub's server on a
+([dispatch-dashboard.md § A reader, not a daemon](dispatch-dashboard.md#a-reader-not-a-daemon)). The
+dispatcher itself stays without a resident process. The dashboard's server on a
 host listens on loopback, or on a socket only a front reaches, and needs
 no token, since every way in from another machine authenticates the person
-first. From the hub's second stage
-`jig dispatch dashboard` starts that server; once the hub's front is built,
+first. From the dashboard's second stage
+`jig dispatch dashboard` starts that server; once the dashboard's front is built,
 the dashboard drops the private-address bind (`dashboard.listen`) and the
 token in its URL, a machine file that still sets `dashboard.listen` gets a
 warning naming the front, and a phone reaches the page through the front
-([hub.md § Where it runs](hub.md#where-it-runs)).
+([dispatch-dashboard.md § Where it runs](dispatch-dashboard.md#where-it-runs)).
 
 Each read answers with its value or a coded failure with a reason for a person,
 and a bug is caught once around the routes and logged with its stack
@@ -2547,5 +2611,5 @@ Critiqued in two rounds by reviewers with fresh context (subagents that
 did not write it): the whole design on 2026-10-30 against commit
 `c2c8083e`, and the Control section, written after that round, on
 2026-10-31 against commit `de08d1ce`.
-What the hub adds to it was critiqued with the hub's design on 2026-11-06
-([hub.md § Review](hub.md#review)).
+What the dashboard design adds to it was critiqued with that design on 2026-11-06
+([dispatch-dashboard.md § Review](dispatch-dashboard.md#review)).

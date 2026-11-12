@@ -17,9 +17,12 @@
  *   the tick observed rather than what ended (a stalled pickup, a double
  *   claim, a stage drifting from its expectation, a session waiting, a stop
  *   it notified on a stage it did not launch, each nudge sent, a defect that
- *   stopped one stage of a repository's `--apply` (`defect.ts`), and a pull
+ *   stopped one stage of a repository's `--apply` (`defect.ts`), a pull
  *   request's hold behind another in a serialized area beginning and
- *   ending, the end carrying how long it waited: `serial-holds.ts`).
+ *   ending, the end carrying how long it waited: `serial-holds.ts`, and a
+ *   park leaving its ledger, answered, decided provisionally or removed,
+ *   an answered one timed when its receipt says it was resolved:
+ *   `park-events.ts`).
  *
  * A row's key is unique in the table, and a row is written in the same
  * transaction as what it records (a record's end, a suppression record, a
@@ -106,11 +109,30 @@ export interface EventRow {
   /** The class the closed list places it in; `null` for an observation no class names (a drift, a wait, a nudge, a hold). */
   class: OutcomeClass | null;
   reason: string;
-  /** For the end of a hold: how long the pull request waited. */
+  /** For the end of a hold: how long the pull request waited; for an answered park, how long it waited for its answer. */
   durationMs?: number;
+  /** For a park that left its ledger (`park-events.ts`): what it was and how it was settled. */
+  park?: ParkFacts;
   /** The target's title and link as the tick's reads gave them; absent on rows written before they were kept, and when no read gave one. */
   title?: string;
   url?: string;
+}
+
+/** How one park occurrence left its ledger, as its event row records it. */
+export interface ParkFacts {
+  key: string;
+  /** The decision class it was parked under; `null` for a park from before classes. */
+  class: string | null;
+  digest: string | null;
+  parkedAt: string;
+  /** Answered by people, handed on to be decided provisionally, or gone with no receipt. */
+  outcome: "answered" | "provisional" | "removed";
+  /** The answers' form: `approve`, `choose`, or `free` for answers in people's own words; `null` when none was consumed. */
+  form: "approve" | "choose" | "free" | null;
+  /** Whether the option chosen is the one the decision recommended; `null` when no option was chosen. */
+  recommended: boolean | null;
+  /** Whether a note narrowed the option chosen. */
+  note: boolean;
 }
 
 export type LogRow = EndedRow | EventRow;
@@ -495,7 +517,8 @@ export function endedRow(
     class: placed.class,
     reason,
     next:
-      record.action === "pickup" && r.result === "done"
+      record.action === "pickup" &&
+      (r.result === "done" || r.result === "waits")
         ? (r.next ?? null)
         : derivedNext(record.action, placed.class, reason),
     ...aboutFields(about),

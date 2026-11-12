@@ -10,6 +10,13 @@ import type { PendingAnswer } from "../../skills/drive-pr/scripts/lib/state/pass
 import type { AskContext } from "./station.ts";
 import { within, PAST_DEADLINE } from "./reading.ts";
 import type { ThreadEntry } from "./answer.ts";
+import { answerView } from "../../shared/decision-card.ts";
+import { decisionOf } from "../../dispatch/lib/line-decision.ts";
+import { renderParkedDecision } from "../../shared/decisions/park.ts";
+import {
+  framedDecisionLines,
+  type ParkedItem,
+} from "../../skills/drive-pr/scripts/lib/state/park-frame.ts";
 
 export type ParkAnswers = Awaited<ReturnType<typeof parkAnswers>>;
 
@@ -109,9 +116,49 @@ export function parkReading(found: ParkAnswers | null): ParkReading {
 /** A person's answer, including the shared parser's interpretation. */
 export function answerText(answer: PendingAnswer): string {
   const choice = answer.choice;
+  if (answer.stale === true)
+    return `stale answer naming framing ${answer.digest ?? "unknown"}: ${answer.body}`;
   return choice === undefined
     ? `free answer: ${answer.body}`
     : `structured answer: chose ${choice.option}${choice.recommended ? " (recommended)" : ""}${choice.note === undefined ? "" : `; note: ${choice.note}`}`;
+}
+
+/** What an answer entry adds to its words: the item's key and what the answer chose, as every reader reads it (`shared/decision-card.ts`). */
+export function answerFields(
+  key: string,
+  answer: PendingAnswer,
+): Pick<ThreadEntry, "key" | "choice" | "note" | "free" | "stale"> {
+  const { author: _a, at: _t, url: _u, ...chose } = answerView(answer);
+  return { key, ...chose };
+}
+
+/** A parked item as a question entry: the decision as the drive framed it, with its key, digest and numbered options, as the tick's line carries them. */
+export function questionEntry(
+  p: ParkedItem,
+  heartbeat: string,
+  from: string,
+  record: ThreadEntry["record"],
+): ThreadEntry {
+  const read = decisionOf({
+    key: p.key,
+    kind: p.kind,
+    ...(p.digest === undefined ? {} : { digest: p.digest }),
+    ...(p.decision === undefined ? {} : { decision: p.decision }),
+    lines: framedDecisionLines(p),
+  });
+  return {
+    at: p.at ?? heartbeat,
+    kind: "question",
+    from,
+    to: "a person",
+    // The decision's question, as the drive framed it.
+    text:
+      p.decision === undefined ? p.reason : renderParkedDecision(p.decision),
+    record,
+    key: p.key,
+    ...(p.digest === undefined ? {} : { digest: p.digest }),
+    ...((read.options ?? []).length === 0 ? {} : { options: read.options }),
+  };
 }
 
 /** Review-thread replies are absent from the pull request's conversation. */
@@ -139,6 +186,13 @@ export function parkAnswerEntries(
       disputed: false,
       partial: true,
     })),
+    // Every other item with answers, a stale one among them, with each person's latest.
+    ...found.responses.map((v) => ({
+      key: v.item.key,
+      answers: v.answers,
+      disputed: false,
+      partial: false,
+    })),
   ]
     .reduce<
       {
@@ -164,6 +218,7 @@ export function parkAnswerEntries(
         to: address,
         text: `${v.disputed ? "disputed " : v.partial ? "partial " : ""}${v.key}: ${answerText(a)}`,
         record: { kind: "pull-request-comment", url: a.url },
+        ...answerFields(v.key, a),
       })),
     );
   return [
@@ -175,6 +230,7 @@ export function parkAnswerEntries(
       to: address,
       text: `${n.item.key}: note with no answer: ${n.note}`,
       record: { kind: "pull-request-comment", url: n.url },
+      key: n.item.key,
     })),
   ];
 }
@@ -188,6 +244,9 @@ export function parkAnswerSummary(found: ParkAnswers | null): string[] {
         `${v.key}: ${v.answers.every((a) => a.choice === undefined) ? "free answer" : `structured answer choosing ${v.answers[0]?.choice?.option ?? ""}`}`,
     ),
     ...found.disputed.map((v) => `${v.item.key}: disputed answers`),
+    ...found.stale.map(
+      (v) => `${v.item.key}: stale answer naming an earlier framing`,
+    ),
     ...found.notes.map((v) => `${v.item.key}: note with no answer`),
   ];
 }

@@ -65,6 +65,14 @@ make, use the entry's term instead.
   holds one concrete, tested implementation of it, and what it learns comes
   back as *backflow*. Short form: consumer. *Avoid*: instance, downstream
   repository, target repository, adopting repository.
+- **Tracker claim token** — the marker comment a claim posts on a tracker
+  item (`do_item.claim_marker`) before it writes the item, so two hosts
+  picking the same item can tell their claims apart: of the markers posted
+  within ten minutes of a claim's own, the earliest wins and a later claim
+  stands down. A marker older than that lapses. The tracker offers no
+  conditional create for a comment, so the token narrows a race between
+  hosts and does not exclude it
+  ([plugin/RECORDS.md](plugin/RECORDS.md)).
 - **Tracker namespace** — the stable name of the tracker collection whose
   served assignments a repository reads: `linear:<team>` for Linear, or
   `jira:<site>:<project>` for Jira, where the site is its `https://` address. The adapter and, for Jira, its site keep
@@ -644,10 +652,16 @@ make, use the entry's term instead.
   be reviewed before what it builds on merges. A *native* stack records the
   final target in the *forge*'s own stack metadata; a plain *branch chain*
   records it nowhere, and tools have to walk the chain of bases to find it.
+- **Release line** — a long-lived branch that keeps an earlier version of a
+  product maintained (`release/2.4`) beside the *integration branch*. A fix
+  for that version lands there first, and is carried forward to the newer
+  branches afterwards, often by automation.
 - **Pull-request policy** — a repository's declared rules for how pull
-  requests are shaped: whether they may stack, how branches are named,
-  whether they open as drafts and when they are marked Ready, how a pull
-  request links its issue, and how large it may be.
+  requests are shaped: whether they may stack, which base an item's pull
+  request targets (the *integration branch*, or a *release line* its labels
+  choose), how branches are named, how titles and commit messages carry the
+  issue key, whether they open as drafts and when they are marked Ready, how
+  a pull request links its issue, and how large it may be.
 - **Merge base** — the most recent commit two branches share. A merge
   compares each branch with it to see what each side changed; a pull
   request's own changes are its diff against the merge base with its base
@@ -1039,10 +1053,18 @@ make, use the entry's term instead.
   *false green* ([M14](modules/M14-testing-strategy/README.md)).
 - **Flaky test** — a test that sometimes passes and sometimes fails on the
   same code, because of timing, shared state or an unreliable dependency.
+- **Known-failure baseline** — a committed list of the tests known to fail
+  in one place (a platform, a suite), each with the reason and the issue
+  that owns the fix. A run that fails only on listed tests passes and one
+  that fails on any other test fails, so a new regression stands out from
+  the old ones; a listed test that passes is reported so its entry is
+  removed, and the list only shrinks. It makes a run that is red for known
+  reasons a signal again while those failures are fixed.
 - **Lock quarantine** — displaced lock directories or recovery marker files
   kept under a distinct name so a later lock holder cannot mistake them for
-  the current lock. The drive's state reaper reports these entries but keeps
-  them because it cannot exclude legacy writers. This stores old lock artifacts;
+  the current lock. The drive's state reaper reports these entries and retires
+  them once a day has passed with no earlier-release driver writing in the
+  clone. This stores old lock artifacts;
   *flaky-test quarantine* sets aside unreliable tests.
 - **Flaky-test quarantine** — setting a *flaky test* aside so its failures
   stop blocking merges while it is fixed, without hiding them: the test keeps
@@ -1272,10 +1294,13 @@ make, use the entry's term instead.
   loop.
 - **Routine question (class)** — a question a follow-up's headless pass may
   stop on that has one safe answer, so the *dispatcher* gives it without a
-  person: housekeeping whose safe answer is to keep and list, such as a local
-  branch or worktree the pass may not delete without asking
-  (`local-leftover`). The classes are a fixed list in the dispatcher's code,
-  each with its **standing answer**; the pass tags its own question with the
+  person, in one of these kinds: housekeeping whose safe answer is to keep and
+  list, such as a local branch or worktree the pass may not delete without
+  asking (`local-leftover`); a step after the merge that only a person can take,
+  whose safe answer is to report it as owed (`person-owed`); and the
+  follow-up items the pass drafted itself, whose safe answer is to file them
+  as drafted (`drafted-items`). The classes are a fixed list in the
+  dispatcher's code, each with its **standing answer**; the pass tags its own question with the
   class, and a follow-up that stopped on one is run again once with that
   answer in its prompt. Any other question waits for a person.
 - **Follow-up lane** — the *dispatcher's* own allowance for follow-ups: a
@@ -1358,10 +1383,10 @@ make, use the entry's term instead.
   dry run is never approved unseen
   ([design](design/structured-answers.md#writing-an-answer)).
 - **Resolution receipt** — the record a re-arm writes into the *drive
-  ledger* when it unparks an item: the park's key and digest, the answer it
-  consumed, the outcome and the times. The dispatcher's tick counts a park
-  as answered from its receipt, and a park that left the ledger with none as
-  removed ([design](design/structured-answers.md#showing-what-was-decided)).
+  ledger* when it unparks an item: the park's key and digest and the time it
+  was parked, the answers it consumed, the outcome and the times. The
+  dispatcher's tick counts a park as answered from its receipt, and a park
+  that left the ledger with none as removed ([design](design/structured-answers.md#showing-what-was-decided)).
 - **Disputed answer** — a parked item whose people's latest answers are not
   all the same option with the same notes (two different choices, the same
   choice with differing notes, or a choice beside another person's free
@@ -1455,6 +1480,8 @@ make, use the entry's term instead.
   session currently owns a piece of work, such as a pull request's review
   threads. Other sessions read it and stand back; a lease whose holder died
   expires instead of blocking forever.
+  A lease may also be granted by a *hub* to a host for a launch or an
+  owner duty, renewed by that host's calls and lapsing when they stop.
 - **Process identity** — what a component records so another process can
   later tell whether the recorded one still runs: the machine's **host id**
   (an id that survives a rename and a restart), its host name, the boot it
@@ -1522,6 +1549,19 @@ make, use the entry's term instead.
   resolves, the push re-triggers the reviewers. Because resolving *causes* the
   next round, "no open threads" is not the loop's stop condition; a round that is
   settled — every expected reviewer has reported — with nothing left is.
+- **Review object** — the forge's own record of one review of a pull request
+  (approve, request changes or comment, with its inline comments and the commit
+  it was made on), as opposed to a *sticky comment* an app edits in place. A
+  reviewer that reviews through review objects names the commit in the object,
+  not in a summary comment.
+- **Commit status** — a result a CI service posts against a commit through the
+  forge's older status interface: a state, a description and a link to the
+  service's own page. A *check run* is the richer newer form, tied to an app,
+  with annotations; a CI that posts only statuses has no check run for the
+  drive to read.
+- **Reviewer evidence mode** — which record of the forge the drive reads to
+  learn that the AI reviewer reviewed the head commit: the reviewer's summary
+  comment marker, or its latest *review object* together with its check run.
 - **Convergence (review loop)** — the point where a review loop may stop: the
   reviewer completed on the exact head commit, its recorded reviewed commit
   equals that head, and no unresolved thread or *summary-only finding* remains.
@@ -1537,10 +1577,18 @@ make, use the entry's term instead.
   review. The drive reads it to tell a head the reviewer has not reached yet
   from one it will never review
   ([terminal states](plugin/skills/drive-pr/references/terminal-states.md)).
+- **Review object (reviewer evidence)** — a pull-request review the forge
+  records, naming the commit it was submitted against. Some automated
+  reviewers (CodeRabbit among them) record their reviews this way instead of
+  in a *sticky comment*, and post none on a push they have nothing new to say
+  about; the drive then reads the review and the reviewer's check run
+  (`review.reviewer_evidence: review_object`,
+  [terminal states](plugin/skills/drive-pr/references/terminal-states.md#a-reviewer-that-submits-pull-request-reviews)).
 - **Summary-only finding** — a review finding that appears only in the
-  reviewer's *sticky comment* because it could not be anchored to a diff line,
-  so it creates no thread. A loop that counted only threads would report
-  *convergence* with a real finding unanswered; the drive enumerates these and
+  reviewer's *sticky comment*, or in the body of its *review object*, because
+  it could not be anchored to a diff line, so it creates no thread. A loop
+  that counted only threads would report *convergence* with a real finding
+  unanswered; the drive enumerates these and
   answers each with a top-level comment
   ([drive-pr](plugin/skills/drive-pr/SKILL.md)).
 - **Precision bar** — the pre-committed threshold of measured precision an
@@ -1778,6 +1826,15 @@ make, use the entry's term instead.
   against a strict form before it reads the rest, which is data and never a
   command
   ([plugin/RECORDS.md](plugin/RECORDS.md)).
+- **Replication revision** — the counter a host keeps, per *incarnation*, to
+  order what it reports to a *hub*: it advances whenever the host observes a
+  record body that differs from the one it last reported for that record, so
+  it orders the host's observations even when two writers left different
+  bodies at the same generation. The hub replaces a stored record with a
+  report of a higher revision and refuses a lower one as a stale replay; the
+  record's own generation is kept for display and never decides the
+  replacement
+  ([design/control-plane.md](design/control-plane.md)).
 - **Records registry** — the one list of every kind of record the plugin
   keeps, with where each lives, who writes it and its schema version
   (`plugin/shared/records/registry.ts`). A gate fails a hidden marker, a
@@ -1899,6 +1956,17 @@ make, use the entry's term instead.
   permissions, whether it has a webhook) that GitHub turns into a new App
   when a person posts it, so the App is created with exactly the
   permissions written down rather than ones picked by hand.
+- **Web app manifest** — a small JSON file a page names so a phone's browser
+  can offer to install it as an app: it gives the app's name, start address,
+  colours and icons. Unrelated to an *App manifest*, which describes a
+  *GitHub App*.
+- **Maskable icon** — an app icon drawn to fill a full square, with its mark
+  kept near the middle, so a launcher that crops icons to its own shape (a
+  circle, a rounded square) does not cut the mark off.
+- **Service worker** — a script a browser starts on demand, apart from the
+  page itself, to handle events such as requests when the network is gone;
+  the browser stops it whenever it has nothing to handle. The
+  dashboard installs none, so an installed copy needs the network.
 - **Release pull request** — a pull request holding a release step's
   commit (the changelog section and the moved version), regenerated by CI
   after each merge and merged by a person, for a repository whose
@@ -2160,27 +2228,29 @@ make, use the entry's term instead.
   instruction and after showing what it would write, and holds no state of
   its own, so any session on any machine can be the operator. *Avoid:*
   orchestrator, lead agent.
-- **Hub** — the page a person watches and steers the execution line from,
-  and the `jig hub` process that serves it: what is safe to merge, what
-  waits on the person, what runs and what is queued, each *piece of work*
-  on a card, a page per piece of work with its thread,
+- **Dispatch dashboard** — the page a person watches and steers the
+  execution line from, and the process that serves it. Today
+  `jig dispatch dashboard` serves one host's *dispatcher*: what is safe to
+  merge, what waits on the person, what runs and what is queued. Planned:
+  each *piece of work* on a card, a page per piece of work with its thread,
   and a chat with the *operator* that explains and drafts and never sends.
-  Each machine serves its own. A host's hub answers reads only, on its
-  loopback address; a laptop's reads each host over *SSH* through the
-  *source feed* and serves the page to any browser, Orca's among them. It
+  Each machine serves its own. A host's dashboard answers reads only, on
+  its loopback address; a laptop's serves the page to any browser, Orca's
+  among them, and shows every host through the *hub*'s *source feed*. It
   keeps no copy of the line, only the person's conversation with the
   operator, and nothing the line does waits on it
-  ([ADR-0013](docs/adr/ADR-0013-records-not-a-daemon.md)). It grows from
-  the *dispatcher*'s dashboard. Planned: [design/hub.md](design/hub.md).
-- **Piece of work** — what the *hub* shows as one card and one thread: a
+  ([ADR-0013](docs/adr/ADR-0013-records-not-a-daemon.md)). Not the *shared
+  control plane*, which would serve many hosts. See
+  [design/dispatch-dashboard.md](design/dispatch-dashboard.md).
+- **Piece of work** — what the *dispatch dashboard* shows as one card and one thread: a
   tracker item, the pull request it opens and that pull request's
   follow-up, joined by their aliases (the item key, the branch name, the
   pull request), each join with the evidence for it. A pull request with no
   item is one, and so is an item with no pull request yet. Each of its
   stations has an *address*. See
-  [design/hub.md](design/hub.md#a-piece-of-work-and-its-views).
+  [design/dispatch-dashboard.md](design/dispatch-dashboard.md#a-piece-of-work-and-its-views).
 - **QR code** (quick response code) — a square barcode a phone camera can
-  scan to open an address. The *hub*'s planned sharing path encodes its
+  scan to open an address. The *dispatch dashboard*'s planned sharing path encodes its
   private, token-free address; scanning transfers the address and does not
   authenticate the reader.
 - **Secure context** — a page environment the browser considers trustworthy,
@@ -2189,49 +2259,69 @@ make, use the entry's term instead.
   clipboard require it, and may also require permission. An unencrypted web connection to another
   machine's private address does not qualify just because the network is
   encrypted. A phone reads
-  the *hub* through its encrypted private-network front for this reason. See
+  the *dispatch dashboard* through its encrypted private-network front for this reason. See
   [MDN's secure-context definition](https://developer.mozilla.org/en-US/docs/Web/Security/Defenses/Secure_Contexts).
 - **Private-network front** — a layer that publishes a
-  machine's *hub* from its loopback address to a private network, with a
+  machine's *dispatch dashboard* from its loopback address to a private network, with a
   certificate and the viewer's identity, so a phone can open the page;
   called a front for short. Tailscale Serve is its first implementation: it
-  names the viewer in a request header, which the hub trusts only on a
+  names the viewer in a request header, which the dashboard trusts only on a
   socket that only Tailscale's daemon reaches, and carries each person's
-  scope from the private network's access grants, which the hub applies to
+  scope from the private network's access grants, which the dashboard applies to
   every answer. A reverse proxy with an identity
   provider, or an *SSH* tunnel, does the same job. A front never publishes
-  to the open internet, and it does not let the hub write. See
-  [design/hub.md](design/hub.md#a-front-on-a-private-network).
-- **Shared control plane** — one service that would serve many hosts: it
-  reads the forge and the tracker once for all of them, hands out work that
-  each host pulls when a slot frees, and serves the *source feed* over
-  connections the hosts open, so neither the *hub* nor a host's records
-  change when it joins. Each host's *dispatcher* is Jig's first
-  *control plane*; handing out work goes past
-  [ADR-0013](docs/adr/ADR-0013-records-not-a-daemon.md), so the shared one
-  waits for a decision record of its own. Only the rules it must keep are
-  written down, among them that a host keeps authority over what it did,
-  that nothing launches without the winning claim, and that a person's act
+  to the open internet, and it does not let the dashboard write. See
+  [design/dispatch-dashboard.md](design/dispatch-dashboard.md#a-front-on-a-private-network).
+- **Hub** — Jig's *shared control plane*: `jig hub serve`, one process with
+  one database that enrolled hosts call. Optional: a host that never
+  enrolls, or whose hub does not answer, dispatches alone. See
+  [design/control-plane.md](design/control-plane.md).
+- **Device grant** — how a host enrolls in a *hub*: the host prints a short
+  code, a person who administers the hub approves it, and the host receives a
+  credential of its own, bound to the repositories and queues that person
+  approved.
+- **Incarnation** — the id a *dispatcher*'s state database got when it was
+  created. A *hub* uses it to tell a host's records from those of an earlier
+  database of the same host.
+- **Capabilities** — named flags a call to the *hub* carries, and the hub
+  answers with its own, so either side adds a feature without changing the
+  other.
+- **Offer policy** — how the *hub* orders the work it offers a host with
+  free slots: an ordered list of named rankers declared as data in the
+  hub's settings, ties in one broken by the next, with built-in rankers
+  (the queue's order, the host that already holds the work, free slots)
+  and a `command` ranker that runs a program the hub's settings name. A
+  repository may choose one of the hub's named policies. See
+  [design/control-plane.md](design/control-plane.md#how-offers-are-ranked).
+- **Shared control plane** — one service that serves many hosts' *dispatchers*:
+  it reads the forge and the tracker once for all of them, puts claims with
+  leases in front of the forge and tracker claims, notices a host that
+  stopped, serves the *source feed* of every host's work and may offer work
+  to a host with free slots, in the order an *offer policy* gives. Each host's *dispatcher* is Jig's first
+  *control plane*; Jig's shared one is the *hub*. The rules it keeps: no
+  level of use requires it, a host keeps authority over what it did, the
+  forge and tracker claims stay the fences, no server timer rewrites a
+  host's work, hosts call it and it calls no host, and a person's act
   carries that person's credential. See
-  [design/hub.md](design/hub.md#toward-a-shared-control-plane).
-- **Source feed** — the protocol through which one *hub* reads another
+  [ADR-0016](docs/adr/ADR-0016-an-optional-hub-for-hosts-that-keep-authority.md)
+  and [design/control-plane.md](design/control-plane.md).
+- **Source feed** — the protocol through which one *dispatch dashboard* reads another
   machine's records: a snapshot, then the changes since a cursor, each
   record in its *record envelope* and stamped with the host it came from
   and a visibility class (safe on the forge, for one person's machines, or
-  for this machine only). Its first transport is
-  `ssh <host> jig hub rpc`, JSON lines over *SSH*; a *shared control plane*
-  would serve the same feed over a connection the host opens. Not the
-  *views API*, which a page uses to talk to its own hub. See
-  [design/hub.md](design/hub.md#the-source-feed-from-a-host-to-a-hub).
-- **Views API** — the protocol between the *hub*'s page and the hub that
+  for this machine only). The *hub* serves it over HTTPS, from what its
+  hosts report; without a hub a dashboard reads its own machine only. Not the
+  *views API*, which a page uses to talk to its own server. See
+  [design/dispatch-dashboard.md](design/dispatch-dashboard.md#the-source-feed-from-a-host-to-a-dashboard).
+- **Views API** — the protocol between the *dispatch dashboard*'s page and the server that
   serves it: a `hello` that names the protocol version, the viewer and each
   source's state; the reads that draw each view, Needs you and Running
   among them, and each
   *piece of work*'s page; and a stream of changes the page resumes from its
   last cursor. Every answer is a value or a coded failure
   ([ADR-0012](docs/adr/ADR-0012-failures-as-values.md)). The page talks to
-  no other machine; its hub reads the others through the *source feed*.
-  See [design/hub.md](design/hub.md#the-views-api-from-a-page-to-its-hub).
+  no other machine; its server reads the others through the *source feed*.
+  See [design/dispatch-dashboard.md](design/dispatch-dashboard.md#the-views-api-from-a-page-to-its-server).
 - **Notices workspace** — the workspace the *dispatcher* keeps per
   repository, on a branch of the default branch, where every notification
   for that repository goes, unless the repository names another workspace
@@ -2281,7 +2371,10 @@ make, use the entry's term instead.
   when it ends (followed-up, followup-failed), and the dispatcher at every
   *tick*, which also writes stale and held (from the *serialized areas*)
   and corrects any label that disagrees. No writer reads a state label to
-  decide what to start, and none creates one: a one-time setup does. Beside
+  decide what to start, and none creates one: a one-time setup does. Where
+  a repository names a `blocked` tracker state, the same projection moves
+  the items a parked pull request links to `blocked`, and back once its
+  drive runs again. Beside
   them the dispatcher keeps marker labels without the prefix: the
   *owed-steps label* and `automation` (*automation pull request*). A person
   adds the commands: `drive` asks the dispatcher to drive a pull request

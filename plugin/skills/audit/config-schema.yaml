@@ -69,6 +69,7 @@ strict:
   - issue_tracker.jira.priorities
   - issue_tracker.jira.resolutions
   - issue_tracker.jira.link_types
+  - issue_tracker.jira.blocked_fields
   - docs.index
   - resolve_conflicts
   - review.lenses
@@ -335,10 +336,21 @@ fields:
     deprecated: "use issue_tracker.labels.epic; the older name is still read while that is unset"
   review.reviewer_app:
     type: string
-    read_by: [drive-pr]
+    read_by: [drive-pr, dispatch]
   review.reviewer_check_pattern:
     type: regex
+    read_by: [drive-pr, dispatch]
+  review.reviewer_evidence:
+    type: enum
+    values: [sticky, review_object]
     read_by: [drive-pr]
+    since: 0.210.0
+  review.draft_skipping_reviewers:
+    type: list
+    items: string
+    distinct: true
+    read_by: [drive-pr]
+    since: 0.210.0
   review.sticky_marker:
     type: string
     read_by: [drive-pr]
@@ -444,8 +456,26 @@ fields:
     read_by: [do-item]
   pull_requests.title_format:
     type: enum
-    values: [conventional, free]
+    values: [conventional, free, pattern]
     read_by: [do-item]
+  pull_requests.title_pattern:
+    type: string
+    pattern: "\\{key\\}"
+    since: 0.204.0
+    read_by: [do-item]
+  pull_requests.base_rules:
+    type: list
+    items:
+      fields:
+        when: { type: map, values_type: { type: list, items: string } }
+        base: string
+    since: 0.206.0
+    read_by: [do-item]
+  pull_requests.commit_prefix:
+    type: string
+    pattern: "\\{key\\}"
+    since: 0.206.0
+    read_by: [do-item, drive-pr, fix-ci, resolve-conflicts]
 
   drive.validation_plan_command:
     type: command
@@ -539,6 +569,16 @@ fields:
   ci.hold_label:
     type: string
     read_by: [drive-pr]
+  ci.log_command:
+    type: command
+    read_by: [fix-ci]
+    repository_only: true
+    since: 0.205.0
+  ci.repair_skill:
+    type: string
+    pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*(?::[A-Za-z0-9][A-Za-z0-9._-]*)?$"
+    read_by: [drive-pr]
+    since: 0.205.0
 
   issue_tracker.adapter:
     type: enum
@@ -552,8 +592,8 @@ fields:
     repository_only: true
   issue_tracker.states:
     type: map
-    keys: [triage, backlog, todo, in_progress, pr_open, in_review, ops_pending, done, canceled, duplicate]
-    read_by: [do-item, work-batch, dispatch]
+    keys: [triage, backlog, todo, in_progress, pr_open, blocked, in_review, ops_pending, done, canceled, duplicate]
+    read_by: [do-item, drive-pr, work-batch, dispatch]
   issue_tracker.github.repository:
     type: string
     pattern: "^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$"
@@ -588,6 +628,12 @@ fields:
     read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
     repository_only: true
     since: 0.111.0
+  issue_tracker.jira.api_base:
+    type: string
+    pattern: "^https://api\\.atlassian\\.com/ex/jira/[A-Za-z0-9][A-Za-z0-9-]{0,63}/?$"
+    read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
+    repository_only: true
+    since: 0.209.0
   issue_tracker.jira.issue_type:
     type: string
     default: Task
@@ -625,6 +671,12 @@ fields:
     nonempty: true
     read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
     since: 0.192.0
+  issue_tracker.jira.blocked_fields:
+    type: map
+    keys: [reason, since]
+    values_type: string
+    read_by: [do-item, drive-pr, dispatch]
+    since: 0.211.0
   issue_tracker.labels.epic:
     type: string
     read_by: [do-item, resolve-review-comments, drive-pr, work-batch, file-issue, reflect, dispatch]
@@ -721,7 +773,7 @@ fields:
   do_item.execution_plan_block:
     type: string
     default: execution-plan-v1
-    read_by: [do-item]
+    read_by: [do-item, dispatch]
   do_item.work_types:
     type: map
     values_type: { type: map, values_type: any }

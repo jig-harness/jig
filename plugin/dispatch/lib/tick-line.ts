@@ -28,17 +28,31 @@ import {
   withLineLocked,
   writeLine,
 } from "./line-store.ts";
-import { mergeLine, readBy } from "./line-merge.ts";
+import {
+  identifiedSlugs,
+  mergeLine,
+  readBy,
+  withLastSlugs,
+} from "./line-merge.ts";
 import { hostTimeZone } from "./host-time.ts";
 import { exportLog } from "./log-export.ts";
 import type { MachineConfig } from "./machine-config.ts";
 import type { SessionsReport } from "./runtime/port.ts";
-import { stateDb } from "./state.ts";
+import { inTransaction, stateDb } from "./state.ts";
+import { insertRow } from "./log.ts";
+import {
+  type ParkOutcomes,
+  parkOutcomes,
+  withUnreadRepos,
+  type ParkRepo,
+} from "./park-events.ts";
 import { failureText } from "./text.ts";
 import { tickHealthOf, withTick } from "./tick-health.ts";
 import { passTimeoutSeconds } from "../../skills/drive-pr/scripts/lib/driver/settings.ts";
 import type { TickReceipt } from "../receipts.ts";
 import type { ClaimedItem, DrivenPr, WantedItem } from "./types.ts";
+import { type PrLinkText, workLinks } from "./work-links.ts";
+import type { IssueKeys } from "../../skills/do-item/scripts/lib/tracker/keys.ts";
 
 /** Copy the outcome log's new rows into its month files; false, with the reason on the receipt, when the copy failed. */
 export function copyLog(receipt: TickReceipt): boolean {
@@ -51,18 +65,29 @@ export function copyLog(receipt: TickReceipt): boolean {
   }
 }
 
-/** What a repository's reads add to its report for the line: its drives, and each other target's title and link. */
+/** What a repository's reads add to its report for the line: its drives, each other target's title and link, its tracker, and, where `repo` names how its branches are named, what links its open pull requests to its items. */
 export function lineInputOf(
   drives: DrivenPr[],
   forge: {
+    ok?: boolean;
     open: ReadonlyArray<{ number: number; url: string; title: string }>;
     merged: ReadonlyArray<{ number: number; url: string; title: string }>;
+    linkTexts?: PrLinkText[];
   },
-  tracked: { pickups: WantedItem[]; claimed: ClaimedItem[] | null },
+  tracked: {
+    pickups: WantedItem[];
+    claimed: ClaimedItem[] | null;
+    keys?: IssueKeys | null;
+    adapter?: string | null;
+    issueRepository?: string | null;
+  },
   sessions: SessionsReport,
+  repo: { slug: string; branchPattern: string } | null = null,
 ): RepoLineInput {
+  const { keys, adapter } = tracked;
   return {
     drives,
+    open: forge.ok === false ? null : forge.open.map((p) => p.number),
     known: [
       ...[...forge.open, ...forge.merged].map((p) => ({
         target: `PR #${p.number}`,
@@ -81,6 +106,18 @@ export function lineInputOf(
       })),
     ],
     sessions,
+    ...(adapter === undefined
+      ? {}
+      : { tracker: adapter === null ? null : { adapter } }),
+    links:
+      repo === null || keys == null || forge.linkTexts === undefined
+        ? null
+        : workLinks(forge.linkTexts, {
+            keys,
+            branchPattern: repo.branchPattern,
+            repository: repo.slug,
+            issueRepository: tracked.issueRepository ?? null,
+          }),
   };
 }
 
@@ -129,6 +166,46 @@ function accountsOf(
     notAdmitted:
       refused.find((r) => r.account === slots.account.name)?.reason ?? null,
   }));
+}
+
+/** The line with its parks, and the event rows of the parks that left: the rows and the line that records them as ingested land together. */
+function writeWithParks(
+  line: LineSnapshot,
+  parked: ParkOutcomes,
+  receipt: string,
+): void {
+  const db = stateDb();
+  inTransaction(db, () => {
+    for (const row of parked.rows) insertRow(db, row);
+    writeLine(
+      { ...line, parks: parked.parks, ingested: parked.ingested },
+      receipt,
+    );
+  });
+}
+
+/** Each repository the tick read, as the park outcomes compare it: its owner flag, its open pull requests and its drives. */
+function parkRepos(
+  receipt: TickReceipt,
+  machine: MachineConfig,
+  inputs: Map<string, RepoLineInput>,
+): ParkRepo[] {
+  return receipt.repos.flatMap((report) => {
+    const input = inputs.get(report.path);
+    if (report.slug === null) return [];
+    // A repository whose forge was not read keeps the parks it held.
+    return [
+      {
+        slug: report.slug,
+        owner:
+          machine.repositories.find((r) => r.path === report.path)?.owner ??
+          false,
+        open: input?.open ?? null,
+        drives: input?.drives ?? [],
+        finalParks: input?.finalParks ?? [],
+      },
+    ];
+  });
 }
 
 /** Whether `repos` are every repository the machine file lists, and only those. */
@@ -299,7 +376,7 @@ function writeKept(
         receipt.startedAt,
       );
       // Even a whole tick merges: another tick may have written a newer part since this one read.
-      const line =
+      const line = withLastSlugs(
         before === null
           ? fresh
           : mergeLine(
@@ -307,10 +384,35 @@ function writeKept(
               fresh,
               machine.repositories,
               receiptText === null ? "fresh" : "kept",
-            );
+            ),
+        before,
+      );
       const ticks = withTick(before?.ticks, tickHealthOf(receipt, whole));
-      writeLine(
+      const listedSlugs = identifiedSlugs(line, before, machine.repositories);
+      const slugsOf = (current: boolean): Set<string> =>
+        current
+          ? new Set(
+              line.repos.flatMap((r) =>
+                r.slug === null || r.runId !== receipt.runId ? [] : [r.slug],
+              ),
+            )
+          : listedSlugs;
+      const accepted = slugsOf(true);
+      const parked = withUnreadRepos(
+        parkOutcomes(
+          parkRepos(receipt, machine, tick.inputs).filter((r) =>
+            accepted.has(r.slug),
+          ),
+          before ?? {},
+          receipt.finishedAt,
+        ),
+        accepted,
+        slugsOf(false),
+        before ?? {},
+      );
+      writeWithParks(
         withLoad({ ...line, ticks }, receipt),
+        parked,
         receiptText ?? JSON.stringify(receipt, null, 2),
       );
     },
