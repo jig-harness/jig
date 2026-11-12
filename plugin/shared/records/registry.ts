@@ -380,6 +380,14 @@ const DISPATCHER: RecordKind[] = [
 
 const MACHINE: RecordKind[] = [
   {
+    name: "db-migration",
+    medium: "machine",
+    owner: "shared/records/migrations.ts",
+    at: "every component's SQLite database: migration digests and whether each was applied or structurally baselined",
+    table: "db_migrations",
+    version: 1,
+  },
+  {
     name: "db-meta",
     medium: "machine",
     owner: "shared/records/db.ts",

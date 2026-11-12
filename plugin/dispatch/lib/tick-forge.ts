@@ -34,6 +34,7 @@ import {
 import { readDrives } from "./sources/ledgers.ts";
 import type { Pool } from "./pool.ts";
 import type { TickComments } from "./tick-comments.ts";
+import type { PrLinkText } from "./work-links.ts";
 import type { CommentsOutcome, RepositoryOutcome } from "./tick-reads.ts";
 import { failureText } from "./text.ts";
 import type {
@@ -62,6 +63,8 @@ export interface ForgeRead {
   drives: Awaited<ReturnType<typeof readDrives>>;
   merged: MarkedPr[];
   login: string | null;
+  /** What links each open pull request to its items (`work-links.ts`), where the repository's query read them all; absent when it did not. */
+  linkTexts?: PrLinkText[];
 }
 
 /** What the forge's part of a tick reads through beside the forge itself: the repository's query, the tick's comment listings, the login read once per tick, and the pool its listings run through. */
@@ -146,6 +149,8 @@ export async function readForge(
       return out;
     }
     out.open = open.value;
+    const texts = queried.ok ? queried.value.open.map(linkText) : [null];
+    if (texts.every((t): t is PrLinkText => t !== null)) out.linkTexts = texts;
     remember(out.open);
     out.login = login;
     const toRead = managed(out.open);
@@ -205,6 +210,21 @@ export async function readForge(
     unread(failureText(error));
   }
   return out;
+}
+
+/** What the query read of one open pull request that links it to its items. */
+function linkText(raw: unknown): PrLinkText | null {
+  const p = (raw ?? {}) as Record<string, unknown>;
+  if (typeof p.number !== "number") return null;
+  return {
+    number: p.number,
+    url: typeof p.url === "string" ? p.url : "",
+    headRefName: typeof p.headRefName === "string" ? p.headRefName : "",
+    body: typeof p.body === "string" ? p.body : "",
+    closing: Array.isArray(p.closing)
+      ? (p.closing as Exclude<PrLinkText["closing"], null>)
+      : null,
+  };
 }
 
 /**

@@ -1,6 +1,6 @@
 import { expect, it } from "bun:test";
 import { gitHub, issueNode, conn, repoLabels } from "./github-fixtures.ts";
-import { jira, issue as jiraIssue } from "./jira-fixtures.ts";
+import { jira, issue as jiraIssue, MEMBER } from "./jira-fixtures.ts";
 import { linearTracker } from "../scripts/lib/tracker/linear.ts";
 import { parseTrackerConfig } from "../scripts/lib/tracker/config.ts";
 
@@ -77,10 +77,11 @@ it("stops Linear updates at each prerequisite request", async () => {
 });
 
 it("stops Jira updates at each prerequisite request", async () => {
-  for (let stop = 1; stop <= 4; stop++) {
+  for (let stop = 1; stop <= 5; stop++) {
     const controller = new AbortController();
     const { t, calls } = jira((c, n) => {
       if (n + 1 === stop) controller.abort(new Error("cancelled prerequisite"));
+      if (c.path === "myself") return MEMBER;
       if (c.path.startsWith("issue/"))
         return jiraIssue({ key: c.path.slice(6) });
       if (c.path === "priority/search")
@@ -96,7 +97,12 @@ it("stops Jira updates at each prerequisite request", async () => {
       ),
     ).rejects.toThrow("cancelled prerequisite");
     expect(calls).toHaveLength(stop);
-    expect(calls.every((c) => c.signal === controller.signal)).toBe(true);
+    // Authentication is shared and runs independently of one caller's signal.
+    expect(
+      calls
+        .filter((c) => c.path !== "myself")
+        .every((c) => c.signal === controller.signal),
+    ).toBe(true);
   }
 });
 

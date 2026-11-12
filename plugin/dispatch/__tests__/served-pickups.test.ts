@@ -29,6 +29,7 @@ function fake() {
     adapter: "github",
     team: "example/repo",
     stateName: (s: string) => (s === "pr_open" ? null : s),
+    assignUnassigned: async () => true,
     assignedIssues: async (_: string, s: string[]) =>
       s.includes("in_progress") ? [] : roots,
     assignedBy: async (k: string) => {
@@ -182,7 +183,10 @@ describe("served pickups", () => {
           target: "#4",
           reason: "needs a person to start",
         }),
-        expect.objectContaining({ target: "#5", reason: "waiting on #9" }),
+        expect.objectContaining({
+          target: "#5",
+          reason: "waiting on #9 (assigned to alex)",
+        }),
       ]),
     );
   });

@@ -42,6 +42,7 @@ import type { JiraSettings, LinkedRelation } from "./settings.ts";
 import {
   abortedError,
   JiraApiError,
+  JIRA_CREDENTIAL_HELP,
   type JiraTransport,
   offsetPages,
   searchPages,
@@ -454,7 +455,15 @@ export function jiraClient(opts: ClientOptions): Client {
 
   /** The credential's own profile, read once. */
   function myself(): Promise<Record<string, unknown>> {
-    me ??= (async () => record(await get("myself"), "myself"))();
+    me ??= (async () => {
+      const raw = await get("myself");
+      const profile = record(raw, "myself");
+      if (typeof profile.accountId !== "string" || !profile.accountId.trim())
+        throw new JiraApiError(
+          `Jira did not identify an authenticated account; ${JIRA_CREDENTIAL_HELP}`,
+        );
+      return profile;
+    })();
     me.catch(() => {
       me = undefined;
     });
@@ -488,6 +497,7 @@ export function jiraClient(opts: ClientOptions): Client {
   /** The site's fields, read once for every resolver that needs them. */
   function siteFields(): Promise<SiteField[]> {
     allFields ??= (async () => {
+      await myself();
       const raw = await get("field");
       if (!Array.isArray(raw))
         throw new JiraApiError("fields of the site: expected a list");
@@ -536,6 +546,11 @@ export function jiraClient(opts: ClientOptions): Client {
     facets: opts.facets ?? defaultFacets("jira"),
 
     async issue(key, signal) {
+      if (signal?.aborted === true) throw abortedError(signal);
+      const authenticated = myself();
+      await (signal === undefined
+        ? authenticated
+        : until(authenticated, signal));
       // Resolved before the issue's own 404 handler: a failed field read is
       // not a missing issue.
       const read = (await fieldsToRead(signal)).join(",");
@@ -572,6 +587,11 @@ export function jiraClient(opts: ClientOptions): Client {
     },
 
     async search(jql, where, signal, fields) {
+      if (signal?.aborted === true) throw abortedError(signal);
+      const authenticated = myself();
+      await (signal === undefined
+        ? authenticated
+        : until(authenticated, signal));
       const extra = await client.fieldLabels(signal);
       const facet = await client.facetFields(signal);
       const read = fields ?? (await fieldsToRead(signal));

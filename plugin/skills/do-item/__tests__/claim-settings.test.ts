@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  claimPlanBlockFromDefaultBranch,
   claimSettingsFromDefaultBranch,
   claimSettingsOf,
 } from "../scripts/lib/claim-settings.ts";
@@ -123,5 +124,20 @@ describe("claimSettingsFromDefaultBranch", () => {
       ok: true,
       value: { claimFrom: null, claimMarker: false },
     });
+  });
+});
+
+describe("claimPlanBlockFromDefaultBranch", () => {
+  it("reads the block the default branch names", async () => {
+    const dir = clone("do_item:\n  execution_plan_block: gated-plan\n");
+    expect(await claimPlanBlockFromDefaultBranch(dir)).toEqual({
+      ok: true,
+      value: "gated-plan",
+    });
+  });
+
+  it("refuses when the default branch cannot be read, whatever the working tree sets", async () => {
+    const dir = clone("do_item: [unclosed\n");
+    expect((await claimPlanBlockFromDefaultBranch(dir)).ok).toBe(false);
   });
 });

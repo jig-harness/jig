@@ -68,7 +68,8 @@ const STATE_FILE = "state.sqlite";
  * database runs them all. A change to the schema adds an entry, says whether
  * it is additive, and never edits one a released plugin ran.
  */
-const MIGRATIONS: readonly Migration[] = [
+/** The dispatcher schema's ordered migrations, shared with historical-schema fixtures. */
+export const MIGRATIONS: readonly Migration[] = [
   {
     additive: false,
     sql: `
@@ -407,6 +408,8 @@ export function stateDb(root = stateRoot()): Database {
   const opened = openDatabase({ path, migrations: MIGRATIONS });
   if (opened.ok) return opened.value;
   const { code, reason, cause } = opened.failure;
+  if (code === "migration-history" || code === "source-state")
+    throw new ExitError(USAGE_EXIT, reason, { cause });
   if (code === "newer-schema")
     throw new ExitError(USAGE_EXIT, reason, {
       cause: new StateVersionError(path, schemaVersion(path) ?? 0, reason),

@@ -239,6 +239,7 @@ describe.skipIf(process.platform === "win32")(
       const r = runScript("reply-to-thread.ts", ["PRRT_x"], fix, {
         stdin: body,
       });
+      expect(r.stderr).toBe("");
       expect({ code: r.code, stdout: r.stdout.trim() }).toEqual({
         code: 0,
         stdout: "https://github.com/acme/widgets/pull/1#discussion_r1",

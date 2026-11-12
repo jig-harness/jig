@@ -62,6 +62,8 @@ export const jqlOf = (c: Call) => String(c.body.jql ?? "");
  */
 export function routes(table: Record<string, unknown>): Answer {
   return (call, n) => {
+    if (!Object.hasOwn(table, call.route) && call.route === "GET myself")
+      return { ...MEMBER, timeZone: "UTC" };
     if (!Object.hasOwn(table, call.route))
       return new Error(`unexpected request ${call.route}`);
     const v = table[call.route];

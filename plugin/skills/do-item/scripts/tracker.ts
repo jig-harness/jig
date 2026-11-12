@@ -115,7 +115,10 @@ import {
   preflightClaim,
   unreadablePreflight,
 } from "./lib/preflight.ts";
-import { claimSettingsFromDefaultBranch } from "./lib/claim-settings.ts";
+import {
+  claimPlanBlockFromDefaultBranch,
+  claimSettingsFromDefaultBranch,
+} from "./lib/claim-settings.ts";
 import { claimBranch, claimSession } from "./lib/claim-marker.ts";
 import { claimWithMarker } from "./lib/claim-token.ts";
 import {
@@ -372,6 +375,7 @@ async function claim(
   key: string,
   person: string | undefined,
   ancestor: string | undefined,
+  blocking: string | undefined,
 ): Promise<unknown> {
   const config = ownTrackerConfig();
   const shape = issueKeysOf(config);
@@ -384,6 +388,11 @@ async function claim(
   const read = await claimSettingsFromDefaultBranch(root, overlay);
   if (!read.ok) return unreadablePreflight(normalized, read.failure.reason);
   const settings = read.value;
+  // Only a pulled-blocker claim enforces the epic plan; any other claim never reads it.
+  const planBlock =
+    person && blocking ? await claimPlanBlockFromDefaultBranch(root) : null;
+  if (planBlock !== null && !planBlock.ok)
+    return unreadablePreflight(normalized, planBlock.failure.reason);
   // Before the lock and before any write: a refusal leaves nothing behind.
   const command = await claimPreflightCommand(root, overlay);
   if (!command.ok)
@@ -411,9 +420,15 @@ async function claim(
           ? claimServedIssue(tracker, normalized, {
               person,
               ...(ancestorKey ? { ancestor: ancestorKey } : {}),
+              ...(blocking
+                ? { blocking: shape?.normalize(blocking) ?? blocking }
+                : {}),
               epicLabel: config.labels.epic,
               hitlLabel: config.labels.hitl,
               manualOpsLabel: config.labels.manualOps,
+              ...(planBlock?.ok && planBlock.value !== undefined
+                ? { executionPlanBlock: planBlock.value }
+                : {}),
               claimFrom: settings.claimFrom,
             })
           : claimIssue(tracker, normalized, { claimFrom: settings.claimFrom });
@@ -530,22 +545,30 @@ const OPERATIONS: Record<string, Operation> = {
       const ancestorFlags = [...flags].filter((f) =>
         f.startsWith("--ancestor"),
       );
+      const blockingFlags = [...flags].filter((f) =>
+        f.startsWith("--blocking"),
+      );
       if (
         forFlags.some((f) => !f.startsWith("--for=") || f.length === 6) ||
         ancestorFlags.some(
           (f) => !f.startsWith("--ancestor=") || f.length === 11,
         ) ||
+        blockingFlags.some(
+          (f) => !f.startsWith("--blocking=") || f.length === 11,
+        ) ||
         forFlags.length > 1 ||
-        ancestorFlags.length > 1
+        ancestorFlags.length > 1 ||
+        blockingFlags.length > 1
       )
         throw new UsageError(
-          "claim accepts one nonempty --for=PERSON and --ancestor=ISSUE",
+          "claim accepts one nonempty --for=PERSON, --ancestor=ISSUE and --blocking=ISSUE",
         );
       const person = forFlags[0]?.slice(6);
       const ancestor = ancestorFlags[0]?.slice(11);
-      if (ancestor && !person)
-        throw new UsageError("--ancestor requires --for");
-      return claim(key as string, person, ancestor);
+      const blocking = blockingFlags[0]?.slice(11);
+      if ((ancestor || blocking) && !person)
+        throw new UsageError("--ancestor and --blocking require --for");
+      return claim(key as string, person, ancestor, blocking);
     },
     exitOf: (out) => {
       const result = out as Awaited<ReturnType<typeof claimIssue>>;
@@ -721,7 +744,9 @@ function operationArguments(op: Operation, name: string, rest: string[]) {
       !allowed.has(flag) &&
       !(
         name === "claim" &&
-        (/^--for=.+/.test(flag) || /^--ancestor=.+/.test(flag))
+        (/^--for=.+/.test(flag) ||
+          /^--ancestor=.+/.test(flag) ||
+          /^--blocking=.+/.test(flag))
       ),
   );
   if (unknown.length)
@@ -750,7 +775,7 @@ function reportFailure(error: unknown): number {
 
 /** Normalize valued claim options before generic positional/flag validation. */
 function normalizeClaimOptions(rest: string[]): void {
-  for (const flag of ["--for", "--ancestor"]) {
+  for (const flag of ["--for", "--ancestor", "--blocking"]) {
     const index = rest.indexOf(flag);
     if (index === -1) continue;
     const value = rest[index + 1];
@@ -758,7 +783,7 @@ function normalizeClaimOptions(rest: string[]): void {
       throw new UsageError(`${flag} requires an identity or issue key`);
     rest.splice(index, 2, `${flag}=${value}`);
   }
-  for (const flag of ["--for=", "--ancestor="])
+  for (const flag of ["--for=", "--ancestor=", "--blocking="])
     if (rest.filter((v) => v.startsWith(flag)).length > 1)
       throw new UsageError("duplicate claim option");
 }

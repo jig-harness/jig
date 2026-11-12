@@ -338,7 +338,7 @@ describe("served items no repository label places", () => {
     );
     const held = await read(g, web, "hold");
     expect(held.wanted).toEqual([]);
-    expect(held.unplaced.map((u) => u.target)).toEqual(["ENG-2"]);
+    expect(held.unplaced.map((u) => u.target)).toEqual(["ENG-2", "ENG-1"]);
   });
 
   it("leaves a GitHub repository's own issues and an unscoped checkout alone", () => {
