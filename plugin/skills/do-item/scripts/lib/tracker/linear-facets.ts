@@ -392,8 +392,8 @@ function estimatedBatches(
     issue: WithEstimate<CorePoolIssue>,
     signal?: AbortSignal,
   ) => Promise<CorePoolIssue>,
-): Pick<CoreTracker, "poolIssues" | "queueIssues"> {
-  const { poolIssues, queueIssues } = core;
+): Pick<CoreTracker, "poolIssues" | "queueIssues" | "queueIssuesByKey"> {
+  const { poolIssues, queueIssues, queueIssuesByKey } = core;
   return {
     ...(poolIssues === undefined
       ? {}
@@ -427,6 +427,34 @@ function estimatedBatches(
                         issue: await pool(q.parent.issue, signal),
                       },
               })),
+            );
+          },
+        }),
+    ...(queueIssuesByKey === undefined
+      ? {}
+      : {
+          async queueIssuesByKey(keys, signal) {
+            const read = [...(await queueIssuesByKey(keys, signal))];
+            return new Map(
+              await Promise.all(
+                read.map(async ([k, q]) => {
+                  const issue = await pool(q, signal);
+                  return [
+                    k,
+                    {
+                      ...q,
+                      ...issue,
+                      parent:
+                        q.parent === null
+                          ? null
+                          : {
+                              ...q.parent,
+                              issue: await pool(q.parent.issue, signal),
+                            },
+                    },
+                  ] as const;
+                }),
+              ),
             );
           },
         }),

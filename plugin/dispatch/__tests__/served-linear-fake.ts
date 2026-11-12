@@ -276,6 +276,30 @@ export class FakeLinear {
           },
         };
       }
+      case "TrackerQueueByKey": {
+        const groups = (filter.or ?? []) as Array<Record<string, unknown>>;
+        const nodes = all.filter((i) => groups.some((g) => this.inGroup(i, g)));
+        const size = Number(/issues\(first: (\d+)/.exec(query)?.[1] ?? 50);
+        const from = Number(variables.after ?? 0);
+        const more = from + size < nodes.length;
+        return {
+          issues: {
+            pageInfo: {
+              hasNextPage: more,
+              endCursor: more ? String(from + size) : null,
+            },
+            nodes: nodes.slice(from, from + size).map((i) => this.queueNode(i)),
+          },
+        };
+      }
+      case "TrackerOpenChildren": {
+        const children = all.filter(
+          (c) =>
+            c.parent === String(variables.id) &&
+            !["completed", "canceled"].includes(c.state.type),
+        );
+        return { issue: { children: page(children.map((c) => this.pool(c))) } };
+      }
       case "TrackerPoolIssue": {
         const i = this.issues.get(String(variables.id));
         return { issue: i === undefined ? null : this.pool(i) };

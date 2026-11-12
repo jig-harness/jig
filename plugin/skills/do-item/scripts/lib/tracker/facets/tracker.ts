@@ -102,6 +102,7 @@ export interface CoreTracker
     | "poolIssue"
     | "poolIssues"
     | "queueIssues"
+    | "queueIssuesByKey"
     | "assignedIssues"
     | "unassignedIssues"
     | "incompleteIssues"
@@ -121,6 +122,10 @@ export interface CoreTracker
     states: ReadonlyArray<CanonicalState>,
     signal?: AbortSignal,
   ): Promise<CoreQueueIssue[]>;
+  queueIssuesByKey?(
+    keys: ReadonlyArray<string>,
+    signal?: AbortSignal,
+  ): Promise<Map<string, CoreQueueIssue>>;
   assignedIssues(
     identity: string,
     states: ReadonlyArray<CanonicalState>,
@@ -182,6 +187,7 @@ export function withFacets(
     facetReport,
     poolIssues: _batch,
     queueIssues: _queue,
+    queueIssuesByKey: _queueByKey,
     unassignedIssues,
     ...rest
   } = core;
@@ -582,8 +588,8 @@ function batchedReads(
   withValues: <T extends CorePoolIssue>(
     issue: T,
   ) => T & FacetValues & { isEpic: boolean },
-): Pick<Tracker, "poolIssues" | "queueIssues"> {
-  const { poolIssues, queueIssues } = core;
+): Pick<Tracker, "poolIssues" | "queueIssues" | "queueIssuesByKey"> {
+  const { poolIssues, queueIssues, queueIssuesByKey } = core;
   return {
     ...(poolIssues === undefined
       ? {}
@@ -608,6 +614,27 @@ function batchedReads(
                   ? null
                   : { ...q.parent, issue: withValues(q.parent.issue) },
             }));
+          },
+        }),
+    ...(queueIssuesByKey === undefined
+      ? {}
+      : {
+          async queueIssuesByKey(keys, options) {
+            const signal = readSignal(options);
+            refuseStopped(signal);
+            const read = await queueIssuesByKey(keys, signal);
+            return new Map(
+              [...read].map(([k, q]) => [
+                k,
+                {
+                  ...withValues(q),
+                  parent:
+                    q.parent === null
+                      ? null
+                      : { ...q.parent, issue: withValues(q.parent.issue) },
+                },
+              ]),
+            );
           },
         }),
   };

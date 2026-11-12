@@ -116,10 +116,15 @@ describe("a served queue's cost in tracker requests", () => {
     expect(first.wanted).toHaveLength(50);
     expect(first.unplaced).toEqual([]);
     const cold = fake.count();
-    // The queue in two pages, each assignment's history once, and every plan step in one lookup.
+    // The queue in two pages, each assignment's history once, and every plan step in one lookup of two pages.
     expect(
       fake.requests.filter((r) => r !== "TrackerAssignmentHistory"),
-    ).toEqual(["TrackerQueue", "TrackerQueue", "TrackerPoolIssues"]);
+    ).toEqual([
+      "TrackerQueue",
+      "TrackerQueue",
+      "TrackerQueueByKey",
+      "TrackerQueueByKey",
+    ]);
 
     const before = fake.count();
     const unchanged = await tick(tracker, cache, 2);
@@ -436,5 +441,88 @@ describe("reads by key in a team with many other issues", () => {
       keys: ["ENG-900"],
     });
     expect(none?.keys).toEqual([]);
+  });
+});
+
+/** An epic assigned to the person with `n` children, each blocked by a finished issue. */
+function epic(n: number): FakeLinear {
+  const fake = new FakeLinear();
+  fake.add({
+    identifier: "ENG-1000",
+    state: { name: "Done", type: "completed" },
+  });
+  fake.add({
+    identifier: "ENG-1",
+    assignee: PERSON,
+    labels: ["epic"],
+    description: "An epic with no plan.",
+  });
+  for (let c = 1; c <= n; c++)
+    fake.add({
+      identifier: `ENG-${100 + c}`,
+      parent: "ENG-1",
+      blockedBy: ["ENG-1000"],
+    });
+  return fake;
+}
+
+describe("an epic's children read together with their relations", () => {
+  it("reads the relations of every child in the batch, not one issue at a time", async () => {
+    const fake = epic(60);
+    const read = await tick(fake.tracker(), memoryCache(), 0);
+    const ops = fake.requests.filter((r) => r !== "TrackerAssignmentHistory");
+    expect(ops.filter((r) => r === "TrackerRelations")).toHaveLength(0);
+    expect(ops.filter((r) => r === "TrackerInverseRelations")).toHaveLength(0);
+    // 60 children in three pages, then the blocker they share.
+    expect(ops.filter((r) => r === "TrackerQueueByKey")).toHaveLength(4);
+    expect(read.wanted.map((w) => w.key)).toEqual(["ENG-101"]);
+  });
+
+  it("costs a cold tick a number of requests that grows with pages, not children", async () => {
+    const small = epic(10);
+    await tick(small.tracker(), memoryCache(), 0);
+    const large = epic(100);
+    await tick(large.tracker(), memoryCache(), 0);
+    // 100 children are four pages of the by-key read; the rest of the cold tick is the same.
+    expect(large.count() - small.count()).toBeLessThanOrEqual(4);
+  });
+});
+
+describe("queueIssuesByKey", () => {
+  it("carries each issue's relations and parent, and omits a key the list does not hold", async () => {
+    const fake = epic(3);
+    const read = await fake
+      .tracker()
+      .queueIssuesByKey?.(["ENG-101", "ENG-999"]);
+    expect([...(read?.keys() ?? [])]).toEqual(["ENG-101"]);
+    const child = read?.get("ENG-101");
+    expect(child?.relations).toEqual([
+      { type: "blocked_by", issue: "ENG-1000", state: "completed" },
+    ]);
+    expect(child?.parent?.issue.identifier).toBe("ENG-1");
+    expect(fake.requests).toEqual(["TrackerQueueByKey"]);
+  });
+
+  it("stops when the filter matches more than the keys named", async () => {
+    const fake = crowdedTeam();
+    const tracker = linearTracker({
+      team: "ENG",
+      states: parseTrackerConfig({}).states,
+      transport: (query, variables, signal) =>
+        fake.transport(
+          query,
+          {
+            ...variables,
+            filter: {
+              or: [{ team: { key: { eq: "ENG" } }, number: { in: [1] } }],
+            },
+          },
+          signal,
+        ),
+    });
+    await expect(tracker.queueIssuesByKey?.(["ENG-1"])).rejects.toThrow(
+      /paging past its keys/,
+    );
+    expect(fake.requests.length).toBeLessThanOrEqual(3);
   });
 });

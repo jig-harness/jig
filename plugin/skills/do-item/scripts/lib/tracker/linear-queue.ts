@@ -99,8 +99,9 @@ const BATCH_PAGE = 50;
 function boundedBatch(
   transport: LinearTransport,
   count: number,
+  pageSize: number,
 ): LinearTransport {
-  const allowed = Math.ceil(count / BATCH_PAGE) + 1;
+  const allowed = Math.ceil(count / pageSize) + 1;
   let sent = 0;
   return async (query, variables, signal) => {
     if (++sent > allowed)
@@ -122,10 +123,19 @@ const QUEUE_PAGE = 25;
 const RELATION_PAGE = 20;
 
 function queueQuery(extra: string): string {
+  return queueQueryOf("TrackerQueue", extra, "");
+}
+
+/** The queue's fields for issues named by key: archived ones included, as `batchQuery` reads them. */
+function queueByKeyQuery(extra: string): string {
+  return queueQueryOf("TrackerQueueByKey", extra, "includeArchived: true, ");
+}
+
+function queueQueryOf(name: string, extra: string, args: string): string {
   const fields = poolFields(extra);
   return `
-query TrackerQueue($filter: IssueFilter!, $after: String) {
-  issues(first: ${QUEUE_PAGE}, after: $after, filter: $filter) {
+query ${name}($filter: IssueFilter!, $after: String) {
+  issues(first: ${QUEUE_PAGE}, after: $after, ${args}filter: $filter) {
     pageInfo { hasNextPage endCursor }
     nodes {
       ${fields}
@@ -232,6 +242,7 @@ function parseQueueIssue(
 export function queueOperations(opts: QueueOptions) {
   const { team, states, transport, pageAll } = opts;
   const queue = queueQuery(opts.extra);
+  const queueByKey = queueByKeyQuery(opts.extra);
   const batch = batchQuery(opts.extra);
   return {
     async queueIssues(
@@ -259,6 +270,34 @@ export function queueOperations(opts: QueueOptions) {
       return nodes.map((n) => parseQueueIssue(n, opts));
     },
 
+    async queueIssuesByKey(
+      keys: ReadonlyArray<string>,
+      signal?: AbortSignal,
+    ): Promise<Map<string, WithEstimate<CoreQueueIssue>>> {
+      const wanted = [...new Set(keys)];
+      const out = new Map<string, WithEstimate<CoreQueueIssue>>();
+      const groups = keyGroups(wanted);
+      if (groups.length === 0) return out;
+      const nodes = await pageAll(
+        boundedBatch(transport, wanted.length, QUEUE_PAGE),
+        queueByKey,
+        { filter: { or: groups } },
+        (d) => d.issues,
+        `${wanted.length} issue(s) by key with their relations`,
+        signal,
+      );
+      const found = new Map<string, WithEstimate<CoreQueueIssue>>();
+      for (const node of nodes) {
+        const issue = parseQueueIssue(node, opts);
+        found.set(issue.identifier.toUpperCase(), issue);
+      }
+      for (const key of wanted) {
+        const hit = found.get(key.toUpperCase());
+        if (hit !== undefined) out.set(key, hit);
+      }
+      return out;
+    },
+
     async poolIssues(
       keys: ReadonlyArray<string>,
       signal?: AbortSignal,
@@ -268,7 +307,7 @@ export function queueOperations(opts: QueueOptions) {
       const groups = keyGroups(wanted);
       if (groups.length > 0) {
         const nodes = await pageAll(
-          boundedBatch(transport, wanted.length),
+          boundedBatch(transport, wanted.length, BATCH_PAGE),
           batch,
           { filter: { or: groups } },
           (d) => d.issues,

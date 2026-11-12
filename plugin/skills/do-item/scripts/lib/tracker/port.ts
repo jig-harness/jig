@@ -819,6 +819,11 @@ export interface Tracker {
     states: ReadonlyArray<CanonicalState>,
     options?: FacetReadOptions,
   ): Promise<QueueIssue[]>;
+  /** `poolIssues` with each issue's relations and parent; a key the tracker did not hold is absent. Optional. */
+  queueIssuesByKey?(
+    keys: ReadonlyArray<string>,
+    options?: FacetReadOptions,
+  ): Promise<Map<string, QueueIssue>>;
   /**
    * Whether any issue a served reading depended on changed since a time, in
    * one request (the tracker change probe). Optional: without it every
