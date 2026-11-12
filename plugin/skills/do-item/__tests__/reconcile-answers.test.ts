@@ -361,4 +361,14 @@ describe("answers checked against the parent's own listing", () => {
     } as unknown as AnswersInput;
     expect(listingFromAnswers(answers).truncated).toBe(true);
   });
+
+  it("fails closed for a present children listing that is not an array", () => {
+    const answers = {
+      issue: "ENG-1",
+      parent: { ...parent, children: "unreadable" },
+      complete: true,
+      children: {},
+    } as unknown as AnswersInput;
+    expect(listingFromAnswers(answers).truncated).toBe(true);
+  });
 });

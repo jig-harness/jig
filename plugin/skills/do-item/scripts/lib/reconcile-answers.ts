@@ -120,6 +120,9 @@ export function listingFromAnswers(input: AnswersInput): ReconcileInput {
   if (!input.complete || parentLabels === null) return TRUNCATED;
   // Answers for exactly the children the parent lists: an omitted child
   // would read as done, and an extra one is another issue's.
+  // A listing that is present but not an array is unreadable, not omitted.
+  if (parent.children !== undefined && !Array.isArray(parent.children))
+    return TRUNCATED;
   if (Array.isArray(parent.children)) {
     const expected = new Set(
       parent.children.map((c) =>

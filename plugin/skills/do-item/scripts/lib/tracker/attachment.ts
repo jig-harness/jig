@@ -121,7 +121,7 @@ export function replacedBy(
  * attachment with the same file name or the same title, or whose title starts
  * with `titlePrefix` (a sheet whose name carries a key that can change). Only
  * attachments the issue listed before this call are removed, so two
- * concurrent replacements never remove each other's new attachment. The new attachment
+ * concurrent replacements never remove each other's new attachment (two that overlap may each leave their own, since the tracker offers no cross-process lock). The new attachment
  * comes first, so a failed upload never leaves the issue without one; and an
  * older one is removed only once the issue lists the new one, so a new
  * attachment the tracker does not show yet never leaves it with none.

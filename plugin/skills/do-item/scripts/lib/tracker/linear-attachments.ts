@@ -87,6 +87,23 @@ function isLinearUpload(url: string): boolean {
   );
 }
 
+/**
+ * Whether `url` is HTTPS on a named public host: not an IP literal, a
+ * single-label name or a local or internal one, so a signed address cannot
+ * point the file at the machine's own network.
+ */
+function isPublicHttps(url: string): boolean {
+  if (!URL.canParse(url)) return false;
+  const u = new URL(url);
+  if (u.protocol !== "https:") return false;
+  const host = u.hostname.toLowerCase().replace(/\.$/, "");
+  if (host.startsWith("[") || /^[\d.]+$/.test(host)) return false;
+  return (
+    host.includes(".") &&
+    !/\.(localhost|local|internal|lan|home|corp|intranet)$/.test(host)
+  );
+}
+
 function bounded(signal: AbortSignal | undefined): AbortSignal {
   const timeout = AbortSignal.timeout(LINEAR_TIMEOUT_MS);
   return signal === undefined ? timeout : AbortSignal.any([timeout, signal]);
@@ -99,9 +116,9 @@ export function linearFiles(
 ): LinearFiles {
   return {
     async put(url, headers, bytes, signal) {
-      if (!URL.canParse(url) || new URL(url).protocol !== "https:")
+      if (!isPublicHttps(url))
         throw new LinearApiError(
-          `${url} is not an HTTPS upload address; the file is not sent to it`,
+          `${url} is not an HTTPS upload address on a public host; the file is not sent to it`,
           null,
         );
       const res = await fetchImpl(url, {
@@ -267,7 +284,7 @@ export function linearAttachments(
         // be retried without another upload.
         if (error instanceof LinearApiError)
           throw new LinearApiError(
-            `${error.message} (the file is already uploaded at ${assetUrl}; attach that address instead of uploading it again)`,
+            `${error.message} (the file is already uploaded at ${assetUrl}, but no command attaches an existing address: run the attach again, which uploads a second copy and leaves this one unattached)`,
             error.status,
             error.notFound,
           );

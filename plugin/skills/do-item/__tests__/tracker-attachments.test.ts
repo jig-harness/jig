@@ -240,6 +240,15 @@ describe("Linear attachments", () => {
     await expect(
       files.put("http://storage.example/a", {}, new Uint8Array()),
     ).rejects.toThrow("not an HTTPS upload address");
+    for (const url of [
+      "https://127.0.0.1/upload",
+      "https://[::1]/upload",
+      "https://localhost/upload",
+      "https://build.internal/upload",
+    ])
+      await expect(files.put(url, {}, new Uint8Array())).rejects.toThrow(
+        "public host",
+      );
     expect(asked).toEqual([]);
   });
 
@@ -561,7 +570,7 @@ describe("attachReplacing", () => {
     expect(result.kept.map((k) => k.id)).toEqual(["old"]);
   });
 
-  it("removes only what the issue listed before this call, so concurrent replacements keep one", async () => {
+  it("removes only what the issue listed before this call, so a concurrent replacement's new attachment is never removed", async () => {
     const after = listed(
       { id: "new", title: "Decision sheet: ENG-1" },
       { id: "old", title: "Decision sheet: ENG-1" },
