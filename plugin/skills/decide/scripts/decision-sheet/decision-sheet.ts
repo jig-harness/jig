@@ -11,7 +11,6 @@
  *   bun decision-sheet.ts trigger --facets <a,b> --options <n,m> [--human-asked]
  *   bun decision-sheet.ts extract <sheet.html>
  *   bun decision-sheet.ts template <sheet.html>
- *   bun decision-sheet.ts stale-attachments --keep <attachment-id> < issue.json
  *
  * Exit codes: 0 ok · 1 usage or invalid input · 3 `--require-fresh` and the
  * freshness check failed, a cited file changed since `verifiedAt.commit`, or a
@@ -19,11 +18,7 @@
  */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import {
-  type AttachmentRow,
-  sheetAttachmentTitle,
-  staleSheetAttachments,
-} from "./attachments.ts";
+import { sheetAttachmentTitle } from "./attachments.ts";
 import {
   adrDirectory,
   assertRepositoriesConfigured,
@@ -81,7 +76,6 @@ const COMMAND_FLAGS: Record<string, readonly string[]> = {
   trigger: ["--facets", "--options", "--human-asked"],
   extract: [],
   template: [],
-  "stale-attachments": ["--keep"],
 };
 
 function rejectUnknownFlags(command: string, args: string[]): void {
@@ -249,12 +243,16 @@ function main(argv: string[]): number {
             trigger: triggerForSource(source),
             freshness,
             files,
+            // What `tracker.ts attach` reads: this sheet replaces the
+            // issue's older one once the issue lists it.
             attachment: {
+              path: files.sheet,
               filename: sheetFilename(source),
               contentType: "text/html",
               size,
               title: sheetAttachmentTitle(source.id),
               subtitle: `${decisionStatus(source)} · facts verified ${source.verifiedAt.date} @ ${source.verifiedAt.commit}`,
+              replace: true,
             },
           },
           null,
@@ -300,22 +298,6 @@ function main(argv: string[]): number {
       // The layout a posted sheet was made with, so a regenerated sheet keeps it.
       console.log(
         extractTemplate(readFileSync(positional(args, "<sheet.html>"), "utf8")),
-      );
-      return 0;
-    }
-    case "stale-attachments": {
-      const keep = flag(args, "--keep");
-      if (!keep) throw new UsageError("--keep <attachment-id> is required");
-      const input: unknown = JSON.parse(readFileSync(0, "utf8"));
-      const rows = Array.isArray(input)
-        ? input
-        : (input as { attachments?: unknown }).attachments;
-      if (!Array.isArray(rows))
-        throw new UsageError(
-          'stdin must be an attachment array or an issue object with "attachments"',
-        );
-      console.log(
-        JSON.stringify(staleSheetAttachments(rows as AttachmentRow[], keep)),
       );
       return 0;
     }

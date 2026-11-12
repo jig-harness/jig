@@ -899,6 +899,14 @@ const TRACKER: RecordKind[] = [
     version: 0,
   },
   {
+    name: "tracker-attachment",
+    medium: "tracker",
+    owner: "skills/do-item/scripts/lib/tracker/github/attachments.ts",
+    at: "a comment on a GitHub issue holding a file attached to it, the file's text or a link to a hosted copy, where GitHub Issues has no file upload",
+    markers: ["jig:attachment"],
+    version: 0,
+  },
+  {
     name: "tracker-blocked",
     medium: "tracker",
     owner: "skills/do-item/scripts/lib/blocked-move.ts",

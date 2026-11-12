@@ -274,47 +274,65 @@ again.
 
 ## Post the sheet
 
-Attach the sheet first. Then remove every older sheet. This order means a
-failed upload never leaves the issue with no sheet. Use the `attachment`
-fields from the `render` summary.
+Attach the sheet through the tracker scripts of `/jig:do-item`, which reach
+the tracker the repository configures. Save the `render` summary to a file
+and pass it whole: its `attachment` fields name the sheet's path, file name,
+media type, size, title and subtitle, and `replace: true`.
 
-Attachments go through the harness's own integration with the issue tracker:
-the plugin's tracker scripts post comments but do not upload files. The steps
-below are the Linear (MCP) adapter example; with another tracker, keep the
-order and the checks and use its equivalent calls.
-
-1. Call `mcp__linear__prepare_attachment_upload` with `issue`, `filename`,
-   `contentType`, `size`, `title` and `subtitle`.
-2. Upload the bytes to `uploadRequest.url` within 60 seconds, using the
-   harness's HTTP client with method `PUT`. Send every header in
-   `uploadRequest.headers` exactly as it was returned.
-3. Call `mcp__linear__create_attachment_from_upload` with `issue`,
-   `assetUrl`, `title` and `subtitle`. Note the new attachment id. If the
-   call fails, for example with a 502, call `mcp__linear__get_issue` first.
-   When the attachment is not there, repeat this step with the same
-   `assetUrl`: a retry with the same `assetUrl` has succeeded after a 502.
-4. Call `mcp__linear__get_issue` for the issue. Write its result to a file
-   and pass it to
-   `bun "<skill-dir>/../../shared/command.ts" --stdin-file issue.json -- bun "<skill-dir>/scripts/decision-sheet/decision-sheet.ts" stale-attachments --keep <new-id>`.
-   Delete each id that it prints with `mcp__linear__delete_attachment`. The
-   script refuses if the new attachment is not on the issue.
-5. Post `<stem>-comment.md` as a comment on the issue (`SKILL.md` § Tracker
+1. Render with the summary saved:
+   `bun "<skill-dir>/../../shared/command.ts" --stdout-file .context/decide/<stem>/summary.json -- bun "<skill-dir>/scripts/decision-sheet/decision-sheet.ts" render .context/decide/<stem>/decision.json --require-fresh`
+   (with `--template` as above).
+2. Attach it:
+   `bun "<skill-dir>/../do-item/scripts/tracker.ts" attach "<KEY>" --input .context/decide/<stem>/summary.json`.
+   It attaches the new sheet first and only then removes the older sheet of
+   the same file name or title, once the issue lists the new one, so a
+   failed upload never leaves the issue with no sheet. It prints the new
+   attachment (`id`, `form`, `url`), the ids it `removed` and any it `kept`
+   with the reason: report a kept one, and never attach again to clear it.
+   An exit of `1` after the request left may still have attached the sheet:
+   list the issue's attachments with
+   `bun "<skill-dir>/../do-item/scripts/tracker.ts" attachments "<KEY>"`
+   before you try again.
+3. Post `<stem>-comment.md` as a comment on the issue (`SKILL.md` § Tracker
    operations).
 
-A tracker such as Linear serves an attachment as a download. The comment
-tells the reader to open the file in a browser. Never commit a sheet to the
+How the issue holds the sheet depends on the tracker, and `form` says which:
+
+- `upload` (Linear, Jira): the tracker stores the file and serves it as a
+  download. The comment tells the reader to open it in a browser. Jira keeps
+  no title for an attachment, so the sheet is known there by its file name.
+- `comment` (GitHub Issues): GitHub Issues has no file upload, so the sheet's
+  text is carried in a collapsed block of a marked comment, which a reader
+  saves as the file. Only a sheet whose comment fits GitHub's comment limit
+  can go this way; the compact layout is often small enough when the
+  document layout is not.
+- `link`: a tracker that cannot carry the file links a copy. Give the
+  address of a copy already hosted as `url` in the summary's `attachment`
+  fields before step 2. Where that copy is published is a person's decision:
+  never publish a sheet anywhere yourself.
+
+When the tracker can hold the sheet in none of these forms, `attach` exits
+`3`, writes nothing and says why in `refused`. Then the sheet stays a local
+file: post the comment with its first paragraph replaced by one that says the
+sheet is not attached, gives the reason, and names the file
+(`.context/decide/<stem>/<stem>-decision-sheet.html` in this session's
+workspace), so a person can host it or ask for it. Never commit a sheet to the
 repository.
 
 ## Regenerate after a ruling
 
 When a human rules on a call, post the `human-decided` record first. It is
-the canonical outcome. Then make the sheet show the ruling (Linear adapter
-example, as above):
+the canonical outcome. Then make the sheet show the ruling:
 
-1. Call `mcp__linear__get_issue` and find the attachment whose title starts
-   with `Decision sheet: `. Call `mcp__linear__get_attachment` with its `id`
-   and `format: "url"`. The URL is signed for five minutes. Download it at
-   once with the harness's download tool, saving it as `current.html`.
+1. List the issue's attachments with
+   `bun "<skill-dir>/../do-item/scripts/tracker.ts" attachments "<KEY>"` and
+   take the one whose title starts with `Decision sheet: ` (on Jira, whose
+   file name ends with `-decision-sheet.html`). Save it as `current.html`:
+   `bun "<skill-dir>/../do-item/scripts/tracker.ts" fetch-attachment "<KEY>" <id> --out current.html`.
+   A sheet the issue only links (exit `3`) is at the address the listing
+   gives: download it from there. With no sheet to read, use the local
+   source `.context/decide/<stem>/decision.json` if this workspace still
+   has it.
 2. Recover its source and its layout. Create `.context/decide/<stem>/`
    with the file-writing tool first, then save the extracted source:
    `bun "<skill-dir>/../../shared/command.ts" --stdout-file .context/decide/<stem>/decision.json -- bun "<skill-dir>/scripts/decision-sheet/decision-sheet.ts" extract current.html`.
@@ -326,10 +344,10 @@ example, as above):
    Do not change the other calls. Open calls stay open.
 4. Render with `--require-fresh` and the same `--template` that step 2 printed
    (`--template <layout>`, substituting the printed `compact` or `document`),
-   and post as in [Post the sheet](#post-the-sheet), but skip step 5. The
-   `human-decided` record is the comment for this change. Attachment
-   replacement finds the old sheet by its title, so it works whatever layout
-   the old sheet had. The issue ends with one sheet attachment.
+   and post as in [Post the sheet](#post-the-sheet), but skip step 3. The
+   `human-decided` record is the comment for this change. Replacement finds
+   the old sheet by its file name or title, so it works whatever layout the
+   old sheet had. The issue ends with one sheet attachment.
 
 The regenerated sheet shows the decided call with the chosen option, the
 date and a link to the record. It drops that call's recommendation. The

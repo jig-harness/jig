@@ -214,12 +214,16 @@ function main(argv: string[]): number {
             freshness,
             freshnessScope: FRESHNESS_SCOPE,
             files,
+            // What `tracker.ts attach` reads: this sheet replaces an older
+            // explainer of the same file name or title once the issue lists it.
             attachment: {
+              path: files.sheet,
               filename: sheetFilename(source),
               contentType: "text/html",
               size: Buffer.byteLength(html),
               title: `Explainer: ${source.title}`,
               subtitle: `facts verified ${source.verifiedAt.date} @ ${source.verifiedAt.commit}`,
+              replace: true,
             },
           },
           null,
