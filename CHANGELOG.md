@@ -391,6 +391,57 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.212.0] - 2026-11-12
+
+A served person's blocked items and assigned epics now keep the line moving.
+
+### Added
+
+- The dispatch dashboard's line now says which work each row is linked to
+  and which tracker each repository uses, for the page and for any program
+  that reads `jig dispatch line --json`. A pull request's row carries the
+  tracker items its branch names, its description closes (`Closes`, `Fixes`,
+  `Resolves`) or GitHub says it closes; an item's row carries the open pull
+  requests that do; each repository carries its configured tracker adapter.
+  The tick reads them from the query of open pull requests it already makes,
+  which now also asks for each pull request's closing issues: one more of
+  the forge's rate points per page of 50 pull requests. A row the tick could
+  not tell about carries no links rather than an empty list. The page shows
+  nothing new yet.
+- Dispatch starts the open blocker of a served item that nobody has assigned, so the item stops waiting on work no one is doing. A blocker qualifies when it is open, not started, unassigned, in this repository's scope, not an epic and free of `hitl`, `manual-ops` and `jig:hold`; blockers of blockers are followed to three links, and a pulled blocker is never batched. The blocked item reads "waiting on #N (picked up first)", and a blocker that does not qualify is named with its reason, for example "(assigned to sam)". `tracker.ts claim` takes `--blocking <item>` for such a pickup and re-reads the item's authority and the live `blocked_by` chain before it assigns the blocker to the served person. GitHub Issues adds the served person and checks that the resulting assignee list contains only that person, refusing when a concurrent assignee remains. Linear and Jira assign first, then verify from history that they replaced nobody; when they find a replaced concurrent assignee, they conditionally make a best-effort restoration and refuse the pickup.
+- An epic none of whose open children can start reports one reason: how many children it has and the first one's hold.
+
+### Changed
+
+- An assigned epic without an execution plan works one child at a time, the top-ranked one, and none while a child of it is in progress, as `do-item` works an epic. An execution plan that lists several eligible steps keeps its parallelism.
+- A served item held by an open blocker names the blocker's assignee or state in the Queue view instead of only its key.
+- A pulled blocker's claim re-reads the epic execution plans of the item it blocks, the blocker itself and every item between, with the plan block named by the default branch's configuration. A tracker that cannot assign still names each blocker's own reason.
+- **Breaking:** development checkouts refuse databases in the operating-system
+  user's live Jig state directory. Run an installed release for live operations,
+  or use an isolated home or explicit database path for development. A legacy
+  database newer than a reader must first be opened by a plugin that knows its
+  full schema before additive compatibility is available.
+
+### Fixed
+
+- Jira verifies the credential before reading fields, issues or searches, so
+  anonymous reads cannot look like missing data. OAuth tokens need Jira's
+  classic `read:jira-user` scope, or the granular scope alternative, for that
+  identity check; add the applicable set before upgrading a token that only
+  read issues. Any refused Jira request names the supported environment
+  variables and where to create an API token, while a timed-out token broker
+  remains a temporary-unavailability error.
+- The dispatch dashboard now ignores closing-key examples in Markdown code,
+  recognises complete comma-separated closing lists, and leaves links unknown
+  when GitHub returns only part of a pull request's closing references.
+- The dashboard now treats adapter names that match JavaScript inherited
+  properties as unknown adapter names.
+- SQLite state records each migration's identity and refuses conflicting
+  histories at the same version. Legacy databases are structurally checked
+  before a baseline is recorded, so a missing dispatch result column is
+  reported before a result write; existing divergent state still needs an
+  operator's repair.
+
 ## [0.211.0] - 2026-11-12
 
 ### Added
@@ -7308,7 +7359,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.211.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.212.0...HEAD
+[0.212.0]: https://github.com/jig-harness/jig/compare/v0.211.0...v0.212.0
 [0.211.0]: https://github.com/jig-harness/jig/compare/v0.210.2...v0.211.0
 [0.210.2]: https://github.com/jig-harness/jig/compare/v0.210.1...v0.210.2
 [0.210.1]: https://github.com/jig-harness/jig/compare/v0.210.0...v0.210.1

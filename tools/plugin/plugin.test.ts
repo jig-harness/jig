@@ -1,9 +1,5 @@
 /**
- * The repository is the `jig` plugin for Claude Code and Codex. These
- * tests pin its manifests and run the shipped skill scripts the way a plugin
- * cache holds them: copied outside this repository (no `node_modules`
- * anywhere above them), invoked from a scratch consumer repository whose own
- * configuration, triage bands and sibling skill they must find.
+ * Pin manifests and run an external artifact with a scratch consumer and no node_modules.
  */
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import {
@@ -28,6 +24,7 @@ import {
 } from "../../plugin/shared/guarded-git-spawn.ts";
 import { expectSpawnExit } from "../../lib/test-helpers/expect-spawn-exit.ts";
 import { writeWorkingArtifact } from "./artifact.ts";
+import { checkArtifactStateIsolation } from "./artifact-state-check.ts";
 
 const root = resolve(import.meta.dirname, "../..");
 const skill = "resolve-review-comments";
@@ -48,17 +45,20 @@ let scratch: string;
 let scripts: string;
 let shared: string;
 beforeAll(() => {
-  // The real path a script finds: links resolved, 8.3 short names expanded.
   scratch = realpathSync.native(mkdtempSync(join(tmpdir(), "jig-plugin-")));
-  // The plugin cache holds the plugin as the release channels ship it
-  // (skills, shared code, agents, assets, manifests), without its tests and
-  // its instructions for agents working on Jig itself.
+  const home = join(scratch, "home");
+  mkdirSync(home);
+  Object.assign(env, { HOME: home, USERPROFILE: home });
+  // Run the release artifact without source tests or agent instructions.
   writeWorkingArtifact(root, join(scratch, "artifact"));
   renameSync(join(scratch, "artifact", "plugin"), join(scratch, "cache"));
   scripts = join(scratch, "cache", "skills", skill, "scripts");
   shared = join(scratch, "cache", "shared");
 });
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
+test("artifact default state stays in its scratch home", () => {
+  checkArtifactStateIsolation(scratch, env);
+});
 
 test("change-note commands run from the plugin cache and read the repository's configuration", () => {
   const consumer = join(scratch, "changelog-consumer");

@@ -5,16 +5,25 @@
  * the state root it reads is the one the test wrote.
  */
 import { afterEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { Database } from "bun:sqlite";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
+import { baselineMigrations } from "../../shared/records/migrations.ts";
 import { serveDashboard } from "../dashboard.ts";
 import type { LineSnapshot, StateAnswer } from "../lib/dashboard-contract.ts";
 import { hostTimeZone } from "../lib/host-time.ts";
 import { writeLine } from "../lib/line-store.ts";
 import {
   closeStateDb,
+  MIGRATIONS,
   SCHEMA_VERSION,
   stateDb,
   statePath,
@@ -64,6 +73,22 @@ function freshHome(): string {
   const home = mkdtempSync(join(tmpdir(), "jig-dispatch-line-"));
   homes.push(home);
   return home;
+}
+
+/** Create a version-one dispatcher database with matching migration history. */
+function versionOneStateDb(root: string): void {
+  mkdirSync(root, { recursive: true });
+  const path = statePath(root);
+  const db = new Database(path);
+  try {
+    const firstMigration = MIGRATIONS.at(0);
+    expect(firstMigration).toBeDefined();
+    db.run(firstMigration?.sql ?? "");
+    db.run("PRAGMA user_version = 1");
+    baselineMigrations(db, { path, migrations: MIGRATIONS }, 1);
+  } finally {
+    db.close();
+  }
 }
 
 /** `jig dispatch line --json` in a child whose home is `home`. */
@@ -317,9 +342,7 @@ describe("jig dispatch line --json", () => {
 
   it("reads a database at an older schema without migrating it", () => {
     const root = stateRootOf(freshHome());
-    writeLine(LINE, "{}", root);
-    stateDb(root).run("PRAGMA user_version = 1");
-    closeStateDb(root);
+    versionOneStateDb(root);
     const before = readFileSync(statePath(root));
     const printed: string[] = [];
     expect(

@@ -59,7 +59,7 @@ describe("Jira adapter: issues by key", () => {
       { id: "ENG-10", labels: ["feature"] },
       { id: "ENG-20", labels: ["epic"] },
     ]);
-    expect(calls).toHaveLength(3);
+    expect(calls).toHaveLength(4);
   });
 
   it("drops a key JQL calls unknown and asks again", async () => {
@@ -79,7 +79,7 @@ describe("Jira adapter: issues by key", () => {
     expect([...(await t.issuesByKeys(["ENG-1", "ENG-9"])).keys()]).toEqual([
       "ENG-1",
     ]);
-    expect(calls).toHaveLength(2);
+    expect(calls).toHaveLength(3);
   });
 
   it("fails on a sixth ancestor rather than attribute short", async () => {
@@ -384,13 +384,14 @@ describe("Jira adapter: populations", () => {
         ],
       },
     ]);
-    expect(jqlOf(calls[0] as Call)).toContain('statusCategory = "In Progress"');
+    expect(jqlOf(calls[1] as Call)).toContain('statusCategory = "In Progress"');
   });
 
   it("keeps a blocked status in the started query, whatever its category", async () => {
     for (const category of ["new", "done"] as const) {
       const { t, calls } = jira(
         routes({
+          "GET myself": MYSELF,
           "POST search/jql": byJql(
             [
               /labels = "epic"/,
@@ -410,7 +411,7 @@ describe("Jira adapter: populations", () => {
       );
       const out = await t.startedIssueActivity("epic");
       expect(out.map((e) => e.epic)).toEqual(["ENG-1"]);
-      expect(jqlOf(calls[0] as Call)).toContain(
+      expect(jqlOf(calls[1] as Call)).toContain(
         '(statusCategory = "In Progress" OR status = "Blocked")',
       );
     }
@@ -451,13 +452,13 @@ describe("Jira adapter: candidate pools", () => {
       withSomeOf: [["a", "b"], ["c"]],
       withNoneOf: ["x"],
     });
-    expect(jqlOf(calls[0] as Call)).toBe(
+    expect(jqlOf(calls[1] as Call)).toBe(
       'project = ENG AND statusCategory != Done AND labels in ("a", "b") AND labels in ("c") AND (labels not in ("x") OR labels is EMPTY) ORDER BY created ASC',
     );
-    expect(jqlOf(calls[1] as Call)).toBe(
+    expect(jqlOf(calls[2] as Call)).toBe(
       "parent in (ENG-1, ENG-2) AND statusCategory != Done ORDER BY created ASC",
     );
-    expect(calls[1]?.body.fields).toEqual(["parent"]);
+    expect(calls[2]?.body.fields).toEqual(["parent"]);
     expect(pool[0]).toEqual({
       identifier: "ENG-1",
       title: "Issue ENG-1",
@@ -507,7 +508,7 @@ describe("Jira adapter: candidate pools", () => {
     expect((await t.openChildren("ENG-1")).map((p) => p.identifier)).toEqual([
       "ENG-2",
     ]);
-    expect(jqlOf(calls[0] as Call)).toContain(
+    expect(jqlOf(calls[1] as Call)).toContain(
       "parent = ENG-1 AND statusCategory != Done",
     );
     expect((await t.poolIssue("ENG-3"))?.state.type).toBe("completed");

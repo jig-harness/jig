@@ -141,7 +141,7 @@ describe("a served queue's cost in tracker requests", () => {
     expect(blocked.unplaced).toContainEqual(
       expect.objectContaining({
         target: "ENG-7",
-        reason: "waiting on ENG-107",
+        reason: expect.stringContaining("waiting on ENG-107"),
       }),
     );
 

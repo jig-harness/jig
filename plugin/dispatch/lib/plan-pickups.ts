@@ -414,6 +414,9 @@ function pickupAction(
       ...(item.ancestorEpic === undefined
         ? {}
         : { ancestorEpic: item.ancestorEpic }),
+      ...(item.blockingFor === undefined
+        ? {}
+        : { blockingFor: item.blockingFor }),
       ...(finishedSessions === null
         ? {}
         : { finishedSessions: finishedSessions }),

@@ -2,10 +2,10 @@
  * One repository's forge state in one query: which repository a checkout
  * is and its default branch, the dispatch configuration on that branch, and
  * every open pull request with its labels, its description, its head, its
- * mergeability, its checks' rollup, its unresolved review threads and its
- * comments. A tick reads it once per repository (`tick-reads.ts`), in
- * place of a repository view, a file read, a pull request listing and one
- * comment listing per pull request.
+ * mergeability, its checks' rollup, its unresolved review threads, the
+ * issues it closes and its comments. A tick reads it once per repository
+ * (`tick-reads.ts`), in place of a repository view, a file read, a pull
+ * request listing and one comment listing per pull request.
  *
  * The query runs in the checkout with the forge client's `{owner}` and
  * `{repo}` placeholders, so the repository is the one the client's own view
@@ -39,11 +39,14 @@ import { ghCall, ghRepoEnv } from "../../skills/drive-pr/scripts/lib/proc.ts";
 import { checksFail } from "./automation.ts";
 import type { RepoTarget } from "./types.ts";
 
-/** Pull requests per page: the forge charges two points for a page this size. */
+/** Pull requests per page: the forge charges three points for a page this size. */
 const PAGE = 50;
 
 /** Comments, labels and review threads read with each pull request: a pull request with more comments is listed on its own. */
 const ITEMS = 100;
+
+/** The issues read as each pull request's closing references; a partial read remains unknown. */
+const CLOSING = 5;
 
 /** The most open pull requests the read takes, as the pull request listing does. */
 const PR_LIMIT = 1000;
@@ -71,6 +74,7 @@ const QUERY = `query ${QUERY_NAME}($owner: String!, $name: String!, $first: Int!
         labels(first: ${ITEMS}) { pageInfo { hasNextPage } nodes { name } }
         headRef { target { ... on Commit { statusCheckRollup { contexts(first: ${ITEMS}) { pageInfo { hasNextPage } nodes { __typename ... on CheckRun { conclusion } ... on StatusContext { state } } } } } } }
         reviewThreads(first: ${ITEMS}) { pageInfo { hasNextPage } nodes { isResolved } }
+        closingIssuesReferences(first: ${CLOSING}) { pageInfo { hasNextPage } nodes { number repository { nameWithOwner } } }
         ${COMMENTS}
       }
     }
@@ -206,6 +210,27 @@ function rollupOf(node: Record<string, unknown>): {
     : { statusCheckRollup: nodes };
 }
 
+/** The issues the forge says a pull request closes, each with its repository; nothing when they do not read. */
+function closingOf(node: Record<string, unknown>): {
+  closing?: Array<{ number: number; repository: string }>;
+} {
+  if (
+    field(node, "closingIssuesReferences", "pageInfo", "hasNextPage") !== false
+  )
+    return {};
+  const nodes = field(node, "closingIssuesReferences", "nodes");
+  if (!Array.isArray(nodes)) return {};
+  const closing = nodes.map((n) => ({
+    number: field(n, "number"),
+    repository: field(n, "repository", "nameWithOwner"),
+  }));
+  return closing.every(
+    (c) => typeof c.number === "number" && text(c.repository),
+  )
+    ? { closing: closing as Array<{ number: number; repository: string }> }
+    : {};
+}
+
 /** One open pull request of the query in the pull request listing's shape; `unreadable` when it or its labels read in part. */
 export function listedPullRequest(
   node: unknown,
@@ -246,6 +271,7 @@ export function listedPullRequest(
     ...(author === null ? {} : { author }),
     ...rollupOf(node),
     ...unresolvedOf(node),
+    ...closingOf(node),
     labels,
   });
 }

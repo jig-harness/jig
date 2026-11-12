@@ -241,6 +241,7 @@ function jiraWorld(
     assignee = to;
   };
   const { t } = jira((c: Call) => {
+    if (c.path === "myself") return FACTORY;
     if (c.route === "GET issue/ENG-1")
       return issue({ key: "ENG-1", assignee: account(assignee) });
     if (c.route === "PUT issue/ENG-1/assignee") {

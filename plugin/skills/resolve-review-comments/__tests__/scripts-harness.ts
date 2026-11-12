@@ -508,6 +508,8 @@ export function runScript(
 ) {
   const env: Record<string, string> = {
     ...gitCleanEnv(),
+    HOME: join(tmpRoot, "home"),
+    USERPROFILE: join(tmpRoot, "home"),
     PATH: `${binDir}${delimiter}${process.env.PATH}`,
     RRC_FIX: fix.dir,
     GH_CALL_TIMEOUT: "20",

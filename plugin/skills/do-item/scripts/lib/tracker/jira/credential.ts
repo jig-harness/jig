@@ -44,6 +44,7 @@ export type CredentialCode =
   | "no-credential"
   | "bearer-token"
   | "token-command"
+  | "token-command-unavailable"
   | "cancelled";
 
 const NO_CREDENTIAL =
@@ -188,9 +189,11 @@ function tokenOf(
 ): Outcome<string, CredentialCode> {
   const program = programOf(argv);
   const fail = (why: string) => failed("token-command", `${program} ${why}`);
+  const unavailable = (why: string) =>
+    failed("token-command-unavailable", `${program} ${why}`);
   if (r.spawnFailed) return fail(`could not start${said(r.stderr)}`);
   if (r.timedOut)
-    return fail(`printed no token within ${timeoutMs / 1000} seconds`);
+    return unavailable(`printed no token within ${timeoutMs / 1000} seconds`);
   if (r.code !== 0) return fail(`exited ${r.code}${said(r.stderr)}`);
   const token = r.stdout.trim();
   if (token === "") return fail("printed no token");
@@ -211,7 +214,7 @@ function stopped<T>(
   const reason: unknown = signal.reason;
   return reason instanceof Error && reason.name === "TimeoutError"
     ? failed(
-        "token-command",
+        "token-command-unavailable",
         `${program} printed no token before the request's deadline`,
       )
     : failed("cancelled", "cancelled while waiting for a token");
@@ -265,7 +268,7 @@ function commandAuthorization(
       (r) => tokenOf(argv, r, timeoutMs),
       (err: unknown) =>
         failed(
-          "token-command",
+          "token-command-unavailable",
           `JIRA_TOKEN_COMMAND could not be run: ${err instanceof Error ? err.message : String(err)}`,
         ),
     );
