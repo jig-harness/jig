@@ -394,6 +394,14 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.222.1] - 2026-11-12
+
+### Fixed
+
+- The Jira audit reach check verifies the credential before checking the project, so refused credentials report credential guidance and token commands can refresh a stale token.
+- Jira token commands that exceed the request deadline report an unavailable broker with the variable name. Once Jira refuses a replacement token, the process stops renewing the command on later requests; a cancelled replacement request remains retryable. Audit tracker checks preserve the command-specific timeout guidance.
+- `get_issue.ts` reports refused or unreachable tracker reads as unreadable, without key or team suggestions. Its JSON distinguishes `read-failed` from `not-found`, while both keep exit 2 and `found: false` for existing callers.
+
 ## [0.222.0] - 2026-11-12
 
 ### Added
@@ -7659,7 +7667,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.222.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.222.1...HEAD
+[0.222.1]: https://github.com/jig-harness/jig/compare/v0.222.0...v0.222.1
 [0.222.0]: https://github.com/jig-harness/jig/compare/v0.221.2...v0.222.0
 [0.221.2]: https://github.com/jig-harness/jig/compare/v0.221.1...v0.221.2
 [0.221.1]: https://github.com/jig-harness/jig/compare/v0.221.0...v0.221.1

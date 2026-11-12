@@ -272,15 +272,13 @@ function headerOf(
   header: Outcome<string, CredentialCode>,
   signal: AbortSignal | undefined,
 ): string {
-  // The credential's own outcome comes first: when the call's deadline ends
-  // the wait for the token command it already names the variable, and the
-  // aborted signal would otherwise hide it behind a generic cancellation.
-  if (!header.ok && header.failure.code !== "cancelled")
+  if (!header.ok && header.failure.code === "token-command-unavailable")
+    throw new JiraApiError(header.failure.reason, { unavailable: true });
+  if (cancelled(signal)) throw abortedError(signal);
+  if (!header.ok)
     throw new JiraApiError(header.failure.reason, {
       unavailable: header.failure.code === "token-command-unavailable",
     });
-  if (cancelled(signal)) throw abortedError(signal);
-  if (!header.ok) throw new JiraApiError(header.failure.reason);
   return header.value;
 }
 
@@ -340,7 +338,6 @@ function leasedSender(
   let key = keyOf(header);
   return async () => {
     budget.governor?.admit("jira", key);
-    let renewedHeader = false;
     let res = await send(
       fetchImpl,
       url,
@@ -351,21 +348,24 @@ function leasedSender(
     if (res.status === 401) {
       const renewed = await lease.renew(bound);
       if (renewed !== null) {
-        await bodyText(res, bound, what);
-        header = headerOf(renewed, bound);
-        renewedHeader = true;
-        key = keyOf(header);
-        budget.governor?.admit("jira", key);
-        res = await send(
-          fetchImpl,
-          url,
-          requestInit(request, header, bound),
-          bound,
-          what,
-        );
+        try {
+          await bodyText(res, bound, what);
+          header = headerOf(renewed, bound);
+          key = keyOf(header);
+          budget.governor?.admit("jira", key);
+          res = await send(
+            fetchImpl,
+            url,
+            requestInit(request, header, bound),
+            bound,
+            what,
+          );
+          if (res.status === 401) lease.refuseRenewal();
+        } finally {
+          lease.settleRenewal();
+        }
       }
     }
-    if (res.status !== 401) lease.accepted?.(renewedHeader);
     const refused = observeLimit(res, key, what, budget);
     if (refused !== null) {
       void discardBody(res, bound);
@@ -381,9 +381,7 @@ function leasedSender(
  * answers within that deadline, rechecking credential holds before each send.
  * A 401 renews the header once, when the
  * credential can be renewed, and sends the request again with it: a 401 is
- * refused before the request is acted on, so a write is not doubled. A
- * renewed header that is refused in turn is not renewed again until one
- * is accepted (`credential.ts`). With
+ * refused before the request is acted on, so a write is not doubled. With
  * `governor` (the machine's request budget), a call is refused locally while
  * the credential is rate limited, and an HTTP 429 limits it until its
  * `Retry-After`. The budget names the credential by the header it resolves to,
@@ -395,7 +393,6 @@ export function httpTransport(
   fetchImpl: typeof fetch = fetch,
   governor?: BudgetGovernor,
   firstRefusal?: string,
-  timeoutMs: number = JIRA_TIMEOUT_MS,
 ): JiraTransport {
   // Until one request succeeds, a 403 carries `firstRefusal`: a credential
   // the host does not take is refused on the first request.
@@ -405,11 +402,12 @@ export function httpTransport(
     const what = `${request.method} ${request.path}`;
     // One deadline for the whole call: the token command, the request, a
     // renewal and the request sent again all spend the same budget.
-    const budget = { governor, deadlineAt: Date.now() + timeoutMs };
-    const deadline = AbortSignal.timeout(timeoutMs);
+    const budget = { governor, deadlineAt: Date.now() + JIRA_TIMEOUT_MS };
+    const deadline = AbortSignal.timeout(JIRA_TIMEOUT_MS);
     const bound =
       signal === undefined ? deadline : AbortSignal.any([deadline, signal]);
     const lease = await authorization.lease(bound);
+    if (cancelled(signal)) throw abortedError(signal);
     const res = await retryRead(
       leasedSender(base, request, lease, bound, fetchImpl, budget),
       request.method === "GET" || request.idempotent === true,
