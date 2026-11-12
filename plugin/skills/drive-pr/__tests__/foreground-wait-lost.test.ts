@@ -117,7 +117,9 @@ test(
     );
     // codexEnv always adds CODEX_THREAD_ID; drop it to leave only CODEX_HOME.
     expectSpawnExit(launched, 4);
-    const env = codexEnv({ CODEX_HOME: "/nonexistent/codex-home" });
+    const env: Record<string, string | undefined> = codexEnv({
+      CODEX_HOME: "/nonexistent/codex-home",
+    });
     delete env.CODEX_THREAD_ID;
     const homeOnly = spawnScript(
       env,
