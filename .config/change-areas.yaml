@@ -227,8 +227,12 @@ areas:
       - outputs: ["plugin/consumer-actions.json"]
         source:
           - "CHANGELOG.md"
+          - ".config/jig.yaml"
           - "plugin/skills/changelog/scripts/consumer-actions.ts"
           - "plugin/skills/changelog/scripts/consumer-actions-record.ts"
+          - "plugin/skills/changelog/scripts/markdown-blocks.ts"
+          - "plugin/skills/changelog/scripts/formats.ts"
+          - "plugin/skills/changelog/scripts/config.ts"
         command: "bun plugin/skills/changelog/scripts/consumer-actions-record.ts --write"
         check: "bun plugin/skills/changelog/scripts/consumer-actions-record.ts --check"
         notes: >-

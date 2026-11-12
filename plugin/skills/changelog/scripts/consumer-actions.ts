@@ -70,8 +70,17 @@ export interface Declared {
   written: string;
 }
 
-const MARKER = "**Consumer action:**";
-const DETECT = "**Detect:**";
+/** The markers, as written in prose; an escaped one (`\\**`) is text. */
+const MARKER = /(?<!\\)\*\*Consumer\s+action:\*\*/g;
+const DETECT = /(?<!\\)\*\*Detect:\*\*/g;
+
+/**
+ * A marker nearly written: the words in bold, but in another case, with the
+ * colon outside the emphasis or with underscores. Read only where
+ * `changelog.consumer_actions` is on.
+ */
+const NEAR_MARKER =
+  /(\*\*|__)\s*consumer[\s_-]*actions?\s*(?::\s*(\*\*|__)|(\*\*|__)\s*:)/gi;
 
 /** An action's id: a released version, `#` and eight hexadecimal digits. */
 export const ACTION_ID = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.+-]+)?#[0-9a-f]{8}$/;
@@ -84,32 +93,80 @@ const collapse = (text: string): string => text.replace(/\s+/g, " ").trim();
 /** The entry without its list marker. */
 const unlisted = (entry: string): string => entry.replace(/^\s*[-*]\s+/, "");
 
-/** Where `marker` sits in `text`'s prose, outside its code spans. */
-function proseOffsets(text: string, marker: string): number[] {
-  const offsets: number[] = [];
+/** Where `marker` matches in `text`'s prose, outside its code spans: each match's start and end. */
+function proseMatches(
+  text: string,
+  marker: RegExp,
+): { at: number; end: number }[] {
+  const found: { at: number; end: number }[] = [];
   let at = 0;
   codeSpans(text).forEach((part, i) => {
     if (i % 2 === 0)
-      for (
-        let found = part.indexOf(marker);
-        found !== -1;
-        found = part.indexOf(marker, found + marker.length)
-      )
-        offsets.push(at + found);
+      for (const m of part.matchAll(marker))
+        found.push({ at: at + m.index, end: at + m.index + m[0].length });
     at += part.length;
   });
-  return offsets;
+  return found;
 }
 
 const malformed = (reason: string) => failed("malformed-declaration", reason);
 
-/** Whether a `file:` glob leaves the repository: absolute, from a home or drive, or through `..`. */
+/** The most alternatives a `file:` glob's braces may expand to. */
+const MAX_ALTERNATIVES = 256;
+
+/** Where the brace group opening at `open` closes, and its top-level commas; null when it never closes. */
+function braceGroup(
+  glob: string,
+  open: number,
+): { close: number; commas: number[] } | null {
+  let depth = 0;
+  const commas: number[] = [];
+  for (let i = open; i < glob.length; i++) {
+    const c = glob[i];
+    if (c === "{") depth++;
+    if (c === "," && depth === 1) commas.push(i);
+    if (c === "}") depth--;
+    if (depth === 0) return { close: i, commas };
+  }
+  return null;
+}
+
+/**
+ * The paths a glob's braces stand for (`{a,b}/x` is `a/x` and `b/x`), nested
+ * braces included; null past `MAX_ALTERNATIVES`.
+ */
+function alternatives(glob: string): string[] | null {
+  const open = glob.indexOf("{");
+  const group = open === -1 ? null : braceGroup(glob, open);
+  if (group === null) return [glob];
+  const cuts = [open, ...group.commas, group.close];
+  const out: string[] = [];
+  for (let k = 0; k < cuts.length - 1; k++) {
+    const part = glob.slice((cuts[k] ?? 0) + 1, cuts[k + 1]);
+    const each = alternatives(
+      `${glob.slice(0, open)}${part}${glob.slice(group.close + 1)}`,
+    );
+    if (each === null || out.push(...each) > MAX_ALTERNATIVES) return null;
+  }
+  return out;
+}
+
+/**
+ * Whether a `file:` glob can leave the repository: any path its braces
+ * stand for is absolute, from a home directory, a drive or a network share,
+ * or holds a backslash or a `..` segment.
+ */
 function leavesRepository(glob: string): boolean {
+  const paths = alternatives(glob);
   return (
-    /^[/~]/.test(glob) ||
-    glob.includes("\\") ||
-    /^[A-Za-z]:/.test(glob) ||
-    glob.split("/").includes("..")
+    paths === null ||
+    paths.some(
+      (path) =>
+        /^[/~]/.test(path) ||
+        path.includes("\\") ||
+        /^[A-Za-z]:/.test(path) ||
+        path.split("/").includes(".."),
+    )
   );
 }
 
@@ -171,7 +228,10 @@ function readHints(text: string): Outcome<Hint[]> {
         `**Detect:** lists hints, each a code span \`kind:value\`, separated by commas: \`${between}\` sits between them`,
       );
   }
-  return ok(hints);
+  // Normalized: each hint once, in one order, so the id does not depend on
+  // how the author listed them.
+  const unique = new Map(hints.map((hint) => [hintText(hint), hint]));
+  return ok([...unique.keys()].sort().map((key) => unique.get(key) as Hint));
 }
 
 /** The levels a declaration names, distinct and known, in `LEVELS` order. */
@@ -189,22 +249,23 @@ function readLevels(text: string): Outcome<Level[]> {
 
 /** `<strength> at <levels>. <instruction>`, then optionally `**Detect:**` and its hints. */
 function readAction(body: string): Outcome<Action> {
-  const strength = (body.split(" ")[0] ?? "").replace(/\.$/, "");
+  const word = body.split(" ")[0] ?? "";
+  const strength = word.replace(/\.$/, "");
   if (!(STRENGTHS as readonly string[]).includes(strength))
     return malformed(
       `unknown strength \`${strength}\` (${STRENGTHS.join(", ")}; or \`none.\`, or \`retracts <id>.\`)`,
     );
   const m = /^\S+ at (.+?)\. (.+)$/.exec(body);
-  if (!m)
+  if (!m || word !== strength)
     return malformed(
       "write `<strength> at <level>[, <level>]. <instruction>`, such as `required at configuration. Rename the key.`",
     );
   const levels = readLevels(m[1] ?? "");
   if (!levels.ok) return levels;
   const rest = m[2] ?? "";
-  const detect = proseOffsets(rest, DETECT);
+  const detect = proseMatches(rest, DETECT);
   if (detect.length > 1) return malformed("an entry has one **Detect:** list");
-  const at = detect[0] ?? rest.length;
+  const at = detect[0]?.at ?? rest.length;
   const instruction = rest.slice(0, at).trim();
   if (!instruction) return malformed("an action says what to do");
   const length = [...instruction].length;
@@ -215,7 +276,7 @@ function readAction(body: string): Outcome<Action> {
   const hints =
     detect[0] === undefined
       ? ok([])
-      : readHints(rest.slice(at + DETECT.length).trim());
+      : readHints(rest.slice(detect[0].end).trim());
   if (!hints.ok) return hints;
   return ok({
     kind: "action",
@@ -240,34 +301,68 @@ function readBody(body: string): Outcome<Declaration> {
   return readAction(body);
 }
 
+/** Whether the marker at `at` opens a nested list item rather than sitting in the entry itself. */
+function nested(raw: string, at: number): boolean {
+  const lineStart = raw.lastIndexOf("\n", at) + 1;
+  return (
+    lineStart > 0 && /^\s*(?:[-*+]|\d+[.)])\s+$/.test(raw.slice(lineStart, at))
+  );
+}
+
 /**
  * The declaration a change-note or changelog entry carries: null when it
- * carries none, a failure naming what is wrong when it is malformed. Markers
- * inside a code span are text, not a declaration.
+ * carries none, a failure naming what is wrong when it is malformed. A
+ * marker inside a code span, or escaped (`\\**Consumer action:**`), is text,
+ * not a declaration, and so is a `**Detect:**` with no declaration before it.
  */
 export function readDeclaration(entry: string): Outcome<Declared | null> {
-  const text = collapse(unlisted(entry));
-  const marks = proseOffsets(text, MARKER);
-  if (!marks.length)
-    return proseOffsets(text, DETECT).length
-      ? malformed("a **Detect:** list follows a **Consumer action:**")
-      : ok(null);
+  const raw = unlisted(entry);
+  const text = collapse(raw);
+  const marks = proseMatches(text, MARKER);
+  if (!marks.length) return ok(null);
   if (marks.length > 1)
     return malformed("an entry declares one **Consumer action:**");
-  const at = marks[0] ?? 0;
-  const description = text.slice(0, at).trim();
+  const [mark] = marks;
+  const [rawMark] = proseMatches(raw, MARKER);
+  if (mark === undefined || rawMark === undefined)
+    return malformed("an entry declares one **Consumer action:**");
+  if (nested(raw, rawMark.at))
+    return malformed(
+      "a **Consumer action:** follows the entry's own description, not a nested list item",
+    );
+  const description = text.slice(0, mark.at).trim();
   if (!description)
     return malformed(
       "a **Consumer action:** follows the entry's description of the change",
     );
-  const declaration = readBody(text.slice(at + MARKER.length).trim());
+  const declaration = readBody(text.slice(mark.end).trim());
   if (!declaration.ok) return declaration;
-  const raw = unlisted(entry);
   return ok({
     description,
     declaration: declaration.value,
-    written: raw.slice(proseOffsets(raw, MARKER)[0] ?? 0).trimEnd(),
+    written: raw.slice(rawMark.at).trimEnd(),
   });
+}
+
+/**
+ * What only a repository with `changelog.consumer_actions` on is held to: a
+ * `**Detect:**` with no declaration before it, and a marker nearly written
+ * (another case, the colon outside the bold, underscores), which would
+ * otherwise leave an action out of the record unseen.
+ */
+function strictProblem(entry: string): string | null {
+  const text = collapse(unlisted(entry));
+  const prose = codeSpans(text)
+    .filter((_, i) => i % 2 === 0)
+    .join(" ")
+    .replace(MARKER, "")
+    .replace(/\\\*\*Consumer\s+action:\*\*/g, "");
+  if ([...prose.matchAll(NEAR_MARKER)].length)
+    return "write the marker exactly `**Consumer action:**`, in bold with the colon inside";
+  return proseMatches(text, MARKER).length === 0 &&
+    proseMatches(text, DETECT).length > 0
+    ? "a **Detect:** list follows a **Consumer action:**"
+    : null;
 }
 
 /** A hint as written, `kind:value`, for an id. */
@@ -317,10 +412,15 @@ export function declarationProblems(file: string, items: string[]): string[] {
   });
 }
 
-/** Whether an entry's prose marks it as breaking: `**Breaking:**` or `**Breaking**`. */
+/**
+ * Whether an entry's prose marks it as breaking: `**Breaking:**`,
+ * `**Breaking**`, `**Breaking.**` or `**Breaking**:`, in any case, anywhere
+ * in the entry, since a mid-entry `**Breaking** for …` marks the part that
+ * breaks.
+ */
 export function isBreakingEntry(item: string): boolean {
   return codeSpans(item).some(
-    (part, i) => i % 2 === 0 && /\*\*Breaking[:.]?\*\*/.test(part),
+    (part, i) => i % 2 === 0 && /\*\*breaking[:.]?\*\*/i.test(part),
   );
 }
 
@@ -331,11 +431,12 @@ export interface NoteEntries {
 }
 
 /**
- * Two entries of one release that declare the same action, written with
- * different whitespace: they would be one action under one id, so the author
- * writes them alike or makes them differ.
+ * Two entries of one release that declare the same action, written
+ * differently (in whitespace, or in the order of their levels or hints): they
+ * would be one action under one id, so the author writes them alike or makes
+ * them differ.
  */
-export function whitespaceTwins(notes: NoteEntries[]): string[] {
+export function twinDeclarations(notes: NoteEntries[]): string[] {
   const seen = new Map<string, { file: string; written: string }>();
   const findings: string[] = [];
   for (const { file, items } of notes)
@@ -348,7 +449,7 @@ export function whitespaceTwins(notes: NoteEntries[]): string[] {
       if (first === undefined) seen.set(key, { file, written });
       else if (first.written !== written)
         findings.push(
-          `${first.file === file ? file : `${first.file} and ${file}`}: two entries of one release declare \`${shown(item)}\` with declarations that differ only in whitespace: write them alike to declare one action, or make them differ`,
+          `${first.file === file ? file : `${first.file} and ${file}`}: two entries of one release declare the same action, \`${shown(item)}\`, written differently (in whitespace, or the order of levels or hints): write them alike to declare one action, or make them differ`,
         );
     }
   return findings;
@@ -362,10 +463,28 @@ export interface BranchRules {
   released: Set<string> | null;
 }
 
+/** What one entry of a branch's note is refused for under `rules`; null when nothing. */
+function branchProblem(item: string, rules: BranchRules): string | null {
+  const strict = rules.required ? strictProblem(item) : null;
+  if (strict !== null) return `${strict} (changelog.consumer_actions is on)`;
+  const read = readDeclaration(item);
+  if (!read.ok) return null;
+  if (read.value === null)
+    return rules.required && isBreakingEntry(item)
+      ? "a breaking entry says what a consumer does: add `**Consumer action:**` after its description, `none.` included (changelog.consumer_actions is on)"
+      : null;
+  const { declaration } = read.value;
+  return declaration.kind === "retracts" &&
+    rules.released !== null &&
+    !rules.released.has(declaration.id)
+    ? `retracts ${declaration.id}, which no released consumer action has`
+    : null;
+}
+
 /**
  * The rules for the notes a branch adds: with `required`, a breaking entry
- * carries a declaration; where the released ids are known, a retraction
- * names one of them.
+ * carries a declaration and no marker is nearly written; where the released
+ * ids are known, a retraction names one of them.
  */
 export function branchRules(
   notes: NoteEntries[],
@@ -373,22 +492,10 @@ export function branchRules(
 ): string[] {
   return notes.flatMap(({ file, items }) =>
     items.flatMap((item) => {
-      const read = readDeclaration(item);
-      if (!read.ok) return [];
-      if (read.value === null)
-        return rules.required && isBreakingEntry(item)
-          ? [
-              `${file}: \`${shown(item)}\` is breaking, so it says what a consumer does: add \`**Consumer action:**\` after it (changelog.consumer_actions is on)`,
-            ]
-          : [];
-      const { declaration } = read.value;
-      return declaration.kind === "retracts" &&
-        rules.released !== null &&
-        !rules.released.has(declaration.id)
-        ? [
-            `${file}: \`${shown(item)}\` retracts ${declaration.id}, which no released consumer action has`,
-          ]
-        : [];
+      const problem = branchProblem(item, rules);
+      return problem === null
+        ? []
+        : [`${file}: \`${shown(item)}\` — ${problem}`];
     }),
   );
 }

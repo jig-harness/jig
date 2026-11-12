@@ -41,9 +41,10 @@ import { banner } from "./banner.ts";
 import {
   branchRules,
   type NoteEntries,
-  whitespaceTwins,
+  twinDeclarations,
 } from "./consumer-actions.ts";
 import { releasedIds } from "./consumer-actions-record.ts";
+import { ok } from "../../../shared/outcome.ts";
 import { checkBase } from "./branches.ts";
 import { creditRefusals, isBreaking } from "./common-changelog.ts";
 import {
@@ -513,7 +514,7 @@ export function checkNotes(options: CheckOptions): CheckResult {
   const findings = [
     ...read.errors,
     ...creditable(options, read.notes),
-    ...whitespaceTwins(read.notes.map(noteEntries)),
+    ...twinDeclarations(read.notes.map(noteEntries)),
   ];
   if (!options.base)
     return { findings, notices: [], skipped: "no base branch given" };
@@ -527,6 +528,13 @@ export function checkNotes(options: CheckOptions): CheckResult {
   if ("skipped" in branch)
     return { findings, notices: [], skipped: branch.skipped };
   const notes = branchNotes(options, branch);
+  // A changelog whose released declarations cannot be read is its own
+  // finding, and leaves the retractions unchecked rather than all refused.
+  const released = options.record
+    ? releasedIds(branch.now(options.changelog), options.format)
+    : ok(null);
+  if (!released.ok)
+    findings.push(`${options.changelog}: ${released.failure.reason}`);
   findings.push(
     ...versionFindings(options, branch),
     ...changelogFindings(options, branch),
@@ -536,9 +544,7 @@ export function checkNotes(options: CheckOptions): CheckResult {
       notes.map(({ note }) => noteEntries(note)),
       {
         required: options.consumerActions ?? false,
-        released: options.record
-          ? releasedIds(branch.now(options.changelog) ?? "", options.format)
-          : null,
+        released: released.ok ? released.value : null,
       },
     ),
   );

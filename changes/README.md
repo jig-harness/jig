@@ -123,10 +123,14 @@ description, as a [consumer action](../GLOSSARY.md):
 
 Every `**Breaking:**` entry carries one (`.config/jig.yaml` sets
 `changelog.consumer_actions: true`), `none` included; any other entry may.
-The check refuses a malformed one: an unknown strength, level or hint kind, a
-`file:` glob that leaves the repository, an instruction over the cap, and two
-entries waiting for one release that differ only in their declaration's
-whitespace. After the merge, the release step writes the entry into
+Write the marker exactly `**Consumer action:**`: the check also refuses a
+near miss (`**Consumer Action:**`, `**Consumer action**:`) and a
+`**Detect:**` with no declaration before it. It refuses a malformed
+declaration: an unknown strength, level or hint kind, a `file:` glob that
+leaves the repository, an instruction over the cap, a declaration in a nested
+list item, and two entries waiting for one release that declare the same
+action written differently (in whitespace, or the order of levels or
+hints). After the merge, the release step writes the entry into
 CHANGELOG.md as it is and derives `plugin/consumer-actions.json`, the record
 the plugin ships, in which the action gets its id: the version, `#` and eight
 hexadecimal digits computed from the entry's text. The record's format is in

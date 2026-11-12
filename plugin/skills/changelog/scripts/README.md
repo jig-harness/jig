@@ -2,7 +2,7 @@
 
 The commands behind [`/jig:changelog`](../README.md): the branch check, the
 whole-changelog check, the
-release step, the consumer-actions record, the conversion of a branch, the status report, the tag plan and
+release step, the [consumer-actions record](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), the conversion of a branch, the status report, the tag plan and
 the release-access check. They read the repository's `changelog:`
 section of `.config/jig.yaml` ([the configuration
 reference](../../../CONFIGURATION.md#changelog)), so none takes the notes folder,
@@ -151,7 +151,8 @@ bun consumer-actions-record.ts [--root <dir>] --write
 ```
 
 Reads the changelog's released sections (never Unreleased), finds every
-entry's `**Consumer action:**` declaration
+entry's `**Consumer action:**` declaration of a
+[consumer action](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
 ([the form](../README.md#consumer-actions); `consumer-actions.ts` reads it)
 and derives the record at `changelog.consumer_actions_record`:
 
@@ -188,7 +189,11 @@ and derives the record at `changelog.consumer_actions_record`:
   `description` is the entry's text before the declaration and its
   `instruction` the text after the levels, each with its list marker dropped
   and whitespace collapsed. A hint is `{ "kind", "value" }`; a `config:` hint
-  also has `"absent"`, true for `config:!key`.
+  also has `"absent"`, true for `config:!key`. The hints are listed once
+  each, sorted by their `kind:value` text.
+- An entry is the list item and the lines indented under it: a paragraph or a
+  link reference definition after a blank line ends it, so the file's
+  comparison links never join the last entry of the oldest release.
 - The `id` is the version, `#` and the first eight hexadecimal digits of the
   SHA-256 of the JSON array `[description, strength, levels, instruction,
   hints]`, each hint written `kind:value` (`config:!key` for an absent key).
@@ -225,10 +230,12 @@ change to it. In Common Changelog a `**Breaking:**` entry needs `release: major`
 (`minor` before 1.0.0), a note whose commits are all by bots needs `authors:`, and
 a summary is refused when a note waiting on the base has one. Every waiting
 note's consumer-action declarations must read, and two entries of the waiting
-notes that differ only in their declaration's whitespace are refused. With the
+notes that declare the same action written differently are refused. With the
 base's `consumer_actions: true`, every breaking entry of a note the branch adds
-carries a declaration; with its `consumer_actions_record`, a `retracts` in such
-a note names an action the changelog has released. Correcting an
+carries a declaration, and a marker nearly written or a `**Detect:**` with no
+declaration is refused; with its `consumer_actions_record`, a `retracts` in
+such a note names an action the changelog has released, and a released
+declaration the record cannot read is a finding of its own. Correcting an
 earlier release's text stays allowed, and so does correcting or removing an
 entry already under Unreleased: each is rare and touches lines no other branch
 does. Adding a section or an entry to Unreleased is refused, and so is deleting

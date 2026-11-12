@@ -138,7 +138,7 @@ a released section the reviewer reads the diff.
    rename it in scripts."
 
    **Ask, for every change to what the repository releases: does a user have
-   to do anything?** When they must or should, declare a **consumer action**
+   to do anything?** When they must or should, declare a [consumer action](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
    after the entry's description, in the form
    [README.md § Consumer actions](README.md#consumer-actions) gives:
    `**Consumer action:** required|advised at <level>[, <level>]. <instruction>`
@@ -147,9 +147,11 @@ a released section the reviewer reads the diff.
    (`config:<key>`, `config:!<key>`, `text:<phrase>`, `file:<glob>`,
    `plugin-source:old|path|project-scope`). Write `**Consumer action:** none.`
    when the entry asks nothing, and `**Consumer action:** retracts <id>.` to
-   withdraw an earlier release's action. The check refuses a malformed
-   declaration in any note; where `changelog.consumer_actions` is `true` it also
-   refuses a breaking entry without one.
+   withdraw an earlier release's action. Write the marker exactly, in the
+   entry itself, not a nested item. The check refuses a malformed declaration
+   in any note; where `changelog.consumer_actions` is `true` it also refuses a
+   breaking entry without one, a near-miss marker (`**Consumer Action:**`)
+   and a `**Detect:**` with no declaration.
 
 6. **Add a summary only when it helps, and only with `release`.** Text before
    the first `###` section is the release's summary; a note without `release`

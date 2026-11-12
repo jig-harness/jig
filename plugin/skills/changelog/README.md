@@ -108,17 +108,28 @@ instead of reading every release by hand. This is a
   the host installs the plugin from that kind of source (`old`, `path`,
   `project-scope`). A hint is evidence for a person, never a command.
 
+The marker is written exactly `**Consumer action:**`, in the entry itself
+rather than a nested list item; one in a code span or escaped
+(`\**Consumer action:**`) is text.
+
 An action's **id** is the release's version, `#` and eight hexadecimal digits
-computed from the entry's text (`0.157.0#3fa9c2b1`), so reordering a release
-does not change it. Two identical entries in one release are one action.
+computed from the entry's text, its levels and hints in one order
+(`0.157.0#3fa9c2b1`), so reordering a release or a list of hints does not
+change it. Two identical entries in one release are one action.
 
 The branch check refuses a malformed declaration in any note: an unknown
-strength, level or hint kind, a `file:` hint that leaves the repository, an
-instruction over the cap, a `retracts` without an id, and two entries of one
-release that differ only in their declaration's whitespace. Where the
-repository sets `changelog.consumer_actions: true`, it also requires every
-breaking entry (marked `**Breaking:**` or `**Breaking**`) of a note the branch
-adds to carry a declaration, `none` included. Where it sets
+strength, level or hint kind, a `file:` hint that leaves the repository (an
+absolute path, a drive, a backslash or a `..`, in any alternative of its
+braces), an instruction over the cap, a `retracts` without an id, and two
+entries of one release that declare the same action written differently (in
+whitespace, or in the order of their levels or hints). Where the repository
+sets `changelog.consumer_actions: true`, it also requires every breaking
+entry (marked `**Breaking:**`, `**Breaking**` or `**Breaking.**`, in any case
+and anywhere in the entry) of a note the branch adds to carry a declaration,
+`none` included, and refuses a marker nearly written (`**Consumer Action:**`,
+`**Consumer action**:`, `__Consumer action:__`) and a `**Detect:**` with no
+declaration before it; a repository with the setting off reads both as
+ordinary text. Where it sets
 `changelog.consumer_actions_record` to a path, the release step derives the
 **consumer-actions record** there: every action the changelog's released
 sections declare, as JSON a tool reads without the changelog, rewritten in each

@@ -25,7 +25,6 @@ import { fail, runMain } from "../../../shared/cli.ts";
 import { consumerRoot } from "../../../shared/consumer.ts";
 import { failed, ok, type Outcome } from "../../../shared/outcome.ts";
 import { banner } from "./banner.ts";
-import { entries } from "./change-notes.ts";
 import { loadResolved } from "./config.ts";
 import {
   actionId,
@@ -36,7 +35,7 @@ import {
   type Strength,
 } from "./consumer-actions.ts";
 import { type Format, releaseVersion } from "./formats.ts";
-import { blocks } from "./markdown-blocks.ts";
+import { blocks, fenced } from "./markdown-blocks.ts";
 
 /** The record's schema version; a reader refuses one it does not know. */
 export const RECORD_SCHEMA = 1;
@@ -89,6 +88,31 @@ function add(release: RecordedRelease, declared: Declared): void {
   });
 }
 
+/**
+ * The top-level list items of a released section, each with its
+ * continuation: the lines indented under it, and lines right after it that
+ * continue its paragraph. An item ends at a blank line followed by a line that
+ * is not indented, so a paragraph, a link reference definition or the file's
+ * comparison links after the list never become part of its last item.
+ */
+export function releasedItems(text: string): string[] {
+  const items: string[][] = [];
+  let open = false;
+  let blank = false;
+  for (const { line, inFence } of fenced(text)) {
+    const opens = !inFence && /^[-*] /.test(line);
+    if (opens) items.push([]);
+    else if (!open || (blank && line.trim() && !/^\s/.test(line))) {
+      open = false;
+      continue;
+    }
+    open = true;
+    blank = !line.trim();
+    items.at(-1)?.push(line);
+  }
+  return items.map((lines) => lines.join("\n").trimEnd());
+}
+
 /** One released section's declarations; the problems name the version. */
 function releaseOf(
   version: string,
@@ -96,8 +120,8 @@ function releaseOf(
   problems: string[],
 ): RecordedRelease {
   const release: RecordedRelease = { version, actions: [], retracts: [] };
-  const items = blocks(text, 3).parts.flatMap(
-    (section) => entries(section.text).items,
+  const items = blocks(text, 3).parts.flatMap((section) =>
+    releasedItems(section.text),
   );
   for (const read of items.map(readDeclaration))
     if (!read.ok) problems.push(`${version}: ${read.failure.reason}`);
@@ -176,14 +200,23 @@ function layout(
 export const recordText = (record: ConsumerActionsRecord): string =>
   `${layout(record, "", 0, 0)}\n`;
 
-/** The ids of every action the changelog has released; empty where it cannot be read. */
-export function releasedIds(changelog: string, format: Format): Set<string> {
+/**
+ * The ids of every action the changelog has released: null when there is no
+ * changelog to read, a failure when a released declaration is malformed.
+ */
+export function releasedIds(
+  changelog: string | null,
+  format: Format,
+): Outcome<Set<string> | null> {
+  if (changelog === null) return ok(null);
   const record = deriveRecord(changelog, format);
-  return new Set(
-    record.ok
-      ? record.value.releases.flatMap((r) => r.actions.map((a) => a.id))
-      : [],
-  );
+  return record.ok
+    ? ok(
+        new Set(
+          record.value.releases.flatMap((r) => r.actions.map((a) => a.id)),
+        ),
+      )
+    : record;
 }
 
 /**

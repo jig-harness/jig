@@ -5,8 +5,9 @@ import { parseNote } from "../scripts/change-notes.ts";
 import { checkBranch, checkNotes } from "../scripts/check.ts";
 import {
   INSTRUCTION_MAX,
+  isBreakingEntry,
   readDeclaration,
-  whitespaceTwins,
+  twinDeclarations,
 } from "../scripts/consumer-actions.ts";
 import { KEEP_A_CHANGELOG } from "../scripts/formats.ts";
 import {
@@ -55,8 +56,9 @@ describe("the declaration's forms", () => {
         instruction:
           "Remove the manual restart step from runbooks and point the plugin source at the current release.",
         hints: [
-          { kind: "text", value: "restart the drive" },
+          // Each hint once, in one order, whatever order the note lists them in.
           { kind: "plugin-source", value: "old" },
+          { kind: "text", value: "restart the drive" },
         ],
       },
       {
@@ -92,6 +94,29 @@ describe("the declaration's forms", () => {
     );
     expect(read.ok && read.value?.description).toBe(
       "**Breaking:** The flag is renamed.",
+    );
+  });
+});
+
+describe("what is not a declaration", () => {
+  test("an escaped marker, a marker in a code span, and a `**Detect:**` alone are text", () => {
+    for (const entry of [
+      "- Labels. \\**Consumer action:** required at nowhere. Text.",
+      "- Labels. `**Consumer action:** required at nowhere.` Text.",
+      "- **Detect:** the scanner now finds stale branches.",
+    ])
+      expect(readDeclaration(entry), entry).toEqual({ ok: true, value: null });
+    expect(
+      errorsOf(note("**Detect:** the scanner now finds stale branches.")),
+    ).toEqual([]);
+  });
+
+  test("a marker wrapped over two lines is one, and the declaration starts at it", () => {
+    const read = readDeclaration(
+      "- Labels. **Consumer\n  action:** required at machine. Upgrade.",
+    );
+    expect(read.ok && read.value?.written).toBe(
+      "**Consumer\n  action:** required at machine. Upgrade.",
     );
   });
 });
@@ -155,7 +180,34 @@ describe("a malformed declaration fails", () => {
       "Labels. **Consumer action:** required at configuration. Set it. **Detect:** `config:a..b`.",
       "a config: hint names a dotted key",
     ],
-    ["Labels. **Detect:** `text:x`.", "follows a **Consumer action:**"],
+    [
+      "Labels. **Consumer action:** required at machine. Upgrade. **Detect:** `file:{..,src}/secret`.",
+      "`{..,src}/secret` leaves the repository",
+    ],
+    [
+      "Labels. **Consumer action:** required at machine. Upgrade. **Detect:** `file:{src,{lib,/etc}}/x`.",
+      "leaves the repository",
+    ],
+    [
+      "Labels. **Consumer action:** required at machine. Upgrade. **Detect:** `file:src\\x`.",
+      "leaves the repository",
+    ],
+    [
+      "Labels. **Consumer action:** required at machine. Upgrade. **Detect:** `file:\\\\server\\share\\x`.",
+      "leaves the repository",
+    ],
+    [
+      "Labels. **Consumer action:** required at machine. Upgrade. **Detect:** `file:C:/Users/x`.",
+      "`C:/Users/x` leaves the repository",
+    ],
+    [
+      "Labels. **Consumer action:** required. at machine. Upgrade.",
+      "write `<strength> at <level>",
+    ],
+    [
+      "Labels.\n  - **Consumer action:** required at machine. Upgrade.",
+      "not a nested list item",
+    ],
     [
       "Labels. **Consumer action:** none. **Consumer action:** none.",
       "declares one **Consumer action:**",
@@ -188,18 +240,38 @@ describe("one release's entries", () => {
 
   test("two entries differing only in their declaration's whitespace fail; identical ones are one action", () => {
     expect(
-      whitespaceTwins([entry(" "), { ...entry("\n  "), file: "changes/b.md" }]),
+      twinDeclarations([
+        entry(" "),
+        { ...entry("\n  "), file: "changes/b.md" },
+      ]),
     ).toEqual([
       expect.stringContaining(
-        "changes/a.md and changes/b.md: two entries of one release",
+        "changes/a.md and changes/b.md: two entries of one release declare the same action",
       ),
     ]);
     expect(
-      whitespaceTwins([entry(" "), { ...entry(" "), file: "changes/b.md" }]),
+      twinDeclarations([entry(" "), { ...entry(" "), file: "changes/b.md" }]),
     ).toEqual([]);
+    // Written in another order of levels, it is the same action written differently.
+    expect(
+      twinDeclarations([
+        {
+          file: "changes/a.md",
+          items: [
+            "- Labels. **Consumer action:** required at machine, configuration. Set it.",
+          ],
+        },
+        {
+          file: "changes/b.md",
+          items: [
+            "- Labels. **Consumer action:** required at configuration, machine. Set it.",
+          ],
+        },
+      ]),
+    ).toEqual([expect.stringContaining("written differently")]);
     // The same description with another declaration is another action.
     expect(
-      whitespaceTwins([
+      twinDeclarations([
         entry(" "),
         {
           file: "changes/b.md",
@@ -238,7 +310,7 @@ describe("one release's entries", () => {
       authors: true,
       base: "main",
     }).findings;
-    expect(findings.join("\n")).toContain("differ only in whitespace");
+    expect(findings.join("\n")).toContain("written differently");
   });
 });
 
@@ -262,7 +334,7 @@ describe("a breaking entry without an action", () => {
     const root = setup("\n  consumer_actions: true");
     commit(root, { "changes/x.md": BREAKING }, "note");
     expect(findings(root)).toEqual([
-      expect.stringContaining("is breaking, so it says what a consumer does"),
+      expect.stringContaining("a breaking entry says what a consumer does"),
     ]);
   });
 
@@ -289,6 +361,68 @@ describe("a breaking entry without an action", () => {
       commit(root, { "changes/x.md": BREAKING }, "note");
       expect(findings(root), JSON.stringify(section)).toEqual([]);
     }
+  });
+
+  test("every spelling of the marker counts, in any case, anywhere in the entry", () => {
+    for (const entry of [
+      "- **Breaking:** The flag is renamed.",
+      "- **Breaking.** The flag is renamed.",
+      "- **Breaking**: the flag is renamed.",
+      "- The flag is renamed. **Breaking** for scripts that pass it.",
+      "- **BREAKING:** The flag is renamed.",
+    ])
+      expect(isBreakingEntry(entry), entry).toBe(true);
+    expect(isBreakingEntry("- Shows `**Breaking:**` entries first.")).toBe(
+      false,
+    );
+  });
+
+  test("where the setting is on, a marker nearly written and a `**Detect:**` alone fail", () => {
+    const root = setup("\n  consumer_actions: true");
+    commit(
+      root,
+      {
+        "changes/x.md": note(
+          "Labels. **Consumer Action:** advised at configuration. Set it.",
+        ),
+        "changes/y.md": note(
+          "Labels. **Consumer action**: advised at configuration. Set it.",
+        ),
+        "changes/z.md": note(
+          "Labels. __Consumer action:__ advised at configuration. Set it.",
+        ),
+        "changes/w.md": note("**Detect:** the scanner finds stale branches."),
+        "changes/v.md": note(
+          "A **consumer action** can now be declared. **Consumer action:** none.",
+        ),
+      },
+      "notes",
+    );
+    const found = findings(root).join("\n");
+    for (const file of ["x", "y", "z"])
+      expect(found).toContain(`changes/${file}.md: \``);
+    expect(found).toContain("write the marker exactly");
+    expect(found).toContain("changes/w.md");
+    expect(found).toContain(
+      "a **Detect:** list follows a **Consumer action:**",
+    );
+    // A term in bold is not a marker.
+    expect(found).not.toContain("changes/v.md");
+  });
+
+  test("where it is off, neither is a finding", () => {
+    const root = setup("");
+    commit(
+      root,
+      {
+        "changes/x.md": note(
+          "Labels. **Consumer Action:** advised at configuration. Set it.",
+        ),
+        "changes/w.md": note("**Detect:** the scanner finds stale branches."),
+      },
+      "notes",
+    );
+    expect(findings(root)).toEqual([]);
   });
 
   test("the base's setting counts, not the branch's", () => {

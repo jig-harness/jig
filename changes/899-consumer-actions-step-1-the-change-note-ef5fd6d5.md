@@ -13,7 +13,8 @@ release: minor
   `plugin-source:`); `none.` says it asks nothing and `retracts <id>.`
   withdraws an earlier one. `/jig:changelog`'s check now refuses a malformed
   declaration in any note, and with the new `changelog.consumer_actions: true`
-  it also requires one on every breaking entry a branch adds. The form is in
+  it also requires one on every breaking entry a branch adds and refuses a
+  near-miss marker or a `**Detect:**` with no declaration. The form is in
   the [changelog skill's guide](../plugin/skills/changelog/README.md#consumer-actions).
   **Consumer action:** none.
 - `changelog.consumer_actions_record` names a file the release step derives

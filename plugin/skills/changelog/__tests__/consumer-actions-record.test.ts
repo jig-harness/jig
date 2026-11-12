@@ -137,6 +137,43 @@ describe("the derived record", () => {
     expect(current?.retracts).toEqual(["1.1.0#00000000"]);
   });
 
+  test("what follows the oldest release's list, link definitions included, is no part of its last entry", () => {
+    const oldest = `## [1.0.0] - 2026-01-01
+
+### Added
+
+- X. **Consumer action:** required at machine. Do it.
+- Y. **Consumer action:** advised at instructions. Read it.
+  **Detect:** \`text:old way\`.
+
+A closing paragraph.
+
+[unreleased]: https://example.com/r/compare/v1.0.0...HEAD
+[1.0.0]: https://example.com/r/releases/tag/v1.0.0
+`;
+    const once = derived(`# Changelog\n\n## [Unreleased]\n\n${oldest}`);
+    // A newer release on top: the oldest one's ids stay what they were.
+    const twice = derived(
+      `# Changelog\n\n## [Unreleased]\n\n## [1.1.0] - 2026-02-01\n\n### Fixed\n\n- Z. **Consumer action:** none.\n\n${oldest.replace("[1.0.0]: ", "[1.1.0]: https://example.com/r/compare/v1.0.0...v1.1.0\n[1.0.0]: ")}`,
+    );
+    const actions = once.releases[0]?.actions ?? [];
+    expect(actions.map((a) => a.instruction)).toEqual(["Do it.", "Read it."]);
+    expect(actions[1]?.hints).toEqual([{ kind: "text", value: "old way" }]);
+    expect(twice.releases).toEqual(once.releases);
+  });
+
+  test("an id does not depend on the order or repetition of the hints", () => {
+    const ids = (hints: string) =>
+      derived(
+        changelog([
+          `- H. **Consumer action:** advised at configuration. Set it. **Detect:** ${hints}.`,
+        ]),
+      ).releases[1]?.actions[0]?.id;
+    expect(ids("`text:a`, `config:b`")).toBe(
+      ids("`config:b`, `text:a`, `config:b`"),
+    );
+  });
+
   test("an id does not depend on the entry's position", () => {
     const ids = (entries: string[]) =>
       derived(changelog(entries))
@@ -386,5 +423,17 @@ describe("the release step and the freshness check", () => {
     expect(findings("1.3.0#ffffffff").join("\n")).toContain(
       "which no released consumer action has",
     );
+    // A changelog whose released declarations cannot be read is its own
+    // finding, and the retraction is left unchecked, not refused.
+    write(
+      root,
+      "CHANGELOG.md",
+      changelog(["- D. **Consumer action:** required at nowhere. Do it."]),
+    );
+    const unreadable = findings(known).join("\n");
+    expect(unreadable).toContain(
+      "CHANGELOG.md: consumer actions the record cannot read",
+    );
+    expect(unreadable).not.toContain("which no released consumer action has");
   });
 });
