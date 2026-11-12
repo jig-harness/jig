@@ -546,6 +546,15 @@ function refuseWrittenPlaceholders(
     throw new ChangelogError(
       `changelog.consumer_actions_record: ${record} is a file the release writes as the changelog or a version file; name a file of its own`,
     );
+  if (
+    record !== null &&
+    (record === OVERLAY_RELPATH ||
+      record.startsWith(".git/") ||
+      posix.dirname(record) === config.notesDir)
+  )
+    throw new ChangelogError(
+      `changelog.consumer_actions_record: ${record} is the configuration, repository metadata or a place the release reads change notes from; name a file of its own`,
+    );
   const written = [
     config.file,
     ...versionFiles,

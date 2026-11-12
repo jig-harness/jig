@@ -70,9 +70,11 @@ export interface Declared {
   written: string;
 }
 
-/** The markers, as written in prose; an escaped one (`\\**`) is text. */
-const MARKER = /(?<!\\)\*\*Consumer\s+action:\*\*/g;
-const DETECT = /(?<!\\)\*\*Detect:\*\*/g;
+/** The markers, as written in prose; one after an odd run of backslashes (`\\**`) is escaped text. */
+const UNESCAPED = String.raw`(?<=(?:^|[^\\])(?:\\\\)*)`;
+const MARKER = new RegExp(`${UNESCAPED}\\*\\*Consumer\\s+action:\\*\\*`, "g");
+const DETECT = new RegExp(`${UNESCAPED}\\*\\*Detect:\\*\\*`, "g");
+const BREAKING = new RegExp(`${UNESCAPED}\\*\\*breaking[:.]?\\*\\*`, "i");
 
 /**
  * A marker nearly written: the words in bold, but in another case, with the
@@ -81,6 +83,14 @@ const DETECT = /(?<!\\)\*\*Detect:\*\*/g;
  */
 const NEAR_MARKER =
   /(\*\*|__)\s*consumer[\s_-]*actions?\s*(?::\s*(\*\*|__)|(\*\*|__)\s*:)/gi;
+
+/**
+ * A marker written with single emphasis or the colon outside it, followed
+ * by what a declaration says next (`**Consumer action** required at …`): an
+ * ordinary bold term in prose does not read that way.
+ */
+const NEAR_DECLARATION =
+  /(\*{1,2}|_{1,2})\s*consumer[\s_-]*actions?\s*:?\s*\1\s*:?\s+(?:required|advised|none|retracts)\b/gi;
 
 /** An action's id: a released version, `#` and eight hexadecimal digits. */
 export const ACTION_ID = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.+-]+)?#[0-9a-f]{8}$/;
@@ -113,6 +123,10 @@ const malformed = (reason: string) => failed("malformed-declaration", reason);
 
 /** The most alternatives a `file:` glob's braces may expand to. */
 const MAX_ALTERNATIVES = 256;
+
+/** The longest `file:` glob, and the most brace groups it holds, that expansion is attempted for. */
+const MAX_GLOB = 1000;
+const MAX_BRACE_GROUPS = 32;
 
 /** Where the brace group opening at `open` closes, and its top-level commas; null when it never closes. */
 function braceGroup(
@@ -152,22 +166,26 @@ function alternatives(glob: string): string[] | null {
 }
 
 /**
- * Whether a `file:` glob can leave the repository: any path its braces
- * stand for is absolute, from a home directory, a drive or a network share,
- * or holds a backslash or a `..` segment.
+ * What is wrong with a `file:` glob's reach: it can leave the repository
+ * (any path its braces stand for is absolute, from a home directory, a drive
+ * or a network share, or holds a backslash or a `..` segment), or its braces
+ * are too many to expand; null when it is fine.
  */
-function leavesRepository(glob: string): boolean {
+function globProblem(glob: string): string | null {
+  if (glob.length > MAX_GLOB || glob.split("{").length - 1 > MAX_BRACE_GROUPS)
+    return `a file: hint is at most ${MAX_GLOB} characters with ${MAX_BRACE_GROUPS} brace groups, and \`${glob.slice(0, 40)}…\` is more`;
   const paths = alternatives(glob);
-  return (
-    paths === null ||
-    paths.some(
-      (path) =>
-        /^[/~]/.test(path) ||
-        path.includes("\\") ||
-        /^[A-Za-z]:/.test(path) ||
-        path.split("/").includes(".."),
-    )
-  );
+  if (paths === null)
+    return `a file: hint's braces expand to at most ${MAX_ALTERNATIVES} paths: split \`${glob}\` into several hints`;
+  return paths.some(
+    (path) =>
+      /^[/~]/.test(path) ||
+      path.includes("\\") ||
+      /^[A-Za-z]:/.test(path) ||
+      path.split("/").includes(".."),
+  )
+    ? `a file: hint is a glob relative to the repository root, and \`${glob}\` leaves the repository`
+    : null;
 }
 
 /** One hint, from a code span's content. */
@@ -192,10 +210,8 @@ function readHint(text: string): Outcome<Hint> {
         );
   }
   if (!value) return malformed(`a ${kind}: hint has a value`);
-  if (kind === "file" && leavesRepository(value))
-    return malformed(
-      `a file: hint is a glob relative to the repository root, and \`${value}\` leaves the repository`,
-    );
+  const reach = kind === "file" ? globProblem(value) : null;
+  if (reach !== null) return malformed(reach);
   if (
     kind === "plugin-source" &&
     !(PLUGIN_SOURCES as readonly string[]).includes(value)
@@ -301,12 +317,31 @@ function readBody(body: string): Outcome<Declaration> {
   return readAction(body);
 }
 
-/** Whether the marker at `at` opens a nested list item rather than sitting in the entry itself. */
+/**
+ * Whether the marker at `at` belongs to a nested list item rather than the
+ * entry itself: it follows a nested bullet on its own line, or sits on a
+ * later line indented into the content of a nested bullet above it.
+ */
 function nested(raw: string, at: number): boolean {
   const lineStart = raw.lastIndexOf("\n", at) + 1;
-  return (
-    lineStart > 0 && /^\s*(?:[-*+]|\d+[.)])\s+$/.test(raw.slice(lineStart, at))
-  );
+  if (
+    lineStart > 0 &&
+    /^\s*(?:[-*+]|\d+[.)])\s+$/.test(raw.slice(lineStart, at))
+  )
+    return true;
+  let content: number | null = null;
+  for (const line of raw.slice(0, lineStart).split("\n").slice(1)) {
+    if (!line.trim()) continue;
+    const bullet = /^(\s*)(?:[-*+]|\d+[.)])\s+/.exec(line);
+    if (bullet) content = bullet[0].length;
+    else if (
+      content !== null &&
+      line.length - line.trimStart().length < content
+    )
+      content = null;
+  }
+  const indent = raw.slice(lineStart, at).length;
+  return content !== null && lineStart > 0 && indent >= content;
 }
 
 /**
@@ -357,10 +392,14 @@ function strictProblem(entry: string): string | null {
     .join(" ")
     .replace(MARKER, "")
     .replace(/\\\*\*Consumer\s+action:\*\*/g, "");
-  if ([...prose.matchAll(NEAR_MARKER)].length)
+  if (
+    [...prose.matchAll(NEAR_MARKER)].length ||
+    [...prose.matchAll(NEAR_DECLARATION)].length
+  )
     return "write the marker exactly `**Consumer action:**`, in bold with the colon inside";
-  return proseMatches(text, MARKER).length === 0 &&
-    proseMatches(text, DETECT).length > 0
+  const marker = proseMatches(text, MARKER)[0];
+  const detect = proseMatches(text, DETECT)[0];
+  return detect !== undefined && (marker === undefined || detect.at < marker.at)
     ? "a **Detect:** list follows a **Consumer action:**"
     : null;
 }
@@ -419,9 +458,7 @@ export function declarationProblems(file: string, items: string[]): string[] {
  * breaks.
  */
 export function isBreakingEntry(item: string): boolean {
-  return codeSpans(item).some(
-    (part, i) => i % 2 === 0 && /\*\*breaking[:.]?\*\*/i.test(part),
-  );
+  return codeSpans(item).some((part, i) => i % 2 === 0 && BREAKING.test(part));
 }
 
 /** A note's file with its entries, as the release-wide rules read them. */

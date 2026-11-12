@@ -102,8 +102,9 @@ release does not change it, and a dismissal a repository committed keeps
 matching. Two entries in one release with the same description and the same
 declaration are one action; the same description with a different declaration
 is two actions with two ids, so neither obligation is lost and a dismissal
-applies to one. The changelog check refuses two entries that differ only in
-their declaration's whitespace.
+applies to one. The changelog check refuses two entries that declare one action
+written differently (in whitespace, or in the order of their levels or
+hints).
 
 ### The record in the plugin
 

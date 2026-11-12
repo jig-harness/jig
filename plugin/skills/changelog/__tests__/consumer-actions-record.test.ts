@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { spawnSync } from "../../../shared/guarded-git-spawn.ts";
@@ -10,6 +10,7 @@ import {
   deriveRecord,
   RECORD_SCHEMA,
   recordText,
+  recordUpdate,
 } from "../scripts/consumer-actions-record.ts";
 import { KEEP_A_CHANGELOG } from "../scripts/formats.ts";
 import { lintResolved } from "../scripts/lint.ts";
@@ -435,5 +436,44 @@ describe("the release step and the freshness check", () => {
       "CHANGELOG.md: consumer actions the record cannot read",
     );
     expect(unreadable).not.toContain("which no released consumer action has");
+  });
+});
+
+describe("the record's own file", () => {
+  const log =
+    "## [1.0.0] - 2026-01-01\n\n### Changed\n\n- A. **Consumer action:** required at machine. Do it.\n";
+
+  test("a changelog with CRLF line endings derives the same record", () => {
+    const lf = deriveRecord(log, KEEP_A_CHANGELOG);
+    const crlf = deriveRecord(log.replaceAll("\n", "\r\n"), KEEP_A_CHANGELOG);
+    expect(lf.ok && lf.value.releases).toHaveLength(1);
+    expect(crlf).toEqual(lf);
+  });
+
+  test("a path through a symbolic link is refused", () => {
+    const root = temporary();
+    mkdirSync(join(root, "elsewhere"));
+    symlinkSync(join(root, "elsewhere"), join(root, "out"));
+    const update = recordUpdate(
+      root,
+      "out/actions.json",
+      log,
+      KEEP_A_CHANGELOG,
+    );
+    expect(!update.ok && update.failure.reason).toContain("symbolic link");
+    expect(recordUpdate(root, "actions.json", log, KEEP_A_CHANGELOG).ok).toBe(
+      true,
+    );
+  });
+
+  test("the configuration and the notes directory are refused as the record", () => {
+    const root = repository({ "CHANGELOG.md": KEEP_CHANGELOG });
+    for (const path of [".config/jig.yaml", "changes/x.md"])
+      expect(() =>
+        resolvedFor(root, {
+          version: { tags: true },
+          consumer_actions_record: path,
+        }),
+      ).toThrow("name a file of its own");
   });
 });

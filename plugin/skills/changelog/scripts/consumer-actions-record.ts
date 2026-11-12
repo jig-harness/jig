@@ -18,7 +18,13 @@
 // Exit: 0 written, fresh, or not configured; 1 stale, or a malformed
 // declaration in a released section; 2 a usage error, an invalid
 // configuration or an unreadable file.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { fail, runMain } from "../../../shared/cli.ts";
@@ -138,12 +144,14 @@ export function deriveRecord(
   format: Format,
 ): Outcome<ConsumerActionsRecord> {
   const problems: string[] = [];
-  const releases = blocks(changelog, 2).parts.flatMap((part) => {
-    const version = releaseVersion(part.title, format);
-    if (version === null) return [];
-    const release = releaseOf(version, part.text, problems);
-    return release.actions.length || release.retracts.length ? [release] : [];
-  });
+  const releases = blocks(changelog.replace(/\r\n?/g, "\n"), 2).parts.flatMap(
+    (part) => {
+      const version = releaseVersion(part.title, format);
+      if (version === null) return [];
+      const release = releaseOf(version, part.text, problems);
+      return release.actions.length || release.retracts.length ? [release] : [];
+    },
+  );
   if (problems.length)
     return failed(
       "malformed-declaration",
@@ -219,6 +227,26 @@ export function releasedIds(
     : record;
 }
 
+const isLink = (path: string): boolean => {
+  try {
+    return lstatSync(path).isSymbolicLink();
+  } catch {
+    return false;
+  }
+};
+
+/** The first part of `path` (relative to `root`) that is a symbolic link; null when none is. */
+function linkedPath(root: string, path: string): string | null {
+  let current = root;
+  let seen = "";
+  for (const part of path.split("/")) {
+    current = join(current, part);
+    seen = seen ? `${seen}/${part}` : part;
+    if (isLink(current)) return seen;
+  }
+  return null;
+}
+
 /**
  * The text the record at `path` (relative to `root`) should hold for
  * `changelog`, or null when it already does.
@@ -229,6 +257,12 @@ export function recordUpdate(
   changelog: string,
   format: Format,
 ): Outcome<string | null> {
+  const linked = linkedPath(root, path);
+  if (linked !== null)
+    return failed(
+      "unsafe-record-path",
+      `changelog.consumer_actions_record: ${path} goes through a symbolic link (${linked}), which could send the record outside the repository's own files: name a path without one`,
+    );
   const record = deriveRecord(changelog, format);
   if (!record.ok) return record;
   const text = recordText(record.value);

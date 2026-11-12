@@ -133,7 +133,7 @@ ordinary text. Where it sets
 `changelog.consumer_actions_record` to a path, the release step derives the
 **consumer-actions record** there: every action the changelog's released
 sections declare, as JSON a tool reads without the changelog, rewritten in each
-release commit. `bun scripts/consumer-actions-record.ts --check` fails when the committed
+release commit. `bun "<skill-dir>/scripts/consumer-actions-record.ts" --check` fails when the committed
 file is not what the changelog derives, so it is never edited by hand. The
 record needs Keep a Changelog, which leaves each entry as its note wrote it.
 

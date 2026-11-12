@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { parseNote } from "../scripts/change-notes.ts";
 import { checkBranch, checkNotes } from "../scripts/check.ts";
 import {
+  branchRules,
   INSTRUCTION_MAX,
   isBreakingEntry,
   readDeclaration,
@@ -438,5 +439,67 @@ describe("a breaking entry without an action", () => {
       "turn it on",
     );
     expect(findings(root)).toEqual([]);
+  });
+});
+
+describe("review hardening", () => {
+  const strict = (entry: string): string[] =>
+    branchRules([{ file: "changes/x.md", items: [`- ${entry}`] }], {
+      required: true,
+      released: new Set(),
+    });
+  const ACTION = "required at machine. Upgrade.";
+
+  test("a marker after two backslashes is a marker; after one it is text", () => {
+    const real = readDeclaration(
+      `- Change. \\\\**Consumer action:** ${ACTION}`,
+    );
+    expect(real.ok && real.value?.declaration.kind).toBe("action");
+    const escaped = readDeclaration(
+      `- Change. \\**Consumer action:** ${ACTION}`,
+    );
+    expect(escaped.ok && escaped.value).toBeNull();
+  });
+
+  test("a bold term in prose is allowed; a declaration in another emphasis is refused", () => {
+    expect(strict("Mentions the **Consumer action** idea in prose.")).toEqual(
+      [],
+    );
+    expect(strict(`Change. **Consumer action** ${ACTION}`)).not.toEqual([]);
+    expect(strict(`Change. *Consumer action:* ${ACTION}`)).not.toEqual([]);
+  });
+
+  test("a marker under a nested bullet's continuation is refused", () => {
+    const read = readDeclaration(
+      `- Parent.\n  - Child.\n    **Consumer action:** ${ACTION}`,
+    );
+    expect(read.ok).toBe(false);
+    const own = readDeclaration(
+      `- Parent.\n  - Child.\n  **Consumer action:** ${ACTION}`,
+    );
+    expect(own.ok).toBe(true);
+  });
+
+  test("a Detect list before the declaration is refused", () => {
+    expect(
+      strict(
+        "Change. **Detect:** `text:old`. **Consumer action:** required at instructions. Update.",
+      ),
+    ).not.toEqual([]);
+  });
+
+  test("an escaped Breaking marker is not breaking", () => {
+    expect(isBreakingEntry("A literal \\**Breaking:** example.")).toBe(false);
+    expect(isBreakingEntry("**Breaking:** it.")).toBe(true);
+  });
+
+  test("brace expansion is bounded, and says which limit", () => {
+    const many = `- C. **Consumer action:** ${ACTION} **Detect:** \`file:{${Array.from({ length: 257 }, () => "a").join(",")}}\`.`;
+    const tooMany = readDeclaration(many);
+    expect(!tooMany.ok && tooMany.failure.reason).toContain(
+      "expand to at most",
+    );
+    const deep = `- C. **Consumer action:** ${ACTION} **Detect:** \`file:${"{a".repeat(5000)}${"}".repeat(5000)}\`.`;
+    expect(readDeclaration(deep).ok).toBe(false);
   });
 });

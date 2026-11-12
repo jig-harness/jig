@@ -110,11 +110,14 @@ commit dates, which two merges can share and an author can set), and:
    `JIG_AFTER_VERSION_TIMEOUT_SEC` seconds (1800 by default). A process it
    leaves running in the background when it returns is stopped, and the
    release fails (POSIX only).
-6. Where `changelog.consumer_actions_record` names a file, derives the
-   [consumer-actions record](#the-consumer-actions-record) again from the
-   changelog it wrote and writes it when it changed, so the record and the
-   release share one commit. A malformed declaration in a released section
-   stops the release.
+6. Where `changelog.consumer_actions_record` names a file, the release derives
+   the [consumer-actions record](#the-consumer-actions-record) from the
+   changelog it is about to write, before any file is written, and writes it
+   with the changelog and the version files (so `after_version`, step 5, finds
+   the record already written, and a change that command makes to the
+   changelog is not derived again), so the record and the release share one
+   commit. A malformed declaration in a released section, or a record path
+   that goes through a symbolic link, stops the release.
 7. Deletes the notes it wrote, last, so a failing `after_version` leaves them.
 
 It computes every file before writing the first, and writes nothing when a note
