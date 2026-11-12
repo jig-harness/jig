@@ -248,7 +248,7 @@ records as its type, priority and size, and a label of each other group
 the label taxonomy requires, from the change-area catalog's areas covering
 the file the finding's thread is on, and replaces it with its issue's link.
 An entry whose group it cannot derive with certainty stays in the section
-for a person, naming the group.
+for a person, and the run's output names the group it lacks.
 
 A review bot's follow-up to a reply (a confirmation, or a chat
 acknowledgement with no outcome token and no finding) is transparent: it is

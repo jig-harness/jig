@@ -156,7 +156,8 @@ const THREAD_PATHS_QUERY = `query($owner: String!, $name: String!, $pr: Int!, $e
   }
 }`;
 
-const THREAD_PATHS_JQ = `.data.repository.pullRequest.reviewThreads.nodes[] | {thread: .comments.nodes[0].url, path} | @json`;
+/** A thread whose first comment is gone, or that is on no file, keys nothing and is left out. */
+const THREAD_PATHS_JQ = `.data.repository.pullRequest.reviewThreads.nodes[] | {thread: .comments.nodes[0].url, path} | select(.thread != null and .path != null) | @json`;
 
 /**
  * Each resolved thread's first comment, whether its comments were cut at the

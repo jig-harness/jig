@@ -78,6 +78,7 @@ import {
   type CatalogSource,
   configuredCatalog,
   entryLabels,
+  type FindingFile,
   unfilledGroups,
 } from "./lib/deferred-labels.ts";
 import {
@@ -449,15 +450,21 @@ function planner(
   return async (entry) => {
     const facets = entryFacets(entry, opts.facets);
     if ("why" in facets) return facets;
-    let path: string | null = null;
+    let file: FindingFile = { none: "it is a summary finding" };
     if (
       unfilledGroups(opts.label, taxonomy).length > 0 &&
       entry.fingerprint === undefined
     ) {
       paths ??= forge.threadPaths(pr);
-      path = (await paths).get(entry.source) ?? null;
+      const path = (await paths).get(entry.source);
+      file =
+        path === undefined
+          ? {
+              none: `no review thread of this pull request starts at ${entry.source}`,
+            }
+          : { path };
     }
-    const labels = entryLabels(opts.label, path, taxonomy, readCatalog);
+    const labels = entryLabels(opts.label, file, taxonomy, readCatalog);
     return "why" in labels ? labels : { facets, labels: labels.labels };
   };
 }

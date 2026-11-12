@@ -12,16 +12,15 @@
  * the areas they imply. Only a review thread is on a file; a summary finding
  * names none. A group is filled only when those areas carry exactly one of its
  * labels: none, or two that disagree, is no certainty, and nothing is guessed.
+ * Labels are compared ignoring case, and the taxonomy's spelling is filed.
  * The size group is the size facet's, as the filing check reads it.
  */
-import { isAbsolute, join } from "node:path";
-import { consumerRoot, readConfig } from "../../../../shared/consumer.ts";
-import { isRecord } from "../../../../shared/guards.ts";
 import {
   areasOf,
   type ChangeAreaCatalog,
   loadCatalogFile,
 } from "../../../drive-pr/scripts/lib/change-areas-catalog.ts";
+import { changeAreasCatalogPath } from "../../../drive-pr/scripts/lib/overlay.ts";
 import type { Taxonomy } from "../../../file-issue/scripts/lib/taxonomy.ts";
 import {
   missingGroups,
@@ -50,26 +49,30 @@ export function unfilledGroups(
     : missingGroups([label], taxonomy, [SIZE_GROUP]);
 }
 
+/** The file a finding is on, or why it is on none. */
+export type FindingFile = { path: string } | { none: string };
+
 /**
- * The labels an entry on `path` (`null` for a summary finding) is filed with,
- * or why a person files it: `label`, then the one label the file's seed areas
- * carry of each required group `label` leaves unfilled. With no taxonomy, or
- * none of its required groups unfilled, `label` alone, and the catalog is not
- * read.
+ * The labels an entry on `file` is filed with, or why a person files it:
+ * `label`, then the one label the file's seed areas carry of each required
+ * group `label` leaves unfilled, compared ignoring case and spelt as the
+ * taxonomy spells it. With no taxonomy, or none of its required groups
+ * unfilled, `label` alone, and the catalog is not read.
  */
 export function entryLabels(
   label: string,
-  path: string | null,
+  file: FindingFile,
   taxonomy: Taxonomy | null,
   catalog: () => CatalogSource,
 ): { labels: string[] } | { why: string } {
   const missing = unfilledGroups(label, taxonomy);
   if (taxonomy === null || missing.length === 0) return { labels: [label] };
   const lacks = `it lacks a ${listed(missing)} label`;
-  if (path === null)
+  if ("none" in file)
     return {
-      why: `${lacks}, which is derived only from the file a review thread is on, and this finding is on none`,
+      why: `${lacks}, which is derived only from the file a review thread is on: ${file.none}`,
     };
+  const { path } = file;
   const source = catalog();
   if (source.catalog === null) return { why: `${lacks}: ${source.why}` };
   const areas = areasOf(path, source.catalog);
@@ -78,12 +81,16 @@ export function entryLabels(
       why: `${lacks}: no area of the change-area catalog covers ${path}`,
     };
   const projected = new Set(
-    areas.flatMap((a) => source.catalog.get(a)?.trackerLabels ?? []),
+    areas.flatMap((a) =>
+      (source.catalog.get(a)?.trackerLabels ?? []).map((l) => l.toLowerCase()),
+    ),
   );
   const labels = [label];
   for (const id of missing) {
     const group = taxonomy.groups.find((g) => g.id === id);
-    const found = (group?.labels ?? []).filter((l) => projected.has(l));
+    const found = (group?.labels ?? []).filter((l) =>
+      projected.has(l.toLowerCase()),
+    );
     if (found.length !== 1)
       return {
         why:
@@ -98,28 +105,26 @@ export function entryLabels(
 
 /** The consumer's change-area catalog (`drive.change_areas_catalog`), or why none is read. */
 export function configuredCatalog(): CatalogSource {
+  let path: string | undefined;
   try {
-    const drive = readConfig().drive;
-    const path = isRecord(drive) ? drive.change_areas_catalog : undefined;
-    if (path === undefined || path === null)
-      return {
-        catalog: null,
-        why: "the repository sets no change-area catalog (drive.change_areas_catalog)",
-      };
-    if (typeof path !== "string" || path.trim() === "")
-      return {
-        catalog: null,
-        why: "drive.change_areas_catalog must be a path",
-      };
+    path = changeAreasCatalogPath();
+  } catch (err) {
+    return { catalog: null, why: message(err) };
+  }
+  if (path === undefined)
     return {
-      catalog: loadCatalogFile(
-        isAbsolute(path) ? path : join(consumerRoot(), path),
-      ),
+      catalog: null,
+      why: "the repository sets no change-area catalog (drive.change_areas_catalog)",
     };
+  try {
+    return { catalog: loadCatalogFile(path) };
   } catch (err) {
     return {
       catalog: null,
-      why: err instanceof Error ? err.message : String(err),
+      why: `the change-area catalog cannot be used; repair it, then run again: ${message(err)}`,
     };
   }
 }
+
+const message = (err: unknown): string =>
+  err instanceof Error ? err.message : String(err);

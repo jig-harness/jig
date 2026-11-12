@@ -221,6 +221,21 @@ describe("file-deferred.ts fills a required group from the catalog", () => {
     expect(forge.pathReads).toBe(1);
   });
 
+  test("a thread the pull request does not list is named as such, not as a finding on no file", async () => {
+    const forge = fakeForge(bodyWith(thread(9)), {});
+    const { tracker, asked } = checkedGitHub(taxonomy());
+    const r = await fileDeferred(forge, tracker, "42", {
+      label: "pr-followup",
+      facets: FACETS,
+      taxonomy: taxonomy(),
+      catalog: () => CATALOG,
+    });
+    expect(asked).toEqual([]);
+    expect(r.forPerson.map((p) => p.why)).toEqual([
+      `it lacks a repo label, which is derived only from the file a review thread is on: no review thread of this pull request starts at ${thread(9)}`,
+    ]);
+  });
+
   test("files exactly as before where the taxonomy requires no other group", async () => {
     const forge = fakeForge(bodyWith(thread(1)), {});
     const { tracker, asked } = checkedGitHub(taxonomy(false));
@@ -256,12 +271,32 @@ describe("file-deferred.ts fills a required group from the catalog", () => {
 });
 
 describe("the labels a deferred finding is filed with", () => {
-  const derive = (path: string | null, catalog: CatalogSource = CATALOG) =>
-    entryLabels("pr-followup", path, taxonomy(), () => catalog);
+  const derive = (path: string, catalog: CatalogSource = CATALOG) =>
+    entryLabels("pr-followup", { path }, taxonomy(), () => catalog);
 
-  test("a summary finding is on no file, so the group is not derived", () => {
-    expect(derive(null)).toEqual({
-      why: "it lacks a repo label, which is derived only from the file a review thread is on, and this finding is on none",
+  test("a finding on no file names why, and the group is not derived", () => {
+    expect(
+      entryLabels(
+        "pr-followup",
+        { none: "it is a summary finding" },
+        taxonomy(),
+        () => CATALOG,
+      ),
+    ).toEqual({
+      why: "it lacks a repo label, which is derived only from the file a review thread is on: it is a summary finding",
+    });
+  });
+
+  test("labels match ignoring case, and the taxonomy's spelling is filed", () => {
+    const shouting: CatalogSource = {
+      catalog: parseCatalog({
+        areas: {
+          web: { paths: ["web/**"], tracker: { labels: ["Repo:Web"] } },
+        },
+      }),
+    };
+    expect(derive("web/app.ts", shouting)).toEqual({
+      labels: ["pr-followup", "repo:web"],
     });
   });
 
@@ -291,7 +326,7 @@ describe("the labels a deferred finding is filed with", () => {
 
   test("with no taxonomy the follow-up label alone is filed", () => {
     expect(
-      entryLabels("pr-followup", null, null, () => {
+      entryLabels("pr-followup", { path: "web/app.ts" }, null, () => {
         throw new Error("the catalog is not read");
       }),
     ).toEqual({ labels: ["pr-followup"] });

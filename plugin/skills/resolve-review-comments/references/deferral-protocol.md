@@ -261,10 +261,12 @@ beyond the size (a `repo` group, say), it adds that group's label from the
 change-area catalog (`drive.change_areas_catalog`): the tracker labels of the
 areas whose own globs match the file the review thread is on, never the
 areas they imply, and only when those areas carry exactly one label of the
-group. It never guesses one: a summary finding (on no file), a file no area
-covers, or areas carrying none of the group's labels or more than one, leaves
-the entry in the section for a person to file through `/jig:file-issue`,
-naming the group, and the other entries are filed. It replaces each entry with its issue's link. Run it from
+group, compared ignoring case. It never guesses one: a summary finding (on
+no file), a file no area covers, or areas carrying none of the group's labels
+or more than one, leaves the entry in the section for a person to file
+through `/jig:file-issue`, the run's output naming the group it lacks, and
+the other entries are filed. It replaces each entry with its issue's link.
+Run it from
 the repository's own post-merge step, or on a pull request closed without
 merging:
 
