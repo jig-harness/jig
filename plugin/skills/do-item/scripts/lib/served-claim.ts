@@ -199,8 +199,9 @@ async function stateBeforeAssignment(
   key: string,
   options: ServedClaim,
 ): Promise<ClaimResult | null> {
-  if (!options.claimFrom) return null;
+  if (!options.claimFrom && tracker.stateName("blocked") === null) return null;
   const current = await tracker.getIssue(key);
+  if (current === null && !options.claimFrom) return null;
   if (current === null)
     return {
       outcome: "refused",
@@ -208,7 +209,12 @@ async function stateBeforeAssignment(
       why: "state",
       reason: `${key} could not be read, so its state is not known to be in claim_from`,
     };
-  return claimFromRefusal(tracker, key, current.state.name, options.claimFrom);
+  return (
+    blockedStateRefusal(tracker, key, current.state.name) ??
+    (options.claimFrom
+      ? claimFromRefusal(tracker, key, current.state.name, options.claimFrom)
+      : null)
+  );
 }
 
 /**
@@ -224,6 +230,12 @@ function startStateRefusal(
   options: ServedClaim,
 ): ClaimResult | null {
   const blocked = blockedStateRefusal(tracker, key, state);
+  if (blocked && options.ancestor)
+    return {
+      outcome: "stood_down",
+      issue: key,
+      reason: `${key} changed before it could be started: ${blocked.reason}; queue must refresh`,
+    };
   if (blocked) return blocked;
   const outside = options.claimFrom
     ? claimFromRefusal(tracker, key, state, options.claimFrom)
@@ -275,6 +287,7 @@ async function blockedNow(
   tracker: Tracker,
   key: string,
 ): Promise<ClaimResult | null> {
+  if (tracker.stateName("blocked") === null) return null;
   const current = await tracker.getIssue(key);
   return current ? blockedStateRefusal(tracker, key, current.state.name) : null;
 }

@@ -501,3 +501,29 @@ test("an item blocked just before the start write is never overwritten", async (
   expect(result).toMatchObject({ outcome: "refused", why: "blocked" });
   expect(w.writes).toEqual([]);
 });
+test("an inherited claim blocked after its assignment write stands down, not refuses", async () => {
+  const w = blockedFrom(6, true);
+  const result = await claimServedIssue(w.tracker, "#1", {
+    person: "dana",
+    ancestor: "#3",
+  });
+  expect(result).toMatchObject({ outcome: "stood_down" });
+});
+test("a claim reads no extra state when the tracker has no blocked state", async () => {
+  const count = async (blockedName: string | null) => {
+    const w = world();
+    let reads = 0;
+    const base = w.tracker.getIssue.bind(w.tracker);
+    const tracker = w.tracker as unknown as Record<string, unknown>;
+    const stateName = w.tracker.stateName.bind(w.tracker);
+    tracker.stateName = (s: string) =>
+      s === "blocked" ? blockedName : stateName(s as never);
+    tracker.getIssue = async (key: string) => {
+      reads++;
+      return base(key);
+    };
+    await claimServedIssue(w.tracker, "#1", { person: "dana" });
+    return reads;
+  };
+  expect(await count(null)).toBe((await count("Blocked")) - 2);
+});
