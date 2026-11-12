@@ -391,6 +391,17 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.210.2] - 2026-11-12
+
+### Fixed
+
+- The Jira adapter refuses a `JIRA_BEARER_TOKEN` or `JIRA_TOKEN_COMMAND`
+  credential for an Atlassian Cloud site (`*.atlassian.net`) when
+  `issue_tracker.jira.api_base` is not set, before it sends a request, and
+  says the setting is needed. Before, the site answered a bare `Jira API HTTP
+  403`. A self-hosted site named in `JIRA_ALLOWED_HOSTS` is left alone, and a
+  403 on its first request now names the credential variable.
+
 ## [0.210.1] - 2026-11-12
 
 ### Changed
@@ -7247,7 +7258,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.210.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.210.2...HEAD
+[0.210.2]: https://github.com/jig-harness/jig/compare/v0.210.1...v0.210.2
 [0.210.1]: https://github.com/jig-harness/jig/compare/v0.210.0...v0.210.1
 [0.210.0]: https://github.com/jig-harness/jig/compare/v0.209.0...v0.210.0
 [0.209.0]: https://github.com/jig-harness/jig/compare/v0.208.0...v0.209.0
