@@ -18,7 +18,9 @@ import { swallow } from "../../shared/errors.ts";
 import {
   clearFailure,
   entryOf,
+  escalates,
   isActionKind,
+  quietFailure,
   readFailures,
   recordFailure,
 } from "./failures.ts";
@@ -343,8 +345,10 @@ function settleTick(
     return scope.key;
   }
   context.tickSettledExit = receipt.exitStatus;
-  if (receipt.exitStatus === 0) clearFailure("", scope.key, root);
-  else if (receipt.exitStatus === 1)
+  if (receipt.exitStatus === 0) {
+    clearFailure("", scope.key, root);
+    quietWakeUps(receipt, scope.key, root, nowMs);
+  } else if (receipt.exitStatus === 1)
     recordFailure(
       { repo: "", ...scope, kind: "tick" },
       tickFailure(receipt),
@@ -353,6 +357,25 @@ function settleTick(
       root,
     );
   return null;
+}
+
+/**
+ * A tick that exits 0 quiets the wake-up rows of the other repositories it
+ * read whose turn succeeded: their cause is gone from every step they share
+ * with it, but only a wake-up of their own clears their count, so a
+ * wake-up that keeps failing between succeeding sweeps is still told.
+ */
+function quietWakeUps(
+  receipt: TickReceipt,
+  own: string,
+  root: string,
+  nowMs: number,
+): void {
+  const at = new Date(nowMs).toISOString();
+  for (const r of receipt.repos) {
+    const key = `ticks ${resolve(r.path)}`;
+    if (key !== own && repoFailure(r) === null) quietFailure("", key, at, root);
+  }
 }
 
 /** Put the ledger's rows that back off or are notified on the receipt. */
@@ -370,7 +393,7 @@ function reportFailures(
   const backingOff = rows.filter(
     (r) => isActionKind(r.kind) && r.nextAtMs > nowMs,
   );
-  const escalated = rows.filter((r) => r.count >= settings.notifyAfter);
+  const escalated = rows.filter((r) => escalates(r, settings));
   delete receipt.failures;
   if (backingOff.length > 0 || escalated.length > 0)
     receipt.failures = {

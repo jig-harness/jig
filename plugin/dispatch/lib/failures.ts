@@ -20,7 +20,9 @@
  * Each row holds the failures in a row, the first and the last failure's
  * time, the last reason (one plain sentence, never a stack:
  * [ADR-0012](../../../docs/adr/ADR-0012-failures-as-values.md)) and when the
- * action is next tried. A first failure is tried again at the next tick, as
+ * action is next tried. A wake-up's tick row is quiet once a tick that read
+ * its repository succeeded after its last failure: it keeps its count, but
+ * nothing escalates it until a wake-up of that repository fails again. A first failure is tried again at the next tick, as
  * every action always was; a second in a row moves the next try
  * `failures.backoff` after it, doubling with each failure after that up to
  * `failures.backoff_max`. A success removes the row, and so does the action
@@ -75,6 +77,8 @@ export interface FailureRow {
   reason: string;
   /** When the action is next tried; the last failure's time for a kind that does not back off. */
   nextAtMs: number;
+  /** When a tick that read a wake-up row's repository succeeded after its last failure; `null` while none has. */
+  quietAt: string | null;
 }
 
 /** The machine file's `failures` settings. */
@@ -129,6 +133,7 @@ interface Stored {
   last_at: string;
   reason: string;
   next_at_ms: number;
+  quiet_at: string | null;
 }
 
 function fromStored(r: Stored): FailureRow {
@@ -142,11 +147,12 @@ function fromStored(r: Stored): FailureRow {
     lastAt: r.last_at,
     reason: r.reason,
     nextAtMs: r.next_at_ms,
+    quietAt: r.quiet_at,
   };
 }
 
 const COLUMNS =
-  "repo, key, kind, target, count, first_at, last_at, reason, next_at_ms";
+  "repo, key, kind, target, count, first_at, last_at, reason, next_at_ms, quiet_at";
 
 /** Every row, or those of one repository. */
 export function readFailures(repo?: string, root = stateRoot()): FailureRow[] {
@@ -195,13 +201,14 @@ export function recordFailure(
       lastAt: at,
       reason: said,
       nextAtMs: next,
+      quietAt: null,
     };
     db.query(
-      `INSERT INTO failures (${COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO failures (${COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (repo, key) DO UPDATE SET kind = excluded.kind,
          target = excluded.target, count = excluded.count,
          last_at = excluded.last_at, reason = excluded.reason,
-         next_at_ms = excluded.next_at_ms`,
+         next_at_ms = excluded.next_at_ms, quiet_at = excluded.quiet_at`,
     ).run(
       row.repo,
       row.key,
@@ -212,6 +219,7 @@ export function recordFailure(
       row.lastAt,
       row.reason,
       row.nextAtMs,
+      row.quietAt,
     );
     return row;
   });
@@ -226,6 +234,27 @@ export function clearFailure(
   stateDb(root)
     .query("DELETE FROM failures WHERE repo = ? AND key = ?")
     .run(repo, key);
+}
+
+/**
+ * A tick that read the row's repository succeeded at `at`: the row keeps
+ * its count and goes quiet until its next failure. Nothing when no row
+ * stands under the key.
+ */
+export function quietFailure(
+  repo: string,
+  key: string,
+  at: string,
+  root = stateRoot(),
+): void {
+  stateDb(root)
+    .query("UPDATE failures SET quiet_at = ? WHERE repo = ? AND key = ?")
+    .run(at, repo, key);
+}
+
+/** Whether a row is past the threshold and not quiet: what a person is told. */
+export function escalates(row: FailureRow, settings: FailureSettings): boolean {
+  return row.count >= settings.notifyAfter && row.quietAt === null;
 }
 
 /**

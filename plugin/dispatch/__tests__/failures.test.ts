@@ -11,7 +11,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { writeLabels } from "../lib/actions/labels.ts";
 import type { editLabels } from "../lib/forge.ts";
-import { failureCauses, homeOf } from "../lib/failure-notices.ts";
+import {
+  failureCauses,
+  homeOf,
+  hostNoticeKeys,
+} from "../lib/failure-notices.ts";
 import {
   actionBook,
   backoffAfter,
@@ -159,6 +163,7 @@ function row(
     lastAt: "2026-11-06T10:20:00.000Z",
     reason: "the forge refused it",
     nextAtMs: Date.parse("2026-11-06T10:36:00.000Z"),
+    quietAt: null,
     ...fields,
   };
 }
@@ -261,6 +266,24 @@ describe("the failure ledger's notifications", () => {
       "host ticks sweep failing since 2026-11-06T10:00:00.000Z",
     );
     expect(atD[0]?.notice?.key).toBe(atC[0]?.notice?.key);
+  });
+
+  it("tells nothing of a quiet wake-up row, and lets its notice retire", () => {
+    const machine = { repositories: [repository("/c")] };
+    const quiet = row({
+      repo: "",
+      key: "ticks /c",
+      kind: "tick",
+      target: "ticks of o/c",
+      quietAt: "2026-11-06T10:30:00.000Z",
+    });
+    expect(failureCauses("o/c", "/c", [quiet], machine)).toEqual([]);
+    expect(hostNoticeKeys([quiet]).size).toBe(0);
+    const loud = { ...quiet, quietAt: null };
+    expect(
+      failureCauses("o/c", "/c", [loud], machine).map((c) => c.cause),
+    ).toEqual(["ticks-failing"]);
+    expect(hostNoticeKeys([loud]).size).toBe(1);
   });
 
   it("never notifies a repository's failures from a host that does not own it", () => {

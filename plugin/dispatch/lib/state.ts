@@ -404,6 +404,11 @@ export const MIGRATIONS: readonly Migration[] = [
     WHERE consumed_by IS NOT NULL;
   `,
   },
+  {
+    // When a tick that read a wake-up row's repository last succeeded after its last failure (`quietFailure`). A row an earlier release wrote has none.
+    additive: true,
+    sql: "ALTER TABLE failures ADD COLUMN quiet_at TEXT;",
+  },
 ];
 
 /** The schema version this plugin writes. */
