@@ -274,6 +274,49 @@ function unreadable(reason: string): LinkedPr {
   return { pullRequest: "unreadable", pulls: [], reason };
 }
 
+/** Whether a pull request body links the item, by its own key or its repository-qualified form. */
+function bodyLinker(
+  key: string,
+  opts: {
+    repository: string;
+    keySource: string;
+    trackerRepository?: string | undefined;
+  },
+): (body: string) => boolean {
+  const { repository, trackerRepository } = opts;
+  const linkKey = linkLineKey(key, trackerRepository, repository);
+  const keySource =
+    linkKey === key
+      ? opts.keySource
+      : `${escapeRe(linkKey.slice(0, linkKey.lastIndexOf("#")))}#[1-9]\\d*(?!\\w)`;
+  const sameRepoNumber =
+    linkKey === key &&
+    trackerRepository !== undefined &&
+    /^#[1-9]\d*$/.test(key) &&
+    trackerRepository.toLowerCase() === repository.toLowerCase();
+  const qualifiedKey = `${repository}${key}`;
+  const qualifiedSource = `${escapeRe(repository)}#[1-9]\\d*(?!\\w)`;
+  return (body) =>
+    linksIssue(body, linkKey, keySource) ||
+    (sameRepoNumber && linksIssue(body, qualifiedKey, qualifiedSource));
+}
+
+/** The sentence that says why an item's linked pull requests reduce to `state`. */
+function linkedReason(
+  key: string,
+  trunk: string,
+  state: LinkedPr["pullRequest"],
+  count: number,
+): string {
+  if (state === "merged")
+    return `a linked pull request of ${key} merged into ${trunk}`;
+  if (state !== "none")
+    return `a linked pull request of ${key} is open or not yet landed on ${trunk}`;
+  return count === 0
+    ? `${key} has no linked pull request`
+    : `no linked pull request of ${key} is open or merged into ${trunk}`;
+}
+
 /**
  * Read one item's linked pull requests and reduce them to a `LinkedPr`.
  * `searchTerm` is the key as the forge's search finds it (a GitHub number
@@ -297,23 +340,9 @@ export async function readLinkedPr(
     bodyLinkRequired?: boolean;
   },
 ): Promise<LinkedPr> {
-  const { reads, repository, trunk, trackerRepository } = opts;
+  const { reads, repository, trunk } = opts;
   const bodyLinkRequired = opts.bodyLinkRequired ?? true;
-  const linkKey = linkLineKey(key, trackerRepository, repository);
-  const keySource =
-    linkKey === key
-      ? opts.keySource
-      : `${escapeRe(linkKey.slice(0, linkKey.lastIndexOf("#")))}#[1-9]\\d*(?!\\w)`;
-  const sameRepoNumber =
-    linkKey === key &&
-    trackerRepository !== undefined &&
-    /^#[1-9]\d*$/.test(key) &&
-    trackerRepository.toLowerCase() === repository.toLowerCase();
-  const qualifiedKey = `${repository}${key}`;
-  const qualifiedSource = `${escapeRe(repository)}#[1-9]\\d*(?!\\w)`;
-  const linked = (body: string) =>
-    linksIssue(body, linkKey, keySource) ||
-    (sameRepoNumber && linksIssue(body, qualifiedKey, qualifiedSource));
+  const linked = bodyLinker(key, opts);
   const comments = await reads.comments(key);
   if (comments === null)
     return unreadable(`the comments of ${key} could not be read`);
@@ -336,13 +365,6 @@ export async function readLinkedPr(
   }
   const facts = [...pulls.values()].sort((a, b) => a.number - b.number);
   const pullRequest = linkedPrState(facts, trunk);
-  const reason =
-    pullRequest === "none"
-      ? facts.length === 0
-        ? `${key} has no linked pull request`
-        : `no linked pull request of ${key} is open or merged into ${trunk}`
-      : pullRequest === "merged"
-        ? `a linked pull request of ${key} merged into ${trunk}`
-        : `a linked pull request of ${key} is open or not yet landed on ${trunk}`;
+  const reason = linkedReason(key, trunk, pullRequest, facts.length);
   return { pullRequest, pulls: facts.map((p) => p.url), reason };
 }

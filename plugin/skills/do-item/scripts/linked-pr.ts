@@ -162,6 +162,30 @@ function forgeReads(
   };
 }
 
+type Keys = NonNullable<ReturnType<typeof issueKeysOrNull>>;
+
+/** The inputs as issue keys, or the first one that is not one. */
+function normalizeKeys(
+  inputs: string[],
+  keys: Keys,
+): { items: string[] } | { bad: string } {
+  const items: string[] = [];
+  for (const input of inputs) {
+    const key = keys.normalize(input);
+    if (key === null) return { bad: input };
+    items.push(key);
+  }
+  return { items };
+}
+
+/** The GitHub tracker's `owner/name`, or undefined for another adapter. */
+function githubTrackerRepository(url: string | null): string | undefined {
+  const config = trackerConfigFrom(readConfig());
+  return config.adapter === "github"
+    ? slug(homeRepo(config.github.repository, () => url))
+    : undefined;
+}
+
 async function main(): Promise<number> {
   const inputs = process.argv.slice(2);
   if (inputs.length === 0 || inputs.some((a) => a.startsWith("-"))) {
@@ -173,17 +197,14 @@ async function main(): Promise<number> {
     console.error("ERROR: the tracker configuration cannot be read");
     return 1;
   }
-  const items: string[] = [];
-  for (const input of inputs) {
-    const key = keys.normalize(input);
-    if (key === null) {
-      console.error(
-        `not an issue key of this tracker: ${input} (e.g. ${keys.example})`,
-      );
-      return 2;
-    }
-    items.push(key);
+  const normalized = normalizeKeys(inputs, keys);
+  if ("bad" in normalized) {
+    console.error(
+      `not an issue key of this tracker: ${normalized.bad} (e.g. ${keys.example})`,
+    );
+    return 2;
   }
+  const { items } = normalized;
   const root = consumerRoot();
   const url = remoteUrl(root);
   const repo = url === null ? null : repoFromRemote(url);
@@ -209,9 +230,7 @@ async function main(): Promise<number> {
   }
   let trackerRepository: string | undefined;
   try {
-    const config = trackerConfigFrom(readConfig());
-    if (config.adapter === "github")
-      trackerRepository = slug(homeRepo(config.github.repository, () => url));
+    trackerRepository = githubTrackerRepository(url);
   } catch (err) {
     console.error(`ERROR: ${err instanceof Error ? err.message : String(err)}`);
     return 1;
