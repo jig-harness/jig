@@ -79,8 +79,6 @@ export interface ServedReading {
   incomplete?: boolean;
 }
 export interface ServedPolicy {
-  /** The label that marks an epic. */
-  epic?: string;
   hitl?: string;
   manualOps?: string;
   executionPlanBlock?: string;
@@ -93,7 +91,6 @@ export interface ServedPolicy {
 }
 export interface ServedOptions extends ServedPolicy {
   cache?: PickupReads;
-  epic: string;
   nowMs: number;
   headroom: boolean;
   /** The tick's views, shared by every repository that reads the same tracker, team and person. */
@@ -111,11 +108,10 @@ async function metadata(
   tracker: Tracker,
   issue: PoolIssue,
   identity: string,
-  epic: string,
   cache: PickupReads,
   carried: QueueRelation[] | null,
 ): Promise<Metadata> {
-  const key = `${trackerScope(tracker)}:item:${issue.identifier}:${identity}:${epic}`;
+  const key = `${trackerScope(tracker)}:item:${issue.identifier}:${identity}:${issue.isEpic ? "epic" : ""}`;
   const kept = cache.get<Metadata>(key);
   if (issue.updatedAt && kept?.updatedAt === issue.updatedAt)
     return carried === null
@@ -133,7 +129,7 @@ async function metadata(
       ? await tracker.listRelations(issue.identifier)
       : carried.map(({ type, issue: i }) => ({ type, issue: i }));
   const children =
-    issue.labels.includes(epic) && issue.hasOpenChildren
+    issue.isEpic && issue.hasOpenChildren
       ? await tracker.openChildren(issue.identifier)
       : [];
   const description =
@@ -221,9 +217,7 @@ async function readPerson(
       { tracker, identity, options, cache, view, seen, ...shared },
       [
         ...view.open().map((h) => h.issue),
-        ...progress.filter(
-          (i) => i.labels.includes(options.epic) && i.hasOpenChildren,
-        ),
+        ...progress.filter((i) => i.isEpic && i.hasOpenChildren),
       ],
       got,
     );
@@ -565,10 +559,7 @@ function leavesNode(
   seen: ReadonlySet<string>,
   tracker: Pick<Tracker, "stateName">,
 ): boolean {
-  const walkedEpic =
-    issue.labels.includes(options.epic) &&
-    issue.hasOpenChildren &&
-    !closed(issue);
+  const walkedEpic = issue.isEpic && issue.hasOpenChildren && !closed(issue);
   if (
     seen.has(issue.identifier) ||
     (!ready(issue, tracker.stateName("blocked")) && !walkedEpic)
@@ -624,8 +615,8 @@ async function placeNode(
   const unplace = unplacer(issue, options.trackerNamespace, found);
   const carried = view.held(issue.identifier)?.relations ?? null;
   const meta = await view.once(
-    `metadata ${issue.identifier} ${issue.updatedAt ?? ""} ${options.epic}`,
-    () => metadata(tracker, issue, identity, options.epic, cache, carried),
+    `metadata ${issue.identifier} ${issue.updatedAt ?? ""} ${issue.isEpic}`,
+    () => metadata(tracker, issue, identity, cache, carried),
   );
   const initialHold = nodeHold(node, meta, identity, options);
   if (initialHold !== null) {
@@ -749,8 +740,8 @@ async function childStates(
       child === null || child.truncated.length
         ? null
         : view.once(
-            `metadata ${child.identifier} ${child.updatedAt ?? ""} ${options.epic}`,
-            () => metadata(tracker, child, identity, options.epic, cache, null),
+            `metadata ${child.identifier} ${child.updatedAt ?? ""} ${child.isEpic}`,
+            () => metadata(tracker, child, identity, cache, null),
           ),
     ),
   );
@@ -889,7 +880,6 @@ async function heldReason(
   );
   if (parentHold !== null) return parentHold;
   const pull = pullBlockers(node.issue, node.pull, node.ancestor, open, {
-    epic: options.epic,
     hitl: options.hitl,
     manualOps: options.manualOps,
     repoScope: options.repoScope,
@@ -923,7 +913,7 @@ async function freshPulledAuthority(
 ): Promise<string | null> {
   if (issue.assignee !== null)
     return "the pulled blocker has acquired an assignee";
-  if (issue.hasOpenChildren || issue.labels.includes(policy.epic ?? "epic"))
+  if (issue.hasOpenChildren || issue.isEpic)
     return "the pulled blocker has become an epic";
   const origin = await tracker.poolIssue(blockingFor);
   if (origin === null || !ready(origin, tracker.stateName("blocked")))
@@ -943,7 +933,6 @@ async function freshPulledAuthority(
     const item = await tracker.poolIssue(via);
     return (
       whyNotPulled(item, {
-        epic: policy.epic ?? "epic",
         hitl: policy.hitl,
         manualOps: policy.manualOps,
         repoScope: policy.repoScope,

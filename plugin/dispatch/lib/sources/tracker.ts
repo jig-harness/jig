@@ -93,11 +93,10 @@ function workingNames(tracker: Tracker): string {
 function withGaps(
   stores: FacetRecord,
   issues: ReadonlyArray<PoolIssue>,
-  epic: string,
 ): FacetRecord {
   return stores.stores === undefined
     ? stores
-    : { ...stores, gaps: facetGaps(issues, stores.stores, epic) };
+    : { ...stores, gaps: facetGaps(issues, stores.stores) };
 }
 
 /**
@@ -246,12 +245,12 @@ async function readAssigned(
  * none to read. With `facets`, the record also says where the tracker
  * keeps each issue facet, read first and within `facets.bound` so a
  * detection the reads depend on is bounded too, and which assigned items
- * lack one (an item carrying `facets.epic` needs no size).
+ * lack one (an epic needs no size).
  */
 async function readFactoryPickups(
   open: () => Tracker,
   section: DispatchSection,
-  facets?: { bound: () => FacetBound; epic: string },
+  facets?: { bound: () => FacetBound },
 ): Promise<TrackerReading> {
   if (section.identity === null)
     return {
@@ -302,7 +301,7 @@ async function readFactoryPickups(
   const record =
     stores === undefined || facets === undefined
       ? undefined
-      : withGaps(stores, issues, facets.epic);
+      : withGaps(stores, issues);
   return {
     read: {
       record: "tracker",
@@ -357,7 +356,7 @@ export async function freshPickup(
 export async function readPickups(
   open: () => Tracker,
   section: DispatchSection,
-  facets?: { bound: () => FacetBound; epic: string },
+  facets?: { bound: () => FacetBound },
   served?: {
     cache?: import("../pickup-reads.ts").PickupReads;
     people: readonly ServedPerson[];
@@ -378,7 +377,6 @@ export async function readPickups(
   if (served === undefined || served.people.length === 0) return factory;
   const extra = await readServedPickups(once(), served.people, {
     ...(served.cache === undefined ? {} : { cache: served.cache }),
-    epic: facets?.epic ?? "epic",
     nowMs: served.nowMs,
     headroom: served.headroom,
     ...(served.hitl === undefined ? {} : { hitl: served.hitl }),

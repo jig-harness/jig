@@ -17,6 +17,7 @@ export const issue = (
   state: { id: "s", name: "Todo", type: "unstarted" },
   assignee: assignee ? { id: assignee, name: assignee } : null,
   labels,
+  isEpic: labels.includes("epic"),
   hasOpenChildren: labels.includes("epic"),
   truncated: [],
 });

@@ -8,7 +8,9 @@
  *   a GitHub issue also by its number or web address)
  * Output: JSON with the issue's details, labels, its facets (`type` and
  *   `size`, `null` for none, and `priority`, 0 for none), the tracker's own
- *   issue type (`nativeType`, `null` where there is none), children and
+ *   issue type (`nativeType`, `null` where there is none), whether it is an
+ *   epic (`isEpic`: the epic label, or an issue type
+ *   `issue_tracker.labels.epic_types` lists), children and
  *   `sub_issue_analysis`
  *
  * Usage:
@@ -163,6 +165,7 @@ export function issueResult(
     priority: issue.priority,
     size: issue.size,
     nativeType: issue.nativeType,
+    isEpic: issue.isEpic,
     url: issue.url,
     parent: issue.parent,
     children,

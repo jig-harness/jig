@@ -50,6 +50,8 @@ export interface IssueListing {
   milestoneNumber?: string;
   /** Assigned to this login. */
   assignee?: string;
+  /** Of this issue type, by name. */
+  type?: string;
 }
 
 export interface Client {
@@ -270,6 +272,7 @@ export function gitHubClient(opts: ClientOptions): Client {
       if (listing.labels !== undefined) filterBy.labels = listing.labels;
       if (listing.since !== undefined) filterBy.since = listing.since;
       if (listing.assignee !== undefined) filterBy.assignee = listing.assignee;
+      if (listing.type !== undefined) filterBy.type = listing.type;
       if (listing.milestoneNumber !== undefined)
         filterBy.milestoneNumber = listing.milestoneNumber;
       const nodes = await pageAll(

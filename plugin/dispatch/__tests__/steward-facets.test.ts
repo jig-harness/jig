@@ -14,6 +14,7 @@ const issue = (): PoolIssue => ({
   state: { id: "todo", name: "Todo", type: "unstarted" },
   assignee: { id: "person", name: "alex" },
   labels: [],
+  isEpic: false,
   hasOpenChildren: false,
   truncated: [],
 });

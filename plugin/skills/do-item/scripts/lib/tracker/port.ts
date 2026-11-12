@@ -154,6 +154,12 @@ export interface Issue extends FacetValues {
    * facet (`type`) is the value callers decide with.
    */
   nativeType: string | null;
+  /**
+   * The issue is an epic: it carries the epic label, or its native type is
+   * one of `issue_tracker.labels.epic_types` (`isEpic` in
+   * `shared/tracker-labels.ts`).
+   */
+  isEpic: boolean;
   parent: { identifier: string; title?: string } | null;
   children: IssueSummary[];
   assignee: string | null;
@@ -191,8 +197,14 @@ export interface IssueFact {
   completedAt: string | null;
   stateType: string;
   description: string;
-  /** Parent chain, nearest first. */
-  ancestors: Array<{ id: string; labels: string[] }>;
+  /** The tracker's own issue type, as `Issue.nativeType`; `null` or absent = none. */
+  nativeType?: string | null;
+  /** Parent chain, nearest first, each with its own issue type. */
+  ancestors: Array<{
+    id: string;
+    labels: string[];
+    nativeType?: string | null;
+  }>;
 }
 
 export interface CommentFact {
@@ -293,6 +305,13 @@ export interface PoolIssue {
   state: IssueState & { id: string };
   assignee: { id: string; name: string } | null;
   labels: string[];
+  /** The issue is an epic, as `Issue.isEpic`. */
+  isEpic: boolean;
+  /**
+   * The tracker's own issue type, as `Issue.nativeType`, where the read took
+   * it (an adapter with issue types, for `isEpic`); absent otherwise.
+   */
+  nativeType?: string | null;
   /** The issue has at least one child that is not closed. */
   hasOpenChildren: boolean;
   /**
@@ -657,6 +676,8 @@ export interface Tracker {
   ): Promise<boolean>;
 
   // ── Fleet metrics ──
+  // A read by the epic label (`issue_tracker.labels.epic`) also takes the
+  // issues of the native types `issue_tracker.labels.epic_types` lists.
   /** Issues of this team named by key; a key that resolves to nothing is absent. */
   issuesByKeys(keys: ReadonlyArray<string>): Promise<Map<string, IssueFact>>;
   /** Issues created (or completed) in a window, optionally of one label. */

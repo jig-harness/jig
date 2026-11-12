@@ -26,12 +26,14 @@ import type {
 import type { CorePoolIssue, CoreTracker } from "../facets/tracker.ts";
 import { TrackerRequestError } from "../port.ts";
 import { checkPoolQuery, inWindow } from "../requests.ts";
-import type { Client } from "./client.ts";
+import { epicTypesOfLabel } from "../../../../../../shared/tracker-labels.ts";
+import type { Client, IssueListing } from "./client.ts";
 import { STATE_TYPES } from "./model.ts";
 import {
   ancestorFields,
   completedAt,
   type GhIssue,
+  nativeTypeOf,
   onePage,
   PAGE,
   parseAncestors,
@@ -75,7 +77,6 @@ export interface Readers {
 
 /** Ancestors read past the attribution walk's depth, to detect a longer chain. */
 const PARENT_DEPTH = 5;
-const ANCESTORS = ancestorFields(PARENT_DEPTH + 1);
 
 /** Whether each sub-issue is open, for `hasOpenChildren`. */
 const OPEN_CHILDREN = `subIssues(first: ${PAGE}) { pageInfo { hasNextPage } nodes { state } }`;
@@ -95,6 +96,38 @@ const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
 export function reportOperations(client: Client, readers: Readers): ReportOps {
   const { model, ctx, home } = client;
+  const epic = client.facetSlots;
+  const typedEpics = epic.epicTypes.length > 0;
+  const ANCESTORS = ancestorFields(PARENT_DEPTH + 1, typedEpics);
+
+  /**
+   * The issues `listing` selects that carry `label`; for the epic label,
+   * also those of the epic's issue types, each issue once.
+   */
+  async function labelled(
+    label: string,
+    listing: Omit<IssueListing, "labels" | "type">,
+    extra = "",
+    signal?: AbortSignal,
+  ): Promise<Array<{ issue: GhIssue; raw: Record<string, unknown> }>> {
+    const read = await client.list(
+      { ...listing, labels: [label] },
+      extra,
+      signal,
+    );
+    const seen = new Set(read.map(({ issue }) => issue.key));
+    for (const type of epicTypesOfLabel(label, epic))
+      for (const found of await client.list(
+        { ...listing, type },
+        extra,
+        signal,
+      ))
+        if (!seen.has(found.issue.key)) {
+          seen.add(found.issue.key);
+          read.push(found);
+        }
+    return read;
+  }
 
   function fact(issue: GhIssue, raw: Record<string, unknown>): IssueFact {
     const ancestors = parseAncestors(raw, ctx, model, `issue ${issue.key}`);
@@ -111,6 +144,9 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
       completedAt: completedAt(issue, model),
       stateType: STATE_TYPES[model.stateOf({ ...issue, labels })],
       description: issue.body,
+      nativeType: typedEpics
+        ? nativeTypeOf(raw.issueType, `issue ${issue.key}`)
+        : null,
       ancestors,
     };
   }
@@ -162,8 +198,12 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
     return out;
   }
 
-  /** The labelled issues of the home repository, every state; refuses an unknown label. */
+  /**
+   * Refuses a label the home repository does not have, unless it is the
+   * epic label read with the epic's issue types too.
+   */
   async function requireLabel(label: string): Promise<void> {
+    if (epicTypesOfLabel(label, epic).length > 0) return;
     const labels = await client.repoLabels();
     if (!labels.some((l) => same(l.name, label)))
       throw new TrackerRequestError(
@@ -284,18 +324,18 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
       const starts = [query.createdIn, query.completedIn]
         .filter((w): w is WindowSpec => w !== undefined)
         .map((w) => w.sinceMs);
-      const read = await client.list(
-        {
-          ...(query.label === undefined ? {} : { labels: [query.label] }),
-          ...(starts.length === 0
-            ? {}
-            : { since: new Date(Math.min(...starts)).toISOString() }),
-          ...(query.completedIn === undefined
-            ? {}
-            : { states: ["CLOSED" as const] }),
-        },
-        ANCESTORS,
-      );
+      const listing = {
+        ...(starts.length === 0
+          ? {}
+          : { since: new Date(Math.min(...starts)).toISOString() }),
+        ...(query.completedIn === undefined
+          ? {}
+          : { states: ["CLOSED" as const] }),
+      };
+      const read =
+        query.label === undefined
+          ? await client.list(listing, ANCESTORS)
+          : await labelled(query.label, listing, ANCESTORS);
       return read
         .filter(
           ({ issue }) =>
@@ -306,8 +346,9 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
     },
 
     async startedIssueActivity(label, signal) {
-      const epics = await client.list(
-        { labels: [label], states: ["OPEN"] },
+      const epics = await labelled(
+        label,
+        { states: ["OPEN"] },
         ctx.board === null ? LABELED_EVENTS : "",
         signal,
       );
@@ -337,8 +378,7 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
     },
 
     async commentsContaining(query) {
-      const issues = await client.list({
-        labels: [query.issueLabel],
+      const issues = await labelled(query.issueLabel, {
         since: new Date(query.createdIn.sinceMs).toISOString(),
       });
       const out: FoundComment[] = [];
@@ -372,7 +412,7 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
           ? null
           : await client.milestone(query.project);
       const read = [
-        ...(await client.list({ labels: [query.label] })),
+        ...(await labelled(query.label, {})),
         ...(milestone === null
           ? []
           : await client.list({ milestoneNumber: String(milestone.number) })),
@@ -387,7 +427,7 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
     },
 
     async labelledIssues(label, signal, withDescription = false) {
-      const read = await client.list({ labels: [label] }, "", signal);
+      const read = await labelled(label, {}, "", signal);
       return read.map(({ issue }): LabelledIssueState => {
         const base = {
           identifier: issue.key,

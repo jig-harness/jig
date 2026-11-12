@@ -309,6 +309,8 @@ export interface Facets {
   size: FacetSlot;
   /** The epic label: an epic needs no size. */
   epic: string;
+  /** The native issue types whose issues read as epics (`issue_tracker.labels.epic_types`). */
+  epicTypes: string[];
   /** The taxonomy the values came from, for the report. */
   taxonomy: { path: string | null; problem: string | null };
 }
@@ -325,6 +327,8 @@ export interface FacetInputs {
   /** `issue_tracker.labels.bug`. */
   bugLabels: string[];
   epic: string;
+  /** `issue_tracker.labels.epic_types`; none when absent. */
+  epicTypes?: string[];
   /** The GitHub adapter's priority labels in force, and whether today's key set them. */
   priorityLabels: Readonly<Record<string, string>> | null;
   priorityLabelsDeclared: boolean;
@@ -644,6 +648,7 @@ export function resolveFacets(
     priority,
     size,
     epic: inputs.epic,
+    epicTypes: inputs.epicTypes ?? [],
     taxonomy: {
       path: taxonomy?.path ?? null,
       problem: broken?.problem ?? null,

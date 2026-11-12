@@ -118,7 +118,6 @@ async function check(argv: string[]): Promise<number> {
         );
   const report = await sweep(tracker, {
     apply: values.yes === true,
-    epic: config.labels.epic,
     retired: (stores) => retiredLabels(overlay, config, root, stores, former),
     writer: pacedWriter(),
     progress: (line) => console.error(line),

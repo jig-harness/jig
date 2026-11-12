@@ -23,7 +23,6 @@ import {
   globMayMatchUnder,
   normalizeRepoPath,
   type Proposal,
-  parsePoolIssues,
   rank,
   REVALIDATION_FIELD_KEYS,
   renderTable,
@@ -32,9 +31,11 @@ import {
   verdictSizes,
 } from "../scripts/candidates.ts";
 import { Refusal } from "../scripts/lib/errors.ts";
+import { parsePoolIssues } from "../scripts/lib/pool-input.ts";
 import { catalog, fakeTracker, issue, policy, relabel } from "./helpers.ts";
 
 const P = policy();
+const EPIC = { epic: P.epicLabel, epicTypes: P.epicTypes };
 const base = issue("ENG-0").labels;
 const opts = (
   over: Partial<{ limit: number; budget: number; claimed: Set<string> }> = {},
@@ -801,13 +802,23 @@ describe("the eligibility mode", () => {
 
   it("refuses input that omits a field rather than reading it as complete", () => {
     const { truncated: _, ...partial } = issue("ENG-1");
-    expect(() => parsePoolIssues([partial])).toThrow(
+    expect(() => parsePoolIssues([partial], EPIC)).toThrow(
       "truncated must be a list",
     );
     const { hasOpenChildren: __, ...childless } = issue("ENG-2");
-    expect(() => parsePoolIssues([childless])).toThrow("hasOpenChildren");
-    expect(() => parsePoolIssues({ issues: [] })).toThrow("JSON array");
-    expect(parsePoolIssues(JSON.parse(JSON.stringify(pool)))).toEqual(pool);
+    expect(() => parsePoolIssues([childless], EPIC)).toThrow("hasOpenChildren");
+    expect(() => parsePoolIssues({ issues: [] }, EPIC)).toThrow("JSON array");
+    expect(parsePoolIssues(JSON.parse(JSON.stringify(pool)), EPIC)).toEqual(
+      pool,
+    );
+    // An input without `isEpic` is an epic by its label or its issue type.
+    const { isEpic: _e, ...typed } = issue("ENG-3");
+    const read = (nativeType: string) =>
+      parsePoolIssues([{ ...typed, nativeType }], {
+        epic: "epic",
+        epicTypes: ["Epic"],
+      })[0]?.isEpic;
+    expect([read("Epic"), read("Story")]).toEqual([true, false]);
   });
 });
 
@@ -948,6 +959,7 @@ describe("the table", () => {
             url: null,
             labels: [],
             missing: ["size"],
+            isEpic: false,
           },
         ],
         warnings: ["warn\u001b[0m"],
@@ -973,6 +985,7 @@ describe("the table", () => {
             url: null,
             labels: ["hitl:legal", "area:billing"],
             missing: ["size"],
+            isEpic: false,
           },
           {
             identifier: "ENG-8",
@@ -980,6 +993,7 @@ describe("the table", () => {
             url: null,
             labels: ["area:billing"],
             missing: ["priority", "size"],
+            isEpic: false,
           },
         ],
       }),

@@ -62,7 +62,7 @@ describe("a served walk and blocked", () => {
     const reading = await readServedPickups(
       tracker,
       [{ name: "Alex", forge: ["alex"], tracker: { github: "alex" } }],
-      { epic: "epic", nowMs: 1, headroom: true },
+      { nowMs: 1, headroom: true },
     );
     expect(reading.wanted.map((w) => w.key)).toEqual(["#3"]);
     expect(await freshServedPickup(tracker, "#2", "alex")).toBe(

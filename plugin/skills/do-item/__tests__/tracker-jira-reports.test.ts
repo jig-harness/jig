@@ -56,8 +56,8 @@ describe("Jira adapter: issues by key", () => {
     const found = await t.issuesByKeys(["ENG-1", "ENG-2", "#3", "OPS-1"]);
     expect([...found.keys()]).toEqual(["ENG-1"]);
     expect(found.get("ENG-1")?.ancestors).toEqual([
-      { id: "ENG-10", labels: ["feature"] },
-      { id: "ENG-20", labels: ["epic"] },
+      { id: "ENG-10", labels: ["feature"], nativeType: "Task" },
+      { id: "ENG-20", labels: ["epic"], nativeType: "Task" },
     ]);
     expect(calls).toHaveLength(4);
   });
@@ -471,6 +471,8 @@ describe("Jira adapter: candidate pools", () => {
       state: { id: "10000", name: "Todo", type: "unstarted" },
       assignee: { id: MEMBER.accountId, name: "Dana Lee" },
       labels: ["a"],
+      nativeType: "Task",
+      isEpic: false,
       hasOpenChildren: true,
       truncated: [],
     });

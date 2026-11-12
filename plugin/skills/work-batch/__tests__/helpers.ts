@@ -127,7 +127,7 @@ export function issue(
   over: Partial<PoolIssue> = {},
 ): PoolIssue {
   created += 1;
-  return {
+  const read = {
     identifier,
     title: `Fix ${identifier}`,
     url: `https://tracker.example/${identifier}`,
@@ -142,6 +142,8 @@ export function issue(
     truncated: [],
     ...over,
   };
+  // As the tracker reads it: the epic label marks an epic unless `over` says.
+  return { ...read, isEpic: over.isEpic ?? read.labels.includes("epic") };
 }
 
 /** `labels` with `drop` removed and `add` appended. */

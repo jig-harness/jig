@@ -50,6 +50,7 @@ it("batches small launchable items of one area and preserves fixed served contex
       state: { id: "s", name: "Todo", type: "unstarted" },
       assignee: { id: "a", name: "alex" },
       labels: ["area:tools"],
+      isEpic: false,
       hasOpenChildren: false,
       truncated: [],
     },

@@ -23,6 +23,7 @@ import type {
   LedgerIssue,
   StartedIssueActivity,
 } from "../port.ts";
+import { epicTypesOfLabel } from "../../../../../../shared/tracker-labels.ts";
 import type { CorePoolIssue, CoreTracker } from "../facets/tracker.ts";
 import { TrackerRequestError } from "../port.ts";
 import { checkPoolQuery, inWindow } from "../requests.ts";
@@ -31,8 +32,8 @@ import type { JiraFacetStores } from "./facets.ts";
 import { type JiraIssue, record } from "./read.ts";
 import {
   fieldOfLabel,
-  hasLabel,
   inProject,
+  labelOrEpicType,
   KEY,
   keyList,
   noLabel,
@@ -51,6 +52,10 @@ import {
   offsetPages,
   searchPages,
 } from "./transport.ts";
+
+/** The issue's type by name, as `Issue.nativeType`. */
+const nativeTypeOf = (issue: JiraIssue): string | null =>
+  issue.issueType?.name ?? null;
 
 type ReportOps = Pick<
   CoreTracker,
@@ -164,7 +169,7 @@ export function reportOperations(
       frontier = [...found.values()];
     }
     return issues.map((issue) => {
-      const ancestors: Array<{ id: string; labels: string[] }> = [];
+      const ancestors: IssueFact["ancestors"] = [];
       let parent = issue.parent?.key;
       while (parent !== undefined) {
         if (ancestors.length === PARENT_DEPTH)
@@ -176,7 +181,11 @@ export function reportOperations(
           throw new JiraApiError(
             `issue ${issue.key}: its ancestor ${parent} is not visible, so its chain would be partial`,
           );
-        ancestors.push({ id: p.key, labels: p.labels });
+        ancestors.push({
+          id: p.key,
+          labels: p.labels,
+          nativeType: nativeTypeOf(p),
+        });
         parent = p.parent?.key;
       }
       return {
@@ -187,6 +196,7 @@ export function reportOperations(
         completedAt: completedAt(issue),
         stateType: stateType(issue),
         description: issue.description,
+        nativeType: nativeTypeOf(issue),
         ancestors,
       };
     });
@@ -245,6 +255,7 @@ export function reportOperations(
                 name: issue.assignee.displayName,
               },
         labels: issue.labels,
+        nativeType: nativeTypeOf(issue),
         hasOpenChildren: parents.has(issue.key),
         ...stores.read(issue),
         truncated: [],
@@ -255,10 +266,12 @@ export function reportOperations(
   /**
    * Refuse a label no issue of the site carries: it would read as an empty
    * population. A field's value (`field_labels`) is not a Jira label, and
-   * its field was resolved when the fields were read.
+   * its field was resolved when the fields were read; the epic label read
+   * with the epic's issue types needs no label on the site.
    */
   async function requireLabel(label: string): Promise<void> {
     if (fieldOfLabel(label, await client.fieldLabels()) !== null) return;
+    if (epicTypesOfLabel(label, client.facets).length > 0) return;
     const values = await offsetPages(
       client.transport,
       { method: "GET", path: "label", query: { query: label } },
@@ -277,7 +290,7 @@ export function reportOperations(
   }
 
   const label = async (l: string, signal?: AbortSignal) =>
-    hasLabel(l, await client.fieldLabels(signal));
+    labelOrEpicType(l, await client.fieldLabels(signal), client.facets);
 
   /** The pool's issue-type clause, as a list to spread; empty when unscoped. */
   const scope = async (signal?: AbortSignal) => {

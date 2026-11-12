@@ -43,7 +43,6 @@ export interface SweepOptions {
   limits?: Partial<{ pages: number; pageSize: number; moves: number }>;
   /** Told of each issue as it is moved, by key, so a run cut short still shows what it did. */
   progress?: (line: string) => void;
-  epic?: string;
 }
 
 export interface SweepReport {
@@ -183,13 +182,10 @@ async function stillEligible(
     !["backlog", "unstarted"].includes(now.state.type)
   )
     throw new SweepChanged("issue is no longer eligible");
-  const epic = now.labels.some(
-    (l) => l.toLowerCase() === (opts.epic ?? "epic").toLowerCase(),
-  );
   const missing = issue.missing.filter((f) =>
     f === "priority"
       ? now.priority === 0
-      : (f !== "size" || !epic) && now[f] === null,
+      : (f !== "size" || !now.isEpic) && now[f] === null,
   );
   const labels = [...now.labels, ...(now.hiddenLabels ?? [])].map((l) =>
     l.toLowerCase(),
