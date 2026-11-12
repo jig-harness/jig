@@ -2228,7 +2228,8 @@ make, use the entry's term instead.
   each *piece of work* on a card, a page per piece of work with its thread,
   and a chat with the *operator* that explains and drafts and never sends.
   Each machine serves its own. A host's dashboard answers reads only, on
-  its loopback address; a laptop's serves the page to any browser, Orca's
+  its loopback address, and its page's Send posts a parked decision's
+  answer from the person's browser with a token kept there; a laptop's serves the page to any browser, Orca's
   among them, and shows every host through the *hub*'s *source feed*. It
   keeps no copy of the line, only the person's conversation with the
   operator, and nothing the line does waits on it

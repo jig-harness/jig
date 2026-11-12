@@ -4,7 +4,8 @@
  * recommended option and the pick. The other options fold under the row. On
  * a phone each option is a row to tap and no number is shown; with keys, the
  * number picks it (`use-picking.ts`). Below the rows: how many are picked,
- * Copy, which takes a second step for a guarded pick, and Undo.
+ * Copy and, where a token is kept, Send (`send.tsx`), each taking a second
+ * step for a guarded pick, and Undo.
  */
 import { useId, useState } from "react";
 import { CopyButton } from "./copy.tsx";
@@ -12,6 +13,7 @@ import { InlineDecisionText } from "./decision-text.tsx";
 import type { NeedView } from "./needs-view.ts";
 import { OptionText } from "./option-text.tsx";
 import type { DecisionRow, RowAnswer, RowOption } from "./picking.ts";
+import { SendButton, SendSaid, useSend } from "./send.tsx";
 import type { Field, Picking } from "./use-picking.ts";
 
 function OptionPick({
@@ -348,7 +350,7 @@ const COPY_WORDS = {
   "answer line": "the answer line",
 } as const;
 
-/** The card's Copy and Undo, and, once Copy is pressed with a guarded pick, what it would approve. */
+/** The card's Copy, Send and Undo, and, once Copy or Send is pressed with a guarded pick, what it would approve. */
 export function CommitControls({
   need,
   picking,
@@ -359,6 +361,7 @@ export function CommitControls({
   const { commit, confirming } = picking;
   const what = COPY_WORDS[commit.label];
   const anyPick = picking.answers.some((a) => a.pick !== null);
+  const sending = useSend(need, picking);
   return (
     <>
       <CopyButton
@@ -368,16 +371,23 @@ export function CommitControls({
         label={commit.label === "answer line" ? undefined : `Copy ${what}`}
         gate={picking.gate}
       />
+      {sending === null ? null : (
+        <SendButton
+          need={need}
+          sending={sending}
+          what={commit.label === "answer line" ? "the answers" : what}
+        />
+      )}
       {anyPick ? (
         <button type="button" className="fbtn" onClick={picking.undo}>
           Undo last pick
         </button>
       ) : null}
-      {confirming ? (
+      {confirming === null ? null : (
         <div className="guard" role="alert">
           <p className="sm">
             A pick here asks for authorization or cannot be undone. Read what it
-            does before you copy:
+            does before you {confirming === "copy" ? "copy" : "send"}:
           </p>
           <ul className="sm">
             {commit.guarded.map((g) => (
@@ -390,19 +400,26 @@ export function CommitControls({
             ))}
           </ul>
           <div className="copyRow">
-            <CopyButton
-              text={commit.text}
-              idle="Confirm copy"
-              aria={`Confirm and copy the answers for ${need.target}`}
-              label="Confirm copy"
-              gate={picking.gate}
-            />
+            {confirming === "send" && sending !== null ? (
+              <SendButton need={need} sending={sending} what={what} confirm />
+            ) : (
+              <CopyButton
+                text={commit.text}
+                idle="Confirm copy"
+                aria={`Confirm and copy the answers for ${need.target}`}
+                label="Confirm copy"
+                gate={picking.gate}
+              />
+            )}
             <button type="button" className="fbtn" onClick={picking.disarm}>
               Cancel
             </button>
           </div>
         </div>
-      ) : null}
+      )}
+      {sending === null ? null : (
+        <SendSaid need={need} sending={sending} text={commit.text} />
+      )}
     </>
   );
 }

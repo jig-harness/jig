@@ -25,8 +25,8 @@ second, the source feed.
 
 **Phone access is a first-class requirement.** A person away from a
 computer must be able to open the dashboard in a phone browser, see what
-waits for them and read enough to decide their next act. The phone has a
-deliberate read-only subset, with visible touch controls and a supported
+waits for them, read enough to decide their next act and answer a parked
+decision. The phone has a deliberate subset, with visible touch controls and a supported
 way in that stays available after a terminal closes. It requires neither
 Orca nor a keyboard. [Phone scope and access](#phone-scope-and-access)
 defines that subset and its acceptance checks; a desktop layout that
@@ -68,8 +68,11 @@ for the conversation record.
   person first. A host's work reaches other machines through the hub,
   which the host calls and which never calls the host.
 - **Every write is the person's**, made with their own credential on the
-  forge or the tracker, through `jig send` or, for a merge, the pinned merge
-  command. A host's dashboard writes nothing; a laptop's writes from stage 3
+  forge or the tracker, through `jig send`, the page's Send or, for a merge,
+  the pinned merge command. No dashboard server writes for a person: the
+  page's Send posts a parked decision's answer from the person's browser to
+  the forge with a token kept in that browser alone, and a laptop's further
+  writes come from stage 3
   ([When the dashboard writes](#when-the-dashboard-writes)).
 - **The dashboard stores no copy of the line.** Each read derives its views from
   the records the line keeps ([plugin/RECORDS.md](../plugin/RECORDS.md)).
@@ -91,6 +94,7 @@ flowchart LR
   HH -->|reads| F[(forge and tracker)]
   HB -->|reads once<br/>for every host| F
   LH -->|reads; from stage 3 writes<br/>as the person| F
+  PH -.->|Send: a parked decision's answer,<br/>with the person's own token| F
 ```
 
 ### A piece of work, and its views
@@ -253,16 +257,97 @@ theme; the dashboard stores nothing for it.
 
 ### When the dashboard writes
 
-On a host, drive passes run with the person's forge login, so a pass's
-answer looks like the person's. A commit button on a local port could be
-pressed by any process running as the person, a pass included, which could
-then answer its own park in the person's name. So the dashboard writes nothing
-until [item 40](plan.md#40-the-pass-trust-boundary-as-mechanisms) settles
-how a comment a pass posts under the person's login is told from the
-person's own. Stage 3 then settles which proof that a person is present each
-commit asks for, a passkey prompt being one kind. Until then a person writes
-with `jig send` in a terminal or with the Orca panel's answer box, and a
-card offers the answer line to copy.
+**Answering a parked decision: Send, from the browser, as the person.** A
+card of a parked drive whose pull request is on github.com has Send beside
+Copy. It posts the comment Copy takes, one comment holding every picked
+decision's `answer <key>: approve [<digest>]` or
+`answer <key>: choose <option> [<digest>]` line and any `note <key>:` line,
+formatted by the module `jig send` formats its lines with
+(`shared/decision-card.ts`), to the pull request through GitHub's REST API
+(`POST /repos/{owner}/{repo}/issues/{n}/comments`). The page makes that
+call itself, from the browser, with a fine-grained token the person pastes
+once per browser
+([ADR-0017](../docs/adr/ADR-0017-the-dashboard-page-answers-as-the-person.md)). So:
+
+- **Who writes, and with what.** The person, with their own token. The
+  page's settings panel tests a pasted token by asking GitHub who it signs
+  in as (`GET /user`), names that login, keeps the token in the browser's
+  local storage alone (for the page's own origin; a browser that refuses
+  storage keeps it while the page stays open) and forgets it on request. A
+  card names the login it sends as where the park names another person; the
+  drive counts any author its rule for answers trusts, so this informs and
+  never blocks.
+- **What the host never does.** The dashboard's server has no route that
+  writes and never receives the token, the comment or GitHub's answer. The
+  dispatcher never relays an answer, and no pass sees one before the forge
+  does: the re-arm reads the comment from the pull request as it reads a
+  pasted one.
+- **Trust is `jig send`'s from a terminal.** A comment the page posts is the
+  person's login's comment, counted by the drive's rule for an author
+  (`shared/trusted-authors.ts`), until
+  [item 40](plan.md#40-the-pass-trust-boundary-as-mechanisms) settles how a
+  comment a pass posts under the person's login is told from the person's
+  own. A pass that holds the person's login can already post an answer, so
+  Send opens no hole such a process does not have. The page's comment
+  carries no record envelope, as a pasted one carries none, since the
+  browser has no host to name.
+- **A guarded pick sends on the second step.** A pick under a class the
+  acts table does not list as Decide, or of an option that cannot be undone,
+  opens the check panel first, as a guarded copy does, and Confirm send
+  posts. A card with nothing answered sends nothing, and says so.
+- **Only where an answer comment is read.** Send is offered for a parked
+  drive's decisions alone, the one station whose answer is read from a
+  pull-request comment; any other card keeps Copy and, once a token is kept,
+  says why it has no Send. A pull request on a forge other than github.com
+  has no Send, since the page's content security policy lets it reach
+  `api.github.com` alone.
+- **What comes back.** After GitHub answers 201, the card links the comment
+  and says "sent here", in this browser alone, until the next tick reads the
+  answer. A refusal shows GitHub's own message with what it means (401: the
+  token is wrong or revoked; 403: it lacks write access to Issues and Pull
+  requests on that repository, or an organization has not approved it; 404:
+  it was not granted the repository; 422: GitHub would not take the text).
+  A call with no answer says the comment may or may not be posted and to
+  check the pull request before sending again.
+
+**The token's scope.** A fine-grained personal access token, limited to the
+repositories the dashboard shows, with Issues and Pull requests set to read
+and write, and a short expiry. The settings panel says so and lists the
+repositories whose cards can send. A token with wider rights works but
+risks more if it leaks.
+
+**Threat model.** The token is as safe as the page's origin and the browser
+that keeps it.
+
+- **Script injection on the page** is the main risk: a script that runs on
+  the page can read local storage. The page renders every text a pull
+  request or a record holds as data (`DecisionText`, HTML off), and its
+  content security policy runs only the page's own script, pinned by hash,
+  with no `eval`, connects only to its own server and `https://api.github.com`,
+  and may not be framed ([What the page trusts](#what-the-page-trusts-and-what-reaches-it)).
+  A script that did run could post as the person on the token's
+  repositories only, which is why the token's scope is narrow.
+- **The network path.** Over the private HTTP fallback a person on the path
+  who can change the page's response could add a script; the private HTTPS
+  front ([Phone scope and access](#phone-scope-and-access)) closes that, and
+  is the setup to use with Send.
+- **Processes on the person's device.** Any process of the person's account
+  on the device whose browser keeps the token can read the browser's
+  profile, as it can read a terminal's `gh` credential. A browser on the
+  host that runs passes is such a device: keep the token in a browser
+  elsewhere, as on a phone or a laptop.
+- **Other pages.** Local storage belongs to the page's origin (scheme, host
+  and port), so another site cannot read it, and a dashboard served at
+  another address asks for the token again.
+
+**Other writes.** Merging and every other act stay with `jig send`, the
+pinned merge command and the Orca panel until stage 3. On a host, drive
+passes run with the person's forge login, so a commit button the host
+serves could be pressed by any process running as the person, a pass
+included. So the server gains no write route until item 40 settles whose
+write is a person's; stage 3 then settles which proof that a person is
+present each of its commits asks for. Answers to parked decisions are not
+among them: they go by Send.
 
 **The Orca panel's writes.** The panel's answer box and merge button run
 `jig send` and the pinned merge command as the person, reached by a click in
@@ -281,13 +366,13 @@ merge command under it, so it needs no panel to answer its own park or to
 merge, and until item 40 the panel opens no hole such a process does not
 already have. The panel's answers carry `jig send`'s record, which names
 the writer and its host, with no plan and no proof. Once item 40 tells a
-person's answer from a pass's, the panel's writes are held to the same rule
-as the dashboard's.
+person's answer from a pass's, the panel's and the page's answers are held
+to the same rule as every other answer.
 
-**If item 40 never settles**, the dashboard never writes. Stage 3 still builds its
+**If item 40 never settles**, the server never writes. Stage 3 still builds its
 steps 2 and 3, not step 1: the runner, `plan` and the chat, which explains
 and drafts without writing. Its plan cards offer the command to copy, and a
-person answers with `jig send` or the panel. Stages 1 and 2 stand on their
+person answers with Send, `jig send` or the panel. Stages 1 and 2 stand on their
 own, since the status of each pull request and every piece of work across
 machines are what a person asks to see.
 
@@ -319,8 +404,10 @@ person's. These rules keep every write theirs:
   ([ADR-0010](../docs/adr/ADR-0010-parking-is-reserved-for-registry-classes.md)):
   the question, each option with what it changes and costs, the
   recommendation and why, the class, the steps a person must take, and what
-  the run already did. Picking an option sends `answer <key>: <letter>`,
-  which the pass resolves against its own record. Typed text goes as typed.
+  the run already did. The person picks there and answers with the card's
+  Copy or Send ([When the dashboard writes](#when-the-dashboard-writes)),
+  never through a plan: a pick is written as `approve` or `choose <option>`
+  with the framing's digest, and typed text goes as typed.
 - **The commit checks, then writes.** It runs the dry run again with
   `--expect <digest>` and refuses if anything changed, then checks the
   proof that a person is present, and only then writes, with the person's
@@ -328,29 +415,19 @@ person's. These rules keep every write theirs:
   once and expires after 5 minutes. It moves through durable states in its
   file (reserved, sent, settled), each written before or after its step,
   and a commit that finds it settled returns its result instead of
-  writing. An answer's comment carries, in its record beside the envelope,
-  the plan id, the dry run's digest and the kind of proof, with `via: dashboard`.
-  A commit that finds a plan reserved or sent but not settled, as a crash
-  leaves it, first reads the target: for an answer, a comment from the
-  plan's login carrying that plan id, read by its id once `sent` holds it;
-  for any other verb, whether the target already holds the label, the
-  assignment, the merge or the directive the plan sets. Found, the plan
-  settles with it. Not found, an answer is never written again under that
-  plan: the forge gives a comment no idempotency key and no bound on how
-  late a listing shows it, so a missing comment does not prove the write
-  failed. The plan settles as `ambiguous`, the card says the answer may or
-  may not have been posted and links the thread, and a person who has read
-  it plans again. Any other verb sets state a second write leaves the same
-  (a label, an assignment, a directive) or one the forge refuses to repeat
-  (a merge), so, not found and not expired, it writes once; expired, it is
-  refused and the page plans again. So a crash never doubles a write that
-  cannot be read back. An answer's audit lives on the
-  forge, in its comment; any other verb's lives in the forge's own event
-  (who set the label or the assignment, who merged) and the plan's file,
-  which `jig gc` removes 90 days after it settles. Until item 40 settles,
-  either is the word of the person's login, which a pass holding that login
-  could also write; item 40's protected mark or separate identity is what
-  makes it evidence.
+  writing. A commit that finds a plan reserved or sent but not settled, as
+  a crash leaves it, first reads the target: whether it already holds the
+  label, the assignment, the merge or the directive the plan sets. Found,
+  the plan settles with it. Every verb a plan carries sets state a second
+  write leaves the same (a label, an assignment, a directive) or one the
+  forge refuses to repeat (a merge), so, not found and not expired, it
+  writes once; expired, it is refused and the page plans again. So a crash
+  never doubles a write. A verb's audit lives in the forge's own event (who
+  set the label or the assignment, who merged) and the plan's file, which
+  `jig gc` removes 90 days after it settles. Until item 40 settles, either
+  is the word of the person's login, which a pass holding that login could
+  also write; item 40's protected mark or separate identity is what makes
+  it evidence.
 - **The runner is one implementation behind an interface, locked down.**
   The dashboard hands a runner the system prompt, the replayed turns and its tool
   server (a Model Context Protocol server started for the turn) and reads
@@ -487,18 +564,22 @@ its first version:
   the dashboard sends no header that lets another site read an answer or the
   stream.
 - **A strict content security policy.** The page loads scripts, styles and
-  images only from the dashboard, connects only to the dashboard, may not be framed by
-  another page (`frame-ancestors 'none'`), and runs no `eval` and no
-  workers.
+  images only from the dashboard, runs only its own script, pinned by hash,
+  connects only to the dashboard and to `https://api.github.com` (where Send
+  posts), may not be framed by another page (`frame-ancestors 'none'`), and
+  runs no `eval` and no workers. A page that runs no script, such as the
+  refusal of a wrong token, connects to the dashboard alone.
 - **Text anyone can write stays text.** Pull request titles, review
   threads, check logs, a source's records and the operator's replies all go
   through one renderer, the dashboard's markdown renderer with HTML off. It
   shows a remote image as its link text and never fetches it, so no image
   can carry the page's data to another server, and it shows a link with its
   full address, followed only on a click.
-- **From stage 3, a write is a `POST`** with a JSON body from the dashboard's own
+- **From stage 3, a write the server makes is a `POST`** with a JSON body from the dashboard's own
   origin and a proof that a person is present, so a form on another site
-  cannot commit.
+  cannot commit. Send is not one: it goes from the browser to GitHub with
+  the person's token, and a form on another site can neither read that
+  token nor reach the page's script.
 - **Local processes.** Any process running as the person already holds
   what the dashboard shows, the person's forge login included, so the dashboard hides
   nothing from it. A process of another account on the same machine holds
@@ -595,11 +676,11 @@ own machine only.
 
 | Machine | What runs | Reached from | Writes |
 | --- | --- | --- | --- |
-| Host | `jig dashboard` resident only where Orca's browser or a front reaches the host's page; every database opened read-only; with a hub, the tick's calls to it | Orca's browser in a workspace on the host; a phone through a front | none |
+| Host | `jig dashboard` resident only where Orca's browser or a front reaches the host's page; every database opened read-only; with a hub, the tick's calls to it | Orca's browser in a workspace on the host; a phone through a front | none by the server; the page's Send posts from the person's browser |
 | Hub, optional | `jig hub serve` ([control-plane.md](control-plane.md)), serving the source feed of every enrolled host | the hosts' calls; a dashboard's source feed; a phone through the hub's front | none for a person |
 | Laptop | `jig dashboard`, on demand or installed, reading its own records and, where the person runs one, the hub's source feed | any browser on the laptop, Orca's included | from stage 3, commits as the person |
 | Orca, optional | the plugin's inbox panel and status bar, and an "Open the dashboard" command | the person's Orca app | the panel's answer box and merge button, as the person |
-| Phone | any browser through a private-network front; private HTTP fallback during stage 1; Orca's paired-host path only once verified | the printed address, with a QR code when sharing is built | read-only, including after desktop writes arrive |
+| Phone | any browser through a private-network front; private HTTP fallback during stage 1; Orca's paired-host path only once verified | the printed address, with a QR code when sharing is built | Send of a parked decision's answer, with the person's token in that browser; nothing else, including after desktop writes arrive |
 
 **A host's dashboard** puts no token in its page's address: every way in from
 another machine (Orca's paired host, a front) authenticates the person
@@ -651,17 +732,20 @@ rules, timestamps and failure states serve desktop and phone.
 | Merge, Needs you, Running, Queue and History | Read the next act, progress and recent outcomes while away. Repository selection and History's time window are the basic filters; pagination keeps long lists bounded. |
 | An opened Work card and its decisions | Read the status, ask, recommended option, costs, alternatives and evidence. Stage 1 shows one item or pull request; stage 2 adds the joined thread. Expand details with a visible control. |
 | Copy the pinned merge command or an answer line | Carry the proposed act to the person's terminal without executing it. Copy success must be confirmed; when browser clipboard access fails, select the complete text for manual copying. |
-| Open the pull request or issue | Follow an explicit link to the forge or tracker, which owns its login and any action there. The dashboard itself remains read-only. |
+| Send a parked decision's answer | Post the comment Copy takes, from the phone's browser to GitHub with a token kept in that browser ([When the dashboard writes](#when-the-dashboard-writes)); a guarded pick sends on the second step, by tap. |
+| Open the pull request or issue | Follow an explicit link to the forge or tracker, which owns its login and any action there. The dashboard's server remains read-only. |
 | A failed or stale read | Show the last successful read and its age while the page is open; after a reconnect, read again before displaying readiness as current. A failed connection never means the queue is empty. |
 
 The phone excludes operator chat, command palettes and advanced filter
 composition: reading and deciding have priority over composing and
 investigating on a small screen. It excludes session chat and steering,
-which need the workspace and its context. It offers no dashboard merge, answer,
-request or other write, even when desktop writes arrive: those need a
-separate phone design and proof of presence. Before #399, no surface gains
-a write by this work. Copying text is not sending it. All supported acts
-have visible buttons or links; no hover or keyboard shortcut is required.
+which need the workspace and its context. Its one write is Send, which
+answers a parked decision as the person from the phone's own browser, the
+same comment `jig send` or a pasted copy writes. It offers no dashboard
+merge, request or other write, even when desktop writes arrive: those need
+a separate phone design and proof of presence. Copying text is not sending
+it. All supported acts have visible buttons or links; no hover or keyboard
+shortcut is required.
 
 **First run, using today's dashboard.** On the host, start
 `jig dispatch dashboard` with `dashboard.listen` set to its private address
@@ -949,7 +1033,7 @@ own figures say when it is slow:
 - **It runs with what the dispatcher resolves**: the dispatcher job's
   `PATH` and the forge command line's configuration, so both resolve the
   same Jig, and none of the rest of the dispatcher's environment. A host's
-  dashboard, which never writes, reads the forge with a read-only token for the
+  dashboard, whose server never writes, reads the forge with a read-only token for the
   repositories its dispatch file lists (on GitHub, a fine-grained token)
   when the user file names one (`dashboard.forge_read_token`, a path), and
   otherwise with the dispatcher's login, which `jig doctor dashboard` reports as
@@ -1200,8 +1284,9 @@ item 40 and commits the plans step 2 renders; until it is built, a plan
 card offers its command to copy.
 
 1. Proof that a person is present, `commit` with the plan's durable states,
-   its file's `jig gc` kind and the plan id beside the answer's envelope,
-   and the merge button with the pinned command.
+   its file's `jig gc` kind and the plan id beside its record,
+   and the merge button with the pinned command. An answer to a parked
+   decision is not a commit: it goes by the page's Send.
 2. The runner interface, Claude Code's runner and the dashboard's tool server,
    with its token ceilings and its lock per thread, and `plan`: read-only,
    rendered by the server from `jig send --dry-run --json`, offering the

@@ -204,6 +204,16 @@ a.tgt { display: inline-flex; align-items: center; min-height: 44px; }
 .guard { order: 10; flex-basis: 100%; margin: 4px 0; padding: 8px 10px; border: 1px solid var(--hl-line); background: var(--hl); border-radius: var(--r); }
 .guard ul { margin: 4px 0; padding-left: 18px; }
 .copyLabel { margin-left: 6px; }
+
+/* Send posts a card's answers to GitHub from this browser, with the person's own token. */
+.copy.send { border-color: var(--accent); color: var(--accent); }
+.copy.send[aria-disabled="true"] { cursor: progress; opacity: 0.7; }
+.sendSaid { order: 10; flex-basis: 100%; display: flex; flex-direction: column; gap: 2px; margin: 2px 0; }
+.sendSaid a, .sendSettings a { display: inline-flex; align-items: center; min-height: 44px; }
+.noSend { margin-top: 2px; }
+.sendToggle span { overflow-wrap: anywhere; }
+.sendSettings { margin: 0 0 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; background: var(--card); border: 1px solid var(--line-strong); border-radius: var(--r); }
+.tokenForm { display: flex; flex-direction: column; gap: 4px; }
 .reply { display: flex; flex-direction: column; gap: 2px; }
 .reply input { width: 100%; min-height: 44px; padding: 4px 8px; background: var(--card); color: var(--ink); border: 1px solid var(--line-strong); border-radius: var(--r); font: 400 15px/1.4 var(--sans); }
 
@@ -344,6 +354,7 @@ a.tgt { display: inline-flex; align-items: center; min-height: 44px; }
   .chipBtn { min-height: 0; margin-block: 0; }
   .panelHead .headMore { min-height: 26px; padding: 0 8px; font-size: 13px; }
   .reply input { min-height: 32px; font-size: 14px; }
+  .sendSaid a, .sendSettings a { display: inline; min-height: 0; }
   .opt { min-height: 0; padding: 2px 8px; }
   .opt .optNum { display: inline-block; }
   .main { padding: 14px 24px; gap: 12px; }

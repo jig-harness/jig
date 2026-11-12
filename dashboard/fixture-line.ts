@@ -260,7 +260,7 @@ export function need(o: {
     target: pr === null ? (o.item ?? "") : `PR #${pr}`,
     pr,
     item: o.item ?? null,
-    url: pr === null ? (o.url ?? null) : prUrl(o.repo, pr),
+    url: o.url !== undefined ? o.url : pr === null ? null : prUrl(o.repo, pr),
     title: o.title,
     since: iso(o.since),
     reason: o.reason,

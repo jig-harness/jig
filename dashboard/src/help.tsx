@@ -72,6 +72,13 @@ export function HelpView({ Fold }: { Fold: FoldComponent }) {
             them and says so. A pick that asks for authorization, or of an
             option that cannot be undone, copies on the second step.
           </p>
+          <p>
+            With a GitHub token pasted under <b>Send from here</b> on What needs
+            you, a parked drive's card on github.com also has <b>Send</b>: it
+            posts the same comment from this browser straight to GitHub, as you.
+            The token stays in this browser and never reaches the host. A
+            guarded pick sends on the second step, as it copies.
+          </p>
         </div>
       </section>
       <section className="panel" aria-labelledby="h-words">

@@ -463,9 +463,11 @@ to read.
 - **The dashboard and the Orca panel** pick and commit as [Picking an
   answer](#picking-an-answer) describes. The tick's line carries each
   waiting park's digest and options, so neither parses the decision. The
-  dashboard's page copies and does not write
-  ([#477](https://github.com/jig-harness/jig/issues/477) decides whether it
-  ever will); the panel's Send runs the same `jig send` as the person
+  dashboard's page copies the card's comment, and with a token the person
+  pasted into that browser its Send posts the same comment to the pull
+  request from the browser, as the person, with no route through the host
+  ([dispatch-dashboard.md § When the dashboard writes](dispatch-dashboard.md#when-the-dashboard-writes));
+  the panel's Send runs the same `jig send` as the person
   ([orca-integration.md](orca-integration.md#the-jig-plugin-for-orca)).
 - **The forge, by hand.** A person types `answer <key>: approve` in a
   pull-request comment, from the forge's site or its phone app, or replies
@@ -588,7 +590,7 @@ goes, the current decision is the first one left with no pick.
   class is one the acts table does not list as Decide by name, or its
   option is marked `reversible: false`. Committing picks that include a guarded one
   takes two steps, however it is started (the `c` key, the card's Copy
-  button, the palette or the panel's Send): the first shows every guarded
+  or Send button, the palette or the panel's Send): the first shows every guarded
   pick's summary and cost, and the second copies or sends. A held key acts
   once, so a held `c` never takes the second step. The first step's effect
   ends when any pick changes, a digest changes, the card loses focus, or
@@ -611,9 +613,9 @@ Each surface's commit:
 
 | Surface | Commit | Waits on |
 | --- | --- | --- |
-| Dashboard, today | `c` copies, `p` opens the pull request, the person pastes | nothing |
+| Dashboard, Copy | `c` copies, `p` opens the pull request, the person pastes | nothing |
+| Dashboard, Send | Send posts the comment Copy takes, from the browser with the person's token | a token kept in that browser |
 | Orca panel | Send runs `jig send` once for each decision's active answer, a free answer with its words | nothing |
-| Dashboard, from stage 3 | Commit, behind proof that a person is there | its third stage, item 40 |
 | Terminal | `jig ask --waiting` numbers the options; `jig send` names one | nothing |
 
 ### Reading answers
@@ -752,18 +754,15 @@ answer cannot be undone wait on proof that a person answered:
     rules out today and that would need a decision of its own, and its
     webhook secret must be out of reach of every pass, so not on a host that
     runs them.
-  - **A passkey on the dashboard**, in the dashboard's third stage
-    ([dispatch-dashboard.md § When the dashboard writes](dispatch-dashboard.md#when-the-dashboard-writes)).
 
 ### Records
 
 The drive ledger's row in [plugin/RECORDS.md](../plugin/RECORDS.md) gains
 each park's `digest` and the resolution receipt of each park a re-arm unparked. The `drive-answer` row gains the line's digest
 suffix and the payload fields `decision` (the digest)
-and `choice` (the option's name and the form). The dashboard's third stage ([dispatch-dashboard.md § Build order](dispatch-dashboard.md#build-order)) adds
-the plan id, the dry run's digest and the kind of proof to the same record
-([addresses.md](addresses.md)); both add payload fields under version 1, so
-neither waits on the other.
+and `choice` (the option's name and the form). The dashboard's Send writes
+the answer lines alone, as a pasted comment does, with no record: a browser
+has no host to name.
 
 ### Beyond the drive
 

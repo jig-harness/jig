@@ -9,7 +9,9 @@
  * coded failure; the one catch around them is the defect boundary, so a bug
  * reaches the log with its stack and the page with its code alone. The
  * database's WAL mode lets it read while a tick writes, and nothing is written
- * to disk.
+ * to disk. It has no route that writes: a card's Send posts a person's answer
+ * from their browser to GitHub with their own token, which never reaches this
+ * server.
  *
  * It listens on the address the machine file names (`dashboard.listen`),
  * which must lie in the private or loopback ranges (`lib/listen.ts`), so a
@@ -48,6 +50,9 @@ export const DEFAULT_PORT = 8765;
 
 /** Below this a body is sent as it is: compressing it saves nothing. */
 const COMPRESS_FROM_BYTES = 1024;
+
+/** The one other origin the page may call: GitHub's API, for Send. */
+export const GITHUB_API = "https://api.github.com";
 
 /** The page's built files, beside this file. */
 const PAGE_DIR = join(import.meta.dir, "dashboard-page");
@@ -99,8 +104,11 @@ interface Page {
 
 /**
  * The policy a built page runs under. Decision text on the page comes from pull
- * requests, and the page's address holds the token: only the page's own script
- * runs, and it can reach this server and nothing else.
+ * requests, and the page's address and its storage hold tokens: only the
+ * page's own script runs, and it can reach this server and GitHub's API, where
+ * a card's Send posts a person's answer with the GitHub token they pasted into
+ * that browser (`design/dispatch-dashboard.md` § When the dashboard writes).
+ * A page that runs no script reaches this server alone.
  */
 function contentPolicy(html: string): string {
   const script = /<script>([\s\S]*)<\/script>/i.exec(html)?.[1];
@@ -113,7 +121,9 @@ function contentPolicy(html: string): string {
     `script-src ${scripts}`,
     // The primitives position their popups with inline styles.
     "style-src 'unsafe-inline'",
-    "connect-src 'self'",
+    script === undefined
+      ? "connect-src 'self'"
+      : `connect-src 'self' ${GITHUB_API}`,
     "manifest-src 'self'",
     "img-src 'self' data:",
     "base-uri 'none'",

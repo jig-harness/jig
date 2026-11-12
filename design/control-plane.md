@@ -149,7 +149,7 @@ nothing requires it.
   on the forge, say) names that write and its permission here first.
 - **A person's act is made with that person's credential.** Merging,
   answering a park and every write a dashboard makes for a person go from
-  the person's own machine, as the person, never through the hub. The hub
+  the person's own machine or browser, as the person, never through the hub. The hub
   holds no person's credential.
 - **A host keeps its own credentials for its sessions.** A drive pushes,
   comments and reviews with its host's accounts, as today. The hub serves
