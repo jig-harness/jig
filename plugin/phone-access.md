@@ -21,7 +21,7 @@ step runs on that host, except the checks on the phone.
 
 ## What the phone gets
 
-The phone's scope is the one [the hub design](https://github.com/jig-harness/jig/blob/main/design/hub.md#phone-scope-and-access)
+The phone's scope is the one [the dashboard design](https://github.com/jig-harness/jig/blob/main/design/dispatch-dashboard.md#phone-scope-and-access)
 fixes: Merge, Needs you, Running, Queue and History; an opened decision;
 copying a command or an answer line; and links to the forge and the tracker.
 It excludes chat, steering and every write.

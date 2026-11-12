@@ -44,6 +44,7 @@ export const OPEN_STATES = [
   "todo",
   "in_progress",
   "pr_open",
+  "blocked",
   "in_review",
   "ops_pending",
 ] as const satisfies ReadonlyArray<CanonicalState>;
@@ -68,6 +69,7 @@ export const STATE_TYPES: Record<CanonicalState, string> = {
   todo: "unstarted",
   in_progress: "started",
   pr_open: "started",
+  blocked: "started",
   in_review: "started",
   ops_pending: "started",
   done: "completed",
