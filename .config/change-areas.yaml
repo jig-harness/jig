@@ -224,6 +224,21 @@ areas:
           a phone loads it (ADR-0001), with the licence of each package the
           bundler read. dashboard/build.test.ts rebuilds and
           compares the files as well.
+      - outputs: ["plugin/consumer-actions.json"]
+        source:
+          - "CHANGELOG.md"
+          - "plugin/skills/changelog/scripts/consumer-actions.ts"
+          - "plugin/skills/changelog/scripts/consumer-actions-record.ts"
+        command: "bun plugin/skills/changelog/scripts/consumer-actions-record.ts --write"
+        check: "bun plugin/skills/changelog/scripts/consumer-actions-record.ts --check"
+        notes: >-
+          The consumer-actions record the plugin ships: every consumer action
+          the changelog's released sections declare, with its id
+          (changes/README.md § Consumer actions). The release step rewrites it
+          in the release commit, so a branch changes it only by correcting a
+          released entry's declaration. JSON cannot carry a generated header,
+          so its "$comment" field names its generator; it is laid out as Biome
+          formats JSON, so the formatter leaves it as derived.
       - outputs: ["plugin/LICENSE", "plugin/NOTICE"]
         source: ["LICENSE", "NOTICE"]
         command: "cp LICENSE NOTICE plugin/"

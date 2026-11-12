@@ -792,13 +792,12 @@ source on a machine. Today a person reads the changelog by hand and tests each
 entry against the repository, nothing records which release a repository has
 already taken, and `/followup` stops on "which repositories are consumers?"
 because Jig names none. [design/consumer-actions.md](consumer-actions.md) has
-how it works. What it will build: a change note names the **consumer action**
-in its list item (the level it is taken at: machine, configuration or
-instructions; required or advised; hints that say how to detect it), which the
-changelog check validates and the release step derives into a record in the
-plugin; a repository records the version it last reconciled with
-(`jig.reconciled`); `jig reconcile` reads the record between that version and
-the installed one (machine actions are checked on every host regardless), tests each action against the repository and reports
+how it works. What it will build, on the **consumer actions** change notes
+declare and the record the release step derives from them
+(`plugin/consumer-actions.json`): a repository records the version it last
+reconciled with (`jig.reconciled`,
+[ADR-0017](../docs/adr/ADR-0017-a-repository-records-the-jig-version-it-reconciled.md));
+`jig reconcile` reads the record between that version and the installed one (machine actions are checked on every host regardless), tests each action against the repository and reports
 required, advised, needs-a-look and not-applicable with file and line
 evidence, and files the repository's own tracker items only for what a person
 approved; a `reconcile` dispatch stage runs it per dispatched repository and

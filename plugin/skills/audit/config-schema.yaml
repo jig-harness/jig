@@ -1263,6 +1263,17 @@ fields:
     read_by: [changelog]
     repository_only: true
     since: 0.44.0
+  changelog.consumer_actions:
+    type: boolean
+    default: false
+    read_by: [changelog]
+    repository_only: true
+    since: next
+  changelog.consumer_actions_record:
+    type: path
+    read_by: [changelog]
+    repository_only: true
+    since: next
 
   code_stats.areas:
     type: list

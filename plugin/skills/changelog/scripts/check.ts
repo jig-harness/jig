@@ -38,6 +38,12 @@ import { swallow } from "../../../shared/errors.ts";
 import { consumerRoot } from "../../../shared/consumer.ts";
 import { type ChangeNote, parseNote } from "./change-notes.ts";
 import { banner } from "./banner.ts";
+import {
+  branchRules,
+  type NoteEntries,
+  whitespaceTwins,
+} from "./consumer-actions.ts";
+import { releasedIds } from "./consumer-actions-record.ts";
 import { checkBase } from "./branches.ts";
 import { creditRefusals, isBreaking } from "./common-changelog.ts";
 import {
@@ -73,6 +79,10 @@ export interface CheckOptions extends NotesConfig {
   authors: boolean;
   /** The branch the change merges into; null checks only the notes. */
   base: string | null;
+  /** `changelog.consumer_actions`: a breaking entry declares a consumer action. */
+  consumerActions?: boolean;
+  /** `changelog.consumer_actions_record`: where the record is derived; null or absent, none. */
+  record?: string | null;
 }
 
 export interface CheckResult {
@@ -482,6 +492,12 @@ function creditable(options: CheckOptions, notes: ChangeNote[]): string[] {
   return notes.flatMap((note) => creditRefusals(note, links));
 }
 
+/** A note's entries, for the consumer-action rules. */
+const noteEntries = (note: ChangeNote): NoteEntries => ({
+  file: note.file,
+  items: [...note.sections.values()].flat(),
+});
+
 /** Notes of an earlier branch that this one changes or deletes, for the reviewer. */
 function editedNotices(options: CheckOptions, branch: Branch): string[] {
   return branch.changed
@@ -494,7 +510,11 @@ function editedNotices(options: CheckOptions, branch: Branch): string[] {
 
 export function checkNotes(options: CheckOptions): CheckResult {
   const read = readNotes(options);
-  const findings = [...read.errors, ...creditable(options, read.notes)];
+  const findings = [
+    ...read.errors,
+    ...creditable(options, read.notes),
+    ...whitespaceTwins(read.notes.map(noteEntries)),
+  ];
   if (!options.base)
     return { findings, notices: [], skipped: "no base branch given" };
   const branch = readBranch(options.root, options.base);
@@ -512,6 +532,15 @@ export function checkNotes(options: CheckOptions): CheckResult {
     ...changelogFindings(options, branch),
     ...pathFindings(options, branch, notes),
     ...creditFindings(options, branch, notes),
+    ...branchRules(
+      notes.map(({ note }) => noteEntries(note)),
+      {
+        required: options.consumerActions ?? false,
+        released: options.record
+          ? releasedIds(branch.now(options.changelog) ?? "", options.format)
+          : null,
+      },
+    ),
   );
   return {
     findings,
@@ -683,6 +712,8 @@ export function checkBranch(
     notePaths: atBase.notePaths,
     authors: atBase.authors,
     base,
+    consumerActions: atBase.consumerActions,
+    record: atBase.consumerActionsRecord,
   });
   return {
     findings: [...findings, ...result.findings],
