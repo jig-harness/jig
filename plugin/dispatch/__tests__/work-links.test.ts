@@ -133,6 +133,21 @@ describe("a team key", () => {
           ["ENG-3"],
         ],
         [
+          "keeps literal quote markers in a bare fence indented up to three spaces",
+          [
+            "  ~~~",
+            "> ~~~",
+            "> Closes ENG-1",
+            "  ~~~",
+            "   ```",
+            "> ```",
+            "> Closes ENG-2",
+            "   ```",
+            "Closes ENG-3",
+          ],
+          ["ENG-3"],
+        ],
+        [
           "is not read from multiline inline code, and accepts a longer closing fence",
           ["`Fixes", "ENG-1`", "```", "Closes ENG-2", "````", "Closes ENG-3"],
           ["ENG-3"],

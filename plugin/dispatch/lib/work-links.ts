@@ -199,10 +199,16 @@ function closesFence(text: string, fence: Fence): boolean {
 
 /** The fence a line opens, if it does. */
 function openedFence(text: string, quoteDepth: number): Fence | null {
-  const open = /^( {0,3}(?:[-*+]|\d{1,9}[.)])[ \t]+)?(`{3,}|~{3,})/.exec(text);
+  const open = /^( {0,3}(?:[-*+]|\d{1,9}[.)])[ \t]+| {0,3})(`{3,}|~{3,})/.exec(
+    text,
+  );
   return open === null
     ? null
-    : { marker: open[2] ?? "", quoteDepth, base: open[1]?.length ?? 0 };
+    : {
+        marker: open[2] ?? "",
+        quoteDepth,
+        base: open[1]?.trim() === "" ? 0 : (open[1]?.length ?? 0),
+      };
 }
 
 /** Whether a line leaves the container holding the open fence: a shallower quote, or a line less indented than the list item's text. */
