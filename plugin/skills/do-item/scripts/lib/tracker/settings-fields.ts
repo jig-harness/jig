@@ -35,6 +35,18 @@ export function settingsSection(
   return section;
 }
 
+/**
+ * A map entry that names one thing or several: a nonempty string, or a
+ * nonempty list of them, each trimmed. `what` names the thing in the
+ * refusal ("priority", "label").
+ */
+export function nameList(v: unknown, at: string, what: string): string[] {
+  if (!Array.isArray(v)) return [nonEmpty(v, at).trim()];
+  if (v.length === 0)
+    throw new TrackerConfigError(at, `${at} names no ${what}`);
+  return v.map((n, i) => nonEmpty(n, `${at}[${i}]`).trim());
+}
+
 /** The first name that an earlier entry already has, compared without case. */
 export function firstRepeat(names: ReadonlyArray<string>): string | undefined {
   return names.find(

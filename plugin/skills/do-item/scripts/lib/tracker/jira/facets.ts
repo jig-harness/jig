@@ -26,7 +26,7 @@ import { readSignal, refuseStopped } from "../facets/bounds.ts";
 import { type Facets, type ResolvedFacet, usable } from "../facets/config.ts";
 import { type LabelCodec, labelCodec } from "../facets/label.ts";
 import type { CoreFacetReport } from "../facets/tracker.ts";
-import { fold } from "../facets/values.ts";
+import { everyName, fold, numberedValue } from "../facets/values.ts";
 import {
   type Facet,
   FACETS,
@@ -250,7 +250,7 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
   ): string | null {
     if (numeric && Number.isFinite(Number(raw)) && raw.trim() !== "") {
       const n = Number(raw);
-      const hits = (s.map?.entries ?? []).filter(
+      const hits = everyName(s.map).filter(
         ([, t]) => t.trim() !== "" && Number(t) === n,
       );
       if (hits.length > 1) return null;
@@ -263,12 +263,7 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
       !Number.isFinite(Number(raw))
     )
       return exact;
-    // A number field answers with the number, not its configured spelling.
-    const n = Number(raw);
-    return (
-      s.map?.entries.find(([, t]) => t.trim() !== "" && Number(t) === n)?.[0] ??
-      null
-    );
+    return numberedValue(s.map, Number(raw));
   }
 
   function readField(issue: JiraIssue, s: ResolvedFacet) {
@@ -359,7 +354,7 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
     name: string,
     field: FacetField,
   ): number {
-    const numbers = (s.map?.entries ?? []).map(([, t]) => Number(t));
+    const numbers = everyName(s.map).map(([, t]) => Number(t));
     if (
       !Number.isFinite(Number(name)) ||
       new Set(numbers).size !== numbers.length

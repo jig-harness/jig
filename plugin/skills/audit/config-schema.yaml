@@ -620,6 +620,7 @@ fields:
   issue_tracker.github.priority_labels:
     type: map
     keys: [urgent, high, medium, low]
+    values_type: any
     read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch, resolve-review-comments]
     since: 0.82.0
   issue_tracker.jira.site:
@@ -646,11 +647,13 @@ fields:
   issue_tracker.jira.priorities:
     type: map
     keys: [urgent, high, medium, low]
+    values_type: any
     read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
     since: 0.111.0
   issue_tracker.jira.resolutions:
     type: map
     keys: [done, canceled, duplicate]
+    values_type: any
     read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
     since: 0.111.0
   issue_tracker.jira.link_types:

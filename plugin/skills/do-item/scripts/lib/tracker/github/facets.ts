@@ -38,7 +38,9 @@ import {
   type Evidence,
 } from "../facets/detect.ts";
 import {
+  everyName,
   fold,
+  numberedValue,
   priorityName,
   priorityNumber,
   type PriorityName,
@@ -412,7 +414,7 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
     }
     if (field.dataType === "NUMBER") {
       const n = Number(name);
-      const numbers = (s.map?.entries ?? [])
+      const numbers = everyName(s.map)
         .map(([, t]) => Number(t))
         .filter(Number.isFinite);
       if (new Set(numbers).size !== numbers.length)
@@ -506,12 +508,7 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
       found.value.trim() === ""
     )
       return exact;
-    // A number field returns the number, not its configured spelling.
-    const n = Number(found.value);
-    return (
-      s.map.entries.find(([, t]) => t.trim() !== "" && Number(t) === n)?.[0] ??
-      null
-    );
+    return numberedValue(s.map, Number(found.value));
   }
 
   async function read(

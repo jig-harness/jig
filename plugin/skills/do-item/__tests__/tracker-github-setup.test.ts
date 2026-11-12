@@ -44,10 +44,10 @@ describe("issue_tracker.github", () => {
       project: null,
       statusField: "Status",
       priorityLabels: {
-        urgent: "priority: urgent",
-        high: "priority: high",
-        medium: "priority: medium",
-        low: "priority: low",
+        urgent: ["priority: urgent"],
+        high: ["priority: high"],
+        medium: ["priority: medium"],
+        low: ["priority: low"],
       },
       priorityLabelsDeclared: false,
     });
@@ -71,7 +71,7 @@ describe("issue_tracker.github", () => {
       number: 3,
     });
     expect(github.statusField).toBe("Stage");
-    expect(github.priorityLabels.urgent).toBe("P0");
+    expect(github.priorityLabels.urgent).toEqual(["P0"]);
   });
 
   it("refuses a priority label that is also a state label, in labels mode only", () => {

@@ -113,7 +113,9 @@ function sameStore(a: FacetSlot, b: FacetSlot): boolean {
       (s.labels ?? []).map(([v, ls]) => [v, ls.map(fold)] as const),
     );
   const map = (s: ResolvedFacet) =>
-    JSON.stringify((s.map?.entries ?? []).map(([v, n]) => [v, fold(n)]));
+    JSON.stringify(
+      (s.map?.names ?? []).map(([v, ns]) => [v, ns.map(fold)] as const),
+    );
   return (
     a.store === b.store &&
     (a.field ?? "") === (b.field ?? "") &&

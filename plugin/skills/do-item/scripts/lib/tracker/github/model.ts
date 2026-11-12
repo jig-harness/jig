@@ -102,9 +102,9 @@ export interface GitHubModel {
   visibleLabels(labels: string[]): string[];
   /** Is `label` a state label or a priority label? */
   isReserved(label: string): boolean;
-  /** The label a priority stands for; `null` for 0. */
+  /** The label a priority is written as; `null` for 0. */
   priorityLabel(priority: number): string | null;
-  /** Every priority label. */
+  /** Every priority label, each priority's aliases included. */
   readonly priorityLabels: string[];
   /**
    * The label an open state carries in labels mode, or `null` for a state
@@ -134,7 +134,9 @@ export function gitHubModel(
         ),
       ]
     : [];
-  const priorityLabels = PRIORITY_NAMES.map((p) => settings.priorityLabels[p]);
+  const priorityLabels = PRIORITY_NAMES.flatMap(
+    (p) => settings.priorityLabels[p],
+  );
   const isReserved = (label: string) =>
     stateLabels.some((l) => same(l, label)) ||
     priorityLabels.some((l) => same(l, label));
@@ -186,7 +188,11 @@ export function gitHubModel(
     },
     priorityOf: (labels) => {
       for (const [i, p] of PRIORITY_NAMES.entries())
-        if (labels.some((l) => same(l, settings.priorityLabels[p])))
+        if (
+          labels.some((l) =>
+            settings.priorityLabels[p].some((name) => same(l, name)),
+          )
+        )
           return i + 1;
       return 0;
     },
@@ -195,7 +201,9 @@ export function gitHubModel(
     priorityLabel: (priority) =>
       priority === 0
         ? null
-        : settings.priorityLabels[PRIORITY_NAMES[priority - 1] as PriorityName],
+        : (settings.priorityLabels[
+            PRIORITY_NAMES[priority - 1] as PriorityName
+          ][0] as string),
     priorityLabels,
     stateLabel,
     stateLabels,

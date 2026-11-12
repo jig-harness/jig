@@ -260,7 +260,7 @@ describe("issue_tracker.facets: what reading the configuration refuses", () => {
         },
       },
     });
-    expect(jira.priorities.urgent).toBe("Blocker");
+    expect(jira.priorities.urgent).toEqual(["Blocker"]);
   });
 });
 

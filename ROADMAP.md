@@ -241,9 +241,8 @@ leave priority and size to triage. The weekly check can move an issue missing an
 triage while it has not been started. Jira's issue-type and custom-field
 stores and Linear's estimate are built; still to come are live checks of
 those stores. Also to come: an epic recognised by its issue type as well as
-its label. Several tracker names will read as one value, such as a site's
-seven priorities onto Jig's four. The weekly check will be able to comment
-without moving an issue.
+its label. The weekly check will be able to comment without moving an
+issue.
 
 ### 43. Consumer actions: which Jig changes a repository must act on
 
