@@ -195,23 +195,28 @@ describe("the nightly run's report", () => {
   });
 
   test("a body cut to the limit keeps every code span whole", () => {
-    const name = `@someone [x](https://example.com)${"x".repeat(61_000)}`;
-    const newFailures = [{ file: "a.test.ts", name }];
+    const names = Array.from(
+      { length: LIST_LIMIT },
+      (_, i) => `@someone [x](https://example.com) ${i} ${"x".repeat(400)}`,
+    );
+    const jobNames = Array.from({ length: 40 }, (_, i) => `gates (job ${i})`);
     const { text } = buildReport({
       ...base,
-      jobs: [job("gates (macos)", "failure")],
-      results: [
+      jobs: jobNames.map((name) => job(name, "failure")),
+      results: jobNames.map((name) =>
         result({
-          job: "gates (macos)",
+          job: name,
           status: 1,
           verdict: "new",
-          newFailures,
+          newFailures: names.map((n) => ({ file: "a.test.ts", name: n })),
         }),
-      ],
+      ),
     });
+    expect(text).toContain("(cut short;");
     expect(text.length).toBeLessThan(60_200);
-    for (const row of text.split("\n").filter((l) => l.startsWith("- ")))
-      expect(row.match(/`/g)?.length ?? 0).toBe(4);
+    const rows = text.split("\n").filter((l) => l.startsWith("- "));
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) expect(row.match(/`/g)?.length ?? 0).toBe(4);
   });
 
   test("a stale entry names the platform it recovered on", () => {
