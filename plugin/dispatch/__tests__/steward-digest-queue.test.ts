@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -199,8 +199,14 @@ describe("the scheduler reads nothing before cadence and cap rule a run out", ()
         },
         startedAt: Date.now(),
       } as unknown as ApplyState);
-    const one = roomWith(1) ?? Number.NaN;
-    const three = roomWith(3) ?? Number.NaN;
-    expect(one - three).toBe(settleMs(30_000, 2));
+    // A frozen clock, so only the account-dependent reserve moves the room.
+    const clock = spyOn(Date, "now").mockImplementation(() => 1_000_000);
+    try {
+      const one = roomWith(1) ?? Number.NaN;
+      const three = roomWith(3) ?? Number.NaN;
+      expect(one - three).toBe(settleMs(30_000, 2));
+    } finally {
+      clock.mockRestore();
+    }
   });
 });
