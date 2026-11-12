@@ -84,11 +84,11 @@ skill into the write itself.
 
 ### The facets and their values
 
-| Facet | Canonical value | Where the values come from |
-| --- | --- | --- |
-| `type` | a type name, or `null` for none | the closed `types` list of the repository's [label taxonomy](../GLOSSARY.md), which `issue_tracker.types` maps to [work types](../GLOSSARY.md); with no taxonomy, the work types themselves |
-| `priority` | `1` (urgent), `2` (high), `3` (medium), `4` (low), or `0` for none | fixed; the configuration names them `urgent`, `high`, `medium` and `low` |
-| `size` | a size name, or `null` for none | the taxonomy's `size` group (Jig's: `xs`, `small`, `medium`, `large`, `xl`); with no size group, there is no size facet |
+| Facet      | Canonical value                                                    | Where the values come from                                                                                                                                                                  |
+| ---------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `type`     | a type name, or `null` for none                                    | the closed `types` list of the repository's [label taxonomy](../GLOSSARY.md), which `issue_tracker.types` maps to [work types](../GLOSSARY.md); with no taxonomy, the work types themselves |
+| `priority` | `1` (urgent), `2` (high), `3` (medium), `4` (low), or `0` for none | fixed; the configuration names them `urgent`, `high`, `medium` and `low`                                                                                                                    |
+| `size`     | a size name, or `null` for none                                    | the taxonomy's `size` group (Jig's: `xs`, `small`, `medium`, `large`, `xl`); with no size group, there is no size facet                                                                     |
 
 Priority keeps the numbers the interface already uses (`PoolIssue.priority`,
 `NewIssue.priority`). A type or a size is the id the taxonomy declares,
@@ -119,13 +119,13 @@ A store is where a tracker keeps one facet:
 
 What each tracker can hold:
 
-| Store | GitHub Issues | Jira | Linear |
-| --- | --- | --- | --- |
-| `native` type | the issue type | the issue type | refused: Linear has no issue types |
-| `native` priority | the organization's Priority issue field | the priority field | the priority field |
-| `native` size | refused: an Effort issue field is a `field` | refused: each site's estimate is a custom field | the estimate |
-| `field` | an issue field of the repository's organization | a custom field, by name or id | refused: the adapter has no custom field to name on Linear |
-| `label` | any facet | any facet | any facet |
+| Store             | GitHub Issues                                   | Jira                                            | Linear                                                     |
+| ----------------- | ----------------------------------------------- | ----------------------------------------------- | ---------------------------------------------------------- |
+| `native` type     | the issue type                                  | the issue type                                  | refused: Linear has no issue types                         |
+| `native` priority | the organization's Priority issue field         | the priority field                              | the priority field                                         |
+| `native` size     | refused: an Effort issue field is a `field`     | refused: each site's estimate is a custom field | the estimate                                               |
+| `field`           | an issue field of the repository's organization | a custom field, by name or id                   | refused: the adapter has no custom field to name on Linear |
+| `label`           | any facet                                       | any facet                                       | any facet                                                  |
 
 A store the adapter cannot hold is refused when the configuration is read,
 naming the facet and the stores that adapter has. A store kept by the
@@ -168,11 +168,11 @@ Linear's own, so a list there is refused.
 A facet whose store the configuration does not name gets its adapter's
 default:
 
-| Facet | GitHub Issues | Jira | Linear |
-| --- | --- | --- | --- |
-| Type | for a repository that keeps no type labels, the issue type, matched by name, a type with no issue type of its name refused when it is filed; type labels otherwise | type labels, and every new issue filed as the one `issue_tracker.jira.issue_type`, as today | labels from `issue_tracker.types`; Linear has no issue types |
-| Priority | for a repository that keeps no priority labels, the organization's Priority field; `priority:` labels otherwise | the priority field | the priority field |
-| Size | for a repository that keeps no size labels, the organization's Effort field, when its options carry the size names; size labels otherwise | size labels, as today, until a field is named, since each site's estimate field differs | size labels; the estimate as an option |
+| Facet    | GitHub Issues                                                                                                                                                      | Jira                                                                                        | Linear                                                       |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Type     | for a repository that keeps no type labels, the issue type, matched by name, a type with no issue type of its name refused when it is filed; type labels otherwise | type labels, and every new issue filed as the one `issue_tracker.jira.issue_type`, as today | labels from `issue_tracker.types`; Linear has no issue types |
+| Priority | for a repository that keeps no priority labels, the organization's Priority field; `priority:` labels otherwise                                                    | the priority field                                                                          | the priority field                                           |
+| Size     | for a repository that keeps no size labels, the organization's Effort field, when its options carry the size names; size labels otherwise                          | size labels, as today, until a field is named, since each site's estimate field differs     | size labels; the estimate as an option                       |
 
 **No store moves by itself.** A GitHub repository keeps a facet in labels
 when a key of today names that facet's labels (`priority_labels`, or the
@@ -262,11 +262,11 @@ issue of each mapped type through them.
 
 ### Who can set a facet
 
-| Store | Who can write it |
-| --- | --- |
-| GitHub issue type, issue fields, labels | anyone with triage access to the repository; an issue form sets the type it names for any filer, as it sets its label today |
-| Jira issue type, priority, custom fields, labels | anyone with Edit Issues in the project |
-| Linear priority, estimate, labels | any member of the team |
+| Store                                            | Who can write it                                                                                                            |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| GitHub issue type, issue fields, labels          | anyone with triage access to the repository; an issue form sets the type it names for any filer, as it sets its label today |
+| Jira issue type, priority, custom fields, labels | anyone with Edit Issues in the project                                                                                      |
+| Linear priority, estimate, labels                | any member of the team                                                                                                      |
 
 No store lets anyone set a type who cannot set its label today. The type
 lowers depth only where nothing else raises it ([work types](work-types.md)):
@@ -287,23 +287,33 @@ number field:
 ```yaml
 issue_tracker:
   facets:
-    type:     { store: native, values: { bug: Bug, feature: Story, task: Task, spike: Spike } }
-    priority: { store: label, labels: { urgent: P0, high: P1, medium: P2, low: P3 } }
-    size:     { store: field, field: customfield_10016, values: { xs: 1, small: 2, medium: 3, large: 5, xl: 8 } }
+    type:
+      {
+        store: native,
+        values: { bug: Bug, feature: Story, task: Task, spike: Spike },
+      }
+    priority:
+      { store: label, labels: { urgent: P0, high: P1, medium: P2, low: P3 } }
+    size:
+      {
+        store: field,
+        field: customfield_10016,
+        values: { xs: 1, small: 2, medium: 3, large: 5, xl: 8 },
+      }
 ```
 
 A value may list several names, the first written and all read:
 `values: { bug: [Bug, Defect], feature: Story }`.
 
-| Field | Type | Default | Meaning |
-| --- | --- | --- | --- |
-| `issue_tracker.facets.<facet>.store` | `native`, `field` or `label` | the adapter's default above | Where the facet is kept |
-| `….values` | map from a canonical value to a tracker value, or to a list of them | each value by its own name | `native` and `field`: the issue type, option or number that holds each value; a list is read in any of its names and written as its first |
-| `….field` | a field's name or id | none; required by `field` | `field`: the custom field, a GitHub issue field by name, a Jira field by name or id (`customfield_10016`) |
-| `….labels` | map from a canonical value to a label, or to a list of labels | the value's own name; on GitHub, priority's `priority: <name>` | `label`: the label of each value; a list is read in any of its labels and written as its first |
-| `….prefix` | a label prefix | none | `label`: each value's label is the prefix followed by the value (`size:small`); refused beside `labels` |
-| `issue_tracker.facets.sweep` | `move` or `comment` | `move` | The weekly sweep's action on an incomplete issue: comment and move it to triage, or comment only (`check-fields.ts --comment-only` sets it for one run) |
-| `issue_tracker.labels.epic_types` | list of issue type names | none | An issue of one of these native types reads as an epic on every adapter with issue types, beside the epic label; it is exempt from the size requirement everywhere the epic label is |
+| Field                                | Type                                                                | Default                                                        | Meaning                                                                                                                                                                              |
+| ------------------------------------ | ------------------------------------------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `issue_tracker.facets.<facet>.store` | `native`, `field` or `label`                                        | the adapter's default above                                    | Where the facet is kept                                                                                                                                                              |
+| `….values`                           | map from a canonical value to a tracker value, or to a list of them | each value by its own name                                     | `native` and `field`: the issue type, option or number that holds each value; a list is read in any of its names and written as its first                                            |
+| `….field`                            | a field's name or id                                                | none; required by `field`                                      | `field`: the custom field, a GitHub issue field by name, a Jira field by name or id (`customfield_10016`)                                                                            |
+| `….labels`                           | map from a canonical value to a label, or to a list of labels       | the value's own name; on GitHub, priority's `priority: <name>` | `label`: the label of each value; a list is read in any of its labels and written as its first                                                                                       |
+| `….prefix`                           | a label prefix                                                      | none                                                           | `label`: each value's label is the prefix followed by the value (`size:small`); refused beside `labels`                                                                              |
+| `file_issue.sweep.move`              | `true` or `false`                                                   | `true`                                                         | The weekly sweep's action on an incomplete issue: comment and move it to triage, or, with `false`, comment only; an explicit `null` is refused                                       |
+| `issue_tracker.labels.epic_types`    | list of issue type names                                            | none                                                           | An issue of one of these native types reads as an epic on every adapter with issue types, beside the epic label; it is exempt from the size requirement everywhere the epic label is |
 
 Outside GitHub, a priority kept in labels needs `labels` or a `prefix`,
 since a Jira label holds no whitespace and so cannot take GitHub's default.
@@ -321,15 +331,15 @@ one of today's keys below with different labels.
 
 ### What today's keys become
 
-| Key today | Becomes |
-| --- | --- |
-| `issue_tracker.types` | It keeps mapping work types to type values, and, set, it keeps the type facet in labels on GitHub until `store` names another: `task: [docs, chore, infra]` lists type values, each the label of its own name, all of them `task` work |
-| `issue_tracker.labels.bug` | The labels of the `bug` type in a label store, as it is today an alias of `issue_tracker.types.bug` |
-| `issue_tracker.github.priority_labels` | The priority facet's `labels`; set, it keeps priority in labels until `store` names another |
-| `issue_tracker.jira.field_labels` | An entry whose values are a facet's values (a `Size` field whose labels are the size group's) is that facet's `field` store, now written as well as read, and its values still show as labels; any other entry reads as labels, as it does today |
-| `issue_tracker.jira.priorities` | The priority facet's `values` map on Jira, seeded from it: its entries and its defaults (urgent is Highest) stay the names written and read until `issue_tracker.facets.priority.values` is set; a facet map that gives a canonical value another name than this key does is refused when the configuration is read |
-| `issue_tracker.jira.issue_type` | The issue type of every new issue until a type store is named, and then of one whose type has no issue type of its own name, and of one created under an Epic |
-| `issue_tracker.labels.batch_sizes`, `work_batch.sizes` and `size_points`, `routing.raise.sizes`, `review.taxonomy.sizes` | Each entry is read as a size value, or as the label of one, so a list keeps working whatever store the size is in |
+| Key today                                                                                                                | Becomes                                                                                                                                                                                                                                                                                                             |
+| ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `issue_tracker.types`                                                                                                    | It keeps mapping work types to type values, and, set, it keeps the type facet in labels on GitHub until `store` names another: `task: [docs, chore, infra]` lists type values, each the label of its own name, all of them `task` work                                                                              |
+| `issue_tracker.labels.bug`                                                                                               | The labels of the `bug` type in a label store, as it is today an alias of `issue_tracker.types.bug`                                                                                                                                                                                                                 |
+| `issue_tracker.github.priority_labels`                                                                                   | The priority facet's `labels`; set, it keeps priority in labels until `store` names another                                                                                                                                                                                                                         |
+| `issue_tracker.jira.field_labels`                                                                                        | An entry whose values are a facet's values (a `Size` field whose labels are the size group's) is that facet's `field` store, now written as well as read, and its values still show as labels; any other entry reads as labels, as it does today                                                                    |
+| `issue_tracker.jira.priorities`                                                                                          | The priority facet's `values` map on Jira, seeded from it: its entries and its defaults (urgent is Highest) stay the names written and read until `issue_tracker.facets.priority.values` is set; a facet map that gives a canonical value another name than this key does is refused when the configuration is read |
+| `issue_tracker.jira.issue_type`                                                                                          | The issue type of every new issue until a type store is named, and then of one whose type has no issue type of its own name, and of one created under an Epic                                                                                                                                                       |
+| `issue_tracker.labels.batch_sizes`, `work_batch.sizes` and `size_points`, `routing.raise.sizes`, `review.taxonomy.sizes` | Each entry is read as a size value, or as the label of one, so a list keeps working whatever store the size is in                                                                                                                                                                                                   |
 
 A repository that set any of these keeps working with no change to its
 file.
@@ -360,8 +370,7 @@ file.
   counted for size, as in [the write's check](#checked-inside-the-write)),
   so a ratio never has a filtered denominator or counts a lawful absence. A
   started issue is never in these pages, so one that stays incomplete cannot
-  use up the read; the sweep lists them from a separate read of one page of
-  100. It is the weekly sweep's read, and the one read of the interface that
+  use up the read; the sweep lists them from a separate read of one page of 100. It is the weekly sweep's read, and the one read of the interface that
   returns part of a population on purpose, so it says so in its name and its
   cursor. Its pages are ordered oldest first, an order no write changes, so
   the cursor of one run can be kept and resumed by the next, which is how the
@@ -486,14 +495,14 @@ today and any later one alike. Records are not filed through
 record store that moves onto the interface gets an operation of its own,
 so `createIssue` offers no way around the check.
 
-| Path | Today | With this built |
-| --- | --- | --- |
-| `file-issue` | writes through `tracker.ts create`; type and size as labels, priority optional | the same command, checked inside the write; priority required |
-| `tracker.ts create` (`do-item`) | checks shape | checked inside the write, the missing facet named |
-| `file-deferred.ts` | the follow-up label only | checked inside the write; the type from the finding, the priority from the [severity mapping](../GLOSSARY.md) M9 names, the size `small` unless the entry names one |
-| `report-bug.ts` | `gh issue create` with the `bug` label | sets the Bug issue type where the account may set types; priority and size from triage |
-| The issue forms | a label | `type: Bug` on the bug form, `type: Feature` on the change form; priority and size from triage |
-| An agent by hand | whatever it sets | reported by the pools on their next read, and moved by the weekly sweep |
+| Path                            | Today                                                                          | With this built                                                                                                                                                     |
+| ------------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `file-issue`                    | writes through `tracker.ts create`; type and size as labels, priority optional | the same command, checked inside the write; priority required                                                                                                       |
+| `tracker.ts create` (`do-item`) | checks shape                                                                   | checked inside the write, the missing facet named                                                                                                                   |
+| `file-deferred.ts`              | the follow-up label only                                                       | checked inside the write; the type from the finding, the priority from the [severity mapping](../GLOSSARY.md) M9 names, the size `small` unless the entry names one |
+| `report-bug.ts`                 | `gh issue create` with the `bug` label                                         | sets the Bug issue type where the account may set types; priority and size from triage                                                                              |
+| The issue forms                 | a label                                                                        | `type: Bug` on the bug form, `type: Feature` on the change form; priority and size from triage                                                                      |
+| An agent by hand                | whatever it sets                                                               | reported by the pools on their next read, and moved by the weekly sweep                                                                                             |
 
 `file-deferred.ts` takes the type from the finding as the
 [deferral protocol](../plugin/skills/resolve-review-comments/references/deferral-protocol.md#labels)
@@ -541,35 +550,40 @@ lacks a type, a priority or a size (no size on an epic), or carries a
 retired label (a facet's label where that facet is kept elsewhere), and, in
 its default mode, moves each one not yet started back to the `triage` state
 with a comment naming the missing facets, so the move carries its reason in
-the tracker's history. With `--comment-only`, or `issue_tracker.facets.sweep:
-comment` in the configuration (default `move`), it posts the comment and moves
-nothing, for a repository whose people triage in place. The comment is posted first and carries a marker naming the issue's
+the tracker's history. With `file_issue.sweep.move: false` in the
+configuration (default `true`), it posts the comment and moves nothing, for a
+lane where only a person may move a ready issue back. The comment is posted first and carries a marker naming the issue's
 missing facets; a run that stopped between the comment and the move finds the
 marker on the next run, moves the issue and posts nothing again. An issue
 already started is listed, not moved, since moving it would take it from the
 session working it. An issue already in triage is not read again, so each
-issue is moved and commented on once. In comment-only mode the issue stays in the queried population, so the
+issue is moved and commented on once. Without moving, the issue stays in the queried population, so the
 marker alone keeps the sweep to one comment per issue and set of missing
-facets: a run that finds the marker posts nothing, and posts again only when
-the missing facets change. A capped read would let the same first issues,
-already commented, take every run's pages, and no order that depends on the
-sweep's own writes can advance past them, since a run that finds the marker
-writes nothing. So in this mode the read keeps a position: pages are ordered
-oldest first, a creation order that no write changes, and the run records the
-key of the last issue it read in the state the sweep keeps between runs (on
-Jig's workflow, its cache). The next run resumes after that key, and a read
-that reaches the end of the population starts again from the first issue. An
-issue whose missing facets change after its comment is revisited when the
-position comes round to it, which is within as many runs as the population
-holds capped reads. A run with no recorded position starts from the first
-issue.
+facets and retired labels: a run that finds the marker posts nothing, and posts again only when
+the missing facets change. An issue that carries the marker is passed over
+before the run's budget is counted, so marked issues never use it up.
+They still take places in the capped read, and past the cap the same first
+issues, already commented, would take every run's pages; no order that
+depends on the sweep's own writes can advance past them, since a run that
+finds the marker writes nothing. So in this mode the read should keep a
+position: its pages are ordered oldest first, a creation order that no write
+changes, and the run records the key of the last issue it read in the
+state the sweep keeps between runs (on Jig's workflow, its cache). The next
+run resumes after that key, and a read that reaches the end of the
+population starts again from the first issue. An issue whose missing
+facets change after its comment is revisited when the position comes round
+to it, which is within as many runs as the population holds capped reads.
+The position is not built yet: until it is, a population past the read cap
+is commented on only as far as its first 20 pages.
 
 Its bounds:
 
-- **A run is capped.** It reads at most 20 pages of 100 issues and moves at
-  most 50; what remains is moved by the next run, which starts from the
-  issues still outside triage. The read pages over issues not yet started
-  only, so the same started issues cannot take the budget run after run.
+- **A run is capped.** It reads at most 20 pages of 100 issues and moves
+  (or, without moving, comments on) at most 50; what remains is handled by
+  the next run. Moving, that run starts from the issues still outside
+  triage; without moving, it passes over the marked issues, as far as the
+  read cap reaches. The read pages over issues not yet started only, so the
+  same started issues cannot take the budget run after run.
 - **Writes are paced.** At most 30 a minute (a move and its comment are
   two); a `Retry-After` is honoured up to 3 times, and on the fourth refusal
   the run stops and reports how many it moved and how many remain.

@@ -12,11 +12,17 @@ const closedType = (type: string) =>
   ["completed", "canceled", "duplicate"].includes(type);
 export const closed = (i: PoolIssue) => closedType(i.state.type);
 /** Not started, and not in the tracker's `blocked` state (`blockedState`, whatever category the tracker gives it): only the drive-ledger projection or a person moves an item out of it. */
-export const ready = (i: PoolIssue, blockedState: string | null = null) =>
-  !closed(i) &&
-  ["triage", "backlog", "unstarted"].includes(i.state.type) &&
-  (blockedState === null ||
-    i.state.name.trim().toLowerCase() !== blockedState.trim().toLowerCase());
+type BlockedState = string | null | ((issue: PoolIssue) => string | null);
+export const ready = (i: PoolIssue, blockedState: BlockedState = null) => {
+  const blocked =
+    typeof blockedState === "function" ? blockedState(i) : blockedState;
+  return (
+    !closed(i) &&
+    ["triage", "backlog", "unstarted"].includes(i.state.type) &&
+    (blocked === null ||
+      i.state.name.trim().toLowerCase() !== blocked.trim().toLowerCase())
+  );
+};
 
 export interface OpenBlocker {
   key: string;
@@ -60,7 +66,7 @@ export interface PullPolicy {
   /** False when the tracker cannot assign a blocker itself: a qualifying one awaits a person. */
   canAssign?: boolean | undefined;
   /** The tracker's name for its `blocked` state, when it has one. */
-  blockedState?: string | null | undefined;
+  blockedState?: BlockedState | undefined;
 }
 
 /**

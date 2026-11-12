@@ -30,7 +30,9 @@ import {
   stateNameEquals,
 } from "./get_issue.ts";
 import { defaultStateNames, ownTrackerConfig } from "./lib/tracker/config.ts";
-import type { StateNames } from "./lib/tracker/port.ts";
+import { statesForType } from "./lib/tracker/jira/state-maps.ts";
+import type { StatesByType } from "./lib/tracker/jira/state-maps.ts";
+import type { StateMap } from "./lib/tracker/port.ts";
 import { parsePostMerge, type PostMergeState } from "./lib/post-merge.ts";
 import { readOverlay } from "../../../shared/consumer.ts";
 import {
@@ -44,6 +46,7 @@ import { LINKED_PR_STATES, type LinkedPrState } from "./lib/linked-pr.ts";
 export type LabelLike = string | { name?: string };
 
 export interface ReconcileChildInput {
+  nativeType?: string | null;
   state?: { name?: string; type?: string };
   labels?: LabelLike[];
   /**
@@ -57,6 +60,7 @@ export interface ReconcileChildInput {
 }
 
 export interface ReconcileInput {
+  parentNativeType?: string | null;
   /**
    * False when the child listing/fetch itself failed — e.g. `get_issue.ts`
    * returned `found: false`. Defaults to true. A failed fetch is not "no
@@ -80,6 +84,7 @@ export interface ReconcileInput {
 }
 
 export type ReconcileVerdict =
+  | "skipped"
   | "listing_failed"
   | "keep_in_progress"
   | "extract_and_close_eligible"
@@ -103,7 +108,8 @@ export interface ReconcileDecision {
  */
 export interface ReconcileVocabulary {
   labels: TrackerLabels;
-  states: StateNames;
+  states: StateMap;
+  statesByType?: StatesByType;
   /** Absent: `done`. */
   postMergeState?: PostMergeState;
 }
@@ -182,10 +188,7 @@ function nameTrustworthyForParkedCheck(
  * is not known to have merged. Fails closed: an open pull request, none, an
  * unreadable read and a missing fact all keep the parent in progress.
  */
-function readsAsPrOpen(
-  child: ReconcileChildInput,
-  states: StateNames,
-): boolean {
+function readsAsPrOpen(child: ReconcileChildInput, states: StateMap): boolean {
   const prOpen = states.pr_open;
   if (prOpen === null || !stateNameEquals(child.state?.name, prOpen))
     return false;
@@ -201,7 +204,7 @@ function labelName(l: LabelLike | undefined): string {
 function extractTailReason(
   tails: string,
   labels: TrackerLabels,
-  states: StateNames,
+  states: StateMap,
   postMergeState: PostMergeState,
   parentHasManualOps: boolean,
 ): string {
@@ -217,7 +220,7 @@ function extractTailReason(
 
 function allDoneOutcome(
   labels: TrackerLabels,
-  states: StateNames,
+  states: StateMap,
   postMergeState: PostMergeState,
   parentHasManualOps: boolean,
 ): [ParentState, string] {
@@ -238,18 +241,31 @@ export function reconcileParentStatus(
   input: ReconcileInput,
   vocabulary: ReconcileVocabulary = DEFAULT_VOCABULARY,
 ): ReconcileDecision {
-  const { labels, states } = vocabulary;
+  const { labels } = vocabulary;
+  const settings = { statesByType: vocabulary.statesByType ?? {} };
+  const states = statesForType(
+    vocabulary.states,
+    settings,
+    input.parentNativeType ?? null,
+  );
+  const childStates = (child: ReconcileChildInput) =>
+    statesForType(vocabulary.states, settings, child.nativeType ?? null);
   const postMergeState = vocabulary.postMergeState ?? "done";
   const decide = (
     verdict: ReconcileVerdict,
     parentState: ParentState | null,
     reason: string,
-  ): ReconcileDecision => ({
-    verdict,
-    parentState,
-    parentStateName: parentState === null ? null : states[parentState],
-    reason,
-  });
+  ): ReconcileDecision => {
+    const name = parentState === null ? null : states[parentState];
+    if (parentState !== null && name === null)
+      return {
+        verdict: "skipped",
+        parentState,
+        parentStateName: null,
+        reason: `Skipped ${parentState}: the parent's workflow has no configured state.`,
+      };
+    return { verdict, parentState, parentStateName: name, reason };
+  };
   const tails = labels.extractableTails.join(" / ");
   const found = input.found ?? true;
   if (!found) {
@@ -276,7 +292,9 @@ export function reconcileParentStatus(
   // An empty `children` array (no sub-issues) needs no special case — every
   // predicate below is vacuously true over `[]`, so a childless parent reads
   // as "all done".
-  const buckets = children.map((c) => classifyChildState(c.state, states));
+  const buckets = children.map((c) =>
+    classifyChildState(c.state, childStates(c)),
+  );
   const allDone = buckets.every((b) => b !== "incomplete");
 
   const incompleteChildren = children.filter(
@@ -350,18 +368,24 @@ export function reconcileParentStatus(
     (c, i) =>
       buckets[i] !== "incomplete" ||
       (nameTrustworthyForParkedCheck(c.state) &&
-        !readsAsPrOpen(c, states) &&
+        !readsAsPrOpen(c, childStates(c)) &&
         PARKED_ACTIVE_STATES.some((key) =>
-          stateNameEquals(c.state?.name, states[key]),
+          stateNameEquals(c.state?.name, childStates(c)[key]),
         )),
   );
 
   if (!allMergedOrParked) {
+    const openPrChild = children.find((c) => {
+      const own = childStates(c);
+      return (
+        own.pr_open !== null &&
+        stateNameEquals(own.pr_open, own.in_review) &&
+        readsAsPrOpen(c, own)
+      );
+    });
     const unmerged =
-      states.pr_open !== null &&
-      stateNameEquals(states.pr_open, states.in_review) &&
-      children.some((c) => readsAsPrOpen(c, states))
-        ? ` A sub-issue under "${states.pr_open}", the name pr_open shares with in_review, reads as pr_open unless its linked pull request merged (its pullRequest fact is not "merged").`
+      openPrChild !== undefined
+        ? ` A sub-issue under "${childStates(openPrChild).pr_open}", the name pr_open shares with in_review, reads as pr_open unless its linked pull request merged (its pullRequest fact is not "merged").`
         : "";
     return decide(
       "keep_in_progress",
@@ -400,7 +424,7 @@ export function reconcileParentStatus(
     .filter((_, i) => buckets[i] === "incomplete")
     .map((c) =>
       STATE_LADDER.findIndex((key) =>
-        stateNameEquals(c.state?.name, states[key]),
+        stateNameEquals(c.state?.name, childStates(c)[key]),
       ),
     )
     .filter((i) => i >= 0);
@@ -487,6 +511,8 @@ export function isReconcileInputShape(value: unknown): value is ReconcileInput {
     typeof c === "object" &&
     c !== null &&
     !Array.isArray(c) &&
+    ((c as Record<string, unknown>).nativeType == null ||
+      typeof (c as Record<string, unknown>).nativeType === "string") &&
     isState((c as Record<string, unknown>).state) &&
     hasReadableState((c as Record<string, unknown>).state) &&
     ((c as Record<string, unknown>).labels === undefined ||
@@ -496,6 +522,8 @@ export function isReconcileInputShape(value: unknown): value is ReconcileInput {
         (c as Record<string, unknown>).pullRequest,
       ));
 
+  if (v.parentNativeType != null && typeof v.parentNativeType !== "string")
+    return false;
   if (v.found !== undefined && typeof v.found !== "boolean") return false;
   if (v.truncated !== undefined && typeof v.truncated !== "boolean")
     return false;
@@ -639,6 +667,7 @@ async function main(): Promise<number> {
     vocabulary = {
       labels: config.labels,
       states: config.states,
+      statesByType: config.adapter === "jira" ? config.jira.statesByType : {},
       postMergeState: parsePostMerge(readOverlay()).state,
     };
   } catch (err) {

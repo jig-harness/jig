@@ -12,9 +12,15 @@
  * posts nothing again. An issue already started is listed, never moved,
  * since moving it would take it from the session working it.
  *
- * Its bounds: at most 20 listing pages of 100 incomplete issues and 50 issues moved a run,
- * the writes paced (`pace.ts`); a refused write stops the run, which reports
- * what it moved and what remains. A store problem moves nothing: a store
+ * With `move: false` (`file_issue.sweep.move`, for a lane where only a
+ * person may move a ready issue back), each such issue gets the comment and
+ * keeps its state. It then stays in every later listing, so an issue that
+ * already carries the marker is passed over before the budget is counted.
+ *
+ * Its bounds: at most 20 listing pages of 100 incomplete issues and 50
+ * issues moved (or, without moving, commented on) a run, the writes paced
+ * (`pace.ts`); a refused write stops the run, which reports what it moved
+ * and what remains. A store problem moves nothing: a store
  * that fails closed, or more than half of the issues that must carry a facet
  * lacking it by the tracker's own counts. It reports issue keys, never a
  * title or a body.
@@ -37,6 +43,8 @@ export const SWEEP_MARKER = "jig:issue-fields";
 export interface SweepOptions {
   /** Move and comment; without it the sweep only reports. */
   apply: boolean;
+  /** Move each issue back to triage (the default); `false` only comments. */
+  move?: boolean;
   /** The labels of each facet the stores keep outside labels. */
   retired: (stores: FacetStores) => string[];
   writer: Writer;
@@ -74,9 +82,13 @@ export interface SweepReport {
   skipped: string[];
   /** Commented on by this run (an issue a stopped run commented on is moved without one). */
   commented: string[];
+  /** Without moving: already carrying the marker, so passed over outside the budget. */
+  marked: string[];
   /** Why a write stopped the run, or `null`. */
   stopped: string | null;
   apply: boolean;
+  /** Whether the run moves issues to triage or only comments on them. */
+  move: boolean;
 }
 
 /** The marker naming what an issue lacks and the retired labels it carries. */
@@ -89,8 +101,8 @@ export function sweepMarker(issue: IncompleteIssue): string {
   return `<!-- ${SWEEP_MARKER} missing=${missing}${retired} -->`;
 }
 
-/** The comment that moves an issue back to triage, naming why. */
-export function sweepComment(issue: IncompleteIssue): string {
+/** The comment that moves an issue back to triage, or with `move: false` leaves it, naming why. */
+export function sweepComment(issue: IncompleteIssue, move = true): string {
   const lacks =
     issue.missing.length === 0
       ? ""
@@ -99,7 +111,9 @@ export function sweepComment(issue: IncompleteIssue): string {
     issue.retired.length === 0
       ? ""
       : ` It carries labels this repository no longer keeps its type, priority or size in (${issue.retired.map((l) => `\`${l}\``).join(", ")}): set each value in the tracker's own field and remove the label.`;
-  return `${sweepMarker(issue)}\nThe weekly issue-fields sweep moved this issue back to triage.${lacks}${retired} Then move it on.`;
+  return move
+    ? `${sweepMarker(issue)}\nThe weekly issue-fields sweep moved this issue back to triage.${lacks}${retired} Then move it on.`
+    : `${sweepMarker(issue)}\nThe weekly issue-fields sweep found this issue incomplete and left it where it is.${lacks}${retired}`;
 }
 
 /** Why the stores the tracker reported keep the sweep from moving anything, or `null`. */
@@ -203,6 +217,38 @@ async function stillEligible(
   opts.writer.signal?.throwIfAborted();
 }
 
+/** Whether the issue already carries the sweep's marker for what it lacks now. */
+async function marked(
+  tracker: Tracker,
+  issue: IncompleteIssue,
+  opts: SweepOptions,
+): Promise<boolean> {
+  const marker = sweepMarker(issue);
+  const comments = await tracker.listComments(
+    issue.identifier,
+    opts.writer.signal,
+  );
+  return comments.some((c) => c.body.includes(marker));
+}
+
+/** Post the sweep's comment on one issue once it is still eligible. */
+async function commentOn(
+  tracker: Tracker,
+  issue: IncompleteIssue,
+  opts: SweepOptions,
+  report: SweepReport,
+): Promise<void> {
+  await opts.writer.write(`comment on ${issue.identifier}`, async (signal) => {
+    await stillEligible(tracker, issue, opts, signal);
+    return tracker.postComment(
+      issue.identifier,
+      sweepComment(issue, report.move),
+      signal,
+    );
+  });
+  report.commented.push(issue.identifier);
+}
+
 /** Move one issue back to triage, its comment first unless a stopped run posted it. */
 async function moveOne(
   tracker: Tracker,
@@ -210,26 +256,8 @@ async function moveOne(
   opts: SweepOptions,
   report: SweepReport,
 ): Promise<void> {
-  const marker = sweepMarker(issue);
-  const comments = await tracker.listComments(
-    issue.identifier,
-    opts.writer.signal,
-  );
-  const posted = comments.some((c) => c.body.includes(marker));
-  if (!posted) {
-    await opts.writer.write(
-      `comment on ${issue.identifier}`,
-      async (signal) => {
-        await stillEligible(tracker, issue, opts, signal);
-        return tracker.postComment(
-          issue.identifier,
-          sweepComment(issue),
-          signal,
-        );
-      },
-    );
-    report.commented.push(issue.identifier);
-  }
+  const posted = await marked(tracker, issue, opts);
+  if (!posted) await commentOn(tracker, issue, opts, report);
   await opts.writer.write(
     `move ${issue.identifier} to triage`,
     async (signal) => {
@@ -243,6 +271,43 @@ async function moveOne(
   );
 }
 
+/** Leave one issue in its state, commenting unless it already carries the marker. */
+async function commentOne(
+  tracker: Tracker,
+  issue: IncompleteIssue,
+  opts: SweepOptions,
+  report: SweepReport,
+): Promise<void> {
+  if (await marked(tracker, issue, opts)) {
+    report.marked.push(issue.identifier);
+    return;
+  }
+  await commentOn(tracker, issue, opts, report);
+  opts.progress?.(`commented on ${issue.identifier}, left in its state`);
+}
+
+/** Sweep one issue: `false` when a write stopped the run; an issue that changed is skipped. */
+async function attempt(
+  issue: IncompleteIssue,
+  report: SweepReport,
+  work: () => Promise<void>,
+): Promise<boolean> {
+  try {
+    await work();
+  } catch (err) {
+    if (changed(err)) {
+      report.skipped.push(issue.identifier);
+      return true;
+    }
+    report.stopped =
+      err instanceof WriteRefused
+        ? err.message
+        : failureLine(`sweep ${issue.identifier}`, err);
+    return false;
+  }
+  return true;
+}
+
 function changed(err: unknown): boolean {
   return (
     err instanceof SweepChanged ||
@@ -250,16 +315,11 @@ function changed(err: unknown): boolean {
   );
 }
 
-/** Sweep the open issues of `tracker`; a read that fails throws. */
-export async function sweep(
-  tracker: Tracker,
+function freshReport(
+  stores: Awaited<ReturnType<Tracker["facetStores"]>>,
   opts: SweepOptions,
-): Promise<SweepReport> {
-  const stores = await tracker.facetStores({
-    discovery: false,
-    ...(opts.writer.signal === undefined ? {} : { signal: opts.writer.signal }),
-  });
-  const report: SweepReport = {
+): SweepReport {
+  return {
     stores: stores.facets.map((f) => ({
       facet: f.facet,
       store: f.store,
@@ -276,9 +336,55 @@ export async function sweep(
     moved: [],
     skipped: [],
     commented: [],
+    marked: [],
     stopped: null,
     apply: opts.apply,
+    move: opts.move ?? true,
   };
+}
+
+/** Write to the listed issues, one by one, until the cap or a stop. */
+async function applyAll(
+  tracker: Tracker,
+  opts: SweepOptions,
+  report: SweepReport,
+): Promise<void> {
+  const budget = opts.limits?.moves ?? SWEEP_LIMITS.moves;
+  // Moving, every issue reached counts; without moving, a marked issue stays
+  // in every listing, so it is passed over uncounted.
+  const spent = () =>
+    (report.move ? report.moved.length : report.commented.length) +
+    report.skipped.length;
+  const one = report.move ? moveOne : commentOne;
+  for (const issue of report.listed) {
+    if (spent() >= budget) {
+      if (report.move) return;
+      // Past the cap nothing more is written, but a marked issue needs no
+      // comment, so it is classified (a read) rather than counted as remaining.
+      const read = await attempt(issue, report, async () => {
+        if (await marked(tracker, issue, opts))
+          report.marked.push(issue.identifier);
+      });
+      if (!read) return;
+      continue;
+    }
+    if (
+      !(await attempt(issue, report, () => one(tracker, issue, opts, report)))
+    )
+      return;
+  }
+}
+
+/** Sweep the open issues of `tracker`; a read that fails throws. */
+export async function sweep(
+  tracker: Tracker,
+  opts: SweepOptions,
+): Promise<SweepReport> {
+  const stores = await tracker.facetStores({
+    discovery: false,
+    ...(opts.writer.signal === undefined ? {} : { signal: opts.writer.signal }),
+  });
+  const report = freshReport(stores, opts);
   if (report.storeProblem !== null) return report;
   const missing = stores.facets
     .filter((f) => f.store !== null)
@@ -291,23 +397,8 @@ export async function sweep(
   );
   report.read = true;
   report.storeProblem = emptiedStore(report.counts);
-  if (!opts.apply || report.storeProblem !== null) return report;
-  const moves = opts.limits?.moves ?? SWEEP_LIMITS.moves;
-  for (const issue of report.listed.slice(0, moves)) {
-    try {
-      await moveOne(tracker, issue, opts, report);
-    } catch (err) {
-      if (changed(err)) {
-        report.skipped.push(issue.identifier);
-        continue;
-      }
-      report.stopped =
-        err instanceof WriteRefused
-          ? err.message
-          : failureLine(`sweep ${issue.identifier}`, err);
-      break;
-    }
-  }
+  if (report.apply && report.storeProblem === null)
+    await applyAll(tracker, opts, report);
   return report;
 }
 
@@ -348,23 +439,37 @@ function listingLines(report: SweepReport): string[] {
   ];
 }
 
+/** The first line of the outcome: what the run did, and what remains. */
+function doneLine(report: SweepReport, remaining: number): string {
+  const capped = report.readCapped ? ", and more past the read's page cap" : "";
+  if (report.move)
+    return `moved ${report.moved.length} to triage (${report.commented.length} commented on); ${remaining} remain${capped}`;
+  return `commented on ${report.commented.length}, moved none (file_issue.sweep.move is false); ${report.marked.length} already commented on; ${remaining} remain${capped}`;
+}
+
 /** What the run moved, what remains, and why it stopped. */
 function outcomeLines(report: SweepReport): string[] {
   if (report.storeProblem !== null)
     return [`store problem, nothing moved: ${report.storeProblem}`];
   if (!report.apply)
-    return ["report only: nothing moved (--yes moves them to triage)"];
+    return [
+      report.move
+        ? "report only: nothing moved (--yes moves them to triage)"
+        : "report only: nothing written (--yes comments on them, file_issue.sweep.move being false)",
+    ];
   const remaining =
-    report.listed.length - report.moved.length - report.skipped.length;
-  const capped = report.readCapped ? ", and more past the read's page cap" : "";
-  const lines = [
-    `moved ${report.moved.length} to triage (${report.commented.length} commented on); ${remaining} remain${capped}`,
-  ];
+    report.listed.length -
+    (report.move ? report.moved.length : report.commented.length) -
+    report.marked.length -
+    report.skipped.length;
+  const lines = [doneLine(report, remaining)];
   if (report.skipped.length > 0)
     lines.push(`changed during pacing, skipped: ${report.skipped.join(", ")}`);
   if (report.stopped !== null) lines.push(`stopped: ${report.stopped}`);
   else if (remaining > 0)
-    lines.push("the next run moves what remains past this run's cap");
+    lines.push(
+      `the next run ${report.move ? "moves" : "comments on"} what remains past this run's cap`,
+    );
   return lines;
 }
 

@@ -838,7 +838,7 @@ describe("buildLine", () => {
     ]);
   });
 
-  it("leaves a stuck record's need without the decisions another drive parked on the same target", () => {
+  it("gives a stuck record's need its own decision, not the decisions another drive parked on the same target", () => {
     const lost = { at: NOW, outcome: "lost" as const, detail: "no answer" };
     const stuck = record(
       { action: "followup", marker: 77, attempts: [lost, lost] },
@@ -855,7 +855,7 @@ describe("buildLine", () => {
     expect(line.needs).toEqual([
       expect.objectContaining({
         stuckRecord: stuck.record.id,
-        decisions: [],
+        decisions: [expect.objectContaining({ key: "launch" })],
       }),
     ]);
   });

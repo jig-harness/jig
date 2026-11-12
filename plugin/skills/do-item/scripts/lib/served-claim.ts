@@ -74,7 +74,7 @@ function nodeStateAllowed(
   if (!claimed) return waiting(issue.state.type);
   return (
     issue.state.name.toLowerCase() ===
-    tracker.stateName("in_progress").toLowerCase()
+    tracker.stateName("in_progress", issue)?.toLowerCase()
   );
 }
 
@@ -97,7 +97,7 @@ async function readNode(
     return { reason: `${current} is no longer open and not started` };
   if (hold(issue.labels, options))
     return { reason: `${current} needs a person to start` };
-  if (child && blockedStateRefusal(tracker, current, issue.state.name))
+  if (child && blockedStateRefusal(tracker, current, issue.state.name, issue))
     return { reason: `${current} is in the blocked state` };
   if (!child && !issue.labels.includes(options.epicLabel ?? "epic"))
     return { reason: `${current} is no longer an epic` };
@@ -226,7 +226,12 @@ async function passable(
     item.truncated.length === 0 &&
     item.assignee === null &&
     waiting(item.state.type) &&
-    blockedStateRefusal(tracker, key, item.state.name) === null &&
+    blockedStateRefusal(
+      tracker,
+      key,
+      item.state.name,
+      item.nativeType ?? null,
+    ) === null &&
     !(await isEpic(tracker, key, options)) &&
     !hold(item.labels, options) &&
     (await planHold(tracker, item, options)) === null
@@ -321,7 +326,7 @@ export async function claimServedIssue(
       reason: `${key} could not be read, so its state is not known to be in claim_from`,
     };
   return (
-    claimFromRefusal(tracker, key, start.state.name, claimFrom) ??
+    claimFromRefusal(tracker, key, start.state.name, claimFrom, start) ??
     claimServed(tracker, key, options)
   );
 }
@@ -336,7 +341,12 @@ async function stateBeforeAssignment(
   key: string,
   options: ServedClaim,
 ): Promise<ClaimResult | null> {
-  if (!options.claimFrom && tracker.stateName("blocked") === null) return null;
+  if (
+    tracker.adapter !== "jira" &&
+    !options.claimFrom &&
+    tracker.stateName("blocked") === null
+  )
+    return null;
   const current = await tracker.getIssue(key);
   if (current === null && !options.claimFrom) return null;
   if (current === null)
@@ -346,10 +356,23 @@ async function stateBeforeAssignment(
       why: "state",
       reason: `${key} could not be read, so its state is not known to be in claim_from`,
     };
+  if (tracker.stateName("in_progress", current) === null)
+    return {
+      outcome: "refused",
+      issue: key,
+      why: "state",
+      reason: `${key} has no in_progress state in its workflow`,
+    };
   return (
-    blockedStateRefusal(tracker, key, current.state.name) ??
+    blockedStateRefusal(tracker, key, current.state.name, current) ??
     (options.claimFrom
-      ? claimFromRefusal(tracker, key, current.state.name, options.claimFrom)
+      ? claimFromRefusal(
+          tracker,
+          key,
+          current.state.name,
+          options.claimFrom,
+          current,
+        )
       : null)
   );
 }
@@ -363,10 +386,10 @@ async function stateBeforeAssignment(
 function startStateRefusal(
   tracker: Tracker,
   key: string,
-  state: string,
+  issue: Issue,
   options: ServedClaim,
 ): ClaimResult | null {
-  const blocked = blockedStateRefusal(tracker, key, state);
+  const blocked = blockedStateRefusal(tracker, key, issue.state.name, issue);
   if (blocked && (options.ancestor || options.blocking))
     return {
       outcome: "stood_down",
@@ -375,7 +398,7 @@ function startStateRefusal(
     };
   if (blocked) return blocked;
   const outside = options.claimFrom
-    ? claimFromRefusal(tracker, key, state, options.claimFrom)
+    ? claimFromRefusal(tracker, key, issue.state.name, options.claimFrom, issue)
     : null;
   if (!outside || !(options.ancestor || options.blocking)) return outside;
   return {
@@ -402,7 +425,9 @@ async function startedStandDown(
     after.truncated.length > 0 ||
     hold(after.labels, options) ||
     after.state.name.toLowerCase() !==
-      tracker.stateName("in_progress").toLowerCase() ||
+      tracker
+        .stateName("in_progress", after.nativeType ?? null)
+        ?.toLowerCase() ||
     !only(await tracker.assignees(key), user)
   )
     return {
@@ -424,9 +449,12 @@ async function blockedNow(
   tracker: Tracker,
   key: string,
 ): Promise<ClaimResult | null> {
-  if (tracker.stateName("blocked") === null) return null;
+  if (tracker.adapter !== "jira" && tracker.stateName("blocked") === null)
+    return null;
   const current = await tracker.getIssue(key);
-  return current ? blockedStateRefusal(tracker, key, current.state.name) : null;
+  return current
+    ? blockedStateRefusal(tracker, key, current.state.name, current)
+    : null;
 }
 
 const refusedAssigned = (key: string, reason: string): ClaimResult => ({
@@ -487,7 +515,7 @@ async function claimServed(
   // Before the waiting guard, so a readable state outside claim_from is a
   // refusal for a direct claim whatever its type.
   const outside = before
-    ? startStateRefusal(tracker, key, before.state.name, options)
+    ? startStateRefusal(tracker, key, before, options)
     : null;
   if (outside) return outside;
   if (
@@ -501,6 +529,8 @@ async function claimServed(
       issue: key,
       reason: `${key} changed before it could be started; queue must refresh`,
     };
+  const target = tracker.stateName("in_progress", before);
+  if (target === null) return absentStartState(key, options);
   await tracker.transition(key, "in_progress");
   const standDown = await startedStandDown(tracker, key, user, options);
   if (standDown) return standDown;
@@ -508,6 +538,22 @@ async function claimServed(
     outcome: "claimed",
     issue: key,
     claimant: user,
-    state: tracker.stateName("in_progress"),
+    state: target,
   };
+}
+
+/** An unavailable target is a stand-down after an inherited assignment. */
+function absentStartState(key: string, options: ServedClaim): ClaimResult {
+  return options.ancestor || options.blocking
+    ? {
+        outcome: "stood_down",
+        issue: key,
+        reason: `${key} no longer has an in_progress state in its workflow after its assignment; queue must refresh`,
+      }
+    : {
+        outcome: "refused",
+        issue: key,
+        why: "state",
+        reason: `${key} has no in_progress state in its workflow`,
+      };
 }

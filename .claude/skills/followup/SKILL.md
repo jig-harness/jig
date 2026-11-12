@@ -406,7 +406,10 @@ take (a live check against a real service, a rollout to a consumer, an
 organization's setting, an operational action, a failed release gate) is
 reported here as owed, and filed where no item tracks it; it settles its
 arm and never makes the follow-up fail. Stop on a question only when an arm
-this pass may carry out cannot go on without the answer. When every arm is NOT OWED,
+this pass may carry out cannot go on without the answer; in a session the
+dispatcher started, frame that question as a decision and record it with
+the failed result, as its prompt says, so the person answers it in a word.
+When every arm is NOT OWED,
 say so in one line: an honest "nothing is owed" is a result. Routine local
 leftovers do not prevent this result or a done marker; do not turn them into a
 question for a person or a failed dispatch result. Then settle the
