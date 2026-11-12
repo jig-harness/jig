@@ -165,6 +165,7 @@ test("a launch that ran out of budget ends a command the runner started but had 
     { stdio: "ignore" },
   );
   let tree: Awaited<ReturnType<typeof captureProcessTree>> = null;
+  const recorded: boolean[] = [];
   try {
     const deadline = Date.now() + 20_000;
     while (Date.now() < deadline) {
@@ -178,6 +179,7 @@ test("a launch that ran out of budget ends a command the runner started but had 
       { registry: undefined, entry: "x" },
       {
         ...unanswering,
+        recordFailure: (witnessed) => recorded.push(witnessed),
         captureRunnerTree: () => captureProcessTree(runner.pid as number),
         endCaptured: async (captured, pid) =>
           captured.every((row) => row.pid === pid)
@@ -190,9 +192,18 @@ test("a launch that ran out of budget ends a command the runner started but had 
       "launched",
     );
     expect(status).toBe(1);
-    expect(await identityTargetsGone(tree as NonNullable<typeof tree>)).toBe(
-      true,
-    );
+    // Windows cannot freeze the runner, so it stays as the command's
+    // supervisor and the failure is recorded unwitnessed.
+    const outcome = byPlatform("Windows cannot freeze an unanswering runner", {
+      windows: "preserved",
+      posix: "ended",
+    });
+    expect(
+      (await identityTargetsGone(tree as NonNullable<typeof tree>))
+        ? "ended"
+        : "preserved",
+    ).toBe(outcome);
+    expect(recorded).toEqual([outcome === "ended"]);
   } finally {
     await signalIdentityTargets(
       (await captureProcessTree(runner.pid as number)) ?? [],
