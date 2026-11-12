@@ -23,6 +23,21 @@ describe("recordRuling's contextAt", () => {
     }
   });
 
+  it("refuses a parseable time that is not a real calendar time or has no zone", async () => {
+    for (const bad of [
+      "2026-02-30T12:00:00Z",
+      "2026-01-01T12:00:00",
+      "2026-01-01",
+      "2026-01-01T24:00:00Z",
+      "2026-01-01T12:00:00+25:00",
+    ])
+      expect(await run(bad)).toBe("exit 2");
+  });
+
+  it("records a past time with an offset", async () => {
+    expect(await run("2026-01-01T12:00:00.5+02:00")).toBe(0);
+  });
+
   it("refuses a time in the future", async () => {
     expect(await run("2099-01-01T00:00:00Z")).toBe("exit 2");
   });

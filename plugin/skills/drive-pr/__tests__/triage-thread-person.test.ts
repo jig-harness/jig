@@ -1,5 +1,5 @@
 /** A fresh accepted reply to a bot's thread never overrules a person's thread on its file. */
-import { writeFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "bun:test";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
@@ -215,6 +215,20 @@ describe("triage-thread.ts and a person's thread on the same file", () => {
     const r = runTriage(["PRRT_bot", "999"], ACCEPTED, dir, stateDir);
     expectSpawnExit(r, 5);
     expect(r.stderr).toContain("more than 100 comments");
+  });
+
+  it("does not read the rest of a long thread on another file", () => {
+    const { dir, stateDir } = writeFixtureDir();
+    botFinding(dir, [
+      {
+        id: "PRRT_long",
+        path: "docs/other.md",
+        truncated: true,
+        comments: [bot("x")],
+      },
+    ]);
+    expectSpawnExit(runTriage(["PRRT_bot", "999"], ACCEPTED, dir, stateDir), 0);
+    expect(existsSync(join(dir, "comment-pages-read"))).toBe(false);
   });
 
   it("reads the rest of a long thread, and refuses on a person's word past the first 100 comments", () => {

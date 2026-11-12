@@ -78,11 +78,38 @@ export function isOptionalRulings(v: unknown): boolean {
   return v === undefined || (Array.isArray(v) && v.every(isRuling));
 }
 
-/** Why a `contextAt` is not a past ISO 8601 time, or `null`. */
+const ISO_WITH_ZONE =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-]([01]\d|2[0-3]):[0-5]\d)$/;
+
+/** The instant of an ISO 8601 time with an explicit zone and a real calendar date, else `NaN`. */
+function strictTime(text: string): number {
+  const m = ISO_WITH_ZONE.exec(text);
+  if (m === null) return NaN;
+  const [y, mo, d, h, mi, s] = m.slice(1, 7).map(Number) as [
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+  ];
+  const day = new Date(Date.UTC(y, mo - 1, d));
+  const real =
+    day.getUTCFullYear() === y &&
+    day.getUTCMonth() === mo - 1 &&
+    day.getUTCDate() === d &&
+    h < 24 &&
+    mi < 60 &&
+    s < 60;
+  return real ? Date.parse(text) : NaN;
+}
+
+/** Why a `contextAt` is not a past ISO 8601 time with a zone, or `null`. */
 function contextFault(contextAt: unknown): string | null {
   if (contextAt === undefined) return null;
-  const at = typeof contextAt === "string" ? Date.parse(contextAt) : NaN;
-  if (Number.isNaN(at)) return "contextAt must be an ISO 8601 time when given";
+  const at = typeof contextAt === "string" ? strictTime(contextAt) : NaN;
+  if (Number.isNaN(at))
+    return "contextAt must be a calendar ISO 8601 time with an explicit zone when given";
   return at > Date.now() ? "contextAt must not be in the future" : null;
 }
 

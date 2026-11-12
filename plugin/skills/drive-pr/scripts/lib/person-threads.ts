@@ -328,7 +328,9 @@ async function readThreads(threadId: string): Promise<{
     if (read === null) return null;
     threads.push(...read.threads);
     if (read.endCursor === null) {
-      for (const t of threads) if (t.truncated) await readRemainingComments(t);
+      for (const t of threads)
+        if (t.truncated && t.id !== threadId && t.path === read.path)
+          await readRemainingComments(t);
       return { path: read.path, viewer: read.viewer, threads };
     }
     after = read.endCursor;

@@ -116,6 +116,7 @@ case "$*" in
     fi
     exit 0 ;;
   *'comments(first:100, after:'*)
+    echo read >> "$F/comment-pages-read"
     [ -f "$F/comments-more.json" ] && { cat "$F/comments-more.json"; exit 0; }
     echo "gh-stub: simulated comment page failure" >&2
     exit 1 ;;
