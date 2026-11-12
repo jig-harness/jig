@@ -609,6 +609,11 @@ export function gitHubTracker(client: Client): Tracker {
   const tracker: CoreTracker = {
     adapter: "github",
     team: slug(home),
+    readinessKey: JSON.stringify([
+      ctx.board?.url ?? null,
+      ctx.board?.statusField ?? null,
+      model.stateLabels,
+    ]),
     stateName: (state) => model.stateName(state),
 
     async reach(signal) {

@@ -33,7 +33,7 @@ import {
   otherRepoLabel,
   unlabeledOutcome,
 } from "./served-repo.ts";
-import { trackerScope } from "./served-reads.ts";
+import { poolScope } from "./served-reads.ts";
 import { openBlockers } from "./served-pull.ts";
 
 export interface PoolReading {
@@ -108,7 +108,7 @@ function moverReader(
   bound: FacetBound | undefined,
 ): (issue: PoolIssue) => Promise<Assigner> {
   return async (issue) => {
-    const key = `${trackerScope(tracker)}:pool:${issue.identifier}`;
+    const key = `${poolScope(tracker)}:pool:${issue.identifier}`;
     const kept = cache?.get<{ updatedAt: string; by: Assigner }>(key);
     if (issue.updatedAt && kept?.updatedAt === issue.updatedAt) return kept.by;
     const asked = stateChangedBy.call(tracker, issue.identifier);
@@ -208,12 +208,36 @@ async function blockerHold(
 
 /** The keys of an item's open blockers, whatever relations the tracker reads as `blocked_by` (on Jira, every configured link type). */
 async function openBlockerKeys(
-  tracker: Tracker,
+  read: (key: string) => Promise<PoolIssue | null>,
   relations: ReadonlyArray<IssueRelation>,
 ): Promise<string[]> {
-  return (await openBlockers((k) => tracker.poolIssue(k), relations)).map(
-    (b) => b.key,
-  );
+  return (await openBlockers(read, relations)).map((b) => b.key);
+}
+
+/** A blocker's keyed read that names the blocker when it fails (a rate limit passes as it is). */
+function namedRead(
+  tracker: Tracker,
+  memo?: Map<string, Promise<PoolIssue | null>>,
+): (key: string) => Promise<PoolIssue | null> {
+  const ask = async (key: string) => {
+    try {
+      return await tracker.poolIssue(key);
+    } catch (error) {
+      if (isRateLimited(error)) throw error;
+      if (error instanceof Error)
+        error.message = `blocker ${key}: ${error.message}`;
+      throw error;
+    }
+  };
+  return (key) => {
+    if (memo === undefined) return ask(key);
+    let kept = memo.get(key);
+    if (kept === undefined) {
+      kept = ask(key);
+      memo.set(key, kept);
+    }
+    return kept;
+  };
 }
 
 /**
@@ -226,8 +250,10 @@ function blockerReader(
   cache: PickupReads | undefined,
   bound: FacetBound | undefined,
 ): (issue: PoolIssue) => Promise<string[]> {
+  // Shared by one reading only, so a blocker that closes is seen next tick.
+  const blockerReads = namedRead(tracker, new Map());
   return async (issue) => {
-    const key = `${trackerScope(tracker)}:pool-relations:${issue.identifier}`;
+    const key = `${poolScope(tracker)}:pool-relations:${issue.identifier}`;
     const kept = cache?.get<{
       updatedAt: string;
       relations: IssueRelation[];
@@ -241,7 +267,7 @@ function blockerReader(
       if (issue.updatedAt)
         cache?.set(key, { updatedAt: issue.updatedAt, relations });
     }
-    const open = openBlockerKeys(tracker, relations);
+    const open = openBlockerKeys(blockerReads, relations);
     return bound === undefined ? open : within(open, bound);
   };
 }
@@ -331,10 +357,16 @@ export async function readPoolPickups(
   try {
     // The claim assigns the item to the credential's user: it must be the
     // identity the pool is attributed to and monitored under.
-    const [factory, viewer] = await Promise.all([
-      tracker.user(identity),
-      tracker.viewer(),
-    ]);
+    if (ended(bound))
+      return unread(
+        tracker,
+        names,
+        `the ready pool (${names}) could not be read: the tick's deadline passed before the read could start`,
+      );
+    const lookup = Promise.all([tracker.user(identity), tracker.viewer()]);
+    const [factory, viewer] = await (bound === undefined
+      ? lookup
+      : within(lookup, bound));
     if (factory.id !== viewer.id)
       return unread(
         tracker,
@@ -433,7 +465,7 @@ export async function freshPoolPickup(
   }
   try {
     const open = await openBlockerKeys(
-      tracker,
+      namedRead(tracker),
       await tracker.listRelations(key),
     );
     const waiting = queueHold({ issue, blockers: open, unblocks: 0 }, policy);

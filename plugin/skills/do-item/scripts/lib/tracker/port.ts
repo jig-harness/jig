@@ -619,6 +619,13 @@ export interface Tracker {
    * alike. Absent when the adapter applies none.
    */
   readonly configKey?: string;
+  /**
+   * Identifies the settings that decide who made an item ready and what
+   * blocks it (a GitHub board, Jira's link types): a reading kept under one
+   * key is valid for another tracker with the same key only. Absent when
+   * the adapter has none.
+   */
+  readonly readinessKey?: string;
   /** The tracker's own name for a canonical state; `null` for an optional state left unset. */
   stateName: StateNameOf;
   /**

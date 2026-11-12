@@ -113,6 +113,7 @@ describe("GitHub adapter: ready-pool reads", () => {
   it("names who labelled the issue into its state, trusted only with write access", async () => {
     const events = timeline([
       labelled("Backlog", "earlier", "2026-10-01T00:00:00Z"),
+      unlabelled("Backlog", "earlier", "2026-10-01T12:00:00Z"),
       labelled("Backlog", "dana", "2026-10-02T00:00:00Z"),
       labelled("bug", "someone", "2026-10-03T00:00:00Z"),
     ]);
@@ -163,6 +164,19 @@ describe("GitHub adapter: ready-pool reads", () => {
     await expect(poolReads(cut).movedBy("#5")).rejects.toThrow(
       "beyond the last 100 events",
     );
+  });
+
+  it("ignores a lower state label's edit while a higher one holds the state", async () => {
+    const events = timeline([
+      labelled("Backlog", "dana", "2026-10-01T00:00:00Z"),
+      labelled("Triage", "stranger", "2026-10-02T00:00:00Z"),
+      unlabelled("Triage", "stranger", "2026-10-03T00:00:00Z"),
+    ]);
+    expect(await poolReads(on(["Backlog"], events).t).movedBy("#5")).toEqual({
+      id: "dana",
+      name: "dana",
+      trusted: true,
+    });
   });
 
   it("throws when no event moved the issue there, or the mover's account is gone", async () => {

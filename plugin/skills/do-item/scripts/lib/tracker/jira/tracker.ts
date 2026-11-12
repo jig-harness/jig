@@ -311,6 +311,7 @@ export function jiraTracker(client: Client): Tracker {
     adapter: "jira",
     team: project,
     instance: client.site,
+    readinessKey: JSON.stringify(settings.linkTypes),
     stateName: (state) => model.stateName(state),
 
     async reach(signal) {
