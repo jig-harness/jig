@@ -292,10 +292,11 @@ export function withFacets(
   }
 
   /** What the core would file `issue` as, after the same facet conversion as the write. */
+  const coreFiledAs = rest.filedAs?.bind(rest);
   const filedAs =
-    rest.filedAs === undefined
+    coreFiledAs === undefined
       ? undefined
-      : (issue: NewIssue) => rest.filedAs!(forCore(issue));
+      : (issue: NewIssue) => coreFiledAs(forCore(issue));
 
   /** The label changes a patch's label-kept facets make, from the issue's labels. */
   async function facetLabels(
