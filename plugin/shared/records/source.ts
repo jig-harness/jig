@@ -1,11 +1,10 @@
 /** A development checkout must use isolated state, never the operator's live databases. */
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, lstatSync, readlinkSync, realpathSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import {
   basename,
   dirname,
   isAbsolute,
-  join,
   relative,
   resolve,
   sep,
@@ -61,14 +60,42 @@ function systemHome(): Outcome<string, "source-state"> {
   return ok(operatorHome);
 }
 
+/** An impossible descendant of a file is absent, just like a missing component. */
+function entryAt(path: string) {
+  try {
+    return lstatSync(path, { throwIfNoEntry: false });
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOTDIR")
+      return undefined;
+    throw error;
+  }
+}
+
 /** Resolve existing ancestors as well, so a symlink cannot alias the live state directory. */
-function canonical(path: string): string {
-  const absolute = resolve(path);
-  if (existsSync(absolute)) return realpathSync(absolute);
+function canonical(path: string, links = new Set<string>()): string {
+  // Preserve parent segments until the operating system has followed links:
+  // lexical normalization of alias/../file can name a different database.
+  const absolute = isAbsolute(path) ? path : `${process.cwd()}${sep}${path}`;
+  const entry = entryAt(absolute);
+  if (entry?.isSymbolicLink()) {
+    const parent = canonical(dirname(absolute), links);
+    const identity = `${parent}${sep}${basename(absolute)}`;
+    // Delegate a repeated link to the platform's cycle detection; its I/O
+    // error is caught by the caller's isolation check.
+    if (links.has(identity)) return realpathSync.native(absolute);
+    links.add(identity);
+    const target = readlinkSync(absolute);
+    return canonical(
+      isAbsolute(target) ? target : `${parent}${sep}${target}`,
+      links,
+    );
+  }
+  // Bun's non-native realpath normalizes parent segments before following links.
+  if (entry !== undefined) return realpathSync.native(absolute);
   const parent = dirname(absolute);
   return parent === absolute
     ? absolute
-    : join(canonical(parent), basename(absolute));
+    : `${canonical(parent, links)}${sep}${basename(absolute)}`;
 }
 
 export function sourceDatabaseRefusal(
@@ -85,7 +112,7 @@ export function sourceDatabaseRefusal(
     `${path}: cannot verify development state isolation`,
     () =>
       relative(
-        canonical(join(operator.value, ".local", "state", "jig")),
+        canonical(`${operator.value}${sep}.local${sep}state${sep}jig`),
         canonical(path),
       ),
   );
