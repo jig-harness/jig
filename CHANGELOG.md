@@ -394,6 +394,59 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.219.0] - 2026-11-12
+
+### Added
+
+- A change note's entry can say what the change asks of the people who use
+  the release, as a **consumer action** after its description:
+  `**Consumer action:** required at configuration. Rename the key.`, with
+  the strength (`required` or `advised`), the levels (`machine`,
+  `configuration`, `instructions`), an instruction of at most 400 characters
+  and optional `**Detect:**` hints (`config:`, `text:`, `file:`,
+  `plugin-source:`); `none.` says it asks nothing and `retracts <id>.`
+  withdraws an earlier one. `/jig:changelog`'s check now refuses a malformed
+  declaration in any note, and with the new `changelog.consumer_actions: true`
+  it also requires one on every breaking entry a branch adds and refuses a
+  near-miss marker or a `**Detect:**` with no declaration. The form is in
+  the [changelog skill's guide](plugin/skills/changelog/README.md#consumer-actions).
+  **Consumer action:** none.
+- `changelog.consumer_actions_record` names a file the release step derives
+  from the changelog's released sections in every release: each consumer
+  action with its id, for a tool to read without the changelog.
+  `consumer-actions-record.ts --check` fails when the committed file is not
+  what the changelog derives, and `--write` regenerates it. The plugin now
+  ships Jig's own record, `plugin/consumer-actions.json`, which lists the
+  actions of every release from this one on. **Consumer action:** none.
+
+### Fixed
+
+- `/jig:jig`'s bug reporter now creates the Jig bug it files with the issue
+  type Bug in the same call, instead of in an edit afterwards, and files it
+  with no `bug`, size or priority label, which Jig's repository keeps in
+  fields. A draft that carries such a label (a type, a priority or a size) has
+  it dropped, and the reporter says which. Where the account cannot set issue
+  types the report is still filed and the reporter says the type was not set.
+
+## [0.218.1] - 2026-11-12
+
+### Fixed
+
+- An unattended review drive no longer reverses what a person decided in a
+  review thread. A bot's finding that argued against a person's ruling
+  could be accepted and fixed once the person's thread was resolved,
+  since the triage only looked for an earlier outcome token, and a person's
+  thread answered with a plain "done" carries none. Now a person's thread,
+  open or resolved, binds every later round. A finding whose fix would
+  undo, narrow or contradict it goes to the review arbiter. The arbiter
+  rejects it when it re-argues what the person settled, and escalates it
+  under `human-thread` when it raises something the person did not settle.
+  `drive-pr`'s `triage-thread.ts` refuses (exit 5) a fresh `accepted` reply
+  to a bot's thread on a file that carries a person's thread, printing the
+  person's words, until the arbiter's `fix-now` ruling on that thread is
+  recorded with the time its context was gathered (`contextAt`) and no person has spoken or edited a comment on the file since. The triage rubric, the arbiter and M7's human-in-the-loop
+  registry template say so.
+
 ## [0.218.0] - 2026-11-12
 
 ### Added
@@ -7538,7 +7591,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.218.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.219.0...HEAD
+[0.219.0]: https://github.com/jig-harness/jig/compare/v0.218.1...v0.219.0
+[0.218.1]: https://github.com/jig-harness/jig/compare/v0.218.0...v0.218.1
 [0.218.0]: https://github.com/jig-harness/jig/compare/v0.217.0...v0.218.0
 [0.217.0]: https://github.com/jig-harness/jig/compare/v0.216.0...v0.217.0
 [0.216.0]: https://github.com/jig-harness/jig/compare/v0.215.0...v0.216.0
