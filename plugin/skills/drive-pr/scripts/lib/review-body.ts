@@ -114,6 +114,9 @@ interface ParseState extends ParsedReviewBody {
   fence: string | null;
   /** The length of the backtick run of a code span still open, else 0. */
   span: number;
+  /** The body's lines and the index of the one being read. */
+  lines: string[];
+  index: number;
   section: Section | null;
   group: { path: string; depth: number } | null;
   entry: Open | null;
@@ -160,18 +163,61 @@ function withoutCode(st: ParseState, text: string): string {
   let out = "";
   let i = 0;
   while (i < text.length) {
+    const c = text[i];
+    if (c === "`") {
+      i = takeRun(st, text, i);
+    } else if (st.span === 0 && c === "\\" && i + 1 < text.length) {
+      // A backslash escape: the next character is literal, a backtick included.
+      if (text[i + 1] !== "`") out += text.slice(i, i + 2);
+      i += 2;
+    } else {
+      if (st.span === 0) out += c;
+      i++;
+    }
+  }
+  return out;
+}
+
+/** Reads the backtick run at `i`, opening or closing a span; returns its end. */
+function takeRun(st: ParseState, text: string, i: number): number {
+  let j = i;
+  while (text[j] === "`") j++;
+  // An opener with no closer in its paragraph is literal text.
+  if (st.span === 0) {
+    if (hasCloser(st, text, j, j - i)) st.span = j - i;
+  } else if (st.span === j - i) st.span = 0;
+  return j;
+}
+
+/** Whether a backtick run of `size` follows `from` in `text` or its paragraph. */
+function hasCloser(
+  st: ParseState,
+  text: string,
+  from: number,
+  size: number,
+): boolean {
+  if (hasRun(text, from, size)) return true;
+  for (let k = st.index + 1; k < st.lines.length; k++) {
+    const next = (st.lines[k] ?? "").replace(QUOTE, "").trim();
+    if (next === "" || FENCE.test(next)) return false;
+    if (hasRun(next, 0, size)) return true;
+  }
+  return false;
+}
+
+function hasRun(text: string, from: number, size: number): boolean {
+  let i = from;
+  while (i < text.length) {
     if (text[i] !== "`") {
-      if (st.span === 0) out += text[i];
       i++;
       continue;
     }
     let j = i;
     while (text[j] === "`") j++;
-    if (st.span === 0) st.span = j - i;
-    else if (st.span === j - i) st.span = 0;
+    if (j - i === size) return true;
     i = j;
   }
-  return out;
+  return false;
 }
 
 function closesFence(open: string, fence: string, rest: string): boolean {
@@ -254,6 +300,20 @@ function appendText(
   else if (!SCAFFOLD.test(trimmed)) entry.text.push(line);
 }
 
+/** Opens the section or block a line heads; false for a line that heads none. */
+function opensStructure(
+  st: ParseState,
+  line: { markup: string; trimmed: string; quoted: boolean },
+  continuesSpan: boolean,
+): boolean {
+  if (opensSection(st, line.markup.trim(), line.quoted)) return true;
+  return (
+    !continuesSpan &&
+    st.section !== null &&
+    opensBlock(st, st.section, line.trimmed)
+  );
+}
+
 function step(st: ParseState, raw: string): void {
   const quoted = QUOTE.test(raw);
   const line = raw.replace(QUOTE, "").trimEnd();
@@ -262,14 +322,20 @@ function step(st: ParseState, raw: string): void {
   if (fenced(st, line, trimmed)) return;
   if (trimmed === "") st.span = 0;
   // Code spans are prose: neither their tags nor their markers are layout.
+  // A line that continues a span is prose throughout, so it opens no block;
+  // one that starts outside any span may open entries by their backticked
+  // locations, which only the raw text shows.
+  const continuesSpan = st.span !== 0;
   const markup = withoutCode(st, trimmed);
   const id = markup.trim().match(ENTRY_ID)?.[1];
   if (id !== undefined && !st.ids.includes(id)) st.ids.push(id);
   const opens = markup.match(/<details\b/g)?.length ?? 0;
   st.depth += opens;
-  const structural =
-    opensSection(st, trimmed, quoted && opens === 0) ||
-    (st.section !== null && opensBlock(st, st.section, trimmed));
+  const structural = opensStructure(
+    st,
+    { markup, trimmed, quoted: quoted && opens === 0 },
+    continuesSpan,
+  );
   if (!structural && opens === 0) appendText(st, line, trimmed, id);
   st.depth -= markup.match(/<\/details>/g)?.length ?? 0;
   leaveClosed(st);
@@ -291,11 +357,14 @@ export function parseCodeRabbitBody(body: string): ParsedReviewBody {
     depth: 0,
     fence: null,
     span: 0,
+    lines: body.split(/\r?\n/),
+    index: 0,
     section: null,
     group: null,
     entry: null,
   };
-  for (const raw of body.split(/\r?\n/)) step(st, raw);
+  for (st.index = 0; st.index < st.lines.length; st.index++)
+    step(st, st.lines[st.index] ?? "");
   closeEntry(st);
   return { entries: st.entries, declared: st.declared, ids: st.ids };
 }

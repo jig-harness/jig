@@ -337,4 +337,32 @@ describe("reviewBodyReport", () => {
     expect(parsed.entries[0]?.id).not.toBe("deadbeef");
     expect(parsed.entries[0]?.text).toContain("Do not emit");
   });
+
+  it("reads an escaped or unmatched backtick as text, not a span", () => {
+    const base = fixture("current-outside-diff");
+    const plain = parseCodeRabbitBody(base);
+    for (const quote of ["Use a literal \\` here.", "Use a lone ` here.\n"]) {
+      const parsed = parseCodeRabbitBody(
+        base.replace(
+          "The separator treats",
+          `${quote}\n<!-- cr-comment:v1:deadbeef -->\nThe separator treats`,
+        ),
+      );
+      expect(parsed.ids).toContain("deadbeef");
+      expect(parsed.ids).toEqual(expect.arrayContaining(plain.ids));
+    }
+  });
+
+  it("opens no section from a heading quoted in a multiline code span", () => {
+    const base = fixture("current-outside-diff");
+    const plain = parseCodeRabbitBody(base);
+    const parsed = parseCodeRabbitBody(
+      base.replace(
+        "The separator treats",
+        "Quote ``\n**Nitpick comments: 2**\n`` here. The separator treats",
+      ),
+    );
+    expect(parsed.declared).toEqual(plain.declared);
+    expect(parsed.ids).toEqual(plain.ids);
+  });
 });
