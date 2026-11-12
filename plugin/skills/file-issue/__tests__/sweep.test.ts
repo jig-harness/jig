@@ -1,4 +1,5 @@
 import { failureLine } from "../scripts/lib/pace.ts";
+import { sweepSettings } from "../scripts/lib/sweep-settings.ts";
 import { describe, expect, it } from "bun:test";
 import { pacedWriter, WriteRefused } from "../scripts/lib/pace.ts";
 import {
@@ -485,4 +486,132 @@ it("forwards cancellation through comment and eligibility reads", async () => {
   expect(report.moved).toEqual([]);
   expect(repo.writes).toEqual([]);
   expect(observed).toEqual([controller.signal, controller.signal]);
+});
+
+describe("the sweep with move: false", () => {
+  it("comments on an incomplete todo issue and keeps its state, and a second run neither comments again nor counts it", async () => {
+    const repo = setup();
+    const { tracker } = repo.view(LABEL_SECTION);
+    const opts = {
+      apply: true,
+      move: false,
+      retired: none,
+      limits: { moves: 1 },
+    };
+    const first = await sweep(tracker, {
+      ...opts,
+      writer: pacedWriter(fakeClock()),
+    });
+    expect(first.commented).toEqual(["#10"]);
+    expect(first.moved).toEqual([]);
+    expect(repo.get("#10").state).toBe("backlog");
+    expect(repo.get("#10").comments).toEqual([
+      sweepComment(first.listed[0] as (typeof first.listed)[0], false),
+    ]);
+    expect(repo.get("#10").comments[0]).toContain("left it where it is");
+    expect(sweepLines(first)).toContain(
+      "commented on 1, moved none (file_issue.sweep.move is false); 0 already commented on; 2 remain",
+    );
+    // The commented issue stays in the listing; the budget of one goes to the next.
+    const second = await sweep(tracker, {
+      ...opts,
+      writer: pacedWriter(fakeClock()),
+    });
+    expect(second.listed.map((i) => i.identifier)).toContain("#10");
+    expect(second.marked).toEqual(["#10"]);
+    expect(second.commented).toEqual(["#11"]);
+    const third = await sweep(tracker, {
+      ...opts,
+      writer: pacedWriter(fakeClock()),
+    });
+    expect(third.marked).toEqual(["#10", "#11"]);
+    expect(third.commented).toEqual(["#15"]);
+    expect(repo.get("#15").state).toBe("unstarted");
+    expect(repo.writes.map((w) => `${w.kind} ${w.key}`)).toEqual([
+      "comment #10",
+      "comment #11",
+      "comment #15",
+    ]);
+    const done = await sweep(tracker, {
+      ...opts,
+      writer: pacedWriter(fakeClock()),
+    });
+    expect(done.commented).toEqual([]);
+    expect(done.marked).toEqual(["#10", "#11", "#15"]);
+    expect(repo.writes).toHaveLength(3);
+    expect(repo.get("#13").comments).toEqual([]);
+  });
+
+  it("reports without --yes and writes nothing", async () => {
+    const repo = setup();
+    const { tracker } = repo.view(LABEL_SECTION);
+    const report = await sweep(tracker, {
+      apply: false,
+      move: false,
+      retired: none,
+      writer: pacedWriter(fakeClock()),
+    });
+    expect(repo.writes).toEqual([]);
+    expect(sweepLines(report).at(-1)).toBe(
+      "report only: nothing written (--yes comments on them, file_issue.sweep.move being false)",
+    );
+  });
+
+  it("comments again when what the issue lacks has changed since its marker", async () => {
+    const repo = setup();
+    const { tracker } = repo.view(LABEL_SECTION);
+    repo
+      .get("#10")
+      .comments.push("<!-- jig:issue-fields missing=size -->\nold");
+    const report = await sweep(tracker, {
+      apply: true,
+      move: false,
+      retired: none,
+      writer: pacedWriter(fakeClock()),
+    });
+    expect(report.commented).toEqual(["#10", "#11", "#15"]);
+    expect(report.marked).toEqual([]);
+  });
+
+  it("classifies marked issues past the cap instead of counting them as remaining", async () => {
+    const repo = setup();
+    const { tracker } = repo.view(LABEL_SECTION);
+    const opts = { apply: true, move: false, retired: none };
+    await sweep(tracker, {
+      ...opts,
+      limits: { moves: 3 },
+      writer: pacedWriter(fakeClock()),
+    });
+    const writes = repo.writes.length;
+    const again = await sweep(tracker, {
+      ...opts,
+      limits: { moves: 1 },
+      writer: pacedWriter(fakeClock()),
+    });
+    expect(again.commented).toEqual([]);
+    expect(again.marked).toEqual(["#10", "#11", "#15"]);
+    expect(repo.writes).toHaveLength(writes);
+    expect(sweepLines(again).join("\n")).toContain(
+      "3 already commented on; 0 remain",
+    );
+  });
+});
+
+describe("the sweep's settings", () => {
+  it("refuse an explicit null instead of reading it as the default", () => {
+    expect(sweepSettings({}).move).toBe(true);
+    expect(() => sweepSettings({ file_issue: null })).toThrow();
+    expect(() => sweepSettings({ file_issue: { sweep: null } })).toThrow();
+    expect(() =>
+      sweepSettings({ file_issue: { sweep: { move: null } } }),
+    ).toThrow();
+    expect(sweepSettings({ file_issue: { sweep: { move: false } } }).move).toBe(
+      false,
+    );
+  });
+  it("refuse a timestamp where a mapping belongs", () => {
+    const date = new Date("2026-11-12");
+    expect(() => sweepSettings({ file_issue: date })).toThrow();
+    expect(() => sweepSettings({ file_issue: { sweep: date } })).toThrow();
+  });
 });

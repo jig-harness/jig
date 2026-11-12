@@ -16,14 +16,15 @@ const scratch = mkdtempSync(join(tmpdir(), "check-fields-"));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 let n = 0;
 
-async function run(args: string[], exit: number): Promise<string> {
+async function run(args: string[], exit: number, extra = ""): Promise<string> {
   const root = join(scratch, `repo-${n++}`);
   mkdirSync(join(root, ".config"), { recursive: true });
   mkdirSync(join(root, ".git"));
   mkdirSync(join(root, "home"));
   writeFileSync(
     join(root, ".config", "jig.yaml"),
-    "issue_tracker:\n  adapter: github\n  github:\n    repository: owner/repo\n",
+    "issue_tracker:\n  adapter: github\n  github:\n    repository: owner/repo\n" +
+      extra,
   );
   writeFileSync(join(root, "record.json"), '{"kind":"something-else"}\n');
   const proc = Bun.spawn(scriptArgv(script, ...args), {
@@ -77,6 +78,23 @@ describe("check-fields.ts", () => {
   ] as const)
     test(`refuses ${what} as usage, before writing anything`, async () => {
       const stderr = await run([...args], 2);
+      expect(stderr).toContain(says);
+    });
+
+  for (const [what, section, says] of [
+    [
+      "a sweep.move that is not true or false",
+      "file_issue:\n  sweep:\n    move: sometimes\n",
+      "file_issue.sweep.move must be true or false",
+    ],
+    [
+      "an unknown sweep field",
+      "file_issue:\n  sweep:\n    moves: false\n",
+      "file_issue.sweep.moves is not a field",
+    ],
+  ] as const)
+    test(`refuses ${what} before reading the tracker`, async () => {
+      const stderr = await run(["check"], 2, section);
       expect(stderr).toContain(says);
     });
 });
