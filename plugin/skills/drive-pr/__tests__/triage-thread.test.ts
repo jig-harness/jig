@@ -12,11 +12,13 @@ import {
   postedCount,
   resolvedCount,
   runTriage,
+  useTriageForge,
   writeFixtureDir,
   writeNode,
   writeHumanFinding,
 } from "./triage-thread-fixtures.ts";
 
+useTriageForge();
 describe("triage-thread.ts", () => {
   it("posts and holds a fresh accepted reply, in one invocation", () => {
     const { dir, stateDir } = writeFixtureDir();
@@ -81,9 +83,8 @@ describe("triage-thread.ts", () => {
 
   it("invoking it twice end-to-end produces exactly one reply and a correct durable record", () => {
     const { dir, stateDir } = writeFixtureDir();
-    // --moot-pending-push: exercises the HOLD path with an outcome other than
-    // accepted — see the dedicated moot-default-resolves tests below for the
-    // no-flag case.
+    // --moot-pending-push: the HOLD path with an outcome other than accepted;
+    // the moot-default-resolves tests below cover the no-flag case.
     const body = "**moot** — the branch this anchored to was deleted.";
     writeNode(dir, { comments: [] });
 

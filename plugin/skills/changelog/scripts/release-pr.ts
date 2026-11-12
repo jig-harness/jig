@@ -321,6 +321,9 @@ function releaseWritten(
   const own = new Set([
     config.file,
     ...(version.kind === "files" ? version.files.map((f) => f.path) : []),
+    ...(config.consumerActionsRecord === null
+      ? []
+      : [config.consumerActionsRecord]),
     ...stamped,
   ]);
   return (path) => own.has(path) || isNoteFile(notes, path);
