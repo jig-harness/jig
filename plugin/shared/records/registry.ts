@@ -85,7 +85,7 @@ const STATE_DIR = "~/.local/state/jig/drive-pr/<clone>/";
 const DRIVE_DB_FILE = "~/.local/state/jig/drive-pr/state.sqlite";
 const DISPATCH_DIR = "~/.local/state/jig/dispatch/";
 /** The dispatcher's database schema version (`dispatch/lib/state.ts`'s `SCHEMA_VERSION`). */
-const DISPATCH_DB = 22;
+const DISPATCH_DB = 23;
 /** The drive's database schema version (`skills/drive-pr/scripts/lib/state/db.ts`'s `DRIVE_DB_VERSION`). */
 const DRIVE_DB = 5;
 const RRC = "skills/resolve-review-comments/scripts/";
@@ -212,6 +212,11 @@ const DRIVE_STATE: RecordKind[] = [
 
 const DISPATCHER: RecordKind[] = [
   dispatchTable("dispatch-launch", "dispatch/lib/launches.ts", "launches"),
+  dispatchTable(
+    "dispatch-pickup-claim",
+    "dispatch/lib/pickup-claim.ts",
+    "pickup_claims",
+  ),
   dispatchTable(
     "dispatch-thread-sample",
     "dispatch/lib/expectations.ts",
@@ -826,6 +831,15 @@ const FORGE: RecordKind[] = [
 ];
 
 const TRACKER: RecordKind[] = [
+  {
+    name: "do-item-pr-association",
+    medium: "tracker",
+    owner: "skills/do-item/scripts/lib/linked-pr.ts",
+    foreign: "the session following the do-item skill",
+    at: "the opening comment on an item",
+    markers: ["do-item-pr"],
+    version: 0,
+  },
   plain(
     "tracker",
     "tracker-claim",

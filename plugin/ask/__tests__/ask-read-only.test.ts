@@ -17,7 +17,11 @@ import {
   writeRecord,
 } from "../../dispatch/lib/launches.ts";
 import { writeRow } from "../../dispatch/lib/log.ts";
-import { closeStateDb, statePath } from "../../dispatch/lib/state.ts";
+import {
+  closeStateDb,
+  SCHEMA_VERSION,
+  statePath,
+} from "../../dispatch/lib/state.ts";
 import { closeDatabase } from "../../shared/records/db.ts";
 import {
   DRIVE_DB_VERSION,
@@ -28,6 +32,7 @@ import { putLock } from "../../skills/drive-pr/__tests__/state-rows.ts";
 import { stoppedLedger } from "../../dispatch/__tests__/fixtures.ts";
 import { ledgerBody } from "../../skills/drive-pr/__tests__/ledger-forge-fixtures.ts";
 import type { AskAnswer } from "../lib/answer.ts";
+import { launchesWhere } from "../lib/local.ts";
 import {
   type AskWorld,
   askWorld,
@@ -222,6 +227,34 @@ describe("jig ask against the dispatcher's database", () => {
     );
     expect(answer.last).toBeNull();
     expect(readFileSync(file).equals(before)).toBe(true);
+  });
+
+  it("reads launch records from a pre-pickup-claims schema without migrating it", async () => {
+    const w = world();
+    seed(w);
+    const file = statePath(w.state);
+    edit(
+      file,
+      "DROP TABLE pickup_claims",
+      `DELETE FROM db_migrations WHERE version = ${SCHEMA_VERSION}`,
+      `PRAGMA user_version = ${SCHEMA_VERSION - 1}`,
+    );
+    const before = readFileSync(file);
+
+    const answer = await askNine(w);
+    const launches = await launchesWhere(w.state, () => true);
+    expect(launches.ok && launches.value.records).toContainEqual(
+      expect.objectContaining({
+        record: expect.objectContaining({ id: RECORD }),
+      }),
+    );
+    expect(answer.sources.records).toContainEqual({
+      record: "dispatch-launch",
+      read: true,
+      local: true,
+    });
+    expect(readFileSync(file).equals(before)).toBe(true);
+    expect(userVersion(file)).toBe(SCHEMA_VERSION - 1);
   });
 });
 

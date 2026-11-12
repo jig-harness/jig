@@ -99,6 +99,7 @@ import {
   uncountedNote,
 } from "./lib/change-size.ts";
 import { prDiffContext, type Signal } from "./lib/pr-diff-context.ts";
+import { linkKeyFor } from "./lib/link-key.ts";
 import { trackerConfigFrom } from "./lib/tracker/config.ts";
 import {
   ANY_TEAM_KEY,
@@ -656,7 +657,10 @@ async function buildOpenPlan(opts: {
     title: planTitle(title, policy.titlePattern, issue, opts.issueJson),
     body: {
       templates: findPrTemplates(root),
-      issueLink: issue === null ? null : issueLinkLine(policy.issueLink, issue),
+      issueLink:
+        issue === null
+          ? null
+          : issueLinkLine(policy.issueLink, linkKeyFor(root, issue)),
     },
     size: {
       changedLines,

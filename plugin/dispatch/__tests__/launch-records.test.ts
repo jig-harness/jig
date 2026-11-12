@@ -553,6 +553,37 @@ describe("retention", () => {
       "20260101T000000Z-aaaaaaaa",
     ]);
   });
+
+  it("keeps a batch pickup for its claimed secondary member after a newer primary pickup", () => {
+    const dir = root();
+    const batch = ended(
+      record("20260101T000000Z-aaaaaaaa", {
+        action: "pickup",
+        pr: null,
+        item: "#1",
+        batchItems: [
+          { key: "#1", person: "alex" },
+          { key: "#2", person: "alex" },
+        ],
+        claimedItems: ["#2"],
+      }),
+      1,
+      "2026-01-01T00:00:00.000Z",
+    );
+    const laterPrimary = ended(
+      record("20260201T000000Z-bbbbbbbb", {
+        action: "pickup",
+        pr: null,
+        item: "#1",
+        createdAt: "2026-02-01T00:00:00.000Z",
+      }),
+      1,
+      "2026-02-01T00:00:00.000Z",
+    );
+    expect(
+      pruneLaunches([batch, laterPrimary], Date.parse("2027-01-01"), 7, dir),
+    ).toEqual([]);
+  });
 });
 
 describe("reading records", () => {

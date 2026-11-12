@@ -211,6 +211,7 @@ async function readPerson(
       title: i.title,
       url: i.url,
       state: i.state.name,
+      served: true as const,
     }));
     // Claims are monitored either way; an invalid scope only starts nothing.
     if (options.repoScope?.invalid !== undefined) return got;

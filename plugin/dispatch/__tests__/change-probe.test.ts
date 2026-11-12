@@ -134,6 +134,7 @@ function machine(changeProbe = true): MachineConfig {
     dashboardListen: null,
     dashboardRequireToken: true,
     dashboardAllowedHosts: [],
+    dashboardFront: null,
     sharedRecords: "forge",
     send: true,
     changeProbe,

@@ -399,7 +399,9 @@ describe.each(MODES)("Jira transport: $name", (mode) => {
         mode.base,
         credential,
         fake(status, body, headers).impl,
-      )({ method: "GET", path: "x" }).catch((e: unknown) => e)) as JiraApiError;
+      )({ method: "POST", path: "x" }).catch(
+        (e: unknown) => e,
+      )) as JiraApiError;
     const missing = await fail(
       404,
       '{"errorMessages":["Issue does not exist"],"errors":{}}',
@@ -407,7 +409,7 @@ describe.each(MODES)("Jira transport: $name", (mode) => {
     expect([missing.notFound, missing.unavailable, missing.message]).toEqual([
       true,
       false,
-      "Jira API HTTP 404 on GET x: Issue does not exist",
+      "Jira API HTTP 404 on POST x: Issue does not exist",
     ]);
     const limited = await fail(429, "slow down", { "Retry-After": "7" });
     expect([limited.unavailable, limited.retryAfterSec]).toEqual([true, 7]);
@@ -420,7 +422,7 @@ describe.each(MODES)("Jira transport: $name", (mode) => {
     expect([invalid.unavailable, invalid.errors, invalid.message]).toEqual([
       false,
       { customfield_1: "is required" },
-      "Jira API HTTP 400 on GET x: customfield_1: is required",
+      "Jira API HTTP 400 on POST x: customfield_1: is required",
     ]);
   });
 

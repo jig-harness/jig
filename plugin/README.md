@@ -494,7 +494,9 @@ stands a claim down after its writes)
 ([do-item's start rules](skills/do-item/README.md#the-repositorys-own-start-rules)).
 Without it, claims serialize on one host only. A claimed item
 with no running session for longer than `dispatch.stalled_after` is
-reported as stalled and never relaunched; an item more than one running
+reported as stalled and never relaunched (a served person's item only when
+a pickup of the host claimed it: the rest of their work in progress is
+their own); an item more than one running
 session joins to is reported as a double claim; a session waiting longer
 than `dispatch.blocked_after` is reported.
 
@@ -971,7 +973,7 @@ independent of the dispatch and change-probe timers, without Orca:
 jig dispatch dashboard --install         # preview, using dashboard.listen
 jig dispatch dashboard --install --yes   # install once; repeating is safe
 jig dispatch dashboard --status          # timer, listener health and log locations
-jig dispatch dashboard --access          # explicitly print the private URL
+jig dispatch dashboard --access          # print the address to open: the front's, else the private URL
 jig dispatch dashboard --uninstall --yes # remove this reader and its retry timer
 ```
 
@@ -983,6 +985,17 @@ prints the installed reader's URL; service output and installation previews
 never print it. The access record is owner-only and invalidated on renewal.
 The server routes still only read the dispatch records; availability state
 and the private access record live under `~/.local/state/jig/dispatch/dashboard/`.
+
+With a private-network front named as `dashboard.front`, `--access` prints
+that front's token-free HTTPS address instead, and on a terminal draws a
+[QR code](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (a
+square barcode a phone camera reads) of the same address below it, black on
+white in colors it sets itself (in plain characters under `NO_COLOR`). The
+code holds only the address: the front still signs the viewer in. Into a
+pipe, a file, a `TERM=dumb` terminal or one too narrow for the code it
+prints the address alone. Without a front,
+`--access` prints the private URL as before, draws no code for it, since it
+carries a token, and says on standard error how to set up a front.
 
 The supported durable setup is Linux with either a systemd user timer and
 **[lingering](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) enabled** (the account's service manager runs without a login), or cron. With systemd, install refuses until
@@ -1620,7 +1633,7 @@ open; the guide lists the evidence it needs.
 | **git** | 2.36 or later (`--path-format` for absolute paths and `git worktree list -z`; `resolve-conflicts` needs 2.41, to reconstruct automatic merge results and read attributes from the index with `--attr-source`, and its history report 2.43, or 2.45 in a partial clone) | Every skill that reads the repository |
 | **GitHub CLI** (`gh`), signed in with access to the repositories you work on | 2.48 or later (`gh api --slurp`) | Every skill that works on pull requests. Jig supports GitHub as its only forge ([extending](EXTENDING.md#forge-github)) |
 | **The `gh-stack` extension** | Any | Only `pull_requests.stacking: native` |
-| **Issue-tracker access** | — | `do-item`, and `drive-pr`'s tracker reads. With the default GitHub adapter, the signed-in `gh` above and nothing more. With the Linear adapter: `LINEAR_API_KEY` or `LINEAR_API_TOKEN` in the environment, or the Linear MCP server or `linear` command line tool signed in. With the Jira adapter: `JIRA_EMAIL` and `JIRA_API_TOKEN` in the environment, an Atlassian account's email address and an API token made for it, or an OAuth access token in `JIRA_BEARER_TOKEN`, or a command that prints one in `JIRA_TOKEN_COMMAND` ([environment variables](CONFIGURATION.md#environment-variables)) |
+| **Issue-tracker access** | — | `do-item`, and `drive-pr`'s tracker reads. With the default GitHub adapter, the signed-in `gh` above and nothing more. With the Linear adapter: `LINEAR_API_KEY` or `LINEAR_API_TOKEN` in the environment, or the Linear MCP server or `linear` command line tool signed in. With the Jira adapter: `JIRA_EMAIL` and `JIRA_API_TOKEN` in the environment, an Atlassian account's email address and an API token made for it, or an OAuth access token or an API token with scopes in `JIRA_BEARER_TOKEN`, or a command that prints one in `JIRA_TOKEN_COMMAND` ([environment variables](CONFIGURATION.md#environment-variables)) |
 
 Most skills do not check these versions when they run: an older tool fails
 on the command it lacks. The `resolve-conflicts` history report is the
