@@ -22,7 +22,10 @@ import { readSection, trackerConfigOf } from "../../dispatch/lib/section.ts";
 import { failureText } from "../../dispatch/lib/text.ts";
 import { openTracker } from "../../skills/do-item/scripts/lib/tracker/index.ts";
 import { issueKeysOf } from "../../skills/do-item/scripts/lib/tracker/keys.ts";
-import type { CanonicalState } from "../../skills/do-item/scripts/lib/tracker/port.ts";
+import type {
+  CanonicalState,
+  Issue,
+} from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { type RepoTracker, readPickup } from "../../ask/lib/pickup.ts";
 import { readDefaultConfig } from "../../ask/lib/forge.ts";
 import { formatAddress } from "../../shared/address.ts";
@@ -130,10 +133,19 @@ export async function planAssign(
       `${key} is assigned to ${issue.assignee}; assigning it to ${identity} would take it from them, so unassign it first if that is meant`,
     );
   const states = tracked.states as CanonicalState[];
-  const moveFor = (stateName: string): CanonicalState | null =>
-    states.some((s) => tracker.stateName(s) === stateName)
+  const moveFor = (
+    stateName: string,
+    current: Issue = issue,
+  ): CanonicalState | null =>
+    states.some((state) => tracker.stateName(state, current) === stateName)
       ? null
-      : (states[0] ?? null);
+      : (states.find((state) => tracker.stateName(state, current) !== null) ??
+        states[0] ??
+        null);
+  if (!states.some((state) => tracker.stateName(state, issue) !== null))
+    return refused(
+      `${key}'s workflow has no configured dispatch state, so it cannot be assigned to ${identity}`,
+    );
   if (issue.state.type === "started")
     return refused(
       `${key} is ${issue.state.name}, a state of work in progress; assign does not move it back to a dispatch state`,
@@ -147,7 +159,7 @@ export async function planAssign(
     record: `${key} assigned to ${identity}${
       move === null
         ? `, in ${issue.state.name}, a dispatch state`
-        : `, and moved from ${issue.state.name} to ${tracker.stateName(move)}, a dispatch state`
+        : `, and moved from ${issue.state.name} to ${tracker.stateName(move, issue)}, a dispatch state`
     }`,
     where: issue.url ?? key,
     reader: TICK.reader(NEXT_TICK),

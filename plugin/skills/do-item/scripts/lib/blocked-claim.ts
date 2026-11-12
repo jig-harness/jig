@@ -18,13 +18,16 @@ export interface BlockedRefusal {
 /** The refusal for `key` when it is `blocked`; `null` when it is not, or the state is unset. */
 export async function blockedClaimRefusal(
   tracker: Pick<Tracker, "stateName"> & {
+    adapter?: string;
     poolIssue(key: string): Promise<PoolIssue | null>;
   },
   key: string,
 ): Promise<BlockedRefusal | null> {
-  const blocked = tracker.stateName("blocked");
-  if (blocked === null) return null;
+  if (tracker.adapter !== "jira" && tracker.stateName("blocked") === null)
+    return null;
   const issue = await tracker.poolIssue(key);
+  const blocked = tracker.stateName("blocked", issue?.nativeType ?? null);
+  if (blocked === null) return null;
   if (
     issue === null ||
     issue.state.name.trim().toLowerCase() !== blocked.trim().toLowerCase()
