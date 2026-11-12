@@ -1,29 +1,25 @@
 import { describe, expect, it } from "bun:test";
-import {
-  httpFailure,
-  JiraApiError,
-} from "../scripts/lib/tracker/jira/transport.ts";
+import { httpFailure } from "../scripts/lib/tracker/jira/transport.ts";
 import { issue, jira, MEMBER, routes } from "./jira-fixtures.ts";
 
 describe("Jira authentication before protected reads", () => {
-  for (const status of [401, 403]) {
-    it(`names the credential for HTTP ${status} without a retry classification`, async () => {
-      const error = httpFailure(status, new Headers(), "refused", "GET myself");
-      const { client } = jira(
-        routes({ "GET myself": error, "GET issue/ENG-1": error }),
+  for (const status of [401, 403])
+    it(`names the credential for HTTP ${status} at every request boundary`, () => {
+      const error = httpFailure(
+        status,
+        new Headers(),
+        "refused",
+        "POST issue/ENG-1/comment",
       );
-      const result = await client.issue("ENG-1").catch((e: unknown) => e);
-      expect(result).toBeInstanceOf(JiraApiError);
-      expect((result as Error).message).toContain("JIRA_EMAIL");
-      expect((result as Error).message).toContain("JIRA_API_TOKEN");
-      expect((result as Error).message).toContain("JIRA_BEARER_TOKEN");
-      expect((result as Error).message).toContain("JIRA_TOKEN_COMMAND");
-      expect((result as Error).message).toContain(
+      expect(error.message).toContain("JIRA_EMAIL");
+      expect(error.message).toContain("JIRA_API_TOKEN");
+      expect(error.message).toContain("JIRA_BEARER_TOKEN");
+      expect(error.message).toContain("JIRA_TOKEN_COMMAND");
+      expect(error.message).toContain(
         "https://id.atlassian.com/manage-profile/security/api-tokens",
       );
-      expect((result as JiraApiError).unavailable).toBe(false);
+      expect(error.unavailable).toBe(false);
     });
-  }
 
   for (const fields of [false, true]) {
     it(`refuses anonymous reads before ${fields ? "field resolution" : "an issue's 404"}`, async () => {

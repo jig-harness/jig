@@ -643,7 +643,7 @@ describe("a Bearer credential at an Atlassian Cloud site", () => {
     expect(urls[0]?.startsWith(`${GATEWAY}/`)).toBe(true);
   });
 
-  it("adds no host advice to a 403 from the gateway", async () => {
+  it("names credential recovery for a 403 from the gateway", async () => {
     const err = await failure(
       defaultTransport(
         GATEWAY,
@@ -652,7 +652,7 @@ describe("a Bearer credential at an Atlassian Cloud site", () => {
       )(request),
     );
     expect(err.status).toBe(403);
-    expect(err.message).not.toContain("JIRA_BEARER_TOKEN");
+    expect(err.message).toContain("JIRA_BEARER_TOKEN");
   });
 
   it("leaves Basic authentication at the site alone", async () => {
@@ -680,7 +680,7 @@ describe("a Bearer credential at an Atlassian Cloud site", () => {
     expect(refused.status).toBe(403);
     expect(refused.message).toContain("HTTP 403");
     expect(refused.message).toContain("JIRA_BEARER_TOKEN");
-    // Once the site has answered, a later 403 is the request's own.
+    // A later refusal can still be an expired or insufficient credential.
     const transport = defaultTransport(
       "https://jira.example.com",
       env,
@@ -689,7 +689,7 @@ describe("a Bearer credential at an Atlassian Cloud site", () => {
     await transport(request);
     const later = await failure(transport(request));
     expect(later.status).toBe(403);
-    expect(later.message).not.toContain("JIRA_BEARER_TOKEN");
+    expect(later.message).toContain("JIRA_BEARER_TOKEN");
   });
 
   it("keeps Retry-After on the first 403's advice", async () => {

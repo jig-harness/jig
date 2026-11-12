@@ -167,7 +167,7 @@ function limitedUntil(now: number, headers: Headers): number {
   return now + (ms > MAX_LIMIT_MS ? FALLBACK_LIMIT_MS : ms);
 }
 
-/** What an error status means, with Jira's own words. */
+/** What an error status means, with Jira's own words and credential recovery guidance when refused. */
 export function httpFailure(
   status: number,
   headers: Headers,
@@ -179,8 +179,11 @@ export function httpFailure(
     ...errorMessages,
     ...Object.entries(errors).map(([k, v]) => `${k}: ${v}`),
   ].join("; ");
+  const message = `Jira API HTTP ${status} on ${what}: ${said === "" ? text.slice(0, 300) : said}`;
   return new JiraApiError(
-    `Jira API HTTP ${status} on ${what}: ${said === "" ? text.slice(0, 300) : said}`,
+    status === 401 || status === 403
+      ? `${message}; ${JIRA_CREDENTIAL_HELP}`
+      : message,
     {
       status,
       notFound: status === 404,

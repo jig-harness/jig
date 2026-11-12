@@ -456,22 +456,7 @@ export function jiraClient(opts: ClientOptions): Client {
   /** The credential's own profile, read once. */
   function myself(): Promise<Record<string, unknown>> {
     me ??= (async () => {
-      let raw: unknown;
-      try {
-        raw = await get("myself");
-      } catch (err) {
-        if (
-          err instanceof JiraApiError &&
-          (err.status === 401 || err.status === 403)
-        )
-          throw new JiraApiError(`${err.message}; ${JIRA_CREDENTIAL_HELP}`, {
-            status: err.status,
-            retryAfterSec: err.retryAfterSec,
-            errorMessages: err.errorMessages,
-            errors: err.errors,
-          });
-        throw err;
-      }
+      const raw = await get("myself");
       const profile = record(raw, "myself");
       if (typeof profile.accountId !== "string" || !profile.accountId.trim())
         throw new JiraApiError(
