@@ -125,8 +125,8 @@ describe("Jira adapter: reading an issue", () => {
       assignee: "Dana Lee",
       project: "Q3",
     });
-    expect(calls[0]?.query.fields).toContain("statuscategorychangedate");
-    expect(jqlOf(calls[1] as Call)).toBe(
+    expect(calls[1]?.query.fields).toContain("statuscategorychangedate");
+    expect(jqlOf(calls[2] as Call)).toBe(
       "parent = ENG-12 ORDER BY created ASC",
     );
   });
@@ -215,7 +215,10 @@ describe("Jira adapter: transitions", () => {
       }),
     );
     await t.transition("ENG-1", "in_progress");
-    expect(calls.map((c) => c.route)).toEqual(["GET issue/ENG-1"]);
+    expect(calls.map((c) => c.route)).toEqual([
+      "GET myself",
+      "GET issue/ENG-1",
+    ]);
   });
 
   it("takes the one transition to the state's status", async () => {
@@ -230,8 +233,8 @@ describe("Jira adapter: transitions", () => {
       }),
     );
     await t.transition("ENG-1", "in_progress");
-    expect(calls[1]?.query).toEqual({ expand: "transitions.fields" });
-    expect(calls[2]?.body).toEqual({ transition: { id: "11" } });
+    expect(calls[2]?.query).toEqual({ expand: "transitions.fields" });
+    expect(calls[3]?.body).toEqual({ transition: { id: "11" } });
   });
 
   it("sends the configured resolution when the transition's screen has one", async () => {
@@ -244,7 +247,7 @@ describe("Jira adapter: transitions", () => {
       { issue_tracker: { states: { canceled: "Done", duplicate: "Done" } } },
     );
     await t.transition("ENG-1", "canceled");
-    expect(calls[2]?.body).toEqual({
+    expect(calls[3]?.body).toEqual({
       transition: { id: "31" },
       fields: { resolution: { name: "Won't Do" } },
     });
@@ -271,7 +274,7 @@ describe("Jira adapter: transitions", () => {
       }),
     );
     await t.transition("ENG-1", "done");
-    expect(calls[2]?.body).toEqual({ transition: { id: "31" } });
+    expect(calls[3]?.body).toEqual({ transition: { id: "31" } });
   });
 
   it("refuses an outcome a resolution-less transition does not reach", async () => {

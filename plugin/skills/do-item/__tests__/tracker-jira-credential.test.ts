@@ -267,7 +267,7 @@ describe("JIRA_TOKEN_COMMAND", () => {
     const err = await failure(
       httpTransport(GATEWAY, command(runner), impl)(request),
     );
-    expect([err.status, err.unavailable]).toEqual([401, true]);
+    expect([err.status, err.unavailable]).toEqual([401, false]);
     expect([runs.length, sent]).toEqual([2, ["Bearer old", "Bearer new"]]);
   });
 
@@ -332,7 +332,11 @@ describe("JIRA_TOKEN_COMMAND", () => {
       const err = await failure(
         httpTransport(GATEWAY, command(runner), impl)(request),
       );
-      expect([err.message, err.unavailable, sent]).toEqual([message, true, []]);
+      expect([err.message, err.unavailable, sent]).toEqual([
+        message,
+        false,
+        [],
+      ]);
       expect(err.message).not.toContain("s3cret");
     }
     const thrown = await failure(

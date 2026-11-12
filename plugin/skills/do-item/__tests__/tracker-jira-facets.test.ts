@@ -584,6 +584,7 @@ describe("Jira: a custom field named by name or id", () => {
       size: "large",
     });
     expect(calls.map((c) => c.route)).toEqual([
+      "GET myself",
       "GET issue/ENG-1",
       "POST search/jql",
       "POST issue",

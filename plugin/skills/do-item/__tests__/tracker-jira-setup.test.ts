@@ -410,7 +410,7 @@ describe.each(MODES)("Jira transport: $name", (mode) => {
     ]);
     const limited = await fail(429, "slow down", { "Retry-After": "7" });
     expect([limited.unavailable, limited.retryAfterSec]).toEqual([true, 7]);
-    expect((await fail(401, "")).unavailable).toBe(true);
+    expect((await fail(401, "")).unavailable).toBe(false);
     expect((await fail(503, "")).unavailable).toBe(true);
     const invalid = await fail(
       400,
@@ -475,10 +475,11 @@ describe.each(MODES)("Jira transport: $name", (mode) => {
     )({ method: "GET", path: "myself" }).catch(
       (e: unknown) => e,
     )) as JiraApiError;
-    expect([err.unavailable, err.message]).toEqual([
-      true,
-      "no Jira credential: set JIRA_BEARER_TOKEN to an OAuth access token, JIRA_TOKEN_COMMAND to a command that prints one, or JIRA_EMAIL and JIRA_API_TOKEN to an Atlassian account's email and API token",
-    ]);
+    expect(err.unavailable).toBe(false);
+    expect(err.message).toContain("JIRA_EMAIL and JIRA_API_TOKEN");
+    expect(err.message).toContain(
+      "https://id.atlassian.com/manage-profile/security/api-tokens",
+    );
   });
 });
 

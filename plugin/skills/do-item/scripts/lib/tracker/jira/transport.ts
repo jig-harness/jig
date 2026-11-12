@@ -33,6 +33,10 @@ import {
   resolveJiraCredential,
 } from "./credential.ts";
 
+/** How to repair an absent or refused Jira credential. */
+export const JIRA_CREDENTIAL_HELP =
+  "Check JIRA_BEARER_TOKEN or JIRA_TOKEN_COMMAND, or JIRA_EMAIL and JIRA_API_TOKEN. Create an API token at https://id.atlassian.com/manage-profile/security/api-tokens and ensure the account or token has access to the Jira site.";
+
 export const JIRA_TIMEOUT_MS = 30_000;
 
 /** The page size every listing asks for. */
@@ -58,8 +62,8 @@ export type JiraTransport = (
 
 /**
  * Jira answered with an error, or could not be asked. `notFound` is a 404;
- * `unavailable` a request that could not be made or answered (no
- * credential, the network, an expired token, a rate limit, a server error),
+ * `unavailable` a request that could not be made or answered (the
+ * network, a rate limit, a server error),
  * which a caller may report as "try later". `errorMessages` and `errors`
  * are Jira's own error body, also carried in the message.
  */
@@ -175,11 +179,11 @@ export function httpFailure(
     ...Object.entries(errors).map(([k, v]) => `${k}: ${v}`),
   ].join("; ");
   return new JiraApiError(
-    `Jira API HTTP ${status} on ${what}: ${said === "" ? text.slice(0, 300) : said}`,
+    `Jira API HTTP ${status} on ${what}: ${said === "" ? text.slice(0, 300) : said}${status === 401 || status === 403 ? `; ${JIRA_CREDENTIAL_HELP}` : ""}`,
     {
       status,
       notFound: status === 404,
-      unavailable: status === 401 || status === 429 || status >= 500,
+      unavailable: status === 429 || status >= 500,
       retryAfterSec: retryAfterOf(headers),
       errorMessages,
       errors,
@@ -249,8 +253,7 @@ function headerOf(
   signal: AbortSignal | undefined,
 ): string {
   if (cancelled(signal)) throw abortedError(signal);
-  if (!header.ok)
-    throw new JiraApiError(header.failure.reason, { unavailable: true });
+  if (!header.ok) throw new JiraApiError(header.failure.reason);
   return header.value;
 }
 
@@ -353,7 +356,7 @@ export function defaultTransport(
   if (!credential.ok) {
     const { reason } = credential.failure;
     return async () => {
-      throw new JiraApiError(reason, { unavailable: true });
+      throw new JiraApiError(`${reason}; ${JIRA_CREDENTIAL_HELP}`);
     };
   }
   return httpTransport(
