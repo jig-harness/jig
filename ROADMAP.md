@@ -103,28 +103,28 @@ recommendation, so a team can see which decisions still need a person.
 Later, decisions that cannot be undone, such as a release, will need proof
 that a person answered.
 
-### 42. The hub: one place to watch and steer the line
+### 42. The dispatch dashboard: one place to watch and steer the line
 
 One page shows a person every piece of work in flight, across the machines
 that run it. A piece of work is a tracker item, the pull request it opens
 and that pull request's follow-up, on one card. The page, the
-[hub](GLOSSARY.md), opens on what is safe to merge, else on what waits for
+[dispatch dashboard](GLOSSARY.md), opens on what is safe to merge, else on what waits for
 that person. It shows what runs and what is queued, and opens any piece of
 work end to end, with its correspondence. A card shows the drive's round and how long it has run, and
 which review threads wait on a person rather than a bot. A pull request held
 back from CI on purpose reads held, never failing. A pickup shows its
-progress before its pull request exists. The hub reads the records the line
-keeps and stores no copy of them. On a host, the hub only reads and accepts
+progress before its pull request exists. The dashboard reads the records the line
+keeps and stores no copy of them. On a host, the dashboard only reads and accepts
 no commands. A laptop serves the page to any browser and reads each host
 over SSH (Secure Shell). Every view works without Orca. A team that uses
-Orca opens the hub in Orca's own browser. A phone reaches a host's page
+Orca opens the dashboard in Orca's own browser. A phone reaches a host's page
 through a front on a private network. Phone access is required, with read-only
 views, visible copy controls and links to pull requests and issues. Tailscale
 Serve is the first such front. The front names who is looking and shows each person only their
 own repositories. A chat with the [operator](GLOSSARY.md), the agent a
 person asks about the line, explains why work is stuck and drafts what to
 do. A person confirms every action, and the words of an answer are always
-theirs. The hub writes nothing until each write can show that a person made
+theirs. The dashboard writes nothing until each write can show that a person made
 it. The first stage puts each pull request's status on the dispatch
 dashboard a team already runs. A person decides on the rest once that stage
 is in use.
@@ -140,7 +140,7 @@ launchers, so a launch gc's last check could miss is turned away. The
 protection is best-effort: a restored session, a hook that fails and a
 plugin that is down are not covered. The plugin will show what waits on a person in Orca's
 status bar and in a panel. The panel opens on that person's inbox, and a
-command opens the hub in Orca's own browser for the board and each piece of
+command opens the dashboard in Orca's own browser for the board and each piece of
 work. The dispatcher will read each account's usage
 from Orca's command line once Orca offers it. The plugin is Orca-bound.
 
@@ -172,15 +172,11 @@ board shows stopped work as blocked, with a reason. The dispatcher can also
 pick up from an unassigned ready pool. Every rule is optional, and a team
 that sets none keeps today's behaviour.
 
-### 48. Fitting the drive to a repository's reviewer, CI and pull-request conventions
+### 48. Fitting the drive to a repository's reviewer
 
-The drive adapts to a repository's reviewer and CI. Review evidence and
-the log a CI failure carries into repair are read from the repository's
-own settings. A repository whose AI reviewer is CodeRabbit, or whose CI is
-Jenkins, is one such case. The drive waits for CodeRabbit's review of the
-latest commit and stops when it pauses or skips. A failure that the CI
-reports as a commit status reaches the repair step with its log. Every
-setting is optional, and a team that sets none keeps today's behaviour.
+Some AI reviewers, CodeRabbit for one, write findings in the text of their
+review rather than as comments on lines. The drive reads those findings too,
+so it never finishes with them unanswered.
 
 ### 26. `init`: setting a repository up for Jig
 
@@ -455,13 +451,13 @@ See the [distribution design](design/distribution.md).
   first.
 - **A control-plane service for the shared records.** A small service with a
   database joins the forge as a shared-record implementation. It also hands
-  the hosts their work and feeds the hub from many hosts at once. It waits
+  the hosts their work and feeds the dashboard from many hosts at once. It waits
   for an [architecture decision record](GLOSSARY.md) of its own, written when
   one of
   [ADR-0013's conditions](docs/adr/ADR-0013-records-not-a-daemon.md#when-to-reopen)
   holds. Those cover state shared within seconds, session nudges needing a
   connection and notification outside a host when it stops. One more covers
-  a second person who acts through a host's hub, or who needs a scope Jig
+  a second person who acts through a host's dashboard, or who needs a scope Jig
   itself keeps.
 - **The mailbox as every session's inbox.** Open the drive mailbox to every
   session the execution line starts once a second mechanical nudge needs it.

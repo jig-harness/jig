@@ -210,9 +210,14 @@ are named by canonical keys (`in_progress`, `in_review`, …) that
 - **Jira Cloud** ([`jira/`](skills/do-item/scripts/lib/tracker/jira/tracker.ts)),
   the adapter `issue_tracker.adapter: jira` selects: the issues of one
   project on one site (`issue_tracker.team` is the project key,
-  `issue_tracker.jira.site` the site). It uses Jira's REST API version 3
-  with `JIRA_EMAIL` and `JIRA_API_TOKEN`, an Atlassian account's email
-  address and an API token made for it, and converts text between Markdown
+  `issue_tracker.jira.site` the site). It uses Jira's REST API version 3,
+  at the site or through Atlassian's API gateway
+  (`issue_tracker.jira.api_base`), signed with an OAuth access token
+  (`JIRA_BEARER_TOKEN`, or one `JIRA_TOKEN_COMMAND` prints) or with
+  `JIRA_EMAIL` and `JIRA_API_TOKEN`, an Atlassian account's email address
+  and an API token made for it
+  ([`credential.ts`](skills/do-item/scripts/lib/tracker/jira/credential.ts)),
+  and converts text between Markdown
   and ADF (Atlassian Document Format), the rich-text form Jira stores. Keys
   are `<PROJECT>-<n>`. How the interface's vocabulary maps onto Jira:
   - a state is the status whose name `issue_tracker.states` gives, matched
@@ -364,8 +369,11 @@ lists the logins whose threads it resolves, and `review.reviewer_app`,
 `review.reviewer_check_pattern`, `review.sticky_marker`,
 `review.reviewed_sha_marker` and `review.skip_notice_marker` tell the drive
 which check run and summary comment are the reviewer's evidence
-([fields](CONFIGURATION.md#review)). The
-drive expects a reviewer only where `review.reviewer_app` or
+([fields](CONFIGURATION.md#review)). A reviewer that submits pull-request
+reviews instead of a summary comment is read through
+`review.reviewer_evidence: review_object`; CodeRabbit is built in, so
+`review.reviewer_app: coderabbitai` alone sets its check name and evidence.
+The drive expects a reviewer only where `review.reviewer_app` or
 `review.reviewer_check_pattern` is set; a repository with neither converges on
 threads and CI alone.
 

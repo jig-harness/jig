@@ -56,8 +56,14 @@ import {
   standingProvisionalKeys,
   unlistedReversals,
 } from "../provisional.ts";
-import { reviewerExpected, reviewerLabel, reviewsDrafts } from "../overlay.ts";
-import { ghCall, run, tsArgv } from "../proc.ts";
+import {
+  reviewerApp,
+  reviewerEvidence,
+  reviewerExpected,
+  reviewerLabel,
+  reviewsDrafts,
+} from "../overlay.ts";
+import { ghCall } from "../proc.ts";
 import {
   type CiReport,
   checkRunsFor,
@@ -78,6 +84,8 @@ import {
 } from "./inherited-head.ts";
 import { resolveMarkerSha, reviewedShaGate, skipNote } from "./reviewed-sha.ts";
 import { readHeldEvidence, isFindingHoldCurrent } from "./held-evidence.ts";
+import { judgeReviewObject, latestReviewBy } from "./review-object.ts";
+import { strandedRunNote } from "./stranded-run.ts";
 import { terminal } from "./terminal-states.ts";
 import type { WaitingEvaluationCache } from "./waiting-cache.ts";
 
@@ -270,71 +278,12 @@ function str(obj: Record<string, unknown>, field: string): string {
   return v == null ? "" : String(v);
 }
 
-/**
- * How often a self-hosted reviewer service runs its reconciliation pass
- * ("every 15 min").
- */
-export const RECONCILIATION_INTERVAL_SEC = 15 * 60;
-
-/**
- * How old a still-unposted head must be before that pass reactivates it
- * (the same service: "a still-eligible head … after 30 min → reactivate").
- *
- * A THRESHOLD, not a deadline — it is only ever evaluated when a pass runs, so
- * a head crossing it just after one waits out the rest of the interval too.
- */
-export const RECONCILIATION_REACTIVATION_SEC = 30 * 60;
-
-/**
- * Upper end of a review's own observed duration (§ 3: "a 4–15-minute review").
- *
- * Reactivation only re-queues the work; the sticky is not rewritten and the
- * inline threads are not posted until the re-run actually reaches publication.
- */
-export const REVIEW_PUBLICATION_MARGIN_SEC = 15 * 60;
-
-/**
- * Default for `$DRIVE_PR_STALLED_MIN_AGE_SEC`: how old the reviewer's sticky
- * must be before it may overrule a stranded `in_progress` check-run.
- *
- * Derived from the REVIEWER SERVICE's own recovery timings above, never picked
- * for feel and never written as a bare number. The service publishes through
- * an outbox (`publishing` → post → `posted`), so a worker that dies between
- * writing its sticky and posting its inline threads is repaired by the service
- * itself — and the only question this floor answers is whether the drive waits
- * long enough for that repair to have happened rather than racing it.
- *
- * Waiting long enough means all three terms, which is why they are summed
- * rather than picked from:
- *
- *   - the reactivation THRESHOLD, the age at which the pass acts at all;
- *   - one full pass INTERVAL, because that threshold is only evaluated when a
- *     pass runs — a head crossing it moments after one is not reactivated
- *     until the next, so worst-case detection is threshold + interval, not
- *     threshold;
- *   - one review's PUBLICATION margin, because reactivation merely re-queues:
- *     until the re-run publishes, the sticky is still stale and the threads
- *     are still absent, which is exactly the state that converges falsely.
- *
- * Two earlier values got this wrong in the same direction. 600s was under even
- * the first term, so the bypass could converge falsely through the whole
- * 10-to-30-minute gap. 2100s cleared the threshold but silently dropped the
- * other two terms, leaving the same false convergence reachable from roughly 35
- * to 60 minutes.
- *
- * This is still a MITIGATION, and the finding behind it is right that elapsed
- * time can never be a completion witness: if the service's repair fails
- * permanently (a `failed` row past its retry budget) it raises `/fail` to a
- * human and nothing re-posts, so a long-enough wait still ends in a bypass
- * over threads that will never arrive. What bounds that residual is the
- * service alarming, not this constant. The cost of the larger value is only
- * that a genuinely stranded run blocks an hour instead of ten minutes —
- * against the 3.5+ hour incident this bypass was built for, still cheap.
- */
-export const STALLED_MIN_AGE_SEC =
-  RECONCILIATION_REACTIVATION_SEC +
-  RECONCILIATION_INTERVAL_SEC +
-  REVIEW_PUBLICATION_MARGIN_SEC;
+export {
+  RECONCILIATION_INTERVAL_SEC,
+  RECONCILIATION_REACTIVATION_SEC,
+  REVIEW_PUBLICATION_MARGIN_SEC,
+  STALLED_MIN_AGE_SEC,
+} from "./stranded-run.ts";
 
 export async function evaluate(
   ctx: EvaluateContext,
@@ -358,14 +307,15 @@ function reviewerGatesApply(conflicting: boolean): boolean {
 
 /**
  * The reviewer's sticky the reviewed-SHA gate judges: an empty one where no
- * reviewer is expected, `null` when the reviewer's comments cannot be read.
- * Reuses the stranded-check-run bypass's read (`earlySticky`) when it made one.
+ * reviewer is expected or its evidence is review objects, `null` when the
+ * reviewer's comments cannot be read. Reuses the stranded-check-run bypass's
+ * read (`earlySticky`) when it made one.
  */
 async function reviewerStamp(
   ctx: EvaluateContext,
   earlySticky: ReviewerSticky | null | undefined,
 ): Promise<ReviewerSticky | null> {
-  if (!reviewerExpected())
+  if (!reviewerExpected() || reviewerEvidence() === "review_object")
     return { sha: "", round: null, updatedAt: "", skip: null };
   if (earlySticky === undefined)
     return reviewerStickyMarkers(ctx.owner, ctx.repo, ctx.pr);
@@ -375,17 +325,26 @@ async function reviewerStamp(
 /**
  * Convergence needs the reviewer's own stamp, where a reviewer is expected:
  * for this head, or for the head it reviewed before skipping this one
- * (`reviewed-sha.ts`).
+ * (`reviewed-sha.ts`); for a review-object reviewer, its review of this head,
+ * or its skip of this draft (`review-object.ts`).
  */
+const STAMPS = new Set([
+  "comment-marker",
+  "skip-notice",
+  "review-object",
+  "review-check-run",
+  "draft-skip",
+]);
+
 function lacksReviewerStamp(report: StatusReport): boolean {
-  return (
-    reviewerExpected() &&
-    report.reviewedShaSource !== "comment-marker" &&
-    report.reviewedShaSource !== "skip-notice"
-  );
+  return reviewerExpected() && !STAMPS.has(report.reviewedShaSource);
 }
 
 function convergedReasonOf(report: StatusReport): string {
+  if (report.reviewedShaSource === "draft-skip")
+    return `${reviewerLabel()} skips drafts and has not reviewed ${report.apiHead}: the draft has 0 unresolved threads, 0 unaddressed summary findings. Marking it Ready for review summons that review, which the drive then waits for`;
+  if (report.reviewedShaSource === "review-check-run")
+    return `${reviewerLabel()} completed its check run on ${report.apiHead} and submitted no review of it, having nothing new to say: 0 unresolved threads, 0 unaddressed summary findings`;
   return reviewerExpected()
     ? `${reviewerLabel()} completed on ${report.apiHead} (reviewed-SHA verified via ${report.reviewedShaSource}), 0 unresolved threads, 0 unaddressed summary findings${skipNote(report)}`
     : `no AI reviewer is configured for this repository (review.reviewer_app, review.reviewer_check_pattern), so no reviewer evidence was required: ${report.apiHead} has 0 unresolved threads, 0 unaddressed summary findings`;
@@ -892,137 +851,62 @@ async function evaluateFresh(
   // bypass trust one snapshot while the gate below judges a different one.
   let earlySticky: ReviewerSticky | null | undefined;
 
-  if (awaitReviewer) {
-    if (report.reviewerStatus !== "completed") {
-      // Stranded-check-run bypass: a check-run stuck 'in_progress' for hours —
-      // a crashed daemon, an exhausted PATCH retry — is indistinguishable from
-      // a live one on status alone, and blocking on it unconditionally wedges
-      // an unattended drive forever with no terminal state (measured: a
-      // check-run sat in_progress 3.5+ hours while the review had already
-      // published its sticky, three inline threads and a wind-down entry). The
-      // main-line reviewed-SHA gate further down already resolves the head from
-      // that same sticky marker (`reviewedShaSource: 'comment-marker'`), and
-      // CONVERGED certifies against it; this extends that SAME trust to the one
-      // case a check-run exists but is stuck. (It is NOT the no-check-run
-      // branch above that establishes the precedent — that branch returns
-      // AWAITING_REVIEWER before reading any sticky. The precedent is the gate
-      // below.) Conditions, all required:
-      //
-      //   1. Status is 'in_progress' specifically — never 'queued', which has
-      //      not started at all, so there is nothing yet a marker could have
-      //      overtaken.
-      //   2. The marker names THIS EXACT head — resolved through
-      //      `resolveMarkerSha`, so an abbreviated marker is turned into a full
-      //      object id before comparing and a mere prefix is never accepted.
-      //      Same helper, and therefore the same answer, as the reviewed-SHA
-      //      gate below; comparing the raw marker here instead meant an
-      //      abbreviated one could never activate the bypass at all. A marker
-      //      this clone cannot resolve witnesses nothing and keeps blocking, as
-      //      does a genuinely running review whose marker still names an OLDER
-      //      head.
-      //   3. The sticky's own ai-review-round is NEWER than the round this
-      //      drive has already counted (`drive-state.ts rounds`). Named in
-      //      the AC, but WEAKER than it reads: the two counters answer
-      //      different questions (§ "The reviewer stops after roughly
-      //      thirteen or fourteen rounds" below — `rounds` is per-DRIVE and
-      //      resets whenever a fresh drive starts, while `ai-review-round` is
-      //      cumulative over the PR's whole life), so on a PR with any
-      //      pre-drive reviewer history this is close to always-true. Kept
-      //      because the AC asks for it and a roundless/malformed sticky
-      //      still fails it, but condition 2 (the exact-SHA pin) and 4
-      //      (below) are what actually carry the safety margin here — do not
-      //      read this one as a real anti-replay check.
-      //   4. The STICKY ITSELF was last updated at least
-      //      $DRIVE_PR_STALLED_MIN_AGE_SEC ago (default `STALLED_MIN_AGE_SEC`;
-      //      a non-positive or non-numeric setting falls back to it rather than
-      //      disabling the floor). A review publishes its sticky and its inline
-      //      threads as separate GitHub calls, not atomically — reading between
-      //      them would see a matching, round-advanced sticky with ZERO threads
-      //      and reach a false CONVERGED. The floor has to measure the age of
-      //      the EVIDENCE, not of the run: a run stuck for hours trivially
-      //      clears any run-age floor while its sticky is edited seconds before
-      //      the read, which is exactly the outbox race the floor exists to
-      //      exclude and which a `started_at` basis let straight through. The
-      //      value itself is pinned to the reviewer service's own
-      //      reconciliation window — see `STALLED_MIN_AGE_SEC`, which also
-      //      states what this floor still cannot witness.
-      //   5. That same sticky POST-DATES the current run's own `started_at`.
-      //      Condition 2's exact-SHA pin does not imply this: a re-run on an
-      //      UNCHANGED head never rewrites `ai-reviewed-sha`, so a sticky from
-      //      an earlier, already-completed review of this very head still names
-      //      it. With condition 3 near-vacuous (see above), such a stale sticky
-      //      otherwise satisfied every condition the moment the re-run crossed
-      //      the age floor — authorizing convergence on evidence the current
-      //      attempt never produced. Requiring the evidence to be younger than
-      //      the run it is being used to overrule is what actually binds it to
-      //      THIS attempt. A run with no parseable `started_at` fails this and
-      //      keeps blocking, which is the fail-closed direction.
-      let stalled = false;
-      if (report.reviewerStatus === "in_progress") {
-        const sticky = await reviewerStickyMarkers(ctx.owner, ctx.repo, ctx.pr);
-        earlySticky = sticky;
-        const stickyFull =
-          sticky === null ? "" : await resolveMarkerSha(sticky.sha);
-        if (
-          sticky !== null &&
-          sticky.round !== null &&
-          stickyFull !== "" &&
-          stickyFull === report.apiHead
-        ) {
-          const countedRes = await run(
-            tsArgv(ctx.driveStateScript, ["rounds", ctx.pr]),
-            { stderr: "inherit" },
-          );
-          const counted =
-            countedRes.code === 0
-              ? Number.parseInt(countedRes.stdout.trim(), 10)
-              : Number.NaN;
-          const startedMs =
-            reviewer !== null && reviewer.started !== null
-              ? Date.parse(reviewer.started)
-              : Number.NaN;
-          const updatedMs = Date.parse(sticky.updatedAt);
-          // Configured value, or the default on anything that is not a positive
-          // finite number. NOT `Math.max(0, Number(...))`: that clamp turned an
-          // empty-string env var (`Number('') === 0`) and any negative value
-          // into `0` — silently DISABLING the floor and reopening the exact
-          // outbox race it exists to close, on a misconfiguration that reads at
-          // a glance like it set a bound. A non-numeric value already failed
-          // closed through `NaN`; these two failed OPEN. The default is the
-          // only fallback, because "the operator meant something, we cannot
-          // tell what" must not resolve to "no floor at all".
-          const configuredMinAge = Number(
-            process.env.DRIVE_PR_STALLED_MIN_AGE_SEC ?? STALLED_MIN_AGE_SEC,
-          );
-          const minAgeSec =
-            Number.isFinite(configuredMinAge) && configuredMinAge > 0
-              ? configuredMinAge
-              : STALLED_MIN_AGE_SEC;
-          // The floor is on the sticky's own age (condition 4), NOT the run's:
-          // a run stuck for hours clears a run-age floor while its sticky was
-          // rewritten seconds ago. `runAgeSec` is reported, never gated on.
-          const stickyAgeSec = Number.isFinite(updatedMs)
-            ? (Date.now() - updatedMs) / 1000
-            : Number.NaN;
-          const runAgeSec = Number.isFinite(startedMs)
-            ? (Date.now() - startedMs) / 1000
-            : Number.NaN;
-          if (
-            Number.isInteger(counted) &&
-            sticky.round > counted &&
-            Number.isFinite(stickyAgeSec) &&
-            stickyAgeSec >= minAgeSec &&
-            // Condition 5. An unparseable `started_at` makes this false (NaN
-            // compares false either way), which is the fail-closed direction.
-            Number.isFinite(startedMs) &&
-            updatedMs > startedMs
-          ) {
-            stalled = true;
-            stalledCheckRunNote = `${reviewerLabel()} check-run on ${report.apiHead} reads 'in_progress' (running ${Math.round(runAgeSec)}s), but its sticky — last updated ${Math.round(stickyAgeSec)}s ago, after that run began — already records round ${sticky.round} reviewing this exact head (${counted} round(s) counted so far) — trusting the comment-marker witness over the stranded check-run`;
-          }
-        }
+  // A reviewer that records its reviews as pull-request reviews is judged on
+  // its check run's title and its newest review (`review-object.ts`).
+  const byObject = reviewerEvidence() === "review_object";
+  if (awaitReviewer && byObject && reviewer !== null) {
+    const latest =
+      reviewer.status === "completed"
+        ? await latestReviewBy(
+            ctx.owner,
+            ctx.repo,
+            ctx.pr,
+            `${reviewerApp()}[bot]`,
+          )
+        : { review: null };
+    if (latest === null)
+      return terminal(
+        report,
+        "INDETERMINATE",
+        `cannot read ${reviewerLabel()}'s pull-request reviews on #${ctx.pr} — refusing to judge its review of ${report.apiHead} without them`,
+      );
+    const verdict = judgeReviewObject(
+      reviewer,
+      latest.review,
+      report.apiHead,
+      report.isDraft === true,
+      reviewerLabel(),
+    );
+    switch (verdict.state) {
+      case "AWAITING_REVIEWER":
+        return terminal(report, "AWAITING_REVIEWER", verdict.reason);
+      case "STALE_REVIEW":
+        return terminal(report, "STALE_REVIEW", verdict.reason);
+      case "REVIEW_SKIPPED": {
+        const rc = await stillOnHead();
+        if (rc !== 0) return rc;
+        return terminal(report, "REVIEW_SKIPPED", verdict.reason);
       }
-      if (!stalled) {
+      case "REVIEWER_FAILED": {
+        const rc = await stillOnHead();
+        if (rc !== 0) return rc;
+        return terminal(report, "REVIEWER_FAILED", verdict.reason);
+      }
+      case "draft-skip":
+        report.reviewedShaSource = "draft-skip";
+        break;
+      default:
+        report.reviewedSha = report.apiHead;
+        report.reviewedShaSource = verdict.source;
+    }
+  } else if (awaitReviewer) {
+    if (report.reviewerStatus !== "completed") {
+      // A check run stuck `in_progress` may be overruled by the sticky it
+      // already published (`stranded-run.ts`).
+      const stranded = await strandedRunNote(ctx, report, reviewer);
+      earlySticky = stranded.sticky;
+      stalledCheckRunNote = stranded.note;
+      if (stalledCheckRunNote === "") {
         return terminal(
           report,
           "AWAITING_REVIEWER",
@@ -1113,7 +997,7 @@ async function evaluateFresh(
   // resolved here — both of which the gate below treats as "not a witness".
   const markerFull = await resolveMarkerSha(marker);
 
-  if (awaitReviewer) {
+  if (awaitReviewer && !byObject) {
     // Second witness: the reviewer's stamp must name THIS head, or the head
     // it reviewed before skipping this one unchanged (`reviewed-sha.ts`).
     const stop = await reviewedShaGate(

@@ -619,6 +619,31 @@ people's in-progress items as they read the factory identity's. How the
 ranking, the cheap reads and the claim work is in
 [served pickups](../plugin/README.md#the-dispatcher).
 
+**Claims across hosts.** The claim lock serializes the claims of one
+machine only. Two hosts that serve one person claim an item with the same
+identity, so their tracker writes are identical, and the claim's re-read
+cannot tell which one holds it. The tracker offers no conditional write
+for an assignment, a state or a comment, so no tracker write can be the
+lease either. The claim marker (`do_item.claim_marker`) is the token
+between hosts instead, ruled by the earliest-wins rule the forge's claim
+records already use. A claim posts its marker before it writes the item,
+reads the item's markers back, and of the trusted markers posted within
+ten minutes of its own the earliest wins. A claim that finds an earlier
+one, or cannot post or read back its own, withdraws its marker and
+refuses, with nothing written to the item. After writing, it reads the
+markers again and stands down if an earlier one has appeared. The marker
+stays optional: a repository whose queue only one host picks up from
+needs none, and unset, claims serialize on one host only. Two claims whose
+read-backs each miss the other's marker can still both win; the read after
+the write narrows that to the claims' own length, and the dispatcher's
+double-claim watch stays as the backstop. The pool pickup (plan item 47),
+where several hosts take unassigned items from one ready pool, will
+require the marker: a pool configured without `do_item.claim_marker` will
+be refused. Inherited claims on Linear and Jira, whose issues hold one
+assignee, assign and then verify through the item's history that the
+assignment replaced nobody, putting back anyone it did replace
+([served pickups](../plugin/README.md#the-dispatcher)).
+
 **The forge.** The tick lists the repository's open pull requests and reads
 each one's comments for the ledger's marker, as the drive itself does; it
 does not rely on the forge's search to find the marker. It trusts only a
@@ -1085,6 +1110,7 @@ jig dispatch install [--interval 5m] --yes        # the timer
 jig dispatch receipts                             # past ticks
 jig dispatch result <record> <token> done|failed  # a session's or a follow-up pass's answer
 jig dispatch result <record> <token> failed --refused <updated-at> --reason <reason>  # a pickup the start rules refused
+jig dispatch result <record> <token> failed --refused <updated-at> --key <item> --reason <reason>  # one refused batch member; repeat --refused and --key per member
 ```
 
 A tick without `--apply` prints every action it would take, each with the
@@ -1858,11 +1884,11 @@ so the dashboard and `jig dispatch log` read while a tick writes. Its
 schema carries a version: a database at an older one is migrated forward
 in one transaction, and one a newer plugin wrote is refused, with its
 version named, by every command that opens it. The dashboard's server
-opens it through the reader that migrates it until the hub's first stage
-(its step 4) makes the server, and the hub it grows into, open it
-read-only, never migrating it and showing a schema older or newer than
+opens it through the reader that migrates it until the dashboard design's
+first stage (its step 5) makes the server, and every later stage's, open
+it read-only, never migrating it and showing a schema older or newer than
 their own as such
-([hub.md § Install and upgrade](hub.md#install-and-upgrade)).
+([dispatch-dashboard.md § Install and upgrade](dispatch-dashboard.md#install-and-upgrade)).
 
 What another host must know of this host's launches is not kept here: it
 is published as shared records on the forge (see Several hosts). The local
@@ -1902,7 +1928,9 @@ cannot close, is in
   it; that host writes the follow-up's answer onto it once its launch record
   ends, as it writes a launch's end.
 - **A pickup's claim** is the tracker claim `do-item` makes, which every
-  host already reads; nothing is published for it here.
+  host already reads; nothing is published for it here. Between hosts that
+  claim with one identity, its claim marker on the item decides which holds
+  it ([claims across hosts](#the-records-it-reads)).
 - **A launch's end** is written by the host that made the claim, onto the
   claim's own comment: its exit, or why it died. The wrapper writes it right
   after it records the stage's exit, so other hosts read it when the launch
@@ -2093,7 +2121,7 @@ The first is the **line**, one row of the state database (`tick_line`): the
 needs, the accounts with their slots and walls, the sessions, the queue and the
 repositories as a tick found them, with that tick's receipt. A tick that read
 every repository the machine file lists replaces it at its end. A tick for one
-repository leaves it, until the hub's first stage (its step 6) lets that tick
+repository leaves it, until the dashboard's first stage (its step 6) lets that tick
 replace only that repository's part (its needs, sessions and queue, and its
 entry among the repositories, stamped with that tick's run and read time) and
 leave the rest to the full ticks: the line's own times, the accounts and the
@@ -2143,22 +2171,23 @@ into the host is opened beyond the network the host already trusts. The
 URL it prints carries a token minted at start, and a request without it is
 refused: these records name repositories, items and accounts.
 
-The dashboard grows into the [hub](hub.md), which `jig install hub`
-installs as a resident reader where Orca's browser or a
+The dashboard's later stages ([dispatch-dashboard.md](dispatch-dashboard.md))
+add `jig install dashboard`, which installs it as a resident reader where
+Orca's browser or a
 [private-network front](../GLOSSARY.md) reaches a host's page: it holds no
 request, no component reads from it and the line never waits on it, so
 stopping it changes nothing the line does, and it opens every database
 read-only and never migrates one
-([hub.md § A reader, not a daemon](hub.md#a-reader-not-a-daemon)). The
-dispatcher itself stays without a resident process. The hub's server on a
+([dispatch-dashboard.md § A reader, not a daemon](dispatch-dashboard.md#a-reader-not-a-daemon)). The
+dispatcher itself stays without a resident process. The dashboard's server on a
 host listens on loopback, or on a socket only a front reaches, and needs
 no token, since every way in from another machine authenticates the person
-first. From the hub's second stage
-`jig dispatch dashboard` starts that server; once the hub's front is built,
+first. From the dashboard's second stage
+`jig dispatch dashboard` starts that server; once the dashboard's front is built,
 the dashboard drops the private-address bind (`dashboard.listen`) and the
 token in its URL, a machine file that still sets `dashboard.listen` gets a
 warning naming the front, and a phone reaches the page through the front
-([hub.md § Where it runs](hub.md#where-it-runs)).
+([dispatch-dashboard.md § Where it runs](dispatch-dashboard.md#where-it-runs)).
 
 Each read answers with its value or a coded failure with a reason for a person,
 and a bug is caught once around the routes and logged with its stack
@@ -2549,5 +2578,5 @@ Critiqued in two rounds by reviewers with fresh context (subagents that
 did not write it): the whole design on 2026-10-30 against commit
 `c2c8083e`, and the Control section, written after that round, on
 2026-10-31 against commit `de08d1ce`.
-What the hub adds to it was critiqued with the hub's design on 2026-11-06
-([hub.md § Review](hub.md#review)).
+What the dashboard design adds to it was critiqued with that design on 2026-11-06
+([dispatch-dashboard.md § Review](dispatch-dashboard.md#review)).

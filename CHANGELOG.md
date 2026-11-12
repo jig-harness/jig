@@ -391,6 +391,123 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.210.1] - 2026-11-12
+
+### Changed
+
+- The planned page for watching and steering the line, which grows from the
+  dispatch dashboard, keeps the name dispatch dashboard: its design is now
+  [design/dispatch-dashboard.md](design/dispatch-dashboard.md), and the
+  [phone access guide](plugin/phone-access.md) links there. The glossary
+  entry Hub becomes Dispatch dashboard, and the commands, settings and
+  record the design plans are named `jig dashboard`, `dashboard.*` and
+  `operator-conversation`. Nothing that is built changes.
+
+## [0.210.0] - 2026-11-11
+
+### Added
+
+- `drive-pr` reads an AI reviewer that submits pull-request reviews instead of
+  a summary comment with a reviewed-SHA stamp (`review.reviewer_evidence:
+review_object`). A review naming the head, or the reviewer's check run
+  completed on the head with no later review, is a review of the head; a run
+  titled `Review paused…` or `Review skipped…` stops the drive with
+  `REVIEW_SKIPPED` (`22`), the reason naming which and quoting the title. On
+  a draft the reviewer skips, the draft converges on its own work, and the
+  drive marks it Ready and waits for that review
+  ([terminal states](plugin/skills/drive-pr/references/terminal-states.md#a-reviewer-that-submits-pull-request-reviews)).
+- CodeRabbit is a built-in reviewer: `review.reviewer_app: coderabbitai`
+  alone sets its check name (`^CodeRabbit$`) and its evidence, for the drive
+  and for the dispatcher's merge-ready board.
+- `review.draft_skipping_reviewers` names the reviewers that skip drafts; the
+  merge-ready announcement waits (exit `4`) until each has run on the head
+  since the pull request was last marked Ready; the list is read from the base
+  branch's file, never the pull request's own
+  ([fields](plugin/CONFIGURATION.md#review)).
+- `arm-drive.ts` refuses a configuration whose reviewer evidence the drive
+  cannot read (`review_object` without `review.reviewer_app` where a reviewer is expected, or `sticky` for
+  CodeRabbit), and the audit reports it as an error, rather than a drive
+  waiting in `AWAITING_REVIEWER` until its timeout.
+
+### Fixed
+
+- The merge-ready announcement no longer vouches for a head a reviewer that
+  skips drafts has not looked at since the pull request was marked Ready,
+  where `review.draft_skipping_reviewers` names that reviewer.
+
+## [0.209.0] - 2026-11-11
+
+### Added
+
+- The Jira adapter signs in with more than an account's email and API
+  token. `JIRA_BEARER_TOKEN` sends an OAuth access token as
+  `Authorization: Bearer`, and `JIRA_TOKEN_COMMAND` names a command that
+  prints one, as `gh auth token` does, so a credential broker or vault holds
+  the token and the environment holds only the command: the adapter runs it
+  once per process under a deadline, runs it once more when Jira answers
+  401, and names the variable when it fails. The first set wins:
+  `JIRA_BEARER_TOKEN`, then `JIRA_TOKEN_COMMAND`, then `JIRA_EMAIL` with
+  `JIRA_API_TOKEN`
+  ([environment variables](plugin/CONFIGURATION.md#environment-variables)).
+- `issue_tracker.jira.api_base` sends the Jira adapter's requests through
+  Atlassian's API gateway, `https://api.atlassian.com/ex/jira/<cloud id>`,
+  which OAuth access tokens and API tokens with scopes require; a token with
+  scopes goes in `JIRA_API_TOKEN` beside `JIRA_EMAIL`. Only that address
+  shape is accepted, redirects are still never followed, and `site` still
+  builds every issue's link
+  ([`issue_tracker`](plugin/CONFIGURATION.md#issue_tracker)).
+
+## [0.208.0] - 2026-11-11
+
+The dispatch dashboard can be installed on a phone as an app.
+
+### Added
+
+- The dashboard's page names a web app manifest (`/manifest.webmanifest`) and
+  its icons (`/icons/*`), and sets a theme colour for each colour scheme, so
+  Chrome on Android offers **Install app** for it. The installed app opens in
+  its own window at the dashboard's root address, with no token in any address.
+  A dashboard that asks for a token refuses the manifest with every other
+  request without the token, so only a dashboard served without a token, behind
+  an HTTPS front, is offered for install. The
+  [phone access guide](plugin/phone-access.md#install-it-as-an-app) has the
+  steps and the check.
+
+## [0.207.0] - 2026-11-11
+
+### Added
+
+- A served person's epic children now start on Linear and Jira too. An
+  inherited claim (`claim --for <person> --ancestor <epic>`) assigns the
+  unassigned child, then checks the item's history to confirm the
+  assignment replaced nobody. If it did replace someone, it puts them back
+  and stands down. Neither tracker offers a write that applies only to an
+  unassigned item, so before this the claim refused there.
+
+### Changed
+
+- `do_item.claim_marker` now serializes claims across hosts. The claim
+  posts its marker before it writes the item's assignee or state, then
+  reads the item's markers back. Of the markers posted within 10 minutes of
+  its own, the earliest wins. A claim that finds an earlier marker, or that
+  cannot post or read back its own, removes its marker and refuses (exit 3,
+  `"why": "marker"`), with nothing written to the item. A claim that finds
+  an earlier marker only after writing stands down (exit 4). Turn the
+  setting on wherever more than one host picks up from one queue; left
+  unset, claims serialize on one host only.
+- With `do_item.claim_marker` set, a marker that cannot be posted now
+  refuses the claim, where it used to leave the claim standing. The claim's
+  `"marker"` JSON now reports `confirmed`: whether the read after the write
+  confirmed that the claim still holds the earliest marker.
+- A served batch pickup that the repository's start rules
+  (`do_item.preflight_command`) refused for one member now holds only that
+  member. The pass records `jig dispatch result <record> <token> failed
+  --refused <updated-at> --key <item> --reason <reason>`, repeating
+  `--refused` and `--key` for each member refused. The dispatcher holds each
+  named member until its own `updatedAt` moves, and picks the rest of the
+  batch up again without them. A single-item pickup, and a refusal recorded
+  without `--key`, are held as before: on one time for the whole pickup.
+
 ## [0.206.0] - 2026-11-11
 
 ### Added
@@ -7130,7 +7247,12 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.206.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.210.1...HEAD
+[0.210.1]: https://github.com/jig-harness/jig/compare/v0.210.0...v0.210.1
+[0.210.0]: https://github.com/jig-harness/jig/compare/v0.209.0...v0.210.0
+[0.209.0]: https://github.com/jig-harness/jig/compare/v0.208.0...v0.209.0
+[0.208.0]: https://github.com/jig-harness/jig/compare/v0.207.0...v0.208.0
+[0.207.0]: https://github.com/jig-harness/jig/compare/v0.206.0...v0.207.0
 [0.206.0]: https://github.com/jig-harness/jig/compare/v0.205.0...v0.206.0
 [0.205.0]: https://github.com/jig-harness/jig/compare/v0.204.0...v0.205.0
 [0.204.0]: https://github.com/jig-harness/jig/compare/v0.203.0...v0.204.0

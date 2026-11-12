@@ -109,7 +109,7 @@ The skill reads them at run time from `.config/jig.yaml`:
 
 | Field | What it sets | When absent |
 |-------|--------------|-------------|
-| `issue_tracker.adapter` | Which tracker adapter the scripts use: `github` for GitHub Issues (the logged-in `gh` command-line client; its settings are under `issue_tracker.github`, [configuration reference](../../CONFIGURATION.md#issue_tracker)) `linear` (credentials from `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, else a logged-in `linear` command-line client), or `jira` for Jira Cloud (credentials from `JIRA_EMAIL` and `JIRA_API_TOKEN`; its settings are under `issue_tracker.jira`, `site` required). A plan file kept in the repository is planned, [ROADMAP item 12](https://github.com/jig-harness/jig/blob/main/ROADMAP.md#12-more-tracker-adapters) | `github` |
+| `issue_tracker.adapter` | Which tracker adapter the scripts use: `github` for GitHub Issues (the logged-in `gh` command-line client; its settings are under `issue_tracker.github`, [configuration reference](../../CONFIGURATION.md#issue_tracker)) `linear` (credentials from `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, else a logged-in `linear` command-line client), or `jira` for Jira Cloud (credentials from `JIRA_BEARER_TOKEN`, else `JIRA_TOKEN_COMMAND`, else `JIRA_EMAIL` and `JIRA_API_TOKEN`; its settings are under `issue_tracker.jira`, `site` required, `api_base` for Atlassian's API gateway). A plan file kept in the repository is planned, [ROADMAP item 12](https://github.com/jig-harness/jig/blob/main/ROADMAP.md#12-more-tracker-adapters) | `github` |
 | `issue_tracker.team` | Linear and Jira: the team (Linear) or project (Jira) the repository files into, as the prefix its issue keys carry (`ENG` for `ENG-123`) | Required on Linear and Jira: the tracker scripts stop with a message naming this field. Not used on GitHub Issues. A file that sets it without naming `issue_tracker.adapter` is refused, since the default adapter has no team: add `adapter: linear` or `adapter: jira` |
 | `issue_tracker.states` | Map from canonical state keys to the tracker's own state names | Each key title-cased, e.g. `in_progress` → "In Progress"; `pr_open` stays unset, and nothing moves an item there |
 | `issue_tracker.file_command` | How to file a new issue (e.g. a slash command) | Ask the user to file it |
@@ -122,7 +122,7 @@ The skill reads them at run time from `.config/jig.yaml`:
 | `do_item.gates` | Mandatory review gates, `[{labels, paths, skill}]` | No gates |
 | `do_item.preflight_command` | The repository's own start rules: a command every claim runs first, read from the default branch, with the item's JSON on standard input (exit 0 goes on, exit 3 refuses with its first output line as the reason, any other exit or a run past its deadline refuses too) | No check beyond the claim's own |
 | `do_item.claim_from` | The canonical states a claim may start from, read from the default branch; any other state, or a status that maps to no canonical state, is refused | None: the claim's own restrictions apply (never an `in_progress` or `pr_open` item; a served claim needs a triage, backlog or unstarted one) |
-| `do_item.claim_marker` | A successful claim posts a marker comment naming the session, host and branch, read from the default branch | No marker |
+| `do_item.claim_marker` | A claim posts a marker comment naming the session, host and branch before it writes, and the earliest marker on the item wins, so two hosts rarely both claim it (best effort: a lagging listing can let both win); read from the default branch | No marker; claims serialize on one host only |
 | `do_item.post_merge_state`, `do_item.post_merge_closer` | Where the [post-merge status rule](#step-4a-standard-start-no-sub-issues) stops (`done`, `ops_pending` or `in_review`), and who closes an item it leaves short of `done`, for the closing comment | `done`; a sentence saying a person closes the item |
 | `do_item.guidance` | Implementation guidance, `[{labels, paths, skills, notes}]`, matched as gates are (see [Step 4a](#step-4a-standard-start-no-sub-issues)) | No guidance |
 | `do_item.execution_plan_block` | Name of the fenced block holding an epic's machine-readable execution plan | `execution-plan-v1` |
@@ -719,19 +719,22 @@ implementation. Skip this check for issues about the repository's own code.
    Keep these as separate quoted arguments. The claim keeps that person as
    sole assignee, checks writer authority and live ancestry, and refuses
    changed holds or assignment. A refusal or stand-down requires a fresh
-   queue read; never retry without the served-person options. GitHub supports
-   inherited claims; Linear and Jira refuse them because their assignment
-   APIs cannot preserve a concurrent assignee. Claims serialize on this
-   host; simultaneous same-person claims on separate hosts remain a race.
+   queue read; never retry without the served-person options. Every
+   adapter supports inherited claims. Claims serialize on this host;
+   between hosts, only `do_item.claim_marker` arbitrates same-person claims,
+   best effort: a lagging listing can let two claims both win, and a later
+   loss stands the claim down after its writes.
 
    Exit `0` is the claim. Exit `3` is a refusal, nothing written: the issue
    is already `in_progress` or assigned to someone else; its state is not
-   one `do_item.claim_from` lets work start from (`"why": "state"`); or the
+   one `do_item.claim_from` lets work start from (`"why": "state"`); the
    repository's `do_item.preflight_command` refused it (`"why": "preflight"`
    in the JSON, its reason on stderr: that command runs inside `claim`,
-   before the lock, so nothing here calls it). Exit `4` is a
-   stand-down: the claim was written, and reading the issue back showed
-   another claim landed first. On `3` or `4`, stop the pickup and report the
+   before the lock, so nothing here calls it); or, with
+   `do_item.claim_marker`, another claim's marker is earlier, or this
+   claim's own could not be posted and read back (`"why": "marker"`). Exit
+   `4` is a stand-down: the claim was written, and reading the issue back
+   showed another claim landed first. On `3` or `4`, stop the pickup and report the
    reason it printed; never start the item beside another session. A
    refusal by the repository's start rules (`state` or `preflight`) is not
    cleared by a person telling you to proceed: the item changes, or the
@@ -741,8 +744,9 @@ implementation. Skip this check for issues about the repository's own code.
    not release it; any other refusal (`state` included) stays held until the
    item leaves the dispatch states or its assignment and returns. With
    `do_item.claim_marker`, the claim posts the claim marker on the item
-   itself; `"marker"` in the JSON says whether it was posted, and a marker
-   that was not posted leaves the claim standing (report it). A person
+   before it writes; `"marker"` in the JSON says whether the read after the
+   write confirmed it, and an unconfirmed one leaves the claim standing
+   (report it). A person
    resuming their own interrupted pickup of an `in_progress` item tells you
    so, and you go on from here without the claim. Exit `5` is the tracker's
    rate limit: stderr names the time it resets
@@ -1819,7 +1823,11 @@ record how it ended. In such a pass:
   of the pass. Nothing was written: record it with the `--refused` command
   the prompt names, passing that `updatedAt` and the reason it printed. The
   dispatcher shows the item as held with that reason and does not launch it
-  again until the item's `updatedAt` moves past it. A preflight refusal
+  again until the item's `updatedAt` moves past it. A batch pass (the
+  prompt names a fixed served batch) adds `--key <the refused issue>` beside
+  its `--refused`, the `"issue"` and `"updatedAt"` from that claim's JSON,
+  repeated for each member refused: only those members are held, and the
+  rest of the batch is launched again without them. A preflight refusal
   with no `updatedAt` (the item could not be read) and a `claim_from`
   refusal record plain `failed`.
 - **Never pick on the person's behalf** to finish unattended: a question
@@ -1835,7 +1843,7 @@ record how it ended. In such a pass:
 |-------|----------|
 | Issue not found | Check the key against the tracker's form ([Tracker operations](#tracker-operations)); list the tracker's issues (Linear: `linear issue list --team <issue_tracker.team>`; GitHub Issues: `gh issue list` on the configured repository) |
 | Tracker unreachable on one transport | Use the other transport recorded in Step 1 |
-| Missing tracker credential | Set the adapter's credential (Linear: `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, or log in to the `linear` command-line client; GitHub Issues: sign in with `gh auth login`, and add the `project` scope with `gh auth refresh` when the states are on a board), or use the harness's native integration |
+| Missing tracker credential | Set the adapter's credential (Linear: `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, or log in to the `linear` command-line client; GitHub Issues: sign in with `gh auth login`, and add the `project` scope with `gh auth refresh` when the states are on a board; Jira: `JIRA_BEARER_TOKEN`, `JIRA_TOKEN_COMMAND`, or `JIRA_EMAIL` and `JIRA_API_TOKEN`, an error naming `JIRA_TOKEN_COMMAND` meaning that command failed), or use the harness's native integration |
 
 ## Scripts reference
 

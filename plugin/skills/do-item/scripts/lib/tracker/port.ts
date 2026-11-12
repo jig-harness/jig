@@ -184,6 +184,8 @@ export interface IssueFact {
 }
 
 export interface CommentFact {
+  /** The tracker's own id for the comment, which `deleteComment` takes. */
+  id?: string;
   body: string;
   createdAt: string;
   /**
@@ -651,8 +653,15 @@ export interface Tracker {
     issueLabel: string;
     createdIn: WindowSpec;
   }): Promise<FoundComment[]>;
-  /** Every comment on one issue, with its trust, and the issue's tracker id. */
+  /**
+   * Every comment on one issue, with its trust, and the issue's tracker id,
+   * in the order the tracker created them: two readers of one issue list its
+   * comments in the same order, which the claim marker's earliest-wins rule
+   * rests on.
+   */
   issueComments(key: string): Promise<IssueComments>;
+  /** Delete a comment of the issue by its id (`CommentFact.id`). */
+  deleteComment(key: string, id: string): Promise<void>;
   /**
    * The issues carrying `label`, or (when given) in `project`: the union, one
    * population. Throws when the label or project does not resolve to exactly
@@ -765,7 +774,13 @@ export interface Tracker {
   assignees(key: string): Promise<TrackerUser[]>;
   /** Assign the issue to `user` alone, replacing any other assignee. */
   assign(key: string, user: TrackerUser): Promise<void>;
-  /** Add an assignee only to an unassigned issue, never replacing a racing assignee. False means refresh the queue. */
+  /**
+   * Assign an unassigned issue to `user` without losing a racing assignee:
+   * GitHub adds the assignee; Linear and Jira, whose issues hold one
+   * assignee and which offer no conditional write, assign and then verify
+   * through the issue's history that the assignment replaced nobody, putting
+   * back anyone it did replace. False means refresh the queue.
+   */
   assignUnassigned?(key: string, user: TrackerUser): Promise<boolean>;
   /**
    * The user an identity names, in the form `dispatch.identity` takes (a

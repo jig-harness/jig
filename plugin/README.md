@@ -453,7 +453,10 @@ waits for the reset within its deadline, else records `failed`): the item is hel
 question for a person, and the first tick after it launches the item again. A pickup
 whose claim the repository's start rules (`do_item.preflight_command`)
 refused records `failed --refused <updated-at> --reason <reason>`, and the dispatcher
-shows the item as held with that reason until the item changes. Every ended
+shows the item as held with that reason until the item changes. A batch
+pickup names each refused member with `--key <item>` beside its `--refused`:
+only those members are held, each until it changes, and the rest of the
+batch is picked up again without them. Every ended
 launch's outcome keeps its next owner: a station address, a person and their
 act, or nobody with a reason. `jig ask` shows this as `last.next`; older
 outcomes that did not keep it say it was not recorded. A converged drive
@@ -463,7 +466,15 @@ slot while the runtime reports its agent working or waiting, and gives it
 back when the agent finishes. `do-item` claims the item itself
 (`tracker.ts claim`: refused when the item is already in progress or
 assigned to someone else, and abandoned when a re-read shows another claim
-landed first), so the tick never writes to the tracker. A claimed item
+landed first), so the tick never writes to the tracker. Hosts that serve
+one person, or pick up from one queue, claim with the same identity, so
+only the claim marker tells their claims apart: with
+`do_item.claim_marker` set, of two hosts claiming one item the one whose
+marker is earliest claims it and the other refuses, usually with nothing
+written (best effort: a lagging listing can let both win, and a later loss
+stands a claim down after its writes)
+([do-item's start rules](skills/do-item/README.md#the-repositorys-own-start-rules)).
+Without it, claims serialize on one host only. A claimed item
 with no running session for longer than `dispatch.stalled_after` is
 reported as stalled and never relaunched; an item more than one running
 session joins to is reported as a double claim; a session waiting longer
@@ -1551,7 +1562,7 @@ open; the guide lists the evidence it needs.
 | **git** | 2.36 or later (`--path-format` for absolute paths and `git worktree list -z`; `resolve-conflicts` needs 2.41, to reconstruct automatic merge results and read attributes from the index with `--attr-source`, and its history report 2.43, or 2.45 in a partial clone) | Every skill that reads the repository |
 | **GitHub CLI** (`gh`), signed in with access to the repositories you work on | 2.48 or later (`gh api --slurp`) | Every skill that works on pull requests. Jig supports GitHub as its only forge ([extending](EXTENDING.md#forge-github)) |
 | **The `gh-stack` extension** | Any | Only `pull_requests.stacking: native` |
-| **Issue-tracker access** | — | `do-item`, and `drive-pr`'s tracker reads. With the default GitHub adapter, the signed-in `gh` above and nothing more. With the Linear adapter: `LINEAR_API_KEY` or `LINEAR_API_TOKEN` in the environment, or the Linear MCP server or `linear` command line tool signed in. With the Jira adapter: `JIRA_EMAIL` and `JIRA_API_TOKEN` in the environment, an Atlassian account's email address and an API token made for it |
+| **Issue-tracker access** | — | `do-item`, and `drive-pr`'s tracker reads. With the default GitHub adapter, the signed-in `gh` above and nothing more. With the Linear adapter: `LINEAR_API_KEY` or `LINEAR_API_TOKEN` in the environment, or the Linear MCP server or `linear` command line tool signed in. With the Jira adapter: `JIRA_EMAIL` and `JIRA_API_TOKEN` in the environment, an Atlassian account's email address and an API token made for it, or an OAuth access token in `JIRA_BEARER_TOKEN`, or a command that prints one in `JIRA_TOKEN_COMMAND` ([environment variables](CONFIGURATION.md#environment-variables)) |
 
 Most skills do not check these versions when they run: an older tool fails
 on the command it lacks. The `resolve-conflicts` history report is the
@@ -1787,8 +1798,9 @@ Issues, the default, the key is the repository's own
 team is set. A drive does not need an AI reviewer: without one it
 converges on review threads and CI alone. A repository that has one names it
 with `review.reviewer_app` (or `review.reviewer_check_pattern`), and the drive
-then also waits for the check run, sticky comment and reviewed-commit marker
-described in the
+then also waits for the check run, sticky comment and reviewed-commit marker,
+or for a reviewer that submits pull-request reviews (CodeRabbit, named by
+`reviewer_app: coderabbitai` alone) its review of the head, as described in the
 [drive-pr README](skills/drive-pr/README.md#consumer-configuration). Add a
 field only when its default does not fit. The
 [configuration reference](CONFIGURATION.md) lists every field, including the
