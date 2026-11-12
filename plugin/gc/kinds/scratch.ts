@@ -1,3 +1,8 @@
+import {
+  registeredFixtureResources,
+  fixtureScopeWithinBounds,
+  withinFixtureRoot,
+} from "./fixture-scratch-inventory.ts";
 import { type Dirent, lstatSync, readdirSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { exclusiveGcLock } from "../../shared/gc-lock.ts";
@@ -13,6 +18,19 @@ import {
   type Outcome,
 } from "../../shared/outcome.ts";
 import type { CollectionKind, Proof, Resource } from "../types.ts";
+import {
+  fixtureScopeInventory,
+  type FixtureScope,
+} from "../../shared/test-fixture-registry.ts";
+import {
+  collectFixtureScratch,
+  fixtureScratchProof,
+  recordFixtureFailure,
+} from "./fixture-scratch.ts";
+import {
+  orphanFixtureProof,
+  reapFixtureScope,
+} from "../../shared/test-fixture-reap.ts";
 
 /** Why a scratch scan stopped short. */
 type ScanFailure = {
@@ -108,13 +126,23 @@ export function scratchKind(
   prefixes: string[],
   declaration: string,
   idleDays: number,
+  registryRoot?: string,
 ): CollectionKind {
+  let memberships = new Map<string, FixtureScope[]>();
+  let processResources = new Map<string, FixtureScope>();
   return {
     name: "scratch",
     repository,
     declaration,
     inventory: async () => {
+      memberships.clear();
+      processResources.clear();
       const resources = new Map<string, Resource>();
+      const registered = fixtureScopeInventory(registryRoot);
+      if (!registered.ok) {
+        recordFixtureFailure(registered.failure);
+        return registered;
+      }
       for (const prefix of prefixes) {
         const absolute = resolve(repository, prefix);
         let entries: Dirent[];
@@ -133,19 +161,93 @@ export function scratchKind(
             resources.set(id, { id });
           }
       }
-      return ok([...resources.values()]);
+      const inventory = registeredFixtureResources(
+        repository,
+        prefixes,
+        registered.value,
+        resources,
+      );
+      memberships = inventory.memberships;
+      processResources = inventory.processes;
+      return ok(inventory.resources);
     },
     prove: async (resource) => {
+      const processScope = processResources.get(resource.id);
+      if (processScope) {
+        const registered = fixtureScopeInventory(registryRoot);
+        if (!registered.ok)
+          return {
+            state: "unverified",
+            reason: recordFixtureFailure(registered.failure),
+          };
+        if (
+          registered.value.some(
+            (scope) =>
+              scope.registry === processScope.registry &&
+              !fixtureScopeWithinBounds(scope.root, repository, prefixes),
+          )
+        )
+          return {
+            state: "unverified",
+            reason:
+              "fixture membership includes scopes outside declared scratch prefixes",
+          };
+        return orphanFixtureProof(processScope.root, processScope.registry);
+      }
+      if (memberships.has(resource.id)) {
+        const registered = fixtureScopeInventory(registryRoot);
+        if (!registered.ok)
+          return {
+            state: "unverified",
+            reason: recordFixtureFailure(registered.failure),
+          };
+        const scopes = registered.value.filter((scope) =>
+          withinFixtureRoot(resource.id, scope),
+        );
+        if (!scopes.some((scope) => scope.root === resource.id))
+          return {
+            state: "unverified",
+            reason: "fixture scope registration disappeared",
+          };
+        memberships.set(resource.id, scopes);
+        return fixtureScratchProof(resource.id, scopes, idleDays);
+      }
       const proof = scratchProof(resource.id, await processTable(), idleDays);
       return proof.ok
         ? proof.value
         : { state: "unverified", reason: proof.failure.reason };
     },
-    collect: async () => ({
-      outcome: "refused",
-      reason: "scratch is report-only until fixture registration",
-    }),
-    describe: (resource) => resource.id,
-    exclusive: (body) => exclusiveGcLock("scratch", body),
+    collect: async (resource) => {
+      const processScope = processResources.get(resource.id);
+      if (processScope) {
+        const reaped = await reapFixtureScope(
+          processScope.root,
+          processScope.registry,
+        );
+        return {
+          outcome: reaped.state === "dead" ? "collected" : "refused",
+          reason: reaped.reason,
+        };
+      }
+      const scopes = memberships.get(resource.id);
+      return scopes
+        ? collectFixtureScratch(resource.id, scopes)
+        : {
+            outcome: "refused",
+            reason: "scratch is report-only until fixture registration",
+          };
+    },
+    describe: (resource) => {
+      const scope = processResources.get(resource.id);
+      return scope
+        ? `registered fixture processes for ${scope.root}`
+        : resource.id;
+    },
+    exclusive: (body) =>
+      exclusiveGcLock(
+        "scratch",
+        body,
+        registryRoot ? join(dirname(registryRoot), "gc-locks") : undefined,
+      ),
   };
 }

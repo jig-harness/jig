@@ -1173,9 +1173,10 @@ per step:
   worktrees derive, and the machine-level dangling images and build cache.
 - **Branches** merged as the forge records it (squash merges included) or
   into the base by ancestry, with the remote branch gone.
-- **Processes**: the process registry as a shared module, the test runner
-  registering its fixtures, and the kind reaping registered trees whose
-  owner is gone.
+- **Process rollout**: validate persistent test fixture registration and
+  collection on a host running suites in several worktrees. Cover native
+  launch trees whose descendant membership remains unknown, keeping those
+  scopes until their registrations can prove every holder gone.
 
 Done when a working repository's weekly sweep is the installed `jig gc`
 job, its own reapers and installers are gone, and the report names each

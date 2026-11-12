@@ -12,7 +12,11 @@ gc:
   # `jig gc`: collection reads only this declaration, within the bounds
   # install confirmed, so a root named only in the environment layer would
   # hold trees it never collects.
-  kinds: [tool-state, worktrees]
+  kinds: [tool-state, worktrees, scratch]
+  # Linux test scopes. Other hosts declare their actual temporary-directory
+  # prefix here before confirming it in the collector's installed bounds.
+  scratch_prefixes:
+    - /tmp/jig-test-tmp.
   worktree_roots:
     - ../../orca/workspaces/jig
     - .claude/worktrees # Claude Code's isolated subagent worktrees, inside the clone

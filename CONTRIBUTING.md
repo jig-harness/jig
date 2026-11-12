@@ -74,6 +74,25 @@ so moves that are harmless alone collide here.
   (`lib/test-reap-children-bun-preload.ts`): a reported leak is a fixture
   that did not clean up, not noise.
 
+Test scratch also has persistent fixture registrations outside the temporary
+directory. A child qualifies for recursive registration when it uses the
+current Bun executable with `--no-env-file` and an explicit empty `--config`.
+This path accepts direct file or evaluation programs without additional
+application arguments.
+The launcher copies that configuration before starting the child, so another
+fixture cannot change its startup behavior between inspection and execution.
+Use those arguments for fixtures that need no runtime configuration. Preserve
+native launch behavior where it is what a regression tests: shell commands,
+workers and nested test runners remain explicitly unverified, and their
+scratch is retained. A process exiting does not prove its children exited.
+
+The `fixtureStartup` option on `scopeTestTmpdir` is for a runner's initial
+preload, before fixture code can launch work. The caller must ensure that
+it runs before user or global startup hooks and environment changes. It
+asserts a startup order the caller owns. A helper first called later cannot
+claim that coverage. See [test scratch](plugin/gc/README.md#test-scratch)
+for collection setup and the checks before removal.
+
 ## Pull-request lifecycle
 
 Jig's own form of [M7's loop](modules/M7-pr-lifecycle-review/templates/PR-LIFECYCLE.md):

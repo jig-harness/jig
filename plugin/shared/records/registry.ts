@@ -430,6 +430,13 @@ const MACHINE: RecordKind[] = [
   ),
   plain(
     "machine",
+    "test-fixture-membership",
+    "shared/test-fixture-registry.ts",
+    "~/.local/state/jig/test-fixtures-v1/<tree>/nodes/<node>.json and <node>.claim, scope-<hash>.json and private startup configurations",
+    1,
+  ),
+  plain(
+    "machine",
     "upgrade-setting",
     "runtime/upgrade-record.ts",
     "~/.jig/jig.yaml, its upgrade section",
