@@ -562,10 +562,10 @@ describe("Jira adapter: filing and patching", () => {
       ["ENG-4"],
     );
     await t.searchIssues("x", { includeClosed: true });
-    expect(jqlOf(calls[0] as Call)).toBe(
+    expect(jqlOf(calls[1] as Call)).toBe(
       'project = ENG AND (summary ~ "say \\"hi\\"" OR description ~ "say \\"hi\\"") AND statusCategory != Done ORDER BY created ASC',
     );
-    expect(jqlOf(calls[1] as Call)).not.toContain("statusCategory");
+    expect(jqlOf(calls[2] as Call)).not.toContain("statusCategory");
     await expect(t.searchIssues(" ")).rejects.toBeInstanceOf(
       TrackerRequestError,
     );

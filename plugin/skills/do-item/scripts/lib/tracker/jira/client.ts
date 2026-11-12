@@ -578,6 +578,11 @@ export function jiraClient(opts: ClientOptions): Client {
     },
 
     async search(jql, where, signal, fields) {
+      if (signal?.aborted === true) throw abortedError(signal);
+      const authenticated = myself();
+      await (signal === undefined
+        ? authenticated
+        : until(authenticated, signal));
       const extra = await client.fieldLabels(signal);
       const facet = await client.facetFields(signal);
       const read = fields ?? (await fieldsToRead(signal));

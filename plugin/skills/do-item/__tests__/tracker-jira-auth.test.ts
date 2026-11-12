@@ -58,6 +58,25 @@ describe("Jira authentication before protected reads", () => {
     const { client } = jira(routes({ "GET myself": {} }));
     await expect(client.issue("ENG-1")).rejects.toThrow("JIRA_API_TOKEN");
   });
+
+  it("verifies identity before a search can return an anonymous population", async () => {
+    const { client, calls } = jira(
+      routes({
+        "GET myself": httpFailure(
+          401,
+          new Headers(),
+          "anonymous",
+          "GET myself",
+        ),
+        "POST search/jql": { issues: [], isLast: true },
+      }),
+    );
+    await expect(client.search("project = ENG", "test search")).rejects.toThrow(
+      "JIRA_API_TOKEN",
+    );
+    expect(calls.map((c) => c.route)).toEqual(["GET myself"]);
+  });
+
   it("retries a refused profile without caching anonymous fields, then shares its success", async () => {
     let profiles = 0;
     const { client, calls } = jira(

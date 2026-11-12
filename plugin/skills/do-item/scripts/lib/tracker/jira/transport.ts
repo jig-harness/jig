@@ -253,7 +253,10 @@ function headerOf(
   signal: AbortSignal | undefined,
 ): string {
   if (cancelled(signal)) throw abortedError(signal);
-  if (!header.ok) throw new JiraApiError(header.failure.reason);
+  if (!header.ok)
+    throw new JiraApiError(header.failure.reason, {
+      unavailable: header.failure.code === "token-command-unavailable",
+    });
   return header.value;
 }
 

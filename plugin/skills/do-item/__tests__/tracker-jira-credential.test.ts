@@ -307,26 +307,35 @@ describe("JIRA_TOKEN_COMMAND", () => {
   });
 
   it("names the variable when the command fails, never what it printed", async () => {
-    const cases: [Partial<TokenRun> & { stdout?: string }, string][] = [
+    const cases: [Partial<TokenRun> & { stdout?: string }, string, boolean][] =
       [
-        { code: 3, stdout: "s3cret", stderr: "warming up\nnot signed in\n" },
-        "JIRA_TOKEN_COMMAND (broker) exited 3: not signed in",
-      ],
-      [{ stdout: "  \n" }, "JIRA_TOKEN_COMMAND (broker) printed no token"],
-      [
-        { stdout: "s3cret\nmore" },
-        "JIRA_TOKEN_COMMAND (broker) printed more than a token; it must print the token alone",
-      ],
-      [
-        { timedOut: true, code: 124, stdout: "s3cret" },
-        "JIRA_TOKEN_COMMAND (broker) printed no token within 30 seconds",
-      ],
-      [
-        { spawnFailed: true, code: 127 },
-        "JIRA_TOKEN_COMMAND (broker) could not start",
-      ],
-    ];
-    for (const [over, message] of cases) {
+        [
+          { code: 3, stdout: "s3cret", stderr: "warming up\nnot signed in\n" },
+          "JIRA_TOKEN_COMMAND (broker) exited 3: not signed in",
+          false,
+        ],
+        [
+          { stdout: "  \n" },
+          "JIRA_TOKEN_COMMAND (broker) printed no token",
+          false,
+        ],
+        [
+          { stdout: "s3cret\nmore" },
+          "JIRA_TOKEN_COMMAND (broker) printed more than a token; it must print the token alone",
+          false,
+        ],
+        [
+          { timedOut: true, code: 124, stdout: "s3cret" },
+          "JIRA_TOKEN_COMMAND (broker) printed no token within 30 seconds",
+          true,
+        ],
+        [
+          { spawnFailed: true, code: 127 },
+          "JIRA_TOKEN_COMMAND (broker) could not start",
+          false,
+        ],
+      ];
+    for (const [over, message, unavailable] of cases) {
       const runner: TokenRunner = async () => tokenRun(over.stdout ?? "", over);
       const { sent, impl } = statuses(200);
       const err = await failure(
@@ -334,7 +343,7 @@ describe("JIRA_TOKEN_COMMAND", () => {
       );
       expect([err.message, err.unavailable, sent]).toEqual([
         message,
-        false,
+        unavailable,
         [],
       ]);
       expect(err.message).not.toContain("s3cret");
@@ -406,6 +415,17 @@ describe("JIRA_TOKEN_COMMAND", () => {
     } finally {
       late.resolve(tokenRun("late\n"));
     }
+  });
+
+  it("keeps a timed-out token broker retryable", async () => {
+    const err = await failure(
+      httpTransport(
+        GATEWAY,
+        command(async () => tokenRun("", { timedOut: true, code: 124 })),
+        statuses(200).impl,
+      )(request),
+    );
+    expect(err.unavailable).toBe(true);
   });
 
   it("starts no renewal run for a request that has already ended", async () => {
