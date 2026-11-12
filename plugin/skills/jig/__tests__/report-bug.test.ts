@@ -693,23 +693,6 @@ test("a type failure after the issue was created does not file it again", () => 
   );
 });
 
-test("a type failure with no way to look for the issue does not file it again", () => {
-  const dir = mkdtempSync(join(tmpdir(), "jig-report-bug-"));
-  filingGh(
-    dir,
-    "echo 'GraphQL: issue type not readable' >&2; exit 1",
-    "exit 1",
-  );
-  const run = fileDraft(dir);
-  expectSpawnExit(run, 1);
-  expect(run.stderr.toString()).toContain(
-    "Whether the issue was created is unknown",
-  );
-  expect(calls(dir).filter((c) => c.startsWith("issue create"))).toHaveLength(
-    1,
-  );
-});
-
 test("labels joined by commas are split before the facet ones are dropped", () => {
   expect(splitFacetLabels(["jig,bug,small", "priority: high, extra"])).toEqual({
     kept: ["jig", "extra"],
@@ -723,16 +706,17 @@ test("labels joined by commas are split before the facet ones are dropped", () =
 });
 
 test.each([
-  ["an object", "{}"],
-  ["an entry with no number", `[{"title":"t"}]`],
+  ["no listing at all", "exit 1"],
+  ["an object", "echo '{}'"],
+  ["an entry with no number", `echo '[{"title":"t"}]'`],
 ])(
-  "a type failure whose listing is %s is not filed again",
+  "a type failure whose issue lookup gives %s is not filed again",
   (_name, listing) => {
     const dir = mkdtempSync(join(tmpdir(), "jig-report-bug-"));
     filingGh(
       dir,
       "echo 'GraphQL: issue type not readable' >&2; exit 1",
-      `echo '${listing}'`,
+      listing,
     );
     const run = fileDraft(dir);
     expectSpawnExit(run, 1);
