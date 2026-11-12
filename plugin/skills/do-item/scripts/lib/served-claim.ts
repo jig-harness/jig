@@ -234,7 +234,7 @@ function startStateRefusal(
     return {
       outcome: "stood_down",
       issue: key,
-      reason: `${key} changed before it could be started: ${blocked.reason}; queue must refresh`,
+      reason: `${key} changed before it could be started: it is now blocked; queue must refresh`,
     };
   if (blocked) return blocked;
   const outside = options.claimFrom
