@@ -513,8 +513,11 @@ repository keeps that facet in the tracker's own field), and the started
 ones apart. With the user's go-ahead, or when they asked for it, run it
 again with `--yes`: it moves each listed issue that is not yet started back
 to triage, a comment naming what it lacks posted first, and lists the
-started ones without moving them. It moves at most 50 a run and lists at
-most 20 pages of 100. Listing pages share one tracker census, bounded to
+started ones without moving them. Where the repository sets
+`file_issue.sweep.move: false`, `--yes` instead posts the comment and moves
+nothing; an issue already carrying the comment's marker is passed over
+without counting against the budget. It moves (or, without moving,
+comments on) at most 50 a run and lists at most 20 pages of 100. Listing pages share one tracker census, bounded to
 a minute; the page limit bounds the report, not tracker issue reads. The
 next run takes what remains. Offer to settle a
 listed issue with [Plan](#plan-an-existing-issue).

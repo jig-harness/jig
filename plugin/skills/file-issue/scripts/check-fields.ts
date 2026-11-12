@@ -17,8 +17,9 @@
  * type, a priority or a size (an epic needs no size) or carries a label of a
  * facet kept elsewhere; with `--yes` it moves each one not yet started back
  * to triage with a comment naming what it lacks, at most 50 a run, and lists
- * the started ones without moving them. It prints issue keys, never a title
- * or a body.
+ * the started ones without moving them; with `file_issue.sweep.move: false`
+ * it comments on each one and moves none. It prints issue keys, never a
+ * title or a body.
  *
  * `move` previews by default and writes nothing without `--yes`. The preview
  * (`--target` with the `issue_tracker.facets` section the repository will
@@ -77,6 +78,7 @@ import {
   storeName,
   withSection,
 } from "./lib/sections.ts";
+import { sweepSettings } from "./lib/sweep-settings.ts";
 import { sweep, sweepLines } from "./lib/sweep.ts";
 
 const USAGE = `usage:
@@ -105,6 +107,7 @@ async function check(argv: string[]): Promise<number> {
     strict: true,
   });
   const overlay = readOverlay();
+  const settings = sweepSettings(overlay);
   const config = trackerConfigFrom(overlay);
   const root = consumerRoot();
   const tracker = openTracker(config, root);
@@ -118,6 +121,7 @@ async function check(argv: string[]): Promise<number> {
         );
   const report = await sweep(tracker, {
     apply: values.yes === true,
+    move: settings.move,
     epic: config.labels.epic,
     retired: (stores) => retiredLabels(overlay, config, root, stores, former),
     writer: pacedWriter(),

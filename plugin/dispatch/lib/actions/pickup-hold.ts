@@ -31,6 +31,7 @@ import {
   type ReadRecord,
   writeRecord,
 } from "../launches.ts";
+import { holdsItem } from "../launch-pickups.ts";
 import { refusalOf } from "../pickup-refusal.ts";
 import { RUNNING_STATES, type SessionsReport } from "../runtime/port.ts";
 
@@ -136,7 +137,8 @@ export function pickupHold(
   if (holding !== undefined)
     return { kind: "held", record: holding, why: describe(holding) };
   const latest = mine.at(-1);
-  if (latest === undefined || latest.record.released) return { kind: "none" };
+  if (latest === undefined || !holdsItem(latest.record, item))
+    return { kind: "none" };
   // A pass the tracker's rate limit stopped waits for the reset, then starts again.
   if (latest.result === "waits" && latest.waitsUntil !== undefined)
     return Date.parse(latest.waitsUntil) > nowMs
@@ -199,7 +201,10 @@ export function releaseEnded(
     const item = record.item as string;
     // A claim seen while the pass still runs counts too: the item may be
     // back among the dispatch states by the time the record ends.
-    const members = record.batchItems?.map((i) => i.key) ?? [item];
+    // A member already released alone no longer counts toward holding its siblings' record.
+    const members = (record.batchItems?.map((i) => i.key) ?? [item]).filter(
+      (key) => holdsItem(record, key),
+    );
     const claimedMembers = members.filter((key) => claimed.has(key));
     // The dispatch identity's own claimed item can only be this pickup's
     // claim, seen while it ran or after it ended. A served person starts their

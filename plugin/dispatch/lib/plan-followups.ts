@@ -376,6 +376,7 @@ function failedTick(
     : `marker comment ${marker.id} names launch record ${id}, and neither that record nor its outcome is on this machine`;
   const action = failed(input, pr, marker, why, ended, question);
   action.evidence.record = id;
+  if (ended && found?.framed !== undefined) action.framed = found.framed;
   return action;
 }
 
@@ -412,6 +413,8 @@ function endedHere(
   marker: FollowupMarker & { run: { kind: "tick" } },
   found: ReadRecord | undefined,
 ): "done" | "failed" | null {
+  // A marker a person's answer marked done settles the follow-up, whatever this host's records of the run say.
+  if (marker.run.outcome === "done") return "done";
   const ended = endedAs(input, pr, marker.run.record, found);
   if (ended !== null || found !== undefined) return ended;
   return marker.run.outcome ?? null;
@@ -658,6 +661,9 @@ function failedRerun(
 ): Action {
   const why = `its pass under launch record ${again.record} ${again.what}, and ${spent}`;
   const question = again.routine?.standing.question ?? null;
+  const framed = input.launches.find(
+    (r) => r.record.id === again.record,
+  )?.framed;
   return {
     stage: "notify",
     target: `PR #${pr.number}`,
@@ -677,6 +683,7 @@ function failedRerun(
       question,
     ),
     launched: true,
+    ...(framed === undefined ? {} : { framed }),
   };
 }
 
