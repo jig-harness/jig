@@ -46,7 +46,8 @@ One or two sentences that sum up the release, when it needs them.
 
 - What was added, written for someone who uses Jig: what it does and where
   it is. Mark a change that breaks something a consumer relies on as
-  **Breaking**, and say what the consumer changes.
+  **Breaking:**, and declare what the consumer does (see Consumer actions
+  below).
 
 ### Fixed
 
@@ -80,6 +81,64 @@ One or two sentences that sum up the release, when it needs them.
   line of only `=` or `-`. Each could change how CHANGELOG.md renders after
   the note. Bun's Markdown parser reads the note, so what it reports as
   another kind of element is refused, wherever the construct sits.
+
+## Consumer actions
+
+For every change under `plugin/`, ask: **does a consumer have to do
+anything?** A team that uses Jig may have to rename a configuration key,
+change a runbook that describes the old behaviour, or move a machine to a
+newer plugin source. When it must or should, the entry says so after its
+description, as a [consumer action](../GLOSSARY.md):
+
+```markdown
+- **Breaking:** A stopped drive is re-armed by the dispatcher, not by hand.
+  **Consumer action:** required at instructions, machine. Remove the manual
+  restart step from runbooks and point the plugin source at the current
+  release. **Detect:** `text:restart the drive`, `plugin-source:old`.
+```
+
+- **The strength**: `required` (the consumer is wrong or broken until it
+  acts) or `advised` (it works, and acting is better or avoids a coming
+  removal). Then `at` and the **levels**, separated by commas: `machine`
+  (what runs on the host that drives the repository: the plugin source, a
+  scheduled job), `configuration` (its `.config/jig.yaml`) or `instructions`
+  (its own agent instructions, runbooks and documents that describe Jig's
+  behaviour). Then a full stop and the instruction, in plain language, at
+  most 400 characters: link to the detail rather than repeat it.
+- **`none`**: `**Consumer action:** none.` says the entry asks nothing, so a
+  reader can tell "asks nothing" from "nobody said".
+- **`retracts`**: `**Consumer action:** retracts <id>.` withdraws a wrong or
+  obsolete action of an earlier release, by its id in
+  `plugin/consumer-actions.json`.
+- **`**Detect:**`**, optional: hints that a repository is affected, each a
+  code span, separated by commas. `config:<dotted.key>` when the key is set
+  in `.config/jig.yaml` (`config:!<dotted.key>` when a new key is absent),
+  `text:<phrase>` when the phrase appears in the repository's instructions
+  and runbooks, `file:<glob>` when a tracked file matches the glob from the
+  repository root, `plugin-source:<kind>` when the host's plugin source is of
+  that kind (`old`, `path`, `project-scope`). Configuration changes the audit
+  can see in [config-schema.yaml](../plugin/skills/audit/config-schema.yaml)
+  need no hint; a changed behaviour that a runbook may describe needs the
+  `text:` phrase that would show it.
+
+Every `**Breaking:**` entry carries one (`.config/jig.yaml` sets
+`changelog.consumer_actions: true`), `none` included; any other entry may.
+Write the marker exactly `**Consumer action:**`: the check also refuses a
+near miss (`**Consumer Action:**`, `**Consumer action**:`) and a
+`**Detect:**` with no declaration before it. It refuses a malformed
+declaration: an unknown strength, level or hint kind, a `file:` glob that
+leaves the repository, an instruction over the cap, a declaration in a nested
+list item, and two entries waiting for one release that declare the same
+action written differently (in whitespace, or the order of levels or
+hints). After the merge, the release step writes the entry into
+CHANGELOG.md as it is and derives `plugin/consumer-actions.json`, the record
+the plugin ships, in which the action gets its id: the version, `#` and eight
+hexadecimal digits computed from the entry's text. The record's format is in
+the [changelog skill's scripts reference](../plugin/skills/changelog/scripts/README.md#the-consumer-actions-record),
+and the [design](../design/consumer-actions.md) says how a consumer
+repository is checked against it.
+
+## Checking a note
 
 `bun run gates` reads every note the way the release step will, and fails
 a branch that edits the changelog's Unreleased or release sections or moves
