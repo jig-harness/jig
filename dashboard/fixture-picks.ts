@@ -16,7 +16,7 @@ import { need } from "./fixture-line.ts";
 import { API, iso, T, WEB } from "./fixture-rows.ts";
 
 /** A pull request's link on github.com, where Send posts. */
-export function githubPull(repo: string, pr: number): string {
+function githubPull(repo: string, pr: number): string {
   return `https://github.com/${repo}/pull/${pr}`;
 }
 

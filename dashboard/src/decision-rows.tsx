@@ -13,7 +13,7 @@ import { InlineDecisionText } from "./decision-text.tsx";
 import type { NeedView } from "./needs-view.ts";
 import { OptionText } from "./option-text.tsx";
 import type { DecisionRow, RowAnswer, RowOption } from "./picking.ts";
-import { SendButton, SendSaid, useSend } from "./send.tsx";
+import { SendButton, SendSaid, type Sending, useSend } from "./send.tsx";
 import type { Field, Picking } from "./use-picking.ts";
 
 function OptionPick({
@@ -350,6 +350,54 @@ const COPY_WORDS = {
   "answer line": "the answer line",
 } as const;
 
+/** The check panel a guarded pick opens under the copy row: what each guarded pick does, then the commit's second step or Cancel. */
+function GuardPanel({
+  need,
+  picking,
+  sending,
+  what,
+}: {
+  need: NeedView;
+  picking: Picking;
+  sending: Sending | null;
+  what: string;
+}) {
+  const { commit, confirming } = picking;
+  const send = confirming === "send" ? sending : null;
+  return (
+    <div className="guard" role="alert">
+      <p className="sm">
+        A pick here asks for authorization or cannot be undone. Read what it
+        does before you {send === null ? "copy" : "send"}:
+      </p>
+      <ul className="sm">
+        {commit.guarded.map((g) => (
+          <li key={g.key}>
+            {need.rows.length > 1 ? `${g.place} of ${need.rows.length}: ` : ""}
+            <OptionText option={g.option} />
+          </li>
+        ))}
+      </ul>
+      <div className="copyRow">
+        {send === null ? (
+          <CopyButton
+            text={commit.text}
+            idle="Confirm copy"
+            aria={`Confirm and copy the answers for ${need.target}`}
+            label="Confirm copy"
+            gate={picking.gate}
+          />
+        ) : (
+          <SendButton need={need} sending={send} what={what} confirm />
+        )}
+        <button type="button" className="fbtn" onClick={picking.disarm}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** The card's Copy, Send and Undo, and, once Copy or Send is pressed with a guarded pick, what it would approve. */
 export function CommitControls({
   need,
@@ -358,7 +406,7 @@ export function CommitControls({
   need: NeedView;
   picking: Picking;
 }) {
-  const { commit, confirming } = picking;
+  const { commit } = picking;
   const what = COPY_WORDS[commit.label];
   const anyPick = picking.answers.some((a) => a.pick !== null);
   const sending = useSend(need, picking);
@@ -383,39 +431,13 @@ export function CommitControls({
           Undo last pick
         </button>
       ) : null}
-      {confirming === null ? null : (
-        <div className="guard" role="alert">
-          <p className="sm">
-            A pick here asks for authorization or cannot be undone. Read what it
-            does before you {confirming === "copy" ? "copy" : "send"}:
-          </p>
-          <ul className="sm">
-            {commit.guarded.map((g) => (
-              <li key={g.key}>
-                {need.rows.length > 1
-                  ? `${g.place} of ${need.rows.length}: `
-                  : ""}
-                <OptionText option={g.option} />
-              </li>
-            ))}
-          </ul>
-          <div className="copyRow">
-            {confirming === "send" && sending !== null ? (
-              <SendButton need={need} sending={sending} what={what} confirm />
-            ) : (
-              <CopyButton
-                text={commit.text}
-                idle="Confirm copy"
-                aria={`Confirm and copy the answers for ${need.target}`}
-                label="Confirm copy"
-                gate={picking.gate}
-              />
-            )}
-            <button type="button" className="fbtn" onClick={picking.disarm}>
-              Cancel
-            </button>
-          </div>
-        </div>
+      {picking.confirming === null ? null : (
+        <GuardPanel
+          need={need}
+          picking={picking}
+          sending={sending}
+          what={what}
+        />
       )}
       {sending === null ? null : (
         <SendSaid need={need} sending={sending} text={commit.text} />

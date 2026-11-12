@@ -10,7 +10,7 @@ import { ItemTitle, Pr, RepoLink } from "./pr.tsx";
  * Where a parked drive's card can send its answers, the head offers Send's
  * settings (`send.tsx`).
  */
-import { useId, useRef, useState } from "react";
+import { type ReactNode, useId, useRef, useState } from "react";
 import { needCard, slotCard } from "./cards.ts";
 import { CopyButton } from "./copy.tsx";
 import { CommitControls, DecisionRows } from "./decision-rows.tsx";
@@ -277,6 +277,31 @@ function sendableRepos(rows: NeedRow[]): string[] {
   return [...new Set(repos)].sort();
 }
 
+/** Send's settings: the toggle in the panel's head, shown while a card can send or a token is kept, and the panel it opens. */
+function useSendSettings(
+  line: LineSnapshot,
+  clock: Clock,
+): { toggle: ReactNode; panel: ReactNode } {
+  // Every card the line holds, whoever it waits on: the token covers them all.
+  const sendable = sendableRepos(needRows(line, clock));
+  const { kept } = useKeptToken();
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  return {
+    toggle:
+      sendable.length === 0 && kept === null ? null : (
+        <SendSettingsToggle
+          open={open}
+          onToggle={() => setOpen(!open)}
+          controls={id}
+        />
+      ),
+    panel: open ? (
+      <SendSettings id={id} repos={sendable} onClose={() => setOpen(false)} />
+    ) : null,
+  };
+}
+
 export function NeedsPanel({
   line,
   clock,
@@ -291,11 +316,7 @@ export function NeedsPanel({
   const person = chosen !== null && people.includes(chosen) ? chosen : null;
   const rows = needRows(line, clock, person);
   const count = rows.filter((r) => r.type !== "head").length;
-  // Every card the line holds, whoever it waits on: the token covers them all.
-  const sendable = sendableRepos(needRows(line, clock));
-  const { kept } = useKeptToken();
-  const [settings, setSettings] = useState(false);
-  const settingsId = useId();
+  const send = useSendSettings(line, clock);
   let seen = 0;
   return (
     <section className="panel pNeeds" aria-labelledby="h-needs" ref={panel}>
@@ -309,13 +330,7 @@ export function NeedsPanel({
           Answer on the pull request, by pasting what a card copies or with its
           Send; the next tick re-arms the drive.
         </PanelHelp>
-        {sendable.length === 0 && kept === null ? null : (
-          <SendSettingsToggle
-            open={settings}
-            onToggle={() => setSettings(!settings)}
-            controls={settingsId}
-          />
-        )}
+        {send.toggle}
         {people.length === 0 ? null : (
           <label className="personFilter sm">
             <span className="mut">Waits on</span>
@@ -334,13 +349,7 @@ export function NeedsPanel({
         )}
         <MoreToggle count={count} all={all} setAll={setAll} where="head" />
       </div>
-      {settings ? (
-        <SendSettings
-          id={settingsId}
-          repos={sendable}
-          onClose={() => setSettings(false)}
-        />
-      ) : null}
+      {send.panel}
       <div className={all ? "needList all" : "needList"}>
         {rows.map((row, i) => {
           const rest = !all && seen >= SHOWN_CLOSED;

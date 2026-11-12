@@ -9,7 +9,7 @@
 import { isRecord } from "../../plugin/shared/guards.ts";
 import type { SendTarget } from "./send-target.ts";
 
-export const GITHUB_API = "https://api.github.com";
+const GITHUB_API = "https://api.github.com";
 
 /** How long a call may take before the page gives up on it. */
 const DEADLINE_MS = 20_000;

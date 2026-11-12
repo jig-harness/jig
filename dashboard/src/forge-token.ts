@@ -7,8 +7,7 @@
  * open, and the settings panel says so.
  */
 import { useSyncExternalStore } from "react";
-import { isRecord } from "../../plugin/shared/guards.ts";
-import { readKept, writeKept } from "./kept.ts";
+import { readKeptRecord, writeKept } from "./kept.ts";
 
 const KEY = "github-token";
 
@@ -20,23 +19,13 @@ export interface KeptToken {
   at: number;
 }
 
-function tokenOf(raw: string | null): KeptToken | null {
-  if (raw === null) return null;
-  let value: unknown;
-  try {
-    value = JSON.parse(raw);
-  } catch (cause) {
-    // Something else wrote this key; it holds no token.
-    if (!(cause instanceof SyntaxError)) throw cause;
-    return null;
-  }
-  if (!isRecord(value)) return null;
-  const { token, login, at } = value;
-  return typeof token === "string" &&
-    token !== "" &&
-    typeof login === "string" &&
-    login !== "" &&
-    typeof at === "number"
+const isText = (v: unknown): v is string => typeof v === "string" && v !== "";
+
+/** The token kept in storage, when what is there is one. */
+function storedToken(): KeptToken | null {
+  const value = readKeptRecord(KEY);
+  const { token, login, at } = value ?? {};
+  return isText(token) && isText(login) && typeof at === "number"
     ? { token, login, at }
     : null;
 }
@@ -47,7 +36,7 @@ const listeners = new Set<() => void>();
 let revision = 0;
 
 function now(): { kept: KeptToken | null; saved: boolean } {
-  held ??= { kept: tokenOf(readKept(KEY)), saved: true };
+  held ??= { kept: storedToken(), saved: true };
   return held;
 }
 

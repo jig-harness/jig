@@ -52,7 +52,7 @@ export const DEFAULT_PORT = 8765;
 const COMPRESS_FROM_BYTES = 1024;
 
 /** The one other origin the page may call: GitHub's API, for Send. */
-export const GITHUB_API = "https://api.github.com";
+const GITHUB_API = "https://api.github.com";
 
 /** The page's built files, beside this file. */
 const PAGE_DIR = join(import.meta.dir, "dashboard-page");

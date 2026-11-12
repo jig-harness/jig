@@ -5,8 +5,7 @@
  * card goes. Forgotten after `KEPT_MS`, as the answers are.
  */
 import { useSyncExternalStore } from "react";
-import { isRecord } from "../../plugin/shared/guards.ts";
-import { keptKeys, readKept, writeKept } from "./kept.ts";
+import { keptKeys, readKeptRecord, writeKept } from "./kept.ts";
 
 const PREFIX = "sent:";
 const KEPT_MS = 30 * 24 * 60 * 60 * 1000;
@@ -19,7 +18,7 @@ export interface SentHere {
   at: number;
 }
 
-const held = new Map<string, SentHere | null>();
+const held = new Map<string, SentHere>();
 const listeners = new Set<() => void>();
 let revision = 0;
 
@@ -28,18 +27,9 @@ function changed(): void {
   for (const listener of listeners) listener();
 }
 
-function sentOf(raw: string | null): SentHere | null {
-  if (raw === null) return null;
-  let value: unknown;
-  try {
-    value = JSON.parse(raw);
-  } catch (cause) {
-    // Something else wrote this key; it holds no send.
-    if (!(cause instanceof SyntaxError)) throw cause;
-    return null;
-  }
-  if (!isRecord(value)) return null;
-  const { text, url, at } = value;
+/** What is kept under `key`, when it is a send this page kept. */
+function storedSent(key: string): SentHere | null {
+  const { text, url, at } = readKeptRecord(key) ?? {};
   return typeof text === "string" &&
     typeof url === "string" &&
     url.startsWith("https://github.com/") &&
@@ -48,13 +38,18 @@ function sentOf(raw: string | null): SentHere | null {
     : null;
 }
 
+/** Whether a send is still kept at `nowMs`. */
+function fresh(sent: SentHere | null, nowMs: number): sent is SentHere {
+  return sent !== null && nowMs - sent.at <= KEPT_MS;
+}
+
 function idOf(repo: string, target: string): string {
   return `${PREFIX}${repo} ${target}`;
 }
 
 function read(id: string, nowMs: number): SentHere | null {
-  const sent = held.has(id) ? (held.get(id) ?? null) : sentOf(readKept(id));
-  return sent !== null && nowMs - sent.at <= KEPT_MS ? sent : null;
+  const sent = held.has(id) ? (held.get(id) ?? null) : storedSent(id);
+  return fresh(sent, nowMs) ? sent : null;
 }
 
 /** Keeps what was sent for a card; held for the page when storage refuses it. */
@@ -67,12 +62,9 @@ export function keepSent(repo: string, target: string, sent: SentHere): void {
 
 /** Forgets what was sent longer ago than `KEPT_MS`, and anything under the prefix that is not a send. */
 export function forgetOldSends(nowMs: number): void {
-  for (const [id, sent] of held)
-    if (sent === null || nowMs - sent.at > KEPT_MS) held.delete(id);
-  for (const key of keptKeys(PREFIX)) {
-    const sent = sentOf(readKept(key));
-    if (sent === null || nowMs - sent.at > KEPT_MS) writeKept(key, null);
-  }
+  for (const [id, sent] of held) if (!fresh(sent, nowMs)) held.delete(id);
+  for (const key of keptKeys(PREFIX))
+    if (!fresh(storedSent(key), nowMs)) writeKept(key, null);
 }
 
 /** What this browser sent for a card, followed as it changes. */
