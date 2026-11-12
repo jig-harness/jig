@@ -50,8 +50,8 @@ export interface Picking {
   setText: (index: number, field: Field, text: string) => void;
   /** Asked before each copy: the comment to copy now, else `null` after saying why or what comes first. */
   gate: () => string | null;
-  /** Asked before each send, as `gate` is before a copy. */
-  sendGate: () => string | null;
+  /** Asked before each send, as `gate` is before a copy: what to send now, which holds a pick. */
+  sendGate: () => CardCommit | null;
   /** Ends a commit's first step: a pick changed elsewhere, or the card lost focus. */
   disarm: () => void;
 }
@@ -167,8 +167,8 @@ export function usePicking(
       update(index, withText(row, keptNow(index), field, text, Date.now()));
   };
 
-  /** The comment to commit now, or `null` when a row holds it back, there is nothing to send, or its first step is still to show. */
-  const commitNow = (how: Commit): string | null => {
+  /** What to commit now, or `null` when a row holds it back, nothing is picked to send, or its first step is still to show. */
+  const commitNow = (how: Commit): CardCommit | null => {
     const fresh = answersNow();
     const now = cardCommit(need.rows, fresh);
     const [fault] = now.faults;
@@ -179,10 +179,10 @@ export function usePicking(
       );
       return null;
     }
-    // The starting line answers nothing: it is copied to write in, never sent.
-    if (how === "send" && now.label === "answer line") {
+    // Send posts only what a person picked: never an approval nobody picked, nor the starting line.
+    if (how === "send" && now.picked === 0) {
       announce(
-        `${not}: nothing is answered on ${need.target} yet; pick an option or write an answer first`,
+        `${not}: Send needs an option picked on ${need.target}; pick one, or copy the card to paste it`,
       );
       return null;
     }
@@ -201,7 +201,7 @@ export function usePicking(
       return null;
     }
     setArmed(null);
-    return now.text;
+    return now;
   };
 
   /** Picks the option the key numbers, or says why it cannot. */
@@ -250,7 +250,7 @@ export function usePicking(
     };
     const onCommit = (event: Event) => {
       event.preventDefault();
-      const text = latest.current.commitNow("copy");
+      const text = latest.current.commitNow("copy")?.text ?? null;
       if (text !== null) void copyText(text, element);
     };
     // The palette ran nothing on this card, or another card's entry: this card's first step ends.
@@ -291,7 +291,7 @@ export function usePicking(
     openField,
     closeField: () => setEditing(null),
     setText,
-    gate: () => commitNow("copy"),
+    gate: () => commitNow("copy")?.text ?? null,
     sendGate: () => commitNow("send"),
     disarm,
   };

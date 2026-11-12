@@ -1,5 +1,5 @@
 /**
- * What this browser sent for a card: the comment and its link, kept in this
+ * What this browser sent for a card: the comment and its links, kept in this
  * browser alone under the card's repository and target, so the card says
  * "Sent here" with the link until the next tick reads the answer and the
  * card goes. Forgotten after `KEPT_MS`, as the answers are.
@@ -14,7 +14,8 @@ const KEPT_MS = 30 * 24 * 60 * 60 * 1000;
 export interface SentHere {
   /** The comment's text, as Copy would take it. */
   text: string;
-  url: string;
+  /** Each comment's link, one per decision it answered. */
+  urls: string[];
   at: number;
 }
 
@@ -29,12 +30,15 @@ function changed(): void {
 
 /** What is kept under `key`, when it is a send this page kept. */
 function storedSent(key: string): SentHere | null {
-  const { text, url, at } = readKeptRecord(key) ?? {};
+  const { text, urls, at } = readKeptRecord(key) ?? {};
   return typeof text === "string" &&
-    typeof url === "string" &&
-    url.startsWith("https://github.com/") &&
+    Array.isArray(urls) &&
+    urls.length > 0 &&
+    urls.every(
+      (u) => typeof u === "string" && u.startsWith("https://github.com/"),
+    ) &&
     typeof at === "number"
-    ? { text, url, at }
+    ? { text, urls: urls as string[], at }
     : null;
 }
 

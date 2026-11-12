@@ -45,11 +45,17 @@
  * run, fetch or follow what it names. A writer that breaks the strict form
  * is a defect, and `encode` throws.
  */
-import { Defect } from "../errors.ts";
 import { isRecord } from "../guards.ts";
-import { attempt, type Failure, failed, ok, type Outcome } from "../outcome.ts";
+import {
+  attempt,
+  Defect,
+  type Failure,
+  failed,
+  ok,
+  type Outcome,
+} from "../outcome.ts";
 import { type RecordKind, recordKind } from "./registry.ts";
-import { readWriter, type Writer } from "./writer.ts";
+import { readWriter, type Writer } from "./writer-shape.ts";
 
 export interface Envelope {
   kind: string;

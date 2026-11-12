@@ -5,11 +5,14 @@
  * every comment with any other hidden marker, a damaged record among them.
  * A structured answer it writes reads back, through the readers' one
  * parser, as the choice it names with its digest, and a person's later
- * answer replaces their earlier one.
+ * answer replaces their earlier one. The comments the dispatch dashboard's
+ * Send writes from a browser, one per decision, read the same way.
  */
 import { describe, expect, it } from "bun:test";
 import { decodeMarker } from "../../../shared/records/envelope.ts";
 import { localWriter } from "../../../shared/records/writer.ts";
+import { BROWSER_HOST } from "../../../shared/records/writer-shape.ts";
+import { cardAnswerComments } from "../../../shared/decisions/answer-record.ts";
 import { decisionDigest } from "../../../shared/decisions/digest.ts";
 import type { ParkedDecision } from "../../../shared/decisions/park.ts";
 import {
@@ -181,5 +184,83 @@ describe("a structured answer the send writes", () => {
     expect(answers).toHaveLength(1);
     expect(answers[0]?.choice?.option).toBe("Keep");
     expect(answers[0]?.choice?.form).toBe("approve");
+  });
+});
+
+describe("the answers the dashboard's Send writes from a browser", () => {
+  const second: ParkedItem = {
+    ...parked,
+    key: "F_k2",
+    reason: "Keep the other flag?",
+  };
+  const comments = cardAnswerComments(
+    [
+      {
+        key: "F_k1",
+        digest: DIGEST,
+        answer: {
+          kind: "pick",
+          option: "Remove",
+          recommended: false,
+          note: "after the migration",
+        },
+      },
+      { key: "F_k2", digest: DIGEST, answer: { kind: "free", text: "later" } },
+    ],
+    12,
+    { login: "owner", host: BROWSER_HOST },
+    AT,
+  );
+
+  it("are one comment per decision, each the record jig send writes, naming the browser as its host", () => {
+    expect(comments.map((c) => c.key)).toEqual(["F_k1", "F_k2"]);
+    const [first, other] = comments;
+    expect(first?.body.split("\n").slice(0, 2)).toEqual([
+      `answer F_k1: choose Remove [${DIGEST}]`,
+      "note F_k1: after the migration",
+    ]);
+    const read = decodeMarker(
+      first?.body ?? "",
+      "jig-send-answer",
+      "drive-answer",
+    );
+    expect(read.ok && read.value.envelope).toMatchObject({
+      key: "answer:F_k1",
+      writer: { login: "owner", host: "dashboard (browser)" },
+    });
+    expect(read.ok && read.value.payload).toEqual({
+      pr: 12,
+      decision: DIGEST,
+      choice: { option: "Remove", form: "choose" },
+    });
+    const free = decodeMarker(
+      other?.body ?? "",
+      "jig-send-answer",
+      "drive-answer",
+    );
+    expect(free.ok && free.value.payload).toEqual({ pr: 12 });
+  });
+
+  it("are a person's answers by the re-arm's rule, and read back as the choice and the words they carry", async () => {
+    for (const c of comments) {
+      expect(isAnswer(asComment(c.body), Date.parse(AT) - 1)).toBe(true);
+      expect(answersKey(c.body, c.key)).toBe(true);
+      expect(isPersonsComment("OWNER", c.body)).toBe(true);
+    }
+    const found = await parkAnswers(12, [parked, second], "o/r", [
+      listed(1, comments[0]?.body ?? "", AT),
+      listed(2, comments[1]?.body ?? "", AT),
+    ]);
+    if ("unreadable" in found) throw new Error(found.unreadable);
+    const byKey = new Map(found.answered.map((v) => [v.key, v.answers]));
+    expect(byKey.get("F_k1")?.[0]?.choice).toEqual({
+      option: "Remove",
+      recommended: false,
+      form: "choose",
+      digest: DIGEST,
+      note: "after the migration",
+    });
+    expect(byKey.get("F_k2")?.[0]?.choice).toBeUndefined();
+    expect(byKey.get("F_k2")?.[0]?.body).toBe(`answer F_k2: later [${DIGEST}]`);
   });
 });

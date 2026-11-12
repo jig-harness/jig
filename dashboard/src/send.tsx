@@ -1,17 +1,26 @@
 /**
  * Send: a card's answers posted from this browser, as the person, on the pull
- * request a parked drive reads them from. It posts exactly the comment Copy
- * takes, through GitHub's API with the token the person pasted here
- * (`forge-token.ts`, `github.ts`); the dashboard's server never sees the
- * token or the comment. A guarded pick sends on the second step, as it
- * copies. A card that no drive reads an answer comment for, or whose pull
- * request is not on github.com, has no Send and says why.
+ * request a parked drive reads them from. Each decision the card answers
+ * goes as its own comment, the `drive-answer` record `jig send` writes
+ * (`shared/decisions/answer-record.ts`): the answer line Copy takes for it,
+ * any note line, and the hidden record naming the person's login and
+ * `BROWSER_HOST` as its writer. It posts through GitHub's API with the token
+ * the person pasted here (`forge-token.ts`, `github.ts`); the dashboard's
+ * server never sees the token or the comments.
+ *
+ * Send posts only once an option is picked on the card: an approval nobody
+ * picked is Copy's alone. A guarded pick sends on the second step, as it
+ * copies. A card that no drive reads an answer comment for, whose pull
+ * request is not on github.com, or a page served over plain HTTP outside
+ * loopback and Tailscale (`transportFault`) has no Send and says why.
  *
  * The settings panel takes the token, tests it by asking GitHub who it signs
  * in as, and forgets it.
  */
 import { KeyRound, Send } from "lucide-react";
 import { useId, useState } from "react";
+import { cardAnswerComments } from "../../plugin/shared/decisions/answer-record.ts";
+import { BROWSER_HOST } from "../../plugin/shared/records/writer-shape.ts";
 import { announce } from "./copy.tsx";
 import { keepToken, keptToken, useKeptToken } from "./forge-token.ts";
 import {
@@ -21,12 +30,17 @@ import {
   tokenRefusal,
 } from "./github.ts";
 import type { NeedView } from "./needs-view.ts";
-import type { SendTarget } from "./send-target.ts";
+import { type SendTarget, transportFault } from "./send-target.ts";
 import { keepSent, useSentHere } from "./sent.ts";
 import type { Picking } from "./use-picking.ts";
 
 /** Where a fine-grained token is made, on GitHub. */
 const NEW_TOKEN_URL = "https://github.com/settings/personal-access-tokens/new";
+
+/** Why this page cannot send from the address it was served at; `null` when it can. */
+function pageTransportFault(): string | null {
+  return transportFault(window.location);
+}
 
 type Phase =
   | { kind: "idle" }
@@ -38,68 +52,106 @@ export interface Sending {
   to: SendTarget;
   login: string;
   phase: Phase;
+  /** Whether an option is picked, so a press sends. */
+  ready: boolean;
   send: () => void;
 }
 
-/** The card's Send, while a token is kept and its decisions are a drive's on github.com. */
+/** Posts each comment in order; the links posted, and why the first refused one was not. */
+async function postAll(
+  token: string,
+  to: SendTarget,
+  comments: Array<{ key: string; body: string }>,
+): Promise<{ urls: string[]; refused: string | null }> {
+  const urls: string[] = [];
+  for (const comment of comments) {
+    const posted = await postComment(token, to, comment.body);
+    if (!posted.ok) {
+      const rest = comments.slice(urls.length).map((c) => c.key);
+      const done =
+        urls.length === 0
+          ? ""
+          : ` The answers before it were posted; not posted: ${rest.join(", ")}.`;
+      return { urls, refused: `${sendRefusal(posted, to)}${done}` };
+    }
+    urls.push(posted.value);
+  }
+  return { urls, refused: null };
+}
+
+/** The card's Send, while a token is kept, its decisions are a drive's on github.com and the page came over a safe path. */
 export function useSend(need: NeedView, picking: Picking): Sending | null {
   const { kept } = useKeptToken();
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
-  if (kept === null || !("to" in need.send)) return null;
+  if (kept === null || !("to" in need.send) || pageTransportFault() !== null)
+    return null;
   const to = need.send.to;
   const send = () => {
     if (phase.kind === "sending") return;
-    const text = picking.sendGate();
+    const commit = picking.sendGate();
     // The token may have been forgotten in another tab since the card drew.
     const token = keptToken();
-    if (text === null || token === null) return;
+    if (commit === null || token === null) return;
+    const comments = cardAnswerComments(
+      commit.answers,
+      to.number,
+      { login: token.login, host: BROWSER_HOST },
+      new Date().toISOString(),
+    );
     setPhase({ kind: "sending" });
     announce(`Sending the answers for ${need.target} as ${token.login}`);
-    void postComment(token.token, to, text).then((posted) => {
-      if (posted.ok) {
+    void postAll(token.token, to, comments).then(({ urls, refused }) => {
+      if (urls.length > 0)
         keepSent(need.repo, need.target, {
-          text,
-          url: posted.value,
+          text: commit.text,
+          urls,
           at: Date.now(),
         });
+      if (refused === null) {
         setPhase({ kind: "idle" });
         announce(`Sent the answers for ${need.target} as ${token.login}`);
         return;
       }
-      const reason = sendRefusal(posted, to);
-      setPhase({ kind: "failed", reason });
-      announce(`Not sent: ${reason}`);
+      setPhase({ kind: "failed", reason: refused });
+      announce(`Not sent: ${refused}`);
     });
   };
-  return { to, login: kept.login, phase, send };
+  return {
+    to,
+    login: kept.login,
+    phase,
+    ready: picking.commit.picked > 0,
+    send,
+  };
 }
 
-/** The Send button beside Copy, named by what it posts. */
+/** The Send button beside Copy, named by what it posts; held back until an option is picked. */
 export function SendButton({
   need,
   sending,
-  what,
   confirm = false,
 }: {
   need: NeedView;
   sending: Sending;
-  /** What the card's commit is, as Copy names it. */
-  what: string;
   /** The check panel's second step, rather than the first press. */
   confirm?: boolean;
 }) {
   const busy = sending.phase.kind === "sending";
-  const label = busy ? "Sending…" : confirm ? "Confirm send" : `Send ${what}`;
+  const label = busy
+    ? "Sending…"
+    : confirm
+      ? "Confirm send"
+      : "Send the answers";
   const aria = confirm
-    ? `Confirm and send ${what} for ${need.target} as ${sending.login}`
-    : `Send ${what} for ${need.target} as ${sending.login}`;
+    ? `Confirm and send the answers for ${need.target} as ${sending.login}`
+    : `Send the answers for ${need.target} as ${sending.login}`;
   return (
     <button
       type="button"
       className="copy send"
       aria-label={aria}
-      title={aria}
-      aria-disabled={busy}
+      title={sending.ready ? aria : "Pick an option to send"}
+      aria-disabled={busy || !sending.ready}
       onClick={sending.send}
     >
       <Send size={14} aria-hidden="true" />
@@ -108,7 +160,23 @@ export function SendButton({
   );
 }
 
-/** Under the copy row: what this browser sent, why the last send failed, and who it sends as where the park names someone else. */
+/** The links this browser posted, as one sentence. */
+function SentLinks({ urls }: { urls: string[] }) {
+  return (
+    <>
+      {urls.map((url, i) => (
+        <span key={url}>
+          {i === 0 ? "" : ", "}
+          <a href={url} target="_blank" rel="noreferrer noopener">
+            {urls.length === 1 ? "open the comment" : `comment ${i + 1}`}
+          </a>
+        </span>
+      ))}
+    </>
+  );
+}
+
+/** Under the copy row: what this browser sent, why the last send failed, what Send waits for, and who it sends as where the park names someone else. */
 export function SendSaid({
   need,
   sending,
@@ -116,25 +184,28 @@ export function SendSaid({
 }: {
   need: NeedView;
   sending: Sending;
-  /** The comment Copy and Send take now. */
+  /** The comment Copy takes now. */
   text: string;
 }) {
   const sent = useSentHere(need.repo, need.target);
   const other =
     need.people.length > 0 &&
     !need.people.some((p) => p.toLowerCase() === sending.login.toLowerCase());
-  if (sent === null && sending.phase.kind !== "failed" && !other) return null;
+  if (
+    sent === null &&
+    sending.phase.kind !== "failed" &&
+    sending.ready &&
+    !other
+  )
+    return null;
   return (
     <div className="sendSaid sm">
       {sent === null ? null : (
         <p className="sentHere">
           {sent.text === text
-            ? "Sent here as a comment: "
+            ? "Sent here: "
             : "An earlier answer was sent here: "}
-          <a href={sent.url} target="_blank" rel="noreferrer noopener">
-            open the comment
-          </a>
-          . The next tick reads it.
+          <SentLinks urls={sent.urls} />. The next tick reads it.
         </p>
       )}
       {sending.phase.kind === "failed" ? (
@@ -142,6 +213,11 @@ export function SendSaid({
           Not sent: {sending.phase.reason}
         </p>
       ) : null}
+      {sending.ready ? null : (
+        <p className="mut sendWaits">
+          Send posts once you pick an option; Copy takes the card as it is.
+        </p>
+      )}
       {other ? (
         <p className="mut">
           Sends as <span className="m">{sending.login}</span>; this waits on{" "}
@@ -156,8 +232,10 @@ export function SendSaid({
 /** Why a card has no Send, shown once a token is kept so its absence is never a puzzle. */
 export function NoSend({ need }: { need: NeedView }) {
   const { kept } = useKeptToken();
-  if (kept === null || !("absent" in need.send)) return null;
-  return <p className="sm mut noSend">{need.send.absent}</p>;
+  if (kept === null) return null;
+  const absent =
+    "absent" in need.send ? need.send.absent : pageTransportFault();
+  return absent === null ? null : <p className="sm mut noSend">{absent}</p>;
 }
 
 type Test =
@@ -318,7 +396,14 @@ export function SendSettings({
         , with Issues and Pull requests set to read and write and a short
         expiry. Forget it here when you are done.
       </p>
-      {kept === null ? <TokenField /> : <KeptTokenRow />}
+      {pageTransportFault() === null ? null : (
+        <p className="sm decNote">{pageTransportFault()}</p>
+      )}
+      {kept !== null ? (
+        <KeptTokenRow />
+      ) : pageTransportFault() === null ? (
+        <TokenField />
+      ) : null}
       <div className="copyRow">
         <button type="button" className="fbtn" onClick={onClose}>
           Close

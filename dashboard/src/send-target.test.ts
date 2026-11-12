@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { sendRefusal, tokenRefusal } from "./github.ts";
-import { sendTargetOf } from "./send-target.ts";
+import { sendTargetOf, transportFault } from "./send-target.ts";
 
 const PARKED = {
   repo: "example-org/web",
@@ -93,6 +93,47 @@ describe("what a refusal from GitHub says", () => {
     );
     expect(tokenRefusal({ status: null, message: "offline" })).toContain(
       "could not be reached",
+    );
+  });
+});
+
+describe("the addresses a page may send from", () => {
+  const at = (url: string) => {
+    const { protocol, hostname } = new URL(url);
+    return transportFault({ protocol, hostname });
+  };
+
+  it("sends over HTTPS, from loopback and over Tailscale", () => {
+    for (const url of [
+      "https://dispatch.example.org/",
+      "https://192.168.1.20:8765/",
+      "http://localhost:8765/",
+      "http://LOCALHOST:8765/",
+      "http://127.0.0.1:8765/",
+      "http://127.200.3.4/",
+      "http://[::1]:8765/",
+      "http://100.64.0.1:8765/",
+      "http://100.101.102.103:8765/",
+      "http://100.127.255.255/",
+      "http://host.tailnet-name.ts.net:8765/",
+    ])
+      expect(at(url)).toBeNull();
+  });
+
+  it("does not send over plain HTTP from any other address, and says why", () => {
+    for (const url of [
+      "http://192.168.1.20:8765/",
+      "http://10.0.0.5/",
+      "http://100.63.255.255/",
+      "http://100.128.0.1/",
+      "http://128.0.0.1/",
+      "http://localhost.example.org/",
+      "http://ts.net.example.org/",
+      "http://[::2]/",
+    ])
+      expect(at(url)).toContain("No Send on this address");
+    expect(at("http://192.168.1.20:8765/")).toContain(
+      "plain HTTP from 192.168.1.20",
     );
   });
 });

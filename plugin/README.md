@@ -1098,10 +1098,15 @@ server stops answering, it keeps what it last read and says when that was.
 
 **Send, from the browser.** With a GitHub token pasted under **Send from
 here** on Needs you, a parked drive's card whose pull request is on
-github.com also has **Send**: it posts the comment Copy takes to the pull
-request through GitHub's API, from the browser, as the person, and the card
-then links the comment and says it was sent here. A guarded pick sends on
-the second step, as it copies. The page tests the token by asking GitHub
+github.com also has **Send**. Once an option is picked on the card, it
+posts each decision's answer to the pull request through GitHub's API, from
+the browser, as the person: one comment per decision, the `drive-answer`
+record `jig send` writes, with Copy's line for that decision, any note line
+and the hidden record naming the person's login and `dashboard (browser)`
+as its writer. The card then links the comments and says they were sent
+here. With nothing picked, Send stays held back; Copy still takes the
+approval of a lone Decide decision's recommendation to paste. A guarded
+pick sends on the second step, as it copies. The page tests the token by asking GitHub
 which login it signs in as, names that login, keeps the token in that
 browser's local storage alone and forgets it on request; the dashboard's
 server never receives it and has no route that writes. Make a fine-grained
@@ -1110,9 +1115,12 @@ Issues and Pull requests set to read and write, and a short expiry. Its
 answers count as `jig send`'s do, by the drive's rule for an author. Any
 other card says why it has no Send. The page's content security policy lets
 it reach its own server and `https://api.github.com` alone, so a pull
-request on another forge has no Send. Use the private HTTPS front with it
-([phone-access.md](phone-access.md)): over plain HTTP, someone on the
-network path who can change the page could read the token.
+request on another forge has no Send. Send is offered only when the page
+came over HTTPS, from the machine's loopback (`localhost`, 127.0.0.0/8,
+`::1`) or over Tailscale (100.64.0.0/10 or a `*.ts.net` name): over any
+other plain-HTTP address someone on the network path who can change the page
+could read the token, so the cards say why Send is missing there. A phone
+uses the private HTTPS front ([phone-access.md](phone-access.md)).
 
 **The line as JSON.** A program beside the dispatcher (an editor's plugin, a
 status bar) reads what the newest tick found without opening the state

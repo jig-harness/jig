@@ -51,11 +51,21 @@ from the browser, as the person:
 - The person pastes a fine-grained GitHub token once per browser. The page
   tests it with GitHub (`GET /user`), names the login it signs in as, keeps
   it in that browser's local storage alone and forgets it on request.
-- A card's **Send** posts the same comment Copy takes, the answer lines
-  `jig send` writes (`approve` or `choose <name>` with the decision's
-  digest, and any note line), formatted by the one shared module, directly
-  to the forge's REST API from the page. A guarded pick sends on the second
-  step, as it copies.
+- A card's **Send** posts, for each decision it answers, the comment
+  `jig send` writes: the answer line Copy takes (`approve` or
+  `choose <name>` with the decision's digest), any note line, and the
+  hidden `drive-answer` record with the digest, the choice and the writer,
+  whose host is `dashboard (browser)`. The shared module that builds
+  `jig send`'s comment builds it, and the page posts it directly to the
+  forge's REST API.
+- Send is held back until an option is picked on the card: an approval
+  nobody picked is Copy's alone. A guarded pick sends on the second step,
+  as it copies.
+- Send is offered only when the page came over HTTPS, from loopback
+  (`localhost`, 127.0.0.0/8, `::1`) or over Tailscale (100.64.0.0/10 or a
+  `*.ts.net` name); on any other plain-HTTP address the card says why it
+  has none.
+- Send works on a phone as on a desktop.
 - The host stays read-only: the dashboard's server gets no write route and
   never receives the token or the comment, and the dispatcher never relays
   an answer.
@@ -96,13 +106,13 @@ Send.
   content security policy and rendering every record's text as data guard
   against, and a narrow scope (the dashboard's repositories, Issues and
   Pull requests only, a short expiry) limits. Over plain HTTP, someone on
-  the network path who can change the page could read it, so Send belongs
-  on the HTTPS front.
+  the network path who can change the page could read it, so Send is
+  offered only over HTTPS, loopback or Tailscale.
 - Any process of the person's account on the device whose browser keeps
   the token can read it, as it can read a terminal's credential.
 - Send reaches github.com only; a pull request on another forge keeps Copy.
-- The comment carries no record envelope naming a writer's host, as a
-  pasted comment carries none.
+- A card of several decisions posts several comments, one per decision,
+  since a comment carries one record.
 
 ## When to reopen
 

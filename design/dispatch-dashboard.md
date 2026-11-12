@@ -259,14 +259,18 @@ theme; the dashboard stores nothing for it.
 
 **Answering a parked decision: Send, from the browser, as the person.** A
 card of a parked drive whose pull request is on github.com has Send beside
-Copy. It posts the comment Copy takes, one comment holding every picked
-decision's `answer <key>: approve [<digest>]` or
-`answer <key>: choose <option> [<digest>]` line and any `note <key>:` line,
-formatted by the module `jig send` formats its lines with
-(`shared/decision-card.ts`), to the pull request through GitHub's REST API
-(`POST /repos/{owner}/{repo}/issues/{n}/comments`). The page makes that
-call itself, from the browser, with a fine-grained token the person pastes
-once per browser
+Copy. For each decision the card answers it posts one comment, the
+`drive-answer` record `jig send` writes, built by the module `jig send`
+builds it with (`shared/decisions/answer-record.ts`): the
+`answer <key>: approve [<digest>]` or `answer <key>: choose <option> [<digest>]`
+line Copy takes for that decision, any `note <key>:` line, and the hidden
+record carrying the decision's digest, the choice and the writer, whose
+host is `dashboard (browser)` since a browser has no machine name to
+digest. One comment per decision, as `jig send` answers one key per
+comment, since a comment carries one record. The page posts each through
+GitHub's REST API (`POST /repos/{owner}/{repo}/issues/{n}/comments`) itself,
+from the browser, with a fine-grained token the person pastes once per
+browser
 ([ADR-0017](../docs/adr/ADR-0017-the-dashboard-page-answers-as-the-person.md)). So:
 
 - **Who writes, and with what.** The person, with their own token. The
@@ -288,22 +292,34 @@ once per browser
   [item 40](plan.md#40-the-pass-trust-boundary-as-mechanisms) settles how a
   comment a pass posts under the person's login is told from the person's
   own. A pass that holds the person's login can already post an answer, so
-  Send opens no hole such a process does not have. The page's comment
-  carries no record envelope, as a pasted one carries none, since the
-  browser has no host to name.
+  Send opens no hole such a process does not have. The record names the
+  person's login and `dashboard (browser)` as its writer, which tells a
+  reader where the answer came from and adds no authority.
+- **Only a pick sends.** Send is held back until an option is picked on
+  the card, and then sends every decision's answer the card holds, a pick
+  or the person's own words beside it. With nothing picked, Copy still
+  takes the approval of a lone Decide decision's recommendation to paste,
+  but Send never posts an approval nobody picked.
 - **A guarded pick sends on the second step.** A pick under a class the
   acts table does not list as Decide, or of an option that cannot be undone,
   opens the check panel first, as a guarded copy does, and Confirm send
-  posts. A card with nothing answered sends nothing, and says so.
+  posts.
 - **Only where an answer comment is read.** Send is offered for a parked
   drive's decisions alone, the one station whose answer is read from a
   pull-request comment; any other card keeps Copy and, once a token is kept,
   says why it has no Send. A pull request on a forge other than github.com
   has no Send, since the page's content security policy lets it reach
   `api.github.com` alone.
-- **What comes back.** After GitHub answers 201, the card links the comment
-  and says "sent here", in this browser alone, until the next tick reads the
-  answer. A refusal shows GitHub's own message with what it means (401: the
+- **Only over a path that protects the token.** Send is offered only when
+  the page came over HTTPS, from the machine's loopback (`localhost`,
+  127.0.0.0/8, `::1`), or over Tailscale (100.64.0.0/10 or a `*.ts.net`
+  name), whose network encrypts the path. On any other plain-HTTP address
+  every card says why it has no Send and the settings panel takes no
+  token, since someone on the path who can change the page could read it.
+- **What comes back.** After GitHub answers 201 for each comment, the card
+  links them and says "sent here", in this browser alone, until the next
+  tick reads the answers. A refusal part-way names the decisions not
+  posted. A refusal shows GitHub's own message with what it means (401: the
   token is wrong or revoked; 403: it lacks write access to Issues and Pull
   requests on that repository, or an organization has not approved it; 404:
   it was not granted the repository; 422: GitHub would not take the text).
@@ -327,10 +343,11 @@ that keeps it.
   and may not be framed ([What the page trusts](#what-the-page-trusts-and-what-reaches-it)).
   A script that did run could post as the person on the token's
   repositories only, which is why the token's scope is narrow.
-- **The network path.** Over the private HTTP fallback a person on the path
-  who can change the page's response could add a script; the private HTTPS
-  front ([Phone scope and access](#phone-scope-and-access)) closes that, and
-  is the setup to use with Send.
+- **The network path.** Over plain HTTP a person on the path who can change
+  the page's response could add a script, so Send is offered only over
+  HTTPS, loopback or Tailscale; the private HTTPS front
+  ([Phone scope and access](#phone-scope-and-access)) is the setup a phone
+  uses.
 - **Processes on the person's device.** Any process of the person's account
   on the device whose browser keeps the token can read the browser's
   profile, as it can read a terminal's `gh` credential. A browser on the
@@ -732,7 +749,7 @@ rules, timestamps and failure states serve desktop and phone.
 | Merge, Needs you, Running, Queue and History | Read the next act, progress and recent outcomes while away. Repository selection and History's time window are the basic filters; pagination keeps long lists bounded. |
 | An opened Work card and its decisions | Read the status, ask, recommended option, costs, alternatives and evidence. Stage 1 shows one item or pull request; stage 2 adds the joined thread. Expand details with a visible control. |
 | Copy the pinned merge command or an answer line | Carry the proposed act to the person's terminal without executing it. Copy success must be confirmed; when browser clipboard access fails, select the complete text for manual copying. |
-| Send a parked decision's answer | Post the comment Copy takes, from the phone's browser to GitHub with a token kept in that browser ([When the dashboard writes](#when-the-dashboard-writes)); a guarded pick sends on the second step, by tap. |
+| Send a parked decision's answer | Once an option is picked, post each decision's answer as the comment `jig send` writes, from the phone's browser to GitHub with a token kept in that browser, over the HTTPS front or Tailscale ([When the dashboard writes](#when-the-dashboard-writes)); a guarded pick sends on the second step, by tap. |
 | Open the pull request or issue | Follow an explicit link to the forge or tracker, which owns its login and any action there. The dashboard's server remains read-only. |
 | A failed or stale read | Show the last successful read and its age while the page is open; after a reconnect, read again before displaying readiness as current. A failed connection never means the queue is empty. |
 
@@ -741,7 +758,7 @@ composition: reading and deciding have priority over composing and
 investigating on a small screen. It excludes session chat and steering,
 which need the workspace and its context. Its one write is Send, which
 answers a parked decision as the person from the phone's own browser, the
-same comment `jig send` or a pasted copy writes. It offers no dashboard
+comment `jig send` writes, record included. It offers no dashboard
 merge, request or other write, even when desktop writes arrive: those need
 a separate phone design and proof of presence. Copying text is not sending
 it. All supported acts have visible buttons or links; no hover or keyboard

@@ -74,10 +74,13 @@ export function HelpView({ Fold }: { Fold: FoldComponent }) {
           </p>
           <p>
             With a GitHub token pasted under <b>Send from here</b> on What needs
-            you, a parked drive's card on github.com also has <b>Send</b>: it
-            posts the same comment from this browser straight to GitHub, as you.
-            The token stays in this browser and never reaches the host. A
-            guarded pick sends on the second step, as it copies.
+            you, a parked drive's card on github.com also has <b>Send</b>: once
+            you pick an option, it posts each decision's answer from this
+            browser straight to GitHub, as you, one comment per decision with
+            the record <code>jig send</code> writes. The token stays in this
+            browser and never reaches the host. A guarded pick sends on the
+            second step, as it copies. Send is offered only over HTTPS, from
+            this machine's loopback or over Tailscale.
           </p>
         </div>
       </section>

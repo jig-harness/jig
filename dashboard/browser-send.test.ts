@@ -1,9 +1,10 @@
 /**
  * Send in a real browser against the real server, with GitHub's API answered
  * by the test: with no token kept no card has Send; the settings panel tests a
- * pasted token with GitHub, names its login and forgets it; Send posts exactly
- * the comment Copy takes to the card's pull request and the card says it was
- * sent here; a guarded pick sends only on the second step; GitHub's refusals
+ * pasted token with GitHub, names its login and forgets it; Send waits for an
+ * option to be picked, then posts each decision's lines Copy takes as its own
+ * comment carrying the `drive-answer` record, and the card says it was sent
+ * here; a guarded pick sends only on the second step; GitHub's refusals
  * are explained; a card no drive reads an answer comment for says why it has
  * no Send; and at phone widths, by touch alone, it all works with no
  * horizontal scroll and 44 px targets. The token never reaches the
@@ -12,6 +13,8 @@
  */
 import { describe, expect } from "bun:test";
 import type { BrowserContext, Page, Request } from "playwright-core";
+import { withoutAnswerRecord } from "../plugin/shared/decisions/answer-record.ts";
+import { decodeMarker } from "../plugin/shared/records/envelope.ts";
 import { PICK_DIGESTS } from "./fixture-picks.ts";
 import { settled, shortControls, shows, until } from "./browser-page.ts";
 import { browserSuite, LAPTOP, PHONE, TIMEOUT } from "./browser-suite.ts";
@@ -69,17 +72,20 @@ async function openSend(
   const calls: Call[] = [];
   const local: string[] = [];
   const problems: string[] = [];
+  let comment = 0;
   const github =
     o.github ??
-    ((call: Call): Answer =>
-      call.path === "/user"
-        ? { status: 200, json: { login: "maintainer-a" } }
-        : {
-            status: 201,
-            json: {
-              html_url: `https://github.com${call.path.replace("/repos", "").replace("/issues/", "/pull/").replace("/comments", "#issuecomment-1")}`,
-            },
-          });
+    ((call: Call): Answer => {
+      if (call.path === "/user")
+        return { status: 200, json: { login: "maintainer-a" } };
+      comment++;
+      return {
+        status: 201,
+        json: {
+          html_url: `https://github.com${call.path.replace("/repos", "").replace("/issues/", "/pull/").replace("/comments", `#issuecomment-${comment}`)}`,
+        },
+      };
+    });
   await context.route("https://api.github.com/**", async (route) => {
     const request = route.request();
     if (request.method() === "OPTIONS")
@@ -176,6 +182,23 @@ const TWO = [
   "",
   `answer PRRT_table: approve [${PICK_DIGESTS.table}]`,
 ].join("\n");
+
+/** Each comment the page posted: where, its lines without the record, and the record it carries. */
+function posts(calls: Call[]) {
+  return calls
+    .filter((c) => c.method === "POST")
+    .map((c) => {
+      const body = (c.body as { body: string }).body;
+      const record = decodeMarker(body, "jig-send-answer", "drive-answer");
+      return {
+        path: c.path,
+        lines: withoutAnswerRecord(body),
+        record: record.ok
+          ? { ...record.value.envelope, ...record.value.payload }
+          : null,
+      };
+    });
+}
 
 describe("Send", () => {
   browserIt(
@@ -286,15 +309,16 @@ describe("Send", () => {
       const { page } = opened;
       try {
         const two = card(page, "PR #502");
-        // Nothing answered yet: Send posts nothing and says why.
-        await two
-          .getByRole("button", {
-            name: "Send the answers for PR #502 as maintainer-a",
-          })
-          .click();
+        // Nothing picked yet: Send waits, posts nothing and says why.
+        const send = two.getByRole("button", {
+          name: "Send the answers for PR #502 as maintainer-a",
+        });
+        expect(await send.getAttribute("aria-disabled")).toBe("true");
+        // A held-back button still says why when pressed.
+        await send.click({ force: true });
         await until("Send said why", async () =>
           ((await page.locator(".say").textContent()) ?? "").includes(
-            "Not sent: nothing is answered on PR #502",
+            "Not sent: Send needs an option picked on PR #502",
           ),
         );
         expect(opened.calls).toEqual([]);
@@ -326,22 +350,100 @@ describe("Send", () => {
             .count()
             .then((n) => n === 1),
         );
-        expect(opened.calls).toEqual([
-          {
-            method: "POST",
-            path: "/repos/example-org/web/issues/502/comments",
-            authorization: `Bearer ${GITHUB_TOKEN}`,
-            body: { body: TWO },
-          },
+        // One comment per decision: Copy's lines for it, then the record jig send writes.
+        const sent = posts(opened.calls);
+        expect(sent.map((p) => p.path)).toEqual([
+          "/repos/example-org/web/issues/502/comments",
+          "/repos/example-org/web/issues/502/comments",
+        ]);
+        expect(sent.map((p) => p.lines).join("\n\n")).toBe(TWO);
+        expect(sent.map((p) => p.record)).toEqual([
+          expect.objectContaining({
+            kind: "drive-answer",
+            key: "answer:PRRT_flag",
+            writer: { login: "maintainer-a", host: "dashboard (browser)" },
+            pr: 502,
+            decision: PICK_DIGESTS.flag,
+            choice: { option: "Remove", form: "choose" },
+          }),
+          expect.objectContaining({
+            key: "answer:PRRT_table",
+            decision: PICK_DIGESTS.table,
+            choice: { option: "Later", form: "approve" },
+          }),
         ]);
         expect(
-          await two.locator(".sentHere").getByRole("link").getAttribute("href"),
-        ).toBe("https://github.com/example-org/web/pull/502#issuecomment-1");
+          await two
+            .locator(".sentHere")
+            .getByRole("link")
+            .evaluateAll((links) => links.map((a) => a.getAttribute("href"))),
+        ).toEqual([
+          "https://github.com/example-org/web/pull/502#issuecomment-1",
+          "https://github.com/example-org/web/pull/502#issuecomment-2",
+        ]);
         expect(await two.locator(".sentHere").textContent()).toContain(
-          "Sent here as a comment",
+          "Sent here",
         );
         expectTokenOnlyToGithub(opened);
         expect(opened.problems).toEqual([]);
+      } finally {
+        await opened.context.close();
+      }
+    },
+    TIMEOUT,
+  );
+
+  browserIt(
+    "with nothing picked Send posts no approval while Copy still copies it, and a pick enables Send",
+    async () => {
+      const opened = await openSend("picks", {
+        kept: { login: "maintainer-a" },
+      });
+      const { page } = opened;
+      const one = card(page, "PR #501");
+      const send = one.getByRole("button", {
+        name: "Send the answers for PR #501 as maintainer-a",
+      });
+      try {
+        expect(await send.getAttribute("aria-disabled")).toBe("true");
+        expect(await one.locator(".sendWaits").textContent()).toContain(
+          "Send posts once you pick an option",
+        );
+        // Copy keeps its approval of the recommendation with nothing picked.
+        await page.evaluate((t) => navigator.clipboard.writeText(t), BEFORE);
+        await one
+          .getByRole("button", { name: "Copy the approval for PR #501" })
+          .click();
+        await until(
+          "Copy copied",
+          async () => (await clipboard(page)) !== BEFORE,
+        );
+        expect(await clipboard(page)).toBe(
+          `answer PRRT_one: approve [${PICK_DIGESTS.one}]`,
+        );
+        await send.click({ force: true });
+        await until("Send said why", async () =>
+          ((await page.locator(".say").textContent()) ?? "").includes(
+            "Send needs an option picked on PR #501",
+          ),
+        );
+        expect(opened.calls).toEqual([]);
+
+        await one.locator(".opt", { hasText: "Keep it" }).click();
+        await until(
+          "the pick enabled Send",
+          async () => (await send.getAttribute("aria-disabled")) === "false",
+        );
+        expect(await one.locator(".sendWaits").count()).toBe(0);
+        await send.click();
+        await until("the pick was sent", async () => opened.calls.length === 1);
+        expect(posts(opened.calls)[0]).toMatchObject({
+          lines: `answer PRRT_one: approve [${PICK_DIGESTS.one}]`,
+          record: {
+            key: "answer:PRRT_one",
+            choice: { option: "Keep it", form: "approve" },
+          },
+        });
       } finally {
         await opened.context.close();
       }
@@ -394,8 +496,12 @@ describe("Send", () => {
         expect(opened.calls[0]).toMatchObject({
           method: "POST",
           path: "/repos/example-org/api/issues/1300/comments",
-          body: {
-            body: `answer PRRT_drop: choose Drop [${PICK_DIGESTS.drop}]`,
+        });
+        expect(posts(opened.calls)[0]).toMatchObject({
+          lines: `answer PRRT_drop: choose Drop [${PICK_DIGESTS.drop}]`,
+          record: {
+            key: "answer:PRRT_drop",
+            choice: { option: "Drop", form: "choose" },
           },
         });
         await until(
@@ -530,8 +636,12 @@ describe("Send", () => {
           expect(opened.calls.at(-1)).toMatchObject({
             method: "POST",
             path: "/repos/example-org/web/issues/502/comments",
-            body: { body: TWO },
           });
+          expect(
+            posts(opened.calls)
+              .map((p) => p.lines)
+              .join("\n\n"),
+          ).toBe(TWO);
           await noSideScroll(page);
           expect(await shortControls(page)).toEqual([]);
           expectTokenOnlyToGithub(opened);

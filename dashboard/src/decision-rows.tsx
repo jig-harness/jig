@@ -355,12 +355,10 @@ function GuardPanel({
   need,
   picking,
   sending,
-  what,
 }: {
   need: NeedView;
   picking: Picking;
   sending: Sending | null;
-  what: string;
 }) {
   const { commit, confirming } = picking;
   const send = confirming === "send" ? sending : null;
@@ -388,7 +386,7 @@ function GuardPanel({
             gate={picking.gate}
           />
         ) : (
-          <SendButton need={need} sending={send} what={what} confirm />
+          <SendButton need={need} sending={send} confirm />
         )}
         <button type="button" className="fbtn" onClick={picking.disarm}>
           Cancel
@@ -419,25 +417,14 @@ export function CommitControls({
         label={commit.label === "answer line" ? undefined : `Copy ${what}`}
         gate={picking.gate}
       />
-      {sending === null ? null : (
-        <SendButton
-          need={need}
-          sending={sending}
-          what={commit.label === "answer line" ? "the answers" : what}
-        />
-      )}
+      {sending === null ? null : <SendButton need={need} sending={sending} />}
       {anyPick ? (
         <button type="button" className="fbtn" onClick={picking.undo}>
           Undo last pick
         </button>
       ) : null}
       {picking.confirming === null ? null : (
-        <GuardPanel
-          need={need}
-          picking={picking}
-          sending={sending}
-          what={what}
-        />
+        <GuardPanel need={need} picking={picking} sending={sending} />
       )}
       {sending === null ? null : (
         <SendSaid need={need} sending={sending} text={commit.text} />

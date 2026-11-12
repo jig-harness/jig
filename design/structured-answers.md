@@ -464,8 +464,10 @@ to read.
   answer](#picking-an-answer) describes. The tick's line carries each
   waiting park's digest and options, so neither parses the decision. The
   dashboard's page copies the card's comment, and with a token the person
-  pasted into that browser its Send posts the same comment to the pull
-  request from the browser, as the person, with no route through the host
+  pasted into that browser its Send posts, once an option is picked, each
+  decision's answer as the comment `jig send` writes, record included, to
+  the pull request from the browser, as the person, with no route through
+  the host
   ([dispatch-dashboard.md § When the dashboard writes](dispatch-dashboard.md#when-the-dashboard-writes));
   the panel's Send runs the same `jig send` as the person
   ([orca-integration.md](orca-integration.md#the-jig-plugin-for-orca)).
@@ -614,7 +616,7 @@ Each surface's commit:
 | Surface | Commit | Waits on |
 | --- | --- | --- |
 | Dashboard, Copy | `c` copies, `p` opens the pull request, the person pastes | nothing |
-| Dashboard, Send | Send posts the comment Copy takes, from the browser with the person's token | a token kept in that browser |
+| Dashboard, Send | Once an option is picked, Send posts one `drive-answer` comment per decision, from the browser with the person's token | a token kept in that browser; a page over HTTPS, loopback or Tailscale |
 | Orca panel | Send runs `jig send` once for each decision's active answer, a free answer with its words | nothing |
 | Terminal | `jig ask --waiting` numbers the options; `jig send` names one | nothing |
 
@@ -761,8 +763,8 @@ The drive ledger's row in [plugin/RECORDS.md](../plugin/RECORDS.md) gains
 each park's `digest` and the resolution receipt of each park a re-arm unparked. The `drive-answer` row gains the line's digest
 suffix and the payload fields `decision` (the digest)
 and `choice` (the option's name and the form). The dashboard's Send writes
-the answer lines alone, as a pasted comment does, with no record: a browser
-has no host to name.
+the same record, one comment per decision, naming the person's login and
+`dashboard (browser)` as its writer's host.
 
 ### Beyond the drive
 
