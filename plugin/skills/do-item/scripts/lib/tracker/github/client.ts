@@ -183,8 +183,15 @@ export interface ClientOptions {
 
 export function gitHubClient(opts: ClientOptions): Client {
   const { home, model, settings } = opts;
-  const transport: GitHubTransport = (query, variables, signal) =>
-    cancellableRequest(signal, () => opts.transport(query, variables, signal));
+  const transport: GitHubTransport = (
+    query,
+    variables,
+    signal,
+    idempotent = false,
+  ) =>
+    cancellableRequest(signal, () =>
+      opts.transport(query, variables, signal, idempotent),
+    );
   const board: Board | null =
     settings.statesFrom === "project" && settings.project !== null
       ? { url: settings.project.url, statusField: settings.statusField }
@@ -196,7 +203,8 @@ export function gitHubClient(opts: ClientOptions): Client {
     facets: facetSlots,
     home,
     model,
-    transport,
+    transport: (query, variables, signal) =>
+      transport(query, variables, signal, true),
     credential: opts.credential ?? credentialOf(),
     ...opts.detection,
   });
@@ -227,6 +235,7 @@ export function gitHubClient(opts: ClientOptions): Client {
           ISSUE_QUERY(`${fields} ${extra}`),
           { owner: ref.owner, name: ref.name, number: ref.number },
           signal,
+          true,
         );
       } catch (err) {
         // The issue is absent only when its repository answered: a
@@ -280,7 +289,7 @@ export function gitHubClient(opts: ClientOptions): Client {
     repositoryId(signal) {
       const ask = async () => {
         const data = record(
-          await transport(REPO_ID_QUERY, repoVars, signal),
+          await transport(REPO_ID_QUERY, repoVars, signal, true),
           "data",
         );
         return str(record(data.repository, "repository").id, "repository.id");
@@ -361,7 +370,7 @@ export function gitHubClient(opts: ClientOptions): Client {
 
     async mutate(query, variables, signal) {
       signal?.throwIfAborted();
-      return record(await transport(query, variables, signal), "data");
+      return record(await transport(query, variables, signal, false), "data");
     },
 
     board(signal) {
@@ -382,6 +391,7 @@ export function gitHubClient(opts: ClientOptions): Client {
               field: settings.statusField,
             },
             signal,
+            true,
           );
         } catch (err) {
           if (!(err instanceof GitHubApiError && err.notFound)) throw err;

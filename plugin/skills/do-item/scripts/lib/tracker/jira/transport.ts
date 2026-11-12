@@ -16,6 +16,7 @@
  * list moved under it, and a shorter population is never presented as whole.
  */
 
+import { discardBody, retryAfterSeconds, retryRead } from "../read-retry.ts";
 import {
   type BudgetGovernor,
   credentialKey,
@@ -29,6 +30,7 @@ import type { Outcome } from "../../../../../../shared/outcome.ts";
 import {
   type CredentialCode,
   type JiraAuthorization,
+  type JiraLease,
   type JiraCredential,
   jiraAuthorization,
   resolveJiraCredential,
@@ -49,6 +51,8 @@ export interface JiraRequest {
   path: string;
   query?: Record<string, string | number | boolean>;
   body?: unknown;
+  /** A read-only POST, such as search/jql; GETs are reads by definition. */
+  idempotent?: boolean;
 }
 
 /**
@@ -153,8 +157,7 @@ function parsedOrNull(text: string): unknown {
 
 /** The seconds a `Retry-After` header asks to wait, or `null`. */
 function retryAfterOf(headers: Headers): number | null {
-  const seconds = Number(headers.get("retry-after") ?? Number.NaN);
-  return Number.isFinite(seconds) && seconds >= 0 ? seconds : null;
+  return retryAfterSeconds(headers);
 }
 
 /** The longest a `Retry-After` may limit a credential; a larger ask is not believed. */
@@ -283,9 +286,80 @@ async function send(
   }
 }
 
+/** The transport never waits toward a reset its whole-call deadline cannot reach. */
+interface CallBudget {
+  governor: BudgetGovernor | undefined;
+  deadlineAt: number;
+}
+
+function observeLimit(
+  response: Response,
+  key: string,
+  what: string,
+  budget: CallBudget,
+): TrackerRateLimited | null {
+  if (response.status !== 429 || budget.governor === undefined) return null;
+  const until = limitedUntil(Date.now(), response.headers);
+  const why = `Jira refused ${what} (HTTP 429)`;
+  budget.governor.observe(key, { limitedUntil: until, why });
+  return until >= budget.deadlineAt
+    ? new TrackerRateLimited("jira", until, why)
+    : null;
+}
+
+/** Keep one call's leased credential and renewal separate from its read retries. */
+function leasedSender(
+  base: string,
+  request: JiraRequest,
+  lease: JiraLease,
+  bound: AbortSignal,
+  fetchImpl: typeof fetch,
+  budget: CallBudget,
+): () => Promise<Response> {
+  const what = `${request.method} ${request.path}`;
+  const url = requestUrl(base, request);
+  const keyOf = (header: string) => credentialKey("jira", `${base} ${header}`);
+  let header = headerOf(lease.header, bound);
+  let key = keyOf(header);
+  return async () => {
+    budget.governor?.admit("jira", key);
+    let res = await send(
+      fetchImpl,
+      url,
+      requestInit(request, header, bound),
+      bound,
+      what,
+    );
+    if (res.status === 401) {
+      const renewed = await lease.renew(bound);
+      if (renewed !== null) {
+        await bodyText(res, bound, what);
+        header = headerOf(renewed, bound);
+        key = keyOf(header);
+        budget.governor?.admit("jira", key);
+        res = await send(
+          fetchImpl,
+          url,
+          requestInit(request, header, bound),
+          bound,
+          what,
+        );
+      }
+    }
+    const refused = observeLimit(res, key, what, budget);
+    if (refused !== null) {
+      await discardBody(res);
+      throw refused;
+    }
+    return res;
+  };
+}
+
 /**
  * HTTPS transport to `base`, the site or its API gateway address; each call
- * bounded as a whole by `JIRA_TIMEOUT_MS`. A 401 renews the header once, when the
+ * bounded as a whole by `JIRA_TIMEOUT_MS`. Idempotent reads retry 429/503
+ * answers within that deadline, rechecking credential holds before each send.
+ * A 401 renews the header once, when the
  * credential can be renewed, and sends the request again with it: a 401 is
  * refused before the request is acted on, so a write is not doubled. With
  * `governor` (the machine's request budget), a call is refused locally while
@@ -303,51 +377,32 @@ export function httpTransport(
   // Until one request succeeds, a 403 carries `firstRefusal`: a credential
   // the host does not take is refused on the first request.
   let answered = false;
-  const keyOf = (header: string) => credentialKey("jira", `${base} ${header}`);
   return async (request, signal) => {
     if (cancelled(signal)) throw abortedError(signal);
     const what = `${request.method} ${request.path}`;
-    const url = requestUrl(base, request);
     // One deadline for the whole call: the token command, the request, a
     // renewal and the request sent again all spend the same budget.
+    const budget = { governor, deadlineAt: Date.now() + JIRA_TIMEOUT_MS };
     const deadline = AbortSignal.timeout(JIRA_TIMEOUT_MS);
     const bound =
       signal === undefined ? deadline : AbortSignal.any([deadline, signal]);
     const lease = await authorization.lease(bound);
-    let header = headerOf(lease.header, signal);
-    // The key belongs to this call's own attempt: a shared one would record a
-    // refusal against whichever credential a concurrent call resolved last.
-    let key = keyOf(header);
-    governor?.admit("jira", key);
-    let res = await send(
-      fetchImpl,
-      url,
-      requestInit(request, header, bound),
-      signal,
-      what,
-    );
-    if (res.status === 401) {
-      const renewed = await lease.renew(bound);
-      if (renewed !== null) {
-        await bodyText(res, signal, what);
-        header = headerOf(renewed, signal);
-        key = keyOf(header);
-        governor?.admit("jira", key);
-        res = await send(
-          fetchImpl,
-          url,
-          requestInit(request, header, bound),
-          signal,
-          what,
-        );
-      }
-    }
-    const text = await bodyText(res, signal, what);
+    const res = await retryRead(
+      leasedSender(base, request, lease, bound, fetchImpl, budget),
+      request.method === "GET" || request.idempotent === true,
+      bound,
+    ).catch((err: unknown) => {
+      if (cancelled(bound)) throw abortedError(bound);
+      throw err;
+    });
+    const text = await bodyText(res, bound, what);
     if (res.status === 429 && governor !== undefined) {
       const until = limitedUntil(Date.now(), res.headers);
-      const why = `Jira refused ${what} (HTTP 429)`;
-      governor.observe(key, { limitedUntil: until, why });
-      throw new TrackerRateLimited("jira", until, why);
+      throw new TrackerRateLimited(
+        "jira",
+        until,
+        `Jira refused ${what} (HTTP 429)`,
+      );
     }
     if (!res.ok) {
       const failure = httpFailure(res.status, res.headers, text, what);
@@ -560,7 +615,7 @@ export async function searchPages(
       ...(token === null ? {} : { nextPageToken: token }),
     };
     const page = await transport(
-      { method: "POST", path: "search/jql", body },
+      { method: "POST", path: "search/jql", body, idempotent: true },
       signal,
     );
     for (const issue of searchIssues(page, where)) {

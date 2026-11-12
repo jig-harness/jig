@@ -11,6 +11,7 @@
  * adapter pass a fake transport.
  */
 
+import { retryAfterSeconds, retryRead } from "../read-retry.ts";
 import {
   type RunResult,
   ghCall,
@@ -23,12 +24,14 @@ export const GITHUB_TIMEOUT_MS = 30_000;
 
 /**
  * A GraphQL request; resolves to the response's `data`. An aborted `signal`
- * ends the request in flight and refuses to start one.
+ * ends the request in flight and refuses to start one. Builders mark queries
+ * idempotent explicitly; unmarked requests and mutations never retry.
  */
 export type GitHubTransport = (
   query: string,
   variables: Record<string, unknown>,
   signal?: AbortSignal,
+  idempotent?: boolean,
 ) => Promise<unknown>;
 
 /**
@@ -166,20 +169,59 @@ function ghExitFailure(r: RunResult, body: unknown): GitHubApiError {
  * wrapper (`runClient`). The request travels on standard input as one JSON
  * body, so variables keep their types and nothing reaches the command line.
  */
-export function ghTransport(): GitHubTransport {
-  return async (query, variables, signal) => {
-    if (cancelled(signal)) throw abortedError(signal);
-    const r = await runClient(ghCall, ["api", "graphql", "--input", "-"], {
-      stdin: JSON.stringify({ query, variables }),
-      timeoutMs: GITHUB_TIMEOUT_MS,
-      signal,
-    });
-    if (cancelled(signal)) throw abortedError(signal);
-    const failure = ghFailure(r);
-    if (failure !== null) throw failure;
-    const body = ghBody(r);
-    if (r.code !== 0) throw ghExitFailure(r, body);
+export function ghTransport(runner: typeof ghCall = ghCall): GitHubTransport {
+  return async (query, variables, signal, idempotent = false) => {
+    const deadline = AbortSignal.timeout(GITHUB_TIMEOUT_MS);
+    const bound =
+      signal === undefined ? deadline : AbortSignal.any([deadline, signal]);
+    const answer = await retryRead(
+      async () => {
+        if (cancelled(bound)) throw abortedError(bound);
+        const r = await runClient(
+          runner,
+          ["api", "graphql", "--include", "--input", "-"],
+          {
+            stdin: JSON.stringify({ query, variables }),
+            timeoutMs: GITHUB_TIMEOUT_MS,
+            signal: bound,
+          },
+        );
+        if (cancelled(bound)) throw abortedError(bound);
+        const failure = ghFailure(r);
+        if (failure !== null) throw failure;
+        const parsed = ghHeaders(r.stdout);
+        return { ...parsed, result: { ...r, stdout: parsed.body } };
+      },
+      idempotent,
+      bound,
+    );
+    const body = ghBody(answer.result);
+    if (answer.result.code !== 0) throw ghExitFailure(answer.result, body);
     return unwrapResponse(body);
+  };
+}
+
+/** `gh --include` prints the HTTP status and headers before the JSON body. */
+function ghHeaders(stdout: string): {
+  status: number;
+  headers: Headers;
+  body: string;
+} {
+  const match = /^HTTP\/[^ ]+ (\d+)[^\r\n]*\r?\n([\s\S]*?)\r?\n\r?\n/.exec(
+    stdout,
+  );
+  if (match === null)
+    return { status: 200, headers: new Headers(), body: stdout };
+  const headers = new Headers();
+  for (const line of (match[2] ?? "").split(/\r?\n/)) {
+    const colon = line.indexOf(":");
+    if (colon > 0)
+      headers.append(line.slice(0, colon), line.slice(colon + 1).trim());
+  }
+  return {
+    status: Number(match[1]),
+    headers,
+    body: stdout.slice(match[0].length),
   };
 }
 
@@ -215,16 +257,24 @@ export function httpTransport(
     throw new GitHubApiError(
       `JIG_GITHUB_GRAPHQL_URL must be an https address, or http on a loopback address (got ${url})`,
     );
-  return async (query, variables, signal) => {
-    if (cancelled(signal)) throw abortedError(signal);
+  return async (query, variables, signal, idempotent = false) => {
+    const deadline = AbortSignal.timeout(GITHUB_TIMEOUT_MS);
+    const bound =
+      signal === undefined ? deadline : AbortSignal.any([deadline, signal]);
+    if (cancelled(bound)) throw abortedError(bound);
     let res: Response;
     try {
-      res = await postGraphQL(
-        fetchImpl,
-        url,
-        `bearer ${token}`,
-        { query, variables },
-        { timeoutMs: GITHUB_TIMEOUT_MS, signal },
+      res = await retryRead(
+        () =>
+          postGraphQL(
+            fetchImpl,
+            url,
+            `bearer ${token}`,
+            { query, variables },
+            { timeoutMs: GITHUB_TIMEOUT_MS, signal: bound },
+          ),
+        idempotent,
+        bound,
       );
     } catch (err) {
       if (cancelled(signal)) throw abortedError(signal);
@@ -234,6 +284,7 @@ export function httpTransport(
       );
     }
     const text = await res.text().catch(() => "");
+    if (cancelled(bound)) throw abortedError(bound);
     const body = parsedOrNull(text);
     if (!res.ok) throw httpFailure(res, text, body);
     return unwrapResponse(body);
@@ -258,8 +309,7 @@ function statusUnavailable(status: number, text: string): boolean {
 
 /** The seconds a `Retry-After` header asks to wait, or `null`. */
 function retryAfterOf(headers: Headers): number | null {
-  const seconds = Number(headers.get("retry-after") ?? Number.NaN);
-  return Number.isFinite(seconds) && seconds >= 0 ? seconds : null;
+  return retryAfterSeconds(headers);
 }
 
 /** What an error status means: whether to try later, and when. */
