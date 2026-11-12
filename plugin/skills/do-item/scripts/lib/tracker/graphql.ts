@@ -95,6 +95,7 @@ export type Transport = (
   query: string,
   variables: Record<string, unknown>,
   signal?: AbortSignal,
+  idempotent?: boolean,
 ) => Promise<unknown>;
 
 /**
@@ -112,7 +113,7 @@ export function pager(rules: Pick<PageRules, "idOf" | "fail">) {
     signal?: AbortSignal,
   ): Promise<unknown[]> =>
     readConnection(
-      (after) => transport(query, { ...variables, after }, signal),
+      (after) => transport(query, { ...variables, after }, signal, true),
       { ...rules, pick, where },
     );
 }
