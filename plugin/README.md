@@ -871,7 +871,12 @@ the re-arm left beside it, never from the park's disappearance alone:
 whether a note narrowed it and how long the park waited for its answer;
 `park-provisional` for a park handed on to be decided provisionally; and
 `park-removed` for a park the line held that left with no receipt
-(withdrawn or framed again; a park on a pull request no longer open is not counted). A park
+(withdrawn or framed again on an open pull request). When a pull request
+that held parks leaves the open listing, the owner host reads its final
+ledger once and counts the receipts it supports under the same occurrence
+keys. A failed read leaves its parks held for a later tick; a successful
+read retires them. A park with no final receipt stays uncounted, including
+when the ledger cut receipts. A park
 raised and answered between two ticks is counted from its receipt, and no
 park is counted twice. A stop the classifier cannot
 place is logged as `unknown`, never dropped, so a reason that recurs among
@@ -1562,7 +1567,7 @@ open; the guide lists the evidence it needs.
 | **git** | 2.36 or later (`--path-format` for absolute paths and `git worktree list -z`; `resolve-conflicts` needs 2.41, to reconstruct automatic merge results and read attributes from the index with `--attr-source`, and its history report 2.43, or 2.45 in a partial clone) | Every skill that reads the repository |
 | **GitHub CLI** (`gh`), signed in with access to the repositories you work on | 2.48 or later (`gh api --slurp`) | Every skill that works on pull requests. Jig supports GitHub as its only forge ([extending](EXTENDING.md#forge-github)) |
 | **The `gh-stack` extension** | Any | Only `pull_requests.stacking: native` |
-| **Issue-tracker access** | — | `do-item`, and `drive-pr`'s tracker reads. With the default GitHub adapter, the signed-in `gh` above and nothing more. With the Linear adapter: `LINEAR_API_KEY` or `LINEAR_API_TOKEN` in the environment, or the Linear MCP server or `linear` command line tool signed in. With the Jira adapter: `JIRA_EMAIL` and `JIRA_API_TOKEN` in the environment, an Atlassian account's email address and an API token made for it |
+| **Issue-tracker access** | — | `do-item`, and `drive-pr`'s tracker reads. With the default GitHub adapter, the signed-in `gh` above and nothing more. With the Linear adapter: `LINEAR_API_KEY` or `LINEAR_API_TOKEN` in the environment, or the Linear MCP server or `linear` command line tool signed in. With the Jira adapter: `JIRA_EMAIL` and `JIRA_API_TOKEN` in the environment, an Atlassian account's email address and an API token made for it, or an OAuth access token in `JIRA_BEARER_TOKEN`, or a command that prints one in `JIRA_TOKEN_COMMAND` ([environment variables](CONFIGURATION.md#environment-variables)) |
 
 Most skills do not check these versions when they run: an older tool fails
 on the command it lacks. The `resolve-conflicts` history report is the
@@ -1798,8 +1803,9 @@ Issues, the default, the key is the repository's own
 team is set. A drive does not need an AI reviewer: without one it
 converges on review threads and CI alone. A repository that has one names it
 with `review.reviewer_app` (or `review.reviewer_check_pattern`), and the drive
-then also waits for the check run, sticky comment and reviewed-commit marker
-described in the
+then also waits for the check run, sticky comment and reviewed-commit marker,
+or for a reviewer that submits pull-request reviews (CodeRabbit, named by
+`reviewer_app: coderabbitai` alone) its review of the head, as described in the
 [drive-pr README](skills/drive-pr/README.md#consumer-configuration). Add a
 field only when its default does not fit. The
 [configuration reference](CONFIGURATION.md) lists every field, including the

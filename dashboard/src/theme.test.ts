@@ -1,5 +1,20 @@
 import { describe, expect, it } from "bun:test";
-import { nextTheme, schemeOf, themeOf, themeSearch } from "./theme.ts";
+import {
+  nextTheme,
+  schemeOf,
+  syncBarColour,
+  themeOf,
+  themeSearch,
+} from "./theme.ts";
+
+function bar(): { metas: HTMLMetaElement[]; doc: Document } {
+  const metas = [
+    "(prefers-color-scheme: light)",
+    "(prefers-color-scheme: dark)",
+  ].map((media) => ({ media, dataset: {} }) as unknown as HTMLMetaElement);
+  const doc = { querySelectorAll: () => metas } as unknown as Document;
+  return { metas, doc };
+}
 
 describe("the theme", () => {
   it("is the one the address names, over what the browser kept", () => {
@@ -36,5 +51,25 @@ describe("the theme", () => {
     expect(nextTheme("auto")).toBe("light");
     expect(nextTheme("light")).toBe("dark");
     expect(nextTheme("dark")).toBe("auto");
+  });
+});
+
+describe("the browser bar's colour", () => {
+  it("keeps only the chosen theme's colour in force", () => {
+    const { metas, doc } = bar();
+    syncBarColour("dark", doc);
+    expect(metas.map((m) => m.media)).toEqual(["not all", "all"]);
+    syncBarColour("light", doc);
+    expect(metas.map((m) => m.media)).toEqual(["all", "not all"]);
+  });
+
+  it("gives each colour its own device scheme back on auto", () => {
+    const { metas, doc } = bar();
+    syncBarColour("dark", doc);
+    syncBarColour("auto", doc);
+    expect(metas.map((m) => m.media)).toEqual([
+      "(prefers-color-scheme: light)",
+      "(prefers-color-scheme: dark)",
+    ]);
   });
 });

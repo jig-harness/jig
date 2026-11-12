@@ -702,6 +702,25 @@ fix_ci:
     );
   });
 
+  test("a reviewer whose evidence the drive cannot read is an error", () => {
+    const errors = (review: string) =>
+      ids(fit({ ".config/jig.yaml": `review:\n${review}` }).report, "error");
+    expect(
+      errors("  reviewer_app: coderabbitai\n  reviewer_evidence: sticky\n"),
+    ).toContain("rule:review.reviewer_evidence");
+    expect(
+      errors(
+        '  reviewer_check_pattern: "^Bot$"\n  reviewer_evidence: review_object\n',
+      ),
+    ).toContain("rule:review.reviewer_evidence");
+    expect(errors("  reviewer_app: coderabbitai\n")).not.toContain(
+      "rule:review.reviewer_evidence",
+    );
+    expect(errors("  reviewer_evidence: review_object\n")).not.toContain(
+      "rule:review.reviewer_evidence",
+    );
+  });
+
   test("work_batch.size_points prices exactly the batchable sizes", () => {
     const findings = (yaml: string) =>
       fit({ ".config/jig.yaml": yaml }).report.findings.filter(
@@ -1724,6 +1743,17 @@ gates:
         "--state merged": pulls(["AI review (shadow)"], []),
       }),
     ).not.toContain("contradiction:review.reviewer");
+    // A known app is matched by its own check name.
+    expect(
+      silent("  reviewer_app: coderabbitai\n", {
+        "--state merged": pulls(["CodeRabbit"], []),
+      }),
+    ).not.toContain("contradiction:review.reviewer");
+    expect(
+      silent("  reviewer_app: coderabbitai\n", {
+        "--state merged": pulls(["AI review (shadow)"], []),
+      }),
+    ).toContain("contradiction:review.reviewer");
   });
 
   test("the gate is compared with the jobs behind the required checks", () => {

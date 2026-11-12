@@ -5,7 +5,7 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { buildPage, PAGE_DIR } from "./build.ts";
+import { buildIcons, buildPage, PAGE_DIR } from "./build.ts";
 
 const root = resolve(import.meta.dir, "..");
 
@@ -14,6 +14,13 @@ test("the built page is a fresh build of its source and the pinned packages", as
     expect({
       name,
       current: readFileSync(join(root, PAGE_DIR, name), "utf8") === content,
+    }).toEqual({ name, current: true });
+  for (const [name, content] of Object.entries(buildIcons()))
+    expect({
+      name,
+      current: Buffer.from(readFileSync(join(root, PAGE_DIR, name))).equals(
+        Buffer.from(content),
+      ),
     }).toEqual({ name, current: true });
 }, 60_000);
 
@@ -41,5 +48,39 @@ test("both pages name Jig's mark as their icon, inline, so the browser asks the 
       name,
       icon: `data:image/svg+xml,${mark}`,
     });
+  }
+}, 60_000);
+
+test("the page, and only the page, offers itself as an app, with an icon of every size its manifest declares", async () => {
+  const files = await buildPage();
+  expect(files["index.html"]).toContain(
+    '<link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials">',
+  );
+  expect(files["index.html"]).toMatch(
+    /<meta name="theme-color" content="#[0-9a-f]{6}" media="\(prefers-color-scheme: dark\)">/,
+  );
+  // The page a refused request gets has nothing to install.
+  expect(files["refused.html"]).not.toContain('rel="manifest"');
+
+  const manifest = JSON.parse(files["manifest.webmanifest"] ?? "") as {
+    start_url: string;
+    icons: { src: string; sizes: string }[];
+  };
+  expect(manifest.start_url).toBe("/");
+  const icons = buildIcons();
+  for (const icon of manifest.icons) {
+    const bytes = icons[icon.src.slice(1)];
+    expect({ src: icon.src, present: bytes !== undefined }).toEqual({
+      src: icon.src,
+      present: true,
+    });
+    const view = new DataView(
+      (bytes ?? new Uint8Array(24)).buffer,
+      (bytes ?? new Uint8Array(24)).byteOffset,
+    );
+    expect({
+      src: icon.src,
+      size: `${view.getUint32(16)}x${view.getUint32(20)}`,
+    }).toEqual({ src: icon.src, size: icon.sizes });
   }
 }, 60_000);

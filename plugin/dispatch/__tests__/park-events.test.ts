@@ -21,6 +21,7 @@ import {
 import type { DrivenPr } from "../lib/types.ts";
 import {
   ledgerComment,
+  mergedPr,
   openPr,
   SLUG,
   stoppedLedger,
@@ -208,13 +209,13 @@ describe("park outcomes", () => {
     });
   });
 
-  it("keeps a held park whose ledger it did not read, and drops one whose pull request closed without claiming how it left", () => {
+  it("keeps a held park until its open or final ledger reads", () => {
     const memory: ParkMemory = {
       parks: [linePark("kept", 8), linePark("closed", 9)],
     };
     const got = parkOutcomes([repo([], { open: [8] })], memory, NOW);
     expect(got.rows).toEqual([]);
-    expect(got.parks.map((p) => p.key)).toEqual(["kept"]);
+    expect(got.parks.map((p) => p.key)).toEqual(["kept", "closed"]);
     const unread = parkOutcomes([repo([], { open: null })], memory, NOW);
     expect(unread.rows).toEqual([]);
     expect(unread.parks.map((p) => p.key)).toEqual(["kept", "closed"]);
@@ -228,6 +229,36 @@ describe("park outcomes", () => {
     );
     expect(got.rows).toEqual([]);
     expect(got.ingested).toEqual([]);
+  });
+
+  it("counts final receipts without resurrecting parks or inferring removal", () => {
+    const final = {
+      number: 7,
+      parks: {
+        parked: [parkOf("C")],
+        resolved: [
+          receipt("A"),
+          receipt("B", { outcome: "provisional", answers: [] }),
+        ],
+        receiptsCut: true,
+      },
+    };
+    const got = parkOutcomes(
+      [repo([], { open: [], finalParks: [final] })],
+      { parks: [linePark("A"), linePark("C")] },
+      NOW,
+    );
+    expect(events(got.rows)).toEqual([
+      ["park-answered", "A"],
+      ["park-provisional", "B"],
+    ]);
+    expect(got.parks).toEqual([]);
+    const repeated = parkOutcomes(
+      [repo([], { open: [], finalParks: [final] })],
+      got,
+      NOW,
+    );
+    expect(repeated.rows).toEqual([]);
   });
 });
 
@@ -265,9 +296,77 @@ describe("the outcome log over real ticks", () => {
     }
   }
 
-  async function tick(w: World): Promise<void> {
-    expectSpawnExit(await w.dispatch(["--json"]), 0);
+  async function tick(w: World, exit = 0): Promise<void> {
+    expectSpawnExit(await w.dispatch(["--json"]), exit);
   }
+
+  it.each(["merged", "closed"])(
+    "reads final receipts once after a pull request is %s",
+    async (state) => {
+      const w = world();
+      current = w;
+      w.setConfig(
+        `issue_tracker:\n  adapter: github\n  github:\n    repository: ${SLUG}\n`,
+      );
+      machineFile(w, [account(w, "a", "a@example.com")], {}, ["notify"]);
+      w.setPrs("open", [openPr(7, "feature/7")]);
+      w.setComments(7, [
+        ledgerComment(
+          701,
+          stoppedLedger(7, 16, {
+            parked: ["A", "C"].map((key) => ({
+              key,
+              kind: "finding",
+              reason: "Keep?",
+              round: 1,
+              at: PARKED_AT,
+              class: "scope",
+            })),
+          }),
+        ),
+      ]);
+      await tick(w);
+      expect(storedLine(w).parks).toHaveLength(2);
+      w.setPrs("open", []);
+      if (state === "merged")
+        w.setPrs("merged", [mergedPr(7, "feature/7", NOW)]);
+      const damaged = ledgerComment(701, stoppedLedger(7, 0));
+      w.setComments(7, [
+        { ...damaged, body: "<!-- drive-pr-ledger -->\nunreadable" },
+      ]);
+      await tick(w, 1);
+      expect(parkRows(w)).toEqual([]);
+      expect(storedLine(w).parks).toHaveLength(2);
+      w.setComments(7, [
+        ledgerComment(
+          701,
+          stoppedLedger(7, 0, {
+            parked: [],
+            resolvedParks: [
+              receipt("A"),
+              receipt("B", { outcome: "provisional", answers: [] }),
+            ].map(({ digest: _d, ...r }) => r),
+          }),
+        ),
+      ]);
+      await tick(w);
+      expect(events(parkRows(w))).toEqual([
+        ["park-answered", "A"],
+        ["park-provisional", "B"],
+      ]);
+      expect(storedLine(w).parks).toEqual([]);
+      // Once retired, a later ledger edit is not read again for park accounting.
+      w.setComments(7, [
+        ledgerComment(
+          701,
+          stoppedLedger(7, 0, { resolvedParks: [receipt("C")] }),
+        ),
+      ]);
+      await tick(w);
+      expect(parkRows(w)).toHaveLength(2);
+    },
+    120_000,
+  );
 
   it("counts answered and removed parks once each across ticks", async () => {
     const w = world();

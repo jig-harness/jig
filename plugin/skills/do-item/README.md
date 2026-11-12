@@ -269,6 +269,19 @@ setting forbids; a person's own move without the flag still works. The
 [configuration reference](../../CONFIGURATION.md#do_item) has both
 settings.
 
+## Stopped work
+
+A team whose board shows stopped work as blocked can name an optional
+`blocked` state in `issue_tracker.states`. With the pull request state
+labels on (`dispatch.labels.enabled`), a drive that stops with only parked
+work left moves each item its pull request links to `blocked`, with a
+comment naming each park's class and reason; on Jira it also writes the
+fields `issue_tracker.jira.blocked_fields` names. Once the park is answered
+and the drive runs again, the item returns to the state it left. This
+skill never moves an item into or out of `blocked`, and its claim refuses
+an item there. The [configuration reference](../../CONFIGURATION.md#issue_tracker)
+has the rules.
+
 ## Continuing work
 
 Invoke the same skill with the issue key again. It refreshes tracker state,

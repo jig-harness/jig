@@ -34,3 +34,10 @@ export function settingsSection(
     );
   return section;
 }
+
+/** The first name that an earlier entry already has, compared without case. */
+export function firstRepeat(names: ReadonlyArray<string>): string | undefined {
+  return names.find(
+    (n, i) => names.findIndex((m) => m.toLowerCase() === n.toLowerCase()) !== i,
+  );
+}
