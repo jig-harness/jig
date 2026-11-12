@@ -2030,6 +2030,19 @@ late-round minimal-diff rule on the fixes that do proceed. `--round` is read
 from `current-round.ts`, which reads this drive's own durable count, so the
 ladder arms on the PR's real depth rather than this pass's.
 
+**A person's thread binds the round.** Before fixing a bot's finding, read
+the threads on its file in which a person spoke, open or resolved (the
+`--include-resolved` stream of `list-unresolved-threads.ts`). A fix that
+would undo, narrow or contradict what the person asked for or settled is
+never an ordinary accept ([triage rubric § Guardrails](../resolve-review-comments/references/triage-rubric.md#guardrails)):
+give the finding and the person's thread to the review arbiter, record its
+ruling with the `rule` operation of `drive-state.ts` (§ 4) and act on it. `triage-thread.ts`
+refuses (exit `5`) a fresh `accepted` reply to a bot's thread on a file that
+carries a person's thread until a `fix-now` ruling on that bot's thread is
+recorded, and prints the person's words for the arbiter. On `rejected`,
+reply `**rejected**` citing the person's thread; on `escalate`, park the
+thread under its class.
+
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 Write `.context/thread-reply.md` with the file editor:
