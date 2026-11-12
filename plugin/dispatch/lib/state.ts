@@ -68,7 +68,8 @@ const STATE_FILE = "state.sqlite";
  * database runs them all. A change to the schema adds an entry, says whether
  * it is additive, and never edits one a released plugin ran.
  */
-const MIGRATIONS: readonly Migration[] = [
+/** The dispatcher schema's ordered migrations, shared with historical-schema fixtures. */
+export const MIGRATIONS: readonly Migration[] = [
   {
     additive: false,
     sql: `
