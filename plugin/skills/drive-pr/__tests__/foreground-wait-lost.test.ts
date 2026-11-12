@@ -60,6 +60,9 @@ const track = async () => {
 };
 
 afterEach(async () => {
+  // A failure can precede every capture in the test body; the generation
+  // directory still names the fixture processes until it is removed below.
+  await track();
   await signalIdentityTargets(tracked, "SIGKILL");
   tracked = [];
   rmSync(cwd, { recursive: true, force: true });
