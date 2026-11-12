@@ -14,7 +14,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { load } from "../../../shared/yaml.ts";
-import { LABEL_ROLES } from "../../../shared/tracker-labels.ts";
+import { LABEL_KEYS } from "../../../shared/tracker-labels.ts";
 import {
   ISSUE_LINKS,
   KNOWN_KEYS,
@@ -602,7 +602,7 @@ describe("the reading skills", () => {
   test("read the fields the schema lists in their strict maps", () => {
     expect(under("pull_requests").sort()).toEqual([...KNOWN_KEYS].sort());
     expect(under("issue_tracker.labels").sort()).toEqual(
-      [...LABEL_ROLES].sort(),
+      [...LABEL_KEYS].sort(),
     );
     expect(under("specs").sort()).toEqual([...SPECS_FIELDS].sort());
     expect(under("work_batch.ranking").sort()).toEqual(

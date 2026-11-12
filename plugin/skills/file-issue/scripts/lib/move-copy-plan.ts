@@ -1,7 +1,6 @@
 /** Plan a copy from live representations and its durable copy snapshot. */
 import type { Facet } from "../../../do-item/scripts/lib/tracker/port.ts";
 import type { ResolvedFacet } from "../../../do-item/scripts/lib/tracker/facets/config.ts";
-import { fold } from "../../../do-item/scripts/lib/tracker/facets/values.ts";
 import type { MoveSides, Pair } from "./move.ts";
 import type { FacetValue } from "./move-record.ts";
 import { sourceValues, facetValue } from "./move-values.ts";
@@ -48,7 +47,7 @@ function facetPlan(
   if (v === undefined)
     return {
       gets: d,
-      ...(missingSourceRequired(pair, f, d, sides)
+      ...(missingSourceRequired(pair, f, d)
         ? { unresolved: `${f} has no value in its source` }
         : {}),
     };
@@ -99,11 +98,7 @@ function missingSourceRequired(
   pair: Pair,
   f: Facet,
   destination: FacetValue,
-  sides: MoveSides,
 ): boolean {
   if (destination !== null) return false;
-  const epicSize =
-    f === "size" &&
-    pair.src.labels.some((l) => fold(l) === fold(sides.sourceFacets.epic));
-  return !epicSize;
+  return !(f === "size" && pair.src.isEpic);
 }

@@ -469,7 +469,10 @@ lists the read could not take in full; `[]` when complete); and the facets
 `type` and `size`, each a value or `null`. An omitted field is refused, never
 defaulted: a missing `truncated` would read a partial label list as complete.
 An omitted facet reads as none, as a reader of an earlier release wrote
-none.
+none. `isEpic` (true or false) and `nativeType` (the tracker's own issue
+type, or `null`) are optional: with `isEpic` omitted, an issue is an epic
+when it carries the epic label or its `nativeType` is one of
+`issue_tracker.labels.epic_types`.
 
 **Output**: one JSON document.
 

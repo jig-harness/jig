@@ -59,7 +59,6 @@ export async function openBlockers(
 }
 
 export interface PullPolicy {
-  epic: string;
   hitl?: string | undefined;
   manualOps?: string | undefined;
   repoScope?: RepoScope | undefined;
@@ -82,7 +81,7 @@ export function whyNotPulled(
   if (blocker === null) return "cannot be read";
   if (blocker.truncated.length > 0) return "its read is incomplete";
   if (blocker.assignee !== null) return `assigned to ${blocker.assignee.name}`;
-  if (blocker.labels.includes(policy.epic) || blocker.hasOpenChildren)
+  if (blocker.isEpic || blocker.hasOpenChildren)
     return "an epic; assign it to start it";
   if (!ready(blocker, policy.blockedState ?? null))
     return `in ${blocker.state.name}`;

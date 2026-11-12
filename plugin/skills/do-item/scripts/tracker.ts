@@ -442,7 +442,6 @@ async function claim(
               ...(blocking
                 ? { blocking: shape?.normalize(blocking) ?? blocking }
                 : {}),
-              epicLabel: config.labels.epic,
               hitlLabel: config.labels.hitl,
               manualOpsLabel: config.labels.manualOps,
               ...(planBlock?.ok && planBlock.value !== undefined

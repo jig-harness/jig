@@ -210,6 +210,12 @@ export interface Issue extends FacetValues {
    * facet (`type`) is the value callers decide with.
    */
   nativeType: string | null;
+  /**
+   * The issue is an epic: it carries the epic label, or its native type is
+   * one of `issue_tracker.labels.epic_types` (`isEpic` in
+   * `shared/tracker-labels.ts`).
+   */
+  isEpic: boolean;
   parent: { identifier: string; title?: string } | null;
   children: IssueSummary[];
   assignee: string | null;
@@ -247,8 +253,14 @@ export interface IssueFact {
   completedAt: string | null;
   stateType: string;
   description: string;
-  /** Parent chain, nearest first. */
-  ancestors: Array<{ id: string; labels: string[] }>;
+  /** The tracker's own issue type, as `Issue.nativeType`; `null` or absent = none. */
+  nativeType?: string | null;
+  /** Parent chain, nearest first, each with its own issue type. */
+  ancestors: Array<{
+    id: string;
+    labels: string[];
+    nativeType?: string | null;
+  }>;
 }
 
 export interface CommentFact {
@@ -331,7 +343,10 @@ export const CLOSED_STATE_TYPES = [
  * states of one category), and a claim re-check compares ids.
  */
 export interface PoolIssue {
-  /** The tracker's own issue type when the adapter has type-specific workflows. */
+  /**
+   * The tracker's own issue type, where the read took it: an adapter with
+   * type-specific workflows, or one that reads `isEpic` from it.
+   */
   nativeType?: string | null;
   /** Complete labels hidden by ordinary pool display, for migration validation. */
   hiddenLabels?: string[];
@@ -351,6 +366,8 @@ export interface PoolIssue {
   state: IssueState & { id: string };
   assignee: { id: string; name: string } | null;
   labels: string[];
+  /** The issue is an epic, as `Issue.isEpic`. */
+  isEpic: boolean;
   /** The issue has at least one child that is not closed. */
   hasOpenChildren: boolean;
   /**
@@ -727,6 +744,8 @@ export interface Tracker extends TrackerAttachments {
   ): Promise<boolean>;
 
   // ── Fleet metrics ──
+  // A read by the epic label (`issue_tracker.labels.epic`) also takes the
+  // issues of the native types `issue_tracker.labels.epic_types` lists.
   /** Issues of this team named by key; a key that resolves to nothing is absent. */
   issuesByKeys(keys: ReadonlyArray<string>): Promise<Map<string, IssueFact>>;
   /** Issues created (or completed) in a window, optionally of one label. */
@@ -913,6 +932,16 @@ export interface Tracker extends TrackerAttachments {
   createIssue(
     issue: NewIssue,
   ): Promise<{ identifier: string; url: string | null }>;
+  /**
+   * What `createIssue` would file `issue` as: its labels and the native issue
+   * type it is written with, resolved the way the write resolves them and
+   * without writing. Optional: a tracker that files the type the caller
+   * names, as given, omits it.
+   */
+  filedAs?(issue: NewIssue): Promise<{
+    labels: string[];
+    nativeType: string | null;
+  }>;
   /** Change an issue. Throws on an empty patch, and as `createIssue` does. */
   updateIssue(
     key: string,

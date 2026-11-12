@@ -10,9 +10,15 @@
  * the adapter.
  *
  * A label behind a `field_labels` prefix is a field's value, not a Jira
- * label, so a query for it is a clause on that field.
+ * label, so a query for it is a clause on that field. A query for the epic
+ * label also takes the issues of the epic's issue types
+ * (`issue_tracker.labels.epic_types`).
  */
 
+import {
+  type EpicRecognition,
+  epicTypesOfLabel,
+} from "../../../../../../shared/tracker-labels.ts";
 import { TrackerRequestError } from "../port.ts";
 import type { FieldLabel } from "./read.ts";
 
@@ -188,6 +194,22 @@ export function hasLabel(
   return found === null
     ? `labels = ${quote(label)}`
     : `${found.field.clause} = ${jqlValue(found.field, found.value, label)}`;
+}
+
+/**
+ * The issues carrying `label`; for the epic label, also those whose issue
+ * type is one of the epic's types.
+ */
+export function labelOrEpicType(
+  label: string,
+  fields: ReadonlyArray<FieldLabel>,
+  epic: EpicRecognition,
+): string {
+  const own = hasLabel(label, fields);
+  const types = epicTypesOfLabel(label, epic);
+  return types.length === 0
+    ? own
+    : `(${own} OR issuetype in ${stringList(types)})`;
 }
 
 /** The issues carrying at least one of `labels`. */
