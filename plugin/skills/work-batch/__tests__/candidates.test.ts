@@ -819,6 +819,13 @@ describe("the eligibility mode", () => {
         epicTypes: ["Epic"],
       })[0]?.isEpic;
     expect([read("Epic"), read("Story")]).toEqual([true, false]);
+    // A supplied `false` never weakens what the label or type says.
+    expect(
+      parsePoolIssues([{ ...typed, nativeType: "Epic", isEpic: false }], {
+        epic: "epic",
+        epicTypes: ["Epic"],
+      })[0]?.isEpic,
+    ).toBe(true);
   });
 });
 

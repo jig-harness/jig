@@ -123,7 +123,7 @@ function epicTypesOf(raw: Record<string, unknown>): string[] {
   const at = `issue_tracker.labels.${EPIC_TYPES}`;
   return raw[EPIC_TYPES] === undefined
     ? []
-    : labelList(raw[EPIC_TYPES], at, "issue type");
+    : labelList(raw[EPIC_TYPES], at, "issue type").map((t) => t.trim());
 }
 
 function oneLabel(value: unknown, field: string): string {

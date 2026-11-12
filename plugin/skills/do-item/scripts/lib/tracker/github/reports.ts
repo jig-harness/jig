@@ -217,7 +217,7 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
   /** Refuses an epic type the home repository does not have. */
   async function requireTypes(types: ReadonlyArray<string>): Promise<void> {
     const have = await client.facets.issueTypes();
-    const lacking = types.filter((t) => !have.some((h) => same(h, t)));
+    const lacking = types.filter((t) => !have.some((h) => same(h, t.trim())));
     if (lacking.length > 0)
       throw new TrackerRequestError(
         "unresolved",

@@ -182,7 +182,12 @@ function gapBlockers(gap: LabellingGap, policy: BatchPolicy): string[] {
   return [
     ...new Set([
       ...labels.filter((l) => soloFlagOf([l], policy) !== null),
-      ...(gap.isEpic ? [policy.epicLabel] : []),
+      ...(gap.isEpic &&
+      !labels.some(
+        (l) => l.trim().toLowerCase() === policy.epicLabel.trim().toLowerCase(),
+      )
+        ? ["an epic by issue type"]
+        : []),
       ...areaShapedLabels(labels, policy).filter(
         (l) => !isKnownAreaLabel(l, policy),
       ),

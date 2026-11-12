@@ -900,6 +900,16 @@ export interface Tracker {
   createIssue(
     issue: NewIssue,
   ): Promise<{ identifier: string; url: string | null }>;
+  /**
+   * What `createIssue` would file `issue` as: its labels and the native issue
+   * type it is written with, resolved the way the write resolves them and
+   * without writing. Optional: a tracker that files the type the caller
+   * names, as given, omits it.
+   */
+  filedAs?(issue: NewIssue): Promise<{
+    labels: string[];
+    nativeType: string | null;
+  }>;
   /** Change an issue. Throws on an empty patch, and as `createIssue` does. */
   updateIssue(
     key: string,

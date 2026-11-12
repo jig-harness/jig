@@ -77,18 +77,18 @@ export function parsePoolIssues(
       state: issue.state as PoolIssue["state"],
       assignee: issue.assignee as PoolIssue["assignee"],
       labels: issue.labels as string[],
-      // A reader of an earlier release wrote no `isEpic`: its labels and
-      // issue type say.
+      // The labels and issue type always say; a supplied `true` adds to
+      // them, and a supplied `false` (or none, from a reader of an earlier
+      // release) never weakens the epic exclusion.
       isEpic:
-        typeof issue.isEpic === "boolean"
-          ? issue.isEpic
-          : isEpic(
-              {
-                labels: issue.labels as string[],
-                nativeType: isText(issue.nativeType) ? issue.nativeType : null,
-              },
-              epic,
-            ),
+        issue.isEpic === true ||
+        isEpic(
+          {
+            labels: issue.labels as string[],
+            nativeType: isText(issue.nativeType) ? issue.nativeType : null,
+          },
+          epic,
+        ),
       hasOpenChildren: issue.hasOpenChildren as boolean,
       truncated: issue.truncated as string[],
       // A reader of an earlier release wrote no facets: none of either.

@@ -35,13 +35,14 @@ export function incompleteness(
   issue: NewIssue,
   facets: Facets,
   taxonomy: Taxonomy | null,
+  filed?: { labels: string[]; nativeType: string | null },
 ): string[] {
   const missing: string[] = [];
   if (usable(facets.type) && (issue.type ?? "").trim() === "")
     missing.push("type");
   if ((issue.priority ?? 0) === 0) missing.push("priority");
   const epic = isEpic(
-    { labels: issue.labels, nativeType: nativeTypeOf(issue, facets) },
+    filed ?? { labels: issue.labels, nativeType: nativeTypeOf(issue, facets) },
     facets,
   );
   if (usable(facets.size) && !epic && (issue.size ?? "").trim() === "")
@@ -118,6 +119,9 @@ export function checkedTracker(
         issue,
         facets,
         typeof taxonomy === "function" ? taxonomy() : taxonomy,
+        // The adapter's own resolution of the write: a child's issue type
+        // and a type kept as a label differ from the facet's plain value.
+        await tracker.filedAs?.(issue),
       );
       if (missing.length > 0)
         throw new TrackerRequestError("invalid", incompleteRefusal(missing));
