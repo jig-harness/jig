@@ -232,34 +232,56 @@ interface Page {
   endCursor: string | null;
 }
 
-/** One page of the query's answer, or `null` when any part does not read. */
-export function pageFrom(stdout: string): Page | null {
+interface Envelope {
+  path: string | null;
+  viewer: string;
+  conn: { pageInfo: Record<string, unknown>; nodes: unknown[] };
+}
+
+/** The viewer, the file and the thread connection of a page, or `null` when any is missing. */
+function envelopeFrom(stdout: string): Envelope | null {
   const read = attempt("unreadable", "the review threads", (): unknown =>
     JSON.parse(stdout),
   );
-  if (!read.ok) return null;
-  const parsed = read.value;
-  const data = isRecord(parsed) ? parsed.data : undefined;
-  const node = isRecord(data) ? data.node : undefined;
-  const viewer =
-    isRecord(data) && isRecord(data.viewer) ? data.viewer.login : "";
+  if (!read.ok || !isRecord(read.value)) return null;
+  const data = read.value.data;
+  if (!isRecord(data) || !isRecord(data.viewer)) return null;
+  const viewer = data.viewer.login;
   if (typeof viewer !== "string" || viewer === "") return null;
+  const node = data.node;
   if (!isRecord(node) || !isRecord(node.pullRequest)) return null;
   const conn = node.pullRequest.reviewThreads;
   if (!isRecord(conn) || !isRecord(conn.pageInfo) || !Array.isArray(conn.nodes))
     return null;
-  const threads = conn.nodes.map(threadFrom);
+  const path = typeof node.path === "string" ? node.path : null;
+  return { path, viewer, conn: { pageInfo: conn.pageInfo, nodes: conn.nodes } };
+}
+
+/** The cursor of the next page (`null` on the last), or `undefined` when the page info does not read. */
+function nextCursor(
+  pageInfo: Record<string, unknown>,
+): string | null | undefined {
+  const { hasNextPage, endCursor } = pageInfo;
+  if (typeof hasNextPage !== "boolean") return undefined;
+  if (!hasNextPage) return null;
+  return typeof endCursor === "string" && endCursor !== ""
+    ? endCursor
+    : undefined;
+}
+
+/** One page of the query's answer, or `null` when any part does not read. */
+export function pageFrom(stdout: string): Page | null {
+  const env = envelopeFrom(stdout);
+  if (env === null) return null;
+  const endCursor = nextCursor(env.conn.pageInfo);
+  if (endCursor === undefined) return null;
+  const threads = env.conn.nodes.map(threadFrom);
   if (threads.some((t) => t === null)) return null;
-  const more = conn.pageInfo.hasNextPage;
-  const cursor = conn.pageInfo.endCursor;
-  if (more === true && (typeof cursor !== "string" || cursor === ""))
-    return null;
-  if (more !== true && more !== false) return null;
   return {
-    path: typeof node.path === "string" ? node.path : null,
-    viewer,
+    path: env.path,
+    viewer: env.viewer,
     threads: threads as ReviewThread[],
-    endCursor: more ? (cursor as string) : null,
+    endCursor,
   };
 }
 
@@ -279,16 +301,11 @@ function commentsPageFrom(stdout: string): CommentsPage | null {
   const conn = isRecord(node) ? node.comments : undefined;
   if (!isRecord(conn) || !isRecord(conn.pageInfo) || !Array.isArray(conn.nodes))
     return null;
-  const { hasNextPage, endCursor } = conn.pageInfo;
-  if (typeof hasNextPage !== "boolean") return null;
-  if (hasNextPage && (typeof endCursor !== "string" || endCursor === ""))
-    return null;
+  const endCursor = nextCursor(conn.pageInfo);
+  if (endCursor === undefined) return null;
   const comments = conn.nodes.map(commentFrom);
   if (comments.some((c) => c === null)) return null;
-  return {
-    comments: comments as ThreadComment[],
-    endCursor: hasNextPage ? (endCursor as string) : null,
-  };
+  return { comments: comments as ThreadComment[], endCursor };
 }
 
 /** The comments of `t` past its first 100, appended; `t` stays truncated if a read fails. */
@@ -305,6 +322,17 @@ async function readRemainingComments(t: ReviewThread): Promise<void> {
     after = read.endCursor;
   }
   t.truncated = after !== null;
+}
+
+/** The rest of the comments of each truncated thread on `path` other than `threadId`. */
+async function readTruncated(
+  threads: ReviewThread[],
+  threadId: string,
+  path: string | null,
+): Promise<void> {
+  for (const t of threads)
+    if (t.truncated && t.id !== threadId && t.path === path)
+      await readRemainingComments(t);
 }
 
 /**
@@ -328,9 +356,7 @@ async function readThreads(threadId: string): Promise<{
     if (read === null) return null;
     threads.push(...read.threads);
     if (read.endCursor === null) {
-      for (const t of threads)
-        if (t.truncated && t.id !== threadId && t.path === read.path)
-          await readRemainingComments(t);
+      await readTruncated(threads, threadId, read.path);
       return { path: read.path, viewer: read.viewer, threads };
     }
     after = read.endCursor;
