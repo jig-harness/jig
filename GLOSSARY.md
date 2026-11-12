@@ -1818,6 +1818,15 @@ make, use the entry's term instead.
   against a strict form before it reads the rest, which is data and never a
   command
   ([plugin/RECORDS.md](plugin/RECORDS.md)).
+- **Replication revision** — the counter a host keeps, per *incarnation*, to
+  order what it reports to a *hub*: it advances whenever the host observes a
+  record body that differs from the one it last reported for that record, so
+  it orders the host's observations even when two writers left different
+  bodies at the same generation. The hub replaces a stored record with a
+  report of a higher revision and refuses a lower one as a stale replay; the
+  record's own generation is kept for display and never decides the
+  replacement
+  ([design/control-plane.md](design/control-plane.md)).
 - **Records registry** — the one list of every kind of record the plugin
   keeps, with where each lives, who writes it and its schema version
   (`plugin/shared/records/registry.ts`). A gate fails a hidden marker, a

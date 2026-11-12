@@ -200,7 +200,7 @@ records that reconsideration, and it is settled before stage 1 starts.
   its repository, key and generation: a key is unique only within its
   repository, so the hub stores a record under host, incarnation,
   repository, kind and key. That tuple names the record, not one update of
-  it. Each host stamps every report with a replication revision, a counter
+  it. Each host stamps every report with a [replication revision](../GLOSSARY.md), a counter
   per incarnation that advances whenever the host observes a body that
   differs from the one it last reported for that record, whatever that
   record's own generation says: the generation Jig writes is one past the
