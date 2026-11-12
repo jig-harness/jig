@@ -19,6 +19,11 @@ import {
 const REPO = "example-org/web";
 const PATTERN = "{key_lower}-{slug}";
 
+/** A fence, a closing line and the fence's end, each behind a quote marker. */
+function quotedClosing(fence: string, n: number): string[] {
+  return [`> ${fence}`, `> Closes ENG-${n}`, `> ${fence}`];
+}
+
 function pr(fields: Partial<PrLinkText> & { number: number }): PrLinkText {
   return {
     url: `https://github.com/${REPO}/pull/${fields.number}`,
@@ -121,9 +126,7 @@ describe("a team key", () => {
           [
             "- ~~~",
             "  example",
-            "> ~~~",
-            "> Closes ENG-1",
-            "> ~~~",
+            ...quotedClosing("~~~", 1),
             "",
             "100. ~~~",
             "     Closes ENG-2",
@@ -136,12 +139,10 @@ describe("a team key", () => {
           "keeps literal quote markers in a bare fence indented up to three spaces",
           [
             "  ~~~",
-            "> ~~~",
-            "> Closes ENG-1",
+            ...quotedClosing("~~~", 1),
             "  ~~~",
             "   ```",
-            "> ```",
-            "> Closes ENG-2",
+            ...quotedClosing("```", 2),
             "   ```",
             "Closes ENG-3",
           ],
@@ -154,16 +155,12 @@ describe("a team key", () => {
             "  ~~~",
             "  example",
             "    ~~~",
-            "> ~~~",
-            "> Closes ENG-1",
-            "> ~~~",
+            ...quotedClosing("~~~", 1),
             "",
             "1. Intro",
             "   ```",
             "     ```",
-            "> ```",
-            "> Closes ENG-2",
-            "> ```",
+            ...quotedClosing("```", 2),
             "Closes ENG-3",
           ],
           ["ENG-3"],
