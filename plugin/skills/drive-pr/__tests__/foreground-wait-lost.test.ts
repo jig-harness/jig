@@ -3,7 +3,6 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
-  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -12,6 +11,10 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { processTable } from "../../../shared/process-table.ts";
+import {
+  identityTargetsGone,
+  signalIdentityTargets,
+} from "../../../shared/process-tree.ts";
 import { hostEnv } from "../../../../lib/test-helpers/host-env.ts";
 
 // A launch whose runner cannot be waited on: refused up front under Codex,
@@ -30,6 +33,7 @@ const sleepMs = (ms: number) => new Promise((r) => setTimeout(r, ms));
 let cwd: string;
 beforeEach(() => {
   cwd = mkdtempSync(join(tmpdir(), "fgwait-lost-"));
+  tracked = [];
 });
 
 const stateRoot = () => join(cwd, ".context", "foreground-wait");
@@ -40,25 +44,24 @@ const pidOf = (name: string): number | null => {
     ? Number.parseInt(readFileSync(file, "utf8"), 10)
     : null;
 };
-const kill = (pid: number | null) => {
-  if (pid === null) return;
-  try {
-    process.kill(pid, "SIGKILL");
-  } catch {
-    // Already gone: nothing to end.
+
+/** Fixture processes by creation identity, so a reused pid is never signalled. */
+type Identity = { pid: number; start: string };
+let tracked: Identity[] = [];
+/** Record the runner's and the command's identities while they are alive. */
+const track = async () => {
+  const rows = await processTable();
+  for (const name of ["runner.pid", "cmd.pid"]) {
+    const pid = pidOf(name);
+    const row = rows?.find((r) => r.pid === pid);
+    if (row && !tracked.some((t) => t.pid === row.pid))
+      tracked.push({ pid: row.pid, start: row.start });
   }
 };
 
-const PID_FILES = ["runner.pid", "cmd.pid"];
-/** Drop the recorded pids once their processes are known gone, so a reused pid is never signalled. */
-const forgetPids = () => {
-  for (const name of PID_FILES)
-    rmSync(join(generation(), name), { force: true });
-};
-
-afterEach(() => {
-  if (existsSync(stateRoot()) && readdirSync(stateRoot()).includes("gen-1"))
-    for (const name of PID_FILES) kill(pidOf(name));
+afterEach(async () => {
+  await signalIdentityTargets(tracked, "SIGKILL");
+  tracked = [];
   rmSync(cwd, { recursive: true, force: true });
 });
 
@@ -130,7 +133,6 @@ test(
     expectSpawnExit(homeOnly, 0);
     const waited = run("wait");
     expectSpawnExit(waited, 0);
-    forgetPids();
   },
   T,
 );
@@ -148,27 +150,20 @@ test(
     const waited = run("wait");
     expectSpawnExit(waited, 0);
     expect(out(waited)).toContain("ok");
-    forgetPids();
   },
   T,
 );
 
-/** Kill the runner and its command, wait until both are gone, then forget their pids. */
+/** Kill the runner and its command, then wait until both identities are gone; an unreadable table keeps polling. */
 const loseRunner = async (deadline: number) => {
-  const pids = [pidOf("runner.pid"), pidOf("cmd.pid")];
-  for (const pid of pids) kill(pid);
-  const gone = async () => {
-    const rows = await processTable();
-    return pids.every(
-      (pid) =>
-        !rows?.some((row) => row.pid === pid && !row.stat.startsWith("Z")),
-    );
-  };
-  while (!(await gone())) {
+  await track();
+  // signalIdentityTargets signals last-first: the runner must go before its command.
+  await signalIdentityTargets([...tracked].reverse(), "SIGKILL");
+  while (!(await identityTargetsGone(tracked))) {
     expect(Date.now()).toBeLessThan(deadline);
     await sleepMs(20);
   }
-  forgetPids();
+  tracked = [];
 };
 const logSize = () => {
   const file = join(generation(), "log");
@@ -176,6 +171,7 @@ const logSize = () => {
 };
 const untilLogSize = async (size: number, deadline: number) => {
   while (logSize() < size) {
+    await track();
     expect(Date.now()).toBeLessThan(deadline);
     await sleepMs(20);
   }
@@ -197,6 +193,7 @@ test(
     while (
       !(existsSync(log()) && readFileSync(log(), "utf8").includes("last words"))
     ) {
+      await track();
       expect(Date.now()).toBeLessThan(deadline);
       await sleepMs(20);
     }
@@ -317,6 +314,33 @@ test(
     expectSpawnExit(lost, 21);
     expect(out(lost)).toContain("no log was written");
     expect(out(lost)).not.toContain("the command wrote no output");
+  },
+  T,
+);
+
+test(
+  "a lost runner is still reported when the relay cursor cannot be written",
+  async () => {
+    const deadline = Date.now() + 30_000;
+    expectSpawnExit(
+      run(
+        "launch",
+        "--",
+        ...bunCommand(
+          'process.stdout.write("a".repeat(100)); setInterval(() => {}, 1000)',
+        ),
+      ),
+      0,
+    );
+    await untilLogSize(100, deadline);
+    await loseRunner(deadline);
+    // A directory where the cursor file belongs: neither readable nor writable.
+    mkdirSync(join(generation(), "log.cursor"));
+
+    const lost = run("wait", "--max-sec", "30");
+    expectSpawnExit(lost, 21);
+    expect(out(lost)).toContain("a".repeat(100));
+    expect(out(lost)).toContain("runner was lost before it published a result");
   },
   T,
 );

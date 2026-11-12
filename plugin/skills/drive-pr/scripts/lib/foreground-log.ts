@@ -70,12 +70,13 @@ export function reportLost(dir: string): void {
 
 /** How far earlier waits relayed the log; 0 when the cursor is unusable. */
 function logCursor(dir: string, size: number): number {
-  const seen = Number.parseInt(
-    existsSync(join(dir, "log.cursor"))
-      ? readFileSync(join(dir, "log.cursor"), "utf8")
-      : "0",
-    10,
-  );
+  let seen = Number.NaN;
+  try {
+    seen = Number.parseInt(readFileSync(join(dir, "log.cursor"), "utf8"), 10);
+  } catch {
+    // No cursor yet, or an unreadable one: nothing was relayed that we know of.
+    seen = 0;
+  }
   return Number.isInteger(seen) && seen >= 0 && seen <= size ? seen : 0;
 }
 
@@ -91,7 +92,16 @@ export function relayLog(dir: string): void {
   }
   const bytes = readLogRange(dir, start, size);
   writeStdoutSync(bytes);
-  writeFileSync(join(dir, "log.cursor"), `${start + bytes.length}\n`);
+  saveCursor(dir, start + bytes.length);
+}
+
+/** Best effort: the bytes are already shown, so a lost cursor only repeats output later. */
+function saveCursor(dir: string, offset: number): void {
+  try {
+    writeFileSync(join(dir, "log.cursor"), `${offset}\n`);
+  } catch {
+    // An unwritable cursor must not turn a report into an exception.
+  }
 }
 
 /** The log's bytes from `start` up to `end`, fewer when it is shorter. */
@@ -123,7 +133,7 @@ function repeatLogTail(dir: string, size: number): void {
   );
   writeStdoutSync(bytes);
   if (bytes.at(-1) !== 0x0a) writeStdoutSync(Buffer.from("\n"));
-  writeFileSync(join(dir, "log.cursor"), `${start + bytes.length}\n`);
+  saveCursor(dir, start + bytes.length);
 }
 
 /**
