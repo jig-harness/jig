@@ -2532,6 +2532,30 @@ make, use the entry's term instead.
   re-arms a drive a person stopped or held, writes code or sends a session free
   text ([steward](plugin/skills/steward/README.md)).
   *Avoid:* orchestrator.
+- **Steward remit** — the record kinds a *steward* may submit for a
+  repository on a host: by default a re-arm, a resume, a need, a facet and
+  an order. A host may add record kinds that settle a stalled pickup, re-drive
+  once more after a flaky check or re-run a run's failed jobs, each applied
+  only when the *tick*'s own reads confirm it
+  (`steward.remit`), and a repository whose autonomy ceiling is `attended`
+  turns such a record into a decision for a person
+  ([ADR-0017](docs/adr/ADR-0017-the-steward-proposes-within-a-remit-the-host-widens.md)).
+- **Need class** — a *need* is one thing the *dispatcher* hands a person,
+  shown on the dashboard's What needs you. Its class is the kind of wait it
+  is (a spent CI repair, a stalled pickup, a blocked release, a host
+  fault), and each class has a place where it is settled: stopped at its
+  source, by the *tick*'s own rule, by a *steward* record, by a person's
+  answer to a framed decision, or by a person alone
+  ([the classes](design/need-classes.md)).
+- **Advisory check** — a CI check whose failure a repair pass cannot fix by
+  itself, such as a scanner's quality gate. When it is the only failing
+  check, a drive stops at once as a decision for a person instead of
+  spending repair passes on it (`ci.advisory_checks`). Not the same as an
+  *advisory gate*, which never blocks.
+- **Rescue branch** — a local branch the *dispatcher* keeps a worktree's
+  unpushed commits on before it detaches that worktree, so freeing a held
+  checkout never loses work. It is never pushed, and `jig gc` never
+  collects it.
 - **Act (of a need)** — the one thing a person does to settle something
   that waits on them, from a closed list: Merge, Decide, Authorize, Reply,
   Do or Investigate. Each need on the *dispatch board* opens with its act,
