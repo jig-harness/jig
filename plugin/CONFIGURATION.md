@@ -23,7 +23,8 @@ Contents: [the file](#the-file) ·
 [`pull_requests`](#pull_requests) · [`drive`](#drive) ·
 [`autonomy`](#autonomy) · [`ci`](#ci) ·
 [`issue_tracker`](#issue_tracker) · [`do_item`](#do_item) ·
-[`specs`](#specs) · [`workspace_name`](#workspace_name) · [`work_batch`](#work_batch) · [`routing`](#routing) ·
+[`specs`](#specs) · [`workspace_name`](#workspace_name) · [`work_batch`](#work_batch) ·
+[`file_issue`](#file_issue) · [`routing`](#routing) ·
 [`fleet_health`](#fleet_health) · [`verify`](#verify) ·
 [`reflection`](#reflection) · [`changelog`](#changelog) ·
 [`code_stats`](#code_stats) · [`gc`](#gc) · [`dispatch`](#dispatch) ·
@@ -694,6 +695,18 @@ context labels from `review`, the labels that name an area from
 An unknown field in `work_batch` or `work_batch.ranking` is refused. The
 [work-batch README](skills/work-batch/README.md) explains the budget, the
 ranking and the solo-only flags.
+
+## `file_issue`
+
+How `file-issue`'s weekly sweep (`check-fields.ts check --yes`, in
+[the file-issue skill](skills/file-issue/SKILL.md#check-the-open-issues))
+treats an open issue outside triage that lacks a type, a priority or a size.
+
+| Field | Type | When absent | Read by | What it does |
+|-------|------|-------------|---------|--------------|
+| `file_issue.sweep.move` | `true` or `false` | `true` | file-issue | Whether the sweep moves each such issue not yet started back to `triage`. `false` is for a lane where only a person may move a ready issue back: the sweep posts its comment, with its marker, and leaves the issue in its state. The issue then stays in every later listing, so one that already carries the marker for what it lacks is passed over before the 50-a-run budget is counted, and is never commented on twice. Until the sweep keeps a read position between runs, only the first 20 pages of 100 such issues are reached |
+
+An unknown field in `file_issue` or `file_issue.sweep` is refused.
 
 ## `routing`
 
@@ -1869,6 +1882,9 @@ work_batch:
     sizes: { xs: 2, small: 1, medium: 0 }
     provenance: 3
     shared_area_label: 1
+file_issue:
+  sweep:
+    move: false                          # comment on an incomplete issue, never move it
 routing:                                 # absent: routes derived and printed, none applied
   complex_flags: [has-migration, api-change, dpa-relevant]
   types:

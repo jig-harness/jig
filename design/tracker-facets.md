@@ -534,35 +534,40 @@ lacks a type, a priority or a size (no size on an epic), or carries a
 retired label (a facet's label where that facet is kept elsewhere), and, in
 its default mode, moves each one not yet started back to the `triage` state
 with a comment naming the missing facets, so the move carries its reason in
-the tracker's history. With `--comment-only`, or `issue_tracker.facets.sweep:
-comment` in the configuration (default `move`), it posts the comment and moves
-nothing, for a repository whose people triage in place. The comment is posted first and carries a marker naming the issue's
+the tracker's history. With `file_issue.sweep.move: false` in the
+configuration (default `true`), it posts the comment and moves nothing, for a
+lane where only a person may move a ready issue back. The comment is posted first and carries a marker naming the issue's
 missing facets; a run that stopped between the comment and the move finds the
 marker on the next run, moves the issue and posts nothing again. An issue
 already started is listed, not moved, since moving it would take it from the
 session working it. An issue already in triage is not read again, so each
-issue is moved and commented on once. In comment-only mode the issue stays in the queried population, so the
+issue is moved and commented on once. Without moving, the issue stays in the queried population, so the
 marker alone keeps the sweep to one comment per issue and set of missing
-facets: a run that finds the marker posts nothing, and posts again only when
-the missing facets change. A capped read would let the same first issues,
-already commented, take every run's pages, and no order that depends on the
-sweep's own writes can advance past them, since a run that finds the marker
-writes nothing. So in this mode the read keeps a position: pages are ordered
-oldest first, a creation order that no write changes, and the run records the
-key of the last issue it read in the state the sweep keeps between runs (on
-Jig's workflow, its cache). The next run resumes after that key, and a read
-that reaches the end of the population starts again from the first issue. An
-issue whose missing facets change after its comment is revisited when the
-position comes round to it, which is within as many runs as the population
-holds capped reads. A run with no recorded position starts from the first
-issue.
+facets and retired labels: a run that finds the marker posts nothing, and posts again only when
+the missing facets change. An issue that carries the marker is passed over
+before the run's budget is counted, so marked issues never use it up.
+They still take places in the capped read, and past the cap the same first
+issues, already commented, would take every run's pages; no order that
+depends on the sweep's own writes can advance past them, since a run that
+finds the marker writes nothing. So in this mode the read should keep a
+position: its pages are ordered oldest first, a creation order that no write
+changes, and the run records the key of the last issue it read in the
+state the sweep keeps between runs (on Jig's workflow, its cache). The next
+run resumes after that key, and a read that reaches the end of the
+population starts again from the first issue. An issue whose missing
+facets change after its comment is revisited when the position comes round
+to it, which is within as many runs as the population holds capped reads.
+The position is not built yet: until it is, a population past the read cap
+is commented on only as far as its first 20 pages.
 
 Its bounds:
 
-- **A run is capped.** It reads at most 20 pages of 100 issues and moves at
-  most 50; what remains is moved by the next run, which starts from the
-  issues still outside triage. The read pages over issues not yet started
-  only, so the same started issues cannot take the budget run after run.
+- **A run is capped.** It reads at most 20 pages of 100 issues and moves
+  (or, without moving, comments on) at most 50; what remains is handled by
+  the next run. Moving, that run starts from the issues still outside
+  triage; without moving, it passes over the marked issues, as far as the
+  read cap reaches. The read pages over issues not yet started only, so the
+  same started issues cannot take the budget run after run.
 - **Writes are paced.** At most 30 a minute (a move and its comment are
   two); a `Retry-After` is honoured up to 3 times, and on the fourth refusal
   the run stops and reports how many it moved and how many remain.

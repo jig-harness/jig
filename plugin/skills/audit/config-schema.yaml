@@ -78,6 +78,8 @@ strict:
   - docs
   - dispatch
   - specs
+  - file_issue
+  - file_issue.sweep
   - work_batch
   - work_batch.ranking
   - workspace_name
@@ -898,6 +900,11 @@ fields:
     default: 1
     read_by: [work-batch]
     since: 0.57.0
+  file_issue.sweep.move:
+    type: boolean
+    default: true
+    read_by: [file-issue]
+    since: next
 
   routing.complex_flags:
     type: list
