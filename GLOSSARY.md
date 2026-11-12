@@ -2111,7 +2111,7 @@ make, use the entry's term instead.
   Orca is its first implementation
   ([ADR-0011](docs/adr/ADR-0011-the-dispatcher-targets-orca-first.md)); a
   *workspace runtime* becomes another by implementing the same methods.
-- <a id="program-status"></a>**Program status** — the state a program reports to its own terminal
+- **Program status** — the state a program reports to its own terminal
   through [OSC (Operating System Command) 7501](https://www.superlogical.com/rex/docs/build/program-status):
   `idle`, `working`, `blocked`, `done` or `error`. A blocked report can say
   whether it needs permission, an answer or authentication. A *workspace
