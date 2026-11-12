@@ -423,7 +423,7 @@ function flipAfter(w: ReturnType<typeof world>, reads: number, to: unknown) {
 }
 test("an unreadable item before the inherited assignment write refuses without writing", async () => {
   const w = world(true);
-  flipAfter(w, 3, null);
+  flipAfter(w, 5, null);
   expect(
     await claimServedIssue(w.tracker, "#1", {
       person: "dana",
@@ -451,7 +451,7 @@ test("a direct claim whose state leaves claim_from before any write keeps the st
 });
 test("a direct claim whose final state is started but outside claim_from refuses, not stands down", async () => {
   const w = world();
-  flipAfter(w, 3, {
+  flipAfter(w, 5, {
     identifier: "#1",
     parent: { identifier: "#2" },
     labels: ["epic"],
@@ -463,5 +463,41 @@ test("a direct claim whose final state is started but outside claim_from refuses
       claimFrom: ["todo"],
     }),
   ).toMatchObject({ outcome: "refused", why: "state" });
+  expect(w.writes).toEqual([]);
+});
+/** `world` whose item reads Blocked (unstarted type) from its `from`th getIssue read of "#1" on. */
+function blockedFrom(from: number, inherited: boolean) {
+  const w = world(inherited);
+  const base = w.tracker.getIssue.bind(w.tracker);
+  const tracker = w.tracker as unknown as Record<string, unknown>;
+  let reads = 0;
+  tracker.stateName = (s: string) =>
+    s === "blocked" ? "Blocked" : "In Progress";
+  tracker.getIssue = async (key: string) => {
+    const issue = await base(key);
+    if (key !== "#1" || !issue || ++reads < from) return issue;
+    return { ...issue, state: { name: "Blocked", type: "unstarted" } };
+  };
+  return w;
+}
+test("a served claim refuses an item that is Blocked, before any write", async () => {
+  const w = blockedFrom(1, false);
+  const result = await claimServedIssue(w.tracker, "#1", { person: "dana" });
+  expect(result).toMatchObject({ outcome: "refused", why: "blocked" });
+  expect(w.writes).toEqual([]);
+});
+test("an item blocked before an inherited assignment is refused without writing", async () => {
+  const w = blockedFrom(3, true);
+  const result = await claimServedIssue(w.tracker, "#1", {
+    person: "dana",
+    ancestor: "#3",
+  });
+  expect(result).toMatchObject({ outcome: "refused", why: "blocked" });
+  expect(w.writes).toEqual([]);
+});
+test("an item blocked just before the start write is never overwritten", async () => {
+  const w = blockedFrom(2, false);
+  const result = await claimServedIssue(w.tracker, "#1", { person: "dana" });
+  expect(result).toMatchObject({ outcome: "refused", why: "blocked" });
   expect(w.writes).toEqual([]);
 });

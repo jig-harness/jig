@@ -1,5 +1,9 @@
 /** Served pickups preserve the person's assignment and revalidate inherited authority live. */
-import { type ClaimResult, claimFromRefusal } from "./claim.ts";
+import {
+  type ClaimResult,
+  blockedStateRefusal,
+  claimFromRefusal,
+} from "./claim.ts";
 import type {
   CanonicalState,
   Issue,
@@ -219,6 +223,8 @@ function startStateRefusal(
   state: string,
   options: ServedClaim,
 ): ClaimResult | null {
+  const blocked = blockedStateRefusal(tracker, key, state);
+  if (blocked) return blocked;
   const outside = options.claimFrom
     ? claimFromRefusal(tracker, key, state, options.claimFrom)
     : null;
@@ -264,6 +270,35 @@ async function startedStandDown(
   };
 }
 
+/** A read of the item's own state: `blocked` is never a claim state, before or after an assignment. */
+async function blockedNow(
+  tracker: Tracker,
+  key: string,
+): Promise<ClaimResult | null> {
+  const current = await tracker.getIssue(key);
+  return current ? blockedStateRefusal(tracker, key, current.state.name) : null;
+}
+
+const refusedAssigned = (key: string, reason: string): ClaimResult => ({
+  outcome: "refused",
+  issue: key,
+  why: "assigned",
+  reason,
+});
+
+/** The pre-write read of the item's own state, then the whole authorization. */
+async function validateBeforeWrite(
+  tracker: Tracker,
+  key: string,
+  user: TrackerUser,
+  options: ServedClaim,
+): Promise<ClaimResult | null> {
+  const blocked = await blockedNow(tracker, key);
+  if (blocked) return blocked;
+  const problem = await validateAssignment(tracker, key, user, options);
+  return problem ? refusedAssigned(key, problem) : null;
+}
+
 /** No cached queue fact authorizes this write. Missing ancestry or provenance refuses it. */
 async function claimServed(
   tracker: Tracker,
@@ -271,22 +306,17 @@ async function claimServed(
   options: ServedClaim,
 ): Promise<ClaimResult> {
   const user = await tracker.user(options.person);
-  const refused = (reason: string): ClaimResult => ({
-    outcome: "refused",
-    issue: key,
-    why: "assigned",
-    reason,
-  });
-  let problem = await validateAssignment(tracker, key, user, options);
-  if (problem) return refused(problem);
+  let stop = await validateBeforeWrite(tracker, key, user, options);
+  if (stop) return stop;
   const assignUnassigned = tracker.assignUnassigned;
   if (options.ancestor && !assignUnassigned)
-    return refused(
+    return refusedAssigned(
+      key,
       "this tracker cannot safely assign an inherited pickup without replacing a concurrent assignee",
     );
   // Re-read the entire authorization immediately before changing the child.
-  problem = await validateAssignment(tracker, key, user, options);
-  if (problem) return refused(problem);
+  stop = await validateBeforeWrite(tracker, key, user, options);
+  if (stop) return stop;
   if (options.ancestor && assignUnassigned) {
     const outsideNow = await stateBeforeAssignment(tracker, key, options);
     if (outsideNow) return outsideNow;

@@ -108,7 +108,7 @@ export function claimFromRefusal(
 }
 
 /** The refusal of a claim from the tracker's `blocked` state; `null` otherwise. */
-function blockedStateRefusal(
+export function blockedStateRefusal(
   tracker: Pick<ClaimTracker, "stateName">,
   key: string,
   stateName: string,
