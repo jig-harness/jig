@@ -170,7 +170,9 @@ export function attachmentBody(file: AttachmentFile): string {
   const noUpload = "GitHub Issues has no API to upload a file to an issue";
   const decoded = isTextType(file.contentType)
     ? attempt("binary", file.filename, () =>
-        new TextDecoder("utf-8", { fatal: true }).decode(file.bytes),
+        new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
+          file.bytes,
+        ),
       )
     : null;
   const text = decoded?.ok === true ? decoded.value : null;

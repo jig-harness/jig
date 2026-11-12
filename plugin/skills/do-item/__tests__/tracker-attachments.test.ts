@@ -277,6 +277,13 @@ describe("GitHub Issues attachments", () => {
     expect(textOf(await t.readAttachment("#5", a.id))).toBe(HTML);
   });
 
+  it("reads back a text file that starts with a byte-order mark byte for byte", async () => {
+    const { t } = gitHubIssue();
+    const bytes = new Uint8Array([0xef, 0xbb, 0xbf, 0x61, 0x0d, 0x0a]);
+    const a = await t.attachFile("#5", sheet({ bytes }));
+    expect([...(await t.readAttachment("#5", a.id))]).toEqual([...bytes]);
+  });
+
   it("refuses a file too long for one comment, writing nothing, and links a hosted copy instead", async () => {
     const { t, calls } = gitHubIssue();
     const long = sheet({ bytes: bytesOf("x".repeat(GITHUB_COMMENT_LIMIT)) });
