@@ -204,7 +204,7 @@ per issue in the design's order:
   held-then-released item re-queued.
 - **The steward.** First its digest's missing facts and its no-result rate;
   then, under
-  [ADR-0017](../docs/adr/ADR-0017-the-steward-proposes-within-a-remit-the-host-widens.md),
+  [ADR-0018](../docs/adr/ADR-0018-the-steward-proposes-within-a-remit-the-host-widens.md),
   the `settle`, `redrive` and `rerun-checks` records, each an opt-in of the
   host (`steward.remit`) that the tick applies only on its own reads.
 - **Releases.** A releasing commit's failed gates re-run once and every

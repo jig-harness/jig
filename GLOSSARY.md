@@ -2539,7 +2539,7 @@ make, use the entry's term instead.
   only when the *tick*'s own reads confirm it
   (`steward.remit`), and a repository whose autonomy ceiling is `attended`
   turns such a record into a decision for a person
-  ([ADR-0017](docs/adr/ADR-0017-the-steward-proposes-within-a-remit-the-host-widens.md)).
+  ([ADR-0018](docs/adr/ADR-0018-the-steward-proposes-within-a-remit-the-host-widens.md)).
 - **Need class** — a *need* is one thing the *dispatcher* hands a person,
   shown on the dashboard's What needs you. Its class is the kind of wait it
   is (a spent CI repair, a stalled pickup, a blocked release, a host

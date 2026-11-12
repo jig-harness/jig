@@ -1,5 +1,5 @@
 ---
-title: "ADR-0017: The steward proposes within a remit the host widens and the repository caps"
+title: "ADR-0018: The steward proposes within a remit the host widens and the repository caps"
 type: adr
 status: draft
 description: "The steward stays a proposer whose closed record kinds the tick checks and applies; a record kind that writes tracker state, re-runs CI or spends a re-drive past the tick's own rule joins only as an opt-in of the host, capped by the repository's autonomy ceiling, with a guard the tick reads from its own facts, a record a person can reverse, and only once the steward finishes reliably and its digest carries the facts the guard names; work the tick can decide from its own records stays the tick's"
@@ -13,7 +13,7 @@ superseded_by: ~
 tags: [adr, autonomy, dispatcher, steward, dark-factory]
 ---
 
-# ADR-0017: The steward proposes within a remit the host widens and the repository caps
+# ADR-0018: The steward proposes within a remit the host widens and the repository caps
 
 **Status:** Draft · **Date:** 2026-11-12 · **Deciders:** Jig's maintainers through pull-request review
 

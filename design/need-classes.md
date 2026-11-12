@@ -26,7 +26,7 @@ as a decision the tick carries out on a person's answer
 ([structured-answers.md § Every need framed](structured-answers.md#every-need-framed)),
 the answer sent from the dashboard (item 46), and the
 [steward](../plugin/skills/steward/README.md).
-[ADR-0017](../docs/adr/ADR-0017-the-steward-proposes-within-a-remit-the-host-widens.md)
+[ADR-0018](../docs/adr/ADR-0018-the-steward-proposes-within-a-remit-the-host-widens.md)
 records the steward's widened remit.
 
 ## The rule
@@ -362,7 +362,7 @@ need. A cause is settled once, and its targets leave the line with it.
 
 The steward reads a digest and proposes records; the next tick checks and
 applies them under its own guards
-([ADR-0017](../docs/adr/ADR-0017-the-steward-proposes-within-a-remit-the-host-widens.md)).
+([ADR-0018](../docs/adr/ADR-0018-the-steward-proposes-within-a-remit-the-host-widens.md)).
 Its default remit stays `rearm`, `resume`, `need`, `facet` and `order`. A
 host may widen it with three record kinds. Each guard is read by the tick
 from the forge, the tracker and its own records, never from the steward's
@@ -491,4 +491,4 @@ on #884, whose health check it reads.
 
 Critiqued on 2026-11-12 by a reviewer with fresh context (a subagent that
 did not write it), against the draft of this design, its plan item and
-ADR-0017 on top of commit `96567939`.
+ADR-0018 on top of commit `96567939`.
