@@ -2484,6 +2484,13 @@ make, use the entry's term instead.
   an action that keeps failing and tells a person once the count passes a
   threshold; it never says what to do, which each tick still derives, and
   a row goes when its action succeeds or is no longer wanted.
+- **Quiet (failure-ledger row)** — the state of a single-repository tick's
+  row in the failure ledger after a tick that read that repository whole
+  exited 0: the row keeps its count but nothing escalates it, and its notice
+  retires with its suppression record, until a tick of its own scope fails
+  again. Quieting differs from clearing, which removes the row and its count
+  when a tick of that scope itself exits 0, and from notification
+  suppression, which only holds back a repeat of a notice already told.
 - **Recurring class** — a bad outcome class (any but converged, merged and
   parked for a person) of one stage on one repository in the *outcome log* on
   at least three of the last seven days of the host's clock, counting the rows
@@ -2541,6 +2548,32 @@ make, use the entry's term instead.
   re-arms a drive a person stopped or held, writes code or sends a session free
   text ([steward](plugin/skills/steward/README.md)).
   *Avoid:* orchestrator.
+- **Steward remit** — the record kinds a *steward* may submit for a
+  repository on a host: today, a re-arm, a resume, a need, a facet and an
+  order. The planned widening lets a host add record kinds that settle a
+  stalled pickup, re-drive once more after a flaky check or re-run a run's
+  failed jobs. Each would apply only when the *tick*'s own reads confirm it
+  (`steward.remit`), and a repository whose autonomy ceiling is `attended`
+  would turn such a record into a decision for a person
+  ([the implementation plan](design/need-classes.md#the-stewards-remit)).
+- **Need class** — a *need* is one thing the *dispatcher* hands a person,
+  shown on the dashboard's What needs you. Its class is the kind of wait it
+  is (a spent CI repair, a stalled pickup, a blocked release, a host
+  fault), and each class has a place where it is settled: stopped at its
+  source, by the *tick*'s own rule, by a *steward* record, by a person's
+  answer to a framed decision, or by a person alone
+  ([the classes](design/need-classes.md)).
+- **Advisory check** — a planned CI configuration for a check whose failure
+  a repair pass cannot fix by itself, such as a scanner's quality gate. When
+  every failing check is advisory and `reviewer-posture` is a configured
+  person-decision class, the planned drive behavior stops as that decision
+  rather than spending repair passes (`ci.advisory_checks`). Not the same as
+  an *advisory gate*, which never blocks
+  ([the implementation plan](design/need-classes.md#ci-repair-spent-or-a-ci-verdict-misread)).
+- **Rescue branch** — a planned local branch the *dispatcher* would keep a
+  worktree's unpushed commits on before detaching that worktree, so freeing
+  a held checkout would not lose work. It would never be pushed or collected
+  by `jig gc` ([the implementation plan](design/need-classes.md#a-checkout-an-unlisted-tree-holds)).
 - **Act (of a need)** — the one thing a person does to settle something
   that waits on them, from a closed list: Merge, Decide, Authorize, Reply,
   Do or Investigate. Each need on the *dispatch board* opens with its act,

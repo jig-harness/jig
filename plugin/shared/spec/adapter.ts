@@ -3,7 +3,7 @@
  *
  * A work item names where its requirements and acceptance criteria live: in
  * its own body, or by a path to an artifact in the repository. An adapter
- * reads one layout of such artifacts, read-only, into three lists with the
+ * reads one layout of such artifacts, read-only, into lists with the
  * ids the artifact gives them. The resolver (`resolve.ts`) finds the
  * references, checks every path before any adapter sees it, and qualifies
  * each id by its source. An adapter reads an artifact only through the
@@ -29,7 +29,7 @@ export interface AdapterTask extends SpecEntry {
 }
 
 /**
- * What one reference yields. Ids are unique across the three lists, since a
+ * What one reference yields. Ids are unique across the lists, since a
  * source qualifies each id into one key whatever its kind; the resolver
  * refuses a reference whose lists share an id.
  */
@@ -37,10 +37,16 @@ export interface AdapterRead {
   requirements: SpecEntry[];
   acceptance: AdapterCriterion[];
   tasks: AdapterTask[];
+  /** Commands to consider for verification; never executed by the resolver. */
+  verification: SpecEntry[];
 }
 
 /** The sections of an issue body the resolver recognises. */
-export type BodySectionKind = "spec" | "requirements" | "acceptance";
+export type BodySectionKind =
+  | "spec"
+  | "requirements"
+  | "acceptance"
+  | "verification";
 
 /**
  * The files of a checked file reference. Each file is checked on its own

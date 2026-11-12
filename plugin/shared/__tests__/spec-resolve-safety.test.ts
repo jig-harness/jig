@@ -768,6 +768,7 @@ test("a source whose lists share an id is refused, since both would get one key"
         requirements: [{ id: "X-1", text: "a requirement" }],
         acceptance: [{ id: "X-1", text: "a criterion", requirement: null }],
         tasks: [],
+        verification: [],
       }),
   };
   const result = await resolveSpec(issue("## Spec\n\n- notes/a.md\n"), root, {

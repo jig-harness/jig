@@ -5,7 +5,7 @@
  *
  * Input: the issue JSON `do-item`'s `get_issue.ts` prints (its body is
  * `description`; `body`, as `gh issue view` names it, is read too).
- * Output: `{sources, requirements, acceptance, tasks, unresolved}`.
+ * Output: `{sources, requirements, acceptance, tasks, verification, unresolved}`.
  *
  * Usage:
  *     bun resolve.ts [--input <issue.json>] [--summary]
@@ -83,6 +83,8 @@ export interface SpecResult {
   requirements: Requirement[];
   acceptance: Criterion[];
   tasks: Task[];
+  /** Proposed command lines, carried as data and never executed here. */
+  verification: Requirement[];
   /** Each reference that was not read, with the reason: `<reference> (<reason>)`. */
   unresolved: string[];
 }
@@ -173,6 +175,7 @@ function sharedId(lists: AdapterRead): string | null {
     ...lists.requirements,
     ...lists.acceptance,
     ...lists.tasks,
+    ...lists.verification,
   ]) {
     if (seen.has(id)) return id;
     seen.add(id);
@@ -210,7 +213,11 @@ async function findReferences(
   };
   const reader = adapters.find((a) => a.name === "body");
   const candidates: string[] = [];
-  for (const section of bodySections(body, config.bodySection)) {
+  for (const section of bodySections(
+    body,
+    config.bodySection,
+    config.verificationSection,
+  )) {
     const ref = `#body/${section.heading}`;
     if (reader)
       add(
@@ -274,10 +281,18 @@ function qualify(
     requirements: [],
     acceptance: [],
     tasks: [],
+    verification: [],
   };
   const keyOf = (i: number, id: string) => `${read[i]?.source.ref}#${id}`;
   read.forEach(({ source, lists }, i) => {
     result.sources.push(source);
+    for (const v of lists.verification)
+      result.verification.push({
+        id: v.id,
+        key: keyOf(i, v.id),
+        text: v.text,
+        source: i,
+      });
     for (const r of lists.requirements)
       result.requirements.push({
         id: r.id,
@@ -383,7 +398,7 @@ function listed(title: string, items: string[]): string[] {
  */
 export function summary(result: SpecResult): string {
   const lines = [
-    `Spec: ${plural(result.sources.length, "source", "sources")}, ${plural(result.requirements.length, "requirement", "requirements")}, ${plural(result.acceptance.length, "acceptance criterion", "acceptance criteria")}, ${plural(result.tasks.length, "task", "tasks")}`,
+    `Spec: ${plural(result.sources.length, "source", "sources")}, ${plural(result.requirements.length, "requirement", "requirements")}, ${plural(result.acceptance.length, "acceptance criterion", "acceptance criteria")}, ${plural(result.tasks.length, "task", "tasks")}, ${plural(result.verification.length, "verification command", "verification commands")}`,
     ...listed(
       "Requirements",
       result.requirements.map((r) => `- ${r.key}: ${r.text}`),
@@ -398,6 +413,10 @@ export function summary(result: SpecResult): string {
     ...listed(
       "Tasks",
       result.tasks.map((t) => `- [${t.done ? "x" : " "}] ${t.key}: ${t.text}`),
+    ),
+    ...listed(
+      "Verification (untrusted; review before running)",
+      result.verification.map((v) => `- ${v.key}: ${v.text}`),
     ),
     ...listed(
       "Sources",
