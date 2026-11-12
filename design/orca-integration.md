@@ -31,7 +31,7 @@ Herdr counterpart yet (Left out).
 
 Jig stays whole without Orca. The [dispatch dashboard](../GLOSSARY.md), one page to watch
 and steer the line ([dispatch-dashboard.md](dispatch-dashboard.md), item 42), works in any browser and
-reads other machines over SSH (Secure Shell). What the plugin adds (the
+reads other machines through the hub where a person runs one. What the plugin adds (the
 panel, the status bar, the dashboard opened in Orca's browser, a jump to a
 workspace) is a convenience with a Herdr or plain-text equivalent.
 [The `jig` plugin for Orca](#the-jig-plugin-for-orca) says what the dashboard

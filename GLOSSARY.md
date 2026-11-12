@@ -1473,6 +1473,8 @@ make, use the entry's term instead.
   session currently owns a piece of work, such as a pull request's review
   threads. Other sessions read it and stand back; a lease whose holder died
   expires instead of blocking forever.
+  A lease may also be granted by a *hub* to a host for a launch or an
+  owner duty, renewed by that host's calls and lapsing when they stop.
 - **Process identity** — what a component records so another process can
   later tell whether the recorded one still runs: the machine's **host id**
   (an id that survives a rename and a restart), its host name, the boot it
@@ -1816,6 +1818,15 @@ make, use the entry's term instead.
   against a strict form before it reads the rest, which is data and never a
   command
   ([plugin/RECORDS.md](plugin/RECORDS.md)).
+- **Replication revision** — the counter a host keeps, per *incarnation*, to
+  order what it reports to a *hub*: it advances whenever the host observes a
+  record body that differs from the one it last reported for that record, so
+  it orders the host's observations even when two writers left different
+  bodies at the same generation. The hub replaces a stored record with a
+  report of a higher revision and refuses a lower one as a stale replay; the
+  record's own generation is kept for display and never decides the
+  replacement
+  ([design/control-plane.md](design/control-plane.md)).
 - **Records registry** — the one list of every kind of record the plugin
   keeps, with where each lives, who writes it and its schema version
   (`plugin/shared/records/registry.ts`). A gate fails a hidden marker, a
@@ -2209,8 +2220,8 @@ make, use the entry's term instead.
   each *piece of work* on a card, a page per piece of work with its thread,
   and a chat with the *operator* that explains and drafts and never sends.
   Each machine serves its own. A host's dashboard answers reads only, on
-  its loopback address; a laptop's reads each host over *SSH* through the
-  *source feed* and serves the page to any browser, Orca's among them. It
+  its loopback address; a laptop's serves the page to any browser, Orca's
+  among them, and shows every host through the *hub*'s *source feed*. It
   keeps no copy of the line, only the person's conversation with the
   operator, and nothing the line does waits on it
   ([ADR-0013](docs/adr/ADR-0013-records-not-a-daemon.md)). Not the *shared
@@ -2246,25 +2257,45 @@ make, use the entry's term instead.
   provider, or an *SSH* tunnel, does the same job. A front never publishes
   to the open internet, and it does not let the dashboard write. See
   [design/dispatch-dashboard.md](design/dispatch-dashboard.md#a-front-on-a-private-network).
-- **Shared control plane** — one service that would serve many hosts: it
-  reads the forge and the tracker once for all of them, hands out work that
-  each host pulls when a slot frees, and serves the *source feed* over
-  connections the hosts open, so neither the *dispatch dashboard* nor a host's records
-  change when it joins. Each host's *dispatcher* is Jig's first
-  *control plane*; handing out work goes past
-  [ADR-0013](docs/adr/ADR-0013-records-not-a-daemon.md), so the shared one
-  waits for a decision record of its own. Only the rules it must keep are
-  written down, among them that a host keeps authority over what it did,
-  that nothing launches without the winning claim, and that a person's act
+- **Hub** — Jig's *shared control plane*: `jig hub serve`, one process with
+  one database that enrolled hosts call. Optional: a host that never
+  enrolls, or whose hub does not answer, dispatches alone. See
+  [design/control-plane.md](design/control-plane.md).
+- **Device grant** — how a host enrolls in a *hub*: the host prints a short
+  code, a person who administers the hub approves it, and the host receives a
+  credential of its own, bound to the repositories and queues that person
+  approved.
+- **Incarnation** — the id a *dispatcher*'s state database got when it was
+  created. A *hub* uses it to tell a host's records from those of an earlier
+  database of the same host.
+- **Capabilities** — named flags a call to the *hub* carries, and the hub
+  answers with its own, so either side adds a feature without changing the
+  other.
+- **Offer policy** — how the *hub* orders the work it offers a host with
+  free slots: an ordered list of named rankers declared as data in the
+  hub's settings, ties in one broken by the next, with built-in rankers
+  (the queue's order, the host that already holds the work, free slots)
+  and a `command` ranker that runs a program the hub's settings name. A
+  repository may choose one of the hub's named policies. See
+  [design/control-plane.md](design/control-plane.md#how-offers-are-ranked).
+- **Shared control plane** — one service that serves many hosts' *dispatchers*:
+  it reads the forge and the tracker once for all of them, puts claims with
+  leases in front of the forge and tracker claims, notices a host that
+  stopped, serves the *source feed* of every host's work and may offer work
+  to a host with free slots, in the order an *offer policy* gives. Each host's *dispatcher* is Jig's first
+  *control plane*; Jig's shared one is the *hub*. The rules it keeps: no
+  level of use requires it, a host keeps authority over what it did, the
+  forge and tracker claims stay the fences, no server timer rewrites a
+  host's work, hosts call it and it calls no host, and a person's act
   carries that person's credential. See
-  [design/dispatch-dashboard.md](design/dispatch-dashboard.md#toward-a-shared-control-plane).
+  [ADR-0016](docs/adr/ADR-0016-an-optional-hub-for-hosts-that-keep-authority.md)
+  and [design/control-plane.md](design/control-plane.md).
 - **Source feed** — the protocol through which one *dispatch dashboard* reads another
   machine's records: a snapshot, then the changes since a cursor, each
   record in its *record envelope* and stamped with the host it came from
   and a visibility class (safe on the forge, for one person's machines, or
-  for this machine only). Its first transport is
-  `ssh <host> jig dashboard feed`, JSON lines over *SSH*; a *shared control plane*
-  would serve the same feed over a connection the host opens. Not the
+  for this machine only). The *hub* serves it over HTTPS, from what its
+  hosts report; without a hub a dashboard reads its own machine only. Not the
   *views API*, which a page uses to talk to its own server. See
   [design/dispatch-dashboard.md](design/dispatch-dashboard.md#the-source-feed-from-a-host-to-a-dashboard).
 - **Views API** — the protocol between the *dispatch dashboard*'s page and the server that

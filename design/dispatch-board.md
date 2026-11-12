@@ -600,7 +600,7 @@ until that scoping is specified and enforced.
 The dashboard's later stages ([dispatch-dashboard.md](dispatch-dashboard.md))
 serve the board beside its other views and reach it in other ways: a
 host's dashboard listens on loopback with no token and only answers reads,
-a laptop's dashboard reads each host over SSH (Secure Shell), and a phone
+a laptop's dashboard reads every host through the hub, and a phone
 reaches a host's dashboard through a recommended HTTPS front on a private
 network that names the viewer and scopes what each person sees
 ([dispatch-dashboard.md § Where it runs](dispatch-dashboard.md#where-it-runs)).

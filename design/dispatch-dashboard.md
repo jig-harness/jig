@@ -16,11 +16,12 @@ opens each one end to end
 with its thread, and carries a chat with the [operator](../GLOSSARY.md)
 that explains why work is stuck and drafts what to do, for the person to
 confirm. A host serves the page read-only on its loopback address, a laptop
-serves it to any browser and reads each host over SSH (Secure Shell), and
-Orca, where a person uses it, opens it in its own browser. The page talks
-to its own server through one protocol, and a laptop's dashboard reads each
-host through a second, which a shared control plane can later serve
-without the page changing.
+serves it to any browser, and Orca, where a person uses it, opens it in its
+own browser. A dashboard that names the person's [hub](../GLOSSARY.md),
+the optional shared control plane ([control-plane.md](control-plane.md),
+item 49), shows every host the hub serves. The page talks to its own
+server through one protocol, and a dashboard reads the hub through a
+second, the source feed.
 
 **Phone access is a first-class requirement.** A person away from a
 computer must be able to open the dashboard in a phone browser, see what
@@ -56,14 +57,16 @@ for the conversation record.
 ### The rules it keeps
 
 - **Jig stays whole without Orca.** Every view works in any browser, the
-  machines talk to each other over SSH, and nothing the dashboard needs runs in
-  Orca. Orca adds conveniences, each with a Herdr or plain-text equivalent:
+  machines reach each other through the hub where a person runs one, and
+  nothing the dashboard needs runs in Orca. Orca adds conveniences, each with a Herdr or plain-text equivalent:
   opening the dashboard inside Orca, jumping to a workspace or a terminal, the
   panel and the status bar.
 - **No host gains a route that accepts a request.** A host's dashboard listens on
   127.0.0.1 (loopback, which nothing outside the machine reaches) and
-  answers reads only. A laptop reaches it over SSH, which authenticates
-  both ends.
+  answers reads only. Another machine reaches it only through Orca's
+  paired host or a private-network front, each of which authenticates the
+  person first. A host's work reaches other machines through the hub,
+  which the host calls and which never calls the host.
 - **Every write is the person's**, made with their own credential on the
   forge or the tracker, through `jig send` or, for a merge, the pinned merge
   command. A host's dashboard writes nothing; a laptop's writes from stage 3
@@ -79,12 +82,15 @@ flowchart LR
   LB[any browser on the laptop,<br/>Orca's included] --> LH[jig dashboard on the laptop:<br/>loopback]
   OB[Orca's browser in a<br/>host workspace, optional] -.->|loopback, through the paired host| HH[jig dashboard on the host:<br/>loopback, read-only]
   PH[a phone's browser] -->|private-network front:<br/>HTTPS, read-only| HH
-  LH -->|source feed over SSH:<br/>jig dashboard feed| HH
+  HH -.->|the host calls it:<br/>reports| HB[the hub, optional:<br/>every enrolled host]
+  LH -.->|source feed over HTTPS| HB
+  PH -.->|or the hub's front:<br/>every host, read-only| HD[jig dashboard on the hub's machine]
+  HD -.->|source feed| HB
   HH --> HR[(host records:<br/>line, log, drives)]
   LH --> LR[(laptop records,<br/>conversations)]
   HH -->|reads| F[(forge and tracker)]
+  HB -->|reads once<br/>for every host| F
   LH -->|reads; from stage 3 writes<br/>as the person| F
-  CP[shared control plane, later] -.->|the same source feed,<br/>the host dials out| HH
 ```
 
 ### A piece of work, and its views
@@ -447,8 +453,8 @@ envelope: the value, or a coded failure with a reason.
 - **Changes**: an opaque cursor that combines one per source. One watch per
   dashboard, shared by every open stream, produces the notices: it checks the
   records' versions (the database's data version, the drive and pickup
-  files' change times) every 5 seconds, and each source's changes arrive on
-  its one SSH connection. Nothing polls the forge for a notice: forge facts
+  files' change times) every 5 seconds, and the hub's changes arrive on
+  the one connection the dashboard holds to it. Nothing polls the forge for a notice: forge facts
   change at the tick that reads them, and a Work card's own reads say when
   they were made. With no page open the dashboard watches nothing and closes its
   sources after a minute, and opens them again at the next request. A
@@ -505,8 +511,10 @@ its first version:
 
 ### The source feed, from a host to a dashboard
 
-A dashboard reads another machine through the [source feed](../GLOSSARY.md),
-which a shared control plane later serves over connections the hosts open.
+A dashboard reads other machines through the [source feed](../GLOSSARY.md),
+which the hub serves from what its hosts report
+([control-plane.md](control-plane.md)). With no hub, a dashboard reads its
+own machine only.
 
 - **`snapshot()` and `changes(since)`** return records in their
   [envelope](../GLOSSARY.md), each with `{host, incarnation, kind, key,
@@ -517,30 +525,26 @@ which a shared control plane later serves over connections the hosts open.
   a working host) and each pickup's progress record. At the size it is
   built for, 50 cards a repository on the board, that is at most 500
   ledgers a host, about 1 MiB, and 32 MiB only if every ledger were at
-  its cap. History is read from the host when the page asks, never sent in
-  a snapshot. `jig dashboard feed` holds nothing between connections, so
-  `changes(since)` derives what changed from the host's records: each
-  record written after the cursor, and the newest line, so a drive or a
-  pickup the line no longer names is sent as gone. A cursor names a point
-  in the host's records, not a connection, so it stays servable across
-  reconnects; one from another incarnation gets `reset` and a new
+  its cap. History is read when the page asks, never sent in a snapshot.
+  `changes(since)` derives what changed from the records the hub holds of
+  each host: each record written after the cursor, and the newest line, so
+  a drive or a pickup the line no longer names is sent as gone. A cursor
+  names a point in those records, not a connection, so it stays servable
+  across reconnects; one from another incarnation gets `reset` and a new
   snapshot. One fold library turns records and forge and tracker reads
   into the work and host views, and every dashboard and a shared control plane
   run it.
-- **Bounded reads besides.** For the owner's own laptop,
-  `jig dashboard feed` also answers `log.rows` (one page through the log's
-  indexes), `receipt.get(run)` and `thread.get(address)`, for which the
-  host runs `jig ask --thread` itself, each with the views API's envelope
-  and the feed call's deadline.
-- **Its transport is `ssh <host> jig dashboard feed`**, JSON lines over SSH, with
-  no token and no new socket; later, a connection the host opens. The
-  laptop's dashboard uses a key of its own, made by `jig install dashboard` and given
-  with `IdentitiesOnly`, never the person's agent. Each host's
-  `authorized_keys` holds that key with
-  `restrict,command="jig dashboard feed --from <laptop>"`, which the install
-  prints, so the key runs the feed and nothing else: no shell, no agent and
-  no port forwarding. `jig dashboard feed` exits 15 minutes after it started,
-  whatever the laptop does, and the laptop's dashboard reconnects with its
+- **Bounded reads besides.** The hub also answers `log.rows` (one page
+  through a host's reported outcome rows), `receipt.get(run)` and
+  `thread.get(address)`, the thread derived with the same fold as
+  `jig ask --thread`, each with the views API's envelope and the feed
+  call's deadline.
+- **Its transport is HTTPS to the hub**, a connection the dashboard opens
+  through the hub's private-network front, which names the person, on the
+  front's `/feed` path ([control-plane.md § One view of every
+  host](control-plane.md#one-view-of-every-host)); the hub answers within
+  that person's grant. A record's identity in the feed is the host, its
+  incarnation, the repository, the kind and the key. A dashboard reconnects with its
   cursor.
 - **Every record a source sends is untrusted.** The laptop checks it
   against the feed's schema, drops one that fails and counts it on the
@@ -591,26 +595,27 @@ which a shared control plane later serves over connections the hosts open.
 
 | Machine | What runs | Reached from | Writes |
 | --- | --- | --- | --- |
-| Host | `jig dashboard feed`, which SSH starts for each laptop's connection; `jig dashboard` resident only where Orca's browser or a front reaches the host's page; every database opened read-only | a laptop's dashboard over `ssh <host> jig dashboard feed`; Orca's browser in a workspace on the host; a phone through a front | none |
-| Laptop | `jig dashboard`, on demand or installed, reading its own records and each host over SSH | any browser on the laptop, Orca's included | from stage 3, commits as the person |
+| Host | `jig dashboard` resident only where Orca's browser or a front reaches the host's page; every database opened read-only; with a hub, the tick's calls to it | Orca's browser in a workspace on the host; a phone through a front | none |
+| Hub, optional | `jig hub serve` ([control-plane.md](control-plane.md)), serving the source feed of every enrolled host | the hosts' calls; a dashboard's source feed; a phone through the hub's front | none for a person |
+| Laptop | `jig dashboard`, on demand or installed, reading its own records and, where the person runs one, the hub's source feed | any browser on the laptop, Orca's included | from stage 3, commits as the person |
 | Orca, optional | the plugin's inbox panel and status bar, and an "Open the dashboard" command | the person's Orca app | the panel's answer box and merge button, as the person |
 | Phone | any browser through a private-network front; private HTTP fallback during stage 1; Orca's paired-host path only once verified | the printed address, with a QR code when sharing is built | read-only, including after desktop writes arrive |
 
 **A host's dashboard** puts no token in its page's address: every way in from
-another machine (SSH, Orca's paired host, a front) authenticates the person
+another machine (Orca's paired host, a front) authenticates the person
 first, so no token sits in a URL a browser's history or a screenshot can
 leak. Orca's browser
 in a workspace on a paired host reaches that host's loopback, as Orca
 documents for remote workspaces.
 
-**A laptop's dashboard** reads each host that `dashboard.sources` lists in the user
-file, by the SSH target `ssh` already knows, and the forge and the tracker
-as the person. Its Needs you view says "host unreachable since 09:12" when a host
-stops answering. A host that is off tells nobody when no dashboard of the
-person's is running: stage 1 has no laptop dashboard, and a phone's page through
-the host's own front fails to open with the host. Telling a person then
-needs a watcher outside the host, which is one of ADR-0013's conditions for
-reopening (Left out).
+**A laptop's dashboard** reads its own machine's records and, when the
+user file names a hub (`dashboard.hub`), the hub's source feed, and the
+forge and the tracker as the person. Its Needs you view says "host silent
+since 09:12" when the hub reports a host silent. Without a hub, a host
+that is off tells nobody, and a phone's page through the host's own front
+fails to open with the host; the hub is the watcher outside the host that
+tells a person
+([control-plane.md § A stopped host, noticed](control-plane.md#a-stopped-host-noticed)).
 
 **In Orca**, the plugin keeps its inbox panel, with the merge button that
 runs a merge-now card's pinned command as the person, and its status bar,
@@ -625,9 +630,9 @@ Orca's notices, each linking to its Needs you card.
 `jig dispatch dashboard`; today a person starts it in a terminal. Phone
 access needs the setup and availability work below, independent of whether
 the later dashboard stages are built. From stage 2 a laptop runs `jig dashboard` by
-hand when the person wants the page, or installs it, and a host needs
-nothing resident for a laptop to read it: SSH starts `jig dashboard feed` for each
-connection, and it exits with the connection. Only a host whose page Orca's
+hand when the person wants the page, or installs it, and reads other
+hosts through the person's hub, which needs nothing on a host beyond the
+tick's calls to it. Only a host whose page Orca's
 browser or a front reaches keeps `jig dashboard` resident, through
 `jig install dashboard`; a front adds the socket's install and the serve
 command, both run by a person with root. A dashboard that fails costs only the
@@ -773,7 +778,7 @@ A *front* ([private-network front](../GLOSSARY.md)) is the recommended layer
 that publishes the loopback dashboard to a private network, with a certificate
 and the viewer's identity. Tailscale Serve is its first implementation; a
 reverse proxy with an identity provider, or an SSH tunnel, does the job
-without Tailscale. Local browser and SSH readers need no front; phone
+without Tailscale. Local browser readers need no front; phone
 access has the explicit fallback above. This is checked
 against
 [Tailscale's Serve documentation](https://tailscale.com/kb/1312/serve) and
@@ -840,11 +845,21 @@ its 1.104 command line, not yet with the dashboard.
   listing; that risk is accepted, since the grant is the tailnet
   administrator's act and doctor shows it. A front's viewer only reads: the
   chat runs on the laptop alone.
-- **Laptop to host.** Tailscale SSH can carry `ssh <host> jig dashboard feed`,
-  with tailnet identity in place of SSH keys. Its rules grant a login
-  rather than one command, so the restricted key
-  ([The source feed](#the-source-feed-from-a-host-to-a-dashboard)) stays the
-  default.
+- **Laptop to hub.** A laptop's dashboard reaches the hub through the
+  hub's front, named by the person's tailnet login like any viewer
+  ([The source feed](#the-source-feed-from-a-host-to-a-dashboard)). A hub
+  on a tagged server has no owner, so a person who runs the fleet is
+  named by a grant carrying `{fleet: true}` beside the scope, under the
+  same app capability. `fleet` is the hub's owner view: receipts,
+  accounts, walls, workspaces, terminals and paths of every host whose
+  repositories the scope names, so `receipt.get` and the paths the
+  workspace opening needs reach a laptop through the front. A host
+  enrolled for more repositories than the viewer's scope names is shown
+  whole to a `fleet` viewer only when the scope covers every repository the
+  host enrolled with; otherwise the host's combined receipts, workspaces
+  and paths are withheld and only the facts of the repositories in the
+  scope are returned. Without `fleet` a viewer gets public facts only, as
+  above.
 - **It does not unblock writes.** Tailscale says who is looking, not whose
   forge login writes. Phone access remains read-only; desktop
   writes still wait for item 40.
@@ -858,7 +873,7 @@ its 1.104 command line, not yet with the dashboard.
 
 ### The size it is built for, and its deadlines
 
-Per laptop dashboard, 5 hosts. Per host, the size the board is built for
+Per hub that a dashboard reads, 5 hosts. Per host, the size the board is built for
 ([dispatch-board.md § The size it is built for](dispatch-board.md#the-size-it-is-built-for)):
 10 repositories, with 100 open pull requests in each. Per dashboard, 10 pages
 open at once, on the person's own devices and those of the people a front
@@ -868,7 +883,7 @@ a test fails a view that answers slower than its target:
 
 - **A view drawn from the line** (Merge, Needs you, Running, Queue,
   Hosts) answers within 1 second, since it folds records read on its own
-  machine or already held from a source, and makes no forge or SSH call.
+  machine or already held from the hub, and makes no forge or hub call.
 - **An opened Work card** shows what the line holds at once and its thread
   within 5 seconds. It reads one thread per address of the piece of work,
   4 at a time, each read conditional. A thread read that misses the target
@@ -893,10 +908,9 @@ ceilings' defaults, are set by stage 3 from the turns its tests measure.
 Its deadlines keep one slow call or source from holding the rest, and its
 own figures say when it is slow:
 
-- **Every child ends at its deadline.** SSH connects within 10 seconds and
-  checks the connection every 15 (`ServerAliveInterval`, two misses
-  allowed), so a host that stops answering shows unreachable within about
-  45 seconds, and a feed connection ends 15 minutes after it opened. Each
+- **Every call ends at its deadline.** The connection to the hub opens
+  within 10 seconds and its stream carries a heartbeat every 15, so a hub
+  that stops answering shows unreachable within about 45 seconds. Each
   feed call ends within 10 seconds, each forge read within
   15, `jig send --dry-run` within 30 and an operator turn within 2 minutes.
   A source that fails is tried again after 5 seconds, then after twice the
@@ -910,9 +924,8 @@ own figures say when it is slow:
 - **The dashboard's own figures.** `jig dashboard status` prints each view's last and
   slowest answer time of the last 100, what the dashboard spent against each
   forge and tracker budget in the last hour, the operator's tokens of the
-  day, its open streams, each source's reconnects, its resident memory
-  and, on a host, each running `jig dashboard feed` with the laptop its key names
-  and when it started. `jig doctor dashboard` fails when
+  day, its open streams, its reconnects to the hub and its resident
+  memory. `jig doctor dashboard` fails when
   a view's slowest answer is past twice its target, or when a tick skipped
   its board read in an hour the dashboard read.
 
@@ -974,12 +987,9 @@ Each way in is closed where it is granted, and the dashboard mints no credential
 of its own (its read-only token is one the person issues and revokes on
 the forge), so it notices at its next read:
 
-- **A laptop**: remove its key's line from each host's `authorized_keys`.
-  The laptop's next connection is refused, and its Hosts view says refused.
-  The host's `jig dashboard feed` exits 15 minutes after it started, whatever the
-  laptop does, so a removed key takes effect within 15 minutes. Removing it
-  at once also means ending that key's running `jig dashboard feed` on the host,
-  which the host's `jig dashboard status` lists.
+- **A laptop**: remove its person's grant at the hub's front, as for any
+  front's viewer below. Its next request is refused, and its Hosts view
+  says refused.
 - **A front's viewer**: remove the grant from the tailnet's policy, or the
   login or device from the tailnet. Serve sends the capability with each
   request, so the next request sees the narrower scope. The dashboard ends a
@@ -994,7 +1004,8 @@ the forge), so it notices at its next read:
 - **The operator's account**: sign it out of the runner's configuration
   directory, or revoke its key. The next turn fails with its reason, and
   the rest of the dashboard is unchanged.
-- **A host that may be compromised**: remove it from `dashboard.sources`. Until
+- **A host that may be compromised**: revoke it at the hub
+  (`jig hub revoke <host>`), which drops its reports from the feed. Until
   then its records show as that host's and are acted on by nothing on the
   laptop.
 
@@ -1014,13 +1025,13 @@ a front's grant carries.
 of programming model when Jig holds a resident process with real
 concurrency, and the dashboard stays below that line. A request reads its
 records in one short read transaction and closes it before it folds them
-with forge facts, so no forge, tracker or SSH call is awaited inside one,
+with forge facts, so no forge, tracker or hub call is awaited inside one,
 and a `changes` stream holds its cursor between notices, not a
 transaction. A test serves the page through a tick and finds the tick's
 checkpoint of the write-ahead log completes, and `jig doctor dashboard` reports
-that log's size. A source is an `ssh` child whose lines the dashboard parses; an
-operator turn is a child process it only pipes; each child ends at its
-deadline. Its only shared state is the cursors and, from stage 3, the plans
+that log's size. The hub is one HTTPS connection whose answers the
+dashboard parses; an operator turn is a child process it only pipes; each
+call and child ends at its deadline. Its only shared state is the cursors and, from stage 3, the plans
 it issued and each thread's conversation, both settled on the file system,
 not in the dashboard's memory. One turn or commit runs at a time per thread,
 under a lock file per thread: a turn or commit from a second page waits
@@ -1040,8 +1051,7 @@ before that step is built.
 ### Where it lives
 
 `jig dashboard` is `plugin/dashboard/`, registered in `plugin/jig.ts`: `jig dashboard` serves
-the page on loopback and prints its address, and `jig dashboard feed` speaks the
-source feed on standard input and output. The page grows from today's
+the page on loopback and prints its address. The page grows from today's
 (`plugin/dispatch/dashboard-page/`), and from stage 2
 `jig dispatch dashboard` starts the same server, read-only, on loopback.
 The fold library is in `plugin/shared/`, for the dispatcher, `ask` and the
@@ -1049,8 +1059,8 @@ dashboard alike. `pickup-progress` and `operator-conversation` are registered re
 on the machine medium.
 
 The configuration it adds, each documented in `plugin/CONFIGURATION.md` by
-the step that adds it: `dashboard.sources`, `dashboard.operator_account` and
-`dashboard.forge_read_token`, the hosts a laptop's dashboard reads, the runner's
+the step that adds it: `dashboard.hub`, `dashboard.operator_account` and
+`dashboard.forge_read_token`, the hub a laptop's dashboard reads, the runner's
 configuration directory and the path of a host dashboard's read-only forge
 token, in the user file (`$JIG_HOME/jig.yaml`) only;
 `dashboard.operator_turn_tokens`, `dashboard.operator_thread_tokens` and
@@ -1062,54 +1072,12 @@ repository's `.config/jig.yaml`, on unless set to `false`. The capability
 
 ### Toward a shared control plane
 
-The glossary calls each host's dispatcher Jig's first
-[control plane](../GLOSSARY.md). The [shared control plane](../GLOSSARY.md)
-is one service that reads the forge and the tracker once for many hosts,
-hands them work and serves the source feed through connections the hosts
-open, so neither the page nor a host's records change. Handing out work
-goes past ADR-0013, so it needs a decision record of its own, which stages
-1 to 3 do not. These are written down now so nothing before it closes the
-way:
-
-- **A host keeps authority over what it did.** The control plane stores
-  records and derives columns and threads when it reads them, and keeps no
-  phase column of its own: a mirror of a pull request's state drifts from
-  the pull request.
-- **No launch without the winning claim on the one medium that decides.**
-  A tick's plan or the control plane's offer is only a proposal. Which
-  medium decides is a setting on the repository's entry that every host
-  dispatching the repository agrees on. During a migration the control
-  plane posts the forge claim for each grant, and a grant counts only once
-  the forge's read-back shows it winning.
-- **A person's act is made with that person's credential.**
-- **Hosts connect out; nothing connects in.** A host dials out and pulls
-  work when a slot frees, and its reports carry an idempotency key, so one
-  sent twice counts once.
-- **A nudge carries no content and is safe to lose.** Correctness comes
-  from the records and a periodic reconcile.
-- **Seam: the tick's world view apart from its machine view.** The world
-  view is the forge's and the tracker's facts, with
-  `fresh(target, notOlderThan)` for the re-check before each act; the
-  machine view is the runtime's sessions, the launch records and the walls,
-  and is never remote. The tick's observe phase mixes the two and writes
-  records, so the split follows the tick's split into observe, plan and
-  apply.
-- **Seam: pickups get a shared claim before anything hands them out.** A
-  pickup has no claim before its session starts, so it is the stage most
-  likely to launch twice. `SharedTarget` widens to a work key and a pickup
-  claim is added; until then, dispatching one repository's pickups from
-  several hosts is unsupported.
-
-None of this is built before the control plane's own stage: version 1
-carries no field for it alone, and the seams are built just before it, so
-a control plane that takes another shape costs nothing already built. A
-parked decision is then one card that every surface shows. Waiting for the
-decision record: hosting and the database; webhook intake and reconcile;
-host enrollment, a device grant that yields a per-host credential; how
-people sign in; whether it stores references only or comment text too; the
-assignment policy; the owner host's duties (notices, labels) moving to it.
-Its trigger is one of ADR-0013's conditions for reopening, the one this
-design adds among them. Where it lives is a person's decision.
+The [hub](../GLOSSARY.md), the [shared control plane](../GLOSSARY.md) for
+many dispatchers, has a design of its own
+([control-plane.md](control-plane.md), item 49). For this page it is one
+more source: it serves the source feed of every enrolled host, so a
+dashboard that names it shows every host with no change to the page or to
+a host's records. Nothing in this design is built for it alone.
 
 ## Build order
 
@@ -1176,8 +1144,8 @@ that fixture; 8 needs 3, 6 and 7; 9 needs 8's fixtures; 10 needs 9.
    and the plan and decision cards, at desktop, Orca's browser pane and phone
    width, light and dark. It keeps item 36's scenarios and adds a park with
    three decisions, a thread from pickup to follow-up, a CI hold beside a
-   broken build, a batch of five items mid-pickup, an unreachable host and
-   a laptop with two sources. It draws stage 3's cards and the chat now,
+   broken build, a batch of five items mid-pickup, a silent host and a
+   laptop reading two hosts through a hub. It draws stage 3's cards and the chat now,
    because one round is one person's session and the layout (where the
    cards sit at phone width and chat sits on desktop) is what a second
    round would redo; if item 40 changes what a write asks for, a card is redrawn inside
@@ -1211,7 +1179,9 @@ a requirement whatever that result.
 2. `jig send --json` with `--expect`.
 3. The `jig dashboard` server: the views API with its checks of the address, the
    origin and the content security policy, the source feed over
-   `jig dashboard feed` with its restricted key, and the fold library.
+   the hub's source feed where the user file names a hub, and the fold
+   library. Showing several hosts waits for the hub's stage 3
+   ([control-plane.md § Build order](control-plane.md#build-order)).
 4. The views the server adds to stage 1's: Needs you across every source,
    derived by `jig ask --waiting`, Hosts, and History by piece of work.
 5. The `resident` job kind and `jig install dashboard`, with
@@ -1243,10 +1213,9 @@ card offers its command to copy.
 3. The assistant-ui chat, the `operator-conversation` record and its `jig gc`
    kind.
 
-**The shared control plane, last**: its decision record, once its trigger
-holds. Before it, the tick splits its world view from its machine view,
-after its split into observe, plan and apply, and pickups get a shared
-claim.
+**The hub, apart**: the shared control plane follows its own build order
+([control-plane.md § Build order](control-plane.md#build-order)), which
+starts with seams in the dispatcher that these stages do not need.
 
 ## Left out
 
@@ -1284,8 +1253,8 @@ claim.
   pairing, rotation and revocation, and every token holder sees every
   repository the host dispatches, across organizations.
 - **Funnel.** A front publishes the dashboard to a private network only.
-- **The shared control plane itself.** It waits for its decision record
-  and its trigger.
+- **The shared control plane itself.** It has a design of its own
+  ([control-plane.md](control-plane.md)).
 
 ## Review
 
