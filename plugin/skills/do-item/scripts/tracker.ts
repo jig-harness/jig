@@ -416,7 +416,7 @@ async function claim(
               manualOpsLabel: config.labels.manualOps,
               claimFrom: settings.claimFrom,
             })
-          : claimIssue(tracker, key, { claimFrom: settings.claimFrom });
+          : claimIssue(tracker, normalized, { claimFrom: settings.claimFrom });
       if (!settings.claimMarker) return body();
       // The marker names who the item will be assigned to, before it is.
       const claimant = person
