@@ -17,6 +17,7 @@ import { TrackerConfigError } from "../config-error.ts";
 import { defaultFacets, type Facets } from "../facets/config.ts";
 import { TrackerRequestError } from "../port.ts";
 import { adfToMarkdown } from "./adf.ts";
+import { type BlockedField, resolveBlockedFields } from "./blocked-fields.ts";
 import {
   type FacetField,
   facetFieldStores,
@@ -35,7 +36,7 @@ import {
 } from "./read.ts";
 
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
-import { KEY, ORDER, OPEN, quote } from "./jql.ts";
+import { KEY, ORDER, openClause, quote } from "./jql.ts";
 import type { JiraModel } from "./model.ts";
 import type { JiraSettings, LinkedRelation } from "./settings.ts";
 import {
@@ -149,6 +150,12 @@ export interface Client {
    * no facet is kept in one.
    */
   facetFields(signal?: AbortSignal): Promise<FacetField[]>;
+  /**
+   * The fields `issue_tracker.jira.blocked_fields` names, each resolved to
+   * exactly one field of the site; read once, and without a request when
+   * none is configured.
+   */
+  blockedFields(): Promise<BlockedField[]>;
   /**
    * The fields on the create screen of an issue type of the project, each
    * with the values it allows (`null` where it lists none); read once per
@@ -413,6 +420,7 @@ export function jiraClient(opts: ClientOptions): Client {
   let labelFields: Promise<FieldLabel[]> | undefined;
   let allFields: Promise<SiteField[]> | undefined;
   let storeFields: Promise<FacetField[]> | undefined;
+  let stateFields: Promise<BlockedField[]> | undefined;
   const readTypes = sharedRead(async (own): Promise<IssueTypeMeta[]> => {
     const values = await offsetPages(
       transport,
@@ -448,7 +456,23 @@ export function jiraClient(opts: ClientOptions): Client {
   /** The credential's own profile, read once. */
   function myself(): Promise<Record<string, unknown>> {
     me ??= (async () => {
-      const profile = record(await get("myself"), "myself");
+      let raw: unknown;
+      try {
+        raw = await get("myself");
+      } catch (err) {
+        if (
+          err instanceof JiraApiError &&
+          (err.status === 401 || err.status === 403)
+        )
+          throw new JiraApiError(`${err.message}; ${JIRA_CREDENTIAL_HELP}`, {
+            status: err.status,
+            retryAfterSec: err.retryAfterSec,
+            errorMessages: err.errorMessages,
+            errors: err.errors,
+          });
+        throw err;
+      }
+      const profile = record(raw, "myself");
       if (typeof profile.accountId !== "string" || !profile.accountId.trim())
         throw new JiraApiError(
           `Jira did not identify an authenticated account; ${JIRA_CREDENTIAL_HELP}`,
@@ -599,7 +623,7 @@ export function jiraClient(opts: ClientOptions): Client {
         );
       // No project clause: an Epic's children may live in other projects.
       return client.search(
-        `${[`parent = ${key}`, ...(open ? [OPEN] : [])].join(" AND ")}${ORDER}`,
+        `${[`parent = ${key}`, ...(open ? [openClause(model.stateName("blocked"))] : [])].join(" AND ")}${ORDER}`,
         `children of ${key}`,
         signal,
       );
@@ -789,6 +813,18 @@ export function jiraClient(opts: ClientOptions): Client {
         storeFields = undefined;
       });
       return signal === undefined ? storeFields : until(storeFields, signal);
+    },
+
+    blockedFields() {
+      const names = settings.blockedFields;
+      if (names.reason === null && names.since === null)
+        return Promise.resolve([]);
+      stateFields ??= (async () =>
+        resolveBlockedFields(names, await siteFields()))();
+      stateFields.catch(() => {
+        stateFields = undefined;
+      });
+      return stateFields;
     },
 
     createMeta(issueTypeId, signal) {

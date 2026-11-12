@@ -778,7 +778,12 @@ outlives the session that spawned it, so its console is not where you look:
   or `held`, nothing on a pull request carrying `hold` or `held`, and never
   a new label. Best effort: `gh` calls under `ghCall`'s deadline, the edit
   only when the labels disagree; a refusal is one `labels:` line on stderr
-  and never changes the exit. A pass never writes a state label.
+  and never changes the exit. A pass never writes a state label. Where
+  `issue_tracker.states.blocked` is set, the same write moves each item the
+  pull request links (`Closes`/`Refs <KEY>`) to `blocked` on a `parked`
+  stop, with each park's class and reason, and back to the state it left
+  on `driving` (`do-item/scripts/lib/blocked-move.ts`), under the same
+  rules; a pass never moves one.
 - **Relocating the state dir** — `$DRIVE_PR_STATE_DIR` relocates the state
   root: the database and one `<clone-key>/` directory per clone (the hash of
   its persisted [universally unique identifier](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (UUID); linked worktrees share it). The driver exports its resolved
@@ -1837,7 +1842,13 @@ publishes no findings, including any partial output.
 Both are open work. A finding the reviewer could not anchor to a diff line
 creates **no thread** — thread count reads zero while it sits live, so a
 thread count alone reports such a PR converged. It also has no `threadId`, so
-`reply-to-thread.ts` cannot answer it.
+`reply-to-thread.ts` cannot answer it. For a review-object reviewer
+(`review.reviewer_evidence: review_object`) these are the entries in its
+reviews' bodies (`source: "review-body"`; CodeRabbit's outside-diff,
+nitpick, duplicate and follow-up comments), read from every review it
+submitted on the pull request. Only a reviewer whose built-in profile names a
+body format is read (today CodeRabbit); another review-object reviewer's
+bodies are not.
 
 `--configured-reviewer-only` keeps this enumeration in step with § 1's gate,
 which passes the same flag: where the repository names no AI reviewer, neither

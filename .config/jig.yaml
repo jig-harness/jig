@@ -40,7 +40,7 @@ design_brief:
   # `JIG__design_brief__handback__browser_executable`, names another.
   prototypes: design/prototypes
   handback:
-    widths: [390, 1440]
+    widths: [320, 390, 1440]
     rubric: design/prototypes/rubric.md
     scorecard: design/prototypes/dispatch-dashboard.scorecard.md
     browser_executable: tools/design/chromium.sh

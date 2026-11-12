@@ -386,6 +386,36 @@ describe("Jira adapter: populations", () => {
     ]);
     expect(jqlOf(calls[1] as Call)).toContain('statusCategory = "In Progress"');
   });
+
+  it("keeps a blocked status in the started query, whatever its category", async () => {
+    for (const category of ["new", "done"] as const) {
+      const { t, calls } = jira(
+        routes({
+          "GET myself": MYSELF,
+          "POST search/jql": byJql(
+            [
+              /labels = "epic"/,
+              page(
+                issue({
+                  key: "ENG-1",
+                  status: "Blocked",
+                  category,
+                  labels: ["epic"],
+                }),
+              ),
+            ],
+            [/parent = ENG-1/, page()],
+          ),
+        }),
+        { issue_tracker: { states: { blocked: "Blocked" } } },
+      );
+      const out = await t.startedIssueActivity("epic");
+      expect(out.map((e) => e.epic)).toEqual(["ENG-1"]);
+      expect(jqlOf(calls[1] as Call)).toContain(
+        '(statusCategory = "In Progress" OR status = "Blocked")',
+      );
+    }
+  });
 });
 
 describe("Jira adapter: candidate pools", () => {
