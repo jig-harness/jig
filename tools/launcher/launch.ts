@@ -146,13 +146,19 @@ function persistCache(
   fallback: FallbackEnvironment,
   nowSeconds: number,
   warn: Warn,
+  namespace: string,
 ): boolean {
   try {
-    if (fresh !== null) writeCache(home, issue, fresh);
+    if (fresh !== null) writeCache(home, issue, fresh, namespace);
     // Seed at least the description when the tracker could not be read, but
     // never replace an existing cache with a thinner one.
     else if (!existsSync(file) && fallback.prompt)
-      writeCache(home, issue, fallbackCache(issue, fallback, nowSeconds));
+      writeCache(
+        home,
+        issue,
+        fallbackCache(issue, fallback, nowSeconds),
+        namespace,
+      );
     return true;
   } catch (error) {
     warn(
@@ -190,8 +196,8 @@ export async function launch(
   deps: LaunchDeps,
 ): Promise<void> {
   const { home, env } = deps;
-  // Before anything else: the key names a file, and a bad one is no issue.
-  assertIssueKey(issue);
+  // Preserve the tracker input while the canonical key names the cache.
+  const originalIssue = issue;
   const warn = deps.warn ?? ((m: string) => console.error(`[launcher] ${m}`));
   const nowSeconds = deps.nowSeconds ?? (() => Date.now() / 1000);
   const config = loadConfig(home, env);
@@ -203,18 +209,24 @@ export async function launch(
       : [named(first), ...rest.map(named)];
     validateRoutes(config, resolved);
     return {
-      tracker: deps.tracker ?? getTracker(config.tracker, { home, env }),
+      tracker:
+        deps.tracker ??
+        getTracker(config.tracker, { home, env, repos: config.repos }),
       providers: resolved,
     };
   });
 
+  issue = tracker.normalizeIssue?.(issue) ?? issue;
+  assertIssueKey(issue);
   const named = branchArg || tracker.launchEnvironment.branch || "";
   const fallback = { prompt: tracker.launchEnvironment.prompt, branch: named };
-  const file = cachePath(home, issue);
+  const namespace = tracker.cacheNamespace?.(originalIssue) ?? "";
+  const file = cachePath(home, issue, namespace);
   const { fresh, repoLabel } = await readAndAssign(
     tracker,
     {
       issue,
+      originalIssue,
       repoLabelGroup: config.repoLabelGroup,
       fallback,
       nowSeconds: nowSeconds(),
@@ -231,6 +243,7 @@ export async function launch(
     fallback,
     nowSeconds(),
     warn,
+    namespace,
   );
   const branch = chooseBranch(named, fresh);
 
