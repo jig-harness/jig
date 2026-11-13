@@ -245,10 +245,39 @@ export async function requestByNumber(
 /** The most pull requests one commit lookup reads; a full page is incomplete. */
 const COMMIT_REQUESTS_PAGE = 100;
 /**
+ * Whether a REST pull request record comes from `source`: false for another
+ * repository's, or for a source the forge no longer has (a deleted fork),
+ * which cannot be this repository.
+ */
+function fromSource(
+  head: Record<string, unknown>,
+  source: string,
+): Outcome<boolean, "malformed"> {
+  const repo = head.repo;
+  if (repo === null) return ok(false);
+  if (!isMapping(repo) || typeof repo.full_name !== "string")
+    return failed(
+      "malformed",
+      "Pull request source repository could not be verified",
+    );
+  return ok(repo.full_name.toLowerCase() === source.toLowerCase());
+}
+/** A REST pull request record's state, as `gh pr` names it. */
+function commitRequestState(
+  value: Record<string, unknown>,
+): Outcome<WorktreeRequest["state"], "malformed"> {
+  if (value.state !== "open" && value.state !== "closed")
+    return failed("malformed", "Malformed pull request state");
+  const merged = value.merged_at;
+  if (merged !== null && typeof merged !== "string")
+    return failed("malformed", "Malformed pull request merge time");
+  if (value.state === "open") return ok("OPEN");
+  return ok(merged ? "MERGED" : "CLOSED");
+}
+/**
  * One entry of the forge's pull requests for a commit, as `request` reads a
  * `gh pr` record: the REST form names its source as `head.repo.full_name`,
- * its state in lower case and a merge by `merged_at`. A source the forge no
- * longer has (a deleted fork) is not this repository's.
+ * its state in lower case and a merge by `merged_at`.
  */
 function commitRequest(
   value: unknown,
@@ -256,30 +285,24 @@ function commitRequest(
 ): Outcome<WorktreeRequest | null, "malformed"> {
   if (!isMapping(value) || !isMapping(value.head))
     return failed("malformed", "Malformed pull request record");
-  const repo = value.head.repo;
-  if (repo === null) return ok(null);
-  if (!isMapping(repo) || typeof repo.full_name !== "string")
-    return failed(
-      "malformed",
-      "Pull request source repository could not be verified",
-    );
-  if (repo.full_name.toLowerCase() !== source.toLowerCase()) return ok(null);
-  if (typeof value.head.sha !== "string" || !COMMIT.test(value.head.sha))
+  const own = fromSource(value.head, source);
+  if (!own.ok) return own;
+  return own.value ? commitRequestFields(value, value.head) : ok(null);
+}
+/** The head, state and number of a REST pull request record from this repository. */
+function commitRequestFields(
+  value: Record<string, unknown>,
+  head: Record<string, unknown>,
+): Outcome<WorktreeRequest, "malformed"> {
+  if (typeof head.sha !== "string" || !COMMIT.test(head.sha))
     return failed("malformed", "Malformed pull request head");
-  if (value.state !== "open" && value.state !== "closed")
-    return failed("malformed", "Malformed pull request state");
-  const merged = value.merged_at;
-  if (merged !== null && typeof merged !== "string")
-    return failed("malformed", "Malformed pull request merge time");
+  const state = commitRequestState(value);
+  if (!state.ok) return state;
   const number = requestNumber(value.number);
   if (!number.ok) return number;
-  if (number.value === null)
-    return failed("malformed", "Malformed pull request number");
-  return ok({
-    state: value.state === "open" ? "OPEN" : merged ? "MERGED" : "CLOSED",
-    head: value.head.sha,
-    number: number.value,
-  });
+  return number.value === null
+    ? failed("malformed", "Malformed pull request number")
+    : ok({ state: state.value, head: head.sha, number: number.value });
 }
 /**
  * The pull requests of `remote`'s repository whose commits include `commit`,
