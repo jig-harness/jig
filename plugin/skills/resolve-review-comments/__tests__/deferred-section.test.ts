@@ -749,53 +749,60 @@ describe("file-deferred.ts files each entry through the tracker", () => {
     expect(old?.filed).toBeUndefined();
   });
 
-  test("an entry whose issue an interrupted run filed is recorded though it can no longer be planned", async () => {
-    const forge = fakeForge(
-      withDeferredEntry("", {
-        source: THREAD,
-        finding: FINDING,
-        reason: "r",
-      }).body,
-    );
-    const [entry] = deferredEntries(forge.state.body);
-    const { t, calls } = trackerThatFiles([
-      {
-        number: 7,
-        body: `Filed by file-deferred.ts.\n\n${identityLine({ source: THREAD })}\n${textLine({ text: entry?.text ?? "" })}`,
-      },
-    ]);
-    forge.threadPaths = async () => {
-      throw new Error("the review threads were consulted");
-    };
-    const r = await fileDeferred(forge, t, "42", {
-      label: "pr-followup",
-      facets: FACETS,
-      taxonomy: {
-        types: JIG_TAXONOMY.types,
-        statuses: [],
-        flags: [],
-        categories: [],
-        groups: [
-          {
-            id: "repo",
-            required: true,
-            notRequiredOn: [],
-            labels: ["repo:web", "repo:api"],
-          },
-        ],
-      },
-      catalog: () => {
-        throw new Error("the catalog was consulted");
-      },
-    });
-    expect(r.why).toBeNull();
-    expect(r.forPerson).toEqual([]);
-    expect(r.filed).toEqual([
-      expect.objectContaining({ key: "#7", reused: true }),
-    ]);
-    expect(calls.filter((c) => c.op === "TrackerCreate")).toHaveLength(0);
-    expect(deferredEntries(forge.state.body)[0]?.filed?.key).toBe("#7");
-  });
+  test.each([
+    ["that records no type or severity", {}],
+    ["that records its type and severity", REC],
+  ])(
+    "an entry %s is recorded with its interrupted run's issue without planning it",
+    async (_name, recorded) => {
+      const forge = fakeForge(
+        withDeferredEntry("", {
+          ...recorded,
+          source: THREAD,
+          finding: FINDING,
+          reason: "r",
+        }).body,
+      );
+      const [entry] = deferredEntries(forge.state.body);
+      const { t, calls } = trackerThatFiles([
+        {
+          number: 7,
+          body: `Filed by file-deferred.ts.\n\n${identityLine({ source: THREAD })}\n${textLine({ text: entry?.text ?? "" })}`,
+        },
+      ]);
+      forge.threadPaths = async () => {
+        throw new Error("the review threads were consulted");
+      };
+      const r = await fileDeferred(forge, t, "42", {
+        label: "pr-followup",
+        facets: FACETS,
+        taxonomy: {
+          types: JIG_TAXONOMY.types,
+          statuses: [],
+          flags: [],
+          categories: [],
+          groups: [
+            {
+              id: "repo",
+              required: true,
+              notRequiredOn: [],
+              labels: ["repo:web", "repo:api"],
+            },
+          ],
+        },
+        catalog: () => {
+          throw new Error("the catalog was consulted");
+        },
+      });
+      expect(r.why).toBeNull();
+      expect(r.forPerson).toEqual([]);
+      expect(r.filed).toEqual([
+        expect.objectContaining({ key: "#7", reused: true }),
+      ]);
+      expect(calls.filter((c) => c.op === "TrackerCreate")).toHaveLength(0);
+      expect(deferredEntries(forge.state.body)[0]?.filed?.key).toBe("#7");
+    },
+  );
 
   test("an issue an interrupted run filed does not replace an entry corrected before its fresh read", async () => {
     const forge = fakeForge(
