@@ -142,7 +142,7 @@ How to apply each is in [CONTRIBUTING.md](CONTRIBUTING.md).
 - **Anything under `plugin/`** follows [plugin/AGENTS.md](plugin/AGENTS.md):
   it ships as a new version.
 - **A call to an outside system goes through its governed transport**
-  ([ADR-0020](docs/adr/ADR-0020-outbound-calls-are-governed.md)). Look at
+  ([ADR-0021](docs/adr/ADR-0021-outbound-calls-are-governed.md)). Look at
   any change to an integration (a forge, a tracker, a reflection store)
   through its obligations: reuse an answer before sending, ask the shared
   budget, bound the call's cost, record what it cost, fail as one of the
