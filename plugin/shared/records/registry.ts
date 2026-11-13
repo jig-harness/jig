@@ -283,6 +283,11 @@ const DISPATCHER: RecordKind[] = [
     "pickup_reads",
   ),
   dispatchTable(
+    "dispatch-read-page",
+    "dispatch/lib/read-pages.ts",
+    "read_pages",
+  ),
+  dispatchTable(
     "dispatch-load-sample",
     "dispatch/lib/load-samples.ts",
     "load_samples",

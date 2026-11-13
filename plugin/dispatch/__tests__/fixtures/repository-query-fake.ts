@@ -11,7 +11,12 @@
  * many as `threads-<pr>` says (none without it). The query fails while `prs-open-fail` or
  * `repository-query-fail` exists. The comments query over named pull
  * requests (`commentsQuery`) answers each from the same files, and fails
- * while `comments-query-fail` exists.
+ * while `comments-query-fail` exists. While `query-times-out-above` holds a
+ * number, a page of the repository's query asking for more pull requests
+ * than it says times out, as the forge does on a page that takes too long. The
+ * checks query over named pull requests (`checksQuery`) answers each from
+ * `prs-open.json`'s listed checks, and fails while `checks-query-fail`
+ * exists.
  */
 import { existsSync, readFileSync } from "node:fs";
 
@@ -116,7 +121,22 @@ export function commentsQuery(dir: string, args: string[]): unknown {
   return { data: { rateLimit: { cost: 1, remaining: 4990 }, repository } };
 }
 
-/** The query's answer, or `null` for a query that fails. */
+/** The checks query's answer, each pull request it names under its alias; `null` for a query that fails. */
+export function checksQuery(dir: string, args: string[]): unknown {
+  const { has, json } = files(dir);
+  if (has("checks-query-fail")) return null;
+  const all = json("prs-open.json") as Listed[];
+  const query = args.find((a) => a.startsWith("query=")) ?? "";
+  const repository: Record<string, unknown> = {};
+  for (const [, n] of query.matchAll(/pr(\d+): pullRequest\(number: \d+\)/g)) {
+    const listed = all.find((p) => p.number === Number(n));
+    repository[`pr${n}`] =
+      listed === undefined ? null : { headRef: headRef(listed) };
+  }
+  return { data: { rateLimit: { cost: 1, remaining: 4990 }, repository } };
+}
+
+/** The query's answer, `"timeout"` for a page the forge times out, or `null` for a query that fails. */
 export function repositoryQuery(
   dir: string,
   args: string[],
@@ -127,6 +147,11 @@ export function repositoryQuery(
   const arg = (key: string) =>
     (args.find((a) => a.startsWith(`${key}=`)) ?? "").slice(key.length + 1);
   const first = Number(arg("first"));
+  if (
+    has("query-times-out-above") &&
+    first > Number(readFileSync(`${dir}/query-times-out-above`, "utf8"))
+  )
+    return "timeout";
   const after = arg("after") === "" ? 0 : Number(arg("after"));
   const all = json("prs-open.json") as Listed[];
   const nodes = all.slice(after, after + first).map((p) => {

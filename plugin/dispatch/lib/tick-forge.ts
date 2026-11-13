@@ -14,6 +14,7 @@
  * read for a ledger, and a merge that carries none wants no follow-up; the
  * scope itself is decided once, by `decideScope`.
  */
+import { ok } from "../../shared/outcome.ts";
 import type { SharedRecords } from "../../shared/records/shared.ts";
 import { adoptionNote, adoptionOf } from "./adopt.ts";
 import { readMarkers } from "./followup-marker.ts";
@@ -24,6 +25,7 @@ import {
   mergedSince,
   openPullRequests,
 } from "./forge.ts";
+import { PAGE } from "./forge-batch.ts";
 import { carriesSet, type LabelConfig } from "./labels.ts";
 import {
   type FreshMergeRead,
@@ -31,6 +33,7 @@ import {
   readMergeReads,
   writeMergeReads,
 } from "./merge-reads.ts";
+import { keptPage } from "./read-pages.ts";
 import { readDrives } from "./sources/ledgers.ts";
 import type { Pool } from "./pool.ts";
 import type { TickComments } from "./tick-comments.ts";
@@ -140,12 +143,20 @@ export async function readForge(
       reads.repository(repo.path),
       reads.login(),
     ]);
-    // The tick's query of the repository, else the pull request listing on its own.
+    // The tick's query of the repository, else the pull request listing on its own, its checks in pages of the size the query last answered at.
     const open = queried.ok
       ? listedOpen(queried.value.open, read)
-      : await reads.pool.run(() => openPullRequests(repo.slug, read));
+      : await reads.pool.run(async () => {
+          const page = keptPage(repo.path, "pull-requests", PAGE, Date.now());
+          const listed = await openPullRequests(repo.slug, read, page);
+          return listed.ok ? ok(listed.value.prs) : listed;
+        });
     if (!open.ok) {
-      unread(open.failure.reason);
+      unread(
+        queried.ok
+          ? open.failure.reason
+          : `the repository query did not read (${queried.failure.reason}), and the listing on its own did not either: ${open.failure.reason}`,
+      );
       return out;
     }
     out.open = open.value;
@@ -266,12 +277,16 @@ function decideScope(
 function queryNote(queried: RepositoryOutcome): string {
   if (!queried.ok)
     return ` (the repository query did not read, so each was read on its own: ${queried.failure.reason})`;
-  const { pages, cost, overflow } = queried.value;
+  const { pages, cost, overflow, pageSize } = queried.value;
   const own =
     overflow.length === 0
       ? ""
       : `; ${overflow.length} with more comments than one page holds, listed on their own`;
-  return ` (one repository query: ${pages} page(s), ${cost} point(s)${own})`;
+  const size =
+    pageSize < PAGE
+      ? `, ${pageSize} pull request(s) a page where the forge timed out on more`
+      : "";
+  return ` (one repository query: ${pages} page(s)${size}, ${cost} point(s)${own})`;
 }
 
 /** How the merges' comments were read, where a query read them. */

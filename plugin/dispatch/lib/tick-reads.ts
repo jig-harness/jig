@@ -3,7 +3,8 @@
  * phases: each repository's query (`forge-batch.ts`: the repository, its
  * configuration, its open pull requests and their comments), each pull
  * request's comments (`tick-comments.ts`, filled from that query where it
- * read them in full), the forge's login, the runtime's host-wide listings, and the forge's budget. The
+ * read them in full; its pages begin at the size the repository's last query
+ * answered at, `read-pages.ts`), the forge's login, the runtime's host-wide listings, and the forge's budget. The
  * login and the listings are the host's, not a repository's: each is read
  * once, the first time a repository needs it, and every repository is
  * answered from that read, a failed one failing each repository's record as
@@ -25,11 +26,13 @@ import { failed, type Outcome } from "../../shared/outcome.ts";
 import { forgeShared } from "../../shared/records/shared-forge.ts";
 import {
   type CommentsRead,
+  PAGE,
   readComments,
   readRepository,
   type RepositoryRead,
 } from "./forge-batch.ts";
 import { forgetMergeRead } from "./merge-reads.ts";
+import { keepPage, keptPage } from "./read-pages.ts";
 import { type Pool, pool } from "./pool.ts";
 import type { SessionRuntime, SessionsReader } from "./runtime/port.ts";
 import type { ServedViews } from "./sources/served-reads.ts";
@@ -115,10 +118,15 @@ async function queryRepository(
 ): Promise<RepositoryOutcome> {
   let read: RepositoryOutcome;
   try {
-    read = await readRepository(path);
+    read = await readRepository(
+      path,
+      keptPage(path, "pull-requests", PAGE, Date.now()),
+    );
   } catch (error) {
     return failed("unreadable", failureText(error));
   }
+  if (read.ok)
+    keepPage(path, "pull-requests", read.value.pageSize, PAGE, Date.now());
   if (read.ok) {
     const { target, startedAtMs } = read.value;
     for (const [pr, listing] of read.value.comments)

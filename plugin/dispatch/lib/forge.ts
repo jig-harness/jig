@@ -16,7 +16,11 @@
  * configuration file and its open pull requests with their labels, which
  * are dropped when the repository's section turns the labels off
  * (`listedOpen`). When that query does not read in full, the tick makes the
- * same reads one by one here.
+ * same reads one by one here. The open pull requests' listing then leaves
+ * out their checks, which a page of many pull requests with many checks each
+ * takes the forge too long to compute: they are read by number in a query of
+ * their own, in pages of the size the repository's query last answered at
+ * (`readChecks`).
  *
  * Each read and write returns an outcome (`shared/outcome.ts`), so a
  * population read in part is never planned from. Its failure's code says
@@ -35,6 +39,7 @@ import { ghCall, ghRepoEnv } from "../../skills/drive-pr/scripts/lib/proc.ts";
 import { OVERLAY_RELPATH } from "../../shared/config-layers.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { checksFail } from "./automation.ts";
+import { PAGE, readChecks } from "./forge-batch.ts";
 import type { MergedPr, RepoTarget } from "./types.ts";
 
 /** The most pull requests one listing reads; a full page means a partial read. */
@@ -339,7 +344,8 @@ async function listPrs(
 ): Promise<Outcome<ListedPr[], "unreadable">> {
   const fields = [...LISTED];
   if (extra.includes("merged")) fields.push("mergedAt", "updatedAt");
-  if (extra.includes("open")) fields.push(...OPEN_FIELDS);
+  if (extra.includes("open"))
+    fields.push(...OPEN_FIELDS.filter((f) => f !== "statusCheckRollup"));
   if (read.labels) fields.push("labels", "body");
   const listing = await ghJson(
     [
@@ -382,15 +388,39 @@ function listedAll(
   return ok(prs);
 }
 
+/** The open pull requests a listing read, and the pull requests per query their checks last read at. */
+export interface OpenListing {
+  prs: ListedPr[];
+  checksPage: number;
+}
+
 /**
  * Every open pull request of the repository in one listing, each with its
- * head commit and mergeability, and its labels when `read` asks for them.
+ * head commit and mergeability, and its labels when `read` asks for them;
+ * whether a check on each fails is read beside it, `checksPage` pull
+ * requests to a query.
  */
 export async function openPullRequests(
   slug: string,
   read = NO_LABELS,
-): Promise<Outcome<ListedPr[], "unreadable">> {
-  return listPrs(slug, ["open"], read);
+  checksPage = PAGE,
+): Promise<Outcome<OpenListing, "unreadable">> {
+  const listed = await listPrs(slug, ["open"], read);
+  if (!listed.ok) return listed;
+  const checks = await readChecks(
+    slug,
+    listed.value.map((p) => p.number),
+    checksPage,
+  );
+  if (!checks.ok)
+    return unreadable(
+      `the open pull requests' checks did not read: ${checks.failure.reason}`,
+    );
+  const prs = listed.value.map((p) => {
+    const failing = checksFail(checks.value.checks.get(p.number));
+    return failing === undefined ? p : { ...p, failingChecks: failing };
+  });
+  return ok({ prs, checksPage: checks.value.pageSize });
 }
 
 /**

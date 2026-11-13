@@ -22,6 +22,7 @@
  * | `load_samples` | kind of launch and sample | the memory one running session of that kind used at one tick; only each kind's newest samples are kept (`load-samples.ts`) |
  * | `merge_reads` | repository and merged pull request in the follow-up window | the follow-up markers a tick last read on it, and the launch claims where an ended launch of this host's needed them, at its `updatedAt` then and as the forge login that read them; replaced by each read, removed by a write the tick makes on it |
  * | `failures` | action, repository or tick scope that failed in a row | its failures in a row, the first and last failure's time, the last reason and the next try; removed by a success or once its action leaves the plan |
+ * | `read_pages` | repository checkout and paged read | the page size that last answered, and when; a read begins there instead of at its full page (`read-pages.ts`) |
  *
  * The receipts, the account walls (which the drive's quota adapters write
  * from a pass, outside the tick), the tick's locks and the rotation cursor stay
@@ -410,6 +411,19 @@ export const MIGRATIONS: readonly Migration[] = [
     sql: `
     ALTER TABLE failures ADD COLUMN quiet_at TEXT;
     ALTER TABLE failures ADD COLUMN renewals INTEGER NOT NULL DEFAULT 0;
+  `,
+  },
+  {
+    // The page size a repository's paged read last answered at (`read-pages.ts`), so a read the forge times out at full size begins smaller.
+    additive: true,
+    sql: `
+  CREATE TABLE read_pages (
+    repo TEXT NOT NULL,
+    read TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    at_ms INTEGER NOT NULL,
+    PRIMARY KEY (repo, read)
+  );
   `,
   },
 ];

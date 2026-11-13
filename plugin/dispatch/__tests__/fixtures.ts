@@ -67,6 +67,12 @@ const out = (v) => { process.stdout.write(typeof v === "string" ? v : JSON.strin
 if (args[0] === "api" && args[1] === "graphql" && args.some((a) => a.includes("query DispatchRepository"))) {
   const answer = require(${JSON.stringify(QUERY_FAKE)}).repositoryQuery(F, args, process.cwd());
   if (answer === null) { process.stderr.write("gh: HTTP 502\\n"); process.exit(1); }
+  if (answer === "timeout") { process.stderr.write("gh: HTTP 504: We couldn't respond to your request in time.\\n"); process.exit(1); }
+  out(answer);
+}
+if (args[0] === "api" && args[1] === "graphql" && args.some((a) => a.includes("query DispatchChecks"))) {
+  const answer = require(${JSON.stringify(QUERY_FAKE)}).checksQuery(F, args);
+  if (answer === null) { process.stderr.write("gh: HTTP 502\\n"); process.exit(1); }
   out(answer);
 }
 if (args[0] === "api" && args[1] === "graphql" && args.some((a) => a.includes("query DispatchComments"))) {

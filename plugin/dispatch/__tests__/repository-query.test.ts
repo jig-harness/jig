@@ -174,6 +174,79 @@ describe("one query per repository", () => {
   });
 });
 
+describe("a page the forge times out", () => {
+  /** A world of `count` open pull requests whose query times out on a page above `limit`. */
+  function heavy(count: number, limit: number): World {
+    const w = fixture();
+    w.setPrs(
+      "open",
+      Array.from({ length: count }, (_, i) => openPr(100 + i, `feature/${i}`)),
+    );
+    writeFileSync(join(w.dir, "query-times-out-above"), String(limit));
+    return w;
+  }
+
+  /** The page sizes the repository's query was asked for, in order. */
+  const pageSizes = (w: World) =>
+    ghCalls(w)
+      .filter((c) => c.includes("query DispatchRepository"))
+      .map((c) => Number(/\bfirst=(\d+)/.exec(c)?.[1]));
+
+  it("is asked for again at half its size until it answers, and the repository is read whole in smaller pages", async () => {
+    const w = heavy(25, 10);
+    const receipt = await tick(w);
+    expect(pageSizes(w)).toEqual([50, 25, 12, 6, 6, 6, 6, 6]);
+    expect(ghCalls(w).filter((c) => c.startsWith("pr list"))).toEqual([]);
+    expect(forgeDetail(receipt)).toContain(
+      "25 open pull request(s) (one repository query: 5 page(s), 6 pull request(s) a page where the forge timed out on more, 5 point(s))",
+    );
+  });
+
+  it("begins the next tick at the size that answered", async () => {
+    const w = heavy(25, 10);
+    await tick(w);
+    resetCalls(w);
+    const receipt = await tick(w);
+    expect(pageSizes(w)).toEqual([6, 6, 6, 6, 6]);
+    expect(forgeDetail(receipt)).toContain("25 open pull request(s)");
+  });
+
+  it("leaves the pull requests to the listing when a page of one times out, their checks read in a query of their own", async () => {
+    const w = heavy(3, 0);
+    const receipt = await tick(w);
+    expect(pageSizes(w)).toEqual([50, 25, 12, 6, 3, 1]);
+    const calls = ghCalls(w);
+    const listing = calls.filter((c) => c.startsWith("pr list"));
+    expect(listing).toHaveLength(1);
+    expect(listing[0]).not.toContain("statusCheckRollup");
+    expect(queries(w, "DispatchChecks")).toBe(1);
+    expect(forgeDetail(receipt)).toContain(
+      "3 open pull request(s) (the repository query did not read, so each was read on its own: the forge timed out: gh api graphql exited 1: gh: HTTP 504: We couldn't respond to your request in time. (at a page of 1, shrunk from 50))",
+    );
+  });
+
+  it("is named beside the listing's own failure when neither reads", async () => {
+    const w = heavy(3, 0);
+    writeFileSync(join(w.dir, "checks-query-fail"), "");
+    // A repository whose pull requests cannot be read fails the tick.
+    const r = await w.dispatch([
+      "--followup-since",
+      "2026-10-30T00:00:00Z",
+      "--json",
+    ]);
+    expectSpawnExit(r, 1);
+    const receipt = JSON.parse(r.stdout) as TickReceipt;
+    const forge = receipt.repos[0]?.records.find((x) => x.record === "forge");
+    expect(forge?.ok).toBe(false);
+    expect(forge?.detail).toContain(
+      "the pull requests cannot be read: the repository query did not read (the forge timed out: gh api graphql exited 1: gh: HTTP 504",
+    );
+    expect(forge?.detail).toContain(
+      "and the listing on its own did not either: the open pull requests' checks did not read: the forge timed out: gh api graphql exited 1: gh: HTTP 502",
+    );
+  });
+});
+
 describe("the reads before a launch", () => {
   /** PR #7 stopped `16` as the query reads it, its workspace there, account a billing it; the forge's listing as `listed` holds it. */
   function launchable(listed: unknown[]): World {
