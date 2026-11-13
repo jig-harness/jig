@@ -265,6 +265,39 @@ function fieldFindings(file: string, base: DataFile, now: DataFile): Finding[] {
   return out;
 }
 
+/** What makes a chapter's identity unusable: no identifying field, or a value listed twice. */
+function identityFindings(
+  file: string,
+  now: DataFile,
+  identity: readonly string[],
+  key: (v: DataValue) => string,
+  show: (v: DataValue) => string,
+): Finding[] {
+  const remedy =
+    "list each value once: a reader selecting the first match must meet the value the comparison saw";
+  const out: Finding[] = [];
+  if (identity.length === 0)
+    out.push({
+      rule: RULE,
+      file,
+      problem: "the chapter's fields name no identifying field",
+      remedy,
+    });
+  const seen = new Set<string>();
+  for (const v of now.values) {
+    const k = key(v);
+    if (seen.has(k))
+      out.push({
+        rule: RULE,
+        file,
+        problem: `the value ${show(v)} is listed more than once`,
+        remedy,
+      });
+    seen.add(k);
+  }
+  return out;
+}
+
 function valueFindings(file: string, base: DataFile, now: DataFile) {
   const out: Finding[] = [];
   const identity = Object.entries(base.fields)
@@ -276,26 +309,7 @@ function valueFindings(file: string, base: DataFile, now: DataFile) {
     identity.map((f) => `${f} ${JSON.stringify(v[f] ?? null)}`).join(", ");
   const before = new Map(base.values.map((v) => [key(v), v]));
   const after = new Map(now.values.map((v) => [key(v), v]));
-  const remedyOnce = `list each value once: a reader selecting the first match must meet the value the comparison saw`;
-  if (identity.length === 0)
-    out.push({
-      rule: RULE,
-      file,
-      problem: "the chapter's fields name no identifying field",
-      remedy: remedyOnce,
-    });
-  const seen = new Set<string>();
-  for (const v of now.values) {
-    const k = key(v);
-    if (seen.has(k))
-      out.push({
-        rule: RULE,
-        file,
-        problem: `the value ${show(v)} is listed more than once`,
-        remedy: remedyOnce,
-      });
-    seen.add(k);
-  }
+  out.push(...identityFindings(file, now, identity, key, show));
   const remedy = `keep the value as the base lists it (withdraw it as a tombstone rather than reuse it), or raise the chapter's version in tools/protocol/chapters.ts (above ${base.version}) and mark its change note breaking`;
   for (const [k, v] of before)
     if (!after.has(k))
