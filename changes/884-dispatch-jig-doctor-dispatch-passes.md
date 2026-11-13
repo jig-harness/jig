@@ -22,3 +22,8 @@ release: minor
   `dispatch.stalled_scope: assigned` keeps the wider watch, for a repository
   whose identity nobody else uses. A double claim is still reported for any
   claimed item.
+- An item a person held with `jig:hold` (or the human-in-the-loop or
+  manual-operations label) and then released is picked up again at the next
+  tick. Before, the record of an earlier pickup that ended without claiming
+  it kept holding it until the item left the dispatch states. A claimed
+  item's record still outlives a hold.

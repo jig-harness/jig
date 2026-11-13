@@ -25,6 +25,9 @@ export interface QueueItem {
   unblocks: number;
   epicOrder?: number;
 }
+/** Why an item a person's label holds (`jig:hold`, the human-in-the-loop or manual-operations label) starts nothing. */
+export const PERSON_HOLD = "needs a person to start";
+
 export function queueHold(
   item: QueueItem,
   policy: { hitl?: string | undefined; manualOps?: string | undefined } = {},
@@ -39,7 +42,7 @@ export function queueHold(
         l === "jig:hold",
     )
   )
-    return "needs a person to start";
+    return PERSON_HOLD;
   return item.blockers.length > 0
     ? `waiting on ${item.blockers.join(", ")}`
     : null;

@@ -11,7 +11,9 @@
  * - the item's latest record that ended, and has not been released, holds
  *   it too: a session that stopped without claiming the item (a refusal, a
  *   crash, a question) is not launched again until the item leaves the
- *   dispatch states (`releaseEnded`) and comes back; an item claimed meanwhile is released when it returns;
+ *   dispatch states (`releaseEnded`) and comes back, or a person's label
+ *   holds it while it is not claimed; an item claimed meanwhile is released
+ *   when it returns;
  * - except a record whose pass recorded `waits` (the tracker's rate limit
  *   stopped it): it holds the item until the time it names, and the item is
  *   launched again after it, with no person asked;
@@ -33,7 +35,9 @@ import {
 } from "../launches.ts";
 import { holdsItem } from "../launch-pickups.ts";
 import { refusalOf } from "../pickup-refusal.ts";
+import { PERSON_HOLD } from "../queue-rank.ts";
 import { RUNNING_STATES, type SessionsReport } from "../runtime/port.ts";
+import type { Unplaced } from "../types.ts";
 
 export type PickupHold =
   | { kind: "none" }
@@ -173,6 +177,36 @@ export function holdingRecords(
   records: ReadRecord[],
 ): ReadRecord[] {
   return recordsOf(item, records).filter((r) => holds(r.state));
+}
+
+/**
+ * The items whose ended pickup records stay held, for `releaseEnded`: the
+ * pickups the tick wants, and the items the read left out (who assigned it
+ * could not be read, or not by a person with write access), which are still
+ * assigned, so only leaving the dispatch states releases their records. An
+ * item a person's label holds is not among them: holding it ends its ended
+ * record, so releasing the hold picks it up again. A pickup that recorded
+ * `done` handed its item on (a pull request opened), so a hold never
+ * releases its record.
+ */
+export function recordsWanted(
+  pickups: ReadonlyArray<{ key: string }>,
+  unplaced: ReadonlyArray<Unplaced>,
+  records: ReadonlyArray<ReadRecord> = [],
+): Set<string> {
+  const handedOn = new Set(
+    records
+      .filter((r) => r.record.action === "pickup" && r.result === "done")
+      .flatMap(
+        (r) => r.record.batchItems?.map((i) => i.key) ?? [r.record.item],
+      ),
+  );
+  return new Set([
+    ...pickups.map((p) => p.key),
+    ...unplaced
+      .filter((u) => u.reason !== PERSON_HOLD || handedOn.has(u.target))
+      .map((u) => u.target),
+  ]);
 }
 
 /**

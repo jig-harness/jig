@@ -199,8 +199,7 @@ per issue in the design's order:
 - **Pickups.** An item moved to `pr_open` when an open
   pull request on its launch's branch names it; a stalled pickup's unpushed
   work relaunched once in its own tree to push and record
-  (`dispatch.stalled_relaunch`); an epic never taken as a pickup; a
-  held-then-released item re-queued.
+  (`dispatch.stalled_relaunch`); an epic never taken as a pickup.
 - **The steward.** First its digest's missing facts and its no-result rate;
   then, under
   [ADR-0018](../docs/adr/ADR-0018-the-steward-proposes-within-a-remit-the-host-widens.md),
