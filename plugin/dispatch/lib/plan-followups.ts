@@ -313,19 +313,7 @@ function planTickMarker(
     });
     return;
   }
-  const wait = ended === "failed" ? owedWait(found, input.launches) : null;
-  if (wait !== null) {
-    const after = waitOver(wait, input.nowMs)
-      ? "; the reset has passed, so the tick releases its marker"
-      : ": the tick releases its marker after that";
-    plan.running.push({
-      target,
-      stage: "followup",
-      reason: `launch record ${id}'s pass ${waitWords(wait)}${after} (comment ${marker.id}), and a later tick runs the follow-up again`,
-      evidence: { record: id, marker: marker.id, until: wait.until },
-    });
-    return;
-  }
+  if (plannedWait(input, marker, found, ended, plan, target)) return;
   const released = releaseWhy(input, pr.number, marker, found, ended);
   if (released !== null) {
     plan.running.push({
@@ -380,6 +368,33 @@ function stoppedOn(owed: RoutineRerun): string {
     : `stopped on a routine question (${owed.standing.classes.join(", ")})`;
 }
 
+/**
+ * A follow-up whose pass waits for a rate limit's reset, as running until
+ * the tick releases its marker; whether it was one.
+ */
+function plannedWait(
+  input: FollowupInput,
+  marker: FollowupMarker & { run: { kind: "tick" } },
+  found: ReadRecord | undefined,
+  ended: "done" | "failed" | null,
+  plan: Plan,
+  target: string,
+): boolean {
+  const wait = ended === "failed" ? owedWait(found, input.launches) : null;
+  if (wait === null) return false;
+  const id = marker.run.record;
+  const after = waitOver(wait, input.nowMs)
+    ? "; the reset has passed, so the tick releases its marker"
+    : ": the tick releases its marker after that";
+  plan.running.push({
+    target,
+    stage: "followup",
+    reason: `launch record ${id}'s pass ${waitWords(wait)}${after} (comment ${marker.id}), and a later tick runs the follow-up again`,
+    evidence: { record: id, marker: marker.id, until: wait.until },
+  });
+  return true;
+}
+
 /** A failed follow-up this host's marker claims: its pass ended short of done, or its record and outcome are both gone. */
 function failedTick(
   input: FollowupInput,
@@ -395,17 +410,24 @@ function failedTick(
   const asked =
     question === null ? "" : `, on a question for a person: ${question}`;
   const again = againWords(found, kept);
-  const spent = ended ? waitsSpent(found, input.launches) : null;
-  const why =
-    spent !== null
-      ? spentWords(id, spent)
-      : ended
-        ? `its pass under launch record ${id} ended without recording done${asked}${again}`
-        : `marker comment ${marker.id} names launch record ${id}, and neither that record nor its outcome is on this machine`;
+  const why = ended
+    ? endedWhy(id, waitsSpent(found, input.launches), `${asked}${again}`)
+    : `marker comment ${marker.id} names launch record ${id}, and neither that record nor its outcome is on this machine`;
   const action = failed(input, pr, marker, why, ended, question);
   action.evidence.record = id;
   if (ended && found?.framed !== undefined) action.framed = found.framed;
   return action;
+}
+
+/** Why a follow-up whose pass ended short of done is a person's: the rate limit it met too often, else what it said. */
+function endedWhy(
+  id: string,
+  spent: ReturnType<typeof waitsSpent>,
+  said: string,
+): string {
+  return spent !== null
+    ? spentWords(id, spent)
+    : `its pass under launch record ${id} ended without recording done${said}`;
 }
 
 /** The question a failed follow-up's pass stopped on: its launch record's, else its outcome record's; `null` when neither keeps one. */

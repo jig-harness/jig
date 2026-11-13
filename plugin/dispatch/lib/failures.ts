@@ -186,6 +186,15 @@ export interface FailureOf {
   target: string;
 }
 
+/** The failures in a row after one more: as many as `notify_after` at least for one told at once. */
+function countAfter(
+  before: number,
+  settings: FailureSettings,
+  atOnce: boolean,
+): number {
+  return atOnce ? Math.max(before + 1, settings.notifyAfter) : before + 1;
+}
+
 /**
  * Count one more failure in a row; the row as it now reads. A failure a
  * person is told of at once (`atOnce`: a refused credential) counts as many
@@ -207,8 +216,7 @@ export function recordFailure(
       .query(`SELECT ${COLUMNS} FROM failures WHERE repo = ? AND key = ?`)
       .get(of.repo, of.key) as Stored | null;
     const prior = before ? fromStored(before) : null;
-    const counted = (before?.count ?? 0) + 1;
-    const count = atOnce ? Math.max(counted, settings.notifyAfter) : counted;
+    const count = countAfter(before?.count ?? 0, settings, atOnce);
     const next = isActionKind(of.kind)
       ? nowMs + backoffAfter(count, settings)
       : nowMs;

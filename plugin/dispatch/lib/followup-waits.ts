@@ -144,12 +144,8 @@ export function owedWait(
   found: ReadRecord | undefined,
   records: readonly ReadRecord[],
 ): WaitStreak | null {
-  if (found === undefined || found.record.pr === null) return null;
-  if (found.result !== "waits") return null;
-  const streak = waitStreak(records, found.record.repo, found.record.pr);
-  return streak?.record === found.record.id && streak.count < WAITS_FOR_PERSON
-    ? streak
-    : null;
+  const streak = endedOnWait(found, records);
+  return streak !== null && streak.count < WAITS_FOR_PERSON ? streak : null;
 }
 
 /** The waits in a row that made the follow-up of `found` a person's; `null` when they have not. */
@@ -157,12 +153,19 @@ export function waitsSpent(
   found: ReadRecord | undefined,
   records: readonly ReadRecord[],
 ): WaitStreak | null {
+  const streak = endedOnWait(found, records);
+  return streak !== null && streak.count >= WAITS_FOR_PERSON ? streak : null;
+}
+
+/** The waits in a row that end with `found`; `null` when `found` did not end on a wait. */
+function endedOnWait(
+  found: ReadRecord | undefined,
+  records: readonly ReadRecord[],
+): WaitStreak | null {
   if (found === undefined || found.record.pr === null) return null;
   if (found.result !== "waits") return null;
   const streak = waitStreak(records, found.record.repo, found.record.pr);
-  return streak?.record === found.record.id && streak.count >= WAITS_FOR_PERSON
-    ? streak
-    : null;
+  return streak?.record === found.record.id ? streak : null;
 }
 
 /** Whether a wait has ended at `nowMs`; a time that does not read has. */
@@ -182,11 +185,7 @@ export function spentWords(id: string, streak: WaitStreak): string {
 }
 
 /** The trusted markers of this host's on a merged pull request that name `record`. */
-export function ownMarkers(
-  pr: MarkedPr,
-  host: string,
-  record: string,
-): number[] {
+function ownMarkers(pr: MarkedPr, host: string, record: string): number[] {
   if ("unreadable" in pr.markers) return [];
   return pr.markers
     .filter(
@@ -215,21 +214,55 @@ export async function releaseWaitMarkers(
   const failures: string[] = [];
   for (const pr of merged) {
     if (scope !== undefined && !scope.has(pr.number)) continue;
-    const streak = waitStreak(records, ctx.slug, pr.number);
-    if (streak === null || streak.count >= WAITS_FOR_PERSON) continue;
-    if (!waitOver(streak, nowMs)) continue;
-    const found = records.find((r) => r.record.id === streak.record);
-    if (found?.state.kind !== "ended" && found?.state.kind !== "died") continue;
-    for (const id of ownMarkers(pr, ctx.host, streak.record)) {
-      const released = await ctx.records.release(
-        { repo: ctx.slug, pr: pr.number },
-        id,
+    const streak = waitEnded(records, ctx.slug, pr.number, nowMs);
+    if (streak === null) continue;
+    failures.push(
+      ...(await releaseOwnMarkers(
+        ctx,
+        pr,
+        streak.record,
+        "waited out a rate limit",
+      )),
+    );
+  }
+  return failures;
+}
+
+/** The wait of the follow-up of `pr` whose reset has passed and whose pass has ended; `null` for any other. */
+function waitEnded(
+  records: readonly ReadRecord[],
+  slug: string,
+  pr: number,
+  nowMs: number,
+): WaitStreak | null {
+  const streak = waitStreak(records, slug, pr);
+  if (streak === null || streak.count >= WAITS_FOR_PERSON) return null;
+  if (!waitOver(streak, nowMs)) return null;
+  const found = records.find((r) => r.record.id === streak.record);
+  const ended = found?.state.kind === "ended" || found?.state.kind === "died";
+  return ended ? streak : null;
+}
+
+/**
+ * Delete this host's trusted markers on `pr` that name `record`, the
+ * follow-up that `what`; why each one that could not be deleted was not.
+ */
+export async function releaseOwnMarkers(
+  ctx: Pick<SharedContext, "records" | "host" | "slug">,
+  pr: MarkedPr,
+  record: string,
+  what: string,
+): Promise<string[]> {
+  const failures: string[] = [];
+  for (const id of ownMarkers(pr, ctx.host, record)) {
+    const released = await ctx.records.release(
+      { repo: ctx.slug, pr: pr.number },
+      id,
+    );
+    if (!released.ok && released.failure.code !== "not-found")
+      failures.push(
+        `PR #${pr.number}: the marker ${id} of the follow-up that ${what} could not be released: ${released.failure.reason}`,
       );
-      if (!released.ok && released.failure.code !== "not-found")
-        failures.push(
-          `PR #${pr.number}: the marker ${id} of the follow-up that waited out a rate limit could not be released: ${released.failure.reason}`,
-        );
-    }
   }
   return failures;
 }

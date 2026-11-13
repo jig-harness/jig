@@ -26,6 +26,7 @@
 
 import { type RunResult, run } from "../../../../drive-pr/scripts/lib/proc.ts";
 import { postGraphQL, runClient } from "./graphql.ts";
+import { swallow } from "../../../../../shared/errors.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
 import {
   answerClass,
@@ -301,26 +302,13 @@ async function postOnce(
     return unreachable(err);
   }
   const text = await res.text().catch(() => "");
-  // Linear answers a missing entity with HTTP 200 and an errors array, but
-  // an error status may carry the same body.
-  let body: unknown = null;
-  try {
-    body = JSON.parse(text);
-  } catch {
-    // not JSON
-  }
+  const body = jsonOrNull(text);
   const answer = linearAnswer(res.headers, res.status, body);
   settle(governed, answer, sentAt);
-  try {
-    if (
-      res.ok ||
-      (isRecord(body) && Array.isArray(body.errors) && body.errors.length > 0)
-    )
-      return { data: unwrapResponse(body, res.status) };
-  } catch (err) {
-    if (err instanceof LinearApiError) return limited(err, answer);
-    throw err;
-  }
+  // Linear answers a missing entity with HTTP 200 and an errors array, but
+  // an error status may carry the same body.
+  if (res.ok || errorsOf(body).length > 0)
+    return unwrapped(body, res.status, answer);
   return limited(
     new LinearApiError(
       `Linear API HTTP ${res.status}: ${text.slice(0, 300)}`,
@@ -329,6 +317,35 @@ async function postOnce(
     ),
     answer,
   );
+}
+
+/** `text` as JSON, or `null` when it is not JSON. */
+function jsonOrNull(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch (err) {
+    swallow(err, "an answer that is not JSON is read by its status or exit");
+    return null;
+  }
+}
+
+/** The errors a GraphQL body carries; none when it carries no list. */
+function errorsOf(body: unknown): unknown[] {
+  return isRecord(body) && Array.isArray(body.errors) ? body.errors : [];
+}
+
+/** A body's data, or the failure its errors name, rate limited until `answer`'s reset when it refused the credential. */
+function unwrapped(
+  body: unknown,
+  status: number | null,
+  answer: BudgetAnswer,
+): Answer {
+  try {
+    return { data: unwrapResponse(body, status) };
+  } catch (err) {
+    if (err instanceof LinearApiError) return limited(err, answer);
+    throw err;
+  }
 }
 
 /** An ungoverned refusal of a spent credential carries the time it clears. */
@@ -459,41 +476,35 @@ async function cliOnce(
     signal,
   );
   if (cancelled(signal)) return abortedError(signal);
-  const failure = cliFailure(r);
-  if (failure !== null) return failure;
-  let body: unknown;
-  try {
-    body = JSON.parse(r.stdout);
-  } catch {
-    const said = (r.stderr || r.stdout).slice(0, 300);
+  return cliFailure(r) ?? cliAnswer(r, governed);
+}
+
+/** What a client run that finished answered. */
+function cliAnswer(r: RunResult, governed: Governed | null): Answer {
+  const said = (r.stderr || r.stdout).slice(0, 300);
+  const body = jsonOrNull(r.stdout);
+  if (body === null)
     return new LinearApiError(
       `linear api returned no JSON (exit ${r.code}): ${said}`,
       null,
       r.code === 0 ? "invalid" : cliClass(said),
     );
-  }
-  const refused = rateLimitedBody(body);
-  const until = Date.now() + FALLBACK_LIMIT_MS;
-  if (refused)
-    settle(governed, {
-      limitedUntil: until,
-      why: "Linear refused the request (RATELIMITED)",
-    });
-  try {
-    // A failed invocation is a failure even when its output parses: report
-    // the errors it carries, else its exit status.
-    if (r.code === 0 || (isRecord(body) && Array.isArray(body.errors)))
-      return { data: unwrapResponse(body, null) };
-  } catch (err) {
-    if (!(err instanceof LinearApiError)) throw err;
-    return refused ? limited(err, { limitedUntil: until }) : err;
-  }
-  const said = (r.stderr || r.stdout).slice(0, 300);
-  return new LinearApiError(
-    `linear api exited ${r.code}: ${said}`,
-    null,
-    cliClass(said),
-  );
+  const refused: BudgetAnswer = rateLimitedBody(body)
+    ? {
+        limitedUntil: Date.now() + FALLBACK_LIMIT_MS,
+        why: "Linear refused the request (RATELIMITED)",
+      }
+    : {};
+  if (refused.limitedUntil !== undefined) settle(governed, refused);
+  // A failed invocation is a failure even when its output parses: report
+  // the errors it carries, else its exit status.
+  if (r.code !== 0 && errorsOf(body).length === 0)
+    return new LinearApiError(
+      `linear api exited ${r.code}: ${said}`,
+      null,
+      cliClass(said),
+    );
+  return unwrapped(body, null, refused);
 }
 
 /**

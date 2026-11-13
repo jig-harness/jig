@@ -17,7 +17,10 @@
  * or `server-fault`, inside the call's deadline (`shared/outbound/retry.ts`).
  */
 
-import { ghCall } from "../../../../../drive-pr/scripts/lib/proc.ts";
+import {
+  type RunResult,
+  ghCall,
+} from "../../../../../drive-pr/scripts/lib/proc.ts";
 import { swallow } from "../../../../../../shared/errors.ts";
 import { isRecord } from "../../../../../../shared/guards.ts";
 import {
@@ -217,43 +220,70 @@ async function ghOnce(
     },
   );
   if (cancelled(signal)) return abortedError(signal);
-  const parsed = ghHeaders(r.stdout);
-  const run = ghRunFailure(r, Date.now() - began);
+  return ghRunAnswer(r, Date.now() - began);
+}
+
+/** What a finished `gh api graphql` run that took `tookMs` answered. */
+function ghRunAnswer(r: RunResult, tookMs: number): Answer {
+  const run = ghRunFailure(r, tookMs);
   if (r.spawnFailed || r.timedOut || r.bufferExceeded)
     return errorOf(run ?? outboundFailure("invalid", "gh api graphql failed"));
+  const parsed = ghHeaders(r.stdout);
   const body = parsedOrNull(parsed.body);
-  if (r.code === 0) {
-    if (body === null && parsed.body.trim() !== "")
-      return new GitHubApiError(
-        `gh api graphql returned no JSON (exit 0): ${parsed.body.trim().slice(0, 300)}`,
-      );
-    return { body };
-  }
-  // A failed run is a failure even when its output parses: its status
-  // when `--include` printed one, else what `gh` said, names the class.
+  if (r.code !== 0) return ghExitAnswer(r, parsed, body, run, tookMs);
+  if (body === null && parsed.body.trim() !== "")
+    return new GitHubApiError(
+      `gh api graphql returned no JSON (exit 0): ${parsed.body.trim().slice(0, 300)}`,
+    );
+  return { body };
+}
+
+/**
+ * A failed run is a failure even when its output parses: its status when
+ * `--include` printed one, else what `gh` said, names the class, and the
+ * GraphQL errors it carries name it where the status was a success.
+ */
+function ghExitAnswer(
+  r: RunResult,
+  parsed: { status: number; headers: Headers; body: string },
+  body: unknown,
+  run: OutboundFailure | null,
+  tookMs: number,
+): GitHubApiError {
+  const answered = parsed.status !== 200;
   const failure =
-    (parsed.status === 200
-      ? null
-      : gitHubHttpFailure(
-          parsed.status,
-          parsed.headers,
-          parsed.body,
-          Date.now() - began,
-        )) ??
+    (answered
+      ? gitHubHttpFailure(parsed.status, parsed.headers, parsed.body, tookMs)
+      : null) ??
     run ??
     outboundFailure("invalid", `gh api graphql exited ${r.code}`);
-  if (isRecord(body) && Array.isArray(body.errors) && body.errors.length > 0)
-    try {
-      unwrapResponse(body, parsed.status === 200 ? null : failure);
-    } catch (err) {
-      if (err instanceof GitHubApiError) return err;
-      throw err;
-    }
+  const named = errorsFailure(body, answered ? failure : null);
+  if (named !== null) return named;
   const said = (r.stderr || parsed.body).trim().slice(0, 300);
   return errorOf({
     ...failure,
     reason: `gh api graphql exited ${r.code}: ${said}`,
   });
+}
+
+/** The failure the GraphQL errors of a failed answer name, `failure` standing over their types; `null` when it carries none. */
+function errorsFailure(
+  body: unknown,
+  failure: OutboundFailure | null,
+): GitHubApiError | null {
+  if (
+    !isRecord(body) ||
+    !Array.isArray(body.errors) ||
+    body.errors.length === 0
+  )
+    return null;
+  try {
+    unwrapResponse(body, failure);
+  } catch (err) {
+    if (err instanceof GitHubApiError) return err;
+    throw err;
+  }
+  return null;
 }
 
 /**
@@ -352,14 +382,7 @@ async function postOnce(
     Date.now() - began,
   );
   if (failure === null) return { body };
-  try {
-    if (isRecord(body) && Array.isArray(body.errors))
-      unwrapResponse(body, failure);
-  } catch (err) {
-    if (err instanceof GitHubApiError) return err;
-    throw err;
-  }
-  return errorOf(failure);
+  return errorsFailure(body, failure) ?? errorOf(failure);
 }
 
 /** HTTPS transport to `url` with `token`; each call bounded by `GITHUB_TIMEOUT_MS`. */

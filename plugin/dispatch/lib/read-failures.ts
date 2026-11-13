@@ -31,7 +31,7 @@ import { type PickupReads, pickupReads } from "./pickup-reads.ts";
 import type { ReadFailure, RepoReport } from "./types.ts";
 
 /** A call's failure as a read keeps it. */
-export function readFailure(outbound: OutboundFailure): ReadFailure {
+function readFailure(outbound: OutboundFailure): ReadFailure {
   return {
     class: outbound.code,
     ...(outbound.until === undefined

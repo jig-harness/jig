@@ -22,7 +22,7 @@ export const GITHUB = "github";
  * How long a refusal that named no reset holds: GitHub's secondary limits
  * name none, and its primary limit resets within the hour.
  */
-export const FORGE_FALLBACK_LIMIT_MS = 15 * 60_000;
+const FORGE_FALLBACK_LIMIT_MS = 15 * 60_000;
 
 /** What a run of `gh` left that tells how it failed. */
 export interface GhRun {
@@ -104,17 +104,27 @@ export function ghRunFailure(
   });
 }
 
-/** The class `gh`'s error output names. */
+/** The class `gh`'s error output names: a refusal that clears by waiting first, then one that does not. */
 function classOfText(stderr: string, tookMs: number | undefined): FailureClass {
+  return waitingClass(stderr, tookMs) ?? refusalClass(stderr);
+}
+
+/** A spent limit, no answer, or a fault of GitHub's own; `null` for none of them. */
+function waitingClass(
+  stderr: string,
+  tookMs: number | undefined,
+): FailureClass | null {
   if (RATE_LIMITED.test(stderr)) return "rate-limited";
   if (NOT_SENT.test(stderr)) return "unreachable";
   if (SERVER.test(stderr))
-    return tookMs !== undefined &&
-      tookMs >= TIMEOUT_FLOOR_MS &&
-      OUT_OF_TIME.test(stderr)
+    return (tookMs ?? 0) >= TIMEOUT_FLOOR_MS && OUT_OF_TIME.test(stderr)
       ? "too-costly"
       : "server-fault";
-  if (LOST.test(stderr)) return "unreachable";
+  return LOST.test(stderr) ? "unreachable" : null;
+}
+
+/** What GitHub refused: the credential, an absence, or the request itself. */
+function refusalClass(stderr: string): FailureClass {
   if (UNAUTHORIZED.test(stderr)) return "unauthorized";
   if (NOT_FOUND.test(stderr)) return "not-found";
   return "invalid";

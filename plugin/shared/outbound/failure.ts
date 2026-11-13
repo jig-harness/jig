@@ -83,7 +83,7 @@ export const POLICIES: Readonly<Record<FailureClass, FailurePolicy>> = {
 };
 
 /** Whether `code` names a failure class. */
-export function isFailureClass(code: unknown): code is FailureClass {
+function isFailureClass(code: unknown): code is FailureClass {
   return (
     typeof code === "string" &&
     (FAILURE_CLASSES as readonly string[]).includes(code)

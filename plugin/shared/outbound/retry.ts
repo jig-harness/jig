@@ -12,10 +12,10 @@ import { swallow } from "../errors.ts";
 import { failureOf, type OutboundFailure, retriedOnce } from "./failure.ts";
 
 /** The most requests one call sends: the first and one retry. */
-export const MOST_ATTEMPTS = 2;
+const MOST_ATTEMPTS = 2;
 
 /** The backoff before the retry, before its jitter. */
-export const BACKOFF_MS = 1_000;
+const BACKOFF_MS = 1_000;
 
 /** The longest wait before a retry; a system that asks for longer is not asked again in this call. */
 export const MOST_WAIT_MS = 30_000;
@@ -61,38 +61,55 @@ export async function retryRead<T>(
   const { signal } = options;
   const wait = options.wait ?? waitForRetry;
   const now = options.now ?? Date.now;
-  const thrown = options.thrownFailure ?? failureOf;
   for (let attempt = 1; ; attempt++) {
     signal.throwIfAborted();
-    let answer: T;
-    try {
-      answer = await send();
-    } catch (error) {
-      if (signal.aborted) throw error;
-      const delay = retryDelay(thrown(error), attempt, options, now);
-      if (delay === null) throw error;
-      await wait(delay, signal);
-      continue;
-    }
+    const sent = await sendOnce(send);
+    if (!sent.ok && signal.aborted) throw sent.error;
     signal.throwIfAborted();
-    const failure = options.failureOf(answer);
-    const delay =
-      failure === null ? null : retryDelay(failure, attempt, options, now);
-    if (delay === null) return answer;
-    await options.discard?.(answer, signal);
+    const delay = retryDelay(sentFailure(sent, options), attempt, options, now);
+    if (delay === null) return settled(sent);
+    if (sent.ok) await options.discard?.(sent.answer, signal);
     await wait(delay, signal);
   }
 }
 
+/** What one send gave: its answer, or what it threw. */
+type Sent<T> = { ok: true; answer: T } | { ok: false; error: unknown };
+
+async function sendOnce<T>(send: () => Promise<T>): Promise<Sent<T>> {
+  try {
+    return { ok: true, answer: await send() };
+  } catch (error) {
+    return { ok: false, error };
+  }
+}
+
+/** The failure a send met: its answer's, or its throw's; `null` for an answer to return. */
+function sentFailure<T>(
+  sent: Sent<T>,
+  options: RetryOptions<T>,
+): OutboundFailure | null {
+  return sent.ok
+    ? options.failureOf(sent.answer)
+    : (options.thrownFailure ?? failureOf)(sent.error);
+}
+
+/** The send's answer, or its throw again. */
+function settled<T>(sent: Sent<T>): T {
+  if (sent.ok) return sent.answer;
+  throw sent.error;
+}
+
 /** How long to wait before sending again; `null` when the call does not send again. */
 function retryDelay<T>(
-  failure: OutboundFailure,
+  failure: OutboundFailure | null,
   attempt: number,
   options: RetryOptions<T>,
   now: () => number,
 ): number | null {
-  if (!options.read || attempt >= MOST_ATTEMPTS || !retriedOnce(failure.code))
+  if (failure === null || !options.read || attempt >= MOST_ATTEMPTS)
     return null;
+  if (!retriedOnce(failure.code)) return null;
   const delay = backoffMs(failure, options.random);
   if (delay > MOST_WAIT_MS) return null;
   if (options.deadlineAt !== undefined && now() + delay >= options.deadlineAt)

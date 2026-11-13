@@ -42,7 +42,7 @@ import {
   type StandingAnswer,
 } from "./routine-questions.ts";
 import { isRerun } from "./session-startup.ts";
-import { ownMarkers } from "./followup-waits.ts";
+import { releaseOwnMarkers } from "./followup-waits.ts";
 import { questionOf } from "./session.ts";
 import type { SharedContext } from "./shared-launches.ts";
 
@@ -185,16 +185,14 @@ export async function releaseRoutineMarkers(
       failures.push(kept);
       continue;
     }
-    for (const id of ownMarkers(pr, ctx.host, owed.record)) {
-      const released = await ctx.records.release(
-        { repo: ctx.slug, pr: pr.number },
-        id,
-      );
-      if (!released.ok && released.failure.code !== "not-found")
-        failures.push(
-          `PR #${pr.number}: the marker ${id} of the follow-up that stopped on a routine question could not be released: ${released.failure.reason}`,
-        );
-    }
+    failures.push(
+      ...(await releaseOwnMarkers(
+        ctx,
+        pr,
+        owed.record,
+        "stopped on a routine question",
+      )),
+    );
   }
   return failures;
 }
