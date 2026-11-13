@@ -28,6 +28,7 @@ import {
   type StateNames,
   TrackerRequestError,
 } from "./port.ts";
+import { AssignerUnknown } from "./assigner-unknown.ts";
 import type { CorePoolIssue, CoreTracker } from "./facets/tracker.ts";
 import { readEstimate, type WithEstimate } from "./linear-facets.ts";
 import {
@@ -207,10 +208,12 @@ function names(user: unknown, name: string): boolean {
 }
 
 function assigner(actor: unknown, key: string, team: string): Assigner {
-  if (!isRecord(actor) || typeof actor.id !== "string")
-    throw new AssignmentError(
+  if (actor === null || actor === undefined)
+    throw new AssignerUnknown(
       `issue ${key}: its assignment was made by no user (an integration or an automation)`,
     );
+  if (!isRecord(actor) || typeof actor.id !== "string")
+    throw new AssignmentError(`issue ${key}: its assigner cannot be read`);
   field(actor.teams, `issue ${key} assigner.teams`);
   return teamMember(actor as Record<string, unknown> & { id: string }, team);
 }
@@ -332,7 +335,7 @@ export function assignedOperations(
         .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))
         .at(-1);
       if (latest === undefined)
-        throw new AssignmentError(
+        throw new AssignerUnknown(
           `issue ${key}: its history holds no assignment of ${who}`,
         );
       return assigner(latest.actor, key, team);

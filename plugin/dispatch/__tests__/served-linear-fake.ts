@@ -21,6 +21,12 @@ export interface FakeIssue {
   description: string;
   /** Keys of the issues that block this one. */
   blockedBy: string[];
+  /**
+   * What its assignment history answers: the assignment by a team member
+   * (`assigned`, the default), no assignment of the assignee (`none`), an
+   * assignment made by no user (`no-user`), or a failed read (`fail`).
+   */
+  history?: "assigned" | "none" | "no-user" | "fail";
 }
 
 const STATE_IDS: Record<string, string> = {};
@@ -345,6 +351,8 @@ export class FakeLinear {
       }
       case "TrackerAssignmentHistory": {
         const i = this.issues.get(String(variables.id));
+        if (i?.history === "fail")
+          throw new Error(`the history of ${i.identifier} cannot be read`);
         const user = {
           id: i?.assignee,
           email: i?.assignee,
@@ -354,19 +362,26 @@ export class FakeLinear {
         return {
           issue: {
             assignee: user,
-            history: page([
-              {
-                id: "h1",
-                createdAt: "2026-10-02T00:00:00.000Z",
-                toAssignee: user,
-                actor: {
-                  id: "lead",
-                  name: "lead",
-                  guest: false,
-                  teams: { nodes: [{ key: "ENG" }] },
-                },
-              },
-            ]),
+            history: page(
+              i?.history === "none"
+                ? []
+                : [
+                    {
+                      id: "h1",
+                      createdAt: "2026-10-02T00:00:00.000Z",
+                      toAssignee: user,
+                      actor:
+                        i?.history === "no-user"
+                          ? null
+                          : {
+                              id: "lead",
+                              name: "lead",
+                              guest: false,
+                              teams: { nodes: [{ key: "ENG" }] },
+                            },
+                    },
+                  ],
+            ),
           },
         };
       }
