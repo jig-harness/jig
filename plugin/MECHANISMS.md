@@ -467,8 +467,9 @@ development and shipped as a version.
   ([`repositories[].stages`](CONFIGURATION.md#dispatch)), when that run
   again fits the pull request's recovery budget and its attempt was not
   itself a run again; one that failed before questions were tagged runs
-  again with every class's standing answer while its launch record is still
-  on this host (`dispatch/lib/routine-reruns.ts`). A failure that does not
+  again with every class's standing answer, from its launch record while that
+  is still on this host or from the retry evidence kept with its outcome
+  (`dispatch/lib/routine-reruns.ts`). A failure that does not
   qualify (another host's marker, a question that is not routine or does
   not read, an attempt that was itself a run again) is notified as a need on
   the configured cadence and not started again until a person answers
