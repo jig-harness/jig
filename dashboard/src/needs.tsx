@@ -274,7 +274,7 @@ function sendableRepos(rows: NeedRow[]): string[] {
   const repos = rows.flatMap((row) =>
     row.type === "need" && "to" in row.need.send ? [row.need.send.to.repo] : [],
   );
-  return [...new Set(repos)].sort();
+  return [...new Set(repos)].sort((a, b) => a.localeCompare(b));
 }
 
 /** Send's settings: the toggle in the panel's head, shown while a card can send or a token is kept, and the panel it opens. */
