@@ -67,8 +67,9 @@ obligations:
    [budget record](../../GLOSSARY.md) for the credential. A spent or refused
    credential sends nothing until the time the system named.
 4. **Bound what one call can cost.** Every call has a deadline. Every list
-   has a page size, and nested page sizes multiply to at most a ceiling
-   declared beside the query. A paged read shrinks its page when the system
+   has a page size, and the query's total (nested page sizes multiplied
+   along each path, summed over all paths) is at most a ceiling declared
+   beside the query, in objects or in the system's own cost unit. A paged read shrinks its page when the system
    runs out of time on it.
 5. **Record and report what it cost.** Requests, the system's own cost unit
    and the time taken, by named operation and by caller, in a
@@ -141,8 +142,8 @@ Any change to an integration is reviewed against these obligations.
 [ratchet](../../GLOSSARY.md) over the calls that predate the rule:
 `scripts/check-outbound-boundary.ts` fails a call that leaves by any door
 but a transport (obligation 1), and `scripts/check-query-cost.ts` fails a
-query with a list that has no page size or whose nested sizes pass its
-declared ceiling (obligation 4). The library's types hold obligations 3, 5
+query with a list that has no page size or whose total cost, summed over
+all its paths, passes its declared ceiling (obligation 4). The library's types hold obligations 3, 5
 and 6: a transport cannot send without the budget, cannot return without a
 ledger entry, and cannot fail outside the classes. Tests with a fake of each
 system hold obligations 2 and 7 by counting requests and by reading what a

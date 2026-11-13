@@ -2162,10 +2162,12 @@ make, use the entry's term instead.
   them, what a refusal looks like and who owns the quota. It holds no
   number the system reports; those are read from each answer. Planned
   ([ROADMAP.md](ROADMAP.md) item 51).
-- **Cost ceiling** — the most objects a query may return in total (the sum
-  over its paths of the nested page sizes' product), declared beside the
-  query, so that what one request can cost an outside system is bounded
-  when the query is written and a gate can check it.
+- **Cost ceiling** — the most a query may cost in total, declared beside
+  the query with its unit: objects (the sum over its paths of the nested
+  page sizes' product) or, where the system's formula can be computed from
+  the query text, the system's own cost unit. What one request can cost an
+  outside system is then bounded when the query is written, and a gate can
+  check it.
   Planned ([ROADMAP.md](ROADMAP.md) item 51).
 - **ADF (Atlassian Document Format)** — the JSON form Jira stores rich
   text in (issue descriptions, comments). Jig's Jira adapter converts it to

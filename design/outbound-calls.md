@@ -172,12 +172,15 @@ was sent: the caller reads the item again before it writes again.
 
 - Every call has a deadline, shared by its retries.
 - Every list a query selects has a page size. Each query is declared with
-  its name and a **cost ceiling**: the most objects it may return in
-  total. A path's size is the product of the page sizes along it, and the
-  query's is the sum over all its paths, sibling selections, fragments and
-  repeated selections included. The ceiling is in the system's own unit
-  where its formula is computable from the text, and a query costing
-  exactly its ceiling passes.
+  its name and a **cost ceiling** with a declared unit. The unit is
+  objects: a path's size is the product of the page sizes along it, and the
+  query's size is the sum over all its paths, sibling selections, fragments
+  and repeated selections included. Where the system charges in its own
+  unit (points) and its formula is computable from the query text, the
+  query declares that unit and the gate computes the formula, scalar
+  charges and rounding included. A ceiling is only compared with a
+  quantity of its own unit, and a query costing exactly its ceiling
+  passes.
 - A paged read goes through `paging`: on `too-costly` it asks again for
   half the page, down to one item, and keeps the size it ended at for the
   next run.
