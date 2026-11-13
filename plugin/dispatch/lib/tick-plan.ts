@@ -35,7 +35,7 @@ import {
   stewardRecords,
 } from "./steward.ts";
 import { applyStewardOrder } from "./steward-queue.ts";
-import { trackerStateMaps } from "../../skills/do-item/scripts/lib/tracker/port.ts";
+import type { Tracker } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { bodyLinker } from "../../skills/do-item/scripts/lib/linked-pr.ts";
 import type { StalledPrInput } from "./stalled-pr.ts";
 
@@ -118,8 +118,9 @@ function withStalledPr(observation: RepoObservation): {
   return {
     prOpen: {
       prs: forge.ok && forge.linkTexts !== undefined ? forge.linkTexts : null,
-      prOpen: sharedPrOpen(tracked.tracker),
+      prOpen: (nativeType) => prOpenOf(tracked.tracker, nativeType),
       owner: ctx.owner,
+      pickup: opened.stages.has("pickup"),
       links: (body, key) =>
         bodyLinker(key, {
           repository,
@@ -130,16 +131,13 @@ function withStalledPr(observation: RepoObservation): {
   };
 }
 
-/** The `pr_open` name every workflow of the tracker agrees on; `null` where there is none or the workflows differ, since the move cannot be told to suit each item's own. */
-function sharedPrOpen(
-  tracker: Parameters<typeof trackerStateMaps>[0] | null | undefined,
+/** The `pr_open` name of the workflow an item of this native type is in; `null` where there is no tracker or that workflow names none. */
+function prOpenOf(
+  tracker: Pick<Tracker, "stateName"> | null | undefined,
+  nativeType: string | null,
 ): string | null {
   if (tracker == null) return null;
-  const names = new Set(
-    trackerStateMaps(tracker).map((map) => map.pr_open?.trim().toLowerCase()),
-  );
-  const [only] = [...names];
-  return names.size === 1 && only ? tracker.stateName("pr_open") : null;
+  return tracker.stateName("pr_open", nativeType)?.trim() || null;
 }
 
 /** A record's execution state: a replay moves it without making a new record. */

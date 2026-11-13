@@ -33,10 +33,12 @@ import type { PrLinkText } from "./work-links.ts";
 export interface StalledPrInput {
   /** The open pull requests as the tick's query of the repository read them; `null` when they did not read. */
   prs: readonly PrLinkText[] | null;
-  /** The tracker's name for `pr_open`; `null` where the repository names none. */
-  prOpen: string | null;
+  /** The tracker's name for `pr_open` in the workflow of an item of this native type; `null` where that workflow names none. */
+  prOpen: (nativeType: string | null) => string | null;
   /** Whether this host owns the repository: only the owner writes to the tracker. */
   owner: boolean;
+  /** Whether the machine file enables the `pickup` stage for the repository: the move is applied by that stage only. */
+  pickup: boolean;
   /** Whether a pull request's description links the item, as `do-item` links it. */
   links: (body: string, key: string) => boolean;
 }
@@ -131,7 +133,7 @@ function launchPrStep(
   pr: LaunchPr,
   input: StalledPrInput,
 ): LaunchPrStep {
-  const { prOpen } = input;
+  const prOpen = input.prOpen(item.nativeType ?? null)?.trim() || null;
   if (prOpen === null)
     return {
       kind: "stall",
@@ -146,6 +148,11 @@ function launchPrStep(
     return {
       kind: "stall",
       note: `${prText(pr)}; only the host that owns the repository moves an item to pr_open, and this host does not own it`,
+    };
+  if (!input.pickup)
+    return {
+      kind: "stall",
+      note: `${prText(pr)}; the pickup stage that moves an item to pr_open is not enabled for this repository on this host, so nothing moved`,
     };
   return {
     kind: "move",

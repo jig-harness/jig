@@ -11,7 +11,10 @@ import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { bodyLinker } from "../../skills/do-item/scripts/lib/linked-pr.ts";
 import type { Tracker } from "../../skills/do-item/scripts/lib/tracker/port.ts";
-import { applyPrOpenMoves } from "../lib/actions/pr-open-moves.ts";
+import {
+  applyPrOpenMoves,
+  type MoveRoom,
+} from "../lib/actions/pr-open-moves.ts";
 import {
   type LaunchRecord,
   type ReadRecord,
@@ -84,6 +87,10 @@ const sessions: SessionsReport = {
   ],
 };
 
+function room(over: Partial<MoveRoom> = {}): MoveRoom {
+  return { left: () => null, sessions: async () => sessions, ...over };
+}
+
 function pr(head: string, body = "Closes #12"): PrLinkText {
   return {
     number: 31,
@@ -101,8 +108,9 @@ function prOpen(
 ): StalledPrInput {
   return {
     prs,
-    prOpen: "PR Open",
+    prOpen: () => "PR Open",
     owner: true,
+    pickup: true,
     links: (body, key) =>
       bodyLinker(key, {
         repository: SLUG,
@@ -183,7 +191,7 @@ describe("a stalled pickup whose launch opened a pull request", () => {
 
     const fake = fakeTracker("In Progress");
     const report = reportWith(plan.moves);
-    await applyPrOpenMoves(report, fake.tracker);
+    await applyPrOpenMoves(report, fake.tracker, room());
     expect(fake.moves).toEqual([["#12", "pr_open"]]);
     expect(fake.comments).toHaveLength(1);
     const [, body] = fake.comments[0] ?? [];
@@ -222,13 +230,33 @@ describe("a stalled pickup whose launch opened a pull request", () => {
   });
 
   it("frames the stall need with the pull request named where the repository names no pr_open state", () => {
-    const plan = planPickups(input(prOpen([pr(BRANCH)], { prOpen: null })));
+    const plan = planPickups(
+      input(prOpen([pr(BRANCH)], { prOpen: () => null })),
+    );
     expect(plan.moves).toEqual([]);
     const [need] = plan.actions;
     expect(need).toMatchObject({ target: "#12", cause: "stalled" });
     expect(need?.evidence.pullRequest).toBe(URL);
     expect(need?.reason).toContain("pull request #31");
     expect(need?.reason).toContain("names no pr_open state, so nothing moved");
+  });
+
+  it("moves nothing where the pickup stage is not enabled, and keeps the stall need", () => {
+    const plan = planPickups(input(prOpen([pr(BRANCH)], { pickup: false })));
+    expect(plan.moves).toEqual([]);
+    expect(plan.actions[0]?.reason).toContain("pickup stage");
+  });
+
+  it("resolves pr_open for the item's own workflow", () => {
+    const only = (t: string | null) => (t === "Task" ? "PR Open" : null);
+    const some = planPickups(input(prOpen([pr(BRANCH)], { prOpen: only })));
+    expect(some.moves).toEqual([]);
+    const claimed = input(prOpen([pr(BRANCH)], { prOpen: only }));
+    claimed.claimed = (claimed.claimed ?? []).map((c) => ({
+      ...c,
+      nativeType: "Task",
+    }));
+    expect(planPickups(claimed).moves[0]).toMatchObject({ to: "PR Open" });
   });
 
   it("moves nothing on a host that does not own the repository", () => {
@@ -289,7 +317,7 @@ describe("--apply of a move to pr_open", () => {
   it("leaves an item the tracker cannot read as it is, and reports it", async () => {
     const fake = fakeTracker("In Progress", true);
     const report = reportWith([move]);
-    await applyPrOpenMoves(report, fake.tracker);
+    await applyPrOpenMoves(report, fake.tracker, room());
     expect(fake.moves).toEqual([]);
     expect(fake.comments).toEqual([]);
     expect(report.prOpenMoves?.[0]).toMatchObject({ outcome: "refused" });
@@ -299,7 +327,7 @@ describe("--apply of a move to pr_open", () => {
   it("waits when the item left the state the plan read it in", async () => {
     const fake = fakeTracker("Done");
     const report = reportWith([move]);
-    await applyPrOpenMoves(report, fake.tracker);
+    await applyPrOpenMoves(report, fake.tracker, room());
     expect(fake.moves).toEqual([]);
     expect(report.prOpenMoves?.[0]).toMatchObject({ outcome: "waits" });
   });
@@ -307,12 +335,46 @@ describe("--apply of a move to pr_open", () => {
   it("waits when the tick has run out of time", async () => {
     const fake = fakeTracker("In Progress");
     const report = reportWith([move]);
-    await applyPrOpenMoves(report, fake.tracker, () => "out of time");
+    await applyPrOpenMoves(report, fake.tracker, room({ left: () => 0 }));
     expect(fake.moves).toEqual([]);
-    expect(report.prOpenMoves?.[0]).toMatchObject({
-      outcome: "waits",
-      detail: "out of time",
-    });
+    expect(report.prOpenMoves?.[0]).toMatchObject({ outcome: "waits" });
+    expect(report.prOpenMoves?.[0]?.detail).toContain("no time left");
+  });
+
+  it("waits when a session holds the item at the fresh read", async () => {
+    const fake = fakeTracker("In Progress");
+    const report = reportWith([move]);
+    const workspaces = sessions.ok ? sessions.workspaces : [];
+    const running: SessionsReport = {
+      ok: true,
+      source: "fake",
+      workspaces: workspaces.map((w) => ({
+        ...w,
+        agents: [{ state: "working" } as never],
+      })),
+    };
+    await applyPrOpenMoves(
+      report,
+      fake.tracker,
+      room({ sessions: async () => running }),
+    );
+    expect(fake.moves).toEqual([]);
+    expect(report.prOpenMoves?.[0]).toMatchObject({ outcome: "waits" });
+    expect(report.prOpenMoves?.[0]?.detail).toContain("a session holds");
+  });
+
+  it("waits when the runtime cannot be read at the fresh read", async () => {
+    const fake = fakeTracker("In Progress");
+    const report = reportWith([move]);
+    await applyPrOpenMoves(
+      report,
+      fake.tracker,
+      room({
+        sessions: async () => ({ ok: false, source: "fake", reason: "down" }),
+      }),
+    );
+    expect(fake.moves).toEqual([]);
+    expect(report.prOpenMoves?.[0]).toMatchObject({ outcome: "waits" });
   });
 });
 

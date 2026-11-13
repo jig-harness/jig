@@ -23,7 +23,7 @@ import { applyFollowups } from "./actions/followup.ts";
 import { applyNotices } from "./actions/notify.ts";
 import { applyPickups } from "./actions/pickup.ts";
 import { applyPrOpenMoves } from "./actions/pr-open-moves.ts";
-import { outOfTime } from "./actions/launch.ts";
+import { timeLeftMs } from "./actions/launch.ts";
 import { applySteward } from "./actions/steward.ts";
 import { applyStewardRecords } from "./steward-apply.ts";
 import { applySteers, retireSteers } from "./actions/steer.ts";
@@ -376,7 +376,10 @@ async function applyStages(
   // A stalled pickup's finished work moves to pr_open on the host that owns the repository, as one of the dispatcher's own tracker writes.
   await guard("pickup", async () => {
     if (enabled.has("pickup") && inputs.shared.owner && tracked.tracker)
-      await applyPrOpenMoves(report, tracked.tracker, () => outOfTime(apply));
+      await applyPrOpenMoves(report, tracked.tracker, {
+        left: () => timeLeftMs(apply),
+        sessions: fresh,
+      });
   });
   // The nudges first: a nudge that went unanswered is notified in the same tick.
   await guard("steer", async () => {

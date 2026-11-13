@@ -95,6 +95,8 @@ export interface ClaimedItem {
   /** Its link as the tracker listing gave it; absent where a reader gives none. */
   url?: string | null;
   state: string;
+  /** The tracker's own issue type where the read took it, which selects the workflow whose `pr_open` the item moves to. */
+  nativeType?: string | null;
   /** Read for a served person rather than `dispatch.identity`: a person starts their own work too, so only this machine's pickup record makes the claim dispatch's. */
   served?: true;
   /** When the tracker last saw the item change; absent where the read has none. */
