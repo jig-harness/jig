@@ -73,6 +73,17 @@ function fixture(startup = true) {
     },
   };
 }
+
+function runFixtureSource(f: ReturnType<typeof fixture>, source: string) {
+  const result = Bun.spawnSync(f.argv(source), {
+    env: f.env,
+    stdout: "pipe",
+    stderr: "pipe",
+    timeout: 20000,
+  });
+  expectSpawnExit(result, 0);
+  return result;
+}
 function inventory(store: string) {
   const result = fixtureScopeInventory(store);
   if (!result.ok) throw new Defect(result.failure.reason);
@@ -203,13 +214,7 @@ test("an isolated file fixture preserves relative imports and closes its members
     fs.writeFileSync(scope.root+'/program.ts',"import {value} from './value.ts';console.log(value);");
     const child=Bun.spawnSync(fixtureArgs('./program.ts'),{cwd:scope.root,env:process.env,stdout:'pipe',stderr:'pipe'});
     if(child.exitCode!==0){process.stderr.write(child.stderr);process.exit(1);}process.stdout.write(child.stdout);`;
-  const result = Bun.spawnSync(f.argv(source), {
-    env: f.env,
-    stdout: "pipe",
-    stderr: "pipe",
-    timeout: 20000,
-  });
-  expectSpawnExit(result, 0);
+  const result = runFixtureSource(f, source);
   expect(result.stdout.toString().trim()).toBe("closed");
   const scope = firstScope(f.store);
   expect((await proveFixtureScope(scope.root, scope.registry)).state).toBe(
@@ -224,13 +229,7 @@ test("an opaque launch preserves an application argument that also names the ori
     fs.writeFileSync(file,'console.log(process.argv[2]);');
     const child=Bun.spawnSync(fixtureArgs(file,${JSON.stringify(original)}),{env:process.env,stdout:'pipe',stderr:'pipe'});
     if(child.exitCode!==0){process.stderr.write(child.stderr);process.exit(1);}process.stdout.write(child.stdout);`;
-  const result = Bun.spawnSync(f.argv(source), {
-    env: f.env,
-    stdout: "pipe",
-    stderr: "pipe",
-    timeout: 20000,
-  });
-  expectSpawnExit(result, 0);
+  const result = runFixtureSource(f, source);
   expect(result.stdout.toString().trim()).toBe(original);
   const scope = firstScope(f.store);
   expect((await proveFixtureScope(scope.root, scope.registry)).state).toBe(
@@ -245,13 +244,7 @@ test("a trailing Bun runtime flag cannot override the bootstrap config and close
     fs.writeFileSync(config,'preload=['+JSON.stringify(hook)+']');
     const child=Bun.spawnSync(fixtureArgs('-e','0','--config='+config),{env:process.env,stdout:'pipe',stderr:'pipe'});
     if(child.exitCode!==0){process.stderr.write(child.stderr);process.exit(1);}`;
-  const result = Bun.spawnSync(f.argv(source), {
-    env: f.env,
-    stdout: "pipe",
-    stderr: "pipe",
-    timeout: 20000,
-  });
-  expectSpawnExit(result, 0);
+  runFixtureSource(f, source);
   const scope = firstScope(f.store);
   const proof = await proveFixtureScope(scope.root, scope.registry);
   expect(proof.state).toBe("unverified");

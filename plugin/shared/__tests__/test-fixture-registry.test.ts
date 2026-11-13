@@ -43,10 +43,7 @@ function fixture() {
     ],
   };
 }
-test("an acknowledgement is idempotent only for its own process", () => {
-  const f = fixture();
-  expect(acknowledgeFixtureLaunch(f.launch)).toEqual({ ok: true, value: true });
-  expect(acknowledgeFixtureLaunch(f.launch)).toEqual({ ok: true, value: true });
+function expectOtherProcessRefused(f: ReturnType<typeof fixture>) {
   const other = Bun.spawnSync(f.args(f.source), {
     env: { ...process.env },
     stdout: "pipe",
@@ -58,6 +55,12 @@ test("an acknowledgement is idempotent only for its own process", () => {
     ok: false,
     failure: { code: "fixture-acknowledgement" },
   });
+}
+test("an acknowledgement is idempotent only for its own process", () => {
+  const f = fixture();
+  expect(acknowledgeFixtureLaunch(f.launch)).toEqual({ ok: true, value: true });
+  expect(acknowledgeFixtureLaunch(f.launch)).toEqual({ ok: true, value: true });
+  expectOtherProcessRefused(f);
 });
 test("an unfinished publication cannot transfer its immutable claim to another process", () => {
   const f = fixture();
@@ -65,17 +68,7 @@ test("an unfinished publication cannot transfer its immutable claim to another p
     join(f.launch.registry, "nodes", `${f.launch.node}.claim`),
     encodeIdentity(ownIdentity()),
   );
-  const other = Bun.spawnSync(f.args(f.source), {
-    env: { ...process.env },
-    stdout: "pipe",
-    stderr: "pipe",
-    timeout: 20000,
-  });
-  expectSpawnExit(other, 0);
-  expect(JSON.parse(other.stdout.toString())).toMatchObject({
-    ok: false,
-    failure: { code: "fixture-acknowledgement" },
-  });
+  expectOtherProcessRefused(f);
 });
 test("a registered child without its durable claim leaves membership unverified", () => {
   const f = fixture();

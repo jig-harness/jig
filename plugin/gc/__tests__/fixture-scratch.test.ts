@@ -208,64 +208,47 @@ test("a nested legacy owner vetoes collection of a recreated registered root", a
   expect(existsSync(f.root)).toBe(true);
 });
 
+async function expectExitedLegacyOwnerUnverified(
+  f: ReturnType<typeof setup>,
+  ownerScope: string,
+) {
+  const owner = Bun.spawnSync(
+    [
+      process.execPath,
+      "-e",
+      `
+        const { writeScratchOwner } = await import(${JSON.stringify(resolve(import.meta.dir, "../../shared/scratch-owner.ts"))});
+        writeScratchOwner(${JSON.stringify(ownerScope)});
+      `,
+    ],
+    {
+      env: { ...process.env },
+      stdout: "pipe",
+      stderr: "pipe",
+      timeout: 30_000,
+    },
+  );
+  expectSpawnExit(owner, 0);
+  const result = await collect(f, true);
+  expect(
+    result.receipt.resources.find((line) => line.resource === f.root),
+  ).toMatchObject({
+    outcome: "unverified",
+    reason: "legacy owner scope lacks a matching durable fixture registration",
+  });
+  expect(existsSync(f.root)).toBe(true);
+}
+
 test("an exited unregistered nested legacy owner vetoes collection", async () => {
   const f = setup();
   const nested = join(f.root, "nested");
   mkdirSync(nested);
-  const owner = Bun.spawnSync(
-    [
-      process.execPath,
-      "-e",
-      `
-        const { writeScratchOwner } = await import(${JSON.stringify(resolve(import.meta.dir, "../../shared/scratch-owner.ts"))});
-        writeScratchOwner(${JSON.stringify(nested)});
-      `,
-    ],
-    {
-      env: { ...process.env },
-      stdout: "pipe",
-      stderr: "pipe",
-      timeout: 30_000,
-    },
-  );
-  expectSpawnExit(owner, 0);
-  const result = await collect(f, true);
-  expect(
-    result.receipt.resources.find((line) => line.resource === f.root),
-  ).toMatchObject({
-    outcome: "unverified",
-    reason: "legacy owner scope lacks a matching durable fixture registration",
-  });
-  expect(existsSync(f.root)).toBe(true);
+  await expectExitedLegacyOwnerUnverified(f, nested);
 });
 
 test("an exited replacement owner cannot claim an earlier registration", async () => {
   const f = setup();
-  const owner = Bun.spawnSync(
-    [
-      process.execPath,
-      "-e",
-      `
-        const { writeScratchOwner } = await import(${JSON.stringify(resolve(import.meta.dir, "../../shared/scratch-owner.ts"))});
-        writeScratchOwner(${JSON.stringify(f.root)});
-      `,
-    ],
-    {
-      env: { ...process.env },
-      stdout: "pipe",
-      stderr: "pipe",
-      timeout: 30_000,
-    },
-  );
-  expectSpawnExit(owner, 0);
-  const result = await collect(f, true);
-  expect(
-    result.receipt.resources.find((line) => line.resource === f.root),
-  ).toMatchObject({
-    outcome: "unverified",
-    reason: "legacy owner scope lacks a matching durable fixture registration",
-  });
-  expect(existsSync(f.root)).toBe(true);
+  await expectExitedLegacyOwnerUnverified(f, f.root);
 });
 
 test("native launch uncertainty retains scratch after its parent exits", async () => {
