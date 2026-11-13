@@ -529,8 +529,15 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
   async function filedTypes(signal?: AbortSignal): Promise<string[]> {
     const names = [settings.issueType];
     if (settings.subtaskType !== null) names.push(settings.subtaskType);
+    else {
+      // Filing a child of a standard parent uses the project's one sub-task type.
+      const subtasks = (await client.issueTypes(signal)).filter(
+        (t) => t.subtask,
+      );
+      if (subtasks.length === 1) names.push(subtasks[0]!.name);
+    }
     for (const value of type?.values ?? []) {
-      const kept = await issueTypeOf(value, signal).catch(() => null);
+      const kept = await issueTypeOf(value, signal);
       if (kept !== null) names.push(kept.name);
     }
     return names.filter((n, i) => names.findIndex((m) => same(m, n)) === i);
@@ -547,7 +554,12 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
         const name = client.model.priorityName(n);
         return name === null ? [] : [name];
       });
-      checkPriorityNames(names, await client.priorities(signal));
+      // Every configured name must be a site priority; the create screens
+      // need only the names a write uses.
+      checkPriorityNames(
+        Object.values(settings.priorities).flat(),
+        await client.priorities(signal),
+      );
       for (const issueType of await filedTypes(signal)) {
         refuseStopped(signal);
         const found = await createScreen(issueType, signal)();

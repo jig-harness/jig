@@ -689,6 +689,21 @@ describe("Jira: a native priority store", () => {
     expect(JSON.stringify(h)).toContain("priority 'Highest'");
   });
 
+  it("reports a listed alternative name the site does not have, though the written name exists", async () => {
+    const [h] = await health(
+      {},
+      {
+        ...STORES,
+        issue_tracker: {
+          ...STORES.issue_tracker,
+          jira: { priorities: { urgent: ["Highest", "Missing"] } },
+        },
+      },
+    );
+    expect(h).toMatchObject({ status: "failed" });
+    expect(JSON.stringify(h)).toContain("priority 'Missing'");
+  });
+
   it("reports a create screen without the priority field, naming the screen of the issue type a native type files", async () => {
     const [h] = await health({
       "GET issue/createmeta/ENG/issuetypes/t1": {
