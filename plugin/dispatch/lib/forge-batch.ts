@@ -212,8 +212,12 @@ async function shrinking(
   // A request short only because fewer items remain is no shrink to keep.
   if (read.size < Math.min(paging.size, most)) paging.size = read.size;
   if (read.outcome.ok) {
-    paging.read += 1;
-    paging.slowestMs = Math.max(paging.slowestMs, read.tookMs);
+    // Only a request asked at the whole size says how that size fares: a
+    // shorter one proves nothing about it, so it may not grow or halve it.
+    if (read.size === paging.size) {
+      paging.read += 1;
+      paging.slowestMs = Math.max(paging.slowestMs, read.tookMs);
+    }
     return read.outcome;
   }
   const { code, reason } = read.outcome.failure;

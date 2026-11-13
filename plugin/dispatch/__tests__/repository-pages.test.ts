@@ -229,6 +229,20 @@ describe("named pull requests' comments the forge cannot answer a full query of"
     expect(sets).toEqual([]);
   });
 
+  it("does not grow an aged size on a read that never asked it", async () => {
+    const { asked, ask } = commentsForge(50);
+    const { sizes, sets } = kept({
+      [`comments:${SLUG}`]: {
+        size: 6,
+        shrankAt: Date.now() - 2 * GROW_AFTER_MS,
+      },
+    });
+    const read = await readComments(SLUG, [1, 2], sizes, ask);
+    expect(read.ok).toBe(true);
+    expect(asked.map((chunk) => chunk.length)).toEqual([2]);
+    expect(sets).toEqual([]);
+  });
+
   it("keeps no size when no pull request is named", async () => {
     const { asked, ask } = commentsForge(8);
     const { sizes, sets } = kept({
