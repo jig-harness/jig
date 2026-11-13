@@ -581,7 +581,11 @@ describe("a nested epic's parents on the tick after a cold one", () => {
     const first = await tick(tracker, cache, 0);
     expect(first.wanted).toHaveLength(1);
     const before = fake.count();
-    await tick(tracker, cache, 2);
+    const second = await tick(tracker, cache, 2);
     expect(fake.requests.slice(before)).toEqual(["TrackerChanges"]);
+    expect(second.wanted.map((pickup) => pickup.key)).toEqual(
+      first.wanted.map((pickup) => pickup.key),
+    );
+    expect(second.unplaced).toEqual(first.unplaced);
   });
 });
