@@ -505,6 +505,43 @@ const LINE: LineSnapshot = {
 };
 
 describe("jig ask --waiting", () => {
+  it("lists a host-wide tracker credential need without inventing a station address", async () => {
+    const w = world();
+    const firstNeed = LINE.needs[0];
+    if (firstNeed === undefined) throw new Error("fixture has no line need");
+    writeLine(
+      {
+        ...LINE,
+        needs: [
+          {
+            ...firstNeed,
+            cause: "tracker-unreachable",
+            repo: "host",
+            target: "account dispatch",
+            pr: null,
+            item: null,
+            decisions: [],
+          },
+        ],
+      },
+      "{}",
+      w.state,
+    );
+
+    const json = await w.ask(["--waiting", "--json"], w.away);
+    expectSpawnExit(json, 0);
+    expect((JSON.parse(json.stdout) as WaitingAnswer).waiting).toContainEqual(
+      expect.objectContaining({
+        address: null,
+        target: "account dispatch",
+        act: "authorize the account's tracker credential",
+      }),
+    );
+    const text = await w.ask(["--waiting"], w.away);
+    expectSpawnExit(text, 0);
+    expect(text.stdout).toContain("host: account dispatch");
+  });
+
   it("lists what the newest tick's line found waiting on a person, with no forge call", async () => {
     const w = world();
     writeLine(LINE, "{}", w.state);

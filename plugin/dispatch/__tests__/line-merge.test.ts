@@ -259,6 +259,28 @@ describe("mergeLine", () => {
     ]);
   });
 
+  test("keeps host-wide needs from the line before for a wake-up, and replaces them on a tick that wrote the machine part", () => {
+    const hostNeed = (target: string): LineNeed => ({
+      ...need("host", target),
+      cause: "tracker-unreachable",
+    });
+    const before = {
+      ...tickLine("2026-11-10T09:00:00.000Z", [
+        { slug: "A", path: "/w/a", n: 0 },
+      ]),
+    };
+    before.needs = [...before.needs, hostNeed("old")];
+    const fresh = tickLine("2026-11-10T09:01:00.000Z", [
+      { slug: "A", path: "/w/a", n: 1 },
+    ]);
+    fresh.needs = [...fresh.needs, hostNeed("new")];
+    const kept = mergeLine(before, fresh, LISTED, "kept");
+    expect(kept.needs.map((x) => x.target)).toEqual(["old", "A-N1"]);
+    const replaced = mergeLine(before, fresh, LISTED, "fresh");
+    expect(replaced.needs.map((x) => x.target)).toContain("new");
+    expect(replaced.needs.map((x) => x.target)).not.toContain("old");
+  });
+
   test("keeps the machine's part but takes the duration history and its maximum from the tick", () => {
     const before = {
       ...tickLine("2026-11-10T09:00:00.000Z", [

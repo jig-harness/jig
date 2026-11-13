@@ -94,7 +94,14 @@ function recordedWord(n: LineNeed): string {
     return "repeated no-cause stops (needs a person)";
   if (n.cause === "parked") return "parked for a person";
   if (n.cause === "assigner-cannot-write") return "assigner cannot write";
+  if (n.cause === "tracker-unreachable") return "tracker unreachable";
   return n.cause;
+}
+
+/** What a card with no link says; a need of the host's names an account, which no tracker links. */
+function noLinkOf(n: LineNeed): string | null {
+  if (n.url !== null || n.cause === "tracker-unreachable") return null;
+  return noLinkText(n.repo, n.target);
 }
 
 function goLabelOf(n: LineNeed): string {
@@ -211,7 +218,7 @@ export function needView(n: LineNeed, clockNow: Clock): NeedView {
     decision,
     url: n.url,
     goLabel: n.url === null ? null : goLabelOf(n),
-    noLink: n.url === null ? noLinkText(n.repo, n.target) : null,
+    noLink: noLinkOf(n),
     answerKeys: [...new Set(n.decisions.map((d) => d.key))],
     rows,
     send: sendTargetOf({

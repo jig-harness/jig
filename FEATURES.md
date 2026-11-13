@@ -248,7 +248,12 @@ then ruling or escalating to a person with a cited decision sheet. `explain`
 writes a cited, commit-dated explainer of how part of the system works
 today, for a decision, a review or onboarding.
 
+For a broad topic before it becomes one work item, `orchestrate` keeps the
+discussion with the person while separate sessions survey the topic, record
+decisions and prepare the work to start.
+
 - **Skills:** [`adr`](plugin/skills/adr/SKILL.md),
+  [`orchestrate`](plugin/skills/orchestrate/README.md),
   [`decide`](plugin/skills/decide/SKILL.md),
   [`explain`](plugin/skills/explain/SKILL.md)
 - **Practice:** [M5](modules/M5-adr-practice/)

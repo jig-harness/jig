@@ -2,10 +2,10 @@
 title: "ADR-0013: Components share records, not a daemon"
 type: adr
 status: draft
-description: "Jig's components share registered records on the machine, in the working tree and on the forge and tracker, and each derives what to do from records it does not own; no resident daemon or message bus coordinates them, one resident reader per machine may serve a person's view of them, and the record names the conditions for reopening that"
+description: "Jig's components share registered records on the machine, in the working tree and on the forge and tracker, and each derives what to do from records it does not own; no resident daemon or message bus coordinates them, one resident reader per machine may serve a person's view of them, a chat bridge may turn a person's click into one request, and the record names the conditions for reopening that"
 lifecycle: permanent
-version: "1.4"
-last_updated: 2026-11-12
+version: "1.5"
+last_updated: 2026-11-13
 owner: maintainers
 decision_date: 2026-11-04
 supersedes: ~
@@ -92,6 +92,13 @@ the forge, never through the reader
 It is the dispatcher's own dashboard with more views, so Jig still has one
 kind of listening server beside the hub ([ADR-0016](ADR-0016-an-optional-hub-for-hosts-that-keep-authority.md)),
 not a second beside it.
+
+A [chat bridge](../../GLOSSARY.md), where a team runs one, is the other
+resident process allowed: inside the hub, or on a host that is not
+enrolled. It listens on no socket, connects out to the chat tool, and
+turns each click into one request the line already reads, so it
+coordinates nothing
+([ADR-0022](ADR-0022-a-chat-bridge-turns-a-click-into-one-request.md)).
 
 ## Alternatives considered
 

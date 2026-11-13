@@ -667,7 +667,7 @@ processes the repository.
 
 Next starts with delegated merge, once item 40 holds. Then come what lets a
 second team adopt Jig, the hub for a team on several hosts, the Protocol
-that readers outside the skills can trust, work that
+that readers outside the skills can trust, the line in a team's chat, work that
 arrives complete, reviews that catch what gates cannot, and doctrine and
 measurement. Last come the developer machine and its runtimes, and the runs
 a person owes.
@@ -800,6 +800,49 @@ and gated, the site renders the chapters, and the
 documents programs outside the skills are pointed to link to the chapters
 instead of restating them, and a change that makes a chapter disagree with
 the code fails `bun run gates`.
+
+### 54. The line in a team's chat
+
+The dispatcher tells a person what needs them on an Orca workspace card,
+and the dashboard shows it to whoever opens it, so a team that works in a
+chat tool learns that a pull request is ready to merge, or that a decision
+waits on it, only when someone looks; answering, asking where work stands
+or starting an item needs a terminal. [design/chat.md](chat.md) has how it
+works and
+[ADR-0022](../docs/adr/ADR-0022-a-chat-bridge-turns-a-click-into-one-request.md)
+the decision. What it will build, Slack first, other chat tools behind the
+same seams: notification channels, a port the tick sends each cause
+through, with today's Orca card as one channel and a suppression record
+per channel, notices staying an owner duty of the host; a Slack channel
+that posts ready to merge with its link and merge command, each framed
+decision with its options and copy lines, each stop only a person settles
+and the host's faults, in one thread per piece of work whose top message
+shows the board's column and whose replies are edited when their cause is
+settled anywhere, with channels, mentions, direct messages, quiet hours
+that hold mentions, and a daily digest; a chat bridge over Socket Mode
+that checks the chat user's workspace, mapping and write permission and
+turns a click on an option, an Answer in words form or a `/jig` command
+(`ask`, `needs`, `status`, `pickup`, `drive`, `hold`, `release`, and on a
+host `pause`, `resume`, `stop`) into one request through `jig send`'s
+writers, run as `jig chat serve` on a host that is not enrolled, posting
+under the host's credential, or inside the hub, posting under the bridge's
+own forge app identity that a repository lists and naming the person each
+chat user linked with `/jig link`; buttons under structured answers'
+guarded pick, none for the attested classes until item 40 accepts the
+hub's bridge as proof; and the Slack app's manifest, `jig chat setup` and
+`jig chat doctor`. Merging from the chat and a drive's mailbox through the
+hub are left out. One pull request per step, in the design's order; the
+hub's placement waits on the hub's first stage and the cross-host commands
+on its third (item 49).
+
+Done when, on a host with Slack configured, a parked drive posts its
+decision into its pull request's thread, a click on an option re-arms the
+drive with that choice and edits the reply to answered, an answer typed on
+the pull request instead edits the reply the same way, the pull request
+becoming ready posts one reply and moves the thread's top message to ready
+to merge, and `/jig ask` on the pull request answers with `jig ask`'s card;
+and, through a hub, an answer clicked in the chat is read by the host's
+re-arm as the linked person's.
 
 ### 26. `init`: setting a repository up for Jig
 
@@ -1054,7 +1097,7 @@ which were met. [design/spec-link.md](spec-link.md) has how it works, on
 the [spec ecosystems research note](spec-ecosystems-research.md): a
 read-only resolver with one adapter per layout (the item's own body first,
 then the common repository layouts by convention, then the tracker's
-attachments once the interface has them) that returns requirements,
+attachments) that returns requirements,
 acceptance criteria and tasks with their ids; the result handed to the
 implementing agent and the reviewer; a pull-request section accounting for
 every criterion as met with an evidence record (item 28), deferred to a
@@ -1075,8 +1118,8 @@ What it will build, one pull request per step:
   still on, reading its script and policy from the base branch rather than
   the head, with a workflow template and the setup that makes it required.
 - **`review` in plan mode, `file-issue`, `/followup` and the epic close.**
-- **The tracker source**, once the tracker interface has attachments
-  (item 12).
+- **The tracker source**: the documents and attachments the tracker
+  interface lists on the item.
 - **A verification section**: the commands a work item lists under
   `Verification`, fenced blocks included, handed to the implementer and
   recorded as evidence records the pull request's acceptance section cites.
