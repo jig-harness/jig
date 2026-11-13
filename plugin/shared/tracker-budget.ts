@@ -257,13 +257,18 @@ export interface BudgetGovernor {
 
 const EMPTY: BudgetWindow = { limit: null, remaining: null, resetAt: null };
 
+/** Answers this close together may have been measured out of the order they arrived in. */
+const RACE_MS = 2_000;
+
 /**
  * The newer of two readings of a window, the answer read at `now`: the
  * lower count within the same window that resets whole, the stored reading
  * (with its own read time) when the answer is from an older window (a
  * delayed response across a reset) or says nothing of this window, else the
- * answer. A window that refills continuously takes the later answer: its
- * count is only comparable at one time.
+ * answer. A window that refills continuously compares counts only at one
+ * time: an answer arriving within `RACE_MS` of the stored reading may be the
+ * older measurement, so it takes the lower of the answer and the stored
+ * balance carried to `now` (reservations included); a later one is newer.
  */
 function merged(
   prev: BudgetWindow,
@@ -286,6 +291,17 @@ function merged(
     next.resetAt < prev.resetAt
   )
     return prev;
+  if (
+    next.refillMs != null &&
+    prev.refillMs != null &&
+    prev.readAt != null &&
+    now - prev.readAt < RACE_MS &&
+    next.remaining !== null
+  ) {
+    const carried = holds(prev, prev.readAt, now);
+    if (carried !== null)
+      return { ...read, remaining: Math.min(carried, next.remaining) };
+  }
   return read;
 }
 
@@ -321,32 +337,41 @@ function usableAt(
   return Math.min(w.resetAt, now + Math.ceil(wait) + 1000);
 }
 
-/** The window that stops the dispatcher, if one does: spent, or at its share. */
+/**
+ * The window that stops the dispatcher, if one does: spent, or at its share.
+ * With several blocked, the one that recovers last, since admission waits for
+ * all of them.
+ */
 function spentWindow(
   record: BudgetRecord,
   share: number | null,
   now: number,
 ): { resetAt: number; why: string } | null {
+  let binding: { resetAt: number; why: string } | null = null;
   for (const [name, w] of [
     ["requests", record.requests],
     ["complexity", record.complexity],
   ] as const) {
     const held = holds(w, record.observedAt, now);
     if (held === null || w.resetAt === null || w.resetAt <= now) continue;
-    // What the window must hold again: more than nothing, and more than the
-    // part of it kept for passes and people.
+    // What the window must hold again: more than the part of it kept for
+    // passes and people, and for requests one whole request (a refilling
+    // balance is fractional).
     const floor =
       share !== null && w.limit !== null ? w.limit * (1 - share) : 0;
-    if (held > floor && held > 0) continue;
-    return {
-      resetAt: usableAt({ ...w, resetAt: w.resetAt }, held, floor, now),
-      why:
-        held <= 0
-          ? `no ${name} left in the window`
-          : `the dispatcher's share (${Math.round((share ?? 0) * 100)}%) of the ${name} window is spent; ${Math.floor(held)} of ${w.limit} are left to passes and people`,
+    const unit = name === "requests" ? 1 : 0;
+    const empty = unit > 0 ? held < unit : held <= 0;
+    if (held > floor && !empty) continue;
+    const resetAt = usableAt({ ...w, resetAt: w.resetAt }, held, floor, now);
+    if (binding !== null && binding.resetAt >= resetAt) continue;
+    binding = {
+      resetAt,
+      why: empty
+        ? `no ${name} left in the window`
+        : `the dispatcher's share (${Math.round((share ?? 0) * 100)}%) of the ${name} window is spent; ${Math.floor(held)} of ${w.limit} are left to passes and people`,
     };
   }
-  return null;
+  return binding;
 }
 
 /** A governor over `store`; `clock` and `share` are for tests. */
