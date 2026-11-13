@@ -56,7 +56,13 @@ import {
 import { markdownToAdf } from "./adf.ts";
 import { assignerOperations } from "./assigner.ts";
 import { stateChangeOperations } from "./state-change.ts";
-import { blockedFieldsBody } from "./blocked-fields.ts";
+import {
+  type BlockedField,
+  blockedFieldValue,
+  blockedFieldsBody,
+  sentWithMove,
+  splitForScreen,
+} from "./blocked-fields.ts";
 import { claimOperations } from "./claim.ts";
 import type { Client, IssueTypeMeta, RelationLink } from "./client.ts";
 import { jiraFacetStores } from "./facets.ts";
@@ -129,17 +135,21 @@ interface Transition {
   to: string;
   /** The transition's screen has a resolution field. */
   resolution: boolean;
+  /** The ids of the fields the transition's screen carries. */
+  screen: string[];
 }
 
 function transitionOf(v: unknown, where: string): Transition {
   const r = record(v, where);
   const fields = r.fields;
+  const screen =
+    fields !== null && typeof fields === "object" ? Object.keys(fields) : [];
   return {
     id: str(r.id, `${where}.id`),
     name: str(r.name, `${where}.name`),
     to: str(record(r.to, `${where}.to`).name, `${where}.to.name`),
-    resolution:
-      fields !== null && typeof fields === "object" && "resolution" in fields,
+    resolution: screen.includes("resolution"),
+    screen,
   };
 }
 
@@ -245,6 +255,78 @@ export function jiraTracker(client: Client): Tracker {
     return raw.transitions.map((t, i) =>
       transitionOf(t, `transitions of ${key}[${i}]`),
     );
+  }
+  /** The one transition to `state`; `null` when the issue is already there or its workflow has no such state. */
+  async function planMove(
+    key: string,
+    state: CanonicalState,
+    signal?: AbortSignal,
+  ): Promise<{ issue: JiraIssue; chosen: Transition } | null> {
+    const issue = await client.mustIssue(key, signal);
+    const target = model.stateName(state, issue.issueType?.name ?? null);
+    if (target === null) {
+      console.error(
+        `${issue.key}: skipped ${state}; its workflow has no configured state`,
+      );
+      return null;
+    }
+    const already =
+      same(issue.status.name, target) &&
+      (!isResolvedState(state) || model.read(issue).canonical === state);
+    if (already) return null;
+    const all = await transitionsOf(issue.key, signal);
+    return { issue, chosen: onlyTransition(all, issue, target, state) };
+  }
+
+  /** Take `chosen`, sending `fields` with it, and the configured resolution where its screen has one. */
+  async function sendMove(
+    issue: JiraIssue,
+    chosen: Transition,
+    state: CanonicalState,
+    fields: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const sent =
+      isResolvedState(state) && chosen.resolution
+        ? { ...fields, resolution: { name: model.resolutionOf(state) } }
+        : fields;
+    await transport(
+      {
+        method: "POST",
+        path: `${path(issue.key)}/transitions`,
+        body: {
+          transition: { id: chosen.id },
+          ...(Object.keys(sent).length > 0 ? { fields: sent } : {}),
+        },
+      },
+      signal,
+    );
+    if (isResolvedState(state) && !chosen.resolution) {
+      const after = await client.mustIssue(issue.key, signal);
+      if (model.read(after).canonical !== state)
+        throw new JiraApiError(
+          `${issue.key} entered ${after.status.name}, which its transition cannot record as ${state}: the transition has no resolution field`,
+        );
+    }
+  }
+
+  /** The configured blocked fields, resolved; an aborted `signal` ends the wait. */
+  async function blockedFieldsUntil(
+    signal?: AbortSignal,
+  ): Promise<BlockedField[]> {
+    signal?.throwIfAborted();
+    const discovery = client.blockedFields();
+    if (signal === undefined) return discovery;
+    let onAbort: (() => void) | undefined;
+    return Promise.race([
+      discovery,
+      new Promise<never>((_, reject) => {
+        onAbort = () => reject(signal.reason);
+        signal.addEventListener("abort", onAbort, { once: true });
+      }),
+    ]).finally(() => {
+      if (onAbort !== undefined) signal.removeEventListener("abort", onAbort);
+    });
   }
 
   /**
@@ -378,39 +460,44 @@ export function jiraTracker(client: Client): Tracker {
     },
 
     async transition(key, state, signal) {
-      const issue = await client.mustIssue(key, signal);
-      const target = model.stateName(state, issue.issueType?.name ?? null);
-      if (target === null) {
-        console.error(
-          `${issue.key}: skipped ${state}; its workflow has no configured state`,
-        );
-        return;
-      }
-      const already =
-        same(issue.status.name, target) &&
-        (!isResolvedState(state) || model.read(issue).canonical === state);
-      if (already) return;
-      const all = await transitionsOf(issue.key, signal);
-      const chosen = onlyTransition(all, issue, target, state);
-      const resolution =
-        isResolvedState(state) && chosen.resolution
-          ? { fields: { resolution: { name: model.resolutionOf(state) } } }
-          : {};
-      await transport(
-        {
-          method: "POST",
-          path: `${path(issue.key)}/transitions`,
-          body: { transition: { id: chosen.id }, ...resolution },
+      const plan = await planMove(key, state, signal);
+      if (plan !== null)
+        await sendMove(plan.issue, plan.chosen, state, {}, signal);
+    },
+
+    async transitionBlocked(key, value, signal) {
+      const plan = await planMove(key, "blocked", signal);
+      if (plan === null) return [];
+      // A field that does not resolve is sent with nothing; the update
+      // after the move reports why.
+      let unresolved: string | null = null;
+      const configured = await blockedFieldsUntil(signal).catch(
+        (error: unknown) => {
+          signal?.throwIfAborted();
+          unresolved = error instanceof Error ? error.message : String(error);
+          return [];
         },
-        signal,
       );
-      if (isResolvedState(state) && !chosen.resolution) {
-        const after = await client.mustIssue(issue.key, signal);
-        if (model.read(after).canonical !== state)
-          throw new JiraApiError(
-            `${issue.key} entered ${after.status.name}, which its transition cannot record as ${state}: the transition has no resolution field`,
-          );
+      const split = splitForScreen(configured, plan.chosen.screen, value);
+      try {
+        await sendMove(plan.issue, plan.chosen, "blocked", split.body, signal);
+      } catch (error) {
+        // Only Jira's answer refusing the move is reworded; an outage, a
+        // lost answer or a cancellation travels as it came.
+        const refused =
+          error instanceof JiraApiError &&
+          error.status !== null &&
+          error.status >= 400 &&
+          error.status < 500 &&
+          !error.unavailable &&
+          !error.answerLost;
+        if (!refused) throw error;
+        throw new JiraApiError(
+          `${plan.issue.key}: the transition '${plan.chosen.name}' to '${plan.chosen.to}' was refused (${sentWithMove(split, unresolved)}): ${error.message}`,
+          error,
+        );
       }
+      return split.sent.map((f) => f.role);
     },
 
     async postComment(issue, body, signal) {
@@ -550,33 +637,44 @@ export function jiraTracker(client: Client): Tracker {
       await transport({ method: "PUT", path: path(issue.key), body }, signal);
     },
 
-    async writeBlockedFields(key, value, signal) {
-      signal?.throwIfAborted();
-      const discovery = client.blockedFields();
-      let onAbort: (() => void) | undefined;
-      const fields = await (signal === undefined
-        ? discovery
-        : Promise.race([
-            discovery,
-            new Promise<never>((_, reject) => {
-              onAbort = () => reject(signal.reason);
-              signal.addEventListener("abort", onAbort, { once: true });
-            }),
-          ]).finally(() => {
-            if (onAbort !== undefined)
-              signal.removeEventListener("abort", onAbort);
-          }));
-      if (fields.length === 0) return false;
-      signal?.throwIfAborted();
-      await transport(
-        {
-          method: "PUT",
-          path: path(key),
-          body: { fields: blockedFieldsBody(fields, value) },
-        },
-        signal,
+    async writeBlockedFields(key, value, signal, except = []) {
+      const configured = (await blockedFieldsUntil(signal)).filter(
+        (f) => !except.includes(f.role),
       );
-      return true;
+      // A field whose type cannot take a value was never written, so
+      // clearing still clears the fields beside it, then reports the rest.
+      const fields: typeof configured = [];
+      const skipped: string[] = [];
+      for (const f of configured) {
+        if (value !== null) {
+          fields.push(f);
+          continue;
+        }
+        try {
+          blockedFieldValue(f, null);
+          fields.push(f);
+        } catch (error) {
+          if (!(error instanceof TrackerRequestError)) throw error;
+          skipped.push(error.message);
+        }
+      }
+      if (fields.length > 0) {
+        signal?.throwIfAborted();
+        await transport(
+          {
+            method: "PUT",
+            path: path(key),
+            body: { fields: blockedFieldsBody(fields, value) },
+          },
+          signal,
+        );
+      }
+      if (skipped.length > 0)
+        throw new TrackerRequestError(
+          "invalid",
+          `${fields.length > 0 ? `cleared ${fields.map((f) => f.role).join(", ")}; ` : ""}left as they were: ${skipped.join("; ")}`,
+        );
+      return fields.length > 0;
     },
 
     async listLabels() {

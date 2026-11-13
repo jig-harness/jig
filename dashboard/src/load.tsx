@@ -5,6 +5,8 @@
  */
 import type { LineSnapshot } from "../../plugin/dispatch/lib/dashboard-contract.ts";
 import { Fold, PanelHelp } from "./fold.tsx";
+import { BareWord } from "./icon-word.tsx";
+import { GAUGE_ICONS, iconOf } from "./icons.ts";
 import { loadView } from "./load-view.ts";
 
 export function LoadGauge({ line }: { line: LineSnapshot | null }) {
@@ -21,6 +23,7 @@ export function LoadGauge({ line }: { line: LineSnapshot | null }) {
           />
         </div>
         <span className="m sm">{view.binds}</span>
+        {view.over ? <BareWord of={GAUGE_ICONS.over} className="sm" /> : null}
         <PanelHelp panel="Load">
           The fullest of the host's gauges against its line, read when the tick
           acts. A launch starts only while every gauge stays under its line with
@@ -34,11 +37,19 @@ export function LoadGauge({ line }: { line: LineSnapshot | null }) {
         <dl className="kv">
           {view.gauges.map((g) => (
             <div key={g.name} style={{ display: "contents" }}>
-              <dt>{g.name}</dt>
+              <dt>
+                <BareWord of={iconOf(GAUGE_ICONS, g.gauge)}>{g.name}</BareWord>
+              </dt>
               <dd>
                 <span>
                   <span className="m">{g.fill}</span> · {g.reads} · line{" "}
                   {g.line}
+                  {g.over ? (
+                    <>
+                      {" "}
+                      <BareWord of={GAUGE_ICONS.over} />
+                    </>
+                  ) : null}
                 </span>
               </dd>
             </div>

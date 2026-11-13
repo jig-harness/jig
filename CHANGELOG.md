@@ -394,6 +394,42 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.227.1] - 2026-11-13
+
+### Fixed
+
+- On Jira, the drive-ledger projection now sends the `issue_tracker.jira.blocked_fields`
+  the transition into the blocked status carries on its screen with the move itself, so a
+  workflow whose transition requires the blocker reason accepts the move instead of refusing it
+  before the fields were written. Fields not on the transition's screen are still written by an
+  update after the move, and the return move is unchanged. A move Jira still refuses names the
+  transition, Jira's message, and which fields went with it.
+
+## [0.227.0] - 2026-11-13
+
+### Changed
+
+- The dispatch dashboard draws each word the records give a closed set with
+  one icon, always beside its word: the acts, the stages, where a coming item
+  came from and what will happen to it, the Ready to merge lanes, the load
+  gauges, an account's state, why a need waits, the answer states and the
+  page's own controls. A family keeps one shape, so it still reads in
+  greyscale and in [forced colours](GLOSSARY.md), the operating system's
+  high-contrast mode that replaces the page's colours with its own: an act is a filled pill, a stage an outlined chip
+  (its icon replaces the glyph it had), a source a dashed chip, and the rest
+  a bare icon beside the word. A word two sets share with the same meaning
+  keeps one icon, and the Help view lists every icon with its word. An account
+  whose wall was never recorded now says "wall not recorded" instead of
+  "behind a wall". **Consumer action:** none.
+
+## [0.226.2] - 2026-11-13
+
+The dispatcher reads a repository's pull requests in pages as large as the forge answers in time.
+
+### Fixed
+
+- A repository whose open pull requests each carry many check results could not be read at all. GitHub ends a query it has worked on for about ten seconds (HTTP 502 or 504); the dispatcher asked for fifty pull requests a page, and its fallback listing asked for every pull request's checks at once. Such a repository's turn failed on every tick, so it got no re-arm, follow-up or pickup. A page the forge runs out of time on is now asked again at half the size, down to one pull request, and the size that read is kept for the repository, so later ticks start from it. The kept size is tried larger again once pages answer quickly and an hour has passed since it last shrank. The comments query over merged pull requests shrinks the same way. The fallback listing is asked once more without the checks, which then read as unknown. The forge record says the page size where it is under fifty, and names both failures when neither read answers.
+
 ## [0.226.1] - 2026-11-13
 
 ### Fixed
@@ -7883,7 +7919,10 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.226.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.227.1...HEAD
+[0.227.1]: https://github.com/jig-harness/jig/compare/v0.227.0...v0.227.1
+[0.227.0]: https://github.com/jig-harness/jig/compare/v0.226.2...v0.227.0
+[0.226.2]: https://github.com/jig-harness/jig/compare/v0.226.1...v0.226.2
 [0.226.1]: https://github.com/jig-harness/jig/compare/v0.226.0...v0.226.1
 [0.226.0]: https://github.com/jig-harness/jig/compare/v0.225.2...v0.226.0
 [0.225.2]: https://github.com/jig-harness/jig/compare/v0.225.1...v0.225.2

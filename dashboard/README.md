@@ -27,6 +27,11 @@ mark (`website/public/brand/jig-mark-light.*`): `icon-192.png` and
 launcher that crops icons to its own shape does not clip it. A new icon is
 rendered again from its drawing, by any tool, and replaces the PNG here.
 
+Every icon the page draws comes from one map, `src/icons.ts`, and each
+family's container from `src/icon-word.tsx`. A word added to a set the
+records name needs its entry there: `src/icons.test.ts` reads each set where
+the code declares it and fails a word with no icon or word in the map.
+
 Why the page looks and reads as it does is the
 [design round](../design/prototypes/dispatch-dashboard/README.md), whose
 scenarios are `fixtures.ts` here.
