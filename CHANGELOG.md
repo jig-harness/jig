@@ -394,6 +394,67 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.228.0] - 2026-11-13
+
+### Added
+
+- The dispatcher checks each account's tracker credential before it launches
+  a follow-up or a pickup. Once per tick for each account and tracker, it
+  reads the repository's tracker headless, in the repository's checkout and
+  the environment a pass on that account runs in. An account the tracker
+  refuses, or whose read gives no answer in time (an operating system
+  keychain waiting for an approval, a lapsed connection), takes none of
+  those launches: they go to another account or wait. The dashboard shows
+  one need per account for the whole host, `tracker-unreachable`, act
+  Authorize, naming every repository it holds and the tracker's answer,
+  instead of a failed pass for every pull request. A rate limit, a server
+  error, the network or a configuration that opens no tracker holds
+  nothing: the stage's own handling of them applies. A later passing check
+  clears the need and the launches start. `preflight` in the machine's
+  dispatch file names the checks: `[tracker]` by default, and `[]` turns
+  them off ([CONFIGURATION.md](plugin/CONFIGURATION.md#the-machines-dispatch-file)).
+
+## [0.227.2] - 2026-11-13
+
+The decision record for calls to outside systems is renumbered.
+
+### Changed
+
+- The decision record for the outbound-calls rule is now [ADR-0021](docs/adr/ADR-0021-outbound-calls-are-governed.md), so the number no longer collides with another record. The plugin instructions link to the new number.
+
+### Fixed
+
+- Release tagging retries failed required checks once before leaving a release untagged; configure `changelog.release.rerun_failed_gates` to change the budget or set it to `0` to disable retries.
+- The tag plan and release status keep reporting every untagged release even after a newer version is tagged. Older releases remain listed for manual tagging without triggering retries or holding newer tags back.
+
+## [0.227.1] - 2026-11-13
+
+### Fixed
+
+- On Jira, the drive-ledger projection now sends the `issue_tracker.jira.blocked_fields`
+  the transition into the blocked status carries on its screen with the move itself, so a
+  workflow whose transition requires the blocker reason accepts the move instead of refusing it
+  before the fields were written. Fields not on the transition's screen are still written by an
+  update after the move, and the return move is unchanged. A move Jira still refuses names the
+  transition, Jira's message, and which fields went with it.
+
+## [0.227.0] - 2026-11-13
+
+### Changed
+
+- The dispatch dashboard draws each word the records give a closed set with
+  one icon, always beside its word: the acts, the stages, where a coming item
+  came from and what will happen to it, the Ready to merge lanes, the load
+  gauges, an account's state, why a need waits, the answer states and the
+  page's own controls. A family keeps one shape, so it still reads in
+  greyscale and in [forced colours](GLOSSARY.md), the operating system's
+  high-contrast mode that replaces the page's colours with its own: an act is a filled pill, a stage an outlined chip
+  (its icon replaces the glyph it had), a source a dashed chip, and the rest
+  a bare icon beside the word. A word two sets share with the same meaning
+  keeps one icon, and the Help view lists every icon with its word. An account
+  whose wall was never recorded now says "wall not recorded" instead of
+  "behind a wall". **Consumer action:** none.
+
 ## [0.226.2] - 2026-11-13
 
 The dispatcher reads a repository's pull requests in pages as large as the forge answers in time.
@@ -420,7 +481,7 @@ Jig states one rule for every call it makes to a system it does not control.
 
 ### Added
 
-- [ADR-0020](docs/adr/ADR-0020-outbound-calls-are-governed.md): every call to a forge, an issue tracker or a reflection store goes through that system's governed transport, which reuses an answer before it sends, asks a budget the whole machine shares, bounds what one call can cost, records what it spent and fails as one of a closed set of classes. The glossary gains the terms (governed transport, budget record, cost ledger, failure class, cost ceiling), and the roadmap gains the item that builds it. Nothing a repository configures changes with this release.
+- [ADR-0021](docs/adr/ADR-0021-outbound-calls-are-governed.md): every call to a forge, an issue tracker or a reflection store goes through that system's governed transport, which reuses an answer before it sends, asks a budget the whole machine shares, bounds what one call can cost, records what it spent and fails as one of a closed set of classes. The glossary gains the terms (governed transport, budget record, cost ledger, failure class, cost ceiling), and the roadmap gains the item that builds it. Nothing a repository configures changes with this release.
 
 ## [0.225.1] - 2026-11-13
 
@@ -7891,7 +7952,11 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.226.2...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.228.0...HEAD
+[0.228.0]: https://github.com/jig-harness/jig/compare/v0.227.2...v0.228.0
+[0.227.2]: https://github.com/jig-harness/jig/compare/v0.227.1...v0.227.2
+[0.227.1]: https://github.com/jig-harness/jig/compare/v0.227.0...v0.227.1
+[0.227.0]: https://github.com/jig-harness/jig/compare/v0.226.2...v0.227.0
 [0.226.2]: https://github.com/jig-harness/jig/compare/v0.226.1...v0.226.2
 [0.226.1]: https://github.com/jig-harness/jig/compare/v0.226.0...v0.226.1
 [0.226.0]: https://github.com/jig-harness/jig/compare/v0.225.2...v0.226.0
