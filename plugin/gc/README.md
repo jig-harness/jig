@@ -81,12 +81,16 @@ requests and how they were found:
   forge call). Every one from this repository counts: an open one keeps the
   tree, and a commit no remote branch holds is covered only when a merged
   one's head contains it. A record left behind never names the pull request
-  of work the head has moved on to. A listing that fills its page, or that
-  the forge cannot answer, leaves the tree unverified.
+  of work the head has moved on to. A commit the forge does not have is in
+  no pull request; a listing that fills its page, any other refusal, or a
+  record git cannot check against the head leaves the tree unverified.
 
 The rest of the proof is the one a branched tree gets: a detached tree whose
 commits no remote branch and no merged pull request's head holds is kept,
-and one no pull request holds is judged as a tree without a pull request.
+and one no pull request holds is judged as a tree without a pull request,
+so one with commits of its own is kept. A tree detached at a commit of the
+base branch is judged by the pull request that brought that commit in,
+whose commits a remote branch keeps.
 
 ### Worktrees Orca manages
 

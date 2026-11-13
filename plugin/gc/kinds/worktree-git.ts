@@ -242,6 +242,8 @@ export async function requestByNumber(
   if (!matched.ok) return matched;
   return ok(matched.value ? [matched.value] : []);
 }
+/** How the forge refuses a commit it does not have (HTTP 422). */
+const UNKNOWN_COMMIT = /No commit found for SHA[\s\S]*HTTP 422/;
 /** The most pull requests one commit lookup reads; a full page is incomplete. */
 const COMMIT_REQUESTS_PAGE = 100;
 /**
@@ -332,6 +334,8 @@ export async function requestsForCommit(
     ],
     { cwd: root, timeoutSec: 30, env: gitEnvironment() },
   );
+  // A commit only this machine has is in no pull request.
+  if (result.code !== 0 && UNKNOWN_COMMIT.test(result.stderr)) return ok([]);
   if (result.code !== 0)
     return failed(
       "forge-unavailable",

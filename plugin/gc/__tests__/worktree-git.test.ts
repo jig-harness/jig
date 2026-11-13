@@ -189,7 +189,12 @@ function commitPull(
  */
 function detachedProof(
   f: ReturnType<typeof repository>,
-  options: { pr: string; head: string | null; remote: string; pulls?: unknown },
+  options: {
+    pr: string | null;
+    head: string | null;
+    remote: string;
+    pulls?: unknown;
+  },
 ) {
   const bin = join(f.root, "bin");
   mkdirSync(bin, { recursive: true });
@@ -199,7 +204,8 @@ function detachedProof(
 import { appendFileSync } from "node:fs";
 appendFileSync(${JSON.stringify(join(f.root, "gh-calls"))}, process.argv.slice(2).join(" ") + "\\n");
 if (process.argv[2] === "api") console.log(JSON.stringify(${JSON.stringify(options.pulls ?? [])}));
-else console.log(JSON.stringify({ ...${options.pr}, headRepository: { name: "repo" }, headRepositoryOwner: { login: "team" } }));
+else if (${options.pr === null}) { console.error("gh: Could not resolve to a PullRequest"); process.exit(1); }
+else console.log(JSON.stringify({ ...${options.pr ?? "{}"}, headRepository: { name: "repo" }, headRepositoryOwner: { login: "team" } }));
 `,
   );
   const source = `import { writeDrivenTree } from ${JSON.stringify(resolve(import.meta.dir, "../../shared/driven-tree.ts"))};
@@ -299,6 +305,113 @@ test("a commit lookup the forge cannot answer in full, or answers malformed, fai
       pulls: unnumbered,
     }),
   ).toMatchObject({ ok: false, failure: { code: "malformed" } });
+});
+
+/**
+ * The forge's pull requests for commit `head` of `f.repo`, as
+ * `requestsForCommit` reads them, with `gh` answering `stdout`, or failing
+ * with `stderr` when that is given.
+ */
+function commitLookup(
+  f: ReturnType<typeof repository>,
+  head: string,
+  answer: { stdout?: unknown; stderr?: string },
+) {
+  const bin = join(f.root, "bin");
+  mkdirSync(bin, { recursive: true });
+  writeFakeProgram(
+    join(bin, "gh"),
+    answer.stderr === undefined
+      ? `#!/usr/bin/env bun
+console.log(${JSON.stringify(JSON.stringify(answer.stdout))});
+`
+      : `#!/usr/bin/env bun
+console.error(${JSON.stringify(answer.stderr)}); process.exit(1);
+`,
+  );
+  const source = `import { requestsForCommit } from ${JSON.stringify(resolve(import.meta.dir, "../kinds/worktree-git.ts"))};
+console.log(JSON.stringify(await requestsForCommit(${JSON.stringify(f.repo)}, "origin", ${JSON.stringify(head)})));`;
+  const result = Bun.spawnSync(
+    [
+      process.execPath,
+      "--no-env-file",
+      `--config=${resolve(import.meta.dir, "../bunfig.toml")}`,
+      "-e",
+      source,
+    ],
+    {
+      cwd: f.repo,
+      env: {
+        ...gitEnvironment(),
+        PATH: `${bin}${delimiter}${process.env.PATH}`,
+      },
+      stdout: "pipe",
+      stderr: "pipe",
+      timeout: 30_000,
+    },
+  );
+  expectSpawnExit(result, 0);
+  return JSON.parse(result.stdout.toString()) as Record<string, unknown>;
+}
+
+test("the commit lookup keeps this repository's pull requests, in every state, and drops a deleted fork's", () => {
+  const f = repository();
+  f.git("remote", "add", "origin", "https://github.com/team/repo.git");
+  const head = headOf(f);
+  const gone = {
+    ...commitPull(4, "MERGED", head),
+    head: { sha: head, repo: null },
+  };
+  expect(
+    commitLookup(f, head, {
+      stdout: [
+        commitPull(1, "MERGED", head),
+        commitPull(2, "CLOSED", head),
+        commitPull(3, "OPEN", "b".repeat(40)),
+        gone,
+      ],
+    }),
+  ).toEqual({
+    ok: true,
+    value: [
+      { state: "MERGED", head, number: 1 },
+      { state: "CLOSED", head, number: 2 },
+      { state: "OPEN", head: "b".repeat(40), number: 3 },
+    ],
+  });
+});
+
+test("a commit the forge does not have is in no pull request; any other refusal fails the lookup", () => {
+  const f = repository();
+  f.git("remote", "add", "origin", "https://github.com/team/repo.git");
+  const head = headOf(f);
+  expect(
+    commitLookup(f, head, {
+      stderr: `gh: No commit found for SHA: ${head} (HTTP 422)`,
+    }),
+  ).toEqual({ ok: true, value: [] });
+  expect(
+    commitLookup(f, head, { stderr: "gh: Bad credentials (HTTP 401)" }),
+  ).toMatchObject({ ok: false, failure: { code: "forge-unavailable" } });
+});
+
+test("a drive record git cannot check, or whose pull request cannot be read, leaves the tree unverified", () => {
+  const f = repository();
+  f.git("remote", "add", "upstream", "https://github.com/team/repo.git");
+  f.git("checkout", "--quiet", "--detach");
+  // A commit this repository does not hold: git cannot tell its descent.
+  const missing = JSON.stringify("c".repeat(40));
+  expect(
+    detachedProof(f, { pr: "{}", head: missing, remote: "upstream" }),
+  ).toMatchObject({ ok: false, failure: { code: "unverifiable" } });
+  expect(
+    detachedProof(f, {
+      pr: null,
+      head: JSON.stringify(headOf(f)),
+      remote: "upstream",
+    }),
+  ).toMatchObject({ ok: false, failure: { code: "forge-unavailable" } });
+  expect(ghCalls(f)).not.toContain("api");
 });
 
 test("a detached worktree moved onto a stacked branch's work is not proven by the merged pull request it was attached to", () => {

@@ -207,7 +207,7 @@ async function describesHead(
   path: string,
   record: DrivenTree,
   prs: WorktreeRequest[],
-): Promise<GitOutcome<boolean>> {
+): Promise<Outcome<boolean>> {
   const listed = await git(path, [
     "for-each-ref",
     "--contains",
@@ -222,9 +222,23 @@ async function describesHead(
     holders.includes(`refs/remotes/${record.remote}/${record.branch}`)
   )
     return ok(true);
-  for (const pr of prs)
-    if ((await ancestry(path, "HEAD", pr.head)) === true) return ok(true);
-  return ok(false);
+  let unknown = false;
+  for (const pr of prs) {
+    const contains = await ancestry(path, "HEAD", pr.head);
+    if (contains === true) return ok(true);
+    if (contains === null) unknown = true;
+  }
+  return unknown ? untold() : ok(false);
+}
+/** Git could not say whether one commit descends from another. */
+function untold(): {
+  ok: false;
+  failure: { code: "unverifiable"; reason: string };
+} {
+  return failed(
+    "unverifiable",
+    "Could not tell whether the drive's tree record still describes HEAD",
+  );
 }
 /**
  * The recorded pull request of a detached tree, or null when the head has
@@ -275,7 +289,9 @@ async function treeRequests(
     const found = await requests(path, policy.remote, identity.name);
     return found.ok ? ok({ found: found.value, source: null }) : found;
   }
-  const record = await attachedDrive(path, identity);
+  const attached = await attachedDrive(path, identity);
+  if (!attached.ok) return attached;
+  const record = attached.value;
   const recorded = record ? await drivenRequests(path, record) : ok(null);
   if (!recorded.ok) return recorded;
   if (recorded.value !== null)
@@ -398,19 +414,20 @@ async function worktreeIdentity(
 }
 /**
  * The drive record of a detached tree, while its head still descends from
- * the commit the drive attached; null otherwise. Unlike the drive's readers,
- * no remote branch is required: a merged pull request's branch is often
+ * the commit the drive attached; null when there is none or the head left
+ * it, and a failure when git cannot tell. Unlike the drive's readers, no
+ * remote branch is required: a merged pull request's branch is often
  * deleted, and that is when the tree is reported.
  */
 async function attachedDrive(
   path: string,
   identity: WorktreeIdentity,
-): Promise<DrivenTree | null> {
+): Promise<Outcome<DrivenTree | null>> {
   const record = readDrivenTree(identity.admin);
-  return record !== null &&
-    (await ancestry(path, record.head, identity.head)) === true
-    ? record
-    : null;
+  if (record === null) return ok(null);
+  const descends = await ancestry(path, record.head, identity.head);
+  if (descends === null) return untold();
+  return ok(descends ? record : null);
 }
 /**
  * What the tree itself holds: uncommitted and index-hidden changes, an

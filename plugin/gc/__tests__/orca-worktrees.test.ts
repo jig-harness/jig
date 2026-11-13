@@ -346,8 +346,9 @@ function commitAndPush(
 
 /**
  * Detach the checkout at its head and make `gh` answer the forge's pull
- * requests for a commit with the merged pull request #12 at `head`, and no
- * pull request for any branch.
+ * requests for a commit with the merged pull request #12 at `head`, that it
+ * has no other commit (as the forge refuses one), and no pull request for any
+ * branch.
  */
 function detachWithMergedPull(f: ReturnType<typeof setup>, head: string): void {
   f.command(["git", "-C", f.tree, "switch", "--quiet", "--detach"]);
@@ -364,7 +365,12 @@ function detachWithMergedPull(f: ReturnType<typeof setup>, head: string): void {
     `#!/usr/bin/env bun
 import { appendFileSync } from "node:fs";
 appendFileSync(${JSON.stringify(join(f.root, "gh-calls"))}, process.argv.slice(2).join(" ") + "\\n");
-console.log(JSON.stringify(process.argv[2] === "api" ? ${JSON.stringify(pulls)} : []));
+const args = process.argv.slice(2);
+if (args[0] === "api" && !args.at(-1).includes(${JSON.stringify(head)})) {
+  console.error("gh: No commit found for SHA: " + args.at(-1) + " (HTTP 422)");
+  process.exit(1);
+}
+console.log(JSON.stringify(args[0] === "api" ? ${JSON.stringify(pulls)} : []));
 `,
   );
 }
@@ -815,7 +821,7 @@ describe.skipIf(
     expect(line(gc(f, ["--collect", "--json"]))).toMatchObject({
       outcome: "refused",
       reason: expect.stringContaining(
-        "commits are outside remote branches and merged pull request heads",
+        "branch without a pull request is ahead of the base; HEAD is detached; the forge lists no pull request holding its commit",
       ),
     });
     expect(existsSync(f.tree)).toBe(true);
