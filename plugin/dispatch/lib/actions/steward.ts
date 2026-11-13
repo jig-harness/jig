@@ -292,14 +292,15 @@ export function stewardPasses(
       null,
       r.record.token ?? "",
     );
-    const question = questionIn(kept.said ?? "");
+    const asked = questionIn(kept.said ?? "");
+    const question = asked === null ? null : durableSummary(asked);
     return [
       {
         record: r.record.id,
         action: r.record.action,
         target: targetOf(r.record),
         question,
-        said: question === null ? null : keptSummary(kept.context),
+        said: asked === null ? null : keptSummary(kept.context),
       },
     ];
   });

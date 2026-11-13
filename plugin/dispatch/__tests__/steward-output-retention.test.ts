@@ -22,6 +22,20 @@ describe("durable output summary", () => {
     expect(kept).not.toContain("ghp_abcdefghijkl1234");
     expect(kept).not.toContain("me@example.com");
   });
+
+  test("redacts quoted JSON credentials and a question's email and password", () => {
+    const json = durableSummary(
+      '{"password":"hunter2","api_key":"abcdefgh12345678","ok":"keep"}',
+    );
+    expect(json).not.toContain("hunter2");
+    expect(json).not.toContain("abcdefgh12345678");
+    expect(json).toContain("keep");
+    const asked = durableSummary(
+      "Should I contact me@example.com using password=hunter2?",
+    );
+    expect(asked).not.toContain("me@example.com");
+    expect(asked).not.toContain("hunter2");
+  });
 });
 
 describe("steward output erasure", () => {
@@ -69,6 +83,8 @@ describe("steward output erasure", () => {
     const fresh = readStewardDigest("new", root);
     if (!old.ok || !fresh.ok) throw new Error("digests did not read");
     expect(old.value.passes[0]?.said).toBeNull();
+    expect(old.value.passes[0]?.question).toBeNull();
+    expect(eraseStewardOutput(41 * day, 30, root)).toBe(0);
     expect(JSON.stringify(old.value)).not.toContain("secret-ish");
     expect(JSON.stringify(fresh.value)).toContain("secret-ish");
   });

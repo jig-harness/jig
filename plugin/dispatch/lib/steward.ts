@@ -291,7 +291,13 @@ export function eraseStewardOutput(
 ): number {
   const db = stateDb(root);
   const rows = db
-    .query("SELECT id, digest FROM steward_runs WHERE at_ms <= ?")
+    .query(
+      `SELECT id, digest FROM steward_runs WHERE at_ms <= ? AND (
+        digest LIKE '%"said":"%' OR digest LIKE '%"question":"%' OR EXISTS (
+          SELECT 1 FROM json_each(steward_runs.digest, '$.targets') t
+          WHERE json_extract(t.value, '$.lastPass.output.tail') NOT IN ('')
+        )) ORDER BY at_ms LIMIT 200`,
+    )
     .all(nowMs - days * 86_400_000) as Array<{ id: string; digest: string }>;
   let erased = 0;
   for (const row of rows) {
@@ -306,6 +312,32 @@ export function eraseStewardOutput(
   return erased;
 }
 
+/** Empty each target's last-pass tail; whether any held one. */
+function erasedTails(targets: unknown): boolean {
+  let changed = false;
+  for (const t of Array.isArray(targets) ? targets : []) {
+    const out =
+      isMapping(t) && isMapping(t.lastPass) ? t.lastPass.output : null;
+    if (!isMapping(out) || out.tail === "") continue;
+    out.tail = "";
+    out.unavailable = "erased after the retention period";
+    changed = true;
+  }
+  return changed;
+}
+
+/** Null each pass's `said` and `question`; whether any held one. */
+function erasedPassFields(passes: unknown): boolean {
+  let changed = false;
+  for (const p of Array.isArray(passes) ? passes : [])
+    for (const field of ["said", "question"])
+      if (isMapping(p) && p[field] !== null && p[field] !== undefined) {
+        p[field] = null;
+        changed = true;
+      }
+  return changed;
+}
+
 /** The digest text without its output, or `null` when it holds none (or does not parse). */
 function erasedOutput(text: string): string | null {
   const parsed = attempt("unreadable", "the steward digest does not read", () =>
@@ -314,23 +346,9 @@ function erasedOutput(text: string): string | null {
   if (!parsed.ok) return null;
   const digest: unknown = parsed.value;
   if (!isMapping(digest)) return null;
-  let changed = false;
-  if (Array.isArray(digest.targets))
-    for (const t of digest.targets) {
-      const out =
-        isMapping(t) && isMapping(t.lastPass) ? t.lastPass.output : null;
-      if (isMapping(out) && out.tail !== "") {
-        out.tail = "";
-        out.unavailable = "erased after the retention period";
-        changed = true;
-      }
-    }
-  if (Array.isArray(digest.passes))
-    for (const p of digest.passes)
-      if (isMapping(p) && p.said !== null && p.said !== undefined) {
-        p.said = null;
-        changed = true;
-      }
+  const erasedTargets = erasedTails(digest.targets);
+  const erasedPasses = erasedPassFields(digest.passes);
+  const changed = erasedTargets || erasedPasses;
   return changed ? JSON.stringify(digest) : null;
 }
 export function readStewardDigest(
