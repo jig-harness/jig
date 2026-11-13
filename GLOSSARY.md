@@ -941,7 +941,8 @@ make, use the entry's term instead.
   Throwaway working files go under `.context/scratch/`, and a working
   directory that nothing needs once the work is finished carries a
   `CACHEDIR.TAG` file; `jig gc` keeps anything else under `.context/` until
-  it is preserved.
+  it is preserved, except a drive's handoff file (`pr-drive-<PR>.md`), which
+  it sets aside whole without archiving, so keep nothing there you need.
 - **Cache directory tag** — a file named `CACHEDIR.TAG`, starting with a
   fixed signature line, that a tool leaves in a directory it can rebuild or
   no longer needs, so backup tools and collectors can tell that directory

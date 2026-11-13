@@ -140,42 +140,67 @@ export function measure(
   }
   return ok(total);
 }
+/** What a fingerprint read: each entry's mark, and the bytes the content read held. */
+export interface Fingerprinted {
+  entries: Map<string, string>;
+  bytes: number;
+}
 /**
  * What each path under `root` holds, entry by entry: its type, and a file's
  * content hash or a link's target. Two trees with the same fingerprint hold
  * the same names and the same content, which byte and entry totals cannot say.
+ * The bytes are counted from what is read, and reading stops once they pass
+ * `limit`, so the size a caller trusts is the size of the content verified.
  */
-function fingerprint(
+export function fingerprint(
   root: string,
   paths: string[],
   deadline: number,
-): Outcome<Map<string, string>, "timed-out" | "unreadable"> {
+  limit: number,
+): Outcome<Fingerprinted, "timed-out" | "unreadable" | "oversized"> {
   const entries = new Map<string, string>();
-  const visit = (relative: string): boolean => {
-    if (Date.now() > deadline) return false;
+  let bytes = 0;
+  const visit = (relative: string): "ok" | "timed-out" | "oversized" => {
+    if (Date.now() > deadline) return "timed-out";
     const path = join(root, relative);
     const stat = lstatSync(path);
-    if (stat.isSymbolicLink())
-      entries.set(relative, `link ${readlinkSync(path)}`);
-    else if (stat.isDirectory()) {
+    if (stat.isSymbolicLink()) {
+      const target = readlinkSync(path);
+      bytes += stat.size;
+      entries.set(relative, `link ${target}`);
+    } else if (stat.isDirectory()) {
       entries.set(relative, "dir");
-      for (const child of readdirSync(path).sort())
-        if (!visit(join(relative, child))) return false;
-    } else if (stat.isFile())
+      for (const child of readdirSync(path).sort()) {
+        const nested = visit(join(relative, child));
+        if (nested !== "ok") return nested;
+      }
+    } else if (stat.isFile()) {
+      const content = readFileSync(path);
+      bytes += content.length;
       entries.set(
         relative,
-        `file ${createHash("sha256").update(readFileSync(path)).digest("hex")}`,
+        `file ${createHash("sha256").update(content).digest("hex")}`,
       );
-    else entries.set(relative, `other ${stat.mode}`);
-    return true;
+    } else {
+      bytes += stat.size;
+      entries.set(relative, `other ${stat.mode}`);
+    }
+    return bytes > limit ? "oversized" : "ok";
   };
   try {
-    for (const path of paths)
-      if (!visit(path.replace(/\/$/, "")))
+    for (const path of paths) {
+      const visited = visit(path.replace(/\/$/, ""));
+      if (visited === "timed-out")
         return failed(
           "timed-out",
           "verifying ignored content exceeded its deadline",
         );
+      if (visited === "oversized")
+        return failed(
+          "oversized",
+          `ignored content exceeds the archive bound of ${limit} bytes`,
+        );
+    }
   } catch (error) {
     return failed(
       "unreadable",
@@ -183,7 +208,7 @@ function fingerprint(
       error,
     );
   }
-  return ok(entries);
+  return ok({ entries, bytes });
 }
 /** An archive written and verified: where it is, and what it holds. */
 export interface Archived extends Measured {
@@ -212,8 +237,13 @@ export function archiveIgnored(
       "oversized",
       `ignored content exceeds the archive bound of ${policy.maxBytes} bytes`,
     );
-  const before = fingerprint(worktree, paths, deadline);
+  const before = fingerprint(worktree, paths, deadline, policy.maxBytes);
   if (!before.ok) return before;
+  // The totals published are those of the content verified, not of the first look.
+  const totals: Measured = {
+    bytes: before.value.bytes,
+    entries: before.value.entries.size,
+  };
   const now = new Date();
   const path = join(
     policy.root,
@@ -239,7 +269,14 @@ export function archiveIgnored(
     },
   );
   const verified = written.ok
-    ? verify(path, worktree, paths, before.value, deadline)
+    ? verify(
+        path,
+        worktree,
+        paths,
+        before.value.entries,
+        policy.maxBytes,
+        deadline,
+      )
     : written;
   const recorded = verified.ok
     ? attempt(
@@ -248,7 +285,7 @@ export function archiveIgnored(
         () =>
           writeFileSync(
             join(path, MANIFEST),
-            `${JSON.stringify({ version: 1, worktree, createdAt: now.toISOString(), paths, ...source.value }, null, 2)}\n`,
+            `${JSON.stringify({ version: 1, worktree, createdAt: now.toISOString(), paths, ...totals }, null, 2)}\n`,
             { mode: 0o600 },
           ),
       )
@@ -265,7 +302,7 @@ export function archiveIgnored(
     );
     return durable;
   }
-  return ok({ path, paths, ...source.value });
+  return ok({ path, paths, ...totals });
 }
 /**
  * Flush a directory entry's own durability. Windows refuses to open a
@@ -305,17 +342,18 @@ function syncPublication(path: string, root: string): void {
   }
 }
 /** The copy and the worktree, fingerprinted again: both must match the worktree as it was before the copy. */
-function verify(
+export function verify(
   path: string,
   worktree: string,
   paths: string[],
   source: Map<string, string>,
+  limit: number,
   deadline: number,
 ): Outcome<undefined, ArchiveCode> {
-  const copied = fingerprint(join(path, "content"), paths, deadline);
+  const copied = fingerprint(join(path, "content"), paths, deadline, limit);
   if (!copied.ok) return copied;
   // The worktree again: content changed while it was copied is not in the copy.
-  const now = fingerprint(worktree, paths, deadline);
+  const now = fingerprint(worktree, paths, deadline, limit);
   if (!now.ok) return now;
   const differs = (other: Map<string, string>): string | null => {
     for (const [name, mark] of source)
@@ -323,7 +361,7 @@ function verify(
     for (const name of other.keys()) if (!source.has(name)) return name;
     return null;
   };
-  const drift = differs(copied.value) ?? differs(now.value);
+  const drift = differs(copied.value.entries) ?? differs(now.value.entries);
   return drift === null
     ? ok(undefined)
     : failed(

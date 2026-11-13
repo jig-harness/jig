@@ -5,6 +5,7 @@
  */
 import { afterAll, describe, expect, test } from "bun:test";
 import {
+  cpSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -13,6 +14,7 @@ import {
   readFileSync,
   readlinkSync,
   readdirSync,
+  renameSync,
   symlinkSync,
   utimesSync,
   writeFileSync,
@@ -24,8 +26,10 @@ import { receiptsKind } from "../kinds/receipts.ts";
 import {
   archiveIgnored,
   archivePaths,
+  fingerprint,
   markingSince,
   measure,
+  verify,
   worktreeCreatedAt,
 } from "../legacy-archive.ts";
 
@@ -132,6 +136,81 @@ describe("the one-time archive", () => {
       ),
     ).toMatchObject({ ok: false, failure: { code: "unreadable" } });
     expect(readdirSync(state)).toEqual([]);
+  });
+
+  test("content that grows past the bound after it was measured is refused", () => {
+    const root = worktree();
+    writeFileSync(join(root, ".context", "msg.txt"), "x".repeat(2048));
+    expect(fingerprint(root, PATHS, Date.now() + 30_000, 1024)).toMatchObject({
+      ok: false,
+      failure: { code: "oversized" },
+    });
+    const read = fingerprint(root, PATHS, Date.now() + 30_000, 1 << 20);
+    if (!read.ok) throw new Error(read.failure.reason);
+    expect(read.value.bytes).toBeGreaterThanOrEqual(2048);
+  });
+
+  describe("verification refuses a copy or a worktree that no longer matches", () => {
+    // A copy made by hand, then one mutation, then verify() against the first read.
+    function prepared() {
+      const root = worktree();
+      const state = scratch();
+      const deadline = Date.now() + 30_000;
+      const before = fingerprint(root, PATHS, deadline, 1 << 20);
+      if (!before.ok) throw new Error(before.failure.reason);
+      for (const entry of PATHS)
+        cpSync(
+          join(root, entry.replace(/\/$/, "")),
+          join(state, "content", entry.replace(/\/$/, "")),
+          { recursive: true, verbatimSymlinks: true },
+        );
+      const check = () =>
+        verify(state, root, PATHS, before.value.entries, 1 << 20, deadline);
+      return { root, state, check };
+    }
+    test("an unchanged copy verifies", () => {
+      expect(prepared().check()).toMatchObject({ ok: true });
+    });
+    test("a same-length rewrite of the copy", () => {
+      const { state, check } = prepared();
+      writeFileSync(
+        join(state, "content", ".context", "msg.txt"),
+        "b person's note\n",
+      );
+      expect(check()).toMatchObject({
+        ok: false,
+        failure: { code: "archive-failed" },
+      });
+    });
+    test("a same-length rewrite of the worktree while it was copied", () => {
+      const { root, check } = prepared();
+      writeFileSync(join(root, ".context", "msg.txt"), "b person's note\n");
+      expect(check()).toMatchObject({
+        ok: false,
+        failure: { code: "archive-failed" },
+      });
+    });
+    test("a changed symlink target in the copy", () => {
+      const { state, check } = prepared();
+      const alias = join(state, "content", ".context", "alias");
+      rmSync(alias);
+      symlinkSync("msg.tx_", alias);
+      expect(check()).toMatchObject({
+        ok: false,
+        failure: { code: "archive-failed" },
+      });
+    });
+    test("an equal-sized rename in the worktree", () => {
+      const { root, check } = prepared();
+      renameSync(
+        join(root, ".context", "facet-move", "record.json"),
+        join(root, ".context", "facet-move", "record.jsoo"),
+      );
+      expect(check()).toMatchObject({
+        ok: false,
+        failure: { code: "archive-failed" },
+      });
+    });
   });
 
   test("measuring stops once the bound is passed or the deadline is", () => {
