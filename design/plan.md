@@ -634,19 +634,12 @@ its check run on the head. It counts inline threads and findings in every
 review body whose format the built-in reviewer profile names; CodeRabbit
 is the first. Each body finding must be answered before convergence.
 
-What remains:
-
-- **The CI repair command's trust boundary.** The repair step reads
-  `ci.log_command` from the default branch, but `runRepoCommand` runs it
-  with the pull request's checkout as its working directory, so a
-  configured repository script executes the pull request's editable
-  content. The command's program content is to come from the default
-  branch, never from the working tree of the pull request being repaired,
-  as the [command store](tracker-facets.md#later-the-command-store) does.
+What remains is a run on a working repository, owed by a person: a drive to
+merge-ready on a repository whose reviewer is CodeRabbit, with no bridge of
+its own.
 
 Done when a repository whose AI reviewer is CodeRabbit runs a drive to
-merge-ready with no bridge of its own, and a CI repair command never runs
-program content from the pull request's working tree.
+merge-ready with no bridge of its own.
 
 ### 49. The hub: a shared control plane for many dispatchers
 
