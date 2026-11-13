@@ -34,6 +34,8 @@ export interface PrLinkText {
   headRefName: string;
   /** Its description; empty when it has none. */
   body: string;
+  /** Whether its head is in another repository (a fork); absent where the read did not say, which no write relies on. */
+  crossRepository?: boolean;
   /** The issues the forge says it closes, each with its repository (`owner/name`). */
   /** `null` when the forge returned only part of its closing-reference connection. */
   closing: ReadonlyArray<{ number: number; repository: string }> | null;

@@ -2314,7 +2314,10 @@ make, use the entry's term instead.
   launch of this host or a claim marker took it, or always under
   `dispatch.stalled_scope: assigned`. The *dispatcher* reports it and
   never starts it again: a second session would be a second implementer on
-  a claimed item, so a person settles it.
+  a claimed item, so a person settles it. An item whose pickup already
+  opened its pull request is finished work, not a stall: when an open pull
+  request from the branch of the dispatcher's launch of it links it, the
+  dispatcher moves it to its `pr_open` state.
 - **Double claim** — an item more than one running session works on at
   once: two workspaces, or a workspace beside a launch the *dispatcher*
   still holds for another one. The dispatcher reports it and starts
