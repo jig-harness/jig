@@ -255,7 +255,7 @@ async function block(
       return {
         item: key,
         outcome: "refused",
-        detail: `${key} moved to blocked, but its comment did not post (${why}) and the move could not be undone (${message(undo)}): a person moves it back to ${fromName}`,
+        detail: `${key} moved to blocked, but its comment did not post (${why}) and the move could not be undone (${message(undo)}): a person moves it back to ${fromName}${sent.length > 0 ? ` and clears its blocked fields (${sent.join(", ")})` : ""}`,
       };
     }
     const cleared =

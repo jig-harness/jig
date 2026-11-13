@@ -139,7 +139,8 @@ export function splitForScreen(
     try {
       out.body[f.id] = blockedFieldValue(f, value);
       out.sent.push(f);
-    } catch {
+    } catch (error) {
+      if (!(error instanceof TrackerRequestError)) throw error;
       out.unformed.push(f);
     }
   }

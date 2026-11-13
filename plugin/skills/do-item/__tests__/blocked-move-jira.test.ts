@@ -2,7 +2,7 @@
  * The `blocked` writer against the Jira adapter over a fake transport: the
  * blocked fields the transition's screen carries go with the move, so a
  * validator that requires one passes; the rest are written after it, and
- * the return move clears them as before.
+ * the return move takes its transition, then clears them.
  */
 import { describe, expect, test } from "bun:test";
 import { type BlockedPr, projectBlocked } from "../scripts/lib/blocked-move.ts";
@@ -72,7 +72,7 @@ const transitionsTo = (to: string, onScreen: string[]) => ({
  * validator refuses it without `required`. Comments live in memory, as the
  * projection's marker needs them.
  */
-function site(onScreen: string[], required: string | null) {
+function site(onScreen: string[], required: string | null, outage = false) {
   const state = { status: "In Progress" };
   const comments: CommentFact[] = [];
   const { t, calls } = jira(
@@ -90,6 +90,11 @@ function site(onScreen: string[], required: string | null) {
           ? transitionsTo("In Progress", [])
           : transitionsTo("Blocked", onScreen),
       "POST issue/ENG-1/transitions": (c: Call) => {
+        if (outage)
+          return new JiraApiError(
+            "Jira API HTTP 503 on POST issue/ENG-1/transitions: unavailable",
+            { status: 503, unavailable: true },
+          );
         const fields = (c.body.fields ?? {}) as Record<string, unknown>;
         if (state.status !== "Blocked" && required !== null)
           if (!(required in fields))
@@ -144,7 +149,7 @@ describe("a block on Jira", () => {
     expect(out?.detail).toContain("sent with the move: reason");
   });
 
-  test("writes a field the move's screen lacks with the update after it, as before", async () => {
+  test("writes a field the move's screen lacks with the update after it", async () => {
     const { tracker, calls } = site([], null);
     const [out] = await projectBlocked(
       tracker,
@@ -181,6 +186,22 @@ describe("a block on Jira", () => {
     expect(out?.detail).toContain("not on its screen: since (Blocked Since)");
   });
 
+  test("an outage on the move is reported as it came, not as a refusal", async () => {
+    const { tracker, state } = site(["customfield_1"], null, true);
+    const [out] = await projectBlocked(
+      tracker,
+      KEYS,
+      LABELS,
+      parked({ state: "parked" }),
+      NOW,
+    );
+    expect(out?.outcome).toBe("refused");
+    expect(state.status).toBe("In Progress");
+    expect(out?.detail).toBe(
+      "Jira API HTTP 503 on POST issue/ENG-1/transitions: unavailable",
+    );
+  });
+
   test("a comment that does not post undoes the move and clears the fields it carried", async () => {
     const { tracker, calls, state } = site(["customfield_1"], "customfield_1");
     const failing = {
@@ -204,7 +225,7 @@ describe("a block on Jira", () => {
     expect(out?.detail).toContain("its blocked fields cleared");
   });
 
-  test("the return move is unchanged: the transition, then the clearing update", async () => {
+  test("the return move takes its transition, then the clearing update", async () => {
     const { tracker, calls } = site(["customfield_1"], "customfield_1");
     await projectBlocked(
       tracker,

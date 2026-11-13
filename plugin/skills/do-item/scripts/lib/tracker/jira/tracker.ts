@@ -481,9 +481,18 @@ export function jiraTracker(client: Client): Tracker {
       try {
         await sendMove(plan.issue, plan.chosen, "blocked", split.body, signal);
       } catch (error) {
-        if (!(error instanceof JiraApiError)) throw error;
+        // Only Jira's answer refusing the move is reworded; an outage, a
+        // lost answer or a cancellation travels as it came.
+        const refused =
+          error instanceof JiraApiError &&
+          error.status !== null &&
+          error.status >= 400 &&
+          error.status < 500 &&
+          !error.unavailable &&
+          !error.answerLost;
+        if (!refused) throw error;
         throw new JiraApiError(
-          `${plan.issue.key}: the transition '${plan.chosen.name}' to '${plan.chosen.to}' was refused (${error.message}); ${sentWithMove(split, unresolved)}`,
+          `${plan.issue.key}: the transition '${plan.chosen.name}' to '${plan.chosen.to}' was refused (${sentWithMove(split, unresolved)}): ${error.message}`,
           error,
         );
       }
