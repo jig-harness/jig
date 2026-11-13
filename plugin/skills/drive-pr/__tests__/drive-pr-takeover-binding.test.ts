@@ -207,4 +207,71 @@ describe("drive.ts --take-over reopening unverified holds", () => {
       await owner.exited;
     }
   }, 120_000);
+
+  it("does not bring back a hold the takeover's own reconciliation removed for a superseding merit reply", async () => {
+    const owner = fakeDriver();
+    const gh = replyRecordingGh("takeover-binding");
+    const noticeFile = join(tmpRoot, "takeover-binding-notice");
+    const accepted = {
+      body: "**accepted** — fixed in the next push",
+      author: "maintainer",
+      authorAssociation: "OWNER",
+      bot: false,
+    };
+    try {
+      const { dir, stateDir } = writeFixture(
+        {
+          threads: [
+            {
+              id: "PRRT_h",
+              path: "a.ts",
+              bot: true,
+              comments: [{ body: "a finding", bot: true }, accepted],
+            },
+            {
+              id: "PRRT_c",
+              path: "b.ts",
+              bot: true,
+              comments: [
+                { body: "a finding", bot: true },
+                accepted,
+                { ...accepted, body: "**rejected** — the premise was wrong" },
+              ],
+            },
+            { id: "PRRT_n", path: "c.ts", bot: true },
+          ],
+        },
+        scratchClean.dir,
+      );
+      // PRRT_c is held on its accepted reply, which a later rejection supersedes:
+      // the takeover's own reconciliation resolves it and removes the hold.
+      const replyH = "https://example.invalid/PRRT_h/comment-1";
+      const replyC = "https://example.invalid/PRRT_c/comment-1";
+      await hold(stateDir, "PRRT_h", "thread", replyH);
+      await hold(stateDir, "PRRT_c", "thread", replyC);
+      plantPrLock(stateDir, owner.pid, scratchClean.dir);
+      await progressAt(stateDir, stale());
+      const pass = [
+        "sh",
+        "-c",
+        `: pass for 999\nprintf '%s' "$DRIVE_PR_PASS_NOTICE" > '${noticeFile}'`,
+      ];
+      const r = await runDriveIn(
+        dir,
+        stateDir,
+        ["--take-over", "--no-head-sync", "--max-rounds", "1", "--", ...pass],
+        undefined,
+        { env: { DRIVE_PR_STOP_GRACE_SEC: "1" }, extraBinDir: gh.bin },
+      );
+      expect(r.stderr).toContain("1 hold(s) reopened, 0 not");
+      const after = JSON.parse((await state(stateDir, ["get", "999"])).stdout);
+      expect(after.takeovers[0].reopened).toEqual(["PRRT_h"]);
+      const keys = after.held.map((h: { key: string }) => h.key);
+      expect(keys).toContain("PRRT_h");
+      expect(keys).not.toContain("PRRT_c");
+    } finally {
+      owner.kill();
+      await owner.exited;
+    }
+  }, 120_000);
 });

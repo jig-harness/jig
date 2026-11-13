@@ -260,19 +260,38 @@ async function decideByLedger(
 }
 
 /**
- * The held batch as it stands after startup. Startup's ledger seeding may
- * replace the batch, so each entry present now is taken as it is now, with its
- * current metadata; an entry `planned` read before startup that is no longer
- * there is carried after them. A batch that cannot be read again stops the
- * takeover (exit `1`) rather than reconciling over a stale one.
+ * The held batch as it stands after startup, before reconciliation runs.
+ * Startup's ledger seeding may replace the batch the plan read; an entry of
+ * the plan's absent from this read is `carried` forward by `heldAfterStartup`.
+ * Reconciliation deletes holds it supersedes only from entries present here,
+ * so an entry missing from this read was not removed by it. A batch that
+ * cannot be read stops the takeover (exit `1`).
+ */
+export async function heldAtStartup(pr: string): Promise<HeldItem[]> {
+  return heldSnapshot(pr);
+}
+
+/**
+ * The held batch once reconciliation has run: each entry present now is taken
+ * as it is now, with its current metadata, and an entry the plan read that the
+ * `atStartup` read (`heldAtStartup`, taken before reconciliation) did not hold
+ * is carried after them. An entry present at startup and gone now was removed
+ * by reconciliation and is not carried back. A batch that cannot be read again
+ * stops the takeover (exit `1`) rather than reconciling over a stale one.
  */
 export async function heldAfterStartup(
   pr: string,
   planned: readonly HeldItem[],
+  atStartup: readonly HeldItem[],
 ): Promise<HeldItem[]> {
   const held = await heldSnapshot(pr);
+  const same = (a: HeldItem, b: HeldItem) =>
+    a.key === b.key && a.kind === b.kind;
   for (const item of planned)
-    if (!held.some((h) => h.key === item.key && h.kind === item.kind))
+    if (
+      !atStartup.some((s) => same(s, item)) &&
+      !held.some((h) => same(h, item))
+    )
       held.push(item);
   return held;
 }
