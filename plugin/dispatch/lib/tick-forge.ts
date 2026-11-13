@@ -226,6 +226,9 @@ function linkText(raw: unknown): PrLinkText | null {
     url: typeof p.url === "string" ? p.url : "",
     headRefName: typeof p.headRefName === "string" ? p.headRefName : "",
     body: typeof p.body === "string" ? p.body : "",
+    ...(typeof p.isCrossRepository === "boolean"
+      ? { crossRepository: p.isCrossRepository }
+      : {}),
     closing: Array.isArray(p.closing)
       ? (p.closing as Exclude<PrLinkText["closing"], null>)
       : null,

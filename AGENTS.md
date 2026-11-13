@@ -141,6 +141,13 @@ How to apply each is in [CONTRIBUTING.md](CONTRIBUTING.md).
   change, and say in the pull request what changed in the audit.
 - **Anything under `plugin/`** follows [plugin/AGENTS.md](plugin/AGENTS.md):
   it ships as a new version.
+- **A call to an outside system goes through its governed transport**
+  ([ADR-0020](docs/adr/ADR-0020-outbound-calls-are-governed.md)). Look at
+  any change to an integration (a forge, a tracker, a reflection store)
+  through its obligations: reuse an answer before sending, ask the shared
+  budget, bound the call's cost, record what it cost, fail as one of the
+  closed classes, and say what the reader does with no answer.
+  [design/outbound-calls.md](design/outbound-calls.md) says how.
 - **Standing decisions** are in [docs/adr/](docs/adr/); read the record before
   deciding something it settles. When several approaches are viable and no
   rule decides, lean the way [docs/dispositions.md](docs/dispositions.md) says.

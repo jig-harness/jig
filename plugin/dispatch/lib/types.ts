@@ -38,6 +38,8 @@ export interface DispatchSection {
   followupCommand: string | null;
   /** How long a claimed item may have no running session before it is reported stalled. */
   stalledAfterMs: number;
+  /** Which of the identity's claimed items the stall watch reads as pickups: `claimed`, only those a launch record of this host or a claim marker took; `assigned`, every one. */
+  stalledScope: StalledScope;
   /** How long a dispatched session may wait before it is reported. */
   blockedAfterMs: number;
   /** A drive drifts when its unresolved threads at the latest recorded round are not below the count this many recorded rounds earlier. */
@@ -93,9 +95,18 @@ export interface ClaimedItem {
   /** Its link as the tracker listing gave it; absent where a reader gives none. */
   url?: string | null;
   state: string;
+  /** The tracker's own issue type where the read took it, which selects the workflow whose `pr_open` the item moves to. */
+  nativeType?: string | null;
   /** Read for a served person rather than `dispatch.identity`: a person starts their own work too, so only this machine's pickup record makes the claim dispatch's. */
   served?: true;
+  /** When the tracker last saw the item change; absent where the read has none. */
+  updatedAt?: string;
+  /** Under `stalledScope: claimed`, a trusted claim marker naming the identity is on the item (`found`), or whether one is could not be read (`unread`); absent when none is. */
+  claimMarker?: "found" | "unread";
 }
+
+/** `dispatch.stalled_scope`'s values. */
+export type StalledScope = "claimed" | "assigned";
 
 /** An item the tracker wants picked up, with the evidence for it. */
 export interface WantedItem {
@@ -129,7 +140,8 @@ export type PickupClass =
   | "pickup-refused"
   | "claimed-idle"
   | "claimed"
-  | "claimed-by-person";
+  | "claimed-by-person"
+  | "claimed-pr-open";
 
 /** How a merged pull request whose follow-up needs nothing reads: done, or held by a run a person started. */
 export type FollowupClass = "followup-done" | "followup-held";
@@ -405,6 +417,31 @@ export interface ReleaseOutcome {
   detail: string;
 }
 
+/**
+ * A stalled pickup's item the tick moves to its `pr_open` state: an open
+ * pull request from the branch of this host's launch of it links it
+ * (`stalled-pr.ts`). The plan names the move; `--apply` on the host that
+ * owns the repository makes it and says what it did.
+ */
+export interface PrOpenMove {
+  /** The item's key. */
+  target: string;
+  /** The open pull request that links it. */
+  pr: number;
+  url: string;
+  /** Its head branch: the branch the launch's workspace has checked out. */
+  branch: string;
+  /** The launch record whose workspace names the branch. */
+  record: string;
+  /** The tracker's state the item was read in, which the fresh read must find again. */
+  from: string;
+  /** The tracker's name for `pr_open`. */
+  to: string;
+  /** What `--apply` did: `moved` (the item moved, and its comment's fate is in `detail`), `waits` (the fresh read changed, or the tick ran out of time), `refused` (the tracker did not move it); absent in a plan nothing applied. */
+  outcome?: "moved" | "waits" | "refused";
+  detail?: string;
+}
+
 /** A checkout the runtime does not list that holds a launch's branch and is in use: where it is, the branch, and what keeps it busy. */
 export interface BusyHolder {
   path: string;
@@ -626,6 +663,8 @@ export interface RepoReport {
   steers?: SteerOutcome[];
   /** What `--apply` did with the stale follow-up claims it released, where the machine file enables `followup`; absent when there were none. */
   releases?: ReleaseOutcome[];
+  /** The stalled pickups' items moved, or to be moved, to `pr_open` (`stalled-pr.ts`); absent when there were none. */
+  prOpenMoves?: PrOpenMove[];
   /** The dispatch labels' part, where the repository turns them on. */
   labels?: LabelReport;
   /** Serialization's part, where the change-area catalog serializes an area. */

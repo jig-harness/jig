@@ -96,7 +96,7 @@ const QUERY = `query ${QUERY_NAME}($owner: String!, $name: String!, $first: Int!
     pullRequests(states: OPEN, first: $first, after: $after, orderBy: {field: CREATED_AT, direction: DESC}) {
       pageInfo { hasNextPage endCursor }
       nodes {
-        number url title body headRefName createdAt headRefOid baseRefName mergeable isDraft updatedAt
+        number url title body headRefName isCrossRepository createdAt headRefOid baseRefName mergeable isDraft updatedAt
         author { __typename login }
         labels(first: ${ITEMS}) { pageInfo { hasNextPage } nodes { name } }
         headRef { target { ... on Commit { statusCheckRollup { contexts(first: ${ITEMS}) { pageInfo { hasNextPage } nodes { __typename ... on CheckRun { conclusion } ... on StatusContext { state } } } } } } }
@@ -419,6 +419,9 @@ export function listedPullRequest(
       ].map((k) => [k, k] as const),
     ),
     ...(typeof node.isDraft === "boolean" ? { isDraft: node.isDraft } : {}),
+    ...(typeof node.isCrossRepository === "boolean"
+      ? { isCrossRepository: node.isCrossRepository }
+      : {}),
     ...(author === null ? {} : { author }),
     ...rollupOf(node),
     ...unresolvedOf(node),
