@@ -197,8 +197,7 @@ per issue in the design's order:
   per account with one host need (`preflight`); missing dispatch labels
   created by the tick; a repository's CI checking what the tick reads from
   it.
-- **Pickups.** An item moved to `pr_open` when an open
-  pull request on its launch's branch names it; a stalled pickup's unpushed
+- **Pickups.** A stalled pickup's unpushed
   work relaunched once in its own tree to push and record
   (`dispatch.stalled_relaunch`); an epic never taken as a pickup.
 - **The steward.** First its digest's missing facts and its no-result rate;
@@ -240,7 +239,7 @@ failure on one account raises one host need and holds that account's
 tracker stages; and every need that reached a person that week was framed,
 or, where only a person can act, raised once for its cause.
 
-### 53. Outbound calls: one governed transport for every system Jig calls
+### 55. Outbound calls: one governed transport for every system Jig calls
 
 Jig's code calls a forge, the issue trackers and the reflection stores,
 and each integration handles their limits and outages on its own: one

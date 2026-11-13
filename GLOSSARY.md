@@ -2154,7 +2154,7 @@ make, use the entry's term instead.
   transport is built from one shared library
   ([ADR-0020](docs/adr/ADR-0020-outbound-calls-are-governed.md)). The
   tracker adapters' transports keep the budget and the deadline; the rest
-  is planned ([ROADMAP.md](ROADMAP.md) item 53).
+  is planned ([ROADMAP.md](ROADMAP.md) item 55).
 - **Budget record** — what a machine knows of one credential's limits at an
   outside system: for each limit its size, what is left and how it refills,
   and until when the system refuses the credential. Every process on the
@@ -2169,7 +2169,7 @@ make, use the entry's term instead.
   requests sent, the cost in the system's own unit (a tracker's complexity
   points, a forge's query points) and the time taken. It answers "what
   spent this quota" without probing the system. Planned
-  ([ROADMAP.md](ROADMAP.md) item 53).
+  ([ROADMAP.md](ROADMAP.md) item 55).
 - **Failure class** — one of the closed set of ways a call to an outside
   system fails: rate limited (with the time it clears), unreachable, too
   costly, server fault, unauthorized, not found, invalid. Each class has
@@ -2180,14 +2180,14 @@ make, use the entry's term instead.
   system's limits: which exist, how each refills, how an answer reports
   them, what a refusal looks like and who owns the quota. It holds no
   number the system reports; those are read from each answer. Planned
-  ([ROADMAP.md](ROADMAP.md) item 53).
+  ([ROADMAP.md](ROADMAP.md) item 55).
 - **Cost ceiling** — the most a query may cost in total, declared beside
   the query with its unit: objects (the sum over its paths of the nested
   page sizes' product) or, where the system's formula can be computed from
   the query text, the system's own cost unit. What one request can cost an
   outside system is then bounded when the query is written, and a gate can
   check it.
-  Planned ([ROADMAP.md](ROADMAP.md) item 53).
+  Planned ([ROADMAP.md](ROADMAP.md) item 55).
 - **ADF (Atlassian Document Format)** — the JSON form Jira stores rich
   text in (issue descriptions, comments). Jig's Jira adapter converts it to
   Markdown when it reads and from Markdown when it writes, so the skills
@@ -2310,7 +2310,10 @@ make, use the entry's term instead.
   launch of this host or a claim marker took it, or always under
   `dispatch.stalled_scope: assigned`. The *dispatcher* reports it and
   never starts it again: a second session would be a second implementer on
-  a claimed item, so a person settles it.
+  a claimed item, so a person settles it. An item whose pickup already
+  opened its pull request is finished work, not a stall: when an open pull
+  request from the branch of the dispatcher's launch of it links it, the
+  dispatcher moves it to its `pr_open` state.
 - **Double claim** — an item more than one running session works on at
   once: two workspaces, or a workspace beside a launch the *dispatcher*
   still holds for another one. The dispatcher reports it and starts

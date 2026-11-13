@@ -84,6 +84,7 @@ async function readClaimed(
         title: i.title,
         url: i.url,
         state: i.state.name,
+        ...(i.nativeType === undefined ? {} : { nativeType: i.nativeType }),
         ...(i.updatedAt === undefined ? {} : { updatedAt: i.updatedAt }),
       }));
   } catch (error) {

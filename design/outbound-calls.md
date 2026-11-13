@@ -13,7 +13,7 @@ through its system's governed transport, which reuses an answer before it
 sends, stays inside a budget the whole machine shares, records what each
 operation cost, and tells a reader exactly how a call failed.
 
-This is the design of [plan.md](plan.md) item 53, decided in
+This is the design of [plan.md](plan.md) item 55, decided in
 [ADR-0020](../docs/adr/ADR-0020-outbound-calls-are-governed.md). Built so
 far: the shared budget record for the tracker adapters
 (`plugin/shared/tracker-budget.ts`, documented under `tracker_share` in the
