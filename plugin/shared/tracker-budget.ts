@@ -280,13 +280,15 @@ function merged(
 ): BudgetWindow {
   if (next === undefined) return prev;
   const read = { ...next, readAt: now };
-  if (sameResetWindow(prev, next))
-    return { ...read, remaining: Math.min(prev.remaining!, next.remaining!) };
+  const count = next.remaining;
+  if (count === null) return olderWindow(prev, next) ? prev : read;
+  if (sameResetWindow(prev, next) && prev.remaining !== null)
+    return { ...read, remaining: Math.min(prev.remaining, count) };
   if (olderWindow(prev, next)) return prev;
   const carried = carriedBalance(prev, next, now, sentAt);
   return carried === null
     ? read
-    : { ...read, remaining: Math.min(carried, next.remaining!) };
+    : { ...read, remaining: Math.min(carried, count) };
 }
 
 /** Both readings are of one window that resets whole, with counts. */
