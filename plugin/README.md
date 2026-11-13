@@ -1369,7 +1369,7 @@ in from a guess. Nothing on the machine is written but the forge's response
 cache that every drive shares (`~/.cache/jig/gh-cache/`).
 
 **`--thread`** adds the address's correspondence, each entry one record
-that already exists: a `request` (a `drive` or `hold` dispatch label, shown
+that already exists: a `request` (a `drive`, `rearm` or `hold` dispatch label, shown
 with who set it, when, and when it came off; a tracker assignment the tick
 accepts; a mailbox directive on this machine), a `question` (a parked
 decision in the drive ledger), an `answer` (an `answer <key>:` line from an

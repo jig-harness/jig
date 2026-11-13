@@ -4,6 +4,7 @@
  * launch, and the notes on the dispatcher's records.
  */
 import type { Address } from "../../shared/address.ts";
+import { COMMANDS } from "../../shared/pr-labels/projection.ts";
 import type { EndedRow, LogRow } from "../../dispatch/lib/log.ts";
 import { holds, type ReadRecord } from "../../dispatch/lib/launches.ts";
 import type { Holder, Last, ThreadEntry, WaitsOn } from "./answer.ts";
@@ -207,7 +208,7 @@ export async function pullFor(ctx: AskContext): Promise<PullRead> {
   };
 }
 
-/** With `--thread`: the `drive` and `hold` label requests on a pull request's timeline, noted in the sources; none when the prefix or the timeline is not known. */
+/** With `--thread`: command label requests on a pull request's timeline, noted in the sources; none when the prefix or the timeline is not known. */
 export async function labelThread(
   ctx: AskContext,
   number: number,
@@ -232,7 +233,7 @@ export async function labelThread(
   if (!events.ok) return [];
   return labelRequests(
     events.value,
-    [`${labelPrefix}drive`, `${labelPrefix}hold`],
+    COMMANDS.map((command) => `${labelPrefix}${command}`),
     ctx.name,
     url,
   );
