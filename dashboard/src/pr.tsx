@@ -1,22 +1,6 @@
 /** Shared PR identity: direct navigation, current forge state and hover/focus context. */
 import { useQueries, useQuery } from "@tanstack/react-query";
 import {
-  Ban,
-  CircleAlert,
-  CircleHelp,
-  Clock as ClockIcon,
-  Flag,
-  GitMerge,
-  GitPullRequest,
-  GitPullRequestArrow,
-  GitPullRequestClosed,
-  GitPullRequestDraft,
-  ListChecks,
-  ListOrdered,
-  type LucideIcon,
-  Pause,
-} from "lucide-react";
-import {
   createContext,
   type PointerEvent,
   useContext,
@@ -32,6 +16,13 @@ import { withDerivedLinks } from "./links.ts";
 import type { DashboardPr } from "../../plugin/dispatch/lib/dashboard-pr.ts";
 import { CopyButton } from "./copy.tsx";
 import { Hint } from "./fold.tsx";
+import { Glyph } from "./icon-word.tsx";
+import {
+  FORGE_ICONS,
+  GROUP_ICONS,
+  type IconWord,
+  LINE_ICONS,
+} from "./icons.ts";
 import { prNumber } from "./pr-state.ts";
 
 class PrReadError extends Error {}
@@ -138,33 +129,33 @@ export const StandingSource = createContext<{
   clock: Clock;
 }>({ line: null, clock: NO_CLOCK });
 
-const KIND_ICONS: Record<StandingKind, LucideIcon> = {
-  driving: GitPullRequestArrow,
-  "following-up": ListChecks,
-  waiting: ClockIcon,
-  "needs-person": CircleAlert,
-  queued: ListOrdered,
-  reported: Flag,
-  refused: Ban,
-  held: Pause,
-  merged: GitMerge,
-  closed: GitPullRequestClosed,
-  draft: GitPullRequestDraft,
-  open: GitPullRequest,
-  unknown: CircleHelp,
+/** A standing's icon: the forge's own, or, while the dispatcher holds the pull request, the line's word for it, each drawn as the map draws it elsewhere. */
+const KIND_ICONS: Record<StandingKind, IconWord> = {
+  driving: LINE_ICONS.driving,
+  "following-up": LINE_ICONS["following-up"],
+  waiting: LINE_ICONS.waiting,
+  "needs-person": LINE_ICONS["needs-person"],
+  queued: GROUP_ICONS.starts,
+  reported: GROUP_ICONS.reported,
+  refused: GROUP_ICONS.never,
+  held: GROUP_ICONS.held,
+  merged: FORGE_ICONS.merged,
+  closed: FORGE_ICONS.closed,
+  draft: FORGE_ICONS.draft,
+  open: FORGE_ICONS.open,
+  unknown: FORGE_ICONS["not read"],
 };
 
-function StandingBody({
-  standing,
-  Icon,
-}: {
-  standing: Standing;
-  Icon: LucideIcon;
-}) {
+/** The standing's icon; one the forge was not read for is drawn dashed. */
+function StandingIcon({ kind, size }: { kind: StandingKind; size: number }) {
+  return <Glyph of={KIND_ICONS[kind]} size={size} />;
+}
+
+function StandingBody({ standing }: { standing: Standing }) {
   return (
     <>
       <p className={`prLabel tone-${standing.tone}`}>
-        <Icon size={14} aria-hidden="true" /> {standing.label}
+        <StandingIcon kind={standing.kind} size={14} /> {standing.label}
       </p>
       <ul className="prFacts">
         {standing.facts.map((f) => (
@@ -200,17 +191,16 @@ function PrContext({
   open: boolean;
   setOpen: (open: boolean) => void;
 }) {
-  const Icon = KIND_ICONS[standing.kind];
   return (
     <Hint
       className={`prState tone-${standing.tone}`}
       label={`PR #${pr}: ${standing.label}`}
       open={open}
       onOpenChange={setOpen}
-      trigger={<Icon size={16} aria-hidden="true" />}
+      trigger={<StandingIcon kind={standing.kind} size={16} />}
     >
       <strong>{fact?.title ?? title ?? target}</strong>
-      <StandingBody standing={standing} Icon={Icon} />
+      <StandingBody standing={standing} />
       <p>
         <RepoLink repo={repo} url={url} /> #{pr}{" "}
         <CopyButton text={pr} aria={`Copy PR ID ${pr}`} />
