@@ -100,8 +100,8 @@ among `labels` or `addLabels`. Priority is `1` (urgent), `2` (high), `3`
 checked inside the tracker: one without a type, a priority or a size (an
 epic needs no size), or without a label of a required group, is refused
 before anything is written (exit `2`), naming what it lacks. Write each
-file with the Write tool under `.context/`, never by interpolating text
-into a shell command.
+file with the Write tool under `.context/scratch/`, never by interpolating
+text into a shell command.
 
 ### Asking the user
 
@@ -138,7 +138,7 @@ level, which the level itself answers.
    size:
 
    ```bash
-   bun "${CLAUDE_SKILL_DIR}/scripts/validate-labels.ts" --check-tracker --input .context/file-issue/<n>.json
+   bun "${CLAUDE_SKILL_DIR}/scripts/validate-labels.ts" --check-tracker --input .context/scratch/file-issue/<n>.json
    bun "${CLAUDE_SKILL_DIR}/scripts/validate-labels.ts" --check-tracker --type <type> --priority <priority> --size <size> <label>...
    ```
 
@@ -391,7 +391,7 @@ It prints `confirm: <level>` or `skip: <level>`, then the filed-by line.
 with `"parent": "<PARENT-KEY>"`, each from its own JSON file:
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" create --input .context/file-issue/<n>.json
+bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" create --input .context/scratch/file-issue/<n>.json
 ```
 
 Each prints the new issue's key and URL. Exit `2` with `refused to file
@@ -482,7 +482,7 @@ is on the child before it leaves the issue. Only once every child exists,
 change the issue:
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" update "<KEY>" --input .context/file-issue/patch.json
+bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" update "<KEY>" --input .context/scratch/file-issue/patch.json
 ```
 
 with `addLabels` and `removeLabels` rather than a whole label list, and a

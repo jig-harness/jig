@@ -929,6 +929,17 @@ make, use the entry's term instead.
   worktree sees them, so nothing another worktree, or a person not working
   in it, needs belongs there
   ([memory tiers](modules/M9-tasks-memory/templates/MEMORY-TIERS.md)).
+  Throwaway working files go under `.context/scratch/`, and a working
+  directory that nothing needs once the work is finished carries a
+  `CACHEDIR.TAG` file; `jig gc` keeps anything else under `.context/` until
+  it is preserved.
+- **Cache directory tag** — a file named `CACHEDIR.TAG`, starting with a
+  fixed signature line, that a tool leaves in a directory it can rebuild or
+  no longer needs, so backup tools and collectors can tell that directory
+  from content that may be the only copy of something. Jig's scripts tag
+  their working directories under `.context/` this way, and `jig gc` sets a
+  tagged directory aside where any other ignored content keeps a worktree
+  ([the collector's rule](plugin/gc/README.md#ignored-content)).
 - **Collection kind** — one class of resource a machine's garbage collector
   knows how to judge and remove (worktrees, scratch directories, container
   volumes, merged branches, tool state, registered processes), shipped with

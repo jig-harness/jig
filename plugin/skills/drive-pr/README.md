@@ -110,7 +110,11 @@ Every field of the file, for every skill, is in the plugin's
 **Ignore `.context/`.** The drive keeps working files (its handoff note,
 mailbox, foreground-wait records) in `.context/` at the root of the working
 tree, and it refuses to push or certify a tree with untracked files. Add
-`.context/` to the repository's `.gitignore`.
+`.context/` to the repository's `.gitignore`. Throwaway working files go
+under `.context/scratch/`, and the mailbox and foreground-wait directories
+carry a `CACHEDIR.TAG` file, since nothing needs them once the work is
+finished; `jig gc` keeps anything else under `.context/` until it is
+preserved.
 
 The foreground supervisor establishes its process identity before starting the
 command. If it cannot establish ownership, the command does not run and the

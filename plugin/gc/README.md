@@ -49,8 +49,8 @@ user's own fetches. See
 | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `tool-state` | Runs drive-pr's state reaper in report mode for each configured clone: the files a clone keeps beside the drive's database that the reaper would retire. Receipts retain its full per-family proof. Collection remains disabled until state creators hold shared admission across every state use; the reaper's lock excludes only other reapers.                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `scratch`    | Inventories only declared directory prefixes. Owner records include captured process creation identities; a live owner anywhere in the subtree keeps the root. Where the identity cannot be captured (no readable process table), the record says so and the root is kept as unverified. Missing ownership is a finding. Collection remains disabled until fixture registration proves all holders gone.                                                                                                                                                                                                                                                                                                                                                 |
-| `worktrees`  | Reports Git changes, hidden index flags, operations, pull request state, remote commit coverage, process holders and idleness. The primary checkout and paths outside declared roots are excluded. Ignored local content needs preservation evidence, except a detected package manager's dependency directory (`node_modules`, wherever it sits in the tree), which is rebuildable from the root `package.json` and tracked lockfile and never vetoes on its own; the receipt lists the paths set aside this way. A worktree [Orca](https://www.onorca.dev) manages is marked `runtime: orca` and collected through Orca ([below](#worktrees-orca-manages)); any other eligible worktree remains report-only until the opener shares session admission. |
-| `receipts`   | Machine kind; removes receipts past retention while preserving the latest completed report for each repository and kind. Unfinished receipts and runs whose inventory failed never take that place.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `worktrees`  | Reports Git changes, hidden index flags, operations, pull request state, remote commit coverage, process holders and idleness. The primary checkout and paths outside declared roots are excluded. Ignored local content needs preservation evidence unless a rule accounts for it ([below](#ignored-content)); the receipt lists every path set aside and the rule that set it aside. A worktree [Orca](https://www.onorca.dev) manages is marked `runtime: orca` and collected through Orca ([below](#worktrees-orca-manages)); any other eligible worktree remains report-only until the opener shares session admission. |
+| `receipts`   | Machine kind; removes receipts past retention while preserving the latest completed report for each repository and kind. Unfinished receipts and runs whose inventory failed never take that place. Removes the one-time archives of collected worktrees' ignored content past the same retention.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 
 Scratch creators use `shared/gc-lock.ts` to hold shared admission while
 creating a scope and writing its owner record. Collectors take exclusive
@@ -61,6 +61,54 @@ needs inspection; it is never stolen on age, and the refusal names its
 creator and why that creator counts as gone.
 Worktree openers have not adopted that protocol, so clean or merged worktrees
 are reported only, except those a workspace runtime manages.
+
+### Ignored content
+
+Ignored content is the one part of a worktree git cannot give back: an
+environment file or a note may be the only copy. A worktree with ignored
+content no rule accounts for is a `finding`, and its reason names the paths.
+A rule accounts for content only by a mark the writer left, never by a name
+alone:
+
+- **`dependency`**: a detected package manager's dependency directory
+  (`node_modules`, wherever it sits in the tree), rebuilt from the root
+  `package.json` and the tracked lockfile; listed as `rebuildable`.
+- **`cache-tag`**: a directory holding a `CACHEDIR.TAG` file that starts with
+  the [cache directory tag](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+  signature. Other tools tag their caches this way, and so do Jig's scripts
+  for the working directories they keep under `.context/` (the drive's
+  mailbox, foreground waits, intent chains).
+- **`self-ignoring`**: a directory whose own `.gitignore` holds the single
+  pattern `*`, the convention a tool writes to keep its cache out of git.
+- **`jig-scratch`**: `.context/scratch/`, where Jig's procedures write the
+  files they never need again.
+- **`drive-handoff`**: a drive's handoff (`.context/pr-drive-<PR>.md`) that
+  opens with the machine block the drive writes.
+- **`empty`**: a directory with nothing in it.
+
+A link is never followed, so a link named like a marked directory, or a tag
+that is a link, marks nothing. Anything else under `.context/`, such as a
+facet move's record a procedure tells a person to keep, still vetoes. The
+receipt's `details.setAside` lists each path a mark set aside with its rule,
+and `details.rebuildable` the dependency directories.
+
+**Worktrees made before marking.** Marking covers what was written after
+Jig's procedures began to mark their working files, so a worktree made
+earlier holds unmarked files of the same kind. The first run of a `jig gc`
+that knows the marks records the time in `~/.local/state/jig/gc/marking-since`;
+a worktree whose creation (the time of its `commondir` file in git's
+administrative directory) is older than that gets a one-time archive instead
+of the veto. Right before removal, after the remove hook, the park and the
+last registry read, gc copies the ignored content no rule accounts for into
+`~/.local/state/jig/gc/archives/<date>/<archive>/`, links as links, checks
+that the copy holds every entry and byte of the source, and writes the
+archive's manifest beside it. A worktree whose content is larger than
+`gc.archive_max_bytes` (64 MiB by default; 0 archives nothing), whose
+creation time cannot be read, or whose copy fails or does not match, is
+kept. A report shows the planned archive in `details.archive` and its
+reason; the receipt of a collected worktree names the archive's path. Archives expire with
+the receipts: the `receipts` kind removes one once `gc.receipts_days` have
+passed since it was written, and keeps one whose manifest cannot be read.
 
 ### Worktrees Orca manages
 
