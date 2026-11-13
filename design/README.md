@@ -77,7 +77,8 @@ with the review.
 | [Issue facets: type, priority and size wherever the tracker keeps them](tracker-facets.md) | 41; Later: the command store |
 | [Structured answers, approving or choosing a parked decision in a word](structured-answers.md) | 46 |
 | [The classes of need, and where each is settled](need-classes.md) | 50 |
-| [Outbound calls, one governed transport for every system Jig calls](outbound-calls.md) | 51 |
+| [What a dispatched session leaves and where it runs](dispatched-sessions.md) | 51 |
+| [Outbound calls, one governed transport for every system Jig calls](outbound-calls.md) | 52 |
 
 ## Starting a design
 

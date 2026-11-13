@@ -12,7 +12,7 @@ and what changed is recorded in [CHANGELOG.md](CHANGELOG.md).
 First comes what lets a team's pull requests reach merge-ready with nobody
 watching. An agent working alone cannot get past a person, the dispatcher
 leaves no work stranded, and a person sees and steers the work from one
-place.
+place. Every run the dispatcher starts says what it concluded.
 
 ### 40. The pass trust boundary as mechanisms
 
@@ -66,7 +66,7 @@ it. What reaches a person arrives as a decision with options, answered in a
 word. A host fault arrives once, saying what to fix. Decisions that are a
 person's stay a person's.
 
-### 51. Staying inside the limits of the systems Jig calls
+### 52. Staying inside the limits of the systems Jig calls
 
 The systems Jig calls limit their callers. A forge counts requests an hour,
 a tracker charges each query a cost, and each ends a request that takes too
@@ -157,6 +157,18 @@ theirs. The dashboard writes nothing until each write can show that a person mad
 it. The first stage puts each pull request's status on the dispatch
 dashboard a team already runs. A person decides on the rest once that stage
 is in use.
+
+### 51. What a dispatched session leaves and where it runs
+
+A run the dispatcher starts ends with a short closing report. The agent that
+did the work writes it: what it concluded, its question for a person, and
+the next step it suggests. The dashboard and `jig ask` show the report, so a
+run's terminal tab closes however the run ended. A run that leaves no report
+gets its cause recorded from its transcript. A second session runtime runs
+each pass as a plain process. A host then dispatches with no desktop app and
+no terminal kept open, and a person can still follow a run or take it over.
+That runtime becomes the default once it has run on a dispatching host, and
+Orca stays supported.
 
 ### 34. Jig in the Orca ecosystem
 
