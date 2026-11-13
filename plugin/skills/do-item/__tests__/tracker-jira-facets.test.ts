@@ -261,6 +261,16 @@ describe("Jira: type in the issue types and size in a custom field", () => {
     );
     expect(calls).toEqual([]);
   });
+
+  it("refuses a size label among a new issue's labels where the size field keeps no field_labels", async () => {
+    const { t, calls } = jira(routes(SITE), STORES);
+    await expect(
+      t.createIssue({ title: "T", description: "", labels: ["small"] }),
+    ).rejects.toThrow(
+      "the label 'small' stands for the size small, which this repository keeps in the field 'Size', not in labels",
+    );
+    expect(calls).toEqual([]);
+  });
 });
 
 describe("Jira: reading a type kept in the issue types", () => {

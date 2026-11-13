@@ -484,6 +484,8 @@ function resolved(
     nativeMap: Record<string, MapNames>;
     /** A native store that keeps a value in its labels where the tracker cannot (Jira's issue type). */
     fallback?: boolean;
+    /** The store is Jira's `field_labels`, whose adapter refuses its labels itself. */
+    fieldLabels?: boolean;
   },
 ): ResolvedFacet {
   const store = entry?.store ?? base.defaultStore;
@@ -517,7 +519,9 @@ function resolved(
     named: Object.keys(entry?.values ?? {}).flatMap(
       (k) => canonical(base.values, k) ?? [],
     ),
-    retired: base.values.map((v) => [v, base.labels(v)] as const),
+    ...(base.fieldLabels === true
+      ? {}
+      : { retired: base.values.map((v) => [v, base.labels(v)] as const) }),
     ...(store === "native" && base.fallback === true
       ? { fallback: base.values.map((v) => [v, base.labels(v)] as const) }
       : {}),
@@ -673,6 +677,7 @@ function sizeSlot(inputs: FacetInputs, tax: TaxonomyValues | null): FacetSlot {
     labels: (v) => [v],
     nativeField: null,
     nativeMap: {},
+    fieldLabels: entry !== inputs.entries.size,
   });
 }
 
@@ -733,6 +738,7 @@ function typeSlot(
     nativeField: null,
     nativeMap: {},
     fallback: inputs.adapter === "jira",
+    fieldLabels: entry !== inputs.entries.type,
   });
 }
 
