@@ -194,6 +194,8 @@ function isRepoEntry(value: unknown): boolean {
     Array.isArray(value.actions) &&
     Array.isArray(value.records) &&
     Array.isArray(value.unplaced) &&
+    value.unplaced.every(isMapping) &&
+    value.records.every(isMapping) &&
     (value.followupSince === null ||
       value.followupSince === undefined ||
       (typeof value.followupSince === "string" &&

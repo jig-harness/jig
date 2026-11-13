@@ -171,6 +171,17 @@ describe("lastTick's read budget", () => {
 });
 
 describe("readReceipt", () => {
+  it("skips a receipt whose unplaced or record rows are not objects", () => {
+    const dir = root();
+    const base = receipt("2026-01-01", "/a", "2026-01-01T00:00:00Z");
+    const entry = { ...(base.repos[0] as object), unplaced: [null] };
+    const path = writeReceipt(
+      { ...base, repos: [entry] } as unknown as TickReceipt,
+      dir,
+    );
+    expect(readReceipt(path)).toBeNull();
+  });
+
   it("skips a receipt whose repository entry lacks the unplaced rows failure rendering reads", () => {
     const dir = root();
     const base = receipt("2026-01-01", "/a", "2026-01-01T00:00:00Z");
