@@ -161,6 +161,37 @@ writeFileSync(${JSON.stringify(marker)}, "executed"); process.stdout.write("toke
   expect(existsSync(marker)).toBe(false);
 });
 
+/**
+ * Run `source` in a child Bun inside `f.repo`, with the fake `gh` in
+ * `f.root/bin` first on the path; the JSON it prints.
+ */
+function runInChild(
+  f: ReturnType<typeof repository>,
+  source: string,
+): Record<string, unknown> {
+  const result = Bun.spawnSync(
+    [
+      process.execPath,
+      "--no-env-file",
+      `--config=${resolve(import.meta.dir, "../bunfig.toml")}`,
+      "-e",
+      source,
+    ],
+    {
+      cwd: f.repo,
+      env: {
+        ...gitEnvironment(),
+        PATH: `${join(f.root, "bin")}${delimiter}${process.env.PATH}`,
+      },
+      stdout: "pipe",
+      stderr: "pipe",
+      timeout: 30_000,
+    },
+  );
+  expectSpawnExit(result, 0);
+  return JSON.parse(result.stdout.toString()) as Record<string, unknown>;
+}
+
 /** The commit `f.repo` has checked out. */
 function headOf(f: ReturnType<typeof repository>): string {
   return Bun.spawnSync(["git", "-C", f.repo, "rev-parse", "HEAD"], {
@@ -217,27 +248,7 @@ import { worktreeProof } from ${JSON.stringify(resolve(import.meta.dir, "../kind
 if (${options.head !== null}) writeDrivenTree(${JSON.stringify(join(f.repo, ".git"))}, { pr: 7, branch: "topic", remote: "upstream", created: true, head: ${options.head} });
 try { console.log(JSON.stringify(await worktreeProof(${JSON.stringify(f.repo)}, { remote: ${JSON.stringify(options.remote)}, base: "main" }, 7))); }
 catch (error) { console.log(JSON.stringify({ error: String(error) })); }`;
-  const result = Bun.spawnSync(
-    [
-      process.execPath,
-      "--no-env-file",
-      `--config=${resolve(import.meta.dir, "../bunfig.toml")}`,
-      "-e",
-      source,
-    ],
-    {
-      cwd: f.repo,
-      env: {
-        ...gitEnvironment(),
-        PATH: `${bin}${delimiter}${process.env.PATH}`,
-      },
-      stdout: "pipe",
-      stderr: "pipe",
-      timeout: 30_000,
-    },
-  );
-  expectSpawnExit(result, 0);
-  return JSON.parse(result.stdout.toString()) as Record<string, unknown>;
+  return runInChild(f, source);
 }
 
 /** What the fake `gh` was asked, one call per line. */
@@ -335,27 +346,7 @@ console.error(${JSON.stringify(answer.stderr)}); process.exit(1);
   );
   const source = `import { requestsForCommit } from ${JSON.stringify(resolve(import.meta.dir, "../kinds/worktree-git.ts"))};
 console.log(JSON.stringify(await requestsForCommit(${JSON.stringify(f.repo)}, "origin", ${JSON.stringify(head)})));`;
-  const result = Bun.spawnSync(
-    [
-      process.execPath,
-      "--no-env-file",
-      `--config=${resolve(import.meta.dir, "../bunfig.toml")}`,
-      "-e",
-      source,
-    ],
-    {
-      cwd: f.repo,
-      env: {
-        ...gitEnvironment(),
-        PATH: `${bin}${delimiter}${process.env.PATH}`,
-      },
-      stdout: "pipe",
-      stderr: "pipe",
-      timeout: 30_000,
-    },
-  );
-  expectSpawnExit(result, 0);
-  return JSON.parse(result.stdout.toString()) as Record<string, unknown>;
+  return runInChild(f, source);
 }
 
 // The endpoint lists open and merged pull requests; the CLOSED record only
