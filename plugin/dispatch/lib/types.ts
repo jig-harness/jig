@@ -38,6 +38,8 @@ export interface DispatchSection {
   followupCommand: string | null;
   /** How long a claimed item may have no running session before it is reported stalled. */
   stalledAfterMs: number;
+  /** Which of the identity's claimed items the stall watch reads as pickups: `claimed`, only those a launch record of this host or a claim marker took; `assigned`, every one. */
+  stalledScope: StalledScope;
   /** How long a dispatched session may wait before it is reported. */
   blockedAfterMs: number;
   /** A drive drifts when its unresolved threads at the latest recorded round are not below the count this many recorded rounds earlier. */
@@ -95,7 +97,14 @@ export interface ClaimedItem {
   state: string;
   /** Read for a served person rather than `dispatch.identity`: a person starts their own work too, so only this machine's pickup record makes the claim dispatch's. */
   served?: true;
+  /** When the tracker last saw the item change; absent where the read has none. */
+  updatedAt?: string;
+  /** Under `stalledScope: claimed`, a trusted claim marker naming the identity is on the item (`found`), or whether one is could not be read (`unread`); absent when none is. */
+  claimMarker?: "found" | "unread";
 }
+
+/** `dispatch.stalled_scope`'s values. */
+export type StalledScope = "claimed" | "assigned";
 
 /** An item the tracker wants picked up, with the evidence for it. */
 export interface WantedItem {

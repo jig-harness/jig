@@ -51,7 +51,12 @@ import {
 import type { LiveIssue } from "../../../skills/do-item/scripts/lib/execution-plan.ts";
 import type { ServedPerson } from "../serve-config.ts";
 import { pickupReads, type PickupReads } from "../pickup-reads.ts";
-import { queueHold, rankQueue, type QueueItem } from "../queue-rank.ts";
+import {
+  PERSON_HOLD,
+  queueHold,
+  rankQueue,
+  type QueueItem,
+} from "../queue-rank.ts";
 import { failureText } from "../text.ts";
 import type { ClaimedItem, Unplaced, WantedItem } from "../types.ts";
 
@@ -708,7 +713,7 @@ function nodeHold(
         l === (options.manualOps ?? "manual-ops"),
     )
   )
-    return "needs a person to start";
+    return PERSON_HOLD;
   if (
     node.ancestor === undefined &&
     node.pull === undefined &&

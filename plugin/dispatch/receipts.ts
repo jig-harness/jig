@@ -57,6 +57,7 @@ import type { NotAdmitted } from "./lib/accounts.ts";
 import type { FailureEntry } from "./lib/failures.ts";
 import type { LineLoad } from "./lib/dashboard-contract.ts";
 import type { ReflectionReport } from "./lib/reflection-route.ts";
+import { tickFailure } from "./lib/tick-failure.ts";
 import { failureText } from "./lib/text.ts";
 import type { Defect, RepoReport } from "./lib/types.ts";
 
@@ -186,16 +187,25 @@ export function receiptPaths(root = stateRoot()): string[] {
     );
 }
 
+/** Whether a repository entry's `followupSince` is absent or a parseable time. */
+function validFollowupSince(value: unknown): boolean {
+  return (
+    value === null ||
+    value === undefined ||
+    (typeof value === "string" && Number.isFinite(Date.parse(value)))
+  );
+}
+
 function isRepoEntry(value: unknown): boolean {
   return (
     isMapping(value) &&
     typeof value.path === "string" &&
     Array.isArray(value.actions) &&
     Array.isArray(value.records) &&
-    (value.followupSince === null ||
-      value.followupSince === undefined ||
-      (typeof value.followupSince === "string" &&
-        Number.isFinite(Date.parse(value.followupSince))))
+    Array.isArray(value.unplaced) &&
+    value.unplaced.every(isMapping) &&
+    value.records.every(isMapping) &&
+    validFollowupSince(value.followupSince)
   );
 }
 
@@ -224,23 +234,107 @@ export function receiptOrWhy(path: string): TickReceipt | string {
     : "it is not a tick's receipt";
 }
 
+/** Receipts read back for a run of failed ticks: each can be large, and a host failing for days holds thousands. */
+const FAILED_RUN_READ = 100;
+
+/** Whether a tick that ran passed: it completed with exit 0. */
+function passed(receipt: TickReceipt): boolean {
+  return receipt.completed && receipt.exitStatus === 0;
+}
+
+/**
+ * A receipt read back for the last run: the tick's receipt when it ran,
+ * `"held"` when it found the lock held and ran nothing (demonstrably no run),
+ * `"invalid"` when the file does not hold a receipt (it may record a run that
+ * cannot be interpreted, so it is no proof of none).
+ */
+function ranTick(path: string): TickReceipt | "held" | "invalid" {
+  const receipt = readReceipt(path);
+  if (receipt === null) return "invalid";
+  return receipt.lockHeldBy !== undefined ? "held" : receipt;
+}
+
 /**
  * The newest receipt of a tick that ran, for `jig status` and `jig doctor`;
- * null when there is none. A tick that found the lock held ran nothing.
+ * null when there is none. A tick that found the lock held ran nothing. A
+ * failed one carries its reason and the failed ticks in a row it ends. Every
+ * receipt file read, held or invalid ones included, spends one of
+ * `FAILED_RUN_READ`; a run still going when they are spent is `capped`, and
+ * with none that ran found by then the answer is `unread` when receipts
+ * remain, null when there are none to read. A receipt that does not read is
+ * an unknown tick, never an absent one: when it is newer than every tick that
+ * ran the last run is `unread`, and when it lies inside a run of failed ticks
+ * the run is `capped`, at least as long as counted.
  */
 export function lastTick(root = stateRoot()): LastRun | null {
-  for (const path of receiptPaths(root).reverse()) {
-    const receipt = readReceipt(path);
-    if (receipt !== null && receipt.lockHeldBy === undefined)
-      return {
-        runId: receipt.runId,
-        startedAt: receipt.startedAt,
-        completed: receipt.completed,
-        exitStatus: receipt.exitStatus,
-        path,
-      };
+  const paths = receiptPaths(root).reverse();
+  let reads = 0;
+  const next = (
+    from: number,
+  ): { at: number; receipt: TickReceipt } | "invalid" | null => {
+    for (let at = from; at < paths.length && reads < FAILED_RUN_READ; at++) {
+      reads++;
+      const receipt = ranTick(paths[at] as string);
+      if (receipt === "invalid") return "invalid";
+      if (receipt !== "held") return { at, receipt };
+    }
+    return null;
+  };
+  const newest = next(0);
+  if (newest === "invalid" || newest === null) {
+    // Receipts left unread, or one that does not read, are an unknown
+    // history, not an absent one.
+    return newest === "invalid" ||
+      (reads >= FAILED_RUN_READ && reads < paths.length)
+      ? {
+          runId: "",
+          startedAt: "",
+          completed: false,
+          exitStatus: 1,
+          path: paths[0] as string,
+          unread: reads,
+        }
+      : null;
   }
-  return null;
+  const { receipt } = newest;
+  const path = paths[newest.at] as string;
+  const last: LastRun = {
+    runId: receipt.runId,
+    startedAt: receipt.startedAt,
+    completed: receipt.completed,
+    exitStatus: receipt.exitStatus,
+    path,
+  };
+  if (passed(receipt)) return last;
+  let runs = 1;
+  let since = receipt.startedAt;
+  let from = newest.at + 1;
+  let capped = false;
+  for (;;) {
+    const earlier = next(from);
+    if (earlier === "invalid") {
+      capped = true;
+      break;
+    }
+    if (earlier === null) {
+      // Every read is the next file in order, so `reads` is how far the scan got.
+      capped = reads >= FAILED_RUN_READ && reads < paths.length;
+      break;
+    }
+    if (passed(earlier.receipt)) break;
+    runs++;
+    since = earlier.receipt.startedAt;
+    from = earlier.at + 1;
+  }
+  return {
+    ...last,
+    reason: tickFailure(receipt),
+    failing: {
+      runs,
+      since,
+      capped,
+    },
+  };
 }
 
 /**
