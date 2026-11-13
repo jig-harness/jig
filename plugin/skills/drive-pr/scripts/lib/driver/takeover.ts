@@ -260,25 +260,20 @@ async function decideByLedger(
 }
 
 /**
- * The held batch `planned` read before startup, with the holds startup's
- * ledger seeding restored since; the planned one alone when it cannot be
- * read again.
+ * The held batch as it stands after startup. Startup's ledger seeding may
+ * replace the batch, so each entry present now is taken as it is now, with its
+ * current metadata; an entry `planned` read before startup that is no longer
+ * there is carried after them. A batch that cannot be read again stops the
+ * takeover (exit `1`) rather than reconciling over a stale one.
  */
 export async function heldAfterStartup(
   pr: string,
   planned: readonly HeldItem[],
 ): Promise<HeldItem[]> {
-  const held = [...planned];
-  try {
-    for (const item of await heldSnapshot(pr))
-      if (!held.some((h) => h.key === item.key && h.kind === item.kind))
-        held.push(item);
-  } catch (err) {
-    if (!(err instanceof ExitError)) throw err;
-    console.error(
-      "takeover: the held batch could not be read again after startup; carrying the one read before it.",
-    );
-  }
+  const held = await heldSnapshot(pr);
+  for (const item of planned)
+    if (!held.some((h) => h.key === item.key && h.kind === item.kind))
+      held.push(item);
   return held;
 }
 

@@ -125,7 +125,7 @@ describe("the takeover record's reopenFailed", () => {
 });
 
 describe("drive.ts --take-over reopening unverified holds", () => {
-  it("re-holds an unverified thread unconfirmed with no reply, and records a hold that changed apart", async () => {
+  it("re-holds an unverified thread unconfirmed with no reply, and reopens a hold the takeover's own reconciliation replaced, on its current reply", async () => {
     const owner = fakeDriver();
     const gh = replyRecordingGh("takeover-binding");
     const noticeFile = join(tmpRoot, "takeover-binding-notice");
@@ -157,7 +157,8 @@ describe("drive.ts --take-over reopening unverified holds", () => {
         scratchClean.dir,
       );
       // PRRT_h is held on its visible reply; PRRT_c on an earlier one, so the
-      // takeover's own reconciliation replaces it before the reopen reaches it.
+      // takeover's own reconciliation replaces it before the reopen reads the
+      // batch again and reopens the current entry.
       const replyH = "https://example.invalid/PRRT_h/comment-1";
       const replyC = "https://example.invalid/PRRT_c/comment-1";
       await hold(stateDir, "PRRT_h", "thread", replyH);
@@ -176,11 +177,11 @@ describe("drive.ts --take-over reopening unverified holds", () => {
         undefined,
         { env: { DRIVE_PR_STOP_GRACE_SEC: "1" }, extraBinDir: gh.bin },
       );
-      expect(r.stderr).toContain("1 hold(s) reopened, 1 not");
+      expect(r.stderr).toContain("2 hold(s) reopened, 0 not");
       const after = JSON.parse((await state(stateDir, ["get", "999"])).stdout);
       const record = after.takeovers[0];
-      expect(record.reopened).toEqual(["PRRT_h"]);
-      expect(record.reopenFailed).toEqual(["PRRT_c"]);
+      expect([...record.reopened].sort()).toEqual(["PRRT_c", "PRRT_h"]);
+      expect(record.reopenFailed).toBeUndefined();
       const byKey = new Map(
         after.held.map((h: { key: string }) => [h.key, h] as const),
       );
@@ -200,10 +201,7 @@ describe("drive.ts --take-over reopening unverified holds", () => {
       expect(notice).toContain(
         `PRRT_h (was accepted, round 0): re-held unconfirmed on ${replyH}`,
       );
-      expect(notice).toContain("could NOT be reopened");
-      expect(notice).toContain(
-        "PRRT_c (was accepted, round 0): NOT reopened — it is now held for another reply",
-      );
+      expect(notice).not.toContain("could NOT be reopened");
     } finally {
       owner.kill();
       await owner.exited;

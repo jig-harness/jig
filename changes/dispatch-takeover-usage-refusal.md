@@ -17,3 +17,6 @@ release: patch
   driver's and stops nothing. When the ledger names this clone's driver in
   another working tree, the refusal now names that tree and says to re-arm
   from there.
+- `drive.ts --take-over` reads the held batch again after startup and reopens
+  each hold as it stands then; a batch it cannot read again stops the takeover
+  with exit `1` instead of reconciling over the earlier one.
