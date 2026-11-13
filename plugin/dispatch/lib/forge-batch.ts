@@ -202,9 +202,10 @@ async function shrinking(
   paging: Paging,
   what: string,
   ask: (size: number) => Promise<Asked<unknown>>,
+  most = paging.size,
 ): Promise<Read<unknown>> {
   const read = await readShrinking(
-    paging.size,
+    Math.min(paging.size, most),
     ask,
     (failure) => failure.code === "too-costly",
   );
@@ -656,9 +657,12 @@ async function readChunks(
       paging,
       "pull requests' comments",
       (size) => {
-        chunk = prs.slice(at, at + size);
+        // A final short chunk must begin at its remaining size, otherwise a
+        // timeout retries the same query while only the nominal size shrinks.
+        chunk = prs.slice(at, at + Math.min(size, prs.length - at));
         return ask(owner, name, chunk);
       },
+      prs.length - at,
     );
     if (!answer.ok) return answer;
     const repository = field(answer.value, "data", "repository");

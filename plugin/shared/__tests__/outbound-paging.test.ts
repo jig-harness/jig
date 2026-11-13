@@ -55,6 +55,16 @@ describe("a page the system runs out of time on", () => {
     expect(page.size).toBe(1);
   });
 
+  it("rejects a non-finite starting size", async () => {
+    const { read } = system(10);
+    await expect(readShrinking(Number.NaN, read, outOfTime)).rejects.toThrow(
+      "the starting page size must be finite",
+    );
+    await expect(readShrinking(Infinity, read, outOfTime)).rejects.toThrow(
+      "the starting page size must be finite",
+    );
+  });
+
   it("is not asked again after any other failure", async () => {
     const asked: number[] = [];
     const page = await readShrinking<number, Code>(

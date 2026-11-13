@@ -19,7 +19,7 @@
  * last time it shrank: a size that fails is then tried once in that time,
  * not on every other run.
  */
-import type { Failure, Outcome } from "../outcome.ts";
+import { Defect, type Failure, type Outcome } from "../outcome.ts";
 
 /** A page answered in less than this may double: twice the items stay well under `SLOW_MS`. */
 export const QUICK_MS = 2_500;
@@ -51,6 +51,8 @@ export async function readShrinking<T, Code extends string>(
   outOfTime: (failure: Failure<Code>) => boolean,
   clock: () => number = Date.now,
 ): Promise<ShrunkRead<T, Code>> {
+  if (!Number.isFinite(start))
+    throw new Defect("the starting page size must be finite");
   let size = Math.max(1, Math.floor(start));
   for (;;) {
     const began = clock();

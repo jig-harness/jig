@@ -205,13 +205,18 @@ describe("named pull requests' comments the forge cannot answer a full query of"
     const read = await readComments(SLUG, prs, sizes, ask);
     if (!read.ok) throw new Error(read.failure.reason);
     expect([...read.value.comments.keys()]).toEqual(prs);
-    expect(asked.map((chunk) => chunk.length)).toEqual([
-      20, 20, 12, 6, 6, 6, 2,
-    ]);
+    expect(asked.map((chunk) => chunk.length)).toEqual([20, 10, 5, 5, 5, 5]);
     expect(read.value.pages).toBe(4);
     expect(sets.map(([key, size]) => [key, size.size])).toEqual([
-      [`comments:${SLUG}`, 6],
+      [`comments:${SLUG}`, 5],
     ]);
+  });
+
+  it("starts a final short query at the number of pull requests remaining", async () => {
+    const { asked, ask } = commentsForge(1);
+    const read = await readComments(SLUG, [1, 2], undefined, ask);
+    expect(read.ok).toBe(true);
+    expect(asked.map((chunk) => chunk.length)).toEqual([2, 1, 1]);
   });
 
   it("keeps no size when no pull request is named", async () => {

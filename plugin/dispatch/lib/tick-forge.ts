@@ -278,7 +278,7 @@ function queryNote(queried: RepositoryOutcome): string {
       : `; ${overflow.length} with more comments than one page holds, listed on their own`;
   const sized =
     pageSize < PAGE
-      ? ` of at most ${pageSize}, as many as the forge answers in time`
+      ? ` ending at ${pageSize} pull requests per page, as many as the forge answers in time`
       : "";
   return ` (one repository query: ${pages} page(s)${sized}, ${cost} point(s)${own})`;
 }
