@@ -3,6 +3,7 @@
  * installed command in a child with its own home.
  */
 import { afterEach, describe, expect, it } from "bun:test";
+import { Database } from "bun:sqlite";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
@@ -232,6 +233,31 @@ describe("jig dispatch receipts", () => {
     });
     expectSpawnExit(report, 0);
     expect(report.stdout).toContain("upgrade: failed: claude 0.2.0 -> 0.3.0");
+  });
+});
+
+describe("a tick a throw stops before its act phase", () => {
+  it("writes a failed receipt, so status and doctor read it rather than the tick before", async () => {
+    const w = fixture();
+    const state = join(w.home, ".local", "state", "jig", "dispatch");
+    const ran = await tick(w);
+    expect(lastTick(state)?.runId).toBe(ran.runId);
+    // A newer plugin's database, which this one refuses at the tick's start.
+    const db = new Database(join(state, "state.sqlite"));
+    db.run("PRAGMA user_version = 9999");
+    db.close();
+    for (let i = 0; i < 2; i++) {
+      const refused = await w.dispatch(["--repo", w.repo, "--json"]);
+      expectSpawnExit(refused, 2);
+    }
+    const last = lastTick(state);
+    expect(last).toMatchObject({
+      completed: false,
+      exitStatus: 2,
+      failing: { runs: 2, capped: false },
+    });
+    expect(last?.runId).not.toBe(ran.runId);
+    expect(last?.reason).toContain("in the start phase");
   });
 });
 

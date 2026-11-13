@@ -21,6 +21,7 @@
  * sub-task type); any other two different values read as no type.
  */
 
+import { failedHealth } from "../unavailable.ts";
 import { TrackerConfigError } from "../config-error.ts";
 import { readSignal, refuseStopped } from "../facets/bounds.ts";
 import { type Facets, type ResolvedFacet, usable } from "../facets/config.ts";
@@ -484,10 +485,7 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
         }
       return { status: "ok" as const };
     } catch (err) {
-      return {
-        status: "failed" as const,
-        error: (err instanceof Error ? err.message : String(err)).slice(0, 300),
-      };
+      return failedHealth(err);
     }
   }
 

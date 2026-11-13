@@ -8,7 +8,7 @@
 import { isRecord } from "../../../../../../shared/guards.ts";
 import type { Facet } from "../port.ts";
 import { adfToMarkdown } from "./adf.ts";
-import type { JiraStatus } from "./model.ts";
+import type { JiraStatus, StateInput } from "./model.ts";
 import { JiraApiError } from "./transport.ts";
 
 // ── Shape helpers ──────────────────────────────────────────────────────────
@@ -113,6 +113,19 @@ export function statusOf(v: unknown, where: string): JiraStatus {
     id: String(s.id ?? ""),
     name: str(s.name, `${where}.name`),
     category,
+  };
+}
+
+/** What the model needs to read an issue's state: its status, issue type and resolution, read as `parseIssue` reads them. */
+export function stateInputOf(v: unknown): StateInput {
+  const raw = record(v, "issue");
+  const key = str(raw.key, "issue.key");
+  const at = (field: string) => `issue ${key}.${field}`;
+  const f = record(raw.fields, at("fields"));
+  return {
+    status: statusOf(f.status, at("status")),
+    issueType: issueTypeOf(f.issuetype),
+    resolution: nameOf(f.resolution, at("resolution")),
   };
 }
 
