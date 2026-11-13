@@ -250,7 +250,7 @@ describe("the icon vocabulary", () => {
           async () => (await card.count()) === 1,
         );
         expect(await card.locator(".answers").textContent()).toBe(
-          "@someone chose Keep (the recommended option).",
+          "contested: @someone chose Keep (the recommended option).",
         );
         expect(await card.locator(".answers svg").count()).toBe(0);
         expect(problems).toEqual([]);

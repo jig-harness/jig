@@ -221,8 +221,10 @@ the load gauges, an account's state, why a need waits, the answer states
 and the page's own controls. Every view and the Help view draw from that
 map, and a test reads each recorded set where the code declares it, so a
 word added to a set with no icon in the map fails the gates. A word the map
-does not hold, such as one a newer dispatcher records, is drawn as its word
-alone. The map also holds the icons the card system's work identity and
+does not hold, such as a cause, stage, source or answer state a newer
+dispatcher records, is drawn as its word alone. An act or queue group the
+views do not enumerate is not drawn at all: the grouping lists only the known
+ones. The map also holds the icons the card system's work identity and
 decision rows draw (an issue, linked work, a person's own words, a note)
 and a retry control's, which no view draws today.
 

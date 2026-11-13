@@ -20,6 +20,7 @@ import { ACT_ICONS, CAUSE_ICONS, EVERYONE_ICONS, iconOf } from "./icons.ts";
 import { Mark } from "./marks.tsx";
 import { MoreToggle, SHOWN_CLOSED, useShowAll } from "./more.tsx";
 import type { LineSnapshot } from "../../plugin/dispatch/lib/dashboard-contract.ts";
+import type { NeedAct } from "../../plugin/shared/acts.ts";
 import {
   type NeedRow,
   type NeedView,
@@ -88,7 +89,9 @@ function AnswerNotes({ need }: { need: NeedView }) {
       {need.answerNotes.map((note) => (
         <p className="sm answers" key={note.text}>
           <BareWord of={iconOf(EVERYONE_ICONS, note.state)}>
-            {note.text}
+            {Object.hasOwn(EVERYONE_ICONS, note.state)
+              ? note.text
+              : `${note.state}: ${note.text}`}
           </BareWord>
         </p>
       ))}
@@ -323,10 +326,14 @@ export function NeedsPanel({
                 className={`groupHead${i === 0 ? " first" : ""}${rest ? " rest" : ""}`}
                 key={rowKeyOf(row)}
               >
-                <span className="headWord">
-                  <Glyph of={iconOf(ACT_ICONS, row.head)} size={16} />
-                  {row.head}
-                </span>
+                {Object.hasOwn(ACT_ICONS, row.head) ? (
+                  <ActPill act={row.head as NeedAct} />
+                ) : (
+                  <span className="headWord">
+                    <Glyph of={iconOf(ACT_ICONS, row.head)} size={16} />
+                    {row.head}
+                  </span>
+                )}
               </div>
             );
           seen++;
