@@ -394,6 +394,14 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.224.2] - 2026-11-13
+
+Reading who made a Linear assignment costs a tenth of the query complexity it did.
+
+### Fixed
+
+- The assignment-history and state-history reads asked Linear for each history entry's user together with the user's teams, with no limit on the team list. Linear prices an unlimited list at its default page of 50 for every one of up to 100 history entries, so one history read cost about 6,000 points of the credential's hourly complexity limit (3,000,000), where the same read with the list limited to the one team it is filtered to costs about 600, with the same answer. A served queue that re-reads a dozen assignment histories every tick therefore spent most of the complexity Linear refills in the tick interval, and the dispatcher's reads were held back at the `tracker_share` floor.
+
 ## [0.224.1] - 2026-11-13
 
 ### Fixed
@@ -7802,7 +7810,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.224.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.224.2...HEAD
+[0.224.2]: https://github.com/jig-harness/jig/compare/v0.224.1...v0.224.2
 [0.224.1]: https://github.com/jig-harness/jig/compare/v0.224.0...v0.224.1
 [0.224.0]: https://github.com/jig-harness/jig/compare/v0.223.5...v0.224.0
 [0.223.5]: https://github.com/jig-harness/jig/compare/v0.223.4...v0.223.5
