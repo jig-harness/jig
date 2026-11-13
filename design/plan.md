@@ -21,7 +21,8 @@ Now is the line that runs with nobody watching: a team's pull requests
 driven to merge-ready while a person keeps every decision that is theirs.
 First what keeps an unattended pass from getting past a person, then what
 keeps the line from stranding work, then one place to see and steer it,
-then Orca, the dispatcher's first session runtime.
+then what a dispatched run leaves behind and where it runs, then Orca, the
+dispatcher's first session runtime.
 
 ### 40. The pass trust boundary as mechanisms
 
@@ -528,6 +529,50 @@ when the operator chat proposes and never sends and, once item 40 has
 settled, a commit from the dashboard writes only as the person, after proof that
 they are present and a dry run that still matches.
 
+### 51. What a dispatched session leaves and where it runs
+
+A dispatched run's conclusion is lost: the wrapper keeps only its last
+`Question:` line, so why a run died or stalled is found only in the
+terminal tab it left. A run that parks or fails keeps that tab, and nothing
+closes it once its pull request merges. And the dispatcher runs nothing
+without Orca. [design/dispatched-sessions.md](dispatched-sessions.md) has
+how it works. What it will build, one pull request per step in the design's
+order, after `jig gc`'s fixes (#990, #991):
+
+- **The closing report.** Every dispatched run ends with a
+  `closing-report/v1` record, written by the agent that did the work through
+  `jig dispatch report`: what it concluded, its question for a person, the
+  next step it suggests, and a cause when it fell short. A drive's comes
+  from `drive.ts` at its stop, built on its passes' round reports. It is
+  kept on the launch record and the outcome log, and shown on the dashboard
+  and by `jig ask`.
+- **The steward's `cause` record** for a run that left no report, read from
+  an excerpt of its transcript, whose copy is kept only for such runs and
+  until seven days after the cause is applied, and at the latest until the
+  receipts retention ends.
+- **Tabs close on every exit**, a park and a failure included, once the
+  report and the cause record hold what a tab showed; the tick ends what a
+  run whose wrapper died left (`endRun`).
+- **The process runtime.** A second session runtime, chosen in the host's
+  machine file (`runtime: process`), that opens plain git worktrees under
+  `jig gc`'s shared admission, starts each run as a unit or job of the
+  host's service manager with an environment built from a list and bound to
+  its account as today, launches a pickup's first drive itself, and lets a
+  person follow or take over a run (`jig dispatch attach`).
+- **The default changes** to the process runtime after a week's run on a
+  dispatching host, as the
+  [ADR-0011](../docs/adr/ADR-0011-the-dispatcher-targets-orca-first.md)
+  amendment states; Orca stays an option.
+
+Done when, on a host running the dispatcher, every run of a week ended with
+a closing report or a recorded cause shown on the dashboard, no run's tab
+outlived its run, and the same week on `runtime: process` meets the
+design's proof: runs went on after the tick that started them ended, no
+pass outlived its launch record, every launch billed its admitted account,
+every pickup's first drive ran through the runtime, every worktree whose
+pull request merged was collected or kept with a reason, and a person
+attached to a run and took one over without Orca.
+
 ### 34. Jig in the Orca ecosystem
 
 Jig's tooling reaches [Orca](https://www.onorca.dev) in places built
@@ -816,7 +861,34 @@ how it works and what is left. Done when:
   state, in both themes;
 - search works on a phone, and the plugin page shows one agent's steps at a
   time;
-- the home and adoption pages show an audit sheet of Jig's own audit.
+- the adoption page shows an audit sheet of Jig's own audit, with a direct
+  link from the home page.
+
+### 51. Present Jig as a software factory, told in three layers
+
+A reader should learn in one screen what Jig does for a team and who
+merges. [The website design](website.md#the-message-a-software-factory-first)
+sets the message: the factory comes first; what runs by itself, what a team
+gets and what it is built from order the site. The home page tells one
+work-item loop, with a direct path to the audit for a team adopting one
+module at a time. The [epic](https://github.com/jig-harness/jig/issues/1019)
+holds this work.
+
+After the message design merges, file and prepare the design brief, then
+run an external Claude Design round. The person supplies the reference
+site with the brief and accepts the returned design. Only then change
+README.md, FACTORY.md, FEATURES.md and the site together, including their
+parsers and tests. The design names what moves down a level and the
+Protocol's page routes; its generation and rendering belong to the
+[Protocol design issue](https://github.com/jig-harness/jig/issues/1016).
+The unrelated [website sync-record fix](https://github.com/jig-harness/jig/issues/989)
+remains separate.
+
+Done when the accepted design is built, every capability is placed in one
+layer and marked shipped or planned, the home page tells one loop from
+work item to merge-ready pull request with a person merging, the audit is
+one step away, and the site and parser gates pass. Unattended-operation
+claims stay in On the roadmap until item 33's live-host checks are recorded.
 
 ### 38. One look for Jig's pages
 

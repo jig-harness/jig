@@ -12,7 +12,7 @@ and what changed is recorded in [CHANGELOG.md](CHANGELOG.md).
 First comes what lets a team's pull requests reach merge-ready with nobody
 watching. An agent working alone cannot get past a person, the dispatcher
 leaves no work stranded, and a person sees and steers the work from one
-place.
+place. Every run the dispatcher starts says what it concluded.
 
 ### 40. The pass trust boundary as mechanisms
 
@@ -147,6 +147,18 @@ it. The first stage puts each pull request's status on the dispatch
 dashboard a team already runs. A person decides on the rest once that stage
 is in use.
 
+### 51. What a dispatched session leaves and where it runs
+
+A run the dispatcher starts ends with a short closing report. The agent that
+did the work writes it: what it concluded, its question for a person, and
+the next step it suggests. The dashboard and `jig ask` show the report, so a
+run's terminal tab closes however the run ended. A run that leaves no report
+gets its cause recorded from its transcript. A second session runtime runs
+each pass as a plain process. A host then dispatches with no desktop app and
+no terminal kept open, and a person can still follow a run or take it over.
+That runtime becomes the default once it has run on a dispatching host, and
+Orca stays supported.
+
 ### 34. Jig in the Orca ecosystem
 
 [Orca](https://www.onorca.dev) is one of the workspace runtimes Jig's
@@ -255,6 +267,15 @@ An audit at the end of a greenfield kickoff that checks the chosen
 and the audit results a team marks as wrong reaching the
 [reflection store](plugin/skills/reflect/README.md), so the audit learns
 from them.
+
+### 51. Present Jig as a software factory, told in three layers
+
+The home page will say what Jig does for a team through one work-item
+loop: an agent builds the change and works through review. A person merges.
+The rest of the site will explain what runs by itself, what a team gets
+and what it is built from. Each capability will say whether it ships or is
+planned. A design round comes before the pages change. The audit stays one
+step from home for a team that adopts one module at a time.
 
 ### 38. One look for Jig's pages
 
