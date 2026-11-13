@@ -46,8 +46,9 @@ export function isoOf(instant: Temporal.Instant): string {
 }
 
 // Anything after the time that can carry zone information: `Z`, an offset
-// (`+01:00`, `+01:00:30`) or a bracketed annotation (`[Europe/Paris]`).
-const ZONE_MARK = /T[^Z+\-[]*[Z+\-[]/i;
+// (`+01:00`, `+01:00:30`) or a bracketed annotation (`[Europe/Paris]`), which
+// a date alone can carry too.
+const ZONE_MARK = /T[^Z+\-[]*[Z+\-[]|^\d{4}-\d{2}-\d{2}\[/i;
 
 /**
  * The instant a string names. It reads ISO 8601 with a `Z` or an offset

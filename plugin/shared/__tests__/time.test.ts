@@ -85,6 +85,7 @@ describe("parsing", () => {
       Temporal.Instant.from("2026-11-12T10:00:00Z").epochMilliseconds,
     );
     expect(parseMs("2026-11-12T11:00:00[Europe/Paris]")).toBeNaN();
+    expect(parseMs("2026-11-12[Europe/Paris]")).toBeNaN();
   });
 
   test("parseInstant throws where parseMs answers NaN", () => {
