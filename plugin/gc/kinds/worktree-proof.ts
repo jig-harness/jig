@@ -260,12 +260,14 @@ async function drivenRequests(
  * drive's record that names one, or the forge's pull requests for the
  * commit at HEAD.
  */
-function detachedSource(
+export function detachedSource(
   found: WorktreeRequest[],
   record: DrivenTree | null,
 ): string {
-  if (record)
+  if (record && found.length > 0)
     return `HEAD is detached; pull request #${record.pr} is named by the drive's tree record`;
+  if (record)
+    return `HEAD is detached; the drive's tree record names pull request #${record.pr}, which counts as no pull request holding its commit`;
   const numbers = found.map((pr) => `#${pr.number ?? "?"}`);
   if (numbers.length === 0)
     return "HEAD is detached; the forge lists no pull request holding its commit";

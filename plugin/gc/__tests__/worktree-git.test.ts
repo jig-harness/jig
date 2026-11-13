@@ -12,7 +12,11 @@ import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts"
 import { writeFakeProgram } from "../../../lib/test-helpers/fake-program.ts";
 import { gcGit, gitEnvironment } from "../git.ts";
 import { ancestry } from "../kinds/worktree-git.ts";
-import { classifyIgnored, worktreeProof } from "../kinds/worktree-proof.ts";
+import {
+  classifyIgnored,
+  detachedSource,
+  worktreeProof,
+} from "../kinds/worktree-proof.ts";
 
 function repository() {
   const root = mkdtempSync(join(tmpdir(), "gc-git-observation-"));
@@ -267,7 +271,7 @@ test("a detached worktree no drive recorded is judged by the pull requests the f
   const head = headOf(f);
   const pulls = [
     commitPull(9, "OPEN", head),
-    // A fork's pull request carrying the same commit is not this repository's.
+    // A fork's pull request is this repository's pull request all the same.
     commitPull(10, "MERGED", head, "other/repo"),
   ];
   expect(
@@ -277,7 +281,7 @@ test("a detached worktree no drive recorded is judged by the pull requests the f
     value: {
       state: "live",
       reason:
-        "branch has an open pull request; HEAD is detached; the forge lists pull request #9 as holding its commit",
+        "branch has an open pull request; HEAD is detached; the forge lists pull requests #9, #10 as holding its commit",
     },
   });
   expect(ghCalls(f)).toContain(
@@ -354,7 +358,9 @@ console.log(JSON.stringify(await requestsForCommit(${JSON.stringify(f.repo)}, "o
   return JSON.parse(result.stdout.toString()) as Record<string, unknown>;
 }
 
-test("the commit lookup keeps this repository's pull requests, in every state, and drops a deleted fork's", () => {
+// The endpoint lists open and merged pull requests; the CLOSED record only
+// pins how a state it did return is read.
+test("the commit lookup keeps every pull request the forge lists, a fork's or a deleted fork's included", () => {
   const f = repository();
   f.git("remote", "add", "origin", "https://github.com/team/repo.git");
   const head = headOf(f);
@@ -377,6 +383,7 @@ test("the commit lookup keeps this repository's pull requests, in every state, a
       { state: "MERGED", head, number: 1 },
       { state: "CLOSED", head, number: 2 },
       { state: "OPEN", head: "b".repeat(40), number: 3 },
+      { state: "MERGED", head, number: 4 },
     ],
   });
 });
@@ -459,6 +466,18 @@ test("a detached worktree moved onto a stacked branch's work is not proven by th
       ),
     },
   });
+});
+
+test("a drive record whose pull request counted as none is not reported as naming the proof", () => {
+  const record = { pr: 7 } as Parameters<typeof detachedSource>[1];
+  expect(detachedSource([], record)).toBe(
+    "HEAD is detached; the drive's tree record names pull request #7, which counts as no pull request holding its commit",
+  );
+  expect(
+    detachedSource([{ state: "OPEN", head: "a", number: 7 }], record),
+  ).toBe(
+    "HEAD is detached; pull request #7 is named by the drive's tree record",
+  );
 });
 
 test("the worktree policy reads the configured remote and that remote's HEAD", () => {

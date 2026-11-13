@@ -246,24 +246,6 @@ export async function requestByNumber(
 const UNKNOWN_COMMIT = /No commit found for SHA[\s\S]*HTTP 422/;
 /** The most pull requests one commit lookup reads; a full page is incomplete. */
 const COMMIT_REQUESTS_PAGE = 100;
-/**
- * Whether a REST pull request record comes from `source`: false for another
- * repository's, or for a source the forge no longer has (a deleted fork),
- * which cannot be this repository.
- */
-function fromSource(
-  head: Record<string, unknown>,
-  source: string,
-): Outcome<boolean, "malformed"> {
-  const repo = head.repo;
-  if (repo === null) return ok(false);
-  if (!isMapping(repo) || typeof repo.full_name !== "string")
-    return failed(
-      "malformed",
-      "Pull request source repository could not be verified",
-    );
-  return ok(repo.full_name.toLowerCase() === source.toLowerCase());
-}
 /** A REST pull request record's state, as `gh pr` names it. */
 function commitRequestState(
   value: Record<string, unknown>,
@@ -278,20 +260,17 @@ function commitRequestState(
 }
 /**
  * One entry of the forge's pull requests for a commit, as `request` reads a
- * `gh pr` record: the REST form names its source as `head.repo.full_name`,
- * its state in lower case and a merge by `merged_at`.
+ * `gh pr` record: the REST form names its state in lower case and a merge by
+ * `merged_at`. The endpoint is scoped to this repository, so a record from a
+ * fork, or from one the forge no longer has, is still this repository's
+ * pull request and counts.
  */
-function commitRequest(
-  value: unknown,
-  source: string,
-): Outcome<WorktreeRequest | null, "malformed"> {
+function commitRequest(value: unknown): Outcome<WorktreeRequest, "malformed"> {
   if (!isMapping(value) || !isMapping(value.head))
     return failed("malformed", "Malformed pull request record");
-  const own = fromSource(value.head, source);
-  if (!own.ok) return own;
-  return own.value ? commitRequestFields(value, value.head) : ok(null);
+  return commitRequestFields(value, value.head);
 }
-/** The head, state and number of a REST pull request record from this repository. */
+/** The head, state and number of a REST pull request record. */
 function commitRequestFields(
   value: Record<string, unknown>,
   head: Record<string, unknown>,
@@ -351,9 +330,9 @@ export async function requestsForCommit(
     return failed("incomplete", "Pull request inventory is incomplete");
   const matched: WorktreeRequest[] = [];
   for (const value of values) {
-    const one = commitRequest(value, source);
+    const one = commitRequest(value);
     if (!one.ok) return one;
-    if (one.value) matched.push(one.value);
+    matched.push(one.value);
   }
   return ok(matched);
 }
