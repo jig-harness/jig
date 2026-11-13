@@ -702,12 +702,20 @@ async function trackerMain(slug: string, deadline: string): Promise<number> {
     return 2;
   }
   // Loaded only here: the wrapper itself never opens a tracker.
-  const { reachTracker } = await import("./lib/tracker-probe.ts");
+  const { answerText, reachTracker } = await import("./lib/tracker-probe.ts");
   let values: unknown;
   try {
     values = JSON.parse(await Bun.stdin.text());
-  } catch {
-    values = null;
+  } catch (error) {
+    // The tick's own handing over failed: that says nothing of the account's credential.
+    console.log(
+      JSON.stringify({
+        ok: false,
+        kind: "config",
+        reason: `the configuration on the input did not read: ${answerText(error)}`,
+      }),
+    );
+    return 0;
   }
   console.log(
     JSON.stringify(await reachTracker(values, slug, process.cwd(), deadlineMs)),

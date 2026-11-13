@@ -23,6 +23,7 @@ import { join, resolve } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import type { LineSnapshot } from "../lib/dashboard-contract.ts";
 import { readMachineConfig } from "../lib/machine-config.ts";
+import { HOST_NEED_REPO } from "../lib/preflight.ts";
 import type { TickReceipt } from "../receipts.ts";
 import {
   assignedIssue,
@@ -44,7 +45,9 @@ const dir = process.env.CLAUDE_CONFIG_DIR ?? "";
 fs.appendFileSync(F + "/tracker-probes.jsonl", JSON.stringify({ argv: process.argv.slice(2), configDir: dir, cwd: process.cwd(), values: JSON.parse(input) }) + "\\n");
 const file = F + "/tracker-answers.json";
 const answers = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : {};
-process.stdout.write(JSON.stringify(answers[path.basename(dir)] ?? { ok: true }));
+const answer = answers[path.basename(dir)] ?? { ok: true };
+// A line of its own before the answer, as a client's notice would be; an answer given as text is printed as it is.
+process.stdout.write("reading the tracker\\n" + (typeof answer === "string" ? answer : JSON.stringify(answer)) + "\\n");
 `;
 
 const KEYCHAIN = "the keychain is waiting for an approval";
@@ -160,12 +163,12 @@ describe("the tracker preflight", () => {
       expect.objectContaining({
         cause: "tracker-unreachable",
         act: "Authorize",
-        repo: SLUG,
+        repo: HOST_NEED_REPO,
         target: "account a",
         pr: null,
         item: null,
         stage: "followup",
-        reason: expect.stringContaining(KEYCHAIN),
+        reason: expect.stringContaining(`${SLUG} are held: ${KEYCHAIN}`),
       }),
     ]);
 
@@ -256,6 +259,68 @@ describe("the tracker preflight", () => {
     expect(claudeRuns(w)).toEqual([]);
   });
 
+  it("holds an account whose probe printed no answer, with what it printed", async () => {
+    const w = fixture(["a"]);
+    writeFileSync(
+      join(w.dir, "tracker-answers.json"),
+      JSON.stringify({ "config-a": "a keychain prompt went unanswered" }),
+    );
+
+    const tick = await applyTick(w, false);
+    expect(launches(tick).map((l) => l.outcome)).toEqual(["waits", "waits"]);
+    expect(tick.repos[0]?.preflight).toEqual([
+      expect.objectContaining({
+        account: "a",
+        reason: expect.stringContaining("a keychain prompt went unanswered"),
+      }),
+    ]);
+  });
+
+  it("holds nothing on a rate-limited answer", async () => {
+    const w = fixture(["a"]);
+    writeFileSync(
+      join(w.dir, "tracker-answers.json"),
+      JSON.stringify({
+        "config-a": {
+          ok: false,
+          kind: "transient",
+          reason: "linear's rate limit for this credential is spent",
+        },
+      }),
+    );
+
+    const limited = await applyTick(w, false);
+    expect(launches(limited).map((l) => [l.target, l.outcome])).toEqual([
+      ["PR #9", "launched"],
+      ["PR #10", "launched"],
+    ]);
+    expect(limited.repos[0]?.preflight).toBeUndefined();
+    expect(
+      (await line(w)).needs.filter((n) => n.cause === "tracker-unreachable"),
+    ).toEqual([]);
+  });
+
+  it("holds nothing on a configuration that opens no tracker", async () => {
+    const w = fixture(["a"]);
+    writeFileSync(
+      join(w.dir, "tracker-answers.json"),
+      JSON.stringify({
+        "config-a": {
+          ok: false,
+          kind: "config",
+          reason: "issue_tracker.team names ENG, which is no Jira project",
+        },
+      }),
+    );
+
+    const tick = await applyTick(w, false);
+    expect(launches(tick).map((l) => l.outcome)).toEqual([
+      "launched",
+      "launched",
+    ]);
+    expect(tick.repos[0]?.preflight).toBeUndefined();
+  });
+
   it("asks nothing with `preflight: []`", async () => {
     const w = fixture(["a"], { preflight: [] });
     answers(w, { a: KEYCHAIN });
@@ -311,13 +376,22 @@ describe("the machine file's preflight key", () => {
 describe("run.ts tracker", () => {
   const RUN_TS = resolve(import.meta.dir, "../run.ts");
   const BUNFIG = resolve(import.meta.dir, "../bunfig.toml");
+  const GITHUB = JSON.stringify({
+    issue_tracker: { adapter: "github", github: { repository: SLUG } },
+  });
   const dirs: string[] = [];
   afterEach(() => {
     for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true });
   });
 
-  /** The probe against a tracker that answers the repository read with `answer`. */
-  async function probe(answer: Record<string, unknown>) {
+  /**
+   * The probe against a tracker that answers every request with `body` and
+   * `status`, handed `input`; with `closed`, against a port nothing answers.
+   */
+  async function probe(
+    body: Record<string, unknown>,
+    options: { status?: number; input?: string; closed?: boolean } = {},
+  ) {
     const requests: string[] = [];
     const server = Bun.serve({
       port: 0,
@@ -325,9 +399,11 @@ describe("run.ts tracker", () => {
       async fetch(request) {
         const { query } = (await request.json()) as { query: string };
         requests.push(/(?:query|mutation)\s+(\w+)/.exec(query)?.[1] ?? "");
-        return Response.json(answer);
+        return Response.json(body, { status: options.status ?? 200 });
       },
     });
+    const port = server.port;
+    if (options.closed === true) server.stop(true);
     const cwd = mkdtempSync(join(tmpdir(), "jig-tracker-probe-"));
     dirs.push(cwd);
     try {
@@ -343,14 +419,7 @@ describe("run.ts tracker", () => {
         ],
         {
           cwd,
-          stdin: new Blob([
-            JSON.stringify({
-              issue_tracker: {
-                adapter: "github",
-                github: { repository: SLUG },
-              },
-            }),
-          ]),
+          stdin: new Blob([options.input ?? GITHUB]),
           stdout: "pipe",
           stderr: "pipe",
           env: {
@@ -358,7 +427,7 @@ describe("run.ts tracker", () => {
             HOME: cwd,
             JIG_HOME: join(cwd, ".jig"),
             JIG_USER_LAYER: "off",
-            JIG_GITHUB_GRAPHQL_URL: `http://127.0.0.1:${server.port}/graphql`,
+            JIG_GITHUB_GRAPHQL_URL: `http://127.0.0.1:${port}/graphql`,
             GH_TOKEN: "test-token",
           },
         },
@@ -383,13 +452,53 @@ describe("run.ts tracker", () => {
     expect(requests).toEqual(["TrackerRepository"]);
   });
 
-  it("answers with the tracker's refusal when it does not", async () => {
+  it("answers unreachable with the tracker's refusal of the credential", async () => {
     const { answer } = await probe({
       errors: [{ message: "Bad credentials" }],
     });
     expect(answer).toEqual({
       ok: false,
+      kind: "unreachable",
       reason: expect.stringContaining("Bad credentials"),
+    });
+  });
+
+  it("answers transient for a rate limit, a server error and the network", async () => {
+    const limited = await probe({
+      errors: [{ type: "RATE_LIMITED", message: "API rate limit exceeded" }],
+    });
+    expect(limited.answer).toMatchObject({ ok: false, kind: "transient" });
+    const server = await probe({ message: "Bad gateway" }, { status: 502 });
+    expect(server.answer).toMatchObject({
+      ok: false,
+      kind: "transient",
+      reason: expect.stringContaining("HTTP 502"),
+    });
+    const network = await probe({}, { closed: true });
+    expect(network.answer).toMatchObject({
+      ok: false,
+      kind: "transient",
+      reason: expect.stringContaining("unreachable"),
+    });
+  });
+
+  it("answers config for a configuration that opens no tracker, or an input that does not read", async () => {
+    const unknown = await probe(
+      {},
+      { input: JSON.stringify({ issue_tracker: { adapter: "nowhere" } }) },
+    );
+    expect(unknown.answer).toMatchObject({
+      ok: false,
+      kind: "config",
+      reason: expect.stringContaining("the tracker cannot be opened"),
+    });
+    const garbled = await probe({}, { input: "{not json" });
+    expect(garbled.answer).toMatchObject({
+      ok: false,
+      kind: "config",
+      reason: expect.stringContaining(
+        "the configuration on the input did not read",
+      ),
     });
   });
 });

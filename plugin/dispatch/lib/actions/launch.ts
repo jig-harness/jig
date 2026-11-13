@@ -640,6 +640,8 @@ export async function accountBlocked(
   const preflight = state.preflight;
   if (preflight === undefined || !checksStage(preflight, record.action))
     return null;
+  const late = noPreflightRoom(state);
+  if (late !== null) return late;
   const held = await heldAccounts(
     preflight,
     record.repo,
@@ -648,6 +650,14 @@ export async function accountBlocked(
     Math.ceil(state.machine.runtimeTimeoutMs / 1000),
   );
   return held.size === 0 ? null : heldDetail(held);
+}
+
+/** Why the tick has no time left for a preflight probe and its receipt; `null` when it has. */
+function noPreflightRoom(state: ApplyState): string | null {
+  const left = timeLeftMs(state);
+  return left !== null && left < settleMs(state.machine.runtimeTimeoutMs)
+    ? "the tick deadline has no room for the tracker preflight and its receipt; a later tick retries this one"
+    : null;
 }
 
 /**
@@ -665,14 +675,8 @@ async function preflightHolds(
   const preflight = state.preflight;
   if (preflight === undefined || !checksStage(preflight, action.stage))
     return { held: new Map() };
-  const left = timeLeftMs(state);
-  if (left !== null && left < settleMs(state.machine.runtimeTimeoutMs))
-    return {
-      outcome: waits(
-        action,
-        "the tick deadline has no room for the tracker preflight and its receipt; a later tick retries this one",
-      ),
-    };
+  const late = noPreflightRoom(state);
+  if (late !== null) return { outcome: waits(action, late) };
   const deadlineSec =
     action.stage === "pickup" || action.stage === "steward"
       ? pickupDeadlineSec
@@ -715,22 +719,9 @@ function admission(
       excluded,
     );
   const replaced = state.records.find((r) => r.record.id === action.takeover);
-  if (replaced === undefined)
-    return {
-      waits: `the launch record ${action.takeover} it replaces is gone`,
-    };
-  const admitted = admitTakeover(
-    state.table,
-    replaced,
-    state.passDeadlineSec,
-    codex,
-  );
-  // A takeover has only its own account: one passed over is one it waits for.
-  return "admitted" in admitted && excluded.has(admitted.admitted.account.name)
-    ? {
-        waits: `${admitted.admitted.account.name}, whose slot it takes, is held`,
-      }
-    : admitted;
+  return replaced === undefined
+    ? { waits: `the launch record ${action.takeover} it replaces is gone` }
+    : admitTakeover(state.table, replaced, state.passDeadlineSec, codex);
 }
 
 /** The kind of launch whose reservation an action counts. */

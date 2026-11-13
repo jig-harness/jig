@@ -525,14 +525,20 @@ it could bill reaches the repository's tracker: it reads the tracker through
 the same port a pass uses, in the repository's checkout and the environment a
 pass on that account runs in, once per tick for each account and tracker
 (`preflight` in [the machine's dispatch file](CONFIGURATION.md#the-machines-dispatch-file)).
-An account whose answer fails (an operating system keychain waiting for an
-approval, a lapsed connection) takes none of those launches that tick: the
-launch goes to another account, or waits, naming each answer. The line shows
-one need per repository and account, `tracker-unreachable`, act Authorize,
-with the answer, rather than a failed pass per pull request or item; fixing
-the credential is a person's. The next tick asks again, and once the answer
-passes the need is gone and the launches start. A drive's re-arm or takeover
-and the steward's own pass are never held by it.
+An account the tracker refuses, or whose read gives no answer within the
+probe's deadline (an operating system keychain waiting for an approval, a
+lapsed connection), takes none of those launches that tick: the launch goes
+to another account, or waits, naming each answer. An answer that says
+nothing of the credential holds nothing: a rate limit, a server error or the
+network leave the stage to its own rate-limit and failure handling, and a
+configuration that opens no tracker to the stage's own failure. The line
+shows one need per account for the whole host, `tracker-unreachable`, act
+Authorize, its repository shown as `host`, naming every repository it holds
+and the answer, rather than a failed pass per pull request or item; fixing
+the credential is a person's. The next tick that has a tracker launch to
+start asks again, and once the answer passes the need is gone and the
+launches start. A drive's re-arm or takeover and the steward's own pass are
+never held by it.
 
 ```sh
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> done|failed [--pr <number> | --none <reason>]

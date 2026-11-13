@@ -14,20 +14,26 @@
  *
  * Each account is asked once per tick for each tracker, whichever
  * repositories read it (`run.ts tracker`, in the account's environment and
- * the first such repository's checkout). An account whose answer failed is
- * held: no tracker stage of the repository launches on it this tick, the
- * launch tries the next account, and with none left it waits, naming the
- * answers. The repository's report keeps one hold per account, with the
- * check's answer and the stages it held, which the line shows as one need
- * of the host's, act Authorize (`preflightNeeds`). Nothing is kept between
- * ticks: the next tick asks again, and an account whose answer passes is
- * no longer held and raises no need.
+ * the first such repository's checkout). An account the tracker refused, or
+ * that gave no answer by the probe's deadline (a credential waiting on an
+ * approval), is held: no tracker stage of the repository launches on it
+ * this tick, the launch tries the next account, and with none left it
+ * waits, naming the answers. An answer that says nothing of the credential
+ * holds nothing: a rate limit, a server error or the network (the stage's
+ * own handling of them applies), or a configuration that does not open a
+ * tracker (the stage's own failure reports it). Each repository's report
+ * keeps one hold per account, with the answer and the stages it held; the
+ * line shows one need per account for the whole host, act Authorize,
+ * naming every repository it holds (`preflightNeeds`). Nothing is kept
+ * between ticks: the next tick asks again, and an account whose answer
+ * passes is no longer held and raises no need.
  *
  * `preflight` in the machine file names the checks (`preflight-config.ts`);
  * `[]` turns them off.
  */
 import { resolve } from "node:path";
 import { actOfNeed } from "../../shared/acts.ts";
+import { swallow } from "../../shared/errors.ts";
 import { run } from "../../shared/proc.ts";
 import { admittedVendor, passEnvironment } from "./accounts.ts";
 import type { LineNeed } from "./dashboard-contract.ts";
@@ -39,17 +45,36 @@ import { failureText, probeFailure } from "./text.ts";
 import { isMapping } from "../../shared/config-layers.ts";
 import type { PreflightHold, RepoReport, Stage } from "./types.ts";
 
-/** What the tracker probe prints (`tracker-probe.ts`). */
-export type TrackerAnswer = { ok: true } | { ok: false; reason: string };
+/**
+ * What the tracker probe prints (`tracker-probe.ts`). A failed answer's
+ * `kind` says what it tells of the credential: `unreachable`, the tracker
+ * refused it or gave no answer in time, which holds the account;
+ * `transient`, a rate limit, a server error or the network; `config`, a
+ * configuration that opens no tracker. Neither of the last two holds it.
+ */
+export type TrackerAnswer =
+  | { ok: true }
+  | {
+      ok: false;
+      kind: "unreachable" | "transient" | "config";
+      reason: string;
+    };
 
-/** Whether a parsed value is what the probe prints. */
-function isTrackerAnswer(value: unknown): value is TrackerAnswer {
-  return (
-    isMapping(value) &&
-    (value.ok === true ||
-      (value.ok === false && typeof value.reason === "string"))
-  );
+const KINDS: readonly unknown[] = ["unreachable", "transient", "config"];
+
+/** What the probe printed as its answer, a failed answer with no kind read as unreachable; `null` when it is not one. */
+function answerOf(value: unknown): TrackerAnswer | null {
+  if (!isMapping(value)) return null;
+  if (value.ok === true) return { ok: true };
+  if (value.ok !== false || typeof value.reason !== "string") return null;
+  const kind = KINDS.includes(value.kind)
+    ? (value.kind as "unreachable" | "transient" | "config")
+    : "unreachable";
+  return { ok: false, kind, reason: value.reason };
 }
+
+/** The repository a need about the whole host names on the line. */
+export const HOST_NEED_REPO = "host";
 
 /** The stages whose passes touch the tracker. */
 const TRACKER_STAGES: ReadonlySet<string> = new Set<Stage>([
@@ -133,7 +158,7 @@ export async function heldAccounts(
     }),
   );
   for (const [name, answer] of answers) {
-    if (answer.ok) continue;
+    if (answer.ok || answer.kind !== "unreachable") continue;
     held.set(name, answer.reason);
     hold(target.report, name, answer.reason, stage);
   }
@@ -203,8 +228,10 @@ function probeScript(): string {
 
 /**
  * `run.ts tracker` in the account's pass environment and the repository's
- * checkout, the configuration on its input; a probe that exits otherwise,
- * or prints no answer, is a failed answer that says so.
+ * checkout, the configuration on its input, its answer the last line it
+ * prints. A probe that runs out its time, exits otherwise or prints no
+ * answer is an `unreachable` answer that says so: a client that hangs on
+ * its credential looks like that.
  */
 async function spawnTrackerProbe(
   account: MachineAccount,
@@ -233,55 +260,124 @@ async function spawnTrackerProbe(
       stdin: JSON.stringify(target.values),
       env,
     });
-    if (done.code !== 0)
-      return { ok: false, reason: probeFailure("the tracker probe", done) };
-    const value: unknown = JSON.parse(done.stdout);
-    return isTrackerAnswer(value)
-      ? value
-      : { ok: false, reason: "the tracker probe printed no answer" };
+    const failure = {
+      ok: false,
+      kind: "unreachable",
+      reason: probeFailure("the tracker probe", done),
+    } as const;
+    if (done.code !== 0) return failure;
+    return answerOf(lastLine(done.stdout)) ?? failure;
   } catch (error) {
     return {
       ok: false,
-      reason: `the tracker probe printed no answer: ${failureText(error)}`,
+      kind: "unreachable",
+      reason: `the tracker probe could not run: ${failureText(error)}`,
     };
   }
 }
 
+/** The last line of `text` that is not empty, parsed; `null` when it does not parse. */
+function lastLine(text: string): unknown {
+  const line = text
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l !== "")
+    .at(-1);
+  if (line === undefined) return null;
+  try {
+    return JSON.parse(line);
+  } catch (error) {
+    // A line that is not an answer leaves the probe's whole output for the reason.
+    swallow(error, "the tracker probe's last line is not JSON");
+    return null;
+  }
+}
+
+/** One account's holds across the host's repositories. */
+interface AccountHolds {
+  repos: string[];
+  stages: Stage[];
+  /** Each distinct answer, with the repositories that got it. */
+  answers: Map<string, string[]>;
+}
+
 /**
- * The line's needs for one repository's holds: one per account, act
- * Authorize, its time the first tick that held it, while holds continue.
+ * The line's needs for the holds on every repository's report: one per
+ * account for the whole host (`repo` is `HOST_NEED_REPO`), act Authorize,
+ * naming every repository it holds and the answers; its time the first
+ * tick that held it, while holds continue.
  */
 export function preflightNeeds(
-  report: RepoReport,
-  slug: string,
+  reports: readonly RepoReport[],
   previous: readonly LineNeed[],
   nowIso: string,
 ): LineNeed[] {
-  return (report.preflight ?? []).map((h: PreflightHold): LineNeed => {
-    const target = `account ${h.account}`;
-    const since = previous.find(
-      (n) =>
-        n.repo === slug &&
-        n.target === target &&
-        n.cause === "tracker-unreachable",
-    )?.since;
-    return {
-      cause: "tracker-unreachable",
-      act: actOfNeed({ cause: "tracker-unreachable" }),
-      stage: (h.stages[0] ?? "followup") as LaunchAction,
-      repo: slug,
-      target,
-      pr: null,
-      item: null,
-      url: null,
-      title: null,
-      workspace: null,
-      since: since ?? nowIso,
-      reason: `account ${h.account} cannot reach the tracker, so its ${h.stages.join(" and ")} launches are held: ${h.reason}`,
-      question: null,
-      decisions: [],
-      notified: null,
-      workspaces: [],
-    };
-  });
+  return [...holdsByAccount(reports)].map(([account, at]) =>
+    hostNeed(account, at, previous, nowIso),
+  );
+}
+
+/** Every repository's holds, gathered by account. */
+function holdsByAccount(
+  reports: readonly RepoReport[],
+): Map<string, AccountHolds> {
+  const byAccount = new Map<string, AccountHolds>();
+  for (const report of reports)
+    for (const h of report.preflight ?? []) {
+      const at: AccountHolds = byAccount.get(h.account) ?? {
+        repos: [],
+        stages: [],
+        answers: new Map(),
+      };
+      byAccount.set(h.account, at);
+      addHold(at, report.slug ?? report.path, h);
+    }
+  return byAccount;
+}
+
+/** One repository's hold added to its account's. */
+function addHold(at: AccountHolds, repo: string, h: PreflightHold): void {
+  if (!at.repos.includes(repo)) at.repos.push(repo);
+  at.stages.push(...h.stages.filter((stage) => !at.stages.includes(stage)));
+  at.answers.set(h.reason, [...(at.answers.get(h.reason) ?? []), repo]);
+}
+
+/** One account's need: the answer alone when every repository got the same one, else each with its repositories. */
+function hostNeed(
+  account: string,
+  at: AccountHolds,
+  previous: readonly LineNeed[],
+  nowIso: string,
+): LineNeed {
+  const target = `account ${account}`;
+  const since = previous.find(
+    (n) =>
+      n.repo === HOST_NEED_REPO &&
+      n.target === target &&
+      n.cause === "tracker-unreachable",
+  )?.since;
+  const answers =
+    at.answers.size === 1
+      ? [...at.answers.keys()]
+      : [...at.answers].map(
+          ([reason, repos]) => `${repos.join(", ")}: ${reason}`,
+        );
+  return {
+    cause: "tracker-unreachable",
+    act: actOfNeed({ cause: "tracker-unreachable" }),
+    stage: (at.stages[0] ?? "followup") as LaunchAction,
+    repo: HOST_NEED_REPO,
+    target,
+    pr: null,
+    item: null,
+    url: null,
+    title: null,
+    workspace: null,
+    since: since ?? nowIso,
+    reason: `account ${account} cannot reach the tracker, so its ${at.stages.join(" and ")} launches in ${at.repos.join(", ")} are held: ${answers.join("; ")}`,
+    question: null,
+    decisions: [],
+    notified: null,
+    workspaces: [],
+  };
 }

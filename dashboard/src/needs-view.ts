@@ -92,6 +92,12 @@ function recordedWord(n: LineNeed): string {
   return n.cause;
 }
 
+/** What a card with no link says; a need of the host's names an account, which no tracker links. */
+function noLinkOf(n: LineNeed): string | null {
+  if (n.url !== null || n.cause === "tracker-unreachable") return null;
+  return noLinkText(n.repo, n.target);
+}
+
 function goLabelOf(n: LineNeed): string {
   if (n.pr === null) return "Open in the tracker";
   // A stuck launch record has no drive handoff to read; its session is inspected and the record cleared.
@@ -200,7 +206,7 @@ export function needView(n: LineNeed, clockNow: Clock): NeedView {
     decision,
     url: n.url,
     goLabel: n.url === null ? null : goLabelOf(n),
-    noLink: n.url === null ? noLinkText(n.repo, n.target) : null,
+    noLink: noLinkOf(n),
     answerKeys: [...new Set(n.decisions.map((d) => d.key))],
     rows: decisionRows(n.decisions),
     keyText: n.url === null ? n.target : null,

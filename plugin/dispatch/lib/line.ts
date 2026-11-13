@@ -471,11 +471,7 @@ function needsOf(
         workspaces: [],
       }),
     );
-  return [
-    ...planned,
-    ...refused,
-    ...preflightNeeds(view.report, view.slug, previous, nowIso),
-  ];
+  return [...planned, ...refused];
 }
 
 function queued(
@@ -805,9 +801,17 @@ export function buildLine(input: LineInput): LineSnapshot {
         );
       })
       .filter((s): s is LineSession => s !== null),
-    needs: views.flatMap((v) =>
-      needsOf(v, input.finishedAt, input.previousNeeds ?? []),
-    ),
+    needs: [
+      ...views.flatMap((v) =>
+        needsOf(v, input.finishedAt, input.previousNeeds ?? []),
+      ),
+      // An account's held tracker stages are one need of the host's, whatever repositories it holds.
+      ...preflightNeeds(
+        input.reports,
+        input.previousNeeds ?? [],
+        input.finishedAt,
+      ),
+    ],
     queue: views.flatMap(queueOf),
     ready: readyOf(input.reports).map((r) => ({
       ...r,
