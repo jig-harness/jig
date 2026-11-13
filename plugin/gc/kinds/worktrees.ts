@@ -327,19 +327,24 @@ async function collectThroughOrca(
         // The hook may run for minutes: Orca can start an agent meanwhile, and
         // the hook can leave a process in the checkout that outlives it.
         admit: async (worktree) => {
-          const live = await orcaLiveness(command, worktree);
-          if (live !== null)
-            return failed("live", `kept after the hook: ${live.reason}`);
-          // Read after the registry and after gc's admission: a launch the
-          // plugin let through meanwhile left its marker first.
-          const launch = launched();
-          if (launch !== null)
-            return failed(LAUNCH_VETO, `kept after the hook: ${launch}`);
-          if ((await processHolder(worktree)) !== false)
-            return failed(
-              "held",
-              "kept after the hook: a process holds the worktree, or holders could not be read",
-            );
+          const checks = async (): Promise<Outcome<undefined, string>> => {
+            const live = await orcaLiveness(command, worktree);
+            if (live !== null)
+              return failed("live", `kept after the hook: ${live.reason}`);
+            // Read after the registry and after gc's admission: a launch the
+            // plugin let through meanwhile left its marker first.
+            const launch = launched();
+            if (launch !== null)
+              return failed(LAUNCH_VETO, `kept after the hook: ${launch}`);
+            if ((await processHolder(worktree)) !== false)
+              return failed(
+                "held",
+                "kept after the hook: a process holds the worktree, or holders could not be read",
+              );
+            return ok(undefined);
+          };
+          const before = await checks();
+          if (!before.ok) return before;
           // Last, so the archive holds the content as the removal finds it.
           const preserved = await preserveLegacyContent(
             worktree,
@@ -347,6 +352,10 @@ async function collectThroughOrca(
             Date.now() + ARCHIVE_LIMIT_MS,
           );
           if (!preserved.ok) return preserved;
+          // The archive may have run for minutes: an agent or process can
+          // have started meanwhile, so what removal relies on is read again.
+          const after = await checks();
+          if (!after.ok) return after;
           archived = preserved.value;
           return ok(undefined);
         },
@@ -396,13 +405,13 @@ function legacyPolicy(
   let read: { value: LegacyPolicy | undefined } | undefined;
   return () => {
     if (read === undefined) {
+      // Stamped even while archiving is off, so enabling it later does not
+      // date the worktrees made meanwhile as older than marking.
       const since =
-        archive === undefined || archive.maxBytes === 0
-          ? undefined
-          : markingSince(archive.root);
+        archive === undefined ? undefined : markingSince(archive.root);
       read = {
         value:
-          archive !== undefined && since?.ok
+          archive !== undefined && archive.maxBytes > 0 && since?.ok
             ? { ...archive, since: since.value }
             : undefined,
       };

@@ -3,11 +3,12 @@
  * a tool's self-marked cache are set aside, each with its rule, and anything
  * else is named as content no rule accounts for.
  */
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import {
   chmodSync,
   mkdirSync,
   mkdtempSync,
+  rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -19,8 +20,16 @@ import {
 } from "../../shared/disposable-mark.ts";
 import { classifyIgnored } from "../kinds/worktree-ignored.ts";
 
+const roots: string[] = [];
+afterAll(() => {
+  for (const root of roots) {
+    chmodSync(root, 0o700);
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 function tree(files: Record<string, string>): string {
   const root = mkdtempSync(join(tmpdir(), "gc-ignored-marks-"));
+  roots.push(root);
   for (const [path, content] of Object.entries(files)) {
     mkdirSync(dirname(join(root, path)), { recursive: true });
     if (path.endsWith("/")) mkdirSync(join(root, path), { recursive: true });
@@ -37,7 +46,7 @@ const TAG = `${CACHEDIR_TAG_SIGNATURE}\n# a cache\n`;
 const HANDOFF = `# Drive handoff — PR #7\n\n${HANDOFF_MACHINE_BLOCK}\n\nnotes\n`;
 
 describe("marked ignored content", () => {
-  test("Jig's working files and a self-ignoring cache are set aside with their rules", () => {
+  test("Jig's working files are set aside with their rules, a self-ignoring directory is not", () => {
     const root = tree({
       ".context/scratch/reply.md": "draft\n",
       ".context/drive-mailbox/CACHEDIR.TAG": TAG,
@@ -54,9 +63,8 @@ describe("marked ignored content", () => {
         { path: ".context/empty/", rule: "empty" },
         { path: ".context/pr-drive-7.md", rule: "drive-handoff" },
         { path: ".context/scratch/", rule: "jig-scratch" },
-        { path: ".fallow/", rule: "self-ignoring" },
       ],
-      other: [],
+      other: [".fallow/"],
     });
   });
 
@@ -81,17 +89,10 @@ describe("marked ignored content", () => {
 
   test("paths git lists one by one inside a marked directory are set aside by it", () => {
     const root = tree({
-      ".fallow/.gitignore": "*\n",
-      ".fallow/cache.bin": "x",
       "cache/CACHEDIR.TAG": TAG,
       "cache/blob": "x",
     });
-    expect(
-      classify(root, [".fallow/.gitignore", ".fallow/cache.bin", "cache/blob"])
-        .setAside,
-    ).toEqual([
-      { path: ".fallow/.gitignore", rule: "self-ignoring" },
-      { path: ".fallow/cache.bin", rule: "self-ignoring" },
+    expect(classify(root, ["cache/blob"]).setAside).toEqual([
       { path: "cache/blob", rule: "cache-tag" },
     ]);
   });

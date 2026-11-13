@@ -3,12 +3,13 @@
  * marking began, a copy verified against its source within a size bound,
  * and the archive's expiry with the receipts.
  */
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import {
   existsSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  rmSync,
   readFileSync,
   readlinkSync,
   readdirSync,
@@ -27,8 +28,14 @@ import {
   worktreeCreatedAt,
 } from "../legacy-archive.ts";
 
+const roots: string[] = [];
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
 function scratch(): string {
-  return mkdtempSync(join(tmpdir(), "gc-legacy-archive-"));
+  const root = mkdtempSync(join(tmpdir(), "gc-legacy-archive-"));
+  roots.push(root);
+  return root;
 }
 function worktree(): string {
   const root = scratch();

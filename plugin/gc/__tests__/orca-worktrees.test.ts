@@ -547,24 +547,18 @@ describe.skipIf(
     expect(file.reason).toContain("node_modules");
   }, 60_000);
 
-  test("Jig's marked working files and a self-ignoring cache do not veto", () => {
+  test("Jig's marked working files do not veto", () => {
     const f = setup();
     commitAndPush(f, "ignore working files", {
-      ".gitignore": ".context/\n.fallow/\n",
+      ".gitignore": ".context/\n",
     });
     mkdirSync(join(f.tree, ".context", "scratch"), { recursive: true });
     writeFileSync(join(f.tree, ".context", "scratch", "reply.md"), "draft\n");
-    mkdirSync(join(f.tree, ".fallow"));
-    writeFileSync(join(f.tree, ".fallow", ".gitignore"), "*\n");
-    writeFileSync(join(f.tree, ".fallow", "cache.bin"), "x");
     idle(f);
     expect(line(gc(f, ["--json"]))).toMatchObject({
       outcome: "would-collect",
       details: {
-        setAside: [
-          { path: ".context/scratch/", rule: "jig-scratch" },
-          { path: ".fallow/", rule: "self-ignoring" },
-        ],
+        setAside: [{ path: ".context/scratch/", rule: "jig-scratch" }],
       },
     });
   }, 60_000);

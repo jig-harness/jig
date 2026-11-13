@@ -78,8 +78,6 @@ alone:
   signature. Other tools tag their caches this way, and so do Jig's scripts
   for the working directories they keep under `.context/` (the drive's
   mailbox, foreground waits, intent chains, refocus state).
-- **`self-ignoring`**: a directory whose own `.gitignore` holds the single
-  pattern `*`, the convention a tool writes to keep its cache out of git.
 - **`jig-scratch`**: `.context/scratch/`, where Jig's procedures write the
   files they never need again.
 - **`drive-handoff`**: a drive's handoff (`.context/pr-drive-<PR>.md`) that

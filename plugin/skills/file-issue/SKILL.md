@@ -101,7 +101,9 @@ checked inside the tracker: one without a type, a priority or a size (an
 epic needs no size), or without a label of a required group, is refused
 before anything is written (exit `2`), naming what it lacks. Write each
 file with the Write tool under `.context/scratch/`, never by interpolating
-text into a shell command.
+text into a shell command. A draft whose tracker write failed is the only
+copy of its findings: move it out of `.context/scratch/` (to
+`.context/unfiled/`) before ending, so worktree collection keeps it.
 
 ### Asking the user
 

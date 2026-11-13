@@ -5,14 +5,7 @@
  * path with the rule that set it aside; everything else stays `other`, which
  * vetoes collection unless it is preserved first.
  */
-import {
-  closeSync,
-  lstatSync,
-  openSync,
-  readFileSync,
-  readdirSync,
-  readSync,
-} from "node:fs";
+import { closeSync, lstatSync, openSync, readdirSync, readSync } from "node:fs";
 import { join } from "node:path";
 import { detectPackageManager } from "../../shared/detect/package-manager.ts";
 import {
@@ -28,8 +21,6 @@ import { failed, ok, type Outcome } from "../../shared/outcome.ts";
  * - `cache-tag`: under a directory holding a `CACHEDIR.TAG` with its
  *   signature, the mark Jig's working directories and other tools' caches
  *   carry;
- * - `self-ignoring`: under a directory whose own `.gitignore` ignores all of
- *   it, the convention a tool writes for its cache;
  * - `jig-scratch`: under `.context/scratch/`, where Jig's procedures write
  *   the files they never need again;
  * - `drive-handoff`: a drive handoff (`.context/pr-drive-<PR>.md`) whose
@@ -38,7 +29,6 @@ import { failed, ok, type Outcome } from "../../shared/outcome.ts";
  */
 export type SetAsideRule =
   | "cache-tag"
-  | "self-ignoring"
   | "jig-scratch"
   | "drive-handoff"
   | "empty";
@@ -105,23 +95,12 @@ function cacheTagged(directory: string): boolean {
     head(tag, CACHEDIR_TAG_SIGNATURE.length) === CACHEDIR_TAG_SIGNATURE
   );
 }
-/** Whether a directory's own `.gitignore` ignores everything in it, and nothing else. */
-function selfIgnoring(directory: string): boolean {
-  const file = join(directory, ".gitignore");
-  if (!isFile(file)) return false;
-  const patterns = readFileSync(file, "utf8")
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line !== "" && !line.startsWith("#"));
-  return patterns.length === 1 && patterns[0] === "*";
-}
 /** The rule that marks one directory (a path relative to `root`, no trailing slash) as disposable. */
 function directoryMark(root: string, directory: string): SetAsideRule | null {
   const absolute = join(root, directory);
   if (!isDirectory(absolute)) return null;
   if (directory === SCRATCH_DIR) return "jig-scratch";
   if (cacheTagged(absolute)) return "cache-tag";
-  if (selfIgnoring(absolute)) return "self-ignoring";
   return null;
 }
 /** The mark of the nearest marked directory above an entry, if any. */

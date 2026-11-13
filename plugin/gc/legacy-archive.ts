@@ -12,6 +12,7 @@
 import {
   closeSync,
   cpSync,
+  fsyncSync,
   lstatSync,
   mkdirSync,
   openSync,
@@ -189,7 +190,7 @@ export function archiveIgnored(
     },
   );
   const verified = written.ok
-    ? verify(path, paths, source.value, deadline)
+    ? verify(path, worktree, paths, source.value, deadline)
     : written;
   const recorded = verified.ok
     ? attempt(
@@ -203,18 +204,37 @@ export function archiveIgnored(
           ),
       )
     : verified;
-  if (!recorded.ok) {
+  const durable = recorded.ok
+    ? attempt("archive-failed", `flushing the archive of ${worktree}`, () =>
+        syncTree(path),
+      )
+    : recorded;
+  if (!durable.ok) {
     // A copy that cannot be removed either stays to expire with the receipts.
     attempt("archive-failed", `removing ${path}`, () =>
       rmSync(path, { recursive: true, force: true }),
     );
-    return recorded;
+    return durable;
   }
   return ok({ path, paths, ...source.value });
+}
+/** Flush every file and directory of a tree to disk, so a removal that follows cannot outlive the copy. */
+function syncTree(path: string): void {
+  const stat = lstatSync(path);
+  if (stat.isSymbolicLink()) return;
+  if (stat.isDirectory())
+    for (const child of readdirSync(path)) syncTree(join(path, child));
+  const fd = openSync(path, "r");
+  try {
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
 }
 /** The copy, measured again: it must hold as many entries and bytes as the worktree held. */
 function verify(
   path: string,
+  worktree: string,
   paths: string[],
   source: Measured,
   deadline: number,
@@ -226,14 +246,19 @@ function verify(
     deadline,
   );
   if (!copied.ok) return copied;
+  // The worktree again: content changed while it was copied is not in the copy.
+  const now = measure(worktree, paths, Number.MAX_SAFE_INTEGER, deadline);
+  if (!now.ok) return now;
   if (
     copied.value.bytes === source.bytes &&
-    copied.value.entries === source.entries
+    copied.value.entries === source.entries &&
+    now.value.bytes === source.bytes &&
+    now.value.entries === source.entries
   )
     return ok(undefined);
   return failed(
     "archive-failed",
-    `the archive holds ${copied.value.entries} entries of ${copied.value.bytes} bytes, the worktree ${source.entries} of ${source.bytes}`,
+    `the archive holds ${copied.value.entries} entries of ${copied.value.bytes} bytes, the worktree held ${source.entries} of ${source.bytes} and now holds ${now.value.entries} of ${now.value.bytes}`,
   );
 }
 /** Every archive under the state directory, oldest day first. */
