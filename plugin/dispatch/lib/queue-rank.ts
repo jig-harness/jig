@@ -25,6 +25,14 @@ export interface QueueItem {
   unblocks: number;
   epicOrder?: number;
 }
+/** Why an item a person's label holds (`jig:hold`, the human-in-the-loop or manual-operations label) starts nothing. */
+export const PERSON_HOLD = "needs a person to start";
+
+/** Whether an unplaced row's reason is a person's hold, bare or as the ready pool words it (`in the ready pool (…), but <hold>`). */
+export function isPersonHold(reason: string): boolean {
+  return reason === PERSON_HOLD || reason.endsWith(`, but ${PERSON_HOLD}`);
+}
+
 export function queueHold(
   item: QueueItem,
   policy: { hitl?: string | undefined; manualOps?: string | undefined } = {},
@@ -39,7 +47,7 @@ export function queueHold(
         l === "jig:hold",
     )
   )
-    return "needs a person to start";
+    return PERSON_HOLD;
   return item.blockers.length > 0
     ? `waiting on ${item.blockers.join(", ")}`
     : null;
