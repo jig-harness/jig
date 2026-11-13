@@ -218,6 +218,7 @@ describe("read retry bounds", () => {
     const governor: BudgetGovernor = {
       admit() {
         if (limited) throw new TrackerRateLimited("jira", 1000, "held");
+        return 0;
       },
       observe() {
         limited = true;

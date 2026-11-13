@@ -29,6 +29,8 @@ import {
 
 export const LINEAR_API = "https://api.linear.app/graphql";
 export const LINEAR_TIMEOUT_MS = 30_000;
+/** How long Linear's rate limits take to refill from empty. */
+const LINEAR_REFILL_MS = 3_600_000;
 
 /**
  * A GraphQL request; resolves to the response's `data`. An aborted `signal`
@@ -123,9 +125,11 @@ function window(headers: Headers, kind: string): BudgetWindow | undefined {
   const limit = headerNumber(headers, `x-ratelimit-${kind}-limit`);
   const remaining = headerNumber(headers, `x-ratelimit-${kind}-remaining`);
   const resetAt = headerNumber(headers, `x-ratelimit-${kind}-reset`);
+  // Linear's limits are leaky buckets: each refills over an hour, and the
+  // reset it names is a full refill away from the answer.
   return limit === null && remaining === null && resetAt === null
     ? undefined
-    : { limit, remaining, resetAt };
+    : { limit, remaining, resetAt, refillMs: LINEAR_REFILL_MS };
 }
 
 /**
@@ -182,9 +186,13 @@ interface Governed {
 }
 
 /** Record an answer; a refusal ends the request with `TrackerRateLimited`. */
-function settle(governed: Governed | null, answer: BudgetAnswer): void {
+function settle(
+  governed: Governed | null,
+  answer: BudgetAnswer,
+  sentAt?: number,
+): void {
   if (governed === null) return;
-  governed.governor.observe(governed.key, answer);
+  governed.governor.observe(governed.key, answer, sentAt);
   if (answer.limitedUntil !== undefined)
     throw new TrackerRateLimited(
       "linear",
@@ -209,7 +217,7 @@ export function httpTransport(
       : { governor, key: credentialKey("linear", token) };
   return async (query, variables, signal) => {
     if (cancelled(signal)) throw abortedError(signal);
-    governed?.governor.admit("linear", governed.key);
+    const sentAt = governed?.governor.admit("linear", governed.key);
     let res: Response;
     try {
       res = await postGraphQL(
@@ -236,7 +244,7 @@ export function httpTransport(
       } catch {
         // not JSON
       }
-      settle(governed, linearAnswer(res.headers, res.status, body));
+      settle(governed, linearAnswer(res.headers, res.status, body), sentAt);
       if (isRecord(body) && Array.isArray(body.errors))
         unwrapResponse(body, res.status);
       throw new LinearApiError(
@@ -245,7 +253,7 @@ export function httpTransport(
       );
     }
     const body: unknown = await res.json();
-    settle(governed, linearAnswer(res.headers, res.status, body));
+    settle(governed, linearAnswer(res.headers, res.status, body), sentAt);
     return unwrapResponse(body, res.status);
   };
 }
