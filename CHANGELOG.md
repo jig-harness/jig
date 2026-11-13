@@ -394,6 +394,12 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.224.1] - 2026-11-13
+
+### Fixed
+
+- Test scratch can be collected after a killed runner when persistent fixture registrations prove its holders gone. Registrations survive removal and recreation of the scratch root, but a replacement legacy owner cannot claim an earlier registration. Unknown native child trees, incomplete launches and legacy scratch remain retained with their reasons. Declare the test directory prefix and refresh the collector's confirmed bounds to include it before collection.
+
 ## [0.224.0] - 2026-11-13
 
 A repository's `ci.log_command` runs the program the default branch holds, not the copy in the pull request it repairs.
@@ -7796,7 +7802,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.224.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.224.1...HEAD
+[0.224.1]: https://github.com/jig-harness/jig/compare/v0.224.0...v0.224.1
 [0.224.0]: https://github.com/jig-harness/jig/compare/v0.223.5...v0.224.0
 [0.223.5]: https://github.com/jig-harness/jig/compare/v0.223.4...v0.223.5
 [0.223.4]: https://github.com/jig-harness/jig/compare/v0.223.3...v0.223.4
