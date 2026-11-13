@@ -247,6 +247,27 @@ describe("a page the forge times out", () => {
   });
 });
 
+describe("a checks query that answers without its pull requests", () => {
+  it("is an unreadable listing, not one whose checks are all unknown", async () => {
+    const w = fixture();
+    w.setPrs("open", [openPr(7, HEAD)]);
+    writeFileSync(join(w.dir, "repository-query-fail"), "");
+    writeFileSync(join(w.dir, "checks-query-empty"), "");
+    const r = await w.dispatch([
+      "--followup-since",
+      "2026-10-30T00:00:00Z",
+      "--json",
+    ]);
+    expectSpawnExit(r, 1);
+    const receipt = JSON.parse(r.stdout) as TickReceipt;
+    const forge = receipt.repos[0]?.records.find((x) => x.record === "forge");
+    expect(forge?.ok).toBe(false);
+    expect(forge?.detail).toContain(
+      "the checks query answered without the repository",
+    );
+  });
+});
+
 describe("the reads before a launch", () => {
   /** PR #7 stopped `16` as the query reads it, its workspace there, account a billing it; the forge's listing as `listed` holds it. */
   function launchable(listed: unknown[]): World {

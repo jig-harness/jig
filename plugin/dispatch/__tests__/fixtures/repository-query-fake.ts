@@ -16,7 +16,7 @@
  * than it says times out, as the forge does on a page that takes too long. The
  * checks query over named pull requests (`checksQuery`) answers each from
  * `prs-open.json`'s listed checks, and fails while `checks-query-fail`
- * exists.
+ * exists, and answers without the repository while `checks-query-empty` exists.
  */
 import { existsSync, readFileSync } from "node:fs";
 
@@ -125,6 +125,7 @@ export function commentsQuery(dir: string, args: string[]): unknown {
 export function checksQuery(dir: string, args: string[]): unknown {
   const { has, json } = files(dir);
   if (has("checks-query-fail")) return null;
+  if (has("checks-query-empty")) return { data: { repository: null } };
   const all = json("prs-open.json") as Listed[];
   const query = args.find((a) => a.startsWith("query=")) ?? "";
   const repository: Record<string, unknown> = {};

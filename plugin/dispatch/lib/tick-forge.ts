@@ -33,7 +33,7 @@ import {
   readMergeReads,
   writeMergeReads,
 } from "./merge-reads.ts";
-import { keptPage } from "./read-pages.ts";
+import { keepPage, keptPage } from "./read-pages.ts";
 import { readDrives } from "./sources/ledgers.ts";
 import type { Pool } from "./pool.ts";
 import type { TickComments } from "./tick-comments.ts";
@@ -149,7 +149,16 @@ export async function readForge(
       : await reads.pool.run(async () => {
           const page = keptPage(repo.path, "pull-requests", PAGE, Date.now());
           const listed = await openPullRequests(repo.slug, read, page);
-          return listed.ok ? ok(listed.value.prs) : listed;
+          if (!listed.ok) return listed;
+          if (listed.value.checksPage < page)
+            keepPage(
+              repo.path,
+              "pull-requests",
+              listed.value.checksPage,
+              PAGE,
+              Date.now(),
+            );
+          return ok(listed.value.prs);
         });
     if (!open.ok) {
       unread(

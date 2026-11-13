@@ -163,6 +163,19 @@ describe("jig dispatch keeps the marker labels", () => {
 });
 
 describe("jig dispatch drives an automation pull request only while it needs work", () => {
+  it("adopts one whose failing check arrives through the checks query when the repository query does not read", async () => {
+    const w = fixture(ADOPT);
+    w.setPrs("open", [
+      labeled(by(21, "drive-bot", FAILING), "automation:docs-sync"),
+      labeled(by(20, "drive-bot", HEALTHY), "automation:docs-sync"),
+    ]);
+    for (const n of [20, 21]) w.setComments(n, []);
+    writeFileSync(join(w.dir, "repository-query-fail"), "");
+
+    const r = await tick(w);
+    expect(rearms(r)).toEqual(["PR #21"]);
+  }, 60_000);
+
   it("adopts one whose check fails, which conflicts or which has an unresolved thread, and leaves a healthy one", async () => {
     const w = fixture(ADOPT);
     const sync = (n: number, extra: object = {}) =>
