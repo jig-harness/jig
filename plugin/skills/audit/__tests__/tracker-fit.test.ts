@@ -5,6 +5,8 @@ import type {
   Tracker,
 } from "../../do-item/scripts/lib/tracker/port.ts";
 import { JIRA_TIMEOUT_MS } from "../../do-item/scripts/lib/tracker/jira/transport.ts";
+import { JIG_TAXONOMY } from "../../do-item/__tests__/github-fixtures.ts";
+import { jira, routes } from "../../do-item/__tests__/jira-fixtures.ts";
 import {
   ANSWER_MS,
   facetFindings,
@@ -177,6 +179,82 @@ describe("where the audited tracker keeps each facet", () => {
       ]);
     },
   );
+});
+
+describe("a Jira facet field the create screens of filed issue types lack", () => {
+  /** A project of Task, Bug and Sub-task whose create screens hold Story Points but those `lacking` names. */
+  const site = (lacking: string[]) =>
+    routes({
+      "GET field": [
+        {
+          id: "customfield_10016",
+          name: "Story Points",
+          schema: { type: "number" },
+        },
+      ],
+      "GET issue/createmeta/ENG/issuetypes": {
+        issueTypes: [
+          ["t1", "Task", false, 0],
+          ["t2", "Bug", false, 0],
+          ["t3", "Sub-task", true, -1],
+        ].map(([id, name, subtask, hierarchyLevel]) => ({
+          id,
+          name,
+          subtask,
+          hierarchyLevel,
+        })),
+        startAt: 0,
+        maxResults: 100,
+        total: 3,
+      },
+      ...Object.fromEntries(
+        [
+          ["t1", "Task"],
+          ["t2", "Bug"],
+          ["t3", "Sub-task"],
+        ].map(([id, name]) => [
+          `GET issue/createmeta/ENG/issuetypes/${id}`,
+          lacking.includes(name as string)
+            ? { fields: [], startAt: 0, maxResults: 100, total: 0 }
+            : {
+                fields: [{ fieldId: "customfield_10016" }],
+                startAt: 0,
+                maxResults: 100,
+                total: 1,
+              },
+        ]),
+      ),
+    });
+  const overlay = {
+    issue_tracker: {
+      jira: { pool_issue_types: ["Task", "Bug"] },
+      facets: {
+        size: {
+          store: "field",
+          field: "Story Points",
+          values: { xs: 1, small: 2, medium: 3, large: 5, xl: 8 },
+        },
+      },
+    },
+    taxonomy: JIG_TAXONOMY,
+  };
+
+  test("names each issue type whose create screen lacks the field", async () => {
+    const { t } = jira(site(["Bug", "Sub-task"]), overlay);
+    expect(await facetFindings(t)).toEqual([
+      {
+        id: "derivation:issue_tracker.facets.size",
+        severity: "error",
+        message:
+          "size's configured store cannot be used: size is kept in the field 'Story Points' (customfield_10016), which is not on the create screens of Sub-task and Bug in ENG; add it to those screens, or keep size in labels (store: label); filing a Sub-task or a Bug fails",
+      },
+    ]);
+  });
+
+  test("stays silent when every create screen has it", async () => {
+    const { t } = jira(site([]), overlay);
+    expect(await facetFindings(t)).toEqual([]);
+  });
 });
 
 describe("the audit's deadline for one question to the tracker", () => {

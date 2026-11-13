@@ -20,10 +20,14 @@ function linearUnanswered(err: LinearApiError): boolean {
   return err.status === null || err.status === 429 || err.status >= 500;
 }
 
-/** A configured store's health; `unavailable` marks a probe the tracker could not answer. */
+/**
+ * A configured store's health; `unavailable` marks a probe the tracker could
+ * not answer, and `fails` says what the failure stops where that is less than
+ * every read and write of the facet.
+ */
 export type StoreHealth =
   | { status: "ok" }
-  | { status: "failed"; error: string; unavailable?: boolean };
+  | { status: "failed"; error: string; unavailable?: boolean; fails?: string };
 
 /** The failed health a thrown probe error stands for. */
 export function failedHealth(err: unknown): StoreHealth {

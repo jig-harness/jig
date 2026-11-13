@@ -9,8 +9,10 @@
  * facet's values gives it): a repository that names none reads and writes
  * exactly what it did before. A field store's field is read in the request
  * that reads the rest of the issue, and written in the request that files or
- * changes it; every name resolves before anything is written, and a value
- * that names no option of the field's screen is refused, naming the options.
+ * changes it; every name resolves before anything is written, a field the
+ * create or edit screen of the issue's type lacks is refused, naming the
+ * issue type, and a value that names no option of the field's screen is
+ * refused, naming the options.
  *
  * Every Jira issue has an issue type. With the issue type as the type's
  * store, a type with no issue type of its own name (and no other name in
@@ -206,6 +208,60 @@ export interface JiraFacetStores {
   report(options?: FacetReadOptions): Promise<CoreFacetReport>;
 }
 
+/** A screen a write goes through, and what it is the screen of, for a message; `null` where none was read. */
+type Screen = { screen: FieldMeta; what: string } | null;
+
+/** Why a facet cannot be written through a screen that lacks its field. */
+const notOn = (
+  s: ResolvedFacet,
+  field: FacetField,
+  where: string,
+  it: string,
+) =>
+  `${s.facet} is kept in the field '${field.name}' (${field.id}), which is not on ${where}; add it to ${it}, or keep ${s.facet} in labels (store: label)`;
+
+/** Refuse a field the screen lacks; unchecked where no screen was read. */
+function onScreen(s: ResolvedFacet, field: FacetField, found: Screen): void {
+  if (found !== null && !found.screen.has(field.id))
+    throw new TrackerRequestError(
+      "unresolved",
+      notOn(s, field, found.what, "the screen"),
+    );
+}
+
+/** `A`, `A and B`, `A, B and C`. */
+function listed(names: ReadonlyArray<string>, last = "and"): string {
+  return names.length < 2
+    ? names.join("")
+    : `${names.slice(0, -1).join(", ")} ${last} ${names.at(-1)}`;
+}
+
+const article = (name: string) => (/^[aeiou]/i.test(name) ? "an" : "a");
+
+/** The health of a field store whose field the create screens of `lacking` do not hold. */
+function lackingHealth(
+  s: ResolvedFacet,
+  field: FacetField,
+  lacking: ReadonlyArray<string>,
+  project: string,
+) {
+  const many = lacking.length > 1;
+  return {
+    status: "failed" as const,
+    unavailable: false,
+    error: notOn(
+      s,
+      field,
+      `the create screen${many ? "s" : ""} of ${listed(lacking)} in ${project}`,
+      many ? "those screens" : "the screen",
+    ).slice(0, 300),
+    fails: `filing ${listed(
+      lacking.map((n) => `${article(n)} ${n}`),
+      "or",
+    )} fails`,
+  };
+}
+
 /** The standard issue types: neither sub-tasks nor above the standard level. */
 const standard = (types: IssueTypeMeta[]) =>
   types.filter((t) => !t.subtask && t.level === 0);
@@ -327,14 +383,16 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
     return found;
   }
 
-  /** The value Jira takes for a facet kept in a field; an option is checked against `meta`. */
+  /** The value Jira takes for a facet kept in a field, checked against `meta`'s screen. */
   async function encode(
     s: ResolvedFacet,
     value: string,
-    meta: () => Promise<{ screen: FieldMeta; what: string } | null>,
+    meta: () => Promise<Screen>,
     signal?: AbortSignal,
   ): Promise<unknown> {
     const field = await fieldOf(s, signal);
+    const found = await meta();
+    onScreen(s, field, found);
     const name = s.map?.toTracker(value) ?? value;
     if (field.kind === "number") return numberOf(s, value, name, field);
     if (field.kind === "string") return name;
@@ -346,7 +404,7 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
         );
       return [name];
     }
-    const option = optionOf(s, value, name, field, await meta());
+    const option = optionOf(s, value, name, field, found);
     return field.kind === "option" ? { value: option } : [{ value: option }];
   }
 
@@ -371,14 +429,9 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
     value: string,
     name: string,
     field: FacetField,
-    found: { screen: FieldMeta; what: string } | null,
+    found: Screen,
   ): string {
     if (found === null) return name;
-    if (!found.screen.has(field.id))
-      throw new TrackerRequestError(
-        "unresolved",
-        `${s.facet} is kept in the field '${field.name}' (${field.id}), which is not on ${found.what}; add it to the screen, or keep ${s.facet} in labels (store: label)`,
-      );
     const allowed = found.screen.get(field.id) ?? null;
     if (allowed === null) return name;
     const match = allowed.find((o) => same(o, name));
@@ -407,11 +460,11 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
   /** The fields a write of `values` sets, each checked against its screen. */
   async function fieldWrites(
     values: { type?: string | null; size?: string | null },
-    meta: () => Promise<{ screen: FieldMeta; what: string } | null>,
+    meta: () => Promise<Screen>,
     signal?: AbortSignal,
   ): Promise<Record<string, unknown>> {
     const out: Record<string, unknown> = {};
-    let screen: Promise<{ screen: FieldMeta; what: string } | null> | undefined;
+    let screen: Promise<Screen> | undefined;
     const once = () => {
       screen ??= meta();
       return screen;
@@ -420,6 +473,7 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
       const v = s.facet === "priority" ? undefined : values[s.facet];
       if (v === undefined) continue;
       const field = await fieldOf(s, signal);
+      if (v === null) onScreen(s, field, await once());
       out[field.id] =
         v === null
           ? field.kind === "options" || field.kind === "strings"
@@ -470,19 +524,68 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
     };
   }
 
+  /**
+   * The project's issue types Jig files: `issue_type`, the sub-task type,
+   * each standard issue type a type is kept as, and the pool's issue types;
+   * a name the project does not list is left out.
+   */
+  async function filedTypes(signal?: AbortSignal): Promise<IssueTypeMeta[]> {
+    const all = await client.issueTypes(signal);
+    const subtasks = all.filter((t) => t.subtask);
+    const names = [
+      settings.issueType,
+      ...(settings.subtaskType !== null
+        ? [settings.subtaskType]
+        : subtasks.length === 1
+          ? [(subtasks[0] as IssueTypeMeta).name]
+          : []),
+      ...(type === null
+        ? []
+        : type.values.map((v) => type.map?.toTracker(v) ?? v)
+      ).filter((n) => standard(all).some((t) => same(t.name, n))),
+      ...settings.poolIssueTypes,
+    ];
+    const out: IssueTypeMeta[] = [];
+    for (const n of names) {
+      const t = all.find((x) => same(x.name, n));
+      if (t !== undefined && !out.includes(t)) out.push(t);
+    }
+    return out;
+  }
+
+  /** A field store's health: its field on the create screen of each issue type Jig files, and each value an option there. */
+  async function fieldHealth(s: ResolvedFacet, signal?: AbortSignal) {
+    const field = await fieldOf(s, signal);
+    const screens: { t: IssueTypeMeta; screen: FieldMeta }[] = [];
+    for (const t of await filedTypes(signal)) {
+      refuseStopped(signal);
+      screens.push({ t, screen: await client.createMeta(t.id, signal) });
+    }
+    const lacking = screens.filter((x) => !x.screen.has(field.id));
+    if (lacking.length > 0)
+      return lackingHealth(
+        s,
+        field,
+        lacking.map((x) => x.t.name),
+        project,
+      );
+    for (const { t, screen } of screens)
+      for (const v of s.values) {
+        refuseStopped(signal);
+        const what = `the create screen of ${t.name} in ${project}`;
+        await encode(s, v, async () => ({ screen, what }), signal);
+      }
+    return { status: "ok" as const };
+  }
+
   async function health(s: ResolvedFacet, signal?: AbortSignal) {
     try {
-      if (s.store === "native") {
-        await fallbackType(signal);
-        for (const v of s.values) {
-          refuseStopped(signal);
-          await issueTypeOf(v, signal);
-        }
-      } else
-        for (const v of s.values) {
-          refuseStopped(signal);
-          await encode(s, v, createScreen(settings.issueType, signal), signal);
-        }
+      if (s.store !== "native") return await fieldHealth(s, signal);
+      await fallbackType(signal);
+      for (const v of s.values) {
+        refuseStopped(signal);
+        await issueTypeOf(v, signal);
+      }
       return { status: "ok" as const };
     } catch (err) {
       return failedHealth(err);
@@ -557,7 +660,7 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
           patch,
           async () => ({
             screen: await client.editMeta(issue.key, signal),
-            what: `the edit screen of ${issue.key}`,
+            what: `the edit screen of ${issue.key}${issue.issueType === null ? "" : ` (${issue.issueType.name})`}`,
           }),
           signal,
         ),

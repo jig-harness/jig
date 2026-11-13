@@ -514,6 +514,10 @@ describe("Jira: a custom field named by name or id", () => {
     const { t, calls } = jira(
       routes({
         ...SITE,
+        "GET issue/createmeta/ENG/issuetypes/t3": {
+          ...SCREEN,
+          fields: [{ fieldId: "customfield_10016" }],
+        },
         "POST issue": { id: "1", key: "ENG-1" },
         "GET issue/ENG-1": issue({
           key: "ENG-1",
@@ -690,5 +694,120 @@ describe("Jira: issue_tracker.jira.field_labels as a facet's field", () => {
     expect(err).toBeInstanceOf(TrackerRequestError);
     expect((err as Error).message).toContain("which has S;");
     expect(writes(calls)).toEqual([]);
+  });
+});
+
+describe("Jira: a facet field missing from an issue type's screen", () => {
+  /** A create screen holding the Story Points field. */
+  const POINTS = {
+    fields: [{ fieldId: "customfield_10016" }],
+    startAt: 0,
+    maxResults: 100,
+    total: 1,
+  };
+  /** A create screen without it. */
+  const BARE = { fields: [], startAt: 0, maxResults: 100, total: 0 };
+  /** Size in the Story Points number field, type in the issue types. */
+  const POINTED = (jira: Record<string, unknown> = {}): Overlay => ({
+    issue_tracker: {
+      jira,
+      facets: {
+        type: { store: "native", values: { feature: "Story" } },
+        size: {
+          store: "field",
+          field: "Story Points",
+          values: { xs: 1, small: 2, medium: 3, large: 5, xl: 8 },
+        },
+      },
+    },
+    taxonomy: JIG_TAXONOMY,
+  });
+  /** Every create screen holds Story Points but those `lacking` names (by id). */
+  const site = (...lacking: string[]) => ({
+    ...SITE,
+    ...Object.fromEntries(
+      ["t0", "t1", "t2", "t3", "t4"].map((id) => [
+        `GET issue/createmeta/ENG/issuetypes/${id}`,
+        lacking.includes(id) ? BARE : POINTS,
+      ]),
+    ),
+  });
+  const file = (t: Awaited<ReturnType<typeof jira>>["t"], more = {}) =>
+    t.createIssue({
+      title: "T",
+      description: "",
+      labels: [],
+      type: "bug",
+      priority: 3,
+      size: "small",
+      ...more,
+    });
+
+  it("refuses, before writing, a bug or a sub-task whose create screen lacks the size's number field", async () => {
+    const { t, calls } = jira(
+      routes({
+        ...site("t1", "t4"),
+        "GET issue/ENG-2": issue({ key: "ENG-2", type: "Task" }),
+        "POST issue": { id: "1", key: "ENG-9" },
+      }),
+      POINTED(),
+    );
+    await expect(file(t)).rejects.toThrow(
+      "size is kept in the field 'Story Points' (customfield_10016), which is not on the create screen of Bug in ENG; add it to the screen, or keep size in labels (store: label)",
+    );
+    await expect(file(t, { parent: "ENG-2" })).rejects.toThrow(
+      "size is kept in the field 'Story Points' (customfield_10016), which is not on the create screen of Sub-task in ENG",
+    );
+    expect(writes(calls)).toEqual([]);
+    await file(t, { type: "docs" });
+    expect(filed(calls)).toMatchObject({
+      issuetype: { name: "Task" },
+      customfield_10016: 2,
+    });
+  });
+
+  it("refuses to set or clear a size whose field is not on the issue's edit screen, naming its issue type", async () => {
+    const { t, calls } = jira(
+      routes({
+        ...site(),
+        "GET issue/ENG-1": issue({
+          key: "ENG-1",
+          type: "Bug",
+          fields: { customfield_10016: 2 },
+        }),
+        "GET issue/ENG-1/editmeta": { fields: {} },
+        "PUT issue/ENG-1": null,
+      }),
+      POINTED(),
+    );
+    for (const size of ["large", null])
+      await expect(t.updateIssue("ENG-1", { size })).rejects.toThrow(
+        "size is kept in the field 'Story Points' (customfield_10016), which is not on the edit screen of ENG-1 (Bug); add it to the screen, or keep size in labels (store: label)",
+      );
+    expect(writes(calls)).toEqual([]);
+  });
+
+  it("reports every issue type Jig files whose create screen lacks the field, and nothing when each has it", async () => {
+    const health = async (lacking: string[], settings = {}) => {
+      const { t } = jira(routes(site(...lacking)), POINTED(settings));
+      return (await t.facetStores()).facets.find((f) => f.facet === "size")
+        ?.health;
+    };
+    expect(await health([])).toEqual({ status: "ok" });
+    expect(await health(["t1", "t4"])).toEqual({
+      status: "failed",
+      unavailable: false,
+      error:
+        "size is kept in the field 'Story Points' (customfield_10016), which is not on the create screens of Sub-task and Bug in ENG; add it to those screens, or keep size in labels (store: label)",
+      fails: "filing a Sub-task or a Bug fails",
+    });
+    // The pool's issue types are filed too; an unlisted type is not asked about.
+    expect(
+      await health(["t0"], { pool_issue_types: ["Task", "Epic", "Spike"] }),
+    ).toMatchObject({
+      status: "failed",
+      error: expect.stringContaining("not on the create screen of Epic in ENG"),
+      fails: "filing an Epic fails",
+    });
   });
 });
