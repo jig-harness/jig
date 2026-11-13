@@ -49,7 +49,7 @@ function latestByScope(root: string): Outcome<Map<string, string>> {
 /**
  * A one-time archive of a removed worktree's ignored content expires with the
  * receipts: once the retention has passed since it was written. One whose
- * manifest cannot be read is kept, since its age is unknown.
+ * age cannot be read at all is kept.
  */
 function archiveProof(path: string, days: number): Proof {
   if (!lstatSync(path).isDirectory())
@@ -58,7 +58,7 @@ function archiveProof(path: string, days: number): Proof {
   if (at === null)
     return {
       state: "unverified",
-      reason: "archive manifest could not be read",
+      reason: "archive age could not be read",
     };
   if (Date.now() - at < days * 86_400_000)
     return { state: "live", reason: "archive retention guard has not elapsed" };

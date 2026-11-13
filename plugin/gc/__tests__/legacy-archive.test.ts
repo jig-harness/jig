@@ -140,7 +140,7 @@ describe("the one-time archive", () => {
     });
   });
 
-  test("an archive expires with the receipts, and one of unknown age stays", async () => {
+  test("an archive expires with the receipts, by its manifest or its day", async () => {
     const root = worktree();
     const state = scratch();
     const archived = archiveIgnored(
@@ -170,11 +170,10 @@ describe("the one-time archive", () => {
       outcome: "collected",
     });
     expect(existsSync(archived.value.path)).toBe(false);
-    const unknown = join(state, "archives", "2026-01-01", "unknown");
-    mkdirSync(unknown, { recursive: true });
+    // A copy cut short before its manifest is dated by its day directory.
+    const cut = join(state, "archives", "2026-01-01", "cut-short");
+    mkdirSync(cut, { recursive: true });
     await kind.inventory();
-    expect(await kind.prove({ id: unknown })).toMatchObject({
-      state: "unverified",
-    });
+    expect(await kind.prove({ id: cut })).toMatchObject({ state: "dead" });
   });
 });

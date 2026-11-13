@@ -10,9 +10,7 @@ import { join } from "node:path";
 import {
   CACHEDIR_TAG,
   CACHEDIR_TAG_SIGNATURE,
-  SCRATCH_DIR,
   markDisposable,
-  scratchDirectory,
 } from "../disposable-mark.ts";
 
 const roots: string[] = [];
@@ -55,18 +53,5 @@ describe("markDisposable", () => {
     if (outcome.ok) return;
     expect(outcome.failure.code).toBe("unmarked");
     expect(outcome.failure.reason).toContain(join(parent, "below"));
-  });
-});
-
-describe("scratchDirectory", () => {
-  it("names the tagged scratch directory under the root", () => {
-    const base = root();
-    const dir = scratchDirectory(base);
-    expect(dir).toBe(join(base, SCRATCH_DIR));
-    expect(
-      readFileSync(join(dir, CACHEDIR_TAG), "utf8").startsWith(
-        CACHEDIR_TAG_SIGNATURE,
-      ),
-    ).toBe(true);
   });
 });

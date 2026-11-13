@@ -77,13 +77,15 @@ alone:
   the [cache directory tag](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
   signature. Other tools tag their caches this way, and so do Jig's scripts
   for the working directories they keep under `.context/` (the drive's
-  mailbox, foreground waits, intent chains).
+  mailbox, foreground waits, intent chains, refocus state).
 - **`self-ignoring`**: a directory whose own `.gitignore` holds the single
   pattern `*`, the convention a tool writes to keep its cache out of git.
 - **`jig-scratch`**: `.context/scratch/`, where Jig's procedures write the
   files they never need again.
 - **`drive-handoff`**: a drive's handoff (`.context/pr-drive-<PR>.md`) that
-  opens with the machine block the drive writes.
+  carries the machine block the drive writes in its first lines. Its
+  narrative part is the drive's notes on rounds of a pull request that is
+  merged or closed by the time gc removes the worktree.
 - **`empty`**: a directory with nothing in it.
 
 A link is never followed, so a link named like a marked directory, or a tag
@@ -101,14 +103,15 @@ administrative directory) is older than that gets a one-time archive instead
 of the veto. Right before removal, after the remove hook, the park and the
 last registry read, gc copies the ignored content no rule accounts for into
 `~/.local/state/jig/gc/archives/<date>/<archive>/`, links as links, checks
-that the copy holds every entry and byte of the source, and writes the
+that the copy holds as many entries and bytes as the source, and writes the
 archive's manifest beside it. A worktree whose content is larger than
 `gc.archive_max_bytes` (64 MiB by default; 0 archives nothing), whose
 creation time cannot be read, or whose copy fails or does not match, is
 kept. A report shows the planned archive in `details.archive` and its
 reason; the receipt of a collected worktree names the archive's path. Archives expire with
 the receipts: the `receipts` kind removes one once `gc.receipts_days` have
-passed since it was written, and keeps one whose manifest cannot be read.
+passed since it was written (by its manifest, or by its day directory when
+the copy was cut short before the manifest).
 
 ### Worktrees Orca manages
 

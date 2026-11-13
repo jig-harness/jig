@@ -232,7 +232,7 @@ function unmarkedDirectory(
     const passed = late(scan.deadline);
     if (passed) return passed;
     const path = `${directory}/${child}`;
-    const nested = classifyEntry(
+    const nested = readableEntry(
       scan,
       isDirectory(join(scan.root, path)) ? `${path}/` : path,
       false,
@@ -243,6 +243,23 @@ function unmarkedDirectory(
   if (found.rebuildable.length === 0 && found.setAside.length === 0)
     return ok({ ...empty(), other: [entry] });
   return ok(found);
+}
+/**
+ * One entry, where a path the platform cannot read (no permission, gone
+ * since git listed it) is content no rule accounts for: it is named and
+ * vetoes, rather than failing the whole proof.
+ */
+function readableEntry(
+  scan: Scan,
+  entry: string,
+  checkAncestors: boolean,
+): Outcome<IgnoredContent, "timed-out"> {
+  try {
+    return classifyEntry(scan, entry, checkAncestors);
+  } catch (error) {
+    if (typeof (error as NodeJS.ErrnoException).code !== "string") throw error;
+    return ok({ ...empty(), other: [entry] });
+  }
 }
 /** One ignored entry, `/`-terminated when it is a directory. */
 function classifyEntry(
@@ -299,7 +316,7 @@ export function classifyIgnored(
   for (const path of paths) {
     const passed = late(deadline);
     if (passed) return passed;
-    const entry = classifyEntry(scan, path, true);
+    const entry = readableEntry(scan, path, true);
     if (!entry.ok) return entry;
     merge(content, entry.value);
   }

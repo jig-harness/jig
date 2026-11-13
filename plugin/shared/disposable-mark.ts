@@ -67,10 +67,3 @@ export function markDisposable(
     return undefined;
   });
 }
-
-/** The worktree's scratch directory, created and tagged; its path either way. */
-export function scratchDirectory(root: string): string {
-  const directory = join(root, SCRATCH_DIR);
-  markDisposable(directory);
-  return directory;
-}

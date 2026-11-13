@@ -4,7 +4,13 @@
  * else is named as content no rule accounts for.
  */
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
@@ -127,6 +133,22 @@ describe("marked ignored content", () => {
       "linked-tag/",
     ]);
   });
+
+  test.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+    "a path that cannot be read is named, not a failed proof",
+    () => {
+      const root = tree({ "locked/inner/a.md": "a\n" });
+      chmodSync(join(root, "locked"), 0o000);
+      try {
+        expect(classify(root, ["locked/", "gone/"]).other).toEqual([
+          "locked/",
+          "gone/",
+        ]);
+      } finally {
+        chmodSync(join(root, "locked"), 0o700);
+      }
+    },
+  );
 
   test("a dependency directory is still rebuildable beside the marks", () => {
     const root = tree({

@@ -21,7 +21,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { attempt, failed, ok, type Outcome } from "../shared/outcome.ts";
 import { isMapping } from "../shared/config-layers.ts";
 
@@ -147,8 +147,8 @@ type ArchiveCode = "oversized" | "timed-out" | "unreadable" | "archive-failed";
 /**
  * Copy `paths` (relative to `worktree`) into a new archive under the state
  * directory, keeping each path's place, links as links. The archive is
- * measured again once written and must match the source entry for entry and
- * byte for byte, else it is removed and the copy fails. Nothing in the
+ * measured again once written and must hold as many entries and bytes as the
+ * source, else it is removed and the copy fails. Nothing in the
  * worktree changes.
  */
 export function archiveIgnored(
@@ -204,12 +204,15 @@ export function archiveIgnored(
       )
     : verified;
   if (!recorded.ok) {
-    rmSync(path, { recursive: true, force: true });
+    // A copy that cannot be removed either stays to expire with the receipts.
+    attempt("archive-failed", `removing ${path}`, () =>
+      rmSync(path, { recursive: true, force: true }),
+    );
     return recorded;
   }
   return ok({ path, paths, ...source.value });
 }
-/** The copy, measured again: it must hold what the worktree held, entry for entry and byte for byte. */
+/** The copy, measured again: it must hold as many entries and bytes as the worktree held. */
 function verify(
   path: string,
   paths: string[],
@@ -257,20 +260,31 @@ export function archivePaths(root: string): string[] {
         .sort(),
     );
 }
-/** When an archive was written, from its manifest; null when the manifest cannot be read. */
+/**
+ * When an archive was written: from its manifest, else the end of the day its
+ * day directory names (a copy cut short before its manifest was written);
+ * null when neither can be read.
+ */
 export function archivedAt(path: string): number | null {
   try {
     const manifest: unknown = JSON.parse(
       readFileSync(join(path, MANIFEST), "utf8"),
     );
     if (!isMapping(manifest) || typeof manifest.createdAt !== "string")
-      return null;
+      return dayOf(path);
     const at = Date.parse(manifest.createdAt);
-    return Number.isFinite(at) ? at : null;
+    return Number.isFinite(at) ? at : dayOf(path);
   } catch (error) {
-    if (error instanceof SyntaxError) return null;
+    if (error instanceof SyntaxError) return dayOf(path);
     const code = (error as NodeJS.ErrnoException).code;
-    if (code === "ENOENT" || code === "ENOTDIR") return null;
+    if (code === "ENOENT" || code === "ENOTDIR") return dayOf(path);
     throw error;
   }
+}
+function dayOf(path: string): number | null {
+  const day = basename(dirname(path));
+  const start = /^\d{4}-\d{2}-\d{2}$/.test(day)
+    ? Date.parse(`${day}T00:00:00.000Z`)
+    : Number.NaN;
+  return Number.isFinite(start) ? start + 86_400_000 : null;
 }

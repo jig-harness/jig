@@ -11,7 +11,7 @@ release: minor
   ignores all of itself, `.context/scratch/`, and a drive's handoff. Any
   other ignored path still keeps the worktree, and the reason names it. The
   receipt lists each path set aside with its rule (`details.setAside`). See
-  [the collector's rule](plugin/gc/README.md#ignored-content).
+  [the collector's rule](../plugin/gc/README.md#ignored-content).
 
 ### Changed
 
