@@ -45,6 +45,12 @@ export interface BudgetWindow {
    * reset; absent for a window that resets whole.
    */
   refillMs?: number | null;
+  /**
+   * When `remaining` was read or reserved, epoch milliseconds: what a
+   * refilling window has refilled counts from it. Absent: the record's
+   * `observedAt`.
+   */
+  readAt?: number | null;
 }
 
 /** What the machine knows of one credential's budget. */
@@ -144,12 +150,16 @@ const orNull = (v: unknown, ok: (n: number) => boolean): boolean =>
 
 function validWindow(w: unknown): w is BudgetWindow {
   if (typeof w !== "object" || w === null) return false;
-  const { limit, remaining, resetAt, refillMs } = w as Record<string, unknown>;
+  const { limit, remaining, resetAt, refillMs, readAt } = w as Record<
+    string,
+    unknown
+  >;
   return (
     orNull(limit, (n) => n >= 0) &&
     orNull(remaining, () => true) &&
     orNull(resetAt, (n) => n >= 0) &&
-    (refillMs === undefined || orNull(refillMs, (n) => n > 0))
+    (refillMs === undefined || orNull(refillMs, (n) => n > 0)) &&
+    (readAt === undefined || orNull(readAt, (n) => n >= 0))
   );
 }
 
@@ -248,39 +258,50 @@ export interface BudgetGovernor {
 const EMPTY: BudgetWindow = { limit: null, remaining: null, resetAt: null };
 
 /**
- * The newer of two readings of a window: the lower count within the same
- * window, the stored reading when the answer is from an older window (a
- * delayed response across a reset), else the answer.
+ * The newer of two readings of a window, the answer read at `now`: the
+ * lower count within the same window that resets whole, the stored reading
+ * (with its own read time) when the answer is from an older window (a
+ * delayed response across a reset) or says nothing of this window, else the
+ * answer. A window that refills continuously takes the later answer: its
+ * count is only comparable at one time.
  */
 function merged(
   prev: BudgetWindow,
   next: BudgetWindow | undefined,
+  now: number,
 ): BudgetWindow {
   if (next === undefined) return prev;
+  const read = { ...next, readAt: now };
   if (
+    next.refillMs == null &&
     prev.resetAt !== null &&
     next.resetAt === prev.resetAt &&
     prev.remaining !== null &&
     next.remaining !== null
   )
-    return { ...next, remaining: Math.min(prev.remaining, next.remaining) };
+    return { ...read, remaining: Math.min(prev.remaining, next.remaining) };
   if (
     prev.resetAt !== null &&
     next.resetAt !== null &&
     next.resetAt < prev.resetAt
   )
     return prev;
-  return next;
+  return read;
 }
 
 /**
  * What a window holds at `now`: its last reading, and for a window that
- * refills continuously, what has refilled since that reading.
+ * refills continuously, what has refilled since that reading (`readAt`, else
+ * the record's `observedAt`), up to its limit.
  */
-function holds(w: BudgetWindow, readAt: number, now: number): number | null {
+function holds(
+  w: BudgetWindow,
+  observedAt: number,
+  now: number,
+): number | null {
   if (w.remaining === null) return null;
   if (w.refillMs == null || w.limit === null) return w.remaining;
-  const refilled = ((now - readAt) * w.limit) / w.refillMs;
+  const refilled = ((now - (w.readAt ?? observedAt)) * w.limit) / w.refillMs;
   return Math.min(w.limit, w.remaining + refilled);
 }
 
@@ -312,20 +333,18 @@ function spentWindow(
   ] as const) {
     const held = holds(w, record.observedAt, now);
     if (held === null || w.resetAt === null || w.resetAt <= now) continue;
-    const window = { ...w, resetAt: w.resetAt };
-    if (held <= 0)
-      return {
-        resetAt: usableAt(window, held, 0, now),
-        why: `no ${name} left in the window`,
-      };
-    if (share !== null && w.limit !== null) {
-      const floor = w.limit * (1 - share);
-      if (held <= floor)
-        return {
-          resetAt: usableAt(window, held, floor, now),
-          why: `the dispatcher's share (${Math.round(share * 100)}%) of the ${name} window is spent; ${Math.floor(held)} of ${w.limit} are left to passes and people`,
-        };
-    }
+    // What the window must hold again: more than nothing, and more than the
+    // part of it kept for passes and people.
+    const floor =
+      share !== null && w.limit !== null ? w.limit * (1 - share) : 0;
+    if (held > floor && held > 0) continue;
+    return {
+      resetAt: usableAt({ ...w, resetAt: w.resetAt }, held, floor, now),
+      why:
+        held <= 0
+          ? `no ${name} left in the window`
+          : `the dispatcher's share (${Math.round((share ?? 0) * 100)}%) of the ${name} window is spent; ${Math.floor(held)} of ${w.limit} are left to passes and people`,
+    };
   }
   return null;
 }
@@ -365,9 +384,12 @@ export function budgetGovernor(
         const w = record.requests;
         if (w.remaining === null || w.resetAt === null || w.resetAt <= now)
           return null;
+        // The balance as it stands, capped at the limit, from now on: a
+        // refill that came while the window was full is not credit.
+        const held = holds(w, record.observedAt, now) ?? w.remaining;
         return {
           ...record,
-          requests: { ...w, remaining: w.remaining - 1 },
+          requests: { ...w, remaining: held - 1, readAt: now },
         };
       });
       if (out.refusal !== null) throw out.refusal;
@@ -385,8 +407,8 @@ export function budgetGovernor(
         const stillLimited =
           base.limitedUntil !== null && base.limitedUntil > now;
         return {
-          requests: merged(base.requests, answer.requests),
-          complexity: merged(base.complexity, answer.complexity),
+          requests: merged(base.requests, answer.requests, now),
+          complexity: merged(base.complexity, answer.complexity, now),
           limitedUntil:
             answer.limitedUntil !== undefined
               ? Math.max(

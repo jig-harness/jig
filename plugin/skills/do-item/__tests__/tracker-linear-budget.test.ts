@@ -161,6 +161,80 @@ describe("the Linear transport's request budget", () => {
     expect(() => dispatcher.admit("linear", key)).not.toThrow();
   });
 
+  /** The governor and store of a dispatcher at a settable clock. */
+  function dispatcherAt(start: number, secret: string) {
+    const clock = { now: start };
+    const store = memoryBudgetStore();
+    const key = credentialKey("linear", secret);
+    const governor = budgetGovernor(store, {
+      clock: () => clock.now,
+      share: () => 0.5,
+    });
+    const tries = () => {
+      try {
+        governor.admit("linear", key);
+        return null;
+      } catch (error) {
+        return error as TrackerRateLimited;
+      }
+    };
+    return { clock, governor, key, tries };
+  }
+
+  it("never lets refill that came while the window was full count as spendable", () => {
+    const d = dispatcherAt(1_000_000, "lin_api_e");
+    // Full at 10 of 10, an hour to refill (rate 10/hour); half an hour later,
+    // a full window is still 10, not 15.
+    d.governor.observe(d.key, {
+      requests: {
+        limit: 10,
+        remaining: 10,
+        resetAt: d.clock.now + 3_600_000,
+        refillMs: 3_600_000,
+      },
+    });
+    d.clock.now += 1_800_000;
+    let admitted = 0;
+    while (d.tries() === null && admitted < 20) admitted += 1;
+    // Down to the floor of 5, no further.
+    expect(admitted).toBe(5);
+  });
+
+  it("keeps refilling a window an unrelated answer says nothing of", () => {
+    const d = dispatcherAt(2_000_000, "lin_api_f");
+    d.governor.observe(d.key, {
+      requests: {
+        limit: 2500,
+        remaining: 1240,
+        resetAt: d.clock.now + 3_600_000,
+        refillMs: 3_600_000,
+      },
+    });
+    d.clock.now += 20_000;
+    // An answer with no request window (an error without headers) must not
+    // restart the window's refill from its old count.
+    d.governor.observe(d.key, {});
+    expect(d.tries()).toBeNull();
+  });
+
+  it("waits for the share floor, not for one request, when the window is empty", () => {
+    const d = dispatcherAt(3_000_000, "lin_api_g");
+    d.governor.observe(d.key, {
+      requests: {
+        limit: 2500,
+        remaining: 0,
+        resetAt: d.clock.now + 3_600_000,
+        refillMs: 3_600_000,
+      },
+    });
+    const refused = d.tries();
+    expect(refused).toBeInstanceOf(TrackerRateLimited);
+    // 1,251 requests refill in about 30 minutes, not in seconds.
+    expect(
+      (refused as TrackerRateLimited).resetAt - d.clock.now,
+    ).toBeGreaterThan(25 * 60_000);
+  });
+
   it("keeps a window that resets whole walled until its reset", () => {
     let now = Date.parse("2026-11-10T12:00:00Z");
     const store = memoryBudgetStore();
