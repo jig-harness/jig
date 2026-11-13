@@ -103,6 +103,11 @@ filing session uses `/jig:file-issue`'s tracker operations and the procedure
 established in step 6. Separating it keeps verification and tracker mechanics
 out of the person's discussion.
 
+Start the important defects, with the person's approval, through the
+work-start mechanism and identity established in step 6, even when they sit
+outside the agreed topic's first wave. Record which defects were started and
+which remain filed.
+
 ### 8. Prepare the delivery and request approval
 
 When the agreed work spans more than one pull request, have a fresh session
