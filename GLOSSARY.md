@@ -2655,6 +2655,10 @@ make, use the entry's term instead.
   JavaScript; without them, for a reader who asks for reduced motion, or on
   a narrow screen, a still drawing stands in its place
   ([design/website.md](design/website.md)).
+- **Jig Protocol** — the planned readable account of Jig's operating rules,
+  arranged as generated, linkable chapters for teams that adopt Jig. Its
+  design determines its final source, generation and rendering
+  ([design/website.md](design/website.md)).
 - **GLB** — the binary form of glTF, the standard file format for
   three-dimensional models on the web: one file holding a model's parts,
   their placement, their materials and its animations, which a browser can
