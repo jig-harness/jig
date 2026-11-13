@@ -394,6 +394,19 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.227.2] - 2026-11-13
+
+The decision record for calls to outside systems is renumbered.
+
+### Changed
+
+- The decision record for the outbound-calls rule is now [ADR-0021](docs/adr/ADR-0021-outbound-calls-are-governed.md), so the number no longer collides with another record. The plugin instructions link to the new number.
+
+### Fixed
+
+- Release tagging retries failed required checks once before leaving a release untagged; configure `changelog.release.rerun_failed_gates` to change the budget or set it to `0` to disable retries.
+- The tag plan and release status keep reporting every untagged release even after a newer version is tagged. Older releases remain listed for manual tagging without triggering retries or holding newer tags back.
+
 ## [0.227.1] - 2026-11-13
 
 ### Fixed
@@ -448,7 +461,7 @@ Jig states one rule for every call it makes to a system it does not control.
 
 ### Added
 
-- [ADR-0020](docs/adr/ADR-0020-outbound-calls-are-governed.md): every call to a forge, an issue tracker or a reflection store goes through that system's governed transport, which reuses an answer before it sends, asks a budget the whole machine shares, bounds what one call can cost, records what it spent and fails as one of a closed set of classes. The glossary gains the terms (governed transport, budget record, cost ledger, failure class, cost ceiling), and the roadmap gains the item that builds it. Nothing a repository configures changes with this release.
+- [ADR-0021](docs/adr/ADR-0021-outbound-calls-are-governed.md): every call to a forge, an issue tracker or a reflection store goes through that system's governed transport, which reuses an answer before it sends, asks a budget the whole machine shares, bounds what one call can cost, records what it spent and fails as one of a closed set of classes. The glossary gains the terms (governed transport, budget record, cost ledger, failure class, cost ceiling), and the roadmap gains the item that builds it. Nothing a repository configures changes with this release.
 
 ## [0.225.1] - 2026-11-13
 
@@ -7919,7 +7932,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.227.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.227.2...HEAD
+[0.227.2]: https://github.com/jig-harness/jig/compare/v0.227.1...v0.227.2
 [0.227.1]: https://github.com/jig-harness/jig/compare/v0.227.0...v0.227.1
 [0.227.0]: https://github.com/jig-harness/jig/compare/v0.226.2...v0.227.0
 [0.226.2]: https://github.com/jig-harness/jig/compare/v0.226.1...v0.226.2
