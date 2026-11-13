@@ -57,7 +57,11 @@ export type ClaimResult =
       updatedAt?: string;
     }
   | {
-      /** The claim was written and the re-read shows another one landed first. */
+      /**
+       * The claim was written and the re-read shows another one landed
+       * first, or, with `do_item.claim_marker`, cannot establish that this
+       * claim holds the item.
+       */
       outcome: "stood_down";
       issue: string;
       reason: string;

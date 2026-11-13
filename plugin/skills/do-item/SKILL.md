@@ -736,10 +736,10 @@ implementation. Skip this check for issues about the repository's own code.
    best effort: a lagging listing can let two claims both win. A claim that
    meets an earlier marker after its writes, or no longer finds its own,
    settles who holds the item from the attempts' recorded outcomes and
-   never undoes its writes: it keeps the claim when every earlier attempt
-   recorded a release (`"recovery": "reclaimed"`), and stands down when one
-   recorded its claim (`"held"`) or when the evidence cannot say
-   (`"unresolved"`).
+   never undoes its writes: it keeps the claim when its own marker still
+   shows and every earlier attempt recorded a release
+   (`"recovery": "reclaimed"`), and stands down when one recorded its claim
+   (`"held"`) or when the evidence cannot say (`"unresolved"`).
 
    Exit `0` is the claim. Exit `3` is a refusal, nothing written: the issue
    is already `in_progress`, `pr_open` or `blocked`, or assigned to someone

@@ -8,7 +8,11 @@
  */
 import { describe, expect, it } from "bun:test";
 import type { Clock } from "../../../shared/clock.ts";
-import { type ClaimResult, claimIssue } from "../scripts/lib/claim.ts";
+import {
+  type ClaimResult,
+  type ClaimTracker,
+  claimIssue,
+} from "../scripts/lib/claim.ts";
 import {
   type ClaimOutcome,
   claimMarkerBody,
@@ -379,7 +383,7 @@ describe("the claim marker as the claim's token", () => {
     expect(out.recovery).toBeUndefined();
   });
 
-  it("keeps its claim when its own marker was removed after the write and no other claim holds the item", async () => {
+  it("stands down unresolved, never reclaiming, when its own marker is gone after the write", async () => {
     const s = store();
     let reads = 0;
     const out = await claimWithMarker(
@@ -399,12 +403,95 @@ describe("the claim marker as the claim's token", () => {
       claimed,
       CLOCK,
     );
+    // A listing that lost its own marker may miss an earlier one too.
     expect(out).toMatchObject({
-      outcome: "claimed",
-      recovery: "reclaimed",
-      marker: { posted: true, confirmed: false },
+      outcome: "stood_down",
+      recovery: "unresolved",
     });
-    expect(outcomesIn(s.comments)).toEqual(["claimed"]);
+    expect(reads).toBe(2 + RECOVERY_READS);
+    expect(outcomesIn(s.comments)).toEqual(["unresolved"]);
+  });
+
+  it("with its own marker gone, yields to an earlier attempt of the same second that recorded its claim", async () => {
+    const s = store();
+    let reads = 0;
+    let rival: CommentFact | undefined;
+    const out = await claimWithMarker(
+      s.tracker({
+        issueComments: async () => {
+          reads++;
+          const own = s.comments.find((c) => readClaimMarker(c.body) !== null);
+          rival ??= {
+            ...theirs("x", 0),
+            createdAt: (own as CommentFact).createdAt,
+          };
+          if (reads === 1) return { uuid: "u", comments: [...s.comments] };
+          // After the write its own marker is gone, and the rival's shows with its claim.
+          return {
+            uuid: "u",
+            comments: [
+              rival,
+              ...s.comments.filter((c) => readClaimMarker(c.body) === null),
+              outcomeOf("x", "claimed"),
+            ],
+          };
+        },
+      }),
+      "#5",
+      FACTS,
+      claimed,
+      CLOCK,
+    );
+    expect(out).toMatchObject({ outcome: "stood_down", recovery: "held" });
+  });
+
+  it("counts an earlier attempt that stood down unresolved as holding nothing", async () => {
+    const s = store();
+    const h = lagging(s, theirs("x", 1_000), (read) =>
+      read >= 3 ? [outcomeOf("x", "unresolved")] : [],
+    );
+    const out = await claimWithMarker(h.tracker, "#5", FACTS, claimed, CLOCK);
+    expect(out).toMatchObject({ outcome: "claimed", recovery: "reclaimed" });
+  });
+
+  it("keeps the question open when an earlier marker vanishes without an outcome", async () => {
+    const s = store();
+    const late = theirs("x", 1_000);
+    // Listed once after the write, then gone with no outcome recorded.
+    const h = lagging(s, late, () => []);
+    let reads = 0;
+    const out = await claimWithMarker(
+      s.tracker({
+        issueComments: async (key) => {
+          reads++;
+          const listed = await h.tracker.issueComments(key);
+          return reads <= 2
+            ? listed
+            : {
+                uuid: "u",
+                comments: listed.comments.filter((c) => c !== late),
+              };
+        },
+      }),
+      "#5",
+      FACTS,
+      claimed,
+      CLOCK,
+    );
+    expect(out).toMatchObject({
+      outcome: "stood_down",
+      recovery: "unresolved",
+    });
+  });
+
+  it("reads an attempt's first outcome, not a later one naming it", async () => {
+    const s = store([
+      theirs("x", 1_000),
+      outcomeOf("x", "claimed"),
+      { ...outcomeOf("x", "released"), id: "x-later" },
+    ]);
+    const out = await claimWithMarker(s.tracker(), "#5", FACTS, claimed, CLOCK);
+    expect(out).toMatchObject({ outcome: "refused", why: "marker" });
   });
 
   it("stands down unresolved when its markers cannot be read again after the write", async () => {
@@ -477,6 +564,94 @@ describe("the claim marker as the claim's token", () => {
       outcome: "claimed",
       marker: { posted: true, confirmed: false, reason: "unreadable" },
     });
+  });
+});
+
+/** One item's assignee and state, claimed through `claimIssue`. */
+function item() {
+  const me = { id: "u", name: "factory" };
+  const at = { state: "Todo", assignees: [] as Array<typeof me> };
+  const names: Record<string, string> = {
+    todo: "Todo",
+    in_progress: "In Progress",
+  };
+  const tracker = {
+    viewer: async () => me,
+    assignees: async () => [...at.assignees],
+    assign: async (_key: string, user: typeof me) => {
+      at.assignees = [user];
+    },
+    poolIssue: async () => ({
+      state: {
+        name: at.state,
+        type: at.state === "Todo" ? "unstarted" : "started",
+      },
+      nativeType: null,
+    }),
+    transition: async () => {
+      at.state = "In Progress";
+    },
+    stateName: (state: string) => names[state] ?? null,
+  } as unknown as ClaimTracker;
+  return { at, tracker };
+}
+
+describe("a claim that meets an earlier marker after it wrote the item", () => {
+  it("keeps the item when the earlier attempt refused on seeing it started", async () => {
+    // B's first read lags past A's marker, so B claims and starts the item.
+    // A, the earlier marker, then refuses because the item is in progress.
+    // B's read after its write still lists A's withdrawn marker.
+    const s = store();
+    const it5 = item();
+    let ghost: CommentFact | undefined;
+    const a = s.tracker({
+      postComment: async (_key, body) => {
+        const comment: CommentFact = {
+          id: `a${s.comments.length}`,
+          body,
+          createdAt: new Date(Date.now() - 1_000).toISOString(),
+          trusted: true,
+        };
+        if (readClaimMarker(body) !== null) {
+          ghost = comment;
+          s.comments.unshift(comment);
+        } else s.comments.push(comment);
+      },
+    });
+    let reads = 0;
+    let first: Awaited<ReturnType<typeof claimWithMarker>> | undefined;
+    const b = await claimWithMarker(
+      s.tracker({
+        issueComments: async () => {
+          reads++;
+          const comments = [...s.comments];
+          if (reads > 1 && ghost && !comments.includes(ghost))
+            comments.unshift(ghost);
+          return { uuid: "u", comments };
+        },
+      }),
+      "#5",
+      FACTS,
+      async () => {
+        const out = await claimIssue(it5.tracker, "#5");
+        first = await claimWithMarker(
+          a,
+          "#5",
+          FACTS,
+          () => claimIssue(it5.tracker, "#5"),
+          CLOCK,
+        );
+        return out;
+      },
+      CLOCK,
+    );
+    expect(first).toMatchObject({ outcome: "refused", why: "in_progress" });
+    expect(b.outcome).toBe("claimed");
+    expect(it5.at).toEqual({
+      state: "In Progress",
+      assignees: [{ id: "u", name: "factory" }],
+    });
+    expect(outcomesIn(s.comments).sort()).toEqual(["claimed", "released"]);
   });
 });
 

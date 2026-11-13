@@ -30,16 +30,19 @@
  *
  * - an earlier attempt recorded `claimed`: that attempt is the worker, and
  *   this one releases its marker and stands down (`held`);
- * - every earlier attempt it saw recorded `released` or `unresolved`: none
- *   holds the item, so this attempt does, and records `claimed`
- *   (`reclaimed`);
+ * - its own marker still lists, and every earlier attempt it saw recorded
+ *   `released` or `unresolved`: none holds the item, so this attempt does,
+ *   and records `claimed` (`reclaimed`);
  * - otherwise, when the reads run out, or one fails: the evidence cannot
  *   establish ownership, so it stands down `unresolved`, records that, and
  *   leaves the item as it is for a person.
  *
  * Ownership is never inferred from a marker's absence: a marker that
  * vanished without an outcome may be a crashed attempt's or one a person
- * removed, so it keeps the question open until the reads run out.
+ * removed, so it keeps the question open until the reads run out. The same
+ * holds for this attempt's own marker: a listing that no longer shows it may
+ * miss an earlier one too, so it never reclaims until its own lists again.
+ * An attempt's first recorded outcome is the one that counts.
  *
  * "Earliest" is the tracker's own order of an item's comments
  * (`issueComments`), which every reader lists alike; only trusted comments
@@ -83,7 +86,7 @@ const READ_BACK_DELAY_MS = 2_000;
  * long enough for an earlier attempt, which takes seconds, to record how it
  * ended.
  */
-export const RECOVERY_READS = 10;
+export const RECOVERY_READS = 20;
 const RECOVERY_DELAY_MS = 3_000;
 
 export type TokenTracker = Pick<
@@ -133,7 +136,7 @@ interface View {
   outcomes: Map<string, ClaimOutcome>;
 }
 
-/** The trusted claim markers on the item, in the tracker's order, and each attempt's newest outcome. */
+/** The trusted claim markers on the item, in the tracker's order, and each attempt's first outcome. */
 async function view(tracker: TokenTracker, key: string): Promise<View> {
   const { comments } = await tracker.issueComments(key);
   const markers: Marker[] = [];
@@ -142,7 +145,8 @@ async function view(tracker: TokenTracker, key: string): Promise<View> {
     if (!c.trusted) continue;
     const outcome = readClaimOutcome(c.body);
     if (outcome !== null) {
-      outcomes.set(outcome.attempt, outcome.outcome);
+      if (!outcomes.has(outcome.attempt))
+        outcomes.set(outcome.attempt, outcome.outcome);
       continue;
     }
     const read = readClaimMarker(c.body);
@@ -174,14 +178,14 @@ function earlier(v: View, attempt: string): Marker[] | "missing" {
 
 /**
  * With `attempt`'s own marker gone from the listing, the live markers that
- * still hold and were posted before it, by the time its marker carried when
- * it was last seen.
+ * still hold and may have been posted before it, by the time its marker
+ * carried when it was last seen; one of the same time may be earlier.
  */
 function postedBefore(v: View, attempt: string, ownAt: number): Marker[] {
   return v.markers.filter(
     (m) =>
       m.attempt !== attempt &&
-      m.createdAt < ownAt &&
+      m.createdAt <= ownAt &&
       m.createdAt >= ownAt - CLAIM_LAPSE_MS &&
       !released(v, m.attempt),
   );
@@ -314,8 +318,9 @@ export async function claimWithMarker(
     await record("claimed");
     return { ...result, marker: { posted: true, confirmed: true } };
   }
-  const ownAt =
-    first.markers.find((m) => m.attempt === attempt)?.createdAt ?? clock.now();
+  // The read before the write listed this attempt's own marker, or it refused.
+  const ownAt = (first.markers.find((m) => m.attempt === attempt) as Marker)
+    .createdAt;
   return recover(now === "missing" ? [] : now.map((m) => m.attempt));
 
   /**
@@ -341,15 +346,19 @@ export async function claimWithMarker(
         await withdraw(reason, last);
         return { outcome: "stood_down", issue: key, reason, recovery: "held" };
       }
-      if (settled !== "open") {
+      if (settled === "reclaimed") {
         await record("claimed");
-        return { ...result, marker: settled, recovery: "reclaimed" };
+        return {
+          ...result,
+          marker: { posted: true, confirmed: true },
+          recovery: "reclaimed",
+        };
       }
     }
     const why =
       failure !== null
         ? `its claim markers could not be read again (${failure})`
-        : "an earlier claim's marker on it recorded no outcome";
+        : "an earlier claim's marker on it recorded no outcome, or this claim's own marker is gone";
     const reason = `${key} was assigned and started, but who holds it cannot be established: ${why}; a person must check it`;
     await withdraw(reason, last, "unresolved");
     return {
@@ -364,28 +373,20 @@ export async function claimWithMarker(
 /**
  * One recovery read: add the earlier holding attempts `v` lists to `open`,
  * drop those that recorded a release, and say whether one recorded its
- * claim (`held`), none is left (the marker's report for this attempt's
- * reclaim), or some are still `open`.
+ * claim (`held`), none is left while this attempt's own marker lists
+ * (`reclaimed`), or the question stays `open`.
  */
 function settle(
   v: View,
   attempt: string,
   ownAt: number,
   open: Set<string>,
-): "held" | "open" | MarkerReport {
+): "held" | "reclaimed" | "open" {
   const listed = earlier(v, attempt);
   const lostOwn = listed === "missing";
   for (const m of lostOwn ? postedBefore(v, attempt, ownAt) : listed)
     open.add(m.attempt);
   if ([...open].some((a) => v.outcomes.get(a) === "claimed")) return "held";
   for (const a of [...open]) if (released(v, a)) open.delete(a);
-  if (open.size > 0) return "open";
-  return lostOwn
-    ? {
-        posted: true,
-        confirmed: false,
-        reason:
-          "this claim's marker is gone, and no other claim holds the item",
-      }
-    : { posted: true, confirmed: true };
+  return open.size === 0 && !lostOwn ? "reclaimed" : "open";
 }
