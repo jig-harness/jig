@@ -15,6 +15,10 @@ export function durableSummary(text: string): string {
     )
     .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{8,}/gi, "$1 [redacted]")
     .replace(
+      /\b([A-Za-z0-9_.-]*(?:token|secret|password|passwd|api[_-]?key|authorization)[A-Za-z0-9_.-]*)\s*[=:]\s*(?:"(?:[^"\\]|\\.)*"|'[^']*')/gi,
+      "$1=[redacted]",
+    )
+    .replace(
       /\b([A-Za-z0-9_.-]*(?:token|secret|password|passwd|api[_-]?key|authorization)[A-Za-z0-9_.-]*)\s*[=:]\s*(?!\[)\S+/gi,
       "$1=[redacted]",
     )

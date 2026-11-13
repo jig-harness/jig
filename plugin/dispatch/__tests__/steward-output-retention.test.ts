@@ -9,7 +9,7 @@ import {
   readStewardDigest,
   type StewardDigest,
 } from "../lib/steward.ts";
-import { closeStateDb } from "../lib/state.ts";
+import { closeStateDb, stateDb } from "../lib/state.ts";
 
 describe("durable output summary", () => {
   test("redacts credential-shaped values and bounds the length", () => {
@@ -35,6 +35,21 @@ describe("durable output summary", () => {
     );
     expect(asked).not.toContain("me@example.com");
     expect(asked).not.toContain("hunter2");
+  });
+});
+
+describe("quoted values after an unquoted key", () => {
+  test("redacts the whole double-quoted, single-quoted and YAML value", () => {
+    for (const text of [
+      'password="correct horse battery staple" rest',
+      "password='correct horse battery staple' rest",
+      'password: "correct horse battery staple" rest',
+    ]) {
+      const kept = durableSummary(text);
+      expect(kept).not.toContain("horse");
+      expect(kept).not.toContain("staple");
+      expect(kept).toContain("rest");
+    }
   });
 });
 
@@ -87,5 +102,28 @@ describe("steward output erasure", () => {
     expect(eraseStewardOutput(41 * day, 30, root)).toBe(0);
     expect(JSON.stringify(old.value)).not.toContain("secret-ish");
     expect(JSON.stringify(fresh.value)).toContain("secret-ish");
+  });
+
+  test("an expired unreadable digest does not stop later rows being erased", () => {
+    const root = mkdtempSync(join(tmpdir(), "steward-erase-bad-"));
+    roots.push(root);
+    const digest = {
+      version: 1,
+      repo: "o/r",
+      drives: [],
+      needs: [],
+      queue: [],
+      passes: [{ record: "p", said: "secret words", question: "q?" }],
+      failures: [],
+    } as unknown as StewardDigest;
+    keepStewardRun("bad", digest, 1000, root);
+    stateDb(root)
+      .query("UPDATE steward_runs SET digest = 'unreadable' WHERE id = 'bad'")
+      .run();
+    keepStewardRun("good", digest, 2000, root);
+    expect(eraseStewardOutput(10_000_000_000, 1, root)).toBe(1);
+    const read = readStewardDigest("good", root);
+    expect(JSON.stringify(read)).not.toContain("secret words");
+    expect(eraseStewardOutput(10_000_000_000, 1, root)).toBe(0);
   });
 });

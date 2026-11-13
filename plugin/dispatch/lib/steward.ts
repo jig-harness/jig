@@ -292,22 +292,17 @@ export function eraseStewardOutput(
   const db = stateDb(root);
   const rows = db
     .query(
-      `SELECT id, digest FROM steward_runs WHERE at_ms <= ? AND (
-        digest LIKE '%"said":"%' OR digest LIKE '%"question":"%' OR EXISTS (
-          SELECT 1 FROM json_each(steward_runs.digest, '$.targets') t
-          WHERE json_extract(t.value, '$.lastPass.output.tail') NOT IN ('')
-        )) ORDER BY at_ms LIMIT 200`,
+      "SELECT id, digest FROM steward_runs WHERE erased = 0 AND at_ms <= ? ORDER BY at_ms LIMIT 200",
     )
     .all(nowMs - days * 86_400_000) as Array<{ id: string; digest: string }>;
   let erased = 0;
   for (const row of rows) {
     const next = erasedOutput(row.digest);
-    if (next === null) continue;
-    db.query("UPDATE steward_runs SET digest = ? WHERE id = ?").run(
-      next,
+    db.query("UPDATE steward_runs SET digest = ?, erased = 1 WHERE id = ?").run(
+      next ?? row.digest,
       row.id,
     );
-    erased++;
+    if (next !== null) erased++;
   }
   return erased;
 }

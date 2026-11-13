@@ -412,6 +412,14 @@ export const MIGRATIONS: readonly Migration[] = [
     ALTER TABLE failures ADD COLUMN renewals INTEGER NOT NULL DEFAULT 0;
   `,
   },
+  {
+    // Whether a steward digest's output has been through the retention erasure (`eraseStewardOutput`); only unexamined expired rows are scanned.
+    additive: true,
+    sql: `
+    ALTER TABLE steward_runs ADD COLUMN erased INTEGER NOT NULL DEFAULT 0;
+    CREATE INDEX steward_runs_unerased ON steward_runs (at_ms) WHERE erased = 0;
+  `,
+  },
 ];
 
 /** The schema version this plugin writes. */

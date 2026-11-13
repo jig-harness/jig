@@ -3,6 +3,7 @@ import { statSync } from "node:fs";
 import { resolve } from "node:path";
 import { gitIdentityEnv, run } from "../../shared/proc.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
+import { durableSummary } from "./pass-output.ts";
 
 export type EvidenceRead<T> = Outcome<T, "unreadable">;
 export type EvidenceRoom = () => number | null;
@@ -53,7 +54,7 @@ export async function evidenceCommand(
             timedOut: result.timedOut,
             spawnFailed: result.spawnFailed,
             bufferExceeded: result.bufferExceeded,
-            stderrTail: result.stderrTail.slice(-2000),
+            stderrTail: durableSummary(result.stderrTail),
           },
         );
   } catch (error) {
