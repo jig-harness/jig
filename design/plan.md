@@ -240,7 +240,7 @@ failure on one account raises one host need and holds that account's
 tracker stages; and every need that reached a person that week was framed,
 or, where only a person can act, raised once for its cause.
 
-### 53. Outbound calls: one governed transport for every system Jig calls
+### 55. Outbound calls: one governed transport for every system Jig calls
 
 Jig's code calls a forge, the issue trackers and the reflection stores,
 and each integration handles their limits and outages on its own: one
@@ -250,7 +250,7 @@ record of what an operation costs. On a dispatch host that showed as a
 tracker credential held at its hourly allowance by one unbounded nested
 list, a repository the forge could not answer a full page of and so was
 never read, and ticks that exited 1 for refusals that clear by waiting.
-[ADR-0020](../docs/adr/ADR-0020-outbound-calls-are-governed.md) sets the
+[ADR-0021](../docs/adr/ADR-0021-outbound-calls-are-governed.md) sets the
 rule, and [design/outbound-calls.md](outbound-calls.md) has each system's
 limits, the shared library (`plugin/shared/outbound/`), the failure classes
 with their policies and the build order. What it will build, one pull

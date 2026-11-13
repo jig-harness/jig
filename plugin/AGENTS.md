@@ -93,7 +93,7 @@ here reaches every repository at once.
   `bun run gates` fails any other throw (`scripts/check-throws.ts`); the
   skill scripts keep their own error handling.
 - **A call to an outside system goes through that system's transport**
-  ([ADR-0020](../docs/adr/ADR-0020-outbound-calls-are-governed.md)): the
+  ([ADR-0021](../docs/adr/ADR-0021-outbound-calls-are-governed.md)): the
   tracker adapters for a tracker, the `ghCall` wrappers for the forge, the
   store clients for a reflection store. Every such call has a deadline,
   every list a query selects has a page size, and a read that runs every
