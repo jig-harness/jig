@@ -14,7 +14,11 @@
  */
 import { slotTable } from "./accounts.ts";
 import { planSteers, readNudges, settlePending } from "./actions/steer.ts";
-import { releaseEnded, settleAgents } from "./actions/pickup-hold.ts";
+import {
+  recordsWanted,
+  releaseEnded,
+  settleAgents,
+} from "./actions/pickup-hold.ts";
 import { planFailureNotices } from "./failure-notices.ts";
 import { readOutcomes, settleFollowups } from "./followup-outcomes.ts";
 import { readReleases, reconcileReleases } from "./followup-releases.ts";
@@ -232,17 +236,12 @@ function planRepo(
     };
   if (input.claimed === null) return;
   updateIdle(repo, plan.idleNow, nowMs, undefined, plan.idleKeep);
-  // An item the read left out (who assigned it could not be read, or not by a
-  // person with write access) is still assigned: only leaving the dispatch
-  // states releases its record. A claimed item whose pass stopped on a
-  // question keeps it until the item returns to the dispatch states.
+  // A claimed item whose pass stopped on a question keeps its record until
+  // the item returns to the dispatch states.
   releaseEnded(
     records,
     repo,
-    new Set([
-      ...input.pickups.map((p) => p.key),
-      ...report.unplaced.map((u) => u.target),
-    ]),
+    recordsWanted(input.pickups, report.unplaced, records),
     new Set(input.claimed.map((c) => c.key)),
     new Set(input.pickups.map((p) => p.key)),
     undefined,
