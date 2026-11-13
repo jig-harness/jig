@@ -13,7 +13,7 @@ import {
   targetOf,
 } from "../launches.ts";
 import { loadReport } from "../load.ts";
-import { passOutput } from "../pass-output.ts";
+import { durableSummary, passOutput } from "../pass-output.ts";
 import { failed, ok, type Outcome } from "../../../shared/outcome.ts";
 import { questionIn, sessionIdFor } from "../session.ts";
 import { stateDb } from "../state.ts";
@@ -271,6 +271,12 @@ export async function stewardQueue(
   return ok(queue);
 }
 
+/** The durable summary of a pass's output, or `null` when it kept none. */
+function keptSummary(context: string | undefined): string | null {
+  const summary = durableSummary(context ?? "");
+  return summary === "" ? null : summary;
+}
+
 /** Question context remains separate from each target's latest output. */
 export function stewardPasses(
   records: ReadRecord[],
@@ -293,7 +299,7 @@ export function stewardPasses(
         action: r.record.action,
         target: targetOf(r.record),
         question,
-        said: question === null ? null : (kept.context ?? null),
+        said: question === null ? null : keptSummary(kept.context),
       },
     ];
   });

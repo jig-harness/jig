@@ -279,6 +279,60 @@ export function keepStewardRun(
     )
     .run(id, digest.repo, digestHash(digest), at, JSON.stringify(digest));
 }
+/**
+ * Erase the output-bearing fields (each target's last-pass tail and each
+ * pass's quoted question context) from digests older than the retention,
+ * in step with launch pruning. The rest of the digest stays.
+ */
+export function eraseStewardOutput(
+  nowMs: number,
+  days: number,
+  root = stateRoot(),
+): number {
+  const db = stateDb(root);
+  const rows = db
+    .query("SELECT id, digest FROM steward_runs WHERE at_ms <= ?")
+    .all(nowMs - days * 86_400_000) as Array<{ id: string; digest: string }>;
+  let erased = 0;
+  for (const row of rows) {
+    const next = erasedOutput(row.digest);
+    if (next === null) continue;
+    db.query("UPDATE steward_runs SET digest = ? WHERE id = ?").run(
+      next,
+      row.id,
+    );
+    erased++;
+  }
+  return erased;
+}
+
+/** The digest text without its output, or `null` when it holds none (or does not parse). */
+function erasedOutput(text: string): string | null {
+  const parsed = attempt("unreadable", "the steward digest does not read", () =>
+    JSON.parse(text),
+  );
+  if (!parsed.ok) return null;
+  const digest: unknown = parsed.value;
+  if (!isMapping(digest)) return null;
+  let changed = false;
+  if (Array.isArray(digest.targets))
+    for (const t of digest.targets) {
+      const out =
+        isMapping(t) && isMapping(t.lastPass) ? t.lastPass.output : null;
+      if (isMapping(out) && out.tail !== "") {
+        out.tail = "";
+        out.unavailable = "erased after the retention period";
+        changed = true;
+      }
+    }
+  if (Array.isArray(digest.passes))
+    for (const p of digest.passes)
+      if (isMapping(p) && p.said !== null && p.said !== undefined) {
+        p.said = null;
+        changed = true;
+      }
+  return changed ? JSON.stringify(digest) : null;
+}
 export function readStewardDigest(
   id: string,
   root = stateRoot(),

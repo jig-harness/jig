@@ -1,3 +1,31 @@
+/** The most output a durable digest keeps per pass. */
+export const DURABLE_OUTPUT_LIMIT = 2000;
+
+/**
+ * The classified summary a durable digest may keep: credential-shaped
+ * values, email addresses and long opaque strings are replaced, and only the
+ * last `DURABLE_OUTPUT_LIMIT` characters remain. Redaction runs before the cut so
+ * a secret split by it cannot survive.
+ */
+export function durableSummary(text: string): string {
+  return text
+    .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{8,}/gi, "$1 [redacted]")
+    .replace(
+      /\b([A-Za-z0-9_.-]*(?:token|secret|password|passwd|api[_-]?key|authorization)[A-Za-z0-9_.-]*)\s*[=:]\s*(?!\[)\S+/gi,
+      "$1=[redacted]",
+    )
+    .replace(
+      /\b(?:gh[pousr]_|github_pat_|sk-|xox[abp]-|lin_api_)[A-Za-z0-9_-]{8,}/g,
+      "[redacted]",
+    )
+    .replace(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g, "[email]")
+    .replace(
+      /\b(?=[A-Za-z_-]*\d)(?=[A-Za-z0-9+/_-]*[A-Za-z])[A-Za-z0-9+/_-]{40,}={0,2}/g,
+      "[redacted]",
+    )
+    .slice(-DURABLE_OUTPUT_LIMIT);
+}
+
 /** Bounded pass output is diagnostic data; it never authorizes a recovery. */
 export function passOutput(
   ran: { output?: string; said?: string },

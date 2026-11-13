@@ -16,6 +16,7 @@ import {
   type LinkedPullRequest,
   type PullRequestChecks,
 } from "./steward-evidence-forge.ts";
+import { DURABLE_OUTPUT_LIMIT, durableSummary } from "./pass-output.ts";
 
 export interface StewardTargetEvidence {
   target: string;
@@ -161,8 +162,8 @@ function lastPass(
       record: pass.record.id,
       output: {
         untrusted: true,
-        tail: (output ?? "").slice(-8000),
-        truncated: outputTruncation(output, rawOutput),
+        tail: durableSummary(output ?? ""),
+        truncated: outputTruncation(output),
         ...(output === undefined
           ? { unavailable: "this pass did not retain an output tail" }
           : {}),
@@ -171,15 +172,10 @@ function lastPass(
   };
 }
 
-/** At the persisted tail's boundary the original stream may already have been cut. */
-function outputTruncation(
-  output: string | undefined,
-  raw: string | undefined,
-): boolean | null {
+/** The summary keeps only the last `DURABLE_OUTPUT_LIMIT` characters of what the pass retained. */
+function outputTruncation(output: string | undefined): boolean | null {
   if (output === undefined) return null;
-  if (output.length > 8000) return true;
-  if (raw?.length === 8000) return null;
-  return (raw?.length ?? 0) > 8000;
+  return output.length > DURABLE_OUTPUT_LIMIT;
 }
 
 function forgeRefusal(context: EvidenceContext): EvidenceRead<never> | null {
