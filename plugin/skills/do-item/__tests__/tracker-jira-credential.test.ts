@@ -548,6 +548,44 @@ describe("JIRA_TOKEN_COMMAND", () => {
     }
   });
 
+  it("stops re-running the command once a renewed token is refused in turn", async () => {
+    const { runs, runner } = printing("old", "new", "newer");
+    const { sent, impl } = statuses(401);
+    const t = httpTransport(GATEWAY, command(runner), impl);
+    const errors = [];
+    for (let i = 0; i < 4; i++) errors.push(await failure(t(request)));
+    expect(runs.length).toBe(2);
+    for (const err of errors) {
+      expect([err.status, err.unavailable]).toEqual([401, false]);
+      expect(err.message).toContain("JIRA_TOKEN_COMMAND");
+    }
+    expect(sent.slice(0, 3)).toEqual([
+      "Bearer old",
+      "Bearer new",
+      "Bearer new",
+    ]);
+  });
+
+  it("renews again after a renewed token has been accepted and later refused", async () => {
+    const { runs, runner } = printing("one", "two", "three");
+    const answers = [401, 200, 401, 200];
+    const sent: string[] = [];
+    const impl = (async (_url: unknown, init?: RequestInit) => {
+      sent.push(authorizationOf(init));
+      return new Response("{}", { status: answers[sent.length - 1] ?? 200 });
+    }) as typeof fetch;
+    const t = httpTransport(GATEWAY, command(runner), impl);
+    await t(request);
+    await t(request);
+    expect(runs.length).toBe(3);
+    expect(sent).toEqual([
+      "Bearer one",
+      "Bearer two",
+      "Bearer two",
+      "Bearer three",
+    ]);
+  });
+
   it("keeps a caller's timeout as cancellation while waiting for a command", async () => {
     const late = Promise.withResolvers<TokenRun>();
     try {
