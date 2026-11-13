@@ -394,6 +394,25 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.225.2] - 2026-11-13
+
+Jig states one rule for every call it makes to a system it does not control.
+
+### Added
+
+- [ADR-0020](docs/adr/ADR-0020-outbound-calls-are-governed.md): every call to a forge, an issue tracker or a reflection store goes through that system's governed transport, which reuses an answer before it sends, asks a budget the whole machine shares, bounds what one call can cost, records what it spent and fails as one of a closed set of classes. The glossary gains the terms (governed transport, budget record, cost ledger, failure class, cost ceiling), and the roadmap gains the item that builds it. Nothing a repository configures changes with this release.
+
+## [0.225.1] - 2026-11-13
+
+### Fixed
+
+- On GitHub Issues, where priority is kept in a field rather than in labels,
+  `tracker.ts update` now removes a leftover `priority:` label named in
+  `removeLabels` instead of refusing it. Adding one is still refused, and the
+  message names the field priority is kept in. Where priority is kept in
+  labels, both stay refused, so priority still changes only through
+  `priority`. **Consumer action:** none.
+
 ## [0.225.0] - 2026-11-13
 
 ### Added
@@ -7852,7 +7871,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.225.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.225.2...HEAD
+[0.225.2]: https://github.com/jig-harness/jig/compare/v0.225.1...v0.225.2
+[0.225.1]: https://github.com/jig-harness/jig/compare/v0.225.0...v0.225.1
 [0.225.0]: https://github.com/jig-harness/jig/compare/v0.224.3...v0.225.0
 [0.224.3]: https://github.com/jig-harness/jig/compare/v0.224.2...v0.224.3
 [0.224.2]: https://github.com/jig-harness/jig/compare/v0.224.1...v0.224.2

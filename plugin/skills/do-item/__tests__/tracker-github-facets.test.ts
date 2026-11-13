@@ -227,6 +227,20 @@ describe("GitHub facets: a repository that names no store", () => {
       ["LA_0_medium"],
     ]);
   });
+
+  it("refuses a priority label among the labels a change adds or removes", async () => {
+    const { t, calls } = gitHub(() => ({ ok: true }), {
+      taxonomy: JIG_TAXONOMY,
+    });
+    for (const patch of [
+      { addLabels: ["priority: high"] },
+      { removeLabels: ["priority: high"] },
+    ])
+      await expect(t.updateIssue("#5", patch)).rejects.toThrow(
+        "'priority: high' stand for a workflow state or a priority; use transition or priority instead",
+      );
+    expect(calls).toEqual([]);
+  });
 });
 
 describe("GitHub facets: the issue type and issue fields as named stores", () => {
@@ -376,6 +390,38 @@ describe("GitHub facets: the issue type and issue fields as named stores", () =>
         { fieldName: "Priority", operation: "CLEAR" },
       ],
     });
+  });
+
+  it("takes a leftover priority label off, and refuses putting one on", async () => {
+    const { t, calls } = gitHub((c) => {
+      if (c.op === "TrackerIssue")
+        return oneIssue(
+          issueNode({
+            number: 5,
+            labels: ["priority: high", "bug"],
+            extra: { subIssues: conn([]) },
+          }),
+        );
+      if (c.op === "TrackerLabels") return repoLabels("bug", "priority: high");
+      if (c.op === "TrackerFacetStores") return STORES;
+      return { ok: true };
+    }, NAMED);
+    await t.updateIssue("#5", { removeLabels: ["priority: high"] });
+    expect(writes(calls)).toEqual(["TrackerRemoveLabels"]);
+    expect(calls.at(-1)?.variables.labelIds).toEqual(["LA_1_priority: high"]);
+    const added = t.updateIssue("#5", { addLabels: ["Priority: High"] });
+    await expect(added).rejects.toBeInstanceOf(TrackerRequestError);
+    await expect(added).rejects.toThrow(
+      "'Priority: High' stand for a priority, which acme/app keeps in the field 'Priority'",
+    );
+    await expect(
+      t.createIssue({
+        title: "x",
+        description: "",
+        labels: ["priority: high"],
+      }),
+    ).rejects.toThrow("keeps in the field 'Priority'");
+    expect(writes(calls)).toEqual(["TrackerRemoveLabels"]);
   });
 
   it("refuses a value that names nothing in the store before writing", async () => {
