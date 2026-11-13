@@ -143,7 +143,10 @@ describe("jig ask and the dashboard show one park alike", () => {
     const card = cardOf(decision);
     expect(card.act).toBe("Decide");
     expect(card.answerNotes).toEqual([
-      "Disputed, so it waits until the people answering agree: @maintainer chose Keep (the recommended option); @reviewer chose Remove.",
+      {
+        state: "disputed",
+        text: "Disputed, so it waits until the people answering agree: @maintainer chose Keep (the recommended option); @reviewer chose Remove.",
+      },
     ]);
   }, 60_000);
 
@@ -170,6 +173,8 @@ describe("jig ask and the dashboard show one park alike", () => {
       ["maintainer", { digest: "000000000000" }, false],
       ["reviewer", null, true],
     ]);
-    expect(cardOf(decision).answerNotes[0]).toStartWith("Stale, so it waits");
+    const [note] = cardOf(decision).answerNotes;
+    expect(note?.state).toBe("stale");
+    expect(note?.text).toStartWith("Stale, so it waits");
   }, 60_000);
 });

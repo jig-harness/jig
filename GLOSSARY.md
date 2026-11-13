@@ -2010,6 +2010,10 @@ make, use the entry's term instead.
 - **Maskable icon** — an app icon drawn to fill a full square, with its mark
   kept near the middle, so a launcher that crops icons to its own shape (a
   circle, a rounded square) does not cut the mark off.
+- **Forced colours** — an operating system's high-contrast mode, in which
+  the browser replaces a page's colours with a few system colours the
+  person chose. A page that tells things apart only by colour loses the
+  difference there, so it keeps shapes and borders that still show.
 - **Service worker** — a script a browser starts on demand, apart from the
   page itself, to handle events such as requests when the network is gone;
   the browser stops it whenever it has nothing to handle. The
