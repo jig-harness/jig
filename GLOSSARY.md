@@ -2157,9 +2157,15 @@ make, use the entry's term instead.
   one policy: whether the call is retried, what its reader shows meanwhile,
   and when a person is told. It names what went wrong outside Jig; the
   *failure channel* is how a failure travels inside it.
-- **Cost ceiling** — the most a query's nested page sizes may multiply to,
-  declared beside the query, so that what one request can cost an outside
-  system is bounded when the query is written and a gate can check it.
+- **Transport profile** — what a *governed transport* declares of its
+  system's limits: which exist, how each refills, how an answer reports
+  them, what a refusal looks like and who owns the quota. It holds no
+  number the system reports; those are read from each answer. Planned
+  ([ROADMAP.md](ROADMAP.md) item 51).
+- **Cost ceiling** — the most objects a query may return in total (the sum
+  over its paths of the nested page sizes' product), declared beside the
+  query, so that what one request can cost an outside system is bounded
+  when the query is written and a gate can check it.
   Planned ([ROADMAP.md](ROADMAP.md) item 51).
 - **ADF (Atlassian Document Format)** — the JSON form Jira stores rich
   text in (issue descriptions, comments). Jig's Jira adapter converts it to

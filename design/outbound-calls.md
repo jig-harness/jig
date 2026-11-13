@@ -25,7 +25,8 @@ every call.
 
 ### What each system limits
 
-A transport declares its system's limits in a **profile**. A profile never
+A transport declares its system's limits in a
+[transport profile](../GLOSSARY.md). A profile never
 holds a number the system reports: the limit, the balance and the reset are
 read from each answer, since they differ by credential and plan. The
 figures below are what the systems state or what a host measured, and say
@@ -35,10 +36,10 @@ what a profile has to model.
 | --- | --- | --- | --- | --- |
 | GitHub, REST | Requests an hour (5,000 for a person's token); searches a minute | Whole, at the reset | `x-ratelimit-limit`, `-remaining`, `-reset` and `-resource` headers | 403 or 429 with no requests remaining |
 | GitHub, GraphQL | Points an hour, a query's points by the nodes it may return; about 10 seconds a query | Whole, at the reset | `rateLimit { cost remaining resetAt }` in the query | An error of type `RATE_LIMITED`; 502 or 504 for a query out of time |
-| GitHub, secondary limits | Requests at once, points a minute, content created a minute | Not stated | Not reported | 403 or 429 with `retry-after` |
+| GitHub, secondary limits | Requests at once, points a minute, content created a minute | Not stated | Not reported | 403 or 429, or a 200 with an error body; `retry-after` when the system sends it |
 | Linear | Requests an hour and complexity points an hour for a key (2,500 and 3,000,000 measured); 10,000 points for one query; a list with no page size is priced at 50 items | Continuously: the reset an answer names is a full refill away | `x-ratelimit-requests-*` and `x-ratelimit-complexity-*` headers, `x-complexity` for the query | 400 or 429 with the error code `RATELIMITED` |
-| Jira Cloud | Not stated as a number a client can read ahead | Not stated | A refusal only | 429 with `Retry-After` |
-| Notion | About 3 requests a second for an integration | Continuously | Not reported | 429 with `Retry-After` |
+| Jira Cloud | Request and cost limits that differ by authentication mode (OAuth or API token) and by endpoint | Not stated | Limit, remaining and reset headers and a reason header, where the system sends them; the profile lists which ones each authentication mode gets | 429 with `Retry-After`; the reason header tells an endpoint's throttle from a wider quota |
+| Notion | A budget per connection over a fixed 60-second window, sized by plan; a limit shared across the workspace; some endpoints with limits of their own | Whole, when the window ends | Not reported | 429 with `Retry-After`; the workspace limit refuses every connection at once |
 
 A local tool Jig runs (a workspace application's command, `git` against a
 remote) has no rate limit. It gets a deadline, the failure classes and the
@@ -52,11 +53,11 @@ module leaves its old path in the same pull request.
 
 | Part | What it does | Moved from |
 | --- | --- | --- |
-| `profile` | A system's limits: which exist, how each refills, how an answer reports them, what a refusal looks like | Constants in each transport |
+| `profile` | A system's limits: which exist, how each refills, how an answer reports them, what a refusal looks like, and who owns the quota | Constants in each transport |
 | `budget` | Admits and reserves per credential and limit, with a share for the dispatcher | `shared/tracker-budget.ts` |
 | `ledger` | Totals of requests, cost and time per operation and caller | New |
 | `failure`, `retry` | The closed classes; jittered backoff inside the call's deadline that honours `Retry-After`, for reads only | `tracker/read-retry.ts` and each transport's own classification |
-| `cache` | Answers kept by update time or by the system's validator, failures included | `shared/gh-conditional.ts`, the served queue's kept readings |
+| `cache` | Answers kept by update time or by the system's validator, stable absences included | `shared/gh-conditional.ts`, the served queue's kept readings |
 | `coalesce`, `batch` | One request for identical reads in a run; reads by key in chunks | `dispatch/lib/tick-reads.ts`, the Linear read by key |
 | `paging` | Page caps, and a page that shrinks when the system runs out of time | Built with step 1 |
 
@@ -70,8 +71,11 @@ the callers of an adapter do not change.
 ### Reuse before sending
 
 - **Cache by what makes an answer stale.** An item's answer is kept under
-  the item's update time, and a failure is an answer: an item whose history
-  names no user is not read again until it changes. Where the system offers
+  the item's update time, and a stable absence is an answer: an item whose
+  history names no user is not read again until it changes. A failure that
+  can clear by waiting (`unreachable`, `server-fault`, `rate-limited`,
+  `too-costly`) is never kept; the caller retries it as the policy says.
+  Where the system offers
   a validator (GitHub's `ETag` on REST reads), the transport sends it, and
   an unchanged answer does not count against the hourly limit.
 - **Ask what changed first.** A reader that keeps a reading asks the system
@@ -85,19 +89,29 @@ the callers of an adapter do not change.
 
 ### The budget record
 
-One record per credential and limit, shared by every process on the
+One record per quota owner and limit, shared by every process on the
 machine (`~/.local/state/jig/tracker/budget.sqlite`, keyed by the system
-and a hash of the credential). `admit` reserves a request before it is
+and a hash of the quota owner). The profile defines the owner for its
+system: the credential where each credential has its own allowance, the
+user a key belongs to where a system shares one allowance across that
+user's keys (Linear does). The credential's own hash stays on ledger rows
+for authentication and reporting. `admit` reserves a request before it is
 sent and refuses, with the time the limit clears, while the credential is
 refused or the caller's share is spent; `observe` records what each answer
 said of the limits. A limit that refills continuously is credited as it
 refills.
 
 GitHub joins the record with a window for each of its limits (core,
-GraphQL, search); a secondary-limit refusal holds the credential until its
-`retry-after`. The command-line client shows headers only for `gh api`
-calls, so the other subcommands are accounted from GitHub's `rate_limit`
-endpoint, which costs nothing, and from refusal text. The tick then reads
+GraphQL, search). A secondary-limit refusal holds the credential until its
+`retry-after`; with no header, until the wait an exhausted primary window
+names, and with neither, for at least a minute, longer with each repeat
+refusal. The command-line client shows headers only for `gh api`
+calls. For the other subcommands the wrapper counts each request it sends
+and records its cost as an estimate, marked as one; the `rate_limit`
+endpoint sets the balance, and spending the counts do not explain goes to
+an unattributed row, never to an operation. That endpoint costs nothing
+against the primary allowance but can count against secondary limits, so
+it is read at most once a tick and its requests are counted. The tick then reads
 the record in place of asking `rate_limit` itself, and `load.forge_floor`
 reads the same record.
 
@@ -131,7 +145,7 @@ to tell them apart.
 | Class | What it means | Retried inside the call | A person is told |
 | --- | --- | --- | --- |
 | `rate-limited` | The system refused the credential, or the budget record says the caller's share is spent; it carries the time it clears | No: nothing is sent before that time | Never for the wait itself; the low-quota need says why |
-| `unreachable` | No answer: the name did not resolve, the connection failed, or the deadline passed with nothing received | Reads, twice, with jittered backoff; writes never | After the failure ledger's count in a row |
+| `unreachable` | No answer: the name did not resolve, the connection failed, or the deadline passed with nothing received | Reads, once, after a jittered backoff; writes never | After the failure ledger's count in a row |
 | `too-costly` | The system ran out of time on the request, or priced it above what one request may cost | A paged read asks again at half the page | When the smallest request fails: the query is the defect |
 | `server-fault` | The system answered at once with a 5xx status | As `unreachable` | After the failure ledger's count in a row |
 | `unauthorized` | The credential is missing, expired or refused | No | At once, once per credential |
@@ -158,9 +172,12 @@ was sent: the caller reads the item again before it writes again.
 
 - Every call has a deadline, shared by its retries.
 - Every list a query selects has a page size. Each query is declared with
-  its name and a **cost ceiling**: the most its nested page sizes may
-  multiply to, in the system's own unit where the unit is computable from
-  the text.
+  its name and a **cost ceiling**: the most objects it may return in
+  total. A path's size is the product of the page sizes along it, and the
+  query's is the sum over all its paths, sibling selections, fragments and
+  repeated selections included. The ceiling is in the system's own unit
+  where its formula is computable from the text, and a query costing
+  exactly its ceiling passes.
 - A paged read goes through `paging`: on `too-costly` it asks again for
   half the page, down to one item, and keeps the size it ended at for the
   next run.
@@ -173,7 +190,7 @@ was sent: the caller reads the item again before it writes again.
   that predate the rule are listed and counted, and the count may only
   fall.
 - `scripts/check-query-cost.ts` reads every declared query: a list with no
-  page size fails, and so does a query whose nested sizes pass its declared
+  page size fails, and so does a query whose total passes its declared
   ceiling.
 - The review skill gets an integration lens, the obligations as
   questions, owed by an `integrations` area of the change-area catalog that
@@ -187,7 +204,9 @@ are built in that order.
 1. **A page that shrinks.** `paging`, and the dispatcher's pull-request
    read through it.
 2. **The rule.** ADR-0020, the rule in `AGENTS.md`, this design.
-3. **Failure classes and one retry.** `failure` and `retry`; the tracker
+3. **Failure classes and one retry.** `failure` and `retry`, which keep
+   one retry for a read (the moved `tracker/read-retry.ts` permits three);
+   the tracker
    transports and the forge client's wrapper return the classes; the tick
    and the passes follow the policies above.
 4. **The ledger and the reports.** `ledger`; `budget` moved into the

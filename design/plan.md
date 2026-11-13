@@ -278,7 +278,8 @@ request per step:
 Done when, on a dispatch host over a week: no tick exits 1 and no person
 is asked for a refusal that clears by waiting; `jig budget` names the
 operations that spent each quota, and their totals match the budget
-record's change; a repository whose pull requests the forge cannot answer
+record's spending once its refills and window resets are set aside, with
+spending by other users of the credential shown apart; a repository whose pull requests the forge cannot answer
 fifty at a time is read on every tick; a steady tick with nothing changed
 sends one tracker request per team; and both gates run in
 `bun run gates`, their counts of calls that predate the rule only falling.

@@ -67,7 +67,7 @@ obligations:
    [budget record](../../GLOSSARY.md) for the credential. A spent or refused
    credential sends nothing until the time the system named.
 4. **Bound what one call can cost.** Every call has a deadline. Every list
-   has a page size, and nested page sizes multiply to less than a ceiling
+   has a page size, and nested page sizes multiply to at most a ceiling
    declared beside the query. A paged read shrinks its page when the system
    runs out of time on it.
 5. **Record and report what it cost.** Requests, the system's own cost unit
