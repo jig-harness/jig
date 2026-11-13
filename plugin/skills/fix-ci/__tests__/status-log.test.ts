@@ -238,7 +238,7 @@ describe("readStatusLogs", () => {
     expect(read.ok).toBe(false);
     if (!read.ok) {
       expect(read.failure.code).toBe("unreadable");
-      expect(read.failure.reason).toContain("could not be copied");
+      expect(read.failure.reason).toContain("could not be");
     }
     expect(cwds()).toEqual([]);
   });

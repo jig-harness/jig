@@ -387,112 +387,146 @@ export async function withDefaultBranchTree<T>(
       mkdirSync(tree),
     );
     if (!made.ok) return made;
-    const objects = await git(
-      [
-        "-C",
-        root,
-        "rev-parse",
-        "--path-format=absolute",
-        "--git-path",
-        "objects",
-      ],
-      readOptions(),
-    );
-    if (objects.code !== 0 || objects.stdout.trim() === "")
-      return failed(
-        "unreadable",
-        `the clone's objects could not be found: ${oneLine(objects.stderrTail || objects.stderr)}`,
-      );
-    const format = await git(
-      ["-C", root, "rev-parse", "--show-object-format"],
-      readOptions(),
-    );
-    const objectFormat = format.stdout.trim();
-    if (format.code !== 0 || !/^sha(1|256)$/.test(objectFormat))
-      return failed(
-        "unreadable",
-        `the clone's object format could not be read: ${oneLine(format.stderrTail || format.stderr)}`,
-      );
-    // A partial clone lacks blobs the copy needs, and the scratch repository
-    // has no remote to fetch them from: the clone's own configuration
-    // fetches them, once, before the copy reads them.
-    const listed = await git(
-      ["-C", root, ...GIT_READ_FLAGS, "ls-tree", "-r", "--object-only", commit],
-      readOptions({}, EXPORT_TIMEOUT_SEC),
-    );
-    if (listed.code !== 0)
-      return failed(
-        "unreadable",
-        `the default branch's files at ${commit.slice(0, 12)} could not be listed: ${oneLine(listed.stderrTail || listed.stderr)}`,
-      );
-    const hydrated = await git(
-      ["-C", root, ...GIT_READ_FLAGS, "cat-file", "--batch-check"],
-      { ...readOptions({}, EXPORT_TIMEOUT_SEC), stdin: listed.stdout },
-    );
-    if (hydrated.code !== 0 || /\bmissing\b/.test(hydrated.stdout))
-      return failed(
-        "unreadable",
-        `the default branch's files at ${commit.slice(0, 12)} are not all in the clone: ${oneLine(hydrated.stderrTail || hydrated.stderr || hydrated.stdout)}`,
-      );
-    // No tokens, no user or system configuration, no inherited repository.
-    const env = {
-      ...scrubbedEnv(gitIdentityEnv()),
-      GIT_CONFIG_GLOBAL: devNull(),
-      GIT_CONFIG_SYSTEM: devNull(),
-      GIT_CONFIG_NOSYSTEM: "1",
-      GIT_DIR: gitDir,
-      GIT_WORK_TREE: tree,
-      // The attributes of the commit, not of any working tree. Git before
-      // 2.41 ignores this and reads the scratch tree's own, which holds the
-      // commit's files and no filter that anything configures.
-      GIT_ATTR_SOURCE: commit,
-    };
-    const options = {
-      env,
-      stderr: "pipe" as const,
-      timeoutSec: EXPORT_TIMEOUT_SEC,
-    };
-    const steps = [
-      ["init", "--quiet", "--bare", `--object-format=${objectFormat}`, gitDir],
-      ["read-tree", commit],
-      ["checkout-index", "--all", "--force"],
-    ];
-    for (const step of steps) {
-      if (step[0] === "read-tree") {
-        // A file, not the environment's list: its entries are paths, and a
-        // path may hold the list's separator. Quoted when it holds anything
-        // the file's format reads specially.
-        const alternate = attempt(
-          "unreadable",
-          "the copy's object source",
-          () =>
-            writeFileSync(
-              join(gitDir, "objects", "info", "alternates"),
-              `${alternateEntry(objects.stdout.trim())}\n`,
-            ),
-        );
-        if (!alternate.ok) return alternate;
-      }
-      const result = await git(
-        [...GIT_READ_FLAGS, ...step],
-        step[0] === "init"
-          ? {
-              ...options,
-              env: { ...env, GIT_DIR: undefined, GIT_WORK_TREE: undefined },
-            }
-          : options,
-      );
-      if (result.code !== 0)
-        return failed(
-          "unreadable",
-          `the default branch's files at ${commit.slice(0, 12)} could not be copied: ${oneLine(result.stderrTail || result.stderr)}`,
-        );
-    }
+    const source = await readCloneObjects(root, commit);
+    if (!source.ok) return source;
+    const copied = await copyCommit(source.value, commit, gitDir, tree);
+    if (!copied.ok) return copied;
     return ok(await use(tree));
   } finally {
     cleanup[Symbol.dispose]();
     remove();
   }
+}
+
+/** The standard output of one read of the clone, or why it failed. */
+async function readClone(
+  root: string,
+  what: string,
+  args: string[],
+  stdin?: string,
+): Promise<Outcome<string, "unreadable">> {
+  const result = await git(["-C", root, ...GIT_READ_FLAGS, ...args], {
+    ...readOptions({}, EXPORT_TIMEOUT_SEC),
+    ...(stdin === undefined ? {} : { stdin }),
+  });
+  return result.code === 0
+    ? ok(result.stdout)
+    : failed(
+        "unreadable",
+        `${what}: ${oneLine(result.stderrTail || result.stderr)}`,
+      );
+}
+
+/**
+ * What the scratch copy needs of the clone: where its objects are and their
+ * hash format, after every file of `commit` is present in them (a partial
+ * clone fetches the missing ones here, through its own configuration, since
+ * the scratch repository has no remote of its own).
+ */
+async function readCloneObjects(
+  root: string,
+  commit: string,
+): Promise<
+  Outcome<{ objectsPath: string; objectFormat: string }, "unreadable">
+> {
+  const objects = await readClone(
+    root,
+    "the clone's objects could not be found",
+    ["rev-parse", "--path-format=absolute", "--git-path", "objects"],
+  );
+  if (!objects.ok) return objects;
+  const format = await readClone(
+    root,
+    "the clone's object format could not be read",
+    ["rev-parse", "--show-object-format"],
+  );
+  if (!format.ok) return format;
+  const short = commit.slice(0, 12);
+  const listed = await readClone(
+    root,
+    `the default branch's files at ${short} could not be listed`,
+    ["ls-tree", "-r", "--object-only", commit],
+  );
+  if (!listed.ok) return listed;
+  const checked = await readClone(
+    root,
+    `the default branch's files at ${short} could not be read`,
+    ["cat-file", "--batch-check"],
+    listed.value,
+  );
+  if (!checked.ok) return checked;
+  if (/\bmissing\b/.test(checked.value))
+    return failed(
+      "unreadable",
+      `the default branch's files at ${short} are not all in the clone`,
+    );
+  return ok({
+    objectsPath: objects.value.trim(),
+    objectFormat: format.value.trim(),
+  });
+}
+
+/**
+ * Copy the files of `commit` into `tree` through a scratch repository at
+ * `gitDir` whose objects are the clone's, with no token, no user or system
+ * configuration and no inherited repository.
+ */
+async function copyCommit(
+  source: { objectsPath: string; objectFormat: string },
+  commit: string,
+  gitDir: string,
+  tree: string,
+): Promise<Outcome<null, "unreadable">> {
+  const env = {
+    ...scrubbedEnv(gitIdentityEnv()),
+    GIT_CONFIG_GLOBAL: devNull(),
+    GIT_CONFIG_SYSTEM: devNull(),
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_DIR: gitDir,
+    GIT_WORK_TREE: tree,
+    // The attributes of the commit, not of any working tree. Git before
+    // 2.41 ignores this and reads the scratch tree's own, which holds the
+    // commit's files and no filter that anything configures.
+    GIT_ATTR_SOURCE: commit,
+  };
+  const run = async (args: string[], inRepository: boolean) => {
+    const result = await git([...GIT_READ_FLAGS, ...args], {
+      env: inRepository
+        ? env
+        : { ...env, GIT_DIR: undefined, GIT_WORK_TREE: undefined },
+      stderr: "pipe" as const,
+      timeoutSec: EXPORT_TIMEOUT_SEC,
+    });
+    return result.code === 0
+      ? ok(null)
+      : failed(
+          "unreadable",
+          `the default branch's files at ${commit.slice(0, 12)} could not be copied: ${oneLine(result.stderrTail || result.stderr)}`,
+        );
+  };
+  const initialised = await run(
+    [
+      "init",
+      "--quiet",
+      "--bare",
+      `--object-format=${source.objectFormat}`,
+      gitDir,
+    ],
+    false,
+  );
+  if (!initialised.ok) return initialised;
+  // A file, not the environment's list: its entries are paths, and a path
+  // may hold the list's separator. Quoted when it holds anything the file's
+  // format reads specially.
+  const alternate = attempt("unreadable", "the copy's object source", () =>
+    writeFileSync(
+      join(gitDir, "objects", "info", "alternates"),
+      `${alternateEntry(source.objectsPath)}\n`,
+    ),
+  );
+  if (!alternate.ok) return alternate;
+  const read = await run(["read-tree", commit], true);
+  return read.ok ? run(["checkout-index", "--all", "--force"], true) : read;
 }
 
 /** One line of an alternates file: the path, C-quoted when it needs it. */
