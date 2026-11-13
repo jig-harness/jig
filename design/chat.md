@@ -230,7 +230,13 @@ bridge keeps each id with its request and its state: `pending`, `running`
 or `done`. Processing is exclusive: the bridge moves an id from `pending`
 to `running` in one atomic update that takes a lease, and a second delivery
 of an id that is `running` under a live lease waits for it and reports its
-result. A lease that expires without the id reaching `done` marks the
+result. The worker renews the lease while it runs and checks, immediately before
+each effect, that it still holds it under the token it took; a worker that
+finds the lease lost stops without making the effect. A lease is longer than
+the deadline of every call the request makes, and an expired lease is
+reclaimed only after a further margin of one such deadline, so a worker
+paused or waiting on a remote call has either finished or been fenced by
+then. A lease that expires without the id reaching `done` marks the
 processing abandoned, and the id returns to `pending` for recovery. The
 record of an interaction that is not `done` is kept until it is, and the
 bridge scans for such records at start and on a timer, so an acknowledged
@@ -240,7 +246,14 @@ the forge or the tracker (a comment, a label, an assignment) and the
 `chat-request` or `drive-answer` record naming the request id beside it. The
 record of the interaction lists them before either is made, and recovery
 checks each against its destination: an effect found, carrying the request
-id, is complete; one missing is made, and only that one. An assignment the
+id, is complete; one missing is made, and only that one. A label has no
+request id, so its witness is the forge's label history: the missing label
+is made only when that history, readable in full, shows no change to the
+label by anyone since the interaction was admitted. A change by another
+actor, such as a release after a hold, means the command is superseded, and
+the id completes as superseded without the label. A history that cannot be
+read in full is ambiguous, and recovery then refuses and leaves the id for a
+person rather than replay a command the line may have moved past. An assignment the
 bridge identity already made, which the tracker would refuse to make twice
 (`assign` refuses an item whose assignee is not null), is completed by
 writing the missing `chat-request` record, never retried. When every effect

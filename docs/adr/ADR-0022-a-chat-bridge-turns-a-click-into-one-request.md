@@ -58,8 +58,10 @@ A team's chat may carry buttons and commands through a **chat bridge**:
   request through `jig send`'s writers, with its checks, after checking
   that the chat user belongs to the configured workspace, is mapped or
   linked to a forge login, and for a write that the login may write to the
-  repository. It keeps only the ids of the interactions it ran, so one the
-  chat delivers twice runs once. It starts no session, nothing the line
+  repository. It keeps a record of each interaction it admitted, with the request,
+  its state and the effects it lists, until the interaction is done, so one
+  the chat delivers twice runs once and one a crash interrupted is finished
+  or refused, never lost or repeated. It starts no session, nothing the line
   runs reads from it, and stopping it removes the buttons and commands and
   nothing else.
 - **Notices stay with the hosts.** The tick of the host that owns a
