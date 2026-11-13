@@ -708,7 +708,8 @@ generator, its gate and the exit-code chapter first, then the other stable
 chapters, their schemas, their restatements as links, the provisional
 chapters, and the site's pages.
 
-Done when every stable chapter of the design is generated and gated, the
+Done when every stable and provisional chapter of the design is generated
+and gated, the site renders the chapters, and the
 documents programs outside the skills are pointed to link to the chapters
 instead of restating them, and a change that makes a chapter disagree with
 the code fails `bun run gates`.

@@ -177,7 +177,9 @@ Each chapter carries its own version, an integer in the chapter list,
 starting at 1. Within one version a stable chapter only grows: a value is
 added; a value is withdrawn by keeping it listed as a tombstone, never by
 deleting it, and never reused for another meaning; a field of a shape is
-never removed or retyped. A change that breaks this raises the chapter's
+never removed or retyped, and no field becomes required or is newly
+required: the accepted record shapes only widen. A change that breaks this
+raises the chapter's
 version, and its change note is marked breaking and says what a reader must
 change ([changes/README.md](../changes/README.md) says which release that
 asks for). The version is the chapter's own, not the plugin's: the plugin's
@@ -189,11 +191,16 @@ alone, which only shows what is there now. So the check also reads the
 chapter's data file (below) as the integration branch holds it, from the
 merge base with that branch, and compares: a value or a field that the base
 has and the new data file lacks, a value whose meaning changed to another
-value's, or a field whose type changed, fails the check unless the chapter's
-version was raised. When the merge base cannot be read (a shallow clone),
+value's, a field whose type changed, or a field that is new and required or
+that changed from optional to required, fails the check unless the chapter's
+version was raised. Which chapters are protected is read from the base too:
+a chapter the base lists as stable stays stable. Marking it provisional,
+or removing its entry or its files, fails the check unless its version was
+raised and its change note is marked breaking. When the merge base cannot be read (a shallow clone),
 the check fails and names the fetch that fixes it, rather than passing
 unchecked. A provisional chapter promises only that it states what the code
-does in the release that ships it, and the comparison does not apply to it.
+does in the release that ships it; the comparison applies to a chapter
+the base holds as stable, whatever status the change gives it.
 
 ### The generator and its gate
 
@@ -220,7 +227,8 @@ development dependencies are installed, never from the plugin cache.
   the change-area catalog (`.config/change-areas.yaml`), whose `paths` are
   `plugin/protocol/**` and `tools/protocol/**`: the generated-file inventory
   [CONTRIBUTING.md § Derived files](../CONTRIBUTING.md#derived-files)
-  describes. Its outputs are the chapters, the data files and the schemas;
+  describes. Its outputs are the chapters, the index page, the data files and the
+schemas;
   its `notes` say that a chapter's prose outside the markers is written by
   hand and only the marked sections and the status line are derived, and
   that the JSON files carry no generated header, so the entry is their
@@ -229,7 +237,10 @@ development dependencies are installed, never from the plugin cache.
 - **Its sources are checked, not listed by hand.** The entry's `source`
   names `tools/protocol/**` and each file a chapter imports from. The
   generator's tests record every module a chapter's sections import and
-  fail when the entry's `source` misses one
+  fail when the entry's `source` misses one. They also enumerate each
+  eligible entry of the imported tables on their own and fail when a chapter
+  neither renders it nor lists it as an explicit exclusion, in both
+  directions
   ([M2 § Generators reach every input](../modules/M2-generated-artifact-freshness/README.md#generators-reach-every-input)).
 - **The commit-time twin.** M2's triad needs a step that regenerates and
   stages the chapters at commit time. The repository's pre-commit hook
@@ -270,10 +281,11 @@ gets a JSON Schema (draft 2020-12) in `plugin/protocol/schemas/`:
 | Needs and structured answers (provisional) | the decision record a pass writes, and an answer |
 | Steward records (provisional) | each record kind |
 | Forge claims (provisional) | each claim |
+| The commands a repository supplies and tracker facets | the JSON a facet store answers with, and the output shapes callers parse |
 
-Exit codes, labels, the commands a repository supplies and tracker facets
-are lists of words or numbers, read one value at a time, and get the data
-file alone. Addresses are strings with a grammar; their chapter states the
+Exit codes and labels are lists of words or numbers, read one value at a
+time, and get the data file alone; the lists of commands and facets do too,
+and only the JSON their callers parse gets a schema. Addresses are strings with a grammar; their chapter states the
 grammar and its data file lists the stations and verbs, without a schema.
 
 **How a schema is held to the code.** A schema is not derived from a

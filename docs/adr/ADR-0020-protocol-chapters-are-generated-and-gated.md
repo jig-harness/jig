@@ -2,7 +2,7 @@
 title: "ADR-0020: A Protocol chapter is generated from the code and agrees with it by a gate"
 type: adr
 status: draft
-description: "Each contract Jig's parts and outside readers share has one chapter of the Jig Protocol, whose values are generated from the code's own tables and whose gate fails the build when the chapter and the code disagree; the chapter's authority is its gate, a stable chapter only grows within a plugin major version, and no specification is written by hand"
+description: "Each contract Jig's parts and outside readers share has one chapter of the Jig Protocol, whose values are generated from the code's own tables and whose gate fails the build when the chapter and the code disagree; the chapter's authority is its gate, a stable chapter only grows within its own chapter version, and no specification is written by hand"
 lifecycle: permanent
 version: "1.0"
 last_updated: 2026-11-13
@@ -62,7 +62,9 @@ The forces:
    each value is written in the code beside the value.
 3. **The gate is the chapter's authority.** A chapter and the code must
    agree; the gate fails the build when they do not, and the disagreement
-   is settled by regenerating the chapter, never by editing it to match.
+   in a generated section or a status line is settled by regenerating the
+   chapter, never by editing it to match; the chapter's handwritten prose,
+   which the gate cannot hold, is corrected by editing it.
 4. **The Protocol ranks after terms and before reference** in "Which
    document wins". A reference document that restates a contract
    differently from its chapter is corrected to it, or made a link.

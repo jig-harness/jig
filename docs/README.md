@@ -65,9 +65,12 @@ rules on the base branch, not the rules it brings with it
 
 Once the Protocol is built (plan item 51), a chapter is the one document
 that cannot wait to be noticed: its gate fails the build when the chapter and the code disagree, and the
-disagreement is settled by regenerating the chapter, never by editing it.
+disagreement in a generated section or status line is settled by
+regenerating the chapter, never by editing it; its handwritten prose is
+corrected by editing it.
 When the regenerated chapter would break a stable chapter's promise (a value
-deleted rather than kept as a tombstone, a value reused, a field removed),
+deleted rather than kept as a tombstone, a value reused, a field removed or
+newly required),
 the code is changed back or the chapter's version is raised and the change
 released as breaking. A reference document
 that restates a contract differently from its chapter is corrected to the
