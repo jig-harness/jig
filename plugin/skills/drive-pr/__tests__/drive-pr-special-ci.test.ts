@@ -344,6 +344,52 @@ test("a held failure retains a passing cross-name replacement witness", async ()
   expect(report.failingCheckNames).toEqual([]);
 });
 
+test("a later held failure in another group still replaces a cancelled run between held failures", async () => {
+  const f = setup();
+  writeFileSync(
+    join(f.dir, "workflow-runs.json"),
+    JSON.stringify({
+      workflow_runs: [
+        {
+          id: 1,
+          workflow_id: 1,
+          status: "completed",
+          conclusion: "failure",
+          check_suite_id: 1,
+          created_at: "2026-11-13T09:01:00Z",
+          run_started_at: "2026-11-13T09:01:00Z",
+          run_attempt: 1,
+        },
+        {
+          id: 2,
+          workflow_id: 1,
+          status: "completed",
+          conclusion: "cancelled",
+          check_suite_id: 2,
+          created_at: "2026-11-13T09:02:00Z",
+          run_started_at: "2026-11-13T09:02:00Z",
+          run_attempt: 1,
+        },
+        {
+          id: 3,
+          workflow_id: 1,
+          status: "completed",
+          conclusion: "failure",
+          check_suite_id: 3,
+          created_at: "2026-11-13T09:03:00Z",
+          run_started_at: "2026-11-13T09:03:00Z",
+          run_attempt: 1,
+        },
+      ],
+    }),
+  );
+  const evidence = join(SCRIPTS, "lib/status/evidence.ts");
+  const source = `import {ciReportFor} from ${JSON.stringify(evidence)};const runs=[{name:"gate",id:1,status:"completed",conclusion:"failure",app:"github-actions",title:"",started:"2026-11-13T09:01:00Z",suiteId:1},{name:"gate",id:2,status:"completed",conclusion:"cancelled",app:"github-actions",title:"",started:"2026-11-13T09:02:00Z",suiteId:2},{name:"custom sentinel",id:3,status:"completed",conclusion:"failure",app:"github-actions",title:"",started:"2026-11-13T09:03:00Z",suiteId:3}];console.log(JSON.stringify(await ciReportFor("example-org","example-repo",process.env.DRIVE_PR_POLICY_BASE,runs,false,"999")));`;
+  const report = JSON.parse((await child(f, source)).stdout);
+  expect(report.ci).toBe("held: custom sentinel, gate");
+  expect(report.failingCheckNames).toEqual([]);
+});
+
 test("a held failure leaves an independently rerunning suite pending", async () => {
   const f = setup();
   writeFileSync(

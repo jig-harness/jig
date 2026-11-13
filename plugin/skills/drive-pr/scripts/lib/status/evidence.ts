@@ -739,14 +739,16 @@ export async function ciReportFor(
       workflowRuns,
     ).map((run) => run.id),
   );
-  // Every unreplaced witness outside held groups is retained: a newer skipped
-  // check cannot replace a passing one's workflow evidence, and re-reducing
-  // only selected runs would resurrect an older cancelled held failure. A held
-  // group stays raw past its held failure, so a later cancellation or rerun
-  // still answers the hold.
+  // Every unreplaced witness is retained: a newer skipped check cannot replace
+  // a passing one's workflow evidence, and re-reducing only selected runs would
+  // resurrect an older cancelled held failure. A held group keeps only what
+  // follows its held failure, so a later cancellation or rerun still answers
+  // the hold while a run another held failure replaced stays gone.
   const laterRuns = runs.filter((run) => {
     const through = heldThrough.get(JSON.stringify([run.app, run.name]));
-    return through === undefined ? retainedIds.has(run.id) : run.id > through;
+    return (
+      retainedIds.has(run.id) && (through === undefined || run.id > through)
+    );
   });
   const laterVerdict = ciVerdictOf(
     laterRuns,
