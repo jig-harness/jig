@@ -14,7 +14,7 @@ sends, stays inside a budget the whole machine shares, records what each
 operation cost, and tells a reader exactly how a call failed.
 
 This is the design of [plan.md](plan.md) item 55, decided in
-[ADR-0020](../docs/adr/ADR-0020-outbound-calls-are-governed.md). Built so
+[ADR-0021](../docs/adr/ADR-0021-outbound-calls-are-governed.md). Built so
 far: the shared budget record for the tracker adapters
 (`plugin/shared/tracker-budget.ts`, documented under `tracker_share` in the
 [configuration reference](../plugin/CONFIGURATION.md)), conditional requests
@@ -206,7 +206,7 @@ are built in that order.
 
 1. **A page that shrinks.** `paging`, and the dispatcher's pull-request
    read through it.
-2. **The rule.** ADR-0020, the rule in `AGENTS.md`, this design.
+2. **The rule.** ADR-0021, the rule in `AGENTS.md`, this design.
 3. **Failure classes and one retry.** `failure` and `retry`, which keep
    one retry for a read (the moved `tracker/read-retry.ts` permits three);
    the tracker

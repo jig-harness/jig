@@ -249,7 +249,7 @@ record of what an operation costs. On a dispatch host that showed as a
 tracker credential held at its hourly allowance by one unbounded nested
 list, a repository the forge could not answer a full page of and so was
 never read, and ticks that exited 1 for refusals that clear by waiting.
-[ADR-0020](../docs/adr/ADR-0020-outbound-calls-are-governed.md) sets the
+[ADR-0021](../docs/adr/ADR-0021-outbound-calls-are-governed.md) sets the
 rule, and [design/outbound-calls.md](outbound-calls.md) has each system's
 limits, the shared library (`plugin/shared/outbound/`), the failure classes
 with their policies and the build order. What it will build, one pull
