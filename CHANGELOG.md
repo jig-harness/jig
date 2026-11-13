@@ -394,6 +394,87 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.226.2] - 2026-11-13
+
+The dispatcher reads a repository's pull requests in pages as large as the forge answers in time.
+
+### Fixed
+
+- A repository whose open pull requests each carry many check results could not be read at all. GitHub ends a query it has worked on for about ten seconds (HTTP 502 or 504); the dispatcher asked for fifty pull requests a page, and its fallback listing asked for every pull request's checks at once. Such a repository's turn failed on every tick, so it got no re-arm, follow-up or pickup. A page the forge runs out of time on is now asked again at half the size, down to one pull request, and the size that read is kept for the repository, so later ticks start from it. The kept size is tried larger again once pages answer quickly and an hour has passed since it last shrank. The comments query over merged pull requests shrinks the same way. The fallback listing is asked once more without the checks, which then read as unknown. The forge record says the page size where it is under fifty, and names both failures when neither read answers.
+
+## [0.226.1] - 2026-11-13
+
+### Fixed
+
+- Isolate drive test subprocesses from the developer checkout so local branch state does not break the tests. Released plugin behavior is unchanged. **Consumer action:** none.
+
+## [0.226.0] - 2026-11-13
+
+### Added
+
+- The dispatcher tells a stalled pickup's finished work from abandoned work. When a claimed item has no running session and an open pull request whose head is the branch of this host's launch of the item links it (`Closes <KEY>` or `Refs <KEY>`, as `do-item` writes it), the tick on the host that owns the repository moves the item from its in-progress state to `pr_open`, never to done, and comments on it naming the pull request. An item already in `pr_open` is not reported as stalled while that pull request is open. Where the repository names no `pr_open` state, or the open pull requests did not read, nothing moves and the stall need says why, naming the pull request where there is one. The rule reads the open pull requests the tick already reads, so it makes no forge request of its own; `jig dispatch` lists each move under the repository, and with `--apply` what it did.
+
+## [0.225.2] - 2026-11-13
+
+Jig states one rule for every call it makes to a system it does not control.
+
+### Added
+
+- [ADR-0020](docs/adr/ADR-0020-outbound-calls-are-governed.md): every call to a forge, an issue tracker or a reflection store goes through that system's governed transport, which reuses an answer before it sends, asks a budget the whole machine shares, bounds what one call can cost, records what it spent and fails as one of a closed set of classes. The glossary gains the terms (governed transport, budget record, cost ledger, failure class, cost ceiling), and the roadmap gains the item that builds it. Nothing a repository configures changes with this release.
+
+## [0.225.1] - 2026-11-13
+
+### Fixed
+
+- On GitHub Issues, where priority is kept in a field rather than in labels,
+  `tracker.ts update` now removes a leftover `priority:` label named in
+  `removeLabels` instead of refusing it. Adding one is still refused, and the
+  message names the field priority is kept in. Where priority is kept in
+  labels, both stay refused, so priority still changes only through
+  `priority`. **Consumer action:** none.
+
+## [0.225.0] - 2026-11-13
+
+### Added
+
+- `dispatch.stalled_scope` (`claimed` by default, or `assigned`) decides
+  which of the factory identity's claimed items the stall watch reads as
+  pickups.
+
+### Fixed
+
+- `jig doctor dispatch` no longer passes while every tick fails. A tick that
+  a throw stops before its act phase, such as one whose state database is
+  refused at the start, now writes a failed receipt, so `jig status` and
+  `jig doctor` read that tick rather than an older successful one. The
+  `dispatch:last-run` check names the latest tick's failure reason and, when
+  more than one tick in a row failed, how many and since when.
+- The stall watch no longer reads someone else's work as a stalled pickup.
+  An item assigned to the factory identity in progress counts as a pickup
+  only when a launch record of the host or a claim marker took it.
+  `dispatch.stalled_scope: assigned` keeps the wider watch, for a repository
+  whose identity nobody else uses. A double claim is still reported for any
+  claimed item.
+- An item a person held with `jig:hold` (or the human-in-the-loop or
+  manual-operations label) in a served person's queue or the ready pool, and
+  then released, is picked up again at the next tick. Before, the record of
+  an earlier pickup that ended without claiming it kept holding it until the
+  item left the dispatch states. A claimed item's record, and the record of
+  a pickup that finished (`done`), still outlive a hold.
+
+## [0.224.3] - 2026-11-13
+
+### Fixed
+
+- The audit now probes configured Jira and Linear facet stores and reports
+  stores that cannot be used, including missing Jira fields or issue types
+  and Linear size estimates disabled for the team. Configured GitHub store
+  failures are also reported; a probe the tracker could not answer is a
+  warning, not an error. Default-store detection advice remains specific to
+  GitHub. The Jira probe also shows the open issue counts for the project and
+  its configured pool issue-type scope, counted as the pool read counts.
+  **Consumer action:** none.
+
 ## [0.224.2] - 2026-11-13
 
 Reading who made a Linear assignment costs a tenth of the query complexity it did.
@@ -7810,7 +7891,14 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.224.2...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.226.2...HEAD
+[0.226.2]: https://github.com/jig-harness/jig/compare/v0.226.1...v0.226.2
+[0.226.1]: https://github.com/jig-harness/jig/compare/v0.226.0...v0.226.1
+[0.226.0]: https://github.com/jig-harness/jig/compare/v0.225.2...v0.226.0
+[0.225.2]: https://github.com/jig-harness/jig/compare/v0.225.1...v0.225.2
+[0.225.1]: https://github.com/jig-harness/jig/compare/v0.225.0...v0.225.1
+[0.225.0]: https://github.com/jig-harness/jig/compare/v0.224.3...v0.225.0
+[0.224.3]: https://github.com/jig-harness/jig/compare/v0.224.2...v0.224.3
 [0.224.2]: https://github.com/jig-harness/jig/compare/v0.224.1...v0.224.2
 [0.224.1]: https://github.com/jig-harness/jig/compare/v0.224.0...v0.224.1
 [0.224.0]: https://github.com/jig-harness/jig/compare/v0.223.5...v0.224.0

@@ -127,7 +127,6 @@ describe("the outcome log's key column", () => {
     old.run("ALTER TABLE launches DROP COLUMN result_until");
     old.run("ALTER TABLE launches DROP COLUMN result_decision");
     old.run("DROP TABLE station_answers");
-    old.run("DROP TABLE read_pages");
     old.run(`PRAGMA user_version = ${BEFORE_TARGET}`);
     old.run("DELETE FROM db_migrations WHERE version > ?", [BEFORE_TARGET]);
     old.run("UPDATE db_meta SET version = ?", [BEFORE_TARGET]);

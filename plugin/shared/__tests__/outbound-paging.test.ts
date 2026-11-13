@@ -1,103 +1,177 @@
 /**
- * shared/outbound: a paged read halves its page on a timeout, down to one
- * item, keeps the smaller size for the rest of the read, reports the size
- * that last answered, and fails on any other failure at once.
+ * shared/outbound: a paged read whose page shrinks when the system it reads
+ * runs out of time, and the size the next read starts from.
  */
 import { describe, expect, it } from "bun:test";
 import { failed, ok, type Outcome } from "../outcome.ts";
 import {
-  type Page,
-  readPaged,
-  TIMED_OUT,
-  timedOut,
+  GROW_AFTER_MS,
+  keptSize,
+  type PagedRun,
+  QUICK_MS,
+  readShrinking,
+  SLOW_MS,
+  sizeToKeep,
+  startSize,
 } from "../outbound/paging.ts";
 
-type Code = typeof TIMED_OUT | "unreadable";
+type Code = "too-costly" | "unreadable";
 
-/** A system of `total` items that times out on a page above `limit`, recording each page size it was asked for. */
-function system(total: number, limit: number) {
+/** A system that runs out of time on a page of more than `most` items. */
+function system(most: number) {
   const asked: number[] = [];
-  const fetch = async (
-    size: number,
-    at: number,
-  ): Promise<Outcome<Page<number[], number>, Code>> => {
+  const read = async (size: number): Promise<Outcome<number, Code>> => {
     asked.push(size);
-    if (size > limit) return failed(TIMED_OUT, "HTTP 504");
-    const items = Array.from(
-      { length: Math.min(size, total - at) },
-      (_, i) => at + i,
-    );
-    const next = at + items.length < total ? at + items.length : null;
-    return ok({ value: items, items: items.length, next });
+    return size > most
+      ? failed("too-costly", `no answer at ${size}`)
+      : ok(size);
   };
-  return { asked, fetch };
+  return { asked, read };
 }
 
-describe("a paged read", () => {
-  it("reads every item in pages of the size that answers, halving from the start size", async () => {
-    const s = system(25, 10);
-    const read = await readPaged({ start: 0, size: 50, fetch: s.fetch });
-    expect(read.ok).toBe(true);
-    if (!read.ok) return;
-    expect(read.value.pages.flat()).toEqual(
-      Array.from({ length: 25 }, (_, i) => i),
+const outOfTime = (failure: { code: Code }) => failure.code === "too-costly";
+
+describe("a page the system runs out of time on", () => {
+  it("is asked again at half the size until it reads", async () => {
+    const { asked, read } = system(10);
+    const page = await readShrinking(50, read, outOfTime);
+    expect(asked).toEqual([50, 25, 12, 6]);
+    expect(page.outcome).toEqual(ok(6));
+    expect(page.size).toBe(6);
+  });
+
+  it("is asked once when it reads at the size it starts from", async () => {
+    const { asked, read } = system(10);
+    const page = await readShrinking(8, read, outOfTime);
+    expect(asked).toEqual([8]);
+    expect(page.size).toBe(8);
+  });
+
+  it("stops at one item, with the failure of that request", async () => {
+    const { asked, read } = system(0);
+    const page = await readShrinking(5, read, outOfTime);
+    expect(asked).toEqual([5, 2, 1]);
+    expect(page.outcome).toEqual(failed("too-costly", "no answer at 1"));
+    expect(page.size).toBe(1);
+  });
+
+  it("rejects a non-finite starting size", async () => {
+    const { read } = system(10);
+    await expect(readShrinking(Number.NaN, read, outOfTime)).rejects.toThrow(
+      "the starting page size must be finite",
     );
-    expect(read.value.items).toBe(25);
-    expect(read.value.size).toBe(6);
-    expect(read.value.shrinks).toBe(3);
-    expect(s.asked).toEqual([50, 25, 12, 6, 6, 6, 6, 6]);
-  });
-
-  it("does not shrink a page that answers", async () => {
-    const s = system(7, 50);
-    const read = await readPaged({ start: 0, size: 50, fetch: s.fetch });
-    expect(read.ok && read.value.size).toBe(50);
-    expect(s.asked).toEqual([50]);
-  });
-
-  it("fails only once a page of one times out, saying how far it shrank", async () => {
-    const s = system(3, 0);
-    const read = await readPaged({ start: 0, size: 4, fetch: s.fetch });
-    expect(read.ok).toBe(false);
-    if (read.ok) return;
-    expect(read.failure.code).toBe(TIMED_OUT);
-    expect(read.failure.reason).toBe(
-      "HTTP 504 (at a page of 1, shrunk from 4)",
+    await expect(readShrinking(Infinity, read, outOfTime)).rejects.toThrow(
+      "the starting page size must be finite",
     );
-    expect(s.asked).toEqual([4, 2, 1]);
   });
 
-  it("ends at the first failure that is not a timeout, without shrinking", async () => {
+  it("is not asked again after any other failure", async () => {
     const asked: number[] = [];
-    const read = await readPaged<number[], number, Code>({
-      start: 0,
-      size: 50,
-      fetch: async (size) => {
+    const page = await readShrinking<number, Code>(
+      50,
+      async (size) => {
         asked.push(size);
-        return failed("unreadable", "not JSON");
+        return failed("unreadable", "the answer is not JSON");
       },
-    });
-    expect(read.ok ? null : read.failure.code).toBe("unreadable");
+      outOfTime,
+    );
     expect(asked).toEqual([50]);
+    expect(page.outcome.ok).toBe(false);
+    expect(page.size).toBe(50);
   });
 
-  it("starts at one page even when asked for a size under one", async () => {
-    const s = system(2, 10);
-    const read = await readPaged({ start: 0, size: 0, fetch: s.fetch });
-    expect(read.ok && read.value.size).toBe(1);
-    expect(s.asked).toEqual([1, 1]);
+  it("reports how long the request that settled it took", async () => {
+    const times = [0, 11_000, 11_000, 14_000];
+    const { read } = system(25);
+    const page = await readShrinking(50, read, outOfTime, () => {
+      const at = times.shift();
+      if (at === undefined) throw new Error("the clock was read too often");
+      return at;
+    });
+    expect(page.size).toBe(25);
+    expect(page.tookMs).toBe(3_000);
   });
 });
 
-describe("a timeout", () => {
-  it("is a passed deadline, or a gateway's 502 or 504", () => {
-    expect(timedOut("", true)).toBe(true);
-    expect(timedOut("gh: HTTP 504: We couldn't respond in time", false)).toBe(
-      true,
-    );
-    expect(timedOut("gh: HTTP 502", false)).toBe(true);
-    expect(timedOut("gh: HTTP 500", false)).toBe(false);
-    expect(timedOut("gh: HTTP 5040", false)).toBe(false);
-    expect(timedOut("gh: Bad credentials (HTTP 401)", false)).toBe(false);
+describe("the size a reader keeps between runs", () => {
+  const NOW = 1_800_000_000_000;
+  /** A run that read whole at `size`, its slowest page taking `slowestMs`. */
+  const whole = (size: number, slowestMs: number): PagedRun => ({
+    started: size,
+    size,
+    pages: 3,
+    slowestMs,
+    whole: true,
+  });
+
+  it("is the size a run shrank to, whether or not the run then read whole", () => {
+    const run = { started: 50, size: 6, pages: 5, slowestMs: 100 };
+    expect(sizeToKeep(null, { ...run, whole: true }, 50, NOW)).toEqual({
+      size: 6,
+      shrankAt: NOW,
+    });
+    expect(sizeToKeep(null, { ...run, whole: false }, 50, NOW)).toEqual({
+      size: 6,
+      shrankAt: NOW,
+    });
+  });
+
+  it("is half after a page that came close to the limit", () => {
+    expect(sizeToKeep(null, whole(12, SLOW_MS), 50, NOW)).toEqual({
+      size: 6,
+      shrankAt: NOW,
+    });
+    expect(sizeToKeep(null, whole(1, SLOW_MS + 3_000), 50, NOW)).toBeNull();
+  });
+
+  it("is twice the size, up to the most, once pages answer quickly and nothing shrank lately", () => {
+    const long = { size: 6, shrankAt: NOW - GROW_AFTER_MS };
+    expect(sizeToKeep(long, whole(6, QUICK_MS - 1), 50, NOW)).toEqual({
+      size: 12,
+      shrankAt: long.shrankAt,
+    });
+    expect(
+      sizeToKeep({ ...long, size: 30 }, whole(30, 100), 50, NOW)?.size,
+    ).toBe(50);
+  });
+
+  it("stays as it is while a page shrank within the hour, however quickly pages answer", () => {
+    const lately = { size: 6, shrankAt: NOW - GROW_AFTER_MS + 1 };
+    expect(sizeToKeep(lately, whole(6, 10), 50, NOW)).toBeNull();
+  });
+
+  it("stays as it is in between, at the most, and after a run that did not read whole or asked nothing", () => {
+    const long = { size: 6, shrankAt: 0 };
+    expect(sizeToKeep(long, whole(6, QUICK_MS), 50, NOW)).toBeNull();
+    expect(sizeToKeep(long, whole(6, SLOW_MS - 1), 50, NOW)).toBeNull();
+    expect(sizeToKeep(null, whole(50, 10), 50, NOW)).toBeNull();
+    expect(
+      sizeToKeep(long, { ...whole(6, 10), whole: false }, 50, NOW),
+    ).toBeNull();
+    expect(sizeToKeep(long, { ...whole(6, 0), pages: 0 }, 50, NOW)).toBeNull();
+  });
+
+  it("is read back only where it is a whole number from one to the most, with when it shrank", () => {
+    expect(keptSize({ size: 6, shrankAt: 5 }, 50)).toEqual({
+      size: 6,
+      shrankAt: 5,
+    });
+    for (const kept of [
+      null,
+      undefined,
+      6,
+      "six",
+      { size: 0, shrankAt: 5 },
+      { size: 2.5, shrankAt: 5 },
+      { size: 51, shrankAt: 5 },
+      { size: 6 },
+      { size: 6, shrankAt: Number.NaN },
+    ])
+      expect(keptSize(kept, 50)).toBeNull();
+  });
+
+  it("starts a read from the kept size, else from the most", () => {
+    expect(startSize({ size: 6, shrankAt: 5 }, 50)).toBe(6);
+    expect(startSize(null, 50)).toBe(50);
   });
 });

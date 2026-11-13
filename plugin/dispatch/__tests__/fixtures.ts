@@ -67,12 +67,6 @@ const out = (v) => { process.stdout.write(typeof v === "string" ? v : JSON.strin
 if (args[0] === "api" && args[1] === "graphql" && args.some((a) => a.includes("query DispatchRepository"))) {
   const answer = require(${JSON.stringify(QUERY_FAKE)}).repositoryQuery(F, args, process.cwd());
   if (answer === null) { process.stderr.write("gh: HTTP 502\\n"); process.exit(1); }
-  if (answer === "timeout") { process.stderr.write("gh: HTTP 504: We couldn't respond to your request in time.\\n"); process.exit(1); }
-  out(answer);
-}
-if (args[0] === "api" && args[1] === "graphql" && args.some((a) => a.includes("query DispatchChecks"))) {
-  const answer = require(${JSON.stringify(QUERY_FAKE)}).checksQuery(F, args);
-  if (answer === null) { process.stderr.write("gh: HTTP 502\\n"); process.exit(1); }
   out(answer);
 }
 if (args[0] === "api" && args[1] === "graphql" && args.some((a) => a.includes("query DispatchComments"))) {
@@ -95,10 +89,7 @@ if (args[0] === "pr" && args[1] === "list") {
   const state = args[args.indexOf("--state") + 1];
   // A listing that fails while prs-<state>-fail exists.
   if (fs.existsSync(F + "/prs-" + state + "-fail")) { process.stderr.write("gh: HTTP 502\\n"); process.exit(1); }
-  // Only the fields --json names, as the forge lists them.
-  const fields = (args[args.indexOf("--json") + 1] ?? "").split(",");
-  const listed = JSON.parse(fs.readFileSync(F + "/prs-" + state + ".json", "utf8"));
-  out(listed.map((p) => Object.fromEntries(Object.entries(p).filter(([k]) => fields.includes(k)))));
+  out(fs.readFileSync(F + "/prs-" + state + ".json", "utf8"));
 }
 if (args[0] === "pr" && args[1] === "view" && args.some((a) => a.includes("headRefOid"))) {
   if (args.some((a) => a.includes("labels")) && fs.existsSync(F + "/pr-labels-fail")) { process.stderr.write("gh: labels unavailable\\n"); process.exit(1); }

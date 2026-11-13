@@ -51,7 +51,12 @@ import {
 import type { LiveIssue } from "../../../skills/do-item/scripts/lib/execution-plan.ts";
 import type { ServedPerson } from "../serve-config.ts";
 import { pickupReads, type PickupReads } from "../pickup-reads.ts";
-import { queueHold, rankQueue, type QueueItem } from "../queue-rank.ts";
+import {
+  PERSON_HOLD,
+  queueHold,
+  rankQueue,
+  type QueueItem,
+} from "../queue-rank.ts";
 import { failureText } from "../text.ts";
 import type { ClaimedItem, Unplaced, WantedItem } from "../types.ts";
 
@@ -207,6 +212,7 @@ async function readPerson(
       title: i.title,
       url: i.url,
       state: i.state.name,
+      ...(i.nativeType === undefined ? {} : { nativeType: i.nativeType }),
       served: true as const,
     }));
     // Claims are monitored either way; an invalid scope only starts nothing.
@@ -708,7 +714,7 @@ function nodeHold(
         l === (options.manualOps ?? "manual-ops"),
     )
   )
-    return "needs a person to start";
+    return PERSON_HOLD;
   if (
     node.ancestor === undefined &&
     node.pull === undefined &&

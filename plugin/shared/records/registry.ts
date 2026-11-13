@@ -85,7 +85,7 @@ const STATE_DIR = "~/.local/state/jig/drive-pr/<clone>/";
 const DRIVE_DB_FILE = "~/.local/state/jig/drive-pr/state.sqlite";
 const DISPATCH_DIR = "~/.local/state/jig/dispatch/";
 /** The dispatcher's database schema version (`dispatch/lib/state.ts`'s `SCHEMA_VERSION`). */
-const DISPATCH_DB = 29;
+const DISPATCH_DB = 28;
 /** The drive's database schema version (`skills/drive-pr/scripts/lib/state/db.ts`'s `DRIVE_DB_VERSION`). */
 const DRIVE_DB = 5;
 const RRC = "skills/resolve-review-comments/scripts/";
@@ -282,7 +282,6 @@ const DISPATCHER: RecordKind[] = [
     "dispatch/lib/pickup-reads.ts",
     "pickup_reads",
   ),
-  dispatchTable("dispatch-page", "dispatch/lib/read-pages.ts", "read_pages"),
   dispatchTable(
     "dispatch-load-sample",
     "dispatch/lib/load-samples.ts",

@@ -14,7 +14,6 @@
  * read for a ledger, and a merge that carries none wants no follow-up; the
  * scope itself is decided once, by `decideScope`.
  */
-import { ok } from "../../shared/outcome.ts";
 import type { SharedRecords } from "../../shared/records/shared.ts";
 import { adoptionNote, adoptionOf } from "./adopt.ts";
 import { readMarkers } from "./followup-marker.ts";
@@ -25,7 +24,6 @@ import {
   mergedSince,
   openPullRequests,
 } from "./forge.ts";
-import { PAGE } from "./forge-batch.ts";
 import { carriesSet, type LabelConfig } from "./labels.ts";
 import {
   type FreshMergeRead,
@@ -33,11 +31,11 @@ import {
   readMergeReads,
   writeMergeReads,
 } from "./merge-reads.ts";
-import { keepPage, keptPage } from "./read-pages.ts";
 import { readDrives } from "./sources/ledgers.ts";
 import type { Pool } from "./pool.ts";
 import type { TickComments } from "./tick-comments.ts";
 import type { PrLinkText } from "./work-links.ts";
+import { PAGE } from "./forge-batch.ts";
 import type { CommentsOutcome, RepositoryOutcome } from "./tick-reads.ts";
 import { failureText } from "./text.ts";
 import type {
@@ -143,28 +141,15 @@ export async function readForge(
       reads.repository(repo.path),
       reads.login(),
     ]);
-    // The tick's query of the repository, else the pull request listing on its own, its checks in pages of the size the query last answered at.
+    // The tick's query of the repository, else the pull request listing on its own.
     const open = queried.ok
       ? listedOpen(queried.value.open, read)
-      : await reads.pool.run(async () => {
-          const page = keptPage(repo.path, "pull-requests", PAGE, Date.now());
-          const listed = await openPullRequests(repo.slug, read, page);
-          if (!listed.ok) return listed;
-          if (listed.value.checksPage < page)
-            keepPage(
-              repo.path,
-              "pull-requests",
-              listed.value.checksPage,
-              PAGE,
-              Date.now(),
-            );
-          return ok(listed.value.prs);
-        });
+      : await reads.pool.run(() => openPullRequests(repo.slug, read));
     if (!open.ok) {
       unread(
         queried.ok
           ? open.failure.reason
-          : `the repository query did not read (${queried.failure.reason}), and the listing on its own did not either: ${open.failure.reason}`,
+          : `${open.failure.reason}; the repository query did not read either: ${queried.failure.reason}`,
       );
       return out;
     }
@@ -241,6 +226,9 @@ function linkText(raw: unknown): PrLinkText | null {
     url: typeof p.url === "string" ? p.url : "",
     headRefName: typeof p.headRefName === "string" ? p.headRefName : "",
     body: typeof p.body === "string" ? p.body : "",
+    ...(typeof p.isCrossRepository === "boolean"
+      ? { crossRepository: p.isCrossRepository }
+      : {}),
     closing: Array.isArray(p.closing)
       ? (p.closing as Exclude<PrLinkText["closing"], null>)
       : null,
@@ -291,11 +279,11 @@ function queryNote(queried: RepositoryOutcome): string {
     overflow.length === 0
       ? ""
       : `; ${overflow.length} with more comments than one page holds, listed on their own`;
-  const size =
+  const sized =
     pageSize < PAGE
-      ? `, ${pageSize} pull request(s) a page where the forge timed out on more`
+      ? ` ending at ${pageSize} pull requests per page, as many as the forge answers in time`
       : "";
-  return ` (one repository query: ${pages} page(s)${size}, ${cost} point(s)${own})`;
+  return ` (one repository query: ${pages} page(s)${sized}, ${cost} point(s)${own})`;
 }
 
 /** How the merges' comments were read, where a query read them. */
