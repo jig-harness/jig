@@ -139,7 +139,8 @@ export function checksStage(preflight: Preflight, stage: string): boolean {
  * account asked at most once per tick and tracker, with at most
  * `TRACKER_PROBE_CONCURRENCY` new probes running at once; `room` names why
  * no further probe may start, and an account not yet asked is then held on
- * that reason. A repository with
+ * that reason in the returned map only, with no report hold and so no host
+ * need. A repository with
  * no tracker registered holds none.
  */
 export async function heldAccounts(
@@ -156,6 +157,9 @@ export async function heldAccounts(
   // Results are stored by input index so the report and the host needs keep
   // the accounts' order however the probes finish.
   const answers: Array<TrackerAnswer | undefined> = [];
+  // Accounts the tick had no room to ask: held from this launch, but never
+  // recorded as unreachable, since nothing was learned about their tracker.
+  const deferred = new Map<number, string>();
   let next = 0;
   const worker = async () => {
     while (next < accounts.length) {
@@ -169,7 +173,7 @@ export async function heldAccounts(
         // are held rather than left to outrun the launcher's deadline.
         const late = room?.() ?? null;
         if (late !== null) {
-          answers[index] = { ok: false, kind: "unreachable", reason: late };
+          deferred.set(index, late);
           continue;
         }
         answer = preflight.probe(account, target, timeoutSec);
@@ -185,6 +189,11 @@ export async function heldAccounts(
     ),
   );
   accounts.forEach((account, index) => {
+    const reason = deferred.get(index);
+    if (reason !== undefined) {
+      held.set(account.name, reason);
+      return;
+    }
     const answer = answers[index];
     if (answer === undefined || answer.ok || answer.kind !== "unreachable")
       return;

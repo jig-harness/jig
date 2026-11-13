@@ -30,7 +30,9 @@ import {
   HOST_NEED_REPO,
   heldAccounts,
   newPreflight,
+  preflightNeeds,
 } from "../lib/preflight.ts";
+import type { RepoReport } from "../lib/types.ts";
 import type { TickReceipt } from "../receipts.ts";
 import {
   assignedIssue,
@@ -541,12 +543,19 @@ describe("heldAccounts", () => {
       asked.push(acct.name);
       return down;
     });
-    pf.targets.set(SLUG, target);
+    const fresh = { ...target, report: {} as RepoReport };
+    pf.targets.set(SLUG, fresh);
     const held = await heldAccounts(pf, SLUG, "pickup", accounts, 1, () =>
       asked.length >= 4 ? "no room" : null,
     );
     expect(asked).toHaveLength(4);
     expect(held.get("f")).toBe("no room");
     expect(held.size).toBe(6);
+    // Only the four probed accounts are on the report and in the needs.
+    const report = fresh.report;
+    expect(report.preflight?.map((h) => h.account)).toEqual(names.slice(0, 4));
+    expect(
+      preflightNeeds([report], [], "2026-01-01T00:00:00Z").map((n) => n.target),
+    ).toEqual(names.slice(0, 4).map((n) => `account ${n}`));
   });
 });
