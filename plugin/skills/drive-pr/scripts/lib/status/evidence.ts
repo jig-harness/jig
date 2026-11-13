@@ -387,6 +387,7 @@ export function reviewerRun(runs: CheckRun[]): CheckRun | null {
 }
 
 interface CheckReading {
+  selected: CheckRun[];
   failing: CheckRun[];
   pending: CheckRun[];
   /** Nothing is known about these: see `lib/status/workflow-runs.ts`. */
@@ -453,6 +454,7 @@ function readChecks(
   // outstanding rerun that the original reduction retained.
   const visible = reading.filter((run) => !suppressedIds.has(run.id));
   return {
+    selected: visible,
     failing: visible.filter(failing),
     pending: [
       ...new Set([
@@ -734,9 +736,7 @@ export async function ciReportFor(
     heldRuns.map((run) => [JSON.stringify([run.app, run.name]), run.id]),
   );
   const reducedIds = new Set(
-    [...reduced.failing, ...reduced.pending, ...reduced.cancelled].map(
-      (run) => run.id,
-    ),
+    [...reduced.selected, ...reduced.pending].map((run) => run.id),
   );
   // Retain already-reduced evidence outside held groups. Re-reducing raw
   // runs after removing a held gate can discard that gate's cross-name
