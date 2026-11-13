@@ -6,34 +6,27 @@
 // check on that commit itself has passed; a later commit's success never
 // stands in for it.
 //
-// A version is owed a tag when the changelog on the integration branch has
-// its release heading, origin has no `<tag_prefix><version>` tag for it, and
-// it is newer than the newest `<tag_prefix>x.y.z` tag origin has. With no
-// such tag on origin at all, only the newest release heading is owed. So a
-// repository that adopts the workflow with untagged history never has its
-// old versions tagged, and published, behind its back; `status.ts` shows what
-// would be tagged before the workflow runs.
-//
-// Versions are tagged oldest first, because once origin has a newer tag an
-// older version is no longer owed one: a version whose checks passed waits
-// while an older owed version is `pending` or `rerun`. An older `failed`
-// version holds nothing back. It is left for a person, its failed run of
-// this plan is the report, and once a newer version is tagged it is no
-// longer owed a tag, so neither this plan nor `status.ts` lists it again.
+// Every release heading without its tag on origin is owed a tag, including
+// releases older than origin's newest tag. Older releases stay `manual`:
+// only versions newer than the newest tag (or the newest release when no tag
+// exists) can be tagged automatically. Versions are tagged oldest first:
+// a version whose checks passed waits while an older owed version is
+// `pending` or `rerun`. An older `failed` version holds nothing back and
+// remains listed for a person until tagged.
 // Each version owed gets one state:
 //   ready     every required check passed and no older owed version is
 //             still pending or to be run again: the tag can be made
 //   pending   a required check is still queued or running, or has not
 //             reported yet; or every check passed and the version waits
 //             for an older one (`waitsFor` names its tag)
-//   rerun     a required check was cancelled, none failed, and the workflow
-//             run it belongs to has not been run again: the run's attempt
-//             number, which GitHub raises with every re-run, is still 1
-//   failed    a required check failed, or was cancelled again once its
-//             workflow run's attempt is past 1, or was cancelled outside a
+//   rerun     a cancelled check has its single retry left, or a failed
+//             check has retries left under release.rerun_failed_gates
+//   failed    a required check failed with no retries left, or was cancelled
+//             again after its workflow run's first attempt, or outside a
 //             workflow run that can be run again, or the hosting service
 //             refused to run it again (GitHub refuses a run older than 30
 //             days): left untagged for a person
+//   manual    outside automatic tagging eligibility: left for a person
 //   imported  its heading arrived in one commit with other release headings
 //             (a changelog brought in with its history), so no commit
 //             released it: tagged by hand when it is owed a tag at all
@@ -58,7 +51,7 @@
 //            tagPrefix, newestTag, requiredChecks: { source, names },
 //            versions: [...], ready: [{ tag, commit, message }],
 //            reruns: [...] }
-//   --rerun  run the cancelled required checks' workflow runs again, once
+//   --rerun  run eligible failed or cancelled workflow runs again
 //            (state `rerun`); needs a token allowed to re-run workflows
 // Without --rerun it writes nothing and asks the hosting service only to read.
 // Exit: 0 a plan was made (also when nothing is owed a tag, and when the
@@ -96,7 +89,13 @@ import { gitEnv } from "./notes-dir.ts";
 
 type Env = Record<string, string | undefined>;
 
-export type TagState = "ready" | "pending" | "rerun" | "failed" | "imported";
+export type TagState =
+  | "ready"
+  | "pending"
+  | "rerun"
+  | "failed"
+  | "imported"
+  | "manual";
 
 /** What one required check says on the releasing commit. */
 export interface CheckVerdict {
@@ -142,7 +141,7 @@ export interface TagPlan {
   branch: string;
   ref: string;
   tagPrefix: string;
-  /** The newest `<tagPrefix>x.y.z` tag on origin, which only newer versions are owed after; null when origin has none. */
+  /** The newest `<tagPrefix>x.y.z` tag on origin; only newer releases can be tagged automatically. */
   newestTag: string | null;
   /** Null when no version was owed a tag, so none were read. */
   requiredChecks: {
@@ -276,13 +275,28 @@ const RANK: Record<CheckVerdict["verdict"], number> = {
 };
 
 /** What one reported result says for the tag, a cancelled one by its workflow run. */
-function verdictOf(check: CommitCheck): CheckVerdict {
+function verdictOf(check: CommitCheck, rerunFailedGates: number): CheckVerdict {
   const url = check.url ? { url: check.url } : {};
   const base = { name: check.name, ...url };
   if (check.outcome === "passed")
     return { ...base, verdict: "passed", detail: check.conclusion };
-  if (check.outcome === "failed")
+  if (check.outcome === "failed") {
+    const run = check.run;
+    if (run && !run.completed)
+      return {
+        ...base,
+        verdict: "pending",
+        detail: `failed, in workflow run ${run.id}, which is still going`,
+      };
+    if (run && run.attempt <= rerunFailedGates)
+      return {
+        ...base,
+        verdict: "rerun",
+        detail: `failed; workflow run ${run.id} is run again (${run.attempt}/${rerunFailedGates} retries)`,
+        run: run.id,
+      };
     return { ...base, verdict: "failed", detail: check.conclusion };
+  }
   if (check.outcome === "pending")
     return { ...base, verdict: "pending", detail: check.conclusion };
   const run = check.run;
@@ -321,6 +335,7 @@ function verdictOf(check: CommitCheck): CheckVerdict {
 export function judgeCheck(
   required: RequiredCheck,
   checks: readonly CommitCheck[],
+  rerunFailedGates = 1,
 ): CheckVerdict {
   const named = checks.filter((c) => c.name === required.name);
   const results = required.apps.length
@@ -329,14 +344,14 @@ export function judgeCheck(
           (c) => c.kind === "check-run" && c.app === app,
         );
         return found
-          ? verdictOf(found)
+          ? verdictOf(found, rerunFailedGates)
           : ({
               name: required.name,
               verdict: "missing",
               detail: `not reported by app ${app}`,
             } satisfies CheckVerdict);
       })
-    : named.map(verdictOf);
+    : named.map((check) => verdictOf(check, rerunFailedGates));
   if (results.length === 0)
     return { name: required.name, verdict: "missing", detail: "not reported" };
   return results.reduce((worst, r) =>
@@ -346,7 +361,7 @@ export function judgeCheck(
 
 /** A version's state from its required checks' verdicts, with a sentence saying why. */
 export function stateOf(verdicts: readonly CheckVerdict[]): {
-  state: Exclude<TagState, "imported">;
+  state: Exclude<TagState, "imported" | "manual">;
   detail: string;
 } {
   const names = (v: CheckVerdict["verdict"][]) =>
@@ -359,7 +374,7 @@ export function stateOf(verdicts: readonly CheckVerdict[]): {
   if (verdicts.some((c) => c.verdict === "rerun"))
     return {
       state: "rerun",
-      detail: `cancelled, to be run again once: ${names(["rerun"])}`,
+      detail: `to be run again: ${names(["rerun"])}`,
     };
   if (verdicts.some((c) => c.verdict === "pending" || c.verdict === "missing"))
     return {
@@ -439,12 +454,8 @@ export function planTags(
   const changelog = fileAt(root, ref, resolved.changelog) ?? "";
   const tagged = (sources.tags ?? originTags)(root, prefix);
   const newest = newestTag(tagged, prefix);
-  const owed = owedVersions(
-    releasedVersions(changelog, resolved.format),
-    tagged,
-    prefix,
-    newest,
-  );
+  const released = releasedVersions(changelog, resolved.format);
+  const owed = owedVersions(released, tagged, prefix);
   const plan: TagPlan = {
     plugin: pluginVersion(),
     configured: true,
@@ -465,11 +476,21 @@ export function planTags(
     resolved.format,
     owed,
   );
-  const required = requiredChecksFor(root, branch, ref, hosting);
-  plan.requiredChecks = {
-    source: required.source,
-    names: required.checks.map((c) => c.name),
-  };
+  const latest = released.toSorted((a, b) => Bun.semver.order(b, a))[0];
+  const automatic = new Set(
+    owed.filter((version) =>
+      newest === null
+        ? version === latest
+        : Bun.semver.order(version, newest) > 0,
+    ),
+  );
+  const required =
+    automatic.size > 0 ? requiredChecksFor(root, branch, ref, hosting) : null;
+  if (required !== null)
+    plan.requiredChecks = {
+      source: required.source,
+      names: required.checks.map((c) => c.name),
+    };
   const checksOf = commitChecksReader(hosting);
   plan.versions = owed.map((version) => {
     const tag = `${prefix}${version}`;
@@ -478,8 +499,20 @@ export function planTags(
       throw new ChangelogError(
         `${tag}: no commit on ${ref}'s first-parent line has its heading, which the branch's changelog holds`,
       );
+    if (!automatic.has(version))
+      return {
+        version,
+        tag,
+        commit: found.commit,
+        state: "manual",
+        detail: "outside automatic tagging eligibility; tag it by hand",
+        checks: [],
+        rerun: [],
+      };
     return entryFor(version, tag, found, () =>
-      required.checks.map((r) => judgeCheck(r, checksOf(found.commit))),
+      (required?.checks ?? []).map((r) =>
+        judgeCheck(r, checksOf(found.commit), config.release.rerunFailedGates),
+      ),
     );
   });
   settle(plan);
@@ -488,11 +521,8 @@ export function planTags(
 
 /**
  * Hold back each version whose own checks passed while an older owed version
- * is still `pending` or `rerun`, then list the `ready` tags. Versions are
- * tagged oldest first: once a newer tag is on origin, an older version is no
- * longer owed one, so tagging past one still on its way would drop it. A
- * `failed` or `imported` older version holds nothing back: it is left for a
- * person. Run again after a state changes, it first releases what it held.
+ * is still `pending` or `rerun`, then list the `ready` tags oldest first.
+ * A `failed`, `imported` or `manual` older version holds nothing back.
  */
 export function settle(plan: TagPlan): void {
   let waiting: TagEntry | undefined;
@@ -527,23 +557,16 @@ export function newestTag(tags: Set<string>, prefix: string): string | null {
 }
 
 /**
- * The released versions owed a tag, oldest first: those without one that are
- * newer than `newest`, origin's newest tagged version; only the newest
- * released version when origin has none.
+ * Every released version without a tag on origin, oldest first.
  */
 export function owedVersions(
   released: readonly string[],
   tagged: Set<string>,
   prefix: string,
-  newest: string | null,
 ): string[] {
-  const untagged = released
+  return released
     .filter((v) => !tagged.has(`${prefix}${v}`))
     .toSorted((a, b) => Bun.semver.order(a, b));
-  if (newest !== null)
-    return untagged.filter((v) => Bun.semver.order(v, newest) > 0);
-  const latest = released.toSorted((a, b) => Bun.semver.order(b, a))[0];
-  return untagged.filter((v) => v === latest);
 }
 
 /** Reads a commit's checks from `hosting`, each commit once. */
@@ -610,7 +633,7 @@ function entryFor(
 }
 
 /**
- * Run each `rerun` version's cancelled workflow runs again, each run once;
+ * Run each `rerun` version's eligible workflow runs again, each run once;
  * records what was asked. A version whose re-run was refused fails, with the
  * reason: it stays untagged for a person, and the other versions' plan holds.
  */
@@ -632,7 +655,7 @@ export function rerunCancelled(plan: TagPlan, hosting: Hosting): void {
     const refused = v.rerun.filter((run) => refusals.has(run));
     if (v.state !== "rerun" || refused.length === 0) continue;
     v.state = "failed";
-    v.detail = `a cancelled check could not be run again: ${refused.map((run) => `workflow run ${run} (${refusals.get(run)})`).join(", ")}`;
+    v.detail = `a check could not be run again: ${refused.map((run) => `workflow run ${run} (${refusals.get(run)})`).join(", ")}`;
   }
   settle(plan);
 }
@@ -644,9 +667,7 @@ export function describePlan(plan: TagPlan): string[] {
     `integration branch: ${plan.branch} (${plan.ref})`,
   ];
   if (plan.newestTag !== null)
-    lines.push(
-      `newest tag on origin: ${plan.newestTag} (only versions after it are owed one)`,
-    );
+    lines.push(`newest tag on origin: ${plan.newestTag}`);
   if (plan.versions.length === 0) {
     lines.push("nothing to tag: no released version owed a tag lacks one");
     return lines;
