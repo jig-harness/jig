@@ -113,9 +113,13 @@ function handlerOf(command: string): Document {
   };
 }
 
+const SHIM_PATTERN = SHIM.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+/** A POSIX word as `shellWord` writes it: an embedded apostrophe is `'\''`. */
+const POSIX_WORD = `'(?:[^']|'\\\\'')*'`;
+
 /** A command of the shape `hookCommand` writes: Bun, flags, then the shim. */
 const OWN_COMMAND = new RegExp(
-  `^bun --no-env-file (?:'[^']*'|"[^"]*") (?:'(?:[^']|'\\\\'')*[/\\\\]${SHIM.replace(/\./g, "\\.")}'|"[^"]*[/\\\\]${SHIM.replace(/\./g, "\\.")}")$`,
+  `^bun --no-env-file (?:${POSIX_WORD}|"[^"]*") (?:'(?:[^']|'\\\\'')*[/\\\\]${SHIM_PATTERN}'|"[^"]*[/\\\\]${SHIM_PATTERN}")$`,
 );
 
 function isOurs(handler: unknown): handler is Document {

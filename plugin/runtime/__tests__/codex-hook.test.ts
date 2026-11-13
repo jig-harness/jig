@@ -12,7 +12,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   hookCommand,
   refreshCodexHook,
@@ -20,6 +20,7 @@ import {
   withHook,
   withoutHook,
 } from "../codex-hook.ts";
+import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 
 const pluginRoot = join(import.meta.dir, "..", "..");
 
@@ -171,33 +172,41 @@ test("uninstall previews, then removes the entry and the shim's directory", () =
   );
 });
 
-test("the command isolates Bun's startup and quotes the path as one literal word", () => {
-  const command = hookCommand(
-    "/home/a$b'c/state/codex-turn-budget-guard.ts",
-    "linux",
-  );
-  expect(command).toStartWith(
-    "bun --no-env-file '--config=/home/a$b'\\''c/state/bunfig.toml' ",
-  );
-  expect(command).toEndWith(
-    "'/home/a$b'\\''c/state/codex-turn-budget-guard.ts'",
-  );
+test.skipIf(process.platform === "win32")(
+  "the command isolates Bun's startup and quotes the path as one literal word",
+  () => {
+    const shim = "/home/a$b'c/state/codex-turn-budget-guard.ts";
+    const command = hookCommand(shim, "linux");
+    expect(command).toStartWith(
+      "bun --no-env-file '--config=/home/a$b'\\''c/state/bunfig.toml' ",
+    );
+    expect(command).toEndWith(
+      "'/home/a$b'\\''c/state/codex-turn-budget-guard.ts'",
+    );
+    const quoted = Bun.spawnSync([
+      "sh",
+      "-c",
+      `printf %s ${command.slice(command.indexOf("'/home/a$b'")).split(" ").slice(-1)[0]}`,
+    ]);
+    expectSpawnExit(quoted, 0);
+    expect(quoted.stdout.toString()).toBe(shim);
+    // The entry is still recognised and removable with an apostrophe in the path.
+    const added = withHook({}, command);
+    expect(withoutHook(added)).toEqual({ hooks: {} });
+    expect(
+      (added as { hooks: { PreToolUse: unknown[] } }).hooks.PreToolUse,
+    ).toHaveLength(1);
+    const again = withHook(added, command) as {
+      hooks: { PreToolUse: unknown[] };
+    };
+    expect(again.hooks.PreToolUse).toHaveLength(1);
+  },
+);
+
+test("a Windows path the command cannot carry is refused", () => {
   expect(() =>
     hookCommand('C:\\a"b\\codex-turn-budget-guard.ts', "win32"),
   ).toThrow();
-  const quoted = Bun.spawnSync([
-    "sh",
-    "-c",
-    `printf %s ${
-      command
-        .slice(command.indexOf("'/home/a$b'") + 0)
-        .split(" ")
-        .slice(-1)[0]
-    }`,
-  ]);
-  expect(quoted.stdout.toString()).toBe(
-    "/home/a$b'c/state/codex-turn-budget-guard.ts",
-  );
 });
 
 test("a handler that merely mentions the shim's name is not the entry", () => {
@@ -221,14 +230,34 @@ test("an empty hooks file is not JSON: reported and left alone", () => {
 });
 
 test("each Codex home gets its own state directory, and removal in one leaves the other", () => {
-  const a = places({});
-  const b = places({});
-  const shared = join(a.root, "shared");
-  const dirA = join(shared, "a");
-  const dirB = join(shared, "b");
-  refreshCodexHook({ ...a, directory: dirA });
-  refreshCodexHook({ ...b, directory: dirB, pluginHooks: a.pluginHooks });
-  removeCodexHook({ ...a, directory: dirA, confirm: true });
+  const root = mkdtempSync(join(tmpdir(), "jig-codex-hook-homes-"));
+  const homeA = join(root, "codex-a");
+  const homeB = join(root, "codex-b");
+  mkdirSync(homeA);
+  mkdirSync(homeB);
+  const script = join(import.meta.dir, "..", "codex-hook.ts");
+  const run = (call: string, codex: string) => {
+    const child = Bun.spawnSync(
+      [
+        process.execPath,
+        "-e",
+        `const m = await import(${JSON.stringify(script)}); ${call}`,
+      ],
+      { env: { ...process.env, HOME: root, CODEX_HOME: codex } },
+    );
+    expectSpawnExit(child, 0);
+  };
+  run("m.refreshCodexHook();", homeA);
+  run("m.refreshCodexHook();", homeB);
+  const shimDirectory = (codex: string) => {
+    const command: string = hooksOf(codex).hooks.PreToolUse[0].hooks[0].command;
+    return dirname(command.replace(/'$/, "").replace(/^.*'/, ""));
+  };
+  const dirA = shimDirectory(homeA);
+  const dirB = shimDirectory(homeB);
+  expect(dirA).not.toBe(dirB);
+  expect(dirA).toStartWith(join(root, ".local"));
+  run("m.removeCodexHook({ confirm: true });", homeA);
   expect(existsSync(dirA)).toBe(false);
   expect(existsSync(join(dirB, "codex-turn-budget-guard.ts"))).toBe(true);
 });
