@@ -187,6 +187,15 @@ export function receiptPaths(root = stateRoot()): string[] {
     );
 }
 
+/** Whether a repository entry's `followupSince` is absent or a parseable time. */
+function validFollowupSince(value: unknown): boolean {
+  return (
+    value === null ||
+    value === undefined ||
+    (typeof value === "string" && Number.isFinite(Date.parse(value)))
+  );
+}
+
 function isRepoEntry(value: unknown): boolean {
   return (
     isMapping(value) &&
@@ -196,10 +205,7 @@ function isRepoEntry(value: unknown): boolean {
     Array.isArray(value.unplaced) &&
     value.unplaced.every(isMapping) &&
     value.records.every(isMapping) &&
-    (value.followupSince === null ||
-      value.followupSince === undefined ||
-      (typeof value.followupSince === "string" &&
-        Number.isFinite(Date.parse(value.followupSince))))
+    validFollowupSince(value.followupSince)
   );
 }
 

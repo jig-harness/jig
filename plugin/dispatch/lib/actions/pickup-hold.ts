@@ -249,18 +249,7 @@ export function releaseEnded(
       (key) => holdsItem(record, key),
     );
     const claimedMembers = members.filter((key) => claimed.has(key));
-    // The dispatch identity's own claimed item can only be this pickup's
-    // claim, seen while it ran or after it ended. A served person starts their
-    // own work too: their claim counts only while this pickup's process runs,
-    // never from a reservation not yet started or once the pickup has ended.
-    const provable = claimedMembers.filter(
-      (key) =>
-        !served.has(key) ||
-        r.state.kind === "alive" ||
-        r.state.kind === "unknown",
-    );
-    if (provable.length > 0 && r.state.kind !== "pending")
-      noteClaims(record, provable, root);
+    noteProvableClaims(r, claimedMembers, served, root);
     if (holds(r.state)) continue;
     // A claimed member keeps its own place; the record's other members
     // release one by one.
@@ -275,6 +264,29 @@ export function releaseEnded(
     else record.releasedItems = [...(record.releasedItems ?? []), ...dropped];
     writeRecord(record, root);
   }
+}
+
+/**
+ * Note the claims on a record's members that this pickup can prove. The
+ * dispatch identity's own claimed item can only be this pickup's claim, seen
+ * while it ran or after it ended. A served person starts their own work too:
+ * their claim counts only while this pickup's process runs, never from a
+ * reservation not yet started or once the pickup has ended.
+ */
+function noteProvableClaims(
+  r: ReadRecord,
+  claimedMembers: string[],
+  served: ReadonlySet<string>,
+  root?: string,
+): void {
+  const provable = claimedMembers.filter(
+    (key) =>
+      !served.has(key) ||
+      r.state.kind === "alive" ||
+      r.state.kind === "unknown",
+  );
+  if (provable.length > 0 && r.state.kind !== "pending")
+    noteClaims(r.record, provable, root);
 }
 
 /** Whether the item still wants its ended record kept. */
