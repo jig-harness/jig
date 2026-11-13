@@ -197,8 +197,7 @@ per issue in the design's order:
   per account with one host need (`preflight`); missing dispatch labels
   created by the tick; a repository's CI checking what the tick reads from
   it.
-- **Pickups.** An item moved to `pr_open` when an open
-  pull request on its launch's branch names it; a stalled pickup's unpushed
+- **Pickups.** A stalled pickup's unpushed
   work relaunched once in its own tree to push and record
   (`dispatch.stalled_relaunch`); an epic never taken as a pickup.
 - **The steward.** First its digest's missing facts and its no-result rate;
@@ -239,6 +238,49 @@ need; an untagged release raises one need, not one per merge; a credential
 failure on one account raises one host need and holds that account's
 tracker stages; and every need that reached a person that week was framed,
 or, where only a person can act, raised once for its cause.
+
+### 55. Outbound calls: one governed transport for every system Jig calls
+
+Jig's code calls a forge, the issue trackers and the reflection stores,
+and each integration handles their limits and outages on its own: one
+shared budget that only the tracker adapters feed, a separate
+classification of failures in each transport, retries in some, and no
+record of what an operation costs. On a dispatch host that showed as a
+tracker credential held at its hourly allowance by one unbounded nested
+list, a repository the forge could not answer a full page of and so was
+never read, and ticks that exited 1 for refusals that clear by waiting.
+[ADR-0020](../docs/adr/ADR-0020-outbound-calls-are-governed.md) sets the
+rule, and [design/outbound-calls.md](outbound-calls.md) has each system's
+limits, the shared library (`plugin/shared/outbound/`), the failure classes
+with their policies and the build order. What it will build, one pull
+request per step:
+
+- **A page that shrinks**: a paged read asks again for half the page when
+  the system runs out of time, and keeps the size that read.
+- **Failure classes and one retry**: every transport returns one of a
+  closed set of classes, reads are retried with one backoff, and the tick
+  and the passes wait out a class that clears by waiting.
+- **The cost ledger and its reports**: requests, cost and time per
+  operation and caller; a line per system in the tick report, a
+  `jig budget` command, and one need when a quota is about to run out.
+- **GitHub in the budget record**: its hourly and secondary limits beside
+  the trackers', every forge call admitted against them.
+- **Reuse**: answers cached by update time or the system's validator,
+  identical reads in a run sent once, one queue reading per tracker team
+  and credential, reads by key in one request.
+- **Gates and a review lens**: no call leaves by another door than a
+  transport, no query selects a list without a page size or passes its
+  declared cost ceiling, and a change to an integration is reviewed
+  against the obligations.
+
+Done when, on a dispatch host over a week: no tick exits 1 and no person
+is asked for a refusal that clears by waiting; `jig budget` names the
+operations that spent each quota, and their totals match the budget
+record's spending once its refills and window resets are set aside, with
+spending by other users of the credential shown apart; a repository whose pull requests the forge cannot answer
+fifty at a time is read on every tick; a steady tick with nothing changed
+sends one tracker request per team; and both gates run in
+`bun run gates`, their counts of calls that predate the rule only falling.
 
 ### 36. The dispatch board: what is driven and what is ready to merge
 
@@ -622,9 +664,10 @@ processes the repository.
 ## Next
 
 Next starts with delegated merge, once item 40 holds. Then come what lets a
-second team adopt Jig, the hub for a team on several hosts, the line in a
-team's chat, work that arrives complete, reviews that catch what gates
-cannot, and doctrine and measurement. Last come the developer machine and its runtimes, and the runs
+second team adopt Jig, the hub for a team on several hosts, the Protocol
+that readers outside the skills can trust, the line in a team's chat, work that
+arrives complete, reviews that catch what gates cannot, and doctrine and
+measurement. Last come the developer machine and its runtimes, and the runs
 a person owes.
 
 ### 9. Delegated merge (`pull_requests.merge: auto-on-converged`)
@@ -726,6 +769,35 @@ stopping the hub during a tick costs that tick only a note on its receipt.
 From the second stage a stopped hub also suspends the owner duties a host
 cannot do without its lease, the one exception to a host working as it does
 today.
+
+### 53. The Jig Protocol: chapters generated from the code and held to it by a gate
+
+Jig's parts, and programs outside its skills (the dispatch dashboard's page,
+the Orca plugin, the planned hub, a repository's follow-up command, a second
+agent harness), agree on contracts: a drive's end states and exit codes, the
+records Jig writes, the labels and comment markers it reads, the commands a
+repository supplies. Each is defined once in code and restated by hand in
+several documents, which drift wherever no test ties them to the code.
+[design/protocol.md](protocol.md) has how it works and
+[ADR-0020](../docs/adr/ADR-0020-protocol-chapters-are-generated-and-gated.md)
+the decision. What it will build: the [Jig Protocol](../GLOSSARY.md), a
+kind of document in `plugin/protocol/`, one chapter per contract, each
+stable or provisional (naming the plan item that still moves it); a
+generator, `tools/protocol/generate.ts`, that writes each chapter's values
+and their meanings from the code's own tables, with a data file per chapter
+and JSON Schemas for the shapes outside readers parse, held to the code by
+its `--check` in the generated-file inventory; the skills' restatements
+turned into links, or kept as held restatements the gate checks; and the
+chapters rendered on the site. Built in steps, one pull request each: the
+generator, its gate and the exit-code chapter first, then the other stable
+chapters, their schemas, their restatements as links, the provisional
+chapters, and the site's pages.
+
+Done when every stable and provisional chapter of the design is generated
+and gated, the site renders the chapters, and the
+documents programs outside the skills are pointed to link to the chapters
+instead of restating them, and a change that makes a chapter disagree with
+the code fails `bun run gates`.
 
 ### 54. The line in a team's chat
 

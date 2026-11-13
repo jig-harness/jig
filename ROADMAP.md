@@ -66,6 +66,17 @@ it. What reaches a person arrives as a decision with options, answered in a
 word. A host fault arrives once, saying what to fix. Decisions that are a
 person's stay a person's.
 
+### 55. Staying inside the limits of the systems Jig calls
+
+The systems Jig calls limit their callers. A forge counts requests an hour,
+a tracker charges each query a cost, and each ends a request that takes too
+long. Every agent and timer on a machine shares one login's allowance. Jig
+gets one way to make these calls. It reuses an answer it holds, asks a
+budget the whole machine shares, and keeps each request small enough to be
+answered. It records what every operation costs, so a team sees what spends
+an allowance. When a system refuses a call for a time, the dispatcher
+waits, and no person is asked.
+
 ### 36. The dispatch board: what is driven and what is ready to merge
 
 The dispatch dashboard leads with a Ready to merge list of the converged
@@ -178,9 +189,10 @@ from Orca's command line once Orca offers it. The plugin is Orca-bound.
 
 Next comes delegated merge, once an agent cannot push or merge by any other
 path. Then come what lets a second team adopt Jig, one control plane for a
-team on several machines, work that arrives complete, and reviews that
-catch what checks cannot. The line comes to a team's chat with the control
-plane. Last come the practices the modules and skills lack, measurement, the developer machine and its
+team on several machines, one trusted statement of what Jig writes, and the line
+in a team's chat. Then come work that arrives complete, and reviews that
+catch what checks cannot. Last come the practices
+the modules and skills lack, measurement, the developer machine and its
 runtimes, and the runs that wait on a person.
 
 ### 9. Delegated merge (`pull_requests.merge: auto-on-converged`)
@@ -222,6 +234,17 @@ whichever host has a free slot, in an order each team can set. The hub
 runs on a machine the team chooses and needs no cloud service. Nothing
 requires it: a host that does not enroll, or whose hub is down, dispatches
 on its own as it does today.
+
+### 53. The Jig Protocol: one trusted statement of each contract
+
+A program that reads what Jig writes (an exit code, a label, a record, a
+comment marker) gets one chapter per contract to read it from: the
+[Jig Protocol](GLOSSARY.md). Each chapter's values are generated from Jig's
+own code and checked against it on every change, so a chapter cannot fall
+out of date. Each says whether its contract is stable or still moving.
+The shapes a program parses come with JSON Schemas, so a dashboard, a
+workspace app or another agent harness can read Jig's records without
+reading its code.
 
 ### 54. The line in a team's chat
 
