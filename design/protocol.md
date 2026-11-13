@@ -397,8 +397,10 @@ Each step is one pull request, shippable alone.
 4. **The commands a repository supplies.**
 5. **Schemas for the stable chapters**: the shape descriptions and the
    generator's schema step with its round-trip tests, then the schemas the
-   table above names for the mailbox, the markers and the follow-up claim,
-   each reader moved onto its description in the same pull request.
+   table above names for the mailbox, the markers, the follow-up claim and
+   the output shapes callers parse from the commands a repository supplies,
+   each reader moved onto its description in the same pull request. The
+   tracker-facet schemas belong to the provisional chapter's step.
 6. **The stable chapters' restatements become links**, in the order above,
    with the drive's exit-code check folded into its chapter's gate.
 7. **The provisional chapters**, one pull request each, with their data
