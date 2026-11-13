@@ -704,6 +704,15 @@ fork, another repository); such a refusal says the holder was stopped and
 prints the plain re-arm command. Do not stop a driver that is making
 progress.
 
+With no driver of this clone holding the lock, the drive ledger decides.
+When it still names this tree's own driver as running, that driver ended
+without writing its stop and released its locks as it went, so the takeover
+goes ahead (verdict `DEAD`), stops nothing, and deals with what that driver
+left in this tree as any re-arm does. When it names this clone's driver in
+another working tree, the takeover refuses with exit `2` and names that tree:
+re-arm from there. When it names no running driver, there is nothing to take
+over, and it refuses with exit `2`: re-arm without `--take-over`.
+
 A driver in **another clone** cannot be stopped from here, so the takeover
 goes through the drive ledger on the pull request. When no driver of this
 clone holds the drive and the ledger names a running driver elsewhere,

@@ -17,8 +17,12 @@
  * variable removed, so the pass bills the account the tick admitted. When
  * the drive ends it records the exit, and an exit of `QUOTA_PARKED` (`16`,
  * a usage-limit wall) writes the account's wall: the reset the drive
- * recorded, else `wall_backoff` from now. The drive's exits are read by
- * name from drive-pr's terminal-state registry (`DRIVE_EXIT`).
+ * recorded, else `wall_backoff` from now. The drive's error output passes
+ * through the wrapper, which keeps its end: an exit on `drive.ts`'s usage
+ * error (`UNSUPPORTED_CLI`) records the drive's message on the exit
+ * (`usage`, one bounded line), which the tick tells a person instead of
+ * launching the same command again. The drive's exits are read by name from
+ * drive-pr's terminal-state registry (`DRIVE_EXIT`).
  *
  *   bun … run.ts identity claude|codex
  *
@@ -170,6 +174,8 @@ function driveScript(): string {
   return process.env.JIG_DISPATCH_DRIVE_SCRIPT || driveTs;
 }
 
+/** How much of a drive's usage message its exit keeps. */
+const USAGE_CHARS = 600;
 /** How much of a follow-up pass's last `Question:` line its exit keeps. */
 const QUESTION_CHARS = 1000;
 /** How long a pass stopped at its deadline has to end before it is killed. */
@@ -181,6 +187,8 @@ interface Ran {
   started?: number;
   exited?: number;
   output?: string;
+  /** The end of the stage's error output, where the wrapper kept it. */
+  errors?: string;
   code: number | null;
   signal: string | null;
   /** The stage's last `Question:` line, where the wrapper kept it. */
@@ -189,9 +197,10 @@ interface Ran {
   unconfirmed?: true;
 }
 
-/** How the wrapper runs a stage: whether it keeps its last question, and the deadline it enforces itself (seconds, `0` for none). */
+/** How the wrapper runs a stage: whether it keeps its last question, or only the end of its error output, and the deadline it enforces itself (seconds, `0` for none). */
 interface RunOptions {
   keepOutput: boolean;
+  keepErrors?: boolean;
   deadlineSec: number;
 }
 
@@ -279,7 +288,11 @@ function runStage(
       cwd,
       env,
       detached: grouped,
-      stdio: options.keepOutput ? ["inherit", "pipe", "pipe"] : "inherit",
+      stdio: options.keepOutput
+        ? ["inherit", "pipe", "pipe"]
+        : options.keepErrors === true
+          ? ["inherit", "inherit", "pipe"]
+          : "inherit",
     });
     const watch = treed
       ? watchWindowsTree(
@@ -316,7 +329,7 @@ function runStage(
       stdout = (stdout + stdoutDecoder.end()).slice(-8192);
       drained = true;
     });
-    let stderrDrained = !options.keepOutput;
+    let stderrDrained = child.stderr === null;
     child.stderr?.on("data", (chunk: Buffer) => {
       stderr = (stderr + stderrDecoder.write(chunk)).slice(-8192);
       if (!process.stderr.write(chunk)) {
@@ -352,6 +365,7 @@ function runStage(
         started,
         exited,
         output: `${stdout}\n${stderr}`,
+        ...(child.stderr === null ? {} : { errors: stderr }),
         ...(!treeEnded ? { unconfirmed: true as const } : {}),
         ...(options.keepOutput && tail.question !== ""
           ? { said: tail.question }
@@ -457,9 +471,10 @@ function ownPass(record: LaunchRecord): boolean {
   );
 }
 
-/** How the wrapper runs a record's stage: its own pass under its deadline, its last question kept; anything else as it is. */
+/** How the wrapper runs a record's stage: its own pass under its deadline, its last question kept; a drive with the end of its error output kept; anything else as it is. */
 function runOptions(record: LaunchRecord): RunOptions {
-  if (!ownPass(record)) return { keepOutput: false, deadlineSec: 0 };
+  if (!ownPass(record))
+    return { keepOutput: false, keepErrors: isDrive(record), deadlineSec: 0 };
   const deadline = record.passTimeoutSec;
   return {
     keepOutput: true,
@@ -475,6 +490,31 @@ function saidOf(
   const said = ran.said?.trim() ?? "";
   if (said === "" || readResult(record.id) === "done") return {};
   return { said, context: (ran.output ?? "").slice(-8000) };
+}
+
+/**
+ * The drive's message on an exit on its usage error: from the last line its
+ * output starts with `drive.ts` (where `drive.ts` states a refusal), else its
+ * last lines, joined into one line and bounded.
+ */
+function usageOf(
+  record: Pick<LaunchRecord, "action">,
+  ran: Pick<Ran, "code" | "errors">,
+): { usage?: string } {
+  if (!isDrive(record) || ran.code !== DRIVE_EXIT.UNSUPPORTED_CLI) return {};
+  const lines = (ran.errors ?? "")
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter((line) => line !== "");
+  let from = lines.length - 3;
+  for (const [i, line] of lines.entries())
+    if (line.startsWith("drive.ts")) from = i;
+  const said = lines.slice(Math.max(0, from)).join(" ");
+  if (said === "") return {};
+  return {
+    usage:
+      said.length > USAGE_CHARS ? `${said.slice(0, USAGE_CHARS - 1)}…` : said,
+  };
 }
 
 /** Whether a drive that stopped on its account's wall had that wall recorded; true when there was none to record. */
@@ -617,6 +657,7 @@ async function finishRun(
       : {}),
     ...(startup === undefined ? {} : { startup }),
     ...saidOf(record, ran),
+    ...usageOf(record, ran),
   });
   await endSharedClaim(id);
   await labelFollowup(id);

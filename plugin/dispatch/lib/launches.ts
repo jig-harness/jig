@@ -52,7 +52,6 @@ import {
   type RefusedMember,
   waitsOf,
 } from "./pickup-refusal.ts";
-
 export type { PickupRefusal, RefusedMember };
 import { unsettledStartups } from "./session-startup.ts";
 import type { Database } from "bun:sqlite";
@@ -253,10 +252,10 @@ export interface LaunchExit {
   /** The stage's exit code; `null` when it ended on a signal. */
   code: number | null;
   signal: string | null;
-  /** Set when the stage ended on the account's wall and the wrapper could not record that wall. */
-  wallUnrecorded?: true;
+  wallUnrecorded?: true; // the stage ended on the account's wall, which the wrapper could not record
   /** For a follow-up pass that ended without recording done: the last `Question:` line of its output, the question it stopped on. */
   said?: string;
+  usage?: string; // a drive's exit on drive.ts's usage error: the end of its message, one line
 }
 
 export type LaunchState =
@@ -475,7 +474,8 @@ function isExit(value: unknown): value is LaunchExit {
   return (
     isMapping(value) &&
     typeof value.at === "string" &&
-    (value.code === null || typeof value.code === "number")
+    (value.code === null || typeof value.code === "number") &&
+    (value.usage === undefined || typeof value.usage === "string")
   );
 }
 

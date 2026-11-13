@@ -2,7 +2,8 @@
  * drive-pr suite: drive.ts and the drive ledger on the pull request —
  * seeding a clone from it, yielding to a newer generation, refusing a
  * version it does not read, ignoring an untrusted ledger, refusing to drive
- * beside another clone's driver, the cross-clone takeover claim, and a driver
+ * beside another clone's driver, the cross-clone takeover claim, a takeover
+ * of this clone's own driver that ended without writing its stop, and a driver
  * standing down at a round boundary on a newer claim. The stub forge's
  * comments are `issue-comments.json` in the fixture directory.
  */
@@ -17,6 +18,8 @@ import {
   renderLedger,
 } from "../scripts/lib/state/ledger.ts";
 import { freshState } from "../scripts/lib/state/schema.ts";
+import { worktreePathKey } from "../scripts/lib/state/actor.ts";
+import { cloneId } from "../scripts/lib/state/ledger-mirror.ts";
 import {
   type Fixture,
   makeScratchRepo,
@@ -278,6 +281,72 @@ describe("drive.ts and another clone's driver", () => {
       "STALE",
     ]);
     expect(s.takeovers[0].fromActor).toBe(OTHER_ACTOR);
+  });
+});
+
+describe("drive.ts --take-over and this clone's driver the ledger still names running", () => {
+  it("takes over this tree's driver that released its locks without writing its stop", async () => {
+    const tree = makeScratchRepo("ledger-own-tree").dir;
+    const { dir, stateDir } = writeFixture({ prState: "MERGED" }, tree);
+    const actor = `wt-${worktreePathKey(tree)}`;
+    const file = join(dir, "issue-comments.json");
+    const own = ledger(4, 3, {
+      state: "running",
+      actor,
+      clone: cloneId(stateDir),
+    });
+    writeFileSync(
+      file,
+      JSON.stringify([
+        ...JSON.parse(readFileSync(file, "utf8")),
+        comment(500, body(own)),
+      ]),
+    );
+    const r = await runDriveIn(
+      dir,
+      stateDir,
+      ["--take-over", ...PASS],
+      tree,
+      LEDGER_ON,
+    );
+    expectSpawnExit({ ...r, stdout: null }, 5);
+    expect(r.stderr).not.toContain("nothing to take over");
+    expect(r.stderr).toContain(
+      `its drive ledger names this tree's driver (${actor}) as running`,
+    );
+    const s = await stateOf(stateDir, tree);
+    expect(
+      s.takeovers.map((t: { verdict: string; fromActor: string }) => [
+        t.verdict,
+        t.fromActor,
+      ]),
+    ).toEqual([["DEAD", actor]]);
+  });
+
+  it("refuses, naming the other tree, when this clone's running driver is another tree's", async () => {
+    const tree = makeScratchRepo("ledger-own-clone").dir;
+    const { dir, stateDir } = writeFixture({ prState: "MERGED" }, tree);
+    const file = join(dir, "issue-comments.json");
+    const own = ledger(4, 3, { state: "running", clone: cloneId(stateDir) });
+    writeFileSync(
+      file,
+      JSON.stringify([
+        ...JSON.parse(readFileSync(file, "utf8")),
+        comment(500, body(own)),
+      ]),
+    );
+    const r = await runDriveIn(
+      dir,
+      stateDir,
+      ["--take-over", ...PASS],
+      tree,
+      LEDGER_ON,
+    );
+    expectSpawnExit({ ...r, stdout: null }, 2);
+    expect(r.stderr).toContain(
+      `names this clone's driver in another working tree (${OTHER_ACTOR}) as running`,
+    );
+    expect((await stateOf(stateDir, tree)).takeovers ?? []).toEqual([]);
   });
 });
 

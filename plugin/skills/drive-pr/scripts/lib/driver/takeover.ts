@@ -2,10 +2,15 @@
  * Replacing a driver that still holds a drive's locks: `drive.ts <PR>
  * --take-over`, in the same clone. This file decides the takeover and stops
  * the holder; `takeover-complete.ts` finishes it once this driver holds the
- * locks. When no driver of this clone holds the drive, a driver in another
- * clone is taken over through the pull request's drive ledger instead
- * (`ledger.ts`): admitted on a heartbeat older than the lease window, and
- * claimed on the pull request once the locks are held.
+ * locks. When no driver of this clone holds the drive, the pull request's
+ * drive ledger decides (`ledger.ts`): a driver in another clone is admitted
+ * on a heartbeat older than the lease window, and claimed on the pull
+ * request once the locks are held; this tree's own driver that the ledger
+ * still names running is `DEAD`, since it released its locks as it ended
+ * without writing its stop, and what it left is this tree's, which this
+ * driver settles as any re-arm does. This clone's driver in another tree is
+ * refused with exit `2`, since what it left is that tree's, as is a ledger
+ * that names no running driver.
  *
  * Admitted against exactly two holders, both decided by `drives.ts --doctor`
  * rather than by the caller: one whose verdict is `WEDGED` (a live driver,
@@ -63,7 +68,7 @@ const STOP_OTHER_HOLDER_EXIT = 3;
 
 import { registerCleanup } from "../../../../../shared/cleanup.ts";
 
-import { type LedgerIdentity, admitCrossCloneTakeover } from "./ledger.ts";
+import { type LedgerIdentity, ledgerTakeover } from "./ledger.ts";
 
 /** One `drives.ts --doctor --json` row, as far as a takeover reads it. */
 interface DoctorRowJson {
@@ -196,18 +201,8 @@ export async function decideTakeover(
       1,
       `drive.ts --take-over: could not read drives.ts --doctor for PR #${pr}; refusing to take over blind.`,
     );
-  if (row === null || row.state === "empty") {
-    // No driver of this clone holds it: a driver in another clone may, by
-    // the pull request's drive ledger.
-    const crossClone =
-      ledger === null ? null : await admitCrossCloneTakeover(pr, ledger);
-    if (crossClone !== null) return crossClone;
-    fail(
-      2,
-      `drive.ts --take-over: no driver holds PR #${pr}'s lock, and its drive ledger names no running driver in another clone, so there is nothing to take over.`,
-      "Re-arm it without --take-over.",
-    );
-  }
+  // No driver of this clone holds it: the pull request's drive ledger decides.
+  if (row === null || row.state === "empty") return decideByLedger(pr, ledger);
   const verdict = row.doctor?.verdict ?? "UNKNOWN";
   let admitted: TakeoverPlan["verdict"];
   let vanished: string | null = null;
@@ -229,6 +224,56 @@ export async function decideTakeover(
     holderStarted: row.diag?.started ?? null,
     held: await heldSnapshot(pr),
     ...(vanished === null ? {} : { vanishedTree: vanished }),
+  };
+}
+
+/**
+ * Decide a takeover no lock of this clone holds by the pull request's drive
+ * ledger: it may name a driver in another clone, or this clone's own that
+ * ended without writing its stop. Refuses (throws the exit) otherwise.
+ */
+async function decideByLedger(
+  pr: string,
+  ledger: LedgerIdentity | null,
+): Promise<TakeoverPlan> {
+  const read =
+    ledger === null
+      ? ({ kind: "none" } as const)
+      : await ledgerTakeover(pr, ledger);
+  if (read.kind === "cross-clone") return read.plan;
+  if (read.kind === "this-tree") return admitReleasedDriver(pr, read.actor);
+  if (read.kind === "other-tree")
+    fail(
+      2,
+      `drive.ts --take-over: no driver holds PR #${pr}'s lock, and its drive ledger names this clone's driver in another working tree (${read.actor}) as running: that driver ended without writing its stop, and what it left is that tree's, so this tree does not take it over.`,
+      "Re-arm it from that working tree, or stop it there (drives.ts --stop) and re-arm it here.",
+    );
+  return fail(
+    2,
+    `drive.ts --take-over: no driver holds PR #${pr}'s lock, and its drive ledger names no running driver in another clone, so there is nothing to take over.`,
+    "Re-arm it without --take-over.",
+  );
+}
+
+/**
+ * Admit this tree's own driver that the ledger still names running while it
+ * holds no lock: it released its locks as it ended, without writing its
+ * stop, and what it left is in this tree, which this driver settles as any
+ * re-arm does. Nothing is stopped.
+ */
+async function admitReleasedDriver(
+  pr: string,
+  actor: string,
+): Promise<TakeoverPlan> {
+  console.error(
+    `drive.ts --take-over: no driver holds PR #${pr}'s lock, but its drive ledger names this tree's driver (${actor}) as running: it ended without writing its stop, so it is DEAD; taking the drive over in its tree.`,
+  );
+  return {
+    verdict: "DEAD",
+    fromActor: actor,
+    fromAccount: null,
+    holderStarted: null,
+    held: await heldSnapshot(pr),
   };
 }
 

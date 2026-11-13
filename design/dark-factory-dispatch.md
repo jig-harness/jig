@@ -1736,7 +1736,7 @@ parked questions (the park's framed decision, or the stored
 reason for a park with no decision record); a drive
 stopped on an exit only a person can settle, carrying the exit and the
 drive's handoff; a drive stopped with no exit, carrying its handoff; a
-stalled pickup or a double claim; a failed follow-up, carrying the question its pass stopped on when it stated one; a follow-up claim that went stale again after the tick released one (see Stale follow-up claims); a launch record stuck pending, carrying why no tick launches it again (cause `needs-person`, see Launch records); a re-arm that failed without moving its ledger, carrying its exit, both heads and, for a pull request behind its branch, the close-and-reopen recovery (cause `needs-person`, sent once for its exit, ledger generation and heads, see Launch records); a launch refused because a checkout the runtime does not list holds its branch and is in use, carrying that checkout's path and what keeps it busy (cause `needs-person`, keyed by the target, the branch and the path, so it is one notice per holder rather than a refusal repeated in the journal every tick; its record stands through a tick whose launch waited before the open); a session waiting past
+stalled pickup or a double claim; a failed follow-up, carrying the question its pass stopped on when it stated one; a follow-up claim that went stale again after the tick released one (see Stale follow-up claims); a launch record stuck pending, carrying why no tick launches it again (cause `needs-person`, see Launch records); a re-arm that failed without moving its ledger, carrying its exit, both heads and, for a pull request behind its branch, the close-and-reopen recovery (cause `needs-person`, sent once for its exit, ledger generation and heads, see Launch records); a re-arm or takeover `drive.ts` refused as a usage error (`UNSUPPORTED_CLI`) on the ledger facts it still shows, carrying the drive's message, which the wrapper keeps from the drive's error output on that exit (cause `needs-person`, sent once for its launch record, and never launched again on those facts); a launch refused because a checkout the runtime does not list holds its branch and is in use, carrying that checkout's path and what keeps it busy (cause `needs-person`, keyed by the target, the branch and the path, so it is one notice per holder rather than a refusal repeated in the journal every tick; its record stands through a tick whose launch waited before the open); a session waiting past
 `blocked_after`; a running stage drifting from its expectation, and a
 session still waiting on a wall after its one nudge (see Control). Every
 message carries the cause or the question, the pull request's link and
@@ -1771,7 +1771,8 @@ then. `0s` sends each cause once. A drift is an observation rather than
 something a person must do, so it is sent once for the life of its key and
 never repeated; so is a re-arm that failed without moving its ledger, whose
 key carries its exit, the ledger generation and both heads, so any change of
-those is a new notice. The suppression record keeps the first send, which the
+those is a new notice, and a drive launch refused as a usage error, whose key
+is its launch record. The suppression record keeps the first send, which the
 dashboard dates the wait from, and the last, which the repeat is timed from;
 a repeat writes no second event row to the outcome log, since the cause's
 row was written when it was first sent.

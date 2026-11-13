@@ -679,7 +679,9 @@ age and whose claim it is, to mark done or delete.
 parked with a decision unanswered, carrying the drive's framed decision for
 each one; a drive stopped on an exit only a person settles, or with no exit; a
 re-arm that failed without moving its ledger, with the close-and-reopen
-recovery where the pull request is behind its branch;
+recovery where the pull request is behind its branch; a re-arm or takeover
+that `drive.ts` refused as a usage error on the ledger as it still is, with
+the drive's message, which is not launched again until the ledger moves;
 a failed follow-up, with the question its pass stopped on; a stalled pickup,
 a double claim, a session waiting past `dispatch.blocked_after`; and a
 pull request that enters Ready to merge. Each message
