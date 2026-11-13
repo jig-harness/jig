@@ -354,6 +354,22 @@ function requireProcessGone(pr: string, row: DoctorRowJson): void {
   );
 }
 
+/** What a dead holder's tree still holds, named for the refusal. */
+function leftoverKinds(
+  leftovers: Exclude<
+    Awaited<ReturnType<typeof gatherWorktreeLeftovers>>,
+    "missing" | null
+  >,
+): string[] {
+  return [
+    leftovers.uncommitted ? "uncommitted changes" : "",
+    leftovers.unpushed ? "unpushed commits" : "",
+    leftovers.unconcludedOp !== null
+      ? `an unconcluded git operation (${leftovers.unconcludedOp})`
+      : "",
+  ].filter((s) => s !== "");
+}
+
 /**
  * Refuses a dead holder whose tree holds leftovers or cannot be inspected;
  * returns the tree when it no longer exists, else `null` for a clean one.
@@ -373,13 +389,7 @@ async function requireNoLeftovers(
       `Its previous driver is gone, but its working tree ${tree === "" ? "is not recorded" : `(${tree}) could not be inspected`} for leftovers.`,
       "Check it by hand, push or discard what it holds, then take over.",
     );
-  const found = [
-    leftovers.uncommitted ? "uncommitted changes" : "",
-    leftovers.unpushed ? "unpushed commits" : "",
-    leftovers.unconcludedOp !== null
-      ? `an unconcluded git operation (${leftovers.unconcludedOp})`
-      : "",
-  ].filter((s) => s !== "");
+  const found = leftoverKinds(leftovers);
   if (found.length > 0)
     refuse(
       pr,
@@ -544,17 +554,28 @@ export async function explainHolder(
   console.error(
     `Its doctor verdict: ${verdict}${row.doctor ? ` — ${row.doctor.reason}` : ""}.`,
   );
-  if (verdict === "WEDGED") {
-    console.error("It is wedged, so a takeover is admitted:");
-    const agent = pr === own.pr ? own.agent : [];
-    console.error(
-      `  ${armCommand(driveTs, pr, botsOnly, " --take-over", agent)}`,
-    );
-  } else {
+  explainAdmission(
+    verdict,
+    armCommand(
+      driveTs,
+      pr,
+      botsOnly,
+      " --take-over",
+      pr === own.pr ? own.agent : [],
+    ),
+  );
+}
+
+/** Say whether a takeover is admitted against a holder with `verdict`, and the command when it is. */
+function explainAdmission(verdict: string, command: string): void {
+  if (verdict !== "WEDGED") {
     console.error(
       "Do not stop a driver that is making progress; a takeover is admitted only once it is WEDGED or dead.",
     );
+    return;
   }
+  console.error("It is wedged, so a takeover is admitted:");
+  console.error(`  ${command}`);
 }
 
 /** Run `fn`, and on an exit-11 refusal explain the holder before rethrowing. */

@@ -30,7 +30,7 @@ export const UNARMED_FACTS = "no ledger, head ";
  * it launched at: a failed re-arm holds its drive only while it is the latest
  * drive record not cancelled before it ran, as `failedRearm` reads it.
  */
-export function latestFailedRearms(records: ReadRecord[]): Set<string> {
+function latestFailedRearms(records: ReadRecord[]): Set<string> {
   const latest = latestIdsBy(records, (r) =>
     isDrive(r.record.action) && !cancelledBeforeExecution(r)
       ? `${r.record.repo}#${String(r.record.pr)}`
