@@ -194,12 +194,21 @@ export function recordsWanted(
   unplaced: ReadonlyArray<Unplaced>,
   records: ReadonlyArray<ReadRecord> = [],
 ): Set<string> {
+  // The latest record that still holds an item decides whether it was handed on.
+  const latest = new Map<string, ReadRecord>();
+  for (const r of records) {
+    if (r.record.action !== "pickup") continue;
+    for (const key of r.record.batchItems?.map((i) => i.key) ?? [
+      r.record.item,
+    ]) {
+      if (key === null || !holdsItem(r.record, key)) continue;
+      const seen = latest.get(key);
+      if (seen === undefined || r.record.createdAt >= seen.record.createdAt)
+        latest.set(key, r);
+    }
+  }
   const handedOn = new Set(
-    records
-      .filter((r) => r.record.action === "pickup" && r.result === "done")
-      .flatMap(
-        (r) => r.record.batchItems?.map((i) => i.key) ?? [r.record.item],
-      ),
+    [...latest].filter(([, r]) => r.result === "done").map(([key]) => key),
   );
   return new Set([
     ...pickups.map((p) => p.key),
@@ -253,8 +262,18 @@ export function releaseEnded(
     if (provable.length > 0 && r.state.kind !== "pending")
       noteClaims(record, provable, root);
     if (claimedMembers.length > 0 || holds(r.state)) continue;
-    if (keepsWanted(record, members, wanted, returned)) continue;
-    record.released = true;
+    const kept = members.filter((key) =>
+      wantsRecord(record, key, wanted, returned),
+    );
+    if (kept.length === members.length) continue;
+    // A member no longer wanted is released alone, so its siblings keep the
+    // question they wait on.
+    if (kept.length === 0) record.released = true;
+    else
+      record.releasedItems = [
+        ...(record.releasedItems ?? []),
+        ...members.filter((key) => !kept.includes(key)),
+      ];
     writeRecord(record, root);
   }
 }
@@ -296,13 +315,4 @@ function noteClaims(
   if (!changed) return;
   record.claimedItems = [...seen];
   writeRecord(record, root);
-}
-
-function keepsWanted(
-  record: LaunchRecord,
-  members: string[],
-  wanted: ReadonlySet<string>,
-  returned: ReadonlySet<string>,
-): boolean {
-  return members.some((key) => wantsRecord(record, key, wanted, returned));
 }

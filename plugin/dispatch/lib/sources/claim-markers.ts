@@ -14,13 +14,16 @@ import { failureText } from "../text.ts";
 import type { ClaimedItem, Unplaced } from "../types.ts";
 import { trackerScope } from "./served-reads.ts";
 
-/** Whether a trusted claim marker is on `key`. */
+/** Whether a trusted claim marker naming `identity` is on `key`. */
 async function marked(
   tracker: Pick<Tracker, "issueComments">,
   key: string,
+  identity: string,
 ): Promise<boolean> {
   const { comments } = await tracker.issueComments(key);
-  return comments.some((c) => c.trusted && readClaimMarker(c.body) !== null);
+  return comments.some(
+    (c) => c.trusted && readClaimMarker(c.body)?.claimant === identity,
+  );
 }
 
 /** One item's mark from the cache, kept by its update time; `undefined` when the cache has no answer for that time. */
@@ -35,13 +38,14 @@ function keptMark(
 }
 
 /**
- * The claimed items, each one a trusted claim marker is on marked `found`,
+ * The claimed items, each one a trusted claim marker naming `identity` is on marked `found`,
  * and each whose comments could not be read marked `unread` with a row
  * saying so. After the tracker's rate limit, the rest are not read and are
  * `unread` too.
  */
 export async function markClaims(
   tracker: Tracker,
+  identity: string,
   items: ClaimedItem[],
   cache: PickupReads,
 ): Promise<{ claimed: ClaimedItem[]; unplaced: Unplaced[] }> {
@@ -54,19 +58,19 @@ export async function markClaims(
     unplaced.push({
       target: item.key,
       record: "tracker",
-      reason: `whether a claim marker took it could not be read, so it is watched as a pickup: ${why}`,
+      reason: `whether a claim marker took it could not be read, so its stall watch waits for a read: ${why}`,
     });
   };
   let limited = false;
   for (const item of items) {
-    const key = `${trackerScope(tracker)}:claim-marker:${item.key}`;
+    const key = `${trackerScope(tracker)}:claim-marker:${identity}:${item.key}`;
     const kept = keptMark(cache, key, item);
     if (kept !== undefined) mark(item, kept);
     else if (limited)
       unread(item, "the tracker's rate limit stopped an earlier read");
     else
       try {
-        const found = await marked(tracker, item.key);
+        const found = await marked(tracker, item.key, identity);
         if (item.updatedAt !== undefined)
           cache.set(key, { updatedAt: item.updatedAt, marked: found });
         mark(item, found);

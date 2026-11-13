@@ -117,11 +117,15 @@ describe("the stall watch's scope", () => {
     }
   });
 
-  it("watches an item a claim marker took, or whose markers could not be read", () => {
-    for (const claimMarker of ["found", "unread"] as const)
-      expect(
-        stalled(planPickups(input("claimed", [item({ claimMarker })]))),
-      ).toEqual(["#7"]);
+  it("watches an item a claim marker took, and waits on one whose markers could not be read", () => {
+    expect(
+      stalled(planPickups(input("claimed", [item({ claimMarker: "found" })]))),
+    ).toEqual(["#7"]);
+    const plan = planPickups(
+      input("claimed", [item({ claimMarker: "unread" })]),
+    );
+    expect(stalled(plan)).toEqual([]);
+    expect(plan.idleNow).toEqual([]);
   });
 
   it("still reports a double claim for an item outside the scope", () => {
@@ -182,37 +186,50 @@ describe("markClaims", () => {
       "#1": [marker(true)],
       "#2": [marker(false)],
       "#3": [],
+      "#4": [
+        {
+          ...marker(true),
+          body: claimMarkerBody({
+            session: "s",
+            branch: "b",
+            claimant: "someone-else",
+            at: "2026-11-11T06:00:00Z",
+          }),
+        },
+      ],
     });
     const cache = memoryCache();
-    const items = ["#1", "#2", "#3"].map((key) =>
+    const items = ["#1", "#2", "#3", "#4"].map((key) =>
       item({ key, updatedAt: "2026-11-11T07:00:00Z" }),
     );
-    const first = await markClaims(t, items, cache);
+    const first = await markClaims(t, "factory-bot", items, cache);
     expect(first.claimed.map((c) => [c.key, c.claimMarker])).toEqual([
       ["#1", "found"],
       ["#2", undefined],
       ["#3", undefined],
+      ["#4", undefined],
     ]);
     expect(first.unplaced).toEqual([]);
-    const again = await markClaims(t, items, cache);
+    const again = await markClaims(t, "factory-bot", items, cache);
     expect(again.claimed).toEqual(first.claimed);
-    expect(reads).toEqual(["#1", "#2", "#3"]);
+    expect(reads).toEqual(["#1", "#2", "#3", "#4"]);
     await markClaims(
       t,
+      "factory-bot",
       [item({ key: "#3", updatedAt: "2026-11-11T07:30:00Z" })],
       cache,
     );
-    expect(reads).toEqual(["#1", "#2", "#3", "#3"]);
+    expect(reads).toEqual(["#1", "#2", "#3", "#4", "#3"]);
   });
 
   it("marks an item whose comments could not be read unread, with a row saying so", async () => {
     const { t } = tracker({});
-    const read = await markClaims(t, [item()], memoryCache());
+    const read = await markClaims(t, "factory-bot", [item()], memoryCache());
     expect(read.claimed[0]?.claimMarker).toBe("unread");
     expect(read.unplaced).toEqual([
       expect.objectContaining({
         target: "#7",
-        reason: expect.stringContaining("watched as a pickup"),
+        reason: expect.stringContaining("waits for a read"),
       }),
     ]);
   });

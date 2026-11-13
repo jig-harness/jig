@@ -115,4 +115,36 @@ describe("an item held and then released", () => {
     });
     expect(records[0]?.record.released).toBe(false);
   });
+
+  it("is not kept by an older pickup that finished and was released", () => {
+    const dir = root();
+    const done = {
+      ...endedPickup("#7"),
+      result: "done" as const,
+    };
+    done.record = {
+      ...done.record,
+      id: "old",
+      createdAt: "2026-11-10T06:00:00Z",
+      released: true,
+    } as LaunchRecord;
+    const records = [done, endedPickup("#7")];
+    tick(records, dir, { unplaced: [held("#7")] });
+    expect(records[1]?.record.released).toBe(true);
+  });
+
+  it("releases a held member of a failed batch alone, while its sibling keeps the record", () => {
+    const dir = root();
+    const batch = endedPickup("#7");
+    batch.record = {
+      ...batch.record,
+      batchItems: [{ key: "#7" }, { key: "#8" }],
+    } as unknown as LaunchRecord;
+    const records = [batch];
+    tick(records, dir, { pickups: ["#8"], unplaced: [held("#7")] });
+    expect(batch.record.released).toBe(false);
+    expect(batch.record.releasedItems).toEqual(["#7"]);
+    expect(pickupHold("#7", records).kind).toBe("none");
+    expect(pickupHold("#8", records).kind).toBe("ended");
+  });
 });

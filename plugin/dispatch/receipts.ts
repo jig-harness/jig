@@ -57,6 +57,7 @@ import type { NotAdmitted } from "./lib/accounts.ts";
 import type { FailureEntry } from "./lib/failures.ts";
 import type { LineLoad } from "./lib/dashboard-contract.ts";
 import type { ReflectionReport } from "./lib/reflection-route.ts";
+import { tickFailure } from "./lib/tick-failure.ts";
 import { failureText } from "./lib/text.ts";
 import type { Defect, RepoReport } from "./lib/types.ts";
 
@@ -232,50 +233,35 @@ function passed(receipt: TickReceipt): boolean {
   return receipt.completed && receipt.exitStatus === 0;
 }
 
-/** Why a tick failed, for a person, as its receipt records it; `undefined` when it records no reason. */
-function failureReason(receipt: TickReceipt): string | undefined {
-  return (
-    receipt.defect?.reason ??
-    receipt.applyWithheld ??
-    receipt.lineFailed ??
-    receipt.logCopyFailed ??
-    receipt.failuresUnwritten ??
-    receipt.unloggedOutcomes?.[0] ??
-    receipt.repos.find((repo) => repo.defect !== undefined)?.defect?.reason
-  );
-}
-
 /** A receipt read back for the last run, or `null` for one that is no evidence of a run: it does not read, or its tick found the lock held and ran nothing. */
 function ranTick(path: string): TickReceipt | null {
   const receipt = readReceipt(path);
   return receipt === null || receipt.lockHeldBy !== undefined ? null : receipt;
 }
 
-/** The failed ticks in a row, newest first, among the ticks that ran at `paths`; read back at most `FAILED_RUN_READ`. */
-function failedRun(paths: string[]): TickReceipt[] {
-  const run: TickReceipt[] = [];
-  for (const path of paths) {
-    if (run.length === FAILED_RUN_READ) break;
-    const receipt = ranTick(path);
-    if (receipt === null) continue;
-    if (passed(receipt)) break;
-    run.push(receipt);
-  }
-  return run;
-}
-
 /**
  * The newest receipt of a tick that ran, for `jig status` and `jig doctor`;
  * null when there is none. A tick that found the lock held ran nothing. A
- * failed one carries its reason and the failed ticks in a row it ends,
- * reading back at most `FAILED_RUN_READ` receipts.
+ * failed one carries its reason and the failed ticks in a row it ends. Every
+ * receipt file read, held or invalid ones included, spends one of
+ * `FAILED_RUN_READ`; a run still going when they are spent is `capped`, and
+ * with none that ran found by then the answer is null.
  */
 export function lastTick(root = stateRoot()): LastRun | null {
   const paths = receiptPaths(root).reverse();
-  const at = paths.findIndex((path) => ranTick(path) !== null);
-  const path = paths[at];
-  const receipt = path === undefined ? null : ranTick(path);
-  if (path === undefined || receipt === null) return null;
+  let reads = 0;
+  const next = (from: number): { at: number; receipt: TickReceipt } | null => {
+    for (let at = from; at < paths.length && reads < FAILED_RUN_READ; at++) {
+      reads++;
+      const receipt = ranTick(paths[at] as string);
+      if (receipt !== null) return { at, receipt };
+    }
+    return null;
+  };
+  const newest = next(0);
+  if (newest === null) return null;
+  const { receipt } = newest;
+  const path = paths[newest.at] as string;
   const last: LastRun = {
     runId: receipt.runId,
     startedAt: receipt.startedAt,
@@ -284,16 +270,28 @@ export function lastTick(root = stateRoot()): LastRun | null {
     path,
   };
   if (passed(receipt)) return last;
-  const reason = failureReason(receipt);
-  const run = failedRun(paths.slice(at));
-  const first = run.at(-1) ?? receipt;
+  let runs = 1;
+  let since = receipt.startedAt;
+  let from = newest.at + 1;
+  let capped = false;
+  for (;;) {
+    const earlier = next(from);
+    if (earlier === null) {
+      capped = reads >= FAILED_RUN_READ && from < paths.length;
+      break;
+    }
+    if (passed(earlier.receipt)) break;
+    runs++;
+    since = earlier.receipt.startedAt;
+    from = earlier.at + 1;
+  }
   return {
     ...last,
-    ...(reason === undefined ? {} : { reason }),
+    reason: tickFailure(receipt),
     failing: {
-      runs: run.length,
-      since: first.startedAt,
-      capped: run.length === FAILED_RUN_READ,
+      runs,
+      since,
+      capped,
     },
   };
 }

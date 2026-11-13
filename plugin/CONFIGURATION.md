@@ -1351,8 +1351,9 @@ pickup; both are reported and nothing is started for them. A pickup whose
 session ended without claiming the item is not started again until the
 item leaves the dispatch states or its assignment for one run and comes
 back, or a person's label (`jig:hold`, the human-in-the-loop or
-manual-operations label) holds it while it is not claimed: once the label
-is off, the item is picked up again. A pull request merged
+manual-operations label) holds it, in a served person's queue or the ready
+pool, while it is not claimed: once the label is off, the item is picked up
+again, unless its pickup recorded `done`, which a hold never releases. A pull request merged
 since the follow-up stage's start wants `followup_command`. That start
 (`followup_since`) is the machine's, not the repository's:
 `jig dispatch --followup-since <date>` sets it, and otherwise each run keeps

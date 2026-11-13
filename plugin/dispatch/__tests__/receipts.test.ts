@@ -145,6 +145,22 @@ describe("lastTick", () => {
   });
 });
 
+describe("lastTick's read budget", () => {
+  it("spends a read on every held receipt, so a backlog of them is no unbounded scan", () => {
+    const dir = root();
+    writeReceipt(tickAt("2026-01-01T00:00:00Z", 1), dir);
+    for (let i = 1; i <= 150; i++)
+      writeReceipt(
+        {
+          ...tickAt(new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString(), 0),
+          lockHeldBy: "other-tick",
+        },
+        dir,
+      );
+    expect(lastTick(dir)).toBeNull();
+  });
+});
+
 describe("readReceipt", () => {
   it("skips a receipt whose repository entry is not one", () => {
     const dir = root();

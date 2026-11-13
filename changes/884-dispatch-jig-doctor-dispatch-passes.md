@@ -23,7 +23,8 @@ release: minor
   whose identity nobody else uses. A double claim is still reported for any
   claimed item.
 - An item a person held with `jig:hold` (or the human-in-the-loop or
-  manual-operations label) and then released is picked up again at the next
-  tick. Before, the record of an earlier pickup that ended without claiming
-  it kept holding it until the item left the dispatch states. A claimed
-  item's record still outlives a hold.
+  manual-operations label) in a served person's queue or the ready pool, and
+  then released, is picked up again at the next tick. Before, the record of
+  an earlier pickup that ended without claiming it kept holding it until the
+  item left the dispatch states. A claimed item's record, and the record of
+  a pickup that finished (`done`), still outlive a hold.

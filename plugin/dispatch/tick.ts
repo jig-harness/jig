@@ -119,7 +119,10 @@ import {
 } from "./lib/tick-settle.ts";
 import { launchedMeanwhile } from "./lib/tick-plan.ts";
 import type { RepoReport } from "./lib/types.ts";
-import { takeScheduledUpgrade } from "../runtime/upgrade-record.ts";
+import {
+  type ScheduledUpgrade,
+  takeScheduledUpgrade,
+} from "../runtime/upgrade-record.ts";
 import { ExitError } from "../shared/cli.ts";
 import { swallow } from "../shared/errors.ts";
 import {
@@ -604,6 +607,7 @@ function abortedReceipt(
   at: Date,
   phase: TickPhase,
   error: unknown,
+  upgrade?: ScheduledUpgrade,
 ): void {
   try {
     writeReceipt({
@@ -614,10 +618,13 @@ function abortedReceipt(
       completed: false,
       apply: options.apply === true,
       exitStatus: error instanceof ExitError ? error.code : 1,
-      ...upgradeField(),
+      ...(upgrade === undefined ? upgradeField() : { upgrade }),
       defect: defectOf(phase, error),
       repos: [],
     });
+    // A timer that fails every tick would otherwise never prune; the receipt
+    // just written is the newest, so the latest failure survives.
+    pruneReceipts(Date.now(), undefined, options.machine?.receiptsDays);
   } catch (unwritten) {
     swallow(unwritten, "the receipt of a tick a throw stopped");
   }
@@ -636,12 +643,20 @@ export async function runTick(options: TickOptions): Promise<TickResult> {
   const timer = new PhaseTimer<TickPhase>();
   const at = options.now ?? new Date();
   // The act phase writes its own receipt, a defect's included.
-  const tick = { acting: false };
+  const tick: { acting: boolean; upgrade?: ScheduledUpgrade } = {
+    acting: false,
+  };
   try {
     return await lockedTick(options, timer, tick);
   } catch (error) {
     if (!tick.acting)
-      abortedReceipt(options, at, timer.current ?? "start", error);
+      abortedReceipt(
+        options,
+        at,
+        timer.current ?? "start",
+        error,
+        tick.upgrade,
+      );
     throw error;
   }
 }
@@ -650,9 +665,12 @@ export async function runTick(options: TickOptions): Promise<TickResult> {
 async function lockedTick(
   options: TickOptions,
   timer: PhaseTimer<TickPhase>,
-  tick: { acting: boolean },
+  tick: { acting: boolean; upgrade?: ScheduledUpgrade },
 ): Promise<TickResult> {
   const started = await timer.time("start", () => startTick(options));
+  // The scheduled upgrade is taken once, so a throw after this carries it.
+  if (started.receipt.upgrade !== undefined)
+    tick.upgrade = started.receipt.upgrade;
   const locks = new Map<string, Held>();
   try {
     const observe = await timer.time("observe", () =>

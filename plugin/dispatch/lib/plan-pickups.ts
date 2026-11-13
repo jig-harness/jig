@@ -288,6 +288,13 @@ function planClaimed(
     plan.quiet.push({ target: item.key, class: "claimed-by-person", why });
     return;
   }
+  // Whether a claim marker took it could not be read (its row is already
+  // unplaced): the scope is unknown, so no idle clock starts and no stall is
+  // reported until a read answers. A double claim above still reports.
+  if (item.claimMarker === "unread" && pickup.kind === "none") {
+    plan.idleKeep.push(item.key);
+    return;
+  }
   if (held.kind === "unknown") {
     plan.idleKeep.push(item.key);
     plan.unplaced.push({

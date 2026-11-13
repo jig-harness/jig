@@ -300,7 +300,13 @@ async function readFactoryPickups(
   if ("limited" in read)
     return limitedFactory(tracker, identity, read.limited, stores);
   const { wanted, unplaced } = read;
-  const claimed = await scopedClaims(tracker, section, read.claimed, cache);
+  const claimed = await scopedClaims(
+    tracker,
+    identity,
+    section,
+    read.claimed,
+    cache,
+  );
   unplaced.push(...claimed.unplaced);
   const record =
     stores === undefined || facets === undefined
@@ -328,6 +334,7 @@ async function readFactoryPickups(
  */
 async function scopedClaims(
   tracker: Tracker,
+  identity: string,
   section: DispatchSection,
   claimed: ClaimedItem[] | Unplaced,
   cache: PickupReads,
@@ -335,7 +342,7 @@ async function scopedClaims(
   if (!Array.isArray(claimed)) return { items: null, unplaced: [claimed] };
   if (section.stalledScope !== "claimed")
     return { items: claimed, unplaced: [] };
-  const marks = await markClaims(tracker, claimed, cache);
+  const marks = await markClaims(tracker, identity, claimed, cache);
   return { items: marks.claimed, unplaced: marks.unplaced };
 }
 
