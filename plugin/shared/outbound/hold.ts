@@ -135,16 +135,38 @@ function settle(
   if (b.earlier.delete(system)) writeKept(b);
 }
 
+/** Wait for `probe`, or throw `signal`'s reason when it aborts first. */
+async function untilProbed(
+  probe: Promise<void>,
+  signal: AbortSignal | undefined,
+): Promise<void> {
+  if (signal === undefined) return probe;
+  signal.throwIfAborted();
+  let abort: (() => void) | undefined;
+  const aborted = new Promise<never>((_, reject) => {
+    abort = () => reject(signal.reason);
+    signal.addEventListener("abort", abort, { once: true });
+  });
+  try {
+    await Promise.race([probe, aborted]);
+  } finally {
+    if (abort !== undefined) signal.removeEventListener("abort", abort);
+  }
+}
+
 /**
  * `send` to `system`, unless this run holds it: then `refuse` gives what
  * the request answers instead. `answered` says what an answer stands for;
- * a throw is read through `failureOf`, recorded and rethrown.
+ * a throw is read through `failureOf`, recorded and rethrown. A request
+ * waiting for another's probe stops waiting when `signal` aborts, throwing
+ * its reason, and is not sent after it.
  */
 export async function guarded<T>(
   system: string,
   send: () => Promise<T>,
   answered: (answer: T) => OutboundFailure | null,
   refuse: (failure: OutboundFailure) => T | Promise<T>,
+  signal?: AbortSignal,
 ): Promise<T> {
   const b = book;
   if (b === null) return send();
@@ -153,8 +175,9 @@ export async function guarded<T>(
     if (held !== undefined) return refuse(heldFailure(system, held));
     const probe = b.probes.get(system);
     if (probe === undefined) break;
-    await probe;
+    await untilProbed(probe, signal);
   }
+  signal?.throwIfAborted();
   // The first request to a system an earlier run held is its probe.
   const probe = b.earlier.has(system) ? Promise.withResolvers<void>() : null;
   if (probe !== null) b.probes.set(system, probe.promise);

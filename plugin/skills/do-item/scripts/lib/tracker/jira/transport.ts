@@ -159,11 +159,12 @@ function cancelled(signal: AbortSignal | undefined): signal is AbortSignal {
   return signal?.aborted === true;
 }
 
-export function abortedError(signal: AbortSignal): JiraApiError {
+/** `sent`: the request had been dispatched, so a write may have landed. */
+export function abortedError(signal: AbortSignal, sent = false): JiraApiError {
   const reason: unknown = signal.reason;
   return new JiraApiError(
     `Jira request cancelled: ${reason instanceof Error ? reason.message : String(reason)}`,
-    { code: "unreachable" },
+    { code: "unreachable", ...(sent ? { sent: true } : {}) },
   );
 }
 
@@ -296,7 +297,7 @@ async function bodyText(
   try {
     return await res.text();
   } catch (err) {
-    if (cancelled(signal)) throw abortedError(signal);
+    if (cancelled(signal)) throw abortedError(signal, true);
     if (!res.ok) return "";
     throw new JiraApiError(
       `Jira answer lost while reading the body on ${what}: ${err instanceof Error ? err.message : String(err)}`,
@@ -314,7 +315,7 @@ async function fileBytes(
   try {
     return new Uint8Array(await res.arrayBuffer());
   } catch (err) {
-    if (cancelled(signal)) throw abortedError(signal);
+    if (cancelled(signal)) throw abortedError(signal, true);
     throw new JiraApiError(
       `Jira answer lost while reading the file on ${what}: ${err instanceof Error ? err.message : String(err)}`,
       { code: "unreachable", sent: true, status: res.status },
@@ -346,7 +347,7 @@ async function send(
   try {
     return await fetchImpl(url, init);
   } catch (err) {
-    if (cancelled(signal)) throw abortedError(signal);
+    if (cancelled(signal)) throw abortedError(signal, true);
     throw new JiraApiError(
       `Jira API unreachable on ${what}: ${err instanceof Error ? err.message : String(err)}`,
       { code: "unreachable", sent: true },
@@ -379,6 +380,13 @@ function responseFailure(
     : outboundFailure(code, `Jira API HTTP ${res.status}`, {
         retryAfterMs: retryAfterMs(res.headers),
       });
+}
+
+/** One attempt's answer with its body, read inside the attempt. */
+interface Read {
+  res: Response;
+  text?: string;
+  bytes?: Uint8Array;
 }
 
 /** Keep one call's leased credential and renewal separate from its read retries. */
@@ -478,14 +486,18 @@ export function httpTransport(
       governor,
     );
     let tookMs = 0;
-    const timed = async () => {
+    // The attempt reads the body too: a peer that drops the connection after
+    // its headers is `unreachable` inside the retry and the hold.
+    const timed = async (): Promise<Read> => {
       const began = Date.now();
-      const answer = await sender();
+      const response = await sender();
       tookMs = Date.now() - began;
-      return answer;
+      return request.bytes === true && response.ok
+        ? { res: response, bytes: await fileBytes(response, bound, what) }
+        : { res: response, text: await bodyText(response, bound, what) };
     };
-    const failureOf = (answer: Response) => responseFailure(answer, tookMs);
-    const res = await guarded(
+    const failureOf = (answer: Read) => responseFailure(answer.res, tookMs);
+    const read = await guarded(
       system,
       () =>
         retryRead(timed, {
@@ -493,22 +505,26 @@ export function httpTransport(
           signal: bound,
           deadlineAt,
           failureOf,
-          discard: (answer, s) => discardBody(answer, s),
         }),
       failureOf,
       (failure) => {
         throw new JiraApiError(failure.reason, { code: failure.code });
       },
+      bound,
     ).catch((err: unknown) => {
-      if (cancelled(signal)) throw abortedError(signal);
-      if (cancelled(bound)) throw abortedError(bound);
+      // A call cancelled once its request was dispatched keeps that fact: a
+      // write may have landed.
+      const sent = err instanceof JiraApiError && err.sent;
+      if (cancelled(signal)) throw abortedError(signal, sent);
+      if (cancelled(bound)) throw abortedError(bound, sent);
       throw err;
     });
-    if (request.bytes === true && res.ok) {
+    const res = read.res;
+    if (read.bytes !== undefined) {
       answered = true;
-      return fileBytes(res, bound, what);
+      return read.bytes;
     }
-    const text = await bodyText(res, bound, what);
+    const text = read.text ?? "";
     if (!res.ok) {
       const failure = httpFailure(res.status, res.headers, text, what, tookMs);
       if (res.status !== 403 || answered || firstRefusal === undefined)

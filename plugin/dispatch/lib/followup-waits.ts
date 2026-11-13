@@ -184,7 +184,7 @@ export function spentWords(id: string, streak: WaitStreak): string {
   return `its pass under launch record ${id} met the rate limit ${streak.count} times in a row, the last until ${streak.until}`;
 }
 
-/** The trusted markers of this host's on a merged pull request that name `record`. */
+/** The trusted markers of this host's on a merged pull request that name `record`, those answered done excepted. */
 function ownMarkers(pr: MarkedPr, host: string, record: string): number[] {
   if ("unreadable" in pr.markers) return [];
   return pr.markers
@@ -193,6 +193,8 @@ function ownMarkers(pr: MarkedPr, host: string, record: string): number[] {
         m.trusted &&
         m.run.kind === "tick" &&
         m.run.record === record &&
+        // A marker a person's answer marked done settles the follow-up: never released.
+        m.run.outcome !== "done" &&
         (m.run.host === undefined || m.run.host === host),
     )
     .map((m) => m.id);

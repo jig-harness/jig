@@ -209,6 +209,7 @@ function traceGhCall<T extends GhRun, O extends { timeoutSec?: number }>(
   envDeadline: number,
   run: (argv: string[], options: O) => Promise<T>,
   refuse: (failure: OutboundFailure) => T,
+  held = true,
 ): Promise<T> {
   // A parent reader counts nested forge calls at dispatch, including timed-out reads.
   if (process.env.JIG_FORGE_CALL_COUNT_FILE) {
@@ -225,14 +226,29 @@ function traceGhCall<T extends GhRun, O extends { timeoutSec?: number }>(
     opts.timeoutSec === undefined
       ? envDeadline
       : Math.max(1, Math.min(envDeadline, opts.timeoutSec));
-  return traceCommand("ghCall", "gh", deadline, () =>
-    guarded(
+  if (!held)
+    return traceCommand("ghCall", "gh", deadline, () =>
+      run(args, { ...opts, timeoutSec: deadline }),
+    );
+  return traceCommand("ghCall", "gh", deadline, () => {
+    // The run's elapsed time tells a 502/504 the forge ran out of time on
+    // (`too-costly`, which the paged reader answers with a smaller page) from
+    // a fault it answered at once (which holds the forge).
+    let tookMs = 0;
+    return guarded(
       GITHUB,
-      () => run(args, { ...opts, timeoutSec: deadline }),
-      (r) => ghRunFailure(r),
+      async () => {
+        const began = Date.now();
+        try {
+          return await run(args, { ...opts, timeoutSec: deadline });
+        } finally {
+          tookMs = Date.now() - began;
+        }
+      },
+      (r) => ghRunFailure(r, tookMs),
       refuse,
-    ),
-  );
+    );
+  });
 }
 
 /** Adapt a process runner once, preserving its options and complete result type. */
@@ -255,7 +271,11 @@ export function traceRunner<
     });
 }
 
-/** Adapt the gh boundary without copying its deadline, span or hold bookkeeping; `refuse` is a held call's result. */
+/**
+ * Adapt the gh boundary without copying its deadline, span or hold bookkeeping;
+ * `refuse` is a held call's result. With `held` false the run is not held: a
+ * caller that applies the hold around its own retry does so itself.
+ */
 export function traceGhRunner<
   T extends GhRun,
   O extends { timeoutSec?: number },
@@ -264,7 +284,8 @@ export function traceGhRunner<
   timeout: () => number,
   defaults: O,
   refuse: (failure: OutboundFailure) => T,
+  held = true,
 ): (args: string[], opts?: O) => Promise<T> {
   return (args, opts = defaults) =>
-    traceGhCall(args, opts, timeout(), run, refuse);
+    traceGhCall(args, opts, timeout(), run, refuse, held);
 }

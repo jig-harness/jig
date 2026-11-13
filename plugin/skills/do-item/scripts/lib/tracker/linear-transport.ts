@@ -33,6 +33,7 @@ import {
   type FailureClass,
   type OutboundFailure,
   OutboundError,
+  retryAfterMs,
   statusClass,
 } from "../../../../../shared/outbound/failure.ts";
 import { guarded } from "../../../../../shared/outbound/hold.ts";
@@ -71,12 +72,13 @@ function cancelled(signal: AbortSignal | undefined): signal is AbortSignal {
 }
 
 /** The error for a request the caller's signal ended: no answer came. */
-function abortedError(signal: AbortSignal): LinearApiError {
+function abortedError(signal: AbortSignal, sent = false): LinearApiError {
   const reason: unknown = signal.reason;
   return new LinearApiError(
     `Linear request cancelled: ${reason instanceof Error ? reason.message : String(reason)}`,
     null,
     "unreachable",
+    sent ? { sent: true } : {},
   );
 }
 
@@ -99,7 +101,11 @@ export class LinearApiError extends OutboundError {
     status: number | null,
     code: FailureClass = (status === null ? null : statusClass(status)) ??
       "invalid",
-    extra: { until?: number | null; sent?: boolean } = {},
+    extra: {
+      until?: number | null;
+      sent?: boolean;
+      retryAfterMs?: number | null;
+    } = {},
   ) {
     super(code, message, extra);
     this.status = status;
@@ -298,10 +304,21 @@ async function postOnce(
       signal,
     });
   } catch (err) {
-    if (cancelled(signal)) return abortedError(signal);
+    if (cancelled(signal)) return abortedError(signal, true);
     return unreachable(err);
   }
-  const text = await res.text().catch(() => "");
+  let text: string;
+  try {
+    text = await res.text();
+  } catch (err) {
+    if (cancelled(signal)) return abortedError(signal, true);
+    return new LinearApiError(
+      `Linear API response lost: ${err instanceof Error ? err.message : String(err)}`,
+      null,
+      "unreachable",
+      { sent: true },
+    );
+  }
   const body = jsonOrNull(text);
   const answer = linearAnswer(res.headers, res.status, body);
   settle(governed, answer, sentAt);
@@ -314,6 +331,7 @@ async function postOnce(
       `Linear API HTTP ${res.status}: ${text.slice(0, 300)}`,
       res.status,
       answerClass(res.status, Date.now() - began) ?? "invalid",
+      { retryAfterMs: retryAfterMs(res.headers) },
     ),
     answer,
   );
@@ -380,13 +398,20 @@ async function call(
         deadlineAt,
         failureOf: failureOfAnswer,
       }).catch((err: unknown) => {
-        if (cancelled(signal)) throw abortedError(signal);
-        if (cancelled(bound)) return abortedError(bound);
+        const sent = err instanceof LinearApiError && err.sent;
+        if (cancelled(signal)) throw abortedError(signal, sent);
+        if (cancelled(bound)) return abortedError(bound, sent);
         throw err;
       }),
     failureOfAnswer,
     heldAnswer,
-  );
+    bound,
+  ).catch((err: unknown): Answer => {
+    // Cancelled while waiting for another request's probe: nothing was sent.
+    if (cancelled(signal)) throw abortedError(signal);
+    if (cancelled(bound)) return abortedError(bound);
+    throw err;
+  });
   if (answer instanceof LinearApiError) throw answer;
   return answer.data;
 }
@@ -475,7 +500,7 @@ async function cliOnce(
     [bin, "api", query, "--variables-json", JSON.stringify(variables)],
     signal,
   );
-  if (cancelled(signal)) return abortedError(signal);
+  if (cancelled(signal)) return abortedError(signal, true);
   return cliFailure(r) ?? cliAnswer(r, governed);
 }
 

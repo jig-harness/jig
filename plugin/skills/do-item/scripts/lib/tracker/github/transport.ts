@@ -20,6 +20,7 @@
 import {
   type RunResult,
   ghCall,
+  ghCallUnheld,
 } from "../../../../../drive-pr/scripts/lib/proc.ts";
 import { swallow } from "../../../../../../shared/errors.ts";
 import { isRecord } from "../../../../../../shared/guards.ts";
@@ -105,11 +106,12 @@ function cancelled(signal: AbortSignal | undefined): signal is AbortSignal {
   return signal?.aborted === true;
 }
 
-function abortedError(signal: AbortSignal): GitHubApiError {
+/** `sent`: the request had been dispatched, so a write may have landed. */
+function abortedError(signal: AbortSignal, sent = false): GitHubApiError {
   const reason: unknown = signal.reason;
   return new GitHubApiError(
     `GitHub request cancelled: ${reason instanceof Error ? reason.message : String(reason)}`,
-    { code: "unreachable" },
+    { code: "unreachable", ...(sent ? { sent: true } : {}) },
   );
 }
 
@@ -189,15 +191,27 @@ async function call(
       deadlineAt,
       failureOf: failureOfAnswer,
     }).catch((err: unknown): Answer => {
-      if (cancelled(signal)) throw abortedError(signal);
-      if (cancelled(bound)) return abortedError(bound);
+      const sent = err instanceof GitHubApiError && err.sent;
+      if (cancelled(signal)) throw abortedError(signal, sent);
+      if (cancelled(bound)) return abortedError(bound, sent);
       throw err;
     });
   // A `gh` run is held where every `gh` call is (`ghCall`); an HTTPS request here, under its endpoint's host.
   const answer =
     hold === null
       ? await retried()
-      : await guarded(hold, retried, failureOfAnswer, (f) => errorOf(f));
+      : await guarded(
+          hold,
+          retried,
+          failureOfAnswer,
+          (f) => errorOf(f),
+          bound,
+        ).catch((err: unknown): Answer => {
+          // Cancelled while waiting for another request's probe: nothing was sent.
+          if (cancelled(signal)) throw abortedError(signal);
+          if (cancelled(bound)) return abortedError(bound);
+          throw err;
+        });
   if (answer instanceof GitHubApiError) throw answer;
   return unwrapResponse(answer.body);
 }
@@ -219,7 +233,7 @@ async function ghOnce(
       signal: bound,
     },
   );
-  if (cancelled(signal)) return abortedError(signal);
+  if (cancelled(signal)) return abortedError(signal, true);
   return ghRunAnswer(r, Date.now() - began);
 }
 
@@ -235,7 +249,15 @@ function ghRunAnswer(r: RunResult, tookMs: number): Answer {
     return new GitHubApiError(
       `gh api graphql returned no JSON (exit 0): ${parsed.body.trim().slice(0, 300)}`,
     );
-  return { body };
+  return answerOf(body);
+}
+
+/**
+ * A response body as the answer: GraphQL errors in a successful response are
+ * classified here, inside the attempt, so the retry and the hold see them.
+ */
+function answerOf(body: unknown): Answer {
+  return errorsFailure(body, null) ?? { body };
 }
 
 /**
@@ -291,13 +313,18 @@ function errorsFailure(
  * wrapper (`runClient`). The request travels on standard input as one JSON
  * body, so variables keep their types and nothing reaches the command line.
  */
-export function ghTransport(runner: typeof ghCall = ghCall): GitHubTransport {
+export function ghTransport(
+  runner: typeof ghCall = ghCallUnheld,
+): GitHubTransport {
+  // The default runner is not held per run: the hold lands around the whole
+  // call, after its retry. An injected runner is the caller's own.
+  const hold = runner === ghCallUnheld ? GITHUB : null;
   return (query, variables, signal, idempotent = false) =>
     call(
       (bound) => ghOnce(runner, { query, variables }, bound, signal),
       signal,
       idempotent,
-      null,
+      hold,
     );
 }
 
@@ -366,14 +393,23 @@ async function postOnce(
       signal: bound,
     });
   } catch (err) {
-    if (cancelled(bound)) return abortedError(bound);
+    if (cancelled(bound)) return abortedError(bound, true);
     return new GitHubApiError(
       `GitHub API unreachable: ${err instanceof Error ? err.message : String(err)}`,
       { code: "unreachable", sent: true },
     );
   }
-  const text = await res.text().catch(() => "");
-  if (cancelled(bound)) return abortedError(bound);
+  let text: string;
+  try {
+    text = await res.text();
+  } catch (err) {
+    if (cancelled(bound)) return abortedError(bound, true);
+    return new GitHubApiError(
+      `GitHub API response lost: ${err instanceof Error ? err.message : String(err)}`,
+      { code: "unreachable", sent: true },
+    );
+  }
+  if (cancelled(bound)) return abortedError(bound, true);
   const body = parsedOrNull(text);
   const failure = gitHubHttpFailure(
     res.status,
@@ -381,7 +417,7 @@ async function postOnce(
     text,
     Date.now() - began,
   );
-  if (failure === null) return { body };
+  if (failure === null) return answerOf(body);
   return errorsFailure(body, failure) ?? errorOf(failure);
 }
 

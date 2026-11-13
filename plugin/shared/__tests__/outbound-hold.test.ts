@@ -105,6 +105,37 @@ describe("guarded", () => {
     expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({});
   });
 
+  it("stops a request waiting for the probe when its signal aborts, and sends nothing", async () => {
+    const path = holdFile();
+    holdUnanswered(path);
+    await system([DOWN]).call();
+    holdUnanswered(path);
+    const gate = Promise.withResolvers<void>();
+    let sent = 0;
+    const send = async () => {
+      sent++;
+      await gate.promise;
+      return null;
+    };
+    const ask = (signal?: AbortSignal) =>
+      guarded(
+        "forge",
+        send,
+        (a: OutboundFailure | null) => a,
+        (held) => held,
+        signal,
+      );
+    const probe = ask();
+    const controller = new AbortController();
+    const waiting = ask(controller.signal);
+    await Bun.sleep(0);
+    controller.abort(new Error("deadline"));
+    await expect(waiting).rejects.toThrow("deadline");
+    gate.resolve();
+    await probe;
+    expect(sent).toBe(1);
+  });
+
   it("holds the system for the run again when its probe is not answered", async () => {
     const path = holdFile();
     holdUnanswered(path);
