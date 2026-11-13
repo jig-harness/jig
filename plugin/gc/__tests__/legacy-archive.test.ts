@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
  * marking began, a copy verified against its source within a size bound,
  * and the archive's expiry with the receipts.
  */
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, spyOn, test } from "bun:test";
 import {
   cpSync,
   existsSync,
@@ -17,6 +17,7 @@ import {
   readdirSync,
   renameSync,
   symlinkSync,
+  truncateSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
@@ -170,6 +171,39 @@ describe("the one-time archive", () => {
       ok: false,
       failure: { code: "timed-out" },
     });
+  });
+
+  test("an oversized file is rejected without being read whole", () => {
+    const root = worktree();
+    const paths = [...PATHS, ".context/sparse.bin"];
+    const sparse = join(root, ".context", "sparse.bin");
+    writeFileSync(sparse, "");
+    truncateSync(sparse, 1 << 30);
+    const before = process.memoryUsage().arrayBuffers;
+    expect(
+      fingerprint(root, paths, Date.now() + 30_000, 64 * 1024),
+    ).toMatchObject({ ok: false, failure: { code: "oversized" } });
+    // A whole-file read would hold the 1 GiB; a bounded one holds a chunk.
+    expect(process.memoryUsage().arrayBuffers - before).toBeLessThan(16 << 20);
+  });
+
+  test("the deadline is checked between the chunks of one file", () => {
+    const root = worktree();
+    const paths = [...PATHS, ".context/big.bin"];
+    writeFileSync(
+      join(root, ".context", "big.bin"),
+      Buffer.alloc(300 * 1024, 7),
+    );
+    let calls = 0;
+    const now = spyOn(Date, "now").mockImplementation(() => 1000 * calls++);
+    try {
+      expect(fingerprint(root, paths, 5000, 1 << 20)).toMatchObject({
+        ok: false,
+        failure: { code: "timed-out" },
+      });
+    } finally {
+      now.mockRestore();
+    }
   });
 
   describe("verification refuses a copy or a worktree that no longer matches", () => {

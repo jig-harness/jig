@@ -199,7 +199,9 @@ export function fingerprint(
       entries.set(relative, `link ${target}`);
     } else if (stat.isDirectory()) {
       entries.set(relative, "dir");
-      for (const child of readdirSync(path).sort()) {
+      for (const child of readdirSync(path).sort((a, b) =>
+        a.localeCompare(b),
+      )) {
         const nested = visit(join(relative, child));
         if (nested !== "ok") return nested;
       }
@@ -412,12 +414,12 @@ export function archivePaths(root: string): string[] {
         /^\d{4}-\d{2}-\d{2}$/.test(day) &&
         lstatSync(join(base, day)).isDirectory(),
     )
-    .sort()
+    .sort((a, b) => a.localeCompare(b))
     .flatMap((day) =>
       readdirSync(join(base, day), { withFileTypes: true })
         .filter((entry) => entry.isDirectory())
         .map((entry) => join(base, day, entry.name))
-        .sort(),
+        .sort((a, b) => a.localeCompare(b)),
     );
 }
 /**
