@@ -236,8 +236,9 @@ with a click. Its `/jig` commands ask where an item or a pull request
 stands and what waits on a person, and tell the line to pick an item up,
 hold or stop. The bridge connects out to the chat and opens no route
 into any machine. On the [hub](GLOSSARY.md) it posts under an identity of
-its own that names the person who clicked. An answer from the chat is then
-never mistaken for one an agent wrote. Merging stays a person's act on the
+its own that names the person who clicked. Where the hub runs on a machine
+that runs no pass, an answer from the chat is never mistaken for an
+agent's. On a machine that does run passes, the two look alike. Merging stays a person's act on the
 forge.
 
 ### 26. `init`: setting a repository up for Jig

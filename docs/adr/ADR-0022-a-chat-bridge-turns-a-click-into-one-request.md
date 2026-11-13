@@ -124,8 +124,8 @@ is a bounded request whose failure is a value.
   plugin.
 - A chat app per team, and on the hub a forge app, each with credentials
   to keep.
-- One chat app has one placement: a host that enrolls in a hub with a chat
-  stops its own bridge, or uses an app of its own.
+- One chat app has one placement: a host that enrolls in a hub stops its
+  own bridge.
 - On a host, the chat's tokens are as reachable by a pass as the host's
   other credentials, and every chat user the host maps can act as the
   host's login, where before only someone with a shell on the host could;

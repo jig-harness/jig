@@ -41,7 +41,7 @@ changes nothing the line does.
 
 ## How it works
 
-### Three tiers, each whole without the next
+### Tiers, each whole without the next
 
 | Tier | What runs | What a person gets |
 | --- | --- | --- |
@@ -118,8 +118,14 @@ settles by itself:
 
 ### One thread per piece of work
 
-A piece of work gets one top-level message in its channel, the first time
-anything about it is posted, and every later notice about it is a reply in
+A piece of work is one item and the pull request that delivers it. Its
+identity is the item's key where it has one, and the pull request's number
+where it has none; when a pickup's pull request opens, the pull request's
+link to the item joins the two, and the thread opened under the item's key
+carries on under the pull request. Station addresses
+([addresses.md](addresses.md)) identify individual requests, never the
+thread. A piece of work gets one top-level message in its channel, the
+first time anything about it is posted, and every later notice about it is a reply in
 that thread. The top-level message says where the work stands now, in the
 board's own columns ([dispatch-board.md](dispatch-board.md)): coming,
 picking up, driven, needs you, ready to merge, merged. The tick edits it
@@ -135,8 +141,14 @@ author where a person typed it; any other cause reads settled. A question
 left showing after it was answered is the failure this prevents.
 
 The thread's identity (the channel and the message ids of the top-level
-message and of each reply, keyed by the address and the notice key) is a
-`chat-thread` record in the posting host's state database. When an
+message and of each reply, keyed by the work's identity and the notice key)
+is a `chat-thread` record in the posting host's state database. Each
+message carries its notice key in a metadata field Slack stores with it,
+and a post is written to the record as pending first. A retry after a lost
+response reads the channel's recent history for that key, adopts the
+message found and its id, and posts only when none carries it, as
+`actions/notify.ts` recognizes a cause already on its destination before
+resending. When an
 enrolled host's owner lease moves to another host, the new owner reads the
 thread records back from the hub's copies of the old owner's reports
 ([control-plane.md § Build order](control-plane.md#build-order), its third
@@ -172,33 +184,44 @@ machine gains a route from outside
 
 The **chat bridge** is one resident process. For each interaction it:
 
-1. checks the event is from the configured workspace (its team and, on an
-   enterprise workspace, its enterprise) and the configured app, and that
-   the chat user who made it is a member of that workspace, not a guest or
-   a member of another workspace sharing the channel;
-2. checks the chat user is mapped or linked to a forge login, and for a
-   write that the login may write to the target repository, read from the
-   forge's permission for that login; an unmapped user, or a login without
-   that permission, gets a private reply saying why, and nothing is
-   written;
-3. acknowledges at once, since Slack waits only three seconds and delivers
-   an interaction again when it is not acknowledged in time;
-4. runs the one request the interaction names, through `jig send`'s
+1. checks the connection and the envelope: the event is from the
+   configured workspace (the team and, on an enterprise workspace, the
+   enterprise the setup pinned) and the configured app;
+2. acknowledges at once, since Slack waits only three seconds and delivers
+   an interaction again when it is not acknowledged in time, and admits the
+   interaction durably as `pending` under its id. The acknowledgement
+   means received, never authorized;
+3. checks the chat user who made it is a member of the workspace, not a
+   guest or a member of another workspace sharing the channel, and is
+   mapped or linked to a forge login;
+4. checks the login may read the target repository for a read and write to
+   it for a write, from the forge's permission for that login. A read
+   command filters what it shows to the repositories the login may read
+   before rendering, and refuses an explicit target it may not read. An
+   unmapped user, or a login without the permission, gets a private reply
+   saying why, and nothing is shown or written;
+5. runs the one request the interaction names, through `jig send`'s
    writers and with its checks: `answer <key> --choose <option> --decision
-   <digest>` for a button, `answer <key> <text>` for a form's words, the
-   command's verb for a command;
-5. edits the message, or replies privately, with what the request wrote or
-   why it was refused.
+   <digest>` for a button, the framing-bound words writer for a form, the
+   command's verb for a command, each carrying the interaction's id as a
+   request id that the write records beside it;
+6. edits the message, or replies privately, with what the request wrote or
+   why it was refused, and marks the interaction `done`.
 
 A request the send refuses changes nothing: a button whose decision was
 reframed since it was posted fails the digest check, and the bridge
-replies with the new framing's options. The bridge keeps the ids of the
-interactions it has handled, for an hour, so an interaction Slack delivers
-twice is run once; it keeps no other state, starts no session and is read
+replies with the new framing's options. An interaction is run once: the bridge
+keeps each id with its state, `pending` or `done`, for an hour. A
+`pending` id met again, after a crash or a second delivery, is first looked
+up in the write's destination for a record carrying its request id: found,
+it is marked `done` and its result reported; not found, it is run. So a
+write accepted by the forge and lost from the bridge's memory is never
+written twice, and an admitted interaction is never lost. The bridge
+keeps no other state, starts no session and is read
 by nothing the line runs. Stopping it removes the buttons and the
 commands, and the line goes on.
 
-### Two placements
+### Placements
 
 The bridge runs where the team runs it, as one process in either place:
 
@@ -213,9 +236,9 @@ The bridge runs where the team runs it, as one process in either place:
 One Slack app has one placement. Slack hands each interaction to one of an
 app's open connections, not to all of them, so a host's bridge and its
 hub's bridge on one app would each see some of the clicks. A host that
-enrolls in a hub whose bridge uses the same Slack app (the app id the two
-configurations name) stops its own bridge at the next tick and says so in
-its receipt. A host with an app of its own keeps its bridge.
+enrolls in a hub stops its own bridge at the next tick and says so in its
+receipt, whichever Slack app either names: a host bridge runs only while
+its host is not enrolled, so installation and enrollment cannot disagree.
 
 Both placements post notices the same way: the owner host's tick, with the
 app's bot token (above). The bot token posts and edits messages; the app
@@ -286,8 +309,13 @@ The readers of each record decide whether it counts, not the bridge:
 ### Buttons
 
 Every option of a framed decision is a button, the recommended one first,
-each carrying the address, the key, the digest and the option, never the
-answer's text. Which decisions get buttons, and which take two steps,
+each carrying the address, the key, the digest, the park's occurrence (the
+time it was parked, which the digest, a hash of the wording, does not
+carry) and the option, never the answer's text. A confirmation carries the
+same fields, and the occurrence is checked again immediately before the
+write, so a message or an open confirmation from an earlier park of the
+same wording is refused, as structured answers drops a pick when the same
+wording is parked again. Which decisions get buttons, and which take two steps,
 follows the guard structured answers sets for every surface
 ([structured-answers.md § Picking an answer](structured-answers.md#picking-an-answer)):
 
@@ -304,9 +332,17 @@ follows the guard structured answers sets for every surface
   passes' login. Their message carries the copy lines and the link.
 - No button sends several answers: there is no "approve all".
 
-Each decision also has an **Answer in words** button, which opens a form
-for one line of text and sends it as `answer <key> <text>`, under `jig
-send`'s limits on an answer's text (one line, a length cap, no control
+Each decision whose writer accepts words, and whose class the placement may
+answer (never an attested class a placement offers no buttons for), also
+has an **Answer in words** button. A station decision that the tick carries
+out as a named option (a follow-up, a pickup) has none, since the writer
+refuses a free answer there. The button opens a form for one line of text
+that carries the digest and the park's occurrence, and a framing-bound
+writer (a `--decision` and occurrence on a free answer, which `jig send`'s
+free answer does not take today) refuses the text when the park has been
+reframed since the form opened, so the words always answer the question the
+person saw. Both the button and the submission check the class, and the
+text keeps `jig send`'s limits on an answer's text (one line, a length cap, no control
 characters, no hidden marker). Words the readers would count as a choice
 (`approve`, `choose Keep`) are refused and pointed to the buttons, as `jig
 send` refuses them typed as free text. A reply typed in the thread is
@@ -373,7 +409,9 @@ never in Jig.
 ```yaml
 chat:
   slack:
-    app: A0123456789              # the Slack app id, for the one-placement rule
+    app: A0123456789              # the Slack app id the bridge checks
+    team: T0123456789             # the workspace whose events count
+    enterprise: E0123456789       # only on an enterprise workspace
     channel: C0123456789          # the default channel
     repositories:
       example-org/web: C0234567890
@@ -414,10 +452,10 @@ Each is registered in `plugin/shared/records/registry.ts` and listed in
   keyed by address and notice key, and reported to the hub where the host
   is enrolled;
 - `chat-handled`, on the bridge's machine: the ids of the interactions it
-  ran, each kept an hour;
+  admitted, each with its state (`pending` or `done`), kept an hour;
 - `chat-link`, on the hub: a chat user and the forge login they linked;
 - `chat-request`, on the forge or the tracker beside the write it explains:
-  the verb, the chat user, the linked login, the time;
+  the verb, the chat user, the linked login, the request id, the time;
 - `drive-answer` gains `via` and the chat user as payload fields, under
   version 1.
 
@@ -429,7 +467,9 @@ messages, direct messages, the `/jig` command, reading the workspace's
 members for the membership check, and link unfurling. A team creates the
 app from it, installs it to their workspace, and gives Jig its tokens:
 `jig chat setup slack` stores the bot token on each host that posts and
-the app token where the bridge runs, and posts a test message to each
+the app token where the bridge runs, pins the team and enterprise from the
+installation's authenticated metadata (refusing a configuration that names
+others), and posts a test message to each
 channel the configuration names. `jig chat doctor` checks the tokens, the
 channels and who can read them, that one placement holds the app, and for
 the hub's bridge the forge app's installation on each repository that
@@ -484,7 +524,9 @@ One pull request per step, each shippable alone:
    `/jig link`; `chat.bridges` in `trusted-authors.ts` and in the
    served-person check, with the permission lookup; the forge and tracker
    verbs; a host's bridge standing down. Waits on the hub's first stage
-   (item 49). Done when an answer clicked in a chat whose bridge runs on
+   (item 49), and offers drive parks only: the station decisions' writers
+   need the dispatching machine's newest line, which the hub reads from
+   hosts at its third stage, so their buttons wait for step 7. Done when an answer clicked in a chat whose bridge runs on
    the hub is read by the host's re-arm as the linked person's, and a
    linked person without write access is refused.
 7. **Across hosts.** The read commands from the hub's view of every host,
