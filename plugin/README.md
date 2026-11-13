@@ -524,7 +524,7 @@ the steward's resume of one), the tick asks, headless, whether each account
 it could bill reaches the repository's tracker: it reads the tracker through
 the same port a pass uses, in the repository's checkout and the environment a
 pass on that account runs in, once per tick for each account and tracker
-(`preflight` in [the machine's dispatch file](CONFIGURATION.md#the-machines-dispatch-file)).
+([preflight](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md#preflight) in [the machine's dispatch file](CONFIGURATION.md#the-machines-dispatch-file)).
 An account the tracker refuses, or whose read gives no answer within the
 probe's deadline (an operating system keychain waiting for an approval, a
 lapsed connection), takes none of those launches that tick: the launch goes

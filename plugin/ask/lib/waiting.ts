@@ -14,6 +14,7 @@ import type {
 import { readLine } from "../../dispatch/lib/line-store.ts";
 import { ANSWER_VERSION, type PersonAct } from "./answer.ts";
 import { actOfLineNeed, type NeedAct } from "../../shared/acts.ts";
+import { HOST_NEED_REPO } from "../../dispatch/lib/preflight.ts";
 
 /** The act that settles each cause the tick finds waiting on a person. */
 const ACTS: Record<NeedCause, PersonAct> = {
@@ -38,7 +39,9 @@ export function personAct(cause: NeedCause): PersonAct {
 /** One address that waits on a person. */
 export interface WaitingEntry {
   people: string[];
-  address: string;
+  /** A station address, or a host-wide target that has no station address. */
+  address: string | null;
+  target: string;
   act: PersonAct;
   /** What the person does about it, as the dashboard's card names it (`shared/acts.ts`). */
   needAct: NeedAct;
@@ -70,8 +73,26 @@ function stationOf(need: LineNeed): Station {
   return "drive";
 }
 
-/** A need as an address, or `null` for one keyed by neither a pull request nor an item. */
+/** A need as an address, or the host target for a host-wide need. */
 function entryOf(need: LineNeed): WaitingEntry | null {
+  if (need.repo === HOST_NEED_REPO) {
+    return {
+      address: null,
+      target: need.target,
+      people: uniqueLogins(
+        need.decisions.flatMap((d) =>
+          d.person === undefined ? [] : [d.person],
+        ),
+      ),
+      act: personAct(need.cause),
+      needAct: actOfLineNeed(need),
+      since: need.since,
+      reason: need.reason,
+      url: need.url,
+      title: need.title,
+      questions: [],
+    };
+  }
   const station = stationOf(need);
   const key =
     station === "pickup"
@@ -82,6 +103,7 @@ function entryOf(need: LineNeed): WaitingEntry | null {
   if (key === null) return null;
   return {
     address: formatAddress({ station, repo: need.repo, key }),
+    target: need.target,
     people: uniqueLogins(
       need.decisions.flatMap((d) => (d.person === undefined ? [] : [d.person])),
     ),

@@ -82,6 +82,9 @@ const TRACKER_STAGES: ReadonlySet<string> = new Set<Stage>([
   "pickup",
 ]);
 
+/** The maximum number of credential helper processes a tracker preflight starts at once. */
+const TRACKER_PROBE_CONCURRENCY = 4;
+
 /** One repository's tracker, as the probe opens it. */
 export interface TrackerTarget {
   slug: string;
@@ -133,8 +136,9 @@ export function checksStage(preflight: Preflight, stage: string): boolean {
 /**
  * The accounts among `accounts` whose tracker answer failed for the
  * repository `slug`, each with the answer, for a launch of `stage`; each
- * account asked at most once per tick and tracker, the accounts not yet
- * asked side by side. A repository with no tracker registered holds none.
+ * account asked at most once per tick and tracker, with at most
+ * `TRACKER_PROBE_CONCURRENCY` new probes running at once. A repository with
+ * no tracker registered holds none.
  */
 export async function heldAccounts(
   preflight: Preflight,
@@ -146,16 +150,26 @@ export async function heldAccounts(
   const held = new Map<string, string>();
   const target = preflight.targets.get(slug);
   if (target === undefined || !checksStage(preflight, stage)) return held;
-  const answers = await Promise.all(
-    accounts.map(async (account) => {
+  const answers: Array<readonly [string, TrackerAnswer]> = [];
+  let next = 0;
+  const worker = async () => {
+    while (next < accounts.length) {
+      const account = accounts[next++];
+      if (account === undefined) continue;
       const key = `${account.name}\u0000${target.tracker}`;
       let answer = preflight.answers.get(key);
       if (answer === undefined) {
         answer = preflight.probe(account, target, timeoutSec);
         preflight.answers.set(key, answer);
       }
-      return [account.name, await answer] as const;
-    }),
+      answers.push([account.name, await answer] as const);
+    }
+  };
+  await Promise.all(
+    Array.from(
+      { length: Math.min(TRACKER_PROBE_CONCURRENCY, accounts.length) },
+      worker,
+    ),
   );
   for (const [name, answer] of answers) {
     if (answer.ok || answer.kind !== "unreachable") continue;

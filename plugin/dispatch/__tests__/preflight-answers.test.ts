@@ -15,6 +15,7 @@ import type { LineNeed } from "../lib/dashboard-contract.ts";
 import { parseMachineConfigText } from "../lib/machine-config.ts";
 import {
   HOST_NEED_REPO,
+  heldAccounts,
   newPreflight,
   preflightNeeds,
 } from "../lib/preflight.ts";
@@ -199,4 +200,32 @@ describe("a launch the tick has no time left to ask for", () => {
     });
     expect(asked).toBe(0);
   });
+});
+
+it("bounds new tracker probes while retaining each account's answer", async () => {
+  let running = 0;
+  let peak = 0;
+  const preflight = newPreflight({ preflight: ["tracker"] }, async () => {
+    running += 1;
+    peak = Math.max(peak, running);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    running -= 1;
+    return { ok: true };
+  });
+  preflight.targets.set("example-org/web", {
+    slug: "example-org/web",
+    path: process.cwd(),
+    tracker: "github:example-org/web",
+    values: {},
+    report: report("example-org/web", []),
+  });
+  const accounts = Array.from(
+    { length: 6 },
+    (_, i) => ({ name: `account-${i}` }) as never,
+  );
+
+  await heldAccounts(preflight, "example-org/web", "followup", accounts, 30);
+
+  expect(peak).toBe(4);
+  expect(preflight.answers.size).toBe(6);
 });
