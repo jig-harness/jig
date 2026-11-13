@@ -145,6 +145,54 @@ describe("lastTick", () => {
   });
 });
 
+describe("lastTick's receipts that do not read", () => {
+  const badRows = [
+    ["unplaced", { unplaced: [null] }],
+    ["records", { records: [null] }],
+  ] as const;
+
+  for (const [name, patch] of badRows) {
+    it(`is unknown, not an older success, when the newest receipt's ${name} rows are not objects`, () => {
+      const dir = root();
+      writeReceipt(tickAt("2026-01-01T09:00:00Z", 0), dir);
+      const failed = tickAt("2026-01-01T10:00:00Z", 1, "failed");
+      const entry = {
+        ...receipt("2026-01-01", "/a", "2026-01-01T10:00:00Z").repos[0],
+        ...patch,
+      };
+      writeReceipt(
+        { ...failed, repos: [entry] } as unknown as TickReceipt,
+        dir,
+      );
+      expect(lastTick(dir)).toMatchObject({ exitStatus: 1, unread: 1 });
+    });
+  }
+
+  it("caps the failed run at a receipt that does not read", () => {
+    const dir = root();
+    writeReceipt(tickAt("2026-01-01T08:00:00Z", 0), dir);
+    const bad = { ...tickAt("2026-01-01T09:00:00Z", 1), repos: [null] };
+    writeReceipt(bad as unknown as TickReceipt, dir);
+    writeReceipt(tickAt("2026-01-01T10:00:00Z", 1, "failed"), dir);
+    expect(lastTick(dir)?.failing).toMatchObject({ runs: 1, capped: true });
+  });
+
+  it("is not capped when the budget ends exactly at the oldest receipt", () => {
+    const dir = root();
+    for (let i = 0; i < 98; i++)
+      writeReceipt(
+        {
+          ...tickAt(new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString(), 0),
+          lockHeldBy: "other-tick",
+        },
+        dir,
+      );
+    writeReceipt(tickAt("2026-01-01T02:00:00Z", 1), dir);
+    writeReceipt(tickAt("2026-01-01T02:01:00Z", 1), dir);
+    expect(lastTick(dir)?.failing).toMatchObject({ runs: 2, capped: false });
+  });
+});
+
 describe("lastTick's read budget", () => {
   it("spends a read on every held receipt, so a backlog of them is no unbounded scan", () => {
     const dir = root();
