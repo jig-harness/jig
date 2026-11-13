@@ -43,6 +43,7 @@
  * send: true
  * change_probe: true
  * tracker_share: 0.5
+ * preflight: [tracker]   # the checks run on each account before a tracker stage: preflight-config.ts
  * load:
  *   enforce: false          # the gauges' lines and reservations: load-config.ts
  * ```
@@ -62,6 +63,7 @@ import { FRONT_RULES, shownFront } from "./dashboard-front.ts";
 import { FAILURE_DEFAULTS, type FailureSettings } from "./failures.ts";
 import { isLoopback, type Listen, parseListen } from "./listen.ts";
 import { type LoadSettings, loadSettings } from "./load-config.ts";
+import { type PreflightProbe, preflightSetting } from "./preflight-config.ts";
 import { type ServedPerson, servedPeople } from "./serve-config.ts";
 import { isoFromMs, parseMs } from "../../shared/time.ts";
 
@@ -157,6 +159,8 @@ export interface MachineConfig {
   load: LoadSettings;
   /** The share of each tracker credential's rate-limit window the tick's own reads may use (`tracker_share`); `DEFAULT_DISPATCHER_SHARE` when absent. */
   trackerShare?: number;
+  /** The checks the tick runs on each account before a stage that needs them (`preflight`); `[tracker]` when absent. */
+  preflight?: PreflightProbe[];
 }
 
 const DEFAULTS = {
@@ -194,6 +198,7 @@ const TOP_KEYS = [
   "change_probe",
   "load",
   "tracker_share",
+  "preflight",
 ];
 const DASHBOARD_KEYS = ["listen", "require_token", "allowed_hosts", "front"];
 const FAILURES_KEYS = ["backoff", "backoff_max", "notify_after"];
@@ -603,10 +608,10 @@ function parseValues(values: unknown, where: string): Checked<MachineConfig> {
   if (!host.ok) return host;
   const steward = stewardSettings(top.steward);
   if (!steward.ok) return steward;
-  const trackerShare = share(top.tracker_share, "tracker_share");
-  if (!trackerShare.ok) return trackerShare;
+  const tracker = trackerSettings(top);
+  if (!tracker.ok) return tracker;
   return ok({
-    trackerShare: trackerShare.value,
+    ...tracker.value,
     path: where,
     serve: serve.value,
     serveDefaults: defaults.value,
@@ -617,6 +622,17 @@ function parseValues(values: unknown, where: string): Checked<MachineConfig> {
     load: host.value,
     steward: steward.value,
   });
+}
+
+/** The tracker's share of each credential's budget, and the checks run on each account before a tracker stage. */
+function trackerSettings(
+  top: Record<string, unknown>,
+): Checked<Pick<MachineConfig, "trackerShare" | "preflight">> {
+  const trackerShare = share(top.tracker_share, "tracker_share");
+  if (!trackerShare.ok) return trackerShare;
+  const preflight = preflightSetting(top.preflight);
+  if (!preflight.ok) return preflight;
+  return ok({ trackerShare: trackerShare.value, preflight: preflight.value });
 }
 
 function stewardSettings(

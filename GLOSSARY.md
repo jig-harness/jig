@@ -9,6 +9,10 @@ make, use the entry's term instead.
 
 ## Core ideas
 
+- **Preflight** — a small check that runs before a stage starts, to prove a
+  condition the stage needs. For example, the dispatcher checks whether an
+  account can reach a tracker before launching work that must use it.
+
 - **AI-native delivery** — building and maintaining software with AI coding
   agents as first-class participants: the repo is organized so agents can find
   the rules, run the checks, and improve the process — not just emit code.
@@ -568,6 +572,24 @@ make, use the entry's term instead.
   them or whose after-measurement is past its due date.
 
 ## Process
+
+- **Topic coordination** — the stage before pickup where a person brings
+  several linked ideas without a single work item, and `/jig:orchestrate`
+  turns them into recorded decisions, a reviewed plan and started issues.
+  Its coordinating session stays with the person and delegates investigation,
+  plan maintenance and filing. It does no implementation. Unlike an
+  *operator*, it shapes work before the line; unlike a *steward*, it does
+  not inspect the dispatcher's stopped work or propose recoveries.
+- **Track** — one related strand of a loosely bounded topic, investigated
+  separately during *topic coordination* before the person decides how the
+  strands fit together.
+- **Survey** — a read-only investigation of one *track* in a fresh session,
+  with a bounded return, opened-file evidence, existing positions quoted,
+  evidence against the idea and uncertainty made explicit.
+- **Plan keeper** — the separate session maintaining the reviewed plan
+  during *topic coordination*. It receives answers, issue numbers and
+  demotions from the coordinating session, keeping plan-tool mechanics out
+  of the person's discussion.
 
 - **Cause fingerprint** — a stable identity for one cause of a scheduled
   failure, built from the check or prerequisite, its scope and a normalized
@@ -2389,6 +2411,14 @@ make, use the entry's term instead.
   one database that enrolled hosts call. Optional: a host that never
   enrolls, or whose hub does not answer, dispatches alone. See
   [design/control-plane.md](design/control-plane.md).
+- **Notification channel** — one way the *dispatcher*'s notices reach a
+  person: a workspace card in Orca, a team's chat. The tick sends each
+  notice through every channel a machine enables and keeps a record per
+  channel of what was delivered ([design/chat.md](design/chat.md)).
+- **Chat bridge** — the one process that turns a person's click or command
+  in a team's chat into one `jig send` request. It runs inside the *hub* or
+  on a host that is not enrolled, connects out to the chat tool and listens
+  on no socket ([design/chat.md](design/chat.md)).
 - **Device grant** — how a host enrolls in a *hub*: the host prints a short
   code, a person who administers the hub approves it, and the host receives a
   credential of its own, bound to the repositories and queues that person

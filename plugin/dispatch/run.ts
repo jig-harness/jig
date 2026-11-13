@@ -34,6 +34,14 @@
  * `null` (`lib/quota-probe.ts`); the tick runs it in the session's
  * account's environment.
  *
+ *   bun … run.ts tracker <slug> <deadline-ms>
+ *
+ * prints, as JSON, whether the repository's tracker answers in this
+ * process's environment and working directory, opened from the
+ * configuration on its input (`lib/tracker-probe.ts`); the tick runs it in
+ * an account's environment and the repository's checkout before a stage
+ * that touches the tracker (`lib/preflight.ts`).
+ *
  * A follow-up's record starts a headless pass instead: its vendor's
  * non-interactive command (`claude -p`, `codex exec`) on the repository's
  * follow-up command and the pull request (`lib/session.ts`), bound to its
@@ -691,6 +699,37 @@ async function closeTabIfDone(
   }
 }
 
+/** `run.ts tracker <slug> <deadline-ms>`: the tracker preflight's answer, the configuration read from the input. */
+async function trackerMain(slug: string, deadline: string): Promise<number> {
+  const deadlineMs = Number(deadline);
+  if (!Number.isSafeInteger(deadlineMs) || deadlineMs < 1) {
+    console.error(
+      `jig dispatch run: ${deadline} is not a deadline in milliseconds`,
+    );
+    return 2;
+  }
+  // Loaded only here: the wrapper itself never opens a tracker.
+  const { answerText, reachTracker } = await import("./lib/tracker-probe.ts");
+  let values: unknown;
+  try {
+    values = JSON.parse(await Bun.stdin.text());
+  } catch (error) {
+    // The tick's own handing over failed: that says nothing of the account's credential.
+    console.log(
+      JSON.stringify({
+        ok: false,
+        kind: "config",
+        reason: `the configuration on the input did not read: ${answerText(error)}`,
+      }),
+    );
+    return 0;
+  }
+  console.log(
+    JSON.stringify(await reachTracker(values, slug, process.cwd(), deadlineMs)),
+  );
+  return 0;
+}
+
 /** The wrapper's command line; `jig dispatch run` reaches it too. */
 export async function runMain(argv: string[]): Promise<number> {
   if (argv[0] === "identity" && argv.length === 2) {
@@ -710,9 +749,11 @@ export async function runMain(argv: string[]): Promise<number> {
     );
     return 0;
   }
+  if (argv[0] === "tracker" && argv.length === 3)
+    return trackerMain(argv[1] as string, argv[2] as string);
   if (argv.length !== 2) {
     console.error(
-      "usage: run.ts <record> <token> | run.ts identity claude|codex | run.ts quota <session-id> <cwd> <since>",
+      "usage: run.ts <record> <token> | run.ts identity claude|codex | run.ts quota <session-id> <cwd> <since> | run.ts tracker <slug> <deadline-ms>",
     );
     return 2;
   }

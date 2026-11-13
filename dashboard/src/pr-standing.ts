@@ -54,6 +54,7 @@ const NEED_LABEL: Record<LineNeed["cause"], string> = {
   "pickup-question": "Pickup stopped on a question",
   "double-claim": "Claimed twice",
   "assigner-cannot-write": "Assigned by someone who cannot write",
+  "tracker-unreachable": "An account cannot reach the tracker",
 };
 
 const KIND_TONE: Record<StandingKind, StandingTone> = {

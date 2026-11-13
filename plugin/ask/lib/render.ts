@@ -132,7 +132,7 @@ export function renderWaiting(w: WaitingAnswer): string {
     head,
     ...w.waiting.flatMap((e) => [
       printable(
-        `  ${e.address}  ${e.act} · ${e.needAct}${e.people.length ? ` [${e.people.join(", ")}]` : ""}  since ${e.since}${e.title === null ? "" : `  ${e.title}`}`,
+        `  ${e.address ?? `host: ${e.target}`}  ${e.act} · ${e.needAct}${e.people.length ? ` [${e.people.join(", ")}]` : ""}  since ${e.since}${e.title === null ? "" : `  ${e.title}`}`,
       ),
       printable(`    ${e.reason}`),
       ...e.questions.map((q) => printable(`    question: ${q}`)),

@@ -188,10 +188,10 @@ from Orca's command line once Orca offers it. The plugin is Orca-bound.
 ## Next
 
 Next comes delegated merge, once an agent cannot push or merge by any other
-path. Then come what lets a second team adopt Jig, one control plane for a
-team on several machines, and one trusted statement of what Jig writes.
-Then come work that arrives complete, and reviews that catch what checks
-cannot. Last come the practices
+path. Then come what lets a second team adopt Jig: one control plane for a
+team on several machines and one trusted statement of what Jig writes. The
+line comes to a team's chat with the control plane. Then come work that arrives complete, and reviews that
+catch what checks cannot. Last come the practices
 the modules and skills lack, measurement, the developer machine and its
 runtimes, and the runs that wait on a person.
 
@@ -245,6 +245,24 @@ out of date. Each says whether its contract is stable or still moving.
 The shapes a program parses come with JSON Schemas, so a dashboard, a
 workspace app or another agent harness can read Jig's records without
 reading its code.
+
+### 54. The line in a team's chat
+
+The dispatcher posts to the team's chat. Slack comes first, and other chat
+tools fit behind the same seams. A pull request ready to merge arrives with
+its link, a decision with its options, and each stop only a person can
+settle. Each piece of work gets one thread, kept current when the work
+moves on or a person answers elsewhere, and a digest arrives once a day.
+
+A team that also runs the [chat bridge](GLOSSARY.md) answers a decision
+with a click. Its `/jig` commands ask where an item or a pull request
+stands and what waits on a person, and tell the line to pick an item up,
+hold or stop. The bridge connects out to the chat and opens no route
+into any machine. On the [hub](GLOSSARY.md) it posts under an identity of
+its own that names the person who clicked. Where the hub runs on a machine
+that runs no pass, an answer from the chat is never mistaken for an
+agent's. On a machine that does run passes, the two look alike. Merging stays a person's act on the
+forge.
 
 ### 26. `init`: setting a repository up for Jig
 

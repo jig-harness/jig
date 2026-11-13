@@ -32,6 +32,7 @@ import {
 export { decisionOf } from "./line-decision.ts";
 import { holds, targetOf } from "./launches.ts";
 import { isFailureCause } from "./failure-notices.ts";
+import { preflightNeeds } from "./preflight.ts";
 import { boardUnread, readyOf } from "./line-ready.ts";
 import { needWorkspace } from "./line-workspace.ts";
 import type { MachineConfig } from "./machine-config.ts";
@@ -800,9 +801,17 @@ export function buildLine(input: LineInput): LineSnapshot {
         );
       })
       .filter((s): s is LineSession => s !== null),
-    needs: views.flatMap((v) =>
-      needsOf(v, input.finishedAt, input.previousNeeds ?? []),
-    ),
+    needs: [
+      ...views.flatMap((v) =>
+        needsOf(v, input.finishedAt, input.previousNeeds ?? []),
+      ),
+      // An account's held tracker stages are one need of the host's, whatever repositories it holds.
+      ...preflightNeeds(
+        input.reports,
+        input.previousNeeds ?? [],
+        input.finishedAt,
+      ),
+    ],
     queue: views.flatMap(queueOf),
     ready: readyOf(input.reports).map((r) => ({
       ...r,
