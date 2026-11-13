@@ -14,6 +14,7 @@
     "issue-tracker"
   ],
   "skills": "./skills/",
+  "hooks": "./hooks/codex-hooks.json",
   "interface": {
     "displayName": "Jig",
     "shortDescription": "Shared agent skills for pull request and issue work",

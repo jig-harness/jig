@@ -2090,12 +2090,32 @@ them together.
 - **Skills** work in Codex as in Claude Code. Codex does not fill in
   `${CLAUDE_SKILL_DIR}`; each `SKILL.md` tells the agent to substitute the
   skill's own directory.
-- **The turn-budget hook runs once trusted.** Codex reads the plugin's
-  `hooks/hooks.json` but skips a plugin's hooks until their current
-  definition is trusted (`/hooks`), and asks again when a release changes
-  them. The guard counts distinct response ids from Codex token usage
-  records, resets at each task-start event, and warns near the configured
-  budget. The warning does not impose a runtime turn cap.
+- **The turn-budget hook is registered in Codex's own `hooks.json`.** Codex
+  skips a plugin's hooks until their current definition and the plugin's
+  contents are trusted (`/hooks`), and asks again whenever a release changes
+  any file of the plugin, so the Codex plugin ships none
+  (`.codex-plugin/plugin.json` names an empty hooks file). `jig upgrade`
+  registers the guard in `$CODEX_HOME/hooks.json` (`~/.codex` by default)
+  instead, as one `PreToolUse` entry whose command never changes: it runs
+  `~/.local/state/jig/hooks/codex-turn-budget-guard.ts`, which runs the guard
+  of the installed plugin copy. Codex trusts a hook there by its definition
+  alone, so approve it once with `/hooks` and every later release keeps that
+  approval. Another Codex home (an account's own) gets the entry when
+  `jig upgrade --codex` runs with `CODEX_HOME` set to it, and a host that
+  rewrites that file loses the entry until the next upgrade writes it again.
+  `jig uninstall --machine --yes` removes the entry and the shim. The guard
+  counts distinct response ids from Codex token usage records, resets at each
+  task-start event, and warns near the configured budget. The warning does not
+  impose a runtime turn cap.
+- **An unattended Codex pass skips hooks nobody approved.** Codex runs only
+  trusted hooks, and a headless `codex exec` cannot ask. Approve the guard once
+  per Codex home before the first unattended pass (`/hooks` in an interactive
+  session of that home). Where a host cannot, and it vets the hooks that home
+  loads itself, a pass command typed by hand adds `--dangerously-bypass-hook-trust`,
+  which runs the enabled hooks without persisted trust for that one run. Jig's
+  own pass commands do not add it, and `drive.codex_bypass` does not imply it:
+  it skips Codex's review of every hook source, the user's and a repository's
+  among them.
 - **The `review-arbiter` agent is Claude Code only.** Codex plugins carry
   skills, MCP servers, apps and hooks, but not agents; Codex reads custom
   agents only from its own agent folders (`~/.codex/agents/` or a
@@ -2373,7 +2393,7 @@ plugin/skills/<name>/SKILL.md            the skills both tools load
 plugin/skills/<name>/scripts/            the scripts the skills run
 plugin/shared/                           code more than one skill's scripts import
 plugin/agents/<name>.md                  agents Claude Code loads (Codex: see Codex notes)
-plugin/hooks/hooks.json                  the agent-runtime hooks both tools register
+plugin/hooks/hooks.json                  the agent-runtime hooks Claude Code registers (Codex's is `jig upgrade`'s entry, below)
 plugin/hooks/<name>.ts                   the hook scripts, each tested in hooks/__tests__/
 ```
 
@@ -2403,7 +2423,9 @@ counts the session's agentic turns off the transcript and, within 50 turns of
 the runtime's cap of 1000, hands the agent a wrap-up instruction, so an
 unattended session writes its handoff before the runtime aborts it. It reads
 local files only, lets the call through whenever it cannot count (and says so
-as a hook error), and is off with `JIG_TURN_BUDGET=0`; its knobs are in
+as a hook error), and is off with `JIG_TURN_BUDGET=0`; Claude Code reads the
+registration from the plugin, and in Codex `jig upgrade` registers it in the
+Codex home ([Codex notes](#codex-notes)); its knobs are in
 [CONFIGURATION.md § Environment variables](CONFIGURATION.md#environment-variables)
 and the practice is [M1's rung](https://github.com/jig-harness/jig/blob/main/modules/M1-gates-enforcement-ladder/README.md#core-pieces).
 

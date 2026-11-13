@@ -35,6 +35,7 @@ import {
   or,
   string,
 } from "../shared/vendor/optique.mjs";
+import { removeCodexHook } from "./codex-hook.ts";
 import type { Component } from "./component.ts";
 import { doctorVerb } from "./doctor.ts";
 import { CHANNELS } from "./harness.ts";
@@ -425,7 +426,10 @@ export async function runVerb(
       if (code !== 0 || !args.machine || args.components.length > 0)
         return code;
       console.log("== the jig command ==");
-      return removeCommand({ confirm: args.confirm });
+      const removed = removeCommand({ confirm: args.confirm });
+      console.log("== the Codex hook ==");
+      console.log(removeCodexHook({ confirm: args.confirm }));
+      return removed;
     }
     case "upgrade":
       return upgradeOf(args, context);
