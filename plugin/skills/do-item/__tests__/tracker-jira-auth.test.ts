@@ -50,15 +50,21 @@ describe("Jira authentication before protected reads", () => {
     );
   });
 
-  it("names the account scopes when the profile read is refused for any reason", () => {
-    const error = httpFailure(
-      401,
-      new Headers(),
-      '{"errorMessages":["Unauthorized"]}',
-      "GET myself",
-    );
-    expect(error.message).toContain("read:jira-user");
-  });
+  for (const answer of [
+    '{"code":401,"message":"Unauthorized"}',
+    '{"errorMessages":["Client must be authenticated to access this resource."]}',
+  ])
+    it(`gives a dead token's profile read the credential guidance alone: ${answer}`, async () => {
+      const { client } = jira(
+        routes({
+          "GET myself": httpFailure(401, new Headers(), answer, "GET myself"),
+        }),
+      );
+      const refused = client.issue("ENG-1");
+      await expect(refused).rejects.toThrow("JIRA_BEARER_TOKEN");
+      const error = await refused.catch((e: unknown) => e);
+      expect(String(error)).not.toContain("read:jira-user");
+    });
 
   it("names the account scopes when Jira says a scope does not match elsewhere", () => {
     const error = httpFailure(

@@ -14,6 +14,7 @@ import type { LineSnapshot } from "../../dispatch/lib/dashboard-contract.ts";
 import { writeLine } from "../../dispatch/lib/line-store.ts";
 import { stoppedLedger } from "../../dispatch/__tests__/fixtures.ts";
 import { claimBody } from "../../shared/records/forge-claims.ts";
+import { COMMANDS } from "../../shared/pr-labels/projection.ts";
 import {
   FOLLOWUP_CLAIM,
   manualClaim,
@@ -104,6 +105,59 @@ async function thread(w: AskWorld, args: string[]) {
 }
 
 describe("jig ask --thread", () => {
+  it("shows a rearm request with its author and both label times", async () => {
+    const w = world();
+    w.api(`repos/${REPO}/pulls/7`, pullDoc(7));
+    w.api(`repos/${REPO}/issues/7/comments`, []);
+    w.api(`repos/${REPO}/issues/7/timeline`, [
+      {
+        event: "labeled",
+        label: { name: "jig:rearm" },
+        actor: { login: "maintainer" },
+        created_at: "2026-11-02T08:00:00Z",
+      },
+      {
+        event: "unlabeled",
+        label: { name: "jig:rearm" },
+        actor: { login: "dispatch-bot" },
+        created_at: "2026-11-02T08:30:00Z",
+      },
+    ]);
+    const answer = await thread(w, ["--all"]);
+    expect(answer.thread).toEqual([
+      expect.objectContaining({
+        kind: "request",
+        text: "label jig:rearm",
+        from: "maintainer",
+        at: "2026-11-02T08:00:00Z",
+        until: "2026-11-02T08:30:00Z",
+      }),
+    ]);
+  });
+
+  it("reads every projected command label and excludes state labels with a custom prefix", async () => {
+    const w = world();
+    await Bun.write(
+      `${w.repo}/.config/jig.yaml`,
+      "dispatch:\n  labels:\n    prefix: 'team:'\n",
+    );
+    w.api(`repos/${REPO}/pulls/7`, pullDoc(7));
+    w.api(`repos/${REPO}/issues/7/comments`, []);
+    w.api(
+      `repos/${REPO}/issues/7/timeline`,
+      [...COMMANDS, "parked"].map((name) => ({
+        event: "labeled",
+        label: { name: `team:${name}` },
+        actor: { login: "maintainer" },
+        created_at: "2026-11-02T08:00:00Z",
+      })),
+    );
+    const answer = await thread(w, ["--all"]);
+    expect(answer.thread?.map((entry) => entry.text).sort()).toEqual(
+      COMMANDS.map((name) => `label team:${name}`).sort(),
+    );
+  });
+
   it("holds the question, the trusted answer and the label request, and no untrusted answer", async () => {
     const w = world();
     w.api(`repos/${REPO}/pulls/7`, pullDoc(7));
