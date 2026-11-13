@@ -218,8 +218,6 @@ test("mixed failure provenance excludes advisory-only runs from the repair chann
     `import {specialCiDisposition} from ${JSON.stringify(routing)};import {failedRunsToTell} from ${JSON.stringify(channel)};const result=await specialCiDisposition("failing: scan, test",false,{pr:"999",dryRun:false},process.env.DRIVE_PR_POLICY_BASE,{checkRunNames:["scan","test"],statusNames:[],runs:[{id:1,createdAt:"2026-11-13T09:00:00Z",jobNames:["scan"]},{id:2,createdAt:"2026-11-13T09:00:00Z",jobNames:["test","scan"]}]},async()=>1);console.log(JSON.stringify(result.failing.runs));console.log(JSON.stringify(await failedRunsToTell("999",result.failing.runs)));`,
   );
   const lines = r.stdout.trim().split("\n");
-  expect(JSON.parse(lines[0] ?? "null")).toEqual([
-    { id: 2, createdAt: "2026-11-13T09:00:00Z", jobNames: ["test"] },
-  ]);
-  expect(JSON.parse(lines[1] ?? "null")).toEqual([2]);
+  expect(JSON.parse(lines[0] ?? "null")).toEqual([]);
+  expect(JSON.parse(lines[1] ?? "null")).toEqual([]);
 });

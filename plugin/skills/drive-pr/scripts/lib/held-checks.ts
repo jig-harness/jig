@@ -35,7 +35,10 @@ export async function liveHeldChecks(pr: string): Promise<string[]> {
     );
     return [];
   }
-  const ref = policy.from === "base" ? policy.commit : "HEAD";
+  // A stacked branch must not grant an exemption that its integration branch
+  // has not reviewed. Read that boundary's workflows when it exists.
+  const ref =
+    policy.from === "base" ? (policy.bound?.commit ?? policy.commit) : "HEAD";
   const root = consumerRoot();
   const listing = await git(
     ["ls-tree", "-r", "--name-only", ref, "--", ".github/workflows"],

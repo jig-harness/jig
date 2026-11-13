@@ -123,7 +123,11 @@ function repairRuns(raw: unknown, advisory: readonly string[]): unknown {
   return failedRunsField(raw).flatMap((run) => {
     const jobNames = run.jobNames?.filter((n) => !advisory.includes(n));
     if (jobNames === undefined) return [run];
-    if (jobNames.length === 0) return [];
+    // GitHub reruns failed jobs for the whole workflow run. A shared run
+    // containing an advisory job would therefore rerun that job as well, so
+    // leave it out of automatic infrastructure recovery entirely.
+    if (jobNames.length === 0 || jobNames.length !== run.jobNames?.length)
+      return [];
     return [{ ...run, jobNames }];
   });
 }
