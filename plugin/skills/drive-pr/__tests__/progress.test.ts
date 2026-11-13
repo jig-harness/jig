@@ -45,14 +45,39 @@ const DRIVE = join(SCRIPTS, "drive.ts");
 const SHA_A = "a".repeat(40);
 const SHA_B = "b".repeat(40);
 
-function cleanEnv(extra: Record<string, string>): Record<string, string> {
+function cleanEnv(
+  extra: Record<string, string>,
+  source: NodeJS.ProcessEnv = gitIdentityEnv(),
+): Record<string, string> {
   const env: Record<string, string> = {};
-  for (const [key, value] of Object.entries(gitIdentityEnv())) {
-    if (key.startsWith("DRIVE_PR_") || value === undefined) continue;
+  for (const [key, value] of Object.entries(source)) {
+    if (
+      key.toUpperCase().startsWith("GIT_") ||
+      key.startsWith("DRIVE_PR_") ||
+      value === undefined
+    )
+      continue;
     env[key] = value;
   }
   return { ...env, ...extra };
 }
+
+it("scrubs inherited Git configuration overrides from fixture subprocesses", () => {
+  const path = process.env.PATH ?? "";
+  const env = cleanEnv(
+    {},
+    {
+      PATH: path,
+      GIT_CONFIG_COUNT: "1",
+      GIT_CONFIG_KEY_0: "core.bare",
+      GIT_CONFIG_VALUE_0: "true",
+      GIT_CONFIG_PARAMETERS: "core.worktree=/elsewhere",
+      DRIVE_PR_STATE_DIR: "/unrelated",
+    },
+  );
+
+  expect(env).toEqual({ PATH: path });
+});
 
 function freshStateDir(): string {
   const root = mkdtempSync(join(tmpdir(), "progress-test-"));
