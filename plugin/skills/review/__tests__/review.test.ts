@@ -197,7 +197,7 @@ test("an unfinished background validator cannot certify a successful catalog pla
   const validator = byPlatform(
     "Windows reaps registered foreground runners; POSIX reaps the policy process group",
     {
-      windows: `import {readdirSync,readFileSync} from "node:fs";import {join} from "node:path";const launched=Bun.spawnSync([process.execPath,${JSON.stringify(foreground)},"launch","--",process.execPath,"-e","setInterval(()=>{},1000)"],{stdout:"pipe",stderr:"pipe"});if(launched.exitCode!==0)throw new Error(launched.stderr.toString());const dir=join(process.cwd(),".context","foreground-wait");const generation=readdirSync(dir).find(name=>name.startsWith("gen-"));await Bun.write("unfinished.pid",readFileSync(join(dir,generation,"runner.pid")));`,
+      windows: `import {readdirSync,readFileSync} from "node:fs";import {join} from "node:path";const launched=Bun.spawnSync([process.execPath,${JSON.stringify(foreground)},"launch","--",process.execPath,"-e","setInterval(()=>{},1000)"],{stdout:"pipe",stderr:"pipe",env:Object.fromEntries(Object.entries(process.env).filter(([name])=>!name.startsWith("CODEX_")))});if(launched.exitCode!==0)throw new Error(launched.stderr.toString());const dir=join(process.cwd(),".context","foreground-wait");const generation=readdirSync(dir).find(name=>name.startsWith("gen-"));await Bun.write("unfinished.pid",readFileSync(join(dir,generation,"runner.pid")));`,
       posix:
         'const child=Bun.spawn([process.execPath,"-e","setInterval(()=>{},1000)"],{stdin:"ignore",stdout:"ignore",stderr:"ignore"});await Bun.write("unfinished.pid",String(child.pid));child.unref();',
     },

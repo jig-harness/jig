@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
+import { hostEnv } from "../../../lib/test-helpers/host-env.ts";
 
 const shared = resolve(import.meta.dir, "..");
 const foreground = resolve(
@@ -77,7 +78,7 @@ test("Windows normal-exit reaping reports registered runners in groupSurvived an
       [process.execPath, "-e", fixture(join(shared, "proc.ts"))],
       {
         cwd,
-        env: { ...process.env, JIG_PROCESS_REGISTRY_DIR: undefined },
+        env: { ...hostEnv, JIG_PROCESS_REGISTRY_DIR: undefined },
         stdout: "pipe",
         stderr: "pipe",
         timeout: 60_000,

@@ -17,6 +17,7 @@ import {
 } from "../../../shared/process-tree.ts";
 import { handOffToRunner } from "../scripts/lib/foreground-start.ts";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import { hostEnv } from "../../../../lib/test-helpers/host-env.ts";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 import { byPlatform } from "../../../../lib/test-helpers/windows-skip.ts";
 
@@ -71,7 +72,7 @@ test("launch returns once the runner has started the command, so a cancellation 
     {
       cwd,
       stderr: "pipe",
-      env: { ...process.env, PATH: `${shim}${delimiter}${process.env.PATH}` },
+      env: { ...hostEnv, PATH: `${shim}${delimiter}${process.env.PATH}` },
     },
   );
   expectSpawnExit(launched, 0);
