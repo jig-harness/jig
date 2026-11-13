@@ -17,6 +17,11 @@
  *   pickup of this machine claimed it: its claim, noted on its launch record
  *   where `tracker.ts claim` made it (`pickup-claim.ts`), or seen while it
  *   ran. The rest of their work in progress is their own, and quiet.
+ * - A claimed item with no running session whose launch's branch has an
+ *   open pull request linking it is finished work, not a stall
+ *   (`stalled-pr.ts`): from its in-progress state it is moved to `pr_open`,
+ *   and in `pr_open` it is quiet while that pull request is open. Where it
+ *   cannot move, the stall need names the pull request.
  * - A session this machine launched that the runtime reports waiting for
  *   longer than `dispatch.blocked_after` is reported; it keeps its slot.
  * - An item whose latest pickup pass ended on a question, without recording
@@ -45,6 +50,13 @@ import { holdsItem } from "./launch-pickups.ts";
 import { pickupNotice } from "./notices.ts";
 import { questionOf } from "./session.ts";
 import {
+  type LaunchPrReading,
+  type LaunchPrStep,
+  readLaunchPr,
+  type StalledPrInput,
+  stallNote,
+} from "./stalled-pr.ts";
+import {
   type SessionsReport,
   WAITING_STATES,
   type Workspace,
@@ -53,6 +65,7 @@ import type {
   Action,
   ClaimedItem,
   DispatchSection,
+  PrOpenMove,
   RepoReport,
   WantedItem,
 } from "./types.ts";
@@ -72,6 +85,8 @@ export interface PickupInput {
   values?: Record<string, unknown>;
   /** The repository's checkout: the label taxonomy the size facet's values come from is read here. */
   root?: string;
+  /** What tells a stalled pickup's finished work: the open pull requests and the `pr_open` state (`stalled-pr.ts`); absent, no claimed item is read for one. */
+  prOpen?: StalledPrInput;
 }
 
 export type PickupPlan = Pick<
@@ -82,6 +97,8 @@ export type PickupPlan = Pick<
   idleNow: string[];
   /** The claimed items whose idleness could not be told: their clock is neither started nor stopped. */
   idleKeep: string[];
+  /** The stalled pickups' items to move to `pr_open`. */
+  moves: PrOpenMove[];
 };
 
 /** The sessions joined to an item: running workspaces, and records holding it outside them. */
@@ -150,6 +167,7 @@ export function planPickups(input: PickupInput): PickupPlan {
     quiet: [],
     idleNow: [],
     idleKeep: [],
+    moves: [],
   };
   const { sessions, launches } = input;
   const joined = (key: string) => (w: Workspace) => w.items.includes(key);
@@ -280,6 +298,8 @@ function planClaimed(
     plan.actions.push(asked);
     return;
   }
+  const pr = readLaunchPr(item, input.launches, input.sessions, input.prOpen);
+  if (settledByPr(item.key, pr.step, plan)) return;
   const since = input.idleSince.get(item.key) ?? input.nowMs;
   const idle = input.nowMs - since;
   if (idle < input.section.stalledAfterMs) {
@@ -290,8 +310,21 @@ function planClaimed(
     });
     return;
   }
-  const reason = `stalled pickup: in ${item.state} with no running session for ${minutes(idle)} (dispatch.stalled_after ${minutes(input.section.stalledAfterMs)}); never relaunched, a person settles it`;
-  plan.actions.push({
+  plan.actions.push(stalledPickup(item, input, held, since, pr));
+}
+
+/** The stall need of a claimed item idle past `dispatch.stalled_after`, naming its launch's pull request where one is open. */
+function stalledPickup(
+  item: ClaimedItem,
+  input: PickupInput,
+  held: Holding,
+  since: number,
+  pr: LaunchPrReading,
+): Action {
+  const idle = input.nowMs - since;
+  const note = stallNote(pr);
+  const reason = `stalled pickup: in ${item.state} with no running session for ${minutes(idle)} (dispatch.stalled_after ${minutes(input.section.stalledAfterMs)}); never relaunched, a person settles it${note === null ? "" : `; ${note}`}`;
+  return {
     stage: "notify",
     target: item.key,
     record: "tracker",
@@ -303,6 +336,7 @@ function planClaimed(
       ...(held.kind === "free" && held.evidence !== null
         ? { finishedSessions: held.evidence }
         : {}),
+      ...(pr.read.kind === "open" ? { pullRequest: pr.read.pr.url } : {}),
     },
     cause: "stalled",
     notice: pickupNotice(
@@ -310,7 +344,24 @@ function planClaimed(
       `${item.key} stalled, idle since ${new Date(since).toISOString()}`,
       `${item.key} (${item.title}): ${reason}`,
     ),
-  });
+  };
+}
+
+/** Whether an open launch pull request settles the claimed item: moved to `pr_open`, or quiet in it. */
+function settledByPr(
+  key: string,
+  step: LaunchPrStep | null,
+  plan: PickupPlan,
+): boolean {
+  if (step?.kind === "move") {
+    plan.moves.push(step.move);
+    return true;
+  }
+  if (step?.kind === "quiet") {
+    plan.quiet.push({ target: key, class: "claimed-pr-open", why: step.why });
+    return true;
+  }
+  return false;
 }
 
 /**

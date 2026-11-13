@@ -197,8 +197,7 @@ per issue in the design's order:
   created by the tick; a repository's CI checking what the tick reads from
   it.
 - **Pickups.** A stall counted only for an item a launch or claim marker
-  took (`dispatch.stalled_scope`); an item moved to `pr_open` when an open
-  pull request on its launch's branch names it; a stalled pickup's unpushed
+  took (`dispatch.stalled_scope`); a stalled pickup's unpushed
   work relaunched once in its own tree to push and record
   (`dispatch.stalled_relaunch`); an epic never taken as a pickup; a
   held-then-released item re-queued.

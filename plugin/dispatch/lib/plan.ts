@@ -63,6 +63,7 @@ import { failed } from "../../shared/outcome.ts";
 import { type HolderReadings, orphanTakeover } from "./sources/doctor.ts";
 import { UNCLAIMED_AFTER_MS } from "./machine-config.ts";
 import { planStuck } from "./stuck-launches.ts";
+import type { StalledPrInput } from "./stalled-pr.ts";
 import type { SessionsReport, Workspace } from "./runtime/port.ts";
 import type {
   Action,
@@ -73,6 +74,7 @@ import type {
   LedgerClass,
   MarkedPr,
   NotifyCause,
+  PrOpenMove,
   RepoReport,
   Running,
   Stage,
@@ -119,6 +121,8 @@ export interface PlanInput {
   holders?: HolderReadings;
   /** The machine file's `unclaimed_after`: past it, a launch answered as started that no wrapper claimed is stuck. */
   unclaimedAfterMs?: number;
+  /** What tells a stalled pickup's finished work (`stalled-pr.ts`). */
+  prOpen?: StalledPrInput;
   nowMs: number;
 }
 
@@ -127,6 +131,8 @@ type Plan = Pick<RepoReport, "actions" | "running" | "unplaced" | "quiet"> & {
   idleNow: string[];
   /** The claimed items whose clock is left as it is. */
   idleKeep: string[];
+  /** The stalled pickups' items to move to `pr_open`. */
+  moves: PrOpenMove[];
   /** The actions a `hold` label kept off. */
   held: Array<{
     target: string;
