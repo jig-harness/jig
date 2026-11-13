@@ -172,33 +172,41 @@ describe("steward output erasure", () => {
     expect(row.digest).toContain("removed after the retention period");
   });
 
-  test("a valid envelope with malformed output-bearing fields is tombstoned", () => {
-    const root = mkdtempSync(join(tmpdir(), "steward-erase-nested-"));
-    roots.push(root);
-    const digest = {
-      version: 1,
-      repo: "o/r",
-      drives: [],
-      needs: [],
-      queue: [],
-      passes: [],
-      failures: [],
-    } as unknown as StewardDigest;
-    keepStewardRun("nested", digest, 1000, root);
-    stateDb(root)
-      .query("UPDATE steward_runs SET digest = ? WHERE id = 'nested'")
-      .run(
-        JSON.stringify({
-          ...digest,
-          passes: ["secret words"],
-          targets: "secret output",
-        }),
-      );
-    expect(eraseStewardOutput(10_000_000_000, 1, root)).toBe(1);
-    const row = stateDb(root)
-      .query("SELECT digest FROM steward_runs WHERE id = 'nested'")
-      .get() as { digest: string };
-    expect(row.digest).not.toContain("secret");
-    expect(row.digest).toContain("removed after the retention period");
-  });
+  const malformed: Record<string, Record<string, unknown>> = {
+    "passes that is not a list": { passes: "secret words" },
+    "a pass that is not a mapping": { passes: ["secret words"] },
+    "targets that is not a list": { targets: "secret output" },
+    "a target that is not a mapping": { targets: ["secret output"] },
+    "a lastPass that is not a mapping": {
+      targets: [{ lastPass: "secret output" }],
+    },
+    "an output that is not a mapping": {
+      targets: [{ lastPass: { output: "secret output" } }],
+    },
+  };
+
+  for (const [name, fields] of Object.entries(malformed))
+    test(`a valid envelope with ${name} is tombstoned`, () => {
+      const root = mkdtempSync(join(tmpdir(), "steward-erase-nested-"));
+      roots.push(root);
+      const digest = {
+        version: 1,
+        repo: "o/r",
+        drives: [],
+        needs: [],
+        queue: [],
+        passes: [],
+        failures: [],
+      } as unknown as StewardDigest;
+      keepStewardRun("nested", digest, 1000, root);
+      stateDb(root)
+        .query("UPDATE steward_runs SET digest = ? WHERE id = 'nested'")
+        .run(JSON.stringify({ ...digest, ...fields }));
+      expect(eraseStewardOutput(10_000_000_000, 1, root)).toBe(1);
+      const row = stateDb(root)
+        .query("SELECT digest FROM steward_runs WHERE id = 'nested'")
+        .get() as { digest: string };
+      expect(row.digest).not.toContain("secret");
+      expect(row.digest).toContain("removed after the retention period");
+    });
 });
