@@ -861,7 +861,34 @@ how it works and what is left. Done when:
   state, in both themes;
 - search works on a phone, and the plugin page shows one agent's steps at a
   time;
-- the home and adoption pages show an audit sheet of Jig's own audit.
+- the adoption page shows an audit sheet of Jig's own audit, with a direct
+  link from the home page.
+
+### 52. Present Jig as a software factory, told in three layers
+
+A reader should learn in one screen what Jig does for a team and who
+merges. [The website design](website.md#the-message-a-software-factory-first)
+sets the message: the factory comes first; what runs by itself, what a team
+gets and what it is built from order the site. The home page tells one
+work-item loop, with a direct path to the audit for a team adopting one
+module at a time. The [epic](https://github.com/jig-harness/jig/issues/1019)
+holds this work.
+
+After the message design merges, file and prepare the design brief, then
+run an external Claude Design round. The person supplies the reference
+site with the brief and accepts the returned design. Only then change
+README.md, FACTORY.md, FEATURES.md and the site together, including their
+parsers and tests. The design names what moves down a level and the
+Protocol's page routes; its generation and rendering belong to the
+[Protocol design issue](https://github.com/jig-harness/jig/issues/1016).
+The unrelated [website sync-record fix](https://github.com/jig-harness/jig/issues/989)
+remains separate.
+
+Done when the accepted design is built, every capability is placed in one
+layer and marked shipped or planned, the home page tells one loop from
+work item to merge-ready pull request with a person merging, the audit is
+one step away, and the site and parser gates pass. Unattended-operation
+claims stay in On the roadmap until item 33's live-host checks are recorded.
 
 ### 38. One look for Jig's pages
 

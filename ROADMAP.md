@@ -262,6 +262,15 @@ and the audit results a team marks as wrong reaching the
 [reflection store](plugin/skills/reflect/README.md), so the audit learns
 from them.
 
+### 52. Present Jig as a software factory, told in three layers
+
+The home page will say what Jig does for a team through one work-item
+loop: an agent builds the change and works through review. A person merges.
+The rest of the site will explain what runs by itself, what a team gets
+and what it is built from. Each capability will say whether it ships or is
+planned. A design round comes before the pages change. The audit stays one
+step from home for a team that adopts one module at a time.
+
 ### 38. One look for Jig's pages
 
 The pages Jig's tooling draws will share one look: the dispatch dashboard,
