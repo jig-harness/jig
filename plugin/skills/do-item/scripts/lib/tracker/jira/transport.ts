@@ -229,8 +229,13 @@ export function httpFailure(
   const refused = status === 401 || status === 403;
   // Atlassian's gateway says only "scope does not match" when a token lacks
   // a scope; a dead or invalid token is refused without those words, even on
-  // the profile read every client sends first.
-  const scopes = refused && /scope does not match/i.test(`${said} ${text}`);
+  // the profile read every client sends first. The account scopes are the
+  // ones that read answers for: another request refused this way lacks a
+  // scope of its own, which this hint would misname.
+  const scopes =
+    refused &&
+    what === "GET myself" &&
+    /scope does not match/i.test(`${said} ${text}`);
   return new JiraApiError(
     refused
       ? `${message}; ${JIRA_CREDENTIAL_HELP}${scopes ? ` ${JIRA_ACCOUNT_SCOPE_HELP}` : ""}`
