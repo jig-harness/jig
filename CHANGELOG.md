@@ -394,6 +394,16 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.223.4] - 2026-11-13
+
+### Fixed
+
+- `jig ask --thread` shows `rearm` dispatch label requests alongside `drive` and `hold`, with who requested the restart, when, and when the label came off. **Consumer action:** none.
+- The Jira adapter no longer names the account scopes a token needs when Jira
+  refuses a dead, expired or invalid token. The scope hint now appears only
+  when Jira's answer says a scope does not match; any other 401 or 403 gets
+  the credential guidance alone.
+
 ## [0.223.3] - 2026-11-13
 
 ### Fixed
@@ -7731,7 +7741,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.223.3...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.223.4...HEAD
+[0.223.4]: https://github.com/jig-harness/jig/compare/v0.223.3...v0.223.4
 [0.223.3]: https://github.com/jig-harness/jig/compare/v0.223.2...v0.223.3
 [0.223.2]: https://github.com/jig-harness/jig/compare/v0.223.1...v0.223.2
 [0.223.1]: https://github.com/jig-harness/jig/compare/v0.223.0...v0.223.1
