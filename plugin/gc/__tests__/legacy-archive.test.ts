@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 /**
  * The one-time archive of a worktree older than marking: the stamp of when
  * marking began, a copy verified against its source within a size bound,
@@ -148,6 +149,27 @@ describe("the one-time archive", () => {
     const read = fingerprint(root, PATHS, Date.now() + 30_000, 1 << 20);
     if (!read.ok) throw new Error(read.failure.reason);
     expect(read.value.bytes).toBeGreaterThanOrEqual(2048);
+  });
+
+  test("a file larger than the bound is rejected through bounded reads, and a multi-chunk file hashes whole", () => {
+    const root = worktree();
+    const paths = [...PATHS, ".context/big.bin"];
+    const big = Buffer.alloc(200 * 1024, 7);
+    writeFileSync(join(root, ".context", "big.bin"), big);
+    expect(
+      fingerprint(root, paths, Date.now() + 30_000, 64 * 1024),
+    ).toMatchObject({
+      ok: false,
+      failure: { code: "oversized" },
+    });
+    const read = fingerprint(root, paths, Date.now() + 30_000, 1 << 20);
+    if (!read.ok) throw new Error(read.failure.reason);
+    const expected = createHash("sha256").update(big).digest("hex");
+    expect(read.value.entries.get(".context/big.bin")).toBe(`file ${expected}`);
+    expect(fingerprint(root, paths, Date.now() - 1, 1 << 20)).toMatchObject({
+      ok: false,
+      failure: { code: "timed-out" },
+    });
   });
 
   describe("verification refuses a copy or a worktree that no longer matches", () => {

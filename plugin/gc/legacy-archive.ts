@@ -18,6 +18,7 @@ import {
   openSync,
   readdirSync,
   readFileSync,
+  readSync,
   readlinkSync,
   rmSync,
   writeFileSync,
@@ -140,6 +141,34 @@ export function measure(
   }
   return ok(total);
 }
+const READ_CHUNK = 64 * 1024;
+/**
+ * A file's SHA-256 and size, read through a fixed buffer: reading stops once
+ * the bytes pass `allowance` or the deadline passes, so a file that grew after
+ * it was measured is never held whole.
+ */
+function hashFile(
+  path: string,
+  allowance: number,
+  deadline: number,
+): { hash: string; bytes: number } | "timed-out" | "oversized" {
+  const hash = createHash("sha256");
+  const buffer = Buffer.allocUnsafe(READ_CHUNK);
+  const fd = openSync(path, "r");
+  let bytes = 0;
+  try {
+    for (;;) {
+      if (Date.now() > deadline) return "timed-out";
+      const read = readSync(fd, buffer, 0, READ_CHUNK, null);
+      if (read === 0) return { hash: hash.digest("hex"), bytes };
+      bytes += read;
+      if (bytes > allowance) return "oversized";
+      hash.update(buffer.subarray(0, read));
+    }
+  } finally {
+    closeSync(fd);
+  }
+}
 /** What a fingerprint read: each entry's mark, and the bytes the content read held. */
 export interface Fingerprinted {
   entries: Map<string, string>;
@@ -175,12 +204,10 @@ export function fingerprint(
         if (nested !== "ok") return nested;
       }
     } else if (stat.isFile()) {
-      const content = readFileSync(path);
-      bytes += content.length;
-      entries.set(
-        relative,
-        `file ${createHash("sha256").update(content).digest("hex")}`,
-      );
+      const hashed = hashFile(path, limit - bytes, deadline);
+      if (typeof hashed === "string") return hashed;
+      bytes += hashed.bytes;
+      entries.set(relative, `file ${hashed.hash}`);
     } else {
       bytes += stat.size;
       entries.set(relative, `other ${stat.mode}`);
