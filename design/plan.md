@@ -1052,7 +1052,7 @@ which were met. [design/spec-link.md](spec-link.md) has how it works, on
 the [spec ecosystems research note](spec-ecosystems-research.md): a
 read-only resolver with one adapter per layout (the item's own body first,
 then the common repository layouts by convention, then the tracker's
-attachments once the interface has them) that returns requirements,
+attachments) that returns requirements,
 acceptance criteria and tasks with their ids; the result handed to the
 implementing agent and the reviewer; a pull-request section accounting for
 every criterion as met with an evidence record (item 28), deferred to a
@@ -1073,8 +1073,8 @@ What it will build, one pull request per step:
   still on, reading its script and policy from the base branch rather than
   the head, with a workflow template and the setup that makes it required.
 - **`review` in plan mode, `file-issue`, `/followup` and the epic close.**
-- **The tracker source**, once the tracker interface has attachments
-  (item 12).
+- **The tracker source**: the documents and attachments the tracker
+  interface lists on the item.
 - **A verification section**: the commands a work item lists under
   `Verification`, fenced blocks included, handed to the implementer and
   recorded as evidence records the pull request's acceptance section cites.
