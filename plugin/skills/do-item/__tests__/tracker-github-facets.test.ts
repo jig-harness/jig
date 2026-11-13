@@ -424,6 +424,40 @@ describe("GitHub facets: the issue type and issue fields as named stores", () =>
     expect(writes(calls)).toEqual(["TrackerRemoveLabels"]);
   });
 
+  it("refuses a retired type or size label to add, and takes one off", async () => {
+    const { t, calls } = gitHub((c) => {
+      if (c.op === "TrackerIssue")
+        return oneIssue(
+          issueNode({
+            number: 5,
+            labels: ["bug", "small"],
+            extra: { subIssues: conn([]) },
+          }),
+        );
+      if (c.op === "TrackerLabels") return repoLabels("bug", "small");
+      if (c.op === "TrackerFacetStores") return STORES;
+      return { ok: true };
+    }, NAMED);
+    const typed = t.updateIssue("#5", { addLabels: ["Bug"] });
+    await expect(typed).rejects.toBeInstanceOf(TrackerRequestError);
+    await expect(typed).rejects.toThrow(
+      "the label 'Bug' stands for the type bug, which this repository keeps in its type, not in labels",
+    );
+    await expect(t.updateIssue("#5", { addLabels: ["small"] })).rejects.toThrow(
+      "the label 'small' stands for the size small, which this repository keeps in the field 'Effort', not in labels",
+    );
+    await expect(
+      t.createIssue({ title: "x", description: "", labels: ["docs"] }),
+    ).rejects.toThrow("stands for the type docs");
+    expect(writes(calls)).toEqual([]);
+    await t.updateIssue("#5", { removeLabels: ["bug", "small"] });
+    expect(writes(calls)).toEqual(["TrackerRemoveLabels"]);
+    expect(calls.at(-1)?.variables.labelIds).toEqual([
+      "LA_0_bug",
+      "LA_1_small",
+    ]);
+  });
+
   it("refuses a value that names nothing in the store before writing", async () => {
     const { t, calls } = gitHub((c) => {
       if (c.op === "TrackerRepository") return { repository: { id: "R_1" } };

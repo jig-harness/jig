@@ -315,6 +315,11 @@ export interface ResolvedFacet {
   field: string | null;
   /** A native or field store's map onto the tracker's values. */
   map: ValueMap | null;
+  /**
+   * A native or field store: the labels the facet was kept in before, each
+   * value with its labels. They are retired, so a write may not add one.
+   */
+  retired?: ReadonlyArray<readonly [string, string[]]>;
   /** The values a native or field store's `values` names (the rest keep their own names). */
   named?: ReadonlyArray<string>;
   /**
@@ -512,6 +517,7 @@ function resolved(
     named: Object.keys(entry?.values ?? {}).flatMap(
       (k) => canonical(base.values, k) ?? [],
     ),
+    retired: base.values.map((v) => [v, base.labels(v)] as const),
     ...(store === "native" && base.fallback === true
       ? { fallback: base.values.map((v) => [v, base.labels(v)] as const) }
       : {}),
