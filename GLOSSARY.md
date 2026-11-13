@@ -2156,7 +2156,7 @@ make, use the entry's term instead.
   list), adds the call to the *cost ledger* and fails as one of the
   *failure classes*. No other code sends to that system, and every
   transport is built from one shared library
-  ([ADR-0020](docs/adr/ADR-0020-outbound-calls-are-governed.md)). The
+  ([ADR-0021](docs/adr/ADR-0021-outbound-calls-are-governed.md)). The
   tracker adapters' transports keep the budget and the deadline; the rest
   is planned ([ROADMAP.md](ROADMAP.md) item 55).
 - **Budget record** — what a machine knows of one credential's limits at an
