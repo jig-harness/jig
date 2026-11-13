@@ -220,7 +220,7 @@ describe("a block on Jira", () => {
     expect(out?.outcome).toBe("refused");
     expect(state.status).toBe("In Progress");
     expect(puts(calls).map((c) => c.body)).toEqual([
-      { fields: { customfield_1: null, customfield_2: null } },
+      { fields: { customfield_1: null } },
     ]);
     expect(out?.detail).toContain("its blocked fields cleared");
   });

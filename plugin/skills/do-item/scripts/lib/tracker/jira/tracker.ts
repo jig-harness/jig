@@ -58,6 +58,7 @@ import { assignerOperations } from "./assigner.ts";
 import { stateChangeOperations } from "./state-change.ts";
 import {
   type BlockedField,
+  blockedFieldValue,
   blockedFieldsBody,
   sentWithMove,
   splitForScreen,
@@ -637,9 +638,20 @@ export function jiraTracker(client: Client): Tracker {
     },
 
     async writeBlockedFields(key, value, signal, except = []) {
-      const fields = (await blockedFieldsUntil(signal)).filter(
-        (f) => !except.includes(f.role),
-      );
+      const fields = (await blockedFieldsUntil(signal))
+        .filter((f) => !except.includes(f.role))
+        // A field whose type cannot take a value was never written, so
+        // clearing leaves it out rather than failing the fields beside it.
+        .filter((f) => {
+          if (value !== null) return true;
+          try {
+            blockedFieldValue(f, null);
+            return true;
+          } catch (error) {
+            if (error instanceof TrackerRequestError) return false;
+            throw error;
+          }
+        });
       if (fields.length === 0) return false;
       signal?.throwIfAborted();
       await transport(

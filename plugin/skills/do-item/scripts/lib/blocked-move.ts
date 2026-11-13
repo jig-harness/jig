@@ -258,8 +258,17 @@ async function block(
         detail: `${key} moved to blocked, but its comment did not post (${why}) and the move could not be undone (${message(undo)}): a person moves it back to ${fromName}${sent.length > 0 ? ` and clears its blocked fields (${sent.join(", ")})` : ""}`,
       };
     }
+    // Only what the move carried is undone; a field it did not send holds
+    // nothing of this move's.
     const cleared =
-      sent.length > 0 ? await writeFields(tracker, key, null) : "";
+      sent.length > 0
+        ? await writeFields(
+            tracker,
+            key,
+            null,
+            (["reason", "since"] as const).filter((r) => !sent.includes(r)),
+          )
+        : "";
     return {
       item: key,
       outcome: "refused",
