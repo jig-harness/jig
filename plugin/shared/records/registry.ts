@@ -893,7 +893,7 @@ const TRACKER: RecordKind[] = [
     medium: "tracker",
     owner: "skills/do-item/scripts/lib/claim-marker.ts",
     at: "a comment on an item a claim started, where `do_item.claim_marker` is set",
-    markers: ["jig-claim", "jig-claim-data"],
+    markers: ["jig-claim", "jig-claim-data", "jig-claim-outcome"],
     version: 1,
     key: CLAIM_MARKER_KEY,
   },

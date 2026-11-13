@@ -14,6 +14,20 @@
  *   Claimed by <claimant> · session <id> · branch <branch>
  *
  * The writer's host is a digest, as on every record the tracker keeps.
+ *
+ * Each attempt that posted a marker also records how it ended, in a comment
+ * of its own, the record's outcome form, since a tracker comment is posted
+ * and deleted but never edited here:
+ *
+ *   <!-- jig-claim-outcome
+ *   {"kind":"tracker-claim-marker","v":1,"key":"claim","writer":{…},"at":"…","attempt":"…","outcome":"released","reason":"…"}
+ *   -->
+ *   Claim attempt <attempt> released: <reason>
+ *
+ * `claimed` says the attempt holds the item and a worker runs on it;
+ * `released` that it refused or stood down and holds nothing; `unresolved`
+ * that it stood down after writing the item without the evidence to tell
+ * whether another attempt holds it, so a person settles it.
  */
 import { git } from "../../../../shared/proc.ts";
 import {
@@ -43,6 +57,20 @@ export interface ClaimMarkerFacts {
   branch: string;
   /** Who the item is now assigned to. */
   claimant: string;
+  at: string;
+}
+
+const OUTCOME_DATA = "jig-claim-outcome";
+
+export const CLAIM_OUTCOMES = ["claimed", "released", "unresolved"] as const;
+export type ClaimOutcome = (typeof CLAIM_OUTCOMES)[number];
+
+export interface ClaimOutcomeFacts {
+  /** The attempt the outcome is of, as its marker names it. */
+  attempt: string;
+  outcome: ClaimOutcome;
+  /** Why, for a person reading the item; absent on `claimed`. */
+  reason?: string;
   at: string;
 }
 
@@ -106,6 +134,46 @@ export function readClaimMarker(body: string): ClaimMarkerFacts | null {
     session,
     branch,
     claimant,
+    at: read.value.envelope.at,
+  };
+}
+
+/** The comment an attempt posts to record how it ended. */
+export function claimOutcomeBody(facts: ClaimOutcomeFacts): string {
+  const data = encodeMarker(
+    OUTCOME_DATA,
+    {
+      kind: CLAIM_MARKER_KIND,
+      v: CLAIM_MARKER_VERSION,
+      key: CLAIM_MARKER_KEY,
+      writer: localWriter("tracker"),
+      at: facts.at,
+    },
+    {
+      attempt: facts.attempt,
+      outcome: facts.outcome,
+      ...(facts.reason === undefined ? {} : { reason: facts.reason }),
+    },
+  );
+  const line = `Claim attempt ${facts.attempt} ${facts.outcome}${facts.reason === undefined ? "" : `: ${facts.reason}`}`;
+  return `${data}\n${line}\n`;
+}
+
+/** The outcome a comment records; `null` when it holds none, or one that does not read. */
+export function readClaimOutcome(body: string): ClaimOutcomeFacts | null {
+  if (!body.includes(`<!-- ${OUTCOME_DATA}`)) return null;
+  const read = decodeMarker(body, OUTCOME_DATA, CLAIM_MARKER_KIND);
+  if (!read.ok) return null;
+  const { attempt, outcome, reason } = read.value.payload;
+  if (
+    typeof attempt !== "string" ||
+    !CLAIM_OUTCOMES.includes(outcome as ClaimOutcome)
+  )
+    return null;
+  return {
+    attempt,
+    outcome: outcome as ClaimOutcome,
+    ...(typeof reason === "string" ? { reason } : {}),
     at: read.value.envelope.at,
   };
 }

@@ -733,8 +733,13 @@ implementation. Skip this check for issues about the repository's own code.
    queue read; never retry without the served-person options. Every
    adapter supports inherited claims. Claims serialize on this host;
    between hosts, only `do_item.claim_marker` arbitrates same-person claims,
-   best effort: a lagging listing can let two claims both win, and a later
-   loss stands the claim down after its writes.
+   best effort: a lagging listing can let two claims both win. A claim that
+   meets an earlier marker after its writes, or no longer finds its own,
+   settles who holds the item from the attempts' recorded outcomes and
+   never undoes its writes: it keeps the claim when every earlier attempt
+   recorded a release (`"recovery": "reclaimed"`), and stands down when one
+   recorded its claim (`"held"`) or when the evidence cannot say
+   (`"unresolved"`).
 
    Exit `0` is the claim. Exit `3` is a refusal, nothing written: the issue
    is already `in_progress`, `pr_open` or `blocked`, or assigned to someone
@@ -748,6 +753,10 @@ implementation. Skip this check for issues about the repository's own code.
    `4` is a stand-down: the claim was written, and reading the issue back
    showed another claim landed first. On `3` or `4`, stop the pickup and report the
    reason it printed; never start the item beside another session. A
+   stand-down with `"recovery": "unresolved"` leaves the item assigned and
+   started with no worker known to hold it: report it as a question for a
+   person (in a dispatched pass, a decision record), never reset the item
+   yourself. A
    refusal by the repository's start rules (`state` or `preflight`) is not
    cleared by a person telling you to proceed: the item changes, or the
    repository's rules change and the pickup is retried by hand. The

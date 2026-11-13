@@ -10,12 +10,16 @@ import { describe, expect, it } from "bun:test";
 import type { Clock } from "../../../shared/clock.ts";
 import { type ClaimResult, claimIssue } from "../scripts/lib/claim.ts";
 import {
+  type ClaimOutcome,
   claimMarkerBody,
+  claimOutcomeBody,
   readClaimMarker,
+  readClaimOutcome,
 } from "../scripts/lib/claim-marker.ts";
 import {
   CLAIM_LAPSE_MS,
   claimWithMarker,
+  RECOVERY_READS,
   type TokenTracker,
 } from "../scripts/lib/claim-token.ts";
 import { parseTrackerConfig } from "../scripts/lib/tracker/config.ts";
@@ -56,6 +60,32 @@ function theirs(id: string, ago: number, trusted = true): CommentFact {
     }),
   };
 }
+
+/** The outcome record another claim's attempt `other-<id>` posted. */
+function outcomeOf(id: string, outcome: ClaimOutcome): CommentFact {
+  return {
+    id: `${id}-outcome`,
+    trusted: true,
+    createdAt: new Date().toISOString(),
+    body: claimOutcomeBody({
+      attempt: `other-${id}`,
+      outcome,
+      at: new Date().toISOString(),
+    }),
+  };
+}
+
+/** The ids of the claim markers among `comments`. */
+const markerIds = (comments: Array<{ id?: unknown; body?: unknown }>) =>
+  comments
+    .filter((c) => readClaimMarker(String(c.body)) !== null)
+    .map((c) => c.id);
+/** The outcomes recorded among `comments`, in order. */
+const outcomesIn = (comments: Array<{ body?: unknown }>) =>
+  comments.flatMap((c) => {
+    const o = readClaimOutcome(String(c.body));
+    return o === null ? [] : [o.outcome];
+  });
 
 /** One item's comments, shared by every host that reads it. */
 function store(initial: CommentFact[] = []) {
@@ -111,9 +141,9 @@ describe("the claim marker as the claim's token", () => {
     const lost = a.outcome === "refused" ? a : b;
     expect(lost).toMatchObject({ why: "marker" });
     expect(claims).toBe(1);
-    // Only the winner's marker is left.
-    expect(s.comments).toHaveLength(1);
-    expect(s.comments[0]?.id).toBe("c1");
+    // Only the winner's marker is left, beside both outcomes.
+    expect(markerIds(s.comments)).toEqual(["c1"]);
+    expect(outcomesIn(s.comments).sort()).toEqual(["claimed", "released"]);
   });
 
   it("claims, and reports the marker confirmed, when its marker is the earliest", async () => {
@@ -141,7 +171,8 @@ describe("the claim marker as the claim's token", () => {
     );
     expect(out).toMatchObject({ outcome: "refused", why: "marker" });
     expect(ran).toBe(false);
-    expect(s.comments.map((c) => c.id)).toEqual(["x"]);
+    expect(markerIds(s.comments)).toEqual(["x"]);
+    expect(outcomesIn(s.comments)).toEqual(["released"]);
   });
 
   it("ignores a marker older than the lapse window", async () => {
@@ -239,7 +270,8 @@ describe("the claim marker as the claim's token", () => {
         CLOCK,
       ),
     ).rejects.toThrow("tracker down");
-    expect((await s.tracker().issueComments("#5")).comments).toEqual([]);
+    expect(markerIds(s.comments)).toEqual([]);
+    expect(outcomesIn(s.comments)).toEqual(["released"]);
   });
 
   it("stands down when an earlier marker shows only after the claim wrote", async () => {
@@ -262,8 +294,147 @@ describe("the claim marker as the claim's token", () => {
       claimed,
       CLOCK,
     );
-    expect(out).toMatchObject({ outcome: "stood_down" });
-    expect(s.log).toEqual(["post", "delete c1"]);
+    expect(out).toMatchObject({
+      outcome: "stood_down",
+      recovery: "unresolved",
+    });
+    expect(out.outcome === "stood_down" && out.reason).toContain(
+      "a person must check it",
+    );
+    // Every recovery read, then the unresolved outcome, then its marker withdrawn.
+    expect(reads).toBe(2 + RECOVERY_READS);
+    expect(s.log).toEqual(["post", "post", "delete c1"]);
+    expect(outcomesIn(s.comments)).toEqual(["unresolved"]);
+  });
+
+  /** A claim whose first read misses the earlier marker `late`, which every later read lists beside `after`. */
+  function lagging(
+    s: ReturnType<typeof store>,
+    late: CommentFact,
+    after: (read: number) => CommentFact[],
+  ) {
+    let reads = 0;
+    return {
+      reads: () => reads,
+      tracker: s.tracker({
+        issueComments: async () => {
+          reads++;
+          return {
+            uuid: "u",
+            comments:
+              reads === 1
+                ? [...s.comments]
+                : [late, ...s.comments, ...after(reads)],
+          };
+        },
+      }),
+    };
+  }
+
+  it("keeps its claim after the write when the earlier attempt recorded that it released the item", async () => {
+    // The earlier attempt refused on seeing this claim's start; its marker still lists.
+    const s = store();
+    const late = theirs("x", 1_000);
+    const h = lagging(s, late, (read) =>
+      read >= 4 ? [outcomeOf("x", "released")] : [],
+    );
+    const out = await claimWithMarker(h.tracker, "#5", FACTS, claimed, CLOCK);
+    expect(out).toMatchObject({
+      outcome: "claimed",
+      recovery: "reclaimed",
+      marker: { posted: true, confirmed: true },
+    });
+    expect(markerIds(s.comments)).toEqual(["c1"]);
+    expect(outcomesIn(s.comments)).toEqual(["claimed"]);
+  });
+
+  it("stands down after the write, leaving the item to the earlier attempt, when that attempt recorded its claim", async () => {
+    const s = store();
+    const late = theirs("x", 1_000);
+    const h = lagging(s, late, (read) =>
+      read >= 3 ? [outcomeOf("x", "claimed")] : [],
+    );
+    let writes = 0;
+    const out = await claimWithMarker(
+      h.tracker,
+      "#5",
+      FACTS,
+      () => {
+        writes++;
+        return claimed();
+      },
+      CLOCK,
+    );
+    expect(out).toMatchObject({ outcome: "stood_down", recovery: "held" });
+    // Its writes were the claim's only ones: nothing undoes them.
+    expect(writes).toBe(1);
+    expect(markerIds(s.comments)).toEqual([]);
+    expect(outcomesIn(s.comments)).toEqual(["released"]);
+  });
+
+  it("ignores an earlier marker whose attempt recorded its release, before it writes", async () => {
+    const s = store([theirs("x", 1_000), outcomeOf("x", "released")]);
+    const out = await claimWithMarker(s.tracker(), "#5", FACTS, claimed, CLOCK);
+    expect(out).toMatchObject({ outcome: "claimed" });
+    expect(out.recovery).toBeUndefined();
+  });
+
+  it("keeps its claim when its own marker was removed after the write and no other claim holds the item", async () => {
+    const s = store();
+    let reads = 0;
+    const out = await claimWithMarker(
+      s.tracker({
+        issueComments: async () => {
+          reads++;
+          // From the read after the write on, its marker is gone.
+          const comments =
+            reads === 1
+              ? [...s.comments]
+              : s.comments.filter((c) => readClaimMarker(c.body) === null);
+          return { uuid: "u", comments };
+        },
+      }),
+      "#5",
+      FACTS,
+      claimed,
+      CLOCK,
+    );
+    expect(out).toMatchObject({
+      outcome: "claimed",
+      recovery: "reclaimed",
+      marker: { posted: true, confirmed: false },
+    });
+    expect(outcomesIn(s.comments)).toEqual(["claimed"]);
+  });
+
+  it("stands down unresolved when its markers cannot be read again after the write", async () => {
+    const s = store();
+    const late = theirs("x", 1_000);
+    let reads = 0;
+    const out = await claimWithMarker(
+      s.tracker({
+        issueComments: async () => {
+          reads++;
+          if (reads >= 3) throw new Error("unreadable");
+          return {
+            uuid: "u",
+            comments: reads === 1 ? [...s.comments] : [late, ...s.comments],
+          };
+        },
+      }),
+      "#5",
+      FACTS,
+      claimed,
+      CLOCK,
+    );
+    expect(out).toMatchObject({
+      outcome: "stood_down",
+      recovery: "unresolved",
+    });
+    expect(out.outcome === "stood_down" && out.reason).toContain(
+      "could not be read again",
+    );
+    expect(outcomesIn(s.comments)).toEqual(["unresolved"]);
   });
 
   it("withdraws its marker when the claim itself refuses", async () => {
@@ -281,7 +452,8 @@ describe("the claim marker as the claim's token", () => {
       CLOCK,
     );
     expect(out.outcome).toBe("refused");
-    expect(s.comments).toEqual([]);
+    expect(markerIds(s.comments)).toEqual([]);
+    expect(outcomesIn(s.comments)).toEqual(["released"]);
   });
 
   it("keeps a claim whose read after the write fails, saying the marker is unconfirmed", async () => {
@@ -335,7 +507,8 @@ describe("two hosts racing for one item", () => {
       }).t;
     expect(await race(make, "#5")).toEqual(["claimed", "refused"]);
     expect(s.writes).toEqual(["TrackerAssign", "TrackerAddLabels"]);
-    expect(s.comments).toHaveLength(1);
+    expect(markerIds(s.comments)).toHaveLength(1);
+    expect(outcomesIn(s.comments).sort()).toEqual(["claimed", "released"]);
   });
 
   it("on Linear", async () => {
@@ -365,7 +538,8 @@ describe("two hosts racing for one item", () => {
       linearTracker({ team: "ENG", states: STATES, transport });
     expect(await race(make, "ENG-4")).toEqual(["claimed", "refused"]);
     expect(s.writes).toEqual(["TrackerAssign", "TrackerUpdate"]);
-    expect(s.comments).toHaveLength(1);
+    expect(markerIds(s.comments)).toHaveLength(1);
+    expect(outcomesIn(s.comments).sort()).toEqual(["claimed", "released"]);
   });
 
   it("on Jira", async () => {
@@ -383,6 +557,9 @@ describe("two hosts racing for one item", () => {
       "PUT issue/ENG-1/assignee",
       "POST issue/ENG-1/transitions",
     ]);
-    expect(s.comments).toHaveLength(1);
+    // Jira keeps a comment's body as a document: read it back as the claim does.
+    const { comments } = await make().issueComments("ENG-1");
+    expect(markerIds(comments)).toHaveLength(1);
+    expect(outcomesIn(comments).sort()).toEqual(["claimed", "released"]);
   });
 });
