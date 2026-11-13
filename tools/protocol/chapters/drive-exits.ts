@@ -3,7 +3,7 @@
  * drive-pr's terminal-state table (`TERMINAL_STATES`) and the exits
  * `drive.ts` ends with (`DRIVE_EXIT`).
  *
- * Two sections: the states and exits of `drive-status.ts` and `drive.ts`,
+ * Sections cover the states and exits of `drive-status.ts` and `drive.ts`,
  * which share one numbering, and the exits the drive's helper scripts take
  * from that numbering, so that no code looks free while it is in use.
  */
@@ -58,7 +58,9 @@ function driveExitOf(name: string, entry: TerminalStateEntry): number | null {
 
 /** The code `drive-status.ts` exits with for an entry, or null when it never does. */
 function driveStatusExitOf(entry: TerminalStateEntry): number | null {
-  return entry.category === "driver-only" || entry.category === "helper"
+  return entry.category === "driver-only" ||
+    entry.category === "helper" ||
+    entry.category === "tombstone"
     ? null
     : entry.exitCode;
 }

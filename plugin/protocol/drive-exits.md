@@ -57,7 +57,7 @@ The same values, for a program in any language:
 | `REVIEWER_FAILED` | state | 7 | 7 | yes | The reviewer's own check did not pass, so the absence of findings proves nothing. A person looks at the reviewer before re-arming. |
 | `HITL_PARKED` | state | 8 | 8 | yes | Everything left waits on a person's decision, each framed on its thread. The drive does not wake itself: once every one is answered, re-arm it. |
 | `PR_CONFLICTING` | state | 9 | 9 | yes | The pull request conflicts with its base and has nothing else to work on; `drive.ts` ends with it once its conflict-repair passes are spent. Merge the base in, then re-arm. |
-| `RETIRED` | tombstone | 10 | — | — | Withdrawn: it once stopped a drive on a draft pull request, which is now driven like any other. Never exited, and never given another meaning. |
+| `RETIRED` | tombstone | — | — | — | Withdrawn: it once stopped a drive on a draft pull request, which is now driven like any other. Never exited, and never given another meaning. |
 | `SESSION_LEASE_HELD` | state | 11 | 11 | yes | Another live session in this working tree holds the drive's lease for this pull request. Nothing was changed: wait for it, or clear its lease once its process is gone. |
 | `SINGLE_INSTANCE_LOCK` | driver-only | — | 11 | yes | Another driver already holds this pull request's or this working tree's lock, so the drive is already armed. Nothing was changed. |
 | `WORKTREE_UNCLEAN` | driver-only | — | 12 | yes | The working tree holds work no round shipped: uncommitted edits, an unfinished git operation or a commit nobody reviewed. Settle it, then re-arm in this tree. |

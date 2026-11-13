@@ -95,9 +95,8 @@ Nothing inside the markers is edited by hand.
 Filled in for one settled contract, the drive's end states and exit codes.
 Its source is `TERMINAL_STATES` and `DRIVE_EXIT` in
 `plugin/skills/drive-pr/scripts/lib/status/terminal-states.ts`. The rows
-below are a selection; the meanings are written for this example, and the
-chapter's will be those the table carries once its `meaning` fields are
-written:
+below are a selection; the meanings are illustrative wording, and the
+chapter's are those the table's `meaning` fields carry:
 
 ```markdown
 # Drive end states and exit codes

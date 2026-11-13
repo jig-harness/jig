@@ -194,7 +194,7 @@
       "name": "RETIRED",
       "kind": "tombstone",
       "exit": 10,
-      "driveStatusExit": 10,
+      "driveStatusExit": null,
       "driveExit": null,
       "endsDrive": null,
       "meaning": "Withdrawn: it once stopped a drive on a draft pull request, which is now driven like any other. Never exited, and never given another meaning."

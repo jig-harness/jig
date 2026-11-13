@@ -534,8 +534,8 @@ The lockfiles and the vendored js-yaml builds cannot carry one, since each
 must stay byte for byte what its generator writes, so their entry is their
 marker; the bundle `tools/plugin/vendor-optique.ts` builds opens with a line
 naming that command. The dashboard's built page is minified, so its entry is
-its marker too. A Protocol chapter is part derived: only its status line and
-the sections between its `protocol:generated` markers come from
+its marker too. A Protocol chapter is part derived: only its title, status
+line and the sections between its `protocol:generated` markers come from
 `tools/protocol/generate.ts`, and its data file carries no header, so the
 `protocol` entry is that file's marker. The chapters' check also compares
 each stable chapter with the integration branch's copy at the merge base

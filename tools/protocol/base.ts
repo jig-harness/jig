@@ -21,6 +21,7 @@ import { entries } from "../../plugin/skills/changelog/scripts/change-notes.ts";
 import { isBreakingEntry } from "../../plugin/skills/changelog/scripts/consumer-actions.ts";
 import {
   gitEnv,
+  isNoteFile,
   tryGit,
 } from "../../plugin/skills/changelog/scripts/notes-dir.ts";
 import { spawnSync } from "../../plugin/shared/guarded-git-spawn.ts";
@@ -215,9 +216,7 @@ export function breakingEntries(root: string, commit: string): string[] {
   const files = new Set(
     listed
       .flatMap((out) => (out ?? "").split("\0"))
-      .filter(
-        (f) => f.endsWith(".md") && f !== `${NOTES_DIR}/README.md` && f !== "",
-      ),
+      .filter((f) => f !== "" && isNoteFile(NOTES_DIR, f)),
   );
   return [...files].flatMap((file) => {
     const full = join(root, file);
@@ -251,6 +250,8 @@ function fieldFindings(file: string, base: DataFile, now: DataFile): Finding[] {
   for (const [name, was] of Object.entries(base.fields)) {
     const is = now.fields[name];
     if (is === undefined) add(`the field ${name}, which the base has, is gone`);
+    else if (Boolean(is.identifies) !== Boolean(was.identifies))
+      add(`the field ${name} changed whether it identifies a value`);
     else if (is.type !== was.type || is.nullable !== was.nullable)
       add(
         `the field ${name} changed type from ${describeType(was)} to ${describeType(is)}`,
@@ -275,6 +276,26 @@ function valueFindings(file: string, base: DataFile, now: DataFile) {
     identity.map((f) => `${f} ${JSON.stringify(v[f] ?? null)}`).join(", ");
   const before = new Map(base.values.map((v) => [key(v), v]));
   const after = new Map(now.values.map((v) => [key(v), v]));
+  const remedyOnce = `list each value once: a reader selecting the first match must meet the value the comparison saw`;
+  if (identity.length === 0)
+    out.push({
+      rule: RULE,
+      file,
+      problem: "the chapter's fields name no identifying field",
+      remedy: remedyOnce,
+    });
+  const seen = new Set<string>();
+  for (const v of now.values) {
+    const k = key(v);
+    if (seen.has(k))
+      out.push({
+        rule: RULE,
+        file,
+        problem: `the value ${show(v)} is listed more than once`,
+        remedy: remedyOnce,
+      });
+    seen.add(k);
+  }
   const remedy = `keep the value as the base lists it (withdraw it as a tombstone rather than reuse it), or raise the chapter's version in tools/protocol/chapters.ts (above ${base.version}) and mark its change note breaking`;
   for (const [k, v] of before)
     if (!after.has(k))
@@ -329,7 +350,7 @@ export function compareWithBase(input: BaseComparison): Finding[] {
  */
 export function namesFile(entry: string, id: string): boolean {
   const name = `${id}.md`.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`(?<![\\w.-])${name}(?![\\w-])`).test(entry);
+  return new RegExp(`(?<![\\w.-])${name}(?![\\w-]|\\.\\w)`).test(entry);
 }
 
 const noteRemedy = (id: string) =>
@@ -343,7 +364,11 @@ function removedFindings(
   breaking: boolean,
 ): Finding[] {
   const entry = withdrawn.find((w) => w.id === id);
-  if (entry === undefined || entry.version <= base.version)
+  if (
+    entry === undefined ||
+    !Number.isInteger(entry.version) ||
+    entry.version <= base.version
+  )
     return [
       {
         rule: RULE,
@@ -389,10 +414,17 @@ function keptFindings(
       problem: `the base lists ${id} as stable, and this change marks it ${now.status}`,
       remedy: `keep it stable, or raise its version in tools/protocol/chapters.ts (above ${base.version}) and add ${noteRemedy(id)}`,
     });
-  if (raised) return out;
-  return [
-    ...out,
+  const breaks = [
     ...fieldFindings(file, base, now),
     ...valueFindings(file, base, now),
   ];
+  if (!raised) return [...out, ...breaks];
+  if (breaks.length > 0 && !breaking)
+    out.push({
+      rule: RULE,
+      file,
+      problem: `this change breaks the stable chapter ${id} (${breaks.map((b) => b.problem).join("; ")}) with no change note marked breaking`,
+      remedy: `add ${noteRemedy(id)}`,
+    });
+  return out;
 }

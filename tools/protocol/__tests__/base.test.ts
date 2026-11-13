@@ -171,10 +171,33 @@ describe("the comparison with the integration branch", () => {
     ]);
   });
 
-  test("passes any of those once the chapter's version is raised", () => {
+  test("passes any of those once the chapter's version is raised and a note marks it breaking", () => {
+    const shrunk = fixtureChapter({ version: 2, values: [VALUES[0] as never] });
+    const root = scratchRepo([fixtureChapter()], [shrunk], {
+      "note.md": BREAKING("fixture.md"),
+    });
+    expect(check(root, [shrunk]).problems).toEqual([]);
+  });
+
+  test("fails a raised version with no breaking note when it breaks the chapter", () => {
     const shrunk = fixtureChapter({ version: 2, values: [VALUES[0] as never] });
     const root = scratchRepo([fixtureChapter()], [shrunk]);
-    expect(check(root, [shrunk]).problems).toEqual([]);
+    expect(check(root, [shrunk]).problems).toHaveLength(1);
+    expect(check(root, [shrunk]).problems[0]).toContain(
+      "with no change note marked breaking",
+    );
+  });
+
+  test("fails a value listed twice", () => {
+    const doubled = fixtureChapter({
+      values: [...VALUES, VALUES[0] as never],
+    });
+    const root = scratchRepo([fixtureChapter()], [doubled]);
+    expect(
+      check(root, [doubled]).problems.some((p) =>
+        p.includes("is listed more than once"),
+      ),
+    ).toBe(true);
   });
 
   test("fails a version lowered below the base's", () => {
@@ -230,6 +253,23 @@ describe("the comparison with the integration branch", () => {
     const unnoted = scratchRepo(both, [other]);
     expect(
       check(unnoted, [other], [{ id: "fixture", version: 2 }]).problems,
+    ).toEqual([
+      "plugin/protocol/fixture.md: the stable chapter fixture is withdrawn with no change note marked breaking",
+    ]);
+    const invalid = scratchRepo(both, [other], {
+      "withdraw.md": BREAKING("fixture.md"),
+    });
+    for (const version of [Number.NaN, Number.POSITIVE_INFINITY, 2.5])
+      expect(
+        check(invalid, [other], [{ id: "fixture", version }]).problems,
+      ).toEqual([
+        "plugin/protocol/fixture.md: the base lists fixture as a stable chapter at version 1, and the chapter list no longer names it",
+      ]);
+    const archived = scratchRepo(both, [other], {
+      "archive/withdraw.md": BREAKING("fixture.md"),
+    });
+    expect(
+      check(archived, [other], [{ id: "fixture", version: 2 }]).problems,
     ).toEqual([
       "plugin/protocol/fixture.md: the stable chapter fixture is withdrawn with no change note marked breaking",
     ]);
@@ -380,6 +420,10 @@ describe("the breaking note's chapter", () => {
       false,
     );
     expect(namesFile("- **Breaking:** exits.mdx changed", "exits")).toBe(false);
+    expect(namesFile("- **Breaking:** exits.md.bak changed", "exits")).toBe(
+      false,
+    );
+    expect(namesFile("- **Breaking:** changed exits.md.", "exits")).toBe(true);
   });
 
   test("a note naming another chapter whose name ends in this one's does not clear it", () => {
