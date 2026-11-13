@@ -578,6 +578,7 @@ describe("Jira: a custom field named by name or id", () => {
   it("reads nothing more for a repository that names no store", async () => {
     const { t, calls } = jira(
       routes({
+        ...SITE,
         "GET issue/ENG-1": issue({ key: "ENG-1", labels: ["bug", "small"] }),
         "POST search/jql": page(),
         "POST issue": { id: "1", key: "ENG-2" },
@@ -603,11 +604,13 @@ describe("Jira: a custom field named by name or id", () => {
       issuetype: { name: "Task" },
       labels: ["docs", "large"],
     });
-    expect(
-      (await t.facetStores()).facets
-        .filter((f) => f.facet !== "priority")
-        .every((f) => f.health === undefined),
-    ).toBe(true);
+    const stores = (await t.facetStores()).facets;
+    expect(stores.filter((f) => f.facet !== "priority")).toSatisfy(
+      (rest: typeof stores) => rest.every((f) => f.health === undefined),
+    );
+    expect(stores.find((f) => f.facet === "priority")?.health).toEqual({
+      status: "ok",
+    });
   });
 });
 
