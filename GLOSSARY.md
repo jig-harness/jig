@@ -1869,6 +1869,25 @@ make, use the entry's term instead.
   that the registry does not hold. Review keeps arbitrary file-backed
   records and dynamically assembled names in the inventory
   ([plugin/RECORDS.md](plugin/RECORDS.md)).
+- **Jig Protocol** — the one statement of each contract Jig's parts and the
+  programs outside its skills share (a drive's exit codes, the records Jig
+  writes, the labels and comment markers it reads, the commands a repository
+  supplies), one *Protocol chapter* per contract in `plugin/protocol/`. Its
+  values are generated from the code and a gate fails the build when a
+  chapter and the code disagree; only the meaning of each value and the
+  chapter's prose are written by hand
+  ([design/protocol.md](design/protocol.md)). *Avoid*: spec, specification
+  (a spec is what a work item links).
+- **Protocol chapter** — one contract's part of the *Jig Protocol*: a status
+  line with its own version, prose written by hand, and generated sections
+  listing every value with its meaning. A **stable** chapter only grows
+  within one version: a withdrawn value stays listed as a tombstone and is
+  never reused, and a change that breaks this raises the version. A **provisional** chapter names the plan item that still moves it,
+  and becomes stable when that item is finished.
+- **Held restatement** — a copy of a contract's values that stays in a skill
+  or a document, where an agent acts on the value in the middle of a step,
+  and that the chapter's gate checks against the code. Every other
+  restatement of a contract is a link to its *Protocol chapter*.
 - **Launch guard record** — the files `jig gc` and Jig's plugin for Orca
   leave each other under `~/.local/state/jig/orca-guard/`: gc's admission
   for a worktree it is removing, the plugin's marker for each agent launch
