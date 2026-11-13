@@ -76,7 +76,7 @@ import { cancelledBeforeExecution } from "./cancellation.ts";
 import type { StandingAnswer } from "./routine-questions.ts";
 export { cancelledBeforeExecution } from "./cancellation.ts";
 export { UNARMED_FACTS } from "./launch-keep.ts";
-import { latestArms, latestFailedRearms } from "./launch-keep.ts";
+import { latestArms, latestDriveRefusals } from "./launch-keep.ts";
 import { latestPickups } from "./launch-pickups.ts";
 
 /** What a launch starts: a re-arm of a stopped drive, a takeover of a wedged one, a pickup's `do-item` session, or a merge's follow-up pass. */
@@ -881,7 +881,7 @@ export function pruneLaunches(
     latestPickups,
     latestRedrives,
     latestArms,
-    latestFailedRearms,
+    latestDriveRefusals,
   ])
     for (const id of latest(records)) kept.add(id);
   for (const r of records)

@@ -39,7 +39,7 @@
  */
 import { ExitError, fail, isDigits, sleep } from "./../cli.ts";
 
-import { helperTimeoutSeconds, run, tsArgv } from "./../proc.ts";
+import { git, helperTimeoutSeconds, run, tsArgv } from "./../proc.ts";
 
 import type { ClaimDiag } from "./../claim.ts";
 
@@ -242,17 +242,65 @@ async function decideByLedger(
       : await ledgerTakeover(pr, ledger);
   if (read.kind === "cross-clone") return read.plan;
   if (read.kind === "this-tree") return admitReleasedDriver(pr, read.actor);
-  if (read.kind === "other-tree")
+  if (read.kind === "other-tree") {
+    const tree = await treeOfActor(read.actor);
     fail(
       2,
-      `drive.ts --take-over: no driver holds PR #${pr}'s lock, and its drive ledger names this clone's driver in another working tree (${read.actor}) as running: that driver ended without writing its stop, and what it left is that tree's, so this tree does not take it over.`,
-      "Re-arm it from that working tree, or stop it there (drives.ts --stop) and re-arm it here.",
+      `drive.ts --take-over: no driver holds PR #${pr}'s lock, and its drive ledger names this clone's driver in another working tree (${tree === null ? `actor ${read.actor}, whose path is not among this clone's registered working trees` : tree}) as running: that driver ended without writing its stop, and what it left is that tree's, so this tree does not take it over.`,
+      tree === null
+        ? `Find the working tree whose \`git worktree list\` path hashes to ${read.actor} (a removed tree leaves nothing to re-arm from), re-arm it from there, or stop it there (drives.ts --stop) and re-arm it here.`
+        : `Re-arm it from ${tree}, or stop it there (drives.ts --stop) and re-arm it here.`,
     );
+  }
   return fail(
     2,
     `drive.ts --take-over: no driver holds PR #${pr}'s lock, and its drive ledger names no running driver in another clone, so there is nothing to take over.`,
     "Re-arm it without --take-over.",
   );
+}
+
+/**
+ * The held batch `planned` read before startup, with the holds startup's
+ * ledger seeding restored since; the planned one alone when it cannot be
+ * read again.
+ */
+export async function heldAfterStartup(
+  pr: string,
+  planned: readonly HeldItem[],
+): Promise<HeldItem[]> {
+  const held = [...planned];
+  try {
+    for (const item of await heldSnapshot(pr))
+      if (!held.some((h) => h.key === item.key && h.kind === item.kind))
+        held.push(item);
+  } catch (err) {
+    if (!(err instanceof ExitError)) throw err;
+    console.error(
+      "takeover: the held batch could not be read again after startup; carrying the one read before it.",
+    );
+  }
+  return held;
+}
+
+/**
+ * The path of this clone's registered working tree that `actor` (`wt-` and the
+ * path's hash) names, or `null` when none of `git worktree list` hashes to it.
+ */
+async function treeOfActor(actor: string): Promise<string | null> {
+  const listed = await git(["worktree", "list", "--porcelain"], {
+    timeoutSec: helperTimeoutSeconds(),
+  });
+  if (listed.code !== 0) return null;
+  for (const line of listed.stdout.split("\n")) {
+    if (!line.startsWith("worktree ")) continue;
+    const path = line.slice("worktree ".length);
+    try {
+      if (`wt-${worktreePathKey(path)}` === actor) return path;
+    } catch (err) {
+      swallow(err, "a registered working tree no longer resolves");
+    }
+  }
+  return null;
 }
 
 /**

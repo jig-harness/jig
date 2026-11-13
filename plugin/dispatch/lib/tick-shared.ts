@@ -270,9 +270,9 @@ export function settleOwnDrives(
     claims,
     host,
   );
-  return settleUsageRefusals(
-    settleNoCauseStops(
-      settleFailedRearms(
+  return settleNoCauseStops(
+    settleFailedRearms(
+      settleUsageRefusals(
         settleSharedConflictStops(
           settleConflictStops(placed, own),
           claims,
@@ -281,10 +281,10 @@ export function settleOwnDrives(
         own,
       ),
       own,
-      claims,
-      Date.now(),
     ),
     own,
+    claims,
+    Date.now(),
   );
 }
 

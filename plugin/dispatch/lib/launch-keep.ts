@@ -1,5 +1,6 @@
 /** Which launch records pruning keeps as the only evidence of what was already done. */
 import { cancelledBeforeExecution } from "./cancellation.ts";
+import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import type { ReadRecord } from "./launches.ts";
 
 const isDrive = (action: string): boolean =>
@@ -45,6 +46,38 @@ export function latestFailedRearms(records: ReadRecord[]): Set<string> {
       .filter((r) => latest.has(r.record.id) && failed(r))
       .map((r) => r.record.id),
   );
+}
+
+/**
+ * The ids of each pull request's latest drive record (a re-arm or a takeover)
+ * when it ended on `drive.ts`'s usage error: the record is the only evidence
+ * that the same command line was refused, so it outlives the retention until a
+ * later launch supersedes it.
+ */
+export function latestUsageRefusals(records: ReadRecord[]): Set<string> {
+  const latest = latestIdsBy(records, (r) =>
+    isDrive(r.record.action) && !cancelledBeforeExecution(r)
+      ? `${r.record.repo}#${String(r.record.pr)}`
+      : null,
+  );
+  return new Set(
+    records
+      .filter(
+        (r) =>
+          latest.has(r.record.id) &&
+          r.state.kind === "ended" &&
+          r.state.exit.code === DRIVE_EXIT.UNSUPPORTED_CLI,
+      )
+      .map((r) => r.record.id),
+  );
+}
+
+/** The ids of the drive records whose refusal holds their drive: a failed re-arm and a usage refusal. */
+export function latestDriveRefusals(records: ReadRecord[]): Set<string> {
+  return new Set([
+    ...latestFailedRearms(records),
+    ...latestUsageRefusals(records),
+  ]);
 }
 
 /**

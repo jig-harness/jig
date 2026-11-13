@@ -8,7 +8,8 @@
  * comments are `issue-comments.json` in the fixture directory.
  */
 import { describe, expect, it } from "bun:test";
-import { readFileSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import {
@@ -344,9 +345,38 @@ describe("drive.ts --take-over and this clone's driver the ledger still names ru
     );
     expectSpawnExit({ ...r, stdout: null }, 2);
     expect(r.stderr).toContain(
-      `names this clone's driver in another working tree (${OTHER_ACTOR}) as running`,
+      `names this clone's driver in another working tree (actor ${OTHER_ACTOR}, whose path is not among this clone's registered working trees) as running`,
     );
     expect((await stateOf(stateDir, tree)).takeovers ?? []).toEqual([]);
+  });
+
+  it("names the path of the other working tree the running driver's actor hashes", async () => {
+    const tree = makeScratchRepo("ledger-own-clone-path").dir;
+    const other = `${tree}-other`;
+    execFileSync("git", ["worktree", "add", "--detach", other], { cwd: tree });
+    const { dir, stateDir } = writeFixture({ prState: "MERGED" }, tree);
+    const file = join(dir, "issue-comments.json");
+    const own = ledger(4, 3, {
+      state: "running",
+      actor: `wt-${worktreePathKey(other)}`,
+      clone: cloneId(stateDir),
+    });
+    writeFileSync(
+      file,
+      JSON.stringify([
+        ...JSON.parse(readFileSync(file, "utf8")),
+        comment(500, body(own)),
+      ]),
+    );
+    const r = await runDriveIn(
+      dir,
+      stateDir,
+      ["--take-over", ...PASS],
+      tree,
+      LEDGER_ON,
+    );
+    expectSpawnExit({ ...r, stdout: null }, 2);
+    expect(r.stderr).toContain(`working tree (${realpathSync(other)})`);
   });
 });
 

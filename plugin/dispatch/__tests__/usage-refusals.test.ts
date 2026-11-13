@@ -7,6 +7,8 @@
 import { describe, expect, it } from "bun:test";
 import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { driveHold, settleUsageRefusals } from "../lib/actions/drive-hold.ts";
+import { latestUsageRefusals } from "../lib/launch-keep.ts";
+import { settleOwnDrives } from "../lib/tick-shared.ts";
 import type { LaunchClaim, LaunchRecord, ReadRecord } from "../lib/launches.ts";
 import type { DrivenPr } from "../lib/types.ts";
 
@@ -186,5 +188,62 @@ describe("a drive launch drive.ts refused as a usage error", () => {
     );
     const [left] = settleUsageRefusals([silent()], [owner, other]);
     expect(left?.class).toBe("silent");
+  });
+});
+
+describe("a refused re-arm that recorded the heads it launched at", () => {
+  const heads = { pr: "p1", branch: "b1" };
+  const refusedRearm = (): ReadRecord =>
+    ended(
+      record("20260101T030000Z-ffffffff", {
+        createdAt: "2026-01-01T03:00:00.000Z",
+        facts: "generation 1, exit 8, heartbeat x",
+        heads: "PR head p1, branch head b1",
+      }),
+      DRIVE_EXIT.UNSUPPORTED_CLI,
+      "2026-01-01T03:00:05.000Z",
+      MESSAGE,
+    );
+
+  it("is settled as a usage refusal, with the drive's message, before the generic failed re-arm", () => {
+    const drive: DrivenPr = {
+      ...silent({ exit: 8 }),
+      class: "re-armable",
+      heads,
+    };
+    const [settled] = settleOwnDrives(
+      [drive],
+      [refusedRearm()],
+      new Map(),
+      "h",
+    );
+    expect(settled?.class).toBe("needs-person");
+    expect(settled?.evidence.usageMessage).toBe(MESSAGE);
+  });
+});
+
+describe("pruning", () => {
+  it("keeps the latest drive record of a pull request that ended on the usage error", () => {
+    const refused = refusedTakeover();
+    const later = ended(
+      record("20260101T050000Z-gggggggg", {
+        createdAt: "2026-01-01T05:00:00.000Z",
+        pr: 8,
+      }),
+      DRIVE_EXIT.UNSUPPORTED_CLI,
+      "2026-01-01T05:00:05.000Z",
+    );
+    expect([...latestUsageRefusals([owner, refused, later])].sort()).toEqual([
+      "20260101T030000Z-bbbbbbbb",
+      "20260101T050000Z-gggggggg",
+    ]);
+    const superseding = ended(
+      record("20260101T060000Z-hhhhhhhh", {
+        createdAt: "2026-01-01T06:00:00.000Z",
+      }),
+      0,
+      "2026-01-01T06:00:05.000Z",
+    );
+    expect([...latestUsageRefusals([refused, superseding])]).toEqual([]);
   });
 });
