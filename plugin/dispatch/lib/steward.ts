@@ -348,7 +348,7 @@ function erasedOutput(text: string): string | null {
   );
   if (!parsed.ok) return UNREADABLE_TOMBSTONE;
   const digest: unknown = parsed.value;
-  if (!isMapping(digest)) return UNREADABLE_TOMBSTONE;
+  if (!isStewardDigest(digest)) return UNREADABLE_TOMBSTONE;
   const erasedTargets = erasedTails(digest.targets);
   const erasedPasses = erasedPassFields(digest.passes);
   const changed = erasedTargets || erasedPasses;

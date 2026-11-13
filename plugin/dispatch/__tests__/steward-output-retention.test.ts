@@ -147,4 +147,28 @@ describe("steward output erasure", () => {
     expect(bad.digest).toContain("removed after the retention period");
     expect(eraseStewardOutput(10_000_000_000, 1, root)).toBe(0);
   });
+
+  test("an expired object that is not a digest is tombstoned, not marked erased untouched", () => {
+    const root = mkdtempSync(join(tmpdir(), "steward-erase-shape-"));
+    roots.push(root);
+    const digest = {
+      version: 1,
+      repo: "o/r",
+      drives: [],
+      needs: [],
+      queue: [],
+      passes: [],
+      failures: [],
+    } as unknown as StewardDigest;
+    keepStewardRun("odd", digest, 1000, root);
+    stateDb(root)
+      .query("UPDATE steward_runs SET digest = ? WHERE id = 'odd'")
+      .run(JSON.stringify({ passes: "secret words" }));
+    expect(eraseStewardOutput(10_000_000_000, 1, root)).toBe(1);
+    const row = stateDb(root)
+      .query("SELECT digest FROM steward_runs WHERE id = 'odd'")
+      .get() as { digest: string };
+    expect(row.digest).not.toContain("secret words");
+    expect(row.digest).toContain("removed after the retention period");
+  });
 });
