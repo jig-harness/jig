@@ -649,7 +649,7 @@ async function placeNode(
     `metadata ${issue.identifier} ${issue.updatedAt ?? ""} ${issue.isEpic}`,
     () => metadata(tracker, issue, identity, cache, carried),
   );
-  // Reported as the read that threw it was before the answer was kept.
+  // A kept no-assigner answer is reported as the failed read it stands for.
   if (meta.noAssigner !== undefined)
     return void unreadable(issue, meta.noAssigner, found);
   const initialHold = nodeHold(node, meta, identity, options);
