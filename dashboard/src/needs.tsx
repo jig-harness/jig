@@ -15,6 +15,8 @@ import { CommitControls, DecisionRows } from "./decision-rows.tsx";
 import { cardAttrs } from "./keys.ts";
 import { DecisionText, InlineDecisionText } from "./decision-text.tsx";
 import { Evidence, Fold, PanelHelp, StageHint } from "./fold.tsx";
+import { ActPill, BareWord, Glyph } from "./icon-word.tsx";
+import { ACT_ICONS, CAUSE_ICONS, EVERYONE_ICONS, iconOf } from "./icons.ts";
 import { Mark } from "./marks.tsx";
 import { MoreToggle, SHOWN_CLOSED, useShowAll } from "./more.tsx";
 import type { LineSnapshot } from "../../plugin/dispatch/lib/dashboard-contract.ts";
@@ -84,8 +86,10 @@ function AnswerNotes({ need }: { need: NeedView }) {
   return (
     <>
       {need.answerNotes.map((note) => (
-        <p className="sm answers" key={note}>
-          {note}
+        <p className="sm answers" key={note.text}>
+          <BareWord of={iconOf(EVERYONE_ICONS, note.state)}>
+            {note.text}
+          </BareWord>
         </p>
       ))}
     </>
@@ -171,13 +175,13 @@ function NeedItem({ need, rest }: { need: NeedView; rest: boolean }) {
       }}
     >
       <div className="rowTop">
-        <span className={`act act${need.act}`}>{need.act}</span>
+        <ActPill act={need.act} />
         <Mark role={need.role} />
         <Pr repo={need.repo} target={need.target} url={need.url} />
         <span className="m sm mut end nowrap">{need.age}</span>
         <span className="br" />
         <RepoLink repo={need.repo} url={need.url} />
-        <StageHint mark={need.mark} stage={need.stage} />
+        <StageHint stage={need.stage} />
         <FollowupBadge
           label={need.stage === "followup" ? "Follow-up needs attention" : null}
         />
@@ -193,7 +197,9 @@ function NeedItem({ need, rest }: { need: NeedView; rest: boolean }) {
         <NeedAsk need={need} />
       )}
       <div className="sm">
-        <span className="m">{need.recorded}</span>
+        <BareWord of={iconOf(CAUSE_ICONS, need.cause)} className="m">
+          {need.recorded}
+        </BareWord>
         <span className="mut">{need.classNote}</span>
       </div>
       <div className="goto">
@@ -231,7 +237,7 @@ function StuckItem({ slot, rest }: { slot: SlotView; rest: boolean }) {
         <Pr repo={slot.repo} target={slot.target} url={slot.url} />
         <span className="br" />
         <RepoLink repo={slot.repo} url={slot.url} />
-        <StageHint mark={slot.mark} stage={slot.stage} />
+        <StageHint stage={slot.stage} />
         <FollowupBadge
           label={slot.stage === "followup" ? runningFollowup(slot.kind) : null}
         />
@@ -317,7 +323,10 @@ export function NeedsPanel({
                 className={`groupHead${i === 0 ? " first" : ""}${rest ? " rest" : ""}`}
                 key={rowKeyOf(row)}
               >
-                {row.head}
+                <span className="headWord">
+                  <Glyph of={iconOf(ACT_ICONS, row.head)} size={16} />
+                  {row.head}
+                </span>
               </div>
             );
           seen++;

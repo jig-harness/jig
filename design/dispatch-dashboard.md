@@ -207,6 +207,56 @@ serves the page, a card opens its workspace and terminal: in Orca through
 `orca terminal switch`, in Herdr through its attach command. Anywhere else
 the card shows the path and the command as text.
 
+### Words and their icons
+
+The page draws each word the records give a closed set with one icon, so a
+reader learns a drawing once and finds it on every view. One map in the
+page's source (`dashboard/src/icons.ts`) ties each word to its icon from
+the pinned `lucide-react` package, as the design round's icon table gives
+it ([round 2's handoff](prototypes/dispatch-dashboard/generated/round-2-handoff.html),
+with round 2b's rows for the answer states): what a
+card is about and a pull request's standing, the acts, the stages, where a
+coming item came from and what will happen to it, the Ready to merge lanes,
+the load gauges, an account's state, why a need waits, the answer states
+and the page's own controls. Every view and the Help view draw from that
+map, and a test reads each recorded set where the code declares it, so a
+word added to a set with no icon in the map fails the gates. A word the map
+does not hold, such as one a newer dispatcher records, is drawn as its word
+alone. The map also holds the icons the card system's work identity and
+decision rows draw (an issue, linked work, a person's own words, a note)
+and a retry control's, which no view draws today.
+
+- **Every icon keeps its word.** The word stands beside the icon, or names
+  the control the icon is on; the icon itself is hidden from a screen
+  reader. A need's cause keeps its own words beside its icon, and the
+  status roles keep their key caps (`~`, `…`, `=` and the rest), which
+  already read in greyscale (with every colour shown as a shade of grey) and
+  in [forced colours](../GLOSSARY.md) (the operating system's high-contrast
+  mode, which replaces the page's colours with its own). Where the design keeps a
+  word alone (an answer still waiting, a draft that does not count), the
+  map holds the word with no icon.
+- **A family is told apart by its container.** An act is a filled pill, a
+  stage an outlined chip, a source a dashed chip; a cause, a standing, an
+  account's state and an answer's state are a bare icon beside its word;
+  a coming group, a lane and a gauge lead their heading or row. The shapes
+  carry the difference, so it holds in greyscale, and under forced colours
+  the pill is filled with the system's text colour and the chips keep their
+  solid or dashed borders.
+- **A shared word shares its icon** where the meaning is the same: a
+  re-armable source and the rearm stage, a held source and the held group,
+  a merged source and the merged standing. The act Merge asks a person to
+  merge, so it has an icon of its own.
+- **The Help view lists every icon with its word**, set by set, each in its
+  family's container, from the same map.
+
+A pull request is drawn by its forge standing (open, draft, merged, closed,
+or dashed while the forge is not read). Its icon also carries the
+dispatcher's states while the dispatcher holds it: queued, held, reported
+and refused take the queue groups' icons, needs a person the cause's and
+following up the followup stage's, and driving and waiting have interim
+icons the design's table does not name. The card system moves these states
+to the status mark and the stage chip.
+
 ### Progress before a pull request
 
 `do-item` and `work-batch` write a `pickup-progress` record on the machine
