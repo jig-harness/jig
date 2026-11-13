@@ -188,9 +188,9 @@ from Orca's command line once Orca offers it. The plugin is Orca-bound.
 ## Next
 
 Next comes delegated merge, once an agent cannot push or merge by any other
-path. Then come what lets a second team adopt Jig, one control plane for a
-team on several machines, one trusted statement of what Jig writes, and the line
-in a team's chat. Then come work that arrives complete, and reviews that
+path. Then come what lets a second team adopt Jig: one control plane for a
+team on several machines and one trusted statement of what Jig writes. The
+line comes to a team's chat with the control plane. Then come work that arrives complete, and reviews that
 catch what checks cannot. Last come the practices
 the modules and skills lack, measurement, the developer machine and its
 runtimes, and the runs that wait on a person.
