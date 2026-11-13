@@ -344,7 +344,10 @@ describe("withDefaultBranchTree", () => {
   it("copies from a clone whose path holds the object list's separator", async () => {
     const parent = mkdtempSync(join(tmpdir(), "jig-sep-"));
     dirs.push(parent);
-    const dir = join(parent, "work:archive;repo");
+    const dir = join(
+      parent,
+      process.platform === "win32" ? "work;archive" : "work:archive;repo",
+    );
     const commit = committedAt(dir);
     const out = await runner(["tree", dir, commit], { JIG_HOME: home() });
     expect(out.out).toMatchObject({ ok: true, value: { note: "committed\n" } });
@@ -389,6 +392,49 @@ describe("withDefaultBranchTree", () => {
       dir,
     );
     const out = await runner(["tree", dir, commit], { JIG_HOME: home() });
+    expect(out.out).toMatchObject({ ok: true, value: { note: "committed\n" } });
+  });
+
+  it("copies files of a partial clone that holds several undownloaded blobs", async () => {
+    const parent = mkdtempSync(join(tmpdir(), "jig-partial-many-"));
+    dirs.push(parent);
+    const origin = join(parent, "origin");
+    committedAt(origin);
+    writeFileSync(join(origin, "second.txt"), "second\n");
+    writeFileSync(join(origin, "third.txt"), "third\n");
+    git(origin, "add", ".");
+    git(origin, "commit", "-q", "-m", "more");
+    const commit = head(origin);
+    git(origin, "config", "uploadpack.allowFilter", "true");
+    git(origin, "config", "uploadpack.allowAnySHA1InWant", "true");
+    const dir = join(parent, "clone");
+    git(
+      parent,
+      "clone",
+      "-q",
+      "--no-checkout",
+      "--filter=blob:none",
+      `file://${origin}`,
+      dir,
+    );
+    const out = await runner(["tree", dir, commit], { JIG_HOME: home() });
+    expect(out.out).toMatchObject({ ok: true, value: { note: "committed\n" } });
+  });
+
+  it("copies a commit that holds a submodule whose objects the clone lacks", async () => {
+    const parent = mkdtempSync(join(tmpdir(), "jig-gitlink-"));
+    dirs.push(parent);
+    const dir = join(parent, "repo");
+    committedAt(dir);
+    git(
+      dir,
+      "update-index",
+      "--add",
+      "--cacheinfo",
+      `160000,${"1".repeat(40)},mod`,
+    );
+    git(dir, "commit", "-q", "-m", "gitlink");
+    const out = await runner(["tree", dir, head(dir)], { JIG_HOME: home() });
     expect(out.out).toMatchObject({ ok: true, value: { note: "committed\n" } });
   });
 

@@ -404,9 +404,10 @@ async function readClone(
   what: string,
   args: string[],
   stdin?: string,
+  env: Record<string, string | undefined> = {},
 ): Promise<Outcome<string, "unreadable">> {
   const result = await git(["-C", root, ...GIT_READ_FLAGS, ...args], {
-    ...readOptions({}, EXPORT_TIMEOUT_SEC),
+    ...readOptions(env, EXPORT_TIMEOUT_SEC),
     ...(stdin === undefined ? {} : { stdin }),
   });
   return result.code === 0
@@ -445,25 +446,75 @@ async function readCloneObjects(
   const listed = await readClone(
     root,
     `the default branch's files at ${short} could not be listed`,
-    ["ls-tree", "-r", "--object-only", commit],
+    ["ls-tree", "-r", "-z", commit],
   );
   if (!listed.ok) return listed;
+  // Files only: a submodule's commit lives in its own object store.
+  const blobs = listed.value
+    .split("\0")
+    .map((entry) => /^\d+ blob ([0-9a-f]+)\t/.exec(entry)?.[1])
+    .filter((id): id is string => id !== undefined);
+  // Which are absent, without fetching them one at a time.
   const checked = await readClone(
     root,
     `the default branch's files at ${short} could not be read`,
     ["cat-file", "--batch-check"],
-    listed.value,
+    `${blobs.join("\n")}\n`,
+    { GIT_NO_LAZY_FETCH: "1" },
   );
   if (!checked.ok) return checked;
-  if (/\bmissing\b/.test(checked.value))
-    return failed(
-      "unreadable",
-      `the default branch's files at ${short} are not all in the clone`,
+  const absent = checked.value
+    .split("\n")
+    .map((line) => /^([0-9a-f]+) missing$/.exec(line)?.[1])
+    .filter((id): id is string => id !== undefined);
+  if (absent.length > 0) {
+    const fetched = await hydrate(root, absent);
+    if (!fetched.ok) return fetched;
+    const again = await readClone(
+      root,
+      `the default branch's files at ${short} could not be read`,
+      ["cat-file", "--batch-check"],
+      `${absent.join("\n")}\n`,
+      { GIT_NO_LAZY_FETCH: "1" },
     );
+    if (!again.ok) return again;
+    if (/\bmissing\b/.test(again.value))
+      return failed(
+        "unreadable",
+        `the default branch's files at ${short} are not all in the clone`,
+      );
+  }
   return ok({
     objectsPath: objects.value.trim(),
     objectFormat: format.value.trim(),
   });
+}
+
+/** Fetch `ids` from the clone's promisor remote in one request. */
+async function hydrate(
+  root: string,
+  ids: string[],
+): Promise<Outcome<null, "unreadable">> {
+  const remotes = await readClone(
+    root,
+    "the clone's promisor remote could not be read",
+    ["config", "--get-regexp", "^remote\\..+\\.promisor$"],
+  );
+  const name = remotes.ok
+    ? /^remote\.(.+)\.promisor\s/m.exec(remotes.value)?.[1]
+    : undefined;
+  if (name === undefined)
+    return failed(
+      "unreadable",
+      "some of the default branch's files are not in the clone, which has no remote to fetch them from",
+    );
+  const fetched = await readClone(
+    root,
+    "the default branch's missing files could not be fetched",
+    ["fetch", "--quiet", "--no-tags", "--no-write-fetch-head", name, "--stdin"],
+    `${ids.join("\n")}\n`,
+  );
+  return fetched.ok ? ok(null) : fetched;
 }
 
 /**
