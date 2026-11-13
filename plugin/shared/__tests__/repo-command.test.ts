@@ -509,6 +509,33 @@ describe("withDefaultBranchTree", () => {
     expect(out.out).toMatchObject({ ok: true, value: { note: "committed\n" } });
   });
 
+  it("copies files nested deeper than any fixed number of tree levels", async () => {
+    const parent = mkdtempSync(join(tmpdir(), "jig-partial-depth-"));
+    dirs.push(parent);
+    const origin = join(parent, "origin");
+    committedAt(origin);
+    const nested = join(origin, ...Array.from({ length: 70 }, () => "d"));
+    mkdirSync(nested, { recursive: true });
+    writeFileSync(join(nested, "run.txt"), "run\n");
+    git(origin, "add", ".");
+    git(origin, "commit", "-q", "-m", "nested");
+    const commit = head(origin);
+    git(origin, "config", "uploadpack.allowFilter", "true");
+    git(origin, "config", "uploadpack.allowAnySHA1InWant", "true");
+    const dir = join(parent, "clone");
+    git(
+      parent,
+      "clone",
+      "-q",
+      "--no-checkout",
+      "--filter=tree:0",
+      `file://${origin}`,
+      dir,
+    );
+    const out = await runner(["tree", dir, commit], { JIG_HOME: home() });
+    expect(out.out).toMatchObject({ ok: true, value: { note: "committed\n" } });
+  }, 120000);
+
   it("copies a commit that holds a submodule whose objects the clone lacks", async () => {
     const parent = mkdtempSync(join(tmpdir(), "jig-gitlink-"));
     dirs.push(parent);

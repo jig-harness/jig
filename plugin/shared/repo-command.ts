@@ -527,9 +527,6 @@ function promisorName(key: string, value: string): string | undefined {
     : undefined;
 }
 
-/** Most passes over the remotes: a tree filter exposes one level per pass. */
-const HYDRATE_MAX_PASSES = 64;
-
 const UNFETCHED = failed(
   "unreadable",
   "the default branch's missing files are not all on the clone's promisor remotes",
@@ -545,15 +542,15 @@ function fetchFrom(root: string, name: string, ids: string[]) {
   );
 }
 
-function sameIds(a: string[], b: string[]): boolean {
-  return a.length === b.length && a.every((id) => b.includes(id));
-}
-
 /**
  * Fetch `ids` in one request from each promisor remote in turn until none
- * of them is still missing, as git does; `stillAbsent` rereads what is left.
- * What a fetch newly exposes (the contents of a tree a tree filter left
- * out) is fetched in a further pass for as long as a pass makes progress.
+ * of them is still missing, as git does; `stillAbsent` rereads what is left
+ * after every attempt, a failed one included, since a fetch that fails can
+ * still have installed objects. What a fetch newly exposes (the contents of
+ * a tree a tree filter left out) is fetched in a further pass for as long as
+ * a pass makes progress, that is, for as long as it installs something it was
+ * asked for: the repository's finite object count ends the loop, so no depth
+ * or pass ceiling applies.
  */
 async function hydrate(
   root: string,
@@ -568,21 +565,17 @@ async function hydrate(
     );
   let wanted = ids;
   let last: Outcome<null, "unreadable"> = UNFETCHED;
-  for (let pass = 0; pass < HYDRATE_MAX_PASSES; pass++) {
-    let progressed = false;
+  for (let progressed = true; progressed; ) {
+    progressed = false;
     for (const name of remotes) {
       const fetched = await fetchFrom(root, name, wanted);
-      if (!fetched.ok) {
-        last = fetched;
-        continue;
-      }
+      last = fetched.ok ? UNFETCHED : fetched;
       const left = await stillAbsent();
       if (left === null || left.length === 0) return ok(null);
-      progressed ||= !sameIds(left, wanted);
+      const absentNow = new Set(left);
+      if (wanted.some((id) => !absentNow.has(id))) progressed = true;
       wanted = left;
-      last = UNFETCHED;
     }
-    if (!progressed) break;
   }
   return last;
 }
