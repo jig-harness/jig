@@ -317,11 +317,16 @@ nothing more, and setup runs it.
 Either way, a version is tagged only once its **releasing commit**, the commit
 on the integration branch that first carries its changelog heading, has passed
 every required check: a publishing job started by the tag therefore ships
-only a commit that passed. A check that was cancelled is run again once; a
-releasing commit whose checks failed is left untagged, and `status.ts`
-reports it. Only versions newer than the newest release tag on `origin` are
-tagged, and with none yet only the newest, so adopting the workflow never
-tags and publishes an untagged history.
+only a commit that passed. A check that was cancelled is run again once. Failed required checks are
+re-run up to `changelog.release.rerun_failed_gates` times (default `1`, `0`
+disables it), once the workflow has finished. Exhausted or refused retries
+leave the releasing commit untagged for a person. Every released version
+without its tag on `origin` remains in the tag plan and `status.ts`, including
+versions older than the newest tag. Automatic tagging applies only to versions
+newer than the newest tag, or to the newest release when no release tag exists.
+Older releases have state `manual` and stay listed for a person to tag by hand;
+they trigger no retries and hold no newer version back. Imported release
+headings also remain listed for manual tagging.
 
 ## In CI: the action and the workflow
 
@@ -344,7 +349,7 @@ call that reads `origin`'s tags.
 | `root` | all | the checkout, relative to the workspace (`.`) |
 | `base` | `check` | the revision the branch is compared with; by default the pull request's base |
 | `head-ref` | `check` | the branch the change comes from; by default the pull request's head |
-| `rerun` | `tag` | `true` to run cancelled required checks again, once (needs Actions write); `false` by default |
+| `rerun` | `tag` | `true` to re-run eligible failed or cancelled required checks within their retry budget (needs Actions write); `false` by default |
 | `token` | `check`, `tag` | the token GitHub is read with; the job's own token by default |
 | `git-user-name`, `git-user-email` | `release` | who the release commit is by; `github-actions[bot]` by default |
 
@@ -370,7 +375,8 @@ in jobs that run nothing from the repository:
   can read the App's key besides `tag-push`, pushes the commit (`direct`) or
   the release branch and its pull request (`pull-request`).
 - `tag-plan`, after each run of the workflows that report the required checks
-  and every six hours, makes the tag plan and re-runs cancelled checks once;
+  and every six hours, makes the tag plan and re-runs eligible failed or
+  cancelled checks within their retry budget;
   `tag-push` makes the tags it found ready.
 
 Runs on the integration branch are never cancelled, so a release that waited
