@@ -12,6 +12,7 @@
  * on these reads would otherwise report a partial read as an improvement.
  */
 
+import type { StoreHealth } from "./unavailable.ts";
 import type { TrackerAttachments } from "./attachment.ts";
 import type { PoolScopeCounts } from "./pool-counts.ts";
 
@@ -501,7 +502,7 @@ export interface FacetStoreReport {
    * A configured native or field store: whether it resolves with the access
    * its own reads and writes use. A failed store fails its reads and writes.
    */
-  health?: { status: "ok" } | { status: "failed"; error: string };
+  health?: StoreHealth;
   /** What detection saw for a facet whose store is not named; it chooses nothing. */
   detection?: FacetDetection;
   /** The configuration line that names the store in force, for a facet that does not name one. */

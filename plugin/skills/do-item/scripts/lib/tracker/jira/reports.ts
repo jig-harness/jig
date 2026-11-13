@@ -559,39 +559,26 @@ export function reportOperations(
     async poolScopeCounts(signal) {
       await client.authenticate(signal);
       const clause = await client.poolScope(signal);
-      async function count(jql: string): Promise<number> {
+      async function count(...clauses: string[]): Promise<number> {
         if (signal?.aborted === true) throw abortedError(signal);
-        const answer = record(
-          await client.transport(
-            {
-              method: "POST",
-              path: "search/approximate-count",
-              body: { jql },
-              idempotent: true,
-            },
+        return (
+          await client.search(
+            inProject(project, open, ...clauses),
+            `open issues of ${project}`,
             signal,
-          ),
-          "open population count",
-        );
-        if (
-          typeof answer.count !== "number" ||
-          !Number.isSafeInteger(answer.count) ||
-          answer.count < 0
-        )
-          throw new TrackerRequestError(
-            "invalid",
-            "Jira open population count must be a non-negative integer",
-          );
-        return answer.count;
+          )
+        ).filter(
+          (issue) =>
+            !["completed", "canceled", "duplicate"].includes(stateType(issue)),
+        ).length;
       }
-      const total = await count(inProject(project, open));
-      const pool =
-        clause === null ? total : await count(inProject(project, open, clause));
+      const total = await count();
+      const pool = clause === null ? total : await count(clause);
       return {
         project: total,
         pool,
         scoped: clause !== null,
-        approximate: true,
+        approximate: false,
       };
     },
 

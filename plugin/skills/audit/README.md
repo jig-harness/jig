@@ -24,7 +24,7 @@ added since, and it does not repeat a recommendation the team declined.
    unknown, refused or deprecated fields, wrong types, commands and paths that
    do not exist, required checks that never run, a tracker that cannot be
    reached, configured GitHub, Jira or Linear facet stores that cannot be used,
-   approximate counts of open Jira issues before and after the configured
+   counts of open Jira issues before and after the configured
    pool issue-type scope, declared values the repository contradicts (`stacking: none` with
    stacked pull requests open), tracker labels its label taxonomy does not
    define, and settings its shape suggests. It also reports what a run

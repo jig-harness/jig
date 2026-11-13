@@ -72,6 +72,14 @@ export async function facetFindings(tracker: Tracker): Promise<Finding[]> {
   }
   return stores.facets.flatMap((f): Finding[] => {
     const at = `issue_tracker.facets.${f.facet}`;
+    if (f.health?.status === "failed" && f.health.unavailable === true)
+      return [
+        {
+          id: `unchecked:${at}`,
+          severity: "warning",
+          message: `whether ${f.facet}'s configured store can be used is unchecked: ${f.health.error}`,
+        },
+      ];
     if (f.health?.status === "failed")
       return [
         {

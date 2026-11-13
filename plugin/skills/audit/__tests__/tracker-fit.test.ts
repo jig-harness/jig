@@ -141,6 +141,28 @@ describe("where the audited tracker keeps each facet", () => {
     },
   );
 
+  test("reports a store probe the tracker could not answer as unchecked", async () => {
+    const { t } = tracker(
+      [
+        {
+          facet: "size",
+          store: "native",
+          why: "configured",
+          health: { status: "failed", error: "timed out", unavailable: true },
+        },
+      ],
+      "jira",
+    );
+    expect(await facetFindings(t)).toEqual([
+      {
+        id: "unchecked:issue_tracker.facets.size",
+        severity: "warning",
+        message:
+          "whether size's configured store can be used is unchecked: timed out",
+      },
+    ]);
+  });
+
   test.each(["jira", "linear"])(
     "reports an unreadable %s probe as unchecked",
     async (adapter) => {
