@@ -51,6 +51,20 @@ describe("quoted values after an unquoted key", () => {
       expect(kept).toContain("rest");
     }
   });
+
+  test("redacts a value holding an escaped quote, for both key forms", () => {
+    for (const text of [
+      "password: 'correct ''horse battery'' staple' rest",
+      "\"password\": 'correct ''horse battery'' staple' rest",
+      'password="correct ""horse battery"" staple" rest',
+      'password: "correct \\"horse battery\\" staple" rest',
+    ]) {
+      const kept = durableSummary(text);
+      expect(kept).not.toContain("horse");
+      expect(kept).not.toContain("staple");
+      expect(kept).toContain("rest");
+    }
+  });
 });
 
 describe("steward output erasure", () => {
@@ -118,12 +132,19 @@ describe("steward output erasure", () => {
     } as unknown as StewardDigest;
     keepStewardRun("bad", digest, 1000, root);
     stateDb(root)
-      .query("UPDATE steward_runs SET digest = 'unreadable' WHERE id = 'bad'")
+      .query(
+        "UPDATE steward_runs SET digest = 'unreadable secret words' WHERE id = 'bad'",
+      )
       .run();
     keepStewardRun("good", digest, 2000, root);
-    expect(eraseStewardOutput(10_000_000_000, 1, root)).toBe(1);
+    expect(eraseStewardOutput(10_000_000_000, 1, root)).toBe(2);
     const read = readStewardDigest("good", root);
     expect(JSON.stringify(read)).not.toContain("secret words");
+    const bad = stateDb(root)
+      .query("SELECT digest FROM steward_runs WHERE id = 'bad'")
+      .get() as { digest: string };
+    expect(bad.digest).not.toContain("secret words");
+    expect(bad.digest).toContain("removed after the retention period");
     expect(eraseStewardOutput(10_000_000_000, 1, root)).toBe(0);
   });
 });

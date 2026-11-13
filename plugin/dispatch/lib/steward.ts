@@ -333,14 +333,22 @@ function erasedPassFields(passes: unknown): boolean {
   return changed;
 }
 
-/** The digest text without its output, or `null` when it holds none (or does not parse). */
+/** What an expired digest that does not parse is replaced with: its text is unclassified, so none of it stays. */
+const UNREADABLE_TOMBSTONE = JSON.stringify({
+  erased: "unreadable digest removed after the retention period",
+});
+
+/**
+ * The digest text without its output, the tombstone when it does not parse
+ * as a digest, or `null` when it holds no output.
+ */
 function erasedOutput(text: string): string | null {
   const parsed = attempt("unreadable", "the steward digest does not read", () =>
     JSON.parse(text),
   );
-  if (!parsed.ok) return null;
+  if (!parsed.ok) return UNREADABLE_TOMBSTONE;
   const digest: unknown = parsed.value;
-  if (!isMapping(digest)) return null;
+  if (!isMapping(digest)) return UNREADABLE_TOMBSTONE;
   const erasedTargets = erasedTails(digest.targets);
   const erasedPasses = erasedPassFields(digest.passes);
   const changed = erasedTargets || erasedPasses;

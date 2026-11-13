@@ -10,12 +10,12 @@ export const DURABLE_OUTPUT_LIMIT = 2000;
 export function durableSummary(text: string): string {
   return text
     .replace(
-      /(["'])([A-Za-z0-9_.-]*(?:token|secret|password|passwd|api[_-]?key|authorization)[A-Za-z0-9_.-]*)\1\s*[:=]\s*(?:"(?:[^"\\]|\\.)*"|'[^']*'|[^\s,}\]]+)/gi,
+      /(["'])([A-Za-z0-9_.-]*(?:token|secret|password|passwd|api[_-]?key|authorization)[A-Za-z0-9_.-]*)\1\s*[:=]\s*(?:"(?:[^"\\]|\\.|"")*"|'(?:[^'\\]|\\.|'')*'|[^\s,}\]]+)/gi,
       '$1$2$1: "[redacted]"',
     )
     .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{8,}/gi, "$1 [redacted]")
     .replace(
-      /\b([A-Za-z0-9_.-]*(?:token|secret|password|passwd|api[_-]?key|authorization)[A-Za-z0-9_.-]*)\s*[=:]\s*(?:"(?:[^"\\]|\\.)*"|'[^']*')/gi,
+      /\b([A-Za-z0-9_.-]*(?:token|secret|password|passwd|api[_-]?key|authorization)[A-Za-z0-9_.-]*)\s*[=:]\s*(?:"(?:[^"\\]|\\.|"")*"|'(?:[^'\\]|\\.|'')*')/gi,
       "$1=[redacted]",
     )
     .replace(
