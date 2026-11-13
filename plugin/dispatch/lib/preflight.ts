@@ -137,7 +137,9 @@ export function checksStage(preflight: Preflight, stage: string): boolean {
  * The accounts among `accounts` whose tracker answer failed for the
  * repository `slug`, each with the answer, for a launch of `stage`; each
  * account asked at most once per tick and tracker, with at most
- * `TRACKER_PROBE_CONCURRENCY` new probes running at once. A repository with
+ * `TRACKER_PROBE_CONCURRENCY` new probes running at once; `room` names why
+ * no further probe may start, and an account not yet asked is then held on
+ * that reason. A repository with
  * no tracker registered holds none.
  */
 export async function heldAccounts(
@@ -146,23 +148,34 @@ export async function heldAccounts(
   stage: Stage,
   accounts: readonly MachineAccount[],
   timeoutSec: number,
+  room?: () => string | null,
 ): Promise<Map<string, string>> {
   const held = new Map<string, string>();
   const target = preflight.targets.get(slug);
   if (target === undefined || !checksStage(preflight, stage)) return held;
-  const answers: Array<readonly [string, TrackerAnswer]> = [];
+  // Results are stored by input index so the report and the host needs keep
+  // the accounts' order however the probes finish.
+  const answers: Array<TrackerAnswer | undefined> = [];
   let next = 0;
   const worker = async () => {
     while (next < accounts.length) {
-      const account = accounts[next++];
+      const index = next++;
+      const account = accounts[index];
       if (account === undefined) continue;
       const key = `${account.name}\u0000${target.tracker}`;
       let answer = preflight.answers.get(key);
       if (answer === undefined) {
+        // A probe not yet started waits for the tick's room: later waves
+        // are held rather than left to outrun the launcher's deadline.
+        const late = room?.() ?? null;
+        if (late !== null) {
+          answers[index] = { ok: false, kind: "unreachable", reason: late };
+          continue;
+        }
         answer = preflight.probe(account, target, timeoutSec);
         preflight.answers.set(key, answer);
       }
-      answers.push([account.name, await answer] as const);
+      answers[index] = await answer;
     }
   };
   await Promise.all(
@@ -171,11 +184,13 @@ export async function heldAccounts(
       worker,
     ),
   );
-  for (const [name, answer] of answers) {
-    if (answer.ok || answer.kind !== "unreachable") continue;
-    held.set(name, answer.reason);
-    hold(target.report, name, answer.reason, stage);
-  }
+  accounts.forEach((account, index) => {
+    const answer = answers[index];
+    if (answer === undefined || answer.ok || answer.kind !== "unreachable")
+      return;
+    held.set(account.name, answer.reason);
+    hold(target.report, account.name, answer.reason, stage);
+  });
   return held;
 }
 

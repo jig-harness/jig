@@ -691,6 +691,7 @@ async function preflightHolds(
     action.stage,
     accounts.filter((a) => !never.has(a.name)),
     Math.ceil(state.machine.runtimeTimeoutMs / 1000),
+    () => noPreflightRoom(state),
   );
   return { held };
 }

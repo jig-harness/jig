@@ -22,8 +22,15 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import type { LineSnapshot } from "../lib/dashboard-contract.ts";
-import { readMachineConfig } from "../lib/machine-config.ts";
-import { HOST_NEED_REPO } from "../lib/preflight.ts";
+import {
+  type MachineAccount,
+  readMachineConfig,
+} from "../lib/machine-config.ts";
+import {
+  HOST_NEED_REPO,
+  heldAccounts,
+  newPreflight,
+} from "../lib/preflight.ts";
 import type { TickReceipt } from "../receipts.ts";
 import {
   assignedIssue,
@@ -500,5 +507,46 @@ describe("run.ts tracker", () => {
         "the configuration on the input did not read",
       ),
     });
+  });
+});
+
+describe("heldAccounts", () => {
+  const names = ["a", "b", "c", "d", "e", "f"];
+  const accounts = names.map((name) => ({ name }) as never as MachineAccount);
+  const target = {
+    slug: SLUG,
+    path: "/x",
+    tracker: "github:x/y",
+    values: {},
+    report: { preflight: undefined } as never,
+  };
+  const down = { ok: false, kind: "unreachable", reason: "down" } as const;
+
+  it("keeps the accounts' order whatever order the probes finish in", async () => {
+    const pf = newPreflight(
+      {},
+      (acct) =>
+        new Promise((r) =>
+          setTimeout(() => r(down), acct.name === "a" ? 30 : 1),
+        ),
+    );
+    pf.targets.set(SLUG, target);
+    const held = await heldAccounts(pf, SLUG, "pickup", accounts, 1);
+    expect([...held.keys()]).toEqual(names);
+  });
+
+  it("holds the accounts not yet asked once the tick has no room", async () => {
+    const asked: string[] = [];
+    const pf = newPreflight({}, async (acct) => {
+      asked.push(acct.name);
+      return down;
+    });
+    pf.targets.set(SLUG, target);
+    const held = await heldAccounts(pf, SLUG, "pickup", accounts, 1, () =>
+      asked.length >= 4 ? "no room" : null,
+    );
+    expect(asked).toHaveLength(4);
+    expect(held.get("f")).toBe("no room");
+    expect(held.size).toBe(6);
   });
 });
