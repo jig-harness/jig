@@ -1515,7 +1515,9 @@ Then:
   `$DRIVE_PR_ROUND_FAILED_RUNS` names and of the statuses
   `$DRIVE_PR_ROUND_FAILED_STATUSES` names:
   `bun "${CLAUDE_SKILL_DIR}/../fix-ci/scripts/parse-ci-log.ts" --pr <PR>`
-  reads both, a status's log through the repository's `ci.log_command`. A
+  reads both, a status's log through the repository's `ci.log_command`
+  (run in a copy of the default branch's files, never this pull request's
+  checkout). A
   status it reports as `unread` (no command) or `gone` has no log to read:
   open its `target_url` only when it is an `https` link on the CI service's
   own host (never a loopback, internal-network or metadata address, or a

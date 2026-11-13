@@ -23,9 +23,8 @@
  * caller's contract (a preflight's exit 3, a facet store's JSON).
  */
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { OVERLAY_RELPATH, isMapping } from "./config-layers.ts";
+import { OVERLAY_RELPATH, isMapping, jigHome } from "./config-layers.ts";
 import { remoteName } from "./consumer.ts";
 import { attempt, failed, ok, type Outcome } from "./outcome.ts";
 import { git, gitIdentityEnv, run } from "./proc.ts";
@@ -49,6 +48,34 @@ const MAX_OUTPUT_BYTES = 64 * 1024;
 const FETCH_TIMEOUT_SEC = 30;
 /** How long copying the default branch's files may take. */
 const EXPORT_TIMEOUT_SEC = 120;
+/**
+ * The git flags of every read of the repository here: no replacement objects
+ * (they would show a commit other than the one asked for), and no
+ * working-tree hook or file-system monitor, which a pull request could set.
+ */
+const GIT_READ_FLAGS = [
+  "--no-optional-locks",
+  "--no-replace-objects",
+  "-c",
+  "core.fsmonitor=false",
+  "-c",
+  "core.hooksPath=/dev/null",
+] as const;
+
+/** The options of a git call that reads this repository, scrubbed of inherited repository variables. */
+function readOptions(
+  env: Record<string, string | undefined> = {},
+  timeoutSec = FETCH_TIMEOUT_SEC,
+) {
+  return {
+    env: { ...gitIdentityEnv(), ...env },
+    stderr: "pipe" as const,
+    timeoutSec,
+  };
+}
+
+/** A full commit id: the only form `withDefaultBranchTree` takes. */
+const COMMIT_ID = /^[0-9a-f]{40}([0-9a-f]{24})?$/;
 /** How many characters of a reason or a failure's output a line keeps. */
 const LINE_CHARS = 300;
 
@@ -139,12 +166,16 @@ async function defaultBranchRef(
       root,
       "symbolic-ref",
       "--quiet",
-      "--short",
+      // Not `--short`: a tag named like the branch makes it print an
+      // unambiguous name that no longer starts with the remote's.
       `refs/remotes/${remote}/HEAD`,
     ],
-    { stderr: "pipe", timeoutSec: FETCH_TIMEOUT_SEC },
+    readOptions(),
   );
-  const name = head.stdout.trim();
+  const full = head.stdout.trim();
+  const name = full.startsWith("refs/remotes/")
+    ? full.slice("refs/remotes/".length)
+    : "";
   return head.code === 0 && name.startsWith(`${remote}/`) ? name : null;
 }
 
@@ -185,21 +216,29 @@ async function defaultBranchConfig(
       "fetch",
       "--quiet",
       remote.value,
-      ref.slice(remote.value.length + 1),
+      `refs/heads/${ref.slice(remote.value.length + 1)}`,
     ],
-    { stderr: "pipe", timeoutSec: FETCH_TIMEOUT_SEC },
+    readOptions(),
   );
   const resolved = await git(
-    ["-C", root, "rev-parse", "--verify", "--quiet", `${ref}^{commit}`],
-    { stderr: "pipe", timeoutSec: FETCH_TIMEOUT_SEC },
+    [
+      "-C",
+      root,
+      "rev-parse",
+      "--verify",
+      "--quiet",
+      // The full name: a tag named like the short one would win otherwise.
+      `refs/remotes/${ref}^{commit}`,
+    ],
+    readOptions(),
   );
   const commit = resolved.stdout.trim();
   if (resolved.code !== 0 || commit === "")
     return failed("unreadable", `${ref} names no commit in this clone`);
-  const show = await git(["-C", root, "show", `${commit}:${OVERLAY_RELPATH}`], {
-    stderr: "pipe",
-    timeoutSec: FETCH_TIMEOUT_SEC,
-  });
+  const show = await git(
+    ["-C", root, "show", `${commit}:${OVERLAY_RELPATH}`],
+    readOptions(),
+  );
   // A default branch with no configuration file sets nothing.
   if (
     show.code !== 0 &&
@@ -298,16 +337,28 @@ export async function defaultBranchSettingAt(
  * are never touched, and nothing of the working tree reaches it: a command
  * run there executes the reviewed program, never a pull request's edit of
  * it. It holds tracked files only: nothing installed or generated beside
- * them (`node_modules`, build output) is in it.
+ * them (`node_modules`, build output) is in it, and it is not a git checkout.
+ * `commit` is a full commit id. Git before 2.40 ignores `GIT_ATTR_SOURCE`, so
+ * there a working tree's `.gitattributes` can still change line endings.
  */
 export async function withDefaultBranchTree<T>(
   root: string,
   commit: string,
   use: (dir: string) => Promise<T>,
 ): Promise<Outcome<T, "unreadable">> {
+  if (!COMMIT_ID.test(commit))
+    return failed(
+      "unreadable",
+      `the default branch's files could not be copied: ${oneLine(commit, 80)} is not a full commit id`,
+    );
   let scratch: string;
   try {
-    scratch = mkdtempSync(join(tmpdir(), "jig-default-branch-"));
+    // Under the Jig home, not the system's temporary directory: a program
+    // that loads a module looks in every parent's `node_modules`, and on a
+    // shared host anyone can create one beside the system's directory.
+    const parent = join(jigHome(), "tmp");
+    mkdirSync(parent, { recursive: true, mode: 0o700 });
+    scratch = mkdtempSync(join(parent, "default-branch-"));
   } catch (error) {
     return failed(
       "unreadable",
@@ -320,28 +371,29 @@ export async function withDefaultBranchTree<T>(
       mkdirSync(tree),
     );
     if (!made.ok) return made;
-    const env = {
-      ...gitIdentityEnv(),
-      GIT_INDEX_FILE: join(scratch, "index"),
-    };
-    const options = {
-      env,
-      stderr: "pipe" as const,
-      timeoutSec: EXPORT_TIMEOUT_SEC,
-    };
-    const read = await git(["-C", root, "read-tree", commit], options);
+    const index = { GIT_INDEX_FILE: join(scratch, "index") };
+    const read = await git(
+      ["-C", root, ...GIT_READ_FLAGS, "read-tree", commit],
+      readOptions(index, EXPORT_TIMEOUT_SEC),
+    );
     const copy =
       read.code === 0
         ? await git(
             [
               "-C",
               root,
+              ...GIT_READ_FLAGS,
               "checkout-index",
               "--all",
               "--force",
               `--prefix=${tree.replaceAll("\\", "/")}/`,
             ],
-            options,
+            // The attributes of the commit, not of the working tree: a pull
+            // request's own `.gitattributes` would change the copied bytes.
+            readOptions(
+              { ...index, GIT_ATTR_SOURCE: commit },
+              EXPORT_TIMEOUT_SEC,
+            ),
           )
         : read;
     if (copy.code !== 0)

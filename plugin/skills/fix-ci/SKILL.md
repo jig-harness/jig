@@ -84,7 +84,8 @@ Fetches the failed run's log with `gh` and sorts its errors into categories,
 in fix-priority order. With a pull request it also reads every failing commit
 status on the pull request's head and, when the default branch's
 `.config/jig.yaml` sets `ci.log_command`, each status's log through it, run in a temporary copy of the default
-branch's files, never the pull request's checkout (with a 300-second
+branch's files, never the pull request's checkout, so nothing installed in that checkout
+(`node_modules`) and no git repository is there for it (with a 300-second
 deadline, or `JIG_FIX_CI_LOG_COMMAND_TIMEOUT_SEC` seconds); a
 status in state `error` whose description says the build was aborted is no
 failure and is left out.

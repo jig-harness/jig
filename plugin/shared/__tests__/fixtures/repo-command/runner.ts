@@ -40,7 +40,9 @@ else if (mode === "tree") {
       note: readFileSync(join(tree, "note.txt"), "utf8"),
     };
   });
-  console.log(JSON.stringify({ out, removed: dir !== "" && !existsSync(dir) }));
+  console.log(
+    JSON.stringify({ out, dir, removed: dir !== "" && !existsSync(dir) }),
+  );
 } else if (mode === "settings")
   console.log(
     JSON.stringify(

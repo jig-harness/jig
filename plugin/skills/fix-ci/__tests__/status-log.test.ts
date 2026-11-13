@@ -1,6 +1,6 @@
 /**
- * status-log.ts: `ci.log_command` is run through the shell from the
- * repository root, reads the failing status on stdin and prints its log; exit
+ * status-log.ts: `ci.log_command` is run through the shell in a copy of the
+ * default branch's files, reads the failing status on stdin and prints its log; exit
  * 3 says the log is gone, any other failure and a run past the deadline is a
  * failure to read. Each case runs a real command, a script the test writes.
  * The command is the default branch's; a working tree's alone never runs, and
@@ -129,7 +129,8 @@ import { appendFileSync, writeFileSync } from "node:fs";
 const [mode, record] = process.argv.slice(2);
 appendFileSync(record, process.cwd() + "\\n");
 await Bun.stdin.text();
-if (mode === "flood") console.log("x".repeat(100_000));
+if (mode === "fail") process.exit(5);
+else if (mode === "flood") console.log("x".repeat(100_000));
 else if (mode === "hang") await Bun.sleep(30_000);
 else console.log("${version}");
 `;
@@ -216,7 +217,7 @@ describe("readStatusLogs", () => {
     expect(git(work, "branch", "--show-current")).toBe("pr");
   });
 
-  for (const mode of ["log", "flood", "hang"]) {
+  for (const mode of ["log", "fail", "flood", "hang"]) {
     it(`removes the copy after a run that ends as '${mode}'`, async () => {
       const read = await run(mode, [STATUS], 2);
       expect(read.ok).toBe(mode === "log");

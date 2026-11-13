@@ -3,7 +3,14 @@
  * ended, and its setting read from the default branch.
  */
 import { afterAll, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
@@ -219,30 +226,102 @@ describe("defaultBranchSettings", () => {
 });
 
 describe("withDefaultBranchTree", () => {
-  it("holds the commit's tracked files, not the working tree's, and is removed afterwards", async () => {
+  /** A clone whose default branch commit holds `note.txt`; returns it and that commit. */
+  function noted(): { dir: string; commit: string } {
     const dir = clone("do_item: {}\n");
-    writeFileSync(join(dir, "note.txt"), "committed");
+    writeFileSync(join(dir, "note.txt"), "committed\n");
     git(dir, "add", ".");
     git(dir, "commit", "-q", "-m", "note");
-    const commit = Bun.spawnSync(["git", "rev-parse", "HEAD"], { cwd: dir })
+    return { dir, commit: head(dir) };
+  }
+  const head = (dir: string) =>
+    Bun.spawnSync(["git", "rev-parse", "HEAD"], { cwd: dir })
       .stdout.toString()
       .trim();
-    writeFileSync(join(dir, "note.txt"), "edited");
+  const home = () => {
+    const dir = mkdtempSync(join(tmpdir(), "jig-home-"));
+    dirs.push(dir);
+    return dir;
+  };
+
+  it("holds the commit's tracked files, not the working tree's, and is removed afterwards", async () => {
+    const { dir, commit } = noted();
+    const jigHome = home();
+    writeFileSync(join(dir, "note.txt"), "edited\n");
     writeFileSync(join(dir, "untracked.txt"), "x");
-    expect(await runner(["tree", dir, commit])).toEqual({
+    expect(
+      await runner(["tree", dir, commit], { JIG_HOME: jigHome }),
+    ).toMatchObject({
       out: {
         ok: true,
-        value: { files: [".config", "note.txt"], note: "committed" },
+        value: { files: [".config", "note.txt"], note: "committed\n" },
       },
       removed: true,
     });
+    expect(readdirSync(join(jigHome, "tmp"))).toEqual([]);
   });
 
-  it("fails, running nothing, for a commit the clone does not have", async () => {
-    const dir = clone("do_item: {}\n");
-    const { out, removed } = await runner(["tree", dir, "0".repeat(40)]);
+  it("copies under the Jig home, never the system's temporary directory", async () => {
+    const { dir, commit } = noted();
+    const jigHome = home();
+    const out = await runner(["tree", dir, commit], { JIG_HOME: jigHome });
+    expect(out.dir.startsWith(join(jigHome, "tmp"))).toBe(true);
+  });
+
+  it("runs no hook of the working tree", async () => {
+    const { dir, commit } = noted();
+    const marker = join(dir, "hook-ran");
+    mkdirSync(join(dir, ".githooks"));
+    writeFileSync(
+      join(dir, ".githooks", "post-index-change"),
+      `#!/bin/sh\ntouch '${marker}'\n`,
+      { mode: 0o755 },
+    );
+    git(dir, "config", "core.hooksPath", ".githooks");
+    await runner(["tree", dir, commit], { JIG_HOME: home() });
+    expect(existsSync(marker)).toBe(false);
+  });
+
+  it("copies bytes the way the commit's attributes say, not the working tree's", async () => {
+    const { dir, commit } = noted();
+    writeFileSync(join(dir, ".gitattributes"), "note.txt eol=crlf\n");
+    const out = await runner(["tree", dir, commit], { JIG_HOME: home() });
+    expect(out.out.value.note).toBe("committed\n");
+  });
+
+  it("fails, running nothing and leaving nothing, for a commit the clone does not have", async () => {
+    const { dir } = noted();
+    const jigHome = home();
+    const { out, removed } = await runner(["tree", dir, "0".repeat(40)], {
+      JIG_HOME: jigHome,
+    });
     expect(out.ok).toBe(false);
     expect(out.failure.code).toBe("unreadable");
     expect(removed).toBe(false);
+    expect(readdirSync(join(jigHome, "tmp"))).toEqual([]);
+  });
+
+  it("refuses anything but a full commit id", async () => {
+    const { dir } = noted();
+    for (const bad of ["HEAD", "--all", "main", "abc123"]) {
+      const { out } = await runner(["tree", dir, bad], { JIG_HOME: home() });
+      expect(out.ok).toBe(false);
+      expect(out.failure.reason).toContain("not a full commit id");
+    }
+  });
+});
+
+describe("the default branch's commit", () => {
+  it("is the remote-tracking branch's, even when a tag has the short name", async () => {
+    const dir = clone("do_item:\n  preflight_command: check-main\n");
+    writeFileSync(
+      join(dir, ".config", "jig.yaml"),
+      "do_item:\n  preflight_command: check-tag\n",
+    );
+    git(dir, "commit", "-q", "-am", "elsewhere");
+    git(dir, "tag", "origin/main");
+    expect(
+      await runner(["setting", dir, "do_item", "preflight_command"]),
+    ).toEqual({ ok: true, value: "check-main" });
   });
 });
