@@ -2206,7 +2206,8 @@ make, use the entry's term instead.
   workspace, launch a session on a subscription account, notify a person.
   Orca is its first implementation
   ([ADR-0011](docs/adr/ADR-0011-the-dispatcher-targets-orca-first.md)); a
-  *workspace runtime* becomes another by implementing the same methods.
+  *workspace runtime* becomes another by implementing the same methods. The
+  planned *process runtime* implements them with no workspace app at all.
 - **Program status** — the state a program reports to its own terminal
   through [OSC (Operating System Command) 7501](https://www.superlogical.com/rex/docs/build/program-status):
   `idle`, `working`, `blocked`, `done` or `error`. A blocked report can say
@@ -2219,6 +2220,19 @@ make, use the entry's term instead.
   The *dispatcher* can start a follow-up this way on its chosen account
   even when the *session runtime* cannot bind a new interactive session to
   that account.
+- **Closing report** — the short record a *headless pass* the *dispatcher*
+  started writes as its last act: what it concluded, its question for a
+  person if it has one, the next step it suggests, and a cause when it fell
+  short. The agent that did the work writes it, and the *steward* reads a
+  run's transcript only when the run left none. Designed in
+  [design/dispatched-sessions.md](design/dispatched-sessions.md#the-closing-report),
+  [ROADMAP.md](ROADMAP.md) item 51.
+- **Process runtime** — a *session runtime* that runs a *headless pass* as
+  a plain managed process in a git worktree Jig opens itself, with no
+  terminal and no desktop app; a host chooses it in its machine dispatch
+  file. Designed in
+  [design/dispatched-sessions.md](design/dispatched-sessions.md#the-process-runtime),
+  [ROADMAP.md](ROADMAP.md) item 51.
 - **Factory identity** — the tracker user a repository assigns an item to
   when the *dispatcher* should pick it up. An item assigned to it and in
   one of the repository's dispatch states is started, when a person with
