@@ -2229,7 +2229,9 @@ make, use the entry's term instead.
 - **Stalled pickup** — an item the *factory identity* or a pickup for a
   *served person* claimed (in its
   in-progress state) that has had no running session for longer than the
-  repository's `dispatch.stalled_after`. The *dispatcher* reports it and
+  repository's `dispatch.stalled_after`. The identity's item counts when a
+  launch of this host or a claim marker took it, or always under
+  `dispatch.stalled_scope: assigned`. The *dispatcher* reports it and
   never starts it again: a second session would be a second implementer on
   a claimed item, so a person settles it.
 - **Double claim** — an item more than one running session works on at
