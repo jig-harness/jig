@@ -73,7 +73,7 @@ const MERGE_READY_KEY = /^merge-ready:[0-9a-f]{7,64}$/;
 /** A sent answer's key: the parked item it answers, on the pull request its comment is on. */
 const ANSWER_KEY = /^answer:\S+$/;
 
-/** A worktree's key in the Orca guard record: the SHA-256 of its path as Orca reports it. */
+/** A worktree's key in the launch guard record: the SHA-256 of its path as Orca reports it. */
 const ORCA_GUARD_KEY = /^[0-9a-f]{64}$/;
 const ORCA_GUARD_HEARTBEAT_KEY = /^heartbeat$/;
 const ORCA_GUARD_DIR = "~/.local/state/jig/orca-guard/";

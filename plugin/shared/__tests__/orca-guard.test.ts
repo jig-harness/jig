@@ -1,5 +1,5 @@
 /**
- * The Orca guard record: the files gc and Jig's plugin for Orca leave each
+ * The launch guard record: the files gc and Jig's plugin for Orca leave each
  * other. The plugin's files are written here the way a dependency-free Node
  * writer would (plain JSON, a temporary file renamed into place), so the
  * tests hold gc's reader to the contract the README states, not to this

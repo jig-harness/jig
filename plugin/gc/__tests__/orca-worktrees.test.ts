@@ -344,6 +344,37 @@ function commitAndPush(
   f.refreshGh();
 }
 
+/**
+ * Detach the checkout at its head and make `gh` answer the forge's pull
+ * requests for a commit with the merged pull request #12 at `head`, that it
+ * has no other commit (as the forge refuses one), and no pull request for any
+ * branch.
+ */
+function detachWithMergedPull(f: ReturnType<typeof setup>, head: string): void {
+  f.command(["git", "-C", f.tree, "switch", "--quiet", "--detach"]);
+  const pulls = [
+    {
+      number: 12,
+      state: "closed",
+      merged_at: "2026-11-01T00:00:00Z",
+      head: { sha: head, repo: { full_name: "acme/app" } },
+    },
+  ];
+  writeFakeProgram(
+    join(f.root, "bin", "gh"),
+    `#!/usr/bin/env bun
+import { appendFileSync } from "node:fs";
+appendFileSync(${JSON.stringify(join(f.root, "gh-calls"))}, process.argv.slice(2).join(" ") + "\\n");
+const args = process.argv.slice(2);
+if (args[0] === "api" && !args.at(-1).includes(${JSON.stringify(head)})) {
+  console.error("gh: No commit found for SHA: " + args.at(-1) + " (HTTP 422)");
+  process.exit(1);
+}
+console.log(JSON.stringify(args[0] === "api" ? ${JSON.stringify(pulls)} : []));
+`,
+  );
+}
+
 /** The Orca plugin's heartbeat, written as the plugin writes it. */
 function heartbeat(f: ReturnType<typeof setup>, at: Date): void {
   mkdirSync(f.guard, { recursive: true });
@@ -749,6 +780,51 @@ describe.skipIf(
       outcome: "unverified",
       reason: expect.stringContaining("Orca's worktree list could not be read"),
     });
+  }, 60_000);
+
+  test("a detached checkout whose head a merged pull request holds is judged by that pull request", () => {
+    const f = setup();
+    commitAndPush(f, "work", { "work.txt": "work\n" });
+    const head = f.command(["git", "-C", f.tree, "rev-parse", "HEAD"]);
+    detachWithMergedPull(f, head);
+    // The merged pull request's branch is gone, so only its head keeps the commit.
+    f.command(["git", "-C", f.tree, "push", "origin", "--delete", "topic"]);
+    idle(f);
+    const judged = line(gc(f, ["--json"]));
+    const reason = String(judged.reason);
+    expect(judged).toMatchObject({
+      outcome: "would-collect",
+      reason: expect.stringContaining(
+        "merged pull request head covers the worktree's commits",
+      ),
+      details: { runtime: "orca" },
+    });
+    expect(reason).toContain(
+      "HEAD is detached; the forge lists pull request #12 as holding its commit",
+    );
+    expect(readFileSync(join(f.root, "gh-calls"), "utf8")).toContain(
+      `api --hostname fakeforge repos/acme/app/commits/${head}/pulls?per_page=100`,
+    );
+  }, 60_000);
+
+  test("a detached checkout holding a commit no remote branch and no merged pull request holds is kept", () => {
+    const f = setup();
+    commitAndPush(f, "work", { "work.txt": "work\n" });
+    detachWithMergedPull(
+      f,
+      f.command(["git", "-C", f.tree, "rev-parse", "HEAD"]),
+    );
+    writeFileSync(join(f.tree, "experiment.txt"), "experiment\n");
+    f.command(["git", "-C", f.tree, "add", "-A"]);
+    f.command(["git", "-C", f.tree, "commit", "-m", "experiment"]);
+    idle(f);
+    expect(line(gc(f, ["--collect", "--json"]))).toMatchObject({
+      outcome: "refused",
+      reason: expect.stringContaining(
+        "branch without a pull request is ahead of the base; HEAD is detached; the forge lists no pull request holding its commit",
+      ),
+    });
+    expect(existsSync(f.tree)).toBe(true);
   }, 60_000);
 
   test("a checkout Orca does not list stays a plain, report-only worktree", () => {

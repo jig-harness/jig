@@ -394,6 +394,26 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.223.5] - 2026-11-13
+
+### Fixed
+
+- The records inventory (`plugin/RECORDS.md`) says the drive ledger is written at version 2, envelope and `ledgerVersion` alike, when it records a person's stop, and at version 1 otherwise; and it names the tracker claim marker among the records that carry the record envelope.
+- The mechanisms map (`plugin/MECHANISMS.md`) says what happens to a failed follow-up: one of this host's that stopped on a routine question runs once more with the class's standing answer, within the pull request's recovery budget and unless it was already a run again, and any other failure waits on a person, whose **Run it again** deletes its marker and **Record it done** marks it done and sets the followed-up label.
+- The plugin README's `jig ask` field table lists every act a station can wait on a person for under `waitsOn`, as `jig ask` prints them, and a test fails when that list and the code's disagree.
+- GLOSSARY.md has one entry for the files `jig gc` and Jig's plugin for Orca share, **Launch guard record**, which the documents now use throughout, and an entry for the **Line**, the row of stations a work item passes through.
+- `jig gc` no longer leaves a worktree with a detached HEAD `unverified`
+  on every run when no drive recorded it, such as an implementer's tree
+  that `do-item` released or a checkout the dispatcher detached. gc now asks
+  the forge for the pull requests that hold the HEAD commit and runs the
+  same proof a branched worktree gets: a tree whose commit a merged pull
+  request holds and that holds nothing else goes on to the later checks,
+  and one with commits no remote branch and no merged pull request's head
+  holds is kept. A drive's tree record still decides while it describes the
+  head. The reason names the pull request and whether the record or the
+  forge named it ([plugin/gc/README.md § Detached
+  worktrees](plugin/gc/README.md#detached-worktrees)).
+
 ## [0.223.4] - 2026-11-13
 
 ### Fixed
@@ -7741,7 +7761,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.223.4...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.223.5...HEAD
+[0.223.5]: https://github.com/jig-harness/jig/compare/v0.223.4...v0.223.5
 [0.223.4]: https://github.com/jig-harness/jig/compare/v0.223.3...v0.223.4
 [0.223.3]: https://github.com/jig-harness/jig/compare/v0.223.2...v0.223.3
 [0.223.2]: https://github.com/jig-harness/jig/compare/v0.223.1...v0.223.2

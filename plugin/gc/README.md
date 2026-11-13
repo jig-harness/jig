@@ -100,6 +100,38 @@ confirms every holder gone. The collector checks again under exclusive
 scratch admission before each action. It does not sweep at test startup or
 use age as ownership evidence.
 
+### Detached worktrees
+
+A worktree on a branch is judged by the pull requests the forge lists for
+that branch. A worktree whose HEAD is detached has no branch, so gc finds
+its pull requests another way, and the reason it reports says which pull
+requests and how they were found:
+
+- **The drive's tree record.** When drive-pr's attach checks a pull
+  request's head out detached, it records the pull request in the tree's
+  git directory (`shared/driven-tree.ts`). While the head still descends
+  from the commit attached and holds no other branch's work, gc judges the
+  tree by that pull request.
+- **The forge's pull requests for the commit.** Otherwise (no record, or a
+  record the head has moved on from) gc asks the forge for the pull requests
+  whose commits include the HEAD commit (`gh api
+repos/<owner>/<name>/commits/<commit>/pulls`, bounded like every other
+  forge call). Every one counts, a fork's included: an open one keeps the
+  tree, and a commit no remote branch holds is covered only when a merged
+  one's head contains it. A record left behind never names the pull request
+  of work the head has moved on to. A commit the forge does not have, or
+  one no pull request introduced (a direct push, a repository's first
+  commit), is in no pull request; a listing that fills its page, any other refusal, or a
+  record git cannot check against the head leaves the tree unverified.
+
+The rest of the proof is the one a branched tree gets: a detached tree whose
+commits no remote branch and no merged pull request's head holds is kept,
+and one no pull request holds is judged as a tree without a pull request,
+so one with commits of its own is kept. A tree detached at a commit of the
+base branch is judged by the pull request the forge lists as bringing that
+commit in, whose commits a remote branch keeps; where the forge lists none,
+it is judged as a tree without a pull request.
+
 ### Worktrees Orca manages
 
 Removing a worktree Orca manages with plain git leaves Orca's card, its
@@ -181,11 +213,11 @@ every other machine record uses. Orca's plugin worker receives `PATH`,
 `XDG_*` or `JIG_*` variable, so the default depends on the home directory
 alone:
 
-| Platform | Directory | How a plugin computes it |
-| -------- | --------- | ------------------------ |
-| Linux | `$HOME/.local/state/jig/orca-guard/` | `path.join(os.homedir(), ".local", "state", "jig", "orca-guard")`; `os.homedir()` is `$HOME` |
-| macOS | `$HOME/.local/state/jig/orca-guard/` (not under `~/Library`) | the same; `os.homedir()` is `$HOME` |
-| Windows | `%USERPROFILE%\.local\state\jig\orca-guard\` | the same; Node's `os.homedir()` reads `USERPROFILE` and, in a worker without it, asks Windows for the profile directory. Do not use `HOME`: a Unix-style shell on Windows may set it to another directory, and Jig does not read it on Windows |
+| Platform | Directory                                                    | How a plugin computes it                                                                                                                                                                                                                       |
+| -------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Linux    | `$HOME/.local/state/jig/orca-guard/`                         | `path.join(os.homedir(), ".local", "state", "jig", "orca-guard")`; `os.homedir()` is `$HOME`                                                                                                                                                   |
+| macOS    | `$HOME/.local/state/jig/orca-guard/` (not under `~/Library`) | the same; `os.homedir()` is `$HOME`                                                                                                                                                                                                            |
+| Windows  | `%USERPROFILE%\.local\state\jig\orca-guard\`                 | the same; Node's `os.homedir()` reads `USERPROFILE` and, in a worker without it, asks Windows for the profile directory. Do not use `HOME`: a Unix-style shell on Windows may set it to another directory, and Jig does not read it on Windows |
 
 Jig honours no `XDG_STATE_HOME` here, so neither may the plugin. A plugin
 setting that overrides the directory must name the one Jig uses.
@@ -199,11 +231,11 @@ rather than replacing it. It replaces an admission whose holder is dead only
 while it holds a lock file created exclusively beside it
 (`admissions/.<key>.json.reclaim`), after reading the admission again.
 
-| File | Written by | Kind |
-| ---- | ---------- | ---- |
-| `admissions/<key>.json` | gc, while it collects the worktree | `orca-guard-admission` |
-| `launches/<key>.json` | the plugin, for each launch it lets through, before the launch goes on | `orca-guard-launch` |
-| `heartbeat.json` | the plugin, about every 60 s while its worker runs | `orca-guard-heartbeat` |
+| File                    | Written by                                                             | Kind                   |
+| ----------------------- | ---------------------------------------------------------------------- | ---------------------- |
+| `admissions/<key>.json` | gc, while it collects the worktree                                     | `orca-guard-admission` |
+| `launches/<key>.json`   | the plugin, for each launch it lets through, before the launch goes on | `orca-guard-launch`    |
+| `heartbeat.json`        | the plugin, about every 60 s while its worker runs                     | `orca-guard-heartbeat` |
 
 **Key.** `<key>` is the lowercase hexadecimal SHA-256 of the worktree's path,
 as UTF-8 bytes, exactly as Orca reports it (its `path` in
@@ -225,7 +257,26 @@ An admission. Its `at` is when gc wrote it, and `holder` is the collecting
 process's identity (`shared/liveness.ts`):
 
 ```json
-{"kind":"orca-guard-admission","v":1,"key":"481ad110b5d9b30b0c46972739bb0e3d2aeb2c05c5dd3804e8a124048162f2ca","writer":{"host":"laptop","bootId":"6c2e8f4a-1b3d-4f5e-9a7c-2d4b6e8f0a1c","pid":48213,"start":"Thu Nov  5 03:00:01 2026"},"at":"2026-11-05T03:00:12.345Z","path":"/home/ada/orca/workspaces/app/topic","holder":{"hostId":"3f1c9a0e5b7d4e2a8c6f1b0d9e7a5c3b","host":"laptop","bootId":"6c2e8f4a-1b3d-4f5e-9a7c-2d4b6e8f0a1c","pid":48213,"start":"Thu Nov  5 03:00:01 2026"}}
+{
+  "kind": "orca-guard-admission",
+  "v": 1,
+  "key": "481ad110b5d9b30b0c46972739bb0e3d2aeb2c05c5dd3804e8a124048162f2ca",
+  "writer": {
+    "host": "laptop",
+    "bootId": "6c2e8f4a-1b3d-4f5e-9a7c-2d4b6e8f0a1c",
+    "pid": 48213,
+    "start": "Thu Nov  5 03:00:01 2026"
+  },
+  "at": "2026-11-05T03:00:12.345Z",
+  "path": "/home/ada/orca/workspaces/app/topic",
+  "holder": {
+    "hostId": "3f1c9a0e5b7d4e2a8c6f1b0d9e7a5c3b",
+    "host": "laptop",
+    "bootId": "6c2e8f4a-1b3d-4f5e-9a7c-2d4b6e8f0a1c",
+    "pid": 48213,
+    "start": "Thu Nov  5 03:00:01 2026"
+  }
+}
 ```
 
 A launch marker. Its `at` is when the plugin let the launch through,
@@ -233,14 +284,31 @@ A launch marker. Its `at` is when the plugin let the launch through,
 launches:
 
 ```json
-{"kind":"orca-guard-launch","v":1,"key":"481ad110b5d9b30b0c46972739bb0e3d2aeb2c05c5dd3804e8a124048162f2ca","writer":{"host":"laptop","pid":51022},"at":"2026-11-05T03:00:13.002Z","path":"/home/ada/orca/workspaces/app/topic","workspaceId":"repo-1::/home/ada/orca/workspaces/app/topic","agent":"claude"}
+{
+  "kind": "orca-guard-launch",
+  "v": 1,
+  "key": "481ad110b5d9b30b0c46972739bb0e3d2aeb2c05c5dd3804e8a124048162f2ca",
+  "writer": { "host": "laptop", "pid": 51022 },
+  "at": "2026-11-05T03:00:13.002Z",
+  "path": "/home/ada/orca/workspaces/app/topic",
+  "workspaceId": "repo-1::/home/ada/orca/workspaces/app/topic",
+  "agent": "claude"
+}
 ```
 
 The heartbeat. Its `key` is always `heartbeat`, `pid` is the worker's
 process id and `pluginVersion` the plugin's version:
 
 ```json
-{"kind":"orca-guard-heartbeat","v":1,"key":"heartbeat","writer":{"host":"laptop","pid":51022},"at":"2026-11-05T03:00:00.000Z","pid":51022,"pluginVersion":"0.4.0"}
+{
+  "kind": "orca-guard-heartbeat",
+  "v": 1,
+  "key": "heartbeat",
+  "writer": { "host": "laptop", "pid": 51022 },
+  "at": "2026-11-05T03:00:00.000Z",
+  "pid": 51022,
+  "pluginVersion": "0.4.0"
+}
 ```
 
 **Order.** The hook writes its launch marker first, then reads the
@@ -259,11 +327,11 @@ and gc keeps the worktree and leaves the file for a person to inspect.
 
 **Constants.**
 
-| Constant | Value | Meaning |
-| -------- | ----- | ------- |
-| Heartbeat freshness | 180 s | The heartbeat is fresh while its `at` is within 180 s of now; gc collects as guarded only then |
-| Settling window | 120 s | A launch marker keeps its worktree while its `at` is within 120 s of now, and always when its `at` is not before the admission's `at` |
-| Marker retention | 1 day | Each collection of an Orca checkout first deletes launch markers whose `at` (or, when one does not read, whose modification time) is more than a day old, and the plugin's temporary files that old |
+| Constant            | Value | Meaning                                                                                                                                                                                             |
+| ------------------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Heartbeat freshness | 180 s | The heartbeat is fresh while its `at` is within 180 s of now; gc collects as guarded only then                                                                                                      |
+| Settling window     | 120 s | A launch marker keeps its worktree while its `at` is within 120 s of now, and always when its `at` is not before the admission's `at`                                                               |
+| Marker retention    | 1 day | Each collection of an Orca checkout first deletes launch markers whose `at` (or, when one does not read, whose modification time) is more than a day old, and the plugin's temporary files that old |
 
 An admission is deleted by the collector that wrote it once the worktree is
 removed or kept. One left by a collector that died stays until the next
@@ -286,8 +354,7 @@ proof with an unverified completion until the result is recorded.
 A run whose configuration fails before it plans any kind (a report,
 `--collect` or `--scheduled`) collects nothing, prints the reason on standard
 error and still writes a receipt, with no kinds or resources and a `failure`
-naming why: `code` is `configuration` for a gc setting the run refuses (exit
-2) and `unreadable` for a configuration file it cannot read (exit 1), and
+naming why: `code` is `configuration` for a gc setting the run refuses (exit 2) and `unreadable` for a configuration file it cannot read (exit 1), and
 `reason` is the message printed. Nothing was left in flight, so the receipt
 records `completed: true` and expires with the rest. A receipt without
 `failure` planned its kinds.
