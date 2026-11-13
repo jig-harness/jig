@@ -13,6 +13,7 @@
  */
 
 import type { TrackerAttachments } from "./attachment.ts";
+import type { PoolScopeCounts } from "./pool-counts.ts";
 
 /**
  * The workflow states the skills reason about, by role rather than by the
@@ -887,6 +888,8 @@ export interface Tracker extends TrackerAttachments {
    * between two stores reads each issue through a tracker of each.
    */
   openPopulation(options?: FacetReadOptions): Promise<PoolIssue[]>;
+  /** Optional comparison of open counts before and after the pool scope, without reading issues. */
+  poolScopeCounts?(signal?: AbortSignal): Promise<PoolScopeCounts>;
 
   // ── Facets ──
   /**

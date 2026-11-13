@@ -1,7 +1,8 @@
 /**
  * What config-fit asks the configured tracker: whether it answers for the
- * audited repository, and, on GitHub Issues, where each facet the
- * configuration leaves to the default is kept (design/tracker-facets.md,
+ * audited repository, whether configured facet stores are usable, and, on
+ * GitHub Issues, where each facet the configuration leaves to the default
+ * is kept (design/tracker-facets.md,
  * "No store moves by itself"). A facet that relies on the default waits on
  * detection before every read and write, and a store the default selected
  * changes only by what the tracker shows; naming it in `issue_tracker.facets`
@@ -50,14 +51,11 @@ const STORE: Record<string, string> = {
 };
 
 /**
- * On GitHub Issues, a finding for each facet whose store the configuration
- * does not name: a conflict or a refused default is an error, a detection
- * that could not be read is unchecked, and a store in force is offered as
- * the line that names it. Other adapters keep a facet the configuration does
- * not name where they always have, so they are not asked.
+ * Report failed configured stores for every adapter. On GitHub Issues, also
+ * report conflicts and unchecked detection, and offer the line that names a
+ * default store. Other adapters do not detect their defaults.
  */
 export async function facetFindings(tracker: Tracker): Promise<Finding[]> {
-  if (tracker.adapter !== "github") return [];
   let stores: Awaited<ReturnType<Tracker["facetStores"]>>;
   try {
     stores = await within((signal) =>
@@ -74,7 +72,20 @@ export async function facetFindings(tracker: Tracker): Promise<Finding[]> {
   }
   return stores.facets.flatMap((f): Finding[] => {
     const at = `issue_tracker.facets.${f.facet}`;
-    if (f.why === "configured" || f.why === "no facet") return [];
+    if (f.health?.status === "failed")
+      return [
+        {
+          id: `derivation:${at}`,
+          severity: "error",
+          message: `${f.facet}'s configured store cannot be used: ${f.health.error}; its reads and writes fail`,
+        },
+      ];
+    if (
+      tracker.adapter !== "github" ||
+      f.why === "configured" ||
+      f.why === "no facet"
+    )
+      return [];
     if (f.store === null)
       return [
         {
@@ -101,4 +112,39 @@ export async function facetFindings(tracker: Tracker): Promise<Finding[]> {
       },
     ];
   });
+}
+
+/** Open population counts, where the adapter can compare its configured scope. */
+export async function poolScopeFindings(tracker: Tracker): Promise<Finding[]> {
+  const read = tracker.poolScopeCounts?.bind(tracker);
+  if (read === undefined) return [];
+  try {
+    const counts = await within(read);
+    const scope = counts.scoped
+      ? `${counts.pool} within the configured pool issue-type scope`
+      : "no pool issue-type scope is configured";
+    return [
+      {
+        id: "info:issue_tracker.pool_scope",
+        severity: "info",
+        message: `open population${counts.approximate ? " (approximate)" : ""}: ${counts.project} issues in the project; ${scope}`,
+      },
+    ];
+  } catch (e) {
+    return [
+      {
+        id: "unchecked:issue_tracker.pool_scope",
+        severity: "warning",
+        message: `open population counts are unchecked: ${e instanceof Error ? e.message : String(e)}`,
+      },
+    ];
+  }
+}
+
+/** Store health and default selection, followed by the adapter's population counts. */
+export async function trackerFindings(tracker: Tracker): Promise<Finding[]> {
+  return [
+    ...(await facetFindings(tracker)),
+    ...(await poolScopeFindings(tracker)),
+  ];
 }

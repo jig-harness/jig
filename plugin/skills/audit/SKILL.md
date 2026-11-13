@@ -101,7 +101,10 @@ configuration schema (`${CLAUDE_SKILL_DIR}/config-schema.yaml`) and against the
 repository: unknown, refused and deprecated fields, wrong types, what the
 skills' own validation rejects, commands and paths that do not exist, required
 checks that never run, a tracker that cannot be reached (on Jira, with each
-`issue_tracker.jira.field_labels` entry resolved against the site), recent integration-branch commit subjects that do not follow
+`issue_tracker.jira.field_labels` entry resolved against the site), configured
+facet stores that cannot be used (GitHub, Jira and Linear), approximate counts
+of open Jira issues before and after `issue_tracker.jira.pool_issue_types`
+limits the pool, recent integration-branch commit subjects that do not follow
 `pull_requests.title_pattern` (an inference about pull request titles that holds
 for squash merges; merge or rebase merging leaves other subjects), a base `pull_requests.base_rules`
 names that the repository lacks, declared values the
