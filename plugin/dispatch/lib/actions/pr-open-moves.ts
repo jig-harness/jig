@@ -124,16 +124,21 @@ async function moveOne(
   move: PrOpenMove,
   room: MoveRoom,
 ): Promise<PrOpenMove> {
+  let signal: AbortSignal | undefined;
   try {
     const why = await changed(tracker, move, room);
     if (why !== null) return done(move, "waits", why);
     const ms = allowance(room);
     if (ms === null) return done(move, "waits", OUT_OF_TIME);
-    await tracker.transition(move.target, "pr_open", AbortSignal.timeout(ms));
+    signal = AbortSignal.timeout(ms);
+    await tracker.transition(move.target, "pr_open", signal);
   } catch (error) {
+    // An adapter wraps a cancelled call in its own error type, so the signal's
+    // own state says the clock ran out where the error's name does not.
+    const clock = timedOut(error) || signal?.aborted === true;
     return done(
       move,
-      isRateLimited(error) || timedOut(error) ? "waits" : "refused",
+      isRateLimited(error) || clock ? "waits" : "refused",
       `the tracker did not move ${move.target} to ${move.to}: ${failureText(error)}`,
     );
   }

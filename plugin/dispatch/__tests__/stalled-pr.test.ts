@@ -367,6 +367,23 @@ describe("--apply of a move to pr_open", () => {
     expect(report.prOpenMoves?.[0]).toMatchObject({ outcome: "waits" });
   });
 
+  it("waits when an adapter wraps the cancelled transition in its own error", async () => {
+    const fake = fakeTracker("In Progress", false, () => move.to);
+    (fake.tracker as unknown as { transition: unknown }).transition = (
+      _key: string,
+      _to: string,
+      signal: AbortSignal,
+    ) =>
+      new Promise<never>((_, reject) => {
+        signal.addEventListener("abort", () =>
+          reject(new Error("the request was cancelled")),
+        );
+      });
+    const report = reportWith([move]);
+    await applyPrOpenMoves(report, fake.tracker, room({ left: () => 20 }));
+    expect(report.prOpenMoves?.[0]).toMatchObject({ outcome: "waits" });
+  });
+
   it("waits when a session holds the item at the fresh read", async () => {
     const fake = fakeTracker("In Progress");
     const report = reportWith([move]);
