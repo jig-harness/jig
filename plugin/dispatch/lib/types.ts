@@ -631,6 +631,16 @@ export interface Defect {
   reason: string;
 }
 
+/** An account a preflight check held a repository's tracker stages back on, with the check's answer. */
+export interface PreflightHold {
+  probe: "tracker";
+  account: string;
+  /** The check's answer, verbatim. */
+  reason: string;
+  /** The stages it held back, in the order it first held each. */
+  stages: Stage[];
+}
+
 export interface RepoReport {
   steward?: { status: string; hash?: string; records?: number };
   path: string;
@@ -655,6 +665,8 @@ export interface RepoReport {
   inScope?: number[];
   /** What `--apply` launched, retried or held back; empty without it. */
   launches: LaunchOutcome[];
+  /** The accounts a preflight check held this repository's tracker stages back on this tick (`preflight.ts`); absent when it held none. */
+  preflight?: PreflightHold[];
   /** What `--apply` notified, where the machine file enables `notify`; empty otherwise. */
   notifications: NotifyOutcome[];
   /** What `--apply` did with the repository's notices workspace, where the machine file enables `notify` and one is open. */
