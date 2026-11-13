@@ -225,12 +225,14 @@ with the bridge itself, in step 4 of the build order:
 - **An acknowledged interaction is never lost.** It is recorded before it is
   acknowledged, kept until it is done, and taken up again after a crash or
   a delivery Slack does not repeat.
-- **An interaction runs once.** A repeated delivery, or a recovery after a
-  crash, makes only the effects not yet made. Each write carries the
-  interaction's id as a request id, on the change itself where it can (a
-  comment) and on the `chat-request` or `drive-answer` record beside it, so
-  recovery can tell what was made. A label carries no id: one whose state
-  recovery cannot confirm is left for a person, never written again.
+- **Duplicate deliveries are suppressed when recovery can prove an effect
+  already happened.** A repeated delivery, or a recovery after a crash,
+  makes only the effects not yet made when the interaction's request id is
+  recorded on the change itself where it can (a comment) or beside it in a
+  `chat-request` or `drive-answer` record. A label carries no id: one whose
+  state recovery cannot confirm is left for a person, never written again.
+  This prevents duplicate deliveries; it does not guarantee exactly-once
+  effects when a stale worker writes after a later command intervenes.
 - **A stale click is refused.** The digest and the park's occurrence are
   checked immediately before the write.
 - **What it cannot promise.** The forge and the tracker accept no
