@@ -147,4 +147,32 @@ describe("an item held and then released", () => {
     expect(pickupHold("#7", records).kind).toBe("none");
     expect(pickupHold("#8", records).kind).toBe("ended");
   });
+
+  it("releases a held member of a batch alone while a sibling is claimed", () => {
+    const dir = root();
+    const batch = endedPickup("#7");
+    batch.record = {
+      ...batch.record,
+      batchItems: [{ key: "#7" }, { key: "#8" }],
+    } as unknown as LaunchRecord;
+    const records = [batch];
+    tick(records, dir, { claimed: ["#8"], unplaced: [held("#7")] });
+    expect(batch.record.releasedItems).toEqual(["#7"]);
+    expect(batch.record.released).toBe(false);
+  });
+
+  it("recognizes a hold the ready pool words with its state", () => {
+    const dir = root();
+    const records = [endedPickup("#7")];
+    tick(records, dir, {
+      unplaced: [
+        {
+          target: "#7",
+          record: "tracker",
+          reason: `in the ready pool (Todo), but ${PERSON_HOLD}`,
+        },
+      ],
+    });
+    expect(records[0]?.record.released).toBe(true);
+  });
 });

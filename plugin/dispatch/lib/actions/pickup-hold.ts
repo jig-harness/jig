@@ -35,7 +35,7 @@ import {
 } from "../launches.ts";
 import { holdsItem } from "../launch-pickups.ts";
 import { refusalOf } from "../pickup-refusal.ts";
-import { PERSON_HOLD } from "../queue-rank.ts";
+import { isPersonHold } from "../queue-rank.ts";
 import { RUNNING_STATES, type SessionsReport } from "../runtime/port.ts";
 import type { Unplaced } from "../types.ts";
 
@@ -213,7 +213,7 @@ export function recordsWanted(
   return new Set([
     ...pickups.map((p) => p.key),
     ...unplaced
-      .filter((u) => u.reason !== PERSON_HOLD || handedOn.has(u.target))
+      .filter((u) => !isPersonHold(u.reason) || handedOn.has(u.target))
       .map((u) => u.target),
   ]);
 }
@@ -261,19 +261,18 @@ export function releaseEnded(
     );
     if (provable.length > 0 && r.state.kind !== "pending")
       noteClaims(record, provable, root);
-    if (claimedMembers.length > 0 || holds(r.state)) continue;
-    const kept = members.filter((key) =>
-      wantsRecord(record, key, wanted, returned),
+    if (holds(r.state)) continue;
+    // A claimed member keeps its own place; the record's other members
+    // release one by one.
+    const unclaimed = members.filter((key) => !claimedMembers.includes(key));
+    const dropped = unclaimed.filter(
+      (key) => !wantsRecord(record, key, wanted, returned),
     );
-    if (kept.length === members.length) continue;
+    if (dropped.length === 0) continue;
     // A member no longer wanted is released alone, so its siblings keep the
     // question they wait on.
-    if (kept.length === 0) record.released = true;
-    else
-      record.releasedItems = [
-        ...(record.releasedItems ?? []),
-        ...members.filter((key) => !kept.includes(key)),
-      ];
+    if (dropped.length === members.length) record.released = true;
+    else record.releasedItems = [...(record.releasedItems ?? []), ...dropped];
     writeRecord(record, root);
   }
 }

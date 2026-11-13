@@ -48,6 +48,12 @@ export interface LastRun {
    * there were at least that many. Absent when the run passed.
    */
   failing?: { runs: number; since: string; capped: boolean };
+  /**
+   * Set when the read spent its limit on receipts that are no evidence of a
+   * run, so the last run is unknown rather than absent: the count read. The
+   * run's own fields are then empty.
+   */
+  unread?: number;
 }
 
 /** One component's entry in `jig status`. */

@@ -157,11 +157,34 @@ describe("lastTick's read budget", () => {
         },
         dir,
       );
+    expect(lastTick(dir)?.unread).toBe(100);
+  });
+
+  it("is null, not unread, when every receipt was read and none ran", () => {
+    const dir = root();
+    writeReceipt(
+      { ...tickAt("2026-01-01T00:00:00Z", 0), lockHeldBy: "x" },
+      dir,
+    );
     expect(lastTick(dir)).toBeNull();
   });
 });
 
 describe("readReceipt", () => {
+  it("skips a receipt whose repository entry lacks the unplaced rows failure rendering reads", () => {
+    const dir = root();
+    const base = receipt("2026-01-01", "/a", "2026-01-01T00:00:00Z");
+    const { unplaced: _unplaced, ...entry } = base.repos[0] as never as Record<
+      string,
+      unknown
+    >;
+    const path = writeReceipt(
+      { ...base, repos: [entry] } as unknown as TickReceipt,
+      dir,
+    );
+    expect(readReceipt(path)).toBeNull();
+  });
+
   it("skips a receipt whose repository entry is not one", () => {
     const dir = root();
     const bad = {

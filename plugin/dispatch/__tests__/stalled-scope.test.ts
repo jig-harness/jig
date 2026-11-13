@@ -230,6 +230,7 @@ describe("markClaims", () => {
       expect.objectContaining({
         target: "#7",
         reason: expect.stringContaining("waits for a read"),
+        readFailed: true,
       }),
     ]);
   });

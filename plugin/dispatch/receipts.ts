@@ -193,6 +193,7 @@ function isRepoEntry(value: unknown): boolean {
     typeof value.path === "string" &&
     Array.isArray(value.actions) &&
     Array.isArray(value.records) &&
+    Array.isArray(value.unplaced) &&
     (value.followupSince === null ||
       value.followupSince === undefined ||
       (typeof value.followupSince === "string" &&
@@ -245,7 +246,8 @@ function ranTick(path: string): TickReceipt | null {
  * failed one carries its reason and the failed ticks in a row it ends. Every
  * receipt file read, held or invalid ones included, spends one of
  * `FAILED_RUN_READ`; a run still going when they are spent is `capped`, and
- * with none that ran found by then the answer is null.
+ * with none that ran found by then the answer is `unread` when receipts
+ * remain, null when there are none to read.
  */
 export function lastTick(root = stateRoot()): LastRun | null {
   const paths = receiptPaths(root).reverse();
@@ -259,7 +261,19 @@ export function lastTick(root = stateRoot()): LastRun | null {
     return null;
   };
   const newest = next(0);
-  if (newest === null) return null;
+  if (newest === null) {
+    // Receipts left unread are an unknown history, not an absent one.
+    return reads >= FAILED_RUN_READ && reads < paths.length
+      ? {
+          runId: "",
+          startedAt: "",
+          completed: false,
+          exitStatus: 1,
+          path: paths[0] as string,
+          unread: reads,
+        }
+      : null;
+  }
   const { receipt } = newest;
   const path = paths[newest.at] as string;
   const last: LastRun = {

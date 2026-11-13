@@ -520,6 +520,12 @@ function failedRunText(failing: LastRun["failing"]): string {
 function lastRunCheck(name: string, last: LastRun | null): DoctorCheck {
   const id = `${name}:last-run`;
   if (last === null) return skip(id, "no receipt yet");
+  if (last.unread !== undefined)
+    return fail(
+      id,
+      `the newest ${last.unread} receipts hold no tick that ran, so the last run is unknown`,
+      `jig receipts ${name}`,
+    );
   if (last.completed && last.exitStatus === 0)
     return pass(id, `${last.runId}, exit 0`);
   const outcome = last.completed

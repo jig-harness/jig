@@ -53,12 +53,14 @@ export async function markClaims(
   const claimed: ClaimedItem[] = [];
   const mark = (item: ClaimedItem, found: boolean) =>
     claimed.push(found ? { ...item, claimMarker: "found" } : item);
-  const unread = (item: ClaimedItem, why: string) => {
+  // A request that failed is a failed read; the tracker's rate limit is a deferral.
+  const unread = (item: ClaimedItem, why: string, failed: boolean) => {
     claimed.push({ ...item, claimMarker: "unread" });
     unplaced.push({
       target: item.key,
       record: "tracker",
       reason: `whether a claim marker took it could not be read, so its stall watch waits for a read: ${why}`,
+      ...(failed ? { readFailed: true as const } : {}),
     });
   };
   let limited = false;
@@ -67,7 +69,7 @@ export async function markClaims(
     const kept = keptMark(cache, key, item);
     if (kept !== undefined) mark(item, kept);
     else if (limited)
-      unread(item, "the tracker's rate limit stopped an earlier read");
+      unread(item, "the tracker's rate limit stopped an earlier read", false);
     else
       try {
         const found = await marked(tracker, item.key, identity);
@@ -76,7 +78,7 @@ export async function markClaims(
         mark(item, found);
       } catch (error) {
         limited = isRateLimited(error);
-        unread(item, failureText(error));
+        unread(item, failureText(error), !limited);
       }
   }
   return { claimed, unplaced };
