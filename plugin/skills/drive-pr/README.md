@@ -538,6 +538,10 @@ clone, a driver's exported state directory. Placing another clone's PR from insi
 whose state is under a relocated `DRIVE_PR_STATE_DIR` is refused (exit 2):
 arm it from a session outside the drive.
 
+Running `mark-ready.ts` by hand releases the session leases it acquired after a
+confirmed successful transition, so you can start a drive in the same tree
+immediately. Calls from a running drive keep its leases.
+
 `--bots-only` keeps it off human-authored threads (recommended for unattended runs). `--keep-draft` stops it marking the PR Ready (`pull_requests.mark_ready: never` does the same for every drive). `--max-rounds N` bounds the loop (default `drive.max_rounds`, else 10). `--dry-run` reports what each round would do and never invokes the pass. `--take-over` and `--window-reopened` pick a stopped drive up ([below](#picking-up-a-stopped-drive)). Starting it twice **in the same clone** is safe — see exit `11`. The lock lives in the drive's database, keyed by this clone, so it covers this clone and its linked worktrees and nothing further. Another clone — another machine, a CI checkout — is held off by the [drive ledger](#where-its-state-lives) instead: while the ledger names a running driver in another clone, an arm is refused with exit `13`.
 
 `--settle-worktree` asks for a pass to settle an exit-12 stop in the tree

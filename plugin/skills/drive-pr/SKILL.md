@@ -3113,6 +3113,11 @@ bun "${CLAUDE_SKILL_DIR}/scripts/mark-ready.ts" [PR] --round N --reason "round N
 or when the repository marks Ready only at convergence or never, it prints
 `not-due` and does nothing.
 
+A standalone successful transition gives back the session leases it acquired, so
+a drive can start immediately in that tree. A call inside a running drive keeps
+its driver's leases; a claim held by another caller and an unconfirmed remote
+transition retain their existing protection.
+
 When it prints `marked`, move the Orca workspace card to the review stage with
 the pull request linked, as `drive.ts` does itself; outside Orca it does
 nothing, and an Orca failure only warns (exit `0`):
