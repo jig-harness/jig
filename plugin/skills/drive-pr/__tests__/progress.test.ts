@@ -35,6 +35,7 @@ import {
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 import { closeDatabase } from "../../../shared/records/db.ts";
+import { gitIdentityEnv } from "../../../shared/proc.ts";
 import { dbPathFor } from "../scripts/lib/state/db.ts";
 import { readState as readStateRow, writeState } from "./state-rows.ts";
 
@@ -46,10 +47,9 @@ const SHA_B = "b".repeat(40);
 
 function cleanEnv(extra: Record<string, string>): Record<string, string> {
   const env: Record<string, string> = {};
-  for (const [k, v] of Object.entries(process.env)) {
-    if (k.startsWith("GIT_") || k.startsWith("DRIVE_PR_") || v === undefined)
-      continue;
-    env[k] = v;
+  for (const [key, value] of Object.entries(gitIdentityEnv())) {
+    if (key.startsWith("DRIVE_PR_") || value === undefined) continue;
+    env[key] = value;
   }
   return { ...env, ...extra };
 }
