@@ -10,9 +10,9 @@ reference pages for the maintainer (every module, skill, principle and
 term), all rendered from the repository's own documents so they cannot
 disagree with them.
 
-This is the design of [plan](plan.md) items 18 and 51. The site is
+This is the design of [plan](plan.md) items 18 and 52. The site is
 built and deployed, open to every reader and to search engines. The factory
-message below is planned under item 51; it guides an external design round
+message below is planned under item 52; it guides an external design round
 before the visitor pages and the site change. The page table states the
 target, with planned routes marked. [§ Build order](#build-order) separates
 that work from item 18's remaining site work.
@@ -248,7 +248,7 @@ maintainers ([AGENTS.md § Writing conventions](../AGENTS.md#writing-conventions
 
 | Route | Source | What the page adds |
 |-------|--------|--------------------|
-| `/` | README.md, FACTORY.md | planned message under item 51: factory headline, checkable sentence and the work-item scenario from § The home page's one loop; the human merge boundary and direct paths to the line, adoption and its audit instructions; the accepted design round chooses the presentation |
+| `/` | README.md, FACTORY.md | planned message under item 52: factory headline, checkable sentence and the work-item scenario from § The home page's one loop; the human merge boundary and direct paths to the line, adoption and its audit instructions; the accepted design round chooses the presentation |
 | `/features/` | FEATURES.md, the plugin README's skill tables, ROADMAP.md, FACTORY.md | what a team gets: the intro beside its plate, an at-a-glance card per feature (its plate, its problem line, number, title and skill chips) linking to its section, then one section per feature: its problem line as a quotation, its prose beside its plate, the skills that run it as actor chips, the modules that state the practice as chips, the factory stations its skills run linked into `/factory/`, and what is on the roadmap as roadmap chips beside each entry |
 | `/modules/` | modules/README.md, profiles.yaml | the full map: every module at three levels, in id order, with a profile switch, scaffolding jobs and the skills that run each |
 | `/modules/<Mn>/` | the module README, its criteria YAML, its mappings.md | three numbered parts (the idea, the practice by level with the audit's criteria, the mechanics folded), the CI-provider switch for the mappings, and a rail: commands, scaffolding job, target per profile, adoption order |
@@ -274,7 +274,7 @@ maintainers ([AGENTS.md § Writing conventions](../AGENTS.md#writing-conventions
 
 These are the deployed site's implementation conventions. The external
 design round works from them; its accepted bundle settles the presentation
-of item 51's message before the page work changes components or copy.
+of item 52's message before the page work changes components or copy.
 
 - **Palette**: the tokens at the top of `website/src/styles/global.css`,
   light and dark; the site follows the reader's system setting and a switch
@@ -581,7 +581,7 @@ update is not a plugin release.
 
 ## Build order
 
-### Factory message: item 51
+### Factory message: item 52
 
 The [epic](https://github.com/jig-harness/jig/issues/1019) holds this design
 amendment and the later work. After the amendment merges, file the brief,
@@ -603,7 +603,7 @@ design round and visitor-page work under that epic, in this order:
    agreed contract. Keep planned autonomy claims in On the roadmap until
    item 33's live-host checks are recorded. The direct audit path remains.
 
-When the page work finishes, remove item 51 from the plan and roadmap and
+When the page work finishes, remove item 52 from the plan and roadmap and
 move the implemented message contract into the documents it governs.
 
 ### Remaining site work: item 18

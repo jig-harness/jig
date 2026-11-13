@@ -864,7 +864,7 @@ how it works and what is left. Done when:
 - the adoption page shows an audit sheet of Jig's own audit, with a direct
   link from the home page.
 
-### 51. Present Jig as a software factory, told in three layers
+### 52. Present Jig as a software factory, told in three layers
 
 A reader should learn in one screen what Jig does for a team and who
 merges. [The website design](website.md#the-message-a-software-factory-first)
