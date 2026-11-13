@@ -9,6 +9,8 @@ import { cardAttrs } from "./keys.ts";
 import { mergeCard } from "./cards.ts";
 import { CopyButton } from "./copy.tsx";
 import { Fold, PanelHelp } from "./fold.tsx";
+import { Glyph } from "./icon-word.tsx";
+import { iconOf, LANE_ICONS } from "./icons.ts";
 import { readKept, writeKept } from "./kept.ts";
 import {
   boardNotes,
@@ -104,7 +106,10 @@ export function MergePanel({
         {lanes.map((lane, i) => (
           <div className="mLane" key={lane.lane}>
             <div className={`groupHead${i === 0 ? " first" : ""}`}>
-              {lane.title} · {lane.cards.length}
+              <span className="headWord">
+                <Glyph of={iconOf(LANE_ICONS, lane.lane)} size={16} />
+                {lane.title} · {lane.cards.length}
+              </span>
             </div>
             <p className="sm mut gnote">{lane.note}</p>
             {lane.cards.map((card) => (
