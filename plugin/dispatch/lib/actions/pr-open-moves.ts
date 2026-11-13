@@ -27,7 +27,7 @@ import type { PrOpenMove, RepoReport } from "../types.ts";
 /** The tracker operations a move uses. */
 export type MoveTracker = Pick<
   Tracker,
-  "getIssue" | "transition" | "postComment"
+  "getIssue" | "transition" | "postComment" | "stateName"
 >;
 
 /** How long one tracker call of a move may take at most. */
@@ -51,12 +51,24 @@ function allowance(room: MoveRoom): number | null {
 const OUT_OF_TIME =
   "this tick has no time left for the move; a later tick retries it";
 
+/** The time a call was bounded by ran out: the tick's allowance, not the tracker's answer. */
+class TimeUp extends Error {}
+
+/** Whether a failure is the clock and not the tracker: a bound of ours that expired, or the abort signal a call was given. */
+function timedOut(error: unknown): boolean {
+  return (
+    error instanceof TimeUp ||
+    (error instanceof Error &&
+      (error.name === "TimeoutError" || error.name === "AbortError"))
+  );
+}
+
 /** A read that cannot take a signal, bounded by `ms`: it rejects when the time is up, the tracker's own call left to finish alone. */
 function within<T>(call: Promise<T>, ms: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(
-      () => reject(new Error(`the read took longer than ${ms / 1000}s`)),
+      () => reject(new TimeUp(`the read took longer than ${ms / 1000}s`)),
       ms,
     );
   });
@@ -92,6 +104,9 @@ async function changed(
   if (now === null) return `${move.target} did not read again`;
   if (now.state.name.trim().toLowerCase() !== move.from.trim().toLowerCase())
     return `${move.target} is now in ${now.state.name}, not the ${move.from} the plan read`;
+  const destination = tracker.stateName("pr_open", now.nativeType ?? null);
+  if (destination?.trim().toLowerCase() !== move.to.trim().toLowerCase())
+    return `${move.target} is now of a type whose workflow ${destination ? `moves it to ${destination}` : "names no pr_open state"}, not the ${move.to} the plan chose`;
   const sessionMs = allowance(room);
   if (sessionMs === null) return OUT_OF_TIME;
   const sessions = await within(room.sessions(), sessionMs);
@@ -118,7 +133,7 @@ async function moveOne(
   } catch (error) {
     return done(
       move,
-      isRateLimited(error) ? "waits" : "refused",
+      isRateLimited(error) || timedOut(error) ? "waits" : "refused",
       `the tracker did not move ${move.target} to ${move.to}: ${failureText(error)}`,
     );
   }

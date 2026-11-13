@@ -143,17 +143,25 @@ function input(
 }
 
 /** A tracker holding #12 in `state`, recording its moves and comments; `fail` makes every call throw. */
-function fakeTracker(state: string, fail = false) {
+function fakeTracker(
+  state: string,
+  fail = false,
+  stateName: (nativeType: string | null) => string | null = () => "PR Open",
+  hang = false,
+) {
   const moves: string[][] = [];
   const comments: string[][] = [];
   const refuse = () => {
     if (fail) throw new Error("tracker unreachable");
   };
   const tracker = {
+    stateName: (_state: string, context: string | null) => stateName(context),
     async getIssue(key: string) {
       refuse();
+      if (hang) await new Promise<never>(() => undefined);
       return {
         identifier: key,
+        nativeType: "Task",
         state: { id: "s", name: state, type: "started" },
       };
     },
@@ -339,6 +347,24 @@ describe("--apply of a move to pr_open", () => {
     expect(fake.moves).toEqual([]);
     expect(report.prOpenMoves?.[0]).toMatchObject({ outcome: "waits" });
     expect(report.prOpenMoves?.[0]?.detail).toContain("no time left");
+  });
+
+  it("waits when the item's workflow no longer names the planned destination", async () => {
+    const fake = fakeTracker("In Progress", false, () => null);
+    const report = reportWith([move]);
+    await applyPrOpenMoves(report, fake.tracker, room());
+    expect(fake.moves).toEqual([]);
+    expect(fake.comments).toEqual([]);
+    expect(report.prOpenMoves?.[0]).toMatchObject({ outcome: "waits" });
+    expect(report.prOpenMoves?.[0]?.detail).toContain("names no pr_open state");
+  });
+
+  it("waits when the tick's time runs out during a read", async () => {
+    const fake = fakeTracker("In Progress", false, () => move.to, true);
+    const report = reportWith([move]);
+    await applyPrOpenMoves(report, fake.tracker, room({ left: () => 20 }));
+    expect(fake.moves).toEqual([]);
+    expect(report.prOpenMoves?.[0]).toMatchObject({ outcome: "waits" });
   });
 
   it("waits when a session holds the item at the fresh read", async () => {
