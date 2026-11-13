@@ -5,12 +5,14 @@
  * as a tested callsite rather than inline pseudocode.
  *
  * Type: Decision
- * Input: JSON on stdin — see `ReconcileInput` below. The caller (SKILL.md
- *   Step 5a) is responsible for fetching and, for the MCP transport, fully
- *   paginating the child list before invoking this script; a script cannot
- *   itself call the harness's tracker tools. Fetching or pagination that
- *   did not complete must be reported via `found`/`truncated`, never by
- *   silently handing over a partial `children` array.
+ * Input: JSON on stdin — the tracker port's answers for the parent and each
+ *   child (`lib/reconcile-answers.ts`: `{ issue, parent, children, complete }`,
+ *   the same shape on every adapter), or a `ReconcileInput` (below). The
+ *   caller (SKILL.md Step 5a) fetches and, on a harness's own integration,
+ *   pages the child list to its end before invoking this script; a script
+ *   cannot itself call the harness's tracker tools. Fetching or paging that
+ *   did not complete is reported (`complete: false`, a `null` answer, or
+ *   `found`/`truncated`), never by silently handing over a partial list.
  * Output: JSON `ReconcileDecision` on stdout.
  *
  * Usage:
@@ -41,6 +43,7 @@ import {
 } from "../../../shared/json-input.ts";
 import { parseArgs, runEntry } from "./lib/cli.ts";
 import { LINKED_PR_STATES, type LinkedPrState } from "./lib/linked-pr.ts";
+import { isAnswersInput, listingFromAnswers } from "./lib/reconcile-answers.ts";
 
 /** A label as either transport supplies it: a flat string (MCP, get_issue.ts) or `{ name }`. */
 export type LabelLike = string | { name?: string };
@@ -648,12 +651,13 @@ async function main(): Promise<number> {
     return 2;
   }
 
-  const input = await readJsonInput(parsed.args.values.get("input"), readStdin);
-  if (input === INVALID_JSON_INPUT) return 1;
+  const raw = await readJsonInput(parsed.args.values.get("input"), readStdin);
+  if (raw === INVALID_JSON_INPUT) return 1;
+  const input = isAnswersInput(raw) ? listingFromAnswers(raw) : raw;
 
   if (!isReconcileInputShape(input)) {
     console.error(
-      "input is not a valid ReconcileInput: expected { found?, truncated?, parentLabels: [], children: [{ state?, labels?, pullRequest? }] }",
+      "input is not a valid ReconcileInput: expected { found?, truncated?, parentLabels: [], children: [{ state?, labels?, pullRequest? }] }, or the tracker's answers { issue, parent, children: { <key>: answer }, complete }",
     );
     return 1;
   }

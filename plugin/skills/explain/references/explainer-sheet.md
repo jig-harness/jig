@@ -146,16 +146,32 @@ sheet can be regenerated from the attachment alone.
 
 ## Post the sheet
 
-Attach the sheet to the issue it serves, the same way as a decision sheet
-([`decision-sheet.md`](../../decide/references/decision-sheet.md#post-the-sheet);
-Linear adapter example: `mcp__linear__prepare_attachment_upload` with the
-`attachment` fields from the `render` summary, upload the bytes with every
-returned header, then `mcp__linear__create_attachment_from_upload`). Remove an
-older explainer with the same title after the new one is attached, never
-before. Post the markdown as the comment, or a shorter comment that points to
-the sheet, through the tracker scripts of `/jig:do-item`
-(`bun "<skill-dir>/../do-item/scripts/tracker.ts" comment "<KEY>" --body-file <comment-file>`). Never commit a
-rendered sheet to the repository.
+Attach the sheet to the issue it serves through the tracker scripts of
+`/jig:do-item`, the same way as a decision sheet
+([`decision-sheet.md`](../../decide/references/decision-sheet.md#post-the-sheet)):
+render with the summary saved
+(`bun "<skill-dir>/../../shared/command.ts" --stdout-file .context/explain/<id>/summary.json -- bun "<skill-dir>/scripts/explainer-sheet/explainer-sheet.ts" render .context/explain/<id>/explainer.json --require-fresh`),
+then pass it whole:
+
+```bash
+bun "<skill-dir>/../do-item/scripts/tracker.ts" attach "<KEY>" --input .context/explain/<id>/summary.json
+```
+
+It attaches the new sheet first and only then removes an older explainer of
+the same file name or title, once the issue lists the new one. It prints the
+attachment's `form`: `upload` where the tracker stores files (Linear, Jira),
+`comment` where GitHub Issues carries a sheet that fits one comment, `link`
+where the summary's `attachment` fields name the `url` of a copy already
+hosted, which a person publishes, never this skill. Exit `3` means the tracker
+can hold the sheet in none of these forms and nothing was written: the sheet
+stays a local file, and the comment then carries the explanation alone.
+
+Post the markdown as the comment, or a shorter comment that points to the
+sheet, through the same scripts
+(`bun "<skill-dir>/../do-item/scripts/tracker.ts" comment "<KEY>" --body-file <comment-file>`).
+When the sheet was not attached, post the markdown itself, with a first line
+saying the sheet is not attached, why, and the file's path in this session's
+workspace. Never commit a rendered sheet to the repository.
 
 ## What the renderer guarantees
 
