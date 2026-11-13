@@ -119,10 +119,15 @@ settles by itself:
 ### One thread per piece of work
 
 A piece of work is one item and the pull request that delivers it. Its
-identity is the item's key where it has one, and the pull request's number
-where it has none; when a pickup's pull request opens, the pull request's
-link to the item joins the two, and the thread opened under the item's key
-carries on under the pull request. Station addresses
+identity is the repository's forge name and the entity kind with its key:
+`owner/web#item:42` or `owner/web#pr:42`, since a bare key or number repeats
+across repositories and between items and pull requests, and several
+repositories may share one channel. An item the tracker keeps outside the
+forge is namespaced by its tracker scope instead. When a pickup's pull
+request opens, the pull request's link to the item records the pull request's
+identity as an alias of the item's, and the thread opened under the item
+carries on under the pull request; a lookup by either identity finds the
+same thread. Station addresses
 ([addresses.md](addresses.md)) identify individual requests, never the
 thread. A piece of work gets one top-level message in its channel, the
 first time anything about it is posted, and every later notice about it is a reply in
@@ -144,11 +149,17 @@ The thread's identity (the channel and the message ids of the top-level
 message and of each reply, keyed by the work's identity and the notice key)
 is a `chat-thread` record in the posting host's state database. Each
 message carries its notice key in a metadata field Slack stores with it,
-and a post is written to the record as pending first. A retry after a lost
-response reads the channel's recent history for that key, adopts the
-message found and its id, and posts only when none carries it, as
+and a post is written to the record as pending first, with the time the
+attempt began. A retry after a lost response looks for that key where the
+message would be, and posts only when a complete read finds none, as
 `actions/notify.ts` recognizes a cause already on its destination before
-resending. When an
+resending. A parent message is looked for in the channel's history
+(`conversations.history`) and a reply in its parent's thread
+(`conversations.replies`), since the history does not return replies. Each
+read asks for metadata, pages through every message from the pending
+attempt's start to now, and adopts the message found and its id. A read that
+fails, or does not reach the end of that range, is no evidence that the
+message is absent: the retry waits rather than resends. When an
 enrolled host's owner lease moves to another host, the new owner reads the
 thread records back from the hub's copies of the old owner's reports
 ([control-plane.md § Build order](control-plane.md#build-order), its third
@@ -187,10 +198,14 @@ The **chat bridge** is one resident process. For each interaction it:
 1. checks the connection and the envelope: the event is from the
    configured workspace (the team and, on an enterprise workspace, the
    enterprise the setup pinned) and the configured app;
-2. acknowledges at once, since Slack waits only three seconds and delivers
-   an interaction again when it is not acknowledged in time, and admits the
-   interaction durably as `pending` under its id. The acknowledgement
-   means received, never authorized;
+2. admits the interaction durably as `pending` under its id, with
+   everything needed to run it (the request, the chat user, the target and
+   the digest and occurrence a button carries), and only then acknowledges,
+   since Slack waits only three seconds and delivers an interaction again
+   when it is not acknowledged in time. An admission that fails or does not
+   finish inside that deadline leaves the interaction unacknowledged, so
+   Slack delivers it again. The acknowledgement means received, never
+   authorized;
 3. checks the chat user who made it is a member of the workspace, not a
    guest or a member of another workspace sharing the channel, and is
    mapped or linked to a forge login;
@@ -210,13 +225,28 @@ The **chat bridge** is one resident process. For each interaction it:
 
 A request the send refuses changes nothing: a button whose decision was
 reframed since it was posted fails the digest check, and the bridge
-replies with the new framing's options. An interaction is run once: the bridge
-keeps each id with its state, `pending` or `done`, for an hour. A
-`pending` id met again, after a crash or a second delivery, is first looked
-up in the write's destination for a record carrying its request id: found,
-it is marked `done` and its result reported; not found, it is run. So a
-write accepted by the forge and lost from the bridge's memory is never
-written twice, and an admitted interaction is never lost. The bridge
+replies with the new framing's options. An interaction is run once. The
+bridge keeps each id with its request and its state: `pending`, `running`
+or `done`. Processing is exclusive: the bridge moves an id from `pending`
+to `running` in one atomic update that takes a lease, and a second delivery
+of an id that is `running` under a live lease waits for it and reports its
+result. A lease that expires without the id reaching `done` marks the
+processing abandoned, and the id returns to `pending` for recovery. The
+record of an interaction that is not `done` is kept until it is, and the
+bridge scans for such records at start and on a timer, so an acknowledged
+interaction is never lost to a crash or a missing redelivery; a `done`
+record is kept for an hour. A write has up to two effects, the change on
+the forge or the tracker (a comment, a label, an assignment) and the
+`chat-request` or `drive-answer` record naming the request id beside it. The
+record of the interaction lists them before either is made, and recovery
+checks each against its destination: an effect found, carrying the request
+id, is complete; one missing is made, and only that one. An assignment the
+bridge identity already made, which the tracker would refuse to make twice
+(`assign` refuses an item whose assignee is not null), is completed by
+writing the missing `chat-request` record, never retried. When every effect
+is complete the id is marked `done` and its result reported. So a write
+accepted by the forge and lost from the bridge's memory is never written
+twice, and an admitted interaction is never lost. The bridge
 keeps no other state, starts no session and is read
 by nothing the line runs. Stopping it removes the buttons and the
 commands, and the line goes on.
@@ -449,22 +479,28 @@ Each is registered in `plugin/shared/records/registry.ts` and listed in
 - the `notices` table's `channel` column, an additive migration;
 - `chat-thread`, in the posting host's state database: the channel and
   message ids of a piece of work's thread and of each notice's reply,
-  keyed by address and notice key, and reported to the hub where the host
-  is enrolled;
-- `chat-handled`, on the bridge's machine: the ids of the interactions it
-  admitted, each with its state (`pending` or `done`), kept an hour;
+  keyed by the work's identity (with its aliases) and the notice key, and
+  reported to the hub where the host is enrolled;
+- `chat-handled`, on the bridge's machine: the interactions it admitted,
+  each with its id, its request, its state (`pending`, `running` with its
+  lease, or `done`) and its listed effects; kept until `done`, then an hour;
 - `chat-link`, on the hub: a chat user and the forge login they linked;
 - `chat-request`, on the forge or the tracker beside the write it explains:
   the verb, the chat user, the linked login, the request id, the time;
-- `drive-answer` gains `via` and the chat user as payload fields, under
-  version 1.
+- `drive-answer` gains `via`, the chat user, the linked forge login and the
+  request id as payload fields, under version 1: the login is what the
+  readers count (§ Who may act), the request id what recovery looks for.
 
 ### Setting it up
 
 The plugin ships the Slack app's manifest (`plugin/chat/slack/manifest.yaml`),
 with Socket Mode on and the scopes the tiers use: posting and editing
 messages, direct messages, the `/jig` command, reading the workspace's
-members for the membership check, and link unfurling. A team creates the
+members for the membership check, reading message history for the
+recovery of a lost post (`channels:history` for public channels,
+`groups:history` for private ones, `im:history` and `mpim:history` for
+direct messages, each only for the conversation types the configuration
+uses), and link unfurling. A team creates the
 app from it, installs it to their workspace, and gives Jig its tokens:
 `jig chat setup slack` stores the bot token on each host that posts and
 the app token where the bridge runs, pins the team and enterprise from the
