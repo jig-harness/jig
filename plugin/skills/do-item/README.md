@@ -153,6 +153,14 @@ can (`do_item.claim_marker`, below): set it wherever more than one host
 picks up from one queue. The dispatcher's double-claim watch stays as the
 backstop.
 
+When a call to the tracker fails, the tracker scripts say how: each
+[failure class](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) has its own exit code, from `5` for
+a spent rate limit (with the time it resets) to `11` for a request the
+tracker refused as malformed, listed in the skill's
+[tracker operations](SKILL.md#tracker-operations). A read the tracker did
+not answer is sent once more before the script gives up; a write is never
+sent twice.
+
 ### The repository's own start rules
 
 A team whose items carry their own start rules (the item names this

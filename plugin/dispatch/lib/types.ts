@@ -8,6 +8,7 @@ import type {
   FacetStoreReport,
 } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import type { SharedBudget, SharedOp } from "../../shared/records/shared.ts";
+import type { FailureClass } from "../../shared/outbound/failure.ts";
 import type { BoardRead } from "./board.ts";
 import type { SerialReport } from "./contention.ts";
 import type { LabelConfig } from "./labels.ts";
@@ -545,12 +546,24 @@ export interface Running {
   drifting?: true;
 }
 
+/**
+ * How a read failed when a call to an outside system failed it: the call's
+ * failure class (`shared/outbound/failure.ts`) and, for `rate-limited`, when
+ * the system lets the credential send again.
+ */
+export interface ReadFailure {
+  class: FailureClass;
+  until?: string;
+}
+
 /** How one record read for one repository. */
 export interface RecordRead {
   record: RecordName;
   source: string;
   ok: boolean;
   detail: string;
+  /** A record that did not read because a call failed: that call's failure class. */
+  failure?: ReadFailure;
   /** The tracker's record only: where each issue facet is kept, and the assigned items lacking one. */
   facets?: FacetRecord;
 }
@@ -637,6 +650,8 @@ export interface RepoReport {
   slug: string | null;
   /** Set when the repository could not be dispatched at all, or a defect stopped its turn. */
   refused: string | null;
+  /** A refusal a failed call to the forge caused: that call's failure class. */
+  refusedBy?: ReadFailure;
   /** The defect that stopped the repository's turn; what its earlier phases did stays on the report. */
   defect?: Defect;
   /** The defects a stage of `--apply` caught, each of which stopped its own stage only; absent when there were none. */

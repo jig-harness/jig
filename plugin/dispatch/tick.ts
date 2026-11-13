@@ -126,9 +126,16 @@ import {
 import { ExitError } from "../shared/cli.ts";
 import { swallow } from "../shared/errors.ts";
 import {
+  heldSystems,
+  holdUnanswered,
+  stopHolding,
+} from "../shared/outbound/hold.ts";
+import { join } from "node:path";
+import {
   type Lock,
   newRunId,
   pruneReceipts,
+  stateRoot,
   type TickPhase,
   type TickReceipt,
   takeObserveLock,
@@ -180,6 +187,9 @@ function upgradeField(): Pick<TickReceipt, "upgrade"> {
 }
 
 /** Read this machine's launch records as the observe phase sees them, and the receipt the tick fills. */
+/** Where the systems a tick held outlive it, for the next tick's probe (`shared/outbound/hold.ts`). */
+const UNANSWERED_FILE = "unanswered.json";
+
 async function startTick(options: TickOptions): Promise<StartedTick> {
   // The deadline counts from here, so the startup read below spends it too.
   const startedMs = Date.now();
@@ -187,6 +197,8 @@ async function startTick(options: TickOptions): Promise<StartedTick> {
   const machine = options.machine ?? null;
   // The tick's tracker reads keep to their share of each credential's budget.
   setDispatcherShare(machine?.trackerShare ?? DEFAULT_DISPATCHER_SHARE);
+  // A system that does not answer is not asked again in this tick, and the next tick probes it once first.
+  holdUnanswered(join(stateRoot(), UNANSWERED_FILE));
   const runtime = options.runtime ?? defaultRuntime(machine);
   const read = await readLaunches();
   const receipt: TickReceipt = {
@@ -492,6 +504,12 @@ async function closeTick(
   await routeReflection(receipt, context);
   receipt.exitStatus =
     failed || !copied || settleFailed || withheld !== undefined ? 1 : 0;
+  const held = [...heldSystems()].map(([system, f]) => ({
+    system,
+    class: f.code,
+    reason: f.reason,
+  }));
+  if (held.length > 0) receipt.unanswered = held;
   // A defect the start kept on the receipt stays: the tick ran, but not whole.
   receipt.completed = receipt.defect === undefined;
   settleFailures(receipt, context);
@@ -658,6 +676,8 @@ export async function runTick(options: TickOptions): Promise<TickResult> {
         tick.upgrade,
       );
     throw error;
+  } finally {
+    stopHolding();
   }
 }
 

@@ -47,7 +47,10 @@ const RATE_LIMIT_WAIT_MS = 60_000;
 
 /** The store contract's exit code for a failure. */
 export function exitCodeOf(error: unknown): 1 | 3 {
-  return error instanceof GitHubApiError && error.unavailable ? 3 : 1;
+  return error instanceof GitHubApiError &&
+    (error.unavailable || error.code === "unauthorized")
+    ? 3
+    : 1;
 }
 
 /**
@@ -65,13 +68,7 @@ export function isRateLimited(error: unknown): boolean {
 
 /** Whether the credential is missing or refused: `check` reports it. */
 export function isAuthFailure(error: unknown): boolean {
-  return (
-    error instanceof GitHubApiError &&
-    error.unavailable &&
-    /HTTP 401|bad credentials|not logged in|auth login|must hold a token/i.test(
-      error.message,
-    )
-  );
+  return error instanceof GitHubApiError && error.code === "unauthorized";
 }
 
 export interface ClientOptions {
@@ -146,7 +143,7 @@ export class GitHubClient {
       )
         throw new GitHubApiError(
           `${error.message}; the write may have been applied, so it is not sent again`,
-          { unavailable: true },
+          { code: "unreachable", sent: true },
         );
       throw error;
     } finally {
@@ -190,7 +187,7 @@ export class GitHubClient {
     if (this.waited + wait > MAX_TOTAL_WAIT_MS)
       throw new GitHubApiError(
         `${error.message}; GitHub asked to wait ${Math.ceil(wait / 1000)}s, longer than this run waits`,
-        { unavailable: true },
+        { code: error.code, until: error.until },
       );
     this.waited += wait;
     await sleep(wait);

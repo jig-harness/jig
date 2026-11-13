@@ -1,3 +1,9 @@
+/**
+ * The tracker transports' one retry (`shared/outbound/retry.ts`): a read
+ * that met `unreachable` or `server-fault` is sent once more inside the
+ * call's deadline; a write, a rate limit and every other failure are sent
+ * once.
+ */
 import { describe, expect, it } from "bun:test";
 import { parseTrackerConfig } from "../scripts/lib/tracker/config.ts";
 import { gitHubClient } from "../scripts/lib/tracker/github/client.ts";
@@ -8,7 +14,7 @@ import {
   searchPages,
 } from "../scripts/lib/tracker/jira/transport.ts";
 import { jiraAuthorization } from "../scripts/lib/tracker/jira/credential.ts";
-import { retryRead, waitForRetry } from "../scripts/lib/tracker/read-retry.ts";
+import { httpTransport as linearHttp } from "../scripts/lib/tracker/linear-transport.ts";
 import {
   TrackerRateLimited,
   type BudgetGovernor,
@@ -21,28 +27,26 @@ import {
 } from "../scripts/lib/tracker/github/transport.ts";
 
 const auth = () => jiraAuthorization({ kind: "bearer", token: "test" });
-function responses(status: number, succeeds = true) {
+
+/** A fetch that answers `status` until `succeedAfter` requests, then 200. */
+function responses(status: number, succeedAfter = 1) {
   let calls = 0;
   const fetcher = (async () => {
     calls++;
+    const ok = calls > succeedAfter;
     return new Response(
       JSON.stringify(
-        calls > 1 && succeeds
-          ? { data: { ok: true }, issues: [], isLast: true }
-          : {},
+        ok ? { data: { ok: true }, issues: [], isLast: true } : {},
       ),
-      {
-        status: calls > 1 && succeeds ? 200 : status,
-        headers: { "Retry-After": "0" },
-      },
+      { status: ok ? 200 : status, headers: { "Retry-After": "0" } },
     );
   }) as unknown as typeof fetch;
   return { fetcher, calls: () => calls };
 }
 
 describe("tracker read retries", () => {
-  it("retries a Jira GET after 429", async () => {
-    const f = responses(429);
+  it("sends a Jira GET once more after a 503", async () => {
+    const f = responses(503);
     await jiraHttp(
       "https://jira.example",
       auth(),
@@ -50,8 +54,9 @@ describe("tracker read retries", () => {
     )({ method: "GET", path: "myself" });
     expect(f.calls()).toBe(2);
   });
-  it("retries the Jira read-only POST search", async () => {
-    const f = responses(429);
+
+  it("sends the Jira read-only POST search once more after a 503", async () => {
+    const f = responses(503);
     expect(
       await searchPages(
         jiraHttp("https://jira.example", auth(), f.fetcher),
@@ -62,30 +67,45 @@ describe("tracker read retries", () => {
     ).toEqual([]);
     expect(f.calls()).toBe(2);
   });
-  it("stops after three retries on 503", async () => {
-    const f = responses(503, false);
+
+  it("stops after one retry on 503", async () => {
+    const f = responses(503, 10);
     await expect(
       jiraHttp(
         "https://jira.example",
         auth(),
         f.fetcher,
       )({ method: "GET", path: "myself" }),
-    ).rejects.toThrow("503");
-    expect(f.calls()).toBe(4);
+    ).rejects.toMatchObject({ code: "server-fault" });
+    expect(f.calls()).toBe(2);
   });
-  it("never retries a Jira write", async () => {
+
+  it("does not send a read again after a 429: it fails rate-limited until the reset", async () => {
     const f = responses(429);
     await expect(
       jiraHttp(
         "https://jira.example",
         auth(),
         f.fetcher,
-      )({ method: "POST", path: "issue" }),
-    ).rejects.toThrow("429");
+      )({ method: "GET", path: "myself" }),
+    ).rejects.toMatchObject({ code: "rate-limited" });
     expect(f.calls()).toBe(1);
   });
-  it("retries an explicitly read-only GraphQL query", async () => {
-    const f = responses(429);
+
+  it("never retries a Jira write", async () => {
+    const f = responses(503);
+    await expect(
+      jiraHttp(
+        "https://jira.example",
+        auth(),
+        f.fetcher,
+      )({ method: "POST", path: "issue" }),
+    ).rejects.toThrow("503");
+    expect(f.calls()).toBe(1);
+  });
+
+  it("sends an explicitly read-only GraphQL query once more", async () => {
+    const f = responses(503);
     expect(
       await githubHttp("https://github.example/graphql", "test", f.fetcher)(
         "query { viewer { login } }",
@@ -96,6 +116,7 @@ describe("tracker read retries", () => {
     ).toEqual({ ok: true });
     expect(f.calls()).toBe(2);
   });
+
   it("never retries a GraphQL mutation", async () => {
     const f = responses(503);
     await expect(
@@ -107,6 +128,23 @@ describe("tracker read retries", () => {
     ).rejects.toThrow("503");
     expect(f.calls()).toBe(1);
   });
+
+  it("sends a Linear query once more, and a Linear mutation once", async () => {
+    const read = responses(503);
+    expect(
+      await linearHttp("lin_test", read.fetcher)(
+        "query Q { viewer { id } }",
+        {},
+      ),
+    ).toEqual({ ok: true });
+    expect(read.calls()).toBe(2);
+    const write = responses(503);
+    await expect(
+      linearHttp("lin_test", write.fetcher)("mutation M { write }", {}),
+    ).rejects.toMatchObject({ code: "server-fault" });
+    expect(write.calls()).toBe(1);
+  });
+
   it("aborts a retry wait before another request leaves", async () => {
     const controller = new AbortController();
     let calls = 0;
@@ -114,8 +152,8 @@ describe("tracker read retries", () => {
       calls++;
       queueMicrotask(() => controller.abort(new Error("cancelled test")));
       return new Response("{}", {
-        status: 429,
-        headers: { "Retry-After": "30" },
+        status: 503,
+        headers: { "Retry-After": "20" },
       });
     }) as unknown as typeof fetch;
     await expect(
@@ -127,92 +165,8 @@ describe("tracker read retries", () => {
     ).rejects.toThrow("cancelled");
     expect(calls).toBe(1);
   });
-});
 
-describe("read retry bounds", () => {
-  it("does not wait forever for response cleanup after cancellation", async () => {
-    const controller = new AbortController();
-    let cancelled = false;
-    const response = new Response(
-      new ReadableStream({
-        cancel() {
-          cancelled = true;
-          return new Promise<void>(() => {
-            // The stream never settles its cancellation callback.
-          });
-        },
-      }),
-      { status: 503 },
-    );
-    const pending = retryRead(async () => response, true, controller.signal);
-    await Promise.resolve();
-    controller.abort(new Error("deadline elapsed"));
-    await expect(pending).rejects.toThrow("deadline elapsed");
-    expect(cancelled).toBe(true);
-  });
-  it("handles cancellation that happens while cleanup begins", async () => {
-    const controller = new AbortController();
-    const response = new Response(
-      new ReadableStream({
-        cancel() {
-          controller.abort(new Error("cleanup cancelled"));
-          return new Promise<void>(() => {
-            // The stream never settles its cancellation callback.
-          });
-        },
-      }),
-      { status: 503 },
-    );
-    const pending = retryRead(async () => response, true, controller.signal);
-    await expect(
-      Promise.race([
-        pending,
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error("cleanup remained pending")), 100),
-        ),
-      ]),
-    ).rejects.toThrow("cleanup cancelled");
-  });
-  it("caps each wait and honors an HTTP-date Retry-After", async () => {
-    const waits: number[] = [];
-    let calls = 0;
-    await retryRead(
-      async () => ({
-        status: ++calls < 3 ? 503 : 200,
-        headers: new Headers({
-          "Retry-After": calls === 1 ? "120" : "Thu, 01 Jan 1970 00:00:05 GMT",
-        }),
-      }),
-      true,
-      new AbortController().signal,
-      async (ms) => {
-        waits.push(ms);
-      },
-      () => 1000,
-    );
-    expect(waits).toEqual([30000, 4000]);
-  });
-  it("ends at the original deadline during a wait", async () => {
-    let calls = 0;
-    await expect(
-      retryRead(
-        async () => {
-          calls++;
-          return { status: 503, headers: new Headers({ "Retry-After": "30" }) };
-        },
-        true,
-        AbortSignal.timeout(10),
-      ),
-    ).rejects.toThrow();
-    expect(calls).toBe(1);
-  });
-  it("cancels after the wait starts", async () => {
-    const controller = new AbortController();
-    const waiting = waitForRetry(30000, controller.signal);
-    controller.abort(new Error("wait cancelled"));
-    await expect(waiting).rejects.toThrow("wait cancelled");
-  });
-  it("preserves a Jira governor hold before retrying", async () => {
+  it("preserves a Jira governor hold: a refused credential sends nothing more", async () => {
     const f = responses(429);
     let limited = false;
     const governor: BudgetGovernor = {
@@ -239,15 +193,15 @@ describe("read retry bounds", () => {
 
 describe("GitHub command-line retries", () => {
   for (const read of [true, false]) {
-    it(`retries a throttled query only when marked read-only: ${read}`, async () => {
+    it(`sends a query once more after a server fault only when marked read-only: ${read}`, async () => {
       let calls = 0;
       const transport = ghTransport(async (argv) => {
         expect(argv).toContain("--include");
         const refused = ++calls === 1;
         return {
           code: refused ? 1 : 0,
-          stdout: `HTTP/2.0 ${refused ? "429 Too Many Requests" : "200 OK"}\nRetry-After: 0\r\n\r\n${JSON.stringify(refused ? {} : { data: { ok: true } })}`,
-          stderr: refused ? "HTTP 429" : "",
+          stdout: `HTTP/2.0 ${refused ? "503 Service Unavailable" : "200 OK"}\nRetry-After: 0\r\n\r\n${JSON.stringify(refused ? {} : { data: { ok: true } })}`,
+          stderr: refused ? "HTTP 503" : "",
           stderrTail: "",
           timedOut: false,
           bufferExceeded: false,
@@ -261,7 +215,7 @@ describe("GitHub command-line retries", () => {
         read,
       );
       if (read) expect(await result).toEqual({ ok: true });
-      else await expect(result).rejects.toThrow("429");
+      else await expect(result).rejects.toThrow("503");
       expect(calls).toBe(read ? 2 : 1);
     });
   }
@@ -280,60 +234,26 @@ it("parses GitHub CLI's mixed-newline headerless response", async () => {
   await expect(transport("query { ok }", {})).resolves.toEqual({ ok: true });
 });
 
-it("preserves failed gh response metadata", async () => {
-  const transport = ghTransport(async () => ({
-    code: 1,
-    stdout:
-      'HTTP/2.0 503 Service Unavailable\r\nRetry-After: 7\r\n\r\n{"errors":[{"message":"down"}]}',
-    stderr: "",
-    stderrTail: "",
-    timedOut: false,
-    bufferExceeded: false,
-    spawnFailed: false,
-  }));
-  try {
-    await transport("query { viewer { login } }", {});
-    throw new Error("expected GitHub failure");
-  } catch (err) {
-    expect(err).toMatchObject({ unavailable: true, retryAfterSec: 7 });
-  }
-});
-
-it("preserves failed gh response metadata for a non-JSON body", async () => {
-  const transport = ghTransport(async () => ({
-    code: 1,
-    stdout:
-      "HTTP/2.0 503 Service Unavailable\r\nRetry-After: 7\r\n\r\n<html>down</html>",
-    stderr: "",
-    stderrTail: "",
-    timedOut: false,
-    bufferExceeded: false,
-    spawnFailed: false,
-  }));
-  try {
-    await transport("query { viewer { login } }", {});
-    throw new Error("expected GitHub failure");
-  } catch (err) {
-    expect(err).toMatchObject({ unavailable: true, retryAfterSec: 7 });
-  }
-});
-
-it("uses the same HTTP-date reset for Jira retries and the credential governor", async () => {
-  let calls = 0;
-  const fetcher = (async () =>
-    new Response("{}", {
-      status: ++calls === 1 ? 429 : 200,
-      headers: { "Retry-After": "Thu, 01 Jan 1970 00:00:00 GMT" },
-    })) as unknown as typeof fetch;
-  const governor = budgetGovernor(memoryBudgetStore());
-  await jiraHttp(
-    "https://jira.example",
-    auth(),
-    fetcher,
-    governor,
-  )({ method: "GET", path: "myself" });
-  expect(calls).toBe(2);
-});
+for (const body of ['{"errors":[{"message":"down"}]}', "<html>down</html>"]) {
+  it(`keeps a failed gh response's class and wait: ${body}`, async () => {
+    const transport = ghTransport(async () => ({
+      code: 1,
+      stdout: `HTTP/2.0 503 Service Unavailable\r\nRetry-After: 7\r\n\r\n${body}`,
+      stderr: "",
+      stderrTail: "",
+      timedOut: false,
+      bufferExceeded: false,
+      spawnFailed: false,
+    }));
+    await expect(
+      transport("query { viewer { login } }", {}),
+    ).rejects.toMatchObject({
+      code: "server-fault",
+      unavailable: true,
+      retryAfterSec: 7,
+    });
+  });
+}
 
 it("marks client reads and keeps both mutation entry points unmarked", async () => {
   const config = parseTrackerConfig({ issue_tracker: { adapter: "github" } });
@@ -369,7 +289,7 @@ it("reports a long credential hold immediately instead of losing it at the deadl
   ).rejects.toBeInstanceOf(TrackerRateLimited);
 });
 
-it("reports a long credential hold without waiting for stream cleanup", async () => {
+it("reports a credential hold without waiting for stream cleanup", async () => {
   let cancelled = false;
   const fetcher = (async () =>
     new Response(
@@ -401,22 +321,6 @@ it("reports a long credential hold without waiting for stream cleanup", async ()
     ]),
   ).rejects.toBeInstanceOf(TrackerRateLimited);
   expect(cancelled).toBe(true);
-});
-
-it("retries after a short credential hold has expired", async () => {
-  let calls = 0;
-  const fetcher = (async () =>
-    new Response("{}", {
-      status: ++calls === 1 ? 429 : 200,
-      headers: { "Retry-After": "0.001" },
-    })) as unknown as typeof fetch;
-  await jiraHttp(
-    "https://jira.example",
-    auth(),
-    fetcher,
-    budgetGovernor(memoryBudgetStore()),
-  )({ method: "GET", path: "myself" });
-  expect(calls).toBe(2);
 });
 
 it("preserves explicit caller cancellation over a credential hold", async () => {
@@ -458,7 +362,7 @@ it("keeps the known credential refusal when response cleanup fails", async () =>
   ).rejects.toBeInstanceOf(TrackerRateLimited);
 });
 
-it("retries a refused read even when response cleanup fails", async () => {
+it("sends a read again after a server fault even when response cleanup fails", async () => {
   let calls = 0;
   const fetcher = (async () => {
     if (++calls > 1) return new Response("{}");
@@ -468,7 +372,7 @@ it("retries a refused read even when response cleanup fails", async () => {
           throw new Error("cleanup failed");
         },
       }),
-      { status: 429, headers: { "Retry-After": "0" } },
+      { status: 503, headers: { "Retry-After": "0" } },
     );
   }) as unknown as typeof fetch;
   expect(

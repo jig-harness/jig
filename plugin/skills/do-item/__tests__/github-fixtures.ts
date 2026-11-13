@@ -162,11 +162,11 @@ export const CREDENTIAL = "gh with GH_TOKEN";
 /** The ways a read can fail that a detection read must report, never read as "no field". */
 export const READ_FAILURES = {
   timeout: new GitHubApiError("gh api graphql timed out", {
-    unavailable: true,
+    code: "unreachable",
   }),
   "rate limit": new GitHubApiError(
     'GitHub API HTTP 403: {"message":"API rate limit exceeded for user ID 1.","documentation_url":"https://docs.github.com"}',
-    { unavailable: true, retryAfterSec: 60 },
+    { code: "rate-limited", retryAfterMs: 60_000 },
   ),
   refusal: new GitHubApiError(
     'GitHub API errors: [{"type":"FORBIDDEN","path":["organization"],"message":"Resource not accessible by integration"}]',

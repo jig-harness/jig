@@ -1657,7 +1657,7 @@ rejects any other form.
 | `unclaimed_after` | `15m`; how long after the session runtime answered a launch as started its launch record may stay pending, with no wrapper's claim, before the tick reports it stuck: notified to a person as needing them (once, then on `dispatch.renotify_after`) and shown on the dashboard as needing a person, holding its stage and slot until `jig dispatch clear <record>`. A record claimed within it is never flagged. The wrapper claims its record as its first act, seconds after its terminal starts, and the workspace is opened before the launch, so fifteen minutes is many times a slow start and three ticks at the default `interval`. While the runtime cannot say which sessions run, the tick waits; a session it joins to the record's target is named in the notice, since that wrapper may have started its stage without claiming the record |
 | `failures.backoff` | `2m`; how long the tick waits before trying again an action that failed twice in a row, doubled with each failure in a row after that, up to `failures.backoff_max`. A first failure is tried again at the next tick. The actions it paces are the ones a tick tries again on its own, with no record of their own that counts attempts: each pull request's dispatch label write, each notification's delivery, each nudge the runtime refused, and the end of this host's launch claim or the follow-up's answer on its marker. Launches are not among them: a launch record counts its own attempts, one lost twice is stuck (`unclaimed_after` and the records it names), and a refusal that did not change is not tried again. While an action waits, the receipt reports it waiting, with its failures in a row and its next try. The count is this host's, kept in its state database (the `failures` table), and only a tick with `--apply` keeps it. Two minutes is one tick at the interval a sweep is meant to run at; doubling reaches the hour after seven failures in a row |
 | `failures.backoff_max` | `1h`; the longest wait between two tries of an action that keeps failing. It may not be shorter than `failures.backoff` |
-| `failures.notify_after` | `3`; positive whole number of failures in a row at which the tick tells a person, once and then on `dispatch.renotify_after`, through the repository's notifications: an action that kept failing (cause `action-failing`); a repository whose turn was refused, stopped by a defect, or found a record that did not read (`repository-failing`); and this host's ticks of one scope that exited 1 (`ticks-failing`; each single-repository tick, such as a wake-up, has its own scope, and every tick of several repositories shares one). The notice names what failed, how many times in a row, since when, and the last reason. An action's notice goes to its own repository; a repository's and the ticks' go to this host's first repository listed here that it owns with `notify` enabled and whose turn is not failing (the first of them when all are failing); a host failure's notice is the same one wherever it is told, so the destination moving does not send it again. Only the host that owns a repository notifies for it. A row is removed, and its notice retires, when the action succeeds, the repository is read whole or a tick of that scope exits 0, or when the action is no longer wanted. A single-repository tick's row also goes quiet, and its notice retires, when a tick that read that repository whole exits 0: the row keeps its count and is told again, as a new notice, only if a tick of its own scope fails again. Three in a row is past a passing outage and, at the default `interval`, within about a quarter of an hour of a cause that stands |
+| `failures.notify_after` | `3`; positive whole number of failures in a row at which the tick tells a person, once and then on `dispatch.renotify_after`, through the repository's notifications: an action that kept failing (cause `action-failing`); a repository whose turn was refused, stopped by a defect, or found a record that did not read (`repository-failing`); and this host's ticks of one scope that exited 1 (`ticks-failing`; each single-repository tick, such as a wake-up, has its own scope, and every tick of several repositories shares one). The notice names what failed, how many times in a row, since when, and the last reason. An action's notice goes to its own repository; a repository's and the ticks' go to this host's first repository listed here that it owns with `notify` enabled and whose turn is not failing (the first of them when all are failing); a host failure's notice is the same one wherever it is told, so the destination moving does not send it again. Only the host that owns a repository notifies for it. A row is removed, and its notice retires, when the action succeeds, the repository is read whole or a tick of that scope exits 0, or when the action is no longer wanted. A single-repository tick's row also goes quiet, and its notice retires, when a tick that read that repository whole exits 0: the row keeps its count and is told again, as a new notice, only if a tick of its own scope fails again. Three in a row is past a passing outage and, at the default `interval`, within about a quarter of an hour of a cause that stands. A repository whose every failed read is of a [failure class](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) that clears by waiting does not fail the tick below this count ([when an outside system refuses or does not answer](#when-an-outside-system-refuses-or-does-not-answer)) |
 | `records.shared` | `forge`, the only value; where this host publishes the records another host dispatching the same repository reads: a claim per drive launch on the pull request it concerns (its launch record, its host and, once it ended, its end), and the follow-up marker with the follow-up's answer. A value this version does not know is refused. The claims coordinate launches and never authorize anything a person does; the forge cannot create a comment only if none exists, so two hosts can each read themselves the holder of one launch, and the stage's own refusal (the drive's lock and ledger claim, `do-item`'s claim) is the backstop |
 | `send` | `true`; whether [`jig send`](README.md#telling-a-station-what-to-do) may write a request from this machine. `false` refuses every send, `--dry-run` included, so a machine whose sessions should only ask the line can say so once. Read by `jig send` alone; the dispatcher ignores it |
 | `change_probe` | `true`; whether the change probe runs: every minute, `jig dispatch probe --apply` (its own timer, which `jig install dispatch` writes beside the tick's) reads the forge once for the pull requests of every repository listed here with a stage, and wakes the tick of each repository where one was updated or its checks changed since the last probe. `false` makes a probe read and wake nothing, and the next `jig install dispatch --yes` removes its timer. Read by `jig dispatch probe` and the dispatcher's install |
@@ -1696,7 +1696,9 @@ change probe's state, `state.json`, and its timer's launcher copy),
 the outcome log's text copy, `log-<year>-<month>.jsonl`, which nothing
 removes, and `dashboard/` (the installed reader's `enabled` record, its
 `access.json` with the access credentials, its `reader.<digest>.lock`, and
-the scheduler's launcher copy). Everything else is one
+the scheduler's launcher copy), and `unanswered.json` (the outside
+systems the last tick held because they did not answer, which the next
+tick probes once). Everything else is one
 SQLite database, `state.sqlite`: the launch records (one per launch,
 written before it, with a pickup session's own result), since when each
 claimed item has had no running session (for `stalled_after`), each
@@ -1715,6 +1717,34 @@ check (claimed on another host, or while the process table cannot be read)
 holds its account's slot until a person clears it with
 `jig dispatch clear <record>`; one claimed on this host before it last
 restarted has died and frees its slot.
+
+### When an outside system refuses or does not answer
+
+Every call to the forge and the issue trackers fails as one of a closed set
+of [failure classes](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md),
+read once, by the call's transport, from the answer; nothing reads a
+message to tell them apart. What a host sees:
+
+| Class | What it means | Inside the call | At the tick |
+| --- | --- | --- | --- |
+| `rate-limited` | the system refused the credential until a reset | not sent again | not a failure before its reset: the repository's row in the failure ledger is neither counted nor cleared, and the tick exits 0 |
+| `unreachable` | no answer: the name did not resolve, the connection failed, the deadline passed | a read is sent once more after a backoff of about a second, within the call's deadline; a write is not | the system is asked nothing more in this tick, and the next tick sends it one request alone and reads on only when it is answered; the tick exits 0 until the repository's row reaches `failures.notify_after` |
+| `server-fault` | the system answered at once with a 5xx status | as `unreachable` | as `unreachable` |
+| `too-costly` | the system ran out of time on the request, or `gh` did not finish within its deadline | the dispatcher's paged reads ask again for half the page | the tick exits 0 until the repository's row reaches `failures.notify_after` |
+| `unauthorized` | the credential is missing, expired or refused | not sent again | the tick exits 1, and a person is told at once: the repository's row counts as `failures.notify_after` failures |
+| `not-found` | what was asked for does not exist or is not visible | not sent again | an absence, read as such |
+| `invalid` | the system refused the request as malformed, or answered in a form that does not read | not sent again | the tick exits 1, and the failure ledger tells a person at `failures.notify_after` |
+
+A repository whose forge read waits shows, in the tick's report, the last
+reading a tick took whole, with its time and its age. A tick's receipt names
+each system it held (`unanswered`). A tracker read that was sent once
+before can now send two requests; a Jira read refused with HTTP 429 is no
+longer sent again within the call, and fails `rate-limited` until its
+`Retry-After`. `tracker.ts` exits with one code per class
+([do-item's tracker operations](skills/do-item/SKILL.md#tracker-operations)):
+exit `5` and its `RATE-LIMITED until <time>` line keep their meaning, and
+a failure that exited `1` before now exits `6` to `11` when a call to the
+tracker caused it.
 
 ## Complete example
 

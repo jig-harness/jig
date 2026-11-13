@@ -586,7 +586,7 @@ describe("JIRA_TOKEN_COMMAND", () => {
     ]);
   });
 
-  it("keeps a caller's timeout as cancellation while waiting for a command", async () => {
+  it("reports a caller's timeout while waiting for a command as a request that got no answer", async () => {
     const late = Promise.withResolvers<TokenRun>();
     try {
       const err = await failure(
@@ -597,7 +597,7 @@ describe("JIRA_TOKEN_COMMAND", () => {
         )(request, AbortSignal.timeout(20)),
       );
       expect(err.message).toContain("Jira request cancelled:");
-      expect(err.unavailable).toBe(false);
+      expect(err.code).toBe("unreachable");
     } finally {
       late.resolve(tokenRun("late"));
     }

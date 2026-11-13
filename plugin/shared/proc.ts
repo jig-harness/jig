@@ -53,6 +53,7 @@ import { traceEnv, traceGhRunner, traceRunner } from "./trace.ts";
 import { fail } from "./cli.ts";
 import { errnoCode, JigError } from "./errors.ts";
 import { detachedTreeRecord } from "./driven-tree.ts";
+import type { OutboundFailure } from "./outbound/failure.ts";
 
 /**
  * Validate a timeout environment variable the way `gh-deadline.sh` did: unset
@@ -492,7 +493,21 @@ export const ghCall = traceGhRunner<RunResult, RunOptions>(
   (args, opts) => run(["gh", ...args], opts),
   ghCallTimeoutSeconds,
   {},
+  heldRun,
 );
+
+/** What a `gh` call this run holds answers: a failed run that sent nothing, its error output the failure's reason. */
+export function heldRun(failure: OutboundFailure): RunResult {
+  return {
+    code: 1,
+    stdout: "",
+    stderr: `${failure.reason}\n`,
+    timedOut: false,
+    bufferExceeded: false,
+    spawnFailed: false,
+    stderrTail: failure.reason,
+  };
+}
 
 function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
   return new Promise((resolve) => {

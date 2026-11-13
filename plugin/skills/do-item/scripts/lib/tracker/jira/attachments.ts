@@ -54,7 +54,7 @@ export function jiraAttachments(transport: JiraTransport): TrackerAttachments {
     );
   }
   const missing = (message: string) =>
-    new JiraApiError(message, { status: 404, notFound: true });
+    new JiraApiError(message, { status: 404 });
 
   return {
     listAttachments: list,

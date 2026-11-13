@@ -193,7 +193,7 @@ fi`,
     const r = run(["issue-states"], "ENG-1\nENG-9\n", {
       "ENG-1": "completed",
     });
-    expectSpawnExit(r, 1);
+    expectSpawnExit(r, 11);
     expect(r.stdout).toBe("");
   });
 

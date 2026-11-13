@@ -6,6 +6,9 @@ import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 
 import { errnoCode, swallow } from "./errors.ts";
+import { GITHUB, type GhRun, ghRunFailure } from "./outbound/github.ts";
+import { guarded } from "./outbound/hold.ts";
+import type { OutboundFailure } from "./outbound/failure.ts";
 
 /** Stable child-process diagnostic code for incomplete forge accounting. */
 export const FORGE_ACCOUNTING_UNAVAILABLE = "jig-forge-accounting-unavailable";
@@ -195,15 +198,17 @@ function traceCommand<T extends { code: number; timedOut: boolean }>(
   });
 }
 
-/** Shared gh boundary keeps its effective deadline and span metadata together. */
-function traceGhCall<
-  T extends { code: number; timedOut: boolean },
-  O extends { timeoutSec?: number },
->(
+/**
+ * Shared gh boundary keeps its effective deadline and span metadata together,
+ * and sends nothing to a forge this run holds (`outbound/hold.ts`): the call
+ * then answers `refuse`'s result, a failed run naming the earlier failure.
+ */
+function traceGhCall<T extends GhRun, O extends { timeoutSec?: number }>(
   args: string[],
   opts: O,
   envDeadline: number,
   run: (argv: string[], options: O) => Promise<T>,
+  refuse: (failure: OutboundFailure) => T,
 ): Promise<T> {
   // A parent reader counts nested forge calls at dispatch, including timed-out reads.
   if (process.env.JIG_FORGE_CALL_COUNT_FILE) {
@@ -221,7 +226,12 @@ function traceGhCall<
       ? envDeadline
       : Math.max(1, Math.min(envDeadline, opts.timeoutSec));
   return traceCommand("ghCall", "gh", deadline, () =>
-    run(args, { ...opts, timeoutSec: deadline }),
+    guarded(
+      GITHUB,
+      () => run(args, { ...opts, timeoutSec: deadline }),
+      (r) => ghRunFailure(r),
+      refuse,
+    ),
   );
 }
 
@@ -245,14 +255,16 @@ export function traceRunner<
     });
 }
 
-/** Adapt the gh boundary without copying its deadline or span bookkeeping. */
+/** Adapt the gh boundary without copying its deadline, span or hold bookkeeping; `refuse` is a held call's result. */
 export function traceGhRunner<
-  T extends { code: number; timedOut: boolean },
+  T extends GhRun,
   O extends { timeoutSec?: number },
 >(
   run: (argv: string[], opts: O) => Promise<T>,
   timeout: () => number,
   defaults: O,
+  refuse: (failure: OutboundFailure) => T,
 ): (args: string[], opts?: O) => Promise<T> {
-  return (args, opts = defaults) => traceGhCall(args, opts, timeout(), run);
+  return (args, opts = defaults) =>
+    traceGhCall(args, opts, timeout(), run, refuse);
 }

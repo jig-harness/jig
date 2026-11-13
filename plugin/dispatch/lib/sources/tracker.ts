@@ -32,7 +32,13 @@ import {
   isWorkingIssue,
   trackerStateMaps,
 } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
-import { failed, ok, type Outcome } from "../../../shared/outcome.ts";
+import {
+  type Failure,
+  failed,
+  ok,
+  type Outcome,
+} from "../../../shared/outcome.ts";
+import { readFailureOf } from "../read-failures.ts";
 import { failureText } from "../text.ts";
 import {
   type FacetBound,
@@ -45,6 +51,7 @@ import type {
   ClaimedItem,
   DispatchSection,
   FacetRecord,
+  ReadFailure,
   RecordRead,
   Unplaced,
   WantedItem,
@@ -243,6 +250,12 @@ async function readAssigned(
   }
 }
 
+/** The failure class of a read the tracker did not answer, when a call failed it. */
+function failureField(failure: Failure): { failure?: ReadFailure } {
+  const read = readFailureOf(failure);
+  return read === undefined ? {} : { failure: read };
+}
+
 /**
  * The pickups; `open` opens the tracker, and is not called when there are
  * none to read. With `facets`, the record also says where the tracker
@@ -290,6 +303,7 @@ async function readFactoryPickups(
         source,
         ok: false,
         detail: `the items assigned to ${identity} could not be read: ${assigned.failure.reason}`,
+        ...failureField(assigned.failure),
         ...(stores === undefined ? {} : { facets: stores }),
       },
       wanted: [],
