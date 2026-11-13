@@ -47,6 +47,9 @@ export type EvidenceJson = (
   room: EvidenceRoom,
 ) => Promise<EvidenceRead<unknown>>;
 
+/** Charges each optional forge request before it is issued. */
+export type TakeForgeReads = (count: number) => boolean;
+
 async function json(
   args: string[],
   observation: RepoObservation,
@@ -76,11 +79,17 @@ export async function linkedPullRequests(
   records: ReadRecord[],
   room: EvidenceRoom,
   readJson: EvidenceJson = json,
+  takeForgeReads: TakeForgeReads = () => true,
 ): Promise<EvidenceRead<LinkedPullRequest[]>> {
   const { repo } = observation.opened;
   const keys = observation.join?.keys;
   if (!keys)
     return failed("unreadable", "the tracker's key rules did not read");
+  if (!takeForgeReads(1))
+    return failed(
+      "unreadable",
+      "the tick budget has no room for another steward evidence read",
+    );
   const read = await readJson(
     [
       "pr",
@@ -171,24 +180,32 @@ export async function linkedPullRequests(
   }
   // A body search cannot discover a pickup whose branch or recorded handoff
   // carries the item key. Add those bounded, already-known PR candidates.
-  const known = records
-    .flatMap((r) => {
-      if (r.record.repo !== repo.slug || r.record.item !== target) return [];
-      const next = r.next;
-      if (next === null || next === undefined || !("address" in next))
-        return [];
-      const number = new RegExp(
-        `^drive@${escapeRegExp(repo.slug)}#([1-9]\\d*)$`,
-      ).exec(next.address)?.[1];
-      return number === undefined ? [] : [number];
-    })
-    .filter((number) => !prs.some((pr) => pr.number === Number(number)));
+  const known = new Set(
+    records
+      .flatMap((r) => {
+        if (r.record.repo !== repo.slug || r.record.item !== target) return [];
+        const next = r.next;
+        if (next === null || next === undefined || !("address" in next))
+          return [];
+        const number = new RegExp(
+          `^drive@${escapeRegExp(repo.slug)}#([1-9]\\d*)$`,
+        ).exec(next.address)?.[1];
+        return number === undefined ? [] : [number];
+      })
+      .map(Number)
+      .filter((number) => !prs.some((pr) => pr.number === number)),
+  );
   for (const number of known) {
+    if (!takeForgeReads(1))
+      return failed(
+        "unreadable",
+        "the tick budget has no room for another steward evidence read",
+      );
     const candidate = await readJson(
       [
         "pr",
         "view",
-        number,
+        String(number),
         "--repo",
         repo.slug,
         "--json",
@@ -212,6 +229,7 @@ export async function linkedPullRequests(
       .filter(
         (p) =>
           links.itemsOf(p.number)?.includes(target) ||
+          known.has(p.number) ||
           ((!keys.sharesPullRequestNumbers ||
             observation.tracked.issueRepository?.toLowerCase() ===
               repo.slug.toLowerCase()) &&
@@ -235,14 +253,20 @@ function closingReferences(
         isRecord(reference) &&
         Number.isInteger(reference.number) &&
         isRecord(reference.repository) &&
-        typeof reference.repository.nameWithOwner === "string",
+        (typeof reference.repository.nameWithOwner === "string" ||
+          (typeof reference.repository.name === "string" &&
+            isRecord(reference.repository.owner) &&
+            typeof reference.repository.owner.login === "string")),
     )
       ? value.map((reference) => {
           const row = reference as Record<string, unknown>;
           const repository = row.repository as Record<string, unknown>;
           return {
             number: Number(row.number),
-            repository: String(repository.nameWithOwner),
+            repository:
+              typeof repository.nameWithOwner === "string"
+                ? repository.nameWithOwner
+                : `${String((repository.owner as Record<string, unknown>).login)}/${String(repository.name)}`,
           };
         })
       : undefined;

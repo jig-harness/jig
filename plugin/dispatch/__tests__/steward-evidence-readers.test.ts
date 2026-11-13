@@ -233,6 +233,74 @@ describe("steward evidence readers", () => {
     ).toMatchObject({ ok: false });
   });
 
+  test("reads CLI-shaped closing references and retains an explicit handoff candidate", async () => {
+    const records = [
+      {
+        record: {
+          id: "launch",
+          repo: "example/repo",
+          item: "#7",
+          action: "pickup",
+          createdAt: "2026-01-01",
+        },
+        next: { address: "drive@example/repo#8" },
+      },
+    ] as unknown as ReadRecord[];
+    const candidate = {
+      number: 8,
+      url: "https://example.test/pull/8",
+      state: "OPEN",
+      headRefName: "topic",
+      body: "",
+      createdAt: "2026-01-03",
+      closingIssuesReferences: [
+        {
+          number: 7,
+          repository: { name: "repo", owner: { login: "example" } },
+        },
+      ],
+    };
+    const read = await linkedPullRequests(
+      "#7",
+      observation,
+      records,
+      () => null,
+      async (args) => (args[1] === "view" ? ok(candidate) : ok([])),
+    );
+    expect(read).toMatchObject({ ok: true, value: [{ number: 8 }] });
+  });
+
+  test("does not spend the forge reserve on a handoff fallback", async () => {
+    const records = [
+      {
+        record: {
+          id: "launch",
+          repo: "example/repo",
+          item: "#7",
+          action: "pickup",
+          createdAt: "2026-01-01",
+        },
+        next: { address: "drive@example/repo#8" },
+      },
+    ] as unknown as ReadRecord[];
+    let reads = 1;
+    const result = await linkedPullRequests(
+      "#7",
+      observation,
+      records,
+      () => null,
+      async () => ok([]),
+      (count) => {
+        reads -= count;
+        return reads >= 0;
+      },
+    );
+    expect(result).toMatchObject({
+      ok: false,
+      failure: { reason: expect.stringContaining("budget") },
+    });
+  });
+
   test("failing checks carry earlier head attempts and base conclusions, pinned to the PR's commits", async () => {
     const calls: string[][] = [];
     const readJson: EvidenceJson = async (args) => {

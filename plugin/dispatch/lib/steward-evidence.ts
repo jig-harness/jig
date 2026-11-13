@@ -40,6 +40,7 @@ export interface StewardEvidenceReaders {
     observation: RepoObservation,
     records: ReadRecord[],
     room: EvidenceRoom,
+    takeForgeReads: (count: number) => boolean,
   ): Promise<EvidenceRead<LinkedPullRequest[]>>;
   checks(
     pr: number,
@@ -51,7 +52,15 @@ export const STEWARD_HISTORY_TARGET_LIMIT = 20;
 
 const READERS: StewardEvidenceReaders = {
   git: treeEvidence,
-  prs: linkedPullRequests,
+  prs: (target, observation, records, room, takeForgeReads) =>
+    linkedPullRequests(
+      target,
+      observation,
+      records,
+      room,
+      undefined,
+      takeForgeReads,
+    ),
   checks: pullRequestChecks,
 };
 
@@ -203,14 +212,14 @@ async function readPullRequests(
 ): Promise<EvidenceRead<LinkedPullRequest[]>> {
   const refusal = forgeRefusal(context);
   if (refusal !== null) return refusal;
-  if (!budgetAvailable(context) || !takeForgeReads(context, 1))
-    return noBudget();
+  if (!budgetAvailable(context)) return noBudget();
   if (/^PR #[1-9]\d*$/.test(target)) return ok([]);
   return context.readers.prs(
     target,
     context.observation,
     context.records,
     context.room,
+    (count) => takeForgeReads(context, count),
   );
 }
 
