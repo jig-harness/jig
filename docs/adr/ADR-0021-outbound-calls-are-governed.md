@@ -1,5 +1,5 @@
 ---
-title: "ADR-0020: Every call to an outside system goes through a governed transport"
+title: "ADR-0021: Every call to an outside system goes through a governed transport"
 type: adr
 status: approved
 description: "Each system Jig integrates with has one transport, built from one shared library, that reuses an answer before it sends, asks a shared budget, bounds what a call can cost, records what it spent, and fails as one of a closed set of classes"
@@ -13,7 +13,7 @@ superseded_by: ~
 tags: [adr, integrations, rate-limits, plugin]
 ---
 
-# ADR-0020: Every call to an outside system goes through a governed transport
+# ADR-0021: Every call to an outside system goes through a governed transport
 
 **Status:** Approved · **Date:** 2026-11-13 · **Deciders:** Jig's maintainers through pull-request review
 
