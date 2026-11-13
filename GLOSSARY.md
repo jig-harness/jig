@@ -9,6 +9,10 @@ make, use the entry's term instead.
 
 ## Core ideas
 
+- **Preflight** — a small check that runs before a stage starts, to prove a
+  condition the stage needs. For example, the dispatcher checks whether an
+  account can reach a tracker before launching work that must use it.
+
 - **AI-native delivery** — building and maintaining software with AI coding
   agents as first-class participants: the repo is organized so agents can find
   the rules, run the checks, and improve the process — not just emit code.

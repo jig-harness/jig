@@ -8,8 +8,9 @@
  * (actions/notify.ts), then the close. Each launch reads its target again
  * just before it starts. Each stage runs inside its own defect boundary
  * (`StageGuard`), so a defect in one leaves the others' launches standing.
- * The apply state these change as they go, the slot table, the records and
- * the deadline, is built here once per tick.
+ * The apply state these change as they go, the slot table, the records,
+ * the deadline and the preflight's answers (preflight.ts), is built here
+ * once per tick.
  */
 import type { Contention } from "./contention.ts";
 import { passTimeoutSeconds } from "../../skills/drive-pr/scripts/lib/driver/settings.ts";
@@ -22,6 +23,7 @@ import {
 import { applyFollowups } from "./actions/followup.ts";
 import { applyNotices } from "./actions/notify.ts";
 import { applyPickups } from "./actions/pickup.ts";
+import { newPreflight, trackerTargetOf } from "./preflight.ts";
 import { applyPrOpenMoves } from "./actions/pr-open-moves.ts";
 import { timeLeftMs } from "./actions/launch.ts";
 import { applySteward } from "./actions/steward.ts";
@@ -112,6 +114,7 @@ export function applyState(
     startedAt,
     tick,
     repos: options.repos.length,
+    preflight: newPreflight(machine),
   };
 }
 
@@ -147,6 +150,9 @@ export async function actObserved(
   if (apply === null) return;
   const { opened, forge, ctx, claims } = observation;
   const { repo, section, report } = opened;
+  // The tracker stages of this repository, a steward's resume of one included, are checked against its tracker.
+  const tracker = trackerTargetOf(opened, observation.tracked);
+  if (tracker !== null) apply.preflight?.targets.set(repo.slug, tracker);
   await hooks.guard("steward", () => applyStewardRecords(apply, observation));
   const book = bookOf(context, repo.slug, report);
   await endOwnClaims(ctx, report, {
