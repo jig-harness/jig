@@ -207,6 +207,16 @@ function names(user: unknown, name: string): boolean {
   );
 }
 
+/** Whether a history target carries any field `names` can match: a malformed one is an unreadable read, not a negative answer. */
+function hasIdentity(user: unknown): boolean {
+  return (
+    isRecord(user) &&
+    ["id", "email", "displayName", "name"].some(
+      (k) => typeof user[k] === "string" && user[k] !== "",
+    )
+  );
+}
+
 function assigner(actor: unknown, key: string, team: string): Assigner {
   if (actor === null)
     throw new AssignerUnknown(
@@ -332,7 +342,7 @@ export function assignedOperations(
       const latest = nodes
         .map((n, i) => {
           const node = field(n, `history of ${key}[${i}]`);
-          if (node.toAssignee !== null && !isRecord(node.toAssignee))
+          if (node.toAssignee !== null && !hasIdentity(node.toAssignee))
             throw new AssignmentError(
               `history of ${key}[${i}]: its assignment target cannot be read`,
             );
