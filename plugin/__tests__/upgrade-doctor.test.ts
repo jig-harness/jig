@@ -128,6 +128,14 @@ test.skipIf(onWindows)(
     expect(failed.stdout.toString()).toMatch(
       /FAIL {2}dispatch:last-run: \S+ exited 1\n {6}fix: jig receipts dispatch \S+/,
     );
+
+    // A run of failed ticks is named with how many and since when.
+    dispatchReceipt(m, 1);
+    const again = m.jig(["doctor", "dispatch"]);
+    expectSpawnExit(again, 1);
+    expect(again.stdout.toString()).toMatch(
+      /FAIL {2}dispatch:last-run: \S+ exited 1; 2 runs in a row have failed, since \S+\n/,
+    );
   },
 );
 

@@ -40,6 +40,14 @@ export interface LastRun {
   exitStatus: number;
   /** The receipt's file. */
   path: string;
+  /** Why the run failed, for a person; absent when it passed or its receipt does not say. */
+  reason?: string;
+  /**
+   * The failed runs in a row that this one ends: how many, and when the
+   * first of them started; `capped` when the read stopped at its limit, so
+   * there were at least that many. Absent when the run passed.
+   */
+  failing?: { runs: number; since: string; capped: boolean };
 }
 
 /** One component's entry in `jig status`. */

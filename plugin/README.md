@@ -199,7 +199,9 @@ jig run       [COMPONENT...]
   copy; the latest scheduled upgrade, which fails while that upgrade failed,
   naming it and the agent tool's error; for each component, or those named, its machine file, its job's
   launcher copy against the installed plugin's, the programs its job names
-  and its last run's receipt, and for the dispatcher that Orca resolves
+  and its last run's receipt (for the dispatcher, a failed last tick also
+  names its reason and how many ticks in a row have failed, since when),
+  and for the dispatcher that Orca resolves
   where its timer runs; and the audit's
   [configuration fit](skills/audit/README.md#what-it-does) of the
   repository, offline (the audit itself also reads the forge and the

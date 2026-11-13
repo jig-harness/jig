@@ -19,6 +19,7 @@ import {
   lockIdentity,
 } from "../../shared/liveness.ts";
 import {
+  lastTick,
   newRunId,
   nextTickIndex,
   previousFollowupSince,
@@ -71,6 +72,78 @@ function receipt(day: string, repoPath: string, since: string): TickReceipt {
     ],
   };
 }
+
+/** A tick's receipt at `iso` with the exit it ended with, and the defect that stopped it when one did. */
+function tickAt(iso: string, exitStatus: number, defect?: string): TickReceipt {
+  const at = new Date(iso);
+  return {
+    version: 1,
+    runId: newRunId(at),
+    startedAt: at.toISOString(),
+    finishedAt: at.toISOString(),
+    completed: defect === undefined,
+    apply: true,
+    exitStatus,
+    ...(defect === undefined
+      ? {}
+      : {
+          defect: { code: "defect" as const, phase: "start", reason: defect },
+        }),
+    repos: [],
+  };
+}
+
+describe("lastTick", () => {
+  it("names the failed ticks in a row the latest one ends, since the first of them, and the latest reason", () => {
+    const dir = root();
+    writeReceipt(tickAt("2026-01-01T09:00:00Z", 1), dir);
+    writeReceipt(tickAt("2026-01-01T10:00:00Z", 0), dir);
+    writeReceipt(tickAt("2026-01-01T11:00:00Z", 1, "first"), dir);
+    writeReceipt(tickAt("2026-01-01T12:00:00Z", 1), dir);
+    const latest = tickAt(
+      "2026-01-02T08:00:00Z",
+      2,
+      "the state database is refused",
+    );
+    writeReceipt(latest, dir);
+    // A held tick ran nothing: it neither ends the run nor is the last run.
+    writeReceipt(
+      { ...tickAt("2026-01-02T09:00:00Z", 3), lockHeldBy: "pid 1" },
+      dir,
+    );
+    expect(lastTick(dir)).toMatchObject({
+      runId: latest.runId,
+      completed: false,
+      exitStatus: 2,
+      reason: "the state database is refused",
+      failing: { runs: 3, since: "2026-01-01T11:00:00.000Z", capped: false },
+    });
+  });
+
+  it("carries no failed run when the latest tick passed", () => {
+    const dir = root();
+    writeReceipt(tickAt("2026-01-01T09:00:00Z", 1, "earlier"), dir);
+    writeReceipt(tickAt("2026-01-01T10:00:00Z", 0), dir);
+    const last = lastTick(dir);
+    expect(last?.exitStatus).toBe(0);
+    expect(last?.failing).toBeUndefined();
+    expect(last?.reason).toBeUndefined();
+  });
+
+  it("stops reading back at its limit and says there were at least that many", () => {
+    const dir = root();
+    for (let i = 0; i < 101; i++)
+      writeReceipt(
+        tickAt(new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString(), 1),
+        dir,
+      );
+    expect(lastTick(dir)?.failing).toEqual({
+      runs: 100,
+      since: "2026-01-01T00:01:00.000Z",
+      capped: true,
+    });
+  });
+});
 
 describe("readReceipt", () => {
   it("skips a receipt whose repository entry is not one", () => {

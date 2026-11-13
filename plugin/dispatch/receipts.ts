@@ -224,23 +224,78 @@ export function receiptOrWhy(path: string): TickReceipt | string {
     : "it is not a tick's receipt";
 }
 
+/** Receipts read back for a run of failed ticks: each can be large, and a host failing for days holds thousands. */
+const FAILED_RUN_READ = 100;
+
+/** Whether a tick that ran passed: it completed with exit 0. */
+function passed(receipt: TickReceipt): boolean {
+  return receipt.completed && receipt.exitStatus === 0;
+}
+
+/** Why a tick failed, for a person, as its receipt records it; `undefined` when it records no reason. */
+function failureReason(receipt: TickReceipt): string | undefined {
+  return (
+    receipt.defect?.reason ??
+    receipt.applyWithheld ??
+    receipt.lineFailed ??
+    receipt.logCopyFailed ??
+    receipt.failuresUnwritten ??
+    receipt.unloggedOutcomes?.[0] ??
+    receipt.repos.find((repo) => repo.defect !== undefined)?.defect?.reason
+  );
+}
+
+/** A receipt read back for the last run, or `null` for one that is no evidence of a run: it does not read, or its tick found the lock held and ran nothing. */
+function ranTick(path: string): TickReceipt | null {
+  const receipt = readReceipt(path);
+  return receipt === null || receipt.lockHeldBy !== undefined ? null : receipt;
+}
+
+/** The failed ticks in a row, newest first, among the ticks that ran at `paths`; read back at most `FAILED_RUN_READ`. */
+function failedRun(paths: string[]): TickReceipt[] {
+  const run: TickReceipt[] = [];
+  for (const path of paths) {
+    if (run.length === FAILED_RUN_READ) break;
+    const receipt = ranTick(path);
+    if (receipt === null) continue;
+    if (passed(receipt)) break;
+    run.push(receipt);
+  }
+  return run;
+}
+
 /**
  * The newest receipt of a tick that ran, for `jig status` and `jig doctor`;
- * null when there is none. A tick that found the lock held ran nothing.
+ * null when there is none. A tick that found the lock held ran nothing. A
+ * failed one carries its reason and the failed ticks in a row it ends,
+ * reading back at most `FAILED_RUN_READ` receipts.
  */
 export function lastTick(root = stateRoot()): LastRun | null {
-  for (const path of receiptPaths(root).reverse()) {
-    const receipt = readReceipt(path);
-    if (receipt !== null && receipt.lockHeldBy === undefined)
-      return {
-        runId: receipt.runId,
-        startedAt: receipt.startedAt,
-        completed: receipt.completed,
-        exitStatus: receipt.exitStatus,
-        path,
-      };
-  }
-  return null;
+  const paths = receiptPaths(root).reverse();
+  const at = paths.findIndex((path) => ranTick(path) !== null);
+  const path = paths[at];
+  const receipt = path === undefined ? null : ranTick(path);
+  if (path === undefined || receipt === null) return null;
+  const last: LastRun = {
+    runId: receipt.runId,
+    startedAt: receipt.startedAt,
+    completed: receipt.completed,
+    exitStatus: receipt.exitStatus,
+    path,
+  };
+  if (passed(receipt)) return last;
+  const reason = failureReason(receipt);
+  const run = failedRun(paths.slice(at));
+  const first = run.at(-1) ?? receipt;
+  return {
+    ...last,
+    ...(reason === undefined ? {} : { reason }),
+    failing: {
+      runs: run.length,
+      since: first.startedAt,
+      capped: run.length === FAILED_RUN_READ,
+    },
+  };
 }
 
 /**

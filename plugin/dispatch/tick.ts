@@ -120,6 +120,8 @@ import {
 import { launchedMeanwhile } from "./lib/tick-plan.ts";
 import type { RepoReport } from "./lib/types.ts";
 import { takeScheduledUpgrade } from "../runtime/upgrade-record.ts";
+import { ExitError } from "../shared/cli.ts";
+import { swallow } from "../shared/errors.ts";
 import {
   type Lock,
   newRunId,
@@ -591,6 +593,36 @@ async function actAndClose(
   return { receipt, path };
 }
 
+/**
+ * The receipt of a tick a throw stopped before its act phase (a state
+ * database refused at the start, a lock that could not be taken), so `jig
+ * status` and `jig doctor` read the failure rather than the tick before it.
+ * Best effort: the throw it records is what the tick reports.
+ */
+function abortedReceipt(
+  options: TickOptions,
+  at: Date,
+  phase: TickPhase,
+  error: unknown,
+): void {
+  try {
+    writeReceipt({
+      version: 1,
+      runId: newRunId(at),
+      startedAt: at.toISOString(),
+      finishedAt: new Date().toISOString(),
+      completed: false,
+      apply: options.apply === true,
+      exitStatus: error instanceof ExitError ? error.code : 1,
+      ...upgradeField(),
+      defect: defectOf(phase, error),
+      repos: [],
+    });
+  } catch (unwritten) {
+    swallow(unwritten, "the receipt of a tick a throw stopped");
+  }
+}
+
 export async function runTick(options: TickOptions): Promise<TickResult> {
   // A plugin host may run inside Electron. Its Node mode and crash reporter
   // belong to that host, not to programs this tick starts.
@@ -602,6 +634,24 @@ export async function runTick(options: TickOptions): Promise<TickResult> {
     )
       delete process.env[key];
   const timer = new PhaseTimer<TickPhase>();
+  const at = options.now ?? new Date();
+  // The act phase writes its own receipt, a defect's included.
+  const tick = { acting: false };
+  try {
+    return await lockedTick(options, timer, tick);
+  } catch (error) {
+    if (!tick.acting)
+      abortedReceipt(options, at, timer.current ?? "start", error);
+    throw error;
+  }
+}
+
+/** The tick under its observe and act locks: every repository read, then acted on and closed. */
+async function lockedTick(
+  options: TickOptions,
+  timer: PhaseTimer<TickPhase>,
+  tick: { acting: boolean },
+): Promise<TickResult> {
   const started = await timer.time("start", () => startTick(options));
   const locks = new Map<string, Held>();
   try {
@@ -634,6 +684,7 @@ export async function runTick(options: TickOptions): Promise<TickResult> {
       heldReceipt(started, act.heldBy);
       return { held: act.heldBy };
     }
+    tick.acting = true;
     try {
       return await actAndClose(started, observe, locks, timer);
     } finally {

@@ -510,17 +510,24 @@ async function jobChecks(
   ];
 }
 
+/** The failed runs in a row a failed last run ends, when there is more than the one. */
+function failedRunText(failing: LastRun["failing"]): string {
+  if (failing === undefined || failing.runs < 2) return "";
+  return `; ${failing.capped ? "at least " : ""}${failing.runs} runs in a row have failed, since ${failing.since}`;
+}
+
 /** The last run's receipt: passes when it completed with exit 0. */
 function lastRunCheck(name: string, last: LastRun | null): DoctorCheck {
   const id = `${name}:last-run`;
   if (last === null) return skip(id, "no receipt yet");
   if (last.completed && last.exitStatus === 0)
     return pass(id, `${last.runId}, exit 0`);
+  const outcome = last.completed
+    ? `${last.runId} exited ${last.exitStatus}`
+    : `${last.runId} did not complete: it is still running, or it stopped before it finished`;
   return fail(
     id,
-    last.completed
-      ? `${last.runId} exited ${last.exitStatus}`
-      : `${last.runId} did not complete: it is still running, or it stopped before it finished`,
+    `${outcome}${last.reason === undefined ? "" : `: ${last.reason}`}${failedRunText(last.failing)}`,
     `jig receipts ${name} ${last.runId}`,
   );
 }
