@@ -131,7 +131,9 @@ Command-line flags, where a script has them, override all three.
   refuses them with an error naming the field. An environment variable may still override them for one run,
   except the `changelog` fields, which the `changelog` skill reads from the
   repository's own file alone and refuses from any other layer
-  ([`changelog`](#changelog)), and `autonomy.max_level` and
+  ([`changelog`](#changelog)), `ci.hold_sentinels` and `ci.advisory_checks`,
+  which a running drive reads from the base branch's snapshot without
+  consulting the environment layer, and `autonomy.max_level` and
   `autonomy.park_classes`, the ceiling a person's level is capped by and the
   classes a drive may park on, which an environment variable is refused for
   too ([`autonomy`](#autonomy)).
