@@ -593,7 +593,8 @@ function validatePassCommand(
   // PR 12 satisfy a driver waiting on 123, so match the number as a delimited
   // token.
   if (explicitPr !== "" && agent.length > 0) {
-    const token = new RegExp(`(?:^|[^0-9])${explicitPr}(?:[^0-9]|$)`);
+    const escaped = explicitPr.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const token = new RegExp(`(?:^|[^0-9])${escaped}(?:[^0-9]|$)`);
     const found = agent.some((word) => token.test(word));
     if (!found) {
       console.error(
