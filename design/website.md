@@ -168,9 +168,8 @@ the visitor-page work starts.
 
 ### The later page work's parser contract
 
-The copy and the parsers that consume it change together in the visitor-page
-pull request, after the accepted design round. The design amendment itself
-changes no parser or page. That later pull request must:
+The copy and the parsers that consume it change together after the accepted
+design round. The visitor-page work must:
 
 - Replace `readme.ts`'s statement-then-bold-tagline assumption with an
   explicit factory opening: headline and checkable sentence. Adjust
@@ -604,8 +603,6 @@ design round and visitor-page work under that epic, in this order:
    agreed contract. Keep planned autonomy claims in On the roadmap until
    item 33's live-host checks are recorded. The direct audit path remains.
 
-This design pull request changes none of those visitor pages except for
-the new roadmap entry. It does not prepare the brief or run the round.
 When the page work finishes, remove item 51 from the plan and roadmap and
 move the implemented message contract into the documents it governs.
 
