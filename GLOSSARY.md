@@ -2393,6 +2393,14 @@ make, use the entry's term instead.
   one database that enrolled hosts call. Optional: a host that never
   enrolls, or whose hub does not answer, dispatches alone. See
   [design/control-plane.md](design/control-plane.md).
+- **Notification channel** — one way the *dispatcher*'s notices reach a
+  person: a workspace card in Orca, a team's chat. The tick sends each
+  notice through every channel a machine enables and keeps a record per
+  channel of what was delivered ([design/chat.md](design/chat.md)).
+- **Chat bridge** — the one process that turns a person's click or command
+  in a team's chat into one `jig send` request. It runs inside the *hub* or
+  on a host that is not enrolled, connects out to the chat tool and listens
+  on no socket ([design/chat.md](design/chat.md)).
 - **Device grant** — how a host enrolls in a *hub*: the host prints a short
   code, a person who administers the hub approves it, and the host receives a
   credential of its own, bound to the repositories and queues that person
