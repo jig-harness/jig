@@ -712,9 +712,8 @@ export async function ciReportFor(
   const statuses = await commitStatusesFor(owner, repo, head);
   const workflowRuns = await workflowRunsBehind(owner, repo, head, runs);
   const held = pr === undefined ? [] : await liveHeldChecks(pr);
-  const heldRuns = readChecks(runs, workflowRuns).failing.filter((r) =>
-    held.includes(r.name),
-  );
+  const reduced = readChecks(runs, workflowRuns);
+  const heldRuns = reduced.failing.filter((r) => held.includes(r.name));
   // Keep the full input for the verdict's reduction. The selected held check
   // is suppressed only from the already-reduced reading so its predecessors
   // remain superseded and unrelated pending reruns remain visible.
@@ -731,15 +730,23 @@ export async function ciReportFor(
   // sentinel. Read it separately, but only use it when the preserved reading
   // found no independent evidence. That keeps the original reduction's
   // supersession witnesses and unreplaced rerun obligations intact.
-  const heldThrough = new Map<string, number>();
-  for (const run of heldRuns) {
-    const key = JSON.stringify([run.app, run.name]);
-    heldThrough.set(key, Math.max(heldThrough.get(key) ?? -1, run.id));
-  }
-  const laterRuns = runs.filter(
-    (run) =>
-      run.id > (heldThrough.get(JSON.stringify([run.app, run.name])) ?? -1),
+  const heldThrough = new Map(
+    heldRuns.map((run) => [JSON.stringify([run.app, run.name]), run.id]),
   );
+  const reducedIds = new Set(
+    [...reduced.failing, ...reduced.pending, ...reduced.cancelled].map(
+      (run) => run.id,
+    ),
+  );
+  // Retain already-reduced evidence outside held groups. Re-reducing raw
+  // runs after removing a held gate can discard that gate's cross-name
+  // workflow replacement witness and resurrect an older cancelled failure.
+  // A held group itself stays raw beyond its held failure, so a genuinely
+  // later cancellation or rerun still answers the hold sentinel.
+  const laterRuns = runs.filter((run) => {
+    const through = heldThrough.get(JSON.stringify([run.app, run.name]));
+    return through === undefined ? reducedIds.has(run.id) : run.id > through;
+  });
   const laterVerdict = ciVerdictOf(
     laterRuns,
     statuses,
