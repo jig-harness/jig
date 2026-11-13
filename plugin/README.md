@@ -530,6 +530,27 @@ follow-ups, with the admitted account's configuration directory and an
 identity check before launch. An interactive launch remains unavailable
 until the runtime can bind it to an account.
 
+Before a stage that touches the tracker launches (a follow-up, a pickup, or
+the steward's resume of one), the tick asks, headless, whether each account
+it could bill reaches the repository's tracker: it reads the tracker through
+the same port a pass uses, in the repository's checkout and the environment a
+pass on that account runs in, once per tick for each account and tracker
+([preflight](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md#preflight) in [the machine's dispatch file](CONFIGURATION.md#the-machines-dispatch-file)).
+An account the tracker refuses, or whose read gives no answer within the
+probe's deadline (an operating system keychain waiting for an approval, a
+lapsed connection), takes none of those launches that tick: the launch goes
+to another account, or waits, naming each answer. An answer that says
+nothing of the credential holds nothing: a rate limit, a server error or the
+network leave the stage to its own rate-limit and failure handling, and a
+configuration that opens no tracker to the stage's own failure. The line
+shows one need per account for the whole host, `tracker-unreachable`, act
+Authorize, its repository shown as `host`, naming every repository it holds
+and the answer, rather than a failed pass per pull request or item; fixing
+the credential is a person's. The next tick that has a tracker launch to
+start asks again, and once the answer passes the need is gone and the
+launches start. A drive's re-arm or takeover and the steward's own pass are
+never held by it.
+
 ```sh
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> done|failed [--pr <number> | --none <reason>]
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> waits --until <time>
@@ -1165,7 +1186,11 @@ field. No key fires while a person types in a field.
 
 The Help view lists the keys and says what the page's words, stages and marks mean; a chip, a
 dotted word or the `?` beside a heading says it in place, on hover, tap or
-focus. The theme follows the device until the switch in the strip picks light
+focus. Each recorded word (an act, a stage, where a coming item came from,
+a lane, a gauge, an account's state, why a need waits) has one icon, always
+beside its word, and its family keeps one shape: an act is a filled pill, a
+stage an outlined chip, a source a dashed chip. The Help view lists every
+icon with its word. The theme follows the device until the switch in the strip picks light
 or dark.
 
 The page acts on nothing: it links to the pull request a decision is answered on
@@ -1362,7 +1387,7 @@ whose configuration names the tracker.
 | --- | --- |
 | `holder` | the launch that holds the station now: its stage, its host (`this machine`, or another dispatching host as its launch claims name it), the drive's driver generation, and whether its process is alive, dead or unknown; the account, the session and the launch record where this machine's records name them; `none` when nobody holds it |
 | `state` | the station's state in its own words: for a drive, `running`, the [terminal-state](skills/drive-pr/README.md) name of its last stop (`HITL_PARKED`, `CONVERGED`, …), `not driven`, `merged` or `closed`; for a pick-up, `assigned`, `claimed`, `stalled`, `doubly claimed`, `not assigned` or `closed`; for a follow-up, `claimed`, `done`, `failed`, `not claimed` or `not merged` |
-| `waitsOn` | `none`; `waiting`, with what it waits for, when it settles by itself (a dispatcher's next tick, another driver); or `person`, with the act that settles it, one of `answer`, `re-arm`, `release the CI hold`, `merge`, `approve`, `request a review`, `update the branch`, `re-run a check`, `mark it ready`, `remove the label`, `open the pull request`, `re-run the follow-up`, `choose the session that keeps the item`, `look at the stalled pickup`, `settle the pickup's question, then return the item to the dispatch states`, `answer the waiting session` or `assign the item as someone who can write`; and `needAct`, what the person does as the dispatch dashboard groups it (Merge, Decide, Authorize, Reply, Do or Investigate; a park's comes from its decision class) |
+| `waitsOn` | `none`; `waiting`, with what it waits for, when it settles by itself (a dispatcher's next tick, another driver); or `person`, with the act that settles it, one of `answer`, `re-arm`, `release the CI hold`, `merge`, `approve`, `request a review`, `update the branch`, `re-run a check`, `mark it ready`, `remove the label`, `open the pull request`, `re-run the follow-up`, `choose the session that keeps the item`, `look at the stalled pickup`, `settle the pickup's question, then return the item to the dispatch states`, `answer the waiting session`, `assign the item as someone who can write` or `authorize the account's tracker credential`; and `needAct`, what the person does as the dispatch dashboard groups it (Merge, Decide, Authorize, Reply, Do or Investigate; a park's comes from its decision class) |
 | `last` | the last ended launch: its class from the [outcome log](#the-dispatcher)'s closed list and when, from this machine's outcome log or, elsewhere, from the end written on its launch claim |
 | `sources` | every record kind the answer consulted, whether it was read and why not, and how many forge and tracker calls it made |
 

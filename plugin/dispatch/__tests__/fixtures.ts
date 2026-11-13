@@ -606,9 +606,12 @@ export function world(): World {
         variables: Record<string, unknown>;
       };
       const op = /(?:query|mutation)\s+(\w+)/.exec(query)?.[1];
+      // The tracker preflight's read, which every repository of the world answers.
       const data = op?.startsWith("TrackerFacet")
         ? { repository: noFacetStores(query) }
-        : answer(op, variables);
+        : op === "TrackerRepository"
+          ? { repository: { id: "R_repo" } }
+          : answer(op, variables);
       return Response.json(
         data === undefined
           ? { errors: [{ message: `unhandled ${op}` }] }

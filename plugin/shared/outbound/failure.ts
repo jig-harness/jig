@@ -1,6 +1,6 @@
 /**
  * The closed set of ways a call to an outside system fails, and the policy
- * each one takes ([ADR-0020](../../../docs/adr/ADR-0020-outbound-calls-are-governed.md),
+ * each one takes ([ADR-0021](../../../docs/adr/ADR-0021-outbound-calls-are-governed.md),
  * [design/outbound-calls.md](../../../design/outbound-calls.md)).
  *
  * Every transport (the tracker adapters' transports, the forge client's

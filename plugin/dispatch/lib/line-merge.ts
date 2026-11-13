@@ -70,8 +70,15 @@ export function mergeLine(
     before: readonly T[],
     now: readonly T[],
   ): T[] => [
-    ...before.filter((x) => kept.has(x.repo)),
-    ...now.filter((x) => read.has(x.repo)),
+    // Host-wide records do not belong to a repository read set. Keep the
+    // previous host part during a partial tick and replace it only when this
+    // tick wrote the machine-wide part.
+    ...before.filter((x) =>
+      x.repo === "host" ? machine === "kept" : kept.has(x.repo),
+    ),
+    ...now.filter((x) =>
+      x.repo === "host" ? machine === "fresh" : read.has(x.repo),
+    ),
   ];
   const base = machine === "fresh" ? fresh : previous;
   // Whichever tick's part is kept, this tick's duration stays in the history the freshness checks take their maximum from.

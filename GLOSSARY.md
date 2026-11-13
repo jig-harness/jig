@@ -9,6 +9,10 @@ make, use the entry's term instead.
 
 ## Core ideas
 
+- **Preflight** — a small check that runs before a stage starts, to prove a
+  condition the stage needs. For example, the dispatcher checks whether an
+  account can reach a tracker before launching work that must use it.
+
 - **AI-native delivery** — building and maintaining software with AI coding
   agents as first-class participants: the repo is organized so agents can find
   the rules, run the checks, and improve the process — not just emit code.
@@ -2010,6 +2014,10 @@ make, use the entry's term instead.
 - **Maskable icon** — an app icon drawn to fill a full square, with its mark
   kept near the middle, so a launcher that crops icons to its own shape (a
   circle, a rounded square) does not cut the mark off.
+- **Forced colours** — an operating system's high-contrast mode, in which
+  the browser replaces a page's colours with a few system colours the
+  person chose. A page that tells things apart only by colour loses the
+  difference there, so it keeps shapes and borders that still show.
 - **Service worker** — a script a browser starts on demand, apart from the
   page itself, to handle events such as requests when the network is gone;
   the browser stops it whenever it has nothing to handle. The
@@ -2152,7 +2160,7 @@ make, use the entry's term instead.
   list), adds the call to the *cost ledger* and fails as one of the
   *failure classes*. No other code sends to that system, and every
   transport is built from one shared library
-  ([ADR-0020](docs/adr/ADR-0020-outbound-calls-are-governed.md)). The
+  ([ADR-0021](docs/adr/ADR-0021-outbound-calls-are-governed.md)). The
   tracker adapters' transports keep the budget and the deadline, and they
   and the forge's `gh` calls fail as the failure classes, with one retry
   for a read; the rest is planned ([ROADMAP.md](ROADMAP.md) item 55).
