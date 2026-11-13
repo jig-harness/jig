@@ -74,6 +74,7 @@ import {
   TimerOff,
   TriangleAlert,
   Undo2,
+  Unplug,
   UserRound,
   UserRoundCheck,
   UserRoundX,
@@ -243,6 +244,7 @@ export const CAUSE_ICONS = {
   "pickup-question": is(MessageSquareMore, "pickup-question"),
   "double-claim": is(CopyX, "double-claim"),
   "assigner-cannot-write": is(UserRoundX, "assigner-cannot-write"),
+  "tracker-unreachable": is(Unplug, "tracker-unreachable"),
 } satisfies Record<NeedCause, IconWord>;
 
 export const EVERYONE_ICONS = {
