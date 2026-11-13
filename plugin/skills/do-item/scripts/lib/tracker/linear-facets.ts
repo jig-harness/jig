@@ -19,6 +19,7 @@
  * the first such read.
  */
 
+import { failedHealth, type StoreHealth } from "./unavailable.ts";
 import {
   defaultFacets,
   type Facets,
@@ -346,18 +347,12 @@ export function estimateStore(
         openPopulation: async (signal) =>
           pools(await core.openPopulation(signal), signal),
         async facetReport(options): Promise<CoreFacetReport> {
-          let health: { status: "ok" } | { status: "failed"; error: string };
+          let health: StoreHealth;
           try {
             await map(readSignal(options));
             health = { status: "ok" };
           } catch (err) {
-            health = {
-              status: "failed",
-              error: (err instanceof Error ? err.message : String(err)).slice(
-                0,
-                300,
-              ),
-            };
+            health = failedHealth(err);
           }
           return {
             facets: { size: { health } },

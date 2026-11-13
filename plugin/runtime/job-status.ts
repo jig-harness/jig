@@ -181,7 +181,9 @@ export function formatStatus(status: ComponentStatus): string {
   lines.push(
     run === null
       ? "  last run: none"
-      : `  last run: ${run.runId}, started ${localMinute(run.startedAt)}, ${run.completed ? `exit ${run.exitStatus}` : "incomplete"} (${run.path})`,
+      : run.unread !== undefined
+        ? `  last run: unknown, the newest ${run.unread} receipts hold no tick that ran (${run.path})`
+        : `  last run: ${run.runId}, started ${localMinute(run.startedAt)}, ${run.completed ? `exit ${run.exitStatus}` : "incomplete"} (${run.path})`,
   );
   return lines.join("\n");
 }

@@ -25,6 +25,7 @@ import {
  * has no field". Every read of a report takes its caller's signal.
  */
 
+import { failedHealth, type StoreHealth } from "../unavailable.ts";
 import { TrackerConfigError } from "../config-error.ts";
 import type { CoreFacetReport } from "../facets/tracker.ts";
 import { type Facets, type ResolvedFacet, usable } from "../facets/config.ts";
@@ -632,7 +633,7 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
   async function health(
     s: ResolvedFacet,
     signal?: AbortSignal,
-  ): Promise<{ status: "ok" } | { status: "failed"; error: string }> {
+  ): Promise<StoreHealth> {
     try {
       for (const v of s.values)
         if (s.facet === "type" && s.store === "native")
@@ -640,10 +641,7 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
         else await fieldValue(s, v, signal);
       return { status: "ok" };
     } catch (err) {
-      return {
-        status: "failed",
-        error: (err instanceof Error ? err.message : String(err)).slice(0, 300),
-      };
+      return failedHealth(err);
     }
   }
 

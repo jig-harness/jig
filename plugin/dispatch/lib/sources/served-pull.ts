@@ -5,7 +5,7 @@ import type {
   PoolIssue,
   QueueRelation,
 } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
-import { queueHold } from "../queue-rank.ts";
+import { PERSON_HOLD, queueHold } from "../queue-rank.ts";
 import { otherRepoLabel, type RepoScope } from "./served-repo.ts";
 
 const closedType = (type: string) =>
@@ -88,7 +88,7 @@ export function whyNotPulled(
   if (otherRepoLabel(blocker.labels, policy.repoScope) !== null)
     return "another repository's";
   const held = queueHold({ issue: blocker, blockers: [], unblocks: 0 }, policy);
-  return held === null ? null : "needs a person to start";
+  return held === null ? null : PERSON_HOLD;
 }
 
 /** Where a pulled item's authority comes from: the served item that waits on it. */
