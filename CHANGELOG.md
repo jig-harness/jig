@@ -394,6 +394,41 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.224.0] - 2026-11-13
+
+A repository's `ci.log_command` runs the program the default branch holds, not the copy in the pull request it repairs.
+
+The dispatcher no longer waits an hour for Linear after spending its share of the rate limit.
+
+A cold read of a served Linear queue no longer costs about three requests for each issue of an epic.
+
+### Added
+
+- `file-deferred.ts` (resolve-review-comments) files a deferred finding into a
+  repository whose label taxonomy requires a group beyond the size, such as a
+  `repo` group: it takes that group's label from the change-area catalog's
+  areas covering the file the finding's review thread is on. A finding whose
+  group it cannot derive with certainty (a summary finding, a file no area
+  covers, or areas carrying none or several of the group's labels) stays in
+  the pull request's `## Deferred` section for a person, the run's output
+  naming the group, and the other entries are filed instead of the run
+  stopping on the tracker's refusal (exit 3 rather than 1). A label taxonomy
+  that fails its lint now stops the run before anything is filed, as no
+  tracker can file (exit 3), rather than at the first filing (exit 1).
+
+### Changed
+
+- **Breaking:** the copy holds tracked files only. A `ci.log_command` that relied on something installed or generated in the working tree (`node_modules`, build output) no longer finds it, and the copy is not a git checkout, so `git` and `gh` do not find the repository from its working directory. **Consumer action:** required at configuration. Make the command self-contained, or have it install what it needs and give `gh` `-R <owner>/<repo>`; a script that imports only Bun's built-ins and files in the repository needs nothing. **Detect:** `config:ci.log_command`.
+
+### Fixed
+
+- Linear's request and complexity limits refill continuously, but the machine's request budget treated the dispatcher's share as spent until the reset Linear names, which is always an hour after the last answer. A tick that took the window down to its share floor (`tracker_share`, 50% by default), such as a cold read of a large queue, therefore stopped every tracker read of the dispatcher for an hour, though the refill brings the window back above the floor in seconds when it was only just below it. The budget now counts the refill of each window since it was last read, never past the window's limit, and the tick's reads resume as soon as the window is back above the floor, however long that takes for a larger deficit. A window that resets whole keeps waiting for its reset.
+- The issues the served walk reads by key (an epic's children, blockers, a plan's steps) now come with their relations and parent in the same paged request (`queueIssuesByKey`, 25 issues a page), where the walk read each issue's relations in two requests of its own, and what a batch carried of a parent is kept for the next tick. After a plugin upgrade or a cleared cache, the first read of a large queue costs a request per 25 issues instead of three per issue; assignment history is still read once per assigned issue, and an issue with more relations than a page holds is still read on its own. An issue the batch does not hold is read on its own.
+
+### Security
+
+- `ci.log_command`'s text was already read from the default branch, but it ran with the pull request's checkout as its working directory, so a script the repository keeps (`bun scripts/ci-log.ts`) ran as the pull request's author had edited it. It now runs in a temporary copy of the default branch's files, made from the same commit its text was read from without touching the repository's index, working tree or branches, and removed when the read ends. A copy that cannot be made fails the read; the command never falls back to the working tree. The copy is made under `$JIG_HOME/tmp`, in a scratch repository that reads the clone's objects, so no hook, filter, replacement object or attribute of the working tree or the clone's configuration applies and the git calls carry no tracker or forge token, and one copy serves every failing status of one read.
+
 ## [0.223.5] - 2026-11-13
 
 ### Fixed
@@ -7761,7 +7796,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.223.5...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.224.0...HEAD
+[0.224.0]: https://github.com/jig-harness/jig/compare/v0.223.5...v0.224.0
 [0.223.5]: https://github.com/jig-harness/jig/compare/v0.223.4...v0.223.5
 [0.223.4]: https://github.com/jig-harness/jig/compare/v0.223.3...v0.223.4
 [0.223.3]: https://github.com/jig-harness/jig/compare/v0.223.2...v0.223.3
