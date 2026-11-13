@@ -716,9 +716,8 @@ export async function ciReportFor(
   const held = pr === undefined ? [] : await liveHeldChecks(pr);
   const reduced = readChecks(runs, workflowRuns);
   const heldRuns = reduced.failing.filter((r) => held.includes(r.name));
-  // Keep the full input for the verdict's reduction. The selected held check
-  // is suppressed only from the already-reduced reading so its predecessors
-  // remain superseded and unrelated pending reruns remain visible.
+  // The held check is suppressed from the already-reduced reading only, so its
+  // predecessors stay superseded and unrelated pending reruns stay visible.
   const heldIds = new Set(heldRuns.map((run) => run.id));
   const preservedVerdict = ciVerdictOf(
     runs,
@@ -728,10 +727,9 @@ export async function ciReportFor(
     workflowRuns,
     heldIds,
   );
-  // A later attempt in the held run's own group still answers the held
-  // sentinel. Read it separately, but only use it when the preserved reading
-  // found no independent evidence. That keeps the original reduction's
-  // supersession witnesses and unreplaced rerun obligations intact.
+  // A later attempt in the held run's own group still answers the hold. It is
+  // read separately and used only when the preserved reading found no
+  // independent evidence.
   const heldThrough = new Map(
     heldRuns.map((run) => [JSON.stringify([run.app, run.name]), run.id]),
   );
@@ -741,12 +739,11 @@ export async function ciReportFor(
       workflowRuns,
     ).map((run) => run.id),
   );
-  // Retain every unreplaced witness outside held groups. A newer skipped
-  // check can be selected over a prior passing check, but cannot replace its
-  // workflow evidence. Re-reducing only selected runs would then resurrect
-  // an older cancelled held failure.
-  // A held group itself stays raw beyond its held failure, so a genuinely
-  // later cancellation or rerun still answers the hold sentinel.
+  // Every unreplaced witness outside held groups is retained: a newer skipped
+  // check cannot replace a passing one's workflow evidence, and re-reducing
+  // only selected runs would resurrect an older cancelled held failure. A held
+  // group stays raw past its held failure, so a later cancellation or rerun
+  // still answers the hold.
   const laterRuns = runs.filter((run) => {
     const through = heldThrough.get(JSON.stringify([run.app, run.name]));
     return through === undefined ? retainedIds.has(run.id) : run.id > through;
