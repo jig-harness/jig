@@ -4,8 +4,8 @@ type: adr
 status: draft
 description: "Herdr stays the first runtime for workspace lifecycle; the dispatcher, which starts the execution line's stages unattended, is built for Orca first, and other runtimes come through the same session runtime interface"
 lifecycle: permanent
-version: "1.0"
-last_updated: 2026-10-30
+version: "1.1"
+last_updated: 2026-11-13
 owner: maintainers
 decision_date: 2026-10-30
 supersedes: ~
@@ -111,3 +111,41 @@ output fields it relies on are not yet listed in one place: the adapter's
 header comment (`plugin/dispatch/lib/runtime/orca.ts`) names the commands, and
 the [plugin README](../../plugin/README.md) describes the behaviour they give.
 The inventory an Orca upgrade is assessed against is still to be written.
+
+## Amendments
+
+### 2026-11-13 — a process runtime joins Orca (v1.1)
+
+Touches the Decision and the Consequences. A second implementation of the
+session runtime interface is designed: the process runtime, which runs a
+headless pass as a plain managed process in a git worktree Jig opens
+itself, with no terminal and no desktop app
+([design/dispatched-sessions.md](../../design/dispatched-sessions.md)). A
+host chooses it in its machine dispatch file (`runtime: process`); a
+repository never chooses a runtime. Orca stays supported, as an option a
+host names (`runtime: orca`).
+
+Two of the reasons in the Context no longer bind the dispatcher to Orca.
+The account roster the dispatcher uses is its own: the accounts, their caps
+and their walls live in the machine file and the dispatcher's records, and
+a drive stopped by one account's usage limit is re-armed on another without
+reading Orca's roster. And a person's phone reaches the dispatch dashboard,
+which lists what waits on a person, so dispatched sessions send no phone
+notices: no run marks its workspace or asks its runtime to reach a person.
+The tick's `notify` stage, a notice per cause written into Orca's notices
+workspace, stays on Orca as an option a host enables, and the process
+runtime has none. The session registry is the one need left that a runtime
+answers, and the process runtime keeps its own, read from its launch
+records, the processes they recorded and the repository's worktrees.
+
+The default stays Orca until the process runtime has run on a host that
+dispatches, with every stage that host enables, for seven consecutive days
+and at least 20 launches, and that week's outcome log shows the checks the
+design lists under "Proof before the default changes": every run ended
+with a closing report or a recorded cause; runs went on after the tick that
+started them ended, and no pass outlived its launch record; every launch
+billed the account it was admitted on; every pickup's first drive ran
+through the runtime; every worktree whose pull request merged was collected
+or kept with a reason; and a person attached to a run and took one over
+without Orca. The pull request that then makes the process runtime the
+default records that week's log and adds a dated amendment here.

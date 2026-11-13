@@ -1869,6 +1869,25 @@ make, use the entry's term instead.
   that the registry does not hold. Review keeps arbitrary file-backed
   records and dynamically assembled names in the inventory
   ([plugin/RECORDS.md](plugin/RECORDS.md)).
+- **Jig Protocol** — the one statement of each contract Jig's parts and the
+  programs outside its skills share (a drive's exit codes, the records Jig
+  writes, the labels and comment markers it reads, the commands a repository
+  supplies), one *Protocol chapter* per contract in `plugin/protocol/`. Its
+  values are generated from the code and a gate fails the build when a
+  chapter and the code disagree; only the meaning of each value and the
+  chapter's prose are written by hand
+  ([design/protocol.md](design/protocol.md)). *Avoid*: spec, specification
+  (a spec is what a work item links).
+- **Protocol chapter** — one contract's part of the *Jig Protocol*: a status
+  line with its own version, prose written by hand, and generated sections
+  listing every value with its meaning. A **stable** chapter only grows
+  within one version: a withdrawn value stays listed as a tombstone and is
+  never reused, and a change that breaks this raises the version. A **provisional** chapter names the plan item that still moves it,
+  and becomes stable when that item is finished.
+- **Held restatement** — a copy of a contract's values that stays in a skill
+  or a document, where an agent acts on the value in the middle of a step,
+  and that the chapter's gate checks against the code. Every other
+  restatement of a contract is a link to its *Protocol chapter*.
 - **Launch guard record** — the files `jig gc` and Jig's plugin for Orca
   leave each other under `~/.local/state/jig/orca-guard/`: gc's admission
   for a worktree it is removing, the plugin's marker for each agent launch
@@ -2130,6 +2149,49 @@ make, use the entry's term instead.
   them under "What still assumes Linear". Adapters for Linear, GitHub
   Issues and Jira are built; an adapter for a plan file kept in the
   repository is planned ([ROADMAP.md](ROADMAP.md) item 12).
+- **Governed transport** — the one module through which Jig's code calls
+  one outside system: a *forge*, an issue tracker, a reflection store. It
+  reuses an answer it holds before it sends, asks the machine's *budget
+  record*, bounds what one call can cost (a deadline, a page size on every
+  list), adds the call to the *cost ledger* and fails as one of the
+  *failure classes*. No other code sends to that system, and every
+  transport is built from one shared library
+  ([ADR-0020](docs/adr/ADR-0020-outbound-calls-are-governed.md)). The
+  tracker adapters' transports keep the budget and the deadline; the rest
+  is planned ([ROADMAP.md](ROADMAP.md) item 55).
+- **Budget record** — what a machine knows of one credential's limits at an
+  outside system: for each limit its size, what is left and how it refills,
+  and until when the system refuses the credential. Every process on the
+  machine shares the record, so the *dispatcher*'s *ticks*, the sessions it
+  starts and a person's skills spend one allowance knowingly. A *governed
+  transport* asks it before each request and tells it what each answer
+  said; the dispatcher's own reads keep to a share of each limit
+  (`tracker_share`,
+  [configuration reference](plugin/CONFIGURATION.md)).
+- **Cost ledger** — the record of what Jig's calls to outside systems
+  cost: for each hour, system, credential, named operation and caller, the
+  requests sent, the cost in the system's own unit (a tracker's complexity
+  points, a forge's query points) and the time taken. It answers "what
+  spent this quota" without probing the system. Planned
+  ([ROADMAP.md](ROADMAP.md) item 55).
+- **Failure class** — one of the closed set of ways a call to an outside
+  system fails: rate limited (with the time it clears), unreachable, too
+  costly, server fault, unauthorized, not found, invalid. Each class has
+  one policy: whether the call is retried, what its reader shows meanwhile,
+  and when a person is told. It names what went wrong outside Jig; the
+  *failure channel* is how a failure travels inside it.
+- **Transport profile** — what a *governed transport* declares of its
+  system's limits: which exist, how each refills, how an answer reports
+  them, what a refusal looks like and who owns the quota. It holds no
+  number the system reports; those are read from each answer. Planned
+  ([ROADMAP.md](ROADMAP.md) item 55).
+- **Cost ceiling** — the most a query may cost in total, declared beside
+  the query with its unit: objects (the sum over its paths of the nested
+  page sizes' product) or, where the system's formula can be computed from
+  the query text, the system's own cost unit. What one request can cost an
+  outside system is then bounded when the query is written, and a gate can
+  check it.
+  Planned ([ROADMAP.md](ROADMAP.md) item 55).
 - **ADF (Atlassian Document Format)** — the JSON form Jira stores rich
   text in (issue descriptions, comments). Jig's Jira adapter converts it to
   Markdown when it reads and from Markdown when it writes, so the skills
@@ -2210,7 +2272,8 @@ make, use the entry's term instead.
   workspace, launch a session on a subscription account, notify a person.
   Orca is its first implementation
   ([ADR-0011](docs/adr/ADR-0011-the-dispatcher-targets-orca-first.md)); a
-  *workspace runtime* becomes another by implementing the same methods.
+  *workspace runtime* becomes another by implementing the same methods. The
+  planned *process runtime* implements them with no workspace app at all.
 - **Program status** — the state a program reports to its own terminal
   through [OSC (Operating System Command) 7501](https://www.superlogical.com/rex/docs/build/program-status):
   `idle`, `working`, `blocked`, `done` or `error`. A blocked report can say
@@ -2223,6 +2286,20 @@ make, use the entry's term instead.
   The *dispatcher* can start a follow-up this way on its chosen account
   even when the *session runtime* cannot bind a new interactive session to
   that account.
+- **Closing report** — the short record of what a run the *dispatcher*
+  started concluded: its question for a person if it has one, the next step
+  it suggests, and a cause when it fell short. A *headless pass* writes it
+  as its last act; for a drive, whose last pass cannot know it is last, the
+  driver writes it when the drive stops. The *steward* reads a run's
+  transcript only when the run left no report. Designed in
+  [design/dispatched-sessions.md](design/dispatched-sessions.md#the-closing-report),
+  [ROADMAP.md](ROADMAP.md) item 51.
+- **Process runtime** — a *session runtime* that runs a *headless pass* as
+  a plain managed process in a git worktree Jig opens itself, with no
+  terminal and no desktop app; a host chooses it in its machine dispatch
+  file. Designed in
+  [design/dispatched-sessions.md](design/dispatched-sessions.md#the-process-runtime),
+  [ROADMAP.md](ROADMAP.md) item 51.
 - **Factory identity** — the tracker user a repository assigns an item to
   when the *dispatcher* should pick it up. An item assigned to it and in
   one of the repository's dispatch states is started, when a person with
@@ -2237,7 +2314,10 @@ make, use the entry's term instead.
   launch of this host or a claim marker took it, or always under
   `dispatch.stalled_scope: assigned`. The *dispatcher* reports it and
   never starts it again: a second session would be a second implementer on
-  a claimed item, so a person settles it.
+  a claimed item, so a person settles it. An item whose pickup already
+  opened its pull request is finished work, not a stall: when an open pull
+  request from the branch of the dispatcher's launch of it links it, the
+  dispatcher moves it to its `pr_open` state.
 - **Double claim** — an item more than one running session works on at
   once: two workspaces, or a workspace beside a launch the *dispatcher*
   still holds for another one. The dispatcher reports it and starts
@@ -2643,6 +2723,10 @@ make, use the entry's term instead.
   browser's drawing interface for three-dimensional graphics) and
   JavaScript; without them, for a reader who asks for reduced motion, or on
   a narrow screen, a still drawing stands in its place
+  ([design/website.md](design/website.md)).
+- **Jig Protocol** — the planned readable account of Jig's operating rules,
+  arranged as generated, linkable chapters for teams that adopt Jig. Its
+  design determines its final source, generation and rendering
   ([design/website.md](design/website.md)).
 - **GLB** — the binary form of glTF, the standard file format for
   three-dimensional models on the web: one file holding a model's parts,
