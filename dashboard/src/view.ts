@@ -10,7 +10,7 @@ import type {
 } from "../../plugin/dispatch/lib/dashboard-contract.ts";
 import { ago, clock, plural, span, until } from "./format.ts";
 import { noLinkText } from "./links.ts";
-import { type Role, roleOf, stageMark } from "./status.ts";
+import { type Role, roleOf } from "./status.ts";
 
 /** The server's clock and the host's zone. */
 export interface Clock {
@@ -196,7 +196,6 @@ export interface SlotView {
   /** What the card says when `url` is null: what is missing and where to look. */
   noLink: string | null;
   stage: string;
-  mark: string;
   role: Role;
   fact: string;
   kind: SessionKind;
@@ -412,7 +411,6 @@ export function slotView(
     url: s.url,
     noLink: s.url === null ? noLinkText(s.repo, s.target) : null,
     stage: s.stage,
-    mark: stageMark(s.stage),
     role: roleFor(s, kind),
     fact: factOf(s, kind, clockNow, Date.parse(line.startedAt)),
     kind,
@@ -426,13 +424,20 @@ export function wallIsUp(a: LineAccount, nowMs: number): boolean {
   return a.wall !== null && Date.parse(a.wall.resetAt) > nowMs;
 }
 
+/** Why an account takes no launch, in the order the row reads them. */
+export type AccountState =
+  | "behind a wall"
+  | "wall not recorded"
+  | "not admitted"
+  | "at cap";
+
 export interface AccountView {
   name: string;
   vendor: string;
   heldText: string;
   /** One entry per slot: whether it is held. */
   pips: boolean[];
-  state: string | null;
+  state: AccountState | null;
   wall: string | null;
   walled: boolean;
   free: boolean;
@@ -443,14 +448,14 @@ export function accountView(a: LineAccount, clockNow: Clock): AccountView {
   const { nowMs, timeZone } = clockNow;
   const walled = wallIsUp(a, nowMs);
   const atCap = a.held >= a.cap;
-  let state: string | null = null;
+  let state: AccountState | null = null;
   let wall: string | null = null;
   if (walled && a.wall !== null) {
     const reset = Date.parse(a.wall.resetAt);
     state = "behind a wall";
     wall = `lifts ${clock(reset, timeZone)}, in ${until(reset, nowMs)}`;
   } else if (a.wallUnrecorded) {
-    state = "behind a wall";
+    state = "wall not recorded";
     wall =
       "a launch ended on this wall and it was never recorded; a person clears that record";
   } else if (a.notAdmitted !== null) {

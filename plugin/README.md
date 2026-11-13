@@ -1150,7 +1150,11 @@ field. No key fires while a person types in a field.
 
 The Help view lists the keys and says what the page's words, stages and marks mean; a chip, a
 dotted word or the `?` beside a heading says it in place, on hover, tap or
-focus. The theme follows the device until the switch in the strip picks light
+focus. Each recorded word (an act, a stage, where a coming item came from,
+a lane, a gauge, an account's state, why a need waits) has one icon, always
+beside its word, and its family keeps one shape: an act is a filled pill, a
+stage an outlined chip, a source a dashed chip. The Help view lists every
+icon with its word. The theme follows the device until the switch in the strip picks light
 or dark.
 
 The page acts on nothing: it links to the pull request a decision is answered on

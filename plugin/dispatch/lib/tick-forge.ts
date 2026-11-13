@@ -35,6 +35,7 @@ import { readDrives } from "./sources/ledgers.ts";
 import type { Pool } from "./pool.ts";
 import type { TickComments } from "./tick-comments.ts";
 import type { PrLinkText } from "./work-links.ts";
+import { PAGE } from "./forge-batch.ts";
 import type { CommentsOutcome, RepositoryOutcome } from "./tick-reads.ts";
 import { failureText } from "./text.ts";
 import type {
@@ -145,7 +146,11 @@ export async function readForge(
       ? listedOpen(queried.value.open, read)
       : await reads.pool.run(() => openPullRequests(repo.slug, read));
     if (!open.ok) {
-      unread(open.failure.reason);
+      unread(
+        queried.ok
+          ? open.failure.reason
+          : `${open.failure.reason}; the repository query did not read either: ${queried.failure.reason}`,
+      );
       return out;
     }
     out.open = open.value;
@@ -269,12 +274,16 @@ function decideScope(
 function queryNote(queried: RepositoryOutcome): string {
   if (!queried.ok)
     return ` (the repository query did not read, so each was read on its own: ${queried.failure.reason})`;
-  const { pages, cost, overflow } = queried.value;
+  const { pages, cost, overflow, pageSize } = queried.value;
   const own =
     overflow.length === 0
       ? ""
       : `; ${overflow.length} with more comments than one page holds, listed on their own`;
-  return ` (one repository query: ${pages} page(s), ${cost} point(s)${own})`;
+  const sized =
+    pageSize < PAGE
+      ? ` ending at ${pageSize} pull requests per page, as many as the forge answers in time`
+      : "";
+  return ` (one repository query: ${pages} page(s)${sized}, ${cost} point(s)${own})`;
 }
 
 /** How the merges' comments were read, where a query read them. */

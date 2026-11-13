@@ -7,7 +7,10 @@
  * login and the listings are the host's, not a repository's: each is read
  * once, the first time a repository needs it, and every repository is
  * answered from that read, a failed one failing each repository's record as
- * a read of its own would. The budget is read once, as the tick starts: it
+ * a read of its own would. The queries start from the page size the last
+ * tick's read ended at (`pageSizes`), so a repository whose pull requests
+ * the forge cannot answer fifty at a time is not asked that way every tick.
+ * The budget is read once, as the tick starts: it
  * decides whether the optional reads run (`lowBudget`), and every
  * repository's report says what was left then.
  *
@@ -25,11 +28,13 @@ import { failed, type Outcome } from "../../shared/outcome.ts";
 import { forgeShared } from "../../shared/records/shared-forge.ts";
 import {
   type CommentsRead,
+  type PageSizes,
   readComments,
   readRepository,
   type RepositoryRead,
 } from "./forge-batch.ts";
 import { forgetMergeRead } from "./merge-reads.ts";
+import { pickupReads } from "./pickup-reads.ts";
 import { type Pool, pool } from "./pool.ts";
 import type { SessionRuntime, SessionsReader } from "./runtime/port.ts";
 import type { ServedViews } from "./sources/served-reads.ts";
@@ -108,6 +113,12 @@ async function readBudget(): Promise<TickBudget> {
   }
 }
 
+/** The page sizes the forge queries read at, kept between ticks with the dispatch state's other kept reads. */
+const pageSizes: PageSizes = {
+  get: (key) => pickupReads.get<unknown>(`forge:page:${key}`),
+  set: (key, size) => pickupReads.set(`forge:page:${key}`, size),
+};
+
 /** A repository's query, its comments read in full held as the tick's listings; a query that throws is one that did not read. */
 async function queryRepository(
   path: string,
@@ -115,7 +126,7 @@ async function queryRepository(
 ): Promise<RepositoryOutcome> {
   let read: RepositoryOutcome;
   try {
-    read = await readRepository(path);
+    read = await readRepository(path, pageSizes);
   } catch (error) {
     return failed("unreadable", failureText(error));
   }
@@ -135,7 +146,7 @@ async function queryComments(
 ): Promise<CommentsOutcome> {
   let read: CommentsOutcome;
   try {
-    read = await readComments(slug, prs);
+    read = await readComments(slug, prs, pageSizes);
   } catch (error) {
     return failed("unreadable", failureText(error));
   }
