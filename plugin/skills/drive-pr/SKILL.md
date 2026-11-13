@@ -112,8 +112,9 @@ rather than waiting:
   "Review skipped / Draft detected"), and a CI-hosted reviewer job commonly
   skips drafts too (`!…pull_request.draft`). Where such a bot is the
   reviewer that decides convergence (`review.reviewer_evidence:
-  review_object`, CodeRabbit's profile), its draft skip is no wait: the draft
-  converges on its own work, and the drive marks it Ready and waits for that
+  review_object`, CodeRabbit's profile), its draft skip is no wait: a skip
+  check run, or CodeRabbit's current skip comment when no check run exists,
+  lets the draft converge on its own work, and the drive marks it Ready and waits for that
   review.
 
 So a draft is driven exactly like a Ready PR, and **after the first completed

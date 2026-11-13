@@ -95,3 +95,16 @@ export function runTitleSays(title: string): RunTitleSays {
   if (/^review skipped\b/i.test(t)) return "skipped";
   return null;
 }
+
+/** CodeRabbit's comment-only draft skip, recognized from its current body. */
+export function commentSaysDraftSkip(app: string, body: string): boolean {
+  return (
+    app === "coderabbitai" &&
+    (body.includes(
+      "<!-- This is an auto-generated comment: skip review by coderabbit.ai -->",
+    ) ||
+      /^\s*(?:>\s*)?(?:#{1,6}\s+)?(?:\*\*)?Draft PR not reviewed(?:\*\*)?\s*$/im.test(
+        body,
+      ))
+  );
+}

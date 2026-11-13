@@ -61,7 +61,6 @@ import {
   reviewerEvidence,
   reviewerExpected,
   reviewerLabel,
-  reviewsDrafts,
 } from "../overlay.ts";
 import { ghCall } from "../proc.ts";
 import {
@@ -85,6 +84,7 @@ import {
 import { resolveMarkerSha, reviewedShaGate, skipNote } from "./reviewed-sha.ts";
 import { readHeldEvidence, isFindingHoldCurrent } from "./held-evidence.ts";
 import { judgeReviewObject, latestReviewBy } from "./review-object.ts";
+import { missingReviewerVerdict } from "./comment-draft-skip.ts";
 import { strandedRunNote } from "./stranded-run.ts";
 import { terminal } from "./terminal-states.ts";
 import type { WaitingEvaluationCache } from "./waiting-cache.ts";
@@ -804,29 +804,18 @@ async function evaluateFresh(
   // conflicting PR that state polls until `--timeout`. The work enumeration
   // further down still runs, so findings the poller DID post are picked up
   // rather than discarded.
+  const byObject = reviewerEvidence() === "review_object";
   if (awaitReviewer && reviewer === null) {
-    // THIS is modes 2 and 4. Other checks being settled — including a
-    // rate-limited CodeRabbit reporting `success` for a review it never ran —
-    // is not evidence about the app that posts findings. Absence of the
-    // reviewer's check-run is absence of a review, full stop.
-    let reason = `no check-run from ${reviewerLabel()} on ${report.apiHead} yet — other checks settling is not evidence it reviewed`;
-    // Whether the reviewer looks at drafts is a property of the consumer's
-    // reviewer deployment (`drive.reviews_drafts`), not an invariant this
-    // skill can check from here. So on a draft specifically, this wait has one
-    // cause the others do not: a reviewer that skips drafts will never
-    // publish, and this state polls to `--timeout` learning nothing. Named in
-    // the reason, not gated on: refusing to drive drafts on the chance that
-    // the reviewer skips them is the very stall retiring `PR_IS_DRAFT` removed.
-    if (report.isDraft) {
-      const drafts = reviewsDrafts();
-      reason +=
-        drafts === false
-          ? `. NOTE: #${ctx.pr} is a draft, and this repository declares that ${reviewerLabel()} does not review drafts (drive.reviews_drafts: false): mark it Ready for review, or this polls to --timeout`
-          : drafts === true
-            ? `. NOTE: #${ctx.pr} is a draft; this repository declares that ${reviewerLabel()} reviews drafts (drive.reviews_drafts: true). If this polls to --timeout, check that the reviewer's draft setting is still on before assuming it is merely slow`
-            : `. NOTE: #${ctx.pr} is a draft, and some reviewers skip drafts (drive.reviews_drafts is not set). If this polls to --timeout, check whether ${reviewerLabel()} reviews drafts before assuming it is merely slow`;
-    }
-    return terminal(report, "AWAITING_REVIEWER", reason);
+    const verdict = await missingReviewerVerdict(
+      ctx.owner,
+      ctx.repo,
+      ctx.pr,
+      report.apiHead,
+      report.isDraft === true,
+    );
+    if (verdict.state !== "draft-skip")
+      return terminal(report, verdict.state, verdict.reason);
+    report.reviewedShaSource = "draft-skip";
   }
 
   if (reviewer !== null) {
@@ -853,7 +842,6 @@ async function evaluateFresh(
 
   // A reviewer that records its reviews as pull-request reviews is judged on
   // its check run's title and its newest review (`review-object.ts`).
-  const byObject = reviewerEvidence() === "review_object";
   if (awaitReviewer && byObject && reviewer !== null) {
     const latest =
       reviewer.status === "completed"
@@ -899,7 +887,7 @@ async function evaluateFresh(
         report.reviewedSha = report.apiHead;
         report.reviewedShaSource = verdict.source;
     }
-  } else if (awaitReviewer) {
+  } else if (awaitReviewer && !byObject) {
     if (report.reviewerStatus !== "completed") {
       // A check run stuck `in_progress` may be overruled by the sticky it
       // already published (`stranded-run.ts`).

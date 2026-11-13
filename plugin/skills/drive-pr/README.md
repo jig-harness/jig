@@ -167,7 +167,10 @@ it has nothing new to say about. A run titled `Review paused…` or `Review
 skipped…` stops the drive with `REVIEW_SKIPPED` (`22`), naming which, except
 a draft skip, which on a draft converges on its own work (the drive marks it
 Ready and waits for the review that summons) and on a Ready PR waits for the
-review. The findings such a reviewer puts only in its review's body
+review. When no check run exists, CodeRabbit's current issue comment from
+`coderabbitai[bot]` also attests a draft skip: its `skip review by coderabbit.ai`
+marker or `Draft PR not reviewed` heading. An old skip comment on a Ready PR
+never attests a review. The findings such a reviewer puts only in its review's body
 (CodeRabbit's outside-diff, nitpick, duplicate and follow-up comments) are summary-only
 findings, answered like a sticky's, for a reviewer whose built-in profile
 names a body format (today CodeRabbit); another review-object reviewer's
