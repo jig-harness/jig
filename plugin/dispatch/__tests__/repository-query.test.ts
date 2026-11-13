@@ -266,6 +266,25 @@ describe("a checks query that answers without its pull requests", () => {
       "the checks query answered without the repository",
     );
   });
+
+  it("is unreadable when one pull request's alias is null beside a valid one", async () => {
+    const w = fixture();
+    w.setPrs("open", [openPr(7, HEAD), openPr(8, HEAD)]);
+    writeFileSync(join(w.dir, "repository-query-fail"), "");
+    writeFileSync(join(w.dir, "checks-query-null-alias"), "8");
+    const r = await w.dispatch([
+      "--followup-since",
+      "2026-10-30T00:00:00Z",
+      "--json",
+    ]);
+    expectSpawnExit(r, 1);
+    const receipt = JSON.parse(r.stdout) as TickReceipt;
+    const forge = receipt.repos[0]?.records.find((x) => x.record === "forge");
+    expect(forge?.ok).toBe(false);
+    expect(forge?.detail).toContain(
+      "the checks query answered without pull request 8",
+    );
+  });
 });
 
 describe("the reads before a launch", () => {

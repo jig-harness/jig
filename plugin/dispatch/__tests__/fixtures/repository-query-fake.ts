@@ -16,9 +16,11 @@
  * than it says times out, as the forge does on a page that takes too long. The
  * checks query over named pull requests (`checksQuery`) answers each from
  * `prs-open.json`'s listed checks, and fails while `checks-query-fail`
- * exists, and answers without the repository while `checks-query-empty` exists.
+ * exists, answers without the repository while `checks-query-empty` exists,
+ * and answers `null` for the pull request `checks-query-null-alias` names.
  */
 import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 
 /** How many comments one page of the query holds. */
 const COMMENTS_PAGE = 100;
@@ -127,12 +129,17 @@ export function checksQuery(dir: string, args: string[]): unknown {
   if (has("checks-query-fail")) return null;
   if (has("checks-query-empty")) return { data: { repository: null } };
   const all = json("prs-open.json") as Listed[];
+  const nulled = has("checks-query-null-alias")
+    ? Number(readFileSync(join(dir, "checks-query-null-alias"), "utf8"))
+    : null;
   const query = args.find((a) => a.startsWith("query=")) ?? "";
   const repository: Record<string, unknown> = {};
   for (const [, n] of query.matchAll(/pr(\d+): pullRequest\(number: \d+\)/g)) {
     const listed = all.find((p) => p.number === Number(n));
     repository[`pr${n}`] =
-      listed === undefined ? null : { headRef: headRef(listed) };
+      listed === undefined || nulled === Number(n)
+        ? null
+        : { headRef: headRef(listed) };
   }
   return { data: { rateLimit: { cost: 1, remaining: 4990 }, repository } };
 }

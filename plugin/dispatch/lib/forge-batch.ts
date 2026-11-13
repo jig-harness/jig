@@ -599,11 +599,9 @@ export async function readChecks(
         return partial("the checks query answered without the repository");
       for (const n of chunk) {
         const node = field(repository, `pr${n}`);
-        if (node === undefined)
+        if (!isRecord(node))
           return partial(`the checks query answered without pull request ${n}`);
-        const rollup = isRecord(node)
-          ? rollupOf(node).statusCheckRollup
-          : undefined;
+        const rollup = rollupOf(node).statusCheckRollup;
         if (rollup !== undefined) checks.set(n, rollup);
       }
       const next = at + chunk.length;
