@@ -78,7 +78,7 @@ with the review.
 | [Structured answers, approving or choosing a parked decision in a word](structured-answers.md) | 46 |
 | [The classes of need, and where each is settled](need-classes.md) | 50 |
 | [What a dispatched session leaves and where it runs](dispatched-sessions.md) | 51 |
-| [Outbound calls, one governed transport for every system Jig calls](outbound-calls.md) | 52 |
+| [Outbound calls, one governed transport for every system Jig calls](outbound-calls.md) | 53 |
 
 ## Starting a design
 

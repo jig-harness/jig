@@ -66,7 +66,7 @@ it. What reaches a person arrives as a decision with options, answered in a
 word. A host fault arrives once, saying what to fix. Decisions that are a
 person's stay a person's.
 
-### 52. Staying inside the limits of the systems Jig calls
+### 53. Staying inside the limits of the systems Jig calls
 
 The systems Jig calls limit their callers. A forge counts requests an hour,
 a tracker charges each query a cost, and each ends a request that takes too

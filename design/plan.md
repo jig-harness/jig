@@ -240,7 +240,7 @@ failure on one account raises one host need and holds that account's
 tracker stages; and every need that reached a person that week was framed,
 or, where only a person can act, raised once for its cause.
 
-### 52. Outbound calls: one governed transport for every system Jig calls
+### 53. Outbound calls: one governed transport for every system Jig calls
 
 Jig's code calls a forge, the issue trackers and the reflection stores,
 and each integration handles their limits and outages on its own: one
