@@ -792,9 +792,7 @@ async function childStates(
   keys.forEach((key, i) => {
     const child = read[i];
     const info = infos[i];
-    if (child === null || child === undefined || !info) return;
-    // An item no user assigned had its relations skipped: they are unread, not empty.
-    if (info.noAssigner !== undefined) return;
+    if (!child || !info || info.noAssigner !== undefined) return;
     const blockedBy = info.relations
       .filter((r) => r.type === "blocked_by")
       .map((r) => r.issue);
