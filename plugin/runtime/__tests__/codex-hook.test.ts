@@ -27,7 +27,7 @@ const pluginRoot = join(import.meta.dir, "..", "..");
 function places(hooks?: unknown) {
   const root = mkdtempSync(join(tmpdir(), "jig-codex-hook-"));
   const codexHome = join(root, "codex");
-  const directory = join(root, "state", "hooks");
+  const directory = join(root, "state", "hooks", "home");
   const pluginHooks = join(root, "release", "hooks");
   mkdirSync(codexHome);
   mkdirSync(pluginHooks, { recursive: true });
@@ -159,12 +159,78 @@ test("no Codex home is left alone, and a hooks file that is not JSON is reported
 test("uninstall previews, then removes the entry and the shim's directory", () => {
   const p = places({ hooks: { PreToolUse: [other("b")] } });
   refreshCodexHook(p);
-  expect(removeCodexHook({ ...p, confirm: false })).toContain("is removed");
+  expect(removeCodexHook({ ...p, confirm: false }).message).toContain(
+    "is removed",
+  );
   expect(hooksOf(p.codexHome).hooks.PreToolUse).toHaveLength(2);
   removeCodexHook({ ...p, confirm: true });
   expect(hooksOf(p.codexHome).hooks.PreToolUse).toEqual([other("b")]);
   expect(existsSync(p.directory)).toBe(false);
-  expect(removeCodexHook({ ...p, confirm: true })).toContain("no entry");
+  expect(removeCodexHook({ ...p, confirm: true }).message).toContain(
+    "no entry",
+  );
+});
+
+test("the command isolates Bun's startup and quotes the path as one literal word", () => {
+  const command = hookCommand(
+    "/home/a$b'c/state/codex-turn-budget-guard.ts",
+    "linux",
+  );
+  expect(command).toStartWith(
+    "bun --no-env-file '--config=/home/a$b'\\''c/state/bunfig.toml' ",
+  );
+  expect(command).toEndWith(
+    "'/home/a$b'\\''c/state/codex-turn-budget-guard.ts'",
+  );
+  expect(() =>
+    hookCommand('C:\\a"b\\codex-turn-budget-guard.ts', "win32"),
+  ).toThrow();
+  const quoted = Bun.spawnSync([
+    "sh",
+    "-c",
+    `printf %s ${
+      command
+        .slice(command.indexOf("'/home/a$b'") + 0)
+        .split(" ")
+        .slice(-1)[0]
+    }`,
+  ]);
+  expect(quoted.stdout.toString()).toBe(
+    "/home/a$b'c/state/codex-turn-budget-guard.ts",
+  );
+});
+
+test("a handler that merely mentions the shim's name is not the entry", () => {
+  const unrelated = other("echo codex-turn-budget-guard.ts");
+  const added = withHook(
+    { hooks: { PreToolUse: [unrelated] } },
+    hookCommand("/s/codex-turn-budget-guard.ts"),
+  );
+  expect(
+    (added as { hooks: { PreToolUse: unknown[] } }).hooks.PreToolUse,
+  ).toHaveLength(2);
+  expect(withoutHook(added)).toEqual({ hooks: { PreToolUse: [unrelated] } });
+});
+
+test("an empty hooks file is not JSON: reported and left alone", () => {
+  const p = places();
+  writeFileSync(join(p.codexHome, "hooks.json"), "  \n");
+  expect(refreshCodexHook(p)).toMatchObject({ outcome: "failed" });
+  expect(readFileSync(join(p.codexHome, "hooks.json"), "utf8")).toBe("  \n");
+  expect(removeCodexHook({ ...p, confirm: true }).failed).toBe(true);
+});
+
+test("each Codex home gets its own state directory, and removal in one leaves the other", () => {
+  const a = places({});
+  const b = places({});
+  const shared = join(a.root, "shared");
+  const dirA = join(shared, "a");
+  const dirB = join(shared, "b");
+  refreshCodexHook({ ...a, directory: dirA });
+  refreshCodexHook({ ...b, directory: dirB, pluginHooks: a.pluginHooks });
+  removeCodexHook({ ...a, directory: dirA, confirm: true });
+  expect(existsSync(dirA)).toBe(false);
+  expect(existsSync(join(dirB, "codex-turn-budget-guard.ts"))).toBe(true);
 });
 
 test("the Codex plugin ships no hooks of its own; Claude Code's registration keeps the guard", () => {

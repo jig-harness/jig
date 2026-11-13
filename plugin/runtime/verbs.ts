@@ -35,6 +35,7 @@ import {
   or,
   string,
 } from "../shared/vendor/optique.mjs";
+import { exclusiveInstallLock } from "../shared/gc-lock.ts";
 import { removeCodexHook } from "./codex-hook.ts";
 import type { Component } from "./component.ts";
 import { doctorVerb } from "./doctor.ts";
@@ -428,8 +429,11 @@ export async function runVerb(
       console.log("== the jig command ==");
       const removed = removeCommand({ confirm: args.confirm });
       console.log("== the Codex hook ==");
-      console.log(removeCodexHook({ confirm: args.confirm }));
-      return removed;
+      const hook = await exclusiveInstallLock(async () =>
+        removeCodexHook({ confirm: args.confirm }),
+      );
+      console.log(hook.message);
+      return removed !== 0 ? removed : hook.failed ? 1 : 0;
     }
     case "upgrade":
       return upgradeOf(args, context);
