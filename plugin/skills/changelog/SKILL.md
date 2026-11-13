@@ -465,6 +465,7 @@ is documented, with its default, in the
 field that turns the skill on. Besides `file`: `format`, `notes_dir`, `version`,
 `release_paths`, `note_paths`, `placeholders`, `after_version`, `unreleased`,
 `authors`, `tag_prefix`, `release.push` / `release.branch`,
+`release.rerun_failed_gates`,
 `consumer_actions` and `consumer_actions_record`. The integration
 branch is `repository.base_branch`, else the hosting service's default branch.
 Outside the section, `tag.ts` and `status.ts` read `ci.required_checks`, the
