@@ -550,7 +550,8 @@ order, after `jig gc`'s fixes (#990, #991):
   and by `jig ask`.
 - **The steward's `cause` record** for a run that left no report, read from
   an excerpt of its transcript, whose copy is kept only for such runs and
-  only until the cause is recorded.
+  until seven days after the cause is applied, and at the latest until the
+  receipts retention ends.
 - **Tabs close on every exit**, a park and a failure included, once the
   report and the cause record hold what a tab showed; the tick ends what a
   run whose wrapper died left (`endRun`).

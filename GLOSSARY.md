@@ -2220,11 +2220,12 @@ make, use the entry's term instead.
   The *dispatcher* can start a follow-up this way on its chosen account
   even when the *session runtime* cannot bind a new interactive session to
   that account.
-- **Closing report** — the short record a *headless pass* the *dispatcher*
-  started writes as its last act: what it concluded, its question for a
-  person if it has one, the next step it suggests, and a cause when it fell
-  short. The agent that did the work writes it, and the *steward* reads a
-  run's transcript only when the run left none. Designed in
+- **Closing report** — the short record of what a run the *dispatcher*
+  started concluded: its question for a person if it has one, the next step
+  it suggests, and a cause when it fell short. A *headless pass* writes it
+  as its last act; for a drive, whose last pass cannot know it is last, the
+  driver writes it when the drive stops. The *steward* reads a run's
+  transcript only when the run left no report. Designed in
   [design/dispatched-sessions.md](design/dispatched-sessions.md#the-closing-report),
   [ROADMAP.md](ROADMAP.md) item 51.
 - **Process runtime** — a *session runtime* that runs a *headless pass* as
