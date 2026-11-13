@@ -174,6 +174,20 @@ describe("one query per repository", () => {
   });
 });
 
+/** The forge record of a tick that fails on the repository's pull requests. */
+async function failedForge(w: World) {
+  const r = await w.dispatch([
+    "--followup-since",
+    "2026-10-30T00:00:00Z",
+    "--json",
+  ]);
+  expectSpawnExit(r, 1);
+  const receipt = JSON.parse(r.stdout) as TickReceipt;
+  const forge = receipt.repos[0]?.records.find((x) => x.record === "forge");
+  expect(forge?.ok).toBe(false);
+  return forge;
+}
+
 describe("a page the forge times out", () => {
   /** A world of `count` open pull requests whose query times out on a page above `limit`. */
   function heavy(count: number, limit: number): World {
@@ -229,15 +243,7 @@ describe("a page the forge times out", () => {
     const w = heavy(3, 0);
     writeFileSync(join(w.dir, "checks-query-fail"), "");
     // A repository whose pull requests cannot be read fails the tick.
-    const r = await w.dispatch([
-      "--followup-since",
-      "2026-10-30T00:00:00Z",
-      "--json",
-    ]);
-    expectSpawnExit(r, 1);
-    const receipt = JSON.parse(r.stdout) as TickReceipt;
-    const forge = receipt.repos[0]?.records.find((x) => x.record === "forge");
-    expect(forge?.ok).toBe(false);
+    const forge = await failedForge(w);
     expect(forge?.detail).toContain(
       "the pull requests cannot be read: the repository query did not read (the forge timed out: gh api graphql exited 1: gh: HTTP 504",
     );
@@ -253,15 +259,7 @@ describe("a checks query that answers without its pull requests", () => {
     w.setPrs("open", [openPr(7, HEAD)]);
     writeFileSync(join(w.dir, "repository-query-fail"), "");
     writeFileSync(join(w.dir, "checks-query-empty"), "");
-    const r = await w.dispatch([
-      "--followup-since",
-      "2026-10-30T00:00:00Z",
-      "--json",
-    ]);
-    expectSpawnExit(r, 1);
-    const receipt = JSON.parse(r.stdout) as TickReceipt;
-    const forge = receipt.repos[0]?.records.find((x) => x.record === "forge");
-    expect(forge?.ok).toBe(false);
+    const forge = await failedForge(w);
     expect(forge?.detail).toContain(
       "the checks query answered without the repository",
     );
@@ -272,15 +270,7 @@ describe("a checks query that answers without its pull requests", () => {
     w.setPrs("open", [openPr(7, HEAD), openPr(8, HEAD)]);
     writeFileSync(join(w.dir, "repository-query-fail"), "");
     writeFileSync(join(w.dir, "checks-query-null-alias"), "8");
-    const r = await w.dispatch([
-      "--followup-since",
-      "2026-10-30T00:00:00Z",
-      "--json",
-    ]);
-    expectSpawnExit(r, 1);
-    const receipt = JSON.parse(r.stdout) as TickReceipt;
-    const forge = receipt.repos[0]?.records.find((x) => x.record === "forge");
-    expect(forge?.ok).toBe(false);
+    const forge = await failedForge(w);
     expect(forge?.detail).toContain(
       "the checks query answered without pull request 8",
     );
