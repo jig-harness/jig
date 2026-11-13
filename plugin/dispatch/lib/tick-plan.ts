@@ -8,7 +8,9 @@
  * pickups. A pickup whose agent finished frees its slot, so the slot table
  * of the apply state is counted again here. With `--apply`, the failure
  * ledger's rows past `failures.notify_after` are planned as notifications
- * beside the plan's own (failure-notices.ts).
+ * beside the plan's own (failure-notices.ts). A stalled pickup's finished
+ * work is told from the open pull requests the observe phase already read
+ * (`stalled-pr.ts`), and its moves to `pr_open` go on the report.
  */
 import { slotTable } from "./accounts.ts";
 import { planSteers, readNudges, settlePending } from "./actions/steer.ts";
@@ -33,6 +35,9 @@ import {
   stewardRecords,
 } from "./steward.ts";
 import { applyStewardOrder } from "./steward-queue.ts";
+import type { Tracker } from "../../skills/do-item/scripts/lib/tracker/port.ts";
+import { bodyLinker } from "../../skills/do-item/scripts/lib/linked-pr.ts";
+import type { StalledPrInput } from "./stalled-pr.ts";
 
 /** Plan one observed repository into its report. */
 export function planObserved(
@@ -78,6 +83,7 @@ export function planObserved(
       ? {}
       : { unclaimedAfterMs: context.options.machine.unclaimedAfterMs }),
     ...(onlyLabeled ? { inScope: forge.inScope } : {}),
+    ...withStalledPr(observation),
   });
   if (onlyLabeled) report.inScope = [...forge.inScope];
   // A failing action on a held pull request, or one not known to be labelled, stands down with every other.
@@ -93,6 +99,45 @@ export function planObserved(
   );
   report.withheld = failing.withheld;
   report.actions.push(...failing.actions);
+}
+
+/**
+ * What tells a stalled pickup's finished work: the open pull requests'
+ * descriptions where the repository's query read them all, the tracker's
+ * `pr_open` state, and whether this host owns the repository. None where
+ * the tracker's keys do not read.
+ */
+function withStalledPr(observation: RepoObservation): {
+  prOpen?: StalledPrInput;
+} {
+  const { tracked, forge, opened, ctx } = observation;
+  const { keys } = tracked;
+  if (keys == null) return {};
+  const repository = opened.repo.slug;
+  const trackerRepository = tracked.issueRepository ?? undefined;
+  return {
+    prOpen: {
+      prs: forge.ok && forge.linkTexts !== undefined ? forge.linkTexts : null,
+      prOpen: (nativeType) => prOpenOf(tracked.tracker, nativeType),
+      owner: ctx.owner,
+      pickup: opened.stages.has("pickup"),
+      links: (body, key) =>
+        bodyLinker(key, {
+          repository,
+          keySource: keys.source,
+          trackerRepository,
+        })(body),
+    },
+  };
+}
+
+/** The `pr_open` name of the workflow an item of this native type is in; `null` where there is no tracker or that workflow names none. */
+function prOpenOf(
+  tracker: Pick<Tracker, "stateName"> | null | undefined,
+  nativeType: string | null,
+): string | null {
+  if (tracker == null) return null;
+  return tracker.stateName("pr_open", nativeType)?.trim() || null;
 }
 
 /** A record's execution state: a replay moves it without making a new record. */
@@ -161,6 +206,7 @@ function planRepo(
     nowMs,
   });
   report.actions.push(...plan.actions);
+  if (plan.moves.length > 0) report.prOpenMoves = plan.moves;
   report.running.push(...plan.running);
   const nudges = readNudges(repo);
   for (const reason of settlePending(nudges))

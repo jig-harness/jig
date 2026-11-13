@@ -6,19 +6,17 @@
 
 import { describe, expect, it } from "bun:test";
 import { mkdirSync } from "node:fs";
-import { delimiter, join } from "node:path";
+import { join } from "node:path";
 import { QUOTA_PARKED_EXIT } from "../scripts/drive";
 
 import {
-  SCRIPTS,
-  binDir,
+  scratchClean,
   writeFixture,
   useDrivePrSuite,
 } from "./drive-pr-harness.ts";
-import { lockDirs } from "./drive-loop-harness.ts";
+import { spawnDriveIn } from "./drive-loop-harness.ts";
 import { readState } from "./state-rows.ts";
 import { loginAccount, loginEnv } from "./drive-pr-pickup-fixtures.ts";
-import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 
@@ -26,10 +24,10 @@ useDrivePrSuite();
 
 describe("drive.ts records a quota wall", () => {
   it("against the account the pass billed, though a login changed during it", async () => {
-    const { dir, stateDir } = writeFixture({
-      threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
-    });
-    lockDirs(dir, stateDir);
+    const { dir, stateDir } = writeFixture(
+      { threads: [{ id: "PRRT_a", path: "a.ts", bot: true }] },
+      scratchClean.dir,
+    );
     const projects = join(dir, "claude-projects");
     mkdirSync(join(projects, "proj"), { recursive: true });
     const login = loginEnv("billed@example.invalid");
@@ -69,31 +67,19 @@ describe("drive.ts records a quota wall", () => {
       ].join("\n"),
     );
 
-    const proc = Bun.spawn(
-      scriptArgv(
-        join(SCRIPTS, "drive.ts"),
-        "999",
-        "--no-head-sync",
-        "--max-rounds",
-        "2",
-        "--",
-        stub,
-        "--pr-999",
-      ),
+    const proc = spawnDriveIn(
+      dir,
+      stateDir,
+      ["--no-head-sync", "--max-rounds", "2", "--", stub, "--pr-999"],
+      scratchClean.dir,
       {
         env: {
-          ...process.env,
           ...login,
-          PATH: `${binDir}${delimiter}${process.env.PATH}`,
-          DRIVE_PR_FIXTURES: dir,
-          DRIVE_PR_STATE_DIR: stateDir,
-          DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
           DRIVE_PR_LOCK_HEARTBEAT_REFRESH_MS: "100",
           DRIVE_PR_CLAUDE_PROJECTS_DIR: projects,
           DRIVE_PR_TEST_PROJ_DIR: join(projects, "proj"),
         },
         stdout: "ignore",
-        stderr: "pipe",
       },
     );
     const [stderr, exitCode] = await Promise.all([
