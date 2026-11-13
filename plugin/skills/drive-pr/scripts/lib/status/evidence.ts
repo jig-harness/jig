@@ -735,17 +735,21 @@ export async function ciReportFor(
   const heldThrough = new Map(
     heldRuns.map((run) => [JSON.stringify([run.app, run.name]), run.id]),
   );
-  const reducedIds = new Set(
-    [...reduced.selected, ...reduced.pending].map((run) => run.id),
+  const retainedIds = new Set(
+    withoutSuperseded(
+      runs.filter((run) => !isReviewerCheck(run)),
+      workflowRuns,
+    ).map((run) => run.id),
   );
-  // Retain already-reduced evidence outside held groups. Re-reducing raw
-  // runs after removing a held gate can discard that gate's cross-name
-  // workflow replacement witness and resurrect an older cancelled failure.
+  // Retain every unreplaced witness outside held groups. A newer skipped
+  // check can be selected over a prior passing check, but cannot replace its
+  // workflow evidence. Re-reducing only selected runs would then resurrect
+  // an older cancelled held failure.
   // A held group itself stays raw beyond its held failure, so a genuinely
   // later cancellation or rerun still answers the hold sentinel.
   const laterRuns = runs.filter((run) => {
     const through = heldThrough.get(JSON.stringify([run.app, run.name]));
-    return through === undefined ? reducedIds.has(run.id) : run.id > through;
+    return through === undefined ? retainedIds.has(run.id) : run.id > through;
   });
   const laterVerdict = ciVerdictOf(
     laterRuns,

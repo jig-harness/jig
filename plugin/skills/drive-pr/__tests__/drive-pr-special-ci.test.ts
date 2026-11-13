@@ -324,11 +324,21 @@ test("a held failure retains a passing cross-name replacement witness", async ()
           run_started_at: "2026-11-13T09:02:00Z",
           run_attempt: 1,
         },
+        {
+          id: 4,
+          workflow_id: 1,
+          status: "completed",
+          conclusion: "skipped",
+          check_suite_id: 4,
+          created_at: "2026-11-13T09:03:00Z",
+          run_started_at: "2026-11-13T09:03:00Z",
+          run_attempt: 1,
+        },
       ],
     }),
   );
   const evidence = join(SCRIPTS, "lib/status/evidence.ts");
-  const source = `import {ciReportFor} from ${JSON.stringify(evidence)};const runs=[{name:"gate",id:1,status:"completed",conclusion:"failure",app:"github-actions",title:"",started:"2026-11-13T09:00:00Z",suiteId:1},{name:"gate",id:2,status:"completed",conclusion:"cancelled",app:"github-actions",title:"",started:"2026-11-13T09:01:00Z",suiteId:2},{name:"test",id:3,status:"completed",conclusion:"success",app:"github-actions",title:"",started:"2026-11-13T09:02:00Z",suiteId:3}];console.log(JSON.stringify(await ciReportFor("example-org","example-repo",process.env.DRIVE_PR_POLICY_BASE,runs,false,"999")));`;
+  const source = `import {ciReportFor} from ${JSON.stringify(evidence)};const runs=[{name:"gate",id:1,status:"completed",conclusion:"failure",app:"github-actions",title:"",started:"2026-11-13T09:00:00Z",suiteId:1},{name:"gate",id:2,status:"completed",conclusion:"cancelled",app:"github-actions",title:"",started:"2026-11-13T09:01:00Z",suiteId:2},{name:"test",id:3,status:"completed",conclusion:"success",app:"github-actions",title:"",started:"2026-11-13T09:02:00Z",suiteId:3},{name:"test",id:4,status:"completed",conclusion:"skipped",app:"github-actions",title:"",started:"2026-11-13T09:03:00Z",suiteId:4}];console.log(JSON.stringify(await ciReportFor("example-org","example-repo",process.env.DRIVE_PR_POLICY_BASE,runs,false,"999")));`;
   const report = JSON.parse((await child(f, source)).stdout);
   expect(report.ci).toBe("held: gate");
   expect(report.failingCheckNames).toEqual([]);
