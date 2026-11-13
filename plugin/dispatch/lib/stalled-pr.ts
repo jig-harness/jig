@@ -23,6 +23,7 @@
  * pull request no launch of this host opened is not this rule's case: the
  * steward's `settle` record links it.
  */
+import { holdsItem } from "./launch-pickups.ts";
 import type { ReadRecord } from "./launches.ts";
 import type { SessionsReport } from "./runtime/port.ts";
 import type { ClaimedItem, PrOpenMove } from "./types.ts";
@@ -61,7 +62,7 @@ export type LaunchPrStep =
   | { kind: "quiet"; why: string }
   | { kind: "stall"; note: string };
 
-/** Each branch a pickup launch of this host for `key` worked on, with its record, as the runtime reports the record's workspace. */
+/** Each branch an unreleased pickup launch of this host for `key` worked on, with its record, as the runtime reports the record's workspace. */
 function launchBranches(
   key: string,
   launches: readonly ReadRecord[],
@@ -71,7 +72,7 @@ function launchBranches(
   const branchAt = (path: string) =>
     sessions.workspaces.find((w) => w.path === path)?.branch ?? "";
   return launches
-    .filter(({ record }) => pickupOf(record, key))
+    .filter(({ record }) => pickupOf(record, key) && holdsItem(record, key))
     .map(({ record }) => ({
       branch: record.workspace === null ? "" : branchAt(record.workspace.path),
       record: record.id,
@@ -106,7 +107,9 @@ function launchPrOf(
     .sort((a, b) => a.number - b.number)
     .flatMap((pr) => {
       const launch = branches.find((b) => b.branch === pr.headRefName);
-      return launch !== undefined && input.links(pr.body, key)
+      return launch !== undefined &&
+        pr.crossRepository === false &&
+        input.links(pr.body, key)
         ? [{ number: pr.number, url: pr.url, ...launch }]
         : [];
     });

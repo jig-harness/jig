@@ -323,12 +323,14 @@ function planClaimed(
     return;
   }
   plan.idleNow.push(item.key);
+  const pr = readLaunchPr(item, input.launches, input.sessions, input.prOpen);
+  // An item already in pr_open under its launch's open pull request is quiet whatever the pickup once asked; a question on an item still to move stays a need.
+  if (pr.step?.kind === "quiet" && settledByPr(item.key, pr.step, plan)) return;
   const asked = questionAsked(input.slug, item, input.launches);
   if (asked !== null) {
     plan.actions.push(asked);
     return;
   }
-  const pr = readLaunchPr(item, input.launches, input.sessions, input.prOpen);
   if (settledByPr(item.key, pr.step, plan)) return;
   const since = input.idleSince.get(item.key) ?? input.nowMs;
   const idle = input.nowMs - since;

@@ -29,10 +29,22 @@ export type MoveTracker = Pick<
 /** How long one tracker call of a move may take. */
 const CALL_MS = 60_000;
 
+/** A read that cannot take a signal, bounded by `CALL_MS`: it rejects when the time is up, the tracker's own call left to finish alone. */
+function within<T>(call: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`the read took longer than ${CALL_MS / 1000}s`)),
+      CALL_MS,
+    );
+  });
+  return Promise.race([call, timeout]).finally(() => clearTimeout(timer));
+}
+
 /** The comment the dispatcher posts on an item it moved: a fixed text. */
 function prOpenComment(move: PrOpenMove): string {
   return [
-    `The dispatcher moved this item to ${move.to}: pull request #${move.pr} (${move.url}) is open from ${move.branch}, the branch a pickup this host launched for it worked on, and links it.`,
+    `The dispatcher moved this item to ${move.to}: pull request #${move.pr} (${move.url}) was open from ${move.branch} when the tick read it, the branch a pickup this host launched for it worked on, and links it.`,
     "",
     `<!-- do-item-pr: ${move.url} -->`,
   ].join("\n");
@@ -51,7 +63,7 @@ async function changed(
   tracker: MoveTracker,
   move: PrOpenMove,
 ): Promise<string | null> {
-  const now = await tracker.getIssue(move.target);
+  const now = await within(tracker.getIssue(move.target));
   if (now === null) return `${move.target} did not read again`;
   return now.state.name.trim().toLowerCase() === move.from.trim().toLowerCase()
     ? null
@@ -69,6 +81,8 @@ async function moveOne(
   try {
     const why = await changed(tracker, move);
     if (why !== null) return done(move, "waits", why);
+    const out = late();
+    if (out !== null) return done(move, "waits", out);
     await tracker.transition(
       move.target,
       "pr_open",
@@ -81,6 +95,13 @@ async function moveOne(
       `the tracker did not move ${move.target} to ${move.to}: ${failureText(error)}`,
     );
   }
+  const out = late();
+  if (out !== null)
+    return done(
+      move,
+      "moved",
+      `moved ${move.target} to ${move.to} for pull request #${move.pr}, but its comment did not post: ${out}`,
+    );
   try {
     await tracker.postComment(
       move.target,

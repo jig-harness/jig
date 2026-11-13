@@ -35,6 +35,7 @@ import {
   stewardRecords,
 } from "./steward.ts";
 import { applyStewardOrder } from "./steward-queue.ts";
+import { trackerStateMaps } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { bodyLinker } from "../../skills/do-item/scripts/lib/linked-pr.ts";
 import type { StalledPrInput } from "./stalled-pr.ts";
 
@@ -117,7 +118,7 @@ function withStalledPr(observation: RepoObservation): {
   return {
     prOpen: {
       prs: forge.ok && forge.linkTexts !== undefined ? forge.linkTexts : null,
-      prOpen: tracked.tracker?.stateName("pr_open") ?? null,
+      prOpen: sharedPrOpen(tracked.tracker),
       owner: ctx.owner,
       links: (body, key) =>
         bodyLinker(key, {
@@ -127,6 +128,18 @@ function withStalledPr(observation: RepoObservation): {
         })(body),
     },
   };
+}
+
+/** The `pr_open` name every workflow of the tracker agrees on; `null` where there is none or the workflows differ, since the move cannot be told to suit each item's own. */
+function sharedPrOpen(
+  tracker: Parameters<typeof trackerStateMaps>[0] | null | undefined,
+): string | null {
+  if (tracker == null) return null;
+  const names = new Set(
+    trackerStateMaps(tracker).map((map) => map.pr_open?.trim().toLowerCase()),
+  );
+  const [only] = [...names];
+  return names.size === 1 && only ? tracker.stateName("pr_open") : null;
 }
 
 /** A record's execution state: a replay moves it without making a new record. */

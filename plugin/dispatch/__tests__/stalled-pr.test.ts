@@ -85,7 +85,14 @@ const sessions: SessionsReport = {
 };
 
 function pr(head: string, body = "Closes #12"): PrLinkText {
-  return { number: 31, url: URL, headRefName: head, body, closing: [] };
+  return {
+    number: 31,
+    url: URL,
+    headRefName: head,
+    body,
+    crossRepository: false,
+    closing: [],
+  };
 }
 
 function prOpen(
@@ -241,6 +248,25 @@ describe("a stalled pickup whose launch opened a pull request", () => {
     );
   });
 
+  it("moves nothing for a pull request from a fork, or one whose head repository is not read", () => {
+    for (const crossRepository of [true, undefined]) {
+      const { crossRepository: _, ...rest } = pr(BRANCH);
+      const fork =
+        crossRepository === undefined ? rest : { ...rest, crossRepository };
+      const plan = planPickups(input(prOpen([fork])));
+      expect(plan.moves).toEqual([]);
+      expect(plan.actions).toHaveLength(1);
+    }
+  });
+
+  it("reads no launch record that no longer holds the item", () => {
+    const released = { ...input(prOpen([pr(BRANCH)])) };
+    released.launches = [
+      { ...launch, record: { ...launch.record, released: true } },
+    ];
+    expect(planPickups(released).moves).toEqual([]);
+  });
+
   it("moves an idle item before dispatch.stalled_after, since its work is finished", () => {
     const early = { ...input(prOpen([pr(BRANCH)])), idleSince: new Map() };
     const plan = planPickups(early);
@@ -323,7 +349,7 @@ dispatch:
     writeFileSync(join(w.dir, "claude-exit"), "0");
     await waitFor("the exit", () => exitWritten(w, id));
     w.setWorkspaces([{ branch: BRANCH, path, agents: [] }]);
-    w.setPrs("open", [{ ...openPr(31, head), body }]);
+    w.setPrs("open", [{ ...openPr(31, head), body, isCrossRepository: false }]);
     return w;
   }
 
