@@ -60,7 +60,7 @@ then `do-item` (or `work-batch`), which opens the pull request and arms
   `steward` is the dispatcher-launched pass that proposes guarded recovery
   records and frames the needs that remain a person's.
 - **Review a change:** `change-areas`, `review`, `github-actions`.
-- **Understand, decide and record:** `explain`, `decide`, `adr`, `red-team`,
+- **Understand, decide and record:** `explain`, `orchestrate`, `decide`, `adr`, `red-team`,
   `design-brief-builder`.
 - **Learn from the work:** `reflect`, `review-reflections`,
   `promote-memory`, `descar`.

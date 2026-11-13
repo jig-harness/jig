@@ -8,105 +8,29 @@ import {
   type Gh,
   github,
   type Hosting,
-  type RequiredCheck,
 } from "../scripts/hosting.ts";
 import { ConfigurationError } from "../scripts/errors.ts";
 import { runStatus } from "../scripts/status.ts";
 import {
   judgeCheck,
   newestTag,
-  type PlanSources,
   planTags,
   runTag,
   type TagPlan,
 } from "../scripts/tag.ts";
+import { cleanEnv, commit, git, repository, temporary } from "./scratch.ts";
+
 import {
-  cleanEnv,
-  commit,
-  git,
-  jigYaml,
-  repository,
-  temporary,
-} from "./scratch.ts";
-
-/** A Keep a Changelog file with a release heading for each of `versions`, newest first. */
-const changelog = (...versions: string[]): string =>
-  [
-    "# Changelog",
-    "",
-    "## [Unreleased]",
-    "",
-    ...versions.flatMap((v) => [
-      `## [${v}] - 2026-01-02`,
-      "",
-      "### Fixed",
-      "",
-      `- ${v}`,
-      "",
-    ]),
-  ].join("\n");
-
-const config = (extra = ""): string =>
-  jigYaml(`  file: CHANGELOG.md\n  version: { tags: true }${extra}`);
-
-/** A repository on `main` whose first commit released 1.2.0. */
-function released(extra = ""): string {
-  return repository({
-    "CHANGELOG.md": changelog("1.2.0"),
-    ".config/jig.yaml": config(extra),
-  });
-}
-
-const head = (root: string, rev = "HEAD"): string =>
-  git(root, "rev-parse", rev).trim();
-
-const env = () => ({ JIG_HOME: temporary("jig-home-") });
-
-const passed = (
-  name: string,
-  extra: Partial<CommitCheck> = {},
-): CommitCheck => ({
-  name,
-  kind: "check-run",
-  outcome: "passed",
-  conclusion: "success",
-  app: 15368,
-  ...extra,
-});
-
-/** A hosting service that answers from `checks` by commit, requiring `required`. */
-function fake(
-  checks: Record<string, CommitCheck[]>,
-  required: RequiredCheck[] | null = [{ name: "test", apps: [] }],
-  reruns: number[] = [],
-): Hosting {
-  return {
-    name: "fake",
-    defaultBranch: () => "main",
-    lastReleaseRun: () => ({ state: "success", detail: "fine" }),
-    requiredChecks: () =>
-      required === null
-        ? { known: false, detail: "offline" }
-        : { known: true, value: required },
-    commitChecks: (sha) => ({ known: true, value: checks[sha] ?? [] }),
-    rerun: (run) => {
-      reruns.push(run);
-      return null;
-    },
-  };
-}
-
-/** The plan, origin answering that it holds `tagged`. */
-function plan(
-  root: string,
-  hosting: Hosting,
-  tagged: string[] = ["v1.2.0"],
-): TagPlan {
-  const sources: PlanSources = { hosting, tags: () => new Set(tagged) };
-  const result = planTags(root, sources, env());
-  if (result === null) throw new Error("not configured");
-  return result;
-}
+  captured,
+  changelog,
+  config,
+  env,
+  fake,
+  head,
+  passed,
+  plan,
+  released,
+} from "./tag-fixture.ts";
 
 describe("the releasing commit", () => {
   test("is the first first-parent commit with the heading, not the merged branch's commit that had it earlier", () => {
@@ -214,7 +138,7 @@ describe("the tags on origin", () => {
     expect(result?.versions.map((v) => v.tag)).toEqual(["v1.3.0"]);
   });
 
-  test("only versions newer than origin's newest tag are owed one", () => {
+  test("older untagged releases remain visible for manual tagging without holding newer tags", () => {
     const root = repository({
       "CHANGELOG.md": changelog("1.1.0"),
       ".config/jig.yaml": config(),
@@ -226,16 +150,26 @@ describe("the tags on origin", () => {
       "1.3.0",
     );
     const release = head(root);
-    // 1.1.0 has no tag, but is older than v1.2.0: never tagged behind a person's back.
+    // The older missing tag must remain visible after a newer release was tagged.
     const result = plan(root, fake({ [release]: [passed("test")] }), [
       "v1.2.0",
       "v-nightly",
     ]);
     expect(result.newestTag).toBe("v1.2.0");
-    expect(result.versions.map((v) => v.tag)).toEqual(["v1.3.0"]);
+    expect(result.versions.map((v) => [v.tag, v.state])).toEqual([
+      ["v1.1.0", "manual"],
+      ["v1.3.0", "ready"],
+    ]);
+    expect(result.ready.map((v) => v.tag)).toEqual(["v1.3.0"]);
+    expect(result.versions[0]?.detail).toContain("tag it by hand");
+    const later = plan(root, fake({}), ["v1.2.0", "v1.3.0"]);
+    expect(later.versions.map((v) => [v.tag, v.state])).toEqual([
+      ["v1.1.0", "manual"],
+    ]);
+    expect(later.ready).toEqual([]);
   });
 
-  test("with no release tag on origin, only the newest release heading is owed one", () => {
+  test("with no release tag on origin, only the newest release is eligible for automatic tagging", () => {
     const root = repository({
       "CHANGELOG.md": changelog("1.1.0"),
       ".config/jig.yaml": config(),
@@ -245,9 +179,50 @@ describe("the tags on origin", () => {
     const result = plan(root, fake({ [release]: [passed("test")] }), []);
     expect(result.newestTag).toBeNull();
     expect(result.versions.map((v) => [v.tag, v.state])).toEqual([
+      ["v1.1.0", "manual"],
       ["v1.2.0", "ready"],
     ]);
   });
+
+  test.each(["passed", "pending", "failed"] as const)(
+    "a historical release with %s checks is never automatically tagged or retried",
+    (outcome) => {
+      const root = released();
+      const old = head(root);
+      commit(root, { "CHANGELOG.md": changelog("1.3.0", "1.2.0") }, "release");
+      const hosting = fake({ [old]: [passed("test", { outcome })] }, null);
+      hosting.commitChecks = () => {
+        throw new Error("historical checks must not be read");
+      };
+      const result = plan(root, hosting, ["v1.3.0"]);
+      expect(result.versions.map((v) => [v.tag, v.state, v.rerun])).toEqual([
+        ["v1.2.0", "manual", []],
+      ]);
+      expect(result.ready).toEqual([]);
+      expect(result.requiredChecks).toBeNull();
+      const reruns: number[] = [];
+      hosting.rerun = (run) => {
+        reruns.push(run);
+        return null;
+      };
+      const output = captured(() =>
+        runTag(root, { json: true, rerun: true }, env(), {
+          hosting,
+          tags: () => new Set(["v1.3.0"]),
+        }),
+      );
+      expect(output.code).toBe(0);
+      expect(JSON.parse(output.text).ready).toEqual([]);
+      expect(reruns).toEqual([]);
+      const status = captured(() =>
+        runStatus(root, true, env(), hosting, () => new Set(["v1.3.0"])),
+      );
+      expect(JSON.parse(status.text).tags.untagged).toMatchObject([
+        { tag: "v1.2.0", state: "manual" },
+      ]);
+      expect(plan(root, hosting, ["v1.2.0", "v1.3.0"]).versions).toEqual([]);
+    },
+  );
 
   test("the newest tag is the highest version, a pre-release below its release", () => {
     expect(
@@ -457,20 +432,6 @@ describe("a re-run the hosting service refuses", () => {
     ]);
   });
 });
-
-/** What `fn` printed to standard output, and the status it returned. */
-function captured(fn: () => number): { code: number; text: string } {
-  const lines: string[] = [];
-  const log = console.log;
-  console.log = (...args: unknown[]) => {
-    lines.push(args.join(" "));
-  };
-  try {
-    return { code: fn(), text: lines.join("\n") };
-  } finally {
-    console.log = log;
-  }
-}
 
 describe("versions are tagged oldest first", () => {
   /** A repository whose last two commits released 1.1.0 and 1.2.0, origin tagged v1.0.0. */
