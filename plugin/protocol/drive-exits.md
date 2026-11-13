@@ -44,14 +44,14 @@ The same values, for a program in any language:
 | --- | --- | --- | --- | --- | --- |
 | `ROUND_READY` | state | 0 | — | no | Work is left for this round: open review threads or unanswered summary findings. The caller runs a pass; `drive.ts` runs it itself and never ends with this state. |
 | `INDETERMINATE` | state | 1 | 1 | yes | The state could not be read, or a step failed: `drive.ts` also ends with it when a pass fails. Never a settled state; read what the drive printed before re-arming. |
-| `UNSUPPORTED_CLI` | state | 2 | 2 | yes | A prerequisite is missing: the installed `gh` cannot report a field the round needs. A refused command line exits `2` as well, with no report. |
+| `UNSUPPORTED_CLI` | state | 2 | 2 | yes | A prerequisite is missing: the installed `gh` cannot report a field the round needs. `drive.ts` also exits `2`, with no report, when it refuses to start: a command line it cannot use, or a working tree or pull request it cannot drive as they stand (uncommitted changes, commits the pull request does not have, a head in a fork). It prints which. |
 | `CONVERGED` | state | 3 | 0 | yes | The pull request is ready to merge: the reviewer reviewed this exact head and nothing is left open. `drive.ts` exits `0` for it, once its own working tree is clean. |
-| `HEAD_LAG` | state | 4 | 4 | no | The pull request's head on the forge and the local head disagree: a push has not shown up yet, or the working tree is behind. Wait, or bring the tree up to date, then read again. |
+| `HEAD_LAG` | state | 4 | 4 | no | The pull request's head on the forge and the local head disagree, and the reason says how: a local head ahead with no record of a push (push it through `guarded-push.ts`), a push the forge does not show yet (wait), a tree behind (update it), or diverged history (reconcile it). Then read again. |
 | `AWAITING_REVIEWER` | state | 4 | 4 | no | The reviewer has not reviewed this head yet. Wait, then read again. |
 | `STALE_REVIEW` | state | 4 | 4 | no | The reviewer's latest review describes an earlier head. Wait for its review of this one, then read again. |
 | `HEAD_MOVED` | state | 4 | 4 | no | The head or the base moved while the round was being judged, so nothing read about it holds. Read again. |
 | `MERGEABILITY_UNKNOWN` | state | 4 | 4 | no | The forge has not yet worked out whether the pull request merges cleanly. Read again. |
-| `NOT_SETTLED` | class-label | 4 | 4 | no | The name of every state that shares exit `4`: the pull request is not ready to judge yet. Never itself a `state`; the caller waits and runs the drive again. |
+| `NOT_SETTLED` | class-label | 4 | 4 | no | The name of every state that shares exit `4`: the pull request is not ready to judge yet. Never itself a `state`; the caller waits and runs the drive again. `drive.ts` also exits `4` after the review converged when another driver holds the mark-Ready lease, when the head moved or the CI hold label changed as the hold was released, when no fresh result of a required check came in time (where a skipped or cancelled check means waiting cannot help: re-run the check, then re-arm), and when the drive keeps a draft that the reviewer skips (mark it Ready, then re-arm). |
 | `PR_NOT_OPEN` | state | 5 | 5 | yes | The pull request was merged or closed. Stop, and push nothing to it. |
 | `MAX_ROUNDS` | driver-only | — | 6 | yes | The drive spent its round budget (`--max-rounds`) without converging. Read the handoff file before re-arming. |
 | `REVIEWER_FAILED` | state | 7 | 7 | yes | The reviewer's own check did not pass, so the absence of findings proves nothing. A person looks at the reviewer before re-arming. |
@@ -64,8 +64,8 @@ The same values, for a program in any language:
 | `DRIVE_HELD_BY_OTHER_WORKTREE` | state | 13 | 13 | yes | Another live working tree, or a driver in another clone, is driving this pull request. Nothing was changed; that driver is the one to finish. |
 | `STALLED` | driver-only | — | 14 | yes | Rounds stopped changing anything the drive can see. Read what the passes decided, and what the tree still holds, before re-arming. |
 | `PASS_DEADLINE` | driver-only | — | 15 | yes | A pass ran past its deadline and was stopped more often than the drive restarts one. Check the tree for the stopped pass's leftovers before re-arming. |
-| `QUOTA_PARKED` | driver-only | — | 16 | yes | A pass hit an agent subscription's usage limit that does not reset soon. Re-arm after the reset, or from a session that bills another account. |
-| `MAILBOX_STOPPED` | driver-only | — | 18 | yes | A person or a tool told the drive to stop through its mailbox, and it stopped at a round boundary. |
+| `QUOTA_PARKED` | driver-only | — | 16 | yes | A pass hit an agent subscription's usage limit that does not reset soon. Re-arm after the reset, or from a session that bills another account. `drive.ts` also exits `16` when it refuses such a re-arm while the limit holds, from a session that bills the same account or one it cannot tell. |
+| `MAILBOX_STOPPED` | driver-only | — | 18 | yes | A person or a tool told the drive to stop through its mailbox, and it stopped at a round boundary. A stop that names this driver's generation ends this driver alone; one that names none stops every later driver too, so resume it before re-arming. |
 | `MAILBOX_PAUSE_TIMEOUT` | driver-only | — | 19 | yes | A pause sent through the drive's mailbox lasted longer than the drive waits. Resume it, then re-arm. |
 | `TAKEN_OVER` | driver-only | — | 20 | yes | Another clone took the drive over and drives it now. Nothing to recover here. |
 | `CI_REPAIR_SPENT` | driver-only | — | 21 | yes | The review converged, but required checks still fail after the drive's CI-repair passes were spent. A re-armed drive repairs again. |

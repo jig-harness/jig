@@ -19,7 +19,11 @@ import { isRecord } from "../../lib/record.ts";
 import { checkBase } from "../../plugin/skills/changelog/scripts/branches.ts";
 import { entries } from "../../plugin/skills/changelog/scripts/change-notes.ts";
 import { isBreakingEntry } from "../../plugin/skills/changelog/scripts/consumer-actions.ts";
-import { tryGit } from "../../plugin/skills/changelog/scripts/notes-dir.ts";
+import {
+  gitEnv,
+  tryGit,
+} from "../../plugin/skills/changelog/scripts/notes-dir.ts";
+import { spawnSync } from "../../plugin/shared/guarded-git-spawn.ts";
 import {
   type Chapter,
   chapterFile,
@@ -38,6 +42,19 @@ const NOTES_DIR = "changes";
 export type MergeBase =
   | { ok: true; commit: string; ref: string }
   | { ok: false; reason: string };
+
+/** git's answer: its output, or why it failed, in its own words. */
+type GitAnswer = { ok: true; stdout: string } | { ok: false; why: string };
+
+function git(root: string, args: string[]): GitAnswer {
+  const result = spawnSync("git", ["-C", root, ...args], { env: gitEnv() });
+  if (result.status === 0) return { ok: true, stdout: result.stdout };
+  const said = (result.stderr || result.error?.message || "").trim();
+  return {
+    ok: false,
+    why: `git ${args.join(" ")} exited ${result.status ?? "on a signal"}${said ? `: ${said}` : ""}`,
+  };
+}
 
 /** The fetch that gives the clone the history it needs to read `ref`'s merge base. */
 function fetchFor(root: string, ref: string, shallow: boolean): string {
@@ -84,18 +101,26 @@ export function mergeBase(
     "-q",
     "MERGE_HEAD^{commit}",
   ])?.trim();
-  const commit = tryGit(root, [
-    "merge-base",
-    ref,
-    "HEAD",
-    ...(incoming ? [incoming] : []),
-  ])?.trim();
-  if (!commit)
+  const heads = ["HEAD", ...(incoming ? [incoming] : [])];
+  const found = git(root, ["merge-base", ref, ...heads]);
+  const commit = found.ok ? found.stdout.trim() : "";
+  if (commit) return { ok: true, commit, ref };
+  if (shallow)
     return {
       ok: false,
-      reason: `the merge base with ${ref} cannot be read${shallow ? " in this shallow clone" : ""}; fetch the history that holds it: ${fetchFor(root, ref, shallow)}`,
+      reason: `the merge base with ${ref} cannot be read in this shallow clone; fetch the history that holds it: ${fetchFor(root, ref, shallow)}`,
     };
-  return { ok: true, commit, ref };
+  // In a full clone, `git merge-base` exits 1 with nothing to say when the
+  // two histories share no commit at all.
+  if (found.ok || /exited 1$/.test(found.why))
+    return {
+      ok: false,
+      reason: `HEAD and ${ref} share no history, so there is no merge base to compare with: compare with the branch this one was cut from (--base <ref>)`,
+    };
+  return {
+    ok: false,
+    reason: `the merge base with ${ref} cannot be read: ${found.why}`,
+  };
 }
 
 /** A base data file read as one, or null when it does not have a data file's shape. */
@@ -112,14 +137,34 @@ function asData(value: unknown): DataFile | null {
   return value as unknown as DataFile;
 }
 
-/** The data files the base commit holds, by chapter, and each one it cannot read. */
-export function baseData(
-  root: string,
-  commit: string,
-): { data: Map<string, DataFile>; findings: Finding[] } {
+/** The base's data files by chapter, with each one that is not a data file; or why git could not read them. */
+export type BaseData =
+  | { ok: true; data: Map<string, DataFile>; findings: Finding[] }
+  | { ok: false; reason: string };
+
+/** What a base data file's text holds: a data file, or why it is not one. */
+function parseData(text: string): DataFile | string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch (error) {
+    return `is not valid JSON (${error instanceof Error ? error.message : String(error)})`;
+  }
+  return (
+    asData(parsed) ??
+    "is JSON without a data file's shape (chapter, version, status, fields and values)"
+  );
+}
+
+/**
+ * The data files the base commit holds, by chapter. A listing git cannot
+ * make, or a file it cannot show, means the check cannot decide; only a
+ * listing git made and found empty means the base has no Protocol.
+ */
+export function baseData(root: string, commit: string): BaseData {
   const data = new Map<string, DataFile>();
   const findings: Finding[] = [];
-  const listing = tryGit(root, [
+  const listing = git(root, [
     "ls-tree",
     "-z",
     "--name-only",
@@ -127,27 +172,31 @@ export function baseData(
     "--",
     `${DATA_DIR}/`,
   ]);
-  for (const path of (listing ?? "").split("\0").filter(Boolean)) {
+  if (!listing.ok)
+    return {
+      ok: false,
+      reason: `the base's data files cannot be listed: ${listing.why}`,
+    };
+  for (const path of listing.stdout.split("\0").filter(Boolean)) {
     if (!path.endsWith(".json")) continue;
-    const text = tryGit(root, ["show", `${commit}:${path}`]);
-    let parsed: unknown = null;
-    try {
-      parsed = text === null ? null : JSON.parse(text);
-    } catch {
-      parsed = null;
-    }
-    const doc = asData(parsed);
-    if (doc === null)
+    const shown = git(root, ["show", `${commit}:${path}`]);
+    if (!shown.ok)
+      return {
+        ok: false,
+        reason: `the base's copy of ${path} cannot be read: ${shown.why}`,
+      };
+    const doc = parseData(shown.stdout);
+    if (typeof doc === "string")
       findings.push({
         rule: RULE,
         file: path,
-        problem: `the base's copy (${commit.slice(0, 12)}) is not a data file the check can read, so the chapter cannot be compared with it`,
+        problem: `the base's copy (${commit.slice(0, 12)}) ${doc}, so the chapter cannot be compared with it`,
         remedy:
-          "repair the data file on the integration branch, or raise the chapter's version",
+          "repair the data file on the integration branch (run the generator there), then bring that fix into this branch; nothing on this branch alone clears it",
       });
     else data.set(path.slice(DATA_DIR.length + 1, -".json".length), doc);
   }
-  return { data, findings };
+  return { ok: true, data, findings };
 }
 
 /** The `**Breaking:**` entries of the change notes this branch adds or changes. */
@@ -262,7 +311,7 @@ export function compareWithBase(input: BaseComparison): Finding[] {
   const out: Finding[] = [];
   for (const [id, base] of input.base) {
     if (base.status !== "stable") continue;
-    const breaking = input.breaking.some((entry) => entry.includes(`${id}.md`));
+    const breaking = input.breaking.some((entry) => namesFile(entry, id));
     const now = input.data.get(id);
     out.push(
       ...(now === undefined
@@ -271,6 +320,16 @@ export function compareWithBase(input: BaseComparison): Finding[] {
     );
   }
   return out;
+}
+
+/**
+ * Whether a change-note entry names the chapter's file, `<id>.md`, as a
+ * whole name: on its own or as a path's last part, so `exits.md` is not read
+ * in `drive-exits.md`.
+ */
+export function namesFile(entry: string, id: string): boolean {
+  const name = `${id}.md`.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?<![\\w.-])${name}(?![\\w-])`).test(entry);
 }
 
 const noteRemedy = (id: string) =>

@@ -26,6 +26,9 @@ pre-commit:
       glob:
         - "tools/protocol/**"
         - "plugin/skills/drive-pr/scripts/lib/status/terminal-states.ts"
+        - "plugin/shared/errors.ts"
+        - "plugin/shared/log.ts"
+        - "plugin/shared/outcome.ts"
       timeout: 60s
       run: bun tools/protocol/generate.ts --stage
       stage_fixed: true

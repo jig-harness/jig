@@ -80,7 +80,7 @@
       "driveStatusExit": 2,
       "driveExit": 2,
       "endsDrive": true,
-      "meaning": "A prerequisite is missing: the installed `gh` cannot report a field the round needs. A refused command line exits `2` as well, with no report."
+      "meaning": "A prerequisite is missing: the installed `gh` cannot report a field the round needs. `drive.ts` also exits `2`, with no report, when it refuses to start: a command line it cannot use, or a working tree or pull request it cannot drive as they stand (uncommitted changes, commits the pull request does not have, a head in a fork). It prints which."
     },
     {
       "name": "CONVERGED",
@@ -98,7 +98,7 @@
       "driveStatusExit": 4,
       "driveExit": 4,
       "endsDrive": false,
-      "meaning": "The pull request's head on the forge and the local head disagree: a push has not shown up yet, or the working tree is behind. Wait, or bring the tree up to date, then read again."
+      "meaning": "The pull request's head on the forge and the local head disagree, and the reason says how: a local head ahead with no record of a push (push it through `guarded-push.ts`), a push the forge does not show yet (wait), a tree behind (update it), or diverged history (reconcile it). Then read again."
     },
     {
       "name": "AWAITING_REVIEWER",
@@ -143,7 +143,7 @@
       "driveStatusExit": 4,
       "driveExit": 4,
       "endsDrive": false,
-      "meaning": "The name of every state that shares exit `4`: the pull request is not ready to judge yet. Never itself a `state`; the caller waits and runs the drive again."
+      "meaning": "The name of every state that shares exit `4`: the pull request is not ready to judge yet. Never itself a `state`; the caller waits and runs the drive again. `drive.ts` also exits `4` after the review converged when another driver holds the mark-Ready lease, when the head moved or the CI hold label changed as the hold was released, when no fresh result of a required check came in time (where a skipped or cancelled check means waiting cannot help: re-run the check, then re-arm), and when the drive keeps a draft that the reviewer skips (mark it Ready, then re-arm)."
     },
     {
       "name": "PR_NOT_OPEN",
@@ -260,7 +260,7 @@
       "driveStatusExit": null,
       "driveExit": 16,
       "endsDrive": true,
-      "meaning": "A pass hit an agent subscription's usage limit that does not reset soon. Re-arm after the reset, or from a session that bills another account."
+      "meaning": "A pass hit an agent subscription's usage limit that does not reset soon. Re-arm after the reset, or from a session that bills another account. `drive.ts` also exits `16` when it refuses such a re-arm while the limit holds, from a session that bills the same account or one it cannot tell."
     },
     {
       "name": "PUSH_HELD",
@@ -278,7 +278,7 @@
       "driveStatusExit": null,
       "driveExit": 18,
       "endsDrive": true,
-      "meaning": "A person or a tool told the drive to stop through its mailbox, and it stopped at a round boundary."
+      "meaning": "A person or a tool told the drive to stop through its mailbox, and it stopped at a round boundary. A stop that names this driver's generation ends this driver alone; one that names none stops every later driver too, so resume it before re-arming."
     },
     {
       "name": "MAILBOX_PAUSE_TIMEOUT",

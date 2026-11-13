@@ -91,6 +91,8 @@ export function generate(options: GenerateOptions): GenerateResult {
   if (!base.ok)
     return { findings, unreadable: base.reason, written, comparedWith: null };
   const atBase = baseData(root, base.commit);
+  if (!atBase.ok)
+    return { findings, unreadable: atBase.reason, written, comparedWith: null };
   findings.push(
     ...atBase.findings,
     ...compareWithBase({
@@ -109,10 +111,19 @@ export function generate(options: GenerateOptions): GenerateResult {
   };
 }
 
-/** Stage the files a write changed, in the index the running commit uses. */
-function stage(root: string, files: readonly string[]): number {
+/**
+ * Stage the files a write changed, in the index the running commit uses: the
+ * environment is passed on whole, since a pre-commit hook's git names that
+ * index in it.
+ */
+export function stage(
+  root: string,
+  files: readonly string[],
+  env: Record<string, string | undefined> = process.env,
+): number {
   if (!files.length) return 0;
   const result = Bun.spawnSync(["git", "-C", root, "add", "--", ...files], {
+    env,
     stdout: "inherit",
     stderr: "inherit",
   });

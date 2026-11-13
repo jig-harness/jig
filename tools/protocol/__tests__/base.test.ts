@@ -1,14 +1,16 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { rmSync } from "node:fs";
+import { readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Chapter, Withdrawn } from "../chapter.ts";
-import { generate } from "../generate.ts";
+import { baseData, namesFile } from "../base.ts";
+import { generate, stage } from "../generate.ts";
 import {
   cleanUp,
   commit,
   FIELDS,
   fixtureChapter,
+  git,
   layout,
   ok,
   put,
@@ -288,5 +290,164 @@ describe("a merge base that cannot be read", () => {
       problems: [],
       unreadable: null,
     });
+  });
+});
+
+describe("reading the base's data files", () => {
+  test("a listing git cannot make fails the check, quoting git; an empty one means no Protocol", () => {
+    const chapter = fixtureChapter();
+    const root = scratchRepo(null, [chapter]);
+    const main = ok(root, "rev-parse", "main").trim();
+    expect(baseData(root, main)).toEqual({
+      ok: true,
+      data: new Map(),
+      findings: [],
+    });
+    const missing = "0123456789abcdef0123456789abcdef01234567";
+    const read = baseData(root, missing);
+    expect(read.ok).toBe(false);
+    if (!read.ok) {
+      expect(read.reason).toContain(
+        "the base's data files cannot be listed: git ls-tree",
+      );
+      expect(read.reason).toContain(missing);
+    }
+  });
+
+  test("a data file git cannot show fails the check, quoting git", () => {
+    const chapter = fixtureChapter();
+    const root = scratchRepo([chapter], [chapter]);
+    const blob = ok(
+      root,
+      "rev-parse",
+      "main:plugin/protocol/data/fixture.json",
+    ).trim();
+    rmSync(join(root, ".git", "objects", blob.slice(0, 2), blob.slice(2)));
+    const result = check(root, [chapter]);
+    expect(result.problems).toEqual([]);
+    expect(result.unreadable).toContain(
+      "the base's copy of plugin/protocol/data/fixture.json cannot be read: git show",
+    );
+  });
+
+  test("a base copy that is not JSON, and one without a data file's shape, are reported apart", () => {
+    const chapter = fixtureChapter();
+    const broken = (text: string) => {
+      const root = tempDir("broken");
+      ok(root, "init", "-q");
+      put(root, "plugin/protocol/data/fixture.json", text);
+      commit(root, "base");
+      ok(root, "checkout", "-q", "-b", "change");
+      rmSync(join(root, "plugin/protocol/data/fixture.json"));
+      layout(root, [chapter]);
+      generate({ root, chapters: [chapter], check: false });
+      commit(root, "change");
+      return check(root, [chapter]).problems;
+    };
+    const [notJson] = broken("{ not json");
+    expect(notJson).toContain("is not valid JSON (");
+    expect(broken('{ "chapter": "fixture" }\n')).toEqual([
+      expect.stringContaining(
+        "is JSON without a data file's shape (chapter, version, status, fields and values)",
+      ),
+    ]);
+  });
+});
+
+describe("histories that share no commit", () => {
+  test("are reported as unrelated, not as a missing fetch", () => {
+    const chapter = fixtureChapter();
+    const root = scratchRepo([chapter], [chapter]);
+    ok(root, "checkout", "-q", "--orphan", "other");
+    commit(root, "unrelated");
+    expect(check(root, [chapter])).toEqual({
+      problems: [],
+      unreadable:
+        "HEAD and main share no history, so there is no merge base to compare with: compare with the branch this one was cut from (--base <ref>)",
+    });
+  });
+});
+
+describe("the breaking note's chapter", () => {
+  test("is named by its whole file name", () => {
+    expect(
+      namesFile("- **Breaking:** `drive-exits.md` changed", "drive-exits"),
+    ).toBe(true);
+    expect(
+      namesFile("- **Breaking:** plugin/protocol/exits.md changed", "exits"),
+    ).toBe(true);
+    expect(namesFile("- **Breaking:** `drive-exits.md` changed", "exits")).toBe(
+      false,
+    );
+    expect(namesFile("- **Breaking:** exits.mdx changed", "exits")).toBe(false);
+  });
+
+  test("a note naming another chapter whose name ends in this one's does not clear it", () => {
+    const provisional = fixtureChapter({
+      id: "exits",
+      version: 2,
+      status: "provisional",
+      planItems: [{ item: 7, epic: 70 }],
+    });
+    const root = scratchRepo([fixtureChapter({ id: "exits" })], [provisional], {
+      "other.md": BREAKING("drive-exits.md"),
+    });
+    expect(check(root, [provisional]).problems).toEqual([
+      "plugin/protocol/data/exits.json: the base lists exits as stable, and this change marks it provisional",
+    ]);
+  });
+});
+
+/** Every file under `root` but git's own, with its bytes. */
+function snapshot(root: string): Map<string, string> {
+  const files = new Map<string, string>();
+  const walk = (dir: string) => {
+    for (const name of readdirSync(dir)) {
+      if (name === ".git") continue;
+      const full = join(dir, name);
+      if (statSync(full).isDirectory()) walk(full);
+      else files.set(full, readFileSync(full, "base64"));
+    }
+  };
+  walk(root);
+  return files;
+}
+
+describe("--check and --stage", () => {
+  test("a failing check writes nothing", () => {
+    const changed = fixtureChapter({ values: [VALUES[0] as never] });
+    const root = scratchRepo([fixtureChapter()], [fixtureChapter()]);
+    const before = snapshot(root);
+    const result = check(root, [changed]);
+    expect(result.problems.length).toBeGreaterThan(0);
+    expect(snapshot(root)).toEqual(before);
+  });
+
+  test("--stage stages exactly the outputs a write changed", () => {
+    const root = scratchRepo(null, [fixtureChapter()]);
+    put(root, "README.md", "an edit the commit does not include\n");
+    const changed = fixtureChapter({ values: [VALUES[0] as never] });
+    const written = generate({
+      root,
+      chapters: [changed],
+      check: false,
+    }).written;
+    expect([...written].sort()).toEqual([
+      "plugin/protocol/data/fixture.json",
+      "plugin/protocol/fixture.md",
+    ]);
+    const env = Object.fromEntries(
+      Object.entries(process.env).filter(([k]) => !k.startsWith("GIT_")),
+    );
+    expect(stage(root, written, env)).toBe(0);
+    expect(
+      ok(root, "diff", "--cached", "--name-only").trim().split("\n").sort(),
+    ).toEqual([
+      "plugin/protocol/data/fixture.json",
+      "plugin/protocol/fixture.md",
+    ]);
+    expect(git(root, "diff", "--name-only").stdout.toString().trim()).toBe(
+      "README.md",
+    );
   });
 });

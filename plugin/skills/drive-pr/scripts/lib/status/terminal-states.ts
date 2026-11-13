@@ -32,7 +32,7 @@
  * (`__tests__/terminal-states-dispatch.ts`).
  *
  * Categories of entry (`drive-status.ts`'s "Exit codes — the driver contract"
- * doc comment mixes the first four in one column, unmarked):
+ * doc comment mixes all but the helper exits in one column, unmarked):
  *
  *   'state'        a real `state` value the `--json` report can carry.
  *   'class-label'  a name for a FAMILY of states sharing one exit code,
@@ -197,7 +197,7 @@ export const TERMINAL_STATES: Readonly<
     terminal: false,
     emittedBy: EVALUATE_EMITTER,
     meaning:
-      "The pull request's head on the forge and the local head disagree: a push has not shown up yet, or the working tree is behind. Wait, or bring the tree up to date, then read again.",
+      "The pull request's head on the forge and the local head disagree, and the reason says how: a local head ahead with no record of a push (push it through `guarded-push.ts`), a push the forge does not show yet (wait), a tree behind (update it), or diverged history (reconcile it). Then read again.",
   },
   AWAITING_REVIEWER: {
     exitCode: 4,
@@ -287,7 +287,7 @@ export const TERMINAL_STATES: Readonly<
     terminal: true,
     emittedBy: EVALUATE_EMITTER,
     meaning:
-      "A prerequisite is missing: the installed `gh` cannot report a field the round needs. A refused command line exits `2` as well, with no report.",
+      "A prerequisite is missing: the installed `gh` cannot report a field the round needs. `drive.ts` also exits `2`, with no report, when it refuses to start: a command line it cannot use, or a working tree or pull request it cannot drive as they stand (uncommitted changes, commits the pull request does not have, a head in a fork). It prints which.",
   },
 
   // ── real states, set OUTSIDE evaluate() — code-bound via outOfBandExitCode()
@@ -325,7 +325,7 @@ export const TERMINAL_STATES: Readonly<
     emittedBy:
       "never emitted — a class label for HEAD_LAG / AWAITING_REVIEWER / STALE_REVIEW / HEAD_MOVED / MERGEABILITY_UNKNOWN",
     meaning:
-      "The name of every state that shares exit `4`: the pull request is not ready to judge yet. Never itself a `state`; the caller waits and runs the drive again.",
+      "The name of every state that shares exit `4`: the pull request is not ready to judge yet. Never itself a `state`; the caller waits and runs the drive again. `drive.ts` also exits `4` after the review converged when another driver holds the mark-Ready lease, when the head moved or the CI hold label changed as the hold was released, when no fresh result of a required check came in time (where a skipped or cancelled check means waiting cannot help: re-run the check, then re-arm), and when the drive keeps a draft that the reviewer skips (mark it Ready, then re-arm).",
   },
 
   // ── tombstone: withdrawn, must never be re-emitted ────────────────────────
@@ -380,7 +380,7 @@ export const TERMINAL_STATES: Readonly<
     terminal: true,
     emittedBy: "drive.ts only (QUOTA_PARKED_EXIT)",
     meaning:
-      "A pass hit an agent subscription's usage limit that does not reset soon. Re-arm after the reset, or from a session that bills another account.",
+      "A pass hit an agent subscription's usage limit that does not reset soon. Re-arm after the reset, or from a session that bills another account. `drive.ts` also exits `16` when it refuses such a re-arm while the limit holds, from a session that bills the same account or one it cannot tell.",
   },
   MAILBOX_STOPPED: {
     exitCode: 18,
@@ -388,7 +388,7 @@ export const TERMINAL_STATES: Readonly<
     terminal: true,
     emittedBy: "drive.ts only (MAILBOX_STOPPED_EXIT)",
     meaning:
-      "A person or a tool told the drive to stop through its mailbox, and it stopped at a round boundary.",
+      "A person or a tool told the drive to stop through its mailbox, and it stopped at a round boundary. A stop that names this driver's generation ends this driver alone; one that names none stops every later driver too, so resume it before re-arming.",
   },
   MAILBOX_PAUSE_TIMEOUT: {
     exitCode: 19,

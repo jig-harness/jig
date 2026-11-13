@@ -31,8 +31,8 @@ function inventoryEntry(): Entry {
   return entry;
 }
 
-/** The repository files a module imports by relative path. */
-function importsOf(module: string): string[] {
+/** The repository files a module imports by relative path, directly. */
+function directImports(module: string): string[] {
   const scanned = new Bun.Transpiler({ loader: "ts" }).scanImports(
     read(module),
   );
@@ -42,6 +42,24 @@ function importsOf(module: string): string[] {
     .map((p) =>
       relative(root, join(root, dirname(module), p)).replaceAll("\\", "/"),
     );
+}
+
+/**
+ * Every repository file a module imports, followed through the files it
+ * imports in turn, so a table that imports another table is reached too.
+ */
+function importsOf(module: string): string[] {
+  const seen = new Set<string>();
+  const visit = (path: string) => {
+    for (const next of directImports(path))
+      if (!seen.has(next)) {
+        seen.add(next);
+        visit(next);
+      }
+  };
+  visit(module);
+  seen.delete(module);
+  return [...seen].sort();
 }
 
 const matchesAny = (globs: readonly string[], path: string) =>
@@ -63,12 +81,19 @@ describe("the inventory entry's sources", () => {
       }).toEqual({ chapter: chapter.id, unlisted: [] });
   });
 
-  test("would miss a module a chapter imported without listing it", () => {
+  test("would miss a module a chapter imports, directly or through another, without listing it", () => {
+    const table =
+      "plugin/skills/drive-pr/scripts/lib/status/terminal-states.ts";
+    expect(unlisted(DRIVE_EXITS.module, ["tools/protocol/**"])).toContain(
+      table,
+    );
+    // The table's own imports are reached through it, not by the chapter.
+    expect(directImports(DRIVE_EXITS.module)).not.toContain(
+      "plugin/shared/errors.ts",
+    );
     expect(
-      unlisted(DRIVE_EXITS.module, ["tools/protocol/**"]).filter(
-        (p) => !p.startsWith("tools/"),
-      ),
-    ).toEqual(["plugin/skills/drive-pr/scripts/lib/status/terminal-states.ts"]);
+      unlisted(DRIVE_EXITS.module, ["tools/protocol/**", table]),
+    ).toContain("plugin/shared/errors.ts");
   });
 
   test("are the files the pre-commit hook regenerates the chapters for", () => {
