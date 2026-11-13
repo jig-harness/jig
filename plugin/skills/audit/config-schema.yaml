@@ -164,7 +164,7 @@ fields:
     values: [claimed, assigned]
     read_by: [dispatch]
     repository_only: true
-    since: next
+    since: 0.225.0
   dispatch.blocked_after:
     type: string
     pattern: "^\\d+\\s*[smh]$"

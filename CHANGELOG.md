@@ -394,6 +394,35 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.225.0] - 2026-11-13
+
+### Added
+
+- `dispatch.stalled_scope` (`claimed` by default, or `assigned`) decides
+  which of the factory identity's claimed items the stall watch reads as
+  pickups.
+
+### Fixed
+
+- `jig doctor dispatch` no longer passes while every tick fails. A tick that
+  a throw stops before its act phase, such as one whose state database is
+  refused at the start, now writes a failed receipt, so `jig status` and
+  `jig doctor` read that tick rather than an older successful one. The
+  `dispatch:last-run` check names the latest tick's failure reason and, when
+  more than one tick in a row failed, how many and since when.
+- The stall watch no longer reads someone else's work as a stalled pickup.
+  An item assigned to the factory identity in progress counts as a pickup
+  only when a launch record of the host or a claim marker took it.
+  `dispatch.stalled_scope: assigned` keeps the wider watch, for a repository
+  whose identity nobody else uses. A double claim is still reported for any
+  claimed item.
+- An item a person held with `jig:hold` (or the human-in-the-loop or
+  manual-operations label) in a served person's queue or the ready pool, and
+  then released, is picked up again at the next tick. Before, the record of
+  an earlier pickup that ended without claiming it kept holding it until the
+  item left the dispatch states. A claimed item's record, and the record of
+  a pickup that finished (`done`), still outlive a hold.
+
 ## [0.224.3] - 2026-11-13
 
 ### Fixed
@@ -7823,7 +7852,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.224.3...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.225.0...HEAD
+[0.225.0]: https://github.com/jig-harness/jig/compare/v0.224.3...v0.225.0
 [0.224.3]: https://github.com/jig-harness/jig/compare/v0.224.2...v0.224.3
 [0.224.2]: https://github.com/jig-harness/jig/compare/v0.224.1...v0.224.2
 [0.224.1]: https://github.com/jig-harness/jig/compare/v0.224.0...v0.224.1
