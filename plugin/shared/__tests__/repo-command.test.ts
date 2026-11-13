@@ -14,7 +14,12 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
-import { oneLine, SCRUBBED_ENV, scrubbedEnv } from "../repo-command.ts";
+import {
+  oneLine,
+  promisorRemotes,
+  SCRUBBED_ENV,
+  scrubbedEnv,
+} from "../repo-command.ts";
 
 const FIXTURES = join(import.meta.dir, "fixtures", "repo-command");
 const RUNNER = join(FIXTURES, "runner.ts");
@@ -451,22 +456,55 @@ describe("withDefaultBranchTree", () => {
   });
 
   it("skips a remote whose promisor setting is false", async () => {
-    const { parent, origin, commit, dir } = partialClone("jig-partial-off-");
+    const { parent, commit, dir } = partialClone("jig-partial-off-");
     git(dir, "remote", "add", "cache", `file://${join(parent, "nowhere")}`);
     git(dir, "config", "remote.cache.promisor", "false");
-    expect(origin).toBeTruthy();
+    expect(await promisorRemotes(dir)).toEqual(["origin"]);
     const out = await runner(["tree", dir, commit], { JIG_HOME: home() });
     expect(out.out).toMatchObject({ ok: true, value: { note: "committed\n" } });
+  });
+
+  it("tries the extension's remote last, as git does", async () => {
+    const { parent, dir } = partialClone("jig-partial-order-");
+    git(dir, "remote", "add", "cache", `file://${join(parent, "nowhere")}`);
+    git(dir, "config", "remote.cache.promisor", "true");
+    git(dir, "config", "extensions.partialClone", "origin");
+    expect(await promisorRemotes(dir)).toEqual(["cache", "origin"]);
   });
 
   it("falls back to the next promisor when the first cannot supply the files", async () => {
     const { parent, commit, dir } = partialClone("jig-partial-fallback-");
     git(dir, "remote", "add", "cache", `file://${join(parent, "nowhere")}`);
     git(dir, "config", "remote.cache.promisor", "true");
-    git(dir, "config", "remote.cache.partialCloneFilter", "blob:none");
-    // The cache is listed before the origin the objects come from.
-    git(dir, "config", "--unset-all", "remote.cache.promisor");
-    git(dir, "config", "extensions.partialClone", "cache");
+    git(dir, "config", "extensions.partialClone", "origin");
+    // The unreachable cache is tried before the origin the objects come from.
+    expect(await promisorRemotes(dir)).toEqual(["cache", "origin"]);
+    const out = await runner(["tree", dir, commit], { JIG_HOME: home() });
+    expect(out.out).toMatchObject({ ok: true, value: { note: "committed\n" } });
+  });
+
+  it("copies files under a tree a tree-filtered clone has not downloaded", async () => {
+    const parent = mkdtempSync(join(tmpdir(), "jig-partial-tree-"));
+    dirs.push(parent);
+    const origin = join(parent, "origin");
+    committedAt(origin);
+    mkdirSync(join(origin, "scripts", "deep"), { recursive: true });
+    writeFileSync(join(origin, "scripts", "deep", "run.txt"), "run\n");
+    git(origin, "add", ".");
+    git(origin, "commit", "-q", "-m", "nested");
+    const commit = head(origin);
+    git(origin, "config", "uploadpack.allowFilter", "true");
+    git(origin, "config", "uploadpack.allowAnySHA1InWant", "true");
+    const dir = join(parent, "clone");
+    git(
+      parent,
+      "clone",
+      "-q",
+      "--no-checkout",
+      "--filter=tree:0",
+      `file://${origin}`,
+      dir,
+    );
     const out = await runner(["tree", dir, commit], { JIG_HOME: home() });
     expect(out.out).toMatchObject({ ok: true, value: { note: "committed\n" } });
   });

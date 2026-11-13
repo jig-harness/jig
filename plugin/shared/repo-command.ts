@@ -489,37 +489,71 @@ function promisorEnabled(value: string): boolean {
 
 /**
  * The clone's promisor remotes, in the order git tries them: those named by
- * `extensions.partialClone`, `remote.<name>.promisor` (when true) or
- * `remote.<name>.partialCloneFilter`.
+ * `remote.<name>.promisor` (when true) or `remote.<name>.partialCloneFilter`,
+ * in configuration order, then the one `extensions.partialClone` names, which
+ * git always moves to the end.
  */
-async function promisorRemotes(root: string): Promise<string[]> {
-  const names: string[] = [];
-  const add = (name: string | undefined) => {
-    if (name && !names.includes(name)) names.push(name);
-  };
+export async function promisorRemotes(root: string): Promise<string[]> {
   const listed = await readClone(root, "the clone's promisor remotes", [
     "config",
     "--null",
     "--get-regexp",
     "^(remote\\..+\\.(promisor|partialclonefilter)|extensions\\.partialclone)$",
   ]);
-  if (!listed.ok) return names;
+  if (!listed.ok) return [];
+  const names: string[] = [];
+  let designated: string | undefined;
   for (const entry of listed.value.split("\0")) {
     const split = entry.indexOf("\n");
     const key = split < 0 ? entry : entry.slice(0, split);
     const value = split < 0 ? "" : entry.slice(split + 1);
-    if (key === "extensions.partialclone") add(value);
-    const remote = /^remote\.(.+)\.(promisor|partialclonefilter)$/.exec(key);
-    if (!remote) continue;
-    if (remote[2] === "partialclonefilter" || promisorEnabled(value))
-      add(remote[1]);
+    if (key === "extensions.partialclone") designated = value || designated;
+    else {
+      const name = promisorName(key, value);
+      if (name && !names.includes(name)) names.push(name);
+    }
   }
-  return names;
+  return designated
+    ? [...names.filter((n) => n !== designated), designated]
+    : names;
+}
+
+/** The remote a `remote.<name>.promisor` or `.partialclonefilter` entry enables. */
+function promisorName(key: string, value: string): string | undefined {
+  const remote = /^remote\.(.+)\.(promisor|partialclonefilter)$/.exec(key);
+  if (!remote) return undefined;
+  return remote[2] === "partialclonefilter" || promisorEnabled(value)
+    ? remote[1]
+    : undefined;
+}
+
+/** Most passes over the remotes: a tree filter exposes one level per pass. */
+const HYDRATE_MAX_PASSES = 64;
+
+const UNFETCHED = failed(
+  "unreadable",
+  "the default branch's missing files are not all on the clone's promisor remotes",
+);
+
+/** Fetch `ids` from one remote of the clone, in one request. */
+function fetchFrom(root: string, name: string, ids: string[]) {
+  return readClone(
+    root,
+    "the default branch's missing files could not be fetched",
+    ["fetch", "--quiet", "--no-tags", "--no-write-fetch-head", name, "--stdin"],
+    `${ids.join("\n")}\n`,
+  );
+}
+
+function sameIds(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((id) => b.includes(id));
 }
 
 /**
  * Fetch `ids` in one request from each promisor remote in turn until none
  * of them is still missing, as git does; `stillAbsent` rereads what is left.
+ * What a fetch newly exposes (the contents of a tree a tree filter left
+ * out) is fetched in a further pass for as long as a pass makes progress.
  */
 async function hydrate(
   root: string,
@@ -530,33 +564,25 @@ async function hydrate(
   if (remotes.length === 0)
     return failed(
       "unreadable",
-      "some of the default branch's files are not in the clone, which has no remote to fetch them from",
+      "some of the default branch's files could not be fetched: the clone has no remote to fetch them from",
     );
   let wanted = ids;
-  let last: Outcome<null, "unreadable"> = ok(null);
-  for (const name of remotes) {
-    const fetched = await readClone(
-      root,
-      "the default branch's missing files could not be fetched",
-      [
-        "fetch",
-        "--quiet",
-        "--no-tags",
-        "--no-write-fetch-head",
-        name,
-        "--stdin",
-      ],
-      `${wanted.join("\n")}\n`,
-    );
-    if (fetched.ok) {
+  let last: Outcome<null, "unreadable"> = UNFETCHED;
+  for (let pass = 0; pass < HYDRATE_MAX_PASSES; pass++) {
+    let progressed = false;
+    for (const name of remotes) {
+      const fetched = await fetchFrom(root, name, wanted);
+      if (!fetched.ok) {
+        last = fetched;
+        continue;
+      }
       const left = await stillAbsent();
       if (left === null || left.length === 0) return ok(null);
+      progressed ||= !sameIds(left, wanted);
       wanted = left;
-      last = failed(
-        "unreadable",
-        "the default branch's missing files are not all on the clone's promisor remotes",
-      );
-    } else last = fetched;
+      last = UNFETCHED;
+    }
+    if (!progressed) break;
   }
   return last;
 }
