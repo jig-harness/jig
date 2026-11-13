@@ -511,7 +511,9 @@ Without it, claims serialize on one host only. A claimed item
 with no running session for longer than `dispatch.stalled_after` is
 reported as stalled and never relaunched (a served person's item only when
 a pickup of the host claimed it: the rest of their work in progress is
-their own); an item more than one running
+their own; the identity's item only when a launch record of the host or a
+claim marker took it, unless `dispatch.stalled_scope` is `assigned`); an
+item more than one running
 session joins to is reported as a double claim; a session waiting longer
 than `dispatch.blocked_after` is reported.
 
