@@ -212,6 +212,7 @@ async function readPerson(
       title: i.title,
       url: i.url,
       state: i.state.name,
+      ...(i.nativeType === undefined ? {} : { nativeType: i.nativeType }),
       served: true as const,
     }));
     // Claims are monitored either way; an invalid scope only starts nothing.
