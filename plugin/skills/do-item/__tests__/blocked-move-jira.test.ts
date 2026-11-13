@@ -72,12 +72,17 @@ const transitionsTo = (to: string, onScreen: string[]) => ({
  * validator refuses it without `required`. Comments live in memory, as the
  * projection's marker needs them.
  */
-function site(onScreen: string[], required: string | null, outage = false) {
+function site(
+  onScreen: string[],
+  required: string | null,
+  outage = false,
+  siteFields: unknown = SITE_FIELDS,
+) {
   const state = { status: "In Progress" };
   const comments: CommentFact[] = [];
   const { t, calls } = jira(
     routes({
-      "GET field": SITE_FIELDS,
+      "GET field": siteFields,
       "POST search/jql": page(),
       "GET issue/ENG-1": () =>
         issue({
@@ -252,6 +257,57 @@ describe("a block on Jira", () => {
     ]);
     expect(puts(calls)[0]?.body).toEqual({
       fields: { customfield_1: null, customfield_2: null },
+    });
+  });
+
+  describe("clearing a field that cannot take a value", () => {
+    const numeric = (id: string, name: string) => ({
+      id,
+      name,
+      schema: { type: "number" },
+    });
+    const returned = async (siteFields: unknown) => {
+      const { tracker, calls } = site([], null, false, siteFields);
+      await projectBlocked(
+        tracker,
+        KEYS,
+        LABELS,
+        parked({ state: "parked" }),
+        NOW,
+      );
+      calls.length = 0;
+      const [out] = await projectBlocked(
+        tracker,
+        KEYS,
+        LABELS,
+        parked({ state: "driving" }),
+        NOW,
+      );
+      return { out, calls };
+    };
+
+    test("clears the valid sibling and names the field left as it was", async () => {
+      const { out, calls } = await returned([
+        numeric("customfield_1", "Blocker reason"),
+        SITE_FIELDS[1],
+      ]);
+      expect(puts(calls)[0]?.body).toEqual({
+        fields: { customfield_2: null },
+      });
+      expect(out?.detail).toContain("not written");
+      expect(out?.detail).toContain("cleared since");
+      expect(out?.detail).toContain("Blocker reason");
+      expect(out?.detail).not.toContain("its blocked fields cleared");
+    });
+
+    test("with every field invalid, writes nothing and reports why", async () => {
+      const { out, calls } = await returned([
+        numeric("customfield_1", "Blocker reason"),
+        numeric("customfield_2", "Blocked Since"),
+      ]);
+      expect(puts(calls)).toEqual([]);
+      expect(out?.detail).toContain("not written");
+      expect(out?.detail).toContain("Blocked Since");
     });
   });
 });

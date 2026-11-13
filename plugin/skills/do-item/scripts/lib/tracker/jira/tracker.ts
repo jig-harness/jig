@@ -638,31 +638,43 @@ export function jiraTracker(client: Client): Tracker {
     },
 
     async writeBlockedFields(key, value, signal, except = []) {
-      const fields = (await blockedFieldsUntil(signal))
-        .filter((f) => !except.includes(f.role))
-        // A field whose type cannot take a value was never written, so
-        // clearing leaves it out rather than failing the fields beside it.
-        .filter((f) => {
-          if (value !== null) return true;
-          try {
-            blockedFieldValue(f, null);
-            return true;
-          } catch (error) {
-            if (error instanceof TrackerRequestError) return false;
-            throw error;
-          }
-        });
-      if (fields.length === 0) return false;
-      signal?.throwIfAborted();
-      await transport(
-        {
-          method: "PUT",
-          path: path(key),
-          body: { fields: blockedFieldsBody(fields, value) },
-        },
-        signal,
+      const configured = (await blockedFieldsUntil(signal)).filter(
+        (f) => !except.includes(f.role),
       );
-      return true;
+      // A field whose type cannot take a value was never written, so
+      // clearing still clears the fields beside it, then reports the rest.
+      const fields: typeof configured = [];
+      const skipped: string[] = [];
+      for (const f of configured) {
+        if (value !== null) {
+          fields.push(f);
+          continue;
+        }
+        try {
+          blockedFieldValue(f, null);
+          fields.push(f);
+        } catch (error) {
+          if (!(error instanceof TrackerRequestError)) throw error;
+          skipped.push(error.message);
+        }
+      }
+      if (fields.length > 0) {
+        signal?.throwIfAborted();
+        await transport(
+          {
+            method: "PUT",
+            path: path(key),
+            body: { fields: blockedFieldsBody(fields, value) },
+          },
+          signal,
+        );
+      }
+      if (skipped.length > 0)
+        throw new TrackerRequestError(
+          "invalid",
+          `${fields.length > 0 ? `cleared ${fields.map((f) => f.role).join(", ")}; ` : ""}left as they were: ${skipped.join("; ")}`,
+        );
+      return fields.length > 0;
     },
 
     async listLabels() {
