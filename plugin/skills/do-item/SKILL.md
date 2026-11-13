@@ -271,6 +271,8 @@ form is the row of this table it belongs to, and on Jira its script form.
 | List children | `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" children "<KEY>"` | `mcp__linear__list_issues` with a parent filter | `gh api` on the issue's `sub_issues` endpoint |
 | Transition state | `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" transition "<KEY>" <canonical-state>`, with `--post-merge` for the post-merge rule's moves | `mcp__linear__save_issue` with `state: <mapped name>` | The script form: a state is a label or a board option plus open or closed, which only the script maps |
 | Post comment | `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" comment "<KEY>" --body-file body.md` | `mcp__linear__save_comment` | `gh issue comment` with the body from a file |
+| Attach a file, replacing older ones of its name or title | `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" attach "<KEY>" --input attachment.json` (exit `3`: the tracker cannot hold the file, nothing written) | The script form | The script form: GitHub Issues has no file upload, and the script carries a text file in a marked comment or links a hosted copy |
+| List or fetch attachments | `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" attachments "<KEY>"`; `… fetch-attachment "<KEY>" <id> --out <file>` | The script form | The script form |
 | File a new issue | The consumer's `issue_tracker.file_command` | — | — |
 
 An issue key is `ENG-123` on Linear and Jira, where `issue_tracker.team`
@@ -1630,16 +1632,29 @@ data flow, not an executable harness API.
 1. **exact** — **Re-fetch every sub-issue's current state** — never rely on
    stale data — and feed it to `reconcile_parent_status.ts`, which owns the
    decision. A script cannot issue a harness's native tool calls, so fetching
-   (and, on the native transport, paginating) stays here; only the decision
-   moves out. Branch on Step 1's `trackerTransport`, normalize the result to
-   the script's transport-neutral `ReconcileInput`, and fail closed on every
-   gap:
+   (and, on the native transport, paging) stays here; only the decision
+   moves out. Branch on Step 1's `trackerTransport`; either way, hand the
+   reconciler the tracker port's answers, the same shape on every adapter:
+   `{ issue, parent, children, complete }`, where `parent` and each child are
+   issues as `get_issue.ts` prints them (`identifier`, `state` with `name`
+   and `type`, `labels`, `nativeType`), `children` maps each child key the
+   parent's listing gave to its answer (`null` when its read failed), and
+   `complete` says the listing was read to its end. The reconciler fails
+   closed on every gap: a missing or mismatched parent, an incomplete listing,
+   a parent without its labels, and a child whose answer is missing, is for
+   another key or has an unreadable state.
 
    ```typescript
-   let listing // ReconcileInput — see reconcile_parent_status.ts
+   let answers // { issue, parent, children, complete }: scripts/lib/reconcile-answers.ts
    if (trackerTransport === "native") {
-     // Adapter example: Linear MCP. Any rejected call or unreadable response
-     // routes to the same fail-closed `truncated` shape.
+     // Adapter example: Linear MCP. Put each of its answers in the port's
+     // shape; a missing field stays missing, so the reconciler sees the gap.
+     const asAnswer = (i) => ({
+       identifier: i.identifier,
+       state: { name: i.status, type: i.statusType },
+       labels: i.labels,
+       nativeType: i.nativeType ?? null,
+     })
      try {
        const parent = mcp__linear__get_issue({ id: issue.id })
        const fields = ["status", "statusType", "labels"]
@@ -1662,78 +1677,51 @@ data flow, not an executable harness API.
          page = requireIssuesArray(mcp__linear__list_issues({ parentId: issue.id, limit: 250, cursor, fields }))
          children.push(...page.issues)
        }
-       // Complete only on an explicit final `hasNextPage === false`, no stuck
-       // cursor, and a real labels array on the parent: a missing `labels` is
-       // a partial fetch, and defaulting it to [] would hide `manual-ops`.
-       const complete = !paginationStuck && page.hasNextPage === false && parent.labels !== undefined
-       listing = complete
-         ? {
-             found: true,
-             parentLabels: parent.labels,
-             parentNativeType: parent.nativeType ?? null,
-             children: children.map(s => ({ identifier: s.identifier, state: { name: s.status, type: s.statusType }, labels: s.labels })),
-           }
-         : { found: true, truncated: true, parentLabels: [], children: [] }
+       answers = {
+         issue: issue.identifier,
+         parent: asAnswer(parent),
+         children: Object.fromEntries(children.map((c) => [c.identifier, asAnswer(c)])),
+         // Complete only on an explicit final `hasNextPage === false` and no stuck cursor.
+         complete: !paginationStuck && page.hasNextPage === false,
+       }
      } catch (err) {
-       listing = { found: true, truncated: true, parentLabels: [], children: [] }
+       // Any rejected call or unreadable response is a failed listing.
+       answers = { issue: issue.identifier, parent: null, children: {}, complete: false }
      }
    } else {
      // Script transport. A failed command, non-JSON stdout, or a literal
-     // `null` are all a failed listing, never a crash.
+     // `null` are all a failed read, never a crash.
      let parent
      try {
        parent = JSON.parse(run(`bun "${CLAUDE_SKILL_DIR}/scripts/get_issue.ts" "${issue.identifier}"`))
      } catch (err) {
        parent = { found: false }
      }
-     // `found: true` alone does not prove the response is for THIS issue:
-     // reconciling another epic's children and writing the result here would
-     // corrupt an unrelated issue's status.
-     if (parent?.found !== true || parent.identifier !== issue.identifier) {
-       listing = { found: false, parentLabels: [], children: [] }
-     } else {
-       // The parent's children listing carries no per-child labels, so every
-       // tail label would read as absent. Re-fetch EVERY child — completed
-       // and abandoned too, since a reopened child's stale terminal state
-       // must not go undetected.
-       //
-       // PHASE A — an agent action, not a script. For every child whose key
-       // matches /^(?:[A-Za-z][A-Za-z0-9]*-\d+|#[1-9]\d*)$/ (defense in depth before it
-       // reaches a command line), issue `bun "${CLAUDE_SKILL_DIR}/scripts/get_issue.ts" "<key>"` as its OWN command-tool
-       // call, all in the SAME turn (parallel tool calls), never one at a
-       // time: each call may take up to 30 seconds. Build `childFetchResults`,
-       // a Map from the REQUESTED key to the parsed stdout; omit any call that
-       // exited non-zero or printed non-JSON.
-       //
-       // PHASE B — verify, then merge. A child's state is trustworthy only
-       // from a fetch that succeeded AND answered for that exact key.
-       const allChildren = [
-         ...(parent.sub_issue_analysis?.completed_issues ?? []),
-         ...(parent.sub_issue_analysis?.abandoned_issues ?? []),
-         ...(parent.sub_issue_analysis?.incomplete_issues ?? []),
-       ]
-       // `get_issue.ts` reports an unreadable state as type `unknown` with a
-       // name of `Unknown` or blank; no real workflow state looks like that.
-       const isUnreadableState = (s) =>
-         s?.type === 'unknown' && (s?.name === 'Unknown' || !s?.name?.trim())
-       const verifiedChildren = allChildren.map((c) => {
-         const fetched = childFetchResults.get(c.identifier)
-         if (fetched?.found !== true || fetched.identifier !== c.identifier || isUnreadableState(fetched.state)) {
-           return null
-         }
-         return { ...c, labels: fetched.labels, state: fetched.state ?? c.state, nativeType: fetched.nativeType ?? null }
-       })
-       // One unverified child makes the whole listing untrustworthy: its
-       // stale state alone could advance the parent wrongly.
-       listing = verifiedChildren.some((c) => c === null)
-         ? { found: true, truncated: true, parentLabels: [], children: [] }
-         : { found: true, parentLabels: parent.labels, parentNativeType: parent.nativeType ?? null, children: verifiedChildren }
+     // The parent's children listing carries no per-child labels, so every
+     // tail label would read as absent. Re-fetch EVERY child — completed
+     // and abandoned too, since a reopened child's stale terminal state
+     // must not go undetected.
+     //
+     // An agent action, not a script: for every child whose key matches
+     // /^(?:[A-Za-z][A-Za-z0-9]*-\d+|#[1-9]\d*)$/ (defense in depth before it
+     // reaches a command line), issue `bun "${CLAUDE_SKILL_DIR}/scripts/get_issue.ts" "<key>"` as its OWN command-tool
+     // call, all in the SAME turn (parallel tool calls), never one at a
+     // time: each call may take up to 30 seconds. Build `childFetchResults`,
+     // a Map from the REQUESTED key to the parsed stdout; omit any call that
+     // exited non-zero or printed non-JSON, and any key that failed the match.
+     const keys = (parent?.found === true ? parent.children ?? [] : []).map((c) => c.identifier)
+     answers = {
+       issue: issue.identifier,
+       parent: parent ?? null,
+       children: Object.fromEntries(keys.map((k) => [k, childFetchResults.get(k) ?? null])),
+       // get_issue.ts reads a parent's children to their end or fails the read.
+       complete: parent?.found === true,
      }
    }
    ```
 
-   Preserve `parentNativeType` and each child’s `nativeType` from the refreshed
-   issues. On Jira, the reconciler uses each issue type’s effective state map
+   Keep the parent's and each child's `nativeType` in its answer. On Jira,
+   the reconciler uses each issue type’s effective state map
    (`issue_tracker.jira.states_by_type`); a target absent from the parent’s
    workflow returns `skipped`, with its reason, without a substitute.
 
@@ -1751,14 +1739,14 @@ data flow, not an executable harness API.
    It finds each item's pull requests through the pull-request links in the
    item's comments and the `Closes <KEY>` or `Refs <KEY>` line in a pull
    request's body, and prints `{ "<KEY>": { pullRequest, pulls, reason } }`.
-   Set each child's `pullRequest` in `listing` to the value printed for its
-   key: `merged` reads as `in_review`; `open`, `none` (no linked pull
+   Set each child's `pullRequest` in `answers.children` to the value printed
+   for its key: `merged` reads as `in_review`; `open`, `none` (no linked pull
    request) and `unreadable` read as `pr_open`. On a non-zero exit, set
    none: every child under the shared name then reads as `pr_open`, and the
    parent stays in progress. Under distinct names, or with `pr_open` unset,
    skip this read.
 
-   Write `listing` as `reconcile-input.json` through the file-writing tool;
+   Write `answers` as `reconcile-input.json` through the file-writing tool;
    pass that file to the reconciler and parse its stdout as
    `decision`:
 
@@ -1779,7 +1767,7 @@ data flow, not an executable harness API.
    | `listing_failed` | **Stop**: report that the tracker refresh failed or was incomplete; do not change the parent's status |
    | `keep_in_progress` | Go to Step 4b |
    | `extract_and_close_eligible` | Verify the epic's closing authorization (below); if it has one, extract and close per the rule above (see the `manual-ops` note below when the parent carries that label). Otherwise **stop**: report that every remaining sub-issue is an extractable tail but the epic has no accepting verdict or waiver yet |
-   | `set_status` | When `decision.parentState` is `done` and the parent is an epic (its `isEpic` as `get_issue.ts` prints it; on the native transport, `listing.parentLabels` carries the configured epic label), verify its closing authorization (below) first; without one, transition it to `in_review` instead and report that it waits for an accepting verdict or a waiver. Transition the parent: `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" transition "<KEY>" <canonical-state> --post-merge` on the script transport; Linear native: `mcp__linear__save_issue({ id: issue.id, state: <mapped name> })`, only after `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" post-merge` shows that its `state` allows it. A parent the reconciler capped at `do_item.post_merge_state` gets that output's `closing` sentence in its closing comment |
+   | `set_status` | When `decision.parentState` is `done` and the parent is an epic (its `isEpic` as `get_issue.ts` prints it; on the native transport, `answers.parent.labels` carries the configured epic label), verify its closing authorization (below) first; without one, transition it to `in_review` instead and report that it waits for an accepting verdict or a waiver. Transition the parent: `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" transition "<KEY>" <canonical-state> --post-merge` on the script transport; Linear native: `mcp__linear__save_issue({ id: issue.id, state: <mapped name> })`, only after `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" post-merge` shows that its `state` allows it. A parent the reconciler capped at `do_item.post_merge_state` gets that output's `closing` sentence in its closing comment |
 
    **Closing authorization.** An epic may close only when its newest verdict
    from the repository's epic acceptance review accepts it, or when a person
@@ -1801,7 +1789,7 @@ data flow, not an executable harness API.
 
    **`manual-ops` guard on `extract_and_close_eligible`.** A parent carrying
    `manual-ops` can never reach `done`, only `ops_pending`. Check
-   `listing.parentLabels` before acting: if `manual-ops` is present, extract
+   `answers.parent.labels` before acting: if `manual-ops` is present, extract
    the tails but do not close the epic (a sweep tool's "no close" mode, if it
    has one). The same holds when `do_item.post_merge_state` is not `done`:
    extract the tails without closing, and move the epic to that state with

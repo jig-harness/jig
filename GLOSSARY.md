@@ -2119,9 +2119,9 @@ make, use the entry's term instead.
   implementation of that set for a particular tracker. The skills call the
   interface, so supporting a new tracker means writing an adapter, not
   editing the skills, except where a skill still calls Linear directly: the
-  review skill's deferral step (roadmap item 10), the one operation the
-  interface does not have yet (attaching a file), and a few reads of
-  Linear's own answers.
+  review skill's deferral step (roadmap item 10). Attaching a file is an
+  operation of the interface each adapter holds in the form its tracker
+  offers: an upload, the file in a comment, or a link to a hosted copy.
   [plugin/EXTENDING.md](plugin/EXTENDING.md#issue-tracker) lists
   them under "What still assumes Linear". Adapters for Linear, GitHub
   Issues and Jira are built; an adapter for a plan file kept in the

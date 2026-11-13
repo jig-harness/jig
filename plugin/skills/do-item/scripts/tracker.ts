@@ -21,6 +21,9 @@
  *     bun tracker.ts sync-plan-blocks <epic-key> [--dry-run]
  *     bun tracker.ts available-labels             # every label issues can carry
  *     bun tracker.ts facet-stores                 # where type, priority and size are kept
+ *     bun tracker.ts attachments <issue-key>      # the files attached to an issue
+ *     bun tracker.ts attach <issue-key> --input attachment.json
+ *     bun tracker.ts fetch-attachment <issue-key> <attachment-id> --out <file>
  *
  * `issue-states` reads item keys, one per line, and prints each key's
  * current state as `open`, `closed` (completed, canceled or duplicate) or
@@ -88,6 +91,16 @@
  * `--dry-run` it writes nothing. Run it again after a failure: it only does
  * what is left.
  *
+ * `attach` attaches a file in the form the tracker offers (`form`: Linear
+ * and Jira `upload`; GitHub Issues a `comment` carrying a text file that
+ * fits one, or a `link` to the `url` the input names), reading
+ * `lib/attachment-ops.ts`'s input; with `replace`, it then removes the
+ * older attachments with the same file name or title, once the issue lists
+ * the new one, and reports any it kept with the reason. A file the tracker
+ * can hold in no form is refused (exit 3, nothing written, the reason in
+ * `refused`). `fetch-attachment` writes an attachment's bytes to `--out`;
+ * one the tracker only links is refused (exit 3).
+ *
  * `sync-plan-blocks` writes the dependency edges of an epic's execution plan
  * as `blocks` relations the tracker lacks, so a dependency is stated in both
  * places; run it after the plan is written.
@@ -95,7 +108,8 @@
  * Output: JSON on stdout. Exit codes: 0 done, 2 usage (input the operation
  * cannot take), 1 the operation failed (the reason on stderr), a label,
  * project or issue that does not resolve to exactly one included; for
- * `claim`, 3 refused and 4 stood down; 5 the tracker's rate limit for this
+ * `claim`, 3 refused and 4 stood down; for `attach` and `fetch-attachment`,
+ * 3 refused; 5 the tracker's rate limit for this
  * credential is spent, with the time it resets on stderr
  * (`RATE-LIMITED until <time>`): the request it names was not sent or was
  * refused. A claim refused part way may have written its first step; the
@@ -130,6 +144,7 @@ import { consumerRoot, readOverlay } from "../../../shared/consumer.ts";
 import { syncPlanBlocks } from "./lib/plan-blocks.ts";
 import { executionPlanBlock } from "./select_execution_issue.ts";
 import { runEntry } from "./lib/cli.ts";
+import { ATTACHMENT_OPERATIONS } from "./lib/attachment-ops.ts";
 import { ownTrackerConfig } from "./lib/tracker/config.ts";
 import { closerSentence, parsePostMerge } from "./lib/post-merge.ts";
 import { issueKeysOf, ANY_KEY_SOURCE } from "./lib/tracker/keys.ts";
@@ -166,7 +181,10 @@ const USAGE = `usage:
   tracker.ts migrate-relations [--dry-run]
   tracker.ts sync-plan-blocks <epic-key> [--dry-run]
   tracker.ts available-labels
-  tracker.ts facet-stores`;
+  tracker.ts facet-stores
+  tracker.ts attachments <issue-key>
+  tracker.ts attach <issue-key>    (attachment as JSON on stdin)
+  tracker.ts fetch-attachment <issue-key> <attachment-id> --out <file>`;
 
 /** The machine-local claim mutex identity for one canonical tracker issue. */
 export function claimLockKey(
@@ -359,7 +377,7 @@ interface Operation {
   arity: number;
   takes: string;
   flags?: string[];
-  input?: "input" | "body-file";
+  input?: "input" | "body-file" | "out";
   /** Print the result indented, for a person reading a listing. */
   indent?: boolean;
   run: (args: string[], flags: Set<string>, input?: string) => Promise<unknown>;
@@ -712,6 +730,7 @@ const OPERATIONS: Record<string, Operation> = {
     indent: true,
     run: () => openTracker().facetStores(),
   },
+  ...ATTACHMENT_OPERATIONS,
 };
 
 /** Whether an error is the caller's input rather than a failed operation. */
