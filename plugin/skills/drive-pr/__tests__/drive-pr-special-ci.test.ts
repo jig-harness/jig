@@ -209,6 +209,15 @@ test("the CI report marks held failures and restores their repair provenance on 
   expect(released.failingCheckRunNames).toEqual(["custom sentinel", "gate"]);
 });
 
+test("a held selected failure does not resurrect its superseded attempt", async () => {
+  const f = setup();
+  const evidence = join(SCRIPTS, "lib/status/evidence.ts");
+  const source = `import {ciReportFor} from ${JSON.stringify(evidence)};const runs=[{name:"gate",id:1,status:"completed",conclusion:"failure",app:"github-actions",title:"",started:"2026-11-13T09:00:00Z"},{name:"gate",id:2,status:"completed",conclusion:"failure",app:"github-actions",title:"",started:"2026-11-13T09:01:00Z"}];console.log(JSON.stringify(await ciReportFor("example-org","example-repo",process.env.DRIVE_PR_POLICY_BASE,runs,false,"999")));`;
+  const held = JSON.parse((await child(f, source)).stdout);
+  expect(held.ci).toBe("held: gate");
+  expect(held.failingCheckNames).toEqual([]);
+});
+
 test("mixed failure provenance excludes advisory-only runs from the repair channel", async () => {
   const f = setup();
   const routing = join(SCRIPTS, "lib/driver/special-ci.ts");
