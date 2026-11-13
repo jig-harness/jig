@@ -1049,7 +1049,7 @@ area's paths, the build tools and the database conventions.
 
 The procedure skills (`review`, `fix-ci`, `github-actions`, `adr`, `descar`,
 `docs`, `promote-memory`, `programmatic-execution`, `design-brief-builder`, `decide`,
-`explain`, `red-team`, `resolve-conflicts`, `audit`, `jig`, `operator`) detect
+`explain`, `red-team`, `resolve-conflicts`, `audit`, `jig`, `operator`, `orchestrate`) detect
 what they need from the repository; set a field only when detection picks
 the wrong thing. `programmatic-execution`, `red-team`, `audit`, `jig` and
 `operator` read no field of their own (`operator` runs `jig ask` and
@@ -1060,6 +1060,15 @@ the repository's names to replace. `red-team` reads a
 document's kind from its frontmatter `type:` or its headings (`--kind`
 overrides) and takes the agent command for its fresh runs on the command
 line.
+
+`orchestrate` adds no configuration fields. It uses the repository and host's
+existing plan review surface and durable record facility, with chat review
+and a plain file outside the repository as fallbacks. Fresh filing sessions
+use the existing `file_issue` and `issue_tracker` settings; starting work on a
+dispatcher host uses [`dispatch.identity`](#dispatch) and the host's configured
+start procedure. Missing start configuration is a question for the person,
+not an identity or command the session invents. Its
+[procedure](skills/orchestrate/SKILL.md) names the runtime fallbacks.
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
