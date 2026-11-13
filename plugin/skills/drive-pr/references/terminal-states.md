@@ -90,8 +90,16 @@ head or tree stops its direct push and needs a validated review round.
 The JSON report (`--json`) carries `state`, `exit`, `reason`, the head pair, the
 `base` block (`refName`, `oid`, `drift`), the `merge` pair (`mergeable`,
 `stateStatus`), the reviewer's identity/status/reviewed-SHA, the work counts,
-and a `ci` verdict (`green`, or `failing:`, `pending:`, `cancelled:` or
+and a `ci` verdict (`green`, or `held:`, `failing:`, `pending:`, `cancelled:` or
 `unknown:` with the names) with the failing names and runs behind it.
+
+A live CI hold's intentional failing check reads `held:`, using M13's job
+shape or `ci.hold_sentinels`; it waits without repair and never counts as
+passing. Advisory-only failures (`ci.advisory_checks`) park under
+`reviewer-posture` with `8` before any repair. The framed options are Fix the
+finding (one repair attempt), Waive it (a recorded human judgment that does
+not bypass certification), and Leave it to me. Other failures alongside an
+advisory one keep their ordinary repair path.
 
 `base.drift` is the one field in the report that is **not** an input
 to any verdict. It is measured once per *counting* invocation — `--no-count`

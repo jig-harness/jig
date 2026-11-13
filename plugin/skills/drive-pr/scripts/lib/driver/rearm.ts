@@ -105,14 +105,28 @@ export function quotaRefusal(
 }
 
 /** The drive state, or `null` when it cannot be read (the gate then refuses). */
-export async function readDriveState(pr: string): Promise<DriveState | null> {
+export async function readDriveState(
+  pr: string,
+  report = false,
+): Promise<DriveState | null> {
   const res = await run(tsArgv(driveState, ["get", pr]), {
     stderr: "pipe",
     timeoutSec: helperTimeoutSeconds(),
   });
-  if (res.code !== 0) return null;
+  if (res.code !== 0) {
+    if (report)
+      console.error(
+        `Cannot read drive state for advisory CI (exit ${res.code}): ${res.stderr}`,
+      );
+    return null;
+  }
   const state = parseJson(res.stdout, "drive-state.ts get");
-  return isUsableState(state, Number.parseInt(pr, 10)) ? state : null;
+  if (isUsableState(state, Number.parseInt(pr, 10))) return state;
+  if (report)
+    console.error(
+      `Cannot read drive state for advisory CI: ${state === null ? "response is not a JSON state object" : "response does not satisfy the drive-state schema"}. ${res.stderr}`,
+    );
+  return null;
 }
 
 /** `text` as JSON, or `null` when it is not JSON. */

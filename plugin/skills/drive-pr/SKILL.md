@@ -302,6 +302,22 @@ CI-repair pass handed neither a run nor a check name has nothing to work from.
 Once the budget is spent — or on the first red if it is `0` — the drive takes
 the original exit-`1` stop and hands the red CI back for repair.
 
+**Held and advisory failures spend no automatic repair pass.** While the live
+CI hold label is present, a held-head check in M13's shape, or named in
+`ci.hold_sentinels`, reads as `held: …`, never green. Releasing the label
+restores ordinary failure handling. The lists come from the base branch;
+a stacked base cannot add names outside the integration branch's policy.
+When the converged head's only failing checks are in `ci.advisory_checks`,
+the driver parks once per head and check set under `reviewer-posture`
+(exit `8`), with **Fix the finding**, **Waive it**, and **Leave it to me**.
+A person's structured fix answer authorizes one repair attempt, retained
+across re-arms. Authorization is consumed before dispatch; a stop in that
+window can leave it spent without a pass, and requires a person to recover
+rather than an automatic retry that could duplicate work. A waiver records their judgment on the pull request; required
+checks and certification still apply. Mixed failures target repair at the
+non-advisory checks. When `autonomy.park_classes` omits `reviewer-posture`,
+`ci.advisory_checks` has no effect and the configuration check warns.
+
 **A failure of the infrastructure is re-run, not repaired.** Before it spends a
 repair pass, the driver reads each failed run's failed-step log against the
 rule `fix-ci` shares

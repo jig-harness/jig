@@ -582,6 +582,22 @@ fields:
   ci.hold_label:
     type: string
     read_by: [drive-pr]
+  ci.hold_sentinels:
+    type: list
+    items: string
+    distinct: true
+    default: []
+    repository_only: true
+    read_by: [drive-pr]
+    since: next
+  ci.advisory_checks:
+    type: list
+    items: string
+    distinct: true
+    default: []
+    repository_only: true
+    read_by: [drive-pr]
+    since: next
   ci.log_command:
     type: command
     read_by: [fix-ci]

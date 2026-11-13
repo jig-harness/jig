@@ -6,6 +6,7 @@
  */
 
 import { parseReviewRound } from "../../summary-findings.ts";
+import { liveHeldChecks } from "../held-checks.ts";
 import { suiteIdOf } from "../ci-hold.ts";
 import {
   isReviewerLogin,
@@ -688,24 +689,40 @@ export async function ciReportFor(
   head: string,
   runs: CheckRun[],
   runsUnreadable: boolean,
+  pr?: string,
 ): Promise<CiReport> {
   const statuses = await commitStatusesFor(owner, repo, head);
   const workflowRuns = await workflowRunsBehind(owner, repo, head, runs);
+  const held = pr === undefined ? [] : await liveHeldChecks(pr);
+  const heldRuns = readChecks(runs, workflowRuns).failing.filter((r) =>
+    held.includes(r.name),
+  );
+  const effectiveRuns = runs.filter((r) => !held.includes(r.name));
+  const verdict = ciVerdictOf(
+    effectiveRuns,
+    statuses,
+    runsUnreadable,
+    head,
+    workflowRuns,
+  );
   return {
-    ci: ciVerdictOf(runs, statuses, runsUnreadable, head, workflowRuns),
+    ci:
+      heldRuns.length > 0 && verdict === "green"
+        ? `held: ${heldRuns.map((r) => r.name).join(", ")}`
+        : verdict,
     failingCheckNames: failingNames(
-      runs,
+      effectiveRuns,
       statuses,
       runsUnreadable,
       workflowRuns,
     ),
     failingCheckRunNames: failingCheckRunNames(
-      runs,
+      effectiveRuns,
       runsUnreadable,
       workflowRuns,
     ),
     failingStatusNames: failingStatusNames(statuses),
-    failingRuns: failingRunsOf(runs, workflowRuns),
+    failingRuns: failingRunsOf(effectiveRuns, workflowRuns),
     failingStatuses: failingStatusesOf(statuses),
   };
 }
