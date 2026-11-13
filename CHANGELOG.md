@@ -394,6 +394,22 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.228.1] - 2026-11-13
+
+### Fixed
+
+- On Jira, a native priority can now be written with a scoped API token or an
+  OAuth access token that the gateway refuses on `priority/search`: the
+  adapter reads the site's priorities from `GET priority` instead, so
+  `tracker.ts create` and `update` set the priority.
+- `tracker.ts facet-stores` and the audit's tracker check now report a Jira
+  native priority store that cannot be used, naming the priority and the
+  reason: a name the site does not have, or a create screen of an issue type
+  Jig files without the priority field or without that value.
+- The note about the classic `read:jira-user` scope now appears only when the
+  account read (`myself`) is refused for its scope, not on any other request
+  refused with `scope does not match`.
+
 ## [0.228.0] - 2026-11-13
 
 ### Added
@@ -7952,7 +7968,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.228.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.228.1...HEAD
+[0.228.1]: https://github.com/jig-harness/jig/compare/v0.228.0...v0.228.1
 [0.228.0]: https://github.com/jig-harness/jig/compare/v0.227.2...v0.228.0
 [0.227.2]: https://github.com/jig-harness/jig/compare/v0.227.1...v0.227.2
 [0.227.1]: https://github.com/jig-harness/jig/compare/v0.227.0...v0.227.1
