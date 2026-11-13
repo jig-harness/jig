@@ -244,21 +244,21 @@ const message = (err: unknown): string =>
 interface Held {
   identifier: string;
   url: string | null;
-  sameText: boolean;
+  /** The issue body's lines, to compare against the entry's text as it stands when recorded. */
+  lines: string[];
 }
 
 /**
  * An issue the tracker already holds for the entry: one whose body carries
  * its identity line as a line of its own. An issue that only mentions the
  * source url, or names another fingerprint on it, is not this entry's.
- * `sameText` says whether it was filed from the entry's current text.
+ * `lines` lets a later read of the entry tell whether it was filed from that text.
  */
 async function alreadyFiled(
   tracker: Tracker,
   entry: DeferredEntry,
 ): Promise<Held | null> {
   const identity = identityLine(entry);
-  const text = textLine(entry);
   for (const hit of await tracker.searchIssues(entry.source, {
     includeClosed: true,
   })) {
@@ -271,7 +271,7 @@ async function alreadyFiled(
       return {
         identifier: issue.identifier,
         url: issue.url,
-        sameText: lines.includes(text),
+        lines,
       };
   }
   return null;
@@ -344,13 +344,13 @@ type Got = {
 
 /**
  * The issue for a `Held` one: reused, never searched for again, so it cannot
- * lead to a creation. `stale` marks one filed from an earlier text of the
- * entry, which must not replace the corrected entry.
+ * lead to a creation. `stale` marks one filed from a text other than the
+ * `entry`'s as it stands now, which must not replace the corrected entry.
  */
-const heldIssue = (found: Held): Got => ({
+const heldIssue = (found: Held, entry: DeferredEntry): Got => ({
   issue: { identifier: found.identifier, url: found.url },
   reused: true,
-  stale: !found.sameText,
+  stale: !found.lines.includes(textLine(entry)),
 });
 
 /**
@@ -364,7 +364,7 @@ async function issueOf(
 ): Promise<Got> {
   const found = await alreadyFiled(tracker, entry);
   return found !== null
-    ? heldIssue(found)
+    ? heldIssue(found, entry)
     : {
         issue: await tracker.createIssue(draft),
         reused: false,
@@ -560,7 +560,7 @@ async function fileOne(
   try {
     got =
       opts.how.held !== null
-        ? heldIssue(opts.how.held)
+        ? heldIssue(opts.how.held, entry)
         : await issueOf(
             tracker,
             entry,

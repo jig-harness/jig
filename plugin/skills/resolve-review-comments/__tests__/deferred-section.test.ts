@@ -42,13 +42,9 @@ import {
   withDeferredEntry,
   withFiledEntry,
 } from "../scripts/lib/deferred-section.ts";
-import type {
-  AnswerComment,
-  PrBody,
-  PrBodyForge,
-} from "../scripts/lib/pr-body.ts";
+import type { AnswerComment, PrBody } from "../scripts/lib/pr-body.ts";
+import { fakeForge, PR_URL } from "./deferred-forge.ts";
 
-const PR_URL = "https://github.com/example/project/pull/42";
 const THREAD = `${PR_URL}#discussion_r1001`;
 const FINDING =
   "The retry budget is read without validation.\n\nIt can go negative.";
@@ -64,52 +60,6 @@ const FACETS = resolveFacets(
   facetInputs(parseTrackerConfig({ issue_tracker: { adapter: "github" } })),
   { path: "label-taxonomy.yaml", ...JIG_TAXONOMY },
 );
-
-/** A pull request body in memory, with a hook that runs before each read. */
-function fakeForge(initial: string): PrBodyForge & {
-  state: PrBody;
-  beforeRead: Array<(s: PrBody) => void>;
-  writes: number;
-  answered: AnswerComment[];
-  failWrites: boolean;
-  /** The file each review thread is on, by its first comment. */
-  paths: Map<string, string>;
-  pathReads: number;
-} {
-  let clock = 0;
-  const state: PrBody = {
-    body: initial,
-    updatedAt: "2026-10-29T00:00:00Z",
-    url: PR_URL,
-  };
-  const forge = {
-    state,
-    beforeRead: [] as Array<(s: PrBody) => void>,
-    writes: 0,
-    answered: [] as AnswerComment[],
-    failWrites: false,
-    paths: new Map<string, string>(),
-    pathReads: 0,
-    async answers() {
-      return forge.answered;
-    },
-    async threadPaths() {
-      forge.pathReads += 1;
-      return forge.paths;
-    },
-    async read() {
-      forge.beforeRead.shift()?.(state);
-      return { ...state };
-    },
-    async write(_pr: string, body: string) {
-      if (forge.failWrites) throw new Error("the forge refused the write");
-      forge.writes += 1;
-      state.body = body;
-      state.updatedAt = `2026-10-29T00:00:0${++clock}Z`;
-    },
-  };
-  return forge;
-}
 
 describe("the deferred section", () => {
   test("is created at the end of the body and read back", () => {
@@ -845,6 +795,41 @@ describe("file-deferred.ts files each entry through the tracker", () => {
     ]);
     expect(calls.filter((c) => c.op === "TrackerCreate")).toHaveLength(0);
     expect(deferredEntries(forge.state.body)[0]?.filed?.key).toBe("#7");
+  });
+
+  test("an issue an interrupted run filed does not replace an entry corrected before its fresh read", async () => {
+    const forge = fakeForge(
+      withDeferredEntry("", {
+        source: THREAD,
+        finding: FINDING,
+        reason: "r",
+      }).body,
+    );
+    const [entry] = deferredEntries(forge.state.body);
+    const { t } = trackerThatFiles([
+      {
+        number: 7,
+        body: `Filed by file-deferred.ts.\n\n${identityLine({ source: THREAD })}\n${textLine({ text: entry?.text ?? "" })}`,
+      },
+    ]);
+    // The initial read, then the person corrects the entry before the fresh one.
+    forge.beforeRead.push(
+      () => undefined,
+      (st: PrBody) => {
+        st.body = st.body.replace(
+          "It can go negative.",
+          "It can go negative, corrected.",
+        );
+      },
+    );
+    const r = await fileDeferred(forge, t, "42", {
+      label: "pr-followup",
+      facets: FACETS,
+    });
+    expect(r.why).toContain("earlier text");
+    const now = deferredEntries(forge.state.body)[0];
+    expect(now?.filed).toBeUndefined();
+    expect(now?.text).toContain("corrected");
   });
 
   test("a dry run does not hand a person an entry whose issue a run already filed", async () => {
