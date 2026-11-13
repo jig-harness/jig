@@ -172,6 +172,7 @@ describe("steward evidence readers", () => {
       url: `https://example.test/pull/${number}`,
       headRefName: "topic",
       createdAt: "2026-01-03",
+      closingIssuesReferences: [],
     });
     const records = [
       {
@@ -186,16 +187,17 @@ describe("steward evidence readers", () => {
         next: { address: "drive@example/repo#8" },
       },
     ] as unknown as ReadRecord[];
-    const readJson: EvidenceJson = async () =>
-      ok([
-        pr(8, "OPEN", "Closes #7"),
-        pr(9, "MERGED", "Related to #7"),
-        pr(10, "CLOSED", "Closes #7"),
-        pr(11, "OPEN", "`Closes #7`"),
-        pr(12, "OPEN", "Closes #70"),
-        pr(13, "OPEN", "Related to other/repo#7"),
-        pr(14, "OPEN", "<!-- Implements #7 -->"),
-      ]);
+    const rows = [
+      pr(8, "OPEN", "Closes #7"),
+      pr(9, "MERGED", "Related to #7"),
+      pr(10, "CLOSED", "Closes #7"),
+      pr(11, "OPEN", "`Closes #7`"),
+      pr(12, "OPEN", "Closes #70"),
+      pr(13, "OPEN", "Related to other/repo#7"),
+      pr(14, "OPEN", "<!-- Implements #7 -->"),
+    ];
+    const readJson: EvidenceJson = async (args) =>
+      args[1] === "view" ? ok(rows[0]) : ok(rows);
     const read = await linkedPullRequests(
       "#7",
       observation,

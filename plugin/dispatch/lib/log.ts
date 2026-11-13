@@ -402,6 +402,10 @@ function sessionClass(
   r: ReadRecord,
   endedAt: string,
 ): { class: OutcomeClass; reason: string } {
+  // A steward that did not submit has no outcome, even if its retained output
+  // contains a Question line that the generic classifier can describe.
+  if (r.record.action === "steward" && r.result === null)
+    return sessionEndClass(r, endedAt);
   const result = sessionResultClass(
     r.result,
     r.state.kind === "ended" ? r.state.exit.said : undefined,

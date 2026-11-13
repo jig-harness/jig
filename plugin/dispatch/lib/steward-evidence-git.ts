@@ -1,7 +1,7 @@
 /** Read-only tree facts for a steward; unavailable facts never become clean trees. */
 import { statSync } from "node:fs";
 import { resolve } from "node:path";
-import { run } from "../../shared/proc.ts";
+import { gitIdentityEnv, run } from "../../shared/proc.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 
 export type EvidenceRead<T> = Outcome<T, "unreadable">;
@@ -69,7 +69,9 @@ export async function treeEvidence(
   path: string,
   room: EvidenceRoom,
 ): Promise<EvidenceRead<TreeEvidence>> {
-  const git = (args: string[]) => evidenceCommand(["git", ...args], path, room);
+  // This evidence is about `path`, not a caller-selected Git directory.
+  const git = (args: string[]) =>
+    evidenceCommand(["git", ...args], path, room, gitIdentityEnv());
   const head = await git(["rev-parse", "--verify", "HEAD"]);
   if (!head.ok) return head;
   const branch = await git(["rev-parse", "--abbrev-ref", "HEAD"]);

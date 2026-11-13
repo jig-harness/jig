@@ -94,7 +94,7 @@ export async function linkedPullRequests(
       "--limit",
       "50",
       "--json",
-      "number,url,state,headRefName,body,createdAt",
+      "number,url,state,headRefName,body,createdAt,closingIssuesReferences",
     ],
     observation,
     room,
@@ -105,8 +105,13 @@ export async function linkedPullRequests(
       "unreadable",
       "the item's pull requests did not read in full (limit 50)",
     );
-  const prs: Array<LinkedPullRequest & { body: string }> = [];
-  for (const p of read.value) {
+  const prs: Array<
+    LinkedPullRequest & {
+      body: string;
+      closing: ReadonlyArray<{ number: number; repository: string }> | null;
+    }
+  > = [];
+  const append = (p: unknown): EvidenceRead<null> => {
     if (
       !isRecord(p) ||
       !Number.isInteger(p.number) ||
@@ -120,7 +125,13 @@ export async function linkedPullRequests(
         "unreadable",
         "the item's pull request listing has unreadable fields",
       );
-    if (p.state !== "OPEN" && p.state !== "MERGED") continue;
+    if (p.state !== "OPEN" && p.state !== "MERGED") return ok(null);
+    const closing = closingReferences(p.closingIssuesReferences);
+    if (closing === undefined)
+      return failed(
+        "unreadable",
+        "the pull request's closing references did not read",
+      );
     const number = Number(p.number);
     const launch =
       records.find(
@@ -148,19 +159,54 @@ export async function linkedPullRequests(
       headRefName: p.headRefName,
       createdAt: p.createdAt,
       body: p.body,
+      closing,
       launch,
       launchProvenance: launch === null ? "unknown" : "inferred",
     });
+    return ok(null);
+  };
+  for (const p of read.value) {
+    const appended = append(p);
+    if (!appended.ok) return appended;
   }
-  const links = workLinks(
-    prs.map((p) => ({ ...p, closing: [] })),
-    {
-      keys,
-      branchPattern: observation.join.branchPattern,
-      repository: repo.slug,
-      issueRepository: observation.tracked.issueRepository,
-    },
-  );
+  // A body search cannot discover a pickup whose branch or recorded handoff
+  // carries the item key. Add those bounded, already-known PR candidates.
+  const known = records
+    .flatMap((r) => {
+      if (r.record.repo !== repo.slug || r.record.item !== target) return [];
+      const next = r.next;
+      if (next === null || next === undefined || !("address" in next))
+        return [];
+      const number = new RegExp(
+        `^drive@${escapeRegExp(repo.slug)}#([1-9]\\d*)$`,
+      ).exec(next.address)?.[1];
+      return number === undefined ? [] : [number];
+    })
+    .filter((number) => !prs.some((pr) => pr.number === Number(number)));
+  for (const number of known) {
+    const candidate = await readJson(
+      [
+        "pr",
+        "view",
+        number,
+        "--repo",
+        repo.slug,
+        "--json",
+        "number,url,state,headRefName,body,createdAt,closingIssuesReferences",
+      ],
+      observation,
+      room,
+    );
+    if (!candidate.ok) return candidate;
+    const appended = append(candidate.value);
+    if (!appended.ok) return appended;
+  }
+  const links = workLinks(prs, {
+    keys,
+    branchPattern: observation.join.branchPattern,
+    repository: repo.slug,
+    issueRepository: observation.tracked.issueRepository,
+  });
   return ok(
     prs
       .filter(
@@ -173,6 +219,41 @@ export async function linkedPullRequests(
       )
       .map(({ body: _body, ...p }) => p),
   );
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** A partial closing-reference connection is unknown, never an empty link set. */
+function closingReferences(
+  value: unknown,
+): ReadonlyArray<{ number: number; repository: string }> | null | undefined {
+  if (Array.isArray(value))
+    return value.every(
+      (reference) =>
+        isRecord(reference) &&
+        Number.isInteger(reference.number) &&
+        isRecord(reference.repository) &&
+        typeof reference.repository.nameWithOwner === "string",
+    )
+      ? value.map((reference) => {
+          const row = reference as Record<string, unknown>;
+          const repository = row.repository as Record<string, unknown>;
+          return {
+            number: Number(row.number),
+            repository: String(repository.nameWithOwner),
+          };
+        })
+      : undefined;
+  if (
+    !isRecord(value) ||
+    !Array.isArray(value.nodes) ||
+    !isRecord(value.pageInfo)
+  )
+    return undefined;
+  if (value.pageInfo.hasNextPage !== false) return null;
+  return closingReferences(value.nodes);
 }
 
 interface NamedConclusion extends CheckConclusion {

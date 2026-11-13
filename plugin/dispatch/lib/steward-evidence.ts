@@ -84,6 +84,8 @@ interface EvidenceContext {
   room: EvidenceRoom;
   readers: StewardEvidenceReaders;
   checkCache: Map<number, EvidenceRead<PullRequestChecks>>;
+  /** Optional evidence must not consume the forge's reserve for the tick. */
+  forgeReadsLeft: number | null;
 }
 
 function targetNames(context: EvidenceContext, queue: PoolIssue[]): string[] {
@@ -110,6 +112,13 @@ function targetNames(context: EvidenceContext, queue: PoolIssue[]): string[] {
 function budgetAvailable(context: EvidenceContext): boolean {
   const left = context.room();
   return left === null || left >= 1000;
+}
+
+function takeForgeReads(context: EvidenceContext, count: number): boolean {
+  if (context.forgeReadsLeft === null) return true;
+  if (context.forgeReadsLeft < count) return false;
+  context.forgeReadsLeft -= count;
+  return true;
 }
 
 function noBudget(): EvidenceRead<never> {
@@ -194,7 +203,8 @@ async function readPullRequests(
 ): Promise<EvidenceRead<LinkedPullRequest[]>> {
   const refusal = forgeRefusal(context);
   if (refusal !== null) return refusal;
-  if (!budgetAvailable(context)) return noBudget();
+  if (!budgetAvailable(context) || !takeForgeReads(context, 1))
+    return noBudget();
   if (/^PR #[1-9]\d*$/.test(target)) return ok([]);
   return context.readers.prs(
     target,
@@ -220,6 +230,9 @@ async function readChecks(
   for (const pr of checkPrs) {
     let read = context.checkCache.get(pr);
     if (read === undefined) {
+      // `pullRequestChecks` reads the PR plus head/base check runs and
+      // statuses: five forge requests per uncached pull request.
+      if (!takeForgeReads(context, 5)) return noBudget();
       read = await context.readers.checks(
         pr,
         context.observation,
@@ -265,6 +278,15 @@ export async function collectStewardEvidence(
     room,
     readers,
     checkCache: new Map(),
+    forgeReadsLeft:
+      observation.forgeBudget === undefined ||
+      !("remaining" in observation.forgeBudget)
+        ? null
+        : Math.max(
+            0,
+            observation.forgeBudget.remaining -
+              Math.ceil(observation.forgeBudget.limit * 0.1),
+          ),
   };
   const results: StewardTargetEvidence[] = [];
   for (const target of targetNames(context, queue))
