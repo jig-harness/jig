@@ -1295,6 +1295,7 @@ repository. What a run may start is the machine's to say, in
 | `dispatch.states` | nonempty list of [canonical states](#issue_tracker), without `in_progress` (the state `do-item`'s claim moves an item to), `pr_open`, `blocked`, or a state whose configured tracker name shares `pr_open`'s name | `[todo]` | dispatch |
 | `dispatch.followup_command` | string | None: no follow-ups. Jig's own is `/followup`; a consumer repository names its own post-merge command, which claims the follow-up with `jig dispatch marker` as [the plugin's README](README.md#the-dispatcher) says | dispatch |
 | `dispatch.stalled_after` | duration (`90s`, `30m`, `1h`) | `30m`: a claimed item (assigned to `identity` in `in_progress`, or in a distinctly named `pr_open` state) with no running session for longer is reported as a stalled pickup, never relaunched. A served person's item in those states is watched only when a pickup of this host claimed it: the rest is their own work. A `pr_open` state that shares a name with `in_review` is not watched, because that name also holds merged items | dispatch |
+| `dispatch.stalled_scope` | `claimed`, `assigned` | `claimed`: the stall watch (`stalled_after`) reads one of `identity`'s claimed items as a pickup only when a launch record of this host took it, or a trusted claim marker (`do_item.claim_marker`) is on it; any other is quiet, its idle clock never starts. `assigned` watches every item assigned to `identity` in those states, for a repository whose `identity` nobody else uses. Each item's claim markers are read once per change of the item. A double claim is reported either way | dispatch |
 | `dispatch.blocked_after` | duration | `30m`: a session the dispatcher started that its runtime reports waiting (on a question or a permission prompt) for longer is reported; it keeps its slot | dispatch |
 | `dispatch.drive_rounds_flat` | positive whole number | `3`: a drive the dispatcher launched drifts when its unresolved review threads at the latest round the dispatcher recorded are not below the count this many recorded rounds earlier | dispatch |
 | `dispatch.pickup_within` | duration | `2h`: a pickup the dispatcher launched that has opened no pull request by then drifts | dispatch |
@@ -1352,7 +1353,10 @@ joins to is a double claim, and one idle past `stalled_after` a stalled
 pickup; both are reported and nothing is started for them. A pickup whose
 session ended without claiming the item is not started again until the
 item leaves the dispatch states or its assignment for one run and comes
-back. A pull request merged
+back, or a person's label (`jig:hold`, the human-in-the-loop or
+manual-operations label) holds it, in a served person's queue or the ready
+pool, while it is not claimed: once the label is off, the item is picked up
+again, unless its pickup recorded `done`, which a hold never releases. A pull request merged
 since the follow-up stage's start wants `followup_command`. That start
 (`followup_since`) is the machine's, not the repository's:
 `jig dispatch --followup-since <date>` sets it, and otherwise each run keeps
@@ -1733,6 +1737,7 @@ dispatch:
   states: [todo]
   followup_command: /post-merge
   stalled_after: 30m
+  stalled_scope: claimed
   blocked_after: 30m
   drive_rounds_flat: 3
   pickup_within: 2h

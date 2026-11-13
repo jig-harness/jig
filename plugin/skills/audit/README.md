@@ -23,7 +23,9 @@ added since, and it does not repeat a recommendation the team declined.
    [configuration schema](config-schema.yaml) and against the repository:
    unknown, refused or deprecated fields, wrong types, commands and paths that
    do not exist, required checks that never run, a tracker that cannot be
-   reached, declared values the repository contradicts (`stacking: none` with
+   reached, configured GitHub, Jira or Linear facet stores that cannot be used,
+   counts of open Jira issues before and after the configured
+   pool issue-type scope, declared values the repository contradicts (`stacking: none` with
    stacked pull requests open), tracker labels its label taxonomy does not
    define, and settings its shape suggests. It also reports what a run
    would trip over: a checkout behind its integration branch, a leftover

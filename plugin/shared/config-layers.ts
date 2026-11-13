@@ -75,6 +75,7 @@ export const REPOSITORY_ONLY_FIELDS: readonly string[] = [
   "dispatch.states",
   "dispatch.followup_command",
   "dispatch.stalled_after",
+  "dispatch.stalled_scope",
   "dispatch.blocked_after",
   "dispatch.drive_rounds_flat",
   "dispatch.pickup_within",
