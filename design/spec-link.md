@@ -74,8 +74,8 @@ every one it finds rather than the first:
    a layout present in the repository turns its adapter on, and
    `specs.adapters` only orders or restricts them.
 3. **The tracker.** Documents and attachments the adapter exposes on the
-   issue, when the tracker interface gains the attachment operation
-   ([the plan](plan.md), item 12).
+   issue, read through the tracker interface's attachment operations
+   (`tracker.ts attachments` and `fetch-attachment`).
 
 Keeping every reference needs the rules below, so that one line cannot
 discharge two criteria and one criterion is not counted twice:
@@ -284,7 +284,8 @@ recommendation names the adapter the repository's layout would turn on.
    makes it a required check on the base branch. Until a repository installs it, the
    criterion scores `advisory` there.
 5. **`review`, `file-issue`, `followup`, the epic close.**
-6. **The tracker source**, once the tracker interface has attachments.
+6. **The tracker source**, through the tracker interface's attachment
+   operations.
 
 ## Left out
 
