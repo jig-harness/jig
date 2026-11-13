@@ -79,12 +79,19 @@ export function classifyFailures(
   };
 }
 
+/** Removes one `${{ … }}` wrapper, scanning from each end rather than backtracking. */
+function unwrapExpression(value: string): string {
+  let text = value.trim();
+  if (text.startsWith("${{") && text.endsWith("}}")) {
+    text = text.slice(3, -2).trim();
+  }
+  return text;
+}
+
 /** M13's exact hold-label test, optionally wrapped in an expression. */
 function holds(value: unknown, label: string): boolean {
   if (typeof value !== "string") return false;
-  const bare = value
-    .replace(/^\s*\$\{\{\s*|\s*\}\}\s*$/g, "")
-    .replace(/\s/g, "");
+  const bare = unwrapExpression(value).replace(/\s/g, "");
   return (
     bare === `contains(github.event.pull_request.labels.*.name,'${label}')` ||
     bare === `contains(github.event.pull_request.labels.*.name,"${label}")`
@@ -116,9 +123,7 @@ export function sentinelNames(workflow: unknown, label: string): string[] {
     )
       return [];
     const condition =
-      typeof job.if === "string"
-        ? job.if.replace(/^\s*\$\{\{\s*|\s*\}\}\s*$/g, "").trim()
-        : undefined;
+      typeof job.if === "string" ? unwrapExpression(job.if) : undefined;
     const runsHeld =
       condition === "!cancelled()" ||
       (condition === undefined && job.needs === undefined);

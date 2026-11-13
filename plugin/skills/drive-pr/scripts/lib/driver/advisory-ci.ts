@@ -14,7 +14,11 @@ import { readDriveState } from "./rearm.ts";
 /** The same head and findings share one park, without parsing check-name delimiters. */
 export function advisoryKey(head: string, names: readonly string[]): string {
   return `ci-advisory-${head}-${createHash("sha256")
-    .update(JSON.stringify([...new Set(names)].sort()))
+    .update(
+      JSON.stringify(
+        [...new Set(names)].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)),
+      ),
+    )
     .digest("hex")
     .slice(0, 16)}`;
 }
