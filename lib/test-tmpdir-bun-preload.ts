@@ -22,7 +22,9 @@
 // Deliberate residual: no teardown hook runs when the process is killed by a
 // signal, so a suite torn down by a CI timeout or a deadman leaves its root
 // behind. That is one prefixed directory tree per killed run, which an
-// registered collector reports with its owner record. Installing SIGINT/SIGTERM handlers here
+// registered collector can remove only after its durable fixture membership
+// proves every child gone. A native launch or missing acknowledgement keeps
+// the scope unverified. Installing SIGINT/SIGTERM handlers here
 // would change Ctrl-C semantics for every test process to reclaim that
 // remainder, which is not a trade worth making.
 //
@@ -45,5 +47,5 @@ process.env.BUN_RUNTIME_TRANSPILER_CACHE_PATH ??= join(
   "cache",
   "@t@",
 );
-const scope = scopeTestTmpdir();
+const scope = scopeTestTmpdir({ fixtureStartup: true });
 afterAll(() => scope.release());

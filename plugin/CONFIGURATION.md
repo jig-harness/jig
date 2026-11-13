@@ -1225,6 +1225,15 @@ remote URL, and newly widened base declarations cannot grant deletion authority.
 A report reads the checkout and names that source. An uninstalled repository
 can be reported but cannot be collected.
 
+`--kind scratch` does not discover undeclared temporary directories. To
+inventory Jig's test scopes, include `scratch` in `gc.kinds` and declare the
+system temporary directory plus the `jig-test-tmp.` name prefix in
+`gc.scratch_prefixes` (for example, `/tmp/jig-test-tmp.` on a host using
+`/tmp`). Refresh the installed collector after changing its bounds. Persistent
+test registrations permit collection only where they prove the scope's
+holders gone. Unresolved child launches and legacy scratch remain retained.
+See [test scratch](gc/README.md#test-scratch) for the ownership checks.
+
 ### The machine's collection policy
 
 These settings live only in the user file (`$JIG_HOME/jig.yaml`, default

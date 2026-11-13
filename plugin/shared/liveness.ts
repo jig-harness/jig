@@ -50,6 +50,7 @@ import { homedir, hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { errnoCode, swallow } from "./errors.ts";
 import { isRecord } from "./guards.ts";
+import { fixtureObserver } from "./fixture-observer.ts";
 import { failed, ok, type Outcome } from "./outcome.ts";
 import {
   parsePosixProcessTable,
@@ -189,9 +190,11 @@ function machineId(): string {
 
 function platformUuid(): string {
   try {
-    const result = Bun.spawnSync(
-      ["/usr/sbin/ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
-      { stdout: "pipe", stderr: "pipe", timeout: 5000 },
+    const result = fixtureObserver(() =>
+      Bun.spawnSync(
+        ["/usr/sbin/ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
+        { stdout: "pipe", stderr: "pipe", timeout: 5000 },
+      ),
     );
     const found = /"IOPlatformUUID"\s*=\s*"([0-9A-Fa-f-]{36})"/.exec(
       result.stdout.toString(),
@@ -331,12 +334,14 @@ function processRow(
   const windows = process.platform === "win32";
   let result: ReturnType<typeof Bun.spawnSync>;
   try {
-    result = Bun.spawnSync(rowProbe(pid, windows), {
-      env: { ...process.env, LC_ALL: "C" },
-      timeout: timeoutMs,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    result = fixtureObserver(() =>
+      Bun.spawnSync(rowProbe(pid, windows), {
+        env: { ...process.env, LC_ALL: "C" },
+        timeout: timeoutMs,
+        stdout: "pipe",
+        stderr: "pipe",
+      }),
+    );
   } catch (error) {
     swallow(error, "no process table to read");
     return null;

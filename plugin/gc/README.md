@@ -47,8 +47,8 @@ user's own fetches. See
 
 | Kind         | Behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tool-state` | Runs drive-pr's state reaper in report mode for each configured clone: the files a clone keeps beside the drive's database that the reaper would retire. Receipts retain its full per-family proof. Collection remains disabled until state creators hold shared admission across every state use; the reaper's lock excludes only other reapers.                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `scratch`    | Inventories only declared directory prefixes. Owner records include captured process creation identities; a live owner anywhere in the subtree keeps the root. Where the identity cannot be captured (no readable process table), the record says so and the root is kept as unverified. Missing ownership is a finding. Collection remains disabled until fixture registration proves all holders gone.                                                                                                                                                                                                                                                                                                                                                 |
+| `tool-state` | Runs drive-pr's state reaper in report mode for each configured clone: the files a clone keeps beside the drive's database that the reaper would retire. Receipts retain its full per-family proof. Collection remains disabled until state creators hold shared admission across every state use; the reaper's lock excludes only other reapers.                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `scratch`    | Inventories only declared directory prefixes. Owner records include captured process creation identities; a live owner anywhere in the subtree keeps the root. Where the identity cannot be captured (no readable process table), the record says so and the root is kept as unverified. Missing ownership is a finding. Registered test scopes can be collected only when their persistent registration proves every holder gone; incomplete registrations and other scratch remain report-only.                                                                                                                                                                                                                                                                                                                                                 |
 | `worktrees`  | Reports Git changes, hidden index flags, operations, pull request state, remote commit coverage, process holders and idleness. The primary checkout and paths outside declared roots are excluded. Ignored local content needs preservation evidence, except a detected package manager's dependency directory (`node_modules`, wherever it sits in the tree), which is rebuildable from the root `package.json` and tracked lockfile and never vetoes on its own; the receipt lists the paths set aside this way. A worktree [Orca](https://www.onorca.dev) manages is marked `runtime: orca` and collected through Orca ([below](#worktrees-orca-manages)); any other eligible worktree remains report-only until the opener shares session admission. |
 | `receipts`   | Machine kind; removes receipts past retention while preserving the latest completed report for each repository and kind. Unfinished receipts and runs whose inventory failed never take that place.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 
@@ -61,6 +61,44 @@ needs inspection; it is never stolen on age, and the refusal names its
 creator and why that creator counts as gone.
 Worktree openers have not adopted that protocol, so clean or merged worktrees
 are reported only, except those a workspace runtime manages.
+
+### Test scratch
+
+`--kind scratch` selects a kind; it does not grant access to the system's
+temporary directory. Declare the directory-name prefix in the repository's
+`gc.scratch_prefixes`, include `scratch` in `gc.kinds`, and install or refresh
+the collector so its confirmed bounds include that prefix. For Jig's test
+scopes on a host whose system temporary directory is `/tmp`, the prefix is
+`/tmp/jig-test-tmp.`. Other hosts use their actual temporary directory.
+Report the declaration before enabling collection:
+
+```sh
+jig gc --repo <repository> --kind scratch --json
+```
+
+Jig's test preload records scopes and child launches outside the disposable
+scope. Those records survive a killed test runner and can identify a scope
+that a surviving child recreated without its original owner file. The
+collector still inspects only roots within the declared prefixes.
+
+A participating Bun child records its own identity and further launches
+before running fixture code. Participation requires the current Bun
+executable, `--no-env-file` and an explicit empty `--config`. The launcher
+pins a private configuration snapshot before execution. This path supports
+direct file or evaluation programs without additional application arguments.
+Unsupported startup
+options, nested test runners, shell commands and workers leave unresolved
+records. A dead parent or a sampled process table never clears that
+uncertainty. The collector reports that reason and keeps the scope. Legacy
+scopes and other scratch remain report-only.
+
+Collection requires a complete registration, verified process identities,
+and the configured idle guard. Process cleanup and directory removal are
+separate receipt entries. Once the registered runner has exited, collection
+can reap its registered children. The directory stays until another proof
+confirms every holder gone. The collector checks again under exclusive
+scratch admission before each action. It does not sweep at test startup or
+use age as ownership evidence.
 
 ### Detached worktrees
 
@@ -350,7 +388,7 @@ collects, and new heavy runs wait behind it. A heavy run that hangs therefore
 holds back every new run on the machine until the collection's lock wait
 (`LOCK_TIMEOUT`) runs out; set a shorter one for the job where that is too long. The design's later container, branch
 and process kinds wait for the first-stage rollout to run in a working
-repository; scratch remains report-only until the process stage.
+repository. Registered test scopes have conditional collection; other scratch remains report-only.
 
 This implements the resource lifecycle practice of
 [M12](https://github.com/jig-harness/jig/blob/main/modules/M12-parallel-agent-ergonomics/README.md).
