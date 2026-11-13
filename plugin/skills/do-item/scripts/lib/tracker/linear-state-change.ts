@@ -16,8 +16,14 @@ import type { Assigner } from "./port.ts";
 /** An issue whose latest move into its state cannot be traced. */
 class StateChangeError extends Error {}
 
-const ACTOR =
-  "id name guest teams(filter: { key: { eq: $team } }) { nodes { key } }";
+/**
+ * What a history read takes of the user who made a change. The team
+ * connection is bounded because Linear prices an unbounded one at its
+ * default page of 50 for every history node (6,013 points for a 57-node
+ * history against 623 with the bound); the filter leaves at most one team.
+ */
+export const ACTOR =
+  "id name guest teams(first: 1, filter: { key: { eq: $team } }) { nodes { key } }";
 
 const STATE_HISTORY = `
 query TrackerStateHistory($id: String!, $team: String!, $after: String) {
