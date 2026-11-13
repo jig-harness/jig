@@ -394,6 +394,17 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.227.1] - 2026-11-13
+
+### Fixed
+
+- On Jira, the drive-ledger projection now sends the `issue_tracker.jira.blocked_fields`
+  the transition into the blocked status carries on its screen with the move itself, so a
+  workflow whose transition requires the blocker reason accepts the move instead of refusing it
+  before the fields were written. Fields not on the transition's screen are still written by an
+  update after the move, and the return move is unchanged. A move Jira still refuses names the
+  transition, Jira's message, and which fields went with it.
+
 ## [0.227.0] - 2026-11-13
 
 ### Changed
@@ -7908,7 +7919,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.227.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.227.1...HEAD
+[0.227.1]: https://github.com/jig-harness/jig/compare/v0.227.0...v0.227.1
 [0.227.0]: https://github.com/jig-harness/jig/compare/v0.226.2...v0.227.0
 [0.226.2]: https://github.com/jig-harness/jig/compare/v0.226.1...v0.226.2
 [0.226.1]: https://github.com/jig-harness/jig/compare/v0.226.0...v0.226.1
