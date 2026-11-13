@@ -17,7 +17,7 @@ values generated from the code, their meaning written beside them in the
 code, and a gate that fails the build when the chapter and the code
 disagree.
 
-This is the design of [plan.md](plan.md) item 51. Nothing of it is built
+This is the design of [plan.md](plan.md) item 53. Nothing of it is built
 yet. The decision that a chapter and the code must agree is
 [ADR-0020](../docs/adr/ADR-0020-protocol-chapters-are-generated-and-gated.md).
 
