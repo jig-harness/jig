@@ -12,6 +12,7 @@ import type {
   LabelWrite,
   LaunchOutcome,
   NotifyOutcome,
+  PrOpenMove,
   ReleaseOutcome,
   RepoReport,
   RetireOutcome,
@@ -45,6 +46,21 @@ function releaseLine(r: ReleaseOutcome): string {
   return `  ${r.outcome.padEnd(8)} release ${r.target} (marker comment ${r.marker}, ${r.claimant}): ${r.detail}`;
 }
 
+/** A stalled pickup's move to `pr_open`: what `--apply` did, or what the plan wants. */
+function moveLine(m: PrOpenMove, verb: string): string {
+  const what = `move     ${m.target} to ${m.to} (pull request #${m.pr} from ${m.branch}, record ${m.record})`;
+  return m.outcome === undefined
+    ? `  ${verb} ${what}`
+    : `  ${m.outcome.padEnd(8)} ${what}: ${m.detail ?? ""}`;
+}
+
+/** The moves to `pr_open` the plan wants and `--apply` did not act on. */
+function plannedMoves(r: RepoReport, verb: string): string[] {
+  return (r.prOpenMoves ?? [])
+    .filter((m) => m.outcome === undefined)
+    .map((m) => moveLine(m, verb));
+}
+
 function steerLine(s: SteerOutcome): string {
   return `  ${s.outcome.padEnd(10)} steer  ${s.target} (record ${s.record}, wall ${s.episode}): ${s.detail}`;
 }
@@ -56,6 +72,9 @@ function outcomeLines(r: RepoReport): string[] {
   return [
     ...r.launches.map(launchLine),
     ...(r.releases ?? []).map(releaseLine),
+    ...(r.prOpenMoves ?? [])
+      .filter((m) => m.outcome !== undefined)
+      .map((m) => moveLine(m, "")),
     ...(r.steers ?? []).map(steerLine),
     ...notified.map(noticeLine),
     ...(r.noticesWorkspace === undefined
@@ -94,7 +113,7 @@ function repoLines(r: RepoReport, apply: boolean): string[] {
     lines.push(
       `  ${verb} ${a.stage.padEnd(8)} ${a.target}${a.cause === undefined ? "" : ` (${a.cause})`}, wanted by the ${a.record}: ${a.reason}${evidence(a.evidence)}`,
     );
-  lines.push(...outcomeLines(r));
+  lines.push(...plannedMoves(r, verb), ...outcomeLines(r));
   for (const x of r.running)
     lines.push(`  running  ${x.stage.padEnd(8)} ${x.target}: ${x.reason}`);
   for (const u of r.unplaced)
