@@ -9,6 +9,7 @@ import { stateDb } from "./state.ts";
 import type { Action, DrivenPr } from "./types.ts";
 import type { FailureRow } from "./failures.ts";
 import type { LineLoad } from "./dashboard-contract.ts";
+import type { StewardTargetEvidence } from "./steward-evidence.ts";
 
 export const STEWARD_DEADLINE_SEC = 900;
 export const STEWARD_RESUME =
@@ -47,6 +48,10 @@ export interface StewardDigest {
   failures: FailureRow[];
   load: LineLoad | null;
   history?: unknown[];
+  /** Facts read for this digest, never authority for applying a record. */
+  targets?: StewardTargetEvidence[];
+  /** Current targets are always first; only this many additional historical targets are read. */
+  targetHistoryLimit?: number;
 }
 export interface StewardRun {
   id: string;
@@ -132,6 +137,9 @@ export function digestHash(digest: StewardDigest): string {
       a.identifier.localeCompare(b.identifier),
     ),
     passes: [...stable.passes].sort((a, b) => a.record.localeCompare(b.record)),
+    targets: stable.targets?.toSorted((a, b) =>
+      a.target.localeCompare(b.target),
+    ),
     failures: [...stable.failures].sort((a, b) => a.key.localeCompare(b.key)),
     history: [...(stable.history ?? [])].sort((a, b) =>
       JSON.stringify(a).localeCompare(JSON.stringify(b)),

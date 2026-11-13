@@ -47,6 +47,7 @@ const LOW_BUDGET_SHARE = 0.1;
 export const OPTIONAL_READS = [
   "thread samples",
   "serialization's changed files and threads",
+  "the steward's linked pull requests and check histories",
 ];
 
 /** Whether `budget` is low: under `LOW_BUDGET_SHARE` of its limit left. One that does not read is not. */

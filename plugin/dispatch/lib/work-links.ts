@@ -310,9 +310,24 @@ function sameRepository(a: string, b: string): boolean {
 
 /** The keys a description closes, in canonical form, each once, in the order written. */
 export function closingKeys(body: string, keys: IssueKeys): string[] {
+  return descriptionKeys(body, keys, CLOSING);
+}
+
+/** Keys mentioned as evidence, with no implication that the description closes them. */
+export function mentionedKeys(body: string, keys: IssueKeys): string[] {
+  const matches = assertedText(body).matchAll(new RegExp(keys.source, "gi"));
+  const normalized = [...matches].map((match) => keys.normalize(match[0]));
+  return [...new Set(normalized.filter((key): key is string => key !== null))];
+}
+
+function descriptionKeys(
+  body: string,
+  keys: IssueKeys,
+  relation: string,
+): string[] {
   const key = keys.source;
   const line = new RegExp(
-    `(?<![\\w-])${CLOSING}(?::[ \\t]*|[ \\t]+)(${key}(?:${SEP}${key})*)`,
+    `(?<![\\w-])${relation}(?::[ \\t]*|[ \\t]+)(${key}(?:${SEP}${key})*)`,
     "gi",
   );
   const found: string[] = [];

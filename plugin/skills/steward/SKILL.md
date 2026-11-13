@@ -66,7 +66,10 @@ re-armed three times in a week becomes a reflection finding proposing a rule.
 bun --no-env-file --config="<skill-dir>/../../dispatch/bunfig.toml" "<skill-dir>/scripts/steward.ts" submit "<launch-id>" "<token>" --input "<records.json>"
 ```
 
-Submit once, including an empty array when no change is justified. Report
+Submit once, including an empty array when no change is justified. Verify
+that the command succeeds with `{"submitted":true}` before reporting
+completion. A read or submit failure must be reported explicitly; it is
+never a successful submission. Report
 what stays a person's and end the pass. The dispatcher enforces its
 15-minute deadline and starts no steward while the digest stays unchanged.
 

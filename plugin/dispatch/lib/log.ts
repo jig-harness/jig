@@ -48,6 +48,7 @@ import {
   targetOf,
 } from "./launches.ts";
 import { sessionResultClass } from "./session-result-class.ts";
+import { stewardNoSubmitCause } from "./pass-output.ts";
 import { existingStateDb, stateDb } from "./state.ts";
 
 /**
@@ -428,9 +429,13 @@ function sessionEndClass(
         : `its agent finished ${s.agent}`
       : goneWithoutExit(s);
   const wall = wallAtEnd(r, endedAt);
+  const reason =
+    r.record.action === "steward"
+      ? `steward ended without submitting; cause: ${stewardNoSubmitCause(s.kind === "ended" ? (s.exit.context ?? "") : "")}; ${how}`
+      : `no result recorded; ${how}`;
   return wall === null
-    ? { class: "died", reason: `no result recorded; ${how}` }
-    : { class: "quota wall", reason: `no result recorded; ${how}; ${wall}` };
+    ? { class: "died", reason }
+    : { class: "quota wall", reason: `${reason}; ${wall}` };
 }
 
 /** The class and reason of a record that ended, first match in table order. */
