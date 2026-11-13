@@ -4,6 +4,7 @@
  * says what kind of fact that word is. The legend is built from this mapping,
  * so it cannot drift from what the rows show.
  */
+import type { Stage } from "./icons.ts";
 
 export type RoleKey =
   | "needs"
@@ -156,16 +157,6 @@ const RECORDED: Record<RecordedSet, Record<string, RoleKey>> = {
   },
 };
 
-/** One mark per stage. */
-const STAGES: Record<string, string> = {
-  pickup: "+",
-  rearm: "↻",
-  takeover: "⇄",
-  followup: "»",
-  notify: "*",
-  steer: "^",
-};
-
 /** The words the running panel's readers need, each with what it means. */
 export const TERMS: Array<{ word: string; meaning: string }> = [
   {
@@ -191,7 +182,7 @@ export const TERMS: Array<{ word: string; meaning: string }> = [
 ];
 
 /** What each stage does, for the popover its chip opens. */
-const STAGE_MEANINGS: Record<string, string> = {
+const STAGE_MEANINGS: Record<Stage, string> = {
   pickup:
     "Starting a tracker item assigned to the factory identity: one workspace and one do-item session.",
   rearm:
@@ -204,14 +195,21 @@ const STAGE_MEANINGS: Record<string, string> = {
     "Telling a person, once per cause, about a stop only a person can settle.",
   steer:
     "The one fixed prompt the dispatcher may send by itself: “continue”, to a session waiting after a usage limit that has since reset.",
+  steward:
+    "A pass on the owner's host that reads the stopped work and the assigned queue, and records the recoveries it may make and what needs a person.",
 };
 
 /** What a stage does; a stage the page does not know says so. */
 export function stageMeaning(stage: string): string {
   return Object.hasOwn(STAGE_MEANINGS, stage)
-    ? (STAGE_MEANINGS[stage] ?? "")
+    ? (STAGE_MEANINGS[stage as Stage] ?? "")
     : "A stage this page has no description for.";
 }
+
+/** Every stage with what it means, for the help view. */
+export const STAGE_LEGEND = Object.entries(STAGE_MEANINGS).map(
+  ([name, meaning]) => ({ name, meaning }),
+);
 
 /** Where a queued target came from, for the popover its chip opens. */
 const SOURCE_MEANINGS: Record<string, string> = {
@@ -253,11 +251,6 @@ export function eventRole(event: string): Role {
     : ROLES.held;
 }
 
-/** A stage's mark; a stage with none shows its name alone. */
-export function stageMark(stage: string): string {
-  return Object.hasOwn(STAGES, stage) ? (STAGES[stage] ?? "") : "";
-}
-
 export interface LegendRole extends Role {
   sets: Array<{ set: string; items: string }>;
 }
@@ -277,11 +270,6 @@ export function buildLegend(): LegendRole[] {
       .filter((s) => s.items !== ""),
   }));
 }
-
-export const STAGE_LEGEND = Object.entries(STAGES).map(([name, mark]) => ({
-  name,
-  mark,
-}));
 
 /** How each computed number on the page is counted. */
 export const COUNT_NOTES = [

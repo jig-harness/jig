@@ -13,8 +13,10 @@ describe("the load gauge's view", () => {
       summary: "Reporting only: 1 launch would have been held this tick.",
     });
     expect(view.gauges[0]).toEqual({
+      gauge: "memory",
       name: "Memory",
       fill: "82%",
+      over: false,
       reads: "13.5 GiB available of 62.5 GiB",
       line: "15% of memory kept free",
     });

@@ -18,9 +18,11 @@ import {
 } from "./fold.tsx";
 import { slotCard } from "./cards.ts";
 import { cardAttrs } from "./keys.ts";
+import { BareWord } from "./icon-word.tsx";
+import { ACCOUNT_ICONS } from "./icons.ts";
 import { LoadGauge } from "./load.tsx";
 import { Mark } from "./marks.tsx";
-import { ROLES, TERMS } from "./status.ts";
+import { TERMS } from "./status.ts";
 import {
   accountView,
   type Clock,
@@ -37,7 +39,7 @@ function Slot({ slot }: { slot: SlotView }) {
       <div className="rowTop">
         <Mark role={slot.role} />
         <Pr repo={slot.repo} target={slot.target} url={slot.url} />
-        <StageHint mark={slot.mark} stage={slot.stage} />
+        <StageHint stage={slot.stage} />
         <FollowupBadge
           label={slot.stage === "followup" ? runningFollowup(slot.kind) : null}
         />
@@ -108,9 +110,10 @@ export function LinePanel({
               </Hint>
               <span className="m sm">{account.heldText}</span>
               {account.state === null ? null : (
-                <span className="sm end">
-                  <Mark role={ROLES.held} /> {account.state}
-                </span>
+                <BareWord
+                  of={ACCOUNT_ICONS[account.state]}
+                  className="sm end"
+                />
               )}
             </div>
             {account.wall === null ? null : (
