@@ -394,6 +394,23 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.227.0] - 2026-11-13
+
+### Changed
+
+- The dispatch dashboard draws each word the records give a closed set with
+  one icon, always beside its word: the acts, the stages, where a coming item
+  came from and what will happen to it, the Ready to merge lanes, the load
+  gauges, an account's state, why a need waits, the answer states and the
+  page's own controls. A family keeps one shape, so it still reads in
+  greyscale and in [forced colours](GLOSSARY.md), the operating system's
+  high-contrast mode that replaces the page's colours with its own: an act is a filled pill, a stage an outlined chip
+  (its icon replaces the glyph it had), a source a dashed chip, and the rest
+  a bare icon beside the word. A word two sets share with the same meaning
+  keeps one icon, and the Help view lists every icon with its word. An account
+  whose wall was never recorded now says "wall not recorded" instead of
+  "behind a wall". **Consumer action:** none.
+
 ## [0.226.2] - 2026-11-13
 
 The dispatcher reads a repository's pull requests in pages as large as the forge answers in time.
@@ -7891,7 +7908,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.226.2...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.227.0...HEAD
+[0.227.0]: https://github.com/jig-harness/jig/compare/v0.226.2...v0.227.0
 [0.226.2]: https://github.com/jig-harness/jig/compare/v0.226.1...v0.226.2
 [0.226.1]: https://github.com/jig-harness/jig/compare/v0.226.0...v0.226.1
 [0.226.0]: https://github.com/jig-harness/jig/compare/v0.225.2...v0.226.0
