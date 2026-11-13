@@ -45,10 +45,26 @@ export function isoOf(instant: Temporal.Instant): string {
   return instant.toString({ fractionalSecondDigits: 3 });
 }
 
-// Anything after the time that can carry zone information: `Z`, an offset
-// (`+01:00`, `+01:00:30`) or a bracketed annotation (`[Europe/Paris]`), which
-// a date alone can carry too.
-const ZONE_MARK = /T[^Z+\-[]*[Z+\-[]|^\d{4}-\d{2}-\d{2}\[/i;
+// A zone or offset at the end of a string, after any whitespace before it.
+const TRAILING_ZONE = /(?:Z|[+-]\d{2}(?::?\d{2})?)$/i;
+
+/**
+ * Whether `text` carries zone information: after the time, a `Z`, an offset
+ * (`+01:00`, `+01:00:30`) or a bracketed annotation (`[Europe/Paris]`), which
+ * a date alone can carry too.
+ */
+function hasZoneMark(text: string): boolean {
+  const time = text.search(/T/i);
+  if (time >= 0 && /[Z+\-[]/i.test(text.slice(time + 1))) return true;
+  return /^\d{4}-\d{2}-\d{2}\[/.test(text);
+}
+
+/** `text` without the whitespace between its time and a trailing zone. */
+function joinTrailingZone(text: string): string {
+  const zone = TRAILING_ZONE.exec(text);
+  if (zone === null) return text;
+  return text.slice(0, zone.index).trimEnd() + zone[0];
+}
 
 /**
  * The instant a string names. It reads ISO 8601 with a `Z` or an offset
@@ -58,14 +74,13 @@ const ZONE_MARK = /T[^Z+\-[]*[Z+\-[]|^\d{4}-\d{2}-\d{2}\[/i;
  * a `RangeError`.
  */
 export function parseInstant(value: string): Temporal.Instant {
-  const text = value
-    .trim()
-    .replace(/^(\d{4}-\d{2}-\d{2}) (?=\d)/, "$1T")
-    .replace(/\s+(?=Z$|[+-]\d{2}(:?\d{2})?$)/i, "");
+  const text = joinTrailingZone(
+    value.trim().replace(/^(\d{4}-\d{2}-\d{2}) (?=\d)/, "$1T"),
+  );
   // Zone information that is present goes to `Instant.from`, which reads it
   // as written and throws when it is wrong or unsupported; only a string
   // with none is UTC (`PlainDateTime.from` would drop it silently).
-  if (ZONE_MARK.test(text)) return Temporal.Instant.from(text);
+  if (hasZoneMark(text)) return Temporal.Instant.from(text);
   return Temporal.PlainDateTime.from(text).toZonedDateTime("UTC").toInstant();
 }
 

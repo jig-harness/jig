@@ -91,10 +91,10 @@ const ISO_WITH_ZONE =
 /** The instant of an ISO 8601 time with an explicit zone and a real calendar date, else `NaN`. */
 function strictTime(text: string): number {
   const m = ISO_WITH_ZONE.exec(text);
-  if (m === null) return NaN;
+  if (m === null) return Number.NaN;
   const [h, mi, s] = m.slice(4, 7).map(Number) as [number, number, number];
   const real = isCalendarDate(text.slice(0, 10)) && h < 24 && mi < 60 && s < 60;
-  return real ? parseMs(text) : NaN;
+  return real ? parseMs(text) : Number.NaN;
 }
 
 /** Why a `contextAt` is not a past ISO 8601 time with a zone, or `null`. */
