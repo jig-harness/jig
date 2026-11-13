@@ -77,6 +77,16 @@ describe("parsing", () => {
     expect(parseMs("2026-11-12T10:00:00+99:99")).toBeNaN();
   });
 
+  test("a second-resolution offset or an annotation keeps its offset", () => {
+    expect(parseMs("2026-11-12T11:00:00+01:00:30")).toBe(
+      Temporal.Instant.from("2026-11-12T09:59:30Z").epochMilliseconds,
+    );
+    expect(parseMs("2026-11-12T11:00:00+01:00[Europe/Paris]")).toBe(
+      Temporal.Instant.from("2026-11-12T10:00:00Z").epochMilliseconds,
+    );
+    expect(parseMs("2026-11-12T11:00:00[Europe/Paris]")).toBeNaN();
+  });
+
   test("parseInstant throws where parseMs answers NaN", () => {
     expect(() => parseInstant("garbage")).toThrow(RangeError);
     expect(parseInstant("2026-11-12T10:00:00Z").epochMilliseconds).toBe(

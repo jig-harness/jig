@@ -45,7 +45,9 @@ export function isoOf(instant: Temporal.Instant): string {
   return instant.toString({ fractionalSecondDigits: 3 });
 }
 
-const OFFSET = /T[^Z+-]*(Z|[+-]\d{2}(:?\d{2})?)$/i;
+// Anything after the time that can carry zone information: `Z`, an offset
+// (`+01:00`, `+01:00:30`) or a bracketed annotation (`[Europe/Paris]`).
+const ZONE_MARK = /T[^Z+\-[]*[Z+\-[]/i;
 
 /**
  * The instant a string names. It reads ISO 8601 with a `Z` or an offset
@@ -59,9 +61,10 @@ export function parseInstant(value: string): Temporal.Instant {
     .trim()
     .replace(/^(\d{4}-\d{2}-\d{2}) (?=\d)/, "$1T")
     .replace(/\s+(?=Z$|[+-]\d{2}(:?\d{2})?$)/i, "");
-  // An offset or a `Z` that is present is read as written, and an error when
-  // it is wrong; only a string with none is UTC.
-  if (OFFSET.test(text)) return Temporal.Instant.from(text);
+  // Zone information that is present goes to `Instant.from`, which reads it
+  // as written and throws when it is wrong or unsupported; only a string
+  // with none is UTC (`PlainDateTime.from` would drop it silently).
+  if (ZONE_MARK.test(text)) return Temporal.Instant.from(text);
   return Temporal.PlainDateTime.from(text).toZonedDateTime("UTC").toInstant();
 }
 
