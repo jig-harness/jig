@@ -48,6 +48,13 @@ describe("Jira open population counts", () => {
       "project = ENG AND statusCategory != Done AND issuetype in (10001) ORDER BY created ASC",
     ]);
     expect(searches.every((c) => c.signal === signal)).toBe(true);
+    expect(
+      searches.every(
+        (c) =>
+          JSON.stringify((c.body as { fields?: unknown }).fields) ===
+          '["status"]',
+      ),
+    ).toBe(true);
     expect(calls.some((c) => c.route === "POST search/approximate-count")).toBe(
       false,
     );

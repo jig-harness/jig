@@ -561,16 +561,11 @@ export function reportOperations(
       const clause = await client.poolScope(signal);
       async function count(...clauses: string[]): Promise<number> {
         if (signal?.aborted === true) throw abortedError(signal);
-        return (
-          await client.search(
-            inProject(project, open, ...clauses),
-            `open issues of ${project}`,
-            signal,
-          )
-        ).filter(
-          (issue) =>
-            !["completed", "canceled", "duplicate"].includes(stateType(issue)),
-        ).length;
+        return client.countNotDone(
+          inProject(project, open, ...clauses),
+          `open issues of ${project}`,
+          signal,
+        );
       }
       const total = await count();
       const pool = clause === null ? total : await count(clause);
