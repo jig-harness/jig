@@ -209,7 +209,8 @@ async function shrinking(
     ask,
     (failure) => failure.code === "too-costly",
   );
-  paging.size = read.size;
+  // A request short only because fewer items remain is no shrink to keep.
+  if (read.size < Math.min(paging.size, most)) paging.size = read.size;
   if (read.outcome.ok) {
     paging.read += 1;
     paging.slowestMs = Math.max(paging.slowestMs, read.tookMs);

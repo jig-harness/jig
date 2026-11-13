@@ -219,6 +219,16 @@ describe("named pull requests' comments the forge cannot answer a full query of"
     expect(asked.map((chunk) => chunk.length)).toEqual([2, 1, 1]);
   });
 
+  it("keeps no size when a query is short only because fewer pull requests remain", async () => {
+    const prs = Array.from({ length: 51 }, (_, i) => i + 1);
+    const { asked, ask } = commentsForge(50);
+    const { sizes, sets } = kept();
+    const read = await readComments(SLUG, prs, sizes, ask);
+    expect(read.ok).toBe(true);
+    expect(asked.map((chunk) => chunk.length)).toEqual([50, 1]);
+    expect(sets).toEqual([]);
+  });
+
   it("keeps no size when no pull request is named", async () => {
     const { asked, ask } = commentsForge(8);
     const { sizes, sets } = kept({
