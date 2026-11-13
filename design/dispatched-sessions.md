@@ -101,8 +101,9 @@ way:
   [terminal-state registry](../plugin/skills/drive-pr/references/terminal-states.md)'s
   entry for its exit, and `concluded` from the stop's own text followed by
   the last round report of this launch, the stop's text first and the round
-  report's `concluded` cut to the room left in the 600 characters, so the
-  composed field always passes the check. `question` and `decision` come
+  report's `concluded` cut to the room left in the 600 characters. The stop's
+  own text is cut to the limit too when it alone exceeds it, so the composed
+  field always passes the check. `question` and `decision` come
   from the drive's own state, never from a round report: at a park the
   driver copies the question and the framed decision of the parked item
   the stop prints (the first, when several are parked, naming how many
@@ -369,8 +370,9 @@ in the tick changes but the new `endRun`. The implementation is
   slot; the tick starts nothing on the target until that person releases the
   hold. A drive taken over is stopped through `drives.ts --stop` too, so its
   ledger reads stopped. If the command dies after the hold and before the
-  end, the run is still live and the hold stands, and running the command
-  again finishes the take-over. It then prints the command that resumes the vendor's session in
+  end, the hold stands and the run may still be live or may already be
+  stopped with its end unrecorded, and running the command again reconciles
+  either: it stops a live run, records the end and releases the slot. It then prints the command that resumes the vendor's session in
   the worktree, bound to the same account's directory: `claude --resume
   <session-id>` for Claude Code, the last pass's id for a drive; Codex's
   resume for a session whose id the run recorded, and for one without, a
