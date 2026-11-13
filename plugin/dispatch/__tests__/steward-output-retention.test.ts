@@ -171,4 +171,34 @@ describe("steward output erasure", () => {
     expect(row.digest).not.toContain("secret words");
     expect(row.digest).toContain("removed after the retention period");
   });
+
+  test("a valid envelope with malformed output-bearing fields is tombstoned", () => {
+    const root = mkdtempSync(join(tmpdir(), "steward-erase-nested-"));
+    roots.push(root);
+    const digest = {
+      version: 1,
+      repo: "o/r",
+      drives: [],
+      needs: [],
+      queue: [],
+      passes: [],
+      failures: [],
+    } as unknown as StewardDigest;
+    keepStewardRun("nested", digest, 1000, root);
+    stateDb(root)
+      .query("UPDATE steward_runs SET digest = ? WHERE id = 'nested'")
+      .run(
+        JSON.stringify({
+          ...digest,
+          passes: ["secret words"],
+          targets: "secret output",
+        }),
+      );
+    expect(eraseStewardOutput(10_000_000_000, 1, root)).toBe(1);
+    const row = stateDb(root)
+      .query("SELECT digest FROM steward_runs WHERE id = 'nested'")
+      .get() as { digest: string };
+    expect(row.digest).not.toContain("secret");
+    expect(row.digest).toContain("removed after the retention period");
+  });
 });

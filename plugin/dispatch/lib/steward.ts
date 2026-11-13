@@ -333,6 +333,28 @@ function erasedPassFields(passes: unknown): boolean {
   return changed;
 }
 
+/**
+ * Whether every structure that can hold output has the shape the erasers
+ * walk, so a malformed one is tombstoned rather than left with its text.
+ */
+function outputFieldsReadable(digest: unknown): boolean {
+  if (!isMapping(digest)) return false;
+  const { targets, passes } = digest;
+  if (targets !== undefined && !Array.isArray(targets)) return false;
+  if (!Array.isArray(passes) || !passes.every(isMapping)) return false;
+  return (targets ?? []).every((t: unknown) => {
+    if (!isMapping(t)) return false;
+    const last = t.lastPass;
+    if (last === undefined || last === null) return true;
+    return (
+      isMapping(last) &&
+      (last.output === undefined ||
+        last.output === null ||
+        isMapping(last.output))
+    );
+  });
+}
+
 /** What an expired digest that does not parse is replaced with: its text is unclassified, so none of it stays. */
 const UNREADABLE_TOMBSTONE = JSON.stringify({
   erased: "unreadable digest removed after the retention period",
@@ -348,7 +370,8 @@ function erasedOutput(text: string): string | null {
   );
   if (!parsed.ok) return UNREADABLE_TOMBSTONE;
   const digest: unknown = parsed.value;
-  if (!isStewardDigest(digest)) return UNREADABLE_TOMBSTONE;
+  if (!isStewardDigest(digest) || !outputFieldsReadable(digest))
+    return UNREADABLE_TOMBSTONE;
   const erasedTargets = erasedTails(digest.targets);
   const erasedPasses = erasedPassFields(digest.passes);
   const changed = erasedTargets || erasedPasses;
