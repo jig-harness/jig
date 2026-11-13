@@ -66,6 +66,17 @@ it. What reaches a person arrives as a decision with options, answered in a
 word. A host fault arrives once, saying what to fix. Decisions that are a
 person's stay a person's.
 
+### 51. Staying inside the limits of the systems Jig calls
+
+The systems Jig calls limit their callers. A forge counts requests an hour,
+a tracker charges each query a cost, and each ends a request that takes too
+long. Every agent and timer on a machine shares one login's allowance. Jig
+gets one way to make these calls. It reuses an answer it holds, asks a
+budget the whole machine shares, and keeps each request small enough to be
+answered. It records what every operation costs, so a team sees what spends
+an allowance. When a system refuses a call for a time, the dispatcher
+waits, and no person is asked.
+
 ### 36. The dispatch board: what is driven and what is ready to merge
 
 The dispatch dashboard leads with a Ready to merge list of the converged

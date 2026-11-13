@@ -241,6 +241,48 @@ failure on one account raises one host need and holds that account's
 tracker stages; and every need that reached a person that week was framed,
 or, where only a person can act, raised once for its cause.
 
+### 51. Outbound calls: one governed transport for every system Jig calls
+
+Jig's code calls a forge, the issue trackers and the reflection stores,
+and each integration handles their limits and outages on its own: one
+shared budget that only the tracker adapters feed, a separate
+classification of failures in each transport, retries in some, and no
+record of what an operation costs. On a dispatch host that showed as a
+tracker credential held at its hourly allowance by one unbounded nested
+list, a repository the forge could not answer a full page of and so was
+never read, and ticks that exited 1 for refusals that clear by waiting.
+[ADR-0020](../docs/adr/ADR-0020-outbound-calls-are-governed.md) sets the
+rule, and [design/outbound-calls.md](outbound-calls.md) has each system's
+limits, the shared library (`plugin/shared/outbound/`), the failure classes
+with their policies and the build order. What it will build, one pull
+request per step:
+
+- **A page that shrinks**: a paged read asks again for half the page when
+  the system runs out of time, and keeps the size that read.
+- **Failure classes and one retry**: every transport returns one of a
+  closed set of classes, reads are retried with one backoff, and the tick
+  and the passes wait out a class that clears by waiting.
+- **The cost ledger and its reports**: requests, cost and time per
+  operation and caller; a line per system in the tick report, a
+  `jig budget` command, and one need when a quota is about to run out.
+- **GitHub in the budget record**: its hourly and secondary limits beside
+  the trackers', every forge call admitted against them.
+- **Reuse**: answers cached by update time or the system's validator,
+  identical reads in a run sent once, one queue reading per tracker team
+  and credential, reads by key in one request.
+- **Gates and a review lens**: no call leaves by another door than a
+  transport, no query selects a list without a page size or passes its
+  declared cost ceiling, and a change to an integration is reviewed
+  against the obligations.
+
+Done when, on a dispatch host over a week: no tick exits 1 and no person
+is asked for a refusal that clears by waiting; `jig budget` names the
+operations that spent each quota, and their totals match the budget
+record's change; a repository whose pull requests the forge cannot answer
+fifty at a time is read on every tick; a steady tick with nothing changed
+sends one tracker request per team; and both gates run in
+`bun run gates`, their counts of calls that predate the rule only falling.
+
 ### 36. The dispatch board: what is driven and what is ready to merge
 
 The merge is the one stage of the execution line that stays a person's, and
