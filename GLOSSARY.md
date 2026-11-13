@@ -573,6 +573,24 @@ make, use the entry's term instead.
 
 ## Process
 
+- **Topic coordination** — the stage before pickup where a person brings
+  several linked ideas without a single work item, and `/jig:orchestrate`
+  turns them into recorded decisions, a reviewed plan and started issues.
+  Its coordinating session stays with the person and delegates investigation,
+  plan maintenance and filing. It does no implementation. Unlike an
+  *operator*, it shapes work before the line; unlike a *steward*, it does
+  not inspect the dispatcher's stopped work or propose recoveries.
+- **Track** — one related strand of a loosely bounded topic, investigated
+  separately during *topic coordination* before the person decides how the
+  strands fit together.
+- **Survey** — a read-only investigation of one *track* in a fresh session,
+  with a bounded return, opened-file evidence, existing positions quoted,
+  evidence against the idea and uncertainty made explicit.
+- **Plan keeper** — the separate session maintaining the reviewed plan
+  during *topic coordination*. It receives answers, issue numbers and
+  demotions from the coordinating session, keeping plan-tool mechanics out
+  of the person's discussion.
+
 - **Cause fingerprint** — a stable identity for one cause of a scheduled
   failure, built from the check or prerequisite, its scope and a normalized
   failure signature. It excludes changing details such as run IDs and times,
