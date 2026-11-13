@@ -534,7 +534,8 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
       const subtasks = (await client.issueTypes(signal)).filter(
         (t) => t.subtask,
       );
-      if (subtasks.length === 1) names.push(subtasks[0]!.name);
+      const [only] = subtasks;
+      if (subtasks.length === 1 && only !== undefined) names.push(only.name);
     }
     for (const value of type?.values ?? []) {
       const kept = await issueTypeOf(value, signal);
