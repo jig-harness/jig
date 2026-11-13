@@ -276,13 +276,19 @@ export async function heldAtStartup(pr: string): Promise<HeldItem[]> {
  * as it is now, with its current metadata, and an entry the plan read that the
  * `atStartup` read (`heldAtStartup`, taken before reconciliation) did not hold
  * is carried after them. An entry present at startup and gone now was removed
- * by reconciliation and is not carried back. A batch that cannot be read again
- * stops the takeover (exit `1`) rather than reconciling over a stale one.
+ * by reconciliation and is not carried back. A carried thread entry is
+ * restored only while its thread is still among `openThreads`, since
+ * reconciliation may have resolved it after startup dropped the hold; with
+ * `openThreads` `null` (the open threads could not be read) no thread entry is
+ * carried, and the gate's sweep re-holds one from its reply. A batch that
+ * cannot be read again stops the takeover (exit `1`) rather than reconciling
+ * over a stale one.
  */
 export async function heldAfterStartup(
   pr: string,
   planned: readonly HeldItem[],
   atStartup: readonly HeldItem[],
+  openThreads: ReadonlySet<string> | null,
 ): Promise<HeldItem[]> {
   const held = await heldSnapshot(pr);
   const same = (a: HeldItem, b: HeldItem) =>
@@ -290,7 +296,8 @@ export async function heldAfterStartup(
   for (const item of planned)
     if (
       !atStartup.some((s) => same(s, item)) &&
-      !held.some((h) => same(h, item))
+      !held.some((h) => same(h, item)) &&
+      (item.kind !== "thread" || openThreads?.has(item.key) === true)
     )
       held.push(item);
   return held;
