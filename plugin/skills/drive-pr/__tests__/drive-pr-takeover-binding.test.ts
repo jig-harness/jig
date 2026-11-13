@@ -177,7 +177,7 @@ describe("drive.ts --take-over reopening unverified holds", () => {
         undefined,
         { env: { DRIVE_PR_STOP_GRACE_SEC: "1" }, extraBinDir: gh.bin },
       );
-      expectSpawnExit(r, 6);
+      expectSpawnExit({ ...r, stdout: "" }, 6);
       expect(r.stderr).toContain("2 hold(s) reopened, 0 not");
       const after = JSON.parse((await state(stateDir, ["get", "999"])).stdout);
       const record = after.takeovers[0];
@@ -264,7 +264,7 @@ describe("drive.ts --take-over reopening unverified holds", () => {
         undefined,
         { env: { DRIVE_PR_STOP_GRACE_SEC: "1" }, extraBinDir: gh.bin },
       );
-      expectSpawnExit(r, 6);
+      expectSpawnExit({ ...r, stdout: "" }, 6);
       expect(r.stderr).toContain("1 hold(s) reopened, 0 not");
       const after = JSON.parse((await state(stateDir, ["get", "999"])).stdout);
       expect(after.takeovers[0].reopened).toEqual(["PRRT_h"]);
