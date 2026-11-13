@@ -701,17 +701,24 @@ export async function ciReportFor(
   // verdict. A same-named queued or cancelled attempt is still evidence that
   // CI has not settled, and must remain visible to ciVerdictOf.
   // `ciVerdictOf` reduces its input again. Removing only the selected failing
-  // attempt would let that second reduction choose an older attempt from the
-  // same (app, name) group, resurrecting evidence the first reduction had
-  // already superseded. The hold applies to the selected source, so remove
-  // that source's whole group while preserving same-named checks from another
-  // publisher.
+  // attempt would let that second reduction choose an older failed attempt
+  // from the same (app, name) group, resurrecting evidence the first
+  // reduction had already superseded. Remove every completed, non-cancelled
+  // failure from that source, but retain its pending and cancelled attempts:
+  // they remain unsettled evidence even while an intentional failure is held.
+  // Same-named checks from another publisher remain independent.
   const heldSources = new Set(
     heldRuns.map((run) => JSON.stringify([run.app, run.name])),
   );
-  const effectiveRuns = runs.filter(
-    (run) => !heldSources.has(JSON.stringify([run.app, run.name])),
-  );
+  const effectiveRuns = runs.filter((run) => {
+    if (!heldSources.has(JSON.stringify([run.app, run.name]))) return true;
+    return (
+      run.status !== "completed" ||
+      run.conclusion === null ||
+      run.conclusion === "cancelled" ||
+      PASSING_CONCLUSIONS.has(run.conclusion)
+    );
+  });
   const verdict = ciVerdictOf(
     effectiveRuns,
     statuses,
