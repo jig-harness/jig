@@ -352,11 +352,12 @@ async function collectThroughOrca(
             Date.now() + ARCHIVE_LIMIT_MS,
           );
           if (!preserved.ok) return preserved;
+          // Named on every failure from here on.
+          archived = preserved.value;
           // The archive may have run for minutes: an agent or process can
           // have started meanwhile, so what removal relies on is read again.
           const after = await checks();
           if (!after.ok) return after;
-          archived = preserved.value;
           return ok(undefined);
         },
       },
@@ -382,6 +383,7 @@ async function collectThroughOrca(
     return {
       outcome: "failed",
       reason: error instanceof Error ? error.message : String(error),
+      ...(archived === null ? {} : { details: { archive: archived } }),
     };
   } finally {
     if (snapshot !== null)
@@ -434,6 +436,8 @@ export function worktreesKind(
     repository,
     declaration,
     inventory: async () => {
+      // The marking boundary is this run's, whether or not a worktree reaches proof.
+      legacy();
       const output = await git(repository, [
         "worktree",
         "list",

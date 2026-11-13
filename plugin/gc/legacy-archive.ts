@@ -18,10 +18,11 @@ import {
   openSync,
   readdirSync,
   readFileSync,
+  readlinkSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { basename, dirname, join } from "node:path";
 import { attempt, failed, ok, type Outcome } from "../shared/outcome.ts";
 import { isMapping } from "../shared/config-layers.ts";
@@ -139,6 +140,51 @@ export function measure(
   }
   return ok(total);
 }
+/**
+ * What each path under `root` holds, entry by entry: its type, and a file's
+ * content hash or a link's target. Two trees with the same fingerprint hold
+ * the same names and the same content, which byte and entry totals cannot say.
+ */
+function fingerprint(
+  root: string,
+  paths: string[],
+  deadline: number,
+): Outcome<Map<string, string>, "timed-out" | "unreadable"> {
+  const entries = new Map<string, string>();
+  const visit = (relative: string): boolean => {
+    if (Date.now() > deadline) return false;
+    const path = join(root, relative);
+    const stat = lstatSync(path);
+    if (stat.isSymbolicLink())
+      entries.set(relative, `link ${readlinkSync(path)}`);
+    else if (stat.isDirectory()) {
+      entries.set(relative, "dir");
+      for (const child of readdirSync(path).sort())
+        if (!visit(join(relative, child))) return false;
+    } else if (stat.isFile())
+      entries.set(
+        relative,
+        `file ${createHash("sha256").update(readFileSync(path)).digest("hex")}`,
+      );
+    else entries.set(relative, `other ${stat.mode}`);
+    return true;
+  };
+  try {
+    for (const path of paths)
+      if (!visit(path.replace(/\/$/, "")))
+        return failed(
+          "timed-out",
+          "verifying ignored content exceeded its deadline",
+        );
+  } catch (error) {
+    return failed(
+      "unreadable",
+      `ignored content could not be verified: ${message(error)}`,
+      error,
+    );
+  }
+  return ok(entries);
+}
 /** An archive written and verified: where it is, and what it holds. */
 export interface Archived extends Measured {
   path: string;
@@ -148,8 +194,9 @@ type ArchiveCode = "oversized" | "timed-out" | "unreadable" | "archive-failed";
 /**
  * Copy `paths` (relative to `worktree`) into a new archive under the state
  * directory, keeping each path's place, links as links. The archive is
- * measured again once written and must hold as many entries and bytes as the
- * source, else it is removed and the copy fails. Nothing in the
+ * fingerprinted again once written, and the worktree once more, and both must
+ * match the worktree as it was before the copy, else it is removed and the
+ * copy fails. Nothing in the
  * worktree changes.
  */
 export function archiveIgnored(
@@ -165,6 +212,8 @@ export function archiveIgnored(
       "oversized",
       `ignored content exceeds the archive bound of ${policy.maxBytes} bytes`,
     );
+  const before = fingerprint(worktree, paths, deadline);
+  if (!before.ok) return before;
   const now = new Date();
   const path = join(
     policy.root,
@@ -190,7 +239,7 @@ export function archiveIgnored(
     },
   );
   const verified = written.ok
-    ? verify(path, worktree, paths, source.value, deadline)
+    ? verify(path, worktree, paths, before.value, deadline)
     : written;
   const recorded = verified.ok
     ? attempt(
@@ -206,7 +255,7 @@ export function archiveIgnored(
     : verified;
   const durable = recorded.ok
     ? attempt("archive-failed", `flushing the archive of ${worktree}`, () =>
-        syncTree(path),
+        syncPublication(path, policy.root),
       )
     : recorded;
   if (!durable.ok) {
@@ -218,12 +267,13 @@ export function archiveIgnored(
   }
   return ok({ path, paths, ...source.value });
 }
-/** Flush every file and directory of a tree to disk, so a removal that follows cannot outlive the copy. */
-function syncTree(path: string): void {
-  const stat = lstatSync(path);
-  if (stat.isSymbolicLink()) return;
-  if (stat.isDirectory())
-    for (const child of readdirSync(path)) syncTree(join(path, child));
+/**
+ * Flush a directory entry's own durability. Windows refuses to open a
+ * directory, and Node offers no other flush there, so the entry is left to the
+ * file system, as `receipts.ts` leaves its own.
+ */
+function syncEntry(path: string): void {
+  if (process.platform === "win32" && lstatSync(path).isDirectory()) return;
   const fd = openSync(path, "r");
   try {
     fsyncSync(fd);
@@ -231,35 +281,55 @@ function syncTree(path: string): void {
     closeSync(fd);
   }
 }
-/** The copy, measured again: it must hold as many entries and bytes as the worktree held. */
+/** Flush every file and directory of a tree to disk. */
+function syncTree(path: string): void {
+  const stat = lstatSync(path);
+  if (stat.isSymbolicLink()) return;
+  if (stat.isDirectory())
+    for (const child of readdirSync(path)) syncTree(join(path, child));
+  syncEntry(path);
+}
+/**
+ * Flush the archive and every directory that names it up to the state root,
+ * so a removal that follows cannot outlive the archive's name.
+ */
+function syncPublication(path: string, root: string): void {
+  syncTree(path);
+  for (
+    let parent = dirname(path);
+    parent.startsWith(root) && parent.length >= root.length;
+    parent = dirname(parent)
+  ) {
+    syncEntry(parent);
+    if (parent === root) break;
+  }
+}
+/** The copy and the worktree, fingerprinted again: both must match the worktree as it was before the copy. */
 function verify(
   path: string,
   worktree: string,
   paths: string[],
-  source: Measured,
+  source: Map<string, string>,
   deadline: number,
 ): Outcome<undefined, ArchiveCode> {
-  const copied = measure(
-    join(path, "content"),
-    paths,
-    Number.MAX_SAFE_INTEGER,
-    deadline,
-  );
+  const copied = fingerprint(join(path, "content"), paths, deadline);
   if (!copied.ok) return copied;
   // The worktree again: content changed while it was copied is not in the copy.
-  const now = measure(worktree, paths, Number.MAX_SAFE_INTEGER, deadline);
+  const now = fingerprint(worktree, paths, deadline);
   if (!now.ok) return now;
-  if (
-    copied.value.bytes === source.bytes &&
-    copied.value.entries === source.entries &&
-    now.value.bytes === source.bytes &&
-    now.value.entries === source.entries
-  )
-    return ok(undefined);
-  return failed(
-    "archive-failed",
-    `the archive holds ${copied.value.entries} entries of ${copied.value.bytes} bytes, the worktree held ${source.entries} of ${source.bytes} and now holds ${now.value.entries} of ${now.value.bytes}`,
-  );
+  const differs = (other: Map<string, string>): string | null => {
+    for (const [name, mark] of source)
+      if (other.get(name) !== mark) return name;
+    for (const name of other.keys()) if (!source.has(name)) return name;
+    return null;
+  };
+  const drift = differs(copied.value) ?? differs(now.value);
+  return drift === null
+    ? ok(undefined)
+    : failed(
+        "archive-failed",
+        `the archive or the worktree no longer matches the content first read: ${drift} differs`,
+      );
 }
 /** Every archive under the state directory, oldest day first. */
 export function archivePaths(root: string): string[] {

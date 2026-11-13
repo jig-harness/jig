@@ -7,8 +7,8 @@ release: minor
 - `jig gc` no longer keeps every finished worktree because of Jig's own
   working files and a tool's cache. The `worktrees` kind sets aside ignored
   content whose writer marked it disposable: a directory holding a
-  `CACHEDIR.TAG` (cache directory tag), a directory whose own `.gitignore`
-  ignores all of itself, `.context/scratch/`, and a drive's handoff. Any
+  `CACHEDIR.TAG` (cache directory tag), `.context/scratch/`, and a drive's
+  handoff. Any
   other ignored path still keeps the worktree, and the reason names it. The
   receipt lists each path set aside with its rule (`details.setAside`). See
   [the collector's rule](../plugin/gc/README.md#ignored-content).

@@ -255,7 +255,7 @@ opener's shared lock ([the runtime binding](mappings.md#machine-resource-collect
 Any other worktree's collection waits for the operated reaper migration and that lock. A worktree's
 ignored content is the one part git cannot give back, so it is set aside only
 where its writer marked it disposable (a [cache directory tag](../../GLOSSARY.md),
-a directory that ignores all of itself, Jig's `.context/scratch/`), and any
+Jig's `.context/scratch/`), and any
 other ignored path keeps the worktree until it is preserved
 ([the collector's rule](../../plugin/gc/README.md#ignored-content)). The machine policy
 can tighten a repository declaration and cannot widen it.

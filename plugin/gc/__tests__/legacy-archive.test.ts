@@ -19,6 +19,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { receiptsKind } from "../kinds/receipts.ts";
 import {
   archiveIgnored,
@@ -182,5 +183,31 @@ describe("the one-time archive", () => {
     mkdirSync(cut, { recursive: true });
     await kind.inventory();
     expect(await kind.prove({ id: cut })).toMatchObject({ state: "dead" });
+  });
+});
+
+describe("the marking boundary", () => {
+  test("a run with no worktree to prove still records when marking began", async () => {
+    const { worktreesKind } = await import("../kinds/worktrees.ts");
+    const repository = scratch();
+    const state = scratch();
+    expectSpawnExit(
+      Bun.spawnSync(["git", "init", "-q", repository], {
+        stdout: "pipe",
+        stderr: "pipe",
+      }),
+      0,
+    );
+    const kind = worktreesKind(
+      repository,
+      [join(repository, "none")],
+      "declaration",
+      7,
+      undefined,
+      undefined,
+      { root: state, maxBytes: 1024 },
+    );
+    await kind.inventory();
+    expect(existsSync(join(state, "marking-since"))).toBe(true);
   });
 });

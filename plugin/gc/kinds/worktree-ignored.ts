@@ -275,8 +275,8 @@ function classifyEntry(
  * too), rebuildable from the root's `package.json` and the lockfile
  * `detectPackageManager` found; only a real directory counts, so an ignored
  * file or link named `node_modules` stays local state. A mark counts only as
- * the writer leaves it: a tool's cache by the tag or the `.gitignore` it
- * writes inside its directory, never by its name, and Jig's own working files
+ * the writer leaves it: a tool's cache by the tag it writes inside its
+ * directory, never by its name or its own `.gitignore`, and Jig's own working files
  * by `.context/scratch/`, a tag, or a handoff's machine block. A link is
  * never followed. The walk fails `timed-out` once `deadline` passes.
  */
