@@ -47,6 +47,7 @@ import {
   type KeptSize,
   keptSize,
   readShrinking,
+  SLOW_MS,
   sizeToKeep,
   startSize,
 } from "../../shared/outbound/paging.ts";
@@ -213,10 +214,16 @@ async function shrinking(
   if (read.size < Math.min(paging.size, most)) paging.size = read.size;
   if (read.outcome.ok) {
     // Only a request asked at the whole size says how that size fares: a
-    // shorter one proves nothing about it, so it may not grow or halve it.
+    // shorter one may not grow or halve it. A slow one still counts against
+    // growth, though never as far as a halving.
     if (read.size === paging.size) {
       paging.read += 1;
       paging.slowestMs = Math.max(paging.slowestMs, read.tookMs);
+    } else {
+      paging.slowestMs = Math.max(
+        paging.slowestMs,
+        Math.min(read.tookMs, SLOW_MS - 1),
+      );
     }
     return read.outcome;
   }

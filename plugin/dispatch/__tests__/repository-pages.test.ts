@@ -243,6 +243,39 @@ describe("named pull requests' comments the forge cannot answer a full query of"
     expect(sets).toEqual([]);
   });
 
+  it("does not grow an aged size when the final short query is slow", async () => {
+    const { ask: quick } = commentsForge(50);
+    let calls = 0;
+    const real = Date.now;
+    let fake = real();
+    // The six-pull-request query takes 100 ms, the final two take 8 s.
+    const ask: AskComments = async (owner, name, prs) => {
+      calls += 1;
+      fake += calls === 1 ? 100 : 8_000;
+      return quick(owner, name, prs);
+    };
+    const { sizes, sets } = kept({
+      [`comments:${SLUG}`]: {
+        size: 6,
+        shrankAt: real() - 2 * GROW_AFTER_MS,
+      },
+    });
+    Date.now = () => fake;
+    try {
+      const read = await readComments(
+        SLUG,
+        [1, 2, 3, 4, 5, 6, 7, 8],
+        sizes,
+        ask,
+      );
+      expect(read.ok).toBe(true);
+    } finally {
+      Date.now = real;
+    }
+    expect(calls).toBe(2);
+    expect(sets).toEqual([]);
+  });
+
   it("keeps no size when no pull request is named", async () => {
     const { asked, ask } = commentsForge(8);
     const { sizes, sets } = kept({
