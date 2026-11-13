@@ -469,7 +469,8 @@ development and shipped as a version.
   on the configured cadence and not started again until a person answers
   it: **Run it again** deletes its marker, so a later tick starts it again
   with the person's note in its prompt, and **Record it done** marks the
-  marker done in place ([Every need is a decision](README.md#every-need-is-a-decision)).
+  marker done in place and sets the pull request's followed-up label, so
+  nothing runs again ([Every need is a decision](README.md#every-need-is-a-decision)).
 
 ### Shared records: several hosts on one repository
 
