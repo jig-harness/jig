@@ -270,6 +270,38 @@ describe("steward evidence readers", () => {
     expect(read).toMatchObject({ ok: true, value: [{ number: 8 }] });
   });
 
+  test("retains a handoff candidate discovered by the body search without another link", async () => {
+    const records = [
+      {
+        record: {
+          id: "launch",
+          repo: "example/repo",
+          item: "#7",
+          action: "pickup",
+          createdAt: "2026-01-01",
+        },
+        next: { address: "drive@example/repo#8" },
+      },
+    ] as unknown as ReadRecord[];
+    const candidate = {
+      number: 8,
+      url: "https://example.test/pull/8",
+      state: "OPEN",
+      headRefName: "topic",
+      body: "mentions `#7` only",
+      createdAt: "2026-01-03",
+      closingIssuesReferences: [],
+    };
+    const read = await linkedPullRequests(
+      "#7",
+      observation,
+      records,
+      () => null,
+      async () => ok([candidate]),
+    );
+    expect(read).toMatchObject({ ok: true, value: [{ number: 8 }] });
+  });
+
   test("does not spend the forge reserve on a handoff fallback", async () => {
     const records = [
       {

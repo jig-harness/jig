@@ -180,7 +180,7 @@ export async function linkedPullRequests(
   }
   // A body search cannot discover a pickup whose branch or recorded handoff
   // carries the item key. Add those bounded, already-known PR candidates.
-  const known = new Set(
+  const handoffNumbers = new Set(
     records
       .flatMap((r) => {
         if (r.record.repo !== repo.slug || r.record.item !== target) return [];
@@ -192,10 +192,14 @@ export async function linkedPullRequests(
         ).exec(next.address)?.[1];
         return number === undefined ? [] : [number];
       })
-      .map(Number)
-      .filter((number) => !prs.some((pr) => pr.number === number)),
+      .map(Number),
   );
-  for (const number of known) {
+  const candidatesToRead = new Set(
+    [...handoffNumbers].filter(
+      (number) => !prs.some((pr) => pr.number === number),
+    ),
+  );
+  for (const number of candidatesToRead) {
     if (!takeForgeReads(1))
       return failed(
         "unreadable",
@@ -229,7 +233,7 @@ export async function linkedPullRequests(
       .filter(
         (p) =>
           links.itemsOf(p.number)?.includes(target) ||
-          known.has(p.number) ||
+          handoffNumbers.has(p.number) ||
           ((!keys.sharesPullRequestNumbers ||
             observation.tracked.issueRepository?.toLowerCase() ===
               repo.slug.toLowerCase()) &&
