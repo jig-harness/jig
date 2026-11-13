@@ -11,6 +11,7 @@
  *    credential broker holds the secret and the environment holds only the
  *    command. It runs once for the process, under a deadline; after a 401 it
  *    runs once more and the request is sent again once with the new token.
+ *    A replacement refused in turn stops further command renewals.
  * 3. `JIRA_EMAIL` and `JIRA_API_TOKEN`: an Atlassian account's email and an
  *    API token (scoped or not), sent as HTTP Basic authentication.
  *
@@ -85,6 +86,10 @@ export function resolveJiraCredential(
 /** A header and what to do when the site refuses it with a 401. */
 export interface JiraLease {
   header: Outcome<string, CredentialCode>;
+  /** Remember that Jira refused the replacement token too. */
+  refuseRenewal: () => void;
+  /** Record that the request which tried a replacement has finished. */
+  settleRenewal: () => void;
   /**
    * A fresh header after the site refused this lease's with a 401, to send
    * the request again once; `null` when this credential cannot be renewed.
@@ -167,7 +172,16 @@ export function jiraAuthorization(
     credential.kind === "bearer"
       ? `Bearer ${credential.token}`
       : `Basic ${Buffer.from(`${credential.email}:${credential.token}`).toString("base64")}`;
-  const lease: JiraLease = { header: ok(value), renew: async () => null };
+  const lease: JiraLease = {
+    header: ok(value),
+    renew: async () => null,
+    refuseRenewal: () => {
+      // A fixed credential has no renewal to refuse.
+    },
+    settleRenewal: () => {
+      // A fixed credential has no renewal to settle.
+    },
+  };
   return { lease: async () => lease, header: async () => lease.header };
 }
 
@@ -260,11 +274,15 @@ function commandAuthorization(
     generation: number;
     header: Promise<Outcome<string, CredentialCode>>;
     failed: boolean;
+    refused: boolean;
+    replacement: boolean;
+    /** Requests still waiting to learn whether Jira takes this run's token. */
+    verifiers: number;
   }
   const program = programOf(argv);
   let generation = 0;
   let current: Run | null = null;
-  const start = (): Run => {
+  const start = (replacement = false): Run => {
     const pending = runner(argv, timeoutMs).then(
       (r) => tokenOf(argv, r, timeoutMs),
       (err: unknown) =>
@@ -277,6 +295,9 @@ function commandAuthorization(
       generation: ++generation,
       header: pending.then((t) => (t.ok ? ok(`Bearer ${t.value}`) : t)),
       failed: false,
+      refused: false,
+      replacement,
+      verifiers: 0,
     };
     current = run;
     void run.header.then((h) => {
@@ -287,18 +308,43 @@ function commandAuthorization(
   const leaseOf = async (
     run: Run,
     signal?: AbortSignal,
-  ): Promise<JiraLease> => ({
-    header: await until(run.header, signal, program),
-    renew: (renewSignal) => {
-      // A later generation already replaced the one this lease holds.
-      if (current !== null && current.generation > run.generation)
-        return until(current.header, renewSignal, program);
-      // No one is waiting once the request has ended: start no new run.
-      if (renewSignal?.aborted)
-        return Promise.resolve(stopped(renewSignal, program));
-      return until(start().header, renewSignal, program);
-    },
-  });
+  ): Promise<JiraLease> => {
+    let renewed: Run | null = null;
+    let counted = false;
+    const verify = (next: Run): Run => {
+      renewed = next;
+      if (!counted) {
+        counted = true;
+        next.verifiers++;
+      }
+      return next;
+    };
+    return {
+      header: await until(run.header, signal, program),
+      refuseRenewal: () => {
+        if (renewed !== null) renewed.refused = true;
+      },
+      settleRenewal: () => {
+        if (renewed !== null && counted) renewed.verifiers--;
+        counted = false;
+      },
+      renew: (renewSignal) => {
+        // A later generation already replaced the one this lease holds.
+        if (current !== null && current.generation > run.generation) {
+          return until(verify(current).header, renewSignal, program);
+        }
+        // A replacement refused in turn stays refused for this process.
+        if (run.refused || (run.replacement && run.verifiers > 0)) {
+          run.refused = true;
+          return Promise.resolve(null);
+        }
+        // No one is waiting once the request has ended: start no new run.
+        if (renewSignal?.aborted)
+          return Promise.resolve(stopped(renewSignal, program));
+        return until(verify(start(true)).header, renewSignal, program);
+      },
+    };
+  };
   const lease = (signal?: AbortSignal) =>
     leaseOf(current !== null && !current.failed ? current : start(), signal);
   return {

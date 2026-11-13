@@ -868,13 +868,9 @@ the changelog by hand.
 ### 12. More tracker adapters
 
 A plan file kept in the repository, beside Linear, GitHub Issues and Jira.
-It waits on the open decisions below. For every adapter to work end
-to end, the [tracker interface](../GLOSSARY.md) gains attaching a file,
-which `decide` and `explain` now do through the Linear MCP tools or the
-`linear` command. The deferral step (item 10), `decide`, `explain` and
-`do-item`'s instructions then use the interface's operations, and
-`do-item`'s parent-status reconciliation reads the interface's answers
-instead of Linear's on its native path too.
+It waits on the open decisions below. For every adapter to work end to end,
+the deferral step (item 10) uses the [tracker interface](../GLOSSARY.md)'s
+operations.
 [plugin/EXTENDING.md](../plugin/EXTENDING.md#issue-tracker) lists what
 still assumes Linear.
 

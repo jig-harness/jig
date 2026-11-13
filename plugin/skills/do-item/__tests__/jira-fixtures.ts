@@ -47,6 +47,10 @@ export interface Call {
   path: string;
   query: Record<string, string | number | boolean>;
   body: Record<string, unknown>;
+  /** The multipart form an upload carried, if any. */
+  form?: FormData;
+  /** Whether the request asked for the answer as bytes. */
+  bytes?: boolean;
   /** The cancellation signal the request carried, if any. */
   signal?: AbortSignal;
 }
@@ -85,6 +89,8 @@ function fakeTransport(answer: Answer): {
         path: request.path,
         query: request.query ?? {},
         body: (request.body ?? {}) as Record<string, unknown>,
+        ...(request.form === undefined ? {} : { form: request.form }),
+        ...(request.bytes === undefined ? {} : { bytes: request.bytes }),
         ...(signal === undefined ? {} : { signal }),
       };
       calls.push(call);
