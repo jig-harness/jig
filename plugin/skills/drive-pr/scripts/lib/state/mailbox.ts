@@ -134,6 +134,7 @@ import {
   writeAllSync,
 } from "./fsutil.ts";
 import { fileLock } from "./file-lock.ts";
+import { helperExitCode } from "../status/terminal-states.ts";
 
 export const MAILBOX_DIRNAME = "drive-mailbox";
 
@@ -1107,12 +1108,11 @@ export function isPushHeld(
 }
 
 /**
- * Exit code for "a `hold-push` directive is blocking this push" — shared by
- * `guarded-push.ts` (its own pre-push refusal, and the mapping of a push the
- * hook aborted) and `push-hold-recheck.ts` (the hook step itself). See
- * `guarded-push.ts`'s exit-code doc for why 17 and not a lower number.
+ * Exit code for "a `hold-push` directive is blocking this push", which
+ * `guarded-push.ts` and `push-hold-recheck.ts` return: the drive numbering's
+ * `PUSH_HELD` entry, read from `lib/status/terminal-states.ts`.
  */
-export const PUSH_HELD_EXIT = 17;
+export const PUSH_HELD_EXIT = helperExitCode("PUSH_HELD");
 
 /**
  * Printed by `push-hold-recheck.ts` when it aborts a push for a hold but could

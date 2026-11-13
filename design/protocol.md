@@ -17,8 +17,10 @@ values generated from the code, their meaning written beside them in the
 code, and a gate that fails the build when the chapter and the code
 disagree.
 
-This is the design of [plan.md](plan.md) item 53. Nothing of it is built
-yet. The decision that a chapter and the code must agree is
+This is the design of [plan.md](plan.md) item 53. Its first build step is
+in place: the generator, its gate and the chapter on the drive's end states
+and exit codes, in [plugin/protocol/](../plugin/protocol/README.md); the
+steps after it in § Build order are open. The decision that a chapter and the code must agree is
 [ADR-0020](../docs/adr/ADR-0020-protocol-chapters-are-generated-and-gated.md).
 
 ## How it works
@@ -129,19 +131,20 @@ How a drive reaches each state: [drive-pr's terminal states](../skills/drive-pr/
 | `HEAD_LAG` | state | 4 | 4 | no | the pull request's head has not caught up with the push |
 | `NOT_SETTLED` | class-label | 4 | 4 | no | the class of states that wait for the pull request to settle; never itself a `state` |
 | `RETIRED` | tombstone | 10 | — | — | withdrawn; the code is not given to another state |
-| `SESSION_LEASE_HELD` | state | 11 | — | yes | another live session holds this round |
+| `SESSION_LEASE_HELD` | state | 11 | 11 | yes | another live session holds this round |
 | `SINGLE_INSTANCE_LOCK` | driver-only | — | 11 | yes | another driver holds this clone's lock |
 
 <!-- /protocol:generated -->
 ```
 
 The kinds are the code's own categories (`state`, `class-label`,
-`tombstone`, `driver-only`), rendered as the code names them. The chapter
-covers every exit a drive script returns in this numbering, including those
-defined outside `TERMINAL_STATES` today (`PUSH_HELD_EXIT` in
-`skills/drive-pr/scripts/lib/state/mailbox.ts`): the step that writes this
-chapter moves each into the table, so that no code looks free while it is
-in use.
+`tombstone`, `driver-only`, and `helper` for an exit one of the drive's
+helper scripts returns), rendered as the code names them. The chapter
+covers every exit a drive script returns in this numbering, the helper
+scripts' included (`PUSH_HELD`, exit `17`, which `guarded-push.ts` returns
+and `skills/drive-pr/scripts/lib/state/mailbox.ts` reads from the table as
+`PUSH_HELD_EXIT`), in a second section of its own, so that no code looks
+free while it is in use.
 
 ### The chapters
 
@@ -196,7 +199,10 @@ that changed from optional to required, fails the check unless the chapter's
 version was raised. Which chapters are protected is read from the base too:
 a chapter the base lists as stable stays stable. Marking it provisional,
 or removing its entry or its files, fails the check unless its version was
-raised and its change note is marked breaking. When the merge base cannot be read (a shallow clone),
+raised and its change note is marked breaking: a note the branch adds or
+changes holds a `**Breaking:**` entry that names the chapter's file. A
+stable chapter is removed by listing it as withdrawn in the chapter list, at
+a version above its last. When the merge base cannot be read (a shallow clone),
 the check fails and names the fetch that fixes it, rather than passing
 unchecked. A provisional chapter promises only that it states what the code
 does in the release that ships it; the comparison applies to a chapter
@@ -244,9 +250,9 @@ schemas;
   ([M2 § Generators reach every input](../modules/M2-generated-artifact-freshness/README.md#generators-reach-every-input)).
 - **The commit-time twin.** M2's triad needs a step that regenerates and
   stages the chapters at commit time. The repository's pre-commit hook
-  (`lefthook.yml`) has no such step for any generated file yet; the first
-  build step adds one for the chapters, run when a staged file is among the
-  entry's sources.
+  (`lefthook.yml`) runs `bun tools/protocol/generate.ts --stage` when a
+  staged file is among the entry's sources, and stages each chapter it
+  changed.
 
 Besides comparing the output and the base, the check refuses: a chapter
 file with no entry in the chapter list, or an entry with no file; a marker
@@ -267,8 +273,12 @@ editing the generated section.
 Every chapter ships its values as JSON in `plugin/protocol/data/<chapter>.json`,
 generated with the chapter: a program in any language loads the closed list
 without parsing Markdown. Each file carries the chapter's version, its
-status and, for a provisional chapter, its plan items. It is also the
-baseline the check compares a stable chapter against.
+status and, for a provisional chapter, its plan items, and declares each
+field of its values: its type, whether it may be null, whether every value
+carries it, and whether it is part of what makes a value the same value
+from one version to the next. It is also the baseline the check compares a
+stable chapter against: a value is matched by those identifying fields, so
+a renumbered value reads as one removed.
 
 A contract that a reader outside the skills parses as a JSON document also
 gets a JSON Schema (draft 2020-12) in `plugin/protocol/schemas/`:
