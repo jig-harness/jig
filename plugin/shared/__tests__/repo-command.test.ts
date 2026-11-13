@@ -379,36 +379,25 @@ describe("withDefaultBranchTree", () => {
     expect(out.out).toMatchObject({ ok: true, value: { note: "committed\n" } });
   });
 
-  it("copies files a partial clone has not downloaded", async () => {
-    const parent = mkdtempSync(join(tmpdir(), "jig-partial-"));
-    dirs.push(parent);
-    const origin = join(parent, "origin");
-    const commit = committedAt(origin);
-    git(origin, "config", "uploadpack.allowFilter", "true");
-    git(origin, "config", "uploadpack.allowAnySHA1InWant", "true");
-    const dir = join(parent, "clone");
-    git(
-      parent,
-      "clone",
-      "-q",
-      "--no-checkout",
-      "--filter=blob:none",
-      `file://${origin}`,
-      dir,
-    );
-    const out = await runner(["tree", dir, commit], { JIG_HOME: home() });
-    expect(out.out).toMatchObject({ ok: true, value: { note: "committed\n" } });
-  });
-
-  it("copies files of a partial clone that holds several undownloaded blobs", async () => {
-    const parent = mkdtempSync(join(tmpdir(), "jig-partial-many-"));
+  /**
+   * A partial clone of a fresh origin under `filter`, its single remote then
+   * reconfigured by the caller. `populate` adds files to the origin and they
+   * are committed as a second commit.
+   */
+  function partialClone(
+    prefix: string,
+    filter = "blob:none",
+    populate?: (origin: string) => void,
+  ) {
+    const parent = mkdtempSync(join(tmpdir(), prefix));
     dirs.push(parent);
     const origin = join(parent, "origin");
     committedAt(origin);
-    writeFileSync(join(origin, "second.txt"), "second\n");
-    writeFileSync(join(origin, "third.txt"), "third\n");
-    git(origin, "add", ".");
-    git(origin, "commit", "-q", "-m", "more");
+    if (populate) {
+      populate(origin);
+      git(origin, "add", ".");
+      git(origin, "commit", "-q", "-m", "more");
+    }
     const commit = head(origin);
     git(origin, "config", "uploadpack.allowFilter", "true");
     git(origin, "config", "uploadpack.allowAnySHA1InWant", "true");
@@ -418,34 +407,34 @@ describe("withDefaultBranchTree", () => {
       "clone",
       "-q",
       "--no-checkout",
-      "--filter=blob:none",
-      `file://${origin}`,
-      dir,
-    );
-    const out = await runner(["tree", dir, commit], { JIG_HOME: home() });
-    expect(out.out).toMatchObject({ ok: true, value: { note: "committed\n" } });
-  });
-
-  /** A partial clone of a fresh origin, its single remote then reconfigured. */
-  function partialClone(prefix: string) {
-    const parent = mkdtempSync(join(tmpdir(), prefix));
-    dirs.push(parent);
-    const origin = join(parent, "origin");
-    const commit = committedAt(origin);
-    git(origin, "config", "uploadpack.allowFilter", "true");
-    git(origin, "config", "uploadpack.allowAnySHA1InWant", "true");
-    const dir = join(parent, "clone");
-    git(
-      parent,
-      "clone",
-      "-q",
-      "--no-checkout",
-      "--filter=blob:none",
+      `--filter=${filter}`,
       `file://${origin}`,
       dir,
     );
     return { parent, origin, commit, dir };
   }
+
+  async function expectCopied(dir: string, commit: string) {
+    const out = await runner(["tree", dir, commit], { JIG_HOME: home() });
+    expect(out.out).toMatchObject({ ok: true, value: { note: "committed\n" } });
+  }
+
+  it("copies files a partial clone has not downloaded", async () => {
+    const { commit, dir } = partialClone("jig-partial-");
+    await expectCopied(dir, commit);
+  });
+
+  it("copies files of a partial clone that holds several undownloaded blobs", async () => {
+    const { commit, dir } = partialClone(
+      "jig-partial-many-",
+      "blob:none",
+      (o) => {
+        writeFileSync(join(o, "second.txt"), "second\n");
+        writeFileSync(join(o, "third.txt"), "third\n");
+      },
+    );
+    await expectCopied(dir, commit);
+  });
 
   it("takes a remote that only sets a partial-clone filter as a promisor", async () => {
     const { commit, dir } = partialClone("jig-partial-filter-");
@@ -484,56 +473,24 @@ describe("withDefaultBranchTree", () => {
   });
 
   it("copies files under a tree a tree-filtered clone has not downloaded", async () => {
-    const parent = mkdtempSync(join(tmpdir(), "jig-partial-tree-"));
-    dirs.push(parent);
-    const origin = join(parent, "origin");
-    committedAt(origin);
-    mkdirSync(join(origin, "scripts", "deep"), { recursive: true });
-    writeFileSync(join(origin, "scripts", "deep", "run.txt"), "run\n");
-    git(origin, "add", ".");
-    git(origin, "commit", "-q", "-m", "nested");
-    const commit = head(origin);
-    git(origin, "config", "uploadpack.allowFilter", "true");
-    git(origin, "config", "uploadpack.allowAnySHA1InWant", "true");
-    const dir = join(parent, "clone");
-    git(
-      parent,
-      "clone",
-      "-q",
-      "--no-checkout",
-      "--filter=tree:0",
-      `file://${origin}`,
-      dir,
-    );
-    const out = await runner(["tree", dir, commit], { JIG_HOME: home() });
-    expect(out.out).toMatchObject({ ok: true, value: { note: "committed\n" } });
+    const { commit, dir } = partialClone("jig-partial-tree-", "tree:0", (o) => {
+      mkdirSync(join(o, "scripts", "deep"), { recursive: true });
+      writeFileSync(join(o, "scripts", "deep", "run.txt"), "run\n");
+    });
+    await expectCopied(dir, commit);
   });
 
   it("copies files nested deeper than any fixed number of tree levels", async () => {
-    const parent = mkdtempSync(join(tmpdir(), "jig-partial-depth-"));
-    dirs.push(parent);
-    const origin = join(parent, "origin");
-    committedAt(origin);
-    const nested = join(origin, ...Array.from({ length: 70 }, () => "d"));
-    mkdirSync(nested, { recursive: true });
-    writeFileSync(join(nested, "run.txt"), "run\n");
-    git(origin, "add", ".");
-    git(origin, "commit", "-q", "-m", "nested");
-    const commit = head(origin);
-    git(origin, "config", "uploadpack.allowFilter", "true");
-    git(origin, "config", "uploadpack.allowAnySHA1InWant", "true");
-    const dir = join(parent, "clone");
-    git(
-      parent,
-      "clone",
-      "-q",
-      "--no-checkout",
-      "--filter=tree:0",
-      `file://${origin}`,
-      dir,
+    const { commit, dir } = partialClone(
+      "jig-partial-depth-",
+      "tree:0",
+      (o) => {
+        const nested = join(o, ...Array.from({ length: 70 }, () => "d"));
+        mkdirSync(nested, { recursive: true });
+        writeFileSync(join(nested, "run.txt"), "run\n");
+      },
     );
-    const out = await runner(["tree", dir, commit], { JIG_HOME: home() });
-    expect(out.out).toMatchObject({ ok: true, value: { note: "committed\n" } });
+    await expectCopied(dir, commit);
   }, 120000);
 
   it("copies a commit that holds a submodule whose objects the clone lacks", async () => {
