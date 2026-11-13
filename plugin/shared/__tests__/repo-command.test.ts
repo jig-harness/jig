@@ -217,3 +217,32 @@ describe("defaultBranchSettings", () => {
     expect(out.value).toBeUndefined();
   });
 });
+
+describe("withDefaultBranchTree", () => {
+  it("holds the commit's tracked files, not the working tree's, and is removed afterwards", async () => {
+    const dir = clone("do_item: {}\n");
+    writeFileSync(join(dir, "note.txt"), "committed");
+    git(dir, "add", ".");
+    git(dir, "commit", "-q", "-m", "note");
+    const commit = Bun.spawnSync(["git", "rev-parse", "HEAD"], { cwd: dir })
+      .stdout.toString()
+      .trim();
+    writeFileSync(join(dir, "note.txt"), "edited");
+    writeFileSync(join(dir, "untracked.txt"), "x");
+    expect(await runner(["tree", dir, commit])).toEqual({
+      out: {
+        ok: true,
+        value: { files: [".config", "note.txt"], note: "committed" },
+      },
+      removed: true,
+    });
+  });
+
+  it("fails, running nothing, for a commit the clone does not have", async () => {
+    const dir = clone("do_item: {}\n");
+    const { out, removed } = await runner(["tree", dir, "0".repeat(40)]);
+    expect(out.ok).toBe(false);
+    expect(out.failure.code).toBe("unreadable");
+    expect(removed).toBe(false);
+  });
+});

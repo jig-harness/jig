@@ -5,9 +5,10 @@
  * server, which only the repository knows how to reach.
  *
  * It is a repository's command (`shared/repo-command.ts`): its text is read
- * from `.config/jig.yaml` as the default branch holds it, and it runs from the
- * repository root with a scrubbed environment, a deadline and at most 64 KiB
- * of output. It reads one JSON object, `{"context": …, "target_url": …}`, on
+ * from `.config/jig.yaml` as the default branch holds it, and it runs in a
+ * temporary copy of the default branch's files at that same commit, never in
+ * the working tree of the pull request being repaired, with a scrubbed
+ * environment, a deadline and at most 64 KiB of output. It reads one JSON object, `{"context": …, "target_url": …}`, on
  * standard input and answers by its exit code:
  *
  * - 0: its standard output is the failed log;
@@ -21,9 +22,10 @@ import type { FailingStatus } from "../../../shared/ci-status.ts";
 import { failed, type Outcome, ok } from "../../../shared/outcome.ts";
 import { readTimeoutEnv } from "../../../shared/proc.ts";
 import {
-  defaultBranchSetting,
+  defaultBranchSettingAt,
   oneLine,
   runRepoCommand,
+  withDefaultBranchTree,
 } from "../../../shared/repo-command.ts";
 
 /** The exit by which `ci.log_command` says the log no longer exists. */
@@ -56,17 +58,23 @@ export function logCommandSeconds(): Outcome<number, "invalid-config"> {
       );
 }
 
+/** The command the default branch sets, and the commit it was read from. */
+export interface LogCommandSetting {
+  command: string;
+  commit: string;
+}
+
 /**
- * The command to run: the default branch's setting, `null` when it sets
- * none. When the default branch cannot be read, a working tree that sets
- * the command fails the read (the command it names is not the reviewed
- * one); one that sets none runs no command.
+ * The command to run: the default branch's setting and the commit it was read
+ * from, `null` when it sets none. When the default branch cannot be read, a
+ * working tree that sets the command fails the read (the command it names is
+ * not the reviewed one); one that sets none runs no command.
  */
 export async function logCommandOf(
   root: string,
   workingTree: string | undefined,
-): Promise<Outcome<string | null, "invalid-config" | "unreadable">> {
-  const read = await defaultBranchSetting(root, "ci", "log_command");
+): Promise<Outcome<LogCommandSetting | null, "invalid-config" | "unreadable">> {
+  const read = await defaultBranchSettingAt(root, "ci", "log_command");
   if (!read.ok)
     return workingTree === undefined
       ? ok(null)
@@ -74,17 +82,17 @@ export async function logCommandOf(
           "unreadable",
           `${FIELD} is read from the default branch, which could not be read: ${read.failure.reason}`,
         );
-  const value = read.value;
+  const { value, commit } = read.value;
   if (value === null || value === undefined) return ok(null);
   if (typeof value !== "string" || value.trim() === "")
     return failed(
       "invalid-config",
       `${FIELD} must be a shell command (nonempty text), as the default branch sets it`,
     );
-  return ok(value);
+  return ok({ command: value, commit });
 }
 
-/** Run `command` for `status` within `seconds`, from the repository root `cwd`. */
+/** Run `command` for `status` within `seconds`, in the directory `cwd`. */
 export async function readStatusLog(
   command: string,
   status: FailingStatus,
@@ -119,4 +127,31 @@ export async function readStatusLog(
       `${name} failed (exit ${result.code}${result.stderrTail === "" ? "" : `: ${result.stderrTail}`})`,
     );
   return ok({ kind: "log", text: result.stdout });
+}
+
+/**
+ * Each of `statuses`' logs, in order, through `command` run in one copy of the
+ * default branch's files at `commit`, taken from the repository at `root`;
+ * the first status that cannot be read stops the reading. A copy that cannot
+ * be made fails the read before the command runs: it never falls back to the
+ * working tree.
+ */
+export async function readStatusLogs(
+  command: string,
+  commit: string,
+  statuses: readonly FailingStatus[],
+  seconds: number,
+  root: string,
+): Promise<Outcome<StatusLog[], "log-command-failed" | "unreadable">> {
+  if (statuses.length === 0) return ok([]);
+  const copied = await withDefaultBranchTree(root, commit, async (tree) => {
+    const logs: StatusLog[] = [];
+    for (const status of statuses) {
+      const log = await readStatusLog(command, status, seconds, tree);
+      if (!log.ok) return log;
+      logs.push(log.value);
+    }
+    return ok(logs);
+  });
+  return copied.ok ? copied.value : copied;
 }

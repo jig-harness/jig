@@ -14,14 +14,21 @@
  * - **It is bounded**: a deadline, and at most `MAX_OUTPUT_BYTES` of
  *   standard output.
  * - **Its failures are redacted** to one bounded line (`oneLine`).
+ * - **A command that runs a program from the repository** is run from the
+ *   default branch's files, not from the working tree of the branch being
+ *   worked on (`withDefaultBranchTree`): the setting and the files it runs
+ *   come from the same commit of the default branch.
  *
  * The caller reads the exit code and the output; what they mean is the
  * caller's contract (a preflight's exit 3, a facet store's JSON).
  */
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { OVERLAY_RELPATH, isMapping } from "./config-layers.ts";
 import { remoteName } from "./consumer.ts";
-import { failed, ok, type Outcome } from "./outcome.ts";
-import { git, run } from "./proc.ts";
+import { attempt, failed, ok, type Outcome } from "./outcome.ts";
+import { git, gitIdentityEnv, run } from "./proc.ts";
 import { load } from "./yaml.ts";
 
 /** The tokens a repository's command never sees. */
@@ -40,6 +47,8 @@ export const SCRUBBED_ENV: readonly string[] = [
 const MAX_OUTPUT_BYTES = 64 * 1024;
 /** How long the default branch's fetch may take before its last-fetched copy is read. */
 const FETCH_TIMEOUT_SEC = 30;
+/** How long copying the default branch's files may take. */
+const EXPORT_TIMEOUT_SEC = 120;
 /** How many characters of a reason or a failure's output a line keeps. */
 const LINE_CHARS = 300;
 
@@ -158,7 +167,9 @@ function remoteOf(root: string): Outcome<string, "unreadable"> {
  */
 async function defaultBranchConfig(
   root: string,
-): Promise<Outcome<{ ref: string; config: unknown }, "unreadable">> {
+): Promise<
+  Outcome<{ ref: string; commit: string; config: unknown }, "unreadable">
+> {
   const remote = remoteOf(root);
   if (!remote.ok) return remote;
   const ref = await defaultBranchRef(root, remote.value);
@@ -178,7 +189,14 @@ async function defaultBranchConfig(
     ],
     { stderr: "pipe", timeoutSec: FETCH_TIMEOUT_SEC },
   );
-  const show = await git(["-C", root, "show", `${ref}:${OVERLAY_RELPATH}`], {
+  const resolved = await git(
+    ["-C", root, "rev-parse", "--verify", "--quiet", `${ref}^{commit}`],
+    { stderr: "pipe", timeoutSec: FETCH_TIMEOUT_SEC },
+  );
+  const commit = resolved.stdout.trim();
+  if (resolved.code !== 0 || commit === "")
+    return failed("unreadable", `${ref} names no commit in this clone`);
+  const show = await git(["-C", root, "show", `${commit}:${OVERLAY_RELPATH}`], {
     stderr: "pipe",
     timeoutSec: FETCH_TIMEOUT_SEC,
   });
@@ -187,14 +205,14 @@ async function defaultBranchConfig(
     show.code !== 0 &&
     /does not exist|exists on disk, but not in/.test(show.stderr)
   )
-    return ok({ ref, config: null });
+    return ok({ ref, commit, config: null });
   if (show.code !== 0)
     return failed(
       "unreadable",
       `${OVERLAY_RELPATH} on ${ref} could not be read: ${oneLine(show.stderrTail || show.stderr)}`,
     );
   try {
-    return ok({ ref, config: load(show.stdout) });
+    return ok({ ref, commit, config: load(show.stdout) });
   } catch (error) {
     return failed(
       "unreadable",
@@ -206,36 +224,48 @@ async function defaultBranchConfig(
 /**
  * Fields of `.config/jig.yaml` as the repository's default branch holds
  * them (`section.field`), each `null` when that branch does not set it, all
- * from one fetch and one parse, so they answer together or fail together. A
- * clone with no default branch to read (`<remote>/HEAD` unset), or a file
- * there that does not parse, is a failure: the caller decides whether that
- * refuses.
+ * from one fetch and one parse, so they answer together or fail together,
+ * with the commit they were read from. A clone with no default branch to
+ * read (`<remote>/HEAD` unset), or a file there that does not parse, is a
+ * failure: the caller decides whether that refuses.
  */
-export async function defaultBranchSettings(
+async function defaultBranchSettingsAt(
   root: string,
   section: string,
   fields: readonly string[],
-): Promise<Outcome<Record<string, unknown>, "unreadable">> {
+): Promise<
+  Outcome<{ values: Record<string, unknown>; commit: string }, "unreadable">
+> {
   const read = await defaultBranchConfig(root);
   if (!read.ok) return read;
-  const { ref, config } = read.value;
-  const out: Record<string, unknown> = {};
-  for (const field of fields) out[field] = null;
-  if (config === null || config === undefined) return ok(out);
+  const { ref, commit, config } = read.value;
+  const values: Record<string, unknown> = {};
+  for (const field of fields) values[field] = null;
+  if (config === null || config === undefined) return ok({ values, commit });
   if (!isMapping(config))
     return failed(
       "unreadable",
       `${OVERLAY_RELPATH} on ${ref} is not a mapping`,
     );
   const part = config[section];
-  if (part === undefined || part === null) return ok(out);
+  if (part === undefined || part === null) return ok({ values, commit });
   if (!isMapping(part))
     return failed(
       "unreadable",
       `${section} in ${OVERLAY_RELPATH} on ${ref} is not a mapping`,
     );
-  for (const field of fields) out[field] = part[field] ?? null;
-  return ok(out);
+  for (const field of fields) values[field] = part[field] ?? null;
+  return ok({ values, commit });
+}
+
+/** The fields of `defaultBranchSettingsAt`, without the commit. */
+export async function defaultBranchSettings(
+  root: string,
+  section: string,
+  fields: readonly string[],
+): Promise<Outcome<Record<string, unknown>, "unreadable">> {
+  const read = await defaultBranchSettingsAt(root, section, fields);
+  return read.ok ? ok(read.value.values) : read;
 }
 
 /** One field of `.config/jig.yaml` as the default branch holds it; see `defaultBranchSettings`. */
@@ -246,4 +276,85 @@ export async function defaultBranchSetting(
 ): Promise<Outcome<unknown, "unreadable">> {
   const read = await defaultBranchSettings(root, section, [field]);
   return read.ok ? ok(read.value[field]) : read;
+}
+
+/** One field as the default branch holds it, and the commit it was read from. */
+export async function defaultBranchSettingAt(
+  root: string,
+  section: string,
+  field: string,
+): Promise<Outcome<{ value: unknown; commit: string }, "unreadable">> {
+  const read = await defaultBranchSettingsAt(root, section, [field]);
+  return read.ok
+    ? ok({ value: read.value.values[field], commit: read.value.commit })
+    : read;
+}
+
+/**
+ * Run `use` in a directory holding the files of `commit` (a commit of the
+ * default branch, as `defaultBranchSettingAt` names it), and remove the
+ * directory afterwards, however `use` ends. The copy is made from a
+ * temporary index, so the repository's own index, working tree and branches
+ * are never touched, and nothing of the working tree reaches it: a command
+ * run there executes the reviewed program, never a pull request's edit of
+ * it. It holds tracked files only: nothing installed or generated beside
+ * them (`node_modules`, build output) is in it.
+ */
+export async function withDefaultBranchTree<T>(
+  root: string,
+  commit: string,
+  use: (dir: string) => Promise<T>,
+): Promise<Outcome<T, "unreadable">> {
+  let scratch: string;
+  try {
+    scratch = mkdtempSync(join(tmpdir(), "jig-default-branch-"));
+  } catch (error) {
+    return failed(
+      "unreadable",
+      `a copy of the default branch's files could not be started: ${oneLine(error instanceof Error ? error.message : String(error))}`,
+    );
+  }
+  try {
+    const tree = join(scratch, "tree");
+    const made = attempt("unreadable", "the copy's directory", () =>
+      mkdirSync(tree),
+    );
+    if (!made.ok) return made;
+    const env = {
+      ...gitIdentityEnv(),
+      GIT_INDEX_FILE: join(scratch, "index"),
+    };
+    const options = {
+      env,
+      stderr: "pipe" as const,
+      timeoutSec: EXPORT_TIMEOUT_SEC,
+    };
+    const read = await git(["-C", root, "read-tree", commit], options);
+    const copy =
+      read.code === 0
+        ? await git(
+            [
+              "-C",
+              root,
+              "checkout-index",
+              "--all",
+              "--force",
+              `--prefix=${tree.replaceAll("\\", "/")}/`,
+            ],
+            options,
+          )
+        : read;
+    if (copy.code !== 0)
+      return failed(
+        "unreadable",
+        `the default branch's files at ${commit.slice(0, 12)} could not be copied: ${oneLine(copy.stderrTail || copy.stderr)}`,
+      );
+    return ok(await use(tree));
+  } finally {
+    try {
+      rmSync(scratch, { recursive: true, force: true });
+    } catch {
+      // A leftover temporary directory is not the command's failure.
+    }
+  }
 }
