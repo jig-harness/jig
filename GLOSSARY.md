@@ -2145,6 +2145,49 @@ make, use the entry's term instead.
   them under "What still assumes Linear". Adapters for Linear, GitHub
   Issues and Jira are built; an adapter for a plan file kept in the
   repository is planned ([ROADMAP.md](ROADMAP.md) item 12).
+- **Governed transport** — the one module through which Jig's code calls
+  one outside system: a *forge*, an issue tracker, a reflection store. It
+  reuses an answer it holds before it sends, asks the machine's *budget
+  record*, bounds what one call can cost (a deadline, a page size on every
+  list), adds the call to the *cost ledger* and fails as one of the
+  *failure classes*. No other code sends to that system, and every
+  transport is built from one shared library
+  ([ADR-0020](docs/adr/ADR-0020-outbound-calls-are-governed.md)). The
+  tracker adapters' transports keep the budget and the deadline; the rest
+  is planned ([ROADMAP.md](ROADMAP.md) item 53).
+- **Budget record** — what a machine knows of one credential's limits at an
+  outside system: for each limit its size, what is left and how it refills,
+  and until when the system refuses the credential. Every process on the
+  machine shares the record, so the *dispatcher*'s *ticks*, the sessions it
+  starts and a person's skills spend one allowance knowingly. A *governed
+  transport* asks it before each request and tells it what each answer
+  said; the dispatcher's own reads keep to a share of each limit
+  (`tracker_share`,
+  [configuration reference](plugin/CONFIGURATION.md)).
+- **Cost ledger** — the record of what Jig's calls to outside systems
+  cost: for each hour, system, credential, named operation and caller, the
+  requests sent, the cost in the system's own unit (a tracker's complexity
+  points, a forge's query points) and the time taken. It answers "what
+  spent this quota" without probing the system. Planned
+  ([ROADMAP.md](ROADMAP.md) item 53).
+- **Failure class** — one of the closed set of ways a call to an outside
+  system fails: rate limited (with the time it clears), unreachable, too
+  costly, server fault, unauthorized, not found, invalid. Each class has
+  one policy: whether the call is retried, what its reader shows meanwhile,
+  and when a person is told. It names what went wrong outside Jig; the
+  *failure channel* is how a failure travels inside it.
+- **Transport profile** — what a *governed transport* declares of its
+  system's limits: which exist, how each refills, how an answer reports
+  them, what a refusal looks like and who owns the quota. It holds no
+  number the system reports; those are read from each answer. Planned
+  ([ROADMAP.md](ROADMAP.md) item 53).
+- **Cost ceiling** — the most a query may cost in total, declared beside
+  the query with its unit: objects (the sum over its paths of the nested
+  page sizes' product) or, where the system's formula can be computed from
+  the query text, the system's own cost unit. What one request can cost an
+  outside system is then bounded when the query is written, and a gate can
+  check it.
+  Planned ([ROADMAP.md](ROADMAP.md) item 53).
 - **ADF (Atlassian Document Format)** — the JSON form Jira stores rich
   text in (issue descriptions, comments). Jig's Jira adapter converts it to
   Markdown when it reads and from Markdown when it writes, so the skills
