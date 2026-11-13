@@ -788,9 +788,13 @@ A release goes like this:
 4. The release commit runs the gates like any push to main. Once `gates`
    passes on that commit, the workflow's `tag-plan` and `tag-push` jobs tag it
    `v<version>`. They run after every gates run on main and every six hours;
-   a cancelled gates run is run again once, and a release commit whose gates
-   failed stays untagged, fails `tag-plan` and shows in the changelog skill's
-   `status.ts`, for a person to fix.
+   a cancelled gates run is run again once, and failed gates are run again up
+   to `changelog.release.rerun_failed_gates` times (default `1`, `0` disables
+   failed-gates retries). A release whose retries are exhausted stays untagged
+   and shows in the changelog skill's `status.ts` for a person to fix. Older
+   untagged releases stay listed for manual tagging after a newer tag exists;
+   only releases newer than the newest tag are automatically tagged (or only
+   the newest release when no release tag exists).
 5. The workflow's `latest` job then moves the `latest` channel to the newest
    tagged version (`.github/workflows/channels.yml`, running
    `tools/plugin/channel.ts`). Each run catches up, so a version a failed run

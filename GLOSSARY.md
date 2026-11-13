@@ -9,6 +9,10 @@ make, use the entry's term instead.
 
 ## Core ideas
 
+- **Preflight** — a small check that runs before a stage starts, to prove a
+  condition the stage needs. For example, the dispatcher checks whether an
+  account can reach a tracker before launching work that must use it.
+
 - **AI-native delivery** — building and maintaining software with AI coding
   agents as first-class participants: the repo is organized so agents can find
   the rules, run the checks, and improve the process — not just emit code.
@@ -2156,7 +2160,7 @@ make, use the entry's term instead.
   list), adds the call to the *cost ledger* and fails as one of the
   *failure classes*. No other code sends to that system, and every
   transport is built from one shared library
-  ([ADR-0020](docs/adr/ADR-0020-outbound-calls-are-governed.md)). The
+  ([ADR-0021](docs/adr/ADR-0021-outbound-calls-are-governed.md)). The
   tracker adapters' transports keep the budget and the deadline; the rest
   is planned ([ROADMAP.md](ROADMAP.md) item 55).
 - **Budget record** — what a machine knows of one credential's limits at an
@@ -2389,6 +2393,14 @@ make, use the entry's term instead.
   one database that enrolled hosts call. Optional: a host that never
   enrolls, or whose hub does not answer, dispatches alone. See
   [design/control-plane.md](design/control-plane.md).
+- **Notification channel** — one way the *dispatcher*'s notices reach a
+  person: a workspace card in Orca, a team's chat. The tick sends each
+  notice through every channel a machine enables and keeps a record per
+  channel of what was delivered ([design/chat.md](design/chat.md)).
+- **Chat bridge** — the one process that turns a person's click or command
+  in a team's chat into one `jig send` request. It runs inside the *hub* or
+  on a host that is not enrolled, connects out to the chat tool and listens
+  on no socket ([design/chat.md](design/chat.md)).
 - **Device grant** — how a host enrolls in a *hub*: the host prints a short
   code, a person who administers the hub approves it, and the host receives a
   credential of its own, bound to the repositories and queues that person

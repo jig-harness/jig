@@ -42,7 +42,11 @@ describe("the section", () => {
       unreleased: null,
       authors: true,
       tagPrefix: "v",
-      release: { push: "direct", branch: "changelog-release" },
+      release: {
+        push: "direct",
+        branch: "changelog-release",
+        rerunFailedGates: 1,
+      },
       consumerActions: false,
       consumerActionsRecord: null,
     });
@@ -75,6 +79,19 @@ describe("the section", () => {
     ] as const)
       expect(refused({ ...section }), JSON.stringify(section)).toContain(
         message,
+      );
+  });
+
+  test("failed gates retry budget is a nonnegative safe integer", () => {
+    expect(
+      parse({ release: { rerun_failed_gates: 0 } })?.release.rerunFailedGates,
+    ).toBe(0);
+    expect(
+      parse({ release: { rerun_failed_gates: 2 } })?.release.rerunFailedGates,
+    ).toBe(2);
+    for (const value of [-1, 1.5, "1", true, Number.MAX_SAFE_INTEGER + 1])
+      expect(refused({ release: { rerun_failed_gates: value } })).toContain(
+        "changelog.release.rerun_failed_gates",
       );
   });
 

@@ -133,6 +133,8 @@ export interface Client {
   version(name: string, signal?: AbortSignal): Promise<string>;
   /** A priority by its name; its id. */
   priority(name: string, signal?: AbortSignal): Promise<string>;
+  /** Every priority the site has. */
+  priorities(signal?: AbortSignal): Promise<PriorityMeta[]>;
   /**
    * Each relation's configured link types, each resolved to exactly one of
    * the site's, the type a new link gets first.
@@ -184,6 +186,12 @@ export interface Client {
   trusted(user: Record<string, unknown> | null): Promise<boolean>;
   /** The credential's profile time zone, read once. */
   timeZone(): Promise<string>;
+}
+
+/** One priority of the site. */
+export interface PriorityMeta {
+  id: string;
+  name: string;
 }
 
 /** A screen's fields by id, each with the values it allows (`null`: no list). */
@@ -458,9 +466,49 @@ export function jiraClient(opts: ClientOptions): Client {
     string,
     (signal?: AbortSignal) => Promise<FieldMeta>
   >();
+  let searchRefused = false;
   let zone: Promise<string> | undefined;
   let me: Promise<Record<string, unknown>> | undefined;
   const assignables = new Map<string, Promise<boolean>>();
+
+  /**
+   * The site's priorities, through `priority/search`. A token the gateway
+   * refuses there (a scoped API token or an OAuth access token without the
+   * scope that search wants) reads the same list from `GET priority`, and
+   * this client asks the search no more: a refused request would renew the
+   * credential and be sent again each time.
+   */
+  async function readPriorities(signal?: AbortSignal): Promise<PriorityMeta[]> {
+    const named = (p: Record<string, unknown>) => ({
+      id: String(p.id),
+      name: str(p.name, "priority.name"),
+    });
+    if (!searchRefused)
+      try {
+        const values = await offsetPages(
+          transport,
+          { method: "GET", path: "priority/search" },
+          {
+            items: "values",
+            idOf: (p) => p.id,
+            where: "priorities",
+            ...(signal === undefined ? {} : { signal }),
+          },
+        );
+        return values.map(named);
+      } catch (err) {
+        if (
+          !(err instanceof JiraApiError) ||
+          ![401, 403].includes(err.status ?? 0)
+        )
+          throw err;
+        searchRefused = true;
+      }
+    const raw = await get("priority", undefined, signal);
+    if (!Array.isArray(raw))
+      throw new JiraApiError("priorities: expected a list");
+    return raw.map((p, i) => named(record(p, `priorities[${i}]`)));
+  }
 
   /** The credential's own profile, read once. */
   function myself(): Promise<Record<string, unknown>> {
@@ -726,22 +774,11 @@ export function jiraClient(opts: ClientOptions): Client {
     },
 
     async priority(name, signal) {
-      const values = await offsetPages(
-        transport,
-        { method: "GET", path: "priority/search" },
-        {
-          items: "values",
-          idOf: (p) => p.id,
-          where: "priorities",
-          ...(signal === undefined ? {} : { signal }),
-        },
-      );
-      const priorities = values.map((p) => ({
-        id: String(p.id),
-        name: str(p.name, "priority.name"),
-      }));
+      const priorities = await readPriorities(signal);
       return onlyNamed(priorities, name, "priorities").id;
     },
+
+    priorities: readPriorities,
 
     linkTypes() {
       links ??= (async () => {
