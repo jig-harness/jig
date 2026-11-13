@@ -394,6 +394,12 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.229.0] - 2026-11-13
+
+### Added
+
+- The `orchestrate` skill turns a large, loosely bounded topic into recorded decisions, a reviewed plan and started issues. One session stays with the person while separate sessions survey the tracks, maintain the plan and file work. **Consumer action:** none.
+
 ## [0.228.1] - 2026-11-13
 
 ### Fixed
@@ -7968,7 +7974,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.228.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.229.0...HEAD
+[0.229.0]: https://github.com/jig-harness/jig/compare/v0.228.1...v0.229.0
 [0.228.1]: https://github.com/jig-harness/jig/compare/v0.228.0...v0.228.1
 [0.228.0]: https://github.com/jig-harness/jig/compare/v0.227.2...v0.228.0
 [0.227.2]: https://github.com/jig-harness/jig/compare/v0.227.1...v0.227.2
