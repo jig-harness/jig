@@ -249,8 +249,9 @@ export function withFacets(
    * Refuse a retired label of a type or size kept outside labels among the
    * labels a write adds: it would put back a label the store no longer
    * reads, beside the value the store holds. Taking one off stays allowed.
-   * Jira's adapter refuses its native-type fallback labels and its
-   * `field_labels` values itself, so only its field stores are checked here.
+   * Jira's adapter refuses its native-type fallback labels and a label
+   * behind a `field_labels` prefix itself, so only its field stores are
+   * checked here, and not for those labels.
    */
   function refuseRetiredLabels(labels: ReadonlyArray<string>): void {
     for (const f of LABEL_FACETS) {
@@ -262,8 +263,12 @@ export function withFacets(
         store: "label",
         labels: slot.retired ?? [],
       });
+      const refused = slot.refusedPrefixes ?? [];
       const owned = labels.find(
-        (l) => retired.owns(l) && fold(l) !== fold(facets.epic),
+        (l) =>
+          retired.owns(l) &&
+          fold(l) !== fold(facets.epic) &&
+          !refused.some((p) => l.startsWith(p)),
       );
       if (owned === undefined) continue;
       const value = retired.read([owned]) as string;

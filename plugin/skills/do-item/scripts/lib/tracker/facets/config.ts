@@ -320,6 +320,8 @@ export interface ResolvedFacet {
    * value with its labels. They are retired, so a write may not add one.
    */
   retired?: ReadonlyArray<readonly [string, string[]]>;
+  /** Label prefixes the tracker's adapter refuses on a write itself, case-sensitively, in its own words. */
+  refusedPrefixes?: ReadonlyArray<string>;
   /** The values a native or field store's `values` names (the rest keep their own names). */
   named?: ReadonlyArray<string>;
   /**
@@ -472,6 +474,13 @@ function checkLabelNames(
   }
 }
 
+/** The label prefixes Jira's adapter refuses on a write, case-sensitively as it matches them. */
+function refusedPrefixes(inputs: FacetInputs): string[] {
+  return inputs.adapter === "jira"
+    ? Object.values(inputs.jiraFieldLabels ?? {})
+    : [];
+}
+
 function resolved(
   facet: Facet,
   entry: FacetEntry | undefined,
@@ -484,8 +493,8 @@ function resolved(
     nativeMap: Record<string, MapNames>;
     /** A native store that keeps a value in its labels where the tracker cannot (Jira's issue type). */
     fallback?: boolean;
-    /** The store is Jira's `field_labels`, whose adapter refuses its labels itself. */
-    fieldLabels?: boolean;
+    /** Jira's `field_labels` prefixes: its adapter refuses a label behind one itself, in its own words. */
+    refusedPrefixes?: ReadonlyArray<string>;
   },
 ): ResolvedFacet {
   const store = entry?.store ?? base.defaultStore;
@@ -519,9 +528,10 @@ function resolved(
     named: Object.keys(entry?.values ?? {}).flatMap(
       (k) => canonical(base.values, k) ?? [],
     ),
-    ...(base.fieldLabels === true
-      ? {}
-      : { retired: base.values.map((v) => [v, base.labels(v)] as const) }),
+    retired: base.values.map((v) => [v, base.labels(v)] as const),
+    ...(base.refusedPrefixes?.length
+      ? { refusedPrefixes: base.refusedPrefixes }
+      : {}),
     ...(store === "native" && base.fallback === true
       ? { fallback: base.values.map((v) => [v, base.labels(v)] as const) }
       : {}),
@@ -677,7 +687,7 @@ function sizeSlot(inputs: FacetInputs, tax: TaxonomyValues | null): FacetSlot {
     labels: (v) => [v],
     nativeField: null,
     nativeMap: {},
-    fieldLabels: entry !== inputs.entries.size,
+    refusedPrefixes: refusedPrefixes(inputs),
   });
 }
 
@@ -738,7 +748,7 @@ function typeSlot(
     nativeField: null,
     nativeMap: {},
     fallback: inputs.adapter === "jira",
-    fieldLabels: entry !== inputs.entries.type,
+    refusedPrefixes: refusedPrefixes(inputs),
   });
 }
 

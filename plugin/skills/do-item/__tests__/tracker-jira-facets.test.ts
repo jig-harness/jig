@@ -666,6 +666,14 @@ describe("Jira: issue_tracker.jira.field_labels as a facet's field", () => {
     expect(writes(calls)).toEqual([]);
   });
 
+  it("refuses a label the adapter does not, such as another case of the prefix", async () => {
+    const { t, calls } = jira(routes(SITE), OVERLAY);
+    await expect(
+      t.createIssue({ title: "T", description: "", labels: ["Size:M"] }),
+    ).rejects.toThrow("stands for the size size:M");
+    expect(writes(calls)).toEqual([]);
+  });
+
   it("stays labels where its labels are not a facet's values", () => {
     const { client } = jira(routes(SITE), {
       issue_tracker: { jira: { field_labels: { Size: "size:" } } },
