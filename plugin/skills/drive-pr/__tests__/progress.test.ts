@@ -1,4 +1,4 @@
-import { scopedStateDir } from "./scoped-state-dir.ts";
+import { scopedStateDir, fixtureStateTree } from "./scoped-state-dir.ts";
 /**
  * progress.test.ts — `DriveState.lastProgressAt`/`quotaPark`,
  * `withProgress`, and the `drive-state.ts` verbs that stamp (or deliberately
@@ -32,6 +32,7 @@ import {
   isUsableState,
   withProgress,
 } from "../scripts/lib/state/schema.ts";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 import { closeDatabase } from "../../../shared/records/db.ts";
 import { dbPathFor } from "../scripts/lib/state/db.ts";
@@ -44,21 +45,25 @@ const SHA_A = "a".repeat(40);
 const SHA_B = "b".repeat(40);
 
 function cleanEnv(extra: Record<string, string>): Record<string, string> {
-  // Scrubs any inherited GIT_* from the suite's own invocation (a git hook,
-  // in particular) — the identical hazard `drives.test.ts`'s own `cleanEnv`
-  // and `drive-pr.test.ts`'s `gitCleanEnv` document: `resolveActor()` runs
-  // `git rev-parse` in the spawned child, and a leaked `GIT_DIR` would
-  // resolve it against the wrong repository.
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env)) {
-    if (k.startsWith("GIT_") || v === undefined) continue;
+    if (k.startsWith("GIT_") || k.startsWith("DRIVE_PR_") || v === undefined)
+      continue;
     env[k] = v;
   }
   return { ...env, ...extra };
 }
 
 function freshStateDir(): string {
-  return scopedStateDir(mkdtempSync(join(tmpdir(), "progress-test-")));
+  const root = mkdtempSync(join(tmpdir(), "progress-test-"));
+  const git = Bun.spawnSync(["git", "init", "-q", "-b", "main"], {
+    cwd: root,
+    env: cleanEnv({}),
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  expectSpawnExit(git, 0);
+  return scopedStateDir(root, root);
 }
 
 function seedState(dir: string, overrides: Partial<DriveState> = {}): void {
@@ -86,6 +91,7 @@ async function driveState(
   args: string[],
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const proc = Bun.spawn(scriptArgv(DRIVE_STATE, ...args), {
+    cwd: fixtureStateTree(stateDir),
     env: cleanEnv({ DRIVE_PR_STATE_DIR: stateDir }),
     stdout: "pipe",
     stderr: "pipe",
