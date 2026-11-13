@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import { hostEnv } from "../../../../lib/test-helpers/host-env.ts";
 import { createProcessRegistry } from "../../../shared/process-registry.ts";
 import { processTable } from "../../../shared/process-table.ts";
 import {
@@ -33,7 +34,7 @@ test("pass cancellation consumes the registry and stops a runner reparented afte
       ],
       {
         cwd,
-        env: { ...process.env, JIG_PROCESS_REGISTRY_DIR: registry.dir },
+        env: { ...hostEnv, JIG_PROCESS_REGISTRY_DIR: registry.dir },
         stdout: "pipe",
         stderr: "pipe",
       },
