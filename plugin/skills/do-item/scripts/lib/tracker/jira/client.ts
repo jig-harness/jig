@@ -32,6 +32,7 @@ import {
   optStr,
   parseIssue,
   record,
+  stateInputOf,
   str,
 } from "./read.ts";
 
@@ -113,14 +114,11 @@ export interface Client {
     fields?: ReadonlyArray<string>,
   ): Promise<JiraIssue[]>;
   /**
-   * How many issues a JQL query selects that are not done, counted from each
-   * issue's status alone: no field or facet is resolved and no issue parsed.
+   * How many issues a JQL query selects that the model reads as open, from
+   * each issue's status, type and resolution alone: no field or facet is
+   * resolved and no issue parsed. An unreadable status throws.
    */
-  countNotDone(
-    jql: string,
-    where: string,
-    signal?: AbortSignal,
-  ): Promise<number>;
+  countOpen(jql: string, where: string, signal?: AbortSignal): Promise<number>;
   /** The issue's children: its sub-tasks, or an Epic's issues. */
   children(
     key: string,
@@ -619,21 +617,25 @@ export function jiraClient(opts: ClientOptions): Client {
       );
     },
 
-    async countNotDone(jql, where, signal) {
+    async countOpen(jql, where, signal) {
       if (signal?.aborted === true) throw abortedError(signal);
       const authenticated = myself();
       await (signal === undefined
         ? authenticated
         : until(authenticated, signal));
-      const read = await searchPages(transport, jql, ["status"], where, signal);
-      return read.filter((i) => {
-        const fields = isRecord(i.fields) ? i.fields : {};
-        const status = isRecord(fields.status) ? fields.status : {};
-        const category = isRecord(status.statusCategory)
-          ? status.statusCategory
-          : {};
-        return category.key !== "done";
-      }).length;
+      const read = await searchPages(
+        transport,
+        jql,
+        ["status", "issuetype", "resolution"],
+        where,
+        signal,
+      );
+      return read.filter(
+        (i) =>
+          !["completed", "canceled", "duplicate"].includes(
+            model.read(stateInputOf(i)).state.type,
+          ),
+      ).length;
     },
 
     children(key, open = false, signal) {

@@ -52,12 +52,45 @@ describe("Jira open population counts", () => {
       searches.every(
         (c) =>
           JSON.stringify((c.body as { fields?: unknown }).fields) ===
-          '["status"]',
+          '["status","issuetype","resolution"]',
       ),
     ).toBe(true);
     expect(calls.some((c) => c.route === "POST search/approximate-count")).toBe(
       false,
     );
+  });
+  test("counts a done-category issue the model reads as blocked, and drops a closed one", async () => {
+    const { t } = jira(
+      routes({
+        "POST search/jql": page(
+          issue({
+            key: "ENG-1",
+            type: "Epic",
+            status: "Waiting",
+            category: "done",
+          }),
+          issue({
+            key: "ENG-2",
+            type: "Story",
+            status: "Waiting",
+            category: "done",
+          }),
+          issue({ key: "ENG-3" }),
+        ),
+      }),
+      {
+        issue_tracker: {
+          jira: { states_by_type: { Epic: { blocked: "Waiting" } } },
+        },
+      },
+    );
+    expect((await t.poolScopeCounts?.())?.project).toBe(2);
+  });
+  test("refuses a count over an unreadable status instead of inventing one", async () => {
+    const { t } = jira(
+      routes({ "POST search/jql": page({ key: "ENG-1", fields: {} }) }),
+    );
+    await expect(t.poolScopeCounts?.()).rejects.toThrow();
   });
   test("reads once when unscoped and preserves zero", async () => {
     const { t, calls } = jira(routes({ "POST search/jql": page() }));

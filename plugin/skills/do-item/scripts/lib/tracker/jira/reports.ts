@@ -561,7 +561,7 @@ export function reportOperations(
       const clause = await client.poolScope(signal);
       async function count(...clauses: string[]): Promise<number> {
         if (signal?.aborted === true) throw abortedError(signal);
-        return client.countNotDone(
+        return client.countOpen(
           inProject(project, open, ...clauses),
           `open issues of ${project}`,
           signal,
