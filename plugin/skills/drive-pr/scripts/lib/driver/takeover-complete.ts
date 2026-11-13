@@ -16,7 +16,6 @@
  * recorded and said apart. A failed reconciliation is said in the notice and
  * the record; the first gate's own sweep runs it again.
  */
-import { isRecord } from "../../../../../shared/guards.ts";
 
 import { helperTimeoutSeconds, run, tsArgv } from "./../proc.ts";
 
@@ -24,11 +23,7 @@ import { accountHash, resolveAccountIdentity } from "./../identity.ts";
 
 import type { DriveState, HeldItem } from "./../state/schema.ts";
 
-import {
-  driveState,
-  listUnresolvedThreads,
-  reconcileRepliedThreads,
-} from "./paths.ts";
+import { driveState, reconcileRepliedThreads } from "./paths.ts";
 
 import {
   admitAnsweredParks,
@@ -181,26 +176,6 @@ async function reholdUnconfirmed(
 }
 
 /**
- * The ids of the PR's unresolved threads, human-started ones included (a hold
- * can sit on either), or `null` when they cannot be read.
- */
-async function openThreadIds(pr: string): Promise<Set<string> | null> {
-  const res = await run(tsArgv(listUnresolvedThreads, [pr]), {
-    stderr: "inherit",
-    timeoutSec: helperTimeoutSeconds(),
-  });
-  if (res.code !== 0) return null;
-  const ids = new Set<string>();
-  for (const line of res.stdout.split("\n")) {
-    if (line.trim() === "") continue;
-    const rec = parseJson(line, "list-unresolved-threads.ts");
-    if (!isRecord(rec) || typeof rec.threadId !== "string") return null;
-    ids.add(rec.threadId);
-  }
-  return ids;
-}
-
-/**
  * Finish an admitted takeover: reconcile, carry the held batch over, record.
  * Returns the notice the first passes read in `$DRIVE_PR_PASS_NOTICE`.
  */
@@ -219,10 +194,7 @@ export async function completeTakeover(
   console.error(
     `takeover: ran reconcile-replied-threads.ts before the first triage (exit ${reconcile.code}${reconciled ? "" : "; the first gate's own sweep runs it again"}).`,
   );
-  const open = await openThreadIds(pr);
-  const unverified = (
-    await heldAfterStartup(pr, plan.held, atStartup, open)
-  ).filter(
+  const unverified = (await heldAfterStartup(pr, plan.held, atStartup)).filter(
     (h) =>
       h.verifiedSha === undefined &&
       (plan.fromActor === null || h.actor === plan.fromActor),

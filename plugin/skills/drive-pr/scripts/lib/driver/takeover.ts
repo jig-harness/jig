@@ -262,7 +262,7 @@ async function decideByLedger(
 /**
  * The held batch as it stands after startup, before reconciliation runs.
  * Startup's ledger seeding may replace the batch the plan read; an entry of
- * the plan's absent from this read is `carried` forward by `heldAfterStartup`.
+ * the plan's finding absent from this read is `carried` forward by `heldAfterStartup`.
  * Reconciliation deletes holds it supersedes only from entries present here,
  * so an entry missing from this read was not removed by it. A batch that
  * cannot be read stops the takeover (exit `1`).
@@ -273,31 +273,29 @@ export async function heldAtStartup(pr: string): Promise<HeldItem[]> {
 
 /**
  * The held batch once reconciliation has run: each entry present now is taken
- * as it is now, with its current metadata, and an entry the plan read that the
- * `atStartup` read (`heldAtStartup`, taken before reconciliation) did not hold
- * is carried after them. An entry present at startup and gone now was removed
- * by reconciliation and is not carried back. A carried thread entry is
- * restored only while its thread is still among `openThreads`, since
- * reconciliation may have resolved it after startup dropped the hold; with
- * `openThreads` `null` (the open threads could not be read) no thread entry is
- * carried, and the gate's sweep re-holds one from its reply. A batch that
- * cannot be read again stops the takeover (exit `1`) rather than reconciling
- * over a stale one.
+ * as it is now, with its current metadata, and a finding entry the plan read
+ * that the `atStartup` read (`heldAtStartup`, taken before reconciliation) did
+ * not hold is carried after them. An entry present at startup and gone now was
+ * removed by reconciliation and is not carried back. A thread entry is never
+ * carried: whether its reply still stands is the sweep's to decide (it leaves
+ * a human leave-open thread and an unsettled scanner outcome without a hold),
+ * and the gate's sweep re-holds a thread from its latest qualifying reply. A
+ * batch that cannot be read again stops the takeover (exit `1`) rather than
+ * reconciling over a stale one.
  */
 export async function heldAfterStartup(
   pr: string,
   planned: readonly HeldItem[],
   atStartup: readonly HeldItem[],
-  openThreads: ReadonlySet<string> | null,
 ): Promise<HeldItem[]> {
   const held = await heldSnapshot(pr);
   const same = (a: HeldItem, b: HeldItem) =>
     a.key === b.key && a.kind === b.kind;
   for (const item of planned)
     if (
+      item.kind === "finding" &&
       !atStartup.some((s) => same(s, item)) &&
-      !held.some((h) => same(h, item)) &&
-      (item.kind !== "thread" || openThreads?.has(item.key) === true)
+      !held.some((h) => same(h, item))
     )
       held.push(item);
   return held;
