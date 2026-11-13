@@ -208,7 +208,7 @@ function names(user: unknown, name: string): boolean {
 }
 
 function assigner(actor: unknown, key: string, team: string): Assigner {
-  if (actor === null || actor === undefined)
+  if (actor === null)
     throw new AssignerUnknown(
       `issue ${key}: its assignment was made by no user (an integration or an automation)`,
     );
@@ -330,7 +330,14 @@ export function assignedOperations(
           `issue ${key} is no longer assigned to ${who}`,
         );
       const latest = nodes
-        .map((n, i) => field(n, `history of ${key}[${i}]`))
+        .map((n, i) => {
+          const node = field(n, `history of ${key}[${i}]`);
+          if (node.toAssignee !== null && !isRecord(node.toAssignee))
+            throw new AssignmentError(
+              `history of ${key}[${i}]: its assignment target cannot be read`,
+            );
+          return node;
+        })
         .filter((n) => names(n.toAssignee, who))
         .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))
         .at(-1);

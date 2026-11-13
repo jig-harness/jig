@@ -144,11 +144,13 @@ async function metadata(
           relations: carried.map(({ type, issue: i }) => ({ type, issue: i })),
         };
   const assigned = await assigner(tracker, issue, identity);
+  // An item no user assigned is not placed, so its relations are not read.
   const relations =
     carried === null
-      ? await tracker.listRelations(issue.identifier)
+      ? assigned.noAssigner === undefined
+        ? await tracker.listRelations(issue.identifier)
+        : []
       : carried.map(({ type, issue: i }) => ({ type, issue: i }));
-  // An item no user assigned is not placed, so its subtree is not read.
   const children =
     assigned.noAssigner === undefined && issue.isEpic && issue.hasOpenChildren
       ? await tracker.openChildren(issue.identifier)

@@ -24,9 +24,17 @@ export interface FakeIssue {
   /**
    * What its assignment history answers: the assignment by a team member
    * (`assigned`, the default), no assignment of the assignee (`none`), an
-   * assignment made by no user (`no-user`), or a failed read (`fail`).
+   * assignment made by no user (`no-user`), malformed nodes (`no-actor`
+   * omits the actor, `bad-target` has an unreadable target), or a failed
+   * read (`fail`).
    */
-  history?: "assigned" | "none" | "no-user" | "fail";
+  history?:
+    | "assigned"
+    | "none"
+    | "no-user"
+    | "no-actor"
+    | "bad-target"
+    | "fail";
 }
 
 const STATE_IDS: Record<string, string> = {};
@@ -369,16 +377,21 @@ export class FakeLinear {
                     {
                       id: "h1",
                       createdAt: "2026-10-02T00:00:00.000Z",
-                      toAssignee: user,
-                      actor:
-                        i?.history === "no-user"
-                          ? null
-                          : {
-                              id: "lead",
-                              name: "lead",
-                              guest: false,
-                              teams: { nodes: [{ key: "ENG" }] },
-                            },
+                      toAssignee: i?.history === "bad-target" ? "broken" : user,
+                      ...(i?.history === "no-actor"
+                        ? {}
+                        : {
+                            actor:
+                              i?.history === "no-user" ||
+                              i?.history === "bad-target"
+                                ? null
+                                : {
+                                    id: "lead",
+                                    name: "lead",
+                                    guest: false,
+                                    teams: { nodes: [{ key: "ENG" }] },
+                                  },
+                          }),
                     },
                   ],
             ),

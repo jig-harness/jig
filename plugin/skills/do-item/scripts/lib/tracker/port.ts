@@ -848,10 +848,12 @@ export interface Tracker extends TrackerAttachments {
    * assignee) to the issue, from the tracker's history. Throws with the
    * reason when the history cannot be read in full or holds no such
    * assignment, so an unknown assigner is never read as a trusted one.
-   * The history's definite answer that no user made the assignment (it
-   * holds no assignment of `assignee`, or one made by an integration or an
-   * automation) throws `AssignerUnknown`, which a caller may keep until the
-   * issue changes; any other throw is a read to try again.
+   * An adapter that can tell the history's definite answer that no user
+   * made the assignment (it holds no assignment of `assignee`, or one made
+   * by an integration or an automation) throws `AssignerUnknown` for it,
+   * which a caller may keep until the issue changes; any other throw is a
+   * read to try again. Linear classifies this way; the GitHub and Jira
+   * adapters throw their API errors for it.
    */
   assignedBy(key: string, assignee?: string): Promise<Assigner>;
   /**

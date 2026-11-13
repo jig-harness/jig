@@ -236,6 +236,19 @@ describe("a served queue's cost in tracker requests", () => {
     expect(fake.requests).not.toContain("TrackerIssue");
   });
 
+  it("reads a malformed history again on the next tick", async () => {
+    for (const history of ["no-actor", "bad-target"] as const) {
+      const fake = queue();
+      fake.add({ identifier: "ENG-900", assignee: PERSON, history });
+      const tracker = fake.tracker();
+      const cache = memoryCache();
+      await tick(tracker, cache, 0);
+      const mark = fake.count();
+      await tick(tracker, cache, 2);
+      expect(fake.requests.slice(mark)).toContain("TrackerAssignmentHistory");
+    }
+  });
+
   it("reads a failed history again on the next tick", async () => {
     const fake = queue();
     fake.add({ identifier: "ENG-900", assignee: PERSON, history: "fail" });
