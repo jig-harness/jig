@@ -2010,6 +2010,10 @@ make, use the entry's term instead.
 - **Maskable icon** — an app icon drawn to fill a full square, with its mark
   kept near the middle, so a launcher that crops icons to its own shape (a
   circle, a rounded square) does not cut the mark off.
+- **Forced colours** — an operating system's high-contrast mode, in which
+  the browser replaces a page's colours with a few system colours the
+  person chose. A page that tells things apart only by colour loses the
+  difference there, so it keeps shapes and borders that still show.
 - **Service worker** — a script a browser starts on demand, apart from the
   page itself, to handle events such as requests when the network is gone;
   the browser stops it whenever it has nothing to handle. The
@@ -2152,7 +2156,7 @@ make, use the entry's term instead.
   list), adds the call to the *cost ledger* and fails as one of the
   *failure classes*. No other code sends to that system, and every
   transport is built from one shared library
-  ([ADR-0020](docs/adr/ADR-0020-outbound-calls-are-governed.md)). The
+  ([ADR-0021](docs/adr/ADR-0021-outbound-calls-are-governed.md)). The
   tracker adapters' transports keep the budget and the deadline; the rest
   is planned ([ROADMAP.md](ROADMAP.md) item 55).
 - **Budget record** — what a machine knows of one credential's limits at an
@@ -2310,7 +2314,10 @@ make, use the entry's term instead.
   launch of this host or a claim marker took it, or always under
   `dispatch.stalled_scope: assigned`. The *dispatcher* reports it and
   never starts it again: a second session would be a second implementer on
-  a claimed item, so a person settles it.
+  a claimed item, so a person settles it. An item whose pickup already
+  opened its pull request is finished work, not a stall: when an open pull
+  request from the branch of the dispatcher's launch of it links it, the
+  dispatcher moves it to its `pr_open` state.
 - **Double claim** — an item more than one running session works on at
   once: two workspaces, or a workspace beside a launch the *dispatcher*
   still holds for another one. The dispatcher reports it and starts

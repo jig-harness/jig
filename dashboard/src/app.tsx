@@ -20,6 +20,8 @@ import { KeyBar } from "./key-bar.tsx";
 import { Fold, Hint, PopupRoot } from "./fold.tsx";
 import { hostDay } from "./format.ts";
 import { HelpView } from "./help.tsx";
+import { BareWord } from "./icon-word.tsx";
+import { CONTROL_ICONS, type IconWord } from "./icons.ts";
 import { LinePanel } from "./line.tsx";
 import { LogPanel } from "./log-panel.tsx";
 import { type Forges, forgesOf } from "./links.ts";
@@ -99,10 +101,13 @@ function Banner({
   title,
   body,
   command,
+  icon,
 }: {
   title: string;
   body: string;
   command: boolean;
+  /** What the title is about, where the icon vocabulary draws it. */
+  icon?: IconWord;
 }) {
   return (
     <section className="banner" role="status">
@@ -110,7 +115,9 @@ function Banner({
         ?
       </span>
       <div className="bannerBody">
-        <h2>{title}</h2>
+        <h2>
+          {icon === undefined ? title : <BareWord of={icon}>{title}</BareWord>}
+        </h2>
         <p className="sm">{body}</p>
         {command ? <CommandRow /> : null}
       </div>
@@ -480,6 +487,7 @@ function Banners({ view }: { view: PageView }) {
           title="The server is not answering. This is what it last returned."
           body={`${lead}retrying every 60 s. It runs only while a person keeps it running: to start it again, run this on the host. Filters need the server and are off until it answers.`}
           command
+          icon={CONTROL_ICONS.unreachable}
         />
       ) : view.overdue && line !== null ? (
         <Banner {...timerBanner(line, view.clock)} command={false} />

@@ -112,3 +112,59 @@ export function blockedFieldsBody(
     fields.map((f) => [f.id, blockedFieldValue(f, value)]),
   );
 }
+
+/** The blocked fields a move into `blocked` sends, and those left for the update after it. */
+export interface ScreenSplit {
+  /** The fields the transition's screen carries, each with a value it takes. */
+  sent: BlockedField[];
+  /** The request's `fields`: each sent field's value. */
+  body: Record<string, unknown>;
+  /** The fields the screen does not carry. */
+  offScreen: BlockedField[];
+  /** The fields on the screen whose value could not be formed; the update after the move reports why. */
+  unformed: BlockedField[];
+}
+
+/** Split the configured fields by the transition's screen (`screen`, its field ids). */
+export function splitForScreen(
+  fields: ReadonlyArray<BlockedField>,
+  screen: ReadonlyArray<string>,
+  value: BlockedFields,
+): ScreenSplit {
+  const out: ScreenSplit = { sent: [], body: {}, offScreen: [], unformed: [] };
+  for (const f of fields) {
+    if (!screen.includes(f.id)) {
+      out.offScreen.push(f);
+      continue;
+    }
+    try {
+      out.body[f.id] = blockedFieldValue(f, value);
+      out.sent.push(f);
+    } catch (error) {
+      if (!(error instanceof TrackerRequestError)) throw error;
+      out.unformed.push(f);
+    }
+  }
+  return out;
+}
+
+/** Which blocked fields went with a move into `blocked`, as a refusal names them. */
+export function sentWithMove(
+  split: ScreenSplit,
+  unresolved: string | null,
+): string {
+  const named = (fs: BlockedField[]) =>
+    fs.map((f) => `${f.role} (${f.name})`).join(", ");
+  return [
+    `sent with it: ${split.sent.length > 0 ? named(split.sent) : "none"}`,
+    ...(split.offScreen.length > 0
+      ? [`not on its screen: ${named(split.offScreen)}`]
+      : []),
+    ...(split.unformed.length > 0
+      ? [`not of a type the role takes: ${named(split.unformed)}`]
+      : []),
+    ...(unresolved === null
+      ? []
+      : [`issue_tracker.jira.blocked_fields did not resolve (${unresolved})`]),
+  ].join("; ");
+}

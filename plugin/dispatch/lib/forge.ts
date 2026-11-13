@@ -35,6 +35,7 @@ import { ghCall, ghRepoEnv } from "../../skills/drive-pr/scripts/lib/proc.ts";
 import { OVERLAY_RELPATH } from "../../shared/config-layers.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { checksFail } from "./automation.ts";
+import { ranOutOfTime } from "./forge-batch.ts";
 import type { MergedPr, RepoTarget } from "./types.ts";
 import { parseMs } from "../../shared/time.ts";
 
@@ -46,13 +47,16 @@ function unreadable(reason: string): Outcome<never, "unreadable"> {
   return failed("unreadable", reason);
 }
 
-/** What `gh` printed, or why it did not answer under `code`. */
-async function gh<Code extends string>(
+/** What `gh` printed; or why it did not answer, and whether the forge ran out of time on the request (`ranOutOfTime`). */
+async function ghAnswer(
   args: string[],
-  code: Code,
   cwd?: string,
   timeoutSec?: number,
-): Promise<Outcome<string, Code>> {
+): Promise<
+  | { ok: true; value: string }
+  | { ok: false; reason: string; outOfTime: boolean }
+> {
+  const began = Date.now();
   const r = await ghCall(args, {
     stderr: "pipe",
     env: ghRepoEnv(),
@@ -61,10 +65,22 @@ async function gh<Code extends string>(
   });
   if (r.code === 0) return ok(r.stdout);
   const tail = r.stderr.trim().split("\n").at(-1) ?? "";
-  return failed(
-    code,
-    `gh ${args.slice(0, 2).join(" ")} exited ${r.code}${tail === "" ? "" : `: ${tail}`}`,
-  );
+  return {
+    ok: false,
+    reason: `gh ${args.slice(0, 2).join(" ")} exited ${r.code}${tail === "" ? "" : `: ${tail}`}`,
+    outOfTime: ranOutOfTime(r, Date.now() - began),
+  };
+}
+
+/** What `gh` printed, or why it did not answer under `code`. */
+async function gh<Code extends string>(
+  args: string[],
+  code: Code,
+  cwd?: string,
+  timeoutSec?: number,
+): Promise<Outcome<string, Code>> {
+  const answer = await ghAnswer(args, cwd, timeoutSec);
+  return answer.ok ? answer : failed(code, answer.reason);
 }
 
 function parsed(text: string, what: string): Outcome<unknown, "unreadable"> {
@@ -253,6 +269,9 @@ const NO_LABELS: LabelRead = { labels: false };
 /** The fields every listing reads. */
 const LISTED = ["number", "url", "title", "headRefName", "createdAt"];
 
+/** The checks on each pull request's head: the field of a listing that costs the forge the most. */
+const CHECKS = "statusCheckRollup";
+
 /** What an open pull request adds: its head commit, its base branch, its mergeability, and what the adoption rule reads (its author, whether it is a draft, its last update, its checks). */
 const OPEN_FIELDS = [
   "headRefOid",
@@ -261,7 +280,7 @@ const OPEN_FIELDS = [
   "author",
   "isDraft",
   "updatedAt",
-  "statusCheckRollup",
+  CHECKS,
 ];
 
 /** A pull request's author as the listing gives it (`{ login, is_bot }`); nothing when it does not read. */
@@ -333,6 +352,12 @@ function listedPr(
   });
 }
 
+/**
+ * One listing of `slug`'s pull requests. A listing the forge ran out of
+ * time on is asked once more without the checks, which cost it the most
+ * (a hundred results to a pull request): each pull request then reads with
+ * its checks unknown, as one whose checks did not read.
+ */
 async function listPrs(
   slug: string,
   extra: string[],
@@ -342,8 +367,8 @@ async function listPrs(
   if (extra.includes("merged")) fields.push("mergedAt", "updatedAt");
   if (extra.includes("open")) fields.push(...OPEN_FIELDS);
   if (read.labels) fields.push("labels", "body");
-  const listing = await ghJson(
-    [
+  const ask = (asked: readonly string[]) =>
+    ghAnswer([
       "pr",
       "list",
       "--repo",
@@ -353,10 +378,13 @@ async function listPrs(
       "--limit",
       String(PR_LIMIT),
       "--json",
-      fields.join(","),
-    ],
-    "the pull request listing",
-  );
+      asked.join(","),
+    ]);
+  let answer = await ask(fields);
+  if (!answer.ok && answer.outOfTime && fields.includes(CHECKS))
+    answer = await ask(fields.filter((f) => f !== CHECKS));
+  if (!answer.ok) return unreadable(answer.reason);
+  const listing = parsed(answer.value, "the pull request listing");
   if (!listing.ok) return listing;
   const out = listing.value;
   if (!Array.isArray(out))

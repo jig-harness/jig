@@ -197,8 +197,7 @@ per issue in the design's order:
   per account with one host need (`preflight`); missing dispatch labels
   created by the tick; a repository's CI checking what the tick reads from
   it.
-- **Pickups.** An item moved to `pr_open` when an open
-  pull request on its launch's branch names it; a stalled pickup's unpushed
+- **Pickups.** A stalled pickup's unpushed
   work relaunched once in its own tree to push and record
   (`dispatch.stalled_relaunch`); an epic never taken as a pickup.
 - **The steward.** First its digest's missing facts and its no-result rate;
@@ -250,7 +249,7 @@ record of what an operation costs. On a dispatch host that showed as a
 tracker credential held at its hourly allowance by one unbounded nested
 list, a repository the forge could not answer a full page of and so was
 never read, and ticks that exited 1 for refusals that clear by waiting.
-[ADR-0020](../docs/adr/ADR-0020-outbound-calls-are-governed.md) sets the
+[ADR-0021](../docs/adr/ADR-0021-outbound-calls-are-governed.md) sets the
 rule, and [design/outbound-calls.md](outbound-calls.md) has each system's
 limits, the shared library (`plugin/shared/outbound/`), the failure classes
 with their policies and the build order. What it will build, one pull
