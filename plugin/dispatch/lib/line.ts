@@ -32,6 +32,7 @@ import {
 export { decisionOf } from "./line-decision.ts";
 import { holds, targetOf } from "./launches.ts";
 import { isFailureCause } from "./failure-notices.ts";
+import { preflightNeeds } from "./preflight.ts";
 import { boardUnread, readyOf } from "./line-ready.ts";
 import { needWorkspace } from "./line-workspace.ts";
 import type { MachineConfig } from "./machine-config.ts";
@@ -470,7 +471,11 @@ function needsOf(
         workspaces: [],
       }),
     );
-  return [...planned, ...refused];
+  return [
+    ...planned,
+    ...refused,
+    ...preflightNeeds(view.report, view.slug, previous, nowIso),
+  ];
 }
 
 function queued(

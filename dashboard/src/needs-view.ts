@@ -88,6 +88,7 @@ function recordedWord(n: LineNeed): string {
     return "repeated no-cause stops (needs a person)";
   if (n.cause === "parked") return "parked for a person";
   if (n.cause === "assigner-cannot-write") return "assigner cannot write";
+  if (n.cause === "tracker-unreachable") return "tracker unreachable";
   return n.cause;
 }
 
