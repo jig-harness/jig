@@ -234,9 +234,15 @@ result. The worker renews the lease while it runs and checks, immediately before
 each effect, that it still holds it under the token it took; a worker that
 finds the lease lost stops without making the effect. A lease is longer than
 the deadline of every call the request makes, and an expired lease is
-reclaimed only after a further margin of one such deadline, so a worker
-paused or waiting on a remote call has either finished or been fenced by
-then. A lease that expires without the id reaching `done` marks the
+reclaimed only after a further margin of one such deadline, which makes an
+overlap of two workers rare. It cannot make it impossible: a worker paused
+between its check and its remote write can still resume after recovery, and
+the forge and the tracker enforce no lease token. So no effect relies on
+the lease alone. Each is safe to make twice: a label is set to a state, so
+a second write changes nothing; an assignment the tracker refuses to make
+twice changes nothing the second time; and the comment or record carrying
+the request id is read as one, the earliest per id, whoever wrote it. A
+lease that expires without the id reaching `done` marks the
 processing abandoned, and the id returns to `pending` for recovery. The
 record of an interaction that is not `done` is kept until it is, and the
 bridge scans for such records at start and on a timer, so an acknowledged
@@ -251,9 +257,14 @@ request id, so its witness is the forge's label history: the missing label
 is made only when that history, readable in full, shows no change to the
 label by anyone since the interaction was admitted. A change by another
 actor, such as a release after a hold, means the command is superseded, and
-the id completes as superseded without the label. A history that cannot be
-read in full is ambiguous, and recovery then refuses and leaves the id for a
-person rather than replay a command the line may have moved past. An assignment the
+the id completes as superseded without the label. Every person linked to the
+bridge acts under its one forge identity, so a change under that identity
+cannot be told from the interrupted command's own or from a later command
+the bridge ran. When the label already stands as the command leaves it, the
+effect is complete; when it does not and the history holds any change under
+that identity since admission, the case is ambiguous. A history that cannot
+be read in full is ambiguous too, and recovery then refuses and leaves the
+id for a person rather than replay a command the line may have moved past. An assignment the
 bridge identity already made, which the tracker would refuse to make twice
 (`assign` refuses an item whose assignee is not null), is completed by
 writing the missing `chat-request` record, never retried. When every effect
