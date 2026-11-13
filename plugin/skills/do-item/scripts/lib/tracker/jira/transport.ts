@@ -60,6 +60,10 @@ export interface JiraRequest {
   body?: unknown;
   /** A read-only POST, such as search/jql; GETs are reads by definition. */
   idempotent?: boolean;
+  /** A multipart form sent instead of `body`: a file upload, which Jira takes only with its no-check header. */
+  form?: FormData;
+  /** Resolve to the answer's body as bytes rather than JSON: a file's content. */
+  bytes?: boolean;
 }
 
 /**
@@ -228,10 +232,14 @@ function requestInit(
     redirect: "manual",
     signal: bound,
   };
-  if (request.body !== undefined) {
+  if (request.form !== undefined) {
+    headers["X-Atlassian-Token"] = "no-check";
+    init.body = request.form;
+  } else if (request.body !== undefined) {
     headers["Content-Type"] = "application/json";
     init.body = JSON.stringify(request.body);
   }
+  if (request.bytes === true) headers.Accept = "*/*";
   return init;
 }
 
@@ -267,11 +275,30 @@ async function bodyText(
   }
 }
 
+/** A successful answer's body as bytes; one lost while reading fails the read. */
+async function fileBytes(
+  res: Response,
+  signal: AbortSignal | undefined,
+  what: string,
+): Promise<Uint8Array> {
+  try {
+    return new Uint8Array(await res.arrayBuffer());
+  } catch (err) {
+    if (cancelled(signal)) throw abortedError(signal);
+    throw new JiraApiError(
+      `Jira answer lost while reading the file on ${what}: ${err instanceof Error ? err.message : String(err)}`,
+      { unavailable: true, answerLost: true, status: res.status },
+    );
+  }
+}
+
 /** The header to send, or the credential's failure as the adapter's error. */
 function headerOf(
   header: Outcome<string, CredentialCode>,
   signal: AbortSignal | undefined,
 ): string {
+  if (!header.ok && header.failure.code === "token-command-unavailable")
+    throw new JiraApiError(header.failure.reason, { unavailable: true });
   if (cancelled(signal)) throw abortedError(signal);
   if (!header.ok)
     throw new JiraApiError(header.failure.reason, {
@@ -346,17 +373,22 @@ function leasedSender(
     if (res.status === 401) {
       const renewed = await lease.renew(bound);
       if (renewed !== null) {
-        await bodyText(res, bound, what);
-        header = headerOf(renewed, bound);
-        key = keyOf(header);
-        budget.governor?.admit("jira", key);
-        res = await send(
-          fetchImpl,
-          url,
-          requestInit(request, header, bound),
-          bound,
-          what,
-        );
+        try {
+          await bodyText(res, bound, what);
+          header = headerOf(renewed, bound);
+          key = keyOf(header);
+          budget.governor?.admit("jira", key);
+          res = await send(
+            fetchImpl,
+            url,
+            requestInit(request, header, bound),
+            bound,
+            what,
+          );
+          if (res.status === 401) lease.refuseRenewal();
+        } finally {
+          lease.settleRenewal();
+        }
       }
     }
     const refused = observeLimit(res, key, what, budget);
@@ -400,6 +432,7 @@ export function httpTransport(
     const bound =
       signal === undefined ? deadline : AbortSignal.any([deadline, signal]);
     const lease = await authorization.lease(bound);
+    if (cancelled(signal)) throw abortedError(signal);
     const res = await retryRead(
       leasedSender(base, request, lease, bound, fetchImpl, budget),
       request.method === "GET" || request.idempotent === true,
@@ -408,6 +441,10 @@ export function httpTransport(
       if (cancelled(signal)) throw abortedError(signal);
       throw err;
     });
+    if (request.bytes === true && res.ok) {
+      answered = true;
+      return fileBytes(res, bound, what);
+    }
     const text = await bodyText(res, bound, what);
     if (res.status === 429 && governor !== undefined) {
       const until = limitedUntil(Date.now(), res.headers);

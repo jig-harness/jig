@@ -43,6 +43,23 @@ describe("getIssue", () => {
     expect(String(linear.suggestions)).toContain("e.g. ENG-123, not just 123");
   });
 
+  it("distinguishes a refused credential from a missing issue", async () => {
+    const tracker = emptyTracker([]);
+    tracker.getIssue = async () => {
+      throw new Error("Jira HTTP 401; check JIRA_API_TOKEN");
+    };
+    const result = await getIssue("ENG-7", tracker, teamKeys("ENG"));
+    expect(result.error).toBe(
+      "Issue ENG-7 could not be read: Jira HTTP 401; check JIRA_API_TOKEN",
+    );
+    expect(result.found).toBe(false);
+    expect(result.reason).toBe("read-failed");
+    expect(result).not.toHaveProperty("suggestions");
+    const missing = await getIssue("ENG-7", emptyTracker([]), teamKeys("ENG"));
+    expect(missing.reason).toBe("not-found");
+    expect(missing).toHaveProperty("suggestions");
+  });
+
   it("passes a key the shape does not read on as given", async () => {
     const asked: string[] = [];
     await getIssue("OPS-7", emptyTracker(asked), teamKeys("ENG"));

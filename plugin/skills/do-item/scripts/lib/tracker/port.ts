@@ -12,6 +12,8 @@
  * on these reads would otherwise report a partial read as an improvement.
  */
 
+import type { TrackerAttachments } from "./attachment.ts";
+
 /**
  * The workflow states the skills reason about, by role rather than by the
  * tracker's own name. `issue_tracker.states` maps each to the tracker's name.
@@ -671,9 +673,10 @@ export interface TrackerLabel {
 
 /**
  * One tracker as the skills use it. "This team" below is where the
- * configured issues live: a Linear team, or one GitHub repository.
+ * configured issues live: a Linear team, or one GitHub repository. Its
+ * attachment operations are in `attachment.ts`.
  */
-export interface Tracker {
+export interface Tracker extends TrackerAttachments {
   /** The adapter name, as `issue_tracker.adapter` spells it. */
   readonly adapter: string;
   /**
@@ -771,6 +774,7 @@ export interface Tracker {
   issueComments(key: string): Promise<IssueComments>;
   /** Delete a comment of the issue by its id (`CommentFact.id`). */
   deleteComment(key: string, id: string): Promise<void>;
+
   /**
    * The issues carrying `label`, or (when given) in `project`: the union, one
    * population. Throws when the label or project does not resolve to exactly

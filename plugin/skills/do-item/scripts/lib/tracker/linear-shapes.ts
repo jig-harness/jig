@@ -2,6 +2,7 @@
 import { isRecord } from "../../../../../shared/guards.ts";
 import { shapeReaders } from "./shape-readers.ts";
 import type { IssueState } from "./port.ts";
+import { LinearApiError } from "./linear-transport.ts";
 
 export class ShapeError extends Error {}
 
@@ -63,4 +64,16 @@ export function stateOf(v: unknown, where: string): IssueState {
     name: typeof s.name === "string" ? s.name : "",
     type: typeof s.type === "string" ? s.type : "",
   };
+}
+
+/**
+ * Linear reports `success: false` without a GraphQL error, so an unchecked
+ * payload would report a write that did not happen.
+ */
+export function assertMutationOk(payload: unknown, what: string): void {
+  if (!isRecord(payload) || payload.success !== true)
+    throw new LinearApiError(
+      `Linear reported that ${what} did not succeed; nothing was written`,
+      200,
+    );
 }
