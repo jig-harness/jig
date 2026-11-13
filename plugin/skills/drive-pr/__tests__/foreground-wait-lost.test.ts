@@ -156,6 +156,13 @@ test(
   T,
 );
 
+/** Launch, capturing the fixture's identities before the exit assertion can throw. */
+const launchTracked = async (...command: string[]) => {
+  const launched = run("launch", "--", ...command);
+  await track();
+  expectSpawnExit(launched, 0);
+};
+
 /** Kill the runner and its command, then wait until both identities are gone; an unreadable table keeps polling. */
 const loseRunner = async (deadline: number) => {
   await track();
@@ -183,13 +190,8 @@ const untilLogSize = async (size: number, deadline: number) => {
 test(
   "a lost runner is reported lost with the command's last output, even output already relayed",
   async () => {
-    expectSpawnExit(
-      run(
-        "launch",
-        "--",
-        ...bunCommand('console.log("last words"); setInterval(() => {}, 1000)'),
-      ),
-      0,
+    await launchTracked(
+      ...bunCommand('console.log("last words"); setInterval(() => {}, 1000)'),
     );
     const log = () => join(generation(), "log");
     const deadline = Date.now() + 20_000;
@@ -200,6 +202,7 @@ test(
       expect(Date.now()).toBeLessThan(deadline);
       await sleepMs(20);
     }
+    await track();
     const running = run("wait", "--max-sec", "1");
     expectSpawnExit(running, 20);
     expect(out(running)).toContain("last words");
@@ -220,12 +223,9 @@ test(
   async () => {
     const deadline = Date.now() + 30_000;
     const go = join(cwd, "go");
-    expectSpawnExit(
-      run(
-        "launch",
-        "--",
-        ...bunCommand(
-          `const fs = require("node:fs");
+    await launchTracked(
+      ...bunCommand(
+        `const fs = require("node:fs");
 process.stdout.write("a".repeat(6000));
 const t = setInterval(() => {
   if (fs.existsSync(${JSON.stringify(go)})) {
@@ -234,9 +234,7 @@ const t = setInterval(() => {
     setInterval(() => {}, 1000);
   }
 }, 20);`,
-        ),
       ),
-      0,
     );
     await untilLogSize(6000, deadline);
     // Everything so far is relayed, so only the 4 KiB floor can show it again.
@@ -258,15 +256,10 @@ test(
   "a lost runner's report shows all of an unseen log larger than 4 KiB",
   async () => {
     const deadline = Date.now() + 30_000;
-    expectSpawnExit(
-      run(
-        "launch",
-        "--",
-        ...bunCommand(
-          'process.stdout.write("a".repeat(10000)); setInterval(() => {}, 1000)',
-        ),
+    await launchTracked(
+      ...bunCommand(
+        'process.stdout.write("a".repeat(10000)); setInterval(() => {}, 1000)',
       ),
-      0,
     );
     await untilLogSize(10000, deadline);
     await loseRunner(deadline);
@@ -282,15 +275,10 @@ test(
   "a lost runner's report keeps exactly 4 KiB of a log wholly relayed",
   async () => {
     const deadline = Date.now() + 30_000;
-    expectSpawnExit(
-      run(
-        "launch",
-        "--",
-        ...bunCommand(
-          'process.stdout.write("a".repeat(5904) + "b".repeat(4096)); setInterval(() => {}, 1000)',
-        ),
+    await launchTracked(
+      ...bunCommand(
+        'process.stdout.write("a".repeat(5904) + "b".repeat(4096)); setInterval(() => {}, 1000)',
       ),
-      0,
     );
     await untilLogSize(10000, deadline);
     expectSpawnExit(run("wait", "--max-sec", "1"), 20);
@@ -325,15 +313,10 @@ test(
   "a lost runner is still reported when the relay cursor cannot be written",
   async () => {
     const deadline = Date.now() + 30_000;
-    expectSpawnExit(
-      run(
-        "launch",
-        "--",
-        ...bunCommand(
-          'process.stdout.write("a".repeat(100)); setInterval(() => {}, 1000)',
-        ),
+    await launchTracked(
+      ...bunCommand(
+        'process.stdout.write("a".repeat(100)); setInterval(() => {}, 1000)',
       ),
-      0,
     );
     await untilLogSize(100, deadline);
     await loseRunner(deadline);
