@@ -56,7 +56,7 @@ with the review.
 | [Scheduled-failure reconciliation](scheduled-failure-reconciliation.md) | Later: reusable M11 reconciler |
 | [Reflection stores](reflection.md) | Later: the Jira store |
 | [The audit experience](audit-experience.md) | 8 |
-| [The jig-harness.dev website](website.md) | 18 |
+| [The jig-harness.dev website](website.md) | 18; 52 |
 | [Merge conflicts, measured](merge-conflicts.md) | 22 |
 | [Review lenses](review-lenses.md) | 23 |
 | [Resource garbage collection](resource-gc.md) | 24 |
@@ -77,6 +77,7 @@ with the review.
 | [Issue facets: type, priority and size wherever the tracker keeps them](tracker-facets.md) | 41; Later: the command store |
 | [Structured answers, approving or choosing a parked decision in a word](structured-answers.md) | 46 |
 | [The classes of need, and where each is settled](need-classes.md) | 50 |
+| [What a dispatched session leaves and where it runs](dispatched-sessions.md) | 51 |
 
 ## Starting a design
 
