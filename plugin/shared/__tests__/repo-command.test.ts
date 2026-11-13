@@ -331,6 +331,67 @@ describe("withDefaultBranchTree", () => {
     expect(readdirSync(join(jigHome, "tmp"))).toEqual([]);
   });
 
+  /** A repository at `dir` (made here) with one committed `note.txt`; returns its commit. */
+  function committedAt(dir: string, ...initArgs: string[]): string {
+    mkdirSync(dir, { recursive: true });
+    git(dir, "init", "-q", "-b", "main", ...initArgs);
+    writeFileSync(join(dir, "note.txt"), "committed\n");
+    git(dir, "add", ".");
+    git(dir, "commit", "-q", "-m", "note");
+    return head(dir);
+  }
+
+  it("copies from a clone whose path holds the object list's separator", async () => {
+    const parent = mkdtempSync(join(tmpdir(), "jig-sep-"));
+    dirs.push(parent);
+    const dir = join(parent, "work:archive;repo");
+    const commit = committedAt(dir);
+    const out = await runner(["tree", dir, commit], { JIG_HOME: home() });
+    expect(out.out).toMatchObject({ ok: true, value: { note: "committed\n" } });
+  });
+
+  it("copies from a SHA-256 clone", async () => {
+    const parent = mkdtempSync(join(tmpdir(), "jig-sha256-"));
+    dirs.push(parent);
+    const dir = join(parent, "repo");
+    const commit = committedAt(dir, "--object-format=sha256");
+    const out = await runner(["tree", dir, commit], { JIG_HOME: home() });
+    expect(out.out).toMatchObject({ ok: true, value: { note: "committed\n" } });
+  });
+
+  it("copies from a SHA-1 clone while git defaults to SHA-256", async () => {
+    const parent = mkdtempSync(join(tmpdir(), "jig-sha1-"));
+    dirs.push(parent);
+    const dir = join(parent, "repo");
+    const commit = committedAt(dir, "--object-format=sha1");
+    const out = await runner(["tree", dir, commit], {
+      JIG_HOME: home(),
+      GIT_DEFAULT_HASH: "sha256",
+    });
+    expect(out.out).toMatchObject({ ok: true, value: { note: "committed\n" } });
+  });
+
+  it("copies files a partial clone has not downloaded", async () => {
+    const parent = mkdtempSync(join(tmpdir(), "jig-partial-"));
+    dirs.push(parent);
+    const origin = join(parent, "origin");
+    const commit = committedAt(origin);
+    git(origin, "config", "uploadpack.allowFilter", "true");
+    git(origin, "config", "uploadpack.allowAnySHA1InWant", "true");
+    const dir = join(parent, "clone");
+    git(
+      parent,
+      "clone",
+      "-q",
+      "--no-checkout",
+      "--filter=blob:none",
+      `file://${origin}`,
+      dir,
+    );
+    const out = await runner(["tree", dir, commit], { JIG_HOME: home() });
+    expect(out.out).toMatchObject({ ok: true, value: { note: "committed\n" } });
+  });
+
   it("refuses anything but a full commit id", async () => {
     const { dir } = noted();
     for (const bad of ["HEAD", "--all", "main", "abc123"]) {

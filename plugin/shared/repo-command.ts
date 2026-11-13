@@ -22,7 +22,7 @@
  * The caller reads the exit code and the output; what they mean is the
  * caller's contract (a preflight's exit 3, a facet store's JSON).
  */
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { registerCleanup } from "./cleanup.ts";
 import { OVERLAY_RELPATH, isMapping, jigHome } from "./config-layers.ts";
@@ -403,13 +403,43 @@ export async function withDefaultBranchTree<T>(
         "unreadable",
         `the clone's objects could not be found: ${oneLine(objects.stderrTail || objects.stderr)}`,
       );
+    const format = await git(
+      ["-C", root, "rev-parse", "--show-object-format"],
+      readOptions(),
+    );
+    const objectFormat = format.stdout.trim();
+    if (format.code !== 0 || !/^sha(1|256)$/.test(objectFormat))
+      return failed(
+        "unreadable",
+        `the clone's object format could not be read: ${oneLine(format.stderrTail || format.stderr)}`,
+      );
+    // A partial clone lacks blobs the copy needs, and the scratch repository
+    // has no remote to fetch them from: the clone's own configuration
+    // fetches them, once, before the copy reads them.
+    const listed = await git(
+      ["-C", root, ...GIT_READ_FLAGS, "ls-tree", "-r", "--object-only", commit],
+      readOptions({}, EXPORT_TIMEOUT_SEC),
+    );
+    if (listed.code !== 0)
+      return failed(
+        "unreadable",
+        `the default branch's files at ${commit.slice(0, 12)} could not be listed: ${oneLine(listed.stderrTail || listed.stderr)}`,
+      );
+    const hydrated = await git(
+      ["-C", root, ...GIT_READ_FLAGS, "cat-file", "--batch-check"],
+      { ...readOptions({}, EXPORT_TIMEOUT_SEC), stdin: listed.stdout },
+    );
+    if (hydrated.code !== 0 || /\bmissing\b/.test(hydrated.stdout))
+      return failed(
+        "unreadable",
+        `the default branch's files at ${commit.slice(0, 12)} are not all in the clone: ${oneLine(hydrated.stderrTail || hydrated.stderr || hydrated.stdout)}`,
+      );
     // No tokens, no user or system configuration, no inherited repository.
     const env = {
       ...scrubbedEnv(gitIdentityEnv()),
       GIT_CONFIG_GLOBAL: devNull(),
       GIT_CONFIG_SYSTEM: devNull(),
       GIT_CONFIG_NOSYSTEM: "1",
-      GIT_ALTERNATE_OBJECT_DIRECTORIES: objects.stdout.trim(),
       GIT_DIR: gitDir,
       GIT_WORK_TREE: tree,
       // The attributes of the commit, not of any working tree. Git before
@@ -423,11 +453,26 @@ export async function withDefaultBranchTree<T>(
       timeoutSec: EXPORT_TIMEOUT_SEC,
     };
     const steps = [
-      ["init", "--quiet", "--bare", gitDir],
+      ["init", "--quiet", "--bare", `--object-format=${objectFormat}`, gitDir],
       ["read-tree", commit],
       ["checkout-index", "--all", "--force"],
     ];
     for (const step of steps) {
+      if (step[0] === "read-tree") {
+        // A file, not the environment's list: its entries are paths, and a
+        // path may hold the list's separator. Quoted when it holds anything
+        // the file's format reads specially.
+        const alternate = attempt(
+          "unreadable",
+          "the copy's object source",
+          () =>
+            writeFileSync(
+              join(gitDir, "objects", "info", "alternates"),
+              `${alternateEntry(objects.stdout.trim())}\n`,
+            ),
+        );
+        if (!alternate.ok) return alternate;
+      }
       const result = await git(
         [...GIT_READ_FLAGS, ...step],
         step[0] === "init"
@@ -448,6 +493,12 @@ export async function withDefaultBranchTree<T>(
     cleanup[Symbol.dispose]();
     remove();
   }
+}
+
+/** One line of an alternates file: the path, C-quoted when it needs it. */
+function alternateEntry(path: string): string {
+  if (!/["\\\n#]|^\s|\s$/.test(path)) return path;
+  return `"${path.replace(/[\\"]/g, "\\$&").replace(/\n/g, "\\n")}"`;
 }
 
 function devNull(): string {
