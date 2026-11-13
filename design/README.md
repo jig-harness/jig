@@ -72,6 +72,7 @@ with the review.
 | [Addresses: asking and telling the stations of the line](addresses.md) | 39 |
 | [The dispatch dashboard, including required phone access](dispatch-dashboard.md) | 42 |
 | [The hub, a shared control plane for many dispatchers](control-plane.md) | 49 |
+| [The line in a team's chat](chat.md) | 54 |
 | [Consumer actions, which Jig changes a repository must act on](consumer-actions.md) | 43 |
 | [Distribution channels](distribution.md) | 45 |
 | [Issue facets: type, priority and size wherever the tracker keeps them](tracker-facets.md) | 41; Later: the command store |

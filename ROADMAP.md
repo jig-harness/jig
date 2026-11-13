@@ -167,8 +167,8 @@ from Orca's command line once Orca offers it. The plugin is Orca-bound.
 Next comes delegated merge, once an agent cannot push or merge by any other
 path. Then come what lets a second team adopt Jig, one control plane for a
 team on several machines, work that arrives complete, and reviews that
-catch what checks cannot. Last come the practices
-the modules and skills lack, measurement, the developer machine and its
+catch what checks cannot. The line comes to a team's chat with the control
+plane. Last come the practices the modules and skills lack, measurement, the developer machine and its
 runtimes, and the runs that wait on a person.
 
 ### 9. Delegated merge (`pull_requests.merge: auto-on-converged`)
@@ -210,6 +210,23 @@ whichever host has a free slot, in an order each team can set. The hub
 runs on a machine the team chooses and needs no cloud service. Nothing
 requires it: a host that does not enroll, or whose hub is down, dispatches
 on its own as it does today.
+
+### 54. The line in a team's chat
+
+The dispatcher posts to the team's chat. Slack comes first, and other chat
+tools fit behind the same seams. A pull request ready to merge arrives with
+its link, a decision with its options, and each stop only a person can
+settle. Each piece of work gets one thread, kept current when the work
+moves on or a person answers elsewhere, and a digest arrives once a day.
+
+A team that also runs the [chat bridge](GLOSSARY.md) answers a decision
+with a click. Its `/jig` commands ask where an item or a pull request
+stands and what waits on a person, and tell the line to pick an item up,
+hold or stop. The bridge connects out to the chat and opens no route
+into any machine. On the [hub](GLOSSARY.md) it posts under an identity of
+its own that names the person who clicked. An answer from the chat is then
+never mistaken for one an agent wrote. Merging stays a person's act on the
+forge.
 
 ### 26. `init`: setting a repository up for Jig
 
