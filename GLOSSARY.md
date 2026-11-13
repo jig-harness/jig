@@ -2210,7 +2210,8 @@ make, use the entry's term instead.
   workspace, launch a session on a subscription account, notify a person.
   Orca is its first implementation
   ([ADR-0011](docs/adr/ADR-0011-the-dispatcher-targets-orca-first.md)); a
-  *workspace runtime* becomes another by implementing the same methods.
+  *workspace runtime* becomes another by implementing the same methods. The
+  planned *process runtime* implements them with no workspace app at all.
 - **Program status** — the state a program reports to its own terminal
   through [OSC (Operating System Command) 7501](https://www.superlogical.com/rex/docs/build/program-status):
   `idle`, `working`, `blocked`, `done` or `error`. A blocked report can say
@@ -2223,6 +2224,20 @@ make, use the entry's term instead.
   The *dispatcher* can start a follow-up this way on its chosen account
   even when the *session runtime* cannot bind a new interactive session to
   that account.
+- **Closing report** — the short record of what a run the *dispatcher*
+  started concluded: its question for a person if it has one, the next step
+  it suggests, and a cause when it fell short. A *headless pass* writes it
+  as its last act; for a drive, whose last pass cannot know it is last, the
+  driver writes it when the drive stops. The *steward* reads a run's
+  transcript only when the run left no report. Designed in
+  [design/dispatched-sessions.md](design/dispatched-sessions.md#the-closing-report),
+  [ROADMAP.md](ROADMAP.md) item 51.
+- **Process runtime** — a *session runtime* that runs a *headless pass* as
+  a plain managed process in a git worktree Jig opens itself, with no
+  terminal and no desktop app; a host chooses it in its machine dispatch
+  file. Designed in
+  [design/dispatched-sessions.md](design/dispatched-sessions.md#the-process-runtime),
+  [ROADMAP.md](ROADMAP.md) item 51.
 - **Factory identity** — the tracker user a repository assigns an item to
   when the *dispatcher* should pick it up. An item assigned to it and in
   one of the repository's dispatch states is started, when a person with
@@ -2643,6 +2658,10 @@ make, use the entry's term instead.
   browser's drawing interface for three-dimensional graphics) and
   JavaScript; without them, for a reader who asks for reduced motion, or on
   a narrow screen, a still drawing stands in its place
+  ([design/website.md](design/website.md)).
+- **Jig Protocol** — the planned readable account of Jig's operating rules,
+  arranged as generated, linkable chapters for teams that adopt Jig. Its
+  design determines its final source, generation and rendering
   ([design/website.md](design/website.md)).
 - **GLB** — the binary form of glTF, the standard file format for
   three-dimensional models on the web: one file holding a model's parts,
