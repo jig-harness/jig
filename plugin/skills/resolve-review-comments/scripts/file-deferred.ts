@@ -15,7 +15,14 @@
  * tracker interface, `issue_tracker.adapter`) with the label of the
  * `followup` role and every facet: the type the entry records, the priority
  * its severity maps to (`lib/severity-priority.ts`, `unknown` as medium) and
- * the size it names, else `small`. The tracker already holding an issue whose
+ * the size it names, else `small`. A label of each other group the
+ * repository's label taxonomy requires, which the filing check inside
+ * `createIssue` asks for, is derived from the change-area catalog's tracker
+ * projection for the areas covering the file a review thread is on
+ * (`lib/deferred-labels.ts`); an entry whose group cannot be derived with
+ * certainty (a summary finding, a file no area covers, areas that carry no
+ * label of the group or more than one) is left for a person, naming the
+ * group. The tracker already holding an issue whose
  * body carries the entry's identity line (its source url and fingerprint; a
  * run stopped after filing it) reuses that issue rather than filing twice.
  * An entry that records no type or severity, written before entries
@@ -60,11 +67,20 @@ import {
   facetValueOf,
   usable,
 } from "../../do-item/scripts/lib/tracker/facets/config.ts";
+import { readTaxonomy } from "../../do-item/scripts/lib/tracker/facets/complete.ts";
 import { openTracker } from "../../do-item/scripts/lib/tracker/index.ts";
 import type {
   NewIssue,
   Tracker,
 } from "../../do-item/scripts/lib/tracker/port.ts";
+import type { Taxonomy } from "../../file-issue/scripts/lib/taxonomy.ts";
+import {
+  type CatalogSource,
+  configuredCatalog,
+  entryLabels,
+  type FindingFile,
+  unfilledGroups,
+} from "./lib/deferred-labels.ts";
 import {
   type DeferredEntry,
   DeferredSectionError,
@@ -161,12 +177,18 @@ export function entryFacets(
   return out;
 }
 
+/** What an entry is filed as: its facets and its labels. */
+interface Plan {
+  facets: Pick<NewIssue, "type" | "priority" | "size">;
+  labels: string[];
+}
+
 /** The issue an entry becomes. */
 function issueFor(
   entry: DeferredEntry,
   pr: string,
   prUrl: string,
-  label: string,
+  labels: string[],
   facets: Pick<NewIssue, "type" | "priority" | "size">,
 ): NewIssue {
   const quote = entry.text
@@ -188,7 +210,7 @@ function issueFor(
       identityLine(entry),
       textLine(entry),
     ].join("\n"),
-    labels: [label],
+    labels,
     ...facets,
   };
 }
@@ -218,22 +240,25 @@ const sameEntry = (a: DeferredEntry, b: DeferredEntry): boolean =>
 const message = (err: unknown): string =>
   err instanceof Error ? err.message : String(err);
 
+/** An issue the tracker holds for an entry, which then needs only recording. */
+interface Held {
+  identifier: string;
+  url: string | null;
+  /** The issue body's lines, to compare against the entry's text as it stands when recorded. */
+  lines: string[];
+}
+
 /**
  * An issue the tracker already holds for the entry: one whose body carries
  * its identity line as a line of its own. An issue that only mentions the
  * source url, or names another fingerprint on it, is not this entry's.
- * `sameText` says whether it was filed from the entry's current text.
+ * `lines` lets a later read of the entry tell whether it was filed from that text.
  */
 async function alreadyFiled(
   tracker: Tracker,
   entry: DeferredEntry,
-): Promise<{
-  identifier: string;
-  url: string | null;
-  sameText: boolean;
-} | null> {
+): Promise<Held | null> {
   const identity = identityLine(entry);
-  const text = textLine(entry);
   for (const hit of await tracker.searchIssues(entry.source, {
     includeClosed: true,
   })) {
@@ -246,7 +271,7 @@ async function alreadyFiled(
       return {
         identifier: issue.identifier,
         url: issue.url,
-        sameText: lines.includes(text),
+        lines,
       };
   }
   return null;
@@ -311,32 +336,58 @@ async function stillOpen(
   return now === undefined || now.filed !== undefined ? null : now;
 }
 
+type Got = {
+  issue: { identifier: string; url: string | null };
+  reused: boolean;
+  stale: boolean;
+};
+
 /**
- * The issue for `entry`: one the tracker already holds, else `draft` filed.
- * `stale` marks a held issue filed from an earlier text of the entry, which
- * must not replace the corrected entry.
+ * The issue for a `Held` one: reused, never searched for again, so it cannot
+ * lead to a creation. `stale` marks one filed from a text other than the
+ * `entry`'s as it stands now, which must not replace the corrected entry.
+ */
+const heldIssue = (found: Held, entry: DeferredEntry): Got => ({
+  issue: { identifier: found.identifier, url: found.url },
+  reused: true,
+  stale: !found.lines.includes(textLine(entry)),
+});
+
+/**
+ * The issue for `entry` when none was held: one a fresh search finds (the
+ * guard against a duplicate), else `draft` filed.
  */
 async function issueOf(
   tracker: Tracker,
   entry: DeferredEntry,
   draft: ReturnType<typeof issueFor>,
-): Promise<{
-  issue: { identifier: string; url: string | null };
-  reused: boolean;
-  stale: boolean;
-}> {
+): Promise<Got> {
   const found = await alreadyFiled(tracker, entry);
   return found !== null
-    ? {
-        issue: { identifier: found.identifier, url: found.url },
-        reused: true,
-        stale: !found.sameText,
-      }
+    ? heldIssue(found, entry)
     : {
         issue: await tracker.createIssue(draft),
         reused: false,
         stale: false,
       };
+}
+
+/** An unfiled entry this run files: the issue the tracker holds for it, else how a new one is filed. */
+type Open =
+  | { entry: DeferredEntry; held: Held; plan: null }
+  | { entry: DeferredEntry; held: null; plan: Plan };
+
+type How = { held: Held } | { held: null; plan: Plan };
+
+/** How `entry` is filed: as the issue it was found to hold, else as its plan, or why a person files it. */
+async function howToFile(
+  initial: Open,
+  entry: DeferredEntry,
+  plan: (entry: DeferredEntry) => Promise<Plan | { why: string }>,
+): Promise<How | { why: string }> {
+  if (initial.held !== null) return { held: initial.held };
+  const next = await plan(entry);
+  return "why" in next ? next : { held: null, plan: next };
 }
 
 /**
@@ -351,6 +402,10 @@ export async function fileDeferred(
     label: string;
     /** The repository's facets, which it has and their values; `null` with no tracker. */
     facets: Facets | null;
+    /** The repository's label taxonomy, whose required groups an issue carries a label of; absent or `null` with none. */
+    taxonomy?: Taxonomy | null;
+    /** The change-area catalog those labels are derived from, read only when a group needs one; the configured one by default. */
+    catalog?: () => CatalogSource;
     dryRun?: boolean;
     noTrackerWhy?: string;
     onFiled?: (f: Filing) => void;
@@ -364,25 +419,26 @@ export async function fileDeferred(
     forPerson: [],
     why: null,
   };
-  const open = fileable(deferredEntries(body), opts.facets, result);
+  const plan = planner(forge, pr, opts);
+  const open = await fileable(deferredEntries(body), tracker, plan, result);
   const skipped = whyNotFiling(tracker, opts);
   if (tracker === null || skipped !== null) {
-    result.remaining = open;
+    result.remaining = open.map((o) => o.entry);
     if (open.length > 0) result.why = skipped;
     return result;
   }
   for (const [i, initial] of open.entries()) {
-    const entry = await stillOpen(forge, pr, initial);
+    const entry = await stillOpen(forge, pr, initial.entry);
     if (entry === null) continue;
-    const facets = entryFacets(entry, opts.facets);
-    if ("why" in facets) {
-      result.forPerson.push({ entry, why: facets.why });
+    const how = await howToFile(initial, entry, plan);
+    if ("why" in how) {
+      result.forPerson.push({ entry, why: how.why });
       continue;
     }
     const step = await fileOne(forge, tracker, pr, entry, {
       ...opts,
       url,
-      facets,
+      how,
     });
     if (step.why === null) {
       result.filed.push(step.filing);
@@ -390,7 +446,7 @@ export async function fileDeferred(
     }
     const held = step.filing === null ? [] : [step.filing];
     result.unrecorded.push(...held);
-    result.remaining = open.slice(i + held.length);
+    result.remaining = open.slice(i + held.length).map((o) => o.entry);
     result.why = step.why;
     return result;
   }
@@ -398,21 +454,74 @@ export async function fileDeferred(
 }
 
 /**
- * The unfiled entries this run can file; each it cannot (no type or
- * severity recorded, or a value the repository lacks) goes to `result`'s
- * `forPerson`, with why.
+ * What each entry is filed as, or why a person files it. The review threads'
+ * files are read once, and the catalog once, the first time an entry needs a
+ * label derived; a repository whose taxonomy requires no other group reads
+ * neither.
  */
-function fileable(
+function planner(
+  forge: PrBodyForge,
+  pr: string,
+  opts: {
+    label: string;
+    facets: Facets | null;
+    taxonomy?: Taxonomy | null;
+    catalog?: () => CatalogSource;
+  },
+): (entry: DeferredEntry) => Promise<Plan | { why: string }> {
+  const taxonomy = opts.taxonomy ?? null;
+  let paths: Promise<Map<string, string>> | undefined;
+  let catalog: CatalogSource | undefined;
+  const readCatalog = () => {
+    catalog ??= (opts.catalog ?? configuredCatalog)();
+    return catalog;
+  };
+  return async (entry) => {
+    const facets = entryFacets(entry, opts.facets);
+    if ("why" in facets) return facets;
+    let file: FindingFile = { none: "it is a summary finding" };
+    if (
+      unfilledGroups(opts.label, taxonomy).length > 0 &&
+      entry.fingerprint === undefined
+    ) {
+      paths ??= forge.threadPaths(pr);
+      const path = (await paths).get(entry.source);
+      file =
+        path === undefined
+          ? {
+              none: `no review thread of this pull request starts at ${entry.source}`,
+            }
+          : { path };
+    }
+    const labels = entryLabels(opts.label, file, taxonomy, readCatalog);
+    return "why" in labels ? labels : { facets, labels: labels.labels };
+  };
+}
+
+/**
+ * The unfiled entries this run can file; each it cannot (no type or
+ * severity recorded, a value the repository lacks, or a required group whose
+ * label cannot be derived) goes to `result`'s `forPerson`, with why. An entry
+ * the tracker already holds an issue for needs only recording, so it is not
+ * planned, and carries that issue forward.
+ */
+async function fileable(
   entries: DeferredEntry[],
-  facets: Facets | null,
+  tracker: Tracker | null,
+  plan: (entry: DeferredEntry) => Promise<Plan | { why: string }>,
   result: FileDeferredResult,
-): DeferredEntry[] {
-  const open: DeferredEntry[] = [];
+): Promise<Open[]> {
+  const open: Open[] = [];
   for (const entry of entries) {
     if (entry.filed !== undefined) continue;
-    const found = entryFacets(entry, facets);
+    const held = tracker === null ? null : await alreadyFiled(tracker, entry);
+    if (held !== null) {
+      open.push({ entry, held, plan: null });
+      continue;
+    }
+    const found = await plan(entry);
     if ("why" in found) result.forPerson.push({ entry, why: found.why });
-    else open.push(entry);
+    else open.push({ entry, held: null, plan: found });
   }
   return open;
 }
@@ -439,21 +548,30 @@ async function fileOne(
   pr: string,
   entry: DeferredEntry,
   opts: {
-    label: string;
     url: string;
-    facets: Pick<NewIssue, "type" | "priority" | "size">;
+    /** The issue the tracker holds, or how a new one is filed. */
+    how: How;
     onFiled?: (f: Filing) => void;
   },
 ): Promise<
   { filing: Filing; why: null } | { filing: Filing | null; why: string }
 > {
-  let got: Awaited<ReturnType<typeof issueOf>>;
+  let got: Got;
   try {
-    got = await issueOf(
-      tracker,
-      entry,
-      issueFor(entry, pr, opts.url, opts.label, opts.facets),
-    );
+    got =
+      opts.how.held !== null
+        ? heldIssue(opts.how.held, entry)
+        : await issueOf(
+            tracker,
+            entry,
+            issueFor(
+              entry,
+              pr,
+              opts.url,
+              opts.how.plan.labels,
+              opts.how.plan.facets,
+            ),
+          );
   } catch (err) {
     return { filing: null, why: `the tracker refused: ${message(err)}` };
   }
@@ -513,11 +631,12 @@ function answered(m: DeferredReply): string {
   return "thread" in m ? m.thread : `the summary finding ${m.fingerprint}`;
 }
 
-/** The configured tracker, its follow-up label and facets, or why none can file. */
+/** The configured tracker, its follow-up label, facets and label taxonomy, or why none can file. */
 function configuredTracker(): {
   tracker: Tracker | null;
   label: string;
   facets: Facets | null;
+  taxonomy: Taxonomy | null;
   why?: string;
 } {
   try {
@@ -526,12 +645,14 @@ function configuredTracker(): {
       tracker: openTracker(config),
       label: config.labels.followup,
       facets: facetsOf(config, consumerRoot()),
+      taxonomy: readTaxonomy(consumerRoot(), config.taxonomy),
     };
   } catch (err) {
     return {
       tracker: null,
       label: "pr-followup",
       facets: null,
+      taxonomy: null,
       why: `no tracker adapter can file: ${message(err)}`,
     };
   }
@@ -581,7 +702,7 @@ async function main(): Promise<number> {
   const pr = rest[0] ?? "";
   if (rest.length !== 1 || !/^\d+$/.test(pr))
     fail(2, "usage: file-deferred.ts <PR> [--dry-run]");
-  const { tracker, label, facets, why } = configuredTracker();
+  const { tracker, label, facets, taxonomy, why } = configuredTracker();
   const forge = ghPrBodyForge();
   let code: number;
   let missing: DeferredReply[];
@@ -589,6 +710,7 @@ async function main(): Promise<number> {
     const r = await fileDeferred(forge, tracker, pr, {
       label,
       facets,
+      taxonomy,
       dryRun,
       ...(why === undefined ? {} : { noTrackerWhy: why }),
       onFiled: (f) =>

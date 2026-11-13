@@ -745,7 +745,14 @@ async function childStates(
         ? null
         : view.once(
             `metadata ${child.identifier} ${child.updatedAt ?? ""} ${child.isEpic}`,
-            () => metadata(tracker, child, identity, cache, null),
+            () =>
+              metadata(
+                tracker,
+                child,
+                identity,
+                cache,
+                view.held(child.identifier)?.relations ?? null,
+              ),
           ),
     ),
   );
