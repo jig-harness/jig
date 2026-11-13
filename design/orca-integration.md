@@ -114,7 +114,7 @@ closes that race for every launch Orca makes. Orca runs the plugin's
 `agent.launch.before` hook before it starts an agent's command from any of
 its launchers: a new tab, a workspace's creation, Orca's command line, an
 automation or an orchestration run. Before its last registry read, gc
-takes its admission for the worktree in the guard record, a record Jig
+takes its admission for the worktree in the launch guard record, a record Jig
 writes and the hook reads without an awaited call; its format is defined
 with the code that writes it. The hook refuses a launch into a worktree gc
 holds, with the reason ("jig gc is removing this worktree"), and notes
@@ -217,7 +217,7 @@ repository's remove hook, which the 2 s of Orca's other hooks is not.
 Through it the plugin runs the remove hook and the reflection park, and
 refuses the removal when either fails, as the workspace tool's `remove`
 does. gc's own removal has already run both, so it marks the removal it
-makes in the guard record, and the hook, finding the mark for that
+makes in the launch guard record, and the hook, finding the mark for that
 worktree, skips the teardown and lets the removal through: each removal runs
 its teardown once.
 
@@ -251,7 +251,7 @@ when a dev-loaded copy and a catalog copy run at once
 ([dispatch-dashboard.md § Install and upgrade](dispatch-dashboard.md#install-and-upgrade)).
 
 The plugin guards and shows; Jig decides and acts. The plugin reads records
-Jig writes, writes to none but the guard record, runs the installed `jig`
+Jig writes, writes to none but the launch guard record, runs the installed `jig`
 command, and holds no rule of its own, so Jig's rules keep one release channel. Every act on the forge and on
 a worktree stays Jig's, through the `orca` command line, which does more
 than the plugin's host API: the host API has no worktree creation and no
@@ -300,7 +300,7 @@ and ship through Jig's own release channel.
 which refuses a launch into a worktree `jig gc` is collecting and lets
 every other launch through ([Collection through the
 runtime](#collection-through-the-runtime) says how gc and the hook share
-the guard record, and what the guard does not cover). It decides from a
+the launch guard record, and what the guard does not cover). It decides from a
 synchronous read of that record, never from a host call, and writes the
 plugin's heartbeat into it while the worker runs. Its `contributes.hooks`
 entry leaves `onError` at `pass`: a failed or absent guard lets a launch
@@ -311,7 +311,7 @@ interactive pickup through Orca, since an Orca agent launch cannot pick
 the subscription account it runs on
 ([dark-factory-dispatch.md](dark-factory-dispatch.md#admission-by-account)).
 The launch hook can add environment variables to a launch. So the
-dispatcher announces an interactive launch in the guard record with its
+dispatcher announces an interactive launch in the launch guard record with its
 account, and the hook adds that account's configuration directory to the
 launch's environment (`CLAUDE_CONFIG_DIR` for Claude Code, `CODEX_HOME`
 for Codex) and consumes the announcement. That the added variable wins
@@ -420,7 +420,7 @@ One pull request each, in this order; each is usable on its own.
 5. **The plugin's wake-up** (built, in
    [its own repository](https://github.com/jig-harness/orca-plugin); the
    listing is open): the manifest, the worker, validation in its own CI.
-6. **The launch guard.** In Jig, the guard record: gc's admission taken
+6. **The launch guard.** In Jig, the launch guard record: gc's admission taken
    before its last registry read and released after the removal, a launch
    noted after the admission keeping the worktree, the heartbeat's
    freshness, and a receipt that says guarded or unguarded. Then, in the
@@ -430,7 +430,7 @@ One pull request each, in this order; each is usable on its own.
 7. **The account binding spike**, after step 6: whether a variable the hook adds
    binds a launch to the dispatcher's chosen account for Claude Code and
    for Codex. Only if it does, the dispatcher announces each interactive
-   launch in the guard record and starts pickups through Orca.
+   launch in the launch guard record and starts pickups through Orca.
 8. **The status bar item**, after `jig` prints the newest tick's line as
    JSON.
 9. **The Jig panel.** First the spike on fixtures that picks the drawing

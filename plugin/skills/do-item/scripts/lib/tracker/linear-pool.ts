@@ -15,7 +15,11 @@
 import { isRecord } from "../../../../../shared/guards.ts";
 import type { LinearTransport } from "./linear.ts";
 import { claimOperations } from "./linear-claim.ts";
-import { stateChangeOperations, teamMember } from "./linear-state-change.ts";
+import {
+  ACTOR,
+  stateChangeOperations,
+  teamMember,
+} from "./linear-state-change.ts";
 import {
   type Assigner,
   type CanonicalState,
@@ -182,7 +186,7 @@ query TrackerAssignmentHistory($id: String!, $team: String!, $after: String) {
       nodes {
         id createdAt
         toAssignee { ${USER} }
-        actor { id name guest teams(filter: { key: { eq: $team } }) { nodes { key } } }
+        actor { ${ACTOR} }
       }
     }
   }

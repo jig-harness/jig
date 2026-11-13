@@ -72,6 +72,7 @@ type ReportOps = Pick<
   | "assignedIssues"
   | "unassignedIssues"
   | "openPopulation"
+  | "poolScopeCounts"
 >;
 
 /** The ancestors the attribution walk reads; a further one fails the read. */
@@ -553,6 +554,27 @@ export function reportOperations(
     async openChildren(key) {
       requireOwnKey(key);
       return pools(await client.children(key, true));
+    },
+
+    async poolScopeCounts(signal) {
+      await client.authenticate(signal);
+      const clause = await client.poolScope(signal);
+      async function count(...clauses: string[]): Promise<number> {
+        if (signal?.aborted === true) throw abortedError(signal);
+        return client.countOpen(
+          inProject(project, open, ...clauses),
+          `open issues of ${project}`,
+          signal,
+        );
+      }
+      const total = await count();
+      const pool = clause === null ? total : await count(clause);
+      return {
+        project: total,
+        pool,
+        scoped: clause !== null,
+        approximate: false,
+      };
     },
 
     async openPopulation(signal) {

@@ -73,8 +73,12 @@ key as a second argument: `jig ask drive@jig 456`.
 
 A re-arm and a takeover are launches of the `drive` station, not stations
 of their own, so the address of a drive stays the same across every driver
-that holds it. `merge` joins the list with the merge-ready predicate of
-[item 36](dispatch-board.md): its holder is always a person
+that holds it. The `merge` station is the one still to be added
+(`shared/address.ts` holds `pickup`, `drive` and `followup`). It reads the
+merge-ready predicate of [item 36](dispatch-board.md)
+(`plugin/skills/drive-pr/scripts/lib/merge-ready.ts`), which is built and
+which the tick, the merge-ready announcement and `jig ask` already share: its
+holder is always a person
 ([ADR-0003](../docs/adr/ADR-0003-a-person-merges.md)), and what it answers
 is which act the merge waits on. The dispatcher has no address. It is no
 station, and its report is its own answer.
@@ -98,7 +102,7 @@ record, starts no session and makes no change on the forge or the tracker.
 | --- | --- | --- |
 | `holder` | the launch that holds the station now: its stage, its host, its driver generation, and whether its process is alive, dead or unknown; the account and the session where this machine's records name them; `none` when nobody holds it | the ledger and launch claims; the launch record; `plugin/shared/liveness.ts` |
 | `state` | the station's state in its own words: for a drive, running or the class of its last stop from the drive's terminal-state registry; for a pick-up, claimed, stalled or doubly claimed; for a follow-up, claimed, done or failed | the ledger; the tracker claim; the follow-up marker |
-| `waitsOn` | `waiting`, with what it waits for, or `person`, with the act that settles it, or `none` when nothing is outstanding (a station never recorded, a running one, a finished follow-up) | the stop's own class: a park waits on an answer, a stop only a person settles waits on a re-arm. The acts of a converged pull request (merge, approve, update the branch) join with item 36's predicate, which the board and `ask` then share |
+| `waitsOn` | `waiting`, with what it waits for, or `person`, with the act that settles it, or `none` when nothing is outstanding (a station never recorded, a running one, a finished follow-up) | the stop's own class: a park waits on an answer, a stop only a person settles waits on a re-arm. A converged pull request's acts (merge, approve, update the branch and the others its lane names) come from item 36's predicate, which the board and `ask` share |
 | `last` | the last ended launch: its class from the outcome log's closed list, and when | the launch claims' ends; the launch records; the outcome log |
 | `sources` | every record kind the answer consulted, whether it was read, the reason when it was not, and how many forge and tracker calls the answer made | the reads themselves |
 
@@ -106,10 +110,10 @@ A drive's stop is placed by the dispatcher's own classifier of its ledger,
 so `waitsOn` means what the tick does with it: a stop the tick re-arms or
 re-drives waits on that (`waiting`) where a dispatcher is known to read the
 pull request (this machine dispatches the repository, or a launch claim is
-on it), and on a person's re-arm where none is. Until item 36's predicate
-exists, a converged drive at its verified head waits on a person's merge,
-and the answer says it has not read whether an approval or an update of the
-branch must come first.
+on it), and on a person's re-arm where none is. A converged drive at its
+verified head waits on the act item 36's predicate names for its lane:
+merge now, approve first or update next, or the act that settles it where
+the predicate says why it is not ready (`plugin/ask/lib/merge.ts`).
 
 **What it reads, and what that costs.** `ask` reads only the records its
 station names: a `drive` or a `followup` never calls the tracker. On the
@@ -399,7 +403,7 @@ session runs `jig ask` and reads its plain answer.
   person's questions the operator adds `--person <login>`. The operator opens
   an address only to say more about one entry.
 - **The status of a pull request** is `jig ask drive@<repository>#<PR>`,
-  with whether it is ready to merge once item 36's predicate exists.
+  with whether it is ready to merge, from item 36's predicate.
 - **It sends a person's command only on that person's instruction in the
   same conversation.** It shows the `--dry-run` first, and for `answer` it
   sends the person's words, not its own summary of them.
@@ -476,9 +480,9 @@ before it is in use and has shown the next is wanted.
 5. **A park names the person it waits on.** The rule, the notification and
    `waitsOn`.
 
-`merge` joins the stations, and `waitsOn` gains a converged pull request's
-acts, in the pull request that builds item 36's predicate or in step 1,
-whichever comes later.
+`waitsOn` names a converged pull request's acts from item 36's predicate,
+which is built. What remains is the `merge` station itself, added to the
+address's stations with its records and its thread.
 
 The thread's additions are built in the dashboard's steps
 ([dispatch-dashboard.md § Build order](dispatch-dashboard.md#build-order)): resolved parks in the drive

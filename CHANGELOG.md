@@ -394,6 +394,152 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.226.0] - 2026-11-13
+
+### Added
+
+- The dispatcher tells a stalled pickup's finished work from abandoned work. When a claimed item has no running session and an open pull request whose head is the branch of this host's launch of the item links it (`Closes <KEY>` or `Refs <KEY>`, as `do-item` writes it), the tick on the host that owns the repository moves the item from its in-progress state to `pr_open`, never to done, and comments on it naming the pull request. An item already in `pr_open` is not reported as stalled while that pull request is open. Where the repository names no `pr_open` state, or the open pull requests did not read, nothing moves and the stall need says why, naming the pull request where there is one. The rule reads the open pull requests the tick already reads, so it makes no forge request of its own; `jig dispatch` lists each move under the repository, and with `--apply` what it did.
+
+## [0.225.2] - 2026-11-13
+
+Jig states one rule for every call it makes to a system it does not control.
+
+### Added
+
+- [ADR-0020](docs/adr/ADR-0020-outbound-calls-are-governed.md): every call to a forge, an issue tracker or a reflection store goes through that system's governed transport, which reuses an answer before it sends, asks a budget the whole machine shares, bounds what one call can cost, records what it spent and fails as one of a closed set of classes. The glossary gains the terms (governed transport, budget record, cost ledger, failure class, cost ceiling), and the roadmap gains the item that builds it. Nothing a repository configures changes with this release.
+
+## [0.225.1] - 2026-11-13
+
+### Fixed
+
+- On GitHub Issues, where priority is kept in a field rather than in labels,
+  `tracker.ts update` now removes a leftover `priority:` label named in
+  `removeLabels` instead of refusing it. Adding one is still refused, and the
+  message names the field priority is kept in. Where priority is kept in
+  labels, both stay refused, so priority still changes only through
+  `priority`. **Consumer action:** none.
+
+## [0.225.0] - 2026-11-13
+
+### Added
+
+- `dispatch.stalled_scope` (`claimed` by default, or `assigned`) decides
+  which of the factory identity's claimed items the stall watch reads as
+  pickups.
+
+### Fixed
+
+- `jig doctor dispatch` no longer passes while every tick fails. A tick that
+  a throw stops before its act phase, such as one whose state database is
+  refused at the start, now writes a failed receipt, so `jig status` and
+  `jig doctor` read that tick rather than an older successful one. The
+  `dispatch:last-run` check names the latest tick's failure reason and, when
+  more than one tick in a row failed, how many and since when.
+- The stall watch no longer reads someone else's work as a stalled pickup.
+  An item assigned to the factory identity in progress counts as a pickup
+  only when a launch record of the host or a claim marker took it.
+  `dispatch.stalled_scope: assigned` keeps the wider watch, for a repository
+  whose identity nobody else uses. A double claim is still reported for any
+  claimed item.
+- An item a person held with `jig:hold` (or the human-in-the-loop or
+  manual-operations label) in a served person's queue or the ready pool, and
+  then released, is picked up again at the next tick. Before, the record of
+  an earlier pickup that ended without claiming it kept holding it until the
+  item left the dispatch states. A claimed item's record, and the record of
+  a pickup that finished (`done`), still outlive a hold.
+
+## [0.224.3] - 2026-11-13
+
+### Fixed
+
+- The audit now probes configured Jira and Linear facet stores and reports
+  stores that cannot be used, including missing Jira fields or issue types
+  and Linear size estimates disabled for the team. Configured GitHub store
+  failures are also reported; a probe the tracker could not answer is a
+  warning, not an error. Default-store detection advice remains specific to
+  GitHub. The Jira probe also shows the open issue counts for the project and
+  its configured pool issue-type scope, counted as the pool read counts.
+  **Consumer action:** none.
+
+## [0.224.2] - 2026-11-13
+
+Reading who made a Linear assignment costs a tenth of the query complexity it did.
+
+### Fixed
+
+- The assignment-history and state-history reads asked Linear for each history entry's user together with the user's teams, with no limit on the team list. Linear prices an unlimited list at its default page of 50 for every one of up to 100 history entries, so one history read cost about 6,000 points of the credential's hourly complexity limit (3,000,000), where the same read with the list limited to the one team it is filtered to costs about 600, with the same answer. A served queue that re-reads a dozen assignment histories every tick therefore spent most of the complexity Linear refills in the tick interval, and the dispatcher's reads were held back at the `tracker_share` floor.
+
+## [0.224.1] - 2026-11-13
+
+### Fixed
+
+- Test scratch can be collected after a killed runner when persistent fixture registrations prove its holders gone. Registrations survive removal and recreation of the scratch root, but a replacement legacy owner cannot claim an earlier registration. Unknown native child trees, incomplete launches and legacy scratch remain retained with their reasons. Declare the test directory prefix and refresh the collector's confirmed bounds to include it before collection.
+
+## [0.224.0] - 2026-11-13
+
+A repository's `ci.log_command` runs the program the default branch holds, not the copy in the pull request it repairs.
+
+The dispatcher no longer waits an hour for Linear after spending its share of the rate limit.
+
+A cold read of a served Linear queue no longer costs about three requests for each issue of an epic.
+
+### Added
+
+- `file-deferred.ts` (resolve-review-comments) files a deferred finding into a
+  repository whose label taxonomy requires a group beyond the size, such as a
+  `repo` group: it takes that group's label from the change-area catalog's
+  areas covering the file the finding's review thread is on. A finding whose
+  group it cannot derive with certainty (a summary finding, a file no area
+  covers, or areas carrying none or several of the group's labels) stays in
+  the pull request's `## Deferred` section for a person, the run's output
+  naming the group, and the other entries are filed instead of the run
+  stopping on the tracker's refusal (exit 3 rather than 1). A label taxonomy
+  that fails its lint now stops the run before anything is filed, as no
+  tracker can file (exit 3), rather than at the first filing (exit 1).
+
+### Changed
+
+- **Breaking:** the copy holds tracked files only. A `ci.log_command` that relied on something installed or generated in the working tree (`node_modules`, build output) no longer finds it, and the copy is not a git checkout, so `git` and `gh` do not find the repository from its working directory. **Consumer action:** required at configuration. Make the command self-contained, or have it install what it needs and give `gh` `-R <owner>/<repo>`; a script that imports only Bun's built-ins and files in the repository needs nothing. **Detect:** `config:ci.log_command`.
+
+### Fixed
+
+- Linear's request and complexity limits refill continuously, but the machine's request budget treated the dispatcher's share as spent until the reset Linear names, which is always an hour after the last answer. A tick that took the window down to its share floor (`tracker_share`, 50% by default), such as a cold read of a large queue, therefore stopped every tracker read of the dispatcher for an hour, though the refill brings the window back above the floor in seconds when it was only just below it. The budget now counts the refill of each window since it was last read, never past the window's limit, and the tick's reads resume as soon as the window is back above the floor, however long that takes for a larger deficit. A window that resets whole keeps waiting for its reset.
+- The issues the served walk reads by key (an epic's children, blockers, a plan's steps) now come with their relations and parent in the same paged request (`queueIssuesByKey`, 25 issues a page), where the walk read each issue's relations in two requests of its own, and what a batch carried of a parent is kept for the next tick. After a plugin upgrade or a cleared cache, the first read of a large queue costs a request per 25 issues instead of three per issue; assignment history is still read once per assigned issue, and an issue with more relations than a page holds is still read on its own. An issue the batch does not hold is read on its own.
+
+### Security
+
+- `ci.log_command`'s text was already read from the default branch, but it ran with the pull request's checkout as its working directory, so a script the repository keeps (`bun scripts/ci-log.ts`) ran as the pull request's author had edited it. It now runs in a temporary copy of the default branch's files, made from the same commit its text was read from without touching the repository's index, working tree or branches, and removed when the read ends. A copy that cannot be made fails the read; the command never falls back to the working tree. The copy is made under `$JIG_HOME/tmp`, in a scratch repository that reads the clone's objects, so no hook, filter, replacement object or attribute of the working tree or the clone's configuration applies and the git calls carry no tracker or forge token, and one copy serves every failing status of one read.
+
+## [0.223.5] - 2026-11-13
+
+### Fixed
+
+- The records inventory (`plugin/RECORDS.md`) says the drive ledger is written at version 2, envelope and `ledgerVersion` alike, when it records a person's stop, and at version 1 otherwise; and it names the tracker claim marker among the records that carry the record envelope.
+- The mechanisms map (`plugin/MECHANISMS.md`) says what happens to a failed follow-up: one of this host's that stopped on a routine question runs once more with the class's standing answer, within the pull request's recovery budget and unless it was already a run again, and any other failure waits on a person, whose **Run it again** deletes its marker and **Record it done** marks it done and sets the followed-up label.
+- The plugin README's `jig ask` field table lists every act a station can wait on a person for under `waitsOn`, as `jig ask` prints them, and a test fails when that list and the code's disagree.
+- GLOSSARY.md has one entry for the files `jig gc` and Jig's plugin for Orca share, **Launch guard record**, which the documents now use throughout, and an entry for the **Line**, the row of stations a work item passes through.
+- `jig gc` no longer leaves a worktree with a detached HEAD `unverified`
+  on every run when no drive recorded it, such as an implementer's tree
+  that `do-item` released or a checkout the dispatcher detached. gc now asks
+  the forge for the pull requests that hold the HEAD commit and runs the
+  same proof a branched worktree gets: a tree whose commit a merged pull
+  request holds and that holds nothing else goes on to the later checks,
+  and one with commits no remote branch and no merged pull request's head
+  holds is kept. A drive's tree record still decides while it describes the
+  head. The reason names the pull request and whether the record or the
+  forge named it ([plugin/gc/README.md § Detached
+  worktrees](plugin/gc/README.md#detached-worktrees)).
+
+## [0.223.4] - 2026-11-13
+
+### Fixed
+
+- `jig ask --thread` shows `rearm` dispatch label requests alongside `drive` and `hold`, with who requested the restart, when, and when the label came off. **Consumer action:** none.
+- The Jira adapter no longer names the account scopes a token needs when Jira
+  refuses a dead, expired or invalid token. The scope hint now appears only
+  when Jira's answer says a scope does not match; any other 401 or 403 gets
+  the credential guidance alone.
+
 ## [0.223.3] - 2026-11-13
 
 ### Fixed
@@ -7731,7 +7877,17 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.223.3...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.226.0...HEAD
+[0.226.0]: https://github.com/jig-harness/jig/compare/v0.225.2...v0.226.0
+[0.225.2]: https://github.com/jig-harness/jig/compare/v0.225.1...v0.225.2
+[0.225.1]: https://github.com/jig-harness/jig/compare/v0.225.0...v0.225.1
+[0.225.0]: https://github.com/jig-harness/jig/compare/v0.224.3...v0.225.0
+[0.224.3]: https://github.com/jig-harness/jig/compare/v0.224.2...v0.224.3
+[0.224.2]: https://github.com/jig-harness/jig/compare/v0.224.1...v0.224.2
+[0.224.1]: https://github.com/jig-harness/jig/compare/v0.224.0...v0.224.1
+[0.224.0]: https://github.com/jig-harness/jig/compare/v0.223.5...v0.224.0
+[0.223.5]: https://github.com/jig-harness/jig/compare/v0.223.4...v0.223.5
+[0.223.4]: https://github.com/jig-harness/jig/compare/v0.223.3...v0.223.4
 [0.223.3]: https://github.com/jig-harness/jig/compare/v0.223.2...v0.223.3
 [0.223.2]: https://github.com/jig-harness/jig/compare/v0.223.1...v0.223.2
 [0.223.1]: https://github.com/jig-harness/jig/compare/v0.223.0...v0.223.1

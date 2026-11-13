@@ -73,7 +73,7 @@ import { consumerRoot } from "../../../shared/consumer.ts";
 import {
   logCommandOf,
   logCommandSeconds,
-  readStatusLog,
+  readStatusLogs,
   type StatusLog,
 } from "./status-log.ts";
 
@@ -188,9 +188,14 @@ export const defaultRunner: Runner = (argv) =>
     ...(argv[0] === "git" ? { env: gitIdentityEnv() } : {}),
   });
 
-/** `ci.log_command`, the deadline each of its runs gets, and where it runs. */
+/**
+ * `ci.log_command`, the commit of the default branch that sets it (whose files
+ * it runs from), the deadline each of its runs gets, and the repository that
+ * holds that commit.
+ */
 export interface LogCommand {
   command: string;
+  commit: string;
   seconds: number;
   root: string;
 }
@@ -203,8 +208,14 @@ export interface StatusLogs {
    * branch that sets it cannot be read.
    */
   settings(): Promise<Outcome<LogCommand | null>>;
-  /** One failing status's log, or why the command could not give one. */
-  read(command: LogCommand, status: FailingStatus): Promise<Outcome<StatusLog>>;
+  /**
+   * Each failing status's log, in order, or why the command could not give
+   * one; one run of the command's files for all of them.
+   */
+  read(
+    command: LogCommand,
+    statuses: readonly FailingStatus[],
+  ): Promise<Outcome<StatusLog[]>>;
 }
 
 export const defaultStatusLogs: StatusLogs = {
@@ -222,11 +233,16 @@ export const defaultStatusLogs: StatusLogs = {
     if (command.value === null) return ok(null);
     const seconds = logCommandSeconds();
     return seconds.ok
-      ? ok({ command: command.value, seconds: seconds.value, root })
+      ? ok({
+          command: command.value.command,
+          commit: command.value.commit,
+          seconds: seconds.value,
+          root,
+        })
       : seconds;
   },
-  read: ({ command, seconds, root }, status) =>
-    readStatusLog(command, status, seconds, root),
+  read: ({ command, commit, seconds, root }, statuses) =>
+    readStatusLogs(command, commit, statuses, seconds, root),
 };
 
 export interface Args {
@@ -376,31 +392,30 @@ async function readStatuses(
   command: LogCommand | null,
   logs: StatusLogs,
 ): Promise<Outcome<StatusReading[]>> {
-  const read: StatusReading[] = [];
-  for (const status of statuses) {
-    if (command === null) {
-      read.push({
+  if (command === null)
+    return ok(
+      statuses.map((status) => ({
         entry: {
           ...status,
-          log: "unread",
+          log: "unread" as const,
           reason: "ci.log_command is not set",
         },
         log: null,
-      });
-      continue;
-    }
-    const answer = await logs.read(command, status);
-    if (!answer.ok) return answer;
-    read.push(
-      answer.value.kind === "log"
-        ? { entry: { ...status, log: "read" }, log: answer.value.text }
-        : {
-            entry: { ...status, log: "gone", reason: answer.value.reason },
-            log: null,
-          },
+      })),
     );
-  }
-  return ok(read);
+  const answers = await logs.read(command, statuses);
+  if (!answers.ok) return answers;
+  return ok(
+    statuses.map((status, i): StatusReading => {
+      const answer = answers.value[i] as StatusLog;
+      return answer.kind === "log"
+        ? { entry: { ...status, log: "read" }, log: answer.text }
+        : {
+            entry: { ...status, log: "gone", reason: answer.reason },
+            log: null,
+          };
+    }),
+  );
 }
 
 export interface Io {

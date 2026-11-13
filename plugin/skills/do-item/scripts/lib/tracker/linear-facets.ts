@@ -19,6 +19,7 @@
  * the first such read.
  */
 
+import { failedHealth, type StoreHealth } from "./unavailable.ts";
 import {
   defaultFacets,
   type Facets,
@@ -29,6 +30,7 @@ import {
   type CoreFacetReport,
   type CoreIssue,
   type CorePoolIssue,
+  type CoreQueueIssue,
   type CoreTracker,
   withFacets,
 } from "./facets/tracker.ts";
@@ -345,18 +347,12 @@ export function estimateStore(
         openPopulation: async (signal) =>
           pools(await core.openPopulation(signal), signal),
         async facetReport(options): Promise<CoreFacetReport> {
-          let health: { status: "ok" } | { status: "failed"; error: string };
+          let health: StoreHealth;
           try {
             await map(readSignal(options));
             health = { status: "ok" };
           } catch (err) {
-            health = {
-              status: "failed",
-              error: (err instanceof Error ? err.message : String(err)).slice(
-                0,
-                300,
-              ),
-            };
+            health = failedHealth(err);
           }
           return {
             facets: { size: { health } },
@@ -392,8 +388,17 @@ function estimatedBatches(
     issue: WithEstimate<CorePoolIssue>,
     signal?: AbortSignal,
   ) => Promise<CorePoolIssue>,
-): Pick<CoreTracker, "poolIssues" | "queueIssues"> {
-  const { poolIssues, queueIssues } = core;
+): Pick<CoreTracker, "poolIssues" | "queueIssues" | "queueIssuesByKey"> {
+  const { poolIssues, queueIssues, queueIssuesByKey } = core;
+  const queued =
+    (signal?: AbortSignal) => async (q: WithEstimate<CoreQueueIssue>) => ({
+      ...q,
+      ...(await pool(q, signal)),
+      parent:
+        q.parent === null
+          ? null
+          : { ...q.parent, issue: await pool(q.parent.issue, signal) },
+    });
   return {
     ...(poolIssues === undefined
       ? {}
@@ -415,18 +420,20 @@ function estimatedBatches(
       : {
           async queueIssues(identity, states, signal) {
             const read = await queueIssues(identity, states, signal);
-            return Promise.all(
-              read.map(async (q) => ({
-                ...q,
-                ...(await pool(q, signal)),
-                parent:
-                  q.parent === null
-                    ? null
-                    : {
-                        ...q.parent,
-                        issue: await pool(q.parent.issue, signal),
-                      },
-              })),
+            return Promise.all(read.map(queued(signal)));
+          },
+        }),
+    ...(queueIssuesByKey === undefined
+      ? {}
+      : {
+          async queueIssuesByKey(keys, signal) {
+            const read = [...(await queueIssuesByKey(keys, signal))];
+            return new Map(
+              await Promise.all(
+                read.map(
+                  async ([k, q]) => [k, await queued(signal)(q)] as const,
+                ),
+              ),
             );
           },
         }),

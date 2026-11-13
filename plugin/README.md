@@ -199,7 +199,9 @@ jig run       [COMPONENT...]
   copy; the latest scheduled upgrade, which fails while that upgrade failed,
   naming it and the agent tool's error; for each component, or those named, its machine file, its job's
   launcher copy against the installed plugin's, the programs its job names
-  and its last run's receipt, and for the dispatcher that Orca resolves
+  and its last run's receipt (for the dispatcher, a failed last tick also
+  names its reason and how many ticks in a row have failed, since when),
+  and for the dispatcher that Orca resolves
   where its timer runs; and the audit's
   [configuration fit](skills/audit/README.md#what-it-does) of the
   repository, offline (the audit itself also reads the forge and the
@@ -509,7 +511,9 @@ Without it, claims serialize on one host only. A claimed item
 with no running session for longer than `dispatch.stalled_after` is
 reported as stalled and never relaunched (a served person's item only when
 a pickup of the host claimed it: the rest of their work in progress is
-their own); an item more than one running
+their own; the identity's item only when a launch record of the host or a
+claim marker took it, unless `dispatch.stalled_scope` is `assigned`); an
+item more than one running
 session joins to is reported as a double claim; a session waiting longer
 than `dispatch.blocked_after` is reported.
 
@@ -1368,7 +1372,7 @@ whose configuration names the tracker.
 | --- | --- |
 | `holder` | the launch that holds the station now: its stage, its host (`this machine`, or another dispatching host as its launch claims name it), the drive's driver generation, and whether its process is alive, dead or unknown; the account, the session and the launch record where this machine's records name them; `none` when nobody holds it |
 | `state` | the station's state in its own words: for a drive, `running`, the [terminal-state](skills/drive-pr/README.md) name of its last stop (`HITL_PARKED`, `CONVERGED`, …), `not driven`, `merged` or `closed`; for a pick-up, `assigned`, `claimed`, `stalled`, `doubly claimed`, `not assigned` or `closed`; for a follow-up, `claimed`, `done`, `failed`, `not claimed` or `not merged` |
-| `waitsOn` | `none`; `waiting`, with what it waits for, when it settles by itself (a dispatcher's next tick, another driver); or `person`, with the act that settles it: answer, re-arm, merge, re-run the follow-up, choose the session that keeps the item, look at the stalled pickup, settle a pickup's question and return the item to the dispatch states, answer the waiting session, or assign the item as someone who can write; and `needAct`, what the person does as the dispatch dashboard groups it (Merge, Decide, Authorize, Reply, Do or Investigate; a park's comes from its decision class) |
+| `waitsOn` | `none`; `waiting`, with what it waits for, when it settles by itself (a dispatcher's next tick, another driver); or `person`, with the act that settles it, one of `answer`, `re-arm`, `release the CI hold`, `merge`, `approve`, `request a review`, `update the branch`, `re-run a check`, `mark it ready`, `remove the label`, `open the pull request`, `re-run the follow-up`, `choose the session that keeps the item`, `look at the stalled pickup`, `settle the pickup's question, then return the item to the dispatch states`, `answer the waiting session` or `assign the item as someone who can write`; and `needAct`, what the person does as the dispatch dashboard groups it (Merge, Decide, Authorize, Reply, Do or Investigate; a park's comes from its decision class) |
 | `last` | the last ended launch: its class from the [outcome log](#the-dispatcher)'s closed list and when, from this machine's outcome log or, elsewhere, from the end written on its launch claim |
 | `sources` | every record kind the answer consulted, whether it was read and why not, and how many forge and tracker calls it made |
 

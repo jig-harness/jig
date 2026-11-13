@@ -3,6 +3,8 @@ import type { Proof } from "../types.ts";
 export interface WorktreeRequest {
   state: "OPEN" | "MERGED" | "CLOSED";
   head: string;
+  /** The pull request's number, when the forge answered one. */
+  number?: number;
 }
 /**
  * Ignored paths, split by whether a detected package manager's dependency

@@ -1,5 +1,26 @@
 {
   "$comment": "Derived from the changelog's released sections by the changelog skill (consumer-actions-record.ts); the release step rewrites it, so never edit it by hand.",
   "schema": 1,
-  "releases": []
+  "releases": [
+    {
+      "version": "0.224.0",
+      "actions": [
+        {
+          "id": "0.224.0#20ef8d86",
+          "strength": "required",
+          "levels": ["configuration"],
+          "description": "**Breaking:** the copy holds tracked files only. A `ci.log_command` that relied on something installed or generated in the working tree (`node_modules`, build output) no longer finds it, and the copy is not a git checkout, so `git` and `gh` do not find the repository from its working directory.",
+          "instruction": "Make the command self-contained, or have it install what it needs and give `gh` `-R <owner>/<repo>`; a script that imports only Bun's built-ins and files in the repository needs nothing.",
+          "hints": [
+            {
+              "kind": "config",
+              "value": "ci.log_command",
+              "absent": false
+            }
+          ]
+        }
+      ],
+      "retracts": []
+    }
+  ]
 }
