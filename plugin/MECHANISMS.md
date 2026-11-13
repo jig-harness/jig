@@ -460,9 +460,23 @@ development and shipped as a version.
 - **Reasoned.** The follow-up session decides what the merge still owes and
   does it; it calls the marker commands at the points its instructions name.
 - **If it fails.** The follow-up session stops on any non-zero exit. A
-  failed follow-up is notified on the configured cadence and never started
-  again; a person
-  deletes its marker to have it run again.
+  follow-up of this host's that stopped on a routine question (`local-leftover`,
+  `person-owed` or `drafted-items`, the classes in
+  `dispatch/lib/routine-questions.ts`) is run once more with the class's
+  standing answer
+  ([`repositories[].stages`](CONFIGURATION.md#dispatch)), when that run
+  again fits the pull request's recovery budget and its attempt was not
+  itself a run again; one that failed before questions were tagged runs
+  again with every class's standing answer, from its launch record while that
+  is still on this host or from the retry evidence kept with its outcome
+  (`dispatch/lib/routine-reruns.ts`). A failure that does not
+  qualify (another host's marker, a question that is not routine or does
+  not read, an attempt that was itself a run again) is notified as a need on
+  the configured cadence and not started again until a person answers
+  it: **Run it again** deletes its marker, so a later tick starts it again
+  with the person's note in its prompt, and **Record it done** marks the
+  marker done in place and sets the pull request's followed-up label, so
+  nothing runs again ([Every need is a decision](README.md#every-need-is-a-decision)).
 
 ### Shared records: several hosts on one repository
 
