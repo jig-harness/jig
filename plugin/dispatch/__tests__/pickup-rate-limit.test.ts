@@ -23,7 +23,6 @@ import { world, type World } from "./fixtures.ts";
 
 const LIMITED = newRecordId(new Date("2026-11-10T11:00:00.000Z"));
 const PICKUP = newRecordId(new Date("2026-11-10T11:01:00.000Z"));
-const FOLLOWUP = newRecordId(new Date("2026-11-10T11:02:00.000Z"));
 let current: World | null = null;
 afterEach(() => {
   current?.close();
@@ -107,7 +106,7 @@ it("takes a waits result through the jig command line", () => {
   expect(readResult(PICKUP, dispatchState(w))).toBe("waits");
 });
 
-it("refuses a waits result without a time, too far ahead, or on a follow-up's record", () => {
+it("refuses a waits result without a time, or too far ahead", () => {
   const w = world();
   current = w;
   const root = dispatchState(w);
@@ -118,15 +117,10 @@ it("refuses a waits result without a time, too far ahead, or on a follow-up's re
     pr: null,
     item: "ENG-5",
   });
-  earlierRecord(w, { id: FOLLOWUP, account: "a", action: "followup", pr: 9 });
-  const soon = new Date(Date.now() + 60_000).toISOString();
   const far = new Date(Date.now() + 3 * 24 * 3_600_000).toISOString();
   expect(resultMain([PICKUP, "earlier-token", "waits"], root)).toBe(2);
   expect(
     resultMain([PICKUP, "earlier-token", "waits", "--until", far], root),
-  ).toBe(2);
-  expect(
-    resultMain([FOLLOWUP, "earlier-token", "waits", "--until", soon], root),
   ).toBe(2);
 });
 

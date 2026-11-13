@@ -20,6 +20,7 @@ import { forgeShared } from "../../shared/records/shared-forge.ts";
 import { settleNoCauseStops } from "./no-cause-stops.ts";
 import { settleFailedRearms, withRearmHeads } from "./failed-rearms.ts";
 import { releaseRoutineMarkers } from "./routine-reruns.ts";
+import { releaseWaitMarkers } from "./followup-waits.ts";
 import {
   driveHold,
   settleConflictStops,
@@ -339,7 +340,7 @@ function markUnlaunched(
   });
 }
 
-/** With `--apply`: write the end of this host's own claims whose launch records ended, release the markers of follow-ups that owe a routine run again, and report what could not be done. */
+/** With `--apply`: write the end of this host's own claims whose launch records ended, release the markers of follow-ups that owe a routine run again or whose rate limit has reset, and report what could not be done. */
 export async function endOwnClaims(
   ctx: SharedContext,
   report: RepoReport,
@@ -377,6 +378,13 @@ export async function endOwnClaims(
       inputs.forge.merged,
       own,
       inputs.outcomes,
+      scope,
+    )),
+    ...(await releaseWaitMarkers(
+      ctx,
+      inputs.forge.merged,
+      own,
+      inputs.nowMs,
       scope,
     )),
   ];
