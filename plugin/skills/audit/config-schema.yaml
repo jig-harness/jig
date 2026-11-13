@@ -1315,7 +1315,7 @@ fields:
     default: 1
     read_by: [changelog]
     repository_only: true
-    since: next
+    since: 0.227.2
   changelog.consumer_actions:
     type: boolean
     default: false
