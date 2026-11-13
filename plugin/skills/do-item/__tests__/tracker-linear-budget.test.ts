@@ -295,13 +295,36 @@ describe("the Linear transport's request budget", () => {
       },
     });
     d.governor.observe(d.key, window(1252));
-    expect(d.tries()).toBeNull();
-    expect(d.tries()).toBeNull();
+    const first = d.governor.admit("linear", d.key);
+    const second = d.governor.admit("linear", d.key);
     // The answers to those two arrive out of order: 1,250 first, then the
     // 1,251 the server measured between them.
-    d.governor.observe(d.key, window(1250));
-    d.governor.observe(d.key, window(1251));
+    d.governor.observe(d.key, window(1250), second);
+    d.governor.observe(d.key, window(1251), first);
     expect(d.tries()).toBeInstanceOf(TrackerRateLimited);
+  });
+
+  it("keeps reservations made while a slow request was in flight", () => {
+    const d = dispatcherAt(7_000_000, "lin_api_k");
+    const window = (remaining: number) => ({
+      requests: {
+        limit: 2500,
+        remaining,
+        resetAt: d.clock.now + 3_600_000,
+        refillMs: 3_600_000,
+      },
+    });
+    d.governor.observe(d.key, window(1260));
+    const sent = d.governor.admit("linear", d.key);
+    // Nine more requests leave while the first is in flight.
+    for (let i = 0; i < 9; i += 1) d.governor.admit("linear", d.key);
+    d.clock.now += 3_000;
+    // Its answer, measured before the others, says 1,259: it must not
+    // restore the capacity the others consumed (about 1,250 plus the refill).
+    d.governor.observe(d.key, window(1259), sent);
+    let admitted = 0;
+    while (d.tries() === null && admitted < 20) admitted += 1;
+    expect(admitted).toBeLessThanOrEqual(3);
   });
 
   it("keeps a window that resets whole walled until its reset", () => {

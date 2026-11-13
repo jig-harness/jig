@@ -186,9 +186,13 @@ interface Governed {
 }
 
 /** Record an answer; a refusal ends the request with `TrackerRateLimited`. */
-function settle(governed: Governed | null, answer: BudgetAnswer): void {
+function settle(
+  governed: Governed | null,
+  answer: BudgetAnswer,
+  sentAt?: number,
+): void {
   if (governed === null) return;
-  governed.governor.observe(governed.key, answer);
+  governed.governor.observe(governed.key, answer, sentAt);
   if (answer.limitedUntil !== undefined)
     throw new TrackerRateLimited(
       "linear",
@@ -213,7 +217,7 @@ export function httpTransport(
       : { governor, key: credentialKey("linear", token) };
   return async (query, variables, signal) => {
     if (cancelled(signal)) throw abortedError(signal);
-    governed?.governor.admit("linear", governed.key);
+    const sentAt = governed?.governor.admit("linear", governed.key);
     let res: Response;
     try {
       res = await postGraphQL(
@@ -240,7 +244,7 @@ export function httpTransport(
       } catch {
         // not JSON
       }
-      settle(governed, linearAnswer(res.headers, res.status, body));
+      settle(governed, linearAnswer(res.headers, res.status, body), sentAt);
       if (isRecord(body) && Array.isArray(body.errors))
         unwrapResponse(body, res.status);
       throw new LinearApiError(
@@ -249,7 +253,7 @@ export function httpTransport(
       );
     }
     const body: unknown = await res.json();
-    settle(governed, linearAnswer(res.headers, res.status, body));
+    settle(governed, linearAnswer(res.headers, res.status, body), sentAt);
     return unwrapResponse(body, res.status);
   };
 }

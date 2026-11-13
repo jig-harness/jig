@@ -351,7 +351,7 @@ describe.each(MODES)("Jira transport: $name", (mode) => {
     const keys: string[] = [];
     const limits: number[] = [];
     const governor = {
-      admit: (_adapter: string, key: string) => void keys.push(key),
+      admit: (_adapter: string, key: string) => keys.push(key),
       observe: (key: string, answer: { limitedUntil?: number }) => {
         keys.push(key);
         limits.push(answer.limitedUntil ?? 0);
@@ -376,7 +376,7 @@ describe.each(MODES)("Jira transport: $name", (mode) => {
   it("admits once per request sent", async () => {
     const admitted: string[] = [];
     const governor = {
-      admit: (_adapter: string, key: string) => void admitted.push(key),
+      admit: (_adapter: string, key: string) => admitted.push(key),
       observe: () => undefined,
     };
     const transport = httpTransport(

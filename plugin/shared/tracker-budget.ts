@@ -249,16 +249,16 @@ function currentShare(): number | null {
 
 /** Admits requests for a credential and records what the answers said. */
 export interface BudgetGovernor {
-  /** Throws `TrackerRateLimited` when no request may leave now. */
-  admit(adapter: string, key: string): void;
-  /** Record what one answer said; returns the record as it now stands. */
-  observe(key: string, answer: BudgetAnswer): void;
+  /** Throws `TrackerRateLimited` when no request may leave now; returns the time the request was admitted. */
+  admit(adapter: string, key: string): number;
+  /**
+   * Record what one answer said. `sentAt` is the `admit` time of the request
+   * it answers: what was recorded since is not in the answer.
+   */
+  observe(key: string, answer: BudgetAnswer, sentAt?: number): void;
 }
 
 const EMPTY: BudgetWindow = { limit: null, remaining: null, resetAt: null };
-
-/** Answers this close together may have been measured out of the order they arrived in. */
-const RACE_MS = 2_000;
 
 /**
  * The newer of two readings of a window, the answer read at `now`: the
@@ -266,14 +266,17 @@ const RACE_MS = 2_000;
  * (with its own read time) when the answer is from an older window (a
  * delayed response across a reset) or says nothing of this window, else the
  * answer. A window that refills continuously compares counts only at one
- * time: an answer arriving within `RACE_MS` of the stored reading may be the
- * older measurement, so it takes the lower of the answer and the stored
- * balance carried to `now` (reservations included); a later one is newer.
+ * time: an answer to a request sent at `sentAt` leaves out every reservation
+ * and reading recorded since (`readAt` at or after `sentAt`), however long
+ * the request was in flight, so it takes the lower of the answer and the
+ * stored balance carried to `now` (reservations included); an answer with
+ * nothing recorded since its request was sent is the newest.
  */
 function merged(
   prev: BudgetWindow,
   next: BudgetWindow | undefined,
   now: number,
+  sentAt: number | undefined,
 ): BudgetWindow {
   if (next === undefined) return prev;
   const read = { ...next, readAt: now };
@@ -295,7 +298,8 @@ function merged(
     next.refillMs != null &&
     prev.refillMs != null &&
     prev.readAt != null &&
-    now - prev.readAt < RACE_MS &&
+    sentAt !== undefined &&
+    prev.readAt >= sentAt &&
     next.remaining !== null
   ) {
     const carried = holds(prev, prev.readAt, now);
@@ -418,8 +422,9 @@ export function budgetGovernor(
         };
       });
       if (out.refusal !== null) throw out.refusal;
+      return now;
     },
-    observe(key, answer) {
+    observe(key, answer, sentAt) {
       const now = clock();
       store.update(key, (prev) => {
         const base: BudgetRecord = prev ?? {
@@ -432,8 +437,8 @@ export function budgetGovernor(
         const stillLimited =
           base.limitedUntil !== null && base.limitedUntil > now;
         return {
-          requests: merged(base.requests, answer.requests, now),
-          complexity: merged(base.complexity, answer.complexity, now),
+          requests: merged(base.requests, answer.requests, now, sentAt),
+          complexity: merged(base.complexity, answer.complexity, now, sentAt),
           limitedUntil:
             answer.limitedUntil !== undefined
               ? Math.max(
