@@ -218,7 +218,7 @@ export function needView(n: LineNeed, clockNow: Clock): NeedView {
       repo: n.repo,
       pr: n.pr,
       url: n.url,
-      parked: rows.length > 0,
+      parked: n.cause === "parked" && rows.length > 0,
     }),
     keyText: n.url === null ? n.target : null,
     foldLabel: decision === null ? "Details" : "The whole decision",
