@@ -443,42 +443,34 @@ async function readCloneObjects(
   );
   if (!format.ok) return format;
   const short = commit.slice(0, 12);
-  const listed = await readClone(
-    root,
-    `the default branch's files at ${short} could not be listed`,
-    ["ls-tree", "-r", "-z", commit],
-  );
-  if (!listed.ok) return listed;
-  // Files only: a submodule's commit lives in its own object store.
-  const blobs = listed.value
-    .split("\0")
-    .map((entry) => /^\d+ blob ([0-9a-f]+)\t/.exec(entry)?.[1])
-    .filter((id): id is string => id !== undefined);
-  // Which are absent, without fetching them one at a time.
-  const checked = await readClone(
-    root,
-    `the default branch's files at ${short} could not be read`,
-    ["cat-file", "--batch-check"],
-    `${blobs.join("\n")}\n`,
-    { GIT_NO_LAZY_FETCH: "1" },
-  );
-  if (!checked.ok) return checked;
-  const absent = checked.value
-    .split("\n")
-    .map((line) => /^([0-9a-f]+) missing$/.exec(line)?.[1])
-    .filter((id): id is string => id !== undefined);
-  if (absent.length > 0) {
-    const fetched = await hydrate(root, absent);
-    if (!fetched.ok) return fetched;
-    const again = await readClone(
+  // `--missing=print` lists what is absent without fetching it one object at
+  // a time, on every git a partial clone can run on; a submodule's commit is
+  // not walked, since it lives in its own object store.
+  const absentFrom = async (): Promise<Outcome<string[], "unreadable">> => {
+    const listed = await readClone(
       root,
       `the default branch's files at ${short} could not be read`,
-      ["cat-file", "--batch-check"],
-      `${absent.join("\n")}\n`,
-      { GIT_NO_LAZY_FETCH: "1" },
+      ["rev-list", "--objects", "--no-walk", "--missing=print", commit],
     );
-    if (!again.ok) return again;
-    if (/\bmissing\b/.test(again.value))
+    if (!listed.ok) return listed;
+    return ok(
+      listed.value
+        .split("\n")
+        .map((line) => /^\?([0-9a-f]+)$/.exec(line)?.[1])
+        .filter((id): id is string => id !== undefined),
+    );
+  };
+  let absent = await absentFrom();
+  if (!absent.ok) return absent;
+  if (absent.value.length > 0) {
+    const fetched = await hydrate(root, absent.value, async () => {
+      const left = await absentFrom();
+      return left.ok ? left.value : null;
+    });
+    if (!fetched.ok) return fetched;
+    absent = await absentFrom();
+    if (!absent.ok) return absent;
+    if (absent.value.length > 0)
       return failed(
         "unreadable",
         `the default branch's files at ${short} are not all in the clone`,
@@ -490,31 +482,83 @@ async function readCloneObjects(
   });
 }
 
-/** Fetch `ids` from the clone's promisor remote in one request. */
+/** Whether a `remote.<name>.promisor` value is true, as git reads a boolean. */
+function promisorEnabled(value: string): boolean {
+  return value === "" || /^(true|yes|on|1)$/i.test(value);
+}
+
+/**
+ * The clone's promisor remotes, in the order git tries them: those named by
+ * `extensions.partialClone`, `remote.<name>.promisor` (when true) or
+ * `remote.<name>.partialCloneFilter`.
+ */
+async function promisorRemotes(root: string): Promise<string[]> {
+  const names: string[] = [];
+  const add = (name: string | undefined) => {
+    if (name && !names.includes(name)) names.push(name);
+  };
+  const listed = await readClone(root, "the clone's promisor remotes", [
+    "config",
+    "--null",
+    "--get-regexp",
+    "^(remote\\..+\\.(promisor|partialclonefilter)|extensions\\.partialclone)$",
+  ]);
+  if (!listed.ok) return names;
+  for (const entry of listed.value.split("\0")) {
+    const split = entry.indexOf("\n");
+    const key = split < 0 ? entry : entry.slice(0, split);
+    const value = split < 0 ? "" : entry.slice(split + 1);
+    if (key === "extensions.partialclone") add(value);
+    const remote = /^remote\.(.+)\.(promisor|partialclonefilter)$/.exec(key);
+    if (!remote) continue;
+    if (remote[2] === "partialclonefilter" || promisorEnabled(value))
+      add(remote[1]);
+  }
+  return names;
+}
+
+/**
+ * Fetch `ids` in one request from each promisor remote in turn until none
+ * of them is still missing, as git does; `stillAbsent` rereads what is left.
+ */
 async function hydrate(
   root: string,
   ids: string[],
+  stillAbsent: () => Promise<string[] | null>,
 ): Promise<Outcome<null, "unreadable">> {
-  const remotes = await readClone(
-    root,
-    "the clone's promisor remote could not be read",
-    ["config", "--get-regexp", "^remote\\..+\\.promisor$"],
-  );
-  const name = remotes.ok
-    ? /^remote\.(.+)\.promisor\s/m.exec(remotes.value)?.[1]
-    : undefined;
-  if (name === undefined)
+  const remotes = await promisorRemotes(root);
+  if (remotes.length === 0)
     return failed(
       "unreadable",
       "some of the default branch's files are not in the clone, which has no remote to fetch them from",
     );
-  const fetched = await readClone(
-    root,
-    "the default branch's missing files could not be fetched",
-    ["fetch", "--quiet", "--no-tags", "--no-write-fetch-head", name, "--stdin"],
-    `${ids.join("\n")}\n`,
-  );
-  return fetched.ok ? ok(null) : fetched;
+  let wanted = ids;
+  let last: Outcome<null, "unreadable"> = ok(null);
+  for (const name of remotes) {
+    const fetched = await readClone(
+      root,
+      "the default branch's missing files could not be fetched",
+      [
+        "fetch",
+        "--quiet",
+        "--no-tags",
+        "--no-write-fetch-head",
+        name,
+        "--stdin",
+      ],
+      `${wanted.join("\n")}\n`,
+    );
+    if (fetched.ok) {
+      const left = await stillAbsent();
+      if (left === null || left.length === 0) return ok(null);
+      wanted = left;
+      last = failed(
+        "unreadable",
+        "the default branch's missing files are not all on the clone's promisor remotes",
+      );
+    } else last = fetched;
+  }
+  return last;
 }
 
 /**

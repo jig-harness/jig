@@ -421,6 +421,56 @@ describe("withDefaultBranchTree", () => {
     expect(out.out).toMatchObject({ ok: true, value: { note: "committed\n" } });
   });
 
+  /** A partial clone of a fresh origin, its single remote then reconfigured. */
+  function partialClone(prefix: string) {
+    const parent = mkdtempSync(join(tmpdir(), prefix));
+    dirs.push(parent);
+    const origin = join(parent, "origin");
+    const commit = committedAt(origin);
+    git(origin, "config", "uploadpack.allowFilter", "true");
+    git(origin, "config", "uploadpack.allowAnySHA1InWant", "true");
+    const dir = join(parent, "clone");
+    git(
+      parent,
+      "clone",
+      "-q",
+      "--no-checkout",
+      "--filter=blob:none",
+      `file://${origin}`,
+      dir,
+    );
+    return { parent, origin, commit, dir };
+  }
+
+  it("takes a remote that only sets a partial-clone filter as a promisor", async () => {
+    const { commit, dir } = partialClone("jig-partial-filter-");
+    git(dir, "config", "--unset", "remote.origin.promisor");
+    git(dir, "config", "remote.origin.partialCloneFilter", "blob:none");
+    const out = await runner(["tree", dir, commit], { JIG_HOME: home() });
+    expect(out.out).toMatchObject({ ok: true, value: { note: "committed\n" } });
+  });
+
+  it("skips a remote whose promisor setting is false", async () => {
+    const { parent, origin, commit, dir } = partialClone("jig-partial-off-");
+    git(dir, "remote", "add", "cache", `file://${join(parent, "nowhere")}`);
+    git(dir, "config", "remote.cache.promisor", "false");
+    expect(origin).toBeTruthy();
+    const out = await runner(["tree", dir, commit], { JIG_HOME: home() });
+    expect(out.out).toMatchObject({ ok: true, value: { note: "committed\n" } });
+  });
+
+  it("falls back to the next promisor when the first cannot supply the files", async () => {
+    const { parent, commit, dir } = partialClone("jig-partial-fallback-");
+    git(dir, "remote", "add", "cache", `file://${join(parent, "nowhere")}`);
+    git(dir, "config", "remote.cache.promisor", "true");
+    git(dir, "config", "remote.cache.partialCloneFilter", "blob:none");
+    // The cache is listed before the origin the objects come from.
+    git(dir, "config", "--unset-all", "remote.cache.promisor");
+    git(dir, "config", "extensions.partialClone", "cache");
+    const out = await runner(["tree", dir, commit], { JIG_HOME: home() });
+    expect(out.out).toMatchObject({ ok: true, value: { note: "committed\n" } });
+  });
+
   it("copies a commit that holds a submodule whose objects the clone lacks", async () => {
     const parent = mkdtempSync(join(tmpdir(), "jig-gitlink-"));
     dirs.push(parent);
