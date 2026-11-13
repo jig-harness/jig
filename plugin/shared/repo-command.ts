@@ -14,16 +14,17 @@
  * - **It is bounded**: a deadline, and at most `MAX_OUTPUT_BYTES` of
  *   standard output.
  * - **Its failures are redacted** to one bounded line (`oneLine`).
- * - **A command that runs a program from the repository** is run from the
- *   default branch's files, not from the working tree of the branch being
- *   worked on (`withDefaultBranchTree`): the setting and the files it runs
- *   come from the same commit of the default branch.
+ * - **A caller that runs a program from the repository opts in** to the
+ *   default branch's files (`withDefaultBranchTree`), so the setting and the
+ *   files it runs come from the same commit. `runRepoCommand` itself runs in
+ *   the `cwd` it is given; the CI-log read opts in, the preflight does not.
  *
  * The caller reads the exit code and the output; what they mean is the
  * caller's contract (a preflight's exit 3, a facet store's JSON).
  */
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { registerCleanup } from "./cleanup.ts";
 import { OVERLAY_RELPATH, isMapping, jigHome } from "./config-layers.ts";
 import { remoteName } from "./consumer.ts";
 import { attempt, failed, ok, type Outcome } from "./outcome.ts";
@@ -164,6 +165,7 @@ async function defaultBranchRef(
     [
       "-C",
       root,
+      ...GIT_READ_FLAGS,
       "symbolic-ref",
       "--quiet",
       // Not `--short`: a tag named like the branch makes it print an
@@ -213,6 +215,7 @@ async function defaultBranchConfig(
     [
       "-C",
       root,
+      ...GIT_READ_FLAGS,
       "fetch",
       "--quiet",
       remote.value,
@@ -224,6 +227,7 @@ async function defaultBranchConfig(
     [
       "-C",
       root,
+      ...GIT_READ_FLAGS,
       "rev-parse",
       "--verify",
       "--quiet",
@@ -236,7 +240,7 @@ async function defaultBranchConfig(
   if (resolved.code !== 0 || commit === "")
     return failed("unreadable", `${ref} names no commit in this clone`);
   const show = await git(
-    ["-C", root, "show", `${commit}:${OVERLAY_RELPATH}`],
+    ["-C", root, ...GIT_READ_FLAGS, "show", `${commit}:${OVERLAY_RELPATH}`],
     readOptions(),
   );
   // A default branch with no configuration file sets nothing.
@@ -332,14 +336,16 @@ export async function defaultBranchSettingAt(
 /**
  * Run `use` in a directory holding the files of `commit` (a commit of the
  * default branch, as `defaultBranchSettingAt` names it), and remove the
- * directory afterwards, however `use` ends. The copy is made from a
- * temporary index, so the repository's own index, working tree and branches
- * are never touched, and nothing of the working tree reaches it: a command
- * run there executes the reviewed program, never a pull request's edit of
- * it. It holds tracked files only: nothing installed or generated beside
- * them (`node_modules`, build output) is in it, and it is not a git checkout.
- * `commit` is a full commit id. Git before 2.40 ignores `GIT_ATTR_SOURCE`, so
- * there a working tree's `.gitattributes` can still change line endings.
+ * directory afterwards, however `use` ends, a termination signal included.
+ * The copy is made in a scratch repository of its own that reads the
+ * clone's objects: the clone's index, working tree, branches, configuration
+ * (so no smudge or process filter it names) and hooks are never consulted,
+ * and nothing of the working tree reaches the copy: a command run there
+ * executes the reviewed program, never a pull request's edit of it. The git
+ * calls run without the tracker and forge tokens. It holds tracked files
+ * only: nothing installed or generated beside them (`node_modules`, build
+ * output) is in it, and it is not a git checkout. `commit` is a full commit
+ * id.
  */
 export async function withDefaultBranchTree<T>(
   root: string,
@@ -365,48 +371,85 @@ export async function withDefaultBranchTree<T>(
       `a copy of the default branch's files could not be started: ${oneLine(error instanceof Error ? error.message : String(error))}`,
     );
   }
-  try {
-    const tree = join(scratch, "tree");
-    const made = attempt("unreadable", "the copy's directory", () =>
-      mkdirSync(tree),
-    );
-    if (!made.ok) return made;
-    const index = { GIT_INDEX_FILE: join(scratch, "index") };
-    const read = await git(
-      ["-C", root, ...GIT_READ_FLAGS, "read-tree", commit],
-      readOptions(index, EXPORT_TIMEOUT_SEC),
-    );
-    const copy =
-      read.code === 0
-        ? await git(
-            [
-              "-C",
-              root,
-              ...GIT_READ_FLAGS,
-              "checkout-index",
-              "--all",
-              "--force",
-              `--prefix=${tree.replaceAll("\\", "/")}/`,
-            ],
-            // The attributes of the commit, not of the working tree: a pull
-            // request's own `.gitattributes` would change the copied bytes.
-            readOptions(
-              { ...index, GIT_ATTR_SOURCE: commit },
-              EXPORT_TIMEOUT_SEC,
-            ),
-          )
-        : read;
-    if (copy.code !== 0)
-      return failed(
-        "unreadable",
-        `the default branch's files at ${commit.slice(0, 12)} could not be copied: ${oneLine(copy.stderrTail || copy.stderr)}`,
-      );
-    return ok(await use(tree));
-  } finally {
+  const remove = () => {
     try {
       rmSync(scratch, { recursive: true, force: true });
     } catch {
       // A leftover temporary directory is not the command's failure.
     }
+  };
+  // A termination signal ends the process without running a `finally`.
+  const cleanup = registerCleanup(remove);
+  try {
+    const tree = join(scratch, "tree");
+    const gitDir = join(scratch, "git");
+    const made = attempt("unreadable", "the copy's directory", () =>
+      mkdirSync(tree),
+    );
+    if (!made.ok) return made;
+    const objects = await git(
+      [
+        "-C",
+        root,
+        "rev-parse",
+        "--path-format=absolute",
+        "--git-path",
+        "objects",
+      ],
+      readOptions(),
+    );
+    if (objects.code !== 0 || objects.stdout.trim() === "")
+      return failed(
+        "unreadable",
+        `the clone's objects could not be found: ${oneLine(objects.stderrTail || objects.stderr)}`,
+      );
+    // No tokens, no user or system configuration, no inherited repository.
+    const env = {
+      ...scrubbedEnv(gitIdentityEnv()),
+      GIT_CONFIG_GLOBAL: devNull(),
+      GIT_CONFIG_SYSTEM: devNull(),
+      GIT_CONFIG_NOSYSTEM: "1",
+      GIT_ALTERNATE_OBJECT_DIRECTORIES: objects.stdout.trim(),
+      GIT_DIR: gitDir,
+      GIT_WORK_TREE: tree,
+      // The attributes of the commit, not of any working tree. Git before
+      // 2.41 ignores this and reads the scratch tree's own, which holds the
+      // commit's files and no filter that anything configures.
+      GIT_ATTR_SOURCE: commit,
+    };
+    const options = {
+      env,
+      stderr: "pipe" as const,
+      timeoutSec: EXPORT_TIMEOUT_SEC,
+    };
+    const steps = [
+      ["init", "--quiet", "--bare", gitDir],
+      ["read-tree", commit],
+      ["checkout-index", "--all", "--force"],
+    ];
+    for (const step of steps) {
+      const result = await git(
+        [...GIT_READ_FLAGS, ...step],
+        step[0] === "init"
+          ? {
+              ...options,
+              env: { ...env, GIT_DIR: undefined, GIT_WORK_TREE: undefined },
+            }
+          : options,
+      );
+      if (result.code !== 0)
+        return failed(
+          "unreadable",
+          `the default branch's files at ${commit.slice(0, 12)} could not be copied: ${oneLine(result.stderrTail || result.stderr)}`,
+        );
+    }
+    return ok(await use(tree));
+  } finally {
+    cleanup[Symbol.dispose]();
+    remove();
   }
+}
+
+function devNull(): string {
+  return process.platform === "win32" ? "NUL" : "/dev/null";
 }

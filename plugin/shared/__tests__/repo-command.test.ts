@@ -289,6 +289,36 @@ describe("withDefaultBranchTree", () => {
     expect(out.out.value.note).toBe("committed\n");
   });
 
+  it("runs no filter the clone configures", async () => {
+    const { dir, commit } = noted();
+    const marker = join(dir, "filter-ran");
+    writeFileSync(join(dir, ".gitattributes"), "note.txt filter=custom\n");
+    git(dir, "add", ".");
+    git(dir, "commit", "-q", "-m", "attributes");
+    git(dir, "config", "filter.custom.smudge", `touch '${marker}'; cat`);
+    git(dir, "config", "filter.custom.process", `touch '${marker}'`);
+    await runner(["tree", dir, head(dir)], { JIG_HOME: home() });
+    expect(existsSync(marker)).toBe(false);
+    expect(commit).not.toBe(head(dir));
+  });
+
+  it("is removed when the process is terminated mid-copy", async () => {
+    if (process.platform === "win32") return;
+    const { dir, commit } = noted();
+    const child = Bun.spawn(["bun", RUNNER, "treewait", dir, commit], {
+      env: { ...process.env, JIG_USER_LAYER: "off", JIG_HOME: home() },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const reader = child.stdout.getReader();
+    const first = await reader.read();
+    const tree = new TextDecoder().decode(first.value).trim();
+    expect(existsSync(tree)).toBe(true);
+    child.kill("SIGTERM");
+    await child.exited;
+    expect(existsSync(tree)).toBe(false);
+  });
+
   it("fails, running nothing and leaving nothing, for a commit the clone does not have", async () => {
     const { dir } = noted();
     const jigHome = home();
@@ -312,6 +342,49 @@ describe("withDefaultBranchTree", () => {
 });
 
 describe("the default branch's commit", () => {
+  it("reads the configuration of the commit it names, whatever replaces it", async () => {
+    const dir = clone("do_item:\n  preflight_command: real\n");
+    const real = Bun.spawnSync(["git", "rev-parse", "HEAD"], { cwd: dir })
+      .stdout.toString()
+      .trim();
+    writeFileSync(
+      join(dir, ".config", "jig.yaml"),
+      "do_item:\n  preflight_command: fake\n",
+    );
+    git(dir, "commit", "-q", "-am", "fake");
+    const fake = Bun.spawnSync(["git", "rev-parse", "HEAD"], { cwd: dir })
+      .stdout.toString()
+      .trim();
+    git(dir, "reset", "-q", "--hard", real);
+    git(dir, "replace", real, fake);
+    expect(
+      await runner(["setting", dir, "do_item", "preflight_command"]),
+    ).toEqual({ ok: true, value: "real" });
+  });
+
+  it("runs no hook of the working tree when it fetches", async () => {
+    const dir = clone("do_item: {}\n");
+    const remote = mkdtempSync(join(tmpdir(), "jig-remote-"));
+    dirs.push(remote);
+    git(remote, "init", "-q", "--bare", "-b", "main");
+    git(dir, "remote", "add", "origin", remote);
+    git(dir, "push", "-q", "origin", "main");
+    git(dir, "commit", "-q", "--allow-empty", "-m", "newer");
+    git(dir, "push", "-q", "origin", "main");
+    git(dir, "reset", "-q", "--hard", "HEAD~1");
+    git(dir, "update-ref", "refs/remotes/origin/main", "HEAD");
+    const marker = join(dir, "hook-ran");
+    mkdirSync(join(dir, ".githooks"));
+    writeFileSync(
+      join(dir, ".githooks", "reference-transaction"),
+      `#!/bin/sh\ntouch '${marker}'\n`,
+      { mode: 0o755 },
+    );
+    git(dir, "config", "core.hooksPath", ".githooks");
+    await runner(["setting", dir, "do_item", "preflight_command"]);
+    expect(existsSync(marker)).toBe(false);
+  });
+
   it("is the remote-tracking branch's, even when a tag has the short name", async () => {
     const dir = clone("do_item:\n  preflight_command: check-main\n");
     writeFileSync(

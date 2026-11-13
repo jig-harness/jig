@@ -7,6 +7,7 @@
  *   bun runner.ts setting <root> <section> <field>
  *   bun runner.ts settings <root> <section> <field>,<field>...
  *   bun runner.ts tree <root> <commit>
+ *   bun runner.ts treewait <root> <commit>   (prints the copy's directory, then waits)
  * Prints the result as JSON.
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -43,7 +44,12 @@ else if (mode === "tree") {
   console.log(
     JSON.stringify({ out, dir, removed: dir !== "" && !existsSync(dir) }),
   );
-} else if (mode === "settings")
+} else if (mode === "treewait")
+  await withDefaultBranchTree(a ?? ".", b ?? "", async (tree) => {
+    console.log(tree);
+    await new Promise((resolve) => setTimeout(resolve, 60_000));
+  });
+else if (mode === "settings")
   console.log(
     JSON.stringify(
       await defaultBranchSettings(a ?? ".", b ?? "", (c ?? "").split(",")),

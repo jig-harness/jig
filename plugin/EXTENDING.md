@@ -75,8 +75,8 @@ hook or the interface instead.
 ## Commands a repository supplies
 
 Each of these is a field whose value is a shell command. The skill runs it
-from the repository root and judges it by its exit code: 0 is success. The
-contract column says what else the command is given or must print.
+from the repository root, except where a row below says otherwise, and
+judges it by its exit code: 0 is success. The contract column says what else the command is given or must print.
 
 | Field                                   | Run by                                                               | Contract                                                                                                                                                                                                                                                                                                                                                    |
 | --------------------------------------- | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
