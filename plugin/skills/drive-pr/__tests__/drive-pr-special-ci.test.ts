@@ -230,6 +230,28 @@ test("a held selected failure does not resurrect failures or hide cancellation",
   expect(cancelled.ci).toBe("cancelled: gate");
 });
 
+test("a held selected failure keeps superseded pending and cancelled attempts out of the verdict", async () => {
+  const f = setup();
+  const evidence = join(SCRIPTS, "lib/status/evidence.ts");
+  const source = `import {ciReportFor} from ${JSON.stringify(evidence)};const runs=[{name:"gate",id:1,status:"in_progress",conclusion:null,app:"github-actions",title:"",started:"2026-11-13T09:00:00Z"},{name:"gate",id:2,status:"completed",conclusion:"failure",app:"github-actions",title:"",started:"2026-11-13T09:01:00Z"}];console.log(JSON.stringify(await ciReportFor("example-org","example-repo",process.env.DRIVE_PR_POLICY_BASE,runs,false,"999")));`;
+  const pending = JSON.parse((await child(f, source)).stdout);
+  expect(pending.ci).toBe("held: gate");
+  expect(pending.failingCheckNames).toEqual([]);
+  const cancelled = JSON.parse(
+    (
+      await child(
+        f,
+        source.replace(
+          'status:"in_progress",conclusion:null',
+          'status:"completed",conclusion:"cancelled"',
+        ),
+      )
+    ).stdout,
+  );
+  expect(cancelled.ci).toBe("held: gate");
+  expect(cancelled.failingCheckNames).toEqual([]);
+});
+
 test("mixed failure provenance excludes advisory-only runs from the repair channel", async () => {
   const f = setup();
   const routing = join(SCRIPTS, "lib/driver/special-ci.ts");

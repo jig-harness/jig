@@ -697,28 +697,21 @@ export async function ciReportFor(
   const heldRuns = readChecks(runs, workflowRuns).failing.filter((r) =>
     held.includes(r.name),
   );
-  // A hold exempts only the failing sentinel evidence that made the held
-  // verdict. A same-named queued or cancelled attempt is still evidence that
-  // CI has not settled, and must remain visible to ciVerdictOf.
-  // `ciVerdictOf` reduces its input again. Removing only the selected failing
-  // attempt would let that second reduction choose an older failed attempt
-  // from the same (app, name) group, resurrecting evidence the first
-  // reduction had already superseded. Remove every completed, non-cancelled
-  // failure from that source, but retain its pending and cancelled attempts:
-  // they remain unsettled evidence even while an intentional failure is held.
-  // Same-named checks from another publisher remain independent.
-  const heldSources = new Set(
-    heldRuns.map((run) => JSON.stringify([run.app, run.name])),
+  // A hold exempts the selected failing sentinel and every older attempt from
+  // its source group. `ciVerdictOf` reduces its input again, so retaining an
+  // older pending or cancelled attempt would make that second reduction choose
+  // evidence the first reduction had already superseded. A later attempt still
+  // says CI is unsettled and remains visible. Same-named checks from another
+  // publisher remain independent.
+  const heldThrough = new Map<string, number>();
+  for (const run of heldRuns) {
+    const key = JSON.stringify([run.app, run.name]);
+    heldThrough.set(key, Math.max(heldThrough.get(key) ?? 0, run.id));
+  }
+  const effectiveRuns = runs.filter(
+    (run) =>
+      run.id > (heldThrough.get(JSON.stringify([run.app, run.name])) ?? -1),
   );
-  const effectiveRuns = runs.filter((run) => {
-    if (!heldSources.has(JSON.stringify([run.app, run.name]))) return true;
-    return (
-      run.status !== "completed" ||
-      run.conclusion === null ||
-      run.conclusion === "cancelled" ||
-      PASSING_CONCLUSIONS.has(run.conclusion)
-    );
-  });
   const verdict = ciVerdictOf(
     effectiveRuns,
     statuses,
