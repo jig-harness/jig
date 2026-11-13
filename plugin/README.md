@@ -199,7 +199,9 @@ jig run       [COMPONENT...]
   copy; the latest scheduled upgrade, which fails while that upgrade failed,
   naming it and the agent tool's error; for each component, or those named, its machine file, its job's
   launcher copy against the installed plugin's, the programs its job names
-  and its last run's receipt, and for the dispatcher that Orca resolves
+  and its last run's receipt (for the dispatcher, a failed last tick also
+  names its reason and how many ticks in a row have failed, since when),
+  and for the dispatcher that Orca resolves
   where its timer runs; and the audit's
   [configuration fit](skills/audit/README.md#what-it-does) of the
   repository, offline (the audit itself also reads the forge and the
@@ -509,7 +511,9 @@ Without it, claims serialize on one host only. A claimed item
 with no running session for longer than `dispatch.stalled_after` is
 reported as stalled and never relaunched (a served person's item only when
 a pickup of the host claimed it: the rest of their work in progress is
-their own); an item more than one running
+their own; the identity's item only when a launch record of the host or a
+claim marker took it, unless `dispatch.stalled_scope` is `assigned`); an
+item more than one running
 session joins to is reported as a double claim; a session waiting longer
 than `dispatch.blocked_after` is reported.
 
