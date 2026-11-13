@@ -1,5 +1,5 @@
 /**
- * The Orca guard record: the files `jig gc` and Jig's plugin for Orca leave
+ * The launch guard record: the files `jig gc` and Jig's plugin for Orca leave
  * each other, so the plugin's launch hook can refuse an agent launch into a
  * worktree gc is removing, and gc can see a launch the hook let through.
  *
@@ -57,7 +57,7 @@ import { currentMs, isoFromMs, parseMs } from "./time.ts";
 export const ADMISSION_KIND = "orca-guard-admission";
 export const LAUNCH_KIND = "orca-guard-launch";
 export const HEARTBEAT_KIND = "orca-guard-heartbeat";
-/** The schema version of every guard record kind. */
+/** The schema version of every launch guard record kind. */
 export const GUARD_VERSION = 1;
 /** A heartbeat is fresh while its `at` is within this of now. */
 export const HEARTBEAT_FRESH_MS = 180_000;

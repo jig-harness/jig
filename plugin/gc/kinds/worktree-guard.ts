@@ -1,5 +1,5 @@
 /**
- * gc's side of the Orca guard record (`shared/orca-guard.ts`) for one
+ * gc's side of the launch guard record (`shared/orca-guard.ts`) for one
  * worktree Orca manages: write the admission, keep the worktree for a launch
  * marker that settles or came after it, let the removal through Orca run,
  * and delete the admission whatever happened. Whether Jig's plugin for Orca

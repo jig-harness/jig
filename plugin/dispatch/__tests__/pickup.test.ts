@@ -520,6 +520,8 @@ describe("jig dispatch --apply picks up assigned items", () => {
 
   it("reports a stalled pickup and never relaunches it", async () => {
     const w = fixture();
+    // No launch record took the item: the wider watch reads it as a pickup.
+    w.setConfig(`${CONFIG}  stalled_scope: assigned\n`);
     w.setIssues([assignedIssue(12, "factory-bot", ["In Progress"])]);
     // Idle since an hour ago: past the 30-minute default.
     updateIdle(SLUG, ["#12"], Date.now() - 3_600_000, dispatchState(w));
@@ -537,6 +539,8 @@ describe("jig dispatch --apply picks up assigned items", () => {
 
   it("starts the stall clock the first time a claimed item is idle", async () => {
     const w = fixture();
+    // No launch record took the item: the wider watch reads it as a pickup.
+    w.setConfig(`${CONFIG}  stalled_scope: assigned\n`);
     w.setIssues([assignedIssue(12, "factory-bot", ["In Progress"])]);
     const receipt = await applyTick(w, false);
     expect(receipt.repos[0]?.actions).toEqual([]);

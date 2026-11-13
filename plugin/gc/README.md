@@ -48,7 +48,7 @@ user's own fetches. See
 | Kind         | Behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `tool-state` | Runs drive-pr's state reaper in report mode for each configured clone: the files a clone keeps beside the drive's database that the reaper would retire. Receipts retain its full per-family proof. Collection remains disabled until state creators hold shared admission across every state use; the reaper's lock excludes only other reapers.                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `scratch`    | Inventories only declared directory prefixes. Owner records include captured process creation identities; a live owner anywhere in the subtree keeps the root. Where the identity cannot be captured (no readable process table), the record says so and the root is kept as unverified. Missing ownership is a finding. Collection remains disabled until fixture registration proves all holders gone.                                                                                                                                                                                                                                                                                                                                                 |
+| `scratch`    | Inventories only declared directory prefixes. Owner records include captured process creation identities; a live owner anywhere in the subtree keeps the root. Where the identity cannot be captured (no readable process table), the record says so and the root is kept as unverified. Missing ownership is a finding. Registered test scopes can be collected only when their persistent registration proves every holder gone; incomplete registrations and other scratch remain report-only.                                                                                                                                                                                                                                                                                                                                                 |
 | `worktrees`  | Reports Git changes, hidden index flags, operations, pull request state, remote commit coverage, process holders and idleness. The primary checkout and paths outside declared roots are excluded. Ignored local content needs preservation evidence, except a detected package manager's dependency directory (`node_modules`, wherever it sits in the tree), which is rebuildable from the root `package.json` and tracked lockfile and never vetoes on its own; the receipt lists the paths set aside this way. A worktree [Orca](https://www.onorca.dev) manages is marked `runtime: orca` and collected through Orca ([below](#worktrees-orca-manages)); any other eligible worktree remains report-only until the opener shares session admission. |
 | `receipts`   | Machine kind; removes receipts past retention while preserving the latest completed report for each repository and kind. Unfinished receipts and runs whose inventory failed never take that place.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 
@@ -61,6 +61,76 @@ needs inspection; it is never stolen on age, and the refusal names its
 creator and why that creator counts as gone.
 Worktree openers have not adopted that protocol, so clean or merged worktrees
 are reported only, except those a workspace runtime manages.
+
+### Test scratch
+
+`--kind scratch` selects a kind; it does not grant access to the system's
+temporary directory. Declare the directory-name prefix in the repository's
+`gc.scratch_prefixes`, include `scratch` in `gc.kinds`, and install or refresh
+the collector so its confirmed bounds include that prefix. For Jig's test
+scopes on a host whose system temporary directory is `/tmp`, the prefix is
+`/tmp/jig-test-tmp.`. Other hosts use their actual temporary directory.
+Report the declaration before enabling collection:
+
+```sh
+jig gc --repo <repository> --kind scratch --json
+```
+
+Jig's test preload records scopes and child launches outside the disposable
+scope. Those records survive a killed test runner and can identify a scope
+that a surviving child recreated without its original owner file. The
+collector still inspects only roots within the declared prefixes.
+
+A participating Bun child records its own identity and further launches
+before running fixture code. Participation requires the current Bun
+executable, `--no-env-file` and an explicit empty `--config`. The launcher
+pins a private configuration snapshot before execution. This path supports
+direct file or evaluation programs without additional application arguments.
+Unsupported startup
+options, nested test runners, shell commands and workers leave unresolved
+records. A dead parent or a sampled process table never clears that
+uncertainty. The collector reports that reason and keeps the scope. Legacy
+scopes and other scratch remain report-only.
+
+Collection requires a complete registration, verified process identities,
+and the configured idle guard. Process cleanup and directory removal are
+separate receipt entries. Once the registered runner has exited, collection
+can reap its registered children. The directory stays until another proof
+confirms every holder gone. The collector checks again under exclusive
+scratch admission before each action. It does not sweep at test startup or
+use age as ownership evidence.
+
+### Detached worktrees
+
+A worktree on a branch is judged by the pull requests the forge lists for
+that branch. A worktree whose HEAD is detached has no branch, so gc finds
+its pull requests another way, and the reason it reports says which pull
+requests and how they were found:
+
+- **The drive's tree record.** When drive-pr's attach checks a pull
+  request's head out detached, it records the pull request in the tree's
+  git directory (`shared/driven-tree.ts`). While the head still descends
+  from the commit attached and holds no other branch's work, gc judges the
+  tree by that pull request.
+- **The forge's pull requests for the commit.** Otherwise (no record, or a
+  record the head has moved on from) gc asks the forge for the pull requests
+  whose commits include the HEAD commit (`gh api
+repos/<owner>/<name>/commits/<commit>/pulls`, bounded like every other
+  forge call). Every one counts, a fork's included: an open one keeps the
+  tree, and a commit no remote branch holds is covered only when a merged
+  one's head contains it. A record left behind never names the pull request
+  of work the head has moved on to. A commit the forge does not have, or
+  one no pull request introduced (a direct push, a repository's first
+  commit), is in no pull request; a listing that fills its page, any other refusal, or a
+  record git cannot check against the head leaves the tree unverified.
+
+The rest of the proof is the one a branched tree gets: a detached tree whose
+commits no remote branch and no merged pull request's head holds is kept,
+and one no pull request holds is judged as a tree without a pull request,
+so one with commits of its own is kept. A tree detached at a commit of the
+base branch is judged by the pull request the forge lists as bringing that
+commit in, whose commits a remote branch keeps; where the forge lists none,
+it is judged as a tree without a pull request.
 
 ### Worktrees Orca manages
 
@@ -143,11 +213,11 @@ every other machine record uses. Orca's plugin worker receives `PATH`,
 `XDG_*` or `JIG_*` variable, so the default depends on the home directory
 alone:
 
-| Platform | Directory | How a plugin computes it |
-| -------- | --------- | ------------------------ |
-| Linux | `$HOME/.local/state/jig/orca-guard/` | `path.join(os.homedir(), ".local", "state", "jig", "orca-guard")`; `os.homedir()` is `$HOME` |
-| macOS | `$HOME/.local/state/jig/orca-guard/` (not under `~/Library`) | the same; `os.homedir()` is `$HOME` |
-| Windows | `%USERPROFILE%\.local\state\jig\orca-guard\` | the same; Node's `os.homedir()` reads `USERPROFILE` and, in a worker without it, asks Windows for the profile directory. Do not use `HOME`: a Unix-style shell on Windows may set it to another directory, and Jig does not read it on Windows |
+| Platform | Directory                                                    | How a plugin computes it                                                                                                                                                                                                                       |
+| -------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Linux    | `$HOME/.local/state/jig/orca-guard/`                         | `path.join(os.homedir(), ".local", "state", "jig", "orca-guard")`; `os.homedir()` is `$HOME`                                                                                                                                                   |
+| macOS    | `$HOME/.local/state/jig/orca-guard/` (not under `~/Library`) | the same; `os.homedir()` is `$HOME`                                                                                                                                                                                                            |
+| Windows  | `%USERPROFILE%\.local\state\jig\orca-guard\`                 | the same; Node's `os.homedir()` reads `USERPROFILE` and, in a worker without it, asks Windows for the profile directory. Do not use `HOME`: a Unix-style shell on Windows may set it to another directory, and Jig does not read it on Windows |
 
 Jig honours no `XDG_STATE_HOME` here, so neither may the plugin. A plugin
 setting that overrides the directory must name the one Jig uses.
@@ -161,11 +231,11 @@ rather than replacing it. It replaces an admission whose holder is dead only
 while it holds a lock file created exclusively beside it
 (`admissions/.<key>.json.reclaim`), after reading the admission again.
 
-| File | Written by | Kind |
-| ---- | ---------- | ---- |
-| `admissions/<key>.json` | gc, while it collects the worktree | `orca-guard-admission` |
-| `launches/<key>.json` | the plugin, for each launch it lets through, before the launch goes on | `orca-guard-launch` |
-| `heartbeat.json` | the plugin, about every 60 s while its worker runs | `orca-guard-heartbeat` |
+| File                    | Written by                                                             | Kind                   |
+| ----------------------- | ---------------------------------------------------------------------- | ---------------------- |
+| `admissions/<key>.json` | gc, while it collects the worktree                                     | `orca-guard-admission` |
+| `launches/<key>.json`   | the plugin, for each launch it lets through, before the launch goes on | `orca-guard-launch`    |
+| `heartbeat.json`        | the plugin, about every 60 s while its worker runs                     | `orca-guard-heartbeat` |
 
 **Key.** `<key>` is the lowercase hexadecimal SHA-256 of the worktree's path,
 as UTF-8 bytes, exactly as Orca reports it (its `path` in
@@ -187,7 +257,26 @@ An admission. Its `at` is when gc wrote it, and `holder` is the collecting
 process's identity (`shared/liveness.ts`):
 
 ```json
-{"kind":"orca-guard-admission","v":1,"key":"481ad110b5d9b30b0c46972739bb0e3d2aeb2c05c5dd3804e8a124048162f2ca","writer":{"host":"laptop","bootId":"6c2e8f4a-1b3d-4f5e-9a7c-2d4b6e8f0a1c","pid":48213,"start":"Thu Nov  5 03:00:01 2026"},"at":"2026-11-05T03:00:12.345Z","path":"/home/ada/orca/workspaces/app/topic","holder":{"hostId":"3f1c9a0e5b7d4e2a8c6f1b0d9e7a5c3b","host":"laptop","bootId":"6c2e8f4a-1b3d-4f5e-9a7c-2d4b6e8f0a1c","pid":48213,"start":"Thu Nov  5 03:00:01 2026"}}
+{
+  "kind": "orca-guard-admission",
+  "v": 1,
+  "key": "481ad110b5d9b30b0c46972739bb0e3d2aeb2c05c5dd3804e8a124048162f2ca",
+  "writer": {
+    "host": "laptop",
+    "bootId": "6c2e8f4a-1b3d-4f5e-9a7c-2d4b6e8f0a1c",
+    "pid": 48213,
+    "start": "Thu Nov  5 03:00:01 2026"
+  },
+  "at": "2026-11-05T03:00:12.345Z",
+  "path": "/home/ada/orca/workspaces/app/topic",
+  "holder": {
+    "hostId": "3f1c9a0e5b7d4e2a8c6f1b0d9e7a5c3b",
+    "host": "laptop",
+    "bootId": "6c2e8f4a-1b3d-4f5e-9a7c-2d4b6e8f0a1c",
+    "pid": 48213,
+    "start": "Thu Nov  5 03:00:01 2026"
+  }
+}
 ```
 
 A launch marker. Its `at` is when the plugin let the launch through,
@@ -195,14 +284,31 @@ A launch marker. Its `at` is when the plugin let the launch through,
 launches:
 
 ```json
-{"kind":"orca-guard-launch","v":1,"key":"481ad110b5d9b30b0c46972739bb0e3d2aeb2c05c5dd3804e8a124048162f2ca","writer":{"host":"laptop","pid":51022},"at":"2026-11-05T03:00:13.002Z","path":"/home/ada/orca/workspaces/app/topic","workspaceId":"repo-1::/home/ada/orca/workspaces/app/topic","agent":"claude"}
+{
+  "kind": "orca-guard-launch",
+  "v": 1,
+  "key": "481ad110b5d9b30b0c46972739bb0e3d2aeb2c05c5dd3804e8a124048162f2ca",
+  "writer": { "host": "laptop", "pid": 51022 },
+  "at": "2026-11-05T03:00:13.002Z",
+  "path": "/home/ada/orca/workspaces/app/topic",
+  "workspaceId": "repo-1::/home/ada/orca/workspaces/app/topic",
+  "agent": "claude"
+}
 ```
 
 The heartbeat. Its `key` is always `heartbeat`, `pid` is the worker's
 process id and `pluginVersion` the plugin's version:
 
 ```json
-{"kind":"orca-guard-heartbeat","v":1,"key":"heartbeat","writer":{"host":"laptop","pid":51022},"at":"2026-11-05T03:00:00.000Z","pid":51022,"pluginVersion":"0.4.0"}
+{
+  "kind": "orca-guard-heartbeat",
+  "v": 1,
+  "key": "heartbeat",
+  "writer": { "host": "laptop", "pid": 51022 },
+  "at": "2026-11-05T03:00:00.000Z",
+  "pid": 51022,
+  "pluginVersion": "0.4.0"
+}
 ```
 
 **Order.** The hook writes its launch marker first, then reads the
@@ -221,11 +327,11 @@ and gc keeps the worktree and leaves the file for a person to inspect.
 
 **Constants.**
 
-| Constant | Value | Meaning |
-| -------- | ----- | ------- |
-| Heartbeat freshness | 180 s | The heartbeat is fresh while its `at` is within 180 s of now; gc collects as guarded only then |
-| Settling window | 120 s | A launch marker keeps its worktree while its `at` is within 120 s of now, and always when its `at` is not before the admission's `at` |
-| Marker retention | 1 day | Each collection of an Orca checkout first deletes launch markers whose `at` (or, when one does not read, whose modification time) is more than a day old, and the plugin's temporary files that old |
+| Constant            | Value | Meaning                                                                                                                                                                                             |
+| ------------------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Heartbeat freshness | 180 s | The heartbeat is fresh while its `at` is within 180 s of now; gc collects as guarded only then                                                                                                      |
+| Settling window     | 120 s | A launch marker keeps its worktree while its `at` is within 120 s of now, and always when its `at` is not before the admission's `at`                                                               |
+| Marker retention    | 1 day | Each collection of an Orca checkout first deletes launch markers whose `at` (or, when one does not read, whose modification time) is more than a day old, and the plugin's temporary files that old |
 
 An admission is deleted by the collector that wrote it once the worktree is
 removed or kept. One left by a collector that died stays until the next
@@ -248,8 +354,7 @@ proof with an unverified completion until the result is recorded.
 A run whose configuration fails before it plans any kind (a report,
 `--collect` or `--scheduled`) collects nothing, prints the reason on standard
 error and still writes a receipt, with no kinds or resources and a `failure`
-naming why: `code` is `configuration` for a gc setting the run refuses (exit
-2) and `unreadable` for a configuration file it cannot read (exit 1), and
+naming why: `code` is `configuration` for a gc setting the run refuses (exit 2) and `unreadable` for a configuration file it cannot read (exit 1), and
 `reason` is the message printed. Nothing was left in flight, so the receipt
 records `completed: true` and expires with the rest. A receipt without
 `failure` planned its kinds.
@@ -283,7 +388,7 @@ collects, and new heavy runs wait behind it. A heavy run that hangs therefore
 holds back every new run on the machine until the collection's lock wait
 (`LOCK_TIMEOUT`) runs out; set a shorter one for the job where that is too long. The design's later container, branch
 and process kinds wait for the first-stage rollout to run in a working
-repository; scratch remains report-only until the process stage.
+repository. Registered test scopes have conditional collection; other scratch remains report-only.
 
 This implements the resource lifecycle practice of
 [M12](https://github.com/jig-harness/jig/blob/main/modules/M12-parallel-agent-ergonomics/README.md).

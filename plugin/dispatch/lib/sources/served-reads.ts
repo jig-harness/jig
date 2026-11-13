@@ -9,8 +9,11 @@
  *   adapter has `queueIssues`; otherwise the two assigned lists.
  * - **Batched lookups.** Every issue the walk reads by key goes through one
  *   loader: the reads one step of the walk asks for together leave as one
- *   `poolIssues` request (per key where the adapter has none), and an issue
- *   read once is not read again in the tick.
+ *   paged request (per key where the adapter has none), and an issue read
+ *   once is not read again in the tick. Where the adapter has
+ *   `queueIssuesByKey` the request carries each issue's relations and parent
+ *   too, so the walk does not read them issue by issue afterwards (`held`,
+ *   `parentBody`); otherwise it is `poolIssues`.
  * - **The change probe.** The reading is kept between ticks (`pickup_reads`,
  *   under `<adapter>:<team>:queue:<identity>`). Where the adapter has
  *   `changedSince`, a tick asks once whether any issue the reading depended
@@ -204,45 +207,106 @@ function semaphore(size: number) {
 
 type Gate = ReturnType<typeof semaphore>;
 
+/** What a batch read carried of an issue besides the issue: handed on as the queue read's. */
+type Carry = (key: string, held: HeldIssue) => void;
+
+/** The read of one key waiting for its batch. */
+interface Waiter {
+  resolve: (v: PoolIssue | null) => void;
+  reject: (e: unknown) => void;
+}
+
+type Batch = Map<string, Waiter>;
+
+/** The keys of `batch` read on their own, one at a time. */
+function readEach(
+  tracker: Tracker,
+  keys: Iterable<[string, Waiter]>,
+  gate: Gate,
+): Promise<unknown> {
+  return Promise.all(
+    [...keys].map(([key, waiter]) =>
+      gate(() => tracker.poolIssue(key)).then(waiter.resolve, waiter.reject),
+    ),
+  );
+}
+
+/**
+ * One batch read the tracker may refuse: `read` settles the batch and
+ * answers true; a refusal by the rate limit refuses each key alike (true);
+ * any other failure answers false, so the batch is read another way and one
+ * bad issue fails only itself.
+ */
+async function settleBatch(
+  batch: Batch,
+  read: () => Promise<void>,
+): Promise<boolean> {
+  try {
+    await read();
+    return true;
+  } catch (error) {
+    if (!isRateLimited(error)) return false;
+    for (const waiter of batch.values()) waiter.reject(error);
+    return true;
+  }
+}
+
+/** The batch with each issue's relations and parent, handed to `carry`; a key the batch did not hold is read on its own (it may have moved out of the team). */
+async function readWithRelations(
+  tracker: Tracker,
+  batch: Batch,
+  gate: Gate,
+  carry: Carry,
+): Promise<void> {
+  const read =
+    (await tracker.queueIssuesByKey?.([...batch.keys()])) ?? new Map();
+  const alone: Array<[string, Waiter]> = [];
+  for (const [key, waiter] of batch) {
+    const found = read.get(key);
+    if (found === undefined) {
+      alone.push([key, waiter]);
+      continue;
+    }
+    const { relations, parent, ...issue } = found;
+    carry(key, { issue, relations, parent });
+    waiter.resolve(issue);
+  }
+  await readEach(tracker, alone, gate);
+}
+
+/** The batch as pool issues alone. */
+async function readPooled(tracker: Tracker, batch: Batch): Promise<void> {
+  const read = (await tracker.poolIssues?.([...batch.keys()])) ?? new Map();
+  for (const [key, waiter] of batch) waiter.resolve(read.get(key) ?? null);
+}
+
 /** A loader that gathers the keys asked for in one turn of the event loop into one read. */
 function loader(
   tracker: Tracker,
   memo: Map<string, Promise<PoolIssue | null>>,
   refusal: () => TrackerRateLimited | null,
   gate: Gate,
+  carry: Carry,
 ) {
-  let queued = new Map<
-    string,
-    {
-      resolve: (v: PoolIssue | null) => void;
-      reject: (e: unknown) => void;
-    }
-  >();
+  let queued: Batch = new Map();
   let scheduled = false;
   const flush = async () => {
     scheduled = false;
     const batch = queued;
     queued = new Map();
-    const keys = [...batch.keys()];
-    if (tracker.poolIssues !== undefined)
-      try {
-        const read = await tracker.poolIssues(keys);
-        for (const [key, waiter] of batch)
-          waiter.resolve(read.get(key) ?? null);
-        return;
-      } catch (error) {
-        // A refused batch refuses each key alike; any other failure is
-        // retried key by key, so one bad issue fails only itself.
-        if (isRateLimited(error)) {
-          for (const waiter of batch.values()) waiter.reject(error);
-          return;
-        }
-      }
-    await Promise.all(
-      [...batch].map(([key, waiter]) =>
-        gate(() => tracker.poolIssue(key)).then(waiter.resolve, waiter.reject),
-      ),
-    );
+    if (
+      tracker.queueIssuesByKey !== undefined &&
+      (await settleBatch(batch, () =>
+        readWithRelations(tracker, batch, gate, carry),
+      ))
+    )
+      return;
+    if (
+      tracker.poolIssues !== undefined &&
+      (await settleBatch(batch, () => readPooled(tracker, batch)))
+    )
+      return;
+    await readEach(tracker, batch, gate);
   };
   return (key: string): Promise<PoolIssue | null> => {
     const kept = memo.get(key);
@@ -369,7 +433,21 @@ function assemble(
   }
   for (const issue of progress) remember(issue.identifier, issue);
   const gate = semaphore(IN_FLIGHT);
-  const load = loader(tracker, memo, () => p.limited, gate);
+  const load = loader(
+    tracker,
+    memo,
+    () => p.limited,
+    gate,
+    (key, h) => {
+      // What the queue read carried of an issue is the fresher reading.
+      if (!held.has(key)) held.set(key, h);
+      if (h.parent) {
+        if (!parents.has(h.parent.issue.identifier))
+          parents.set(h.parent.issue.identifier, h.parent);
+        remember(h.parent.issue.identifier, h.parent.issue);
+      }
+    },
+  );
   const reads = new Map<string, Promise<unknown>>();
   const readAt = queue === undefined ? (kept?.readAt ?? 0) : nowMs;
   return {

@@ -19,6 +19,7 @@ import {
   lockIdentity,
 } from "../../shared/liveness.ts";
 import {
+  lastTick,
   newRunId,
   nextTickIndex,
   previousFollowupSince,
@@ -29,7 +30,7 @@ import {
   type TickReceipt,
   writeReceipt,
 } from "../receipts.ts";
-import { isoOf } from "../../shared/time.ts";
+import { isoFromMs, isoOf } from "../../shared/time.ts";
 
 const roots: string[] = [];
 function root(): string {
@@ -73,7 +74,174 @@ function receipt(day: string, repoPath: string, since: string): TickReceipt {
   };
 }
 
+/** A tick's receipt at `iso` with the exit it ended with, and the defect that stopped it when one did. */
+function tickAt(iso: string, exitStatus: number, defect?: string): TickReceipt {
+  const at = Temporal.Instant.from(iso);
+  return {
+    version: 1,
+    runId: newRunId(at),
+    startedAt: isoOf(at),
+    finishedAt: isoOf(at),
+    completed: defect === undefined,
+    apply: true,
+    exitStatus,
+    ...(defect === undefined
+      ? {}
+      : {
+          defect: { code: "defect" as const, phase: "start", reason: defect },
+        }),
+    repos: [],
+  };
+}
+
+describe("lastTick", () => {
+  it("names the failed ticks in a row the latest one ends, since the first of them, and the latest reason", () => {
+    const dir = root();
+    writeReceipt(tickAt("2026-01-01T09:00:00Z", 1), dir);
+    writeReceipt(tickAt("2026-01-01T10:00:00Z", 0), dir);
+    writeReceipt(tickAt("2026-01-01T11:00:00Z", 1, "first"), dir);
+    writeReceipt(tickAt("2026-01-01T12:00:00Z", 1), dir);
+    const latest = tickAt(
+      "2026-01-02T08:00:00Z",
+      2,
+      "the state database is refused",
+    );
+    writeReceipt(latest, dir);
+    // A held tick ran nothing: it neither ends the run nor is the last run.
+    writeReceipt(
+      { ...tickAt("2026-01-02T09:00:00Z", 3), lockHeldBy: "pid 1" },
+      dir,
+    );
+    expect(lastTick(dir)).toMatchObject({
+      runId: latest.runId,
+      completed: false,
+      exitStatus: 2,
+      reason: "the state database is refused",
+      failing: { runs: 3, since: "2026-01-01T11:00:00.000Z", capped: false },
+    });
+  });
+
+  it("carries no failed run when the latest tick passed", () => {
+    const dir = root();
+    writeReceipt(tickAt("2026-01-01T09:00:00Z", 1, "earlier"), dir);
+    writeReceipt(tickAt("2026-01-01T10:00:00Z", 0), dir);
+    const last = lastTick(dir);
+    expect(last?.exitStatus).toBe(0);
+    expect(last?.failing).toBeUndefined();
+    expect(last?.reason).toBeUndefined();
+  });
+
+  it("stops reading back at its limit and says there were at least that many", () => {
+    const dir = root();
+    for (let i = 0; i < 101; i++)
+      writeReceipt(tickAt(isoFromMs(Date.UTC(2026, 0, 1, 0, i)), 1), dir);
+    expect(lastTick(dir)?.failing).toEqual({
+      runs: 100,
+      since: "2026-01-01T00:01:00.000Z",
+      capped: true,
+    });
+  });
+});
+
+describe("lastTick's receipts that do not read", () => {
+  const badRows = [
+    ["unplaced", { unplaced: [null] }],
+    ["records", { records: [null] }],
+  ] as const;
+
+  for (const [name, patch] of badRows) {
+    it(`is unknown, not an older success, when the newest receipt's ${name} rows are not objects`, () => {
+      const dir = root();
+      writeReceipt(tickAt("2026-01-01T09:00:00Z", 0), dir);
+      const failed = tickAt("2026-01-01T10:00:00Z", 1, "failed");
+      const entry = {
+        ...receipt("2026-01-01", "/a", "2026-01-01T10:00:00Z").repos[0],
+        ...patch,
+      };
+      writeReceipt(
+        { ...failed, repos: [entry] } as unknown as TickReceipt,
+        dir,
+      );
+      expect(lastTick(dir)).toMatchObject({ exitStatus: 1, unread: 1 });
+    });
+  }
+
+  it("caps the failed run at a receipt that does not read", () => {
+    const dir = root();
+    writeReceipt(tickAt("2026-01-01T08:00:00Z", 0), dir);
+    const bad = { ...tickAt("2026-01-01T09:00:00Z", 1), repos: [null] };
+    writeReceipt(bad as unknown as TickReceipt, dir);
+    writeReceipt(tickAt("2026-01-01T10:00:00Z", 1, "failed"), dir);
+    expect(lastTick(dir)?.failing).toMatchObject({ runs: 1, capped: true });
+  });
+
+  it("is not capped when the budget ends exactly at the oldest receipt", () => {
+    const dir = root();
+    for (let i = 0; i < 98; i++)
+      writeReceipt(
+        {
+          ...tickAt(isoFromMs(Date.UTC(2026, 0, 1, 0, i)), 0),
+          lockHeldBy: "other-tick",
+        },
+        dir,
+      );
+    writeReceipt(tickAt("2026-01-01T02:00:00Z", 1), dir);
+    writeReceipt(tickAt("2026-01-01T02:01:00Z", 1), dir);
+    expect(lastTick(dir)?.failing).toMatchObject({ runs: 2, capped: false });
+  });
+});
+
+describe("lastTick's read budget", () => {
+  it("spends a read on every held receipt, so a backlog of them is no unbounded scan", () => {
+    const dir = root();
+    writeReceipt(tickAt("2026-01-01T00:00:00Z", 1), dir);
+    for (let i = 1; i <= 150; i++)
+      writeReceipt(
+        {
+          ...tickAt(isoFromMs(Date.UTC(2026, 0, 1, 0, i)), 0),
+          lockHeldBy: "other-tick",
+        },
+        dir,
+      );
+    expect(lastTick(dir)?.unread).toBe(100);
+  });
+
+  it("is null, not unread, when every receipt was read and none ran", () => {
+    const dir = root();
+    writeReceipt(
+      { ...tickAt("2026-01-01T00:00:00Z", 0), lockHeldBy: "x" },
+      dir,
+    );
+    expect(lastTick(dir)).toBeNull();
+  });
+});
+
 describe("readReceipt", () => {
+  it("skips a receipt whose unplaced or record rows are not objects", () => {
+    const dir = root();
+    const base = receipt("2026-01-01", "/a", "2026-01-01T00:00:00Z");
+    const entry = { ...(base.repos[0] as object), unplaced: [null] };
+    const path = writeReceipt(
+      { ...base, repos: [entry] } as unknown as TickReceipt,
+      dir,
+    );
+    expect(readReceipt(path)).toBeNull();
+  });
+
+  it("skips a receipt whose repository entry lacks the unplaced rows failure rendering reads", () => {
+    const dir = root();
+    const base = receipt("2026-01-01", "/a", "2026-01-01T00:00:00Z");
+    const { unplaced: _unplaced, ...entry } = base.repos[0] as never as Record<
+      string,
+      unknown
+    >;
+    const path = writeReceipt(
+      { ...base, repos: [entry] } as unknown as TickReceipt,
+      dir,
+    );
+    expect(readReceipt(path)).toBeNull();
+  });
+
   it("skips a receipt whose repository entry is not one", () => {
     const dir = root();
     const bad = {

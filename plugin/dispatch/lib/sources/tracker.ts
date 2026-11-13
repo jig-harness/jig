@@ -17,6 +17,7 @@
 import type { ServedPerson } from "../serve-config.ts";
 import { type PickupReads, pickupReads } from "../pickup-reads.ts";
 import { within } from "./bounded.ts";
+import { markClaims } from "./claim-markers.ts";
 import { freshPoolPickup, readPoolPickups } from "./ready-pool.ts";
 import { limitedRow, readServedPickups, type ServedPolicy } from "./served.ts";
 import {
@@ -84,6 +85,7 @@ async function readClaimed(
         title: i.title,
         url: i.url,
         state: i.state.name,
+        ...(i.updatedAt === undefined ? {} : { updatedAt: i.updatedAt }),
       }));
   } catch (error) {
     if (isRateLimited(error)) throw error;
@@ -252,6 +254,7 @@ async function readFactoryPickups(
   open: () => Tracker,
   section: DispatchSection,
   facets?: { bound: () => FacetBound },
+  cache: PickupReads = pickupReads,
 ): Promise<TrackerReading> {
   if (section.identity === null)
     return {
@@ -297,8 +300,15 @@ async function readFactoryPickups(
   const read = await trustedAndClaimed(tracker, identity, issues);
   if ("limited" in read)
     return limitedFactory(tracker, identity, read.limited, stores);
-  const { wanted, unplaced, claimed } = read;
-  if (!Array.isArray(claimed)) unplaced.push(claimed);
+  const { wanted, unplaced } = read;
+  const claimed = await scopedClaims(
+    tracker,
+    identity,
+    section,
+    read.claimed,
+    cache,
+  );
+  unplaced.push(...claimed.unplaced);
   const record =
     stores === undefined || facets === undefined
       ? undefined
@@ -308,13 +318,33 @@ async function readFactoryPickups(
       record: "tracker",
       source,
       ok: true,
-      detail: `${issues.length} item(s) assigned to ${identity} in ${section.states.join(", ")}${Array.isArray(claimed) ? `; ${claimed.length} in ${workingNames(tracker)}` : ""}${record === undefined ? "" : `; ${facetSummary(record)}`}`,
+      detail: `${issues.length} item(s) assigned to ${identity} in ${section.states.join(", ")}${claimed.items === null ? "" : `; ${claimed.items.length} in ${workingNames(tracker)}`}${record === undefined ? "" : `; ${facetSummary(record)}`}`,
       ...(record === undefined ? {} : { facets: record }),
     },
     wanted,
     unplaced,
-    claimed: Array.isArray(claimed) ? claimed : null,
+    claimed: claimed.items,
   };
+}
+
+/**
+ * The claimed items as the stall watch reads them, with the rows for what
+ * could not be read: under `dispatch.stalled_scope: claimed`, each marked
+ * with the claim marker on it (`markClaims`); `null` items when they could
+ * not be read at all.
+ */
+async function scopedClaims(
+  tracker: Tracker,
+  identity: string,
+  section: DispatchSection,
+  claimed: ClaimedItem[] | Unplaced,
+  cache: PickupReads,
+): Promise<{ items: ClaimedItem[] | null; unplaced: Unplaced[] }> {
+  if (!Array.isArray(claimed)) return { items: null, unplaced: [claimed] };
+  if (section.stalledScope !== "claimed")
+    return { items: claimed, unplaced: [] };
+  const marks = await markClaims(tracker, identity, claimed, cache);
+  return { items: marks.claimed, unplaced: marks.unplaced };
 }
 
 /**
@@ -387,7 +417,7 @@ export async function readPickups(
   let tracker: Tracker | undefined;
   const once = () => (tracker ??= open());
   const factory = withPool(
-    await readFactoryPickups(once, section, facets),
+    await readFactoryPickups(once, section, facets, served?.cache),
     await readPool(once, section, served, facets?.bound()),
     once,
   );

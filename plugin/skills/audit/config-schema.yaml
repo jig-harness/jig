@@ -159,6 +159,12 @@ fields:
     read_by: [dispatch]
     repository_only: true
     since: 0.114.0
+  dispatch.stalled_scope:
+    type: enum
+    values: [claimed, assigned]
+    read_by: [dispatch]
+    repository_only: true
+    since: 0.225.0
   dispatch.blocked_after:
     type: string
     pattern: "^\\d+\\s*[smh]$"
@@ -499,7 +505,7 @@ fields:
   drive.change_areas_catalog:
     type: path
     exists: expected
-    read_by: [drive-pr, do-item, review, decide, work-batch, change-areas, resolve-conflicts, dispatch]
+    read_by: [drive-pr, do-item, review, decide, work-batch, change-areas, resolve-conflicts, resolve-review-comments, dispatch]
   drive.reviews_drafts:
     type: boolean
     read_by: [drive-pr, do-item]

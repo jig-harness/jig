@@ -8,6 +8,7 @@ import {
   type LiveIssue,
 } from "../../../skills/do-item/scripts/lib/execution-plan.ts";
 import { failureText } from "../text.ts";
+import { PERSON_HOLD } from "../queue-rank.ts";
 
 /** Every issue a plan names (its steps and its edges' predecessors), after `first`, once each. */
 export function planKeys(
@@ -81,8 +82,7 @@ export function servedPlan(
     for (const step of plan.steps)
       if (!order.includes(step.issue))
         holds[step.issue] = "waiting on the epic execution plan";
-    for (const gate of humanGates(plan))
-      holds[gate.issue] = "needs a person to start";
+    for (const gate of humanGates(plan)) holds[gate.issue] = PERSON_HOLD;
     return { present: true, order, holds };
   } catch (error) {
     return { present: true, order: [], holds: {}, error: failureText(error) };

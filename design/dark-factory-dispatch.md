@@ -1427,6 +1427,9 @@ read --screen --json` returns the rendered screen (its `source` says
 
 A second runtime is a second implementation of the same methods, with
 nothing in the tick changed.
+The second one designed is the process runtime, which runs a pass as a
+plain managed process in a worktree Jig opens itself
+([dispatched-sessions.md](dispatched-sessions.md#the-process-runtime)).
 
 #### Naming what it starts
 

@@ -99,6 +99,16 @@ here reaches every repository at once.
   `Instant.toString()`. A `Date` appears only where a library hands one over,
   and `bun run quality`'s `legacy-time` counter fails a new one. A test pins
   the time with `setSystemTime` or the injected `Clock`, not `spyOn(Date, "now")`.
+- **A call to an outside system goes through that system's transport**
+  ([ADR-0020](../docs/adr/ADR-0020-outbound-calls-are-governed.md)): the
+  tracker adapters for a tracker, the `ghCall` wrappers for the forge, the
+  store clients for a reflection store. Every such call has a deadline,
+  every list a query selects has a page size, and a read that runs every
+  tick reuses what it already holds before it sends. A new call says what
+  it costs the system (requests, and the system's own cost unit) in its
+  pull request, measured on one request.
+  [design/outbound-calls.md](../design/outbound-calls.md) has each system's
+  limits and the shared library the transports are being built from.
 - **Skills call each other by sibling path** (`../<skill>/scripts/…`), never
   through a path in the consumer repository.
 - **A runtime-specific capability names its fallback**
@@ -187,7 +197,7 @@ and that the dispatcher reads each from the registry rather than restating it. W
 behaviour changes, search `SKILL.md` and `references/` for sentences that
 state the old behaviour, in the same edit.
 
-- **Every outbound call has a deadline.** Spawn it through `skills/drive-pr/scripts/lib/proc.ts`
+- **A drive's outbound calls get their deadline from `skills/drive-pr/scripts/lib/proc.ts`**
   (`ghCall`, or `run` with a `timeoutSec`): an unbounded call is a silent
   stall, not an error, and nothing upstream can end it.
 - **A once-per-pass step is skipped only under a predicate that makes the

@@ -11,7 +11,9 @@
  * - the item's latest record that ended, and has not been released, holds
  *   it too: a session that stopped without claiming the item (a refusal, a
  *   crash, a question) is not launched again until the item leaves the
- *   dispatch states (`releaseEnded`) and comes back; an item claimed meanwhile is released when it returns;
+ *   dispatch states (`releaseEnded`) and comes back, or a person's label
+ *   holds it while it is not claimed; an item claimed meanwhile is released
+ *   when it returns;
  * - except a record whose pass recorded `waits` (the tracker's rate limit
  *   stopped it): it holds the item until the time it names, and the item is
  *   launched again after it, with no person asked;
@@ -33,8 +35,10 @@ import {
 } from "../launches.ts";
 import { holdsItem } from "../launch-pickups.ts";
 import { refusalOf } from "../pickup-refusal.ts";
+import { isPersonHold } from "../queue-rank.ts";
 import { RUNNING_STATES, type SessionsReport } from "../runtime/port.ts";
 import { currentMs, isoFromMs, parseMs } from "../../../shared/time.ts";
+import type { Unplaced } from "../types.ts";
 
 export type PickupHold =
   | { kind: "none" }
@@ -177,6 +181,45 @@ export function holdingRecords(
 }
 
 /**
+ * The items whose ended pickup records stay held, for `releaseEnded`: the
+ * pickups the tick wants, and the items the read left out (who assigned it
+ * could not be read, or not by a person with write access), which are still
+ * assigned, so only leaving the dispatch states releases their records. An
+ * item a person's label holds is not among them: holding it ends its ended
+ * record, so releasing the hold picks it up again. A pickup that recorded
+ * `done` handed its item on (a pull request opened), so a hold never
+ * releases its record.
+ */
+export function recordsWanted(
+  pickups: ReadonlyArray<{ key: string }>,
+  unplaced: ReadonlyArray<Unplaced>,
+  records: ReadonlyArray<ReadRecord> = [],
+): Set<string> {
+  // The latest record that still holds an item decides whether it was handed on.
+  const latest = new Map<string, ReadRecord>();
+  for (const r of records) {
+    if (r.record.action !== "pickup") continue;
+    for (const key of r.record.batchItems?.map((i) => i.key) ?? [
+      r.record.item,
+    ]) {
+      if (key === null || !holdsItem(r.record, key)) continue;
+      const seen = latest.get(key);
+      if (seen === undefined || r.record.createdAt >= seen.record.createdAt)
+        latest.set(key, r);
+    }
+  }
+  const handedOn = new Set(
+    [...latest].filter(([, r]) => r.result === "done").map(([key]) => key),
+  );
+  return new Set([
+    ...pickups.map((p) => p.key),
+    ...unplaced
+      .filter((u) => !isPersonHold(u.reason) || handedOn.has(u.target))
+      .map((u) => u.target),
+  ]);
+}
+
+/**
  * Release every ended pickup record of `repo` whose item is no longer
  * wanted, so a later assignment of that item is a pickup again. Called only
  * after a whole read of the tracker.
@@ -207,23 +250,44 @@ export function releaseEnded(
       (key) => holdsItem(record, key),
     );
     const claimedMembers = members.filter((key) => claimed.has(key));
-    // The dispatch identity's own claimed item can only be this pickup's
-    // claim, seen while it ran or after it ended. A served person starts their
-    // own work too: their claim counts only while this pickup's process runs,
-    // never from a reservation not yet started or once the pickup has ended.
-    const provable = claimedMembers.filter(
-      (key) =>
-        !served.has(key) ||
-        r.state.kind === "alive" ||
-        r.state.kind === "unknown",
+    noteProvableClaims(r, claimedMembers, served, root);
+    if (holds(r.state)) continue;
+    // A claimed member keeps its own place; the record's other members
+    // release one by one.
+    const unclaimed = members.filter((key) => !claimedMembers.includes(key));
+    const dropped = unclaimed.filter(
+      (key) => !wantsRecord(record, key, wanted, returned),
     );
-    if (provable.length > 0 && r.state.kind !== "pending")
-      noteClaims(record, provable, root);
-    if (claimedMembers.length > 0 || holds(r.state)) continue;
-    if (keepsWanted(record, members, wanted, returned)) continue;
-    record.released = true;
+    if (dropped.length === 0) continue;
+    // A member no longer wanted is released alone, so its siblings keep the
+    // question they wait on.
+    if (dropped.length === members.length) record.released = true;
+    else record.releasedItems = [...(record.releasedItems ?? []), ...dropped];
     writeRecord(record, root);
   }
+}
+
+/**
+ * Note the claims on a record's members that this pickup can prove. The
+ * dispatch identity's own claimed item can only be this pickup's claim, seen
+ * while it ran or after it ended. A served person starts their own work too:
+ * their claim counts only while this pickup's process runs, never from a
+ * reservation not yet started or once the pickup has ended.
+ */
+function noteProvableClaims(
+  r: ReadRecord,
+  claimedMembers: string[],
+  served: ReadonlySet<string>,
+  root?: string,
+): void {
+  const provable = claimedMembers.filter(
+    (key) =>
+      !served.has(key) ||
+      r.state.kind === "alive" ||
+      r.state.kind === "unknown",
+  );
+  if (provable.length > 0 && r.state.kind !== "pending")
+    noteClaims(r.record, provable, root);
 }
 
 /** Whether the item still wants its ended record kept. */
@@ -263,13 +327,4 @@ function noteClaims(
   if (!changed) return;
   record.claimedItems = [...seen];
   writeRecord(record, root);
-}
-
-function keepsWanted(
-  record: LaunchRecord,
-  members: string[],
-  wanted: ReadonlySet<string>,
-  returned: ReadonlySet<string>,
-): boolean {
-  return members.some((key) => wantsRecord(record, key, wanted, returned));
 }

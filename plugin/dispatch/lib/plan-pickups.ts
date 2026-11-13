@@ -231,6 +231,32 @@ function planStopped(
   else plan.quiet.push({ target: item.key, class: "pickup-ended", why });
 }
 
+/**
+ * Why a claimed item is not one the stall watch reads as a pickup, or
+ * `null` when it is: a served person's item no pickup of this machine
+ * claimed is their own work; under `dispatch.stalled_scope: claimed`, so is
+ * the identity's item no launch record of this machine and no claim marker
+ * took.
+ */
+function outsideScope(
+  item: ClaimedItem,
+  section: DispatchSection,
+  pickup: PickupHold,
+  endedUnclaimed: boolean,
+): string | null {
+  if (item.served === true)
+    return pickup.kind === "none" || endedUnclaimed
+      ? `in ${item.state}, started by its served person: no pickup of this machine claimed it`
+      : null;
+  if (
+    section.stalledScope === "claimed" &&
+    item.claimMarker === undefined &&
+    pickup.kind === "none"
+  )
+    return `in ${item.state}, claimed outside dispatch: no launch record of this machine and no claim marker took it (dispatch.stalled_scope claimed)`;
+  return null;
+}
+
 /** One claimed item: a double claim, running, idle, or stalled. */
 function planClaimed(
   item: ClaimedItem,
@@ -258,12 +284,16 @@ function planClaimed(
     (pickup.kind === "ended" ||
       (pickup.kind === "held" && pickup.record.result === "waits")) &&
     !pickupClaimed(pickup.record.record, item.key);
-  if (item.served === true && (pickup.kind === "none" || endedUnclaimed)) {
-    plan.quiet.push({
-      target: item.key,
-      class: "claimed-by-person",
-      why: `in ${item.state}, started by its served person: no pickup of this machine claimed it`,
-    });
+  const why = outsideScope(item, input.section, pickup, endedUnclaimed);
+  if (why !== null) {
+    plan.quiet.push({ target: item.key, class: "claimed-by-person", why });
+    return;
+  }
+  // Whether a claim marker took it could not be read (its row is already
+  // unplaced): the scope is unknown, so no idle clock starts and no stall is
+  // reported until a read answers. A double claim above still reports.
+  if (item.claimMarker === "unread" && pickup.kind === "none") {
+    plan.idleKeep.push(item.key);
     return;
   }
   if (held.kind === "unknown") {
