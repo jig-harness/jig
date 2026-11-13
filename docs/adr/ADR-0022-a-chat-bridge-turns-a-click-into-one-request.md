@@ -61,7 +61,9 @@ A team's chat may carry buttons and commands through a **chat bridge**:
   repository. It keeps a record of each interaction it admitted, with the request,
   its state and the effects it lists, until the interaction is done, so one
   the chat delivers twice runs once and one a crash interrupted is finished
-  or refused, never lost or repeated. It starts no session, nothing the line
+  or refused, never lost. A stale worker can still repeat an effect after a
+  later interaction changed what it set; the bridge records that as
+  overlapped rather than preventing it. It starts no session, nothing the line
   runs reads from it, and stopping it removes the buttons and commands and
   nothing else.
 - **Notices stay with the hosts.** The tick of the host that owns a

@@ -239,8 +239,9 @@ overlap of two workers rare. It cannot make it impossible: a worker paused
 between its check and its remote write can still resume after recovery, and
 the forge and the tracker enforce no lease token. So no effect relies on
 the lease alone, and the design states what that leaves. A repeat of the
-same command is harmless: a label is set to a state, so a second write
-changes nothing; an assignment the tracker refuses to make twice changes
+same command is harmless only when nothing intervened: a label is set to a
+state, so a second write changes nothing unless another interaction changed
+the label in between; an assignment the tracker refuses to make twice changes
 nothing the second time; and the comment or record carrying the request id
 is read as one, the earliest per id, whoever wrote it. A stale write that
 lands after a different, later interaction is not made harmless: a worker
@@ -253,8 +254,10 @@ rare, not impossible. After each effect the worker checks its lease again,
 and one found lost, or an effect made after the lease's end, is recorded
 as overlapped, which tells the person who ran the command that the result
 may have been overtaken. The guarantee is therefore: an interaction is
-never lost and its own command is never repeated with a changed result; it
-is not that a stale worker never overtakes a later command. A tracker that
+never lost, and a repeat of its command changes nothing only while nothing
+intervened; duplicate effects remain possible, as when a hold is applied,
+released by another interaction, and applied again by the resumed worker.
+It is not that a stale worker never overtakes a later command. A tracker that
 offers a conditional assignment replaces the preflight read with it. A
 lease that expires without the id reaching `done` marks the
 processing abandoned, and the id returns to `pending` for recovery. The
