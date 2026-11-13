@@ -174,8 +174,8 @@ interface.
   [M12](modules/M12-parallel-agent-ergonomics/),
   [M11](modules/M11-process-observability/),
   [M3](modules/M3-change-area-catalog/)
-- **On the roadmap:** pickups in Orca (item 33); a launch guard and an Orca
-  panel for what waits on a person (item 34)
+- **On the roadmap:** a launch guard and an Orca panel for what waits on a
+  person (item 34)
 
 ## Review in tiers, with an arbiter for contested findings
 

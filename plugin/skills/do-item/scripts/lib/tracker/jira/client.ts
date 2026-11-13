@@ -99,6 +99,8 @@ export interface Client {
   readonly transport: JiraTransport;
   /** The repository's facets, resolved. */
   readonly facets: Facets;
+  /** Verify the credential identifies an account before a protected read. */
+  authenticate(signal?: AbortSignal): Promise<void>;
   /** One issue; `null` when it does not exist or is not visible. */
   issue(key: string, signal?: AbortSignal): Promise<JiraIssue | null>;
   /** One issue that must exist. */
@@ -544,6 +546,14 @@ export function jiraClient(opts: ClientOptions): Client {
     settings,
     transport,
     facets: opts.facets ?? defaultFacets("jira"),
+
+    async authenticate(signal) {
+      if (signal?.aborted === true) throw abortedError(signal);
+      const authenticated = myself();
+      await (signal === undefined
+        ? authenticated
+        : until(authenticated, signal));
+    },
 
     async issue(key, signal) {
       if (signal?.aborted === true) throw abortedError(signal);

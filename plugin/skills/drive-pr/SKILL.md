@@ -1315,6 +1315,17 @@ pre-commit hook runs a long suite, a push that runs the pre-push suite), use the
 **foreground wait**. It is two calls, launched once and waited on as often as
 the ceiling requires, all inside this turn.
 
+**Under Codex, use Codex's own command session instead.** Codex's default Linux
+sandbox ends the processes a tool call started when that call returns, and a
+runner's survival there cannot be verified, so as a conservative policy
+`launch` refuses at once under Codex (exit `4`) and starts nothing. Run the step's command itself through `exec_command` with a
+`yield_time_ms` below the call ceiling, and while it is still running poll
+the same session with `write_stdin` and empty input until it exits; that
+session belongs to Codex and outlives each call. Where neither tool is
+exposed, run the command in one foreground call and, if it cannot finish
+within the ceiling, stop and say so. The forwarding rule below,
+the round's own flags in the command, holds the same way.
+
 Launch — one call, returns as soon as the command has started. On POSIX, `foreground-wait.ts` keeps the
 command in the pass's own process group, so the pass's deadline and stop
 signals reach it. On Windows, the runner starts independently so it survives
@@ -1345,8 +1356,12 @@ bun "${CLAUDE_SKILL_DIR}/scripts/foreground-wait.ts" wait
 collide with its control codes. `0` means the command finished and exited `0`
 with its process tree confirmed stopped; `30` means the command failed or
 its process tree could not be confirmed stopped (the `command-exit: N` line
-preserves the command's status); `20` means still running — call `wait` again; `21` means no process
-recorded for the launch is alive and no result was published. Each `wait`
+preserves the command's status); `20` means still running — call `wait` again; `21` means the runner
+was lost: no process recorded for the launch is alive and no result was
+published. Its report shows at least the command's last 4 KiB of output,
+repeating what an earlier `wait` already showed, or says that no log was
+written, so the runner may have been lost before it started the command.
+Otherwise each `wait`
 relays only output not yet shown (a bounded tail if a great deal arrived).
 
 The supervisor establishes its own process identity before executing the

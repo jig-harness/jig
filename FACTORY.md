@@ -108,11 +108,10 @@ so a launch whose answer is lost is never followed by a second one.
 The dispatcher opens workspaces and starts agents through a
 [session runtime](GLOSSARY.md). Orca is the first one. Another runtime, Herdr
 among them, joins as a second implementation of the same interface once it
-can list a host's accounts. On Orca, the dispatcher starts a follow-up as a
-non-interactive agent run, a [headless pass](GLOSSARY.md), on the account it
-chose. It reports a pickup for a person to start. Orca opens a new session
-on whichever account its host has selected, and a pickup needs the account the
-dispatcher chose. The dispatcher ships in the plugin, and
+can list a host's accounts. On Orca, the dispatcher starts pickups and
+follow-ups as non-interactive agent runs, or [headless passes](GLOSSARY.md),
+on the account it chose. An interactive pickup session waits until the
+runtime can bind it to an account. The dispatcher ships in the plugin, and
 [the `jig` command](plugin/README.md#the-jig-command) installs its timer and
 checks it.
 
@@ -204,8 +203,6 @@ never the dispatcher.
   as a finding, and what to change is a person's decision.
 
 On the roadmap:
-[pickups started on Orca](ROADMAP.md#33-the-dispatcher-a-tick-that-starts-the-execution-lines-stages),
-and
 [a guard on launches and a view of what waits on a person, inside Orca](ROADMAP.md#34-jig-in-the-orca-ecosystem).
 
 ## Deciding what to build

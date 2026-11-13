@@ -2,7 +2,7 @@
  * The requests a person makes of the dispatcher, as the tick reads them,
  * written for `jig send` (`send/`):
  *
- * - **A command label** (`dispatch-command-label`): `drive` or `hold`
+ * - **A command label** (`dispatch-command-label`): `drive`, `rearm` or `hold`
  *   under the repository's prefix, added to or removed from a pull request
  *   in one `gh pr edit` call. The tick reads `drive` to arm a drive on a
  *   pull request with no ledger and `hold` to keep every stage off it

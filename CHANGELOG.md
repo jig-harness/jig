@@ -394,6 +394,78 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.223.3] - 2026-11-13
+
+### Fixed
+
+- A Codex drive pass no longer loses a long step between starting it and
+  waiting on it. Codex's default Linux sandbox ends the processes a tool call
+  started when the call returns, so drive-pr's foreground wait
+  (`foreground-wait.ts`) now refuses to launch under Codex as a conservative
+  policy, exit `4`, before starting anything, and names the
+  way to run the step there: `exec_command`, then `write_stdin` on the same
+  session until the command exits
+  ([drive-pr § Driver pass](plugin/skills/drive-pr/SKILL.md#driver-pass-you-are-headless-and-one-shot)).
+- A foreground wait whose runner was lost (exit `21`) now says so and shows
+  at least the command's last 4 KiB of output, repeating what an earlier
+  wait already showed, or says that the runner wrote no log at all.
+
+## [0.223.2] - 2026-11-13
+
+### Fixed
+
+- The Jira token command's renewal is now covered by tests: after a renewed
+  token is refused the adapter stops running the command, and it renews again
+  once a renewed token has been accepted and later refused.
+
+## [0.223.1] - 2026-11-12
+
+### Fixed
+
+- The dispatcher checks the steward's cadence and hourly cap before reading the queue for its digest, so a tick the cadence or the cap rules out reads nothing for it. The digest reuses the queued items the tick already read, and reads the rest only while the tick's deadline leaves room for the launch's preparation and the launch: when time runs out or a read fails, the steward waits for a later tick instead of holding up the tick.
+
+## [0.223.0] - 2026-11-12
+
+### Added
+
+- The tracker interface attaches a file to an issue on every adapter:
+  `tracker.ts attach "<KEY>" --input <file>` attaches it and, with
+  `replace`, then removes the older attachments of the same file name or
+  title once the issue lists the new one; `tracker.ts attachments` lists an
+  issue's attachments and `tracker.ts fetch-attachment` saves one. Linear
+  and Jira upload the file to their own file store. GitHub Issues has no
+  file upload, so the file's text goes in a marked comment when it fits one,
+  or the comment links a copy the caller already hosts; anything else is
+  refused (exit `3`) with nothing written
+  ([EXTENDING.md](plugin/EXTENDING.md#issue-tracker)).
+- `reconcile_parent_status.ts` reads the tracker interface's answers for an
+  epic and its children (`{ issue, parent, children, complete }`), so
+  `do-item`'s parent-status reconciliation gives the same verdict on every
+  adapter, on its native path too.
+
+### Changed
+
+- `/jig:decide` and `/jig:explain` attach their sheets through
+  `tracker.ts attach` instead of Linear's tools, and say what happens when
+  a tracker can only link a sheet or cannot hold it: the sheet stays a local
+  file and the comment says so. The sheet renderers' `render` summary now
+  carries the sheet's `path` and `replace: true`, and is what `attach`
+  reads. `/jig:decide` regenerates a ruled sheet from the one `tracker.ts
+  fetch-attachment` reads back.
+
+### Removed
+
+- `decision-sheet.ts stale-attachments`: `tracker.ts attach` removes the
+  older sheet itself, and only once the issue lists the new one.
+
+## [0.222.1] - 2026-11-12
+
+### Fixed
+
+- The Jira audit reach check verifies the credential before checking the project, so refused credentials report credential guidance and token commands can refresh a stale token.
+- Jira token commands that exceed the request deadline report an unavailable broker with the variable name. Once Jira refuses a replacement token, the process stops renewing the command on later requests; a cancelled replacement request remains retryable. Audit tracker checks preserve the command-specific timeout guidance.
+- `get_issue.ts` reports refused or unreachable tracker reads as unreadable, without key or team suggestions. Its JSON distinguishes `read-failed` from `not-found`, while both keep exit 2 and `found: false` for existing callers.
+
 ## [0.222.0] - 2026-11-12
 
 ### Added
@@ -7659,7 +7731,12 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.222.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.223.3...HEAD
+[0.223.3]: https://github.com/jig-harness/jig/compare/v0.223.2...v0.223.3
+[0.223.2]: https://github.com/jig-harness/jig/compare/v0.223.1...v0.223.2
+[0.223.1]: https://github.com/jig-harness/jig/compare/v0.223.0...v0.223.1
+[0.223.0]: https://github.com/jig-harness/jig/compare/v0.222.1...v0.223.0
+[0.222.1]: https://github.com/jig-harness/jig/compare/v0.222.0...v0.222.1
 [0.222.0]: https://github.com/jig-harness/jig/compare/v0.221.2...v0.222.0
 [0.221.2]: https://github.com/jig-harness/jig/compare/v0.221.1...v0.221.2
 [0.221.1]: https://github.com/jig-harness/jig/compare/v0.221.0...v0.221.1
