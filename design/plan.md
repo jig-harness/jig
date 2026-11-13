@@ -542,7 +542,7 @@ registry read and the removal, and the dispatcher cannot read an account's
 usage from Orca's command line. [design/orca-integration.md](orca-integration.md)
 has how it works, in classes built in order. Still open, on Orca 1.4.248's
 plugin hooks: the launch guard, in which `jig gc` takes its admission in a
-guard record before its last registry read and the plugin's
+launch guard record before its last registry read and the plugin's
 `agent.launch.before` hook, reading that record without an awaited call,
 refuses a launch into a worktree gc holds; a spike on binding a launch to
 its account through the same hook; the plugin's status bar item; and the

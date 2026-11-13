@@ -25,10 +25,19 @@ make, use the entry's term instead.
 - **Station** — one fixed step of a *software factory*, with its input, its
   output and who runs it: a skill, an agent, a tool or a person. Deciding what
   to build runs a feature through a pipeline of stations (research,
-  requirements, architecture, …); the line runs one work item through a row
+  requirements, architecture, …); the *line* runs one work item through a row
   of them, from pick-up to a merged pull request and its follow-ups. The
   *dispatcher* is no station: it starts stations of the line when nobody is at
   the keyboard. See [FACTORY.md](FACTORY.md).
+- **Line** (execution line) — the row of *stations* one work item passes
+  through once a team has decided to build it: pick-up, build, open, drive,
+  repair, merge and follow-up. Follow-up items enter it again at pick-up,
+  so the line is a loop. The *dispatcher* starts its stations when nobody is
+  at the keyboard, the *operator* asks and tells them, and the *dispatch
+  dashboard* shows it moving. The two names are one thing: *line* in prose a
+  team reads, *execution line* where *line* alone could be read as a line of
+  text. See [FACTORY.md](FACTORY.md#the-line). *Avoid*: pipeline (the
+  stations that decide what to build), workflow, assembly line.
 - **Lifecycle map** (stage map) — the one table that publishes a repository's
   delivery loop, from steering to a closed epic and back: a row per named
   stage, the skill, command or document that owns it, and the artifact it
@@ -1867,6 +1876,7 @@ make, use the entry's term instead.
   into an admitted worktree; gc keeps a worktree with a recent marker, and
   trusts the guard only while the heartbeat is fresh
   ([plugin/gc/README.md](plugin/gc/README.md#the-launch-guard-record)).
+  *Avoid*: guard record, Orca guard record.
 - **Forge claim** — a comment a script posts on a pull request to say "this
   is mine to do" (a driver taking over a drive, a run following up a merge,
   a driver announcing a head safe to merge), carrying a *record envelope*
@@ -2751,12 +2761,7 @@ make, use the entry's term instead.
   thread: the request, the question, the answer and the outcome, each linked
   to the record it came from. `jig ask` reads an address and its thread, and
   `jig send` writes a record to one.
-- **Guard record** — the small file Jig's Orca plugin and `jig gc` share
-  without an awaited call: gc's *admission* for each worktree it is
-  collecting, the launches the plugin let through, and the plugin's
-  heartbeat. The plugin reads it to refuse a launch into a worktree gc is
-  removing.
-- **Admission** — gc's claim on one worktree in the *guard record* while it
+- **Admission** — gc's claim on one worktree in the *launch guard record* while it
   makes its last checks and removes it. One not yet submitted for removal is
   released on every exit and judged abandoned when its owner is no longer
   alive; one submitted to Orca stays until the removal is known to have

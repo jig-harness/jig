@@ -35,8 +35,8 @@ export interface Holder {
   };
 }
 
-/** The acts a person settles a station with: a closed list. */
-const PERSON_ACTS = [
+/** The acts a person settles a station with: a closed list, which README.md's `waitsOn` row lists in the same order. */
+export const PERSON_ACTS = [
   "answer",
   "re-arm",
   "release the CI hold",

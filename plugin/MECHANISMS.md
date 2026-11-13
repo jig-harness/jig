@@ -460,9 +460,16 @@ development and shipped as a version.
 - **Reasoned.** The follow-up session decides what the merge still owes and
   does it; it calls the marker commands at the points its instructions name.
 - **If it fails.** The follow-up session stops on any non-zero exit. A
-  failed follow-up is notified on the configured cadence and never started
-  again; a person
-  deletes its marker to have it run again.
+  follow-up that stopped on a routine question (`local-leftover`,
+  `person-owed` or `drafted-items`, the classes in
+  `dispatch/lib/routine-questions.ts`) is run once more with the class's
+  standing answer
+  ([`repositories[].stages`](CONFIGURATION.md#dispatch)). One that stops on
+  any other question, or fails again after that run, is notified as a need
+  on the configured cadence and not started again until a person answers
+  it: **Run it again** deletes its marker, so a later tick starts it again
+  with the person's note in its prompt, and **Record it done** marks the
+  marker done in place ([Every need is a decision](README.md#every-need-is-a-decision)).
 
 ### Shared records: several hosts on one repository
 
