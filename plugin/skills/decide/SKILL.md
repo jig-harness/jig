@@ -70,20 +70,21 @@ time. Every one is optional.
 
 ### Tracker operations
 
-Reads of an issue and posted comments go through the tracker scripts of
-`/jig:do-item`, whose adapter `issue_tracker.adapter` selects. A
-harness with a native integration for the same tracker may use it instead; the
-Linear forms are given as the adapter example.
+Reads of an issue, posted comments and attached sheets go through the
+tracker scripts of `/jig:do-item`, whose adapter `issue_tracker.adapter`
+selects; they work on every adapter. A harness with a native integration for
+the same tracker may use it for a read or a comment instead; the Linear forms
+are given as the adapter example.
 
 | Operation | Script form | Adapter example: Linear (MCP) |
 |-----------|-------------|-------------------------------|
 | Get issue | `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/get_issue.ts" "<KEY>"` | `mcp__linear__get_issue` |
 | List comments | `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/list_comments.ts" "<KEY>"` | `mcp__linear__list_comments` |
 | Post comment | `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" comment "<KEY>" --body-file body.md` | `mcp__linear__save_comment` |
-| Search open issues | — | `mcp__linear__list_issues` with a query |
-| Add labels | — | `mcp__linear__save_issue` with `addLabels` |
+| Search open issues | `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" search -- "<text>"` | `mcp__linear__list_issues` with a query |
+| Add labels | `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" update "<KEY>" --input patch.json`, the patch `{ "addLabels": [...] }` | `mcp__linear__save_issue` with `addLabels` |
 | File a new issue | The consumer's `issue_tracker.file_command` | — |
-| Attach a sheet | — | see [`references/decision-sheet.md`](references/decision-sheet.md#post-the-sheet) |
+| Attach a sheet | `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" attach "<KEY>" --input <summary.json>`; see [`references/decision-sheet.md`](references/decision-sheet.md#post-the-sheet) | The script form |
 
 An issue key is `ENG-123` on Linear and Jira and `#123` on GitHub Issues, an issue of
 the configured repository; this document writes it as `<KEY>`. Quote it on a
@@ -357,10 +358,13 @@ author asks for `compact`.
 applies the rule. Above the threshold, phase 4 does not wait for a human to
 ask for the trade-offs: it writes the decision source, renders the sheet and
 its short comment from it, attaches the sheet to the issue and posts the
-comment, together with the escalation. A regenerated sheet keeps the layout of
-the sheet it replaces. The source format, the layouts, the render and
-freshness check, the upload procedure and the regeneration after a ruling are
-in [`references/decision-sheet.md`](references/decision-sheet.md).
+comment, together with the escalation. A tracker that can only link a file
+links a copy a person has hosted; one that can hold the sheet in no form
+leaves it a local file, and the comment says so. A regenerated sheet keeps
+the layout of the sheet it replaces. The source format, the layouts, the
+render and freshness check, how a tracker holds the sheet and the
+regeneration after a ruling are in
+[`references/decision-sheet.md`](references/decision-sheet.md).
 
 When a drive parks a call from that sheet, use the reference's `park`
 conversion command. It fills the park's question, expands the sheet's
