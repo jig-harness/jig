@@ -18,11 +18,13 @@ export function specialCiSettings(
   config: Record<string, unknown>,
 ): SpecialCiSettings {
   const ci = config.ci;
-  if (ci !== undefined && !isRecord(ci))
+  // Repository configuration treats null as an explicit unset value unless a
+  // schema field opts out. `ci` and these optional lists do not opt out.
+  if (ci !== undefined && ci !== null && !isRecord(ci))
     throw new DecodeError("CI policy", "$.ci", "ci must be a mapping");
   const list = (key: string): string[] => {
     const value = isRecord(ci) ? ci[key] : undefined;
-    if (value === undefined) return [];
+    if (value === undefined || value === null) return [];
     if (!isDistinctNameList(value))
       throw new DecodeError(
         "CI policy",

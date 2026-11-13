@@ -38,6 +38,17 @@ test("policy defaults and malformed values", () => {
     "ci.advisory_checks",
   );
 });
+test("null CI settings are explicit unset values", () => {
+  expect(specialCiSettings({ ci: null })).toEqual({
+    holdSentinels: [],
+    advisoryChecks: [],
+  });
+  expect(
+    specialCiSettings({
+      ci: { hold_sentinels: null, advisory_checks: null },
+    }),
+  ).toEqual({ holdSentinels: [], advisoryChecks: [] });
+});
 test("M13 sentinel shape detects exact job names and rejects tolerated failures", () => {
   const wf = {
     jobs: {

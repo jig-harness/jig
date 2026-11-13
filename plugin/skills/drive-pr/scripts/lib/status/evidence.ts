@@ -697,7 +697,11 @@ export async function ciReportFor(
   const heldRuns = readChecks(runs, workflowRuns).failing.filter((r) =>
     held.includes(r.name),
   );
-  const effectiveRuns = runs.filter((r) => !held.includes(r.name));
+  // A hold exempts only the failing sentinel evidence that made the held
+  // verdict. A same-named queued or cancelled attempt is still evidence that
+  // CI has not settled, and must remain visible to ciVerdictOf.
+  const heldRunIds = new Set(heldRuns.map((run) => run.id));
+  const effectiveRuns = runs.filter((run) => !heldRunIds.has(run.id));
   const verdict = ciVerdictOf(
     effectiveRuns,
     statuses,
