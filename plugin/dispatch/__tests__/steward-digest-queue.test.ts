@@ -188,6 +188,10 @@ describe("the scheduler reads nothing before cadence and cap rule a run out", ()
   });
 
   test("the read room reserves an identity check for every account admission may try", () => {
+    // A frozen clock, so only the account-dependent reserve moves the room.
+    const clock = spyOn(Temporal.Now, "instant").mockImplementation(() =>
+      Temporal.Instant.fromEpochMilliseconds(1_000_000),
+    );
     const roomWith = (accounts: number): number | null =>
       readRoomMs({
         machine: {
@@ -198,10 +202,8 @@ describe("the scheduler reads nothing before cadence and cap rule a run out", ()
           repositories: [],
           accounts: Array.from({ length: accounts }, () => ({})),
         },
-        startedAt: Date.now(),
+        startedAt: 1_000_000,
       } as unknown as ApplyState);
-    // A frozen clock, so only the account-dependent reserve moves the room.
-    const clock = spyOn(Date, "now").mockImplementation(() => 1_000_000);
     try {
       const one = roomWith(1) ?? Number.NaN;
       const three = roomWith(3) ?? Number.NaN;
