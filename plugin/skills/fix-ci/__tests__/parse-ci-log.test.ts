@@ -372,20 +372,29 @@ function logCommand(answers: Record<string, StatusLog | string>): {
   logs: StatusLogs;
   asked: FailingStatus[];
 } {
-  const command: LogCommand = { command: "ci-log", seconds: 300, root: "." };
+  const command: LogCommand = {
+    command: "ci-log",
+    commit: "0123456789abcdef",
+    seconds: 300,
+    root: ".",
+  };
   const asked: FailingStatus[] = [];
   return {
     asked,
     logs: {
       settings: async () => okOutcome(command),
-      async read(given, status) {
+      async read(given, statuses) {
         expect(given).toEqual(command);
-        asked.push(status);
-        const answer = answers[status.context];
-        if (answer === undefined) return failed("unexpected", status.context);
-        return typeof answer === "string"
-          ? failed("log-command-failed", answer)
-          : okOutcome(answer);
+        const logs: StatusLog[] = [];
+        for (const status of statuses) {
+          asked.push(status);
+          const answer = answers[status.context];
+          if (answer === undefined) return failed("unexpected", status.context);
+          if (typeof answer === "string")
+            return failed("log-command-failed", answer);
+          logs.push(answer);
+        }
+        return okOutcome(logs);
       },
     },
   };

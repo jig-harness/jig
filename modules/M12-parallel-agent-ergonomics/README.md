@@ -246,8 +246,9 @@ check; a tool's refusing removal protects only the conditions it checks.
 
 [Jig's resource collector](../../plugin/gc/README.md) supplies the runner,
 receipts, confirmed repository bounds, scheduler installation and adapters
-for drive-pr state and scratch scopes. Scratch is report-only until fixture
-registration covers every holder. Worktree reports evaluate lifecycle evidence. A worktree a
+for drive-pr state and scratch scopes. Registered test scopes can be collected
+when persistent fixture records prove every holder gone. Unknown child trees,
+incomplete registrations and other scratch remain retained. Worktree reports evaluate lifecycle evidence. A worktree a
 [workspace runtime](../../GLOSSARY.md) manages is collected through that
 runtime, whose registry of the agents working in it stands in for the session
 opener's shared lock ([the runtime binding](mappings.md#machine-resource-collection-schedules)).

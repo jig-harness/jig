@@ -56,6 +56,7 @@ import { keyOf, repoOf, slug } from "./refs.ts";
 import { assignerOperations } from "./assigner.ts";
 import { stateChangeOperations } from "./state-change.ts";
 import { claimOperations } from "./claim.ts";
+import { gitHubAttachments } from "./attachments.ts";
 import { reportOperations } from "./reports.ts";
 import {
   ADD_RELATES_TO,
@@ -376,9 +377,23 @@ export function gitHubTracker(client: Client): Tracker {
       );
   }
 
-  /** Refuse a label the caller may not set directly: a state or a priority. */
-  function refuseReserved(labels: string[]): void {
-    const reserved = labels.filter((l) => model.isReserved(l));
+  /**
+   * Refuse a label the caller may not set directly: a state or a priority.
+   * A priority kept outside labels has retired its labels, so a change may
+   * take one off an issue but never put one on.
+   */
+  function refuseReserved(add: string[], remove: string[] = []): void {
+    const retired = (l: string) =>
+      !priorityInLabels && model.priorityLabels.some((p) => same(p, l));
+    const kept = add.filter(retired);
+    if (kept.length > 0)
+      throw new TrackerRequestError(
+        "invalid",
+        `${kept.map((l) => `'${l}'`).join(", ")} stand for a priority, which ${slug(home)} keeps in the field '${client.facetSlots.priority.field ?? "Priority"}'; give it as the issue's priority instead`,
+      );
+    const reserved = [...add, ...remove.filter((l) => !retired(l))].filter(
+      (l) => model.isReserved(l),
+    );
     if (reserved.length > 0)
       throw new TrackerRequestError(
         "invalid",
@@ -698,6 +713,7 @@ export function gitHubTracker(client: Client): Tracker {
     ...assignerOperations(client),
     ...stateChangeOperations(client),
     ...claimOperations(client),
+    ...gitHubAttachments(client),
 
     async createIssue(issue) {
       requireTitle(issue.title);
@@ -744,7 +760,7 @@ export function gitHubTracker(client: Client): Tracker {
       checkPatch(key, patch);
       const add = patch.addLabels ?? [];
       const remove = patch.removeLabels ?? [];
-      refuseReserved([...add, ...remove]);
+      refuseReserved(add, remove);
       if (touchesRepositoryNames(patch))
         refuseForeign(key, "labels, priority, type, size or project");
       const issue = await client.mustIssue(key, signal);

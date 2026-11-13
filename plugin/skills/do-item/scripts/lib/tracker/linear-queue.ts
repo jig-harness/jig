@@ -99,8 +99,9 @@ const BATCH_PAGE = 50;
 function boundedBatch(
   transport: LinearTransport,
   count: number,
+  pageSize: number,
 ): LinearTransport {
-  const allowed = Math.ceil(count / BATCH_PAGE) + 1;
+  const allowed = Math.ceil(count / pageSize) + 1;
   let sent = 0;
   return async (query, variables, signal) => {
     if (++sent > allowed)
@@ -122,10 +123,19 @@ const QUEUE_PAGE = 25;
 const RELATION_PAGE = 20;
 
 function queueQuery(extra: string): string {
+  return queueQueryOf("TrackerQueue", extra, "");
+}
+
+/** The queue's fields for issues named by key: archived ones included, as `batchQuery` reads them. */
+function queueByKeyQuery(extra: string): string {
+  return queueQueryOf("TrackerQueueByKey", extra, "includeArchived: true, ");
+}
+
+function queueQueryOf(name: string, extra: string, args: string): string {
   const fields = poolFields(extra);
   return `
-query TrackerQueue($filter: IssueFilter!, $after: String) {
-  issues(first: ${QUEUE_PAGE}, after: $after, filter: $filter) {
+query ${name}($filter: IssueFilter!, $after: String) {
+  issues(first: ${QUEUE_PAGE}, after: $after, ${args}filter: $filter) {
     pageInfo { hasNextPage endCursor }
     nodes {
       ${fields}
@@ -229,9 +239,40 @@ function parseQueueIssue(
   };
 }
 
+/**
+ * The issues named by `wanted`, read in pages of `read.query` and parsed by
+ * `parse`, by upper-case key; one the list does not hold (archived, or moved
+ * to another team) is absent.
+ */
+async function readByKey<T extends { identifier: string }>(
+  opts: QueueOptions,
+  read: { query: string; size: number; what: string },
+  wanted: ReadonlyArray<string>,
+  parse: (node: unknown) => T,
+  signal?: AbortSignal,
+): Promise<Map<string, T>> {
+  const found = new Map<string, T>();
+  const groups = keyGroups(wanted);
+  if (groups.length === 0) return found;
+  const nodes = await opts.pageAll(
+    boundedBatch(opts.transport, wanted.length, read.size),
+    read.query,
+    { filter: { or: groups } },
+    (d) => d.issues,
+    `${wanted.length} issue(s) by key ${read.what}`.trim(),
+    signal,
+  );
+  for (const node of nodes) {
+    const issue = parse(node);
+    found.set(issue.identifier.toUpperCase(), issue);
+  }
+  return found;
+}
+
 export function queueOperations(opts: QueueOptions) {
   const { team, states, transport, pageAll } = opts;
   const queue = queueQuery(opts.extra);
+  const queueByKey = queueByKeyQuery(opts.extra);
   const batch = batchQuery(opts.extra);
   return {
     async queueIssues(
@@ -259,27 +300,38 @@ export function queueOperations(opts: QueueOptions) {
       return nodes.map((n) => parseQueueIssue(n, opts));
     },
 
+    async queueIssuesByKey(
+      keys: ReadonlyArray<string>,
+      signal?: AbortSignal,
+    ): Promise<Map<string, WithEstimate<CoreQueueIssue>>> {
+      const wanted = [...new Set(keys)];
+      const found = await readByKey(
+        opts,
+        { query: queueByKey, size: QUEUE_PAGE, what: "with their relations" },
+        wanted,
+        (node) => parseQueueIssue(node, opts),
+        signal,
+      );
+      const out = new Map<string, WithEstimate<CoreQueueIssue>>();
+      for (const key of wanted) {
+        const hit = found.get(key.toUpperCase());
+        if (hit !== undefined) out.set(key, hit);
+      }
+      return out;
+    },
+
     async poolIssues(
       keys: ReadonlyArray<string>,
       signal?: AbortSignal,
     ): Promise<Map<string, WithEstimate<CorePoolIssue> | null>> {
       const wanted = [...new Set(keys)];
-      const found = new Map<string, WithEstimate<CorePoolIssue> | null>();
-      const groups = keyGroups(wanted);
-      if (groups.length > 0) {
-        const nodes = await pageAll(
-          boundedBatch(transport, wanted.length),
-          batch,
-          { filter: { or: groups } },
-          (d) => d.issues,
-          `${wanted.length} issue(s) by key`,
-          signal,
-        );
-        for (const node of nodes) {
-          const issue = opts.parsePool(node);
-          found.set(issue.identifier.toUpperCase(), issue);
-        }
-      }
+      const found = await readByKey(
+        opts,
+        { query: batch, size: BATCH_PAGE, what: "" },
+        wanted,
+        opts.parsePool,
+        signal,
+      );
       const out = new Map<string, WithEstimate<CorePoolIssue> | null>();
       for (const key of wanted) {
         const hit = found.get(key.toUpperCase());

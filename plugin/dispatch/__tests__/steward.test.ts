@@ -3,6 +3,7 @@ import {
   checkedRecords,
   recordBelongsToDigest,
   stewardDue,
+  stewardWaits,
   rearmableBySteward,
 } from "../lib/steward.ts";
 import {
@@ -20,6 +21,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 describe("steward boundaries", () => {
+  test("cadence and the rolling cap rule a run out before any digest is read", () => {
+    const now = 3_600_000;
+    expect(stewardWaits([], now, 1_200_000)).toBe(false);
+    expect(stewardWaits([{ at: now - 1_000 }], now, 1_200_000)).toBe(true);
+    expect(stewardWaits([{ at: now + 1_000 }], now, 1_200_000)).toBe(true);
+    expect(stewardWaits([{ at: now - 1_300_000 }], now, 1_200_000)).toBe(false);
+    expect(
+      stewardWaits(
+        [0, 1, 2].map((i) => ({ at: now - 1_300_000 - i })),
+        now,
+        1_200_000,
+      ),
+    ).toBe(true);
+  });
   test("unchanged digest and time and rolling run cap all prevent launches", () => {
     const now = 3_600_000;
     expect(

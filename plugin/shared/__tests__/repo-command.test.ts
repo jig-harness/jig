@@ -3,11 +3,23 @@
  * ended, and its setting read from the default branch.
  */
 import { afterAll, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
-import { oneLine, SCRUBBED_ENV, scrubbedEnv } from "../repo-command.ts";
+import {
+  oneLine,
+  promisorRemotes,
+  SCRUBBED_ENV,
+  scrubbedEnv,
+} from "../repo-command.ts";
 
 const FIXTURES = join(import.meta.dir, "fixtures", "repo-command");
 const RUNNER = join(FIXTURES, "runner.ts");
@@ -215,5 +227,353 @@ describe("defaultBranchSettings", () => {
     ]);
     expect(out.ok).toBe(false);
     expect(out.value).toBeUndefined();
+  });
+});
+
+describe("withDefaultBranchTree", () => {
+  /** A clone whose default branch commit holds `note.txt`; returns it and that commit. */
+  function noted(): { dir: string; commit: string } {
+    const dir = clone("do_item: {}\n");
+    writeFileSync(join(dir, "note.txt"), "committed\n");
+    git(dir, "add", ".");
+    git(dir, "commit", "-q", "-m", "note");
+    return { dir, commit: head(dir) };
+  }
+  const head = (dir: string) =>
+    Bun.spawnSync(["git", "rev-parse", "HEAD"], { cwd: dir })
+      .stdout.toString()
+      .trim();
+  const home = () => {
+    const dir = mkdtempSync(join(tmpdir(), "jig-home-"));
+    dirs.push(dir);
+    return dir;
+  };
+
+  it("holds the commit's tracked files, not the working tree's, and is removed afterwards", async () => {
+    const { dir, commit } = noted();
+    const jigHome = home();
+    writeFileSync(join(dir, "note.txt"), "edited\n");
+    writeFileSync(join(dir, "untracked.txt"), "x");
+    expect(
+      await runner(["tree", dir, commit], { JIG_HOME: jigHome }),
+    ).toMatchObject({
+      out: {
+        ok: true,
+        value: { files: [".config", "note.txt"], note: "committed\n" },
+      },
+      removed: true,
+    });
+    expect(readdirSync(join(jigHome, "tmp"))).toEqual([]);
+  });
+
+  it("copies under the Jig home, never the system's temporary directory", async () => {
+    const { dir, commit } = noted();
+    const jigHome = home();
+    const out = await runner(["tree", dir, commit], { JIG_HOME: jigHome });
+    expect(out.dir.startsWith(join(jigHome, "tmp"))).toBe(true);
+  });
+
+  it("runs no hook of the working tree", async () => {
+    const { dir, commit } = noted();
+    const marker = join(dir, "hook-ran");
+    mkdirSync(join(dir, ".githooks"));
+    writeFileSync(
+      join(dir, ".githooks", "post-index-change"),
+      `#!/bin/sh\ntouch '${marker}'\n`,
+      { mode: 0o755 },
+    );
+    git(dir, "config", "core.hooksPath", ".githooks");
+    await runner(["tree", dir, commit], { JIG_HOME: home() });
+    expect(existsSync(marker)).toBe(false);
+  });
+
+  it("copies bytes the way the commit's attributes say, not the working tree's", async () => {
+    const { dir, commit } = noted();
+    writeFileSync(join(dir, ".gitattributes"), "note.txt eol=crlf\n");
+    const out = await runner(["tree", dir, commit], { JIG_HOME: home() });
+    expect(out.out.value.note).toBe("committed\n");
+  });
+
+  it("runs no filter the clone configures", async () => {
+    const { dir, commit } = noted();
+    const marker = join(dir, "filter-ran");
+    writeFileSync(join(dir, ".gitattributes"), "note.txt filter=custom\n");
+    git(dir, "add", ".");
+    git(dir, "commit", "-q", "-m", "attributes");
+    git(dir, "config", "filter.custom.smudge", `touch '${marker}'; cat`);
+    git(dir, "config", "filter.custom.process", `touch '${marker}'`);
+    await runner(["tree", dir, head(dir)], { JIG_HOME: home() });
+    expect(existsSync(marker)).toBe(false);
+    expect(commit).not.toBe(head(dir));
+  });
+
+  it("is removed when the process is terminated mid-copy", async () => {
+    if (process.platform === "win32") return;
+    const { dir, commit } = noted();
+    const child = Bun.spawn(["bun", RUNNER, "treewait", dir, commit], {
+      env: { ...process.env, JIG_USER_LAYER: "off", JIG_HOME: home() },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const reader = child.stdout.getReader();
+    const first = await reader.read();
+    const tree = new TextDecoder().decode(first.value).trim();
+    expect(existsSync(tree)).toBe(true);
+    child.kill("SIGTERM");
+    await child.exited;
+    expect(existsSync(tree)).toBe(false);
+  });
+
+  it("fails, running nothing and leaving nothing, for a commit the clone does not have", async () => {
+    const { dir } = noted();
+    const jigHome = home();
+    const { out, removed } = await runner(["tree", dir, "0".repeat(40)], {
+      JIG_HOME: jigHome,
+    });
+    expect(out.ok).toBe(false);
+    expect(out.failure.code).toBe("unreadable");
+    expect(removed).toBe(false);
+    expect(readdirSync(join(jigHome, "tmp"))).toEqual([]);
+  });
+
+  /** A repository at `dir` (made here) with one committed `note.txt`; returns its commit. */
+  function committedAt(dir: string, ...initArgs: string[]): string {
+    mkdirSync(dir, { recursive: true });
+    git(dir, "init", "-q", "-b", "main", ...initArgs);
+    writeFileSync(join(dir, "note.txt"), "committed\n");
+    git(dir, "add", ".");
+    git(dir, "commit", "-q", "-m", "note");
+    return head(dir);
+  }
+
+  it("copies from a clone whose path holds the object list's separator", async () => {
+    const parent = mkdtempSync(join(tmpdir(), "jig-sep-"));
+    dirs.push(parent);
+    const dir = join(
+      parent,
+      process.platform === "win32" ? "work;archive" : "work:archive;repo",
+    );
+    const commit = committedAt(dir);
+    const out = await runner(["tree", dir, commit], { JIG_HOME: home() });
+    expect(out.out).toMatchObject({ ok: true, value: { note: "committed\n" } });
+  });
+
+  it("copies from a SHA-256 clone", async () => {
+    const parent = mkdtempSync(join(tmpdir(), "jig-sha256-"));
+    dirs.push(parent);
+    const dir = join(parent, "repo");
+    const commit = committedAt(dir, "--object-format=sha256");
+    const out = await runner(["tree", dir, commit], { JIG_HOME: home() });
+    expect(out.out).toMatchObject({ ok: true, value: { note: "committed\n" } });
+  });
+
+  it("copies from a SHA-1 clone while git defaults to SHA-256", async () => {
+    const parent = mkdtempSync(join(tmpdir(), "jig-sha1-"));
+    dirs.push(parent);
+    const dir = join(parent, "repo");
+    const commit = committedAt(dir, "--object-format=sha1");
+    const out = await runner(["tree", dir, commit], {
+      JIG_HOME: home(),
+      GIT_DEFAULT_HASH: "sha256",
+    });
+    expect(out.out).toMatchObject({ ok: true, value: { note: "committed\n" } });
+  });
+
+  /**
+   * A partial clone of a fresh origin under `filter`, its single remote then
+   * reconfigured by the caller. `populate` adds files to the origin and they
+   * are committed as a second commit.
+   */
+  function partialClone(
+    prefix: string,
+    filter = "blob:none",
+    populate?: (origin: string) => void,
+  ) {
+    const parent = mkdtempSync(join(tmpdir(), prefix));
+    dirs.push(parent);
+    const origin = join(parent, "origin");
+    committedAt(origin);
+    if (populate) {
+      populate(origin);
+      git(origin, "add", ".");
+      git(origin, "commit", "-q", "-m", "more");
+    }
+    const commit = head(origin);
+    git(origin, "config", "uploadpack.allowFilter", "true");
+    git(origin, "config", "uploadpack.allowAnySHA1InWant", "true");
+    const dir = join(parent, "clone");
+    git(
+      parent,
+      "clone",
+      "-q",
+      "--no-checkout",
+      `--filter=${filter}`,
+      `file://${origin}`,
+      dir,
+    );
+    return { parent, origin, commit, dir };
+  }
+
+  async function expectCopied(dir: string, commit: string) {
+    const out = await runner(["tree", dir, commit], { JIG_HOME: home() });
+    expect(out.out).toMatchObject({ ok: true, value: { note: "committed\n" } });
+  }
+
+  it("copies files a partial clone has not downloaded", async () => {
+    const { commit, dir } = partialClone("jig-partial-");
+    await expectCopied(dir, commit);
+  });
+
+  it("copies files of a partial clone that holds several undownloaded blobs", async () => {
+    const { commit, dir } = partialClone(
+      "jig-partial-many-",
+      "blob:none",
+      (o) => {
+        writeFileSync(join(o, "second.txt"), "second\n");
+        writeFileSync(join(o, "third.txt"), "third\n");
+      },
+    );
+    await expectCopied(dir, commit);
+  });
+
+  it("takes a remote that only sets a partial-clone filter as a promisor", async () => {
+    const { commit, dir } = partialClone("jig-partial-filter-");
+    git(dir, "config", "--unset", "remote.origin.promisor");
+    git(dir, "config", "remote.origin.partialCloneFilter", "blob:none");
+    const out = await runner(["tree", dir, commit], { JIG_HOME: home() });
+    expect(out.out).toMatchObject({ ok: true, value: { note: "committed\n" } });
+  });
+
+  it("skips a remote whose promisor setting is false", async () => {
+    const { parent, commit, dir } = partialClone("jig-partial-off-");
+    git(dir, "remote", "add", "cache", `file://${join(parent, "nowhere")}`);
+    git(dir, "config", "remote.cache.promisor", "false");
+    expect(await promisorRemotes(dir)).toEqual(["origin"]);
+    const out = await runner(["tree", dir, commit], { JIG_HOME: home() });
+    expect(out.out).toMatchObject({ ok: true, value: { note: "committed\n" } });
+  });
+
+  it("tries the extension's remote last, as git does", async () => {
+    const { parent, dir } = partialClone("jig-partial-order-");
+    git(dir, "remote", "add", "cache", `file://${join(parent, "nowhere")}`);
+    git(dir, "config", "remote.cache.promisor", "true");
+    git(dir, "config", "extensions.partialClone", "origin");
+    expect(await promisorRemotes(dir)).toEqual(["cache", "origin"]);
+  });
+
+  it("falls back to the next promisor when the first cannot supply the files", async () => {
+    const { parent, commit, dir } = partialClone("jig-partial-fallback-");
+    git(dir, "remote", "add", "cache", `file://${join(parent, "nowhere")}`);
+    git(dir, "config", "remote.cache.promisor", "true");
+    git(dir, "config", "extensions.partialClone", "origin");
+    // The unreachable cache is tried before the origin the objects come from.
+    expect(await promisorRemotes(dir)).toEqual(["cache", "origin"]);
+    const out = await runner(["tree", dir, commit], { JIG_HOME: home() });
+    expect(out.out).toMatchObject({ ok: true, value: { note: "committed\n" } });
+  });
+
+  it("copies files under a tree a tree-filtered clone has not downloaded", async () => {
+    const { commit, dir } = partialClone("jig-partial-tree-", "tree:0", (o) => {
+      mkdirSync(join(o, "scripts", "deep"), { recursive: true });
+      writeFileSync(join(o, "scripts", "deep", "run.txt"), "run\n");
+    });
+    await expectCopied(dir, commit);
+  });
+
+  it("copies files nested deeper than any fixed number of tree levels", async () => {
+    const { commit, dir } = partialClone(
+      "jig-partial-depth-",
+      "tree:0",
+      (o) => {
+        const nested = join(o, ...Array.from({ length: 70 }, () => "d"));
+        mkdirSync(nested, { recursive: true });
+        writeFileSync(join(nested, "run.txt"), "run\n");
+      },
+    );
+    await expectCopied(dir, commit);
+  }, 120000);
+
+  it("copies a commit that holds a submodule whose objects the clone lacks", async () => {
+    const parent = mkdtempSync(join(tmpdir(), "jig-gitlink-"));
+    dirs.push(parent);
+    const dir = join(parent, "repo");
+    committedAt(dir);
+    git(
+      dir,
+      "update-index",
+      "--add",
+      "--cacheinfo",
+      `160000,${"1".repeat(40)},mod`,
+    );
+    git(dir, "commit", "-q", "-m", "gitlink");
+    const out = await runner(["tree", dir, head(dir)], { JIG_HOME: home() });
+    expect(out.out).toMatchObject({ ok: true, value: { note: "committed\n" } });
+  });
+
+  it("refuses anything but a full commit id", async () => {
+    const { dir } = noted();
+    for (const bad of ["HEAD", "--all", "main", "abc123"]) {
+      const { out } = await runner(["tree", dir, bad], { JIG_HOME: home() });
+      expect(out.ok).toBe(false);
+      expect(out.failure.reason).toContain("not a full commit id");
+    }
+  });
+});
+
+describe("the default branch's commit", () => {
+  it("reads the configuration of the commit it names, whatever replaces it", async () => {
+    const dir = clone("do_item:\n  preflight_command: real\n");
+    const real = Bun.spawnSync(["git", "rev-parse", "HEAD"], { cwd: dir })
+      .stdout.toString()
+      .trim();
+    writeFileSync(
+      join(dir, ".config", "jig.yaml"),
+      "do_item:\n  preflight_command: fake\n",
+    );
+    git(dir, "commit", "-q", "-am", "fake");
+    const fake = Bun.spawnSync(["git", "rev-parse", "HEAD"], { cwd: dir })
+      .stdout.toString()
+      .trim();
+    git(dir, "reset", "-q", "--hard", real);
+    git(dir, "replace", real, fake);
+    expect(
+      await runner(["setting", dir, "do_item", "preflight_command"]),
+    ).toEqual({ ok: true, value: "real" });
+  });
+
+  it("runs no hook of the working tree when it fetches", async () => {
+    const dir = clone("do_item: {}\n");
+    const remote = mkdtempSync(join(tmpdir(), "jig-remote-"));
+    dirs.push(remote);
+    git(remote, "init", "-q", "--bare", "-b", "main");
+    git(dir, "remote", "add", "origin", remote);
+    git(dir, "push", "-q", "origin", "main");
+    git(dir, "commit", "-q", "--allow-empty", "-m", "newer");
+    git(dir, "push", "-q", "origin", "main");
+    git(dir, "reset", "-q", "--hard", "HEAD~1");
+    git(dir, "update-ref", "refs/remotes/origin/main", "HEAD");
+    const marker = join(dir, "hook-ran");
+    mkdirSync(join(dir, ".githooks"));
+    writeFileSync(
+      join(dir, ".githooks", "reference-transaction"),
+      `#!/bin/sh\ntouch '${marker}'\n`,
+      { mode: 0o755 },
+    );
+    git(dir, "config", "core.hooksPath", ".githooks");
+    await runner(["setting", dir, "do_item", "preflight_command"]);
+    expect(existsSync(marker)).toBe(false);
+  });
+
+  it("is the remote-tracking branch's, even when a tag has the short name", async () => {
+    const dir = clone("do_item:\n  preflight_command: check-main\n");
+    writeFileSync(
+      join(dir, ".config", "jig.yaml"),
+      "do_item:\n  preflight_command: check-tag\n",
+    );
+    git(dir, "commit", "-q", "-am", "elsewhere");
+    git(dir, "tag", "origin/main");
+    expect(
+      await runner(["setting", dir, "do_item", "preflight_command"]),
+    ).toEqual({ ok: true, value: "check-main" });
   });
 });

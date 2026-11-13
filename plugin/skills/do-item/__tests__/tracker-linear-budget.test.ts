@@ -58,8 +58,18 @@ describe("the Linear transport's request budget", () => {
     const reset = now + 20 * 60_000;
     const read = linearAnswer(new Headers(headers(1200, reset)), 200, {}, now);
     expect(read).toEqual({
-      requests: { limit: 2500, remaining: 1200, resetAt: reset },
-      complexity: { limit: 3_000_000, remaining: 2_900_000, resetAt: reset },
+      requests: {
+        limit: 2500,
+        remaining: 1200,
+        resetAt: reset,
+        refillMs: 3_600_000,
+      },
+      complexity: {
+        limit: 3_000_000,
+        remaining: 2_900_000,
+        resetAt: reset,
+        refillMs: 3_600_000,
+      },
     });
     const refused = linearAnswer(
       new Headers(headers(0, reset)),
@@ -117,6 +127,219 @@ describe("the Linear transport's request budget", () => {
     });
     expect(() => dispatcher.admit("linear", key)).toThrow(/share \(50%\)/);
     expect(() => pass.admit("linear", key)).not.toThrow();
+  });
+
+  it("lets the dispatcher send again once a continuously refilling window refills past its share", () => {
+    let now = Date.parse("2026-11-10T12:00:00Z");
+    const store = memoryBudgetStore();
+    const key = credentialKey("linear", "lin_api_c");
+    const dispatcher = budgetGovernor(store, {
+      clock: () => now,
+      share: () => 0.5,
+    });
+    // The answer left 1,240 of 2,500; the reset it names is an hour of refill away.
+    dispatcher.observe(key, {
+      requests: {
+        limit: 2500,
+        remaining: 1240,
+        resetAt: now + 3_600_000,
+        refillMs: 3_600_000,
+      },
+    });
+    const refused = (() => {
+      try {
+        dispatcher.admit("linear", key);
+        return null;
+      } catch (error) {
+        return error as TrackerRateLimited;
+      }
+    })();
+    expect(refused).toBeInstanceOf(TrackerRateLimited);
+    // 11 requests refill in about 16 seconds, not an hour.
+    expect((refused as TrackerRateLimited).resetAt - now).toBeLessThan(20_000);
+    now += 20_000;
+    expect(() => dispatcher.admit("linear", key)).not.toThrow();
+  });
+
+  /** The governor and store of a dispatcher at a settable clock. */
+  function dispatcherAt(start: number, secret: string) {
+    const clock = { now: start };
+    const store = memoryBudgetStore();
+    const key = credentialKey("linear", secret);
+    const governor = budgetGovernor(store, {
+      clock: () => clock.now,
+      share: () => 0.5,
+    });
+    const tries = () => {
+      try {
+        governor.admit("linear", key);
+        return null;
+      } catch (error) {
+        return error as TrackerRateLimited;
+      }
+    };
+    return { clock, governor, key, tries };
+  }
+
+  it("never lets refill that came while the window was full count as spendable", () => {
+    const d = dispatcherAt(1_000_000, "lin_api_e");
+    // Full at 10 of 10, an hour to refill (rate 10/hour); half an hour later,
+    // a full window is still 10, not 15.
+    d.governor.observe(d.key, {
+      requests: {
+        limit: 10,
+        remaining: 10,
+        resetAt: d.clock.now + 3_600_000,
+        refillMs: 3_600_000,
+      },
+    });
+    d.clock.now += 1_800_000;
+    let admitted = 0;
+    while (d.tries() === null && admitted < 20) admitted += 1;
+    // Down to the floor of 5, no further.
+    expect(admitted).toBe(5);
+  });
+
+  it("keeps refilling a window an unrelated answer says nothing of", () => {
+    const d = dispatcherAt(2_000_000, "lin_api_f");
+    d.governor.observe(d.key, {
+      requests: {
+        limit: 2500,
+        remaining: 1240,
+        resetAt: d.clock.now + 3_600_000,
+        refillMs: 3_600_000,
+      },
+    });
+    d.clock.now += 20_000;
+    // An answer with no request window (an error without headers) must not
+    // restart the window's refill from its old count.
+    d.governor.observe(d.key, {});
+    expect(d.tries()).toBeNull();
+  });
+
+  it("waits for the share floor, not for one request, when the window is empty", () => {
+    const d = dispatcherAt(3_000_000, "lin_api_g");
+    d.governor.observe(d.key, {
+      requests: {
+        limit: 2500,
+        remaining: 0,
+        resetAt: d.clock.now + 3_600_000,
+        refillMs: 3_600_000,
+      },
+    });
+    const refused = d.tries();
+    expect(refused).toBeInstanceOf(TrackerRateLimited);
+    // 1,251 requests refill in about 30 minutes, not in seconds, and not in
+    // the hour a full reset takes.
+    const wait = (refused as TrackerRateLimited).resetAt - d.clock.now;
+    expect(wait).toBeGreaterThan(25 * 60_000);
+    expect(wait).toBeLessThan(35 * 60_000);
+    d.clock.now = (refused as TrackerRateLimited).resetAt;
+    expect(d.tries()).toBeNull();
+  });
+
+  it("does not admit on a fraction of a request", () => {
+    const d = dispatcherAt(4_000_000, "lin_api_h");
+    const whole = budgetGovernor(memoryBudgetStore(), {
+      clock: () => d.clock.now,
+      share: () => null,
+    });
+    const key = credentialKey("linear", "lin_api_h2");
+    whole.observe(key, {
+      requests: {
+        limit: 2500,
+        remaining: 0,
+        resetAt: d.clock.now + 3_600_000,
+        refillMs: 3_600_000,
+      },
+    });
+    d.clock.now += 100;
+    expect(() => whole.admit("linear", key)).toThrow(/no requests left/);
+    d.clock.now += 1_400;
+    expect(() => whole.admit("linear", key)).not.toThrow();
+  });
+
+  it("reports the recovery of the window that recovers last", () => {
+    const d = dispatcherAt(5_000_000, "lin_api_i");
+    d.governor.observe(d.key, {
+      requests: {
+        limit: 2500,
+        remaining: 1240,
+        resetAt: d.clock.now + 3_600_000,
+        refillMs: 3_600_000,
+      },
+      complexity: {
+        limit: 3_000_000,
+        remaining: 0,
+        resetAt: d.clock.now + 3_600_000,
+        refillMs: 3_600_000,
+      },
+    });
+    const refused = d.tries();
+    expect(refused).toBeInstanceOf(TrackerRateLimited);
+    // The requests recover in about 17 seconds; the complexity takes 30 minutes.
+    expect(
+      (refused as TrackerRateLimited).resetAt - d.clock.now,
+    ).toBeGreaterThan(25 * 60_000);
+    expect((refused as TrackerRateLimited).message).toMatch(/complexity/);
+  });
+
+  it("keeps reservations when a delayed answer arrives after later ones", () => {
+    const d = dispatcherAt(6_000_000, "lin_api_j");
+    const window = (remaining: number) => ({
+      requests: {
+        limit: 2500,
+        remaining,
+        resetAt: d.clock.now + 3_600_000,
+        refillMs: 3_600_000,
+      },
+    });
+    d.governor.observe(d.key, window(1252));
+    const first = d.governor.admit("linear", d.key);
+    const second = d.governor.admit("linear", d.key);
+    // The answers to those two arrive out of order: 1,250 first, then the
+    // 1,251 the server measured between them.
+    d.governor.observe(d.key, window(1250), second);
+    d.governor.observe(d.key, window(1251), first);
+    expect(d.tries()).toBeInstanceOf(TrackerRateLimited);
+  });
+
+  it("keeps reservations made while a slow request was in flight", () => {
+    const d = dispatcherAt(7_000_000, "lin_api_k");
+    const window = (remaining: number) => ({
+      requests: {
+        limit: 2500,
+        remaining,
+        resetAt: d.clock.now + 3_600_000,
+        refillMs: 3_600_000,
+      },
+    });
+    d.governor.observe(d.key, window(1260));
+    const sent = d.governor.admit("linear", d.key);
+    // Nine more requests leave while the first is in flight.
+    for (let i = 0; i < 9; i += 1) d.governor.admit("linear", d.key);
+    d.clock.now += 3_000;
+    // Its answer, measured before the others, says 1,259: it must not
+    // restore the capacity the others consumed (about 1,250 plus the refill).
+    d.governor.observe(d.key, window(1259), sent);
+    let admitted = 0;
+    while (d.tries() === null && admitted < 20) admitted += 1;
+    expect(admitted).toBeLessThanOrEqual(3);
+  });
+
+  it("keeps a window that resets whole walled until its reset", () => {
+    let now = Date.parse("2026-11-10T12:00:00Z");
+    const store = memoryBudgetStore();
+    const key = credentialKey("linear", "lin_api_d");
+    const dispatcher = budgetGovernor(store, {
+      clock: () => now,
+      share: () => 0.5,
+    });
+    dispatcher.observe(key, {
+      requests: { limit: 2500, remaining: 1240, resetAt: now + 3_600_000 },
+    });
+    now += 20_000;
+    expect(() => dispatcher.admit("linear", key)).toThrow(/share \(50%\)/);
   });
 
   it("records a refusal the command-line client reports, for the fallback period", async () => {

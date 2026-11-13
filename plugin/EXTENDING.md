@@ -60,7 +60,7 @@ hook or the interface instead.
 | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | Local checks, generators, lints            | Any command                                                                                                                                                                                                                                                                                           | [A command](#commands-a-repository-supplies)                                                                        | —                                                                                                                       |
 | Review skills, implementing agents, scouts | The repository's own                                                                                                                                                                                                                                                                                  | [Configuration](#the-repositorys-own-skills-and-agents)                                                             | —                                                                                                                       |
-| Issue tracker                              | GitHub Issues (the default); Linear; Jira Cloud                                                                                                                                                                                                                                                       | [A tracker adapter](#issue-tracker) in Jig                                                                          | The deferral step and a few operations still call Linear directly: roadmap items 10 and 12                              |
+| Issue tracker                              | GitHub Issues (the default); Linear; Jira Cloud                                                                                                                                                                                                                                                       | [A tracker adapter](#issue-tracker) in Jig                                                                          | The deferral step still calls Linear directly: roadmap items 10 and 12                                                  |
 | Reflection store                           | A folder of files, a Notion database, a GitHub repository's issues, or any command                                                                                                                                                                                                                    | [A store command](#reflection-stores), no change to Jig                                                             | Jira: roadmap, later                                                                                                    |
 | AI reviewer                                | Any bot, by login, app and check name; finding severities from CodeRabbit, Greptile, the Codex connector, Jig's own finding format, or any reviewer [configured](#severity-formats); GitHub code scanning alerts from any tool, SonarQube Cloud's included                                            | [Configuration](#ai-reviewers)                                                                                      | —                                                                                                                       |
 | Forge (where pull requests live)           | GitHub, through the `gh` command                                                                                                                                                                                                                                                                      | —                                                                                                                   | [No forge interface yet](#forge-github): roadmap, later                                                                 |
@@ -75,8 +75,8 @@ hook or the interface instead.
 ## Commands a repository supplies
 
 Each of these is a field whose value is a shell command. The skill runs it
-from the repository root and judges it by its exit code: 0 is success. The
-contract column says what else the command is given or must print.
+from the repository root, except where a row below says otherwise, and
+judges it by its exit code: 0 is success. The contract column says what else the command is given or must print.
 
 | Field                                   | Run by                                                               | Contract                                                                                                                                                                                                                                                                                                                                                    |
 | --------------------------------------- | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -86,7 +86,7 @@ contract column says what else the command is given or must print.
 | `descar.lint_command`                   | descar                                                               | Takes document paths; finds review scars in them                                                                                                                                                                                                                                                                                                            |
 | `promote_memory.lint_command`           | promote-memory                                                       | `{dir}` and `{file}` stand for the memory folder and file; checks one memory against the repository                                                                                                                                                                                                                                                         |
 | `fix_ci.regenerate_commands`            | fix-ci                                                               | Each regenerates committed generated files a CI check compares                                                                                                                                                                                                                                                                                              |
-| `ci.log_command`                        | fix-ci, for a drive's CI-repair pass                                 | Reads `{"context", "target_url"}` of a failing commit status as JSON on standard input; prints that status's failed log, at most 64 KiB. Exit 3, the reason its first output line, when the log is gone; 300 s                                                                                                                                              |
+| `ci.log_command`                        | fix-ci, for a drive's CI-repair pass                                 | Reads `{"context", "target_url"}` of a failing commit status as JSON on standard input; prints that status's failed log, at most 64 KiB. Runs in a temporary copy of the default branch's files, not the pull request's checkout. Exit 3, the reason its first output line, when the log is gone; 300 s                                                                                                                                              |
 | `resolve_conflicts.generated[].command` | resolve-conflicts                                                    | Rebuilds the files its `paths` match when they conflict                                                                                                                                                                                                                                                                                                     |
 | `explain.figure_build_command`          | explain                                                              | Builds one explainer figure; the figure's stem is appended                                                                                                                                                                                                                                                                                                  |
 | `code_stats.classify_command`           | code-stats                                                           | Reads every tracked path, one per line, on standard input; prints one JSON object per line, `{"path", "area"?, "kind"?, "language"?, "module"?}`, whose values override the skill's own classification ([contract](skills/code-stats/README.md#the-classify-command)). Exit 0 within 300 seconds; any other exit, or a line it cannot use, fails the report |
@@ -129,7 +129,9 @@ check that the tracker answers for the team or repository (the audit's
 reachability probe, which reads no issue), read an issue with its comments and children, move it to a workflow state,
 comment, file an issue, change its fields and labels, search this team's
 issues, read and add relations between issues, list the labels an issue can
-carry, read whether an item is open (`tracker.ts issue-states`, which M4's
+carry, attach a file to an issue and list, read or remove its attachments
+(`tracker.ts attach`, `attachments` and `fetch-attachment`, in the form each
+adapter below says), read whether an item is open (`tracker.ts issue-states`, which M4's
 scheduled [deferral check](https://github.com/jig-harness/jig/blob/main/plugin/skills/docs/scripts/deferral-references/README.md)
 uses), and the reads that delivery metrics and batch proposals need. Every
 issue it reads and writes carries its
@@ -194,7 +196,21 @@ are named by canonical keys (`in_progress`, `in_review`, …) that
     uses the search and refuses a result it cannot return in full. GitHub
     does not record when an issue started, so the stuck-epic census dates it
     no earlier than its real start (the time its state label was added, or
-    its board item last changed).
+    its board item last changed);
+  - GitHub Issues has no API to upload a file to an issue, and the adapter
+    publishes nothing outside the issue, so an attachment is a comment that
+    opens with a marker line naming the file
+    ([`github/attachments.ts`](skills/do-item/scripts/lib/tracker/github/attachments.ts)):
+    a text file whose comment fits GitHub's limit of 65,536 characters is
+    carried in it, in a collapsed block a reader saves as the file
+    (`form: comment`); given the address of a copy already hosted (`url`),
+    the comment links it (`form: link`). A binary file, or a text file too
+    long for one comment with no `url`, is refused, nothing written, so a
+    decision sheet in the document layout, often longer, needs a hosted copy
+    or stays a local file. Only a marked comment by someone who can write to
+    the repository, or by the credential's own account, counts as an
+    attachment, and one changed since it was written reads as changed, never
+    as the file.
 
 - **Linear** ([`linear.ts`](skills/do-item/scripts/lib/tracker/linear.ts)),
   the adapter `issue_tracker.adapter: linear` selects. It reads `LINEAR_API_KEY` or
@@ -205,7 +221,13 @@ are named by canonical keys (`in_progress`, `in_review`, …) that
   the sizes mapped onto the team's estimate scale
   ([`linear-facets.ts`](skills/do-item/scripts/lib/tracker/linear-facets.ts)),
   read once with the first read that needs it and refused where estimates
-  are off or the scale has fewer points than the sizes.
+  are off or the scale has fewer points than the sizes. A file is uploaded
+  to Linear's own file store (`fileUpload`, then the bytes, then
+  `attachmentCreate` with its title and subtitle), its name and media type
+  kept in the attachment's metadata; reading one back needs the API key,
+  since Linear serves its uploads only to a signed-in request. Any other
+  attachment (a pull request's, say) is a link
+  ([`linear-attachments.ts`](skills/do-item/scripts/lib/tracker/linear-attachments.ts)).
 
 - **Jira Cloud** ([`jira/`](skills/do-item/scripts/lib/tracker/jira/tracker.ts)),
   the adapter `issue_tracker.adapter: jira` selects: the issues of one
@@ -277,7 +299,12 @@ are named by canonical keys (`in_progress`, `in_review`, …) that
     the adapter writes no other entry's field;
   - a comment, or an assignment, is trusted when a person's Atlassian
     account made it, not a guest, that can be assigned issues in the
-    project; an app's account, Jira Automation's own included, never is.
+    project; an app's account, Jira Automation's own included, never is;
+  - a file is uploaded to the issue as a Jira attachment
+    ([`jira/attachments.ts`](skills/do-item/scripts/lib/tracker/jira/attachments.ts)).
+    Jira keeps an attachment's file name and no title or subtitle, so the
+    file name stands as its title, and a site with attachments turned off
+    refuses the upload.
 
 **To add one.** Implement the `Tracker` interface in a module beside
 `linear.ts` (the facets an adapter keeps in the tracker's own fields are its
@@ -308,7 +335,14 @@ duplicate B` records A as the duplicate of B (the tracker may close A),
   and B reads it as `duplicated_by` A; `related` has no direction;
 - a finished issue's workflow state belongs to one of the closed categories
   the metrics count (completed, canceled, duplicate); active states such as
-  `in_progress` and `in_review` belong to none of them.
+  `in_progress` and `in_review` belong to none of them;
+- a file is attached in the nearest form the tracker offers (its own file
+  store, the file in a comment, or a link to a hosted copy), `form` saying
+  which; one it can hold in no form is refused with `AttachmentRefused`
+  before anything is written, never published elsewhere. Replacing older
+  attachments is the interface's own (`attachReplacing` in
+  [`attachment.ts`](skills/do-item/scripts/lib/tracker/attachment.ts)), on
+  the file name or the title an adapter lists.
 
 **What still assumes Linear.** These bypass the interface today, so a
 second adapter does not yet reach them:
@@ -317,15 +351,10 @@ second adapter does not yet reach them:
   findings through its own Linear client (`defer-batch.ts`), with fixed type
   and repository label groups; with GitHub Issues as the tracker, the
   default, deferred findings cannot be filed yet.
-- **Operations the interface does not have.** Attaching a file. Where a
-  skill needs it (`decide` and `explain` attaching a sheet), its
-  instructions name the Linear MCP tools or the `linear` command.
-- **Skill instructions not yet moved.** `decide` escalating and `do-item`
-  where no script covers a step still name the Linear MCP tools in their
-  instructions as the native form; the script forms work on every adapter.
-- **Response shapes.** `do-item`'s parent-status reconciliation, on its
-  native path, reads the shape of Linear's own answers; its script path
-  works on every adapter.
+- **Native forms.** A skill run where the scripts cannot reach the tracker
+  (no credential in that environment) may use a harness's own integration,
+  and the skills give Linear's MCP tools as its example; every step they
+  cover also has a script form, which works on every adapter.
 - **Names.** The change-area catalog still accepts the older `linear:` block
   beside `tracker:`. The review-triage file's
   `severity_mapping.<severity>.priority` also accepts `linear_priority`, and
@@ -336,9 +365,8 @@ repository) keeps the rest of the plugin's code, and the planning skills'
 procedures, from reaching Linear except through the interface; the deferral
 step is the one file it still allows.
 
-Fixing it means adding file attachment to the interface, and moving the
-deferral step and the skills' instructions onto it. Roadmap item 10 holds
-the deferral step; item 12 holds the next adapter, a plan file kept in the
+Fixing it means moving the deferral step onto the interface. Roadmap item 10
+holds the deferral step; item 12 holds the next adapter, a plan file kept in the
 repository, behind open decisions: the plan file's format, and whether an
 adapter may leave out the reporting operations.
 

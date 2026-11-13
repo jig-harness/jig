@@ -139,10 +139,20 @@ function request(
     return failed("malformed", "Malformed pull request head");
   if (!["OPEN", "MERGED", "CLOSED"].includes(String(value.state)))
     return failed("malformed", "Malformed pull request state");
+  const number = requestNumber(value.number);
+  if (!number.ok) return number;
   return ok({
     state: value.state as WorktreeRequest["state"],
     head: value.headRefOid,
+    ...(number.value === null ? {} : { number: number.value }),
   });
+}
+/** A pull request's number, null when the forge did not answer one. */
+function requestNumber(value: unknown): Outcome<number | null, "malformed"> {
+  if (value === undefined) return ok(null);
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0
+    ? ok(value)
+    : failed("malformed", "Malformed pull request number");
 }
 /** The forge repository `remote` names, as `owner/name` under its host. */
 async function remoteRepository(
@@ -173,7 +183,7 @@ export async function requests(
       "--limit",
       "200",
       "--json",
-      "state,headRefOid,headRepository,headRepositoryOwner",
+      "number,state,headRefOid,headRepository,headRepositoryOwner",
     ],
     { cwd: root, timeoutSec: 30, env: gitEnvironment() },
   );
@@ -216,7 +226,7 @@ export async function requestByNumber(
       "--repo",
       repository.value,
       "--json",
-      "state,headRefOid,headRepository,headRepositoryOwner",
+      "number,state,headRefOid,headRepository,headRepositoryOwner",
     ],
     { cwd: root, timeoutSec: 30, env: gitEnvironment() },
   );
@@ -231,6 +241,100 @@ export async function requestByNumber(
   );
   if (!matched.ok) return matched;
   return ok(matched.value ? [matched.value] : []);
+}
+/** How the forge refuses a commit it does not have (HTTP 422). */
+const UNKNOWN_COMMIT = /No commit found for SHA[\s\S]*HTTP 422/;
+/** The most pull requests one commit lookup reads; a full page is incomplete. */
+const COMMIT_REQUESTS_PAGE = 100;
+/** A REST pull request record's state, as `gh pr` names it. */
+function commitRequestState(
+  value: Record<string, unknown>,
+): Outcome<WorktreeRequest["state"], "malformed"> {
+  if (value.state !== "open" && value.state !== "closed")
+    return failed("malformed", "Malformed pull request state");
+  const merged = value.merged_at;
+  if (merged !== null && typeof merged !== "string")
+    return failed("malformed", "Malformed pull request merge time");
+  if (value.state === "open") return ok("OPEN");
+  return ok(merged ? "MERGED" : "CLOSED");
+}
+/**
+ * One entry of the forge's pull requests for a commit, as `request` reads a
+ * `gh pr` record: the REST form names its state in lower case and a merge by
+ * `merged_at`. The endpoint is scoped to this repository, so a record from a
+ * fork, or from one the forge no longer has, is still this repository's
+ * pull request and counts.
+ */
+function commitRequest(value: unknown): Outcome<WorktreeRequest, "malformed"> {
+  if (!isMapping(value) || !isMapping(value.head))
+    return failed("malformed", "Malformed pull request record");
+  return commitRequestFields(value, value.head);
+}
+/** The head, state and number of a REST pull request record. */
+function commitRequestFields(
+  value: Record<string, unknown>,
+  head: Record<string, unknown>,
+): Outcome<WorktreeRequest, "malformed"> {
+  if (typeof head.sha !== "string" || !COMMIT.test(head.sha))
+    return failed("malformed", "Malformed pull request head");
+  const state = commitRequestState(value);
+  if (!state.ok) return state;
+  const number = requestNumber(value.number);
+  if (!number.ok) return number;
+  return number.value === null
+    ? failed("malformed", "Malformed pull request number")
+    : ok({ state: state.value, head: head.sha, number: number.value });
+}
+/**
+ * The pull requests of `remote`'s repository whose commits include `commit`,
+ * as `requests` reports a branch's: for a detached tree no drive record
+ * describes, which has no branch to list pull requests by. The forge answers
+ * the pull request that brought a commit into its default branch, else the
+ * open and merged ones that carry it; every one it names is evidence.
+ */
+export async function requestsForCommit(
+  root: string,
+  remote: string,
+  commit: string,
+): Promise<Outcome<WorktreeRequest[]>> {
+  if (!COMMIT.test(commit))
+    return failed("malformed", "Malformed worktree commit");
+  const repository = await remoteRepository(root, remote);
+  if (!repository.ok) return repository;
+  const host = repository.value.slice(0, repository.value.indexOf("/"));
+  const source = repository.value.slice(host.length + 1);
+  const result = await run(
+    [
+      "gh",
+      "api",
+      "--hostname",
+      host,
+      `repos/${source}/commits/${commit}/pulls?per_page=${COMMIT_REQUESTS_PAGE}`,
+    ],
+    { cwd: root, timeoutSec: 30, env: gitEnvironment() },
+  );
+  // A commit only this machine has is in no pull request.
+  if (result.code !== 0 && UNKNOWN_COMMIT.test(result.stderr)) return ok([]);
+  if (result.code !== 0)
+    return failed(
+      "forge-unavailable",
+      `Forge inventory unavailable: ${result.stderr}`,
+    );
+  let values: unknown;
+  try {
+    values = JSON.parse(result.stdout);
+  } catch (error) {
+    return failed("malformed", "Malformed pull request inventory", error);
+  }
+  if (!Array.isArray(values) || values.length >= COMMIT_REQUESTS_PAGE)
+    return failed("incomplete", "Pull request inventory is incomplete");
+  const matched: WorktreeRequest[] = [];
+  for (const value of values) {
+    const one = commitRequest(value);
+    if (!one.ok) return one;
+    matched.push(one.value);
+  }
+  return ok(matched);
 }
 export async function processHolder(path: string): Promise<boolean | null> {
   const result = await run(["lsof", "-nP", "-F", "pfn", "+D", path], {

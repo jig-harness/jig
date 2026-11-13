@@ -116,10 +116,15 @@ describe("a served queue's cost in tracker requests", () => {
     expect(first.wanted).toHaveLength(50);
     expect(first.unplaced).toEqual([]);
     const cold = fake.count();
-    // The queue in two pages, each assignment's history once, and every plan step in one lookup.
+    // The queue in two pages, each assignment's history once, and every plan step in one lookup of two pages.
     expect(
       fake.requests.filter((r) => r !== "TrackerAssignmentHistory"),
-    ).toEqual(["TrackerQueue", "TrackerQueue", "TrackerPoolIssues"]);
+    ).toEqual([
+      "TrackerQueue",
+      "TrackerQueue",
+      "TrackerQueueByKey",
+      "TrackerQueueByKey",
+    ]);
 
     const before = fake.count();
     const unchanged = await tick(tracker, cache, 2);
@@ -371,6 +376,25 @@ describe("a served queue's cost in tracker requests", () => {
   });
 });
 
+/** A tracker over `fake` whose key filters are the bare `{ team, number }` groups Linear answers with the whole team. */
+function bareGroupTracker(fake: FakeLinear): Tracker {
+  return linearTracker({
+    team: "ENG",
+    states: parseTrackerConfig({}).states,
+    transport: (query, variables, signal) =>
+      fake.transport(
+        query,
+        {
+          ...variables,
+          filter: {
+            or: [{ team: { key: { eq: "ENG" } }, number: { in: [1] } }],
+          },
+        },
+        signal,
+      ),
+  });
+}
+
 /** A team of 300 issues, ten of which a read names, the rest recently updated bystanders. */
 function crowdedTeam(): FakeLinear {
   const fake = new FakeLinear();
@@ -398,21 +422,7 @@ describe("reads by key in a team with many other issues", () => {
   it("stops when the filter matches more than the keys named", async () => {
     const fake = crowdedTeam();
     // Linear matches the whole team when a bare `{ team, number }` sits in an `or`.
-    const tracker = linearTracker({
-      team: "ENG",
-      states: parseTrackerConfig({}).states,
-      transport: (query, variables, signal) =>
-        fake.transport(
-          query,
-          {
-            ...variables,
-            filter: {
-              or: [{ team: { key: { eq: "ENG" } }, number: { in: [1] } }],
-            },
-          },
-          signal,
-        ),
-    });
+    const tracker = bareGroupTracker(fake);
     await expect(tracker.poolIssues?.(["ENG-1", "ENG-2"])).rejects.toThrow(
       /paging past its keys/,
     );
@@ -436,5 +446,169 @@ describe("reads by key in a team with many other issues", () => {
       keys: ["ENG-900"],
     });
     expect(none?.keys).toEqual([]);
+  });
+});
+
+/** An epic assigned to the person with `n` children, each blocked by a finished issue. */
+function epic(n: number): FakeLinear {
+  const fake = new FakeLinear();
+  fake.add({
+    identifier: "ENG-1000",
+    state: { name: "Done", type: "completed" },
+  });
+  fake.add({
+    identifier: "ENG-1",
+    assignee: PERSON,
+    labels: ["epic"],
+    description: "An epic with no plan.",
+  });
+  for (let c = 1; c <= n; c++)
+    fake.add({
+      identifier: `ENG-${100 + c}`,
+      parent: "ENG-1",
+      blockedBy: ["ENG-1000"],
+    });
+  return fake;
+}
+
+describe("an epic's children read together with their relations", () => {
+  it("reads the relations of every child in the batch, not one issue at a time", async () => {
+    const fake = epic(60);
+    const cache = memoryCache();
+    const read = await tick(fake.tracker(), cache, 0);
+    const ops = fake.requests.filter((r) => r !== "TrackerAssignmentHistory");
+    expect(ops.filter((r) => r === "TrackerRelations")).toHaveLength(0);
+    expect(ops.filter((r) => r === "TrackerInverseRelations")).toHaveLength(0);
+    // 60 children in three pages, then the blocker they share.
+    expect(ops.filter((r) => r === "TrackerQueueByKey")).toHaveLength(4);
+    expect(read.wanted.map((w) => w.key)).toEqual(["ENG-101"]);
+    // The next tick, with nothing changed, reads no child again.
+    const before = fake.count();
+    await tick(fake.tracker(), cache, 2);
+    expect(fake.requests.slice(before)).toEqual(["TrackerChanges"]);
+  });
+
+  it("reads an issue with more relations than a page holds on its own, and only that one", async () => {
+    const fake = epic(2);
+    for (let b = 1; b <= 21; b++)
+      fake.add({
+        identifier: `ENG-${2000 + b}`,
+        state: { name: "Done", type: "completed" },
+      });
+    fake.add({
+      identifier: "ENG-102",
+      parent: "ENG-1",
+      blockedBy: Array.from({ length: 21 }, (_, b) => `ENG-${2001 + b}`),
+    });
+    await tick(fake.tracker(), memoryCache(), 0);
+    // One request per direction, for the one issue whose relations overflowed.
+    expect(fake.requests.filter((r) => r === "TrackerRelations")).toHaveLength(
+      1,
+    );
+    expect(
+      fake.requests.filter((r) => r === "TrackerInverseRelations"),
+    ).toHaveLength(1);
+  });
+
+  it("pages an epic's open children as the tracker does", async () => {
+    const fake = epic(101);
+    await tick(fake.tracker(), memoryCache(), 0);
+    expect(
+      fake.requests.filter((r) => r === "TrackerOpenChildren"),
+    ).toHaveLength(2);
+  });
+
+  it("costs a cold tick a number of requests that grows with pages, not children", async () => {
+    const small = epic(10);
+    await tick(small.tracker(), memoryCache(), 0);
+    const large = epic(100);
+    await tick(large.tracker(), memoryCache(), 0);
+    // 100 children are four pages of the by-key read; the rest of the cold tick is the same.
+    expect(large.count() - small.count()).toBeLessThanOrEqual(4);
+  });
+});
+
+describe("queueIssuesByKey", () => {
+  it("carries each issue's relations and parent, and omits a key the list does not hold", async () => {
+    const fake = epic(3);
+    const read = await fake
+      .tracker()
+      .queueIssuesByKey?.(["ENG-101", "ENG-999"]);
+    expect([...(read?.keys() ?? [])]).toEqual(["ENG-101"]);
+    const child = read?.get("ENG-101");
+    expect(child?.relations).toEqual([
+      { type: "blocked_by", issue: "ENG-1000", state: "completed" },
+    ]);
+    expect(child?.parent?.issue.identifier).toBe("ENG-1");
+    expect(fake.requests).toEqual(["TrackerQueueByKey"]);
+  });
+
+  it("stops when the filter matches more than the keys named", async () => {
+    const fake = crowdedTeam();
+    const tracker = bareGroupTracker(fake);
+    await expect(tracker.queueIssuesByKey?.(["ENG-1"])).rejects.toThrow(
+      /paging past its keys/,
+    );
+    expect(fake.requests.length).toBeLessThanOrEqual(3);
+  });
+});
+
+describe("a nested epic's parents on the tick after a cold one", () => {
+  /** An epic assigned to the person, a sub-epic nobody holds, and `n` leaves under the sub-epic. */
+  function nested(n: number): FakeLinear {
+    const fake = new FakeLinear();
+    fake.add({
+      identifier: "ENG-1",
+      assignee: PERSON,
+      labels: ["epic"],
+      description: "The epic.",
+    });
+    fake.add({
+      identifier: "ENG-2",
+      parent: "ENG-1",
+      labels: ["epic"],
+      description: "The sub-epic.",
+    });
+    for (let c = 1; c <= n; c++)
+      fake.add({ identifier: `ENG-${10 + c}`, parent: "ENG-2" });
+    return fake;
+  }
+
+  it("reads no parent again when nothing changed", async () => {
+    const fake = nested(30);
+    const tracker = fake.tracker();
+    const cache = memoryCache();
+    const first = await tick(tracker, cache, 0);
+    expect(first.wanted).toHaveLength(1);
+    const before = fake.count();
+    const second = await tick(tracker, cache, 2);
+    expect(fake.requests.slice(before)).toEqual(["TrackerChanges"]);
+    expect(second.wanted.map((pickup) => pickup.key)).toEqual(
+      first.wanted.map((pickup) => pickup.key),
+    );
+    expect(second.unplaced).toEqual(first.unplaced);
+  });
+});
+
+describe("what a history read costs Linear", () => {
+  it("bounds the actor's team connection, which Linear prices per history node", async () => {
+    const fake = new FakeLinear();
+    fake.add({ identifier: "ENG-1", assignee: PERSON });
+    const queries: string[] = [];
+    const tracker = linearTracker({
+      team: "ENG",
+      states: parseTrackerConfig({}).states,
+      transport: (query, variables, signal) => {
+        queries.push(query);
+        return fake.transport(query, variables, signal);
+      },
+    });
+    const by = await tracker.assignedBy("ENG-1", PERSON);
+    expect(by.trusted).toBe(true);
+    expect(queries).toHaveLength(1);
+    // An unbounded connection is priced at Linear's default page of 50 for each of
+    // up to 100 history nodes: 6,013 points for 57 nodes, against 623 bounded.
+    expect(queries[0]).toContain("teams(first: 1, filter:");
+    expect(queries[0]).not.toMatch(/teams\((?!first:)/);
   });
 });

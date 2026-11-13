@@ -82,7 +82,7 @@ import {
 import { parseTrackerConfig } from "../../do-item/scripts/lib/tracker/config.ts";
 import { openTracker } from "../../do-item/scripts/lib/tracker/index.ts";
 import { trackerProbeable } from "./lib/tracker-probe.ts";
-import { facetFindings, reachTracker } from "./lib/tracker-fit.ts";
+import { trackerFindings, reachTracker } from "./lib/tracker-fit.ts";
 import { ghCall } from "../../../shared/proc.ts";
 import { type AuditRecord, parseRecord, RECORD_RELPATH } from "./lib/record.ts";
 import { fileFindings } from "./lib/automation-fit.ts";
@@ -1021,7 +1021,7 @@ async function trackerCheck(
     if (!trackerProbeable(trackerConfig)) return [];
     const tracker = openTracker(trackerConfig, root);
     await reachTracker(tracker);
-    return await facetFindings(tracker);
+    return await trackerFindings(tracker);
   } catch (e) {
     const reason = e instanceof Error ? e.message : String(e);
     return [

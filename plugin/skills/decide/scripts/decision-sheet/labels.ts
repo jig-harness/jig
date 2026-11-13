@@ -150,7 +150,7 @@ export const COMMENT = {
 export const SHEET_FILENAME_SUFFIX = "-decision-sheet.html";
 
 /**
- * Title prefix of every decision-sheet attachment. Replacement selects on it,
- * so a sheet attachment is recognisable without reading its content.
+ * Title prefix of every decision-sheet attachment, so a sheet attachment is
+ * recognisable without reading its content.
  */
 export const SHEET_ATTACHMENT_TITLE_PREFIX = "Decision sheet: ";

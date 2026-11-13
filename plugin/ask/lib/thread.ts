@@ -5,7 +5,7 @@
  *
  * | Entry | From | Whose record counts |
  * | --- | --- | --- |
- * | `request` | a `drive` or `hold` label event, a tracker assignment, a mailbox directive | the label event's login and time, which claim no more than that event; an assignment as the tracker reports it; a directive in this machine's mailbox |
+ * | `request` | a command label event, a tracker assignment, a mailbox directive | the label event's login and time, which claim no more than that event; an assignment as the tracker reports it; a directive in this machine's mailbox |
  * | `question` | a parked item's framed decision in the drive ledger | the ledger, read under the forge-claims rule |
  * | `answer` | an `answer <key>:` line in a pull request comment | a trusted author (`shared/trusted-authors.ts`) |
  * | `launch` | a launch claim, a follow-up marker; this machine's launch record | the earliest trusted claim on each attempt |
@@ -116,7 +116,7 @@ export function answerEntries(
 }
 
 /**
- * The `drive` and `hold` label requests: each time a label of `names` was
+ * The command label requests: each time a label of `names` was
  * set, by whom, and when it came off if it did.
  */
 export function labelRequests(

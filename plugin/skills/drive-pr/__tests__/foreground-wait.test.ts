@@ -1,4 +1,5 @@
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import { hostEnv } from "../../../../lib/test-helpers/host-env.ts";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   existsSync,
@@ -111,7 +112,7 @@ describe("foreground-wait.ts", () => {
     Bun.spawnSync([process.execPath, SCRIPT, ...args], {
       cwd,
       stderr: "pipe",
-      env: { ...process.env, ...PACING, ...env },
+      env: { ...hostEnv, ...PACING, ...env },
     });
   const run = (...args: string[]) => runWith({}, ...args);
   const out = (r: ReturnType<typeof run>) => r.stdout.toString();
@@ -231,7 +232,7 @@ describe("foreground-wait.ts", () => {
         {
           cwd,
           env: {
-            ...process.env,
+            ...hostEnv,
             ...PACING,
             PATH: `${shim}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FOREGROUND_WAIT_CANCEL_MS: "1000",
@@ -270,7 +271,7 @@ describe("foreground-wait.ts", () => {
           [process.execPath, SCRIPT, "launch", "--", ...bunCommand(busy)],
           {
             cwd,
-            env: { ...process.env, ...PACING },
+            env: { ...hostEnv, ...PACING },
           },
         ),
       );
@@ -409,7 +410,7 @@ describe("foreground-wait.ts", () => {
         {
           cwd,
           detached: true,
-          env: { ...process.env, ...PACING, ...captureEnv(ack) },
+          env: { ...hostEnv, ...PACING, ...captureEnv(ack) },
           stdout: "pipe",
           stderr: "pipe",
         },
@@ -931,7 +932,7 @@ describe("foreground-wait.ts", () => {
           {
             cwd,
             env: {
-              ...process.env,
+              ...hostEnv,
               ...PACING,
               PATH: `${shim}${delimiter}${process.env.PATH}`,
               JIG_PROCESS_REGISTRY_DIR: registry,
@@ -1020,7 +1021,7 @@ describe("foreground-wait.ts", () => {
               [process.execPath, SCRIPT, "wait", "--max-sec", "120"],
               {
                 cwd,
-                env: { ...process.env, ...PACING },
+                env: { ...hostEnv, ...PACING },
                 stdout: "pipe",
                 stderr: "pipe",
                 timeout: 3000,
@@ -1075,7 +1076,7 @@ describe("foreground-wait.ts", () => {
           {
             cwd,
             env: {
-              ...process.env,
+              ...hostEnv,
               ...PACING,
               PATH: `${shim}${delimiter}${process.env.PATH}`,
               DRIVE_PR_FOREGROUND_WAIT_TIMEOUT: timeout,
@@ -1094,7 +1095,7 @@ describe("foreground-wait.ts", () => {
           [process.execPath, SCRIPT, "wait", "--max-sec", "120"],
           {
             cwd,
-            env: { ...process.env, ...PACING },
+            env: { ...hostEnv, ...PACING },
             stdout: "pipe",
             stderr: "pipe",
             timeout: 3000,
@@ -1265,7 +1266,7 @@ describe("foreground-wait.ts", () => {
           {
             cwd,
             env: {
-              ...process.env,
+              ...hostEnv,
               ...PACING,
               PATH: `${shim}${delimiter}${process.env.PATH}`,
             },
@@ -1359,7 +1360,7 @@ describe("foreground-wait.ts", () => {
           [process.execPath, SCRIPT, "wait", "--max-sec", "120"],
           {
             cwd,
-            env: { ...process.env, ...PACING },
+            env: { ...hostEnv, ...PACING },
             stdout: "pipe",
             stderr: "pipe",
             timeout: 3000,

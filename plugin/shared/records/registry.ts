@@ -73,7 +73,7 @@ const MERGE_READY_KEY = /^merge-ready:[0-9a-f]{7,64}$/;
 /** A sent answer's key: the parked item it answers, on the pull request its comment is on. */
 const ANSWER_KEY = /^answer:\S+$/;
 
-/** A worktree's key in the Orca guard record: the SHA-256 of its path as Orca reports it. */
+/** A worktree's key in the launch guard record: the SHA-256 of its path as Orca reports it. */
 const ORCA_GUARD_KEY = /^[0-9a-f]{64}$/;
 const ORCA_GUARD_HEARTBEAT_KEY = /^heartbeat$/;
 const ORCA_GUARD_DIR = "~/.local/state/jig/orca-guard/";
@@ -427,6 +427,13 @@ const MACHINE: RecordKind[] = [
     "gc/install.ts",
     "~/.jig/jig.yaml, its gc section",
     0,
+  ),
+  plain(
+    "machine",
+    "test-fixture-membership",
+    "shared/test-fixture-registry.ts",
+    "~/.local/state/jig/test-fixtures-v1/<tree>/nodes/<node>.json and <node>.claim, scope-<hash>.json and private startup configurations",
+    1,
   ),
   plain(
     "machine",
@@ -896,6 +903,14 @@ const TRACKER: RecordKind[] = [
     owner: "skills/do-item/scripts/lib/tracker/github/related-migration.ts",
     at: "a legacy comment on a GitHub issue relating it to another, read until the migration marks it superseded",
     markers: ["jig:related", "jig:related-superseded"],
+    version: 0,
+  },
+  {
+    name: "tracker-attachment",
+    medium: "tracker",
+    owner: "skills/do-item/scripts/lib/tracker/github/attachments.ts",
+    at: "a comment on a GitHub issue holding a file attached to it, the file's text or a link to a hosted copy, where GitHub Issues has no file upload",
+    markers: ["jig:attachment"],
     version: 0,
   },
   {

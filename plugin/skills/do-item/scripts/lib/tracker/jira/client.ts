@@ -32,6 +32,7 @@ import {
   optStr,
   parseIssue,
   record,
+  stateInputOf,
   str,
 } from "./read.ts";
 
@@ -112,6 +113,12 @@ export interface Client {
     signal?: AbortSignal,
     fields?: ReadonlyArray<string>,
   ): Promise<JiraIssue[]>;
+  /**
+   * How many issues a JQL query selects that the model reads as open, from
+   * each issue's status, type and resolution alone: no field or facet is
+   * resolved and no issue parsed. An unreadable status throws.
+   */
+  countOpen(jql: string, where: string, signal?: AbortSignal): Promise<number>;
   /** The issue's children: its sub-tasks, or an Epic's issues. */
   children(
     key: string,
@@ -608,6 +615,27 @@ export function jiraClient(opts: ClientOptions): Client {
       return (await searchPages(transport, jql, read, where, signal)).map((i) =>
         parseIssue(i, site, extra, facet),
       );
+    },
+
+    async countOpen(jql, where, signal) {
+      if (signal?.aborted === true) throw abortedError(signal);
+      const authenticated = myself();
+      await (signal === undefined
+        ? authenticated
+        : until(authenticated, signal));
+      const read = await searchPages(
+        transport,
+        jql,
+        ["status", "issuetype", "resolution"],
+        where,
+        signal,
+      );
+      return read.filter(
+        (i) =>
+          !["completed", "canceled", "duplicate"].includes(
+            model.read(stateInputOf(i)).state.type,
+          ),
+      ).length;
     },
 
     children(key, open = false, signal) {

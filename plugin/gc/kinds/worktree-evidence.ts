@@ -6,6 +6,8 @@ export type { IgnoredContent };
 export interface WorktreeRequest {
   state: "OPEN" | "MERGED" | "CLOSED";
   head: string;
+  /** The pull request's number, when the forge answered one. */
+  number?: number;
 }
 export interface WorktreeEvidence {
   dirty: boolean;

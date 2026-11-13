@@ -60,6 +60,10 @@ export interface JiraRequest {
   body?: unknown;
   /** A read-only POST, such as search/jql; GETs are reads by definition. */
   idempotent?: boolean;
+  /** A multipart form sent instead of `body`: a file upload, which Jira takes only with its no-check header. */
+  form?: FormData;
+  /** Resolve to the answer's body as bytes rather than JSON: a file's content. */
+  bytes?: boolean;
 }
 
 /**
@@ -192,10 +196,9 @@ export function httpFailure(
   const message = `Jira API HTTP ${status} on ${what}: ${said === "" ? text.slice(0, 300) : said}`;
   const refused = status === 401 || status === 403;
   // Atlassian's gateway says only "scope does not match" when a token lacks
-  // a scope, and the profile read is the first request every client sends.
-  const scopes =
-    refused &&
-    (what === "GET myself" || /scope does not match/i.test(`${said} ${text}`));
+  // a scope; a dead or invalid token is refused without those words, even on
+  // the profile read every client sends first.
+  const scopes = refused && /scope does not match/i.test(`${said} ${text}`);
   return new JiraApiError(
     refused
       ? `${message}; ${JIRA_CREDENTIAL_HELP}${scopes ? ` ${JIRA_ACCOUNT_SCOPE_HELP}` : ""}`
@@ -228,10 +231,14 @@ function requestInit(
     redirect: "manual",
     signal: bound,
   };
-  if (request.body !== undefined) {
+  if (request.form !== undefined) {
+    headers["X-Atlassian-Token"] = "no-check";
+    init.body = request.form;
+  } else if (request.body !== undefined) {
     headers["Content-Type"] = "application/json";
     init.body = JSON.stringify(request.body);
   }
+  if (request.bytes === true) headers.Accept = "*/*";
   return init;
 }
 
@@ -262,6 +269,23 @@ async function bodyText(
     if (!res.ok) return "";
     throw new JiraApiError(
       `Jira answer lost while reading the body on ${what}: ${err instanceof Error ? err.message : String(err)}`,
+      { unavailable: true, answerLost: true, status: res.status },
+    );
+  }
+}
+
+/** A successful answer's body as bytes; one lost while reading fails the read. */
+async function fileBytes(
+  res: Response,
+  signal: AbortSignal | undefined,
+  what: string,
+): Promise<Uint8Array> {
+  try {
+    return new Uint8Array(await res.arrayBuffer());
+  } catch (err) {
+    if (cancelled(signal)) throw abortedError(signal);
+    throw new JiraApiError(
+      `Jira answer lost while reading the file on ${what}: ${err instanceof Error ? err.message : String(err)}`,
       { unavailable: true, answerLost: true, status: res.status },
     );
   }
@@ -416,6 +440,10 @@ export function httpTransport(
       if (cancelled(signal)) throw abortedError(signal);
       throw err;
     });
+    if (request.bytes === true && res.ok) {
+      answered = true;
+      return fileBytes(res, bound, what);
+    }
     const text = await bodyText(res, bound, what);
     if (res.status === 429 && governor !== undefined) {
       const until = limitedUntil(Date.now(), res.headers);

@@ -1,6 +1,6 @@
 // Per-test-process temp-dir scope: gives every test process its own subtree of
 // the system temp dir and removes it when the process exits, so scratch
-// directories a suite never cleans up cannot accumulate on a shared host.
+// directories a suite never cleans up are removed after normal teardown.
 //
 // The failure this exists to stop: a shared build host's `/tmp` was a tmpfs
 // with a fixed inode table that reached 100% while the disk still reported
@@ -28,11 +28,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sharedGcLock } from "../plugin/shared/gc-lock.ts";
 import { writeScratchOwner } from "../plugin/shared/scratch-owner.ts";
+import { trackFixtureScope } from "./test-fixture-tracking.ts";
 
 /**
- * Scratch collection is report-only, so a home the admission store cannot be
- * created in (a read-only container or sandbox home) costs no safety: the
- * owner record still marks the scope, and no collector removes it. Every
+ * A scope without durable fixture membership remains report-only, so a home
+ * the admission store cannot be created in (a read-only container or sandbox
+ * home) costs no safety. Its owner record alone never permits collection. Every
  * other admission failure, a collection in progress above all, still refuses.
  */
 function scratchAdmission(): () => void {
@@ -59,6 +60,8 @@ export const TEST_TMPDIR_SYSTEM_ENV = "JIG_TEST_TMPDIR_SYSTEM";
 const TMPDIR_VARS = ["TMPDIR", "TMP", "TEMP"] as const;
 
 export interface TestTmpdirOptions {
+  /** Caller-owned first preload, before any fixture, environment change or earlier hook. */
+  fixtureStartup?: boolean;
   /** Directory-name prefix of the scoped root; a host sweep can reap by it. */
   prefix?: string;
   /** Env var publishing the scoped root. */
@@ -145,6 +148,7 @@ export function scopeTestTmpdir(
     root = mkdtempSync(join(systemTmpdir, prefix));
     try {
       writeScratchOwner(root);
+      trackFixtureScope(root, options.fixtureStartup);
     } catch (error) {
       rmSync(root, { recursive: true, force: true });
       throw error;

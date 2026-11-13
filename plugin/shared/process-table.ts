@@ -1,6 +1,7 @@
 /** One bounded, platform-native snapshot for identity and descendant checks. */
 import { spawn } from "node:child_process";
 import { swallow } from "./errors.ts";
+import { fixtureObserver } from "./fixture-observer.ts";
 
 export interface ProcessRow {
   pid: number;
@@ -113,11 +114,13 @@ export async function processTable(
   // this very process table to end a Windows child tree. Its direct, bounded
   // native probe has no descendants and cannot recursively enumerate itself.
   return new Promise((resolve) => {
-    const child = spawn(argv[0] as string, argv.slice(1), {
-      stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env, LC_ALL: "C" },
-      windowsHide: true,
-    });
+    const child = fixtureObserver(() =>
+      spawn(argv[0] as string, argv.slice(1), {
+        stdio: ["ignore", "pipe", "pipe"],
+        env: { ...process.env, LC_ALL: "C" },
+        windowsHide: true,
+      }),
+    );
     let output = "";
     let stderrTail = "";
     let done = false;

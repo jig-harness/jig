@@ -12,6 +12,10 @@
  * on these reads would otherwise report a partial read as an improvement.
  */
 
+import type { StoreHealth } from "./unavailable.ts";
+import type { TrackerAttachments } from "./attachment.ts";
+import type { PoolScopeCounts } from "./pool-counts.ts";
+
 /**
  * The workflow states the skills reason about, by role rather than by the
  * tracker's own name. `issue_tracker.states` maps each to the tracker's name.
@@ -498,7 +502,7 @@ export interface FacetStoreReport {
    * A configured native or field store: whether it resolves with the access
    * its own reads and writes use. A failed store fails its reads and writes.
    */
-  health?: { status: "ok" } | { status: "failed"; error: string };
+  health?: StoreHealth;
   /** What detection saw for a facet whose store is not named; it chooses nothing. */
   detection?: FacetDetection;
   /** The configuration line that names the store in force, for a facet that does not name one. */
@@ -671,9 +675,10 @@ export interface TrackerLabel {
 
 /**
  * One tracker as the skills use it. "This team" below is where the
- * configured issues live: a Linear team, or one GitHub repository.
+ * configured issues live: a Linear team, or one GitHub repository. Its
+ * attachment operations are in `attachment.ts`.
  */
-export interface Tracker {
+export interface Tracker extends TrackerAttachments {
   /** The adapter name, as `issue_tracker.adapter` spells it. */
   readonly adapter: string;
   /**
@@ -771,6 +776,7 @@ export interface Tracker {
   issueComments(key: string): Promise<IssueComments>;
   /** Delete a comment of the issue by its id (`CommentFact.id`). */
   deleteComment(key: string, id: string): Promise<void>;
+
   /**
    * The issues carrying `label`, or (when given) in `project`: the union, one
    * population. Throws when the label or project does not resolve to exactly
@@ -801,24 +807,22 @@ export interface Tracker {
   openChildren(key: string): Promise<PoolIssue[]>;
   /** One issue in pool form, whatever its state; `null` when it does not exist. */
   poolIssue(key: string, signal?: AbortSignal): Promise<PoolIssue | null>;
-  /**
-   * Several issues in pool form, in as few requests as the tracker allows;
-   * every key is in the answer, `null` for one that does not exist. Optional:
-   * `poolIssuesOf` reads one at a time where an adapter has none.
-   */
+  /** Several issues in pool form in few requests; every key is answered, `null` for one that does not exist. Optional (`poolIssuesOf` reads singly). */
   poolIssues?(
     keys: ReadonlyArray<string>,
     signal?: AbortSignal,
   ): Promise<Map<string, PoolIssue | null>>;
-  /**
-   * `assignedIssues` with each issue's relations and parent, in one paged
-   * request. Optional: the served walk reads them one by one without it.
-   */
+  /** `assignedIssues` with each issue's relations and parent in one paged request. Optional (the served walk reads them singly without it). */
   queueIssues?(
     identity: string,
     states: ReadonlyArray<CanonicalState>,
     options?: FacetReadOptions,
   ): Promise<QueueIssue[]>;
+  /** `poolIssues` with each issue's relations and parent; a key the tracker did not hold is absent. Optional. */
+  queueIssuesByKey?(
+    keys: ReadonlyArray<string>,
+    options?: FacetReadOptions,
+  ): Promise<Map<string, QueueIssue>>;
   /**
    * Whether any issue a served reading depended on changed since a time, in
    * one request (the tracker change probe). Optional: without it every
@@ -885,6 +889,8 @@ export interface Tracker {
    * between two stores reads each issue through a tracker of each.
    */
   openPopulation(options?: FacetReadOptions): Promise<PoolIssue[]>;
+  /** Optional comparison of open counts before and after the pool scope, without reading issues. */
+  poolScopeCounts?(signal?: AbortSignal): Promise<PoolScopeCounts>;
 
   // ── Facets ──
   /**
