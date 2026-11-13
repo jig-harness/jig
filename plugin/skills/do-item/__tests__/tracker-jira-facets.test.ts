@@ -10,6 +10,7 @@ import {
 } from "../scripts/lib/tracker/facets/config.ts";
 import { checkJiraFacets } from "../scripts/lib/tracker/jira/facets.ts";
 import { TrackerRequestError } from "../scripts/lib/tracker/port.ts";
+import { httpFailure } from "../scripts/lib/tracker/jira/transport.ts";
 import { JIG_TAXONOMY } from "./github-fixtures.ts";
 import {
   type Call,
@@ -64,10 +65,19 @@ const SIZE_OPTIONS = ["XS", "S", "M", "L", "XL"].map((value, i) => ({
 
 /** A create screen holding the Size field with its options. */
 const SCREEN = {
-  fields: [{ fieldId: "customfield_10050", allowedValues: SIZE_OPTIONS }],
+  fields: [
+    { fieldId: "customfield_10050", allowedValues: SIZE_OPTIONS },
+    {
+      fieldId: "priority",
+      allowedValues: ["Highest", "High", "Medium", "Low"].map((name, i) => ({
+        id: String(i + 1),
+        name,
+      })),
+    },
+  ],
   startAt: 0,
   maxResults: 100,
-  total: 1,
+  isLast: true,
 };
 
 const PRIORITIES = {
@@ -551,7 +561,7 @@ describe("Jira: a custom field named by name or id", () => {
       (await healthy.facetStores()).facets.map((f) => [f.facet, f.health]),
     ).toEqual([
       ["type", { status: "ok" }],
-      ["priority", undefined],
+      ["priority", { status: "ok" }],
       ["size", { status: "ok" }],
     ]);
     const broken = jira(routes(SITE), {
@@ -594,8 +604,158 @@ describe("Jira: a custom field named by name or id", () => {
       labels: ["docs", "large"],
     });
     expect(
-      (await t.facetStores()).facets.every((f) => f.health === undefined),
+      (await t.facetStores()).facets
+        .filter((f) => f.facet !== "priority")
+        .every((f) => f.health === undefined),
     ).toBe(true);
+  });
+});
+
+describe("Jira: a native priority store", () => {
+  const scopeRefused = () =>
+    httpFailure(
+      401,
+      new Headers(),
+      '{"code":401,"message":"Unauthorized; scope does not match"}',
+      "GET priority/search",
+    );
+  const LIST = PRIORITIES.values;
+  const health = async (table: Record<string, unknown>, overlay = STORES) =>
+    (await jira(routes({ ...SITE, ...table }), overlay).t.facetStores()).facets
+      .filter((f) => f.facet === "priority")
+      .map((f) => f.health);
+
+  it("reads the priorities from GET priority where priority/search is refused for its scope", async () => {
+    const { t, calls } = jira(
+      routes({
+        ...SITE,
+        "GET priority/search": scopeRefused(),
+        "GET priority": LIST,
+        "POST issue": { id: "1", key: "ENG-1" },
+        "GET issue/ENG-1": issue({ key: "ENG-1" }),
+        "PUT issue/ENG-1": null,
+      }),
+      STORES,
+    );
+    await t.createIssue({
+      title: "T",
+      description: "",
+      labels: [],
+      type: "bug",
+      priority: 3,
+      size: "medium",
+    });
+    expect(filed(calls).priority).toEqual({ id: "3" });
+    await t.updateIssue("ENG-1", { priority: 1 });
+    expect(calls.at(-1)?.body).toEqual({ fields: { priority: { id: "1" } } });
+  });
+
+  it("does not hide a refusal of the fallback behind the first", async () => {
+    const { t } = jira(
+      routes({
+        ...SITE,
+        "GET priority/search": scopeRefused(),
+        "GET priority": httpFailure(401, new Headers(), "no", "GET priority"),
+      }),
+      STORES,
+    );
+    const err = await t
+      .createIssue({
+        title: "T",
+        description: "",
+        labels: [],
+        type: "bug",
+        priority: 3,
+        size: "medium",
+      })
+      .catch((e: unknown) => e);
+    expect(String(err)).toContain("on GET priority:");
+  });
+
+  it("reports the store healthy when search is refused and the list answers", async () => {
+    expect(
+      await health({
+        "GET priority/search": scopeRefused(),
+        "GET priority": LIST,
+      }),
+    ).toEqual([{ status: "ok" }]);
+  });
+
+  it("reports a priority name the site does not have, naming it", async () => {
+    const [h] = await health({
+      "GET priority/search": { ...PRIORITIES, values: LIST.slice(1) },
+    });
+    expect(h).toMatchObject({ status: "failed" });
+    expect(JSON.stringify(h)).toContain("priority 'Highest'");
+  });
+
+  it("reports a create screen without the priority field, naming the screen of the issue type a native type files", async () => {
+    const [h] = await health({
+      "GET issue/createmeta/ENG/issuetypes/t1": {
+        ...SCREEN,
+        fields: SCREEN.fields.slice(0, 1),
+      },
+    });
+    expect(h).toMatchObject({ status: "failed" });
+    expect(JSON.stringify(h)).toContain(
+      "priority field is not on the create screen of Bug",
+    );
+  });
+
+  it("asks priority/search once after the gateway refuses it", async () => {
+    const { t, calls } = jira(
+      routes({
+        ...SITE,
+        "GET priority/search": scopeRefused(),
+        "GET priority": LIST,
+        "GET issue/ENG-1": issue({ key: "ENG-1" }),
+        "PUT issue/ENG-1": null,
+      }),
+      STORES,
+    );
+    await t.updateIssue("ENG-1", { priority: 1 });
+    await t.updateIssue("ENG-1", { priority: 2 });
+    expect(calls.filter((c) => c.route === "GET priority/search")).toHaveLength(
+      1,
+    );
+  });
+
+  it("reports an issue_type the project lacks", async () => {
+    const [h] = await health(
+      {},
+      {
+        ...STORES,
+        issue_tracker: {
+          ...STORES.issue_tracker,
+          jira: { issue_type: "Chore" },
+        },
+      },
+    );
+    expect(h).toMatchObject({ status: "failed" });
+    expect(JSON.stringify(h)).toContain("'Chore' is no issue type of ENG");
+  });
+
+  it("reports a priority the create screen does not allow", async () => {
+    const narrow = {
+      ...SCREEN,
+      fields: [
+        SCREEN.fields[0],
+        {
+          fieldId: "priority",
+          allowedValues: [{ id: "2", name: "High" }],
+        },
+      ],
+    };
+    const [h] = await health({
+      "GET issue/createmeta/ENG/issuetypes/t1": narrow,
+      "GET issue/createmeta/ENG/issuetypes/t2": narrow,
+      "GET issue/createmeta/ENG/issuetypes/t3": narrow,
+      "GET issue/createmeta/ENG/issuetypes/t4": narrow,
+    });
+    expect(h).toMatchObject({ status: "failed" });
+    expect(JSON.stringify(h)).toContain(
+      "priority 'Highest' is not among the values",
+    );
   });
 });
 

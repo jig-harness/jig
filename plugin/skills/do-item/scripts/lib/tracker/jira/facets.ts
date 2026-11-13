@@ -41,7 +41,12 @@ import {
   type NewIssue,
   TrackerRequestError,
 } from "../port.ts";
-import type { Client, FieldMeta, IssueTypeMeta } from "./client.ts";
+import type {
+  Client,
+  FieldMeta,
+  IssueTypeMeta,
+  PriorityMeta,
+} from "./client.ts";
 import type { JiraIssue } from "./read.ts";
 
 /** A field of the site, as `GET field` lists it. */
@@ -489,6 +494,76 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
     }
   }
 
+  /** Each priority name is one of the site's priorities, exactly once. */
+  function checkPriorityNames(names: string[], site: PriorityMeta[]) {
+    for (const name of names) {
+      const matches = site.filter((p) => same(p.name, name)).length;
+      if (matches !== 1)
+        throw new TrackerRequestError(
+          "unresolved",
+          `priority '${name}' (issue_tracker.jira.priorities) matches ${matches} of the site's priorities (${site.map((p) => p.name).join(", ") || "none"}), expected exactly 1`,
+        );
+    }
+  }
+
+  /** A create screen has the priority field, and every name among its values. */
+  function checkPriorityScreen(
+    names: string[],
+    found: { screen: FieldMeta; what: string },
+  ) {
+    if (!found.screen.has("priority"))
+      throw new TrackerRequestError(
+        "unresolved",
+        `the priority field is not on ${found.what}, so a priority cannot be set when an issue is filed; add it to the screen, or keep priority in labels (store: label)`,
+      );
+    const allowed = found.screen.get("priority") ?? null;
+    const missing = names.find((n) => !allowed?.some((a) => same(a, n)));
+    if (allowed !== null && missing !== undefined)
+      throw new TrackerRequestError(
+        "unresolved",
+        `priority '${missing}' is not among the values of the priority field on ${found.what} (${allowed.join(", ") || "none"}); name another in issue_tracker.jira.priorities`,
+      );
+  }
+
+  /** The issue types a filing uses: the configured ones, and those a native type is kept as. */
+  async function filedTypes(signal?: AbortSignal): Promise<string[]> {
+    const names = [settings.issueType];
+    if (settings.subtaskType !== null) names.push(settings.subtaskType);
+    for (const value of type?.values ?? []) {
+      const kept = await issueTypeOf(value, signal).catch(() => null);
+      if (kept !== null) names.push(kept.name);
+    }
+    return names.filter((n, i) => names.findIndex((m) => same(m, n)) === i);
+  }
+
+  /**
+   * A native priority store's health: each priority's name is one of the
+   * site's priorities, and the create screen of each issue type filed (see
+   * `filedTypes`) has the priority field with each name among its values.
+   */
+  async function priorityHealth(signal?: AbortSignal) {
+    try {
+      const names = [1, 2, 3, 4].flatMap((n) => {
+        const name = client.model.priorityName(n);
+        return name === null ? [] : [name];
+      });
+      checkPriorityNames(names, await client.priorities(signal));
+      for (const issueType of await filedTypes(signal)) {
+        refuseStopped(signal);
+        const found = await createScreen(issueType, signal)();
+        if (found === null)
+          throw new TrackerRequestError(
+            "unresolved",
+            `'${issueType}' is no issue type of ${project}, so a priority cannot be set when one is filed`,
+          );
+        checkPriorityScreen(names, found);
+      }
+      return { status: "ok" as const };
+    } catch (err) {
+      return failedHealth(err);
+    }
+  }
+
   return {
     own,
     read(issue) {
@@ -571,6 +646,8 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
       const out: CoreFacetReport["facets"] = {};
       for (const s of [...(type === null ? [] : [type]), ...fields])
         out[s.facet] = { health: await health(s, signal) };
+      if (facets.priority.store === "native")
+        out.priority = { health: await priorityHealth(signal) };
       return {
         facets: out,
         discovery: {
