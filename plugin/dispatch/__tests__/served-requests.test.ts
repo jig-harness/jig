@@ -589,3 +589,26 @@ describe("a nested epic's parents on the tick after a cold one", () => {
     expect(second.unplaced).toEqual(first.unplaced);
   });
 });
+
+describe("what a history read costs Linear", () => {
+  it("bounds the actor's team connection, which Linear prices per history node", async () => {
+    const fake = new FakeLinear();
+    fake.add({ identifier: "ENG-1", assignee: PERSON });
+    const queries: string[] = [];
+    const tracker = linearTracker({
+      team: "ENG",
+      states: parseTrackerConfig({}).states,
+      transport: (query, variables, signal) => {
+        queries.push(query);
+        return fake.transport(query, variables, signal);
+      },
+    });
+    const by = await tracker.assignedBy("ENG-1", PERSON);
+    expect(by.trusted).toBe(true);
+    expect(queries).toHaveLength(1);
+    // An unbounded connection is priced at Linear's default page of 50 for each of
+    // up to 100 history nodes: 6,013 points for 57 nodes, against 623 bounded.
+    expect(queries[0]).toContain("teams(first: 1, filter:");
+    expect(queries[0]).not.toMatch(/teams\((?!first:)/);
+  });
+});
