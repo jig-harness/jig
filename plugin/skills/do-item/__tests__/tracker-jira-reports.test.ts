@@ -802,6 +802,7 @@ describe("Jira adapter: assignments", () => {
       states: ["todo"],
       followupCommand: null,
       stalledAfterMs: 1_800_000,
+      stalledScope: "claimed" as const,
       blockedAfterMs: 1_800_000,
       driveRoundsFlat: 3,
       pickupWithinMs: 7_200_000,
