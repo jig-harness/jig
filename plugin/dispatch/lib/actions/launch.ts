@@ -157,6 +157,27 @@ export function timeLeftMs(state: ApplyState): number | null {
   return allowed - (Date.now() - state.startedAt);
 }
 
+/** The runtime-timeout calls a launch needs before it: the repository lookup and the identity check after the open, beside its admission's identity checks. The open itself runs on the workspace timeout. */
+const PREPARATION_CALLS = 2;
+
+/** The identity checks admission may make: one per account, since each failed check moves on to the next. */
+function admissionChecks(state: ApplyState): number {
+  return Math.max(1, state.machine.accounts.length);
+}
+
+/** What the tick has left for reads that still leaves a runtime launch its preparation and its room; `null` for a tick that keeps no start. */
+export function readRoomMs(state: ApplyState): number | null {
+  const left = timeLeftMs(state);
+  return left === null
+    ? null
+    : left -
+        settleMs(
+          state.machine.runtimeTimeoutMs,
+          admissionChecks(state) + PREPARATION_CALLS + LAUNCH_CALLS,
+        ) -
+        settleMs(state.machine.workspaceTimeoutMs);
+}
+
 /**
  * Why the tick cannot settle a runtime launch now; `null` when it can. The
  * launch is admitted on its settlement bound, not its timeout, and the

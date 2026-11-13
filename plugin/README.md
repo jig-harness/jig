@@ -1369,7 +1369,7 @@ in from a guess. Nothing on the machine is written but the forge's response
 cache that every drive shares (`~/.cache/jig/gh-cache/`).
 
 **`--thread`** adds the address's correspondence, each entry one record
-that already exists: a `request` (a `drive` or `hold` dispatch label, shown
+that already exists: a `request` (a `drive`, `rearm` or `hold` dispatch label, shown
 with who set it, when, and when it came off; a tracker assignment the tick
 accepts; a mailbox directive on this machine), a `question` (a parked
 decision in the drive ledger), an `answer` (an `answer <key>:` line from an
@@ -2096,6 +2096,13 @@ them together.
   [`agents/review-arbiter.md`](agents/review-arbiter.md) as its
   instructions, or define the arbiter once as a Codex custom agent from that
   file.
+- **A drive pass waits on a long step through Codex's own command session.**
+  Codex's default Linux sandbox ends the processes a tool call started when
+  the call returns, so drive-pr's foreground wait, which starts a step in one
+  call and waits on it in later ones, refuses under Codex as a conservative
+  policy and names the fallback: run the step
+  through `exec_command` and poll that session with `write_stdin`
+  ([drive-pr § Driver pass](skills/drive-pr/SKILL.md#driver-pass-you-are-headless-and-one-shot)).
 - **The drive has a pass command for each.** Claude Code's
   (`claude -p "/jig:drive-pr <PR>"`) is the default; Codex's
   (`codex exec "Use the jig:drive-pr skill: /jig:drive-pr <PR>"`, with

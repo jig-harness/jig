@@ -24,7 +24,9 @@ import {
   labelPage,
   priorityOf,
   stateOf,
+  assertMutationOk,
 } from "./linear-shapes.ts";
+import { linearAttachments, type LinearFiles } from "./linear-attachments.ts";
 import { cancellableRequest } from "./cancellation.ts";
 import { commentFacts, trustedUser } from "./linear-comments.ts";
 import { pager } from "./graphql.ts";
@@ -209,18 +211,6 @@ const COMMENT_MUTATION = `
 mutation TrackerComment($issueId: String!, $body: String!) {
   commentCreate(input: { issueId: $issueId, body: $body }) { success }
 }`;
-
-/**
- * Linear reports `success: false` without a GraphQL error, so an unchecked
- * payload would report a write that did not happen.
- */
-function assertMutationOk(payload: unknown, what: string): void {
-  if (!isRecord(payload) || payload.success !== true)
-    throw new LinearApiError(
-      `Linear reported that ${what} did not succeed; nothing was written`,
-      200,
-    );
-}
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -683,6 +673,7 @@ export interface LinearTrackerOptions {
   states: StateNames;
   transport: LinearTransport;
   facets?: lf.Facets; // default: every facet at the adapter's default
+  files?: LinearFiles; // default: Linear's file store with the environment's key
 }
 
 /** The Linear implementation of the tracker port. */
@@ -795,6 +786,12 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
     async reach(signal) {
       await teamId(signal);
     },
+
+    ...linearAttachments(
+      transport,
+      opts.files,
+      async (key, signal) => (await issueIdAndTeam(key, signal)).id,
+    ),
 
     async getIssue(key) {
       let data: unknown;

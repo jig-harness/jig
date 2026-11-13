@@ -33,6 +33,13 @@
  * `launch` returns once the runner has started the command, so a later
  * cancellation of the runner's tree reaches it (lib/foreground-start.ts).
  *
+ * NOT UNDER CODEX. Codex's default Linux sandbox runs a tool call in a PID
+ * namespace of its own and ends the call's processes, even a `setsid` one,
+ * when it returns. The sandbox can be bypassed or share the caller's
+ * namespace, and a runner's survival cannot be verified from inside it, so as
+ * a conservative policy `launch` refuses (exit 4) before it writes anything,
+ * naming Codex's own long-running command session as the way to run the step.
+ *
  * STATE. Every launch owns one generation directory,
  * `.context/foreground-wait/gen-<n>/` (gitignored), holding that launch's log,
  * pids and result. The directory is the launch claim: `mkdir` is atomic, so of
@@ -47,7 +54,9 @@
  * status and signal); 20 still running — call `wait` again, never `launch`;
  * 21 nothing of the launch is alive and no result was published; 2 usage / no
  * launch on record. `launch` exits 3 while an earlier launch is running or its tree is unresolved, so a
- * second copy of a push can never start beside the first.
+ * second copy of a push can never start beside the first, and 4 under Codex
+ * (above). A `wait` that exits 21 says the runner was lost and shows at least
+ * the log's last 4 KiB, repeating what an earlier `wait` already relayed.
  *
  * LIVENESS is the live (non-zombie) process tree under the launch's recorded
  * pids, read from the native process table, never bare pid existence: an unreaped zombie answers
@@ -83,21 +92,22 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
   appendFileSync,
-  closeSync,
   existsSync,
   mkdirSync,
-  openSync,
   readdirSync,
   readFileSync,
-  readSync,
   renameSync,
   rmSync,
   statSync,
   writeFileSync,
-  writeSync,
 } from "node:fs";
 import { join, isAbsolute } from "node:path";
 import { testPacing } from "./lib/cli.ts";
+import {
+  refuseUnderCodex,
+  relayLog,
+  reportLost,
+} from "./lib/foreground-log.ts";
 import { readTimeoutEnv } from "./lib/proc.ts";
 import { processTable } from "../../../shared/process-table.ts";
 import {
@@ -119,12 +129,6 @@ import {
 } from "./lib/process-witness.ts";
 
 const ROOT = join(process.cwd(), ".context", "foreground-wait");
-/** Most log bytes one `wait` relays; older unseen output is summarised. */
-const LOG_CAP_BYTES = 256 * 1024;
-/** How long a relayed write may make no progress before the relay gives up. */
-const STDOUT_STALL_MS = 30_000;
-/** Total time one relayed write may take, however steadily it progresses. */
-const STDOUT_RELAY_MAX_MS = 60_000;
 /**
  * Grace before force termination: POSIX first sends SIGTERM; Windows has no
  * generic cooperative CLI signal and gives the command time to exit. This,
@@ -979,79 +983,6 @@ async function run(
   });
 }
 
-/** Relay the log bytes not yet shown, bounded, advancing a per-launch cursor. */
-function relayLog(dir: string): void {
-  if (!existsSync(at(dir, "log"))) return;
-  const size = statSync(at(dir, "log")).size;
-  const seen = Number.parseInt(
-    existsSync(at(dir, "log.cursor"))
-      ? readFileSync(at(dir, "log.cursor"), "utf8")
-      : "0",
-    10,
-  );
-  let start = Number.isInteger(seen) && seen >= 0 && seen <= size ? seen : 0;
-  if (size - start > LOG_CAP_BYTES) {
-    const omitted = size - LOG_CAP_BYTES - start;
-    console.log(`[foreground-wait: ${omitted} earlier log bytes omitted]`);
-    start = size - LOG_CAP_BYTES;
-  }
-  const buf = Buffer.alloc(size - start);
-  const fd = openSync(at(dir, "log"), "r");
-  let got = 0;
-  try {
-    while (got < buf.length) {
-      const n = readSync(fd, buf, got, buf.length - got, start + got);
-      if (n === 0) break;
-      got += n;
-    }
-  } finally {
-    closeSync(fd);
-  }
-  writeStdoutSync(buf.subarray(0, got));
-  writeFileSync(at(dir, "log.cursor"), `${start + got}\n`);
-}
-
-/**
- * Write all of `bytes` to stdout before returning. `process.stdout.write` on a
- * pipe is asynchronous under Bun: the `console.log` lines that follow overtook
- * its tail, and `process.exit` then dropped whatever had not drained — on Linux
- * under load, the relayed tail including the truncation marker.
- */
-function writeStdoutSync(bytes: Uint8Array): void {
-  let off = 0;
-  const startedAt = Date.now();
-  let lastProgress = startedAt;
-  while (off < bytes.length) {
-    try {
-      const n = writeSync(1, bytes, off, bytes.length - off);
-      off += n;
-      if (n > 0) lastProgress = Date.now();
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== "EAGAIN") throw err;
-      // A non-blocking stdout whose reader is behind: back off and retry. The
-      // sleep blocks the event loop, so the stall is bounded here — a reader
-      // that stays open but stops draining must fail the relay, not wedge it
-      // past the wait budget with the cancellation handlers unable to run.
-      if (Date.now() - lastProgress > STDOUT_STALL_MS) {
-        throw new Error(
-          `foreground-wait: stdout reader made no progress for ${STDOUT_STALL_MS}ms`,
-          { cause: err },
-        );
-      }
-      // Slow-but-steady progress resets the stall clock, so the relay also has
-      // an overall budget: a reader taking a few KiB per interval must not
-      // keep this synchronous loop running past the caller's wait budget.
-      if (Date.now() - startedAt > STDOUT_RELAY_MAX_MS) {
-        throw new Error(
-          `foreground-wait: stdout relay exceeded ${STDOUT_RELAY_MAX_MS}ms`,
-          { cause: err },
-        );
-      }
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
-    }
-  }
-}
-
 /** Relay the rest of the log and report a published result. */
 function finish(dir: string, result: Result | "unreadable"): number {
   relayLog(dir);
@@ -1097,8 +1028,7 @@ async function wait(maxSec: number): Promise<number> {
   // once the launch is observed not running, before calling it lost.
   const late = readResult(dir);
   if (late !== null) return finish(dir, late);
-  relayLog(dir);
-  console.log("no recorded process is alive and no result was published");
+  reportLost(dir);
   return 21;
 }
 
@@ -1107,7 +1037,7 @@ const sep = rest.indexOf("--");
 const after = sep === -1 ? [] : rest.slice(sep + 1);
 
 if (cmd === "launch") {
-  process.exit(await launch(after));
+  process.exit(refuseUnderCodex() ?? (await launch(after)));
 } else if (cmd === "_run") {
   await run(rest[0] as string, after, rest[1]);
 } else if (cmd === "wait") {

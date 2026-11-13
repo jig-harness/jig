@@ -33,6 +33,7 @@
  * `assigner.ts`.
  */
 
+import { jiraAttachments } from "./attachments.ts";
 import type {
   CanonicalState,
   IssuePatch,
@@ -442,6 +443,7 @@ export function jiraTracker(client: Client): Tracker {
     ...assignerOperations(client),
     ...stateChangeOperations(client),
     ...claimOperations(client),
+    ...jiraAttachments(transport),
 
     async filedAs(issue) {
       const parent =

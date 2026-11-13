@@ -280,8 +280,7 @@ change.
 ### 12. More tracker adapters
 
 A plan file kept in the repository, beside Linear, GitHub Issues and
-Jira. The [tracker interface](GLOSSARY.md) first gains attaching a file,
-the one operation the skills need that the interface does not have yet.
+Jira.
 
 ### 27. Work types: depth by kind of work
 
