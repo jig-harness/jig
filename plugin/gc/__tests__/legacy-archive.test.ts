@@ -189,15 +189,19 @@ describe("the one-time archive", () => {
 
   test("the deadline is checked between the chunks of one file", () => {
     const root = worktree();
-    const paths = [...PATHS, ".context/big.bin"];
     writeFileSync(
       join(root, ".context", "big.bin"),
       Buffer.alloc(300 * 1024, 7),
     );
+    // Each clock read advances 1000: the visit and the first two chunk checks
+    // pass, the third chunk's check is past the deadline. A check once per
+    // file would read all five chunks and succeed.
     let calls = 0;
     const now = spyOn(Date, "now").mockImplementation(() => 1000 * calls++);
     try {
-      expect(fingerprint(root, paths, 5000, 1 << 20)).toMatchObject({
+      expect(
+        fingerprint(root, [".context/big.bin"], 2500, 1 << 20),
+      ).toMatchObject({
         ok: false,
         failure: { code: "timed-out" },
       });
