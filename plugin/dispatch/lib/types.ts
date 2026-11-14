@@ -477,18 +477,25 @@ export interface LaunchOutcome {
   record: string | null;
   detail: string;
   /**
-   * For a follow-up that waits for its lane: what it waits on. `lane-budget`:
+   * For a follow-up held back this tick: what it waits on. `lane-budget`:
    * the tick spent `followup_opens_per_tick`; `lane-cap`: the host runs
    * `followup_concurrency` follow-ups already; `accounts`: no admitted
-   * account has a free slot.
+   * account has a free slot; `tick-deadline`: the tick has no time left for
+   * the next step; `admission`: another check refused or deferred the
+   * follow-up, with the specific reason in `detail`.
    */
   waitsOn?: LaneWait;
   /** For a launch refused because a busy checkout the runtime does not list holds its branch: that checkout, which the tick notifies a person of. */
   holder?: BusyHolder;
 }
 
-/** What a follow-up that waits for its lane waits on. */
-export type LaneWait = "lane-budget" | "lane-cap" | "accounts";
+/** What holds a follow-up back this tick; `detail` gives the specific reason. */
+export type LaneWait =
+  | "lane-budget"
+  | "lane-cap"
+  | "accounts"
+  | "tick-deadline"
+  | "admission";
 
 /** What `--apply` did with one notification. */
 export interface NotifyOutcome {

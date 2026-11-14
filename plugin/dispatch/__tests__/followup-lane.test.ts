@@ -10,13 +10,30 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { joinedWorkspace, laneCapWait } from "../lib/actions/followup-lane.ts";
-import { type ApplyState, openWithinBudget } from "../lib/actions/launch.ts";
+import {
+  type ApplyState,
+  openWithinBudget,
+  replay,
+  admitAccount,
+} from "../lib/actions/launch.ts";
+import {
+  applyFollowups,
+  type FollowupContext,
+} from "../lib/actions/followup.ts";
+import { currentMs } from "../../shared/time.ts";
 import type { ReadRecord } from "../lib/launches.ts";
 import type { SessionsReport } from "../lib/runtime/port.ts";
 import type { LineSnapshot } from "../lib/dashboard-contract.ts";
-import type { MachineConfig } from "../lib/machine-config.ts";
+import { newPreflight } from "../lib/preflight.ts";
+import type { MachineAccount, MachineConfig } from "../lib/machine-config.ts";
 import { existingStateDb } from "../lib/state.ts";
-import type { LaunchOutcome, RepoTarget } from "../lib/types.ts";
+import type {
+  Action,
+  LaunchOutcome,
+  RepoReport,
+  RepoTarget,
+} from "../lib/types.ts";
+import type { LaunchRecord } from "../lib/launches.ts";
 import type { TickReceipt } from "../receipts.ts";
 import {
   ledgerComment,
@@ -335,3 +352,117 @@ it("names the accounts for a follow-up no admitted account has a free slot for",
   expect(accounts.length).toBeGreaterThan(0);
   for (const l of accounts) expect(l.outcome).toBe("waits");
 }, 60_000);
+
+it("names an admission refusal in the receipt and dashboard queue", async () => {
+  const w = fixture();
+  queued(w, 8, 1);
+  const a = account(w, "a", "other@example.com");
+  machineFile(
+    w,
+    [{ ...a, identity: "expected@example.com" }],
+    {},
+    ["followup"],
+    {
+      followup_since: "2026-10-30T00:00:00Z",
+    },
+  );
+  const [held] = followups(await tick(w));
+  expect(held?.outcome).toBe("refused");
+  expect(held?.detail).toContain("identity check:");
+  expect(held?.waitsOn).toBe("admission");
+  expect(
+    line(w).queue.find((q) => q.target === held?.target)?.launch?.waitsOn,
+  ).toBe("admission");
+}, 60_000);
+
+it("carries a deadline wait from the receipt into the dashboard queue", async () => {
+  const w = fixture();
+  queued(w, 8, 1);
+  w.env.JIG_LAUNCHER_DEADLINE_SEC = "1";
+  const result = await w.dispatch(["--apply", "--json"]);
+  expectSpawnExit(result, 0);
+  const [held] = followups(JSON.parse(result.stdout) as TickReceipt);
+  expect(held).toMatchObject({ outcome: "waits", waitsOn: "tick-deadline" });
+  expect(
+    line(w).queue.find((q) => q.target === held?.target)?.launch?.waitsOn,
+  ).toBe("tick-deadline");
+}, 60_000);
+
+it("names the tick deadline before a follow-up, workspace open, admission probe or replay", async () => {
+  const s = state();
+  s.root = dispatchState(fixture());
+  s.startedAt = currentMs() - 24 * 3_600_000;
+  s.records = [];
+  s.table = [];
+  const action = { stage: "followup", target: "PR #7" } as Action;
+  const report = { actions: [action], launches: [] } as unknown as RepoReport;
+  await applyFollowups(s, repo, report, {} as FollowupContext);
+  expect(report.launches[0]).toMatchObject({
+    outcome: "waits",
+    waitsOn: "tick-deadline",
+  });
+  expect(await openWithinBudget(s, repo, pull, true)).toMatchObject({
+    waitsOn: "tick-deadline",
+  });
+  expect(
+    await replay(
+      s,
+      { id: "pending", account: "a" } as LaunchRecord,
+      action,
+      null,
+    ),
+  ).toMatchObject({ waitsOn: "tick-deadline" });
+  s.preflight = newPreflight({ preflight: ["tracker"] });
+  expect(await admitAccount(s, repo.slug, action)).toMatchObject({
+    outcome: { waitsOn: "tick-deadline" },
+  });
+});
+
+it("names the deadline when a later wave of admission probes cannot start", async () => {
+  const s = state();
+  s.root = dispatchState(fixture());
+  s.startedAt = currentMs();
+  s.records = [];
+  s.codexOptIn = { on: false, why: "not enabled" };
+  const accounts = Array.from(
+    { length: 6 },
+    (_, n): MachineAccount => ({
+      name: `a${n}`,
+      vendor: "claude",
+      configDir: `/tmp/a${n}`,
+      identity: `a${n}`,
+      maxPerAccount: 1,
+    }),
+  );
+  s.table = accounts.map((account) => ({
+    account,
+    held: 0,
+    wall: null,
+    wallUnrecorded: false,
+  }));
+  s.passDeadlineSec = 3600;
+  let asked = 0;
+  s.preflight = newPreflight({ preflight: ["tracker"] }, async () => {
+    if (++asked === 4) s.startedAt = currentMs() - 24 * 3_600_000;
+    return { ok: false, kind: "unreachable", reason: "tracker unavailable" };
+  });
+  s.preflight.targets.set(SLUG, {
+    slug: SLUG,
+    path: repo.path,
+    tracker: "github",
+    values: {},
+    report: {} as RepoReport,
+  });
+  const result = await admitAccount(s, SLUG, {
+    stage: "followup",
+    target: "PR #7",
+  } as Action);
+  expect(asked).toBe(4);
+  expect(result).toMatchObject({
+    outcome: {
+      outcome: "waits",
+      waitsOn: "tick-deadline",
+      detail: expect.stringContaining("tracker preflight"),
+    },
+  });
+});
