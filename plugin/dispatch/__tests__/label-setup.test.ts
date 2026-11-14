@@ -37,7 +37,13 @@ function fixture(): World {
 }
 
 const repoLabels = (w: World): string[] =>
-  JSON.parse(readFileSync(join(w.dir, "labels-repo.json"), "utf8")).sort();
+  (
+    JSON.parse(readFileSync(join(w.dir, "labels-repo.json"), "utf8")) as Array<
+      string | { name: string }
+    >
+  )
+    .map((l) => (typeof l === "string" ? l : l.name))
+    .sort();
 
 describe("jig dispatch labels", () => {
   it("creates the labels the repository lacks, with no machine file and no job", async () => {
