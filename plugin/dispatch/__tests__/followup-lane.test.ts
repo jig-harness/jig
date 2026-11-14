@@ -437,12 +437,10 @@ it("preserves an account replay blocker's queue classification", async () => {
   });
 });
 
-it("keeps a replayed follow-up out of the dashboard queue while its session is active", async () => {
-  const w = fixture();
-  queued(w, 8, 0);
+function pendingFollowupReplay(w: ReturnType<typeof fixture>, id: string) {
   w.setPrs("merged", [mergedPr(10, "merged/10", "2026-10-31T12:00:00Z")]);
   const record = earlierRecord(w, {
-    id: "20261031T120000Z-aaaaaaaa",
+    id,
     account: "a",
     action: "followup",
     pr: 10,
@@ -465,6 +463,13 @@ it("keeps a replayed follow-up out of the dashboard queue while its session is a
       }),
     ),
   ]);
+  return record;
+}
+
+it("keeps a replayed follow-up out of the dashboard queue while its session is active", async () => {
+  const w = fixture();
+  queued(w, 8, 0);
+  const record = pendingFollowupReplay(w, "20261031T120000Z-aaaaaaaa");
 
   const [replayed] = followups(await tick(w));
   expect(replayed).toMatchObject({
@@ -486,31 +491,7 @@ it("shows a held pending replay in the dashboard queue", async () => {
     ["followup"],
     { followup_since: "2026-10-30T00:00:00Z" },
   );
-  w.setPrs("merged", [mergedPr(10, "merged/10", "2026-10-31T12:00:00Z")]);
-  const record = earlierRecord(w, {
-    id: "20261031T120000Z-bbbbbbbb",
-    account: "a",
-    action: "followup",
-    pr: 10,
-    marker: 10_000,
-    attempts: [
-      {
-        at: "2026-10-31T12:00:00.000Z",
-        outcome: "lost",
-        detail: "the runtime did not answer",
-      },
-    ],
-  });
-  w.setComments(10, [
-    forgeComment(
-      record.marker ?? 0,
-      tickMarker(record.id, {
-        pr: 10,
-        writer: { host: "sha256:0123456789abcdef" },
-        host: "sha256:0123456789abcdef",
-      }),
-    ),
-  ]);
+  const record = pendingFollowupReplay(w, "20261031T120000Z-bbbbbbbb");
 
   const [held] = followups(await tick(w));
   expect(held).toMatchObject({
