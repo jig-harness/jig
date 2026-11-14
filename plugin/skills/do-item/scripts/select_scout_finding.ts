@@ -29,6 +29,7 @@ import {
   INVALID_JSON_INPUT,
 } from "../../../shared/json-input.ts";
 import { parseArgs, runEntry } from "./lib/cli.ts";
+import { currentMs, parseMs } from "../../../shared/time.ts";
 
 export interface ScoutFindingsComment {
   body: string;
@@ -84,7 +85,7 @@ function isScoutFindingsComment(body: string): boolean {
 function parseOrderingMs(c: ScoutFindingsComment): number | null {
   const raw = c.created_at ?? c.createdAt;
   if (raw === undefined) return null;
-  const ms = Date.parse(raw);
+  const ms = parseMs(raw);
   return Number.isNaN(ms) ? null : ms;
 }
 
@@ -101,7 +102,7 @@ function parseOrderingMs(c: ScoutFindingsComment): number | null {
 function parseTimestampMs(c: ScoutFindingsComment, now: number): number | null {
   const raw = c.created_at ?? c.createdAt;
   if (raw === undefined) return null;
-  const ms = Date.parse(raw);
+  const ms = parseMs(raw);
   if (Number.isNaN(ms) || ms > now) return null;
   return ms;
 }
@@ -130,7 +131,7 @@ function hashesMatch(a: string, b: string): boolean {
 export function selectScoutFinding(
   comments: readonly ScoutFindingsComment[],
   currentHash: string,
-  now: number = Date.now(),
+  now: number = currentMs(),
 ): ScoutFindingsDecision {
   const candidates = comments
     .map((c, index) => ({ c, index, orderMs: parseOrderingMs(c) }))

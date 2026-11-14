@@ -80,6 +80,7 @@ import {
   policyFrom,
   readCatalog,
 } from "./lib/policy.ts";
+import { parseMs } from "../../../shared/time.ts";
 
 /**
  * The version of both JSON documents (the proposal and the eligibility
@@ -211,7 +212,7 @@ export function compareCandidates(a: Candidate, b: Candidate): number {
   return (
     b.score - a.score ||
     priorityOrder(a.priority) - priorityOrder(b.priority) ||
-    Date.parse(a.createdAt) - Date.parse(b.createdAt) ||
+    parseMs(a.createdAt) - parseMs(b.createdAt) ||
     (a.identifier < b.identifier ? -1 : a.identifier > b.identifier ? 1 : 0)
   );
 }

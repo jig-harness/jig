@@ -23,6 +23,7 @@ import type {
 } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
 import { failureText } from "../text.ts";
 import type { FacetRecord, FacetStoreLine } from "../types.ts";
+import { currentMs } from "../../../shared/time.ts";
 
 /**
  * The most one repository's facet read may take. Detection and the store
@@ -48,7 +49,7 @@ export interface FacetBound {
  */
 export function facetBound(
   tickDeadline: number | undefined,
-  now = Date.now(),
+  now = currentMs(),
 ): FacetBound {
   const deadline = Math.min(tickDeadline ?? Infinity, now + FACET_READ_MS);
   return {
@@ -62,7 +63,7 @@ export function facetBound(
  * of what is left, ended by `bound`'s own signal too, so the assigned-item
  * read that follows keeps the other half.
  */
-export function reportBound(bound: FacetBound, now = Date.now()): FacetBound {
+export function reportBound(bound: FacetBound, now = currentMs()): FacetBound {
   const deadline = now + Math.max(0, bound.deadline - now) / 2;
   return {
     deadline,
@@ -101,7 +102,7 @@ export async function readFacetStores(
   tracker: Tracker,
   bound: FacetBound,
 ): Promise<FacetRecord> {
-  if (bound.signal.aborted || Date.now() >= bound.deadline)
+  if (bound.signal.aborted || currentMs() >= bound.deadline)
     return {
       failed:
         "not read: the tick's deadline passed before the facet read could start",
@@ -114,7 +115,7 @@ export async function readFacetStores(
     });
     return { stores: storeLines(report) };
   } catch (error) {
-    const stopped = bound.signal.aborted || Date.now() >= bound.deadline;
+    const stopped = bound.signal.aborted || currentMs() >= bound.deadline;
     return {
       failed: line(
         stopped

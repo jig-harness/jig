@@ -31,6 +31,7 @@ export type DockerRunner = (
 class DockerTimeout extends Error {}
 const operationTimeout = () => Number(process.env.DOCKER_TIMEOUT_MS) || 300000;
 const READY_TIMEOUT_MS = 60000;
+const nowMs = () => Temporal.Now.instant().epochMilliseconds;
 const CLEANUP_TIMEOUT_MS = 15000;
 // Reconciliation after an unfinished `docker run`: wait up to five steps for
 // the call to settle, then remove and list up to five times, one step apart,
@@ -146,9 +147,9 @@ export async function checkSchema(
       console.error(
         `warning: could not remove ${container}: ${error instanceof Error ? error.message : error}`,
       );
-    const deadline = Date.now() + RECONCILE_DEADLINE_MS;
+    const deadline = nowMs() + RECONCILE_DEADLINE_MS;
     const budget = () =>
-      Math.max(1, Math.min(CLEANUP_TIMEOUT_MS, deadline - Date.now()));
+      Math.max(1, Math.min(CLEANUP_TIMEOUT_MS, deadline - nowMs()));
     const remove = () =>
       docker(["rm", "-f", container], undefined, true, budget(), false);
     if (!creation || runResolved()) {
@@ -163,7 +164,7 @@ export async function checkSchema(
     await Promise.race([
       creation,
       new Promise((resolve) => {
-        timer = setTimeout(resolve, Math.min(5 * step, deadline - Date.now()));
+        timer = setTimeout(resolve, Math.min(5 * step, deadline - nowMs()));
       }),
     ]);
     clearTimeout(timer);
@@ -196,7 +197,7 @@ export async function checkSchema(
           return (
             confirmedGone ||
             attempt === RECONCILE_ATTEMPTS ||
-            Date.now() + step >= deadline
+            nowMs() + step >= deadline
           );
         },
         {
@@ -233,9 +234,9 @@ export async function checkSchema(
       "POSTGRES_DB=postgres",
       process.env.PG_IMAGE || "postgres:18",
     ]);
-    const deadline = Date.now() + READY_TIMEOUT_MS;
+    const deadline = nowMs() + READY_TIMEOUT_MS;
     const remaining = () =>
-      Math.min(operationTimeout(), Math.max(1, deadline - Date.now()));
+      Math.min(operationTimeout(), Math.max(1, deadline - nowMs()));
     try {
       await poll(
         async () => {

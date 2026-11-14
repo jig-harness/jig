@@ -15,6 +15,7 @@ import { join } from "node:path";
 import { jigHome } from "../config-layers.ts";
 import { spawnSync, withoutLeakyGitEnv } from "../guarded-git-spawn.ts";
 import { Defect, JigError } from "../errors.ts";
+import { currentMs } from "../time.ts";
 
 /** A workspace step that cannot go on; the message says why and what to do. */
 export class HerdrError extends JigError<"workspace-step-failed"> {
@@ -22,6 +23,15 @@ export class HerdrError extends JigError<"workspace-step-failed"> {
   constructor(reason: string, options?: { cause?: unknown }) {
     super("workspace-step-failed", reason, options);
   }
+}
+
+/**
+ * A failed hook's process group could not be confirmed ended, so it may still
+ * be changing the worktree: the claim that excludes another run stays, with
+ * the record of the group, until the group is ended or gone.
+ */
+export class UnendedGroupError extends HerdrError {
+  override name = "UnendedGroupError";
 }
 
 export interface RunResult {
@@ -148,7 +158,7 @@ export function budget(ctx: Context, ms: number): number {
 export function withLimit(
   ctx: Context,
   limitMs: number,
-  now: () => number = Date.now,
+  now: () => number = currentMs,
 ): Context {
   const deadline = now() + limitMs;
   const left = (ms: number): number => {

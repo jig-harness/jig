@@ -441,8 +441,14 @@ have one assignee, so they assign first and verify the assignment from history;
 when that check finds a concurrent assignee was replaced, they conditionally
 make a best-effort restoration and refuse the pickup. A tracker without either
 operation leaves the blocker for a person to assign. An assigned epic without an execution plan works one child at a time,
-none while a child of it is in progress; an epic none of whose open children
-can start reports one reason.
+none while a started child still needs an agent. A child awaiting a person
+does not occupy that slot: it is in the tracker's `ops_pending` state, or
+carries `hitl`, `hitl:*`, `manual-ops` (including their configured names) or
+`jig:hold`. Nor does a child this host's ended pickup record keeps from
+starting: its next startable sibling takes the slot, and the epic reports
+the held child and why. An epic none of whose open children can start reports one reason,
+naming a child waiting on a person when it has one. An execution plan keeps
+its own ordering rules.
 
 The Queue view names holds: an open blocker reads "waiting on #N" (with
 "picked up first" or why it was left);
@@ -471,12 +477,42 @@ Every process on the host shares each tracker credential's request budget
 While the tracker refuses the credential for its rate limit, no request
 leaves the host before the reset it named: a tick reports the tracker once
 as rate limited until then, the queue it shows is the last reading, and
-the pickups it would launch wait.
+the pickups it would launch wait. The forge is read the same way: a
+repository whose forge read is rate limited, unanswered or out of time
+does not fail the tick, and its report shows the last reading with its
+age, until the failure ledger counts `failures.notify_after` such ticks in
+a row (a rate limit before its reset is never counted). A forge or tracker
+that did not answer is asked nothing more in that tick, and the next tick
+sends it one request before it reads on
+([when an outside system refuses or does not answer](CONFIGURATION.md#when-an-outside-system-refuses-or-does-not-answer)).
+
+The [cost ledger](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) records outbound attempts per hour,
+system, hashed credential, operation and caller in the same budget database.
+The tick report shows each system's known balance, this tick's spending and
+its costliest operations. `jig budget` shows the last 24 hours grouped by
+operation and caller; use `--hours 1` through `--hours 168` to choose the
+window, or `--json` for its rows and balances. Linear complexity comes from
+`x-complexity`; GitHub query points are recorded where the answer includes
+them. Unknown costs and estimates are marked rather than presented as measured
+points. No query body, token or item content is kept.
+
+A `low-quota` need names the operations spending a quota when the last hour's
+rate would empty it before its refill. It appears once per quota and clears
+when the projection recovers. The rate estimate weights partial hourly buckets
+as if spending were uniform within them. It accounts for continuous refill
+and fixed resets; it cannot measure other applications' use of the credential.
+Ledger writes do not stop calls when storage is unavailable, so a report may
+understate spending. Rows whose hour began more than 7 days ago are removed.
+GitHub admission windows and dashboard quota displays remain planned.
 
 Before launching, the tick rechecks the item and admits an account. The
 pass runs through the account-bound wrapper under `dispatch.pickup_deadline`;
 it keeps the orchestrator's model and effort and forwards the item's route
-to its implementer. Its prompt ends by asking the session to record
+to its implementer. Like a drive's pass, and like the follow-up and
+steward passes, it runs with Claude Code's background tasks off, and its
+prompt has it keep long steps in the foreground, bound each wait on another
+agent and push committed work before a long validation step, since a
+headless pass has no next turn to receive a background result. Its prompt ends by asking the session to record
 how it ended, `jig dispatch result <record> <token> done|failed`, which
 refuses another record's token and a second answer. A completed pickup adds
 `--pr <number>` for the pull request it opened, or `--none "<reason>"` when
@@ -549,7 +585,35 @@ never held by it.
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> done|failed [--pr <number> | --none <reason>]
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> waits --until <time>
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> failed --decision <file>
+bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch report <record> <token> <file>
 ```
+
+#### The closing report
+
+Every pickup, follow-up and steward pass ends by writing a
+[closing report](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md),
+a short `closing-report/v1` record of what it concluded, in the words of
+the agent that did the work: `concluded` (at most 600 characters), the
+`suggested_next` step and who takes it (`line`, `person` with the act they
+take, or `none`), a `question` with its framed `decision` when a person
+must decide, the `cause` when the run fell short (`needs-person`,
+`refused`, `tool-failed`, `environment`, `scope`, `deadline`, `startup`,
+`usage-limit`, `crashed` or `unknown`) and up to 10 `evidence` references
+(`pr:#12`, `commit:<sha>`, `item:<key>`, `path:<path>`, `run:<CI run
+address>`), never contents. The prompt names the command,
+`jig dispatch report <record> <token> <file>`, and asks for the report as
+the pass's last act; a pickup records its result as soon as its drive is
+armed and its report at the end. The command replaces email addresses,
+account identifiers and tokens or other credential-shaped values (a
+`Bearer` value, a vendor token such as `ghp_…`, a JSON Web Token, a value
+named as a secret) with `<redacted>`, checks the record and names
+everything wrong in one refusal, so the pass can fix it and run the command
+again. It may run more than once, before or after the result: the last
+report that passes stands, and none touches the result. The launch record
+keeps the report whole; the outcome log's `ended` row keeps its fields and
+who wrote it (`by`: `agent` for a pass's own report, `none` for a run that
+left none), with `cause` and `by` as columns. A run that ends without a
+report still leaves its `Question:` line.
 
 #### Every need is a decision
 
@@ -621,7 +685,7 @@ terminal tab running the dispatcher's wrapper, as the account's vendor's
 non-interactive command (`claude -p`, `codex exec`), bound to the admitted
 account through its configuration directory, under the pass deadline, and
 with the host's own permission settings (`drive.pass_args`, and
-`drive.codex_bypass` for a Codex account; see
+`drive.codex_bypass` and `drive.codex_pass_args` for a Codex account; see
 [a host's opt-in](CONFIGURATION.md#a-hosts-opt-in-to-bypass)), never with
 one the dispatcher adds. So it starts on Orca, which cannot yet bind an
 interactive session to an account. A hidden-marker comment on the merged
@@ -681,6 +745,14 @@ host, and is notified once the record is gone (past `receipts_days`). An untagge
 question, or a failure of the run again, is notified; a follow-up is never
 run again more than once by a death and a routine question together.
 
+A follow-up pass that meets a rate limit (the forge's, or a tracker script
+that exits `5`) asks nothing and records `waits --until <time>`, the time
+the limit resets. Its marker stays until then, so no host starts the
+follow-up early; after the reset the tick releases it and a later tick
+starts the follow-up again as a first run, outside the recovery budget. The
+third wait in a row is notified as a failed follow-up that names the rate
+limit.
+
 A Claude follow-up that exits unsuccessfully within a minute without a
 result, a question or its own transcript is treated as unable to start.
 Its account stays out of admission for `wall_backoff`, and its marker is
@@ -705,7 +777,9 @@ age and whose claim it is, to mark done or delete.
 parked with a decision unanswered, carrying the drive's framed decision for
 each one; a drive stopped on an exit only a person settles, or with no exit; a
 re-arm that failed without moving its ledger, with the close-and-reopen
-recovery where the pull request is behind its branch;
+recovery where the pull request is behind its branch; a re-arm or takeover
+that `drive.ts` refused as a usage error on the ledger as it still is, with
+the drive's message, which is not launched again until the ledger moves;
 a failed follow-up, with the question its pass stopped on; a stalled pickup,
 a double claim, a session waiting past `dispatch.blocked_after`; and a
 pull request that enters Ready to merge. Each message
@@ -879,13 +953,18 @@ request. With `only_labeled`, the dispatcher reads only the pull requests
 that carry a label of the set, which includes one a drive armed by hand
 has labelled `jig:driving`; `jig:hold` keeps such a pull request out. The labels must exist first, and no writer
 creates one: `jig dispatch labels [--repo <path>] [--yes]` lists the missing
-ones, the marker labels with them, with no job installed, and with `--yes`
-names each it created and lists the rest with the command a person who may
-create labels runs; `jig install dispatch --repo <path>` does the same
+ones, the marker labels with them, and the labels of the set whose
+description is not the one this release gives them, with no job installed,
+and with `--yes` names each it created or updated (the description only: a
+color a person chose stays) and lists the rest with the command a person who
+may create or edit labels runs; `jig install dispatch --repo <path>` does the same
 beside the timer. A label write the forge refuses is reported (in the
 receipt, or on the drive's or the command's output) and fails nothing, except
 `jig dispatch marker failed`, which exits `1` when it cannot write its enabled
-label, since that label is its only record of the failure. An
+label, since that label is its only record of the failure, and
+`jig dispatch labels --yes` (with the labels phase of
+`jig install dispatch --repo <path> --yes`), which exits `1` while a label it
+needs is still missing or outdated after the write. An
 optional workflow, drive-pr's
 [`templates/github/state-labels.yml`](skills/drive-pr/templates/github/state-labels.yml),
 replaces `jig:converged` with `jig:stale` on a push to the pull request,
@@ -1309,7 +1388,8 @@ a probe run then reads nothing, and the next install removes its timer.
 dispatcher timer was installed before the probe existed gets the probe's at
 its next `jig install dispatch --yes`. `jig install dispatch
 --repo <path>` also lists the [state labels](#the-dispatcher) that
-repository turns on and lacks, and creates them with `--yes`, as
+repository turns on and lacks, and those whose description an earlier
+release wrote, and creates or updates them with `--yes`, as
 `jig dispatch labels` does with no job installed. The earlier
 `jig dispatch install [--interval 5m] [--yes] [--uninstall]` keeps working,
 and is the one form that sets an interval other than the machine file's.
@@ -1373,7 +1453,7 @@ whose configuration names the tracker.
 | --- | --- |
 | `holder` | the launch that holds the station now: its stage, its host (`this machine`, or another dispatching host as its launch claims name it), the drive's driver generation, and whether its process is alive, dead or unknown; the account, the session and the launch record where this machine's records name them; `none` when nobody holds it |
 | `state` | the station's state in its own words: for a drive, `running`, the [terminal-state](skills/drive-pr/README.md) name of its last stop (`HITL_PARKED`, `CONVERGED`, …), `not driven`, `merged` or `closed`; for a pick-up, `assigned`, `claimed`, `stalled`, `doubly claimed`, `not assigned` or `closed`; for a follow-up, `claimed`, `done`, `failed`, `not claimed` or `not merged` |
-| `waitsOn` | `none`; `waiting`, with what it waits for, when it settles by itself (a dispatcher's next tick, another driver); or `person`, with the act that settles it, one of `answer`, `re-arm`, `release the CI hold`, `merge`, `approve`, `request a review`, `update the branch`, `re-run a check`, `mark it ready`, `remove the label`, `open the pull request`, `re-run the follow-up`, `choose the session that keeps the item`, `look at the stalled pickup`, `settle the pickup's question, then return the item to the dispatch states`, `answer the waiting session`, `assign the item as someone who can write` or `authorize the account's tracker credential`; and `needAct`, what the person does as the dispatch dashboard groups it (Merge, Decide, Authorize, Reply, Do or Investigate; a park's comes from its decision class) |
+| `waitsOn` | `none`; `waiting`, with what it waits for, when it settles by itself (a dispatcher's next tick, another driver); or `person`, with the act that settles it, one of `answer`, `re-arm`, `release the CI hold`, `merge`, `approve`, `request a review`, `update the branch`, `re-run a check`, `mark it ready`, `remove the label`, `open the pull request`, `re-run the follow-up`, `choose the session that keeps the item`, `look at the stalled pickup`, `settle the pickup's question, then return the item to the dispatch states`, `pick the item up again or leave it`, `answer the waiting session`, `assign the item as someone who can write`, `authorize the account's tracker credential` or `inspect the quota spending`; and `needAct`, what the person does as the dispatch dashboard groups it (Merge, Decide, Authorize, Reply, Do or Investigate; a park's comes from its decision class) |
 | `last` | the last ended launch: its class from the [outcome log](#the-dispatcher)'s closed list and when, from this machine's outcome log or, elsewhere, from the end written on its launch claim |
 | `sources` | every record kind the answer consulted, whether it was read and why not, and how many forge and tracker calls it made |
 
@@ -2006,7 +2086,12 @@ list of scouts that run before it, not a label to a scout.
 
 **Add `.context/` to `.gitignore`.** A drive keeps working files there, at
 the root of the working tree, and refuses to push or certify a tree with
-untracked files.
+untracked files. The skills write throwaway working files under
+`.context/scratch/`, and a working directory of Jig's that nothing needs once
+the work is finished carries a `CACHEDIR.TAG` file; `jig gc` keeps anything
+else under `.context/` until it is preserved, except a drive's handoff file
+(`pr-drive-<PR>.md`), which it sets aside whole without archiving: keep nothing
+you need in it.
 
 **Continuous integration.** Without configuration a drive waits, on the final
 head, for the checks the base branch's protection requires, and every push
@@ -2112,12 +2197,33 @@ them together.
 - **Skills** work in Codex as in Claude Code. Codex does not fill in
   `${CLAUDE_SKILL_DIR}`; each `SKILL.md` tells the agent to substitute the
   skill's own directory.
-- **The turn-budget hook runs once trusted.** Codex reads the plugin's
-  `hooks/hooks.json` but skips a plugin's hooks until their current
-  definition is trusted (`/hooks`), and asks again when a release changes
-  them. The guard counts distinct response ids from Codex token usage
-  records, resets at each task-start event, and warns near the configured
-  budget. The warning does not impose a runtime turn cap.
+- **The turn-budget hook is registered in Codex's own `hooks.json`.** Codex
+  skips a plugin's hooks until their current definition and the plugin's
+  contents are trusted (`/hooks`), and asks again whenever a release changes
+  any file of the plugin, so the Codex plugin ships none
+  (`.codex-plugin/plugin.json` names an empty hooks file). `jig upgrade`
+  registers the guard in `$CODEX_HOME/hooks.json` (`~/.codex` by default)
+  instead, as one `PreToolUse` entry whose command never changes: it runs
+  `~/.local/state/jig/hooks/<home key>/codex-turn-budget-guard.ts` (one directory per Codex home, started with Bun's environment files and checkout configuration off), which runs the guard
+  of the installed plugin copy. Codex trusts a hook there by its definition
+  alone, so approve it once with `/hooks` and every later release keeps that
+  approval. Another Codex home (an account's own) gets the entry when
+  `jig upgrade --codex` runs with `CODEX_HOME` set to it, and a host that
+  rewrites that file loses the entry until the next upgrade writes it again.
+  `jig uninstall --machine --yes` removes the entry and the shim. The guard
+  counts distinct response ids from Codex token usage records, resets at each
+  task-start event, and warns near the configured budget. The warning does not
+  impose a runtime turn cap.
+- **An unattended Codex pass skips hooks nobody approved.** Codex runs only
+  trusted hooks, and a headless `codex exec` cannot ask. Approve the guard once
+  per Codex home before the first unattended pass (`/hooks` in an interactive
+  session of that home). Where a host cannot, and it vets the hooks that home
+  loads itself, it sets
+  [`drive.codex_pass_args: [--dangerously-bypass-hook-trust]`](CONFIGURATION.md#a-hosts-opt-in-to-bypass)
+  in its user file, and every Codex pass it arms or the dispatcher launches
+  runs the enabled hooks without persisted trust. `drive.codex_bypass` does
+  not imply it. The flag skips Codex's review of every hook source, the
+  user's and a repository's among them.
 - **The `review-arbiter` agent is Claude Code only.** Codex plugins carry
   skills, MCP servers, apps and hooks, but not agents; Codex reads custom
   agents only from its own agent folders (`~/.codex/agents/` or a
@@ -2395,7 +2501,8 @@ plugin/skills/<name>/SKILL.md            the skills both tools load
 plugin/skills/<name>/scripts/            the scripts the skills run
 plugin/shared/                           code more than one skill's scripts import
 plugin/agents/<name>.md                  agents Claude Code loads (Codex: see Codex notes)
-plugin/hooks/hooks.json                  the agent-runtime hooks both tools register
+plugin/hooks/hooks.json                  the agent-runtime hooks Claude Code registers
+plugin/hooks/codex-hooks.json            the Codex plugin's hooks file, empty: jig upgrade registers Codex's
 plugin/hooks/<name>.ts                   the hook scripts, each tested in hooks/__tests__/
 ```
 

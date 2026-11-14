@@ -11,10 +11,11 @@
  * The pickup's claim assigns the item to the factory identity; the claim
  * marker the pool requires decides between hosts that take the same item.
  */
+import { cacheForTracker } from "./tracker-cache.ts";
 import {
   isRateLimited,
   type TrackerRateLimited,
-} from "../../../shared/tracker-budget.ts";
+} from "../../../shared/outbound/budget.ts";
 import type {
   Assigner,
   IssueRelation,
@@ -338,6 +339,7 @@ export async function readPoolPickups(
 ): Promise<PoolReading> {
   const { pool, identity } = section;
   if (pool === undefined || identity === null) return NONE;
+  if (cache !== undefined) cache = cacheForTracker(tracker, cache);
   const names = stateNames(tracker, pool);
   const { unassignedIssues, stateChangedBy } = tracker;
   if (unassignedIssues === undefined || stateChangedBy === undefined)

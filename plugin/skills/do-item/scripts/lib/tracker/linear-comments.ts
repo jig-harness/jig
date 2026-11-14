@@ -8,6 +8,7 @@
 import { isRecord } from "../../../../../shared/guards.ts";
 import { ShapeError } from "./linear-shapes.ts";
 import type { CommentFact } from "./port.ts";
+import { parseMs } from "../../../../../shared/time.ts";
 
 /** A comment's author counts when it is a real, non-guest member of the workspace. */
 export function trustedUser(u: unknown): boolean {
@@ -22,7 +23,7 @@ export function commentFacts(nodes: unknown[], key: string): CommentFact[] {
       !isRecord(c) ||
       typeof c.body !== "string" ||
       typeof c.createdAt !== "string" ||
-      !Number.isFinite(Date.parse(c.createdAt))
+      !Number.isFinite(parseMs(c.createdAt))
     )
       throw new ShapeError(`issue ${key}: an unreadable comment node`);
     return {
@@ -34,7 +35,7 @@ export function commentFacts(nodes: unknown[], key: string): CommentFact[] {
   });
   return comments.sort(
     (a, b) =>
-      Date.parse(a.createdAt) - Date.parse(b.createdAt) ||
+      parseMs(a.createdAt) - parseMs(b.createdAt) ||
       (a.id ?? "").localeCompare(b.id ?? ""),
   );
 }

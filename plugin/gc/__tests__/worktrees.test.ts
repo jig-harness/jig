@@ -10,7 +10,7 @@ function evidence(overrides: Partial<WorktreeEvidence> = {}): WorktreeEvidence {
     dirty: false,
     hiddenIndexChanges: false,
     operation: null,
-    ignoredContent: { rebuildable: [], other: [] },
+    ignoredContent: { rebuildable: [], setAside: [], other: [] },
     requests: [{ state: "MERGED", head: "a".repeat(40) }],
     localOnlyCommits: false,
     mergedHeadCovers: true,
@@ -92,7 +92,9 @@ test("unknown forge, process, ancestry and idle evidence fails closed", () => {
 test("ignored local content needs independent preservation evidence", () => {
   expect(
     classifyWorktree(
-      evidence({ ignoredContent: { rebuildable: [], other: [".env"] } }),
+      evidence({
+        ignoredContent: { rebuildable: [], setAside: [], other: [".env"] },
+      }),
       guard,
     ),
   ).toMatchObject({
@@ -105,6 +107,7 @@ test("a dependency directory alongside another ignored path still vetoes, naming
     evidence({
       ignoredContent: {
         rebuildable: ["node_modules/.bin/tsc"],
+        setAside: [],
         other: [".context/notes.md"],
       },
     }),
@@ -120,12 +123,24 @@ test("a dependency directory is the only ignored content and does not veto", () 
       evidence({
         ignoredContent: {
           rebuildable: ["node_modules/.bin/tsc", "website/node_modules/x"],
+          setAside: [{ path: ".context/scratch/", rule: "jig-scratch" }],
           other: [],
         },
       }),
       guard,
     ).state,
   ).toBe("dead");
+});
+test("a planned one-time archive lifts the ignored-content veto and no other", () => {
+  const unaccounted = {
+    ignoredContent: { rebuildable: [], setAside: [], other: [".env"] },
+    archive: { paths: [".env"], bytes: 9 },
+  };
+  expect(classifyWorktree(evidence(unaccounted), guard).state).toBe("dead");
+  for (const overrides of [{ dirty: true }, { idleMs: 0 }])
+    expect(
+      classifyWorktree(evidence({ ...unaccounted, ...overrides }), guard).state,
+    ).toBe("live");
 });
 test("a runtime's registry stands in for session admission, and only it", () => {
   const coordinated = classifyWorktree(evidence({ coordinated: true }), guard);
@@ -141,4 +156,29 @@ test("a runtime's registry stands in for session admission, and only it", () => 
     classifyWorktree(evidence({ requests: [], coordinated: true }), guard)
       .state,
   ).toBe("finding");
+});
+test("an agent tool's worktree needs no registry, only no holder and the idle guard", () => {
+  const merged = classifyWorktree(evidence({ agentTool: true }), guard);
+  expect(merged.state).toBe("dead");
+  expect(merged.reportOnly).toBeUndefined();
+  expect(merged.reason).toContain("an agent tool's worktree");
+  const bare = classifyWorktree(
+    evidence({ requests: [], aheadOfBase: 0, agentTool: true }),
+    guard,
+  );
+  expect(bare.state).toBe("dead");
+  expect(bare.reportOnly).toBeUndefined();
+  for (const overrides of [
+    { held: true },
+    { held: null },
+    { idleMs: 0 },
+    { dirty: true },
+    { requests: [], aheadOfBase: 1 },
+    { localOnlyCommits: true, mergedHeadCovers: false },
+    { requests: [{ state: "OPEN" as const, head: "a".repeat(40) }] },
+  ])
+    expect(
+      classifyWorktree(evidence({ ...overrides, agentTool: true }), guard)
+        .state,
+    ).not.toBe("dead");
 });

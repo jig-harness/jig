@@ -154,10 +154,10 @@ describe("immutable pickup sources", () => {
     // deadline is set) sees a stale lock; by the time it judges the inode it
     // moved aside, that inode reads fresh, as when a rival replaced the lock
     // in between. The moved live lock must be linked back, not deleted.
-    const realNow = Date.now.bind(Date);
+    const realNow = Temporal.Now.instant.bind(Temporal.Now);
     let reads = 0;
-    const clock = spyOn(Date, "now").mockImplementation(() =>
-      ++reads === 2 ? realNow() + 60 * 60 * 1000 : realNow(),
+    const clock = spyOn(Temporal.Now, "instant").mockImplementation(() =>
+      ++reads === 2 ? realNow().add({ hours: 1 }) : realNow(),
     );
     try {
       expect(() => withFileLock(lock, () => "ran", 30)).toThrow(/timed out/);

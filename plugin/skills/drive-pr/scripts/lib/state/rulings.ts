@@ -27,6 +27,13 @@ import { layeredConfig } from "../../../../../shared/consumer.ts";
 import { fail } from "../cli.ts";
 import type { DriveState } from "./schema.ts";
 import type { StateStore } from "./store.ts";
+import {
+  currentIso,
+  currentMs,
+  isCalendarDate,
+  isoFromMs,
+  parseMs,
+} from "../../../../../shared/time.ts";
 
 /** The arbiter's verdicts (`plugin/agents/review-arbiter.md`). */
 export const ARBITER_VERDICTS = [
@@ -84,24 +91,10 @@ const ISO_WITH_ZONE =
 /** The instant of an ISO 8601 time with an explicit zone and a real calendar date, else `NaN`. */
 function strictTime(text: string): number {
   const m = ISO_WITH_ZONE.exec(text);
-  if (m === null) return NaN;
-  const [y, mo, d, h, mi, s] = m.slice(1, 7).map(Number) as [
-    number,
-    number,
-    number,
-    number,
-    number,
-    number,
-  ];
-  const day = new Date(Date.UTC(y, mo - 1, d));
-  const real =
-    day.getUTCFullYear() === y &&
-    day.getUTCMonth() === mo - 1 &&
-    day.getUTCDate() === d &&
-    h < 24 &&
-    mi < 60 &&
-    s < 60;
-  return real ? Date.parse(text) : NaN;
+  if (m === null) return Number.NaN;
+  const [h, mi, s] = m.slice(4, 7).map(Number) as [number, number, number];
+  const real = isCalendarDate(text.slice(0, 10)) && h < 24 && mi < 60 && s < 60;
+  return real ? parseMs(text) : Number.NaN;
 }
 
 /** Why a `contextAt` is not a past ISO 8601 time with a zone, or `null`. */
@@ -110,7 +103,7 @@ function contextFault(contextAt: unknown): string | null {
   const at = typeof contextAt === "string" ? strictTime(contextAt) : NaN;
   if (Number.isNaN(at))
     return "contextAt must be a calendar ISO 8601 time with an explicit zone when given";
-  return at > Date.now() ? "contextAt must not be in the future" : null;
+  return at > currentMs() ? "contextAt must not be in the future" : null;
 }
 
 /**
@@ -143,7 +136,7 @@ function rulingFrom(
   if (fault !== null) return fault;
   const contextAt =
     typeof input.contextAt === "string"
-      ? { contextAt: new Date(input.contextAt).toISOString() }
+      ? { contextAt: isoFromMs(parseMs(input.contextAt)) }
       : {};
   const key = input.key as string;
   const verdict = input.verdict as Verdict;
@@ -184,7 +177,7 @@ export async function recordRuling(
     ...s,
     rulings: [
       ...(s.rulings ?? []).filter((r) => r.key !== ruling.key),
-      { ...ruling, round: s.rounds, at: new Date().toISOString() },
+      { ...ruling, round: s.rounds, at: currentIso() },
     ],
   }));
   return 0;

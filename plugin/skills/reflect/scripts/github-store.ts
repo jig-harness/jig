@@ -111,7 +111,12 @@ async function append(nameWithOwner: string): Promise<number> {
   }
   const client = GitHubClient.fromEnv();
   const repo = await opened(client, nameWithOwner, unwritable);
-  const result = await appendEvents(client, repo, input.events, new Date());
+  const result = await appendEvents(
+    client,
+    repo,
+    input.events,
+    Temporal.Now.instant(),
+  );
   for (const failure of result.viewFailures)
     console.error(
       `the title and description of ${failure} were not updated; the events are stored, and a later write or github-store.ts repair recomputes them`,

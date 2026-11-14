@@ -47,6 +47,7 @@ import {
   readMachineConfig,
   tickDeadlineMs,
 } from "./machine-config.ts";
+import { currentIso } from "../../shared/time.ts";
 
 /** The exit of a tick that found another holding its repository or the act lock (`dispatch/cli.ts`). */
 const LOCK_HELD_EXIT = 3;
@@ -294,7 +295,7 @@ async function waiterMain(path: string): Promise<WaitEnd> {
   )
     truncateSync(logPath(dir));
   const note = (line: string) =>
-    appendFileSync(logPath(dir), `${new Date().toISOString()} ${line}\n`);
+    appendFileSync(logPath(dir), `${currentIso()} ${line}\n`);
   let prepared: TickCall;
   const { end } = await waitAndRun(dir, {
     busy: LOCK_HELD_EXIT,

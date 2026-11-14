@@ -162,7 +162,7 @@ describe("the board read in a tick", () => {
     writeFileSync(join(failing.dir, "board-fail"), "");
     const receipt = await tick(failing);
     expect(receipt.repos[0]?.board?.ok).toBe(false);
-    expect(receipt.repos[0]?.board?.reason).toContain("HTTP 502");
+    expect(receipt.repos[0]?.board?.reason).toContain("HTTP 422");
     expect(actions(receipt)).toEqual(withBoard);
     expect(withBoard).toEqual([["rearm", "PR #8"]]);
   });

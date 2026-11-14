@@ -8,6 +8,7 @@ import {
   publishProcessIdentity,
 } from "../../../../shared/process-registry.ts";
 import type { ProcessRow } from "../../../../shared/process-table.ts";
+import { currentMs } from "../../../../shared/time.ts";
 
 /** Force only this still-owned OS child handle when native identity lookup is unavailable. */
 export function forceOwnedChild(child: ReturnType<typeof spawn>): void {
@@ -60,9 +61,9 @@ export function armCommandDeadline(
     start();
     return;
   }
-  const readyBy = Date.now() + 20000;
+  const readyBy = currentMs() + 20000;
   const readiness = setInterval(() => {
-    if (!existsSync(gate) && Date.now() < readyBy) return;
+    if (!existsSync(gate) && currentMs() < readyBy) return;
     clearInterval(readiness);
     if (existsSync(gate)) start();
     else void terminate(125, "test deadline gate did not become ready");

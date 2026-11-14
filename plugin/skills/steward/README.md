@@ -47,6 +47,11 @@ the admitted account's vendor and has a 15-minute deadline. It starts no
 interactive session. Digests and submitted records stay in the owner host's
 state database; other hosts see resulting launches through the usual claims.
 
+A pass confirms submission even when it proposes no records. An ended pass
+that submitted nothing keeps a bounded output tail as untrusted diagnostic
+data, and the outcome log names a recognized cause or says it is unknown.
+An exit code of zero alone does not count as a submission.
+
 Read the receipt for the steward's launch or why it waited. A person uses
 [operator](../operator/SKILL.md) to give commands and
 [drive-pr](../drive-pr/README.md) to drive a pull request. The steward is

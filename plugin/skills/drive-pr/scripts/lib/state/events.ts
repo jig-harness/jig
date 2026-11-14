@@ -31,6 +31,8 @@
 import { isRecord } from "../../../../../shared/guards.ts";
 import { fail } from "../cli.ts";
 import type { StateStore } from "./store.ts";
+import { currentIso, parseMs } from "../../../../../shared/time.ts";
+import { recordCiAction } from "./ci-actions.ts";
 
 export const EVENT_CAUSES = {
   restart: ["pass-deadline", "stall"],
@@ -69,7 +71,7 @@ export function isDriveEvent(v: unknown): v is DriveEvent {
     isRecord(v) &&
     isCause(v.kind, v.cause) &&
     typeof v.at === "string" &&
-    Number.isFinite(Date.parse(v.at)) &&
+    Number.isFinite(parseMs(v.at)) &&
     Number.isSafeInteger(v.round) &&
     (v.round as number) >= 0 &&
     (v.leftWork === undefined ||
@@ -126,9 +128,10 @@ export async function recordEvent(
   }
   if (!isRecord(input))
     fail(2, 'record-event reads one JSON object on stdin: {"kind", "cause"}');
+  if (input.kind === "ci") return recordCiAction(store, input.cause);
   await store.update((s) => {
     const event = {
-      at: new Date().toISOString(),
+      at: currentIso(),
       round: s.rounds,
       kind: input.kind,
       cause: input.cause,
@@ -138,7 +141,7 @@ export async function recordEvent(
     if (!isDriveEvent(event))
       fail(
         2,
-        `record-event: kind restart (${EVENT_CAUSES.restart.join(", ")}), rearm (${EVENT_CAUSES.rearm.join(", ")}) or stop (the exit code)`,
+        `record-event: kind restart (${EVENT_CAUSES.restart.join(", ")}), rearm (${EVENT_CAUSES.rearm.join(", ")}), ci (rerun: or repair: detail) or stop (the exit code)`,
       );
     return { ...s, events: [...(s.events ?? []), event] };
   });

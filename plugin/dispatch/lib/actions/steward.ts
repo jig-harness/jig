@@ -1,21 +1,27 @@
 /** The owner host schedules an admitted, bounded pass; the pass has no launch authority. */
 import { parseRoutingModels } from "../../../skills/do-item/scripts/lib/routing.ts";
 import { runtimeModel } from "../../../shared/model-families.ts";
-import { admittedVendor } from "../accounts.ts";
+import { admittedVendor, codexLaunchFields } from "../accounts.ts";
 import { factsOf } from "./drive-hold.ts";
 import { readFailures } from "../failures.ts";
 import {
   holds,
   type LaunchRecord,
+  type ReadRecord,
   newRecordId,
   newToken,
   targetOf,
 } from "../launches.ts";
 import { loadReport } from "../load.ts";
+import { durableSummary, passOutput } from "../pass-output.ts";
 import { failed, ok, type Outcome } from "../../../shared/outcome.ts";
-import { questionOf, sessionIdFor } from "../session.ts";
+import { questionIn, sessionIdFor } from "../session.ts";
 import { stateDb } from "../state.ts";
 import { dispatched } from "../runtime/port.ts";
+import {
+  collectStewardEvidence,
+  STEWARD_HISTORY_TARGET_LIMIT,
+} from "../steward-evidence.ts";
 import {
   digestHash,
   keepStewardRun,
@@ -40,6 +46,7 @@ import {
   accountBlocked,
   readRoomMs,
 } from "./launch.ts";
+import { currentIso, currentMs } from "../../../shared/time.ts";
 
 export async function applySteward(
   state: ApplyState,
@@ -79,18 +86,18 @@ export async function applySteward(
   if (!forge.ok || report.records.some((r) => !r.ok))
     return skip("the digest's records did not all read");
   if (
-    stewardRuns(null, state.root).filter((r) => r.at > Date.now() - 3_600_000)
+    stewardRuns(null, state.root).filter((r) => r.at > currentMs() - 3_600_000)
       .length >= 3
   )
     return skip("the host's hourly steward budget is spent");
   const runs = stewardRuns(repo.slug, state.root);
-  if (stewardWaits(runs, Date.now(), config.everyMs))
+  if (stewardWaits(runs, currentMs(), config.everyMs))
     return skip("cadence has not elapsed or hourly budget is spent");
   const read = await readDigest(state, observation);
   if (!read.ok) return skip(read.failure.reason);
   const digest = read.value;
   const hash = digestHash(digest);
-  if (!stewardDue(hash, runs, Date.now(), config.everyMs))
+  if (!stewardDue(hash, runs, currentMs(), config.everyMs))
     return skip("input is unchanged since the last pass");
   const action: Action = {
     stage: "steward",
@@ -110,7 +117,7 @@ export async function applySteward(
     return skip(admitted.outcome.detail);
   }
   const { slots } = admitted;
-  const id = newRecordId(new Date());
+  const id = newRecordId();
   const named = dispatched("steward", "line", id);
   const openedWorkspace = await openedFor(
     state,
@@ -152,10 +159,10 @@ export async function applySteward(
     configDir: slots.account.configDir,
     wallBackoffMs: state.machine.wallBackoffMs,
     passTimeoutSec: STEWARD_DEADLINE_SEC,
-    codexBypass: state.codexOptIn.on,
+    ...codexLaunchFields(state.codexOptIn),
     replaces: null,
     facts: hash,
-    createdAt: new Date().toISOString(),
+    createdAt: currentIso(),
     workspace: openedWorkspace.workspace,
     attempts: [],
     agentId: null,
@@ -168,7 +175,7 @@ export async function applySteward(
     sessionId: sessionIdFor(vendor),
     mark: named.mark,
   };
-  keepStewardRun(id, digest, Date.now(), state.root);
+  keepStewardRun(id, digest, currentMs(), state.root);
   report.launches.push(await startRecord(state, record, slots));
   report.steward = { status: "pass recorded and launch attempted", hash };
 }
@@ -193,6 +200,12 @@ async function digestOf(
   const read = await stewardQueue(tracked, () => readRoomMs(state));
   if (!read.ok) return read;
   const queue = read.value;
+  const targets = await collectStewardEvidence(
+    state.records,
+    observation,
+    queue,
+    () => readRoomMs(state),
+  );
   return ok({
     version: 1,
     repo: repo.slug,
@@ -202,21 +215,9 @@ async function digestOf(
     })),
     needs: report.actions.filter((a) => a.stage === "notify"),
     queue,
-    passes: state.records.flatMap((r) =>
-      r.record.repo === repo.slug &&
-      (r.record.action === "pickup" || r.record.action === "followup") &&
-      r.state.kind === "ended"
-        ? [
-            {
-              record: r.record.id,
-              action: r.record.action,
-              target: targetOf(r.record),
-              question: questionOf(r.state),
-              said: r.state.exit.context ?? r.state.exit.said ?? null,
-            },
-          ]
-        : [],
-    ),
+    targets,
+    targetHistoryLimit: STEWARD_HISTORY_TARGET_LIMIT,
+    passes: stewardPasses(state.records, repo.slug),
     failures: readFailures(repo.slug, state.root),
     load: state.load === undefined ? null : loadReport(state.load),
     history: (
@@ -269,4 +270,39 @@ export async function stewardQueue(
     if (issue.read !== null) queue.push(issue.read);
   }
   return ok(queue);
+}
+
+/** The durable summary of a pass's output, or `null` when it kept none. */
+function keptSummary(context: string | undefined): string | null {
+  const summary = durableSummary(context ?? "");
+  return summary === "" ? null : summary;
+}
+
+/** Question context remains separate from each target's latest output. */
+export function stewardPasses(
+  records: ReadRecord[],
+  slug: string,
+): StewardDigest["passes"] {
+  return records.flatMap((r) => {
+    if (r.record.repo !== slug || r.state.kind !== "ended") return [];
+    if (r.record.action !== "pickup" && r.record.action !== "followup")
+      return [];
+    const { exit } = r.state;
+    const kept = passOutput(
+      { output: exit.context || exit.said || "", said: exit.said ?? "" },
+      null,
+      r.record.token ?? "",
+    );
+    const asked = questionIn(kept.said ?? "");
+    const question = asked === null ? null : durableSummary(asked);
+    return [
+      {
+        record: r.record.id,
+        action: r.record.action,
+        target: targetOf(r.record),
+        question,
+        said: asked === null ? null : keptSummary(kept.context),
+      },
+    ];
+  });
 }

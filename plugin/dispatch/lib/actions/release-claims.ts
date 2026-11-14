@@ -30,6 +30,7 @@ import type {
 } from "../types.ts";
 import type { FollowupContext } from "./followup.ts";
 import { type ApplyState, outOfTime } from "./launch.ts";
+import { currentIso } from "../../../shared/time.ts";
 
 type Release = Action & { release: StaleClaim };
 
@@ -145,11 +146,7 @@ async function releaseOne(
       `marker comment ${marker} could not be deleted: ${deleted.failure.reason}; the pending record is kept for a fresh marker listing`,
     );
   }
-  finishRelease(
-    key,
-    eventRow(repo.slug, action, new Date().toISOString()),
-    root,
-  );
+  finishRelease(key, eventRow(repo.slug, action, currentIso()), root);
   return outcomeOf(
     action,
     "released",

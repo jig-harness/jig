@@ -49,13 +49,10 @@
  *      `assertTreeMutationAllowed` and `assertRemoteMutationAllowed`
  *   17 a `hold-push` mailbox directive (lib/state/mailbox.ts) is active —
  *      a live session in this tree explicitly asked for pushes to wait.
- *      Nothing was pushed. Not one of drive.ts's shared terminal codes:
- *      `references/terminal-states.md` currently runs through `16`
- *      (`QUOTA_PARKED`) — this was originally allocated `15`
- *      under the stale belief that table topped out at `14`, directly
- *      colliding with the ALREADY-assigned `PASS_DEADLINE` and making an
- *      exit `15` from this script ambiguous with one from `drive.ts`
- *      itself. `17` is the first code past that table's current top;
+ *      Nothing was pushed. Not a terminal state of the drive: the code is
+ *      the drive's numbering's `PUSH_HELD` entry
+ *      (`lib/status/terminal-states.ts`), held there so that no exit of
+ *      `drive.ts` or `drive-status.ts` can take it, and
  *      this is a LOCAL, recoverable refusal a mailbox `resume
  *      --target hold-push` clears, not a drive-ending state —
  *      `finish-round.ts` does not special-case it and reports it through

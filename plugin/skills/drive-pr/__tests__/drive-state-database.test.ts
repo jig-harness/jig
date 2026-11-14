@@ -502,6 +502,7 @@ describe("the mailbox", () => {
       );
       expectSpawnExit(sent, 0);
     }
-    expect(readdirSync(box)).toEqual(["inbox.jsonl"]);
+    // The tag marks the mailbox as working state; no lock file stays.
+    expect(readdirSync(box).sort()).toEqual(["CACHEDIR.TAG", "inbox.jsonl"]);
   });
 });

@@ -35,6 +35,7 @@ import {
 import { fail } from "../cli.ts";
 import { PROVISIONAL_OUTCOMES } from "../outcome.ts";
 import type { StateStore } from "./store.ts";
+import { currentIso, parseMs } from "../../../../../shared/time.ts";
 
 /**
  * The decisions an agent takes and records, one per row of the autonomy
@@ -94,7 +95,7 @@ function isReversal(v: unknown): v is Reversal {
   return (
     isRecord(v) &&
     typeof v.at === "string" &&
-    Number.isFinite(Date.parse(v.at)) &&
+    Number.isFinite(parseMs(v.at)) &&
     typeof v.by === "string" &&
     typeof v.url === "string"
   );
@@ -140,7 +141,7 @@ export function isUnattendedDecision(v: unknown): v is UnattendedDecision {
   return (
     isRecord(v) &&
     typeof v.at === "string" &&
-    Number.isFinite(Date.parse(v.at)) &&
+    Number.isFinite(parseMs(v.at)) &&
     typeof v.round === "number" &&
     Number.isInteger(v.round) &&
     v.round >= 0 &&
@@ -285,7 +286,7 @@ export async function recordDecision(
     );
   await store.update((s) => {
     const entry = {
-      at: new Date().toISOString(),
+      at: currentIso(),
       round: s.rounds,
       level,
       class: input.class,

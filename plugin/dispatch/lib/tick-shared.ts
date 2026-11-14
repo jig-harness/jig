@@ -20,10 +20,12 @@ import { forgeShared } from "../../shared/records/shared-forge.ts";
 import { settleNoCauseStops } from "./no-cause-stops.ts";
 import { settleFailedRearms, withRearmHeads } from "./failed-rearms.ts";
 import { releaseRoutineMarkers } from "./routine-reruns.ts";
+import { releaseWaitMarkers } from "./followup-waits.ts";
 import {
   driveHold,
   settleConflictStops,
   settleSilentTakeovers,
+  settleUsageRefusals,
 } from "./actions/drive-hold.ts";
 import type { FollowupOutcome } from "./followup-outcomes.ts";
 import { type ReadRecord, settledEnds } from "./launches.ts";
@@ -52,6 +54,7 @@ import {
 import type { ForgeRead } from "./tick-forge.ts";
 import type { ActionBook } from "./failures.ts";
 import type { DrivenPr, MarkedPr, RepoReport, SharedReport } from "./types.ts";
+import { currentMs, isoFromMs } from "../../shared/time.ts";
 
 /** A repository's shared records for one tick. */
 export interface TickShared {
@@ -238,8 +241,9 @@ export async function readDriveClaims(
  * claims are read beside it: a re-drive already made for the change it shows
  * now is a person's (by this host's records, then by another host's claims),
  * so is a re-arm that failed at the heads and ledger facts it shows now, a
- * silent driver already taken over on its facts is notified, and what is
- * left is bounded by the pull request's recovery budget.
+ * silent driver already taken over on its facts is notified, what is left
+ * is bounded by the pull request's recovery budget, and a launch the drive
+ * refused as a usage error on its facts is a person's.
  */
 export function settleDrives(
   ctx: Pick<SharedContext, "slug" | "host">,
@@ -270,12 +274,19 @@ export function settleOwnDrives(
   );
   return settleNoCauseStops(
     settleFailedRearms(
-      settleSharedConflictStops(settleConflictStops(placed, own), claims, host),
+      settleUsageRefusals(
+        settleSharedConflictStops(
+          settleConflictStops(placed, own),
+          claims,
+          host,
+        ),
+        own,
+      ),
       own,
     ),
     own,
     claims,
-    Date.now(),
+    currentMs(),
   );
 }
 
@@ -339,7 +350,7 @@ function markUnlaunched(
   });
 }
 
-/** With `--apply`: write the end of this host's own claims whose launch records ended, release the markers of follow-ups that owe a routine run again, and report what could not be done. */
+/** With `--apply`: write the end of this host's own claims whose launch records ended, release the markers of follow-ups that owe a routine run again or whose rate limit has reset, and report what could not be done. */
 export async function endOwnClaims(
   ctx: SharedContext,
   report: RepoReport,
@@ -368,7 +379,7 @@ export async function endOwnClaims(
       inputs.forge.merged,
       own,
       inputs.outcomes,
-      new Date(inputs.nowMs).toISOString(),
+      isoFromMs(inputs.nowMs),
       scope,
       inputs.forge.ok ? (inputs.book ?? undefined) : undefined,
     )),
@@ -377,6 +388,13 @@ export async function endOwnClaims(
       inputs.forge.merged,
       own,
       inputs.outcomes,
+      scope,
+    )),
+    ...(await releaseWaitMarkers(
+      ctx,
+      inputs.forge.merged,
+      own,
+      inputs.nowMs,
       scope,
     )),
   ];

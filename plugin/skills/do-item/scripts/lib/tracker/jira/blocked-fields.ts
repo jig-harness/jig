@@ -15,6 +15,7 @@ import {
   type BlockedFieldNames,
   type BlockedFieldRole,
 } from "./settings.ts";
+import { isoFromMs, parseMs } from "../../../../../../shared/time.ts";
 
 /** A configured blocked field, resolved against the site. */
 export interface BlockedField {
@@ -66,7 +67,7 @@ function kindOf(schema: unknown): { type: string; custom: string } {
 
 /** Jira's date-time form: `2026-11-11T09:30:00.000+0000`. */
 function jiraDateTime(iso: string): string {
-  return new Date(iso).toISOString().replace("Z", "+0000");
+  return isoFromMs(parseMs(iso)).replace("Z", "+0000");
 }
 
 /** Refuse a field whose type the role cannot be written to, or cleared from. */

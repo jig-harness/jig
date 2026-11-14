@@ -94,20 +94,11 @@ export function startedClause(
  * Jira's profile gives it).
  */
 export function jqlDate(ms: number, timeZone: string): string {
-  const parts = Object.fromEntries(
-    new Intl.DateTimeFormat("en-CA", {
-      timeZone,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      hourCycle: "h23",
-    })
-      .formatToParts(new Date(ms))
-      .map((p) => [p.type, p.value]),
-  );
-  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
+  return Temporal.Instant.fromEpochMilliseconds(Math.trunc(ms))
+    .toZonedDateTimeISO(timeZone)
+    .toPlainDateTime()
+    .toString({ smallestUnit: "minute" })
+    .replace("T", " ");
 }
 
 const MINUTE = 60_000;

@@ -501,7 +501,9 @@ the source-size counter active at zero so that any excess line fails.
 ### Local hooks
 
 [`lefthook.yml`](lefthook.yml), with lefthook pinned in `mise.toml`: a commit
-formats its staged files and re-stages them, and a push runs
+formats its staged files and re-stages them, regenerates the
+[Jig Protocol](GLOSSARY.md)'s chapters and stages them when a staged file is
+among their sources, and a push runs
 `bun scripts/gates.ts --fast` (format, lint, types and the repository checks,
 in seconds). Install them once per clone with
 `mise install && lefthook install`; every worktree of the clone shares them.
@@ -532,7 +534,12 @@ The lockfiles and the vendored js-yaml builds cannot carry one, since each
 must stay byte for byte what its generator writes, so their entry is their
 marker; the bundle `tools/plugin/vendor-optique.ts` builds opens with a line
 naming that command. The dashboard's built page is minified, so its entry is
-its marker too.
+its marker too. A Protocol chapter is part derived: only its title, status
+line and the sections between its `protocol:generated` markers come from
+`tools/protocol/generate.ts`, and its data file carries no header, so the
+`protocol` entry is that file's marker. The chapters' check also compares
+each stable chapter with the integration branch's copy at the merge base
+([design/protocol.md](design/protocol.md)), so it needs that history.
 
 A new derived file gets its entry in the pull request that adds it; the
 runner refuses an entry without a check.

@@ -1,4 +1,5 @@
 /** A tick's receipt as the terminal reads it. */
+import { spendingLines } from "./outbound-report.ts";
 import { upgradeLine } from "../../runtime/upgrade-record.ts";
 import type { TickReceipt } from "../receipts.ts";
 import type { SerialReport } from "./contention.ts";
@@ -257,6 +258,15 @@ export function formatReceipt(receipt: TickReceipt, path: string): string {
     ...(receipt.logCopyFailed === undefined
       ? []
       : [`outcome log: ${receipt.logCopyFailed}`]),
+    ...(receipt.unanswered ?? []).map(
+      (u) =>
+        `${u.system} did not answer (${u.class}), so it was not asked again this tick: ${u.reason}`,
+    ),
+    ...(receipt.outboundUnavailable === true
+      ? [
+          "outbound: the cost ledger could not be read; spending and balances are unknown",
+        ]
+      : spendingLines(receipt.outbound ?? [])),
     ...receipt.repos.flatMap((r) => [...repoLines(r, receipt.apply), ""]),
     ...(receipt.defect === undefined
       ? []

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { LEAKY_GIT_ENV, spawn, spawnSync } from "../guarded-git-spawn.ts";
 
 const safe = Object.fromEntries(
@@ -8,6 +9,18 @@ const safe = Object.fromEntries(
   ),
 );
 
+/** Text a shell would split, substitute, chain or expand. */
+const SHELL_TEXT = [
+  "two words",
+  "x; echo INJECTED",
+  "$(echo INJECTED)",
+  "`echo INJECTED`",
+  "a && b || c > d",
+  "$HOME",
+  "%PATH%",
+];
+const PRINT_ARGV = "console.log(JSON.stringify(process.argv.slice(1)))";
+
 describe("spawnSync", () => {
   test("runs a command with an explicit safe env and returns text output", () => {
     const result = spawnSync(process.execPath, ["-e", "console.log('ok')"], {
@@ -15,6 +28,20 @@ describe("spawnSync", () => {
     });
     expect(result.status).toBe(0);
     expect(result.stdout).toBe("ok\n");
+  });
+
+  // Every argument is one argv entry of the child; no shell reads it.
+  test("passes each argument to the child as written, without a shell", () => {
+    const result = spawnSync(
+      process.execPath,
+      ["-e", PRINT_ARGV, ...SHELL_TEXT],
+      { env: safe },
+    );
+    expectSpawnExit(
+      { exitCode: result.status, stdout: result.stdout, stderr: result.stderr },
+      0,
+    );
+    expect(JSON.parse(result.stdout)).toEqual(SHELL_TEXT);
   });
 
   test("refuses to inherit the ambient env", () => {
@@ -69,6 +96,26 @@ describe("spawn", () => {
     expect(() =>
       spawn("bash", ["-c", "git init"], { env: { ...safe, GIT_DIR: "/x" } }),
     ).toThrow(/leaks GIT_DIR/);
+  });
+
+  test("passes each argument to the child as written, without a shell", async () => {
+    const child = spawn(process.execPath, ["-e", PRINT_ARGV, ...SHELL_TEXT], {
+      env: safe,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout?.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr?.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    const exitCode = await new Promise<number | null>((resolve) =>
+      child.on("close", resolve),
+    );
+    expectSpawnExit({ exitCode, stdout, stderr }, 0);
+    expect(JSON.parse(stdout)).toEqual(SHELL_TEXT);
   });
 
   test("launches with a safe env and can be signalled", async () => {

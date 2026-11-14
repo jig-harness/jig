@@ -34,6 +34,7 @@ import {
   logEntries,
   loggedRecords,
 } from "./thread.ts";
+import { parseMs } from "../../shared/time.ts";
 
 /** The marker that holds the follow-up: the earliest trusted one that reads. */
 function markerOf(winning: readonly ReadClaim[]): ReadClaim | null {
@@ -119,7 +120,7 @@ function lastOf(
   const claimed = marker === null ? null : lastOfMarker(marker);
   // The newer of the two ends: another host may have ended a pass after this machine's last row.
   if (fromRow === null || claimed === null) return fromRow ?? claimed;
-  return (Date.parse(claimed.at) || 0) > (Date.parse(fromRow.at) || 0)
+  return (parseMs(claimed.at) || 0) > (parseMs(fromRow.at) || 0)
     ? claimed
     : fromRow;
 }

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import type {
+  CanonicalState,
   PoolIssue,
+  StateContext,
   Tracker,
 } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { renderExecutionPlan } from "../../skills/do-item/scripts/lib/execution-plan.ts";
@@ -295,6 +297,213 @@ describe("an assigned epic's children", () => {
     expect(reasons(read)["#1"]).toBeUndefined();
   });
 
+  it("lets a sibling start while a started child waits on a person", async () => {
+    const parked = [
+      {
+        ...started("#5"),
+        state: { id: "ops", name: "ops_pending", type: "started" },
+      },
+      ...["hitl", "hitl:product", "manual-ops", "jig:hold"].map((label) => ({
+        ...started("#5"),
+        labels: [label],
+      })),
+    ];
+    for (const child of parked) {
+      const read = await world({
+        assigned: [issue("#1", ["epic"])],
+        children: { "#1": [...kids("#2", "#3"), child] },
+      }).read();
+      expect(read.wanted.map((i) => i.key)).toEqual(["#2"]);
+      expect(reasons(read)["#3"]).toBe(
+        "waiting on #2; #1 takes one child at a time",
+      );
+    }
+  });
+
+  it("uses configured person labels and the child's mapped operations state", async () => {
+    for (const child of [
+      { ...started("#5"), labels: ["approval:product"] },
+      { ...started("#5"), labels: ["operator"] },
+      {
+        ...started("#5"),
+        nativeType: "Task",
+        state: { id: "ops", name: "Awaiting check", type: "started" },
+      },
+    ]) {
+      const w = world({
+        assigned: [issue("#1", ["epic"])],
+        children: { "#1": [...kids("#2"), child] },
+      });
+      w.tracker.stateName = (
+        state: CanonicalState,
+        type: StateContext = null,
+      ) =>
+        state === "ops_pending" && type === "Task" ? "Awaiting check" : state;
+      const read = await w.read({ hitl: "approval", manualOps: "operator" });
+      expect(read.wanted.map((i) => i.key)).toEqual(["#2"]);
+    }
+  });
+
+  it("keeps a serial slot for a state that can also mean active pull-request work", async () => {
+    const w = world({
+      assigned: [issue("#1", ["epic"])],
+      children: {
+        "#1": [
+          {
+            ...started("#5"),
+            state: { id: "review", name: "Review", type: "started" },
+          },
+          ...kids("#2"),
+        ],
+      },
+    });
+    w.tracker.stateName = ((state: CanonicalState) =>
+      ["pr_open", "in_review", "ops_pending"].includes(state)
+        ? "Review"
+        : state) as Tracker["stateName"];
+    const read = await w.read();
+    expect(read.wanted).toEqual([]);
+    expect(reasons(read)["#2"]).toBe(
+      "#1 is working #5; it takes one child at a time",
+    );
+  });
+
+  it("releases a serial slot for an operations state shared only with merged review work", async () => {
+    const w = world({
+      assigned: [issue("#1", ["epic"])],
+      children: {
+        "#1": [
+          {
+            ...started("#5"),
+            state: { id: "review", name: "Review", type: "started" },
+          },
+          ...kids("#2"),
+        ],
+      },
+    });
+    w.tracker.stateName = ((state: CanonicalState) =>
+      ["in_review", "ops_pending"].includes(state)
+        ? "Review"
+        : state) as Tracker["stateName"];
+    const read = await w.read();
+    expect(read.wanted.map((item) => item.key)).toEqual(["#2"]);
+  });
+
+  it("gives the slot to the next startable child while an ended pickup holds the top one", async () => {
+    const held = (i: { identifier: string }) =>
+      i.identifier === "#2" ? "launch record r1 ended" : null;
+    const read = await world({
+      assigned: [issue("#1", ["epic"])],
+      children: { "#1": kids("#2", "#3", "#4") },
+    }).read({ passOver: held });
+    // The held child stays wanted, so the pickup plan reports it; it takes no slot.
+    expect(read.wanted.map((i) => i.key)).toEqual(["#2", "#3"]);
+    expect(reasons(read)["#4"]).toBe(
+      "waiting on #3; #1 takes one child at a time",
+    );
+    expect(reasons(read)["#1"]).toBe(
+      "#2 is held, so it does not hold its siblings: launch record r1 ended",
+    );
+  });
+
+  it("keeps a held child ranked after the leader planned, so its own need is raised", async () => {
+    const read = await world({
+      assigned: [issue("#1", ["epic"])],
+      children: { "#1": kids("#2", "#3") },
+    }).read({
+      passOver: (i: { identifier: string }) =>
+        i.identifier === "#3" ? "launch record r1 ended" : null,
+    });
+    expect(read.wanted.map((i) => i.key)).toEqual(["#2", "#3"]);
+    expect(reasons(read)["#3"]).toBeUndefined();
+  });
+
+  it("names the held child in the idle epic summary when no sibling can start", async () => {
+    const read = await world({
+      assigned: [issue("#1", ["epic"])],
+      children: { "#1": kids("#2") },
+    }).read({ passOver: () => "launch record r1 ended" });
+    expect(read.wanted.map((i) => i.key)).toEqual(["#2"]);
+    expect(reasons(read)["#1"]).toBe(
+      "none of its 1 open children can start; first, #2: launch record r1 ended",
+    );
+  });
+
+  it("names a parked child in the idle epic summary", async () => {
+    const read = await world({
+      assigned: [issue("#1", ["epic"])],
+      children: {
+        "#1": [
+          { ...started("#2"), labels: ["manual-ops"] },
+          {
+            ...started("#3"),
+            state: { id: "ops", name: "ops_pending", type: "started" },
+          },
+        ],
+      },
+    }).read();
+    expect(read.wanted).toEqual([]);
+    const summaries = read.unplaced.filter((u) => u.target === "#1");
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0]?.reason).toContain("#2: waiting on a person");
+  });
+
+  it("does not traverse the children of a person-held epic", async () => {
+    const read = await world({
+      assigned: [issue("#1", ["epic"])],
+      children: {
+        "#1": [
+          {
+            ...issue("#2", ["epic", "hitl"], null),
+            isEpic: true,
+            hasOpenChildren: true,
+          },
+        ],
+        "#2": [issue("#3", [], null)],
+      },
+    }).read();
+    expect(read.wanted).toEqual([]);
+    expect(reasons(read)["#2"]).toBe("needs a person to start");
+    expect(reasons(read)["#3"]).toBeUndefined();
+  });
+
+  it("still holds siblings when an active child follows a parked one", async () => {
+    const read = await world({
+      assigned: [issue("#1", ["epic"])],
+      children: {
+        "#1": [
+          { ...started("#5"), labels: ["hitl"] },
+          started("#6"),
+          ...kids("#2"),
+        ],
+      },
+    }).read();
+    expect(read.wanted).toEqual([]);
+    expect(reasons(read)["#2"]).toBe(
+      "#1 is working #6; it takes one child at a time",
+    );
+    expect(reasons(read)["#1"]).toBeUndefined();
+  });
+
+  it("keeps a planned epic's summary unchanged while a started child waits on a person", async () => {
+    const description =
+      "## Execution Plan\n" +
+      renderExecutionPlan({
+        epic: "#1",
+        intent: "deliver",
+        steps: [{ issue: "#2", band: 1, lane: "a", gate: "agent" }],
+        edges: [],
+        gates: [],
+      });
+    const read = await world({
+      assigned: [issue("#1", ["epic"])],
+      children: { "#1": [{ ...started("#2"), labels: ["manual-ops"] }] },
+      descriptions: { "#1": description },
+    }).read();
+    expect(read.wanted).toEqual([]);
+    expect(reasons(read)["#1"]).toBeUndefined();
+  });
+
   it("starts no sibling while a child cannot be read, since it may be the one in progress", async () => {
     const unread = { ...issue("#3", [], null), truncated: ["labels"] };
     const read = await world({
@@ -430,7 +639,7 @@ describe("an assigned epic's children", () => {
     }).read();
     expect(read.wanted).toEqual([]);
     expect(reasons(read)["#1"]).toBe(
-      "none of its 2 open children can start; first, #2: needs a person to start",
+      "none of its 2 open children can start; first, #2: waiting on a person",
     );
   });
 

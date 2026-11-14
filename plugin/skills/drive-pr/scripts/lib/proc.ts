@@ -50,6 +50,7 @@ import { resolve } from "node:path";
 import {
   ghCallTimeoutSeconds,
   gitIdentityEnv,
+  heldRun,
   lastBytes,
   readTimeoutEnv,
   registerRunCancellation,
@@ -57,6 +58,7 @@ import {
 } from "../../../../shared/proc.ts";
 import { detachedTreeRecord } from "../../../../shared/driven-tree.ts";
 import { fail, testPacing } from "./cli.ts";
+import { currentMs } from "../../../../shared/time.ts";
 
 // Shared timeout readers and the process-wide cancellation registry serve
 // every helper loaded in this process. The drive transport adds stop handles,
@@ -845,7 +847,7 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
         // Wait out the grace by watching for the group to go on its own — a
         // pass that exits promptly on SIGTERM should not be made to wait for
         // an escalation it never needed.
-        const deadline = Date.now() + graceMs + STOP_WITNESS_MS;
+        const deadline = currentMs() + graceMs + STOP_WITNESS_MS;
         // Throttled to roughly once a second, independent of the 100ms
         // `groupGone()` poll: the zombie case does not change from one tick
         // to the next, and running `hasLiveGroupMember`'s heavier check
@@ -863,7 +865,7 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
             clearStopEscalateTimer();
             return true;
           }
-          const now = Date.now();
+          const now = currentMs();
           if (now - lastLiveCheckAt >= LIVE_CHECK_THROTTLE_MS) {
             lastLiveCheckAt = now;
             // A process-table slot still exists for the group, but that
@@ -878,7 +880,7 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
               return true;
             }
           }
-          if (Date.now() >= deadline) return false;
+          if (currentMs() >= deadline) return false;
           await sleep(STOP_WITNESS_POLL_MS);
         }
       };
@@ -958,21 +960,19 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
 /**
  * `gh` with the GH_CALL_TIMEOUT deadline — the `gh_call` of the bash lib.
  *
- * `timeoutSec` is an optional TIGHTENING, never a loosening: a caller that
- * holds a budget smaller than `GH_CALL_TIMEOUT` (drive-status.ts's poll loop
- * owns `--timeout`, which is independent of the env default) can pass it, and
- * the effective deadline is whichever is smaller. Omitting it keeps the env
- * default exactly as before.
+ * `timeoutSec` is an optional TIGHTENING, never a loosening: a caller with a
+ * budget smaller than `GH_CALL_TIMEOUT` (drive-status.ts's `--timeout`) passes
+ * it, and the effective deadline is the smaller. A forge the run holds
+ * (`shared/outbound/hold.ts`) is not asked: the call answers `heldRun`.
  *
- * It lives here rather than at the call site because `run(['gh', …])` is a raw
- * spawn, and this skill has a guardrail test asserting that every outbound `gh`
- * call routes through this chokepoint — so clamping by dropping to `run` would
- * trade one fix for a regression of that guard (which the test catches).
+ * It lives here because `run(['gh', …])` is a raw spawn, and a guardrail test
+ * asserts that every outbound `gh` call routes through this chokepoint.
  */
 export const ghCall = traceGhRunner<RunResult, RunOptions>(
   (args, opts) => run(["gh", ...args], opts),
   ghCallTimeoutSeconds,
   {},
+  heldRun,
 );
 
 /**

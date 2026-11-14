@@ -195,9 +195,10 @@ function copyMonth(
   let added = 0;
   try {
     const [year, number] = month.split("-").map(Number) as [number, number];
+    const first = Temporal.PlainDate.from({ year, month: number, day: 1 });
     const within = {
-      from: Date.UTC(year, number - 1, 1),
-      to: Date.UTC(year, number, 1),
+      from: first.toZonedDateTime("UTC").epochMilliseconds,
+      to: first.add({ months: 1 }).toZonedDateTime("UTC").epochMilliseconds,
     };
     eachRow(
       db,

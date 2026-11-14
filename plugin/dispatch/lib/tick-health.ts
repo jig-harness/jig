@@ -7,6 +7,7 @@
  */
 import type { TickReceipt } from "../receipts.ts";
 import type { LineTick, LineTickRepo } from "./dashboard-contract.ts";
+import { parseMs } from "../../shared/time.ts";
 
 /** The recent ticks the line keeps: an hour of wake-ups at one a minute, or four hours of the default interval. */
 export const RECENT_TICK_HEALTH = 48;
@@ -93,7 +94,7 @@ function budgetOf(receipt: HealthReceipt): LineTick["budget"] {
 export function tickHealthOf(receipt: HealthReceipt, sweep: boolean): LineTick {
   const tookMs = Math.max(
     0,
-    Date.parse(receipt.finishedAt) - Date.parse(receipt.startedAt),
+    parseMs(receipt.finishedAt) - parseMs(receipt.startedAt),
   );
   const repos = receipt.repos.map(repoOf);
   return {

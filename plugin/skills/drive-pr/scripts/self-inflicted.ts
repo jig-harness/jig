@@ -168,6 +168,7 @@ import {
   severityOfRecord,
 } from "./lib/record-labels.ts";
 import { MARKER_SAFE_FINGERPRINT } from "./summary-findings.ts";
+import { currentMs } from "../../../shared/time.ts";
 
 /**
  * The aggregate wall-clock budget for ONE record's range scan (`labelRecord`'s
@@ -246,7 +247,7 @@ export interface SelfInflictedLabel {
  * would let two threads in one stream be labelled against different commit
  * sets if the tree moved mid-run.
  *
- * `deadlineAt` is an absolute `Date.now()`-comparable epoch-ms bound on the
+ * `deadlineAt` is an absolute `currentMs()`-comparable epoch-ms bound on the
  * WHOLE range scan below, checked before every `blame()` call rather than
  * threaded into git as an `AbortSignal`. Each `blame()` call already carries
  * its own `GIT_CALL_TIMEOUT` (default 30s), which bounds any ONE call; what
@@ -337,7 +338,7 @@ export async function labelRecord(
     // that runs out of budget partway through is exactly the `sawFailure`
     // case below — some lines went unchecked, so `false` would overclaim.
     //
-    // The bare `Date.now()` here is NOT a lapse in clock injection, despite the
+    // The bare `currentMs()` here is NOT a lapse in clock injection, despite the
     // resemblance: clock injection is for business temporal logic (retention,
     // disposal eligibility, SLA deadlines), not for operational timestamps, and
     // this is one: a subprocess call budget, the same unchallenged pattern used
@@ -348,7 +349,7 @@ export async function labelRecord(
     // `deadlineAt` is still the injected, test-controlled seam (see the
     // header): only the internal "has the deadline passed" read is a bare
     // wall-clock call, same as every sibling timeout check in this skill.
-    if (Date.now() >= deadlineAt) {
+    if (currentMs() >= deadlineAt) {
       sawFailure = true;
       break;
     }
@@ -1052,14 +1053,14 @@ async function main(): Promise<number> {
     // every later record's own scan, turning one bad range into a `null`
     // flood for records that had nothing to do with it.
     //
-    // `Date.now()` here is the same operational timeout pattern, exempt from
+    // `currentMs()` here is the same operational timeout pattern, exempt from
     // clock injection, documented at `labelRecord`'s own deadline check above —
     // see that comment for the precedent.
     const label = await labelRecord(
       rec as AnchoredRecord,
       prCommits,
       deps.blame,
-      Date.now() + rangeScanDeadlineMs(),
+      currentMs() + rangeScanDeadlineMs(),
     );
     const severity = severityOfRecord(rec as LabelledRecord);
     const category = categoryOfRecord(rec as LabelledRecord);

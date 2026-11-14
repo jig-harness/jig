@@ -99,6 +99,7 @@ import {
 } from "./../pass-args.ts";
 
 import type { DriveState } from "./../state/schema.ts";
+import { currentIso } from "../../../../../shared/time.ts";
 
 /**
  * Refuse a PR that is not a canonical number. Digits, checked here rather
@@ -299,7 +300,7 @@ async function drive(ctx: { pr: string; dryRun: boolean }): Promise<number> {
     pr,
     worktree: rootRes.code === 0 ? rootRes.stdout.trim() : "",
     log: logPath,
-    started: new Date().toISOString(),
+    started: currentIso(),
     account,
     model: pass.model,
     permissionMode: pass.args.permission.mode,
@@ -592,7 +593,8 @@ function validatePassCommand(
   // PR 12 satisfy a driver waiting on 123, so match the number as a delimited
   // token.
   if (explicitPr !== "" && agent.length > 0) {
-    const token = new RegExp(`(?:^|[^0-9])${explicitPr}(?:[^0-9]|$)`);
+    const escaped = explicitPr.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const token = new RegExp(`(?:^|[^0-9])${escaped}(?:[^0-9]|$)`);
     const found = agent.some((word) => token.test(word));
     if (!found) {
       console.error(

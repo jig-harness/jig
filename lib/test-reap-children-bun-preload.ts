@@ -24,6 +24,7 @@ import {
   recordDescendants,
   reapSurvivingDescendants,
 } from "./test-reap-children.ts";
+import { currentMs } from "../plugin/shared/time.ts";
 
 const CAPTURE_INTERVAL_MS = 2_000;
 const HOOK_TIMEOUT_MS = 30_000;
@@ -37,7 +38,7 @@ function capture(): Promise<unknown> {
       swallow(error, "a missed capture is retried next interval"),
     )
     .finally(() => {
-      lastCapture = Date.now();
+      lastCapture = currentMs();
       capturing = null;
     });
   return capturing;
@@ -67,7 +68,7 @@ Object.defineProperty(globalThis, Symbol.for("jig.test-reap.forget"), {
 });
 
 afterEach(async () => {
-  if (Date.now() - lastCapture >= CAPTURE_INTERVAL_MS) await capture();
+  if (currentMs() - lastCapture >= CAPTURE_INTERVAL_MS) await capture();
 }, HOOK_TIMEOUT_MS);
 
 afterAll(async () => {

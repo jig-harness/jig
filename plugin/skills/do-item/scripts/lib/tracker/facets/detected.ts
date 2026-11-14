@@ -190,9 +190,46 @@ export function defaultedTracker(inputs: DefaultInputs): Tracker {
       throw err;
     }
   }
+  const native = base.dispatchSource;
   return {
     ...base,
     stateName: base.stateName,
+    ...(native === undefined
+      ? {}
+      : {
+          dispatchSource: {
+            ...native,
+            requirements: [
+              ...new Set([
+                ...(native.requirements ?? []),
+                "issue-type",
+                "issue-fields",
+              ]),
+            ],
+            get shape() {
+              return native.shape ?? "";
+            },
+            project: (
+              raw: import("../port.ts").DispatchRawIssue,
+              options?: import("../port.ts").FacetReadOptions,
+            ) =>
+              on(
+                (t) => {
+                  const source = t.dispatchSource;
+                  return source === undefined
+                    ? Promise.reject(
+                        new TrackerRequestError(
+                          "invalid",
+                          "the tracker has no native dispatch source",
+                        ),
+                      )
+                    : source.project(raw, options);
+                },
+                undefined,
+                readSignal(options),
+              ),
+          },
+        }),
     getIssue: (key) => on((t) => t.getIssue(key)),
     openIssues: (query) => on((t) => t.openIssues(query)),
     openChildren: (key) => on((t) => t.openChildren(key)),

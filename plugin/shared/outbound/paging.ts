@@ -20,6 +20,7 @@
  * not on every other run.
  */
 import { Defect, type Failure, type Outcome } from "../outcome.ts";
+import { currentMs } from "../time.ts";
 
 /** A page answered in less than this may double: twice the items stay well under `SLOW_MS`. */
 export const QUICK_MS = 2_500;
@@ -49,7 +50,7 @@ export async function readShrinking<T, Code extends string>(
   start: number,
   read: (size: number) => Promise<Outcome<T, Code>>,
   outOfTime: (failure: Failure<Code>) => boolean,
-  clock: () => number = Date.now,
+  clock: () => number = currentMs,
 ): Promise<ShrunkRead<T, Code>> {
   if (!Number.isFinite(start))
     throw new Defect("the starting page size must be finite");

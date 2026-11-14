@@ -60,6 +60,7 @@ import {
   type RunResult,
 } from "./runner.ts";
 import type { Spawned } from "./spawn.ts";
+import { currentMs } from "../../plugin/shared/time.ts";
 
 /** What a kickoff key may look like: it names files. */
 export const KICKOFF_KEY = /^(?:#[1-9][0-9]*|[A-Za-z0-9][A-Za-z0-9._-]{0,63})$/;
@@ -185,13 +186,13 @@ export function acquireClaim(
 ): string {
   const dir = claimDir(ctx, key);
   mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const deadline = Date.now() + waitMs;
+  const deadline = currentMs() + waitMs;
   for (;;) {
     const generations = generationsIn(dir);
     const step = nextStep(ctx, key, dir, generations);
     if ("create" in step && take(ctx, dir, step.create, generations))
       return String(step.create);
-    if ("held" in step && Date.now() >= deadline)
+    if ("held" in step && currentMs() >= deadline)
       throw new HerdrError(
         `another launch is kicking off ${key} (claim ${step.held}) and did not finish within ${Math.round(waitMs / 1000)}s; let it finish and run again. Its claim is taken over once the launch holding it has ended; if no launch is running and it stays, give it back with touch ${join(dir, String(step.held), RELEASED)}`,
       );

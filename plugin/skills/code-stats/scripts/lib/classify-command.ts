@@ -9,13 +9,17 @@
  */
 import { isRecord } from "../../../../shared/guards.ts";
 import { readTimeoutEnv, run } from "../../../../shared/proc.ts";
+import {
+  CLASSIFY_TIMEOUT_ENV,
+  DEFAULT_CLASSIFY_TIMEOUT_SEC,
+} from "../../../../shared/repo-commands.ts";
 import type { Override } from "./classify.ts";
 import { CodeStatsError } from "./errors.ts";
 import { isKind } from "./model.ts";
 
 /** The variable that bounds the command, in seconds. */
-export const TIMEOUT_ENV = "JIG_CODE_STATS_COMMAND_TIMEOUT_SEC";
-const DEFAULT_TIMEOUT_SEC = 300;
+export const TIMEOUT_ENV = CLASSIFY_TIMEOUT_ENV;
+const DEFAULT_TIMEOUT_SEC = DEFAULT_CLASSIFY_TIMEOUT_SEC;
 const KEYS = ["path", "area", "kind", "language", "module"];
 
 function parseObject(text: string, where: string): Record<string, unknown> {

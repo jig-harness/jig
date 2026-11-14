@@ -63,38 +63,28 @@ export interface Stall {
 const usage =
   "usage: find-queue-stalls.ts [--max-wait-minutes <n>] [--now <ISO 8601>] [jobs.json | -]";
 
-// A time zone is required: without one, Date.parse reads the stamp as local
-// time and the verdict would depend on the machine it runs on.
+// A time zone is required: without one the verdict would depend on the
+// machine it runs on.
 const iso8601 =
-  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(?:Z|[+-](\d{2}):?(\d{2}))$/;
-
-/** Whether the matched fields name a real date and time of day. */
-function isRealTime(f: RegExpExecArray): boolean {
-  const n = (i: number) => Number(f[i] ?? 0);
-  const stamp = new Date(Date.UTC(n(1), n(2) - 1, n(3), n(4), n(5), n(6)));
-  // Date.UTC rolls an impossible field over into the next one (30 February
-  // becomes 2 March), so a real time is one that comes back unchanged.
-  const written = `${f[1]}-${f[2]}-${f[3]}T${f[4]}:${f[5]}:${f[6] ?? "00"}`;
-  return (
-    Number.isFinite(stamp.getTime()) &&
-    stamp.toISOString().startsWith(written) &&
-    n(7) <= 23 &&
-    n(8) <= 59
-  );
-}
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::(\d{2})(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})$/;
 
 /**
  * The timestamp in milliseconds; throw unless it is ISO 8601 with a time zone
- * and names a real calendar time. Date.parse alone would roll an impossible
- * date such as 30 February over into March.
+ * and names a real calendar time. Temporal refuses a date or time that does
+ * not exist (30 February, 24:00) but reads a leap second as :59, so the
+ * seconds are checked first.
  */
 export function parseTime(value: unknown, what: string): number {
   const fields = typeof value === "string" ? iso8601.exec(value) : null;
-  const ms =
-    fields !== null && isRealTime(fields) ? Date.parse(fields[0]) : NaN;
-  if (Number.isNaN(ms))
-    throw new Error(`${what} is not an ISO 8601 timestamp: ${String(value)}`);
-  return ms;
+  if (fields !== null && Number(fields[1] ?? 0) <= 59)
+    try {
+      // Digits past the nanosecond name no time Temporal can hold.
+      return Temporal.Instant.from(fields[0].replace(/(\.\d{9})\d+/, "$1"))
+        .epochMilliseconds;
+    } catch {
+      // Falls through to the refusal below.
+    }
+  throw new Error(`${what} is not an ISO 8601 timestamp: ${String(value)}`);
 }
 
 const isPage = (v: unknown): v is { jobs: unknown[] } =>
@@ -197,7 +187,7 @@ interface Options {
 function parseArgs(args: string[]): Options {
   const options: Options = {
     maxWaitMinutes: 45,
-    now: Date.now(),
+    now: Temporal.Now.instant().epochMilliseconds,
     path: undefined,
   };
   for (let i = 0; i < args.length; i++) {

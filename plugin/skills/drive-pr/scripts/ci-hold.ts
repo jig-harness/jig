@@ -66,6 +66,7 @@ import {
   withoutSuperseded,
   workflowRunsBehind,
 } from "./lib/status/workflow-runs.ts";
+import { currentIso } from "../../../shared/time.ts";
 
 let policy: CiPolicy = {
   requiredChecks: [],
@@ -519,7 +520,7 @@ async function ensure(pr: string, expectedPushHead: string): Promise<number> {
     label: holdLabel(),
     head,
     actor: login,
-    createdAt: new Date().toISOString(),
+    createdAt: currentIso(),
     checkRunWatermark: preHoldWatermark,
   });
   const add = await ghCall(["pr", "edit", pr, "--add-label", holdLabel()]);
@@ -685,7 +686,7 @@ async function release(
     heldCreatedAt: persisted.createdAt,
     head,
     actor: login,
-    createdAt: new Date().toISOString(),
+    createdAt: currentIso(),
     checkRunWatermark: watermark,
   });
   const remove = await ghCall([

@@ -15,6 +15,7 @@ import { tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { Defect, swallow } from "./errors.ts";
 import { processTable, type ProcessRow } from "./process-table.ts";
+import { currentMs } from "./time.ts";
 
 export const PROCESS_REGISTRY_ENV = "JIG_PROCESS_REGISTRY_DIR";
 export interface ProcessIdentity {
@@ -136,7 +137,7 @@ export async function handoffProcessRegistration(
     resultFile?: string;
   } = {},
 ): Promise<boolean> {
-  const deadline = Date.now() + (options.timeoutMs ?? 15_000);
+  const deadline = currentMs() + (options.timeoutMs ?? 15_000);
   const table = options.table ?? processTable;
   const resultFile = options.resultFile ?? registrationResultFile(dir, entry);
   do {
@@ -146,16 +147,16 @@ export async function handoffProcessRegistration(
     }
     if (!stillOwned()) return false;
     const rows = await table(
-      Math.min(5, Math.max(1, deadline - Date.now()) / 1000),
+      Math.min(5, Math.max(1, deadline - currentMs()) / 1000),
     );
     const identity = rows?.find((row) => row.pid === pid);
     if (identity?.start && stillOwned()) {
       publishProcessIdentity(dir, entry, identity, resultFile);
       return true;
     }
-    if (Date.now() >= deadline) break;
+    if (currentMs() >= deadline) break;
     await new Promise((resolve) => setTimeout(resolve, options.pollMs ?? 100));
-  } while (Date.now() < deadline);
+  } while (currentMs() < deadline);
   return false;
 }
 

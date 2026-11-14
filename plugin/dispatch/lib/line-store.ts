@@ -20,6 +20,7 @@ import { stateRoot } from "../receipts.ts";
 import type { LineSnapshot, StateAnswer } from "./dashboard-contract.ts";
 import { hostTimeZone } from "./host-time.ts";
 import { readOnlyStateDb, SCHEMA_VERSION, stateDb } from "./state.ts";
+import { isoFromMs } from "../../shared/time.ts";
 
 /**
  * Run `work`, which reads the stored line and writes a merge of it, under the
@@ -413,7 +414,7 @@ export function stateAnswer(
   const line = readLine(root);
   if (!line.ok) return line;
   return ok({
-    now: new Date(nowMs).toISOString(),
+    now: isoFromMs(nowMs),
     timeZone: line.value?.timeZone ?? hostTimeZone(),
     plugin: pluginVersion(),
     schema: SCHEMA_VERSION,

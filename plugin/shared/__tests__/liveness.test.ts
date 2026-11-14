@@ -250,22 +250,22 @@ describe("the recorded form", () => {
 });
 
 describe("the lease", () => {
-  const now = new Date("2026-11-04T10:00:00.000Z");
-  const later = (minutes: number) => new Date(now.getTime() + minutes * 60_000);
+  const now = Temporal.Instant.from("2026-11-04T10:00:00.000Z");
+  const later = (minutes: number) => now.add({ minutes });
 
   it("holds until its expiry and is stale from then, unless renewed", () => {
     const lease = takeLease(HOLDER, 3, now, 30);
     expect(lease).toEqual({
       holder: HOLDER,
       generation: 3,
-      startedAt: now.toISOString(),
-      renewedAt: now.toISOString(),
-      expiresAt: later(30).toISOString(),
+      startedAt: "2026-11-04T10:00:00.000Z",
+      renewedAt: "2026-11-04T10:00:00.000Z",
+      expiresAt: "2026-11-04T10:30:00.000Z",
     });
     expect(isStale(lease, later(29))).toBe(false);
     expect(isStale(lease, later(30))).toBe(true);
     const renewed = renewLease(lease, later(20), 30);
-    expect(renewed.startedAt).toBe(now.toISOString());
+    expect(renewed.startedAt).toBe("2026-11-04T10:00:00.000Z");
     expect(isStale(renewed, later(45))).toBe(false);
   });
 

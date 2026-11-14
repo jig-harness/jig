@@ -59,14 +59,14 @@ implement, open a pull request or arm a drive.
 
 1. For an issue key, fetch the issue with `scripts/get_issue.ts` as in
    [Step 1](#step-1-fetch-the-issue), and write the returned JSON to
-   `.context/scout-input.json`. Stop if the fetch fails. For `--text`, write
+   `.context/scratch/scout-input.json`. Stop if the fetch fails. For `--text`, write
    JSON with the task verbatim as `title` and `description`, and `labels: []`,
    to that file; do not read or write the tracker. Free text routes through
    the configured title keywords or default agent, since it has no labels.
 2. Run the same routing used by a pickup:
 
    ```bash
-   bun "${CLAUDE_SKILL_DIR}/scripts/determine_agent.ts" .context/scout-input.json
+   bun "${CLAUDE_SKILL_DIR}/scripts/determine_agent.ts" .context/scratch/scout-input.json
    ```
 
    Report the recommended agent and scouts. Stop on a non-zero exit. If the
@@ -85,12 +85,13 @@ implement, open a pull request or arm a drive.
    bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rev-parse --short HEAD
    ```
 
-   Write `.context/scout-findings.md` with the first line exactly
+   Write `.context/scratch/scout-findings.md` with the first line exactly
    `## Scout Findings (<hash>)`, substituting that hash, followed by the
    collected findings. Print the complete findings for both forms. For an
    issue key, also post that file through the tracker comment operation as in
    [Step 4a item 3](#step-4a-standard-start-no-sub-issues). Report a failed
-   post and retain the file. For free text, the printed findings are the
+   post and move the file to `.context/scout-findings.md`, out of
+   `.context/scratch/`, so that `jig gc` keeps it until it is posted. For free text, the printed findings are the
    result; no tracker comment is posted. A later pickup's Step 2 selects an
    issue's comment under the existing hash and freshness rules.
 
@@ -274,6 +275,25 @@ form is the row of this table it belongs to, and on Jira its script form.
 | Attach a file, replacing older ones of its name or title | `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" attach "<KEY>" --input attachment.json` (exit `3`: the tracker cannot hold the file, nothing written) | The script form | The script form: GitHub Issues has no file upload, and the script carries a text file in a marked comment or links a hosted copy |
 | List or fetch attachments | `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" attachments "<KEY>"`; `… fetch-attachment "<KEY>" <id> --out <file>` | The script form | The script form |
 | File a new issue | The consumer's `issue_tracker.file_command` | — | — |
+
+A `tracker.ts` operation that a failed call to the tracker stopped exits
+with the call's [failure class](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md),
+its reason on stderr after the class's name (`UNREACHABLE: …`); any other
+failure exits `1`, and `2`, `3` and `4` keep the meanings each operation
+gives them:
+
+| Exit | Class | What to do |
+|------|-------|------------|
+| `5` | `rate-limited`; stderr `RATE-LIMITED until <time>` | Stop and report the time; a dispatched pass records `waits` ([Dispatched passes](#dispatched-passes)) |
+| `6` | `unreachable`: no answer; "the request may have been applied" when it left | Run it again later; after a write, read the item first |
+| `7` | `too-costly`: the tracker ran out of time on the request | Run it again later, or ask for less |
+| `8` | `server-fault`: the tracker answered with a fault of its own | Run it again later |
+| `9` | `unauthorized`: the credential is missing, expired or refused | Fix the credential ([Error handling](#error-handling)) |
+| `10` | `not-found`: the item does not exist or is not visible | Check the key |
+| `11` | `invalid`: the tracker refused the request as malformed | Report it: the request is the defect |
+
+A read the tracker did not answer, or answered with a fault, was already
+sent once more inside the call; a write never is.
 
 An issue key is `ENG-123` on Linear and Jira, where `issue_tracker.team`
 names the prefix, and `#123` on GitHub Issues, an issue of the configured repository;
@@ -733,8 +753,13 @@ implementation. Skip this check for issues about the repository's own code.
    queue read; never retry without the served-person options. Every
    adapter supports inherited claims. Claims serialize on this host;
    between hosts, only `do_item.claim_marker` arbitrates same-person claims,
-   best effort: a lagging listing can let two claims both win, and a later
-   loss stands the claim down after its writes.
+   best effort: a lagging listing can let two claims both win. A claim that
+   meets an earlier marker after its writes, or no longer finds its own,
+   settles who holds the item from the attempts' recorded outcomes and
+   never undoes its writes: it keeps the claim when its own marker still
+   shows and every earlier attempt recorded a release
+   (`"recovery": "reclaimed"`), and stands down when one recorded its claim
+   (`"held"`) or when the evidence cannot say (`"unresolved"`).
 
    Exit `0` is the claim. Exit `3` is a refusal, nothing written: the issue
    is already `in_progress`, `pr_open` or `blocked`, or assigned to someone
@@ -748,6 +773,12 @@ implementation. Skip this check for issues about the repository's own code.
    `4` is a stand-down: the claim was written, and reading the issue back
    showed another claim landed first. On `3` or `4`, stop the pickup and report the
    reason it printed; never start the item beside another session. A
+   stand-down with `"recovery": "unresolved"` leaves the item's current
+   state untouched, which a person may have changed during recovery (moved
+   back to Todo, reassigned or removed), and no worker is known to hold
+   it: report it as a question for a person (in a dispatched pass, a
+   decision record that includes the returned reason, without assuming the
+   claim's writes still stand), never reset the item yourself. A
    refusal by the repository's start rules (`state` or `preflight`) is not
    cleared by a person telling you to proceed: the item changes, or the
    repository's rules change and the pickup is retried by hand. The
@@ -787,12 +818,12 @@ implementation. Skip this check for issues about the repository's own code.
    with the template set to `""`, or anywhere else, it does nothing; a failed rename only warns and exits `0`,
    while a malformed argument, an invalid `workspace_name` field or an unreadable title
    file exits `2`, and a configuration file that cannot be parsed exits `1`. The issue title is
-   tracker text, so write it alone to `.context/workspace-title.md` with the
+   tracker text, so write it alone to `.context/scratch/workspace-title.md` with the
    file editor and pass the file, never the title inside the command; quote
    the key, since a GitHub key (`#123`) starts a shell comment unquoted:
 
    ```bash
-   bun "${CLAUDE_SKILL_DIR}/scripts/workspace-name.ts" implementing --id "<KEY>" --title-file .context/workspace-title.md
+   bun "${CLAUDE_SKILL_DIR}/scripts/workspace-name.ts" implementing --id "<KEY>" --title-file .context/scratch/workspace-title.md
    ```
 
 3. **exact** — **Persist the findings to the tracker**: post a comment whose
@@ -971,7 +1002,9 @@ implementation. Skip this check for issues about the repository's own code.
    **Pre-PR code review gate (mandatory unless the diff is tiny):**
 
    Run it after the implementing agent finishes and the validation plan
-   passes, **before** `git push` / `gh pr create`. The validation plan is
+   passes, **before** the push that opens the pull request and
+   `gh pr create` (a [dispatched pass](#dispatched-passes) pushes its
+   committed work earlier as well). The validation plan is
    the one the change-area catalog emits for the complete workspace change
    when `drive.change_areas_catalog` is declared, and the repository's gate
    command otherwise; do not substitute a fixed command list. `<base>` below
@@ -1276,7 +1309,8 @@ implementation. Skip this check for issues about the repository's own code.
       tool this session runs in: Claude Code's (`claude --model <model> -p
       "..."`) or Codex's (`codex exec … "Use the jig:drive-pr skill: …"`,
       on the standard tier of `routing.models.codex`, overridden by `--pass-model`, with its bypass
-      only on a host that set `drive.codex_bypass`). A Codex session
+      only on a host that set `drive.codex_bypass` and the host's
+      `drive.codex_pass_args` before its prompt). A Codex session
       that cannot open a tab gets `spawn`. In any other
       agent tool the script answers `print`. Do not guess one for another
       agent tool.
@@ -1328,7 +1362,13 @@ implementation. Skip this check for issues about the repository's own code.
         background execution; Claude Code uses Bash `run_in_background`,
         Codex uses `exec_command` with a short `yield_time_ms` and retains
         `session_id` for `write_stdin`). If neither tool is exposed, treat
-        this as `print` and name the limitation. Otherwise spawning is mandatory: an emitted but unspawned command reintroduces the
+        this as `print` and name the limitation. A [dispatched pass](#dispatched-passes)
+        runs with background tasks off, so it cannot spawn: it first reads
+        `drives.ts` for a drive on this pull request (a fallback after a tab
+        whose drive was not listed in time may have one that started
+        since), and when none holds it, treats `spawn` as `print` and
+        follows [Dispatched passes](#dispatched-passes) for the result.
+        Otherwise spawning is mandatory: an emitted but unspawned command reintroduces the
         human-memory delay this step removes, and a `hitl` issue cleared
         this run is no reason to withhold it. In Claude Code, pass the Bash call's `timeout`
         of `28800000` (8 hours) with `run_in_background`: in an unattended
@@ -1393,10 +1433,10 @@ implementation. Skip this check for issues about the repository's own code.
         launch it again, and report the drive's terminal outcome afterward.
 
       Once armed, name the workspace for the driving stage (same rules as at
-      pickup, with `.context/workspace-title.md` still holding the title):
+      pickup, with `.context/scratch/workspace-title.md` still holding the title):
 
       ```bash
-      bun "${CLAUDE_SKILL_DIR}/scripts/workspace-name.ts" driving --id "<KEY>" --title-file .context/workspace-title.md --pr <PR>
+      bun "${CLAUDE_SKILL_DIR}/scripts/workspace-name.ts" driving --id "<KEY>" --title-file .context/scratch/workspace-title.md --pr <PR>
       ```
 
       Post the prepared tracker comment with the arm outcome and the
@@ -1835,7 +1875,8 @@ the factory identity, or an unassigned one from the repository's ready pool
 followed by the line
 `route: rules`, with nobody at the keyboard and nobody to answer while it
 runs. Its prompt says so, and names the `jig dispatch result` commands that
-record how it ended. In such a pass:
+record how it ended and the `jig dispatch report` command for its closing
+report. In such a pass:
 
 - **The route reaches the implementer, not this session**: forward it as
   [Step 4a item 1](#step-4a-standard-start-no-sub-issues) says.
@@ -1891,6 +1932,41 @@ record how it ended. In such a pass:
   default), after which the wrapper stops it: open the pull request and arm
   its drive as soon as the work allows, and record the result before
   anything long-running that follows.
+- **The pass has no next turn.** A background task or agent still running
+  when its turn ends is lost with it, so run every long step (the
+  implementer, a reviewer, the gates) in the foreground and wait for it in
+  the same turn, and bound every wait on another agent: one that stops
+  without reporting is retried or replaced, or its failure is recorded, and
+  is never waited on until the deadline. A review the skill requires is not
+  discharged by an agent's silence: run it another way, or record that it
+  did not happen. A Claude Code pass runs with background tasks off. Once the
+  branch holds committed work, push it before a long validation step and
+  after each later commit, so a deadline or an interrupted run strands
+  less on the host. Where the repository's instructions require validation
+  before every push, they win and the early push is skipped. Each such push is the push step of
+  [Step 4a](#step-4a-standard-start-no-sub-issues): `commit-prefix.ts`
+  first when `pull_requests.commit_prefix` is set, since a pushed commit is
+  never reworded. A push the repository's pre-push hook refuses is no stop:
+  go on with validation, fix what it found, and push after it. The pull
+  request still opens only after validation and the pre-PR review.
+- **A drive the pass cannot arm is handed off, not dropped.** When the arm
+  script answers `spawn`, the pass cannot start the drive itself and
+  first checks `drives.ts` for one on this pull request. With none, it
+  records `done --pr <number>` as for an armed drive (the work is
+  finished and the pull request is open), and its closing report says the
+  drive is unarmed and carries the unstarted command and the arm
+  script's reason. The dispatcher then drives the pull request only
+  where `dispatch.adopt` is enabled or a person has put the `drive`
+  label on it; the report names that person's next step.
+- **Write the closing report last.** Record the result as soon as the
+  pull request's drive is armed, or handed off as above, and go on; when the pass is done, write
+  its closing report, a `closing-report/v1` record of the shape the prompt
+  gives (what the run concluded, the next step and who takes it, the
+  question and its framed decision when a person must decide, why it fell
+  short when it did, and references as evidence, never contents), to a
+  file, and record it with the `jig dispatch report` command the prompt
+  names. When the command refuses the report, fix what it names and run it
+  again; the last report it takes stands, and it never changes the result.
 
 ## Error handling
 
@@ -1898,6 +1974,7 @@ record how it ended. In such a pass:
 |-------|----------|
 | Issue not found | Check the key against the tracker's form ([Tracker operations](#tracker-operations)); list the tracker's issues (Linear: `linear issue list --team <issue_tracker.team>`; GitHub Issues: `gh issue list` on the configured repository) |
 | Tracker unreachable on one transport | Use the other transport recorded in Step 1 |
+| A tracker script exits `6` to `11` | The failure class names the cause ([Tracker operations](#tracker-operations)); `6`, `7` and `8` clear by waiting |
 | Missing tracker credential | Set the adapter's credential (Linear: `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, or log in to the `linear` command-line client; GitHub Issues: sign in with `gh auth login`, and add the `project` scope with `gh auth refresh` when the states are on a board; Jira: `JIRA_BEARER_TOKEN`, `JIRA_TOKEN_COMMAND`, or `JIRA_EMAIL` and `JIRA_API_TOKEN`, an error naming `JIRA_TOKEN_COMMAND` meaning that command failed), or use the harness's native integration |
 
 ## Scripts reference

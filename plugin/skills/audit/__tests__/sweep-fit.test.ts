@@ -50,6 +50,15 @@ describe("the audit's sweep finding", () => {
         'ExecStart=bun "$PLUGIN/skills/file-issue/scripts/check-fields.ts" --yes\n',
     });
     expect(sweepFindings(tracker, timer.root, timer.tracked)).toEqual([]);
+    const positioned = repo({
+      "systemd/issue-fields.timer":
+        "[Timer]\nOnCalendar=weekly\n[Install]\nWantedBy=timers.target\n",
+      "systemd/issue-fields.service":
+        'ExecStart=bun "$PLUGIN/skills/file-issue/scripts/check-fields.ts" check --yes --position state/issue-fields-position.json\n',
+    });
+    expect(sweepFindings(tracker, positioned.root, positioned.tracked)).toEqual(
+      [],
+    );
   });
 
   it("says nothing of a repository that keeps no tracker", () => {

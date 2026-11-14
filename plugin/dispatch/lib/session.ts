@@ -11,7 +11,9 @@
  * skill the prompt names, so its prompt names the skill before the same
  * invocation (`skillPrompt`). The prompt ends by asking the session to
  * record how it ended through `jig dispatch result`, under its launch
- * record's token; it names no agent. The token binds the session to its
+ * record's token, and, as its last act, its closing report through
+ * `jig dispatch report`, as the steward's prompt does too; it names no
+ * agent. The token binds the session to its
  * record; it does not guard the state directory against another process of
  * the same user.
  */
@@ -25,6 +27,16 @@ import {
 import type { LaunchRecord, LaunchState, SessionResult } from "./launches.ts";
 import { ROUTINE_QUESTIONS, routineQuestion } from "./routine-questions.ts";
 import { STEWARD_RESUME } from "./steward.ts";
+import { NEED_ACTS } from "../../shared/acts.ts";
+import {
+  CLOSING_REPORT_SCHEMA,
+  CONCLUDED_MAX,
+  EVIDENCE_FORM_NAMES,
+  EVIDENCE_MAX,
+  NEXT_OWNERS,
+  REPORT_CAUSES,
+  STEP_MAX,
+} from "../../shared/closing-report.ts";
 
 /** The skill a pickup starts. */
 export const PICKUP_SKILL = "/jig:do-item";
@@ -67,6 +79,27 @@ function resultCommand(
   return jigCommand(["result", record.id, record.token, result]);
 }
 
+/** The command a pass runs to record its closing report. */
+function reportCommand(record: Pick<LaunchRecord, "id" | "token">): string {
+  return jigCommand(["report", record.id, record.token]);
+}
+
+/** The shape of a closing report, as a pass's prompt gives it in one line. */
+const REPORT_SHAPE = `{"schema":"${CLOSING_REPORT_SCHEMA}","concluded":"<what this run concluded, in your words: at most ${CONCLUDED_MAX} characters>","question":"<only when a person must decide: one line ending with ?>","decision":<only with question, when you framed it: the decision record itself, whose call.question is the question>,"suggested_next":{"step":"<the next step: at most ${STEP_MAX} characters>","owner":"<${NEXT_OWNERS.join("|")}>","act":"<only when the owner is person: ${NEED_ACTS.join(", ")}>"},"cause":"<only when the run fell short of its goal: ${REPORT_CAUSES.join(", ")}>","evidence":["<at most ${EVIDENCE_MAX} references, never contents: ${EVIDENCE_FORM_NAMES.join(", ")}>"]}`;
+
+/**
+ * How a pass writes its closing report (`jig dispatch report`), as its last
+ * act, after `after`, under its record's token, beside the result it records.
+ */
+function reportLines(
+  record: Pick<LaunchRecord, "id" | "token">,
+  after = "your result",
+): string[] {
+  return [
+    `As your last act, after ${after}, write your closing report: what this run concluded, for the person and the stations that read it after you. Write it as JSON of this shape to a file, leaving out each field marked "only" that does not apply: ${REPORT_SHAPE}. Owner line means a stage of the line takes the next step (a drive, a follow-up). Name no secret and no personal data. Record it: ${reportCommand(record)} <that file>. When the command refuses the report it names what is wrong: fix it and run the command again; the last report it takes stands, and it never changes a result.`,
+  ];
+}
+
 /** The shape of a framed decision, as a pass's prompt gives it in one line. */
 const DECISION_SHAPE =
   '{"schema":"parked-decision/v1","class":"<the registry class it falls in: scope, human-decision, release, destructive, …>","call":{"id":"a","question":"<one line ending with ?>","options":[{"id":"a","name":"<a name on one line>","summary":"<what choosing it changes>","pay":["<what it costs>"]},{"id":"b","name":"<another name>","summary":"<what it changes>","pay":["<what it costs>"]}],"recommended":"<an option id>","why":"<why you recommend it>"},"steps":["<what a person must do whichever option is chosen; none: []>"],"alreadyDone":"<what you did about it so far>"}';
@@ -82,6 +115,24 @@ function framingLines(record: Pick<LaunchRecord, "id" | "token">): string[] {
     `Frame that decision for the person as a decision record, JSON of this shape, written to a file: ${DECISION_SHAPE}. Give at least two options, each refusal or wait an option of its own; option ids are 1 to 8 letters or digits, names are unique; no secret or personal data. Record your stop with it: ${resultCommand(record, "failed")} --decision <that file>. When the command refuses the record it names what is wrong: fix it and run the command again. When you cannot frame the decision, record failed without --decision.`,
   ];
 }
+
+/**
+ * Why a headless pass keeps its work in its own turn: it has no next turn,
+ * so a background task or agent still running when the turn ends is lost
+ * with it, and an agent that stopped without reporting must not hold the
+ * pass until its deadline. A Claude Code pass also runs with background
+ * tasks off (`NO_BACKGROUND_TASKS`); this rule is a Codex pass's only one.
+ */
+const FOREGROUND_LINE =
+  "This pass has no next turn: a background task or agent still running when your turn ends is lost with it, and nothing reports its result. Run every long step (a long command, a subagent) in the foreground and wait for it in the same turn. When you wait on another agent, bound the wait; when it stops or goes quiet without reporting, retry or replace it, or record that its work did not happen (a required review is not discharged by silence), and never wait out the deadline.";
+
+/**
+ * Why a pickup pushes before it validates: a deadline or an interrupted
+ * validation run then strands nothing on the host. The push opens no pull
+ * request; that still waits for validation and review.
+ */
+const PUSH_BEFORE_VALIDATION_LINE =
+  "Once the branch holds committed work, push the branch before a long validation step (the gates, a full test run), and again after each later commit, so a deadline or an interrupted validation strands less on this host. Where the repository's instructions require validation before every push, they win: skip the early push. Push the way the skill's push step does, rewording unpushed commits to the configured commit prefix first, since a pushed commit is never reworded. A push the repository's pre-push hook refuses is no stop: go on with validation, fix what it found and push after it. Pushing opens no pull request: that still waits for validation and the pre-PR review.";
 
 /**
  * A person's answer to the decision an earlier session of this target
@@ -138,8 +189,9 @@ function pickupResultLines(
       ? `- the claim was refused by the repository's start rules (exit 3 with "why": "preflight" and an "updatedAt" in its JSON): ${resultCommand(record, "failed")} --refused <its updatedAt> --reason "<its reason>"`
       : `- a member's claim was refused by the repository's start rules (exit 3 with "why": "preflight" and an "updatedAt" in its JSON): ${resultCommand(record, "failed")} --refused <its updatedAt> --key <its issue> --reason "<its reason>", repeating the three for each member refused; only those members are held`;
   return [
-    "When you stop, record how the pickup ended, once:",
-    `- its pull request is open and its drive armed: ${resultCommand(record, "done")} --pr <the pull request number>`,
+    "Record how the pickup ended, once, as soon as you know it:",
+    `- its pull request is open and its drive armed: ${resultCommand(record, "done")} --pr <the pull request number>; record this as soon as the drive is armed, then go on`,
+    `- its pull request is open and the drive could not be armed here (the arm script answered spawn, which this pass cannot run, and no drive of the pull request is listed): record the same ${resultCommand(record, "done")} --pr <the pull request number>, and say in the closing report that the drive is unarmed, with the unstarted command`,
     `- no pull request was needed (a duplicate or work already made): ${resultCommand(record, "done")} --none "<why>"`,
     refused,
     `- the tracker refused a request for its rate limit (a tracker script exited 5, naming the time it resets) before your claim of the item succeeded: ${resultCommand(record, "waits")} --until <that time>; ask no question, the dispatcher starts the item again after the reset`,
@@ -197,9 +249,12 @@ function pickupPassPrompt(
         ]),
     "",
     "jig dispatch started this headless pass for an item assigned to the factory identity, or for an unassigned item from the repository's ready pool, which your claim assigns; nobody is at the keyboard, and nobody can answer a question while it runs.",
+    FOREGROUND_LINE,
+    PUSH_BEFORE_VALIDATION_LINE,
     `Where a step needs a person's decision, do not guess: carry out what does not depend on it, then stop, and end your output with one line that starts "${QUESTION_PREFIX}" and states what the person must decide, with no secret or personal data in it. The dispatcher sends that line to a person.`,
     ...framingLines(record),
     ...pickupResultLines(record),
+    ...reportLines(record),
   ].join("\n");
 }
 
@@ -269,6 +324,7 @@ function followupPrompt(record: LaunchRecord): string {
     skillPrompt(record.vendor, `${record.command} ${pr}`),
     "",
     "jig dispatch started this headless pass for the follow-up of a merged pull request; nobody is at the keyboard, and nobody can answer a question while it runs.",
+    FOREGROUND_LINE,
     ...answeredLines(record),
     `It claimed the follow-up with the marker comment ${marker} on the pull request. That claim is this pass's: post no marker of your own. Before each act that writes outside the pull request (an issue closed, a tag pushed), check that you still hold the claim, and stop on any nonzero exit (an earlier marker, an unreadable forge, a missing marker): ${jigCommand(["marker", "check", pr, "--comment", marker, "--repo", record.repo])}`,
     "Leave routine local housekeeping (branch retention, retired workspaces and scratch notes) to periodic cleanup, even when no collector covers a leftover yet. Do not ask a person about it or treat it as an incomplete arm or a failed result. Evidence of unlanded work or an active operational problem still belongs in the follow-up.",
@@ -278,7 +334,9 @@ function followupPrompt(record: LaunchRecord): string {
     ...routineLines(record),
     "When you stop, record how the follow-up ended, once:",
     `- every arm is settled, what you may carry out carried out and the rest reported: ${resultCommand(record, "done")}`,
+    `- the forge or the tracker refused a request for its rate limit (a gh call reporting it, such as "API rate limit exceeded", "secondary rate limit" or HTTP 429, or a tracker script that exited 5, naming the time it resets): ${resultCommand(record, "waits")} --until <that time>, for the forge the reset gh api rate_limit names for the spent resource, else an hour from now; ask no question, the dispatcher starts the follow-up again after the reset, and its steps check what is already done`,
     `- you stopped short of that (a question, a failure, an earlier marker): ${resultCommand(record, "failed")}, with --decision <file> when you framed the question`,
+    ...reportLines(record),
   ].join("\n");
 }
 
@@ -334,7 +392,8 @@ export function sessionArgv(record: LaunchRecord): string[] {
  * runs `claude -p` with the vendor session id the tick minted and the
  * host's `drive.pass_args` (`passArgs`) before `-p`, as a drive's pass
  * gets them; Codex runs `codex exec`, with its bypass only when the tick
- * admitted the record on a host that opted in (`codexBypass`). Neither
+ * admitted the record on a host that opted in (`codexBypass`), then the
+ * host's `drive.codex_pass_args` the record keeps (`codexPassArgs`). Neither
  * gets a permission of the launcher's own.
  */
 export function followupPassArgv(
@@ -357,6 +416,7 @@ function headlessArgv(
       "codex",
       "exec",
       ...(record.codexBypass === true ? [CODEX_BYPASS] : []),
+      ...(record.codexPassArgs ?? []),
       ...route,
       prompt,
     ];
@@ -393,6 +453,9 @@ export function stewardPassArgv(
     `Steward launch: ${record.id}`,
     `Launch token: ${record.token}`,
     "Read only the token-bound digest and submit the skill's closed records. The dispatcher applies them on the next tick; launch nothing and make no repository, tracker or configuration changes yourself.",
+    'Finish only after submit succeeds with {"submitted":true}, including an empty array when no record is justified. If read or submit fails, report that failure explicitly; never describe the pass as submitted without its confirmation.',
+    FOREGROUND_LINE,
+    ...reportLines(record, "the submit"),
   ].join("\n");
   return headlessArgv(record, passArgs, prompt, true);
 }

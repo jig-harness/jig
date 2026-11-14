@@ -8,6 +8,7 @@ import {
 } from "./settings.ts";
 
 import type { DriveLock } from "./locks.ts";
+import { NO_BACKGROUND_TASKS } from "../pass-command.ts";
 
 import { refreshAccountIdentityBeforeSpawn } from "./identity.ts";
 
@@ -20,6 +21,7 @@ import { run, tsArgv, helperTimeoutSeconds } from "./../proc.ts";
 import { finishDriverPassRegistrations, touchLock } from "./lifecycle.ts";
 
 import type { FailingStatus } from "./../../../../../shared/ci-status.ts";
+import { isoOf } from "../../../../../shared/time.ts";
 
 // `drive.ts` is itself very often launched from inside a live Claude Code
 // session (do-item's "Arm the drive" step spawns it in the background), and
@@ -35,10 +37,9 @@ export function passEnv(
 ): NodeJS.ProcessEnv {
   const env = { ...process.env };
   delete env.CLAUDECODE;
+  env.JIG_OUTBOUND_CALLER = `pass:drive:${task?.task ?? "review"}:${env.JIG_LAUNCH ?? "manual"}`;
   // A headless pass has no next turn to receive a background task's result.
-  // Claude Code removes background tool parameters and auto-backgrounding
-  // under this setting; other pass runtimes ignore this vendor variable.
-  env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS = "1";
+  Object.assign(env, NO_BACKGROUND_TASKS);
   // DELETED UNCONDITIONALLY FIRST, then set only for a repair pass. An
   // ordinary review round must never inherit a repair task — not from this
   // driver's own environment, and not from an operator who exported one by
@@ -285,7 +286,7 @@ export async function runRepairPass(
 export async function recordQuotaPark(
   driveStatePath: string,
   pr: string,
-  block: { vendor: string; window: string; resetAt: Date | null },
+  block: { vendor: string; window: string; resetAt: Temporal.Instant | null },
   account: string | null,
 ): Promise<void> {
   const park = await run(
@@ -296,9 +297,7 @@ export async function recordQuotaPark(
       block.vendor,
       "--window",
       block.window,
-      ...(block.resetAt !== null
-        ? ["--reset-at", block.resetAt.toISOString()]
-        : []),
+      ...(block.resetAt !== null ? ["--reset-at", isoOf(block.resetAt)] : []),
       // Whose wall it is: a re-arm from another account may pass it.
       ...(account !== null ? ["--account", account] : []),
     ]),

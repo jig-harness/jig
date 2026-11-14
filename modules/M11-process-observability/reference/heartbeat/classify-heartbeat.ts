@@ -157,16 +157,6 @@ export function parseDuration(value: unknown, where: string): number {
   return ms;
 }
 
-/**
- * The days in a month of the proleptic Gregorian calendar, computed from the
- * year as written: `Date.UTC` would read a year below 100 as 1900 plus it.
- */
-function monthLength(year: number, month: number): number {
-  if (month !== 2) return [4, 6, 9, 11].includes(month) ? 30 : 31;
-  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
-  return leap ? 29 : 28;
-}
-
 /** An ISO 8601 time with a zone in epoch milliseconds; throw on any other text. */
 export function parseTime(value: unknown, where: string): number {
   const match = typeof value === "string" ? TIME.exec(value) : null;
@@ -174,26 +164,24 @@ export function parseTime(value: unknown, where: string): number {
     throw new HeartbeatInputError(
       `${where} must be an ISO 8601 time with Z or an offset, not ${JSON.stringify(value)}`,
     );
-  // Date.parse rolls an impossible date over (February 30 becomes March 2), so
-  // the components are checked before it runs.
-  const [year, month, day, hour, minute, second] = match
-    .slice(1, 7)
-    .map(Number) as [number, number, number, number, number, number];
-  const daysInMonth = monthLength(year, month);
-  const real =
-    month >= 1 &&
-    month <= 12 &&
-    day >= 1 &&
-    day <= daysInMonth &&
-    hour <= 23 &&
-    minute <= 59 &&
-    second <= 59 &&
-    (match[9] === undefined ||
-      (Number(match[9]) <= 23 && Number(match[10]) <= 59));
-  const ms = Date.parse(match[0]);
-  if (!real || Number.isNaN(ms))
-    throw new HeartbeatInputError(`${where} is not a real time: ${match[0]}`);
-  return ms;
+  // Temporal refuses a date, time or offset that does not exist, but reads a
+  // leap second (:60) as :59, so the seconds are checked first. Digits past
+  // the nanosecond name no time Temporal can hold, and are dropped.
+  if (Number(match[6]) <= 59)
+    try {
+      return Temporal.Instant.from(match[0].replace(/(\.[0-9]{9})[0-9]+/, "$1"))
+        .epochMilliseconds;
+    } catch {
+      // Falls through to the refusal below.
+    }
+  throw new HeartbeatInputError(`${where} is not a real time: ${match[0]}`);
+}
+
+/** Epoch milliseconds as an ISO 8601 UTC time, to the millisecond. */
+function iso(ms: number): string {
+  return Temporal.Instant.fromEpochMilliseconds(ms).toString({
+    fractionalSecondDigits: 3,
+  });
 }
 
 function record(value: unknown, where: string): Record<string, unknown> {
@@ -466,7 +454,7 @@ export function classify(job: Job, runs: Run[], now: number): JobResult {
   const overdue = ageMs > job.cadenceMs + job.graceMs;
   const found = {
     id: job.id,
-    lastResultAt: new Date(last.finishedMs).toISOString(),
+    lastResultAt: iso(last.finishedMs),
     lastResult: last.status === "success" ? "success" : "failure",
     consecutiveFailures: streak,
     ageMs,
@@ -514,7 +502,7 @@ export function heartbeat(jobs: Job[], runs: Run[], now: number): Report {
     .map((job) => classify(job, runs, now));
   const declared = new Set(jobs.map((job) => job.id));
   return {
-    now: new Date(now).toISOString(),
+    now: iso(now),
     verdict: results.some((r) => r.class === "red" || r.class === "stale")
       ? "red"
       : "ok",
@@ -570,7 +558,10 @@ const OPTIONS = {
 } as const;
 
 /** The options; throw with the usage on any other shape. */
-export function parseOptions(args: string[], clock = Date.now()): Options {
+export function parseOptions(
+  args: string[],
+  clock = Temporal.Now.instant().epochMilliseconds,
+): Options {
   const { values } = strictOptions(
     { args, options: OPTIONS, allowPositionals: false },
     usage,

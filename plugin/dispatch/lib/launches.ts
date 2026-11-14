@@ -13,9 +13,10 @@
  * - `claim`, the wrapper's (`run.ts`): the process identity it ran under
  *   (`shared/liveness.ts`: host id and name, boot id, process id and the
  *   process's start time), set by an update that only fills an empty column,
- *   so exactly one wrapper ever claims a record;
- * - `exit`, the wrapper's again: the stage's exit, once it ended; the first
- *   one written stands;
+ *   so exactly one wrapper ever claims a record; a headless stage reserves
+ *   pending supervisor and child identities, each acknowledged once by its
+ *   owner under that launch's token;
+ * - `exit`, the wrapper's again: the stage's exit, once it ended; first write wins;
  * - `result`, a pickup's session's or a follow-up pass's own answer
  *   (`done` or `failed`), written once by `jig dispatch result` under the
  *   record's token.
@@ -28,7 +29,8 @@
  * | an exit | ended, with the stage's exit |
  * | a claim whose process is alive under the same identity | alive |
  * | a claim from another host, or an unreadable process table | unknown |
- * | a claim whose process is gone, or from before this host last restarted, and no exit | died, with why |
+ * | a legacy claim whose process is gone, or a claim from before this host last restarted, and no exit | died, with why |
+ * | a headless claim with no confirmed cleanup after wrapper death | unknown, holding its slot |
  * | no claim | pending |
  *
  * Pending, alive and unknown records hold their stage and their account's
@@ -43,25 +45,30 @@
  * `waiting_episodes` table), and, once it ended, the time its outcome row
  * carries (`endedAt`), written in the same transaction as that row.
  */
+import {
+  asClaim,
+  claimState,
+  malformedLiveWrapper,
+  uncertainCleanupState,
+  type StageSupervision,
+} from "./launch-supervision.ts";
 import { optionalLaunchFields } from "./launch-record-options.ts";
 import { readNext, type NextOwner } from "./next-owner.ts";
 import { type FramedResult, framedOf } from "./framed-result.ts";
+import { type KeptReport, readKeptReport } from "./closing-report-store.ts";
 import {
   type PickupRefusal,
   readRefusal,
   type RefusedMember,
   waitsOf,
 } from "./pickup-refusal.ts";
-
 export type { PickupRefusal, RefusedMember };
 import { unsettledStartups } from "./session-startup.ts";
 import type { Database } from "bun:sqlite";
 import { isMapping } from "../../shared/config-layers.ts";
 import { swallow } from "../../shared/errors.ts";
 import {
-  decodeIdentity,
   type HostIdentity,
-  judge,
   type ProcessIdentity,
   thisHost,
 } from "../../shared/liveness.ts";
@@ -77,8 +84,10 @@ import { cancelledBeforeExecution } from "./cancellation.ts";
 import type { StandingAnswer } from "./routine-questions.ts";
 export { cancelledBeforeExecution } from "./cancellation.ts";
 export { UNARMED_FACTS } from "./launch-keep.ts";
-import { latestArms, latestFailedRearms } from "./launch-keep.ts";
+import { latestArms, latestDriveRefusals } from "./launch-keep.ts";
 import { latestPickups } from "./launch-pickups.ts";
+import { type ControlRows, controlRows, EMPTY } from "./launch-control-rows.ts";
+import { isoOf, parseMs } from "../../shared/time.ts";
 
 /** What a launch starts: a re-arm of a stopped drive, a takeover of a wedged one, a pickup's `do-item` session, or a merge's follow-up pass. */
 export type LaunchAction =
@@ -151,8 +160,9 @@ export interface LaunchRecord {
   /** For a pickup from the ready pool: the launch re-reads it as one, so a later assignment cannot move it to the assigned lane. */
   pooled?: boolean;
   batchItems?: import("./queue-batch.ts").BatchItem[];
-  /** For a headless pass: whether the tick admitted it on a host opted in to Codex's bypass. A Codex pass carries the bypass only when this is `true`; the wrapper does not read the setting itself, since it can read another user layer from the tick's. */
+  /** For a headless pass: whether the tick admitted it on a host opted in to Codex's bypass (a Codex pass carries the bypass only when this is `true`), and the host's `drive.codex_pass_args` read with it, which a Codex pass carries before its prompt (absent for none); the wrapper reads neither setting itself, since it can read another user layer from the tick's. */
   codexBypass?: boolean;
+  codexPassArgs?: string[];
   /** For a takeover: the record whose driver it replaces, whose slot it takes. */
   replaces: string | null;
   /** The ledger facts the launch acted on: the same facts after a refusal are never launched again. */
@@ -244,6 +254,8 @@ export interface WaitingEpisode {
 /** The wrapper's process identity (`shared/liveness.ts`), and when it claimed the record. */
 export interface LaunchClaim extends ProcessIdentity {
   claimedAt: string;
+  /** Durable startup handoff and identities for the supervised stage. */
+  supervision?: StageSupervision;
 }
 
 export interface LaunchExit {
@@ -253,10 +265,10 @@ export interface LaunchExit {
   /** The stage's exit code; `null` when it ended on a signal. */
   code: number | null;
   signal: string | null;
-  /** Set when the stage ended on the account's wall and the wrapper could not record that wall. */
-  wallUnrecorded?: true;
+  wallUnrecorded?: true; // the stage ended on the account's wall, which the wrapper could not record
   /** For a follow-up pass that ended without recording done: the last `Question:` line of its output, the question it stopped on. */
   said?: string;
+  usage?: string; // a drive's exit on drive.ts's usage error: the end of its message, one line
 }
 
 export type LaunchState =
@@ -268,6 +280,8 @@ export type LaunchState =
       process: LaunchClaim;
       /** It ended on its account's wall, which was never written: the whole account stays closed. */
       wallUnrecorded?: true;
+      /** A registered process proved alive even though the launch cannot be settled. */
+      liveProcess?: ProcessIdentity;
     }
   | { kind: "died"; reason: string; process: LaunchClaim }
   | {
@@ -290,6 +304,8 @@ export interface ReadRecord {
   refusal?: PickupRefusal | null;
   /** The framed decision the pass recorded with its `failed` result, when it stopped for a person; absent otherwise. */
   framed?: FramedResult;
+  /** The run's closing report (`closing-report-store.ts`); absent or `null` when it left none. */
+  report?: KeptReport | null;
 }
 
 /** A launch record id: the time it was made, and a random suffix. */
@@ -300,9 +316,10 @@ export function isRecordId(id: string): boolean {
   return ID.test(id);
 }
 
-export function newRecordId(now: Date): string {
-  const stamp = now
-    .toISOString()
+export function newRecordId(
+  now: Temporal.Instant = Temporal.Now.instant(),
+): string {
+  const stamp = isoOf(now)
     .replace(/[-:]/g, "")
     .replace(/\.\d+Z$/, "Z");
   return `${stamp}-${crypto.randomUUID().slice(0, 8)}`;
@@ -392,7 +409,7 @@ export function isLaunchRecord(value: unknown): value is LaunchRecord {
     (value.vendor === "claude" || value.vendor === "codex") &&
     typeof value.wallBackoffMs === "number" &&
     (value.replaces === null || typeof value.replaces === "string") &&
-    Number.isFinite(Date.parse(value.createdAt as string)) &&
+    Number.isFinite(parseMs(value.createdAt as string)) &&
     isWorkspace(value.workspace) &&
     Array.isArray(value.attempts) &&
     value.attempts.every(isAttempt) &&
@@ -461,21 +478,12 @@ function isAttempt(value: unknown): value is LaunchAttempt {
   );
 }
 
-/** A claim as written, one from before host ids included; `null` when it is not one. */
-function asClaim(value: unknown): LaunchClaim | null {
-  const identity = decodeIdentity(value);
-  return identity === null ||
-    !isMapping(value) ||
-    typeof value.claimedAt !== "string"
-    ? null
-    : { ...identity, claimedAt: value.claimedAt };
-}
-
 function isExit(value: unknown): value is LaunchExit {
   return (
     isMapping(value) &&
     typeof value.at === "string" &&
-    (value.code === null || typeof value.code === "number")
+    (value.code === null || typeof value.code === "number") &&
+    (value.usage === undefined || typeof value.usage === "string")
   );
 }
 
@@ -492,6 +500,7 @@ export interface LaunchRow {
   refusal?: string | null;
   /** A pass's framed decision, recorded with its `failed` result (`framed-result.ts`). */
   result_decision?: string | null;
+  report?: string | null;
 }
 
 /** The tick's part of a row, with its samples and episodes; `null` when it does not read as a record. */
@@ -516,60 +525,6 @@ export function recordOf(
       ...new Set([...(record.claimedItems ?? []), ...claims]),
     ];
   return { ...record, ...(rows ?? EMPTY) };
-}
-
-interface EpisodeRow {
-  launch: string;
-  observed_at: string;
-  reset_at: string | null;
-  evidence: string;
-  last: number;
-  read_at: string;
-}
-
-type ControlRows = Pick<LaunchRecord, "samples" | "episodes">;
-
-const EMPTY: ControlRows = { samples: [], episodes: [] };
-
-/** The thread samples and waiting episodes of one launch, or of every launch, in the order they were first written. */
-function controlRows(
-  root: string,
-  id?: string,
-  db: Database = stateDb(root),
-): Map<string, ControlRows> {
-  const where = id === undefined ? "" : "WHERE launch = ?";
-  const args = id === undefined ? [] : [id];
-  const out = new Map<string, ControlRows>();
-  const of = (launch: string) => {
-    let rows = out.get(launch);
-    if (rows === undefined) {
-      rows = { samples: [], episodes: [] };
-      out.set(launch, rows);
-    }
-    return rows;
-  };
-  const samples = db
-    .query(
-      `SELECT launch, round, threads, at FROM thread_samples ${where} ORDER BY rowid`,
-    )
-    .all(...args) as Array<ThreadSample & { launch: string }>;
-  for (const { launch, round, threads, at } of samples)
-    (of(launch).samples as ThreadSample[]).push({ round, threads, at });
-  const episodes = db
-    .query(
-      `SELECT launch, observed_at, reset_at, evidence, last, read_at
-       FROM waiting_episodes ${where} ORDER BY rowid`,
-    )
-    .all(...args) as EpisodeRow[];
-  for (const e of episodes)
-    (of(e.launch).episodes as WaitingEpisode[]).push({
-      observedAt: e.observed_at,
-      resetAt: e.reset_at,
-      evidence: e.evidence,
-      last: e.last === 1,
-      readAt: e.read_at,
-    });
-  return out;
 }
 
 function launchRow(id: string, root: string): LaunchRow | null {
@@ -599,11 +554,19 @@ export function readEnded(id: string, root = stateRoot()): ReadRecord | null {
   return {
     record,
     state: stateOf(row, null, thisHost()),
+    ...answerOf(row),
+  };
+}
+
+/** What a row says the session answered: its result, handoff, refusal, framed decision and closing report. */
+function answerOf(row: LaunchRow): Omit<ReadRecord, "record" | "state"> {
+  return {
     result: asResult(row.result, row.result_until ?? null),
     next: readNext(row.result_next),
     ...waitsOf(row),
     refusal: readRefusal(row.refusal),
     ...framedOf(row.result_decision),
+    report: readKeptReport(row.report),
   };
 }
 
@@ -664,20 +627,6 @@ export function recordExit(
     .run(JSON.stringify(exit), id);
 }
 
-/** Whether a claimed process is the one running now under its pid, by the shared rules. */
-function claimState(
-  claim: LaunchClaim,
-  rows: ProcessRow[] | null,
-  here: HostIdentity,
-): LaunchState {
-  const verdict = judge(claim, rows, here);
-  if (!verdict.ok)
-    return { kind: "unknown", reason: verdict.failure.reason, process: claim };
-  return verdict.value.state === "alive"
-    ? { kind: "alive", process: claim }
-    : { kind: "died", reason: verdict.value.reason, process: claim };
-}
-
 /** A row's exit, when it has one that reads. */
 function exitOf(row: Pick<LaunchRow, "id" | "exit">): LaunchExit | null {
   const exit = parseJson(row.exit, `the exit of launch record ${row.id}`);
@@ -719,6 +668,8 @@ function stateOf(
 ): LaunchState {
   const exit = exitOf(row);
   const claim = claimOf(row);
+  const uncertain = uncertainCleanupState(claim, rows, here);
+  if (uncertain !== null) return uncertain;
   if (exit?.wallUnrecorded === true)
     // The wall was never written: the account stays held until a person clears the record.
     return {
@@ -742,6 +693,21 @@ function stateOf(
         process: NO_PROCESS,
       };
     return { kind: "pending" };
+  }
+  if (claim === null) {
+    const liveWrapper = malformedLiveWrapper(
+      parseJson(row.claim, `the claim of launch record ${row.id}`),
+      rows,
+      here,
+    );
+    if (liveWrapper !== undefined)
+      return {
+        kind: "unknown",
+        reason:
+          "its supervision handoff does not read while a recorded process is alive",
+        process: liveWrapper,
+        liveProcess: liveWrapper,
+      };
   }
   if (claim === null)
     return {
@@ -781,11 +747,7 @@ export async function readLaunches(
     records.push({
       record,
       state: stateOf(row, rows, here),
-      result: asResult(row.result, row.result_until ?? null),
-      next: readNext(row.result_next),
-      ...waitsOf(row),
-      refusal: readRefusal(row.refusal),
-      ...framedOf(row.result_decision),
+      ...answerOf(row),
     });
   }
   return { records, unreadable };
@@ -862,8 +824,8 @@ function latestRedrives(records: ReadRecord[]): Set<string> {
 
 /** When an ended or died record finished; `null` for one still holding its stage. */
 function finishedAt(record: LaunchRecord, state: LaunchState): number | null {
-  if (state.kind === "ended") return Date.parse(state.exit.at);
-  return state.kind === "died" ? Date.parse(record.createdAt) : null;
+  if (state.kind === "ended") return parseMs(state.exit.at);
+  return state.kind === "died" ? parseMs(record.createdAt) : null;
 }
 
 /** Remove the rows of ended or died records older than the retention, in one transaction. */
@@ -881,7 +843,7 @@ export function pruneLaunches(
     latestPickups,
     latestRedrives,
     latestArms,
-    latestFailedRearms,
+    latestDriveRefusals,
   ])
     for (const id of latest(records)) kept.add(id);
   for (const r of records)

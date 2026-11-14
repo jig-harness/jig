@@ -53,6 +53,7 @@ import {
 } from "../shared/liveness.ts";
 import type { LastRun } from "../runtime/component.ts";
 import type { ScheduledUpgrade } from "../runtime/upgrade-record.ts";
+import type { QuotaRisk, SystemSpending } from "./lib/outbound-report.ts";
 import type { NotAdmitted } from "./lib/accounts.ts";
 import type { FailureEntry } from "./lib/failures.ts";
 import type { LineLoad } from "./lib/dashboard-contract.ts";
@@ -60,6 +61,7 @@ import type { ReflectionReport } from "./lib/reflection-route.ts";
 import { tickFailure } from "./lib/tick-failure.ts";
 import { failureText } from "./lib/text.ts";
 import type { Defect, RepoReport } from "./lib/types.ts";
+import { currentMs, isoOf, parseMs } from "../shared/time.ts";
 
 /** Days a receipt is kept unless the machine file's `receipts_days` says otherwise. */
 const RETENTION_DAYS = 30;
@@ -87,6 +89,8 @@ export interface TickReceipt {
   lineFailed?: string;
   /** The repositories another tick held the observe lock of, so this tick neither read nor acted on them. */
   busy?: { path: string; heldBy: string }[];
+  /** The outside systems that did not answer in this tick, so no further request went to them in it; the next tick probes each once before it reads on. */
+  unanswered?: { system: string; class: string; reason: string }[];
   /** The forge's budget as the tick started, when it was low enough that the optional reads (thread samples, serialization's reads) were skipped. */
   lowBudget?: { remaining: number; limit: number; skipped: string[] };
   /** The host's gauges as the act phase read them, the load factor, each kind's reservation and the launches the load factor held or would hold (`lib/load.ts`); absent from a tick with no machine file. */
@@ -110,6 +114,12 @@ export interface TickReceipt {
   lockHeldBy?: string;
   /** The plugin upgrade the launcher ran before this tick (`runtime/upgrade-record.ts`); absent from a tick no timer started. */
   upgrade?: ScheduledUpgrade;
+  /** Per-system balances and this tick's own spending. */
+  outbound?: SystemSpending[];
+  /** The ledger did not read; spending and balance are unknown. */
+  outboundUnavailable?: boolean;
+  /** Quotas the last hour's estimated spending empties before their refill horizon. */
+  quotaRisks?: QuotaRisk[];
   repos: RepoReport[];
 }
 
@@ -137,8 +147,8 @@ function receiptsRoot(root: string): string {
 
 const RUN_ID = /^\d{4}-\d{2}-\d{2}T[\d-]+Z-\d+-[a-f\d]{8}$/;
 
-export function newRunId(now: Date): string {
-  const stamp = now.toISOString().replace(/[:.]/g, "-");
+export function newRunId(now: Temporal.Instant): string {
+  const stamp = isoOf(now).replace(/[:.]/g, "-");
   return `${stamp}-${process.pid}-${crypto.randomUUID().slice(0, 8)}`;
 }
 
@@ -158,7 +168,7 @@ export function writeReceipt(receipt: TickReceipt, root = stateRoot()): string {
   // The file's time is when it is published, which the morning report reads:
   // the fsync above can take arbitrarily long, so stamp it just before the
   // rename, which keeps it.
-  const published = new Date();
+  const published = currentMs() / 1000;
   utimesSync(temporary, published, published);
   renameSync(temporary, path);
   return path;
@@ -192,7 +202,7 @@ function validFollowupSince(value: unknown): boolean {
   return (
     value === null ||
     value === undefined ||
-    (typeof value === "string" && Number.isFinite(Date.parse(value)))
+    (typeof value === "string" && Number.isFinite(parseMs(value)))
   );
 }
 
@@ -389,7 +399,7 @@ export function pruneReceipts(
   const removed: string[] = [];
   for (const path of paths) {
     if (keep.has(path)) continue;
-    const day = Date.parse(`${basename(dirname(path))}T00:00:00Z`);
+    const day = parseMs(`${basename(dirname(path))}T00:00:00Z`);
     if (!Number.isFinite(day) || day + 86_400_000 > cutoff) continue;
     rmSync(path, { force: true });
     removed.push(path);
@@ -507,7 +517,7 @@ function abandoned(path: string, text: string | null): boolean {
 
 function olderThan(path: string, ms: number): boolean {
   try {
-    return Date.now() - statSync(path).mtimeMs > ms;
+    return currentMs() - statSync(path).mtimeMs > ms;
   } catch (err) {
     swallow(err, `${path} is gone`);
     return false;

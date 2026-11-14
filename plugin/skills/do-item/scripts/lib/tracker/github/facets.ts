@@ -237,9 +237,9 @@ export function facetFailure(
     .join(", ");
   const line = `${what} with ${credential}: ${status}${detail === "" ? "" : ` (${detail})`}`;
   return new GitHubApiError(line.slice(0, 300), {
-    notFound: err.notFound,
-    unavailable: err.unavailable,
-    retryAfterSec: err.retryAfterSec,
+    code: err.code,
+    until: err.until,
+    retryAfterMs: err.retryAfterMs,
   });
 }
 

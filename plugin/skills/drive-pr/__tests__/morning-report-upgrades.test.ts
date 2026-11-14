@@ -65,7 +65,7 @@ function tickReceipt(forge: Forge, upgrade: ScheduledUpgrade): void {
   const path = writeTick(
     {
       version: 1,
-      runId: newRunId(new Date(upgrade.at)),
+      runId: newRunId(Temporal.Instant.from(upgrade.at)),
       startedAt: upgrade.at,
       finishedAt: upgrade.at,
       completed: true,
@@ -96,7 +96,10 @@ describe("drives.ts --report: the plugin upgrades", () => {
     const at = new Date(Date.now() - 3_600_000);
     const day = join(root, "receipts", at.toISOString().slice(0, 10));
     mkdirSync(day, { recursive: true });
-    const bad = join(day, `${newRunId(at)}.json`);
+    const bad = join(
+      day,
+      `${newRunId(Temporal.Instant.fromEpochMilliseconds(at.getTime()))}.json`,
+    );
     writeFileSync(bad, "{ not json");
     const json = await runIn(forge, join(SCRIPTS, "drives.ts"), [
       "--report",

@@ -20,6 +20,7 @@ import { defaultBranchFile, pullRequestFiles } from "../forge.ts";
 import type { ReadRecord } from "../launches.ts";
 import { settleHolds } from "../serial-holds.ts";
 import type { DrivenPr, RepoReport, RepoTarget } from "../types.ts";
+import { isoFromMs } from "../../../shared/time.ts";
 
 /** What the forge gave the tick, as serialization reads it. */
 export interface ForgeView {
@@ -110,11 +111,7 @@ export async function observeContention(
     });
   if (contention.report !== null) report.serialized = contention.report;
   if (forge.owner === false) return contention;
-  for (const reason of settleHolds(
-    repo.slug,
-    contention,
-    new Date(nowMs).toISOString(),
-  ))
+  for (const reason of settleHolds(repo.slug, contention, isoFromMs(nowMs)))
     report.unplaced.push({
       target: "the outcome log",
       record: "runtime",

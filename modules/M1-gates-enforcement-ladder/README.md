@@ -366,8 +366,11 @@ What this module provides:
   the turn-budget guard, the plugin's agent-runtime hook: before every tool
   call it counts the session's round-trips off the transcript and hands the
   agent a wrap-up instruction within a margin of the runtime's turn cap;
-  registered by [`plugin/hooks/hooks.json`](../../plugin/hooks/hooks.json)
-  and tested in [`plugin/hooks/__tests__/`](../../plugin/hooks/__tests__/).
+  registered for Claude Code by [`plugin/hooks/hooks.json`](../../plugin/hooks/hooks.json)
+  and for Codex, whose per-release re-approval of a plugin's hooks it avoids,
+  by an entry `jig upgrade` writes into the Codex home that runs a stable
+  [shim](../../plugin/hooks/codex-shim.ts); tested in
+  [`plugin/hooks/__tests__/`](../../plugin/hooks/__tests__/).
 - [`reference/retry-classified/`](reference/retry-classified/) — the
   classified retry: runs a command, retries it only on an error the pattern
   list classifies as transient, aborts at once on any other with the

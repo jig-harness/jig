@@ -22,6 +22,7 @@ import { parkRefusal } from "./rulings.ts";
 import type { StateStore } from "./store.ts";
 import { resolveParkPerson } from "./park-person.ts";
 import { items, optionFields, optionName } from "./park-frame.ts";
+import { currentIso } from "../../../../../shared/time.ts";
 
 /** The record's headings, in the order it must carry them. */
 export const RECORD_SECTIONS = [
@@ -277,7 +278,7 @@ function parkedWith(
         decision,
         digest: decisionDigest(decision),
         round: s.rounds,
-        at: new Date().toISOString(),
+        at: currentIso(),
       },
     ],
   };

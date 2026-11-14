@@ -73,6 +73,7 @@ import {
   sameOperation,
   saveSnapshot,
 } from "./lib/snapshot.ts";
+import { currentIso } from "../../../shared/time.ts";
 
 /** At most this many commits per side and path; the rest is `truncated`. */
 export const INTENT_CAP = 20;
@@ -667,7 +668,7 @@ async function main(): Promise<number> {
     },
     warning: warningOf(op.warning, catalog),
     catalogIncomplete: catalog.incomplete,
-    mappedAt: new Date().toISOString(),
+    mappedAt: currentIso(),
     attribution: attributionOf(process.env),
     paths,
   };

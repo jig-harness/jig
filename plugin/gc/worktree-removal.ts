@@ -7,7 +7,9 @@
  *
  * `jig gc` collects an Orca-managed worktree through here from the installed
  * plugin, and the Orca workspace tool's `remove` (tools/orca) runs the same
- * sequence with its own seams: a server's host reached over SSH.
+ * sequence with its own seams: a server's host reached over SSH. A worktree
+ * an agent tool made, which no runtime keeps records of, goes the same way
+ * with `git worktree remove` as the last step.
  */
 import { main as journalMain } from "../skills/reflect/scripts/journal.ts";
 import { withGitDeadline } from "../skills/reflect/scripts/lib/context.ts";
@@ -21,6 +23,7 @@ import {
   hookPath,
   superviseHook,
 } from "../shared/worktree-hooks.ts";
+import { currentMs } from "../shared/time.ts";
 
 /** The longest parking a worktree's reflection findings may take: a few git calls. */
 export const PARK_TIMEOUT_MS = 3 * 60_000;
@@ -111,7 +114,7 @@ export function localSteps(
   log: (line: string) => void,
 ): RemovalSteps {
   const left = (ms: number): number =>
-    Math.max(0, Math.min(ms, deadline - Date.now()));
+    Math.max(0, Math.min(ms, deadline - currentMs()));
   return {
     hook: (worktree) => hookPath(worktree, "remove"),
     runHook: (worktree, hook) => {
@@ -121,7 +124,7 @@ export function localSteps(
       return failure === null ? ok(undefined) : failed("hook-failed", failure);
     },
     park: (worktree) =>
-      parkFindings(worktree, Date.now() + left(PARK_TIMEOUT_MS), log),
+      parkFindings(worktree, currentMs() + left(PARK_TIMEOUT_MS), log),
   };
 }
 
@@ -151,13 +154,15 @@ export interface Removed {
 }
 
 /**
- * Remove an Orca-managed worktree: the remove hook, the park, then `orca
- * worktree rm`. The first step that fails is the answer, its code unchanged,
- * and the worktree stays.
+ * What every removal runs before the checkout goes: the remove hook, the
+ * park, then the caller's last admission. The first step that fails is the
+ * answer, and the worktree stays.
  */
-export async function removeThroughOrca(
-  removal: OrcaRemoval,
-): Promise<Outcome<Removed>> {
+async function prepareRemoval(removal: {
+  worktree: string;
+  log: (line: string) => void;
+  steps: RemovalSteps;
+}): Promise<Outcome<Removed>> {
   const { worktree, steps } = removal;
   const hook = steps.hook(worktree);
   if (hook !== null) {
@@ -169,6 +174,48 @@ export async function removeThroughOrca(
   if (!parked.ok) return parked;
   const admitted = (await steps.admit?.(worktree)) ?? ok(undefined);
   if (!admitted.ok) return admitted;
+  return ok({ hook });
+}
+
+/** A worktree no workspace runtime manages, removed with git itself. */
+export interface GitRemoval {
+  worktree: string;
+  log: (line: string) => void;
+  steps: RemovalSteps;
+  /**
+   * Run `git worktree remove` for the worktree, never with `--force`, so git
+   * itself refuses a checkout that gained changes; answers git's failure.
+   */
+  remove(worktree: string): Promise<StepOutcome>;
+}
+
+/**
+ * Remove a worktree no runtime keeps records of (an agent tool's): the remove
+ * hook, the park, then `git worktree remove`. The first step that fails is
+ * the answer, its code unchanged, and the worktree stays.
+ */
+export async function removeWithGit(
+  removal: GitRemoval,
+): Promise<Outcome<Removed>> {
+  const prepared = await prepareRemoval(removal);
+  if (!prepared.ok) return prepared;
+  const removed = await removal.remove(removal.worktree);
+  if (!removed.ok) return removed;
+  removal.log(`✓ removed ${removal.worktree}`);
+  return prepared;
+}
+
+/**
+ * Remove an Orca-managed worktree: the remove hook, the park, then `orca
+ * worktree rm`. The first step that fails is the answer, its code unchanged,
+ * and the worktree stays.
+ */
+export async function removeThroughOrca(
+  removal: OrcaRemoval,
+): Promise<Outcome<Removed>> {
+  const prepared = await prepareRemoval(removal);
+  if (!prepared.ok) return prepared;
+  const { hook } = prepared.value;
   const what = "orca worktree rm";
   const done = await removal.orca([
     "worktree",
@@ -195,6 +242,6 @@ export async function removeThroughOrca(
       "orca-unreadable",
       `${what}: unreadable output ${orcaFailure(done)}`,
     );
-  removal.log(`✓ removed ${worktree}`);
+  removal.log(`✓ removed ${removal.worktree}`);
   return ok({ hook });
 }

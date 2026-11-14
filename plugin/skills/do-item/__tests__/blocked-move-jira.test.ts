@@ -23,7 +23,7 @@ const KEYS = {
   source: "(?<!\\w)ENG-\\d+(?!\\w)",
   normalize: (k: string) => k.toUpperCase(),
 };
-const NOW = () => new Date("2026-11-11T09:30:00Z");
+const NOW = () => Temporal.Instant.from("2026-11-11T09:30:00Z");
 
 const SITE_FIELDS = [
   {
@@ -98,7 +98,7 @@ function site(
         if (outage)
           return new JiraApiError(
             "Jira API HTTP 503 on POST issue/ENG-1/transitions: unavailable",
-            { status: 503, unavailable: true },
+            { status: 503, code: "server-fault" },
           );
         const fields = (c.body.fields ?? {}) as Record<string, unknown>;
         if (state.status !== "Blocked" && required !== null)

@@ -288,6 +288,7 @@ import {
   WaitingEvaluationCache,
   waitingChecksMaxAgeMs,
 } from "./lib/status/waiting-cache.ts";
+import { currentMs } from "../../../shared/time.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -878,7 +879,7 @@ async function main(): Promise<number> {
       // collector already published, never sampled here.
       const fleetHealth = readFleetHealthAdvisory(
         Number.parseInt(pr, 10),
-        Date.now(),
+        currentMs(),
       );
       process.stdout.write(
         `${JSON.stringify({
@@ -978,7 +979,7 @@ async function main(): Promise<number> {
     if (!json) {
       const fh = fleetHealthLine(
         Number.parseInt(pr, 10),
-        readFleetHealthAdvisory(Number.parseInt(pr, 10), Date.now()),
+        readFleetHealthAdvisory(Number.parseInt(pr, 10), currentMs()),
       );
       if (fh !== null) console.error(fh);
     }
@@ -1093,7 +1094,7 @@ async function main(): Promise<number> {
   // might clear. A read that positively says the PR is finished is a different
   // matter: it will not clear, and `evaluate()` is about to return PR_NOT_OPEN
   // for it anyway.
-  const deadline = Date.now() + timeout * 1000;
+  const deadline = currentMs() + timeout * 1000;
   /**
    * What is LEFT of the caller's `--timeout`. Non-positive means spent.
    *
@@ -1110,7 +1111,7 @@ async function main(): Promise<number> {
    * Worth recording because it is why this is one bug rather than several:
    * every such site is a different instance of the same omission.
    */
-  const budgetLeftMs = (): number => deadline - Date.now();
+  const budgetLeftMs = (): number => deadline - currentMs();
   /**
    * Whether a further `--interval` sleep still fits inside `--timeout`.
    *
@@ -1726,7 +1727,7 @@ async function main(): Promise<number> {
           return 4;
         }
         // The budget is spent when the NEXT sleep no longer fits, not when the
-        // clock has already passed the deadline. `Date.now() >= deadline` let
+        // clock has already passed the deadline. `currentMs() >= deadline` let
         // a full `--interval` be slept on top of whatever the iteration had
         // already spent, so `--timeout 30 --interval 30` returned at ~50s when
         // a sweep took the first 20 — and

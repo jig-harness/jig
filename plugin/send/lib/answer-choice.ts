@@ -29,6 +29,7 @@ import {
 } from "../../skills/drive-pr/scripts/lib/answer-forms.ts";
 import type { AnswerChoice } from "../../skills/drive-pr/scripts/lib/state/pass-handoff.ts";
 import type { ParkedItem } from "../../skills/drive-pr/scripts/lib/state/park-frame.ts";
+import { currentMs, isoFromMs, parseMs } from "../../shared/time.ts";
 
 /** A structured form, as the person named it. */
 export type StructuredForm =
@@ -65,9 +66,9 @@ function readBack(
   login: string,
   parts?: StructuredParts,
 ): AnswerChoice | undefined {
-  const at = new Date(
-    Math.max(Date.now(), Date.parse(item.at ?? "") + 1000 || 0),
-  ).toISOString();
+  const at = isoFromMs(
+    Math.max(currentMs(), parseMs(item.at ?? "") + 1000 || 0),
+  );
   const body = answerComment(
     item.key,
     text,

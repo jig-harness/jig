@@ -620,7 +620,15 @@ describe("incompleteIssues", () => {
       limit: 2,
     });
     expect(second.issues.map((i) => i.identifier)).toEqual(["#7"]);
-    expect(second.next).toBeNull();
+    expect(second.next).toBeNull(); // An issue's own cursor resumes after it, as a page's does.
+    const resumed = await t.incompleteIssues({
+      missing: ["type", "priority", "size"],
+      retired: [],
+      after: first.issues[0]?.cursor ?? null,
+      limit: 1,
+    });
+    expect(resumed.issues.map((i) => i.identifier)).toEqual(["#6"]);
+    expect(resumed.next).toBe(resumed.issues[0]?.cursor ?? "");
   });
 
   it("refuses a page size outside 1 to 100 and a facet with no store", async () => {

@@ -193,13 +193,13 @@ describe("tracker.ts and the post-merge policy", () => {
   });
 
   it("leaves a person's direct move alone, and lets a post-merge move to done through under the default", () => {
-    // Both reach the tracker, which the closed port refuses: exit 1, not 3.
+    // Both reach the tracker, which the closed port leaves unanswered: exit 6 (unreachable), not 3.
     for (const [overlay, args] of [
       [SHORT_OF_DONE, ["transition", "#5", "done"]],
       ["", ["transition", "#5", "done", "--post-merge"]],
     ] as const) {
       const r = run(overlay, [...args]);
-      expectSpawnExit(r, 1);
+      expectSpawnExit(r, 6);
       expect(r.stdout.toString()).toBe("");
     }
   });

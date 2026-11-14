@@ -57,6 +57,7 @@ import {
   verifyMigrations,
 } from "./migrations.ts";
 import { sourceDatabaseRefusal } from "./source.ts";
+import { currentIso } from "../time.ts";
 
 /** How long a write waits for another connection's transaction to end. */
 const BUSY_MS = 10_000;
@@ -76,6 +77,8 @@ export interface Migration {
 export interface DatabaseSpec {
   readonly path: string;
   readonly migrations: readonly Migration[];
+  /** Maximum time SQLite may wait for a lock while opening or migrating this database. */
+  readonly busyMs?: number;
 }
 
 /** Why a database could not be opened. */
@@ -194,7 +197,7 @@ function migrate(db: Database, spec: DatabaseSpec): Outcome<null, OpenCode> {
             randomUUID(),
             now,
             minimumReader(spec.migrations, now),
-            new Date().toISOString(),
+            currentIso(),
           ],
         );
       else if (meta.version !== now && now <= known)
@@ -272,7 +275,7 @@ function connect(spec: DatabaseSpec): Outcome<Database, OpenCode> {
     mkdirSync(dirname(spec.path), { recursive: true, mode: 0o700 });
     db = new Database(spec.path, { create: true });
     if (fresh) chmodSync(spec.path, 0o600);
-    db.run(`PRAGMA busy_timeout = ${BUSY_MS}`);
+    db.run(`PRAGMA busy_timeout = ${spec.busyMs ?? BUSY_MS}`);
   } catch (error) {
     return failed(
       "unopenable",
@@ -312,6 +315,9 @@ function refreshConnection(
   spec: DatabaseSpec,
 ): Outcome<Database, OpenCode> {
   try {
+    // Callers that need best-effort access (such as outbound accounting) must
+    // apply their timeout before inspecting or migrating a cached connection.
+    db.run(`PRAGMA busy_timeout = ${spec.busyMs ?? BUSY_MS}`);
     const inspected = inspectDatabase(db, spec);
     if (inspected.refusal !== null) return inspected.refusal;
     if (inspected.write) {

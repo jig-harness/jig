@@ -10,6 +10,7 @@ import {
   renderName,
   type Scenario,
 } from "./contracts.ts";
+import { currentMs } from "../../../shared/time.ts";
 type Reply = {
   id?: number;
   result?: Record<string, unknown>;
@@ -28,8 +29,8 @@ async function until<T>(
   read: () => Promise<T | undefined>,
   limitMs = deadlineMs,
 ): Promise<T | undefined> {
-  const deadline = Date.now() + limitMs;
-  while (Date.now() < deadline) {
+  const deadline = currentMs() + limitMs;
+  while (currentMs() < deadline) {
     const value = await read();
     if (value !== undefined) return value;
     await Bun.sleep(50);
@@ -217,12 +218,12 @@ function intercept(client: Client, state: RenderState, params: Params): void {
 function requestStarted(state: RenderState, params: Params): void {
   const { url } = params.request as { url: string };
   state.active.add(String(params.requestId));
-  state.lastActivity = Date.now();
+  state.lastActivity = currentMs();
   if (external(url, state.origin)) fail(state, `external request ${url}`);
 }
 function requestEnded(state: RenderState, params: Params): void {
   state.active.delete(String(params.requestId));
-  state.lastActivity = Date.now();
+  state.lastActivity = currentMs();
 }
 function attachEvents(client: Client, state: RenderState): void {
   const handlers: Record<string, (params: Params) => void> = {
@@ -420,7 +421,7 @@ async function loadPage(
       returnByValue: true,
     });
     const ready = (result.result as { value?: string }).value === "complete";
-    const idle = !state.active.size && Date.now() - state.lastActivity >= 250;
+    const idle = !state.active.size && currentMs() - state.lastActivity >= 250;
     return (state.loaded.has(String(navigation.loaderId)) && ready && idle) ||
       state.rejected > rejected
       ? true
@@ -666,7 +667,7 @@ export async function renderBundle(
       failures: new Set(),
       active: new Set(),
       loaded: new Set(),
-      lastActivity: Date.now(),
+      lastActivity: currentMs(),
     };
     // Service and shared workers belong to the browser, not the page.
     attachEvents(session, state);

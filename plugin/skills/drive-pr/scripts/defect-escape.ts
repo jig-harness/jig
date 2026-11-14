@@ -161,6 +161,7 @@ import {
   samplePr,
   type ThreadSample,
 } from "./lib/sample.ts";
+import { currentMs, isCalendarDate, parseMs } from "../../../shared/time.ts";
 
 export interface Decline {
   pr: number;
@@ -791,7 +792,7 @@ const mergeCommitMergedAtFailureCounts = new Map<string, number>();
  * plausibly cleared. Like the per-key TTL above, this is an operational
  * retry/backoff timestamp, not the business-temporal logic ADR-0017 scopes
  * clock injection to (see `self-inflicted.ts`'s identical, already-settled
- * note on its own `Date.now()` deadline read). */
+ * note on its own `currentMs()` deadline read). */
 const MERGE_COMMIT_MERGED_AT_BUDGET_COOLDOWN_MS = 60_000;
 const mergeCommitMergedAtBudgetTrippedAt = new Map<string, number>();
 
@@ -862,14 +863,14 @@ async function mergeCommitMergedAt(
   const failedAt = mergeCommitMergedAtFailedAt.get(key);
   if (
     failedAt !== undefined &&
-    Date.now() - failedAt < MERGE_COMMIT_MERGED_AT_FAILURE_TTL_MS
+    currentMs() - failedAt < MERGE_COMMIT_MERGED_AT_FAILURE_TTL_MS
   ) {
     return null;
   }
   const budgetKey = cwd ?? "";
   const trippedAt = mergeCommitMergedAtBudgetTrippedAt.get(budgetKey);
   if (trippedAt !== undefined) {
-    if (Date.now() - trippedAt < MERGE_COMMIT_MERGED_AT_BUDGET_COOLDOWN_MS) {
+    if (currentMs() - trippedAt < MERGE_COMMIT_MERGED_AT_BUDGET_COOLDOWN_MS) {
       return null;
     }
     // Cooldown elapsed — let this call through to retry, with the counter
@@ -884,7 +885,7 @@ async function mergeCommitMergedAt(
   }
   const recordFailure = (): void => {
     mergeCommitMergedAtCache.delete(key);
-    mergeCommitMergedAtFailedAt.set(key, Date.now());
+    mergeCommitMergedAtFailedAt.set(key, currentMs());
     if (mergeCommitMergedAtFailedAt.size > MERGE_COMMIT_MERGED_AT_CACHE_MAX) {
       const oldest = mergeCommitMergedAtFailedAt.keys().next().value;
       if (oldest !== undefined) mergeCommitMergedAtFailedAt.delete(oldest);
@@ -892,7 +893,7 @@ async function mergeCommitMergedAt(
     const nextCount = failureCount + 1;
     mergeCommitMergedAtFailureCounts.set(budgetKey, nextCount);
     if (nextCount >= MERGE_COMMIT_MERGED_AT_FAILURE_BUDGET) {
-      mergeCommitMergedAtBudgetTrippedAt.set(budgetKey, Date.now());
+      mergeCommitMergedAtBudgetTrippedAt.set(budgetKey, currentMs());
     }
   };
   // A conclusive response — well-formed JSON, whether it names a match or
@@ -998,10 +999,10 @@ export async function renameHistoryFromRevision(
   return hops;
 }
 
-/** `Date.parse` of a full ISO instant, or `null` for `''`/an unparsable value. */
+/** Epoch milliseconds of a full ISO instant, or `null` for `''`/an unparsable value. */
 function epochMsOf(iso: string): number | null {
   if (iso === "") return null;
-  const ms = Date.parse(iso);
+  const ms = parseMs(iso);
   return Number.isNaN(ms) ? null : ms;
 }
 
@@ -1566,17 +1567,9 @@ export async function mergedPrs(
  * be about a window that does not exist (measured against the live API).
  */
 export function calendarDate(raw: string): string | null {
-  const m = /^([0-9]{4})-([0-9]{2})-([0-9]{2})$/.exec(raw);
-  if (m === null) return null;
-  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
-  const asDate = new Date(Date.UTC(y, mo - 1, d));
-  // Round-tripping catches every overflow at once — month 13, February 31, and
-  // a non-leap February 29 — rather than re-deriving the calendar here.
-  return asDate.getUTCFullYear() === y &&
-    asDate.getUTCMonth() === mo - 1 &&
-    asDate.getUTCDate() === d
-    ? raw
-    : null;
+  // The calendar check catches every bad day at once — month 13, February
+  // 31, and a non-leap February 29 — rather than re-deriving the calendar here.
+  return isCalendarDate(raw) ? raw : null;
 }
 
 /**

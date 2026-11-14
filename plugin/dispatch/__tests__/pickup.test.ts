@@ -128,6 +128,8 @@ describe("jig dispatch --apply picks up assigned items", () => {
   it("gives an assigned todo item exactly one headless do-item pass across three ticks, on Orca's own answer", async () => {
     const w = fixture();
     w.env.CLAUDE_CODE_OAUTH_TOKEN = "a-token-for-another-account";
+    // The host's own setting does not turn the pass's background tasks back on.
+    w.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS = "0";
 
     const first = await applyTick(w, false);
     const [launched] = launches(first);
@@ -159,6 +161,8 @@ describe("jig dispatch --apply picks up assigned items", () => {
     // Bound through the account's directory, with the other account's token gone.
     expect(pass?.configDir).toBe(join(w.root, "config-a"));
     expect(pass?.token).toBeNull();
+    // A headless pass has no next turn to receive a background task's result.
+    expect(pass?.backgroundTasksOff).toBe("1");
     const argv = pass?.argv ?? [];
     expect(argv.at(-2)).toBe("-p");
     // The pass keeps the agent's own model and effort.
@@ -439,17 +443,45 @@ describe("jig dispatch --apply picks up assigned items", () => {
     expect(text.stdout).toContain("--apply withheld, nothing was started");
   });
 
-  it("does not pick an item up again once its pass ended without claiming it", async () => {
+  it("asks a person, once, whether to pick an item up again once its pass ended without claiming it", async () => {
     const w = fixture();
     const id = String(launches(await applyTick(w, false))[0]?.record);
     await waitFor("the pass", () => claudeRuns(w).length === 1);
     writeFileSync(join(w.dir, "claude-exit"), "1");
     await waitFor("the exit", () => exitWritten(w, id));
-    const later = await applyTick(w, false);
-    expect(launches(later)).toEqual([]);
-    expect(later.repos[0]?.quiet).toContainEqual(
-      expect.objectContaining({ target: "#12", class: "pickup-ended" }),
-    );
+    const needOf = async () => {
+      const tick = await applyTick(w, false);
+      expect(launches(tick)).toEqual([]);
+      const ended = (tick.repos[0]?.actions ?? []).filter(
+        (a) => a.cause === "pickup-ended",
+      );
+      expect(ended).toHaveLength(1);
+      expect(ended[0]).toMatchObject({
+        stage: "notify",
+        target: "#12",
+        evidence: { record: id, stage: "pickup" },
+      });
+      const answer = await w.dispatch(["line", "--json"]);
+      expectSpawnExit(answer, 0);
+      const { line } = (
+        JSON.parse(answer.stdout) as { value: { line: LineSnapshot } }
+      ).value;
+      const needs = line.needs.filter((n) => n.target === "#12");
+      expect(needs).toHaveLength(1);
+      expect(needs[0]).toMatchObject({
+        cause: "pickup-ended",
+        stage: "pickup",
+      });
+      const options = needs[0]?.decisions[0]?.options?.map((o) => o.name);
+      expect(options).toEqual(["Release the claim", "Leave it to me"]);
+      return {
+        digest: needs[0]?.decisions[0]?.digest,
+        notice: ended[0]?.notice?.key,
+      };
+    };
+    const first = await needOf();
+    // The next tick raises the same need on the same facts, not a second one.
+    expect(await needOf()).toEqual(first);
     expect(orcaCalls(w, "terminal", "create")).toHaveLength(1);
   });
 
@@ -494,8 +526,8 @@ describe("jig dispatch --apply picks up assigned items", () => {
 
   it("launches nothing for an item unassigned between the report and the launch", async () => {
     const w = fixture();
-    // The plan's two listings (dispatch states, then in progress) see it; the fresh read does not.
-    w.setIssuesAfter(2, []);
+    // The shared queue sees it; the fresh read before launch does not.
+    w.setIssuesAfter(1, []);
     const [waiting] = launches(await applyTick(w, false));
     expect(waiting).toMatchObject({
       action: "pickup",
@@ -509,7 +541,7 @@ describe("jig dispatch --apply picks up assigned items", () => {
 
   it("launches nothing for an item moved back to the backlog before the launch", async () => {
     const w = fixture();
-    w.setIssuesAfter(2, [assignedIssue(12, "factory-bot", ["Backlog"])]);
+    w.setIssuesAfter(1, [assignedIssue(12, "factory-bot", ["Backlog"])]);
     expect(launches(await applyTick(w, false))[0]).toMatchObject({
       outcome: "waits",
       detail: "it is no longer assigned to factory-bot in todo",

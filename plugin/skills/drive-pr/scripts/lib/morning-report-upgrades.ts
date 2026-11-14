@@ -25,6 +25,7 @@ import {
   type ScheduledUpgrade,
   upgradeLine,
 } from "../../../../runtime/upgrade-record.ts";
+import { isoFromMs, parseMs } from "../../../../shared/time.ts";
 
 export interface UpgradeEntry {
   /** When the upgrade ran; for a failure that repeated, when it first came. */
@@ -64,7 +65,7 @@ function upgradesOf(
   unread: string[],
 ): Array<[string, unknown, string | undefined]> {
   const first = Number.isFinite(since)
-    ? new Date(since - 86_400_000).toISOString().slice(0, 10)
+    ? isoFromMs(since - 86_400_000).slice(0, 10)
     : "";
   const found: Array<[string, unknown, string | undefined]> = [];
   /** Each job: its receipts' paths, and a receipt read, or why it does not read. */
@@ -99,7 +100,7 @@ function upgradesOf(
         try {
           return {
             upgrade: receipt.upgrade,
-            startedAt: statSync(path).mtime.toISOString(),
+            startedAt: isoFromMs(statSync(path).mtimeMs),
           };
         } catch (error) {
           return String(error);
@@ -176,7 +177,7 @@ function listed(
     // first written), not the attempt's start and not the run's finish: a
     // receipt written after one report ran is new to the next, whenever its
     // upgrade began, and its completion later does not make it new again.
-    Date.parse(published ?? upgrade.at) >= since
+    parseMs(published ?? upgrade.at) >= since
   );
 }
 

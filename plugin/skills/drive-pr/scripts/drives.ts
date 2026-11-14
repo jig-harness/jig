@@ -95,6 +95,7 @@ import {
  */
 
 import {
+  processStartMs,
   processTable,
   type ProcessRow,
 } from "../../../shared/process-table.ts";
@@ -271,7 +272,7 @@ function readLock(
   };
   const claim = inspectLock(stateDir, name);
   if (claim === null) return row;
-  const ageMs = Date.now() - Date.parse(claim.renewedAt);
+  const ageMs = currentMs() - parseMs(claim.renewedAt);
   row.pid = claim.pid;
   row.host = claim.host;
   row.hostId = claim.hostId === "" ? undefined : claim.hostId;
@@ -376,6 +377,7 @@ const stopHint = (pr: string): string => formatStopCommand(SELF, pr);
 
 export { gatherWorktreeLeftovers } from "./lib/worktree-leftovers.ts";
 import { gatherWorktreeLeftovers } from "./lib/worktree-leftovers.ts";
+import { currentMs, parseMs } from "../../../shared/time.ts";
 
 /**
  * Assemble one row's `DoctorInput` — the I/O `classifyDrive` never does.
@@ -393,7 +395,7 @@ async function gatherDoctorInput(
   const snapshot = readStateSnapshot(stateDir, row.key);
   const rawProgressAgeMs =
     snapshot.ok && snapshot.state.lastProgressAt !== ""
-      ? Date.now() - Date.parse(snapshot.state.lastProgressAt)
+      ? currentMs() - parseMs(snapshot.state.lastProgressAt)
       : null;
   // A FUTURE `lastProgressAt` (clock skew between the machine that stamped it
   // and this one, or a corrupted/hand-edited stored state) makes the subtraction
@@ -488,7 +490,7 @@ async function attachDoctorVerdicts(
       await (async () => {
         if (row.kind !== "pr") return row;
         const input = await gatherDoctorInput(stateDir, row, selfPath, procs);
-        const doctor = classifyDrive(input, new Date());
+        const doctor = classifyDrive(input, Temporal.Now.instant());
         const snapshot = readStateSnapshot(stateDir, row.key);
         if (
           doctorMode &&
@@ -890,8 +892,8 @@ async function verifyDriverClaim(
     console.log(`Inspect the claim by hand before acting: ${row.dir}`);
     return { code: 1 };
   }
-  const claimStartedMs = Date.parse(row.diag.started);
-  const processStartedMs = Date.parse(owner?.start ?? "");
+  const claimStartedMs = parseMs(row.diag.started);
+  const processStartedMs = processStartMs(owner?.start ?? "");
   if (Number.isNaN(claimStartedMs) || Number.isNaN(processStartedMs)) {
     console.log(
       `refusing to signal pid ${pid}: could not compare its start time (${JSON.stringify(owner?.start)}) to the claim's acquisition time (${JSON.stringify(row.diag.started)}).`,
@@ -903,7 +905,7 @@ async function verifyDriverClaim(
   // slack` is false for every process, so a recycled pid wearing a clock-skewed
   // or corrupt claim would pass. A claim can never be legitimately acquired
   // after "now", so materially-future is refused, not compared.
-  if (claimStartedMs > Date.now() + START_SLACK_MS) {
+  if (claimStartedMs > currentMs() + START_SLACK_MS) {
     console.log(
       `refusing to signal pid ${pid}: the claim's acquisition time (${row.diag.started}) is in the future — clock skew or a corrupt claim, and a future bound accepts every process.`,
     );
@@ -1015,8 +1017,8 @@ async function stopVerifiedDriver(
   }
   if (!(await requestVerifiedDriverStop(row, owner, sent))) return 1;
   const graceSec = testPacing("DRIVE_PR_STOP_GRACE_SEC", 30, 1);
-  const deadline = Date.now() + graceSec * 1000;
-  while (Date.now() < deadline) {
+  const deadline = currentMs() + graceSec * 1000;
+  while (currentMs() < deadline) {
     if (!(await refreshRegistered())) {
       await sleep(0.25);
       continue;
@@ -1063,7 +1065,7 @@ async function forceKnownStopTargets(
   state: WindowsTreeState,
   completed: () => boolean,
 ): Promise<boolean> {
-  const deadline = Date.now() + 30_000;
+  const deadline = currentMs() + 30_000;
   const control: ProcessTreeControl = {
     deadline,
     state,
@@ -1077,7 +1079,7 @@ async function forceKnownStopTargets(
       ...control,
       registrySnapshot: () => ({ roots: [owner], complete: true }),
     });
-  while (Date.now() < deadline) {
+  while (currentMs() < deadline) {
     await refreshOwner();
     await refreshRegistered(control);
     const count = targets.length;

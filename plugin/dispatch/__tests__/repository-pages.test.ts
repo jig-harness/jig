@@ -5,15 +5,16 @@
  * failure that is not the forge running out of time is not asked again.
  * The comments query over named pull requests shrinks the same way.
  */
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, spyOn } from "bun:test";
 import { failed, ok } from "../../shared/outcome.ts";
 import { GROW_AFTER_MS, type KeptSize } from "../../shared/outbound/paging.ts";
+import { ghRunFailure } from "../../shared/outbound/github.ts";
+import * as time from "../../shared/time.ts";
 import {
   type AskComments,
   type AskPage,
   PAGE,
   type PageSizes,
-  ranOutOfTime,
   readComments,
   readRepository,
 } from "../lib/forge-batch.ts";
@@ -246,7 +247,7 @@ describe("named pull requests' comments the forge cannot answer a full query of"
   it("does not grow an aged size when the final short query is slow", async () => {
     const { ask: quick } = commentsForge(50);
     let calls = 0;
-    const real = Date.now;
+    const real = time.currentMs;
     let fake = real();
     // The six-pull-request query takes 100 ms, the final two take 8 s.
     const ask: AskComments = async (owner, name, prs) => {
@@ -260,7 +261,7 @@ describe("named pull requests' comments the forge cannot answer a full query of"
         shrankAt: real() - 2 * GROW_AFTER_MS,
       },
     });
-    Date.now = () => fake;
+    const clock = spyOn(time, "currentMs").mockImplementation(() => fake);
     try {
       const read = await readComments(
         SLUG,
@@ -270,7 +271,7 @@ describe("named pull requests' comments the forge cannot answer a full query of"
       );
       expect(read.ok).toBe(true);
     } finally {
-      Date.now = real;
+      clock.mockRestore();
     }
     expect(calls).toBe(2);
     expect(sets).toEqual([]);
@@ -289,7 +290,11 @@ describe("named pull requests' comments the forge cannot answer a full query of"
 });
 
 describe("what says the forge ran out of time", () => {
-  const answered = (stderr: string) => ({ timedOut: false, stderr });
+  const answered = (stderr: string) => ({ code: 1, timedOut: false, stderr });
+  const ranOutOfTime = (
+    r: { code?: number; timedOut: boolean; stderr: string },
+    tookMs: number,
+  ) => ghRunFailure({ code: 1, ...r }, tookMs)?.code === "too-costly";
 
   it("is a gateway timeout the forge took its time over", () => {
     expect(ranOutOfTime(answered("gh: HTTP 504"), 11_000)).toBe(true);

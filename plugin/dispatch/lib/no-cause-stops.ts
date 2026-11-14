@@ -25,6 +25,7 @@ import {
   RECOVERY_FACTS,
 } from "./recovery-facts.ts";
 import type { DrivenPr } from "./types.ts";
+import { parseMs } from "../../shared/time.ts";
 
 const NO_CAUSE_LIMIT = 3;
 export const NO_CAUSE_WINDOW_MS = 60 * 60_000;
@@ -173,10 +174,10 @@ function limitReason(
   const invalid = [...attempts.values()].some(
     (a) =>
       budgeted(a.facts) &&
-      (!Number.isFinite(Date.parse(a.at)) || Date.parse(a.at) > nowMs),
+      (!Number.isFinite(parseMs(a.at)) || parseMs(a.at) > nowMs),
   );
   const count = [...attempts.values()].filter(
-    (a) => budgeted(a.facts) && Date.parse(a.at) > nowMs - NO_CAUSE_WINDOW_MS,
+    (a) => budgeted(a.facts) && parseMs(a.at) > nowMs - NO_CAUSE_WINDOW_MS,
   ).length;
   const what = facts.startsWith(RECOVERY_FACTS)
     ? "repeated recovery re-drives"

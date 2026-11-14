@@ -23,6 +23,7 @@ import {
   type GitHubTransport,
   pageAll,
 } from "../../../../do-item/scripts/lib/tracker/github/transport.ts";
+import { currentMs } from "../../../../../shared/time.ts";
 
 export { GitHubApiError };
 
@@ -47,7 +48,10 @@ const RATE_LIMIT_WAIT_MS = 60_000;
 
 /** The store contract's exit code for a failure. */
 export function exitCodeOf(error: unknown): 1 | 3 {
-  return error instanceof GitHubApiError && error.unavailable ? 3 : 1;
+  return error instanceof GitHubApiError &&
+    (error.unavailable || error.code === "unauthorized")
+    ? 3
+    : 1;
 }
 
 /**
@@ -65,13 +69,7 @@ export function isRateLimited(error: unknown): boolean {
 
 /** Whether the credential is missing or refused: `check` reports it. */
 export function isAuthFailure(error: unknown): boolean {
-  return (
-    error instanceof GitHubApiError &&
-    error.unavailable &&
-    /HTTP 401|bad credentials|not logged in|auth login|must hold a token/i.test(
-      error.message,
-    )
-  );
+  return error instanceof GitHubApiError && error.code === "unauthorized";
 }
 
 export interface ClientOptions {
@@ -133,7 +131,7 @@ export class GitHubClient {
     query: string,
     variables: Record<string, unknown>,
   ): Promise<unknown> {
-    const wait = this.lastWrite + this.intervalMs - Date.now();
+    const wait = this.lastWrite + this.intervalMs - currentMs();
     if (wait > 0) await sleep(wait);
     try {
       return await this.attempt(query, variables, isRateLimited);
@@ -146,11 +144,11 @@ export class GitHubClient {
       )
         throw new GitHubApiError(
           `${error.message}; the write may have been applied, so it is not sent again`,
-          { unavailable: true },
+          { code: "unreachable", sent: true },
         );
       throw error;
     } finally {
-      this.lastWrite = Date.now();
+      this.lastWrite = currentMs();
     }
   }
 
@@ -190,7 +188,7 @@ export class GitHubClient {
     if (this.waited + wait > MAX_TOTAL_WAIT_MS)
       throw new GitHubApiError(
         `${error.message}; GitHub asked to wait ${Math.ceil(wait / 1000)}s, longer than this run waits`,
-        { unavailable: true },
+        { code: error.code, until: error.until },
       );
     this.waited += wait;
     await sleep(wait);

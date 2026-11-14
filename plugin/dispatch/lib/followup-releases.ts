@@ -19,6 +19,7 @@ import { stateRoot } from "../receipts.ts";
 import { insertRow, type LogRow } from "./log.ts";
 import { inTransaction, stateDb } from "./state.ts";
 import type { MarkedPr, StaleClaim } from "./types.ts";
+import { currentIso } from "../../shared/time.ts";
 
 export interface FollowupRelease extends StaleClaim {
   /** The repository's `owner/name`. */
@@ -81,7 +82,7 @@ export function reconcileReleases(
       pr.markers.some((m) => m.id === release.marker)
     )
       continue;
-    const at = new Date().toISOString();
+    const at = currentIso();
     finishRelease(
       release,
       {

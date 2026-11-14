@@ -69,6 +69,12 @@ import { unobservedTarget } from "../notices.ts";
 import { openCard, orcaCard, retireCard } from "../runtime/orca-card.ts";
 import type { SessionsReport } from "../runtime/port.ts";
 import { failureText } from "../text.ts";
+import {
+  currentIso,
+  currentMs,
+  isoFromMs,
+  parseMs,
+} from "../../../shared/time.ts";
 import type {
   Action,
   NoticeCause,
@@ -104,7 +110,7 @@ function asRepeat(
   nowMs: number,
 ): Cause {
   const [head = "", ...rest] = cause.notice.text.split("\n");
-  const again = `Sent again: this still waits on a person as of ${new Date(nowMs).toISOString()}, first sent ${record.at} (dispatch.renotify_after ${hours(everyMs)}).`;
+  const again = `Sent again: this still waits on a person as of ${isoFromMs(nowMs)}, first sent ${record.at} (dispatch.renotify_after ${hours(everyMs)}).`;
   const repeated = {
     ...cause,
     repeat: true as const,
@@ -347,7 +353,7 @@ function dueAgain(
   nowMs: number,
 ): boolean {
   if (everyMs <= 0 || record.lasting) return false;
-  const last = Date.parse(record.sentAt);
+  const last = parseMs(record.sentAt);
   return Number.isFinite(last) && nowMs - last >= everyMs;
 }
 
@@ -484,7 +490,7 @@ function dueThere(
   const sent = readSuppressions(channel, repo.slug, root);
   const hostSent = readHostSuppressions(channel, HOST_NOTICE, root);
   prune(channel, report, standing, sent, root);
-  const nowMs = Date.now();
+  const nowMs = currentMs();
   const all: Cause[] = [];
   for (const c of causes) {
     const earlier = earlierSend(c, sent, hostSent);
@@ -514,7 +520,7 @@ function recordSent(
   place: string,
   { repo, report, root, settings }: SendScope,
 ): void {
-  const at = new Date().toISOString();
+  const at = currentIso();
   try {
     suppress(
       channel,

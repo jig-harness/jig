@@ -40,26 +40,31 @@ import {
   parkFindings,
 } from "../../plugin/gc/worktree-removal.ts";
 import { errnoCode } from "../../plugin/shared/errors.ts";
+import { processAlive } from "../../plugin/shared/orca-workspace/process-start.ts";
+import {
+  groupAlive,
+  type Recorded,
+  recordedRun,
+  supervisedHook,
+} from "../../plugin/shared/orca-workspace/supervised-hook.ts";
 import {
   type Hook,
   HOOK_TIMEOUT_MS,
   HOOKS_DIR,
-  hookFailure,
   hookPath as sharedHookPath,
-  superviseHook,
   WorktreeHookError,
 } from "../../plugin/shared/worktree-hooks.ts";
 import { assertLinkedWorktree, findGitWorktree, samePath } from "./git.ts";
 import { findHerdrWorktree, herdrCall, herdrJson } from "./herdr.ts";
+import { localOwner, type Owner, ownerAlive, ownerLine } from "./owner.ts";
 import {
-  localOwner,
-  type Owner,
-  ownerAlive,
-  ownerLine,
-  processAlive,
-  processStart,
-} from "./owner.ts";
-import { budget, type Context, HerdrError, output } from "./runner.ts";
+  budget,
+  type Context,
+  HerdrError,
+  output,
+  UnendedGroupError,
+} from "./runner.ts";
+import { currentMs } from "../../plugin/shared/time.ts";
 
 export {
   type Hook,
@@ -84,86 +89,11 @@ export function hookPath(worktree: string, hook: Hook): string | null {
 }
 
 /**
- * Run a hook in its worktree under the supervisor; throws when it fails. Its
- * output goes to the log. With `groupFile`, the hook's process group is
- * recorded there, and a failed run's group is ended before this returns, so
- * nothing of it is still running when the hook is run again. The hook gets
- * `HOOK_TIMEOUT_MS`, or what is left of the run's limit when that is less.
+ * Run a hook in its worktree under the supervisor; throws when it fails, a
+ * failed run's process group recorded in `groupFile` ended first
+ * (`plugin/shared/orca-workspace/supervised-hook.ts`).
  */
-export function runHook(
-  ctx: Context,
-  worktree: string,
-  path: string,
-  groupFile?: string,
-): void {
-  const run = superviseHook(
-    worktree,
-    path,
-    budget(ctx, HOOK_TIMEOUT_MS),
-    groupFile,
-  );
-  for (const line of run.lines) ctx.log(line);
-  const failure = hookFailure(path, run);
-  if (failure !== null) {
-    if (groupFile !== undefined) endGroup(ctx, groupFile);
-    throw new HerdrError(failure);
-  }
-}
-
-/**
- * The processes a hook run recorded, by role; empty when none were. A start
- * the supervisor could not read is null, and the id alone is checked then.
- */
-interface Recorded {
-  pid: number;
-  start: string | null;
-}
-
-function recordedRun(groupFile: string): {
-  wrapper?: Recorded;
-  group?: Recorded;
-} {
-  let text: string;
-  try {
-    text = readFileSync(groupFile, "utf8");
-  } catch (error) {
-    if (errnoCode(error) === "ENOENT") return {};
-    throw error;
-  }
-  const run: { wrapper?: Recorded; group?: Recorded } = {};
-  for (const line of text.split("\n")) {
-    const [role, pidText, start] = line.split(" ");
-    const pid = Number(pidText);
-    if (
-      (role === "wrapper" || role === "group") &&
-      Number.isInteger(pid) &&
-      pid > 0
-    )
-      run[role] = { pid, start: start || null };
-  }
-  return run;
-}
-
-/**
- * Kill what is left of a failed run's process group, only while the id still
- * names that group (`groupAlive`): once it names another, the hook's group
- * has ended and the other is not this run's to kill. A group that is gone
- * answers ESRCH; on macOS one whose processes have all exited but are not yet
- * reaped answers EPERM, and has nothing left to kill either.
- * Cleanup keeps processStart's own fixed deadline after the run budget expires,
- * so an expired hook still gets its identity checked before any group signal.
- */
-function endGroup(ctx: Context, groupFile: string): void {
-  const { group } = recordedRun(groupFile);
-  if (group === undefined || !groupAlive({ ...ctx, budget: (ms) => ms }, group))
-    return;
-  try {
-    process.kill(-group.pid, "SIGKILL");
-  } catch (error) {
-    const code = errnoCode(error);
-    if (code !== "ESRCH" && code !== "EPERM") throw error;
-  }
-}
+export const runHook = supervisedHook;
 
 /** The worktree's own git directory, where the create hook's claim is kept. */
 function gitDir(ctx: Context, worktree: string): string {
@@ -252,20 +182,6 @@ function recordedAlive(ctx: Context, run: Recorded): boolean {
 }
 
 /**
- * Whether the hook's process group still has a process in it. A group's id
- * is its first process's id, which the system does not give to another
- * process while the group has one left; so when that id now names a process
- * with another start, the group that has it is a new one, and the hook's has
- * ended.
- */
-function groupAlive(ctx: Context, group: Recorded): boolean {
-  if (!processAlive(-group.pid)) return false;
-  if (group.start === null) return true;
-  const start = processStart(ctx, group.pid);
-  return start === null || start === group.start;
-}
-
-/**
  * Take over a claim whose owner, on this host, is no longer running. A claim
  * with no readable owner, or one owned on another host, is never taken over.
  */
@@ -347,7 +263,9 @@ function runClaimed(
     runHook(ctx, worktree, path, groupPath(state));
   } catch (error) {
     writeWhole(state.result, `failed: ${(error as Error).message}\n`);
-    rmSync(state.claim, { recursive: true, force: true });
+    // A group that may still run keeps the claim; a later open takes it over once the run is gone.
+    if (!(error instanceof UnendedGroupError))
+      rmSync(state.claim, { recursive: true, force: true });
     throw error;
   }
   writeWhole(state.result, "ok\n");
@@ -379,27 +297,29 @@ export function awaitCreateHook(
   if (path === null) return;
   const state = createState(ctx, worktree);
   if (readResult(state) === "ok") return;
-  const graceEnds = Date.now() + graceMs;
-  while (!existsSync(state.claim) && Date.now() < graceEnds) ctx.sleep(POLL_MS);
+  const graceEnds = currentMs() + graceMs;
+  while (!existsSync(state.claim) && currentMs() < graceEnds)
+    ctx.sleep(POLL_MS);
   if (claim(ctx, state)) {
     ctx.log(`… running ${HOOKS_DIR}/create`);
     runClaimed(ctx, worktree, path, state);
     return;
   }
   ctx.log(`… waiting for ${HOOKS_DIR}/create`);
-  const deadline = Date.now() + HOOK_TIMEOUT_MS;
+  const deadline = currentMs() + HOOK_TIMEOUT_MS;
   for (;;) {
     const result = readResult(state);
     if (result === "ok") return;
-    if (result !== null)
-      throw new HerdrError(
-        `the worktree's create hook ${result}; fix ${path} and open the workspace again, which runs it again`,
-      );
+    // A failed run whose group could not be ended keeps its claim: once nothing of it is alive, take it over and run the hook again.
     if (takeOverAbandoned(ctx, state)) {
       runClaimed(ctx, worktree, path, state);
       return;
     }
-    if (Date.now() >= deadline)
+    if (result !== null)
+      throw new HerdrError(
+        `the worktree's create hook ${result}; fix ${path} and open the workspace again, which runs it again`,
+      );
+    if (currentMs() >= deadline)
       throw new HerdrError(
         `the worktree's create hook did not finish within ${HOOK_TIMEOUT_MS / 60_000} minutes; if no process is still running it, remove ${state.claim} and open the workspace again, which runs it again`,
       );
@@ -436,7 +356,7 @@ export async function parkJournal(
 ): Promise<void> {
   const parked = await parkFindings(
     worktree,
-    Date.now() + budget(ctx, PARK_TIMEOUT_MS),
+    currentMs() + budget(ctx, PARK_TIMEOUT_MS),
   );
   if (!parked.ok) throw new HerdrError(parked.failure.reason);
 }

@@ -16,6 +16,7 @@ import { stateRoot } from "../receipts.ts";
 import { isMapping } from "../../shared/config-layers.ts";
 import { swallow } from "../../shared/errors.ts";
 import { inTransaction, stateDb } from "./state.ts";
+import { currentIso } from "../../shared/time.ts";
 
 /** What a session started on a person's answer is handed: the decision's question, the option chosen and what it states, and the person's note. */
 export interface CarriedAnswer {
@@ -80,7 +81,7 @@ export function claimAnswer(
         row.answer,
         row.author,
         row.option,
-        new Date().toISOString(),
+        currentIso(),
         carry === null ? null : JSON.stringify(carry),
       );
     if (done.changes !== 1) return false;

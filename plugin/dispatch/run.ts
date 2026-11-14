@@ -11,14 +11,20 @@
  * the pull request's workspace, the pass being the documented pass command
  * of the account's vendor (`claude -p "/jig:drive-pr --bots-only <PR>"`, or
  * Codex's `codex exec …`, with the bypass when the record says the tick
- * admitted it on a host that opted in) and the deadline the one the tick
- * admitted it under, with the account's configuration directory set (`CLAUDE_CONFIG_DIR`
+ * admitted it on a host that opted in, and the host's `drive.codex_pass_args`
+ * the record keeps before the prompt, or `--pass-args ''` on a record that
+ * keeps none, so `drive.ts` adds no others) and the deadline the one the
+ * tick admitted it under, with the account's configuration directory set (`CLAUDE_CONFIG_DIR`
  * or `CODEX_HOME`) and the credential variables and the other directory
  * variable removed, so the pass bills the account the tick admitted. When
  * the drive ends it records the exit, and an exit of `QUOTA_PARKED` (`16`,
  * a usage-limit wall) writes the account's wall: the reset the drive
- * recorded, else `wall_backoff` from now. The drive's exits are read by
- * name from drive-pr's terminal-state registry (`DRIVE_EXIT`).
+ * recorded, else `wall_backoff` from now. The drive's error output passes
+ * through the wrapper, which keeps its end: an exit on `drive.ts`'s usage
+ * error (`UNSUPPORTED_CLI`) records the drive's message on the exit
+ * (`usage`, one bounded line), which the tick tells a person instead of
+ * launching the same command again. The drive's exits are read by name from
+ * drive-pr's terminal-state registry (`DRIVE_EXIT`).
  *
  *   bun … run.ts identity claude|codex
  *
@@ -48,10 +54,12 @@
  * account the same way. A Claude Code pass gets the host's
  * `drive.pass_args`, read here in the workspace as `drive.ts` reads them for
  * a drive's pass, and a Codex pass the bypass only when the record says the
- * tick admitted it on a host that opted in; the wrapper adds no permission
- * of its own. The wrapper stops the pass at the deadline the record names,
- * passes its output through, and keeps its last `Question:` line, nothing
- * else of it, on the exit of a pass that ended without recording `done`:
+ * tick admitted it on a host that opted in, with the `drive.codex_pass_args`
+ * the record keeps; the wrapper adds no permission of its own. The pass
+ * runs with background tasks off (`NO_BACKGROUND_TASKS`), as a drive's
+ * passes do: it has no next turn to receive their results. The wrapper stops the pass at the deadline the record names,
+ * passes its output through and keeps a bounded diagnostic tail. Its last
+ * `Question:` line is also kept unless the pass recorded `done`:
  * that is where a pass that needs a person states its question.
  *
  * A pickup's record starts a headless pass the same way, on
@@ -88,17 +96,25 @@
  * permission settings do not read; 3 the record was already claimed, so nothing
  * started.
  */
-import { spawn, type ChildProcess } from "node:child_process";
+import { runStage, type Ran, type RunOptions } from "./lib/run-stage.ts";
+import { driverCleanupUncertain } from "./lib/stage-cleanup.ts";
+import { spawnSupervisor } from "./lib/spawn-supervisor.ts";
+import {
+  readStageClaim,
+  registerStageProcess,
+  uncertainStage,
+} from "./lib/launch-supervision.ts";
 import { resolve } from "node:path";
-import { StringDecoder } from "node:string_decoder";
 import { swallow } from "../shared/errors.ts";
-import { QuestionTail } from "./lib/question-tail.ts";
-import { NO_WATCH, watchWindowsTree } from "./lib/windows-tree.ts";
+import { passOutput } from "./lib/pass-output.ts";
 import { captureIdentity } from "../shared/liveness.ts";
 import { endOwnTab, withoutRunTabMarker } from "../shared/orca-tabs.ts";
 import { LAUNCH_VARIABLE } from "../shared/launched-session.ts";
 import { resolveAccountIdentity } from "../skills/drive-pr/scripts/lib/identity.ts";
-import { passCommand } from "../skills/drive-pr/scripts/lib/pass-command.ts";
+import {
+  NO_BACKGROUND_TASKS,
+  passCommand,
+} from "../skills/drive-pr/scripts/lib/pass-command.ts";
 import {
   DRIVE_EXIT,
   driveExitClosesTab,
@@ -127,7 +143,6 @@ import {
   followupPassArgv,
   pickupPassArgv,
   stewardPassArgv,
-  QUESTION_PREFIX,
   sessionArgv,
 } from "./lib/session.ts";
 import { failureText } from "./lib/text.ts";
@@ -135,16 +150,24 @@ import { configuredPassArgs } from "../skills/drive-pr/scripts/lib/pass-args.ts"
 import { newerStateRefusal } from "./lib/state.ts";
 import { writeWall } from "./lib/walls.ts";
 import { failedStartup } from "./lib/session-startup.ts";
+import {
+  currentIso,
+  currentMs,
+  isoFromMs,
+  parseInstant,
+  parseMs,
+} from "../shared/time.ts";
 
 const CLAIMED = 3;
-const FORWARDED = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
 
 const BUNFIG = resolve(import.meta.dir, "bunfig.toml");
 
 /**
  * The drive command a record starts, under the same trusted startup as this
  * wrapper: the documented pass command of the record's vendor, under the
- * pass deadline and the host's opt-in the record was admitted with.
+ * pass deadline and the host's opt-in the record was admitted with. A Codex
+ * pass carries the extra words the record keeps; with none, `--pass-args ''`
+ * keeps `drive.ts` from adding any it reads later.
  */
 function driveCommand(record: LaunchRecord, script: string): string[] {
   const pr = String(record.pr);
@@ -152,7 +175,14 @@ function driveCommand(record: LaunchRecord, script: string): string[] {
   const settleTree =
     record.redrive?.uncleanTree === true ||
     (record.rearmLabel != null && record.facts.includes(", exit 12,"));
-  const pass = passCommand(record.vendor, pr, record.codexBypass === true);
+  const words = record.codexPassArgs ?? [];
+  const pass = passCommand(
+    record.vendor,
+    pr,
+    record.codexBypass === true,
+    words,
+  );
+  const pinned = record.vendor === "codex" && words.length === 0;
   if (settleTree)
     pass[pass.length - 1] +=
       "\nThe original tree holds uncommitted work. Inspect it: commit and push edits that belong to this change, or discard edits only when they are known disposable. Stop if ownership is unclear. Settle the existing tree before reporting convergence.";
@@ -165,6 +195,7 @@ function driveCommand(record: LaunchRecord, script: string): string[] {
     ...(record.action === "takeover" ? ["--take-over"] : []),
     "--bots-only",
     ...(settleTree ? ["--settle-worktree"] : []),
+    ...(pinned ? ["--pass-args", ""] : []),
     ...(typeof deadline === "number"
       ? ["--pass-timeout", String(deadline)]
       : []),
@@ -178,202 +209,8 @@ function driveScript(): string {
   return process.env.JIG_DISPATCH_DRIVE_SCRIPT || driveTs;
 }
 
-/** How much of a follow-up pass's last `Question:` line its exit keeps. */
-const QUESTION_CHARS = 1000;
-/** How long a pass stopped at its deadline has to end before it is killed. */
-const STOP_GRACE_MS = 10_000;
-/** How long the wrapper waits, once the stage exited, for the rest of its output and for its descendants to end. */
-const DRAIN_MS = 2000;
-
-interface Ran {
-  started?: number;
-  exited?: number;
-  output?: string;
-  code: number | null;
-  signal: string | null;
-  /** The stage's last `Question:` line, where the wrapper kept it. */
-  said?: string;
-  /** Windows only: the pass's tree could not be shown to have ended, so no exit is published. */
-  unconfirmed?: true;
-}
-
-/** How the wrapper runs a stage: whether it keeps its last question, and the deadline it enforces itself (seconds, `0` for none). */
-interface RunOptions {
-  keepOutput: boolean;
-  deadlineSec: number;
-}
-
-/** Whether a process group still has a member. */
-function groupAlive(pid: number): boolean {
-  try {
-    process.kill(-pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
-  }
-}
-
-/** Kill what is left of a pass's group and wait, briefly, for it to end. */
-async function endGroup(
-  pid: number | undefined,
-  signalTree: (name: NodeJS.Signals) => void,
-): Promise<void> {
-  if (pid === undefined || !groupAlive(pid)) return;
-  signalTree("SIGKILL");
-  const gone = Date.now() + DRAIN_MS;
-  while (groupAlive(pid) && Date.now() < gone) await Bun.sleep(20);
-}
-
-/** The timers that stop a pass at its deadline: a signal, then a kill after the grace. */
-function armDeadline(
-  deadlineSec: number,
-  signalTree: (name: NodeJS.Signals) => void,
-  endTree: () => Promise<void>,
-): ReturnType<typeof setTimeout>[] {
-  const timers: ReturnType<typeof setTimeout>[] = [];
-  if (deadlineSec <= 0) return timers;
-  timers.push(
-    setTimeout(() => {
-      console.error(
-        `jig dispatch run: the pass ran past its ${deadlineSec}s deadline; stopping it`,
-      );
-      signalTree("SIGTERM");
-      timers.push(
-        setTimeout(() => {
-          signalTree("SIGKILL");
-          void endTree();
-        }, STOP_GRACE_MS),
-      );
-    }, deadlineSec * 1000),
-  );
-  return timers;
-}
-
-/** Wait, briefly, for the last of a pass's output; a pipe a surviving descendant holds open is let go. */
-async function drainOutput(
-  child: ChildProcess,
-  drained: () => boolean,
-): Promise<void> {
-  const until = Date.now() + DRAIN_MS;
-  while (!drained() && Date.now() < until) await Bun.sleep(20);
-  if (!drained()) releasePipe(child);
-}
-
-/** Let go of a pass's output pipe that a surviving descendant holds open. */
-function releasePipe(child: ChildProcess): void {
-  child.stdout?.removeAllListeners("data");
-  child.stdout?.destroy();
-  child.stderr?.removeAllListeners("data");
-  child.stderr?.destroy();
-}
-
-function runStage(
-  argv: string[],
-  cwd: string,
-  env: Record<string, string>,
-  options: RunOptions = { keepOutput: false, deadlineSec: 0 },
-): Promise<Ran> {
-  return new Promise((settle) => {
-    const started = Date.now();
-    let stdout = "";
-    let stderr = "";
-    const stdoutDecoder = new StringDecoder("utf8");
-    const stderrDecoder = new StringDecoder("utf8");
-    // A pass under a deadline leads its own process group, so the deadline reaches what the agent started too.
-    const grouped = options.deadlineSec > 0 && process.platform !== "win32";
-    // Windows has no process group to signal; its tree is walked and ended by identity.
-    const treed = options.deadlineSec > 0 && process.platform === "win32";
-    const child = spawn(argv[0] as string, argv.slice(1), {
-      cwd,
-      env,
-      detached: grouped,
-      stdio: options.keepOutput ? ["inherit", "pipe", "pipe"] : "inherit",
-    });
-    const watch = treed
-      ? watchWindowsTree(
-          child.pid,
-          () => child.exitCode === null && child.signalCode === null,
-        )
-      : NO_WATCH;
-    let treeEnded = true;
-    const endWindowsTree = async () => {
-      treeEnded = await watch.end();
-    };
-    const signalTree = (name: NodeJS.Signals) => {
-      if (grouped && child.pid !== undefined) {
-        try {
-          process.kill(-child.pid, name);
-          return;
-        } catch (error) {
-          swallow(error, "the pass's group is gone or unsignalable");
-        }
-      }
-      child.kill(name);
-    };
-    const tail = new QuestionTail(QUESTION_PREFIX, QUESTION_CHARS);
-    let drained = !options.keepOutput;
-    child.stdout?.on("data", (chunk: Buffer) => {
-      stdout = (stdout + stdoutDecoder.write(chunk)).slice(-8192);
-      if (!process.stdout.write(chunk)) {
-        child.stdout?.pause();
-        process.stdout.once("drain", () => child.stdout?.resume());
-      }
-      tail.write(chunk);
-    });
-    child.stdout?.on("end", () => {
-      stdout = (stdout + stdoutDecoder.end()).slice(-8192);
-      drained = true;
-    });
-    let stderrDrained = !options.keepOutput;
-    child.stderr?.on("data", (chunk: Buffer) => {
-      stderr = (stderr + stderrDecoder.write(chunk)).slice(-8192);
-      if (!process.stderr.write(chunk)) {
-        child.stderr?.pause();
-        process.stderr.once("drain", () => child.stderr?.resume());
-      }
-    });
-    child.stderr?.on("end", () => {
-      stderr = (stderr + stderrDecoder.end()).slice(-8192);
-      stderrDrained = true;
-    });
-    const forward = (name: NodeJS.Signals) => signalTree(name);
-    for (const name of FORWARDED) process.on(name, forward);
-    const timers = armDeadline(options.deadlineSec, signalTree, () =>
-      endWindowsTree(),
-    );
-    let ended = false;
-    const done = async (code: number | null, signal: string | null) => {
-      if (ended) return;
-      ended = true;
-      const exited = Date.now();
-      for (const timer of timers) clearTimeout(timer);
-      watch.stopSampling();
-      // What the agent started can outlive it; the exit is published once the group has ended.
-      if (grouped) await endGroup(child.pid, signalTree);
-      await endWindowsTree();
-      for (const name of FORWARDED) process.off(name, forward);
-      await drainOutput(child, () => drained && stderrDrained);
-      tail.end();
-      settle({
-        code,
-        signal,
-        started,
-        exited,
-        output: `${stdout}\n${stderr}`,
-        ...(!treeEnded ? { unconfirmed: true as const } : {}),
-        ...(options.keepOutput && tail.question !== ""
-          ? { said: tail.question }
-          : {}),
-      });
-    };
-    child.on("error", (error) => {
-      console.error(`jig dispatch run: ${error.message}`);
-      void done(127, null);
-    });
-    child.on("exit", (code, signal) => void done(code, signal));
-  });
-}
-
+/** How much of a drive's usage message its exit keeps. */
+const USAGE_CHARS = 600;
 /** The reset in the drive state's quota park, read under the same trusted startup as the drive: the state script runs in the consumer's workspace. */
 async function parkedReset(pr: number): Promise<string | null> {
   const done = await run(
@@ -405,22 +242,22 @@ async function recordedReset(
   nowMs: number,
 ): Promise<string | null> {
   const reset = await parkedReset(pr);
-  return reset !== null && Date.parse(reset) > nowMs ? reset : null;
+  return reset !== null && parseMs(reset) > nowMs ? reset : null;
 }
 
 async function writeAccountWall(
   record: LaunchRecord & { pr: number },
 ): Promise<void> {
-  const now = Date.now();
+  const now = currentMs();
   const reset = await recordedReset(record.pr, now);
   const path = writeWall({
     account: record.account,
     vendor: record.vendor,
     configDir: record.configDir,
-    resetAt: reset ?? new Date(now + record.wallBackoffMs).toISOString(),
+    resetAt: reset ?? isoFromMs(now + record.wallBackoffMs),
     source:
       reset === null
-        ? `no reset recorded; wall_backoff from ${new Date(now).toISOString()}`
+        ? `no reset recorded; wall_backoff from ${isoFromMs(now)}`
         : `the drive's quota park on PR #${record.pr}`,
   });
   console.error(`jig dispatch run: ${record.account} is walled (${path})`);
@@ -446,13 +283,15 @@ async function tryWriteWall(
  * recorded. Throws when the pass's permission settings do not read.
  */
 function stageArgv(record: LaunchRecord): string[] {
+  // `drive.pass_args` is Claude Code's: a Codex pass never reads it, so a bad value cannot stop one.
+  const claudeWords = (): readonly string[] =>
+    record.vendor === "codex" ? [] : configuredPassArgs().words;
   if (record.action === "steward")
-    return stewardPassArgv(record, configuredPassArgs().words);
+    return stewardPassArgv(record, claudeWords());
   if (isDrive(record)) return driveCommand(record, driveScript());
   if (record.action === "followup")
-    return followupPassArgv(record, configuredPassArgs().words);
-  if (!isInteractive(record))
-    return pickupPassArgv(record, configuredPassArgs().words);
+    return followupPassArgv(record, claudeWords());
+  if (!isInteractive(record)) return pickupPassArgv(record, claudeWords());
   return sessionArgv(record);
 }
 
@@ -465,9 +304,14 @@ function ownPass(record: LaunchRecord): boolean {
   );
 }
 
-/** How the wrapper runs a record's stage: its own pass under its deadline, its last question kept; anything else as it is. */
+/** How the wrapper runs a record's stage: its own pass under its deadline, its last question kept; a drive with the end of its error output kept; anything else as it is. */
 function runOptions(record: LaunchRecord): RunOptions {
-  if (!ownPass(record)) return { keepOutput: false, deadlineSec: 0 };
+  if (!ownPass(record))
+    return {
+      keepOutput: isDrive(record),
+      keepErrors: isDrive(record),
+      deadlineSec: 0,
+    };
   const deadline = record.passTimeoutSec;
   return {
     keepOutput: true,
@@ -475,14 +319,37 @@ function runOptions(record: LaunchRecord): RunOptions {
   };
 }
 
-/** The end of a follow-up's or a pickup's pass output, kept on its exit when it ended without recording done. */
+/** Keep bounded diagnostic output independently of whether a pass asked a question. */
 function saidOf(
   record: LaunchRecord,
   ran: Ran,
 ): { said?: string; context?: string } {
-  const said = ran.said?.trim() ?? "";
-  if (said === "" || readResult(record.id) === "done") return {};
-  return { said, context: (ran.output ?? "").slice(-8000) };
+  return passOutput(ran, readResult(record.id), record.token);
+}
+
+/**
+ * The drive's message on an exit on its usage error: from the last line its
+ * output starts with `drive.ts` (where `drive.ts` states a refusal), else its
+ * last lines, joined into one line and bounded.
+ */
+function usageOf(
+  record: Pick<LaunchRecord, "action">,
+  ran: Pick<Ran, "code" | "errors">,
+): { usage?: string } {
+  if (!isDrive(record) || ran.code !== DRIVE_EXIT.UNSUPPORTED_CLI) return {};
+  const lines = (ran.errors ?? "")
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter((line) => line !== "");
+  let from = lines.length - 3;
+  for (const [i, line] of lines.entries())
+    if (line.startsWith("drive.ts")) from = i;
+  const said = lines.slice(Math.max(0, from)).join(" ");
+  if (said === "") return {};
+  return {
+    usage:
+      said.length > USAGE_CHARS ? `${said.slice(0, USAGE_CHARS - 1)}…` : said,
+  };
 }
 
 /** Whether a drive that stopped on its account's wall had that wall recorded; true when there was none to record. */
@@ -526,7 +393,13 @@ async function wrap(id: string, token: string): Promise<number> {
     console.error(`jig dispatch run: ${identity.failure.reason}; not starting`);
     return 2;
   }
-  const claim = { ...identity.value, claimedAt: new Date().toISOString() };
+  const claim = {
+    ...identity.value,
+    claimedAt: currentIso(),
+    ...(!isInteractive(record)
+      ? { supervision: { supervisor: null, child: null } }
+      : {}),
+  };
   if (!claimRecord(id, claim)) {
     console.error(
       `jig dispatch run: ${id} is already claimed; nothing started`,
@@ -535,12 +408,27 @@ async function wrap(id: string, token: string): Promise<number> {
     return CLAIMED;
   }
   process.chdir(record.workspace.path);
+  if (!isInteractive(record)) {
+    const code = await spawnSupervisor(id, token);
+    if (readEnded(id)?.state.kind === "ended")
+      await closeTabIfDone(record, code);
+    return code;
+  }
+  return executeStage(id, record);
+}
+
+async function executeStage(
+  id: string,
+  record: LaunchRecord,
+  owner?: RunOptions["owner"],
+): Promise<number> {
+  if (record.workspace === null) return 2;
   let argv: string[];
   try {
     argv = stageArgv(record);
   } catch (error) {
     console.error(`jig dispatch run: ${failureText(error)}; not starting`);
-    recordExit(id, { at: new Date().toISOString(), code: 2, signal: null });
+    recordExit(id, { at: currentIso(), code: 2, signal: null });
     await endSharedClaim(id);
     return 2;
   }
@@ -549,13 +437,53 @@ async function wrap(id: string, token: string): Promise<number> {
     record.workspace.path,
     // The tab's own command is this wrapper; the drive it runs is not. What
     // it starts is a session the line started, named by its launch record.
+    // A pass of its own starts no background task, as a drive's passes do.
     {
       ...withoutRunTabMarker(passEnvironment(process.env, record)),
+      ...(ownPass(record) ? NO_BACKGROUND_TASKS : {}),
       [LAUNCH_VARIABLE]: id,
+      JIG_OUTBOUND_CALLER: `pass:${record.action}:${record.id}`,
     },
-    runOptions(record),
+    { ...runOptions(record), ...(owner === undefined ? {} : { owner }) },
   );
   return finishRun(id, record, ran);
+}
+
+/** A separate process owns the stage and its exit, surviving wrapper death to stop it. */
+async function supervise(id: string, token: string): Promise<number> {
+  const record = readRecord(id);
+  const wrapper = readStageClaim(id, token);
+  if (
+    record === null ||
+    record.token !== token ||
+    record.workspace === null ||
+    !wrapper?.supervision
+  )
+    return 2;
+  const identity = await captureIdentity();
+  if (!identity.ok) {
+    console.error(identity.failure.reason);
+    return 2;
+  }
+  const registered = registerStageProcess(
+    id,
+    token,
+    "supervisor",
+    identity.value,
+    wrapper,
+  );
+  if (!registered.ok) {
+    swallow(registered.failure.cause, registered.failure.reason);
+    console.error(registered.failure.reason);
+    return 3;
+  }
+  process.chdir(record.workspace.path);
+  return executeStage(id, record, {
+    id,
+    token,
+    wrapper,
+    supervisor: identity.value,
+  });
 }
 
 /** Startup evidence is checked only when the session left no result or question. */
@@ -571,7 +499,7 @@ function startupOf(record: LaunchRecord, ran: Ran) {
     record,
     ran.code,
     ran.started,
-    ran.output ?? "",
+    ran.startupOutput ?? ran.output ?? "",
     ran.exited,
   );
 }
@@ -583,7 +511,7 @@ function recordStartupWall(record: LaunchRecord, startup: string): boolean {
       account: record.account,
       vendor: record.vendor,
       configDir: record.configDir,
-      resetAt: new Date(Date.now() + record.wallBackoffMs).toISOString(),
+      resetAt: isoFromMs(currentMs() + record.wallBackoffMs),
       source: `session could not start (${startup}); wall_backoff`,
     });
     return true;
@@ -603,8 +531,9 @@ async function finishRun(
   ran: Ran,
 ): Promise<number> {
   const { code, signal } = ran;
-  if (ran.unconfirmed) {
-    // The pass's processes may still run, so no exit is published. The wrapper then exits, and a record whose wrapper is gone no longer holds its slot: the limit design/dark-factory-dispatch.md records for a Windows tree.
+  if (ran.unconfirmed || (await driverCleanupUncertain(record, ran))) {
+    uncertainStage(id);
+    // Unconfirmed cleanup keeps the account slot until reconciliation or clearance.
     console.error(
       "jig dispatch run: the pass's process tree could not be shown to have ended; no exit is recorded",
     );
@@ -617,7 +546,7 @@ async function finishRun(
   const startupWallUnrecorded =
     startup !== undefined && !recordStartupWall(record, startup);
   recordExit(id, {
-    at: new Date().toISOString(),
+    at: currentIso(),
     code,
     signal,
     ...(wallUnrecorded || startupWallUnrecorded
@@ -625,10 +554,11 @@ async function finishRun(
       : {}),
     ...(startup === undefined ? {} : { startup }),
     ...saidOf(record, ran),
+    ...usageOf(record, ran),
   });
   await endSharedClaim(id);
   await labelFollowup(id);
-  await closeTabIfDone(record, code);
+  if (isInteractive(record)) await closeTabIfDone(record, code);
   return code ?? 1;
 }
 
@@ -725,18 +655,22 @@ async function trackerMain(slug: string, deadline: string): Promise<number> {
 
 /** The wrapper's command line; `jig dispatch run` reaches it too. */
 export async function runMain(argv: string[]): Promise<number> {
+  if (argv[0] === "supervise" && argv.length === 3)
+    return supervise(argv[1] as string, argv[2] as string);
   if (argv[0] === "identity" && argv.length === 2) {
     console.log(JSON.stringify(resolveAccountIdentity([argv[1] as string])));
     return 0;
   }
   if (argv[0] === "quota" && argv.length === 4) {
     const [, session, cwd, since] = argv as [string, string, string, string];
-    if (!Number.isFinite(Date.parse(since))) {
+    if (!Number.isFinite(parseMs(since))) {
       console.error(`jig dispatch run: ${since} is not a date`);
       return 2;
     }
     console.log(
-      JSON.stringify(probeWall(session, cwd, new Date(since), new Date())),
+      JSON.stringify(
+        probeWall(session, cwd, parseInstant(since), Temporal.Now.instant()),
+      ),
     );
     return 0;
   }

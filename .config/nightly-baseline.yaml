@@ -309,7 +309,7 @@ groups:
       plugin/skills/drive-pr/__tests__/drive-pr-status-skipped-head.test.ts:
         - "drive-status.ts over a head the reviewer skipped > converges when a base edit shifts a file's hunk when git quotes its name in the patch header"
       plugin/skills/drive-pr/__tests__/drive-pr-takeover-binding.test.ts:
-        - "drive.ts --take-over reopening unverified holds > re-holds an unverified thread unconfirmed with no reply, and records a hold that changed apart"
+        - "drive.ts --take-over reopening unverified holds > re-holds an unverified thread unconfirmed with no reply, and reopens a hold the takeover's own reconciliation replaced, on its current reply"
         - "drives.ts --stop --expect-started > refuses a holder of another acquisition with exit 3, and stops the one it names"
       plugin/skills/drive-pr/__tests__/driver-observation.test.ts:
         - "durable driver observations > accepts an acquisition-bound lock with an omitted Windows creation time"

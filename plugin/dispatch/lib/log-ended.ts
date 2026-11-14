@@ -4,11 +4,13 @@
  * the time the row carries) and the row are written in one transaction,
  * so either both are in the database or neither is: a record with its end
  * written has its row, and one without is ended and logged by the next
- * tick that reads it. The result and handoff are read under the same write
- * transaction so a session reporting during a tick is not lost.
+ * tick that reads it. The result, the handoff and the closing report are
+ * read under the same write transaction so a session reporting during a
+ * tick is not lost.
  */
 import { Defect } from "../../shared/errors.ts";
 import { readNext } from "./next-owner.ts";
+import { readKeptReport } from "./closing-report-store.ts";
 import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { failureText } from "./text.ts";
 import {
@@ -63,12 +65,13 @@ export async function logEnded(
       inTransaction(db, () => {
         const current = db
           .query(
-            "SELECT result, result_next, result_until FROM launches WHERE id = ?",
+            "SELECT result, result_next, result_until, report FROM launches WHERE id = ?",
           )
           .get(record.id) as {
           result: string | null;
           result_next: string | null;
           result_until: string | null;
+          report: string | null;
         } | null;
         if (current === null)
           throw new Defect("the launch record disappeared before logging");
@@ -76,6 +79,7 @@ export async function logEnded(
           ...r,
           result: asResult(current.result, current.result_until),
           next: readNext(current.result_next),
+          report: readKeptReport(current.report),
         };
         const row = endedRow(
           fresh,

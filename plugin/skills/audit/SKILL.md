@@ -102,7 +102,8 @@ repository: unknown, refused and deprecated fields, wrong types, what the
 skills' own validation rejects, commands and paths that do not exist, required
 checks that never run, a tracker that cannot be reached (on Jira, with each
 `issue_tracker.jira.field_labels` entry resolved against the site), configured
-facet stores that cannot be used (GitHub, Jira and Linear), counts
+facet stores that cannot be used (GitHub, Jira and Linear; on Jira, a facet's
+field missing from the create screen of an issue type Jig files), counts
 of open Jira issues before and after `issue_tracker.jira.pool_issue_types`
 limits the pool, recent integration-branch commit subjects that do not follow
 `pull_requests.title_pattern` (an inference about pull request titles that holds
@@ -124,8 +125,9 @@ It judges the repository's file alone: the user file (`~/.jig/jig.yaml`) and
 `JIG__*` variables belong to whoever runs the audit. What they add on this
 machine is reported as facts (`fact:user-layer`, `fact:environment-layer`),
 a user file that sets a field only a repository may set is a warning
-(`fact:user-layer-refused`), and so is one whose `drive.pass_args` or
-`drive.codex_bypass` a drive would stop on (`fact:user-layer-invalid`). A
+(`fact:user-layer-refused`), and so is one whose `drive.pass_args`,
+`drive.codex_pass_args` or `drive.codex_bypass` a drive would stop on
+(`fact:user-layer-invalid`). A
 repository's file that sets a field only the host may is an error, whatever it
 sets it to (`user-only:<field>`). The tracker check is the exception: it probes the
 tracker the skills here select, so it reads all three layers, and layers that

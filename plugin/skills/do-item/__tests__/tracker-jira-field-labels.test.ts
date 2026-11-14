@@ -335,7 +335,6 @@ describe("Jira adapter: fields read as labels", () => {
       routes({
         "GET field": new JiraApiError("not found", {
           status: 404,
-          notFound: true,
         }),
         "GET issue/ENG-1": TAGGED,
       }),
@@ -403,7 +402,10 @@ describe("Jira adapter: fields read as labels", () => {
   });
 
   it("refuses to write a field's value as a label", async () => {
-    const { t, calls } = jira(routes({ "GET field": SITE_FIELDS }), overlay());
+    const { t, calls } = jira(
+      routes({ "GET field": SITE_FIELDS, "GET issue/ENG-1": TAGGED }),
+      overlay(),
+    );
     const filed = await rejection(
       t.createIssue({ title: "New", description: "", labels: ["a", "size:M"] }),
     );
@@ -413,6 +415,53 @@ describe("Jira adapter: fields read as labels", () => {
       t.updateIssue("ENG-1", { removeLabels: ["facet:ui"] }),
     );
     expect(patched).toBeInstanceOf(TrackerRequestError);
+    expect(String(patched)).toContain("field_labels.customfield_10060");
+    expect(writes(calls)).toEqual([]);
+  });
+
+  it("removes real labels behind field prefixes without changing the fields", async () => {
+    const { t, calls } = jira(
+      routes({
+        "GET field": SITE_FIELDS,
+        "GET issue/ENG-1": issue({
+          key: "ENG-1",
+          labels: ["facet:old", "facet:ui", "a"],
+          fields: { customfield_10060: [{ value: "ui" }] },
+        }),
+        "PUT issue/ENG-1": null,
+      }),
+      overlay({ customfield_10060: "facet:" }),
+    );
+    await t.updateIssue("ENG-1", {
+      removeLabels: ["facet:old", "facet:ui", "a"],
+    });
+    expect(calls.filter((c) => c.method === "PUT").map((c) => c.body)).toEqual([
+      {
+        update: {
+          labels: [
+            { remove: "facet:old" },
+            { remove: "facet:ui" },
+            { remove: "a" },
+          ],
+        },
+      },
+    ]);
+  });
+
+  it("refuses an added field label even when removing a real one", async () => {
+    const { t, calls } = jira(
+      routes({
+        "GET field": SITE_FIELDS,
+        "GET issue/ENG-1": issue({ key: "ENG-1", labels: ["facet:old"] }),
+      }),
+      overlay({ customfield_10060: "facet:" }),
+    );
+    await expect(
+      t.updateIssue("ENG-1", {
+        addLabels: ["facet:new"],
+        removeLabels: ["facet:old"],
+      }),
+    ).rejects.toThrow("field_labels.customfield_10060");
     expect(writes(calls)).toEqual([]);
   });
 });

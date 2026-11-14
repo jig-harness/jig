@@ -362,7 +362,7 @@ describe("Linear adapter: issue pickup", () => {
 
   it("returns null for an issue the tracker does not have", async () => {
     const { t } = tracker(
-      () => new LinearApiError("Entity not found", 200, true),
+      () => new LinearApiError("Entity not found", 200, "not-found"),
     );
     expect(await t.getIssue("ENG-404")).toBeNull();
   });
@@ -807,7 +807,7 @@ describe("Linear adapter: candidate pools", () => {
     }));
     expect((await found.t.poolIssue("ENG-9"))?.state.type).toBe("completed");
     const missing = tracker(
-      () => new LinearApiError("Entity not found", 200, true),
+      () => new LinearApiError("Entity not found", 200, "not-found"),
     );
     expect(await missing.t.poolIssue("ENG-404")).toBeNull();
     const empty = tracker(() => ({ issue: null }));

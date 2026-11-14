@@ -32,6 +32,7 @@ import {
   listEach,
   sharedClaimsFrom,
 } from "../../shared/records/shared-forge.ts";
+import { currentMs } from "../../shared/time.ts";
 
 /** A pull request's comments as the forge listed them, or why they did not read. */
 export type Listing = Outcome<unknown[], "unreadable">;
@@ -79,7 +80,7 @@ export function tickComments(
       const key = keyOf(repo, pr);
       let listing = listings.get(key);
       if (listing === undefined) {
-        started.set(key, Date.now());
+        started.set(key, currentMs());
         listing = list({ repo, number: pr });
         listings.set(key, listing);
       }
@@ -91,7 +92,7 @@ export function tickComments(
     forget(repo, pr) {
       listings.delete(keyOf(repo, pr));
       started.delete(keyOf(repo, pr));
-      forgotten.set(keyOf(repo, pr), Date.now());
+      forgotten.set(keyOf(repo, pr), currentMs());
       options.written?.(repo, pr);
     },
     seed(repo, pr, comments, startedAtMs) {

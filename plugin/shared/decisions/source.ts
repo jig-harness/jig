@@ -1,4 +1,5 @@
 /** Portable validation primitives: collect every source problem with its JSON path. */
+import { isCalendarDate } from "../time.ts";
 
 export interface SourcedClaim {
   text: string;
@@ -39,12 +40,7 @@ export class Checker {
   /** A real calendar day, not merely the YYYY-MM-DD shape. */
   date(value: unknown, path: string): void {
     if (!this.text(value, path)) return;
-    const parsed = new Date(`${value}T00:00:00Z`);
-    if (
-      !DATE.test(value) ||
-      Number.isNaN(parsed.getTime()) ||
-      parsed.toISOString().slice(0, 10) !== value
-    )
+    if (!isCalendarDate(value))
       this.fail(path, "must be a real YYYY-MM-DD date");
   }
 

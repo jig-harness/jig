@@ -9,6 +9,7 @@
  */
 
 import type { AdfMark, AdfNode } from "./adf.ts";
+import { isoFromMs } from "../../../../../../shared/time.ts";
 
 export const RULE = /^ {0,3}([-*_])(?:\s*\1){2,}\s*$/;
 export const COMMENT_LINE = /^\s*<!--[\s\S]*-->\s*$/;
@@ -62,7 +63,7 @@ const ATOMS: Record<string, (a: Record<string, unknown>) => string> = {
   status: (a) => str(a.text),
   date: (a) => {
     const ms = Number(a.timestamp);
-    return Number.isFinite(ms) ? new Date(ms).toISOString().slice(0, 10) : "";
+    return Number.isFinite(ms) ? isoFromMs(ms).slice(0, 10) : "";
   },
 };
 

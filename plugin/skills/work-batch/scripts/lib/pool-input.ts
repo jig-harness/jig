@@ -9,6 +9,7 @@ import {
 } from "../../../../shared/tracker-labels.ts";
 import type { PoolIssue } from "../../../do-item/scripts/lib/tracker/port.ts";
 import { Refusal } from "./errors.ts";
+import { parseMs } from "../../../../shared/time.ts";
 
 const isText = (v: unknown): v is string => typeof v === "string";
 const isTextList = (v: unknown) => Array.isArray(v) && v.every(isText);
@@ -27,11 +28,7 @@ const POOL_FIELDS: ReadonlyArray<
     (v) => typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= 4,
     "an integer from 0 to 4",
   ],
-  [
-    "createdAt",
-    (v) => isText(v) && !Number.isNaN(Date.parse(v)),
-    "a timestamp",
-  ],
+  ["createdAt", (v) => isText(v) && !Number.isNaN(parseMs(v)), "a timestamp"],
   ["state", (v) => hasTexts(v, ["id", "name", "type"]), "{ id, name, type }"],
   [
     "assignee",

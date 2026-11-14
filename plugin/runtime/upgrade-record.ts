@@ -28,6 +28,7 @@ import { swallow } from "../shared/errors.ts";
 import { exclusiveInstallLock } from "../shared/gc-lock.ts";
 import { failed, ok, type Outcome } from "../shared/outcome.ts";
 import { dump } from "../shared/yaml.ts";
+import { currentIso } from "../shared/time.ts";
 
 /**
  * The variable the launcher passes a job's scheduled upgrade in: the line
@@ -128,7 +129,7 @@ export function scheduledUpgradeOf(
     : {
         outcome: "failed",
         detail: capped(`the launcher's upgrade line does not read: ${text}`),
-        at: new Date().toISOString(),
+        at: currentIso(),
       };
 }
 

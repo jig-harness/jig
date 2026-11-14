@@ -59,7 +59,7 @@ const SCRIPT = join(
   "scripts",
   "resolve-precedent.ts",
 );
-const FIXED_NOW = new Date("2026-09-15T12:00:00Z");
+const FIXED_NOW = Temporal.Instant.from("2026-09-15T12:00:00Z");
 
 /** Build a throwaway repo root holding a small, fully known corpus. */
 function makeFixtureRepo(): string {

@@ -3,12 +3,13 @@ import { isRecord } from "../../../../shared/guards.ts";
 import { parseFacetEntries } from "../../../do-item/scripts/lib/tracker/facets/config.ts";
 import { FACETS } from "../../../do-item/scripts/lib/tracker/port.ts";
 import { MoveRecordError } from "./move-error.ts";
+import { parseMs } from "../../../../shared/time.ts";
 
 const nonempty = (v: unknown): v is string =>
   typeof v === "string" && v.trim() !== "";
 const facet = (v: unknown) => (FACETS as readonly unknown[]).includes(v);
 const date = (v: unknown) =>
-  typeof v === "string" && Number.isFinite(Date.parse(v));
+  typeof v === "string" && Number.isFinite(parseMs(v));
 function value(v: unknown, f: string): boolean {
   if (v === null) return true;
   if (!nonempty(v)) return false;

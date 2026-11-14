@@ -32,6 +32,7 @@ import {
 export { decisionOf } from "./line-decision.ts";
 import { holds, targetOf } from "./launches.ts";
 import { isFailureCause } from "./failure-notices.ts";
+import { lowQuotaNeeds, type QuotaRisk } from "./outbound-report.ts";
 import { preflightNeeds } from "./preflight.ts";
 import { boardUnread, readyOf } from "./line-ready.ts";
 import { needWorkspace } from "./line-workspace.ts";
@@ -48,6 +49,7 @@ import type {
   RepoReport,
   Unplaced,
 } from "./types.ts";
+import { isoFromMs, parseMs } from "../../shared/time.ts";
 
 /** The recent ticks whose longest decides when the timer reads as stopped: a day of the default interval. */
 const RECENT_TICKS = 288;
@@ -94,6 +96,7 @@ export interface RepoStored {
 export interface LineInput {
   /** The needs of the tick before, whose first sightings a continuing need keeps. */
   previousNeeds?: LineNeed[];
+  quotaRisks?: QuotaRisk[];
   runId: string;
   startedAt: string;
   finishedAt: string;
@@ -134,6 +137,7 @@ function needStage(cause: NeedCause): LineNeed["stage"] {
     cause === "stalled" ||
     cause === "double-claim" ||
     cause === "pickup-question" ||
+    cause === "pickup-ended" ||
     cause === "assigner-cannot-write"
   )
     return "pickup";
@@ -664,8 +668,7 @@ function agentOf(read: ReadRecord, view: RepoView | undefined) {
     ? null
     : {
         state: agent.state,
-        since:
-          agent.since === null ? null : new Date(agent.since).toISOString(),
+        since: agent.since === null ? null : isoFromMs(agent.since),
       };
 }
 
@@ -765,7 +768,7 @@ export function buildLine(input: LineInput): LineSnapshot {
   const bySlug = new Map(views.map((v) => [v.slug, v]));
   const tookMs = Math.max(
     0,
-    Date.parse(input.finishedAt) - Date.parse(input.startedAt),
+    parseMs(input.finishedAt) - parseMs(input.startedAt),
   );
   const recentTicksMs = [...input.recentTicksMs, tookMs].slice(-RECENT_TICKS);
   return {
@@ -794,7 +797,7 @@ export function buildLine(input: LineInput): LineSnapshot {
           sessions === undefined
             ? undefined
             : {
-                nowMs: Date.parse(input.startedAt),
+                nowMs: parseMs(input.startedAt),
                 unclaimedAfterMs: input.machine.unclaimedAfterMs,
                 sessions,
               },
@@ -802,6 +805,15 @@ export function buildLine(input: LineInput): LineSnapshot {
       })
       .filter((s): s is LineSession => s !== null),
     needs: [
+      ...(input.quotaRisks === undefined
+        ? (input.previousNeeds ?? []).filter(
+            (n) => n.repo === "host" && n.cause === "low-quota",
+          )
+        : lowQuotaNeeds(
+            input.quotaRisks,
+            input.previousNeeds ?? [],
+            input.finishedAt,
+          )),
       ...views.flatMap((v) =>
         needsOf(v, input.finishedAt, input.previousNeeds ?? []),
       ),

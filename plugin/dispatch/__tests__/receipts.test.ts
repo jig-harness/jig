@@ -30,6 +30,7 @@ import {
   type TickReceipt,
   writeReceipt,
 } from "../receipts.ts";
+import { isoFromMs, isoOf } from "../../shared/time.ts";
 
 const roots: string[] = [];
 function root(): string {
@@ -45,12 +46,12 @@ afterEach(() => {
 });
 
 function receipt(day: string, repoPath: string, since: string): TickReceipt {
-  const at = new Date(`${day}T10:00:00Z`);
+  const at = Temporal.Instant.from(`${day}T10:00:00Z`);
   return {
     version: 1,
     runId: newRunId(at),
-    startedAt: at.toISOString(),
-    finishedAt: at.toISOString(),
+    startedAt: isoOf(at),
+    finishedAt: isoOf(at),
     completed: true,
     apply: false,
     exitStatus: 0,
@@ -75,12 +76,12 @@ function receipt(day: string, repoPath: string, since: string): TickReceipt {
 
 /** A tick's receipt at `iso` with the exit it ended with, and the defect that stopped it when one did. */
 function tickAt(iso: string, exitStatus: number, defect?: string): TickReceipt {
-  const at = new Date(iso);
+  const at = Temporal.Instant.from(iso);
   return {
     version: 1,
     runId: newRunId(at),
-    startedAt: at.toISOString(),
-    finishedAt: at.toISOString(),
+    startedAt: isoOf(at),
+    finishedAt: isoOf(at),
     completed: defect === undefined,
     apply: true,
     exitStatus,
@@ -133,10 +134,7 @@ describe("lastTick", () => {
   it("stops reading back at its limit and says there were at least that many", () => {
     const dir = root();
     for (let i = 0; i < 101; i++)
-      writeReceipt(
-        tickAt(new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString(), 1),
-        dir,
-      );
+      writeReceipt(tickAt(isoFromMs(Date.UTC(2026, 0, 1, 0, i)), 1), dir);
     expect(lastTick(dir)?.failing).toEqual({
       runs: 100,
       since: "2026-01-01T00:01:00.000Z",
@@ -182,7 +180,7 @@ describe("lastTick's receipts that do not read", () => {
     for (let i = 0; i < 98; i++)
       writeReceipt(
         {
-          ...tickAt(new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString(), 0),
+          ...tickAt(isoFromMs(Date.UTC(2026, 0, 1, 0, i)), 0),
           lockHeldBy: "other-tick",
         },
         dir,
@@ -200,7 +198,7 @@ describe("lastTick's read budget", () => {
     for (let i = 1; i <= 150; i++)
       writeReceipt(
         {
-          ...tickAt(new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString(), 0),
+          ...tickAt(isoFromMs(Date.UTC(2026, 0, 1, 0, i)), 0),
           lockHeldBy: "other-tick",
         },
         dir,

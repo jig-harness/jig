@@ -61,6 +61,7 @@ import type { SessionsReport } from "../runtime/port.ts";
 import { laneBudgetWait } from "./followup-lane.ts";
 import type { LoadKind } from "../dashboard-contract.ts";
 import { judge, type LoadState } from "../load.ts";
+import { currentIso, currentMs } from "../../../shared/time.ts";
 import {
   checksStage,
   heldAccounts,
@@ -163,7 +164,7 @@ export function timeLeftMs(state: ApplyState): number | null {
   if (state.startedAt === undefined) return null;
   const allowed =
     enforcedDeadlineMs(state.machine) - state.machine.runtimeTimeoutMs;
-  return allowed - (Date.now() - state.startedAt);
+  return allowed - (currentMs() - state.startedAt);
 }
 
 /** The runtime-timeout calls a launch needs before it: the repository lookup and the identity check after the open, beside its admission's identity checks. The open itself runs on the workspace timeout. */
@@ -280,7 +281,7 @@ function openBudgetWait(state: ApplyState, notice: boolean): string | null {
 function openRoomWait(state: ApplyState): string | null {
   if (state.startedAt === undefined) return null;
   const left =
-    enforcedDeadlineMs(state.machine) - (Date.now() - state.startedAt);
+    enforcedDeadlineMs(state.machine) - (currentMs() - state.startedAt);
   const needed =
     state.machine.workspaceTimeoutMs +
     2 * state.machine.runtimeTimeoutMs +
@@ -351,7 +352,7 @@ export async function openWithinBudget(
 
 function attemptOf(receipt: RuntimeReceipt): LaunchAttempt {
   return {
-    at: new Date().toISOString(),
+    at: currentIso(),
     outcome: receipt.ok ? "sent" : receipt.lost ? "lost" : "failed",
     detail: receipt.detail,
   };
@@ -619,7 +620,7 @@ export async function accountBlocked(
   state: ApplyState,
   record: LaunchRecord,
 ): Promise<string | null> {
-  refreshWalls(state.table, state.records, Date.now(), state.root);
+  refreshWalls(state.table, state.records, currentMs(), state.root);
   const slots = slotsOf(state.table, record);
   if (slots === undefined)
     return `${record.account} is no longer in the machine file`;
@@ -762,7 +763,7 @@ export async function admitAccount(
   action: Action,
   pickupDeadlineSec = 0,
 ): Promise<{ slots: Slots } | { outcome: LaunchOutcome }> {
-  refreshWalls(state.table, state.records, Date.now(), state.root);
+  refreshWalls(state.table, state.records, currentMs(), state.root);
   const checked = await preflightHolds(state, repo, action, pickupDeadlineSec);
   if ("outcome" in checked) return checked;
   const { held } = checked;
@@ -809,7 +810,7 @@ async function changedWhileOpening(
   action: Action,
   slots: Slots,
 ): Promise<LaunchOutcome | null> {
-  refreshWalls(state.table, state.records, Date.now(), state.root);
+  refreshWalls(state.table, state.records, currentMs(), state.root);
   const name = slots.account.name;
   if (slots.wallUnrecorded)
     return waits(

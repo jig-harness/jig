@@ -39,6 +39,7 @@ import {
   reviseFinding,
   unsent,
 } from "./journal.ts";
+import { isCalendarDate, isoFromMs, parseMs } from "../../../../shared/time.ts";
 
 /** The parts of the report a hotspot finding is written from. */
 export interface HotspotReport {
@@ -80,44 +81,33 @@ function isCount(value: unknown): boolean {
 const OFFSET_TIME =
   /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(\.\d+)?(Z|[+-](\d{2}):(\d{2}))$/;
 
-/** A day the calendar has: `Date` rolls February 30 over into March. */
-function isCalendarDay(year: number, month: number, day: number): boolean {
-  const date = new Date(0);
-  // setUTCFullYear, not Date.UTC, which maps years 0 to 99 onto 1900 to 1999.
-  date.setUTCFullYear(year, month - 1, day);
-  return (
-    date.getUTCFullYear() === year &&
-    date.getUTCMonth() === month - 1 &&
-    date.getUTCDate() === day
-  );
-}
-
 /** A clock time and an offset as git writes them: no `24:00`, no leap second. */
 function isTime(value: unknown): value is string {
   if (typeof value !== "string") return false;
   const match = OFFSET_TIME.exec(value);
   if (match === null) return false;
-  const [year, month, day, hour, minute, second] = match
-    .slice(1, 7)
-    .map(Number) as [number, number, number, number, number, number];
+  const [hour, minute, second] = match.slice(4, 7).map(Number) as [
+    number,
+    number,
+    number,
+  ];
   const offsetHour = match[9] === undefined ? 0 : Number(match[9]);
   const offsetMinute = match[10] === undefined ? 0 : Number(match[10]);
   return (
-    isCalendarDay(year, month, day) &&
+    isCalendarDate(value.slice(0, 10)) &&
     hour <= 23 &&
     minute <= 59 &&
     second <= 59 &&
     offsetHour <= 23 &&
     offsetMinute <= 59 &&
-    !Number.isNaN(Date.parse(value))
+    !Number.isNaN(parseMs(value))
   );
 }
 
-/** A range end as the report writes it: UTC, through `toISOString()`. */
+/** A range end as the report writes it: UTC, to the millisecond (`isoFromMs`). */
 function isRangeEnd(value: unknown): boolean {
   return (
-    value === null ||
-    (isTime(value) && new Date(Date.parse(value)).toISOString() === value)
+    value === null || (isTime(value) && isoFromMs(parseMs(value)) === value)
   );
 }
 
@@ -212,7 +202,7 @@ function isRange(value: unknown): boolean {
   return (
     value.since === null ||
     value.until === null ||
-    Date.parse(value.since as string) < Date.parse(value.until as string)
+    parseMs(value.since as string) < parseMs(value.until as string)
   );
 }
 
@@ -285,8 +275,8 @@ function derivedProblem(report: Report): string | null {
   const { since, until } = report.range;
   const outside = report.merges.find(
     ({ date }) =>
-      (since !== null && Date.parse(date) < Date.parse(since)) ||
-      (until !== null && Date.parse(date) >= Date.parse(until)),
+      (since !== null && parseMs(date) < parseMs(since)) ||
+      (until !== null && parseMs(date) >= parseMs(until)),
   );
   if (outside !== undefined)
     return `merge ${outside.commit} is outside the range`;
@@ -437,7 +427,7 @@ function storedFinding(
     entry.status === "implemented" &&
     since !== null &&
     entry.latest !== null &&
-    Date.parse(entry.latest.at) < Date.parse(since);
+    parseMs(entry.latest.at) < parseMs(since);
   return held.find((entry) => !recurredAfterFix(entry)) ?? null;
 }
 

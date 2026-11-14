@@ -31,6 +31,7 @@ import {
 } from "../cache.ts";
 import { isRecord } from "../../../lib/record.ts";
 import type { AssignResult, Tracker, TrackerOptions } from "../tracker.ts";
+import { currentMs, parseMs } from "../../../plugin/shared/time.ts";
 
 export const LINEAR_API = "https://api.linear.app/graphql";
 
@@ -155,7 +156,7 @@ async function readCapped(res: Response): Promise<string> {
 /** HTTPS client for Linear's API with a personal API key. A write passes `strict`. */
 export function linearClient(
   apiKey: string,
-  { fetchImpl = fetch, now = Date.now }: LinearClientOptions = {},
+  { fetchImpl = fetch, now = currentMs }: LinearClientOptions = {},
 ): LinearClient {
   return {
     now,
@@ -542,7 +543,7 @@ function commentsOf(list: Json[]): NonNullable<ContextCache["comments"]> {
   // The cache promises oldest first, which the API's page order does not. A
   // comment without a readable time cannot be placed, so then the API's order
   // stands.
-  const times = out.map((c) => Date.parse(c.created_at ?? ""));
+  const times = out.map((c) => parseMs(c.created_at ?? ""));
   if (times.every(Number.isFinite)) {
     const order = out.map((_, i) => i);
     order.sort((a, b) => (times[a] as number) - (times[b] as number) || a - b);

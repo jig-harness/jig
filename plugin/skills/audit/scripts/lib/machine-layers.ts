@@ -10,6 +10,7 @@ import {
   userConfigPath,
   userLayerEnabled,
 } from "../../../../shared/config-layers.ts";
+import { codexPassArgsProblem } from "../../../drive-pr/scripts/lib/codex-pass-args.ts";
 import { passArgsProblem } from "../../../drive-pr/scripts/lib/overlay.ts";
 import { at, type Finding, type Schema } from "./schema.ts";
 
@@ -24,20 +25,30 @@ function leafFields(config: Config, prefix = ""): string[] {
   );
 }
 
+/** Each host setting a drive reads from the user file, and why a value cannot be it. */
+const HOST_SETTINGS: ReadonlyArray<
+  [string, (value: unknown) => string | undefined]
+> = [
+  ["drive.pass_args", passArgsProblem],
+  ["drive.codex_pass_args", codexPassArgsProblem],
+  [
+    "drive.codex_bypass",
+    (value) =>
+      typeof value === "boolean" ? undefined : "must be true or false",
+  ],
+];
+
 /** What is wrong with the host's own settings in its user file: a drive here stops on either. */
 function hostSettingProblems(user: Config): string[] {
   const drive = user.drive;
   if (drive !== undefined && drive !== null && !isRecord(drive))
     return ["drive must be an object"];
-  const problems: string[] = [];
-  const words = at(user, "drive.pass_args");
-  const wrong =
-    words === undefined || words === null ? undefined : passArgsProblem(words);
-  if (wrong !== undefined) problems.push(`drive.pass_args ${wrong}`);
-  const bypass = at(user, "drive.codex_bypass");
-  if (bypass !== undefined && bypass !== null && typeof bypass !== "boolean")
-    problems.push("drive.codex_bypass must be true or false");
-  return problems;
+  return HOST_SETTINGS.flatMap(([field, problem]) => {
+    const value = at(user, field);
+    const wrong =
+      value === undefined || value === null ? undefined : problem(value);
+    return wrong === undefined ? [] : [`${field} ${wrong}`];
+  });
 }
 
 /**

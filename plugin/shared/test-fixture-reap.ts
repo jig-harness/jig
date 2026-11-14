@@ -2,6 +2,7 @@
 import { judge, type ProcessIdentity } from "./liveness.ts";
 import { failureFields } from "./errors.ts";
 import { log } from "./log.ts";
+import { currentMs } from "./time.ts";
 import { processTable, type ProcessRow } from "./process-table.ts";
 import {
   signalIdentityTargets,
@@ -83,7 +84,7 @@ export async function reapFixtureScope(
   registry: string,
   deps: ProcessTreeControl = {},
 ): Promise<FixtureProof> {
-  const now = deps.now ?? Date.now;
+  const now = deps.now ?? currentMs;
   const deadline = deps.deadline ?? now() + (deps.timeoutMs ?? 10_000);
   const remaining = () => Math.max(0, deadline - now());
   const read = deps.table ?? processTable;

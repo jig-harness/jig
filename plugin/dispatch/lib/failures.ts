@@ -36,6 +36,7 @@
  */
 import { stateRoot } from "../receipts.ts";
 import { inTransaction, stateDb } from "./state.ts";
+import { currentMs, isoFromMs } from "../../shared/time.ts";
 
 /** What a row counts the failures of. */
 export type FailureKind =
@@ -92,7 +93,12 @@ export interface FailureSettings {
   backoffMaxMs: number;
   /** `failures.notify_after`: the failures in a row at which a person is told. */
   notifyAfter: number;
+  /** `failures.group`: this host's own failing rows told one notice per cause (`cause`, also when absent) or one per scope (`scope`). */
+  group?: FailureGrouping;
 }
+
+/** How this host's own failing rows are told: one notice per cause, or one per scope. */
+export type FailureGrouping = "cause" | "scope";
 
 /**
  * The defaults. A single failure waits for nothing, since most are a
@@ -108,6 +114,7 @@ export const FAILURE_DEFAULTS: FailureSettings = {
   backoffMs: 2 * 60_000,
   backoffMaxMs: 60 * 60_000,
   notifyAfter: 3,
+  group: "cause",
 };
 
 /** The longest reason a row keeps. */
@@ -186,23 +193,37 @@ export interface FailureOf {
   target: string;
 }
 
-/** Count one more failure in a row; the row as it now reads. */
+/** The failures in a row after one more: as many as `notify_after` at least for one told at once. */
+function countAfter(
+  before: number,
+  settings: FailureSettings,
+  atOnce: boolean,
+): number {
+  return atOnce ? Math.max(before + 1, settings.notifyAfter) : before + 1;
+}
+
+/**
+ * Count one more failure in a row; the row as it now reads. A failure a
+ * person is told of at once (`atOnce`: a refused credential) counts as many
+ * as `notify_after`.
+ */
 export function recordFailure(
   of: FailureOf,
   reason: string,
   nowMs: number,
   settings: FailureSettings,
   root = stateRoot(),
+  atOnce = false,
 ): FailureRow {
   const db = stateDb(root);
-  const at = new Date(nowMs).toISOString();
+  const at = isoFromMs(nowMs);
   const said = oneSentence(reason);
   return inTransaction(db, () => {
     const before = db
       .query(`SELECT ${COLUMNS} FROM failures WHERE repo = ? AND key = ?`)
       .get(of.repo, of.key) as Stored | null;
     const prior = before ? fromStored(before) : null;
-    const count = (before?.count ?? 0) + 1;
+    const count = countAfter(before?.count ?? 0, settings, atOnce);
     const next = isActionKind(of.kind)
       ? nowMs + backoffAfter(count, settings)
       : nowMs;
@@ -327,16 +348,14 @@ export function entryOf(row: FailureRow): FailureEntry {
     count: row.count,
     since: row.firstAt,
     last: row.reason,
-    ...(isActionKind(row.kind)
-      ? { nextTry: new Date(row.nextAtMs).toISOString() }
-      : {}),
+    ...(isActionKind(row.kind) ? { nextTry: isoFromMs(row.nextAtMs) } : {}),
   };
 }
 
 /** Why an action whose row is `row` is not tried now; `null` when it is due. */
 function backingOff(row: FailureRow, nowMs: number): string | null {
   if (!isActionKind(row.kind) || row.nextAtMs <= nowMs) return null;
-  return `backing off after ${row.count} failure${row.count === 1 ? "" : "s"} in a row since ${row.firstAt} (the last: ${row.reason}); next try at ${new Date(row.nextAtMs).toISOString()}`;
+  return `backing off after ${row.count} failure${row.count === 1 ? "" : "s"} in a row since ${row.firstAt} (the last: ${row.reason}); next try at ${isoFromMs(row.nextAtMs)}`;
 }
 
 /**
@@ -387,7 +406,7 @@ export function actionBook(
     standing: (key) => rows.has(key),
     waits: (key) => {
       const row = rows.get(key);
-      return row === undefined ? null : backingOff(row, Date.now());
+      return row === undefined ? null : backingOff(row, currentMs());
     },
     ran: (of, failure) =>
       write(() => {
@@ -399,7 +418,7 @@ export function actionBook(
         }
         rows.set(
           of.key,
-          recordFailure({ ...of, repo }, failure, Date.now(), settings, root),
+          recordFailure({ ...of, repo }, failure, currentMs(), settings, root),
         );
       }),
     wanted: (kind, keys, unobserved) =>

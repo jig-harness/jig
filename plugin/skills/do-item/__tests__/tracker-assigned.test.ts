@@ -211,4 +211,24 @@ describe("Linear adapter: assignment reads", () => {
       "made by no user",
     );
   });
+  it("reads a history target with no usable identity as an unreadable read, not a negative answer", async () => {
+    for (const target of ["broken", {}, { id: 123 }]) {
+      const { t } = tracker(() => ({
+        issue: {
+          assignee: { id: "u-f", email: "factory@example.invalid" },
+          history: page([
+            {
+              id: "h1",
+              createdAt: "2026-10-01T00:00:00Z",
+              toAssignee: target,
+              actor: null,
+            },
+          ]),
+        },
+      }));
+      await expect(t.assignedBy("ENG-4")).rejects.toThrow(
+        "its assignment target cannot be read",
+      );
+    }
+  });
 });

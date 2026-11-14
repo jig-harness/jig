@@ -67,6 +67,11 @@ import {
   isUnattendedDecision,
 } from "./decisions.ts";
 import { type DriveEvent, isOptionalEvents } from "./events.ts";
+import {
+  type CiAction,
+  boundedCiDetail,
+  isOptionalCiActions,
+} from "./ci-actions.ts";
 import { type ArbiterRuling, isOptionalRulings } from "./rulings.ts";
 import {
   isOptionalResolvedParks,
@@ -74,6 +79,7 @@ import {
   type ResolutionReceipt,
 } from "./resolution-receipt.ts";
 import { decisionAnswerLines } from "./park-frame.ts";
+import { parseMs } from "../../../../../shared/time.ts";
 
 export const LEDGER_MARKER = "<!-- drive-pr-ledger -->";
 export const CLAIM_MARKER = "<!-- drive-pr-takeover-claim -->";
@@ -158,6 +164,8 @@ export interface Ledger {
   decisions: UnattendedDecision[];
   /** Self-restarts and re-arms (`events.ts`); absent in a ledger written before them. */
   events?: DriveEvent[];
+  /** Optional CI telemetry; it never changes the meaning of control events. */
+  ciActions?: CiAction[];
   /**
    * The review arbiter's rulings (`rulings.ts`), so a drive recovered in
    * another clone parks under the same boundary. Absent in a ledger written
@@ -233,6 +241,10 @@ export function ledgerFromState(
       reverse: redact(d.reverse),
     })),
     events: s.events ?? [],
+    ciActions: (s.ciActions ?? []).map((action) => ({
+      ...action,
+      detail: boundedCiDetail(redact(action.detail)),
+    })),
     rulings: s.rulings ?? [],
     resolvedParks: (s.resolvedParks ?? []).map(redactedReceipt),
     driver: opts.driver,
@@ -304,6 +316,12 @@ function stopSummary(
   return `${state === "running" ? "Stop requested" : "Stopped"} by a person at ${stop.at}${stop.reason === "" ? "" : `: ${summaryText(stop.reason)}`}.`;
 }
 
+function ciEventLines(actions: readonly CiAction[] | undefined): string[] {
+  return (actions ?? [])
+    .slice(-5)
+    .flatMap((e) => ["", `CI ${e.action}: ${summaryText(e.detail)}`]);
+}
+
 function ledgerBody(l: Ledger, parkedList: boolean, writer: Writer): string {
   const d = l.driver;
   const lines = [
@@ -314,6 +332,7 @@ function ledgerBody(l: Ledger, parkedList: boolean, writer: Writer): string {
   ];
   if (d.personStop !== undefined)
     lines.push("", stopSummary(d.personStop, d.state));
+  lines.push(...ciEventLines(l.ciActions));
   if (parkedList && l.parked.length > 0) {
     lines.push("", "Parked, awaiting a person:");
     for (const p of l.parked)
@@ -367,13 +386,24 @@ export function renderLedger(
   };
   let body = ledgerBody(l, true, writer);
   if (bytes(body) <= limit) return { body, ledger: l };
+  // This is optional telemetry. It must not prevent the resumable control
+  // record, its decisions, or the visible summary from fitting on the forge.
+  if ((l.ciActions ?? []).length > 0) {
+    l = { ...l, ciActions: [], cut: [...l.cut, "CI telemetry"] };
+    body = ledgerBody(l, true, writer);
+    if (bytes(body) <= limit) return { body, ledger: l };
+  }
   const receipts = l.resolvedParks ?? [];
+  const cutBeforeReceipts = l.cut;
   // The oldest receipts go first: the newest are the ones no tick has read.
   for (let keep = receipts.length - 1; keep >= 0; keep--) {
     l = {
       ...l,
       resolvedParks: receipts.slice(receipts.length - keep),
-      cut: [keep === 0 ? RESOLVED_PARKS_CUT : OLDER_PARKS_CUT],
+      cut: [
+        ...cutBeforeReceipts,
+        keep === 0 ? RESOLVED_PARKS_CUT : OLDER_PARKS_CUT,
+      ],
     };
     body = ledgerBody(l, true, writer);
     if (bytes(body) <= limit) return { body, ledger: l };
@@ -432,7 +462,7 @@ function isRecoveryFields(v: Record<string, unknown>): boolean {
   return (
     isRecord(v.personStop) &&
     isText(v.personStop.at) &&
-    Number.isFinite(Date.parse(v.personStop.at)) &&
+    Number.isFinite(parseMs(v.personStop.at)) &&
     isText(v.personStop.reason)
   );
 }
@@ -443,12 +473,12 @@ function isLedgerDriver(v: unknown): v is LedgerDriver {
     isText(v.actor) &&
     isText(v.clone) &&
     isText(v.heartbeat) &&
-    Number.isFinite(Date.parse(v.heartbeat)) &&
+    Number.isFinite(parseMs(v.heartbeat)) &&
     (v.state === "running" || v.state === "stopped") &&
     (v.exit === undefined || isCount(v.exit)) &&
     isRecoveryFields(v) &&
     (v.started === undefined ||
-      (isText(v.started) && Number.isFinite(Date.parse(v.started)))) &&
+      (isText(v.started) && Number.isFinite(parseMs(v.started)))) &&
     (v.position === undefined || isCount(v.position))
   );
 }
@@ -494,6 +524,7 @@ function ledgerFault(v: Record<string, unknown>): string {
       Array.isArray(v.decisions) && v.decisions.every(isUnattendedDecision),
     ],
     ["events", isOptionalEvents(v.events)],
+    ["ciActions", isOptionalCiActions(v.ciActions)],
     ["rulings", isOptionalRulings(v.rulings)],
     ["resolvedParks", isOptionalResolvedParks(v.resolvedParks)],
     ["driver", isLedgerDriver(v.driver)],
@@ -967,6 +998,7 @@ export function seedFromLedger(
     })),
     decisions: l.decisions,
     events: l.events ?? local.events ?? [],
+    ciActions: l.ciActions ?? local.ciActions ?? [],
     ...(l.rulings === undefined ? {} : { rulings: l.rulings }),
     ...(l.resolvedParks === undefined
       ? {}

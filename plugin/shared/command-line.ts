@@ -6,6 +6,7 @@
  */
 import { resolve } from "node:path";
 import { message, type ValueParser } from "./vendor/optique.mjs";
+import { isoFromMs, parseMs } from "./time.ts";
 
 /** The exit code of a command line the parser refuses. */
 export const USAGE_EXIT = 2;
@@ -28,14 +29,14 @@ export const pathValue: ValueParser<"sync", string> = {
   format: (value) => value,
 };
 
-/** A date `Date.parse` reads, as the ISO timestamp a command compares with. */
+/** An ISO 8601 date or instant (`parseMs`), as the ISO timestamp a command compares with. */
 export const dateValue: ValueParser<"sync", string> = {
   mode: "sync",
   metavar: "DATE",
   placeholder: "",
   parse: (input) =>
-    Number.isFinite(Date.parse(input))
-      ? { success: true, value: new Date(input).toISOString() }
+    Number.isFinite(parseMs(input))
+      ? { success: true, value: isoFromMs(parseMs(input)) }
       : { success: false, error: message`Expected a date, but got ${input}.` },
   format: (value) => value,
 };

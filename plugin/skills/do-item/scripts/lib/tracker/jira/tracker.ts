@@ -70,18 +70,8 @@ import { type JiraIssue, record, str } from "./read.ts";
 import { fieldOfLabel, inProject, openClause, quote } from "./jql.ts";
 import { isResolvedState } from "./model.ts";
 import { reportOperations } from "./reports.ts";
-import { LINKED_RELATIONS, type LinkedRelation } from "./settings.ts";
+import { relationsOf } from "./relations.ts";
 import { JiraApiError, offsetPages } from "./transport.ts";
-
-/** A relation's two sides: as the issue reads it outward, and inward. */
-const SIDES: Record<
-  LinkedRelation,
-  [IssueRelation["type"], IssueRelation["type"]]
-> = {
-  blocks: ["blocks", "blocked_by"],
-  duplicate: ["duplicate", "duplicated_by"],
-  related: ["related", "related"],
-};
 
 /** A label Jira accepts: no whitespace, at most 255 characters. */
 const LABEL = /^\S{1,255}$/;
@@ -199,17 +189,7 @@ export function jiraTracker(client: Client): Tracker {
   async function relations(key: string): Promise<IssueRelation[]> {
     const issue = await client.mustIssue(key);
     const types = await client.linkTypes();
-    const out: IssueRelation[] = [];
-    for (const link of issue.links)
-      for (const relation of LINKED_RELATIONS) {
-        const entry = types[relation].find((t) => same(link.type, t.name));
-        if (entry === undefined) continue;
-        const forward = (link.direction === "outward") !== entry.inverted;
-        out.push({ type: SIDES[relation][forward ? 0 : 1], issue: link.issue });
-        break;
-      }
-    const ids = out.map((r) => `${r.type} ${r.issue}`);
-    return out.filter((_, i) => ids.indexOf(ids[i] as string) === i);
+    return relationsOf(issue, types);
   }
 
   /** The fields a patch sets, each name resolved first. */
@@ -611,13 +591,17 @@ export function jiraTracker(client: Client): Tracker {
       const named = labels.map((l) => ("add" in l ? l.add : l.remove));
       checkLabels(named);
       stores.refuseLabels(patch.addLabels ?? [], "to add");
-      await refuseFieldLabels(named, signal);
+      await refuseFieldLabels(patch.addLabels ?? [], signal);
       if (patch.priority === 0)
         throw new TrackerRequestError(
           "invalid",
           "a Jira issue always carries a priority, so priority 0 (none) cannot be set",
         );
       const issue = await client.mustIssue(key, signal);
+      await refuseFieldLabels(
+        (patch.removeLabels ?? []).filter((l) => !issue.jiraLabels.includes(l)),
+        signal,
+      );
       const fields = await patchFields(patch, signal);
       const facet = await stores.update(issue, patch, signal);
       Object.assign(fields, facet.fields);

@@ -80,6 +80,30 @@ test("file input and output preserve text and argv without shell expansion", () 
   }
 });
 
+test("the output file's folder is made when it is missing", () => {
+  const dir = mkdtempSync(join(tmpdir(), "jig-command-"));
+  try {
+    const output = join(dir, ".context", "scratch", "plan.json");
+    const result = Bun.spawnSync(
+      [
+        process.execPath,
+        entry,
+        "--stdout-file",
+        output,
+        "--",
+        "bun",
+        "-e",
+        "console.log('planned')",
+      ],
+      { stdout: "pipe", stderr: "pipe" },
+    );
+    expectSpawnExit(result, 0);
+    expect(readFileSync(output, "utf8")).toBe("planned\n");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("a failed producer preserves the destination and its exit code", () => {
   const dir = mkdtempSync(join(tmpdir(), "jig-command-"));
   try {

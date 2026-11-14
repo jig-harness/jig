@@ -29,14 +29,24 @@
  *   nor closed.
  * - `refused`: the forge refused a write (a label that does not exist, no
  *   permission).
+ *
+ * A failure a failed `gh` call caused carries that call's failure class
+ * (`shared/outbound/failure.ts`, `outboundOf`), so the tick tells a forge
+ * that will answer after a wait from one that refused the read.
  */
 import { isRecord } from "../../shared/guards.ts";
 import { ghCall, ghRepoEnv } from "../../skills/drive-pr/scripts/lib/proc.ts";
 import { OVERLAY_RELPATH } from "../../shared/config-layers.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { checksFail } from "./automation.ts";
-import { ranOutOfTime } from "./forge-batch.ts";
+import {
+  type CausedFailure,
+  failedBy,
+  type OutboundFailure,
+} from "../../shared/outbound/failure.ts";
+import { ghRunFailure } from "../../shared/outbound/github.ts";
 import type { MergedPr, RepoTarget } from "./types.ts";
+import { currentMs, parseMs } from "../../shared/time.ts";
 
 /** The most pull requests one listing reads; a full page means a partial read. */
 const PR_LIMIT = 1000;
@@ -46,40 +56,43 @@ function unreadable(reason: string): Outcome<never, "unreadable"> {
   return failed("unreadable", reason);
 }
 
-/** What `gh` printed; or why it did not answer, and whether the forge ran out of time on the request (`ranOutOfTime`). */
+/** What `gh` printed; or why it did not answer, with the call's failure class. */
 async function ghAnswer(
   args: string[],
   cwd?: string,
   timeoutSec?: number,
 ): Promise<
   | { ok: true; value: string }
-  | { ok: false; reason: string; outOfTime: boolean }
+  | { ok: false; reason: string; outbound: OutboundFailure }
 > {
-  const began = Date.now();
+  const began = currentMs();
   const r = await ghCall(args, {
     stderr: "pipe",
     env: ghRepoEnv(),
     ...(cwd === undefined ? {} : { cwd }),
     ...(timeoutSec === undefined ? {} : { timeoutSec }),
   });
-  if (r.code === 0) return ok(r.stdout);
+  const outbound = ghRunFailure(r, currentMs() - began);
+  if (outbound === null) return ok(r.stdout);
   const tail = r.stderr.trim().split("\n").at(-1) ?? "";
   return {
     ok: false,
     reason: `gh ${args.slice(0, 2).join(" ")} exited ${r.code}${tail === "" ? "" : `: ${tail}`}`,
-    outOfTime: ranOutOfTime(r, Date.now() - began),
+    outbound,
   };
 }
 
-/** What `gh` printed, or why it did not answer under `code`. */
+/** What `gh` printed, or why it did not answer under `code`, carrying the call's failure class. */
 async function gh<Code extends string>(
   args: string[],
   code: Code,
   cwd?: string,
   timeoutSec?: number,
-): Promise<Outcome<string, Code>> {
+): Promise<
+  { ok: true; value: string } | { ok: false; failure: CausedFailure<Code> }
+> {
   const answer = await ghAnswer(args, cwd, timeoutSec);
-  return answer.ok ? answer : failed(code, answer.reason);
+  return answer.ok ? answer : failedBy(code, answer.outbound, answer.reason);
 }
 
 function parsed(text: string, what: string): Outcome<unknown, "unreadable"> {
@@ -158,10 +171,13 @@ export async function defaultBranchFile(
     ],
     { stderr: "pipe", env: ghRepoEnv() },
   );
-  if (r.code !== 0) {
-    if (/HTTP 404/.test(r.stderr)) return ok(null);
+  const outbound = ghRunFailure(r);
+  if (outbound !== null) {
+    if (outbound.code === "not-found") return ok(null);
     const tail = r.stderr.trim().split("\n").at(-1) ?? "";
-    return unreadable(
+    return failedBy(
+      "unreadable",
+      outbound,
       `${where} could not be read (gh exited ${r.code}${tail === "" ? "" : `: ${tail}`})`,
     );
   }
@@ -380,9 +396,13 @@ async function listPrs(
       asked.join(","),
     ]);
   let answer = await ask(fields);
-  if (!answer.ok && answer.outOfTime && fields.includes(CHECKS))
+  if (
+    !answer.ok &&
+    answer.outbound.code === "too-costly" &&
+    fields.includes(CHECKS)
+  )
     answer = await ask(fields.filter((f) => f !== CHECKS));
-  if (!answer.ok) return unreadable(answer.reason);
+  if (!answer.ok) return failedBy("unreadable", answer.outbound, answer.reason);
   const listing = parsed(answer.value, "the pull request listing");
   if (!listing.ok) return listing;
   const out = listing.value;
@@ -540,12 +560,12 @@ export async function mergedSince(
   if (!listing.ok) return listing;
   const listed = listing.value;
   for (const p of listed)
-    if (p.mergedAt === undefined || !Number.isFinite(Date.parse(p.mergedAt)))
+    if (p.mergedAt === undefined || !Number.isFinite(parseMs(p.mergedAt)))
       return unreadable(
         `merged pull request #${p.number} has no valid merge time`,
       );
   const merged = listed
-    .filter((p) => Date.parse(p.mergedAt as string) >= Date.parse(since))
+    .filter((p) => parseMs(p.mergedAt as string) >= parseMs(since))
     .map((p) => ({
       number: p.number,
       url: p.url,
@@ -654,10 +674,16 @@ export async function editLabels(
   return edited.ok ? ok(undefined) : edited;
 }
 
-/** The names of every label the repository has. */
+/** One label the repository has, as the install compares it with the set. */
+export interface RepositoryLabel {
+  name: string;
+  description: string;
+}
+
+/** Every label the repository has, with its description (`""` for none). */
 export async function repositoryLabels(
   slug: string,
-): Promise<Outcome<string[], "unreadable">> {
+): Promise<Outcome<RepositoryLabel[], "unreadable">> {
   const out = await ghJson(
     [
       "label",
@@ -667,18 +693,34 @@ export async function repositoryLabels(
       "--limit",
       String(PR_LIMIT),
       "--json",
-      "name",
+      "name,description",
     ],
     "the label listing",
   );
   if (!out.ok) return out;
-  const names = labelNames(out.value, slug);
-  if (!names.ok) return names;
-  if (names.value.length >= PR_LIMIT)
+  const value = out.value;
+  if (
+    !Array.isArray(value) ||
+    value.some(
+      (l) =>
+        !isRecord(l) ||
+        typeof l.name !== "string" ||
+        (l.description !== undefined &&
+          l.description !== null &&
+          typeof l.description !== "string"),
+    )
+  )
+    return unreadable(`${slug}'s labels are unreadable`);
+  if (value.length >= PR_LIMIT)
     return unreadable(
       `${slug} has ${PR_LIMIT} or more labels, more than one read holds`,
     );
-  return names;
+  return ok(
+    value.map((l: Record<string, unknown>) => ({
+      name: l.name as string,
+      description: typeof l.description === "string" ? l.description : "",
+    })),
+  );
 }
 
 /** Create one label; `refused` with the forge's reason (no permission). */
@@ -701,6 +743,26 @@ export async function createLabel(
     "refused",
   );
   return created.ok ? ok(undefined) : created;
+}
+
+/** Set one label's description, leaving its color; `refused` with the forge's reason (no permission). */
+export async function describeLabel(
+  slug: string,
+  label: { name: string; description: string },
+): Promise<Outcome<void, "refused">> {
+  const edited = await gh(
+    [
+      "label",
+      "edit",
+      label.name,
+      "--repo",
+      slug,
+      "--description",
+      label.description,
+    ],
+    "refused",
+  );
+  return edited.ok ? ok(undefined) : edited;
 }
 
 /** A pull request's link when no read gave one: the forge is GitHub, read through `gh`. */

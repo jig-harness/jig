@@ -3,6 +3,7 @@ import { copyFileSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { cli } from "../lib/cli.ts";
 import { walk } from "../lib/files.ts";
+import { markDisposable } from "../plugin/shared/disposable-mark.ts";
 if (import.meta.main)
   cli(async () => {
     const entries = ["scripts", "modules", "tools"].flatMap((root) =>
@@ -20,6 +21,8 @@ if (import.meta.main)
     );
     rmSync("dist", { recursive: true, force: true });
     mkdirSync("dist", { recursive: true });
+    // The bundle is rebuilt on every run: tag it so `jig gc` sets it aside.
+    markDisposable("dist");
     const result = await Bun.build({
       entrypoints: entries,
       outdir: "dist",

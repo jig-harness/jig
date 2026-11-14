@@ -68,6 +68,7 @@ import type { FollowupOutcome } from "./followup-outcomes.ts";
 import { outcomeOf } from "./followup-outcomes.ts";
 import { retriedDeath, retryableFollowup } from "./session-startup.ts";
 import { routineEnd, routineRerun } from "./routine-reruns.ts";
+import { waitEnd } from "./followup-waits.ts";
 import { resolveLogin } from "../../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
 import { DRIVER_REFUSAL_EXITS } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import {
@@ -81,6 +82,7 @@ import {
 } from "./launches.ts";
 import { stateDb } from "./state.ts";
 import type { DrivenPr, FollowupMarker, MarkedPr } from "./types.ts";
+import { currentIso, currentMs, parseMs } from "../../shared/time.ts";
 
 /** This host as its claims name it: a digest of its dispatcher database's instance id. */
 export function hostOf(root = stateRoot()): string {
@@ -146,9 +148,9 @@ function startedDriver(c: ReadClaim, pr: DrivenPr): boolean {
   const s = c.says.value;
   if (s.end?.state === "died" || refusal(s) !== null) return false;
   // A time that does not read is NaN, which no comparison holds for.
-  const started = Date.parse(String(pr.evidence.started));
-  const until = s.end === null ? Infinity : Date.parse(s.end.at);
-  return Date.parse(s.at) <= started && started <= until;
+  const started = parseMs(String(pr.evidence.started));
+  const until = s.end === null ? Infinity : parseMs(s.end.at);
+  return parseMs(s.at) <= started && started <= until;
 }
 
 /** What another host's claims say about one driven pull request. */
@@ -466,7 +468,7 @@ async function checkedReservation(
   const why =
     history === null
       ? null
-      : recoveryReservationRefusal(record, own, history, Date.now());
+      : recoveryReservationRefusal(record, own, history, currentMs());
   if (why === null) return { claim: own };
   const released = await withdrawUnstarted(ctx, record, own);
   return {
@@ -488,7 +490,7 @@ async function withdrawUnstarted(
     own,
   );
   if (!released.ok && record.attempts.every((a) => a.outcome === "failed")) {
-    record.cancelledAt ??= new Date().toISOString();
+    record.cancelledAt ??= currentIso();
     writeRecord(record, ctx.root ?? stateRoot());
   }
   return released;
@@ -780,7 +782,7 @@ function ownRecordClaims(
   );
 }
 
-/** Whether the marker naming `record` is released rather than answered: a retry's, or one a routine run again follows. */
+/** Whether the marker naming `record` is released rather than answered: a retry's, or one a routine run again or a rate limit's reset follows. */
 function released(
   record: string,
   byId: ReadonlyMap<string, ReadRecord>,
@@ -788,7 +790,8 @@ function released(
   records: readonly ReadRecord[],
 ): boolean {
   const r = byId.get(record);
-  if (retryable(r) || (r !== undefined && routineEnd(r))) return true;
+  if (retryable(r) || (r !== undefined && (routineEnd(r) || waitEnd(r))))
+    return true;
   return routineRerun(written, records)?.record === record;
 }
 
@@ -822,15 +825,16 @@ async function releaseStartupClaims(
  * through `ghCall` under `AT_EXIT_CALL_SEC`. Best effort: it returns why an
  * end was not written, and the tick's settle writes it. Retryable startup
  * markers, and those of a follow-up that owes a routine run again, are
- * released only by the tick, which reads current dispatch scope.
+ * released only by the tick, which reads current dispatch scope; so are
+ * those of a follow-up that waits out a rate limit (`followup-waits.ts`).
  */
 export async function settleAtExit(
   r: ReadRecord,
   root = stateRoot(),
 ): Promise<string[]> {
   // A retry's marker deletion needs the tick's current scope and dispute checks.
-  if (retryableFollowup(r) || routineEnd(r)) return [];
-  const nowIso = new Date().toISOString();
+  if (retryableFollowup(r) || routineEnd(r) || waitEnd(r, root)) return [];
+  const nowIso = currentIso();
   if (owedAtExit(r, nowIso) === null) return [];
   const login = await resolveLogin(AT_EXIT_CALL_SEC);
   const records = forgeShared({ login, timeoutSec: AT_EXIT_CALL_SEC });

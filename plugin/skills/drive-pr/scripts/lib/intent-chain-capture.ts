@@ -8,6 +8,7 @@
  */
 
 import { renameWithRetry } from "../../../../shared/rename-with-retry.ts";
+import { markDisposable } from "../../../../shared/disposable-mark.ts";
 import {
   linkSync,
   lstatSync,
@@ -30,6 +31,7 @@ import {
   identifierFromBranchName,
   prCaptureFileName,
 } from "./state/handoff.ts";
+import { currentMs } from "../../../../shared/time.ts";
 
 /** A snapshot is budgeted at 4000 characters by the writer; this bound only
  * refuses a file that is not one, rather than copy something unbounded. */
@@ -196,7 +198,7 @@ export function captureIntentChain(input: CaptureInput): CaptureResult {
     try {
       renewed = withFileLock(pinLock(pin), () => {
         if (!pinIsValid(pin)) return false;
-        const now = new Date();
+        const now = currentMs() / 1000;
         utimesSync(pin, now, now);
         return true;
       });
@@ -238,6 +240,8 @@ export function captureIntentChain(input: CaptureInput): CaptureResult {
   const tmp = `${pin}.tmp-${process.pid}`;
   try {
     mkdirSync(chainDir, { recursive: true });
+    // The chain is working state, like the writer's: tag it for a collector.
+    markDisposable(chainDir);
     writeFileSync(tmp, pickup.text, { mode: 0o600 });
     if (input.refresh) {
       withFileLock(pinLock(pin), () => renameWithRetry(tmp, pin));

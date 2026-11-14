@@ -5,10 +5,10 @@
  *
  * | Table | One row per | Its key carries |
  * | --- | --- | --- |
- * | `launches` | session the dispatcher started | the record's id; its `claim`, `exit` and `result` are each written once, by an update that only fills an empty column; a pickup that waits on a tracker's rate limit has `result` `failed` and the reset in `result_until`; a pickup's `refusal` is written with its `result` |
+ * | `launches` | session the dispatcher started | the record's id; its wrapper `claim`, `exit` and `result` each fill an empty column; a headless claim's pending supervisor and child identities are each acknowledged once by their owner; a pickup that waits on a tracker's rate limit has `result` `failed` and the reset in `result_until`; a pickup's `refusal` is written with its `result`; `report`, the run's closing report, is replaced by each later one that passes the check |
  * | `thread_samples` | drive and ledger round | the count recorded the first tick that sees the round |
  * | `waiting_episodes` | interactive session and wall | a later wall is a new episode, the same one is read again |
- * | `notices` | repository, notification channel and cause | once per cause and channel, until the cause goes; its first send, and its last, which a repeat is timed from; a channel other than `orca-card` qualifies its key (`notice-records.ts`) |
+ * | `notices` | repository and notification cause | once per cause, until the cause goes; its first send, and its last, which a repeat is timed from |
  * | `notices_content` | workspace | the exact dispatcher-only comment last confirmed, and the intended write awaiting an exact read |
  * | `notices_read` | repository | when the tick first found its notices workspace read, until it is unread again or removed |
  * | `nudges` | session and waiting episode | one nudge per episode, its delivery marked once |
@@ -16,7 +16,7 @@
  * | `followup_releases` | repository and merged pull request | the one stale claim the tick released, pending until the forge deleted its marker |
  * | `idle` | repository and claimed item | the stall clock starts once |
  * | `holds` | repository and pull request held behind another in a serialized area | the hold's start, written with its event row |
- * | `log` | outcome row | each row once: it is written in the same transaction as what it records; its `target` column, the piece of work, is indexed with the repository |
+ * | `log` | outcome row | each row once: it is written in the same transaction as what it records; its `target` column, the piece of work, is indexed with the repository; an ended row's closing-report `cause` and writer (`report_by`) are columns too |
  * | `tick_line` | the newest tick from the machine file | one row, replaced by each such tick: the line as it found it and its receipt, which `jig dispatch dashboard` reads |
  * | `reflection_findings` | finding the reflection route made of a recurring class | its id, derived from the repository, stage, class and week: the event as every append sends it, pending until the store reports it stored |
  * | `load_samples` | kind of launch and sample | the memory one running session of that kind used at one tick; only each kind's newest samples are kept (`load-samples.ts`) |
@@ -411,6 +411,28 @@ export const MIGRATIONS: readonly Migration[] = [
     ALTER TABLE failures ADD COLUMN quiet_at TEXT;
     ALTER TABLE failures ADD COLUMN renewals INTEGER NOT NULL DEFAULT 0;
   `,
+  },
+  {
+    // Whether a steward digest's output has been through the retention erasure (`eraseStewardOutput`); only unexamined expired rows are scanned.
+    additive: true,
+    sql: `
+    ALTER TABLE steward_runs ADD COLUMN erased INTEGER NOT NULL DEFAULT 0;
+    CREATE INDEX steward_runs_unerased ON steward_runs (at_ms) WHERE erased = 0;
+  `,
+  },
+  {
+    // A run's closing report (`closing-report-store.ts`): the launch record keeps it whole, as JSON with who wrote it and when; the outcome log's ended row carries its cause and its writer as columns the dashboard filters on.
+    additive: true,
+    sql: `
+    ALTER TABLE launches ADD COLUMN report TEXT;
+    ALTER TABLE log ADD COLUMN cause TEXT;
+    ALTER TABLE log ADD COLUMN report_by TEXT;
+  `,
+  },
+  {
+    // Child identities and an unresolved spawn handoff must hold slots even after wrapper death. Earlier readers ignore those fields.
+    additive: false,
+    sql: "SELECT 1;",
   },
   {
     // The notification channel a suppression record is of (`notice-records.ts`). A row an earlier release wrote, or a copy one release behind writes, is `orca-card`'s, the only channel there was; the table's key stays the repository and `key`, which a channel other than `orca-card` qualifies with its name.

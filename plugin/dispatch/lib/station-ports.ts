@@ -24,12 +24,9 @@ import {
   BusyHolderError,
   releaseHiddenHolder,
 } from "../../shared/orca-workspace/holder.ts";
-import {
-  boundedHook,
-  type OpenPort,
-  orcaAnswer,
-} from "../../shared/orca-workspace/port.ts";
+import { type OpenPort, orcaAnswer } from "../../shared/orca-workspace/port.ts";
 import { localContext, withLimit } from "../../shared/orca-workspace/runner.ts";
+import { supervisedHook } from "../../shared/orca-workspace/supervised-hook.ts";
 import { listComments } from "../../shared/records/forge-claims.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { stateRoot } from "../receipts.ts";
@@ -52,6 +49,7 @@ import { retryable } from "./stuck-launches.ts";
 import { failureText } from "./text.ts";
 import type { DispatchSection, RepoTarget } from "./types.ts";
 import type { WorkLinks } from "./work-links.ts";
+import { currentIso } from "../../shared/time.ts";
 
 /** The longest one step's git checks run. */
 const STEP_LIMIT_MS = 60_000;
@@ -200,7 +198,7 @@ async function doneFollowup(
     marker,
     {
       state: "ended",
-      at: new Date().toISOString(),
+      at: currentIso(),
       exit: null,
       outcome: "done",
     },
@@ -330,7 +328,7 @@ function detachCheckout(
   const orca = orcaCommandOrInstalled(process.env);
   const port: OpenPort = {
     host,
-    runHook: boundedHook,
+    runHook: supervisedHook,
     orcaCall: <T>(args: string[], what: string) =>
       orcaAnswer<T>(host.run([orca, ...args, "--json"]), what),
     where: "",

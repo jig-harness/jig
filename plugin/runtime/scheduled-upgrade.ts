@@ -60,6 +60,7 @@ import {
   writeStamp,
   writeStampWhen,
 } from "./upgrade-stamp.ts";
+import { currentIso, currentMs, isoFromMs, parseMs } from "../shared/time.ts";
 
 type Result = Omit<ScheduledUpgrade, "at">;
 
@@ -239,7 +240,7 @@ async function attempt(options: ScheduledOptions): Promise<Result> {
  */
 function withheldBy(
   settings: UpgradeSettings,
-  now: Date,
+  nowMs: number,
 ): ((at: string) => ScheduledUpgrade) | null {
   const read = readStamp();
   if (!("stamp" in read)) return null;
@@ -251,9 +252,9 @@ function withheldBy(
     return withheld(stillRunning(last, holder));
   // A stamp a little ahead of this clock is fresh too: another job may have
   // written it after this one read the time.
-  const elapsed = now.getTime() - Date.parse(last.at);
+  const elapsed = nowMs - parseMs(last.at);
   if (Math.abs(elapsed) >= settings.everyMs) return null;
-  const due = new Date(Date.parse(last.at) + settings.everyMs).toISOString();
+  const due = isoFromMs(parseMs(last.at) + settings.everyMs);
   const latest = holder?.gone
     ? `the upgrade started at ${last.at} did not finish (${holder.reason})`
     : `the latest, at ${last.at}, ${upgradeLine({ ...last, outcome: last.outcome as ScheduledUpgrade["outcome"] })}`;
@@ -276,7 +277,7 @@ async function claim(
   const taken = await withFileLock(
     stampPath(root),
     async () => {
-      const withheld = withheldBy(settings, new Date());
+      const withheld = withheldBy(settings, currentMs());
       if (withheld !== null) return withheld(at);
       writeStamp({
         outcome: "running",
@@ -299,9 +300,8 @@ async function claim(
 /** The scheduled upgrade, whatever it comes to; only the attempt it claimed writes the stamp. */
 async function scheduledUpgrade(
   options: ScheduledOptions,
-  now = new Date(),
 ): Promise<ScheduledUpgrade> {
-  const at = now.toISOString();
+  const at = currentIso();
   const read = upgradeSettings();
   if (!read.ok) return { outcome: "failed", detail: read.failure.reason, at };
   const settings = read.value;
@@ -357,7 +357,7 @@ export async function scheduledUpgradeVerb(
     upgrade = {
       outcome: "failed",
       detail: message(error),
-      at: new Date().toISOString(),
+      at: currentIso(),
     };
   }
   upgrade = bounded(upgrade);

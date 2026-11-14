@@ -17,88 +17,16 @@
  *      rather than sleeping. This function is deliberately not the place that
  *      decides plausibility — it reports what the text says.
  *
- * No date library: `Intl.DateTimeFormat` with a `timeZone` is the built-in
- * zone database, and it is enough. The offset is
- * recovered by asking what wall clock the zone shows at a known instant, then
- * inverted — applied twice, because the offset at the ANSWER can differ from
- * the offset at `now` across a DST boundary, which is precisely the night a
+ * No date library: Temporal's `ZonedDateTime` carries the zone database, and
+ * it is enough. It also says, for a wall clock on a transition day, which
+ * instants show it: none on a spring-forward (the clock skips it), two on a
+ * fall-back (the clock shows it twice), which is precisely the night a
  * five-hour sleep is most likely to cross.
  */
 
-/** Zone-shown wall clock at `instant`, as the numbers a formatter reports. */
-interface Parts {
-  year: number;
-  month: number;
-  day: number;
-  hour: number;
-  minute: number;
-  second: number;
-}
-
-function partsIn(instant: Date, timeZone: string): Parts | null {
-  let formatted: Intl.DateTimeFormatPart[];
-  try {
-    formatted = new Intl.DateTimeFormat("en-US", {
-      timeZone,
-      hour12: false,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    }).formatToParts(instant);
-  } catch {
-    // An unknown zone name throws RangeError. That is "cannot resolve", which
-    // is this module's null, not an error for a caller mid-diagnosis to catch.
-    return null;
-  }
-  const get = (type: string): number => {
-    const p = formatted.find((x) => x.type === type);
-    return p === undefined ? Number.NaN : Number.parseInt(p.value, 10);
-  };
-  const out = {
-    year: get("year"),
-    month: get("month"),
-    day: get("day"),
-    // `hour12: false` renders midnight as `24` in some ICU versions and `00` in
-    // others. Both mean "the zeroth hour of this day" — the date parts already
-    // name the day — so fold it rather than letting a `24` become tomorrow.
-    hour: get("hour") % 24,
-    minute: get("minute"),
-    second: get("second"),
-  };
-  for (const v of Object.values(out)) if (!Number.isFinite(v)) return null;
-  return out;
-}
-
-/**
- * Offset in ms such that `wallClockAsUTC - instant === offset` for `timeZone`.
- * East of Greenwich is positive.
- */
-function offsetMs(instant: Date, timeZone: string): number | null {
-  const p = partsIn(instant, timeZone);
-  if (p === null) return null;
-  const asUTC = Date.UTC(
-    p.year,
-    p.month - 1,
-    p.day,
-    p.hour,
-    p.minute,
-    p.second,
-  );
-  // Floor the reference to the second before differencing. The formatter's
-  // finest field is the second, so `asUTC` carries no milliseconds while
-  // `instant` does — differencing them raw folds that remainder into the
-  // "offset" and back out into every resolved reset time, which then reads as
-  // 16:40:00.884Z rather than 16:40:00Z. Harmless arithmetically, wrong in
-  // every log line and diff it appears in.
-  return asUTC - Math.floor(instant.getTime() / 1000) * 1000;
-}
-
 /**
  * The next instant at or after `now` whose wall clock in `timeZone` reads
- * `hour:minute`. `null` when the zone is unknown or the formatter is unusable.
+ * `hour:minute`. `null` when the zone is unknown.
  *
  * "At or after" rather than "strictly after" so a reset announced for the
  * current minute resolves to now rather than being pushed a whole day out —
@@ -106,16 +34,23 @@ function offsetMs(instant: Date, timeZone: string): number | null {
  * error is exactly the kind this function must not manufacture.
  */
 export function nextWallClock(
-  now: Date,
+  now: Temporal.Instant,
   hour: number,
   minute: number,
   timeZone: string,
-): Date | null {
+): Temporal.Instant | null {
   if (!Number.isInteger(hour) || hour < 0 || hour > 23) return null;
   if (!Number.isInteger(minute) || minute < 0 || minute > 59) return null;
 
-  const here = partsIn(now, timeZone);
-  if (here === null) return null;
+  let here: Temporal.ZonedDateTime;
+  try {
+    here = now.toZonedDateTimeISO(timeZone);
+  } catch (error) {
+    // An unknown zone name throws RangeError. That is "cannot resolve", which
+    // is this module's null, not an error for a caller mid-diagnosis to catch.
+    if (error instanceof RangeError) return null;
+    throw error;
+  }
 
   // Every "has this candidate already passed" decision in this function
   // compares against this FLOORED value, never against `now` directly: a
@@ -128,74 +63,41 @@ export function nextWallClock(
   // current minute (during a fall-back's doubled hour) is wrongly treated as
   // passed and swapped for the second, later occurrence instead — sleeping
   // roughly an extra hour.
-  const nowFlooredToMinute = Math.floor(now.getTime() / 60_000) * 60_000;
+  const nowFlooredToMinute =
+    Math.floor(now.epochMilliseconds / 60_000) * 60_000;
 
   // Resolve a candidate date (zone-local Y/M/D + the target time) to an
-  // instant. Pass 1 uses the offset at `now`; pass 2 re-reads the offset at
-  // pass 1's answer, which is what makes a DST-crossing result correct.
-  const resolve = (dayShift: number): Date | null => {
-    const localAsUTC = Date.UTC(
-      here.year,
-      here.month - 1,
-      here.day + dayShift,
-      hour,
-      minute,
-      0,
-    );
-    const first = offsetMs(now, timeZone);
-    if (first === null) return null;
-    const guess = new Date(localAsUTC - first);
-    const second = offsetMs(guess, timeZone);
-    if (second === null) return null;
-    const candidate = new Date(localAsUTC - second);
+  // instant.
+  const resolve = (dayShift: number): Temporal.Instant | null => {
+    const wall = here
+      .toPlainDate()
+      .add({ days: dayShift })
+      .toPlainDateTime({ hour, minute });
+    const earlier = wall.toZonedDateTime(timeZone, {
+      disambiguation: "earlier",
+    });
 
-    // The two-pass correction assumes the requested wall clock actually
-    // exists in this zone. On a spring-forward day it does not — e.g.
-    // Europe/Amsterdam has no 02:30 on its transition date — and the
-    // corrected instant then lands on some OTHER local time, not the one
-    // asked for. Round-trip the candidate and refuse rather than hand the
-    // caller a fabricated deadline it could sleep against.
-    const target = new Date(localAsUTC);
-    const roundTrips = (instant: Date): boolean => {
-      const shown = partsIn(instant, timeZone);
-      return (
-        shown !== null &&
-        shown.year === target.getUTCFullYear() &&
-        shown.month === target.getUTCMonth() + 1 &&
-        shown.day === target.getUTCDate() &&
-        shown.hour === target.getUTCHours() &&
-        shown.minute === target.getUTCMinutes()
-      );
-    };
-    if (!roundTrips(candidate)) return null;
+    // On a spring-forward day the requested wall clock may not exist — e.g.
+    // Europe/Amsterdam has no 02:30 on its transition date — and the instant
+    // Temporal picks then shows some OTHER local time, not the one asked for.
+    // Refuse rather than hand the caller a fabricated deadline it could sleep
+    // against.
+    if (!earlier.toPlainDateTime().equals(wall)) return null;
 
-    // A fall-back transition means one local wall clock occurs TWICE. If
-    // `candidate` is the EARLIER of the two and it has already passed, the
-    // LATER occurrence can still be minutes away — returning null here would
-    // make the caller advance a whole day, past an instant that is actually
-    // imminent. Detect the shift
-    // by comparing the zone's offset now against a day later, when any
-    // transition in between has settled: a POSITIVE shift is exactly a
-    // fall-back (the offset got smaller); anything else — no transition, or
-    // a spring-forward, where the offset grows — leaves nothing to check.
-    if (candidate.getTime() < nowFlooredToMinute) {
-      const offsetADayLater = offsetMs(
-        new Date(now.getTime() + 24 * 60 * 60 * 1000),
-        timeZone,
-      );
-      if (offsetADayLater !== null) {
-        const shiftMs = first - offsetADayLater;
-        if (shiftMs > 0) {
-          const later = new Date(candidate.getTime() + shiftMs);
-          if (roundTrips(later)) return later;
-        }
-      }
-    }
-    return candidate;
+    // A fall-back transition means one local wall clock occurs TWICE. If the
+    // EARLIER of the two has already passed, the LATER occurrence can still be
+    // minutes away — returning null here would make the caller advance a whole
+    // day, past an instant that is actually imminent.
+    if (earlier.epochMilliseconds < nowFlooredToMinute)
+      return wall
+        .toZonedDateTime(timeZone, { disambiguation: "later" })
+        .toInstant();
+    return earlier.toInstant();
   };
 
   const today = resolve(0);
-  if (today !== null && today.getTime() >= nowFlooredToMinute) return today;
+  if (today !== null && today.epochMilliseconds >= nowFlooredToMinute)
+    return today;
   return resolve(1);
 }
 
@@ -243,12 +145,13 @@ export function matchResetClauseText(text: string): string | null {
 
 export function parseResetClause(
   text: string,
-  now: Date,
-): { at: Date; zone: string } | null {
+  now: Temporal.Instant,
+): { at: Temporal.Instant; zone: string } | null {
   // Slash-separated segments are optional for zones such as UTC and GMT.
   // Preserve digits in zone names such as EST5EDT and Etc/GMT+5; resolve the
-  // complete name through Intl rather than interpreting a truncated prefix.
-  // Runtime zone support varies, so a name Intl rejects remains unresolved.
+  // complete name through Temporal rather than interpreting a truncated
+  // prefix. Runtime zone support varies, so a name it rejects remains
+  // unresolved.
   const m = RESET_CLAUSE_RE.exec(text);
   if (m === null) return null;
   const rawHour = Number.parseInt(m[1] as string, 10);

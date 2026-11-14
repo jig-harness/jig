@@ -22,6 +22,7 @@ import {
   parseConsumed,
   receiptsFor,
 } from "./resolution-receipt.ts";
+import { currentIso } from "../../../../../shared/time.ts";
 
 /** What is wrong with the flags themselves; `null` when nothing is. */
 function usageError(
@@ -70,7 +71,7 @@ function withoutParks(
   consumed: readonly ConsumedVerdict[],
 ): DriveState {
   const removed = s.parked.filter((p) => keys.includes(p.key));
-  const fresh = receiptsFor(removed, consumed, new Date().toISOString());
+  const fresh = receiptsFor(removed, consumed, currentIso());
   const kept =
     fresh.length === 0
       ? (s.resolvedParks ?? [])

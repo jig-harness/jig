@@ -10,7 +10,7 @@ import {
   wallClockIn,
 } from "../lib/host-time.ts";
 
-const at = (iso: string) => Date.parse(iso);
+const at = (iso: string) => Temporal.Instant.from(iso).epochMilliseconds;
 
 describe("midnightIn", () => {
   it("is the start of the day in a zone ahead of or behind UTC", () => {
@@ -44,6 +44,16 @@ describe("midnightIn", () => {
     expect(midnightIn("America/New_York", at("2026-11-01T20:00:00.000Z"))).toBe(
       at("2026-11-01T04:00:00.000Z"),
     );
+  });
+
+  it("starts a day whose clock change skips midnight at its first moment", () => {
+    // Santiago's clocks went from 00:00 to 01:00 on 6 September 2026.
+    expect(midnightIn("America/Santiago", at("2026-09-06T12:00:00.000Z"))).toBe(
+      at("2026-09-06T04:00:00.000Z"),
+    );
+    expect(
+      midnightIn("America/Santiago", at("2026-09-06T12:00:00.000Z"), -1),
+    ).toBe(at("2026-09-05T04:00:00.000Z"));
   });
 });
 

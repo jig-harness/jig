@@ -23,7 +23,6 @@ import { orcaCommandOrInstalled } from "../../../shared/orca.ts";
 import { BusyHolderError } from "../../../shared/orca-workspace/holder.ts";
 import { openBranch } from "../../../shared/orca-workspace/open.ts";
 import {
-  boundedHook,
   type OpenPort,
   orcaAnswer,
 } from "../../../shared/orca-workspace/port.ts";
@@ -32,6 +31,7 @@ import {
   localContext,
   withLimit,
 } from "../../../shared/orca-workspace/runner.ts";
+import { supervisedHook } from "../../../shared/orca-workspace/supervised-hook.ts";
 import { treeDrivers } from "../../../skills/drive-pr/scripts/lib/state/tree-drivers.ts";
 import { resolvePullRequestHead } from "./orca-pr-head.ts";
 import { failureText } from "../text.ts";
@@ -43,12 +43,13 @@ import type {
   PullRequestTarget,
   RuntimeReceipt,
 } from "./port.ts";
+import { currentMs } from "../../../shared/time.ts";
 
 function portOn(ctx: Context): OpenPort {
   const orca = orcaCommandOrInstalled(process.env);
   return {
     host: ctx,
-    runHook: boundedHook,
+    runHook: supervisedHook,
     orcaCall: <T>(args: string[], what: string) =>
       orcaAnswer<T>(ctx.run([orca, ...args, "--json"]), what),
     where: "",
@@ -97,7 +98,7 @@ export async function openNoticesWorkspace(
   target: NoticesTarget,
   timeoutMs: number,
 ): Promise<RuntimeReceipt> {
-  const started = Date.now();
+  const started = currentMs();
   const opened = await open(
     repo,
     {
@@ -118,7 +119,7 @@ export async function openNoticesWorkspace(
       `path:${opened.workspace.path}`,
       "--all",
     ],
-    Math.max(1, timeoutMs - (Date.now() - started)),
+    Math.max(1, timeoutMs - (currentMs() - started)),
   );
   return withoutReattached({
     ...opened,
@@ -173,7 +174,7 @@ async function open(
     localContext((line) => lines.push(line)),
     timeoutMs,
   );
-  const started = Date.now();
+  const started = currentMs();
   try {
     const resolved =
       options.pr === undefined
@@ -206,7 +207,7 @@ async function open(
   } catch (error) {
     return {
       ok: false,
-      lost: Date.now() - started >= timeoutMs,
+      lost: currentMs() - started >= timeoutMs,
       detail: [failureText(error), ...lines.slice(-3)].join("; "),
       ...(error instanceof BusyHolderError
         ? {

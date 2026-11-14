@@ -18,6 +18,7 @@ import { editLabels, pullRequestLabels } from "./forge.ts";
 import type { ReadRecord } from "./launches.ts";
 import { outcomeOf } from "./followup-outcomes.ts";
 import { routineEnd } from "./routine-reruns.ts";
+import { waitEnd } from "./followup-waits.ts";
 import { defaultBranchLabels } from "./label-config.ts";
 import { ok } from "../../shared/outcome.ts";
 import {
@@ -96,9 +97,9 @@ export function labelFailed(label: FollowupLabel): boolean {
   return o === "unreadable" || o === "refused" || o === "defect";
 }
 
-/** How an ended follow-up record ended, for its label: `null` while it holds, or when it runs again. */
+/** How an ended follow-up record ended, for its label: `null` while it holds, or when it runs again (a routine run again, or after a rate limit's reset). */
 export function followupEndOf(r: ReadRecord): "done" | "failed" | null {
   if (r.record.action !== "followup" || r.record.pr === null) return null;
-  if (routineEnd(r)) return null;
+  if (routineEnd(r) || waitEnd(r)) return null;
   return outcomeOf(r);
 }

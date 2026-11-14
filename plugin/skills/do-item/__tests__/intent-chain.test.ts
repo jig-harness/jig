@@ -41,6 +41,10 @@ import {
   TRUNCATION_MARKER,
 } from "../scripts/intent-chain.ts";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import {
+  CACHEDIR_TAG,
+  CACHEDIR_TAG_SIGNATURE,
+} from "../../../shared/disposable-mark.ts";
 
 /** The escape both consumers apply — strip the arm line, then expand every
  * literal `<!--` to `&lt;!--` — reproduced here so a test can assert on what
@@ -1407,6 +1411,49 @@ describe("main", () => {
       );
       expect(existsSync(used)).toBe(true);
       expect(existsSync(unused)).toBe(false);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  // Nothing needs the chain or a session copy once the work is finished, so
+  // both directories carry a cache tag, and the age-based prunes of a later
+  // pickup remove only snapshots, never the tag.
+  it("tags the chain and session directories disposable, and a later prune keeps the tags", () => {
+    const repo = mkdtempSync(join(tmpdir(), "intent-chain-tagged-"));
+    try {
+      expectSpawnExit(
+        runWriter(
+          repo,
+          { issue: { identifier: "ENG-9701" } },
+          { CLAUDE_CODE_SESSION_ID: "tagged-sess" },
+        ),
+        0,
+        "first pickup",
+      );
+      const context = join(realpathSync.native(repo), ".context");
+      const tags = [
+        join(context, "intent-chain", CACHEDIR_TAG),
+        join(context, "refocus-state", CACHEDIR_TAG),
+      ];
+      const old = new Date(Date.now() - 400 * 24 * 60 * 60 * 1000);
+      for (const tag of tags) {
+        expect(
+          readFileSync(tag, "utf8").startsWith(CACHEDIR_TAG_SIGNATURE),
+        ).toBe(true);
+        utimesSync(tag, old, old);
+      }
+
+      expectSpawnExit(
+        runWriter(
+          repo,
+          { issue: { identifier: "ENG-9702" } },
+          { CLAUDE_CODE_SESSION_ID: "later-tagged-sess" },
+        ),
+        0,
+        "later pickup",
+      );
+      for (const tag of tags) expect(existsSync(tag)).toBe(true);
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
