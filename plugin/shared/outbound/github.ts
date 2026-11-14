@@ -163,6 +163,15 @@ export function gitHubHttpFailure(
   return outboundFailure(code, reason, { retryAfterMs: wait });
 }
 
+/** What a response's headers say of when a spent limit clears: the reset time and `Retry-After`, with the bounded fallback when it names neither. */
+export function gitHubLimitReset(
+  headers: Headers,
+  now: () => number = Date.now,
+): { until: number; retryAfterMs: number | null } {
+  const wait = retryAfterMs(headers, now);
+  return { until: resetOf(headers, wait, now), retryAfterMs: wait };
+}
+
 /** When a spent limit clears: the reset GitHub names, else its `Retry-After`, else the fallback. */
 function resetOf(
   headers: Headers,

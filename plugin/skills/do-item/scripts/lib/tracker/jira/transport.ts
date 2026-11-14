@@ -571,13 +571,15 @@ export function defaultTransport(
   if (!credential.ok) {
     const { reason } = credential.failure;
     return async () => {
-      throw new JiraApiError(`${reason}; ${JIRA_CREDENTIAL_HELP}`);
+      throw new JiraApiError(`${reason}; ${JIRA_CREDENTIAL_HELP}`, {
+        code: "unauthorized",
+      });
     };
   }
   const refusal = bearerOnSite(credential.value, base);
   if (refusal !== null)
     return async () => {
-      throw new JiraApiError(refusal);
+      throw new JiraApiError(refusal, { code: "unauthorized" });
     };
   const variable = bearerVariable(credential.value);
   return httpTransport(

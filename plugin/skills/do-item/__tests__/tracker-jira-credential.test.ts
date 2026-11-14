@@ -791,6 +791,7 @@ describe("a Bearer credential at an Atlassian Cloud site", () => {
       expect(err.message).toContain(variable);
       expect(err.message).toContain("issue_tracker.jira.api_base");
       expect(err.message).not.toContain("HTTP 403");
+      expect(err.code).toBe("unauthorized");
       expect(urls).toEqual([]);
     },
   );

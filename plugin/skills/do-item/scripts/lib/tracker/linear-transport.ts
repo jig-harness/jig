@@ -161,7 +161,11 @@ function errorsClass(errors: unknown[], status: number | null): FailureClass {
 }
 
 /** Turn a GraphQL response body into its `data`, or throw. */
-export function unwrapResponse(body: unknown, status: number | null): unknown {
+export function unwrapResponse(
+  body: unknown,
+  status: number | null,
+  retryAfter: number | null = null,
+): unknown {
   if (!isRecord(body))
     throw new LinearApiError(
       "Linear returned a non-object body",
@@ -173,6 +177,7 @@ export function unwrapResponse(body: unknown, status: number | null): unknown {
       `Linear API errors: ${JSON.stringify(body.errors).slice(0, 500)}`,
       status,
       errorsClass(body.errors, status),
+      { retryAfterMs: retryAfter },
     );
   return body.data;
 }
@@ -325,7 +330,7 @@ async function postOnce(
   // Linear answers a missing entity with HTTP 200 and an errors array, but
   // an error status may carry the same body.
   if (res.ok || errorsOf(body).length > 0)
-    return unwrapped(body, res.status, answer);
+    return unwrapped(body, res.status, answer, retryAfterMs(res.headers));
   return limited(
     new LinearApiError(
       `Linear API HTTP ${res.status}: ${text.slice(0, 300)}`,
@@ -357,9 +362,10 @@ function unwrapped(
   body: unknown,
   status: number | null,
   answer: BudgetAnswer,
+  retryAfter: number | null,
 ): Answer {
   try {
-    return { data: unwrapResponse(body, status) };
+    return { data: unwrapResponse(body, status, retryAfter) };
   } catch (err) {
     if (err instanceof LinearApiError) return limited(err, answer);
     throw err;
@@ -540,7 +546,7 @@ function cliAnswer(r: RunResult, governed: Governed | null): Answer {
       null,
       cliClass(said),
     );
-  return unwrapped(body, null, refused);
+  return unwrapped(body, null, refused, null);
 }
 
 /**

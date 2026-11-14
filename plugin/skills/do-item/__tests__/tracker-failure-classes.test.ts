@@ -304,6 +304,55 @@ describe("each class's policy", () => {
   });
 });
 
+describe("a reset named beside GraphQL errors", () => {
+  it("keeps Retry-After from a Linear answer whose errors list rides a refusing status", async () => {
+    const f = fetcher({
+      status: 400,
+      body: { errors: [{ message: "x" }] },
+      headers: { "Retry-After": "20" },
+    });
+    const error = await thrown(
+      linearHttp("lin_test", f.impl)("query Q { viewer { id } }", {}),
+    );
+    expect(error).toMatchObject({ code: "invalid", retryAfterMs: 20_000 });
+  });
+
+  it("gives a GitHub rate limit in a successful response the reset its headers name", async () => {
+    const reset = Math.floor(Date.now() / 1000) + 600;
+    const f = fetcher({
+      status: 200,
+      body: { errors: [{ type: "RATE_LIMITED", message: "x" }] },
+      headers: { "x-ratelimit-reset": String(reset), "Retry-After": "" },
+    });
+    const error = await thrown(
+      githubHttp(
+        "https://github.example/graphql",
+        "test",
+        f.impl,
+      )("query Q { viewer { login } }", {}),
+    );
+    expect(error).toMatchObject({ code: "rate-limited", until: reset * 1000 });
+  });
+
+  it("bounds a GitHub rate limit in a successful response that names no reset", async () => {
+    const f = fetcher({
+      status: 200,
+      body: { errors: [{ type: "RATE_LIMITED", message: "x" }] },
+      headers: { "Retry-After": "" },
+    });
+    const before = Date.now();
+    const error = (await thrown(
+      githubHttp(
+        "https://github.example/graphql",
+        "test",
+        f.impl,
+      )("query Q { viewer { login } }", {}),
+    )) as { code: string; until: number };
+    expect(error.code).toBe("rate-limited");
+    expect(error.until).toBeGreaterThan(before);
+  });
+});
+
 describe("a held gh run", () => {
   it("answers the failure it was held with, not one read from its reason", () => {
     const failure = {

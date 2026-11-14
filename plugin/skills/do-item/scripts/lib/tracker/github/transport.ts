@@ -34,6 +34,7 @@ import {
   GITHUB,
   ghRunFailure,
   gitHubHttpFailure,
+  gitHubLimitReset,
   graphQLErrorsClass,
 } from "../../../../../../shared/outbound/github.ts";
 import { guarded } from "../../../../../../shared/outbound/hold.ts";
@@ -124,6 +125,7 @@ function abortedError(signal: AbortSignal, sent = false): GitHubApiError {
 export function unwrapResponse(
   body: unknown,
   failure: OutboundFailure | null = null,
+  headers: Headers | null = null,
 ): unknown {
   if (!isRecord(body))
     throw errorOf(
@@ -136,10 +138,16 @@ export function unwrapResponse(
     );
     const message = `GitHub API errors: ${JSON.stringify(body.errors).slice(0, 500)}`;
     const code = failure?.code ?? graphQLErrorsClass(types);
+    // A spent limit named in a successful response still clears at the reset
+    // its headers carry, else after the bounded fallback.
+    const limit =
+      code === "rate-limited" && headers !== null
+        ? gitHubLimitReset(headers)
+        : null;
     throw errorOf(
       outboundFailure(code, message, {
-        until: failure?.until ?? null,
-        retryAfterMs: failure?.retryAfterMs ?? null,
+        until: failure?.until ?? limit?.until ?? null,
+        retryAfterMs: failure?.retryAfterMs ?? limit?.retryAfterMs ?? null,
       }),
       body.data,
     );
@@ -261,15 +269,15 @@ function ghRunAnswer(r: RunResult, tookMs: number): Answer {
     return new GitHubApiError(
       `gh api graphql returned no JSON (exit 0): ${parsed.body.trim().slice(0, 300)}`,
     );
-  return answerOf(body);
+  return answerOf(body, parsed.headers);
 }
 
 /**
  * A response body as the answer: GraphQL errors in a successful response are
  * classified here, inside the attempt, so the retry and the hold see them.
  */
-function answerOf(body: unknown): Answer {
-  return errorsFailure(body, null) ?? { body };
+function answerOf(body: unknown, headers: Headers | null): Answer {
+  return errorsFailure(body, null, headers) ?? { body };
 }
 
 /**
@@ -304,6 +312,7 @@ function ghExitAnswer(
 function errorsFailure(
   body: unknown,
   failure: OutboundFailure | null,
+  headers: Headers | null = null,
 ): GitHubApiError | null {
   if (
     !isRecord(body) ||
@@ -312,7 +321,7 @@ function errorsFailure(
   )
     return null;
   try {
-    unwrapResponse(body, failure);
+    unwrapResponse(body, failure, headers);
   } catch (err) {
     if (err instanceof GitHubApiError) return err;
     throw err;
@@ -428,7 +437,7 @@ async function postOnce(
     text,
     Date.now() - began,
   );
-  if (failure === null) return answerOf(body);
+  if (failure === null) return answerOf(body, res.headers);
   return errorsFailure(body, failure) ?? errorOf(failure);
 }
 
