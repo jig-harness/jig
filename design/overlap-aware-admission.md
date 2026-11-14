@@ -309,7 +309,14 @@ before either:
   pickup is held while another piece of work in flight touches the area,
   reported as `held: serialized behind #N in <area>, footprint unknown`,
   as the drives of unplaced pull requests are held today. A footprint
-  record, or the footprint scout, releases it.
+  record, or the footprint scout, releases it. The rule is symmetric: a
+  pickup in flight whose footprint is unknown, and a pull request whose
+  footprint the tick could not read, occupy every serialized area their
+  known part does not exclude, so a candidate whose footprint reaches such
+  an area is held behind them, reported as
+  `held: serialized behind #N in <area>, #N's footprint unknown`. The
+  occupation ends when #N's footprint is known, or when #N's pull request
+  merges or closes, or the pickup ends.
 - **A person's hold** (`jig:hold`, `hitl`).
 
 ### Merge evidence for a plan's conflict edges
