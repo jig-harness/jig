@@ -46,7 +46,15 @@ function pidIn(file: string): number {
 function git(cwd: string, ...args: string[]): string {
   const run = Bun.spawnSync(["git", ...args], {
     cwd,
-    env: { ...process.env, GIT_DIR: undefined, GIT_WORK_TREE: undefined },
+    env: {
+      ...process.env,
+      GIT_DIR: undefined,
+      GIT_WORK_TREE: undefined,
+      GIT_AUTHOR_NAME: "t",
+      GIT_AUTHOR_EMAIL: "t@example.com",
+      GIT_COMMITTER_NAME: "t",
+      GIT_COMMITTER_EMAIL: "t@example.com",
+    },
   });
   expectSpawnExit(run, 0, `git ${args.join(" ")}`);
   return run.stdout.toString().trim();
