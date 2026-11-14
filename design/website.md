@@ -263,7 +263,7 @@ maintainers ([AGENTS.md § Writing conventions](../AGENTS.md#writing-conventions
 | `/adopt/existing/`, `/adopt/greenfield/` | adoption/*.md, profiles | the guides with the plan rail: the chosen profile's modules in order, linked to their levels, and a hand-off link that keeps the profile (`?profile=`) |
 | `/adopt/plugin/`, `/adopt/configuration/`, `/adopt/extending/`, `/adopt/mechanisms/` | plugin/README.md, CONFIGURATION.md, EXTENDING.md, MECHANISMS.md | the plugin README's sections getting started does not render; the configuration reference; the extending guide; the map of the deterministic and reasoned parts |
 | `/skills/`, `/skills/<name>/`, `/skills/<name>/skill/` | plugin README tables, each skill's README or SKILL.md | what each skill runs (stations and modules), the stations no skill runs, each skill's own page, and its agent contract where the page is its README |
-| `/protocol/`, `/protocol/<chapter>/` | planned: the Jig Protocol's index and generated chapter Markdown, with `plugin/protocol/` as the proposed source home | planned reference in the “what it is built from” layer: the index explains the operating rules and links to each chapter; each chapter is readable and linkable on its own; the [Protocol design issue](https://github.com/jig-harness/jig/issues/1016) owns generation, rendering, the final source home and chapter slugs; agree those before implementation |
+| `/protocol/`, `/protocol/<chapter>/` | the Jig Protocol's index and generated chapter Markdown in `plugin/protocol/`; existing chapter filename stems are the agreed slugs | reference in the “what it is built from” layer: the index links to each chapter; each chapter has a status badge, prose and tables with a link target per value. Data is published at `/protocol/<chapter>/v<version>/data.json`, and schemas at `/protocol/<chapter>/v<version>/schemas/<filename>.json`, as [the Protocol design](protocol.md#how-the-site-renders-the-chapters) defines |
 | `/principles/`, `/principles/<n>/` | principles/ | the index shows each principle's statement and the first paragraph of its why, with a link to where it is visible on the site; each principle's page has its statement, why and consequences; principle 4 draws the ladder |
 | `/glossary/` | GLOSSARY.md | every term in its group, an anchor per term, a find filter |
 | `/whats-new/` | CHANGELOG.md, ROADMAP.md | every release beside the roadmap, each item foldable and anchored (`#rm-item-<n>`) |
@@ -599,7 +599,7 @@ design round and visitor-page work under that epic, in this order:
    position or the status of a capability.
 3. **Build the visitor pages and site together.** Apply the accepted design
    to README.md, FACTORY.md, FEATURES.md and `website/src`, with the parser
-   and test changes above. The Protocol routes depend on its design's
+   and test changes above. The Protocol routes follow its design's
    agreed contract. Keep planned autonomy claims in On the roadmap until
    item 33's live-host checks are recorded. The direct audit path remains.
 

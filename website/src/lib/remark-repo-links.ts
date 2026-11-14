@@ -101,6 +101,7 @@ function inlineReference(node: MdNode, definitions: Map<string, MdNode>): void {
 
 /** What a site page is called when a link names it by its file. */
 export const PAGE_NAMES: Readonly<Record<string, string>> = {
+  "/protocol/": "The Jig Protocol",
   "/": "the overview",
   "/adopt/existing/": "the adoption guide",
   "/adopt/greenfield/": "the greenfield guide",

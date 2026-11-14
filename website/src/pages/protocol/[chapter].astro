@@ -1,0 +1,37 @@
+---
+import Base from "../../layouts/Base.astro";
+import { md } from "../../lib/markdown.ts";
+import { protocolChapters, protocolResources } from "../../lib/protocol-source.ts";
+import { chapterBody } from "../../lib/protocol.ts";
+import { read } from "../../lib/site.ts";
+import { REPO_URL } from "../../lib/routes.ts";
+
+export function getStaticPaths() {
+  return protocolChapters().map((chapter) => ({ params: { chapter: chapter.chapter }, props: { chapter } }));
+}
+const { chapter } = Astro.props;
+const from = `plugin/protocol/${chapter.chapter}.md`;
+const html = await md(chapterBody(read(from), chapter), from);
+const resources = protocolResources().filter((r) => r.route.startsWith(`${chapter.chapter}/v${chapter.version}/`));
+---
+
+<Base title={chapter.title} description={`${chapter.title}, version ${chapter.version} of the Jig Protocol.`}>
+  <section class="page wrap">
+    <article class="main" style="--main-max:1000px">
+      <nav class="crumbs" aria-label="Breadcrumb"><a href="/protocol/">Protocol</a></nav>
+      <h1 class="display">{chapter.title}</h1>
+      <p><span class="status">{chapter.status}</span> · Version {chapter.version}
+        {chapter.planItems?.map((item) => <> · <a href={`/whats-new/#rm-item-${item.item}`}>Plan item {item.item}</a></>)}
+      </p>
+      <div class="prose" set:html={html} />
+      <h2 id="machine-readable">Machine-readable files</h2>
+      <ul>{resources.map((resource) => <li><a href={`/protocol/${resource.route}`}>{resource.route.split("/").at(-1)}</a></li>)}</ul>
+      <p class="source"><a href={`${REPO_URL}/blob/main/${from}`}>Source: {from}</a></p>
+    </article>
+  </section>
+</Base>
+
+<style>
+  .status { display: inline-block; border: 1px solid currentColor; border-radius: 4px; padding: 2px 8px; font-size: .85em; }
+  h1 { font-size: clamp(30px, 3.2vw, 46px); margin: 12px 0 16px; }
+</style>

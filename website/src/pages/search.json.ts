@@ -16,6 +16,7 @@ import {
   stationLabel,
 } from "../lib/data/factory.ts";
 import { LEVEL_NAME, LEVELS } from "../lib/data/modules.ts";
+import { protocolChapters } from "../lib/protocol-source.ts";
 import { headingId } from "../lib/view.ts";
 
 const plain = (md: string) =>
@@ -229,6 +230,20 @@ const termEntries = (): Entry[] =>
 export function GET() {
   const entries = [
     ...pageEntries(),
+    {
+      kind: "Page",
+      label: "The Jig Protocol",
+      sub: "",
+      href: "/protocol/",
+      key: "protocol contracts operating rules",
+    },
+    ...protocolChapters().map((chapter) => ({
+      kind: "Protocol",
+      label: chapter.title,
+      sub: `Version ${chapter.version} · ${chapter.status}`,
+      href: `/protocol/${chapter.chapter}/`,
+      key: `${chapter.title} ${chapter.values.map((v) => Object.values(v).join(" ")).join(" ")}`.toLowerCase(),
+    })),
     ...moduleEntries(),
     ...stationEntries(),
     ...jobEntries(),
