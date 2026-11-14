@@ -8,6 +8,7 @@ import {
 } from "../shared/config-layers.ts";
 import { failed, type Failure, ok, type Outcome } from "../shared/outcome.ts";
 import type { KindName } from "./types.ts";
+import { DEFAULT_ARCHIVE_MAX_BYTES } from "./legacy-archive.ts";
 
 const REPOSITORY_KINDS = ["worktrees", "tool-state", "scratch"] as const;
 export interface Declaration {
@@ -31,6 +32,8 @@ export interface MachineConfig {
   hour: number;
   collect_day: number;
   min_free_bytes: number;
+  /** The most the one-time archive of one worktree's ignored content may hold; 0 archives nothing. */
+  archive_max_bytes: number;
   /** Orca's command, for a run no Orca terminal started (the scheduler's). */
   orca?: { command: string };
 }
@@ -197,7 +200,11 @@ function schedule(
 ): Configured<
   Pick<
     MachineConfig,
-    "receipts_days" | "hour" | "collect_day" | "min_free_bytes"
+    | "receipts_days"
+    | "hour"
+    | "collect_day"
+    | "min_free_bytes"
+    | "archive_max_bytes"
   >
 > {
   const receipts_days = integer(gc.receipts_days ?? 30, "gc.receipts_days", 1);
@@ -212,11 +219,18 @@ function schedule(
     0,
   );
   if (!min_free_bytes.ok) return min_free_bytes;
+  const archive_max_bytes = integer(
+    gc.archive_max_bytes ?? DEFAULT_ARCHIVE_MAX_BYTES,
+    "gc.archive_max_bytes",
+    0,
+  );
+  if (!archive_max_bytes.ok) return archive_max_bytes;
   return ok({
     receipts_days: receipts_days.value,
     hour: hour.value,
     collect_day: collect_day.value,
     min_free_bytes: min_free_bytes.value,
+    archive_max_bytes: archive_max_bytes.value,
   });
 }
 export function parseMachine(value: unknown): Configured<MachineConfig> {
@@ -234,6 +248,7 @@ export function parseMachine(value: unknown): Configured<MachineConfig> {
       "hour",
       "collect_day",
       "min_free_bytes",
+      "archive_max_bytes",
       "orca",
     ],
     "machine gc",
@@ -260,6 +275,7 @@ export function parseMachine(value: unknown): Configured<MachineConfig> {
     hour: times.value.hour,
     collect_day: times.value.collect_day,
     min_free_bytes: times.value.min_free_bytes,
+    archive_max_bytes: times.value.archive_max_bytes,
     ...(orca.value === undefined ? {} : { orca: orca.value }),
   });
 }
