@@ -767,6 +767,22 @@ function proveClaim(
     return managed.ok ? ok(listedIn(managed.value)) : managed;
   });
 }
+/** The proof that needs no policy: a claim resource, or a locked worktree; null otherwise. */
+function proveEarly(
+  orca: string | undefined,
+  resource: Resource,
+  repository: string,
+): Proof | Promise<Proof> | null {
+  const claim =
+    orca === undefined ? null : proveClaim(orca, resource, repository);
+  if (claim !== null) return claim;
+  if (!isMapping(resource.details) || resource.details.locked !== true)
+    return null;
+  return withHeldBranch(resource, {
+    state: "live",
+    reason: "worktree is locked",
+  });
+}
 export function worktreesKind(
   repository: string,
   roots: string[],
@@ -821,14 +837,8 @@ export function worktreesKind(
       ]);
     },
     prove: async (resource) => {
-      const claim =
-        orca === undefined ? null : proveClaim(orca, resource, repository);
-      if (claim !== null) return claim;
-      if (isMapping(resource.details) && resource.details.locked === true)
-        return withHeldBranch(resource, {
-          state: "live",
-          reason: "worktree is locked",
-        });
+      const early = proveEarly(orca, resource, repository);
+      if (early !== null) return early;
       const resolved =
         policy === undefined ? await worktreePolicy(repository) : ok(policy);
       if (!resolved.ok)
