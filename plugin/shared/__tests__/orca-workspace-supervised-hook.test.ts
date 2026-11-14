@@ -10,6 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
+import { skipsOnWindows } from "../../../lib/test-helpers/windows-skip.ts";
 import {
   CREATE_HOOK_CLAIM,
   CREATE_HOOK_MARK,
@@ -78,7 +79,12 @@ function worktreeWithHook(script: string): {
 
 const quiet = (): Context => localContext(() => undefined);
 
-describe("the plugin's local Orca hook runner", () => {
+describe.skipIf(
+  skipsOnWindows(
+    "process-lifecycle",
+    "the hook is a shell script and its children are ended through POSIX process groups",
+  ),
+)("the plugin's local Orca hook runner", () => {
   test("a failed create hook's children are ended before its claim is given back", () => {
     const pidFile = join(mkdtempSync(join(tmpdir(), "jig-orca-pid-")), "pid");
     const { worktree, dir } = worktreeWithHook(
@@ -101,7 +107,16 @@ describe("the plugin's local Orca hook runner", () => {
 
   test("records the hook's process group in the claim while it runs", () => {
     const { worktree, dir } = worktreeWithHook(
-      `#!/bin/sh\ncat "$(git rev-parse --absolute-git-dir)/${CREATE_HOOK_CLAIM}/hook"\n`,
+      // The supervisor records the group just after the hook starts, so the
+      // hook waits for that line, for up to 10 seconds, before printing it.
+      [
+        "#!/bin/sh",
+        `record="$(git rev-parse --absolute-git-dir)/${CREATE_HOOK_CLAIM}/hook"`,
+        "i=0",
+        `while ! grep -q '^group ' "$record" 2>/dev/null && [ "$i" -lt 100 ]; do sleep 0.1; i=$((i + 1)); done`,
+        'cat "$record"',
+        "",
+      ].join("\n"),
     );
     const lines: string[] = [];
     expect(
@@ -116,5 +131,15 @@ describe("the plugin's local Orca hook runner", () => {
     ).toBe(true);
     expect(lines.some((line) => /^group \d+/.test(line))).toBe(true);
     expect(existsSync(join(dir, CREATE_HOOK_MARK))).toBe(true);
+  });
+
+  test("a group that cannot be ended keeps the hook's own failure first", () => {
+    const { worktree, hook } = worktreeWithHook("#!/bin/sh\nexit 4\n");
+    // A directory where the record should be: the supervisor cannot write
+    // it, and reading it back to end the group fails.
+    const record = mkdtempSync(join(tmpdir(), "jig-orca-record-"));
+    expect(() => supervisedHook(quiet(), worktree, hook, record)).toThrow(
+      /^\S+create failed \(exit \d+\); its process group may still be running/,
+    );
   });
 });

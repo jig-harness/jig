@@ -21,7 +21,9 @@ import { budget, type Context, HerdrError } from "./runner.ts";
  * recorded there, and a failed run's group is ended before this returns, so
  * nothing of it is still running when the hook is run again. The hook gets
  * `HOOK_TIMEOUT_MS`, or what is left of the run's limit when that is less.
- * The hook runs on this machine whatever `ctx` runs its commands on.
+ * The hook runs on this machine whatever `ctx` runs its commands on. When
+ * the group cannot be ended, the error names the hook's own failure first,
+ * then why its group may still be running.
  */
 export const supervisedHook: HookRunner = (ctx, worktree, path, groupFile) => {
   const run = superviseHook(
@@ -32,10 +34,17 @@ export const supervisedHook: HookRunner = (ctx, worktree, path, groupFile) => {
   );
   for (const line of run.lines) ctx.log(line);
   const failure = hookFailure(path, run);
-  if (failure !== null) {
-    if (groupFile !== undefined) endGroup(ctx, groupFile);
-    throw new HerdrError(failure);
-  }
+  if (failure === null) return;
+  if (groupFile !== undefined)
+    try {
+      endGroup(ctx, groupFile);
+    } catch (error) {
+      throw new HerdrError(
+        `${failure}; its process group may still be running, as it could not be ended (${error instanceof Error ? error.message : String(error)})`,
+        { cause: error },
+      );
+    }
+  throw new HerdrError(failure);
 };
 
 /**
