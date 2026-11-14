@@ -395,6 +395,7 @@ fs.appendFileSync(F + "/claude-runs.jsonl", JSON.stringify({
   cwd: process.cwd(),
   configDir: process.env.CLAUDE_CONFIG_DIR ?? null,
   token: process.env.CLAUDE_CODE_OAUTH_TOKEN ?? null,
+  backgroundTasksOff: process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS ?? null,
 }) + "\\n");
 if (fs.existsSync(F + "/claude-stubborn")) {
   process.on("SIGTERM", () => {});

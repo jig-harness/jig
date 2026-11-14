@@ -144,7 +144,11 @@ describe("jig dispatch --apply follows up a merge", () => {
 
     await waitFor("the pass", () => claudeRuns(w).length === 1);
     const [run] = claudeRuns(w);
-    expect(run).toMatchObject({ configDir: join(w.root, "config-a"), cwd: ws });
+    expect(run).toMatchObject({
+      configDir: join(w.root, "config-a"),
+      cwd: ws,
+      backgroundTasksOff: "1",
+    });
     const argv = run?.argv ?? [];
     expect(argv.at(-2)).toBe("-p");
     expect(argv).not.toContain("--permission-mode");

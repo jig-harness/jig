@@ -1913,6 +1913,16 @@ report. In such a pass:
   default), after which the wrapper stops it: open the pull request and arm
   its drive as soon as the work allows, and record the result before
   anything long-running that follows.
+- **The pass has no next turn.** A background task or agent still running
+  when its turn ends is lost with it, so run every long step (the
+  implementer, a reviewer, the gates) in the foreground and wait for it in
+  the same turn, and bound every wait on another agent: one that stops
+  without reporting is carried on without, never waited on until the
+  deadline. A Claude Code pass runs with background tasks off. Once the
+  branch holds committed work, push it before a long validation step and
+  after each later commit, so a deadline or an interrupted run strands
+  nothing on the host; the pull request still opens only after validation
+  and the pre-PR review.
 - **Write the closing report last.** Record the result as soon as the
   pull request's drive is armed and go on; when the pass is done, write
   its closing report, a `closing-report/v1` record of the shape the prompt

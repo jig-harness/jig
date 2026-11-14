@@ -55,7 +55,9 @@
  * `drive.pass_args`, read here in the workspace as `drive.ts` reads them for
  * a drive's pass, and a Codex pass the bypass only when the record says the
  * tick admitted it on a host that opted in, with the `drive.codex_pass_args`
- * the record keeps; the wrapper adds no permission of its own. The wrapper stops the pass at the deadline the record names,
+ * the record keeps; the wrapper adds no permission of its own. The pass
+ * runs with background tasks off (`NO_BACKGROUND_TASKS`), as a drive's
+ * passes do: it has no next turn to receive their results. The wrapper stops the pass at the deadline the record names,
  * passes its output through and keeps a bounded diagnostic tail. Its last
  * `Question:` line is also kept unless the pass recorded `done`:
  * that is where a pass that needs a person states its question.
@@ -105,7 +107,10 @@ import { captureIdentity } from "../shared/liveness.ts";
 import { endOwnTab, withoutRunTabMarker } from "../shared/orca-tabs.ts";
 import { LAUNCH_VARIABLE } from "../shared/launched-session.ts";
 import { resolveAccountIdentity } from "../skills/drive-pr/scripts/lib/identity.ts";
-import { passCommand } from "../skills/drive-pr/scripts/lib/pass-command.ts";
+import {
+  NO_BACKGROUND_TASKS,
+  passCommand,
+} from "../skills/drive-pr/scripts/lib/pass-command.ts";
 import {
   DRIVE_EXIT,
   driveExitClosesTab,
@@ -625,8 +630,10 @@ async function wrap(id: string, token: string): Promise<number> {
     record.workspace.path,
     // The tab's own command is this wrapper; the drive it runs is not. What
     // it starts is a session the line started, named by its launch record.
+    // A pass of its own starts no background task, as a drive's passes do.
     {
       ...withoutRunTabMarker(passEnvironment(process.env, record)),
+      ...(ownPass(record) ? NO_BACKGROUND_TASKS : {}),
       [LAUNCH_VARIABLE]: id,
     },
     runOptions(record),

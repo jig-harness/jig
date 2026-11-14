@@ -40,6 +40,18 @@ export function onlyDeadlineBounds(vendor: AccountVendor): boolean {
   return UNCAPPED.has(vendor);
 }
 
+/**
+ * The setting a headless pass runs under so that it starts no background
+ * task: a pass has no next turn to receive one's result, so a task still
+ * running when its turn ends is lost with it. Claude Code removes its
+ * background tool parameters and auto-backgrounding under this variable;
+ * Codex has no such setting and ignores it, and its pass's prompt carries
+ * the rule alone.
+ */
+export const NO_BACKGROUND_TASKS: Readonly<Record<string, string>> = {
+  CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1",
+};
+
 /** The words Codex's command line runs without a sandbox and without asking. */
 export const CODEX_BYPASS = "--dangerously-bypass-approvals-and-sandbox";
 
