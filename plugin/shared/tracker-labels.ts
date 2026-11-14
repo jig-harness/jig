@@ -46,7 +46,7 @@ const EPIC_TYPES = "epic_types";
 export const LABEL_KEYS: readonly string[] = [...LABEL_ROLES, EPIC_TYPES];
 
 export interface TrackerLabels {
-  /** Marks an issue as an epic whose sub-issues are worked one at a time. */
+  /** Marks an issue as an epic whose sub-issues are each delivered as their own pull request. */
   epic: string;
   /** Native issue types whose issues read as epics; empty when unset. */
   epicTypes: string[];

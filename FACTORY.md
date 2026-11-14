@@ -208,8 +208,8 @@ On the roadmap:
 ## Deciding what to build
 
 Before an item reaches the line, a team decides what to build and how. A
-feature or an [epic](GLOSSARY.md), a set of work items worked one at a time,
-passes through stages. A reviewer checks each stage before the next one uses
+feature or an [epic](GLOSSARY.md), a set of work items each delivered as
+its own pull request, passes through stages. A reviewer checks each stage before the next one uses
 it.
 
 1. **Research.** A dated research note per question: the options, the

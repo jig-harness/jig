@@ -440,11 +440,17 @@ assignee makes the pickup refuse without restoring anyone. Linear and Jira
 have one assignee, so they assign first and verify the assignment from history;
 when that check finds a concurrent assignee was replaced, they conditionally
 make a best-effort restoration and refuse the pickup. A tracker without either
-operation leaves the blocker for a person to assign. An assigned epic without an execution plan works one child at a time,
-none while a started child still needs an agent. A child awaiting a person
-does not occupy that slot: it is in the tracker's `ops_pending` state, or
-carries `hitl`, `hitl:*`, `manual-ops` (including their configured names) or
-`jig:hold`. An epic none of whose open children can start reports one reason,
+operation leaves the blocker for a person to assign. An assigned epic without
+an execution plan has its ready children started in parallel, best-ranked
+first, up to `dispatch.epic_width` of them under way at once (4 by default;
+1 starts one child at a time). A started child counts toward the width while
+it still needs an agent, and so does a child that cannot be read, since it
+may be under way. A child awaiting a person takes no part of the width: it
+is in the tracker's `ops_pending` state, or carries `hitl`, `hitl:*`,
+`manual-ops` (including their configured names) or `jig:hold`. A child that
+waits on the width says so, naming the epic and the width
+([ADR-0023](../docs/adr/ADR-0023-epic-children-are-admitted-in-parallel.md)).
+An epic none of whose open children can start reports one reason,
 naming a child waiting on a person when it has one. An execution plan keeps
 its own ordering rules.
 
