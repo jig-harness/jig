@@ -2931,3 +2931,35 @@ scheduled failures, it opens, updates or closes the issue for each cause from
 complete evidence, retaining progress so retries do not repeat changes. See
 [M11](modules/M11-process-observability/README.md#one-current-issue-for-external-preconditions)
 and [scheduled failures](modules/M11-process-observability/README.md#scheduled-failures-one-issue-per-cause).
+
+- **Priorities record** — the proposed versioned declaration of objectives,
+  purposes, end states, owners and capacity shares or limits at site,
+  repository or individual level. A mechanical ranker reads it with a tracker
+  snapshot to propose a reproducible shortlist; a person picks from it.
+  See [the design](design/priorities-and-overview.md).
+- **Progress review** — the proposed scheduled or on-demand pass that reads
+  declared objectives, tracker progress and the line's records, and proposes
+  findings and systematic fixes across items. It never picks, starts,
+  answers, re-ranks or files; the steward keeps individual stopped items.
+  See [the design](design/priorities-and-overview.md#progress-review-proposals-after-mechanical-facts).
+- **WebAuthn** — the browser standard for asking a credential on a device or
+  security key to authenticate a person. Local verification can require the
+  device's unlock; it does not prove to Jig that a forge comment came from
+  a person rather than a pass. See [the phone unlock design](design/priorities-and-overview.md#phone-unlock-and-browser-evidence).
+- **PRF extension** — WebAuthn's pseudo-random function extension: a supported
+  credential returns secret bytes bound to that credential and the supplied
+  input. The proposed browser unlock derives a wrapping key from those bytes
+  to protect a stored token. Support must be checked with the actual credential.
+  See [the phone unlock design](design/priorities-and-overview.md#phone-unlock-and-browser-evidence).
+- **HKDF** — HMAC-based key derivation function, a standard way to derive a
+  cryptographic key from secret input with a separate purpose and salt.
+  The proposed browser unlock derives a wrapping key from a credential's
+  PRF output. See [the unlock design](design/priorities-and-overview.md#phone-unlock-and-browser-evidence).
+- **AES-GCM** — Advanced Encryption Standard in Galois/Counter Mode, an
+  encryption scheme that also detects changed ciphertext. Each encryption
+  under a key needs a fresh nonce, a value used only once.
+  See [the unlock design](design/priorities-and-overview.md#phone-unlock-and-browser-evidence).
+- **Allocation owner** — the first objective matching an item at a priorities
+  level. That objective alone counts the item's start for capacity and the
+  peripheral floor; other matching objectives show it for reporting only.
+  See [computed ranking](design/priorities-and-overview.md#computed-ranking-proposes-a-shortlist).

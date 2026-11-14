@@ -53,6 +53,7 @@ with the review.
 
 | Design | Plan items |
 |--------|---------------|
+| [Declared priorities, a progress review and the overview](priorities-and-overview.md) | 56 |
 | [Scheduled-failure reconciliation](scheduled-failure-reconciliation.md) | Later: reusable M11 reconciler |
 | [Reflection stores](reflection.md) | Later: the Jira store |
 | [The audit experience](audit-experience.md) | 8 |

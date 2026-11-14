@@ -709,11 +709,16 @@ rules, timestamps and failure states serve desktop and phone.
 The phone excludes operator chat, command palettes and advanced filter
 composition: reading and deciding have priority over composing and
 investigating on a small screen. It excludes session chat and steering,
-which need the workspace and its context. It offers no dashboard merge, answer,
-request or other write, even when desktop writes arrive: those need a
-separate phone design and proof of presence. Before #399, no surface gains
-a write by this work. Copying text is not sending it. All supported acts
-have visible buttons or links; no hover or keyboard shortcut is required.
+which need the workspace and its context. The current phone view remains
+read-only. The [priorities and overview design](priorities-and-overview.md#phone-unlock-and-browser-evidence)
+and [ADR-0023](../docs/adr/ADR-0023-browser-actions-use-a-local-unlock.md)
+define the later phone actions and local unlock: every desktop act except
+merge, only after the browser-write path and physical-device probes pass,
+with confirmation of exactly what will be sent. The private HTTP fallback
+stays read-only; phone writes require the private-network HTTPS front.
+Before #399, no surface gains a write by this work. Copying text is not
+sending it. All supported acts have visible buttons or links; no hover or
+keyboard shortcut is required.
 
 **First run, using today's dashboard.** On the host, start
 `jig dispatch dashboard` with `dashboard.listen` set to its private address
