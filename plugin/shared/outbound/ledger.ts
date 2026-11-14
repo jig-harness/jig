@@ -90,6 +90,10 @@ function currentCaller(): string {
       : `skill:${basename(process.argv[1] ?? "jig")}`)
   );
 }
+/** The caller to preserve when this process starts an outbound-capable child. */
+export function callerForChild(): string {
+  return currentCaller();
+}
 /** Named GraphQL operation, or a stable opaque name for an anonymous document. */
 export function operationName(query: string): string {
   const clean = query.replace(/^\s*#.*$/gm, "");
@@ -144,32 +148,40 @@ export function recordCall(input: CallRecord): void {
       caller,
       unit,
     ];
-    inTransaction(db, () => {
-      db.query("DELETE FROM outbound_cost WHERE hour < ?").run(
-        Math.ceil((at - LEDGER_RETENTION_MS) / HOUR) * HOUR,
-      );
-      const prior = db
-        .query(
-          "SELECT * FROM outbound_cost WHERE hour=? AND system=? AND credential=? AND operation=? AND caller=? AND unit=?",
-        )
-        .get(...keys) as RawRow | null;
-      const failures: Partial<Record<FailureClass, number>> = prior
-        ? JSON.parse(prior.failures)
-        : {};
-      if (input.failure)
-        failures[input.failure] = (failures[input.failure] ?? 0) + 1;
-      db.query(
-        "INSERT OR REPLACE INTO outbound_cost VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-      ).run(
-        ...keys,
-        (prior?.requests ?? 0) + requests,
-        (prior?.cost ?? 0) + cost,
-        (prior?.unknown_cost ?? 0) + unknown,
-        (prior?.estimated ?? 0) + estimated,
-        (prior?.duration_ms ?? 0) + duration,
-        JSON.stringify(failures),
-      );
-    });
+    // Accounting is best effort: a busy ledger must never extend an outbound
+    // call beyond its own deadline. Restore the connection's normal policy
+    // after this one nonblocking write for its other users.
+    db.run("PRAGMA busy_timeout = 0");
+    try {
+      inTransaction(db, () => {
+        db.query("DELETE FROM outbound_cost WHERE hour < ?").run(
+          Math.ceil((at - LEDGER_RETENTION_MS) / HOUR) * HOUR,
+        );
+        const prior = db
+          .query(
+            "SELECT * FROM outbound_cost WHERE hour=? AND system=? AND credential=? AND operation=? AND caller=? AND unit=?",
+          )
+          .get(...keys) as RawRow | null;
+        const failures: Partial<Record<FailureClass, number>> = prior
+          ? JSON.parse(prior.failures)
+          : {};
+        if (input.failure)
+          failures[input.failure] = (failures[input.failure] ?? 0) + 1;
+        db.query(
+          "INSERT OR REPLACE INTO outbound_cost VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        ).run(
+          ...keys,
+          (prior?.requests ?? 0) + requests,
+          (prior?.cost ?? 0) + cost,
+          (prior?.unknown_cost ?? 0) + unknown,
+          (prior?.estimated ?? 0) + estimated,
+          (prior?.duration_ms ?? 0) + duration,
+          JSON.stringify(failures),
+        );
+      });
+    } finally {
+      db.run("PRAGMA busy_timeout = 10000");
+    }
   } catch (error) {
     swallow(error, "write the outbound cost ledger");
   }

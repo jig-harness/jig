@@ -274,10 +274,16 @@ export function spendingLines(systems: readonly SystemSpending[]): string[] {
         )
         .join(", ") || "no cost recorded";
     const top =
-      s.operations
-        .slice(0, 3)
-        .map((o) => `${o.operation} ${o.cost} ${o.unit}`)
-        .join(", ") || "none";
+      [...new Set(s.operations.map((o) => o.unit))]
+        .map((unit) => {
+          const operations = s.operations
+            .filter((o) => o.unit === unit)
+            .slice(0, 3)
+            .map((o) => `${o.operation} ${o.cost} ${o.unit}`)
+            .join(", ");
+          return operations || `none (${unit})`;
+        })
+        .join("; ") || "none";
     return `outbound ${s.system}: ${held}; tick spent ${s.requests} requests, ${costs}; costliest: ${top}`;
   });
 }

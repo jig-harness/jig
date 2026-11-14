@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import {
   lowQuotaNeeds,
   quotaRisks,
+  spendingLines,
   systemSpending,
 } from "../lib/outbound-report.ts";
 import type { LedgerReport, LedgerRow } from "../../shared/outbound/ledger.ts";
@@ -85,6 +86,18 @@ test("tick totals exclude a concurrent caller and retain the system's known bala
   ]);
   expect(systems[0]?.requests).toBe(20);
   expect(systems[0]?.balances[0]?.complexity.remaining).toBe(50);
+});
+
+test("spending lines retain the costliest operations for each cost unit", () => {
+  const data = report();
+  data.rows.push({
+    ...row("tick:one", 9),
+    unit: "requests",
+    operation: "Rest",
+  });
+  const line = spendingLines(systemSpending(data, "tick:one", now))[0];
+  expect(line).toContain("Queue 200 points");
+  expect(line).toContain("Rest 9 requests");
 });
 
 test("a window whose refill keeps pace is safe and a fixed window predicts exhaustion before reset", () => {

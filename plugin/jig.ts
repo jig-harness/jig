@@ -25,6 +25,7 @@ import type { CommandComponent, Component } from "./runtime/component.ts";
 import { runVerb, verbCommands } from "./runtime/verbs.ts";
 import { runMain, ExitError } from "./shared/cli.ts";
 import { USAGE_EXIT } from "./shared/command-line.ts";
+import { withCaller } from "./shared/outbound/ledger.ts";
 import { map, message, or, runParser } from "./shared/vendor/optique.mjs";
 
 /** The components, in the order the lifecycle verbs act on them. */
@@ -122,7 +123,9 @@ function execute(parsed: Parsed, script: string): Promise<number> {
       script,
       run: (argv) => execute(parseCommandLine(argv), script),
     });
-  return commandNamed(parsed.component).main(parsed.args, script);
+  return withCaller(`skill:${parsed.component}`, () =>
+    commandNamed(parsed.component).main(parsed.args, script),
+  );
 }
 
 export async function main(argv: string[]): Promise<number> {

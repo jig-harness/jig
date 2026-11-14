@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
+import { Database } from "bun:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,6 +7,7 @@ import { closeDatabase } from "../records/db.ts";
 import {
   ledgerReport,
   recordCall,
+  callerForChild,
   withCaller,
   withLedgerPath,
   operationName,
@@ -140,4 +142,37 @@ test("concurrent caller contexts stay separate and operation names omit query co
   expect(operationName("{ viewer { secret } }")).toMatch(
     /^query:viewer-[a-f0-9]+$/,
   );
+});
+
+test("a child inherits its enclosing caller", () => {
+  expect(withCaller("tick:preflight", callerForChild)).toBe("tick:preflight");
+});
+
+test("a locked ledger discards accounting without delaying the outbound caller", () => {
+  const p = path();
+  recordCall({
+    path: p,
+    system: "github",
+    credential: "key",
+    operation: "First",
+    cost: 1,
+    durationMs: 1,
+  });
+  const lock = new Database(p);
+  try {
+    lock.exec("BEGIN IMMEDIATE");
+    const began = performance.now();
+    recordCall({
+      path: p,
+      system: "github",
+      credential: "key",
+      operation: "Blocked",
+      cost: 1,
+      durationMs: 1,
+    });
+    expect(performance.now() - began).toBeLessThan(1_000);
+  } finally {
+    lock.exec("ROLLBACK");
+    lock.close();
+  }
 });
