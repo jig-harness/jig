@@ -31,6 +31,8 @@ export interface GhRun {
   timedOut: boolean;
   spawnFailed?: boolean;
   bufferExceeded?: boolean;
+  /** The failure a held run answers: read as it was met, never from its text. */
+  held?: OutboundFailure;
 }
 
 /** GitHub refused the credential for a rate limit, primary or secondary. */
@@ -73,6 +75,7 @@ export function ghRunFailure(
   now: () => number = Date.now,
 ): OutboundFailure | null {
   if (r.code === 0) return null;
+  if (r.held !== undefined) return r.held;
   const said = tail(r.stderr);
   const reason = `gh exited ${r.code}${said === "" ? "" : `: ${said}`}`;
   if (r.spawnFailed === true)

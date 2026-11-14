@@ -384,3 +384,47 @@ it("sends a read again after a server fault even when response cleanup fails", a
   ).toEqual({});
   expect(calls).toBe(2);
 });
+
+describe("a decoded answer and a cancelled write keep what happened", () => {
+  it("sends a Jira read once more after a 200 whose body is not JSON", async () => {
+    let calls = 0;
+    const fetcher = (async () =>
+      ++calls > 1
+        ? new Response("{}", { status: 200, headers: { "Retry-After": "0" } })
+        : new Response("<html>", { status: 200 })) as unknown as typeof fetch;
+    expect(
+      await jiraHttp(
+        "https://jira.example",
+        auth(),
+        fetcher,
+      )({ method: "GET", path: "myself" }),
+    ).toEqual({});
+    expect(calls).toBe(2);
+  });
+
+  it("marks a Jira write cancelled after its request left as possibly landed", async () => {
+    const controller = new AbortController();
+    const fetcher = (async () => {
+      queueMicrotask(() => controller.abort(new Error("cancelled test")));
+      return new Response("{}", { status: 200 });
+    }) as unknown as typeof fetch;
+    await expect(
+      jiraHttp(
+        "https://jira.example",
+        auth(),
+        fetcher,
+      )({ method: "POST", path: "issue" }, controller.signal),
+    ).rejects.toMatchObject({ sent: true });
+  });
+
+  it("marks a Linear mutation cancelled after its request left as possibly landed", async () => {
+    const controller = new AbortController();
+    const fetcher = (async () => {
+      queueMicrotask(() => controller.abort(new Error("cancelled test")));
+      return new Response(JSON.stringify({ data: {} }), { status: 200 });
+    }) as unknown as typeof fetch;
+    await expect(
+      linearHttp("token", fetcher)("mutation { x }", {}, controller.signal),
+    ).rejects.toMatchObject({ sent: true });
+  });
+});

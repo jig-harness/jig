@@ -389,16 +389,25 @@ async function call(
   const bound =
     signal === undefined ? deadline : AbortSignal.any([deadline, signal]);
   const deadlineAt = Date.now() + LINEAR_TIMEOUT_MS;
+  // Once an attempt has begun, a cancellation may have cut a request that
+  // landed: `retryRead` throws the bare reason, which carries no marker.
+  let dispatched = false;
   const answer = await guarded(
     LINEAR,
     () =>
-      retryRead(() => send(bound), {
-        read: !isMutation(query),
-        signal: bound,
-        deadlineAt,
-        failureOf: failureOfAnswer,
-      }).catch((err: unknown) => {
-        const sent = err instanceof LinearApiError && err.sent;
+      retryRead(
+        () => {
+          dispatched = true;
+          return send(bound);
+        },
+        {
+          read: !isMutation(query),
+          signal: bound,
+          deadlineAt,
+          failureOf: failureOfAnswer,
+        },
+      ).catch((err: unknown) => {
+        const sent = dispatched || (err instanceof LinearApiError && err.sent);
         if (cancelled(signal)) throw abortedError(signal, sent);
         if (cancelled(bound)) return abortedError(bound, sent);
         throw err;
@@ -407,9 +416,11 @@ async function call(
     heldAnswer,
     bound,
   ).catch((err: unknown): Answer => {
-    // Cancelled while waiting for another request's probe: nothing was sent.
-    if (cancelled(signal)) throw abortedError(signal);
-    if (cancelled(bound)) return abortedError(bound);
+    // A cancellation that met no request keeps nothing sent; one a dispatched
+    // request met, or that an attempt already marked, keeps that fact.
+    const sent = dispatched || (err instanceof LinearApiError && err.sent);
+    if (cancelled(signal)) throw abortedError(signal, sent);
+    if (cancelled(bound)) return abortedError(bound, sent);
     throw err;
   });
   if (answer instanceof LinearApiError) throw answer;

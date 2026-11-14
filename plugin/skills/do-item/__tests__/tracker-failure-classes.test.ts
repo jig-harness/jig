@@ -17,6 +17,7 @@ import {
   TIMEOUT_FLOOR_MS,
 } from "../../../shared/outbound/failure.ts";
 import { ghRunFailure } from "../../../shared/outbound/github.ts";
+import { heldRun } from "../../../shared/proc.ts";
 import { TrackerRateLimited } from "../../../shared/tracker-budget.ts";
 import {
   ghTransport,
@@ -300,5 +301,15 @@ describe("each class's policy", () => {
       "RATE-LIMITED until 2026-11-13T12:00:00.000Z:",
     );
     expect(failureExit(new Error("boom")).code).toBe(1);
+  });
+});
+
+describe("a held gh run", () => {
+  it("answers the failure it was held with, not one read from its reason", () => {
+    const failure = {
+      code: "server-fault" as const,
+      reason: "GitHub API errors: down",
+    };
+    expect(ghRunFailure(heldRun(failure))).toMatchObject(failure);
   });
 });

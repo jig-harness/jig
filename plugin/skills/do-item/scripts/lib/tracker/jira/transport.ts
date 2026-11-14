@@ -392,6 +392,8 @@ interface Read {
   res: Response;
   text?: string;
   bytes?: Uint8Array;
+  /** A successful answer's decoded body, read inside the attempt. */
+  data?: unknown;
 }
 
 /** Keep one call's leased credential and renewal separate from its read retries. */
@@ -491,15 +493,23 @@ export function httpTransport(
       governor,
     );
     let tookMs = 0;
-    // The attempt reads the body too: a peer that drops the connection after
-    // its headers is `unreachable` inside the retry and the hold.
+    // Once an attempt has begun, a cancellation may have cut a request that
+    // landed: `retryRead` throws the bare reason, which carries no marker.
+    let dispatched = false;
+    // The attempt reads and decodes the body too: a peer that drops the
+    // connection after its headers, or answers with no JSON, is `unreachable`
+    // inside the retry and the hold.
     const timed = async (): Promise<Read> => {
       const began = Date.now();
+      dispatched = true;
       const response = await sender();
       tookMs = Date.now() - began;
-      return request.bytes === true && response.ok
-        ? { res: response, bytes: await fileBytes(response, bound, what) }
-        : { res: response, text: await bodyText(response, bound, what) };
+      if (request.bytes === true && response.ok)
+        return { res: response, bytes: await fileBytes(response, bound, what) };
+      const text = await bodyText(response, bound, what);
+      return response.ok
+        ? { res: response, text, data: answerBody(text, response.status, what) }
+        : { res: response, text };
     };
     const failureOf = (answer: Read) => responseFailure(answer.res, tookMs);
     const read = await guarded(
@@ -519,7 +529,7 @@ export function httpTransport(
     ).catch((err: unknown) => {
       // A call cancelled once its request was dispatched keeps that fact: a
       // write may have landed.
-      const sent = err instanceof JiraApiError && err.sent;
+      const sent = dispatched || (err instanceof JiraApiError && err.sent);
       if (cancelled(signal)) throw abortedError(signal, sent);
       if (cancelled(bound)) throw abortedError(bound, sent);
       throw err;
@@ -543,7 +553,7 @@ export function httpTransport(
       });
     }
     answered = true;
-    return answerBody(text, res.status, what);
+    return read.data;
   };
 }
 

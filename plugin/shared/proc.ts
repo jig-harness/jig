@@ -153,6 +153,11 @@ export interface RunResult {
    * members of its process group alive; they were killed.
    */
   groupSurvived?: boolean;
+  /**
+   * The failure a held run answers instead of sending: its class and reason
+   * as they were met, so a reader does not classify its own reason text again.
+   */
+  held?: OutboundFailure;
 }
 
 /**
@@ -506,6 +511,7 @@ export function heldRun(failure: OutboundFailure): RunResult {
     bufferExceeded: false,
     spawnFailed: false,
     stderrTail: failure.reason,
+    held: failure,
   };
 }
 
