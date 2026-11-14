@@ -179,14 +179,18 @@ async function orcaInventory(
   // A checkout gone from the disk can still be registered with Git: the claim
   // is then the resource, not the registration.
   const known = new Set(
-    selected.filter((entry) => onDisk(entry.id)).map((entry) => entry.id),
+    selected
+      .filter((entry) => onDisk(entry.id))
+      .map((entry) => resolvedPath(entry.id)),
   );
   const gone = stale.filter(
-    (claim) => !listed(claim.id) && !known.has(normalize(claim.id)),
+    (claim) => !listed(claim.id) && !known.has(resolvedPath(claim.id)),
   );
-  const replaced = new Set(gone.map((claim) => normalize(claim.id)));
+  const replaced = new Set(gone.map((claim) => resolvedPath(claim.id)));
   const standing = standingClaims();
-  const kept = selected.filter((entry) => !replaced.has(entry.id));
+  const kept = selected.filter(
+    (entry) => !replaced.has(resolvedPath(entry.id)),
+  );
   markManaged(kept, managed.value);
   for (const entry of kept) {
     const row = managed.value.get(canonicalWorktree(entry.id));
@@ -199,21 +203,25 @@ async function orcaInventory(
   }
   return ok([...kept, ...gone, ...unreadable]);
 }
-/** Whether the claim's `path` lies under `root` once its nearest existing ancestor is resolved. */
-function underRoot(path: string, root: string): boolean {
+/** The path with its nearest existing ancestor resolved, the spelling git and the disk agree on. */
+function resolvedPath(path: string): string {
   let ancestor = normalize(path);
   let suffix = "";
   for (;;) {
     try {
-      return within(join(realpathSync.native(ancestor), suffix), root);
+      return join(realpathSync.native(ancestor), suffix);
     } catch (error) {
       swallow(error, "the ancestor is gone: the next one up is tried");
     }
     const parent = dirname(ancestor);
-    if (parent === ancestor) return false;
+    if (parent === ancestor) return normalize(path);
     suffix = join(basename(ancestor), suffix);
     ancestor = parent;
   }
+}
+/** Whether the claim's `path` lies under `root` once its nearest existing ancestor is resolved. */
+function underRoot(path: string, root: string): boolean {
+  return within(resolvedPath(path), root);
 }
 function orcaId(resource: Resource): string | null {
   return isMapping(resource.details) &&
@@ -807,12 +815,10 @@ export function worktreesKind(
         );
       const selected = selectWorktrees(entries, roots, repository);
       if (orca === undefined) return ok(selected);
-      return orcaInventory(
-        orca,
-        repository,
-        selected,
-        roots.map(canonicalRoot),
-      );
+      return orcaInventory(orca, repository, selected, [
+        ...roots.map(canonicalRoot),
+        canonicalRoot(join(entries[0]?.id ?? repository, ...AGENT_TOOL_DIR)),
+      ]);
     },
     prove: async (resource) => {
       const claim =

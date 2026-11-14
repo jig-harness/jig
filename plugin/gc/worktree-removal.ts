@@ -188,7 +188,9 @@ function removalAnswer(
   // result without `ok` is.
   const parsed = orcaEnvelope(done.stdout);
   const envelope =
-    parsed?.ok === false && !parsed.code && !parsed.message ? null : parsed;
+    parsed?.ok === false && !parsed.code?.trim() && !parsed.message?.trim()
+      ? null
+      : parsed;
   if (envelope?.ok === false)
     return failed(
       "orca-refused",

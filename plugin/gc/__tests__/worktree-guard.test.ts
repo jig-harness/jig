@@ -109,6 +109,11 @@ describe("the admission around orca worktree rm", () => {
       emptyRefusal({ code: "", message: "" }),
       "orca worktree rm failed (exit 1)",
     ],
+    [
+      "a refusal with whitespace-only code and message",
+      emptyRefusal({ code: " ", message: "\t " }),
+      "orca worktree rm failed (exit 1)",
+    ],
     ["a nonzero exit", exited, "orca worktree rm failed (exit 1)"],
     ["output that is not Orca's", garbled, "unreadable output"],
   ])("is kept, marked submitted, after %s", async (_name, answer, why) => {
