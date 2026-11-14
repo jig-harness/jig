@@ -2,6 +2,7 @@
 import { PERSON_HOLD, queueHold, type QueueItem } from "../queue-rank.ts";
 import type { Unplaced } from "../types.ts";
 import type {
+  CanonicalState,
   PoolIssue,
   Tracker,
 } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
@@ -13,13 +14,38 @@ export function parkedOnPerson(
   tracker: Pick<Tracker, "stateName">,
   policy: { hitl?: string; manualOps?: string },
 ): boolean {
-  const operations = tracker.stateName("ops_pending", child.nativeType ?? null);
+  const context = child.nativeType ?? null;
+  const states = canonicalStatesFor(tracker, child.state.name, context);
   return (
-    (operations !== null &&
-      child.state.name.trim().toLowerCase() ===
-        operations.trim().toLowerCase()) ||
+    (states.length === 1 && states[0] === "ops_pending") ||
     queueHold({ issue: child, blockers: [], unblocks: 0 }, policy) ===
       PERSON_HOLD
+  );
+}
+
+/** The canonical states this native name can mean in the child's workflow. */
+function canonicalStatesFor(
+  tracker: Pick<Tracker, "stateName">,
+  name: string,
+  context: string | null,
+): CanonicalState[] {
+  const canonical: CanonicalState[] = [
+    "triage",
+    "backlog",
+    "todo",
+    "in_progress",
+    "pr_open",
+    "blocked",
+    "in_review",
+    "ops_pending",
+    "done",
+    "canceled",
+    "duplicate",
+  ];
+  const native = name.trim().toLowerCase();
+  return canonical.filter(
+    (state) =>
+      tracker.stateName(state, context)?.trim().toLowerCase() === native,
   );
 }
 

@@ -344,6 +344,30 @@ describe("an assigned epic's children", () => {
     }
   });
 
+  it("keeps a serial slot for a state that can also mean active pull-request work", async () => {
+    const w = world({
+      assigned: [issue("#1", ["epic"])],
+      children: {
+        "#1": [
+          {
+            ...started("#5"),
+            state: { id: "review", name: "Review", type: "started" },
+          },
+          ...kids("#2"),
+        ],
+      },
+    });
+    w.tracker.stateName = ((state: CanonicalState) =>
+      ["pr_open", "in_review", "ops_pending"].includes(state)
+        ? "Review"
+        : state) as Tracker["stateName"];
+    const read = await w.read();
+    expect(read.wanted).toEqual([]);
+    expect(reasons(read)["#2"]).toBe(
+      "#1 is working #5; it takes one child at a time",
+    );
+  });
+
   it("names a parked child in the idle epic summary", async () => {
     const read = await world({
       assigned: [issue("#1", ["epic"])],
@@ -361,6 +385,25 @@ describe("an assigned epic's children", () => {
     const summaries = read.unplaced.filter((u) => u.target === "#1");
     expect(summaries).toHaveLength(1);
     expect(summaries[0]?.reason).toContain("#2: waiting on a person");
+  });
+
+  it("does not traverse the children of a person-held epic", async () => {
+    const read = await world({
+      assigned: [issue("#1", ["epic"])],
+      children: {
+        "#1": [
+          {
+            ...issue("#2", ["epic", "hitl"], null),
+            isEpic: true,
+            hasOpenChildren: true,
+          },
+        ],
+        "#2": [issue("#3", [], null)],
+      },
+    }).read();
+    expect(read.wanted).toEqual([]);
+    expect(reasons(read)["#2"]).toBe("needs a person to start");
+    expect(reasons(read)["#3"]).toBeUndefined();
   });
 
   it("still holds siblings when an active child follows a parked one", async () => {
@@ -535,7 +578,7 @@ describe("an assigned epic's children", () => {
     }).read();
     expect(read.wanted).toEqual([]);
     expect(reasons(read)["#1"]).toBe(
-      "none of its 2 open children can start; first, #2: needs a person to start",
+      "none of its 2 open children can start; first, #2: waiting on a person",
     );
   });
 

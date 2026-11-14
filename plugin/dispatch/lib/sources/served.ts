@@ -519,11 +519,7 @@ async function enqueueChildren(
     );
     const parked = selection.present
       ? []
-      : children.filter(
-          (c) =>
-            c.state.type === "started" &&
-            parkedOnPerson(c, ctx.tracker, options),
-        );
+      : children.filter((c) => parkedOnPerson(c, ctx.tracker, options));
     const busy = children.find(
       (c) => c.state.type === "started" && !parked.includes(c),
     );
@@ -652,7 +648,7 @@ async function placeNode(
   // A kept no-assigner answer is reported as the failed read it stands for.
   if (meta.noAssigner !== undefined)
     return void unreadable(issue, meta.noAssigner, found);
-  const initialHold = nodeHold(node, meta, identity, options);
+  const initialHold = nodeHold(node, meta, identity, options, tracker);
   if (initialHold !== null) {
     // An epic whose description is unreadable hides its subtree: the claims below it are unknown.
     if (meta.description === null) found.failures.push(undefined);
@@ -727,18 +723,10 @@ function nodeHold(
   meta: Metadata,
   identity: string,
   options: ServedOptions,
+  tracker: Pick<Tracker, "stateName">,
 ): string | null {
   if (node.planHold) return node.planHold;
-  const hitl = options.hitl ?? "hitl";
-  if (
-    node.issue.labels.some(
-      (l) =>
-        l === hitl ||
-        l.startsWith(`${hitl}:`) ||
-        l === (options.manualOps ?? "manual-ops"),
-    )
-  )
-    return PERSON_HOLD;
+  if (parkedOnPerson(node.issue, tracker, options)) return PERSON_HOLD;
   if (
     node.ancestor === undefined &&
     node.pull === undefined &&
