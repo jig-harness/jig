@@ -444,7 +444,10 @@ function assemble(
       if (h.parent) {
         if (!parents.has(h.parent.issue.identifier))
           parents.set(h.parent.issue.identifier, h.parent);
-        remember(h.parent.issue.identifier, h.parent.issue);
+        // A reading already asked for (or kept) is the direct one; the
+        // parent's projection never replaces it.
+        if (!memo.has(h.parent.issue.identifier))
+          remember(h.parent.issue.identifier, h.parent.issue);
       }
     },
   );

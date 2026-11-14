@@ -54,9 +54,9 @@ const TRAILING_ZONE = /(?:Z|[+-]\d{2}(?::?\d{2})?)$/i;
  * a date alone can carry too.
  */
 function hasZoneMark(text: string): boolean {
+  if (text.includes("[")) return true;
   const time = text.search(/T/i);
-  if (time >= 0 && /[Z+\-[]/i.test(text.slice(time + 1))) return true;
-  return /^\d{4}-\d{2}-\d{2}\[/.test(text);
+  return time >= 0 && /[Z+-]/i.test(text.slice(time + 1));
 }
 
 /** `text` without the whitespace between its time and a trailing zone. */
