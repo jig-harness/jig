@@ -778,8 +778,9 @@ its `--check` in the generated-file inventory; the skills' restatements
 turned into links, or kept as held restatements the gate checks; and the
 chapters rendered on the site. Built in steps, one pull request each;
 built so far: the generator, its gate, the chapter on the drive's end
-states and exit codes, and the chapters on the drive mailbox and on the
-pull-request labels ([plugin/protocol/](../plugin/protocol/README.md)).
+states and exit codes, and the chapters on the drive mailbox, on the
+pull-request labels and on the commands a repository supplies
+([plugin/protocol/](../plugin/protocol/README.md)).
 Open, in order: the other stable chapters, their schemas, their
 restatements as links, the provisional chapters, and the site's pages.
 
