@@ -32,6 +32,7 @@ import {
 import type { LinePark } from "./dashboard-contract.ts";
 import type { EventRow, ParkFacts } from "./log.ts";
 import type { DrivenPr } from "./types.ts";
+import { parseMs } from "../../shared/time.ts";
 
 /** What a ledger that read holds of its parks: every park, and the receipts of those re-arms unparked. */
 export interface LedgerParks {
@@ -131,7 +132,7 @@ function parksOf(slug: string, d: DrivenPr): LinePark[] {
 
 function spanMs(from: string, to: string | undefined): number | undefined {
   if (to === undefined) return undefined;
-  const span = Date.parse(to) - Date.parse(from);
+  const span = parseMs(to) - parseMs(from);
   return Number.isFinite(span) ? Math.max(0, span) : undefined;
 }
 

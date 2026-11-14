@@ -24,6 +24,7 @@ import { attempt } from "../../../../../shared/outcome.ts";
 import { ghCall } from "../proc.ts";
 import { runTitleSays } from "../reviewer-profiles.ts";
 import type { CheckRun } from "./evidence.ts";
+import { parseMs } from "../../../../../shared/time.ts";
 
 /** One pull-request review: its id, the commit it reviewed, when, its body. */
 export interface ReviewObject {
@@ -174,8 +175,8 @@ export function judgeReviewObject(
   if (review?.commit === head)
     return { state: "witnessed", source: "review-object" };
   if (review !== null) {
-    const completed = Date.parse(run.completed ?? "");
-    const submitted = Date.parse(review.submittedAt);
+    const completed = parseMs(run.completed ?? "");
+    const submitted = parseMs(review.submittedAt);
     // An unreadable time cannot order the two, and an unordered pair must not
     // certify the run as the review of this head.
     if (!Number.isFinite(completed) || !Number.isFinite(submitted))

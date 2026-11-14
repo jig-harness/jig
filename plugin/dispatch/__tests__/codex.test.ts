@@ -9,7 +9,10 @@
  * launch on a host that has not opted in with `drive.codex_bypass`; and a
  * pickup on a Codex account starts a headless `codex exec` pass with the
  * bypass, on Codex's own model, its record keeping the route's Codex model
- * and effort for the implementer.
+ * and effort for the implementer. The host's `drive.codex_pass_args` is
+ * kept on the record and carried by the pass before its prompt; a record
+ * with none pins `--pass-args ''`, so `drive.ts` adds none of its own; a
+ * value that does not read admits no Codex account.
  */
 import { afterEach, describe, expect, it } from "bun:test";
 import {
@@ -74,15 +77,19 @@ afterEach(() => {
   current = null;
 });
 
-/** The host's opt-in: `drive.codex_bypass: true` in its user file. */
-function hostOptsIn(w: World): void {
+/** The host's opt-in: `drive.codex_bypass: true` in its user file, with any other `drive` lines. */
+function hostOptsIn(w: World, more = ""): void {
   delete w.env.JIG_USER_LAYER;
   mkdirSync(join(w.home, ".jig"), { recursive: true });
   writeFileSync(
     join(w.home, ".jig", "jig.yaml"),
-    "drive:\n  codex_bypass: true\n",
+    `drive:\n  codex_bypass: true\n${more}`,
   );
 }
+
+/** A host's `drive.codex_pass_args` line, and the words it gives. */
+const HOOK_TRUST = "  codex_pass_args: [--dangerously-bypass-hook-trust]\n";
+const HOOK_TRUST_WORDS = ["--dangerously-bypass-hook-trust"];
 
 /** A quota-parked PR #7 whose workspace exists, on a host that opted in. */
 function fixture(): World {
@@ -168,6 +175,8 @@ describe("jig dispatch --apply on Codex accounts", () => {
         argv: [
           "7",
           "--bots-only",
+          "--pass-args",
+          "",
           "--pass-timeout",
           "5400",
           "--",
@@ -183,6 +192,55 @@ describe("jig dispatch --apply on Codex accounts", () => {
       },
     ]);
     await waitFor("the exit", () => exitWritten(w, id));
+  });
+
+  it("records the host's drive.codex_pass_args and launches the drive's Codex pass with them before the prompt", async () => {
+    const w = fixture();
+    hostOptsIn(w, HOOK_TRUST);
+    const c = codexAccount(w, "c", "codex-account-c");
+    machineFile(w, [c]);
+
+    const receipt = await tick(w);
+    expect(launches(receipt)[0]).toMatchObject({
+      outcome: "launched",
+      account: "c",
+    });
+    const id = launchedRecord(receipt);
+    expect(readRecord(id, dispatchState(w))).toMatchObject({
+      codexBypass: true,
+      codexPassArgs: HOOK_TRUST_WORDS,
+    });
+    await waitFor("the drive", () => driveRuns(w).length === 1);
+    expect(driveRuns(w)[0]?.argv).toEqual([
+      "7",
+      "--bots-only",
+      "--pass-timeout",
+      "5400",
+      "--",
+      ...CODEX_PASS.slice(0, 3),
+      ...HOOK_TRUST_WORDS,
+      ...CODEX_PASS.slice(3),
+    ]);
+    await waitFor("the exit", () => exitWritten(w, id));
+  });
+
+  it("admits no Codex account on a host whose drive.codex_pass_args does not read, naming the field", async () => {
+    const w = fixture();
+    hostOptsIn(w, "  codex_pass_args: [--sandbox]\n");
+    machineFile(w, [codexAccount(w, "c", "codex-account-c")]);
+
+    const receipt = await tick(w);
+    expect(receipt.accountsNotAdmitted).toEqual([
+      {
+        account: "c",
+        vendor: "codex",
+        reason: expect.stringContaining(
+          "drive.codex_pass_args cannot end with --sandbox",
+        ),
+      },
+    ]);
+    expect(launches(receipt)[0]?.outcome).toBe("waits");
+    expect(recordIds(w)).toEqual([]);
   });
 
   it("reports an account of a vendor with no documented pass command and never launches on it", async () => {
@@ -356,6 +414,8 @@ describe("jig dispatch --apply on Codex accounts", () => {
         argv: [
           "7",
           "--bots-only",
+          "--pass-args",
+          "",
           "--pass-timeout",
           "120",
           "--",
@@ -419,7 +479,7 @@ describe("jig dispatch --apply picks up an item on a Codex account", () => {
     expect(recordIds(w)).toEqual([]);
   });
 
-  it("starts a headless Codex pass with the bypass, bound through CODEX_HOME, and keeps the route for the implementer", async () => {
+  it("starts a headless Codex pass with the bypass and the host's drive.codex_pass_args, bound through CODEX_HOME, and keeps the route for the implementer", async () => {
     const w = world();
     current = w;
     w.setConfig(PICKUP_CONFIG);
@@ -433,7 +493,7 @@ describe("jig dispatch --apply picks up an item on a Codex account", () => {
     const c = codexAccount(w, "c", "codex-account-c");
     machineFile(w, [c], {}, ["pickup"]);
     inheritOtherAccounts(w);
-    hostOptsIn(w);
+    hostOptsIn(w, HOOK_TRUST);
 
     // Orca's own answer: a headless pass needs no interactive binding.
     const receipt = await applyTick(w, false);
@@ -453,6 +513,7 @@ describe("jig dispatch --apply picks up an item on a Codex account", () => {
         sessionId: null,
         headless: true,
         codexBypass: true,
+        codexPassArgs: HOOK_TRUST_WORDS,
         model: "gpt-6-astra",
         effort: "high",
       },
@@ -464,6 +525,7 @@ describe("jig dispatch --apply picks up an item on a Codex account", () => {
         argv: [
           "exec",
           "--dangerously-bypass-approvals-and-sandbox",
+          ...HOOK_TRUST_WORDS,
           expect.stringMatching(
             /^Use the jig:do-item skill: \/jig:do-item #12\nroute: rules\n/,
           ),

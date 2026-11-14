@@ -238,10 +238,13 @@ describe("a Jira facet field the create screens of filed issue types lack", () =
     },
     taxonomy: JIG_TAXONOMY,
   };
+  /** The size facet's findings; the site answers no priority question. */
+  const sizeFindings = async (t: Parameters<typeof facetFindings>[0]) =>
+    (await facetFindings(t)).filter((f) => f.id.endsWith(".size"));
 
   test("names each issue type whose create screen lacks the field", async () => {
     const { t } = jira(site(["Bug", "Sub-task"]), overlay);
-    expect(await facetFindings(t)).toEqual([
+    expect(await sizeFindings(t)).toEqual([
       {
         id: "derivation:issue_tracker.facets.size",
         severity: "error",
@@ -253,7 +256,7 @@ describe("a Jira facet field the create screens of filed issue types lack", () =
 
   test("stays silent when every create screen has it", async () => {
     const { t } = jira(site([]), overlay);
-    expect(await facetFindings(t)).toEqual([]);
+    expect(await sizeFindings(t)).toEqual([]);
   });
 });
 

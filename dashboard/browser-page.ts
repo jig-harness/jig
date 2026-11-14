@@ -182,7 +182,7 @@ export async function settled(page: Page): Promise<void> {
   );
 }
 
-/** The controls a phone's thumb reaches that are shorter than 44 px. */
+/** The controls a phone's thumb reaches that are shorter than 44 px, or, for a standalone icon control, narrower. */
 export function shortControls(page: Page): Promise<string[]> {
   return page.evaluate(() =>
     [
@@ -195,11 +195,16 @@ export function shortControls(page: Page): Promise<string[]> {
         if (element.classList.contains("clip")) return false;
         if (element.getAttribute("aria-hidden") === "true") return false;
         const box = element.getBoundingClientRect();
-        return box.width > 1 && box.height > 1 && box.height < 44;
+        const compact = element.matches(".disclosure, .prState, .copy");
+        return (
+          box.width > 1 &&
+          box.height > 1 &&
+          (box.height < 44 || (compact && box.width < 44))
+        );
       })
       .map(
         (element) =>
-          `${element.tagName} ${element.className}: ${element.textContent?.slice(0, 30)} ${element.getBoundingClientRect().height}`,
+          `${element.tagName} ${element.className}: ${element.textContent?.slice(0, 30)} ${element.getBoundingClientRect().width}x${element.getBoundingClientRect().height}`,
       ),
   );
 }

@@ -48,6 +48,7 @@ import { errnoCode, swallow } from "./errors.ts";
 import { isRecord } from "./guards.ts";
 import { orcaEnvelope, type OrcaRunner, runOrca } from "./orca.ts";
 import { type ProcessRow, processTable } from "./process-table.ts";
+import { currentIso, currentMs, isoFromMs } from "./time.ts";
 
 type Env = Record<string, string | undefined>;
 
@@ -89,7 +90,7 @@ export function defaultRunTabDeps(env: Env = process.env): RunTabDeps {
     root: tabsRoot(env),
     orca: runOrca,
     table: (timeoutSec) => processTable(timeoutSec),
-    now: Date.now,
+    now: currentMs,
     sleep: (ms) => new Promise((settle) => setTimeout(settle, ms)),
   };
 }
@@ -104,7 +105,7 @@ export function defaultRunTabDeps(env: Env = process.env): RunTabDeps {
  */
 export function runTabEnv(
   env: Env = process.env,
-  until: number = Date.now() + REGISTRATION_WAIT_MS,
+  until: number = currentMs() + REGISTRATION_WAIT_MS,
 ): string[] {
   const dir = env.JIG_ORCA_TABS_DIR?.trim();
   return [
@@ -135,7 +136,7 @@ function pendingUntil(env: Env = process.env): number | null {
  * otherwise bounded by `cap`; null when `until` has passed.
  */
 function within(until: number, cap: number): number | null {
-  const left = (until - Date.now()) / 1000;
+  const left = (until - currentMs()) / 1000;
   return left <= 0 ? null : Math.min(cap, left);
 }
 
@@ -259,7 +260,7 @@ export async function recordRunTab(
     subject: opened.subject,
     title: opened.title,
     orca: opened.orca,
-    openedAt: new Date(deps.now()).toISOString(),
+    openedAt: isoFromMs(deps.now()),
   };
   try {
     mkdirSync(deps.root, { recursive: true });
@@ -373,7 +374,7 @@ export async function closePreviousTabs(
   );
   const lines: string[] = [];
   for (const tab of earlier) {
-    if (Date.now() >= until) {
+    if (currentMs() >= until) {
       lines.push(
         `earlier run tab ${tab.handle} (${tab.title}): left, out of time`,
       );
@@ -466,7 +467,7 @@ export async function endOwnTab(
     table?: RunTabDeps["table"];
   } = {
     until: pendingUntil(),
-    now: Date.now,
+    now: currentMs,
     sleep: (ms) => new Promise((settle) => setTimeout(settle, ms)),
   },
 ): Promise<string | null> {
@@ -571,7 +572,7 @@ async function closerMain(): Promise<number> {
     defaultRunTabDeps(),
   );
   console.error(
-    `${new Date().toISOString()} run tab ${handle}: ${typeof outcome === "string" ? outcome : outcome.failed}`,
+    `${currentIso()} run tab ${handle}: ${typeof outcome === "string" ? outcome : outcome.failed}`,
   );
   return outcome === "closed" || outcome === "gone" ? 0 : 1;
 }

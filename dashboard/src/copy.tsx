@@ -2,8 +2,9 @@
  * The Copy control: an icon with feedback for a moment, announced
  * politely. It writes only to the reader's own clipboard.
  */
-import { Check, Copy, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { Glyph } from "./icon-word.tsx";
+import { CONTROL_ICONS } from "./icons.ts";
 
 const SHOWN_MS = 1800;
 
@@ -132,11 +133,11 @@ export function CopyButton({
       }}
     >
       {said === "Copied" ? (
-        <Check size={14} aria-hidden="true" />
+        <Glyph of={CONTROL_ICONS.copied} />
       ) : said === "Copy failed" ? (
-        <X size={14} aria-hidden="true" />
+        <Glyph of={CONTROL_ICONS.refused} />
       ) : (
-        <Copy size={14} aria-hidden="true" />
+        <Glyph of={CONTROL_ICONS.copy} />
       )}
       {label === undefined ? null : <span className="copyLabel">{label}</span>}
     </button>

@@ -30,6 +30,7 @@ import { fail } from "../cli.ts";
 import { canonicalPr, type StateStore } from "./store.ts";
 import { type DriveDb, driveDb, inTransaction } from "./db.ts";
 import { type DriveState, withProgress } from "./schema.ts";
+import { currentIso } from "../../../../../shared/time.ts";
 
 /** The pull request's highest counted ordinal, 0 when none. */
 function highest(drive: DriveDb, pr: string): number {
@@ -72,19 +73,13 @@ function countHead(
     if (knownHead !== "" && floor > 0 && !hasRow(drive, pr, knownHead))
       drive.db.run(
         "INSERT OR IGNORE INTO review_rounds (clone, pr, head, round, settled, at) VALUES (?, ?, ?, ?, 0, ?)",
-        [
-          drive.clone,
-          canonicalPr(pr),
-          knownHead,
-          floor,
-          new Date().toISOString(),
-        ],
+        [drive.clone, canonicalPr(pr), knownHead, floor, currentIso()],
       );
     const top = Math.max(highest(drive, pr), floor);
     if (head === knownHead && floor > 0) return { round: top, counted: false };
     const inserted = drive.db.run(
       "INSERT OR IGNORE INTO review_rounds (clone, pr, head, round, settled, at) VALUES (?, ?, ?, ?, 0, ?)",
-      [drive.clone, canonicalPr(pr), head, top + 1, new Date().toISOString()],
+      [drive.clone, canonicalPr(pr), head, top + 1, currentIso()],
     );
     const counted = inserted.changes === 1;
     return { round: counted ? top + 1 : top, counted };
@@ -185,7 +180,7 @@ export async function bumpDriveRound(
       // counted moves the pointer, not the count.
       const counted =
         round > state.rounds
-          ? withProgress(base, "round-advanced", new Date())
+          ? withProgress(base, "round-advanced", Temporal.Now.instant())
           : base;
       store.write(counted);
       return counted;

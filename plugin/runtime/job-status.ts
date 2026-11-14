@@ -5,6 +5,7 @@
  * write now, so a job installed before a configuration change shows the
  * schedule it actually has.
  */
+import { isoOf, parseMs } from "../shared/time.ts";
 import type { ComponentStatus, LastRun } from "./component.ts";
 import type { JobSpec } from "./job-spec.ts";
 import {
@@ -102,18 +103,21 @@ export function describeSchedule(schedule: Schedule): string {
  * that has passed. An interval's next run depends on when the scheduler last
  * started it, so it is not told.
  */
-export function nextRun(schedule: Schedule, now: Date): Date | null {
+export function nextRun(
+  schedule: Schedule,
+  now: Temporal.Instant,
+): Temporal.Instant | null {
   if (!("hour" in schedule)) return null;
-  const next = new Date(now);
-  next.setHours(schedule.hour, 0, 0, 0);
-  if (next <= now) {
-    // From `now`'s own date: today's hour, if the clocks skipped it, may
-    // have rolled into the next day and must not carry into tomorrow's.
-    next.setTime(now.getTime());
-    next.setDate(next.getDate() + 1);
-    next.setHours(schedule.hour, 0, 0, 0);
-  }
-  return next;
+  const timeZone = Temporal.Now.timeZoneId();
+  const plainTime = new Temporal.PlainTime(schedule.hour);
+  // An hour the clocks skipped runs at the first moment after it.
+  const at = (date: Temporal.PlainDate) =>
+    date.toZonedDateTime({ timeZone, plainTime }).toInstant();
+  const today = now.toZonedDateTimeISO(timeZone).toPlainDate();
+  const next = at(today);
+  return Temporal.Instant.compare(next, now) > 0
+    ? next
+    : at(today.add({ days: 1 }));
 }
 
 /**
@@ -126,7 +130,7 @@ export async function scheduledStatus(
   spec: JobSpec,
   lastRun: LastRun | null,
   absent?: string,
-  now = new Date(),
+  now = Temporal.Now.instant(),
 ): Promise<ComponentStatus> {
   const missing = (detail: string): ComponentStatus => ({
     component,
@@ -154,18 +158,24 @@ export async function scheduledStatus(
     detail: job.where,
     schedule: schedule === null ? null : describeSchedule(schedule),
     nextRun:
-      schedule === null || !job.active
-        ? null
-        : (nextRun(schedule, now)?.toISOString() ?? null),
+      schedule === null || !job.active ? null : nextIso(nextRun(schedule, now)),
     lastRun,
   };
 }
 
-/** `iso` as local time to the minute (`2026-11-02 04:00`). */
+function nextIso(next: Temporal.Instant | null): string | null {
+  return next === null ? null : isoOf(next);
+}
+
+/** `iso` as local time to the minute (`2026-11-02 04:00`); a string that is no time, as it is. */
 function localMinute(iso: string): string {
-  const at = new Date(iso);
-  const two = (n: number) => String(n).padStart(2, "0");
-  return `${at.getFullYear()}-${two(at.getMonth() + 1)}-${two(at.getDate())} ${two(at.getHours())}:${two(at.getMinutes())}`;
+  const ms = parseMs(iso);
+  if (!Number.isFinite(ms)) return iso;
+  return Temporal.Instant.fromEpochMilliseconds(ms)
+    .toZonedDateTimeISO(Temporal.Now.timeZoneId())
+    .toPlainDateTime()
+    .toString({ smallestUnit: "minute" })
+    .replace("T", " ");
 }
 
 /** `jig status` for people: each component's job, schedule and last run. */

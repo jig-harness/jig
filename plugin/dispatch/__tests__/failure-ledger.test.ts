@@ -271,7 +271,7 @@ describe("jig dispatch tells a person about a repository whose turn keeps failin
     expect(comment).toContain(
       `The dispatcher's turn for ${SLUG} has failed 3 ticks in a row since`,
     );
-    expect(comment).toContain("HTTP 502");
+    expect(comment).toContain("HTTP 422");
     // The tick's own row counts the same failing ticks, and is notified beside it.
     expect(
       (repo(told)?.notifications ?? []).some(

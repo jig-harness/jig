@@ -14,6 +14,8 @@ import type { LineSnapshot } from "../../plugin/dispatch/lib/dashboard-contract.
 import { keptCommit } from "./answers.ts";
 import { allCards, type CardInfo } from "./cards.ts";
 import { announce, copyText } from "./copy.tsx";
+import { Glyph } from "./icon-word.tsx";
+import { CONTROL_ICONS } from "./icons.ts";
 import {
   CARD_COMMIT,
   PALETTE_DONE,
@@ -49,20 +51,23 @@ export function ViewFilter({
 }) {
   return (
     <div className="viewFilter">
-      <input
-        type="search"
-        data-view-filter=""
-        aria-label="Filter this view's cards"
-        placeholder="Filter this view  /"
-        value={value}
-        onChange={(event) => setValue(event.currentTarget.value)}
-        onKeyDown={(event) => {
-          if (event.key !== "Escape") return;
-          setValue("");
-          const main = event.currentTarget.closest<HTMLElement>("main");
-          if (main !== null) focusStart(main);
-        }}
-      />
+      <label className="viewFilterField">
+        <Glyph of={CONTROL_ICONS.filter} size={16} className="mut" />
+        <input
+          type="search"
+          data-view-filter=""
+          aria-label="Filter this view's cards"
+          placeholder="Filter this view  /"
+          value={value}
+          onChange={(event) => setValue(event.currentTarget.value)}
+          onKeyDown={(event) => {
+            if (event.key !== "Escape") return;
+            setValue("");
+            const main = event.currentTarget.closest<HTMLElement>("main");
+            if (main !== null) focusStart(main);
+          }}
+        />
+      </label>
       {shown === null ? null : <span className="sm mut">{shown}</span>}
     </div>
   );

@@ -7,6 +7,7 @@ import {
   type ResolutionComment,
   type TransparentResolutionFollowUp,
 } from "./resolution-follow-up.ts";
+import { parseMs } from "../../../../shared/time.ts";
 
 function field(value: unknown, key: string): unknown {
   return isRecord(value) ? value[key] : undefined;
@@ -20,7 +21,7 @@ function text(value: unknown): string {
 
 function commentEvidence(comment: unknown): ResolutionComment {
   const author = text(field(field(comment, "author"), "login"));
-  const at = Date.parse(text(field(comment, "createdAt")));
+  const at = parseMs(text(field(comment, "createdAt")));
   if (!Number.isFinite(at))
     fail(1, "resolve-thread: invalid comment timestamp");
   const body = field(comment, "body");

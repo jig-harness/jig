@@ -32,7 +32,13 @@
  * - a `silent` ledger whose driver no launch started and this host shows
  *   gone is taken over once per ledger facts: once this machine's takeover
  *   on those facts ended without moving the ledger on, it is notified as
- *   silent (`settleSilentTakeovers`).
+ *   silent (`settleSilentTakeovers`);
+ * - a re-arm or takeover of this machine that ended on `drive.ts`'s usage
+ *   error (`DRIVE_EXIT.UNSUPPORTED_CLI`) on the same ledger facts as now
+ *   refused the command line it was given, which the next launch on those
+ *   facts would be given again: it is a person's, notified once with the
+ *   drive's message, and not launched again until the ledger moves
+ *   (`settleUsageRefusals`).
  *
  * Facts are compared without the recovery budget's tag (`sameFacts`): it
  * says how a launch is counted, not what the ledger said.
@@ -45,6 +51,7 @@ import {
   cancelledBeforeExecution,
   holds,
   isDrive,
+  type LaunchExit,
   type ReadRecord,
   redrivenChanges,
   UNARMED_FACTS,
@@ -52,6 +59,7 @@ import {
 import { DRIVE_EXIT } from "../../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { settledWhy, settlesWithPerson } from "../redrive-settle.ts";
 import type { DrivenPr } from "../types.ts";
+import { parseMs } from "../../../shared/time.ts";
 
 export type DriveHold =
   | { kind: "none" }
@@ -106,9 +114,9 @@ function startedDriver(r: ReadRecord, started: string | null): boolean {
   if (s.kind !== "alive" && s.kind !== "ended") return false;
   if (s.process === null || refusalOf(r) !== null || started === null)
     return false;
-  const claimed = Date.parse(s.process.claimedAt);
-  const run = Date.parse(started);
-  const end = s.kind === "ended" ? Date.parse(s.exit.at) : Infinity;
+  const claimed = parseMs(s.process.claimedAt);
+  const run = parseMs(started);
+  const end = s.kind === "ended" ? parseMs(s.exit.at) : Infinity;
   return (
     Number.isFinite(claimed) &&
     Number.isFinite(run) &&
@@ -305,6 +313,87 @@ export function settleSilentTakeovers(
       ...pr,
       why: `${pr.why}; launch record ${earlier.record.id} already took it over on these ledger facts and ${endOf(earlier)}, leaving its ledger as it was: only a person settles it until its ledger moves`,
       evidence: { ...pr.evidence, driverGone: false, settled: true },
+    };
+  });
+}
+
+/** The ledger classes a launch re-arms or takes over, which a usage refusal settles. */
+const LAUNCHED_CLASSES: ReadonlySet<DrivenPr["class"]> = new Set([
+  "silent",
+  "stale",
+  "re-armable",
+]);
+
+/** This machine's drive launches of `pr` that ran or may run, oldest first. */
+export function drivesOf(
+  pr: Pick<DrivenPr, "number">,
+  records: readonly ReadRecord[],
+): ReadRecord[] {
+  return records
+    .filter(
+      (r) =>
+        isDrive(r.record) &&
+        r.record.pr === pr.number &&
+        !cancelledBeforeExecution(r),
+    )
+    .sort((a, b) => a.record.createdAt.localeCompare(b.record.createdAt));
+}
+
+/**
+ * The drive's latest launch, when it ended on `drive.ts`'s usage error on
+ * the ledger facts it shows now and no launch of it holds its stage.
+ */
+function usageRefusal(
+  pr: DrivenPr,
+  records: readonly ReadRecord[],
+): { record: ReadRecord; exit: LaunchExit } | null {
+  const mine = drivesOf(pr, records);
+  const latest = mine.at(-1);
+  const s = latest?.state;
+  if (
+    latest === undefined ||
+    s?.kind !== "ended" ||
+    s.exit.code !== DRIVE_EXIT.UNSUPPORTED_CLI ||
+    mine.some((r) => holds(r.state)) ||
+    !sameFacts(latest.record.facts, factsOf(pr))
+  )
+    return null;
+  return { record: latest, exit: s.exit };
+}
+
+/**
+ * Each drive whose latest launch of this machine, a re-arm or a takeover,
+ * ended on `drive.ts`'s usage error on the ledger facts it shows now, and
+ * that the plan would launch again (no record holds it, no refusal or
+ * re-drive already answers it): a person's, with the record, its exit and
+ * the drive's message, notified once (`usageRefusal` keys the notice), and
+ * not launched again until its ledger moves. A person's rearm request still
+ * launches it.
+ */
+export function settleUsageRefusals(
+  drives: readonly DrivenPr[],
+  records: readonly ReadRecord[],
+): DrivenPr[] {
+  return drives.map((pr) => {
+    if (!LAUNCHED_CLASSES.has(pr.class) || pr.evidence.rearm === true)
+      return pr;
+    const refused = usageRefusal(pr, records);
+    const hold = refused === null ? null : driveHold(pr, [...records]).kind;
+    if (refused === null || (hold !== "none" && hold !== "takeover")) return pr;
+    const { record, exit } = refused;
+    const said = exit.usage ?? "its message was not kept";
+    const { stale: _settled, ...rest } = pr;
+    return {
+      ...rest,
+      class: "needs-person",
+      why: `${pr.why}; launch record ${record.record.id} (${record.record.action}) ended ${String(exit.code)}, drive.ts's usage error, on these same ledger facts (${said}): it is not launched again until its ledger moves, so a person reads the drive's message and settles it`,
+      evidence: {
+        ...pr.evidence,
+        driverGone: false,
+        settled: true,
+        usageRefusal: record.record.id,
+        usageMessage: said,
+      },
     };
   });
 }

@@ -35,6 +35,7 @@ kind, its README included.
 | Decisions | [adr/](adr/) | amended or superseded, never rewritten |
 | Instructions | the `AGENTS.md` files, [CONTRIBUTING.md](../CONTRIBUTING.md) and the voice guide [VOICE.md](VOICE.md) they point to, and the policies CONTRIBUTING.md points to: [GOVERNANCE.md](../GOVERNANCE.md), [SECURITY.md](../SECURITY.md), [CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md), [TRADEMARK.md](../TRADEMARK.md) | in the pull request that changes the rule |
 | Terms | [GLOSSARY.md](../GLOSSARY.md) | a term enters in the commit that first uses it |
+| Protocol | `plugin/protocol/`, the chapters of the [Jig Protocol](../GLOSSARY.md), built by [plan item 53](../design/protocol.md) | generated from the code; only the prose and the meaning of each value are written by hand, and a gate fails the build when a chapter and the code disagree ([ADR-0020](adr/ADR-0020-protocol-chapters-are-generated-and-gated.md)) |
 | Reference | every document no other row places: [LIFECYCLE.md](LIFECYCLE.md), `SKILL.md`, [CONFIGURATION.md](../plugin/CONFIGURATION.md), the skills' references, and the READMEs outside the doctrine and plans directories | describes what exists now; changes with what it describes |
 | Doctrine | [modules/](../modules/README.md), [principles/](../principles/README.md), [profiles/](../profiles/README.md), [adoption/](../adoption/brownfield.md), [FACTORY.md](../FACTORY.md), [FEATURES.md](../FEATURES.md), [dispositions.md](dispositions.md) | rewritten to stay current, never appended to |
 | Plans | [design/plan.md](../design/plan.md), the public [ROADMAP.md](../ROADMAP.md) (the same items, for the site's readers; `bun run gates` keeps them matched), [design/](../design/README.md) | open work only; an item and its design leave when it is finished |
@@ -50,7 +51,7 @@ exists.
 
 When two documents disagree, the one higher in this order wins, and the lower
 one is corrected when the conflict is found: decisions; instructions, the
-nearest `AGENTS.md` first; terms; reference, a `SKILL.md` before its README;
+nearest `AGENTS.md` first; terms; the Protocol; reference, a `SKILL.md` before its README;
 doctrine; plans, the roadmap before a design; history. Where the order does
 not decide, as between two documents of one kind it does not rank, a person
 does, and the answer is written into the document that was wrong.
@@ -61,6 +62,19 @@ Jig should do: code that breaks a decision or an instruction is what gets
 fixed, never a reason to loosen the rule. A change is reviewed against the
 rules on the base branch, not the rules it brings with it
 ([review](../plugin/skills/review/SKILL.md#policy-comes-from-the-base-branch-not-the-change-under-review)).
+
+Once the Protocol is built (plan item 53), a chapter is the one document
+that cannot wait to be noticed: its gate fails the build when the chapter and the code disagree, and the
+disagreement in a generated section or status line is settled by
+regenerating the chapter, never by editing it; its handwritten prose is
+corrected by editing it.
+When the regenerated chapter would break a stable chapter's promise (a value
+deleted rather than kept as a tombstone, a value reused, a field removed or
+newly required),
+the code is changed back or the chapter's version is raised and the change
+released as breaking. A reference document
+that restates a contract differently from its chapter is corrected to the
+chapter, or made a link to it.
 
 ## Decision records
 

@@ -90,7 +90,7 @@ function resolve(c: Case) {
   return resolveAutonomy(
     loadLayeredConfig(root, env),
     env,
-    new Date(),
+    Temporal.Now.instant(),
     snapshotOf(c),
   );
 }
@@ -235,11 +235,15 @@ describe("the effective level and its source", () => {
 });
 
 describe("off-hours", () => {
-  // Local-time constructors, so each instant is the stated wall-clock time
-  // whatever time zone the suite runs in. 2026-10-26 is a Monday.
-  const mondayNoon = new Date(2026, 9, 26, 12, 0);
-  const mondayNight = new Date(2026, 9, 26, 22, 30);
-  const saturdayNoon = new Date(2026, 9, 31, 12, 0);
+  // Wall-clock times in the machine's time zone, so each instant is the
+  // stated time whatever time zone the suite runs in. 2026-10-26 is a Monday.
+  const local = (text: string) =>
+    Temporal.PlainDateTime.from(text)
+      .toZonedDateTime(Temporal.Now.timeZoneId())
+      .toInstant();
+  const mondayNoon = local("2026-10-26T12:00");
+  const mondayNight = local("2026-10-26T22:30");
+  const saturdayNoon = local("2026-10-31T12:00");
   const offHours = [
     "autonomy:",
     "  level: unattended",
@@ -249,7 +253,7 @@ describe("off-hours", () => {
     "",
   ].join("\n");
 
-  function at(c: Case, now: Date) {
+  function at(c: Case, now: Temporal.Instant) {
     const { root, env } = setup(c);
     return resolveAutonomy(
       loadLayeredConfig(root, env),
@@ -692,7 +696,7 @@ describe("reading the base branch's snapshot", () => {
     const a = resolveAutonomy(
       loadLayeredConfig(root, withBound),
       withBound,
-      new Date(),
+      Temporal.Now.instant(),
       snapshot,
     );
     expect(a.ceiling).toBe("unattended");

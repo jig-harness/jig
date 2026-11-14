@@ -10,7 +10,7 @@ function evidence(overrides: Partial<WorktreeEvidence> = {}): WorktreeEvidence {
     dirty: false,
     hiddenIndexChanges: false,
     operation: null,
-    ignoredContent: { rebuildable: [], other: [] },
+    ignoredContent: { rebuildable: [], setAside: [], other: [] },
     requests: [{ state: "MERGED", head: "a".repeat(40) }],
     localOnlyCommits: false,
     mergedHeadCovers: true,
@@ -92,7 +92,9 @@ test("unknown forge, process, ancestry and idle evidence fails closed", () => {
 test("ignored local content needs independent preservation evidence", () => {
   expect(
     classifyWorktree(
-      evidence({ ignoredContent: { rebuildable: [], other: [".env"] } }),
+      evidence({
+        ignoredContent: { rebuildable: [], setAside: [], other: [".env"] },
+      }),
       guard,
     ),
   ).toMatchObject({
@@ -105,6 +107,7 @@ test("a dependency directory alongside another ignored path still vetoes, naming
     evidence({
       ignoredContent: {
         rebuildable: ["node_modules/.bin/tsc"],
+        setAside: [],
         other: [".context/notes.md"],
       },
     }),
@@ -120,12 +123,24 @@ test("a dependency directory is the only ignored content and does not veto", () 
       evidence({
         ignoredContent: {
           rebuildable: ["node_modules/.bin/tsc", "website/node_modules/x"],
+          setAside: [{ path: ".context/scratch/", rule: "jig-scratch" }],
           other: [],
         },
       }),
       guard,
     ).state,
   ).toBe("dead");
+});
+test("a planned one-time archive lifts the ignored-content veto and no other", () => {
+  const unaccounted = {
+    ignoredContent: { rebuildable: [], setAside: [], other: [".env"] },
+    archive: { paths: [".env"], bytes: 9 },
+  };
+  expect(classifyWorktree(evidence(unaccounted), guard).state).toBe("dead");
+  for (const overrides of [{ dirty: true }, { idleMs: 0 }])
+    expect(
+      classifyWorktree(evidence({ ...unaccounted, ...overrides }), guard).state,
+    ).toBe("live");
 });
 test("a runtime's registry stands in for session admission, and only it", () => {
   const coordinated = classifyWorktree(evidence({ coordinated: true }), guard);

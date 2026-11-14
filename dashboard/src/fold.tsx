@@ -2,11 +2,12 @@
  * The page's disclosures and its hints: popovers that say what a word, a chip
  * or a panel means.
  */
-import { ChevronRight } from "lucide-react";
 import { Collapsible } from "@base-ui/react/collapsible";
 import { Popover } from "@base-ui/react/popover";
 import { createContext, type ReactNode, useContext, useState } from "react";
 import { CopyButton } from "./copy.tsx";
+import { Glyph, SourceChip, StageChip } from "./icon-word.tsx";
+import { CONTROL_ICONS } from "./icons.ts";
 import { sourceMeaning, stageMeaning } from "./status.ts";
 import type { EvidenceRow } from "./view.ts";
 
@@ -27,7 +28,7 @@ export function Fold({
         aria-label={label}
         title={label}
       >
-        <ChevronRight size={16} aria-hidden="true" />
+        <Glyph of={CONTROL_ICONS.disclosure} size={16} />
       </Collapsible.Trigger>
       <Collapsible.Panel className="foldPanel">{children}</Collapsible.Panel>
     </Collapsible.Root>
@@ -149,17 +150,12 @@ export function Term({
 }
 
 /** A stage's chip, which says what the stage does. */
-export function StageHint({ mark, stage }: { mark: string; stage: string }) {
+export function StageHint({ stage }: { stage: string }) {
   return (
     <Hint
       className="chipBtn"
       label={`Stage ${stage}`}
-      trigger={
-        <span className="chip">
-          <b>{mark}</b>
-          {stage}
-        </span>
-      }
+      trigger={<StageChip stage={stage} />}
     >
       <b>{stage}</b>: {stageMeaning(stage)}
     </Hint>
@@ -172,7 +168,7 @@ export function SourceHint({ source }: { source: string }) {
     <Hint
       className="chipBtn"
       label={`Source ${source}`}
-      trigger={<span className="chip">{source}</span>}
+      trigger={<SourceChip source={source} />}
     >
       <b>{source}</b>: {sourceMeaning(source)}
     </Hint>

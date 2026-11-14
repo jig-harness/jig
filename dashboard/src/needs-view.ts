@@ -5,6 +5,7 @@
 import type {
   LineDecision,
   LineNeed,
+  NeedCause,
   LineOption,
   LineSession,
   LineSnapshot,
@@ -17,9 +18,10 @@ import {
 import { uniqueLogins } from "../../plugin/shared/forge-logins.ts";
 import { answerStateWords } from "../../plugin/shared/decision-card.ts";
 import { ago, clock, plural } from "./format.ts";
+import type { EveryoneAnswerState } from "./icons.ts";
 import { type DecisionRow, decisionRows } from "./picking.ts";
 import { noLinkText } from "./links.ts";
-import { ROLES, type Role, stageMark } from "./status.ts";
+import { ROLES, type Role } from "./status.ts";
 import {
   type Clock,
   type EvidenceRow,
@@ -42,8 +44,8 @@ export interface NeedView {
   otherOptions: LineOption[];
   /** The steps for a person, as a checklist in the fold. */
   steps: string[];
-  /** What the answers that keep a decision waiting say, stale or disputed, one line per decision that has any. */
-  answerNotes: string[];
+  /** What the answers that keep a decision waiting say, one line per decision that has any, with the state they leave it in. */
+  answerNotes: Array<{ state: EveryoneAnswerState; text: string }>;
   /** Who it waits on, as the parks name them; empty when no record names anyone. */
   people: string[];
   target: string;
@@ -51,9 +53,10 @@ export interface NeedView {
   title: string | null;
   repo: string;
   stage: string;
-  mark: string;
   age: string;
   role: Role;
+  /** The cause the line recorded, which the meta line draws beside its words. */
+  cause: NeedCause;
   recorded: string;
   classNote: string;
   question: string | null;
@@ -88,7 +91,14 @@ function recordedWord(n: LineNeed): string {
     return "repeated no-cause stops (needs a person)";
   if (n.cause === "parked") return "parked for a person";
   if (n.cause === "assigner-cannot-write") return "assigner cannot write";
+  if (n.cause === "tracker-unreachable") return "tracker unreachable";
   return n.cause;
+}
+
+/** What a card with no link says; a need of the host's names an account, which no tracker links. */
+function noLinkOf(n: LineNeed): string | null {
+  if (n.url !== null || n.cause === "tracker-unreachable") return null;
+  return noLinkText(n.repo, n.target);
 }
 
 function goLabelOf(n: LineNeed): string {
@@ -107,11 +117,16 @@ function goLabelOf(n: LineNeed): string {
 }
 
 /** Each decision's waiting answers in words, named by its key when the need has several. */
-function answerNotes(decisions: LineDecision[]): string[] {
+function answerNotes(decisions: LineDecision[]): NeedView["answerNotes"] {
   return decisions.flatMap((d) => {
     const said = answerStateWords(d.answerState, d.answers ?? []);
     if (said === null) return [];
-    return [decisions.length > 1 ? `${d.key}: ${said}` : said];
+    return [
+      {
+        state: d.answerState ?? "waiting",
+        text: decisions.length > 1 ? `${d.key}: ${said}` : said,
+      },
+    ];
   });
 }
 
@@ -182,9 +197,9 @@ export function needView(n: LineNeed, clockNow: Clock): NeedView {
     title: n.title,
     repo: n.repo,
     stage: n.stage,
-    mark: stageMark(n.stage),
     age: ago(Date.parse(n.since), clockNow.nowMs),
     role: ROLES.needs,
+    cause: n.cause,
     recorded: recordedWord(n),
     classNote:
       first === undefined
@@ -199,7 +214,7 @@ export function needView(n: LineNeed, clockNow: Clock): NeedView {
     decision,
     url: n.url,
     goLabel: n.url === null ? null : goLabelOf(n),
-    noLink: n.url === null ? noLinkText(n.repo, n.target) : null,
+    noLink: noLinkOf(n),
     answerKeys: [...new Set(n.decisions.map((d) => d.key))],
     rows: decisionRows(n.decisions),
     keyText: n.url === null ? n.target : null,

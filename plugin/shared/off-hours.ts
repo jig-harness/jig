@@ -42,7 +42,7 @@ const DAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
 export interface OffHoursWindow {
   /** As written in the configuration, for the source line. */
   text: string;
-  /** The days it opens on, `0` for Sunday, as `Date.getDay` counts them. */
+  /** The days it opens on, `0` for Sunday to `6` for Saturday. */
   days: ReadonlySet<number>;
   /** Minutes past midnight it opens at; `0` for a whole-day window. */
   start: number;
@@ -136,10 +136,12 @@ export function parseSchedule(entries: readonly string[]): OffHoursWindow[] {
  */
 export function windowAt(
   windows: readonly OffHoursWindow[],
-  at: Date,
+  at: Temporal.Instant,
 ): OffHoursWindow | null {
-  const today = at.getDay();
-  const minute = at.getHours() * 60 + at.getMinutes();
+  const local = at.toZonedDateTimeISO(Temporal.Now.timeZoneId());
+  // Temporal counts Monday 1 to Sunday 7; the windows count Sunday 0.
+  const today = local.dayOfWeek % 7;
+  const minute = local.hour * 60 + local.minute;
   for (const w of windows) {
     // Opened today, or opened yesterday and still open past midnight.
     if (w.days.has(today) && minute >= w.start && minute < w.start + w.length)

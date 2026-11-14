@@ -9,6 +9,9 @@
 // The skill-authoring counter holds each of the plugin's skill files to its
 // own count per rule (M0's skill-authoring check); its script is a support
 // path, so the base is measured with the head's version of it.
+// The legacy-time counter holds how often runnable code builds a Date or reads
+// the clock through one (ADR-0018). The browser's code (dashboard, website),
+// the design prototypes, the seeds and the tests stay outside it.
 // The voice counter holds each visitor document's count of findings under
 // docs/VOICE.md's caps. Its rules are the documents and its entries the
 // findings, so each document's total is compared, and a document whose total
@@ -64,6 +67,16 @@
         "biome-ignore": "biome-ignore(-all|-start)?\\s",
         "fallow-ignore": "fallow-ignore(-next-line|-file)?\\s",
         "ts-expect-error": "@ts-(expect-error|ignore|nocheck)\\b"
+      }
+    },
+    {
+      "name": "legacy-time",
+      "format": "grep",
+      "files": "^(?!dashboard/|website/|design/|seeds/)(?!.*(\\.test\\.|/__tests__/|vendor/)).*\\.(ts|tsx|mjs)$",
+      "patterns": {
+        "new-date": "\\bnew Date\\(",
+        "date-now": "\\bDate\\.now\\(",
+        "date-parse": "\\bDate\\.parse\\("
       }
     }
   ],

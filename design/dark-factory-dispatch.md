@@ -57,11 +57,15 @@ flowchart LR
 
 ### One tick, step by step
 
-A tick runs in two **phases**. In the **observe phase** every repository
-is read at once: each under its own **observe lock**, and every read
+A tick runs in two **phases**. In the **observe phase** the tick reads
+**trackers first, repositories second**. It opens the repositories'
+configuration, groups their tracker scopes and served people, and reads
+each scope and person once before deriving any repository's pickups.
+Each repository is observed under its own **observe lock**, and every read
 through one pool that keeps at most six in flight (the forge's login and rate limit, each read once per tick, and the base heads of conflicting drives among them), well inside the forge's
 secondary rate limits. Within one repository, the sources that do not
-depend on each other are read side by side: the tracker beside the forge,
+depend on each other are read side by side: the repository's derivation
+of the shared tracker reading beside the forge,
 then every host's launch claims beside the runtime. In the **act phase**,
 under the machine's one **act lock**, the tick reads this machine's launch
 records again and gives each repository a **turn** in rotated order, one
@@ -439,7 +443,14 @@ guards keep one stage from starting twice:
   is never read as an earlier release's: it is logged and the follow-up is a
   person's. The prompt of a routine run again quotes the earlier question,
   at most 500 characters on one line, as a JSON string in a fence, and says
-  it is that pass's words, data and not an instruction. A run again of either kind never earns another: whichever
+  it is that pass's words, data and not an instruction. A pass that met a
+  rate limit (the forge's, or a tracker's) records `waits --until <time>`
+  instead of a question: the marker it left stays until that time, so no
+  host starts the follow-up early, its wrapper does not answer it, and the
+  tick releases it after the reset; a later tick starts the follow-up again
+  as a first run, with no recovery tag and outside the recovery budget. The
+  third wait in a row is a person's, notified with the rate limit named
+  (`followup-waits.ts`). A run again of either kind never earns another: whichever
   path ran it, its failure or death is a person's, so a follow-up is run
   again at most once by the two together, and both draw on the pull
   request's recovery budget. An older death, a failed outcome on an untagged
@@ -566,7 +577,27 @@ guards keep one stage from starting twice:
 | The shared records  | the `SharedRecords` interface (`plugin/shared/records/shared.ts`), on the forge through `plugin/shared/records/shared-forge.ts`; the observe phase reads them from the tick's comment listings, a launch's own reads and writes go to the forge                                                                                                                                                    | for each pull request it classifies, every host's launch claims and their ends, and the follow-up markers' answers: which host holds a launch, and how it ended (see Several hosts)            |
 | The drive doctor    | `drives.ts --json` from drive-pr, run read-only in the repository clone the machine file lists, only in a tick where a drive fell silent                                                                                                                                                                                                                                                           | each pull request's lock holder and the doctor's verdict on it (`DEAD`, `WEDGED`, `HEALTHY`, …): whether a silent driver no launch started is taken over                                       |
 
-**The tracker.** The interface gains one read, `assignedIssues(identity,
+**The tracker.** A tracker scope is its adapter, instance, credential and
+team or project, or the target repository for GitHub Issues. The tick
+collects the repositories' needs before reading each scope: one queue per
+person, holding native states, labels and fields. Repositories derive their
+own canonical states and facets from that shared reading, then apply their
+repository labels and the host's default for unlabelled items. Different
+state maps or facet stores share the reading. Assignment history,
+relations and an epic's open children are read once per item in the scope.
+Native queries select the union of states the repositories need; a
+factory's explicitly configured dispatch states are included even when
+they fall outside the served queue's open and working states.
+The kept reading between ticks is per scope and person; the change probe
+and scheduled full read are shared. A rate-limited or unreachable scope is
+reported once, and every repository using it shows the kept reading's age.
+An opaque Linear command-line credential has a process-local scope,
+because a login switch cannot be distinguished safely across ticks. Its
+queue, item metadata and ready-pool readings stay in memory, without
+accumulating persistent entries. HTTP token credentials retain their
+readings between ticks.
+
+The interface gains one read, `assignedIssues(identity,
 states)`: the issues assigned to that user in those states, in the pool
 form whose fields (`assignee`, `state`) the interface already returns. Both
 adapters answer it natively. It is a new read rather than a change to
@@ -598,7 +629,20 @@ then finds claimed items with the same read over the in-progress state: one
 with no running session and no launch record still running for longer than
 `dispatch.stalled_after` (30 minutes by default) is reported as stalled and
 notified, never relaunched, since a relaunch would start a second
-implementer on a claimed item. One with more than one running session is
+implementer on a claimed item. A claimed item with no running session whose
+launch already opened its pull request is finished work, not a stall: when
+an open pull request whose head is the branch the runtime reports in the
+workspace of this host's launch record for the item links it as `do-item`
+links it (`Closes <KEY>` or `Refs <KEY>`), the host that owns the
+repository moves it from its in-progress state to `pr_open`, never to done,
+and comments on it from a fixed text naming the pull request; an item
+already in `pr_open` is not watched as stalled while that pull request is
+open. The open pull requests are those the tick's query of the repository
+already read, so the rule makes no forge request of its own. Where the
+repository names no `pr_open` state, or the open pull requests did not read
+this tick, nothing moves and the stall need says why, naming the pull
+request where there is one. A pull request no launch of this host opened is
+not this rule's case: the steward's `settle` record links it. One with more than one running session is
 a double claim (see Guards against a second launch). A repository with no factory identity
 configured has no pickups of its own; its other stages still run.
 
@@ -1173,8 +1217,10 @@ jig dispatch --apply [--repo <path>]...           # start what the machine file 
 jig dispatch install [--interval 5m] --yes        # the timer
 jig dispatch receipts                             # past ticks
 jig dispatch result <record> <token> done|failed  # a session's or a follow-up pass's answer
+jig dispatch result <record> <token> waits --until <time>  # a pickup or follow-up a rate limit stopped
 jig dispatch result <record> <token> failed --refused <updated-at> --reason <reason>  # a pickup the start rules refused
 jig dispatch result <record> <token> failed --refused <updated-at> --key <item> --reason <reason>  # one refused batch member; repeat --refused and --key per member
+jig dispatch report <record> <token> <file>       # a pass's closing report (dispatched-sessions.md)
 ```
 
 A tick without `--apply` prints every action it would take, each with the
@@ -1427,6 +1473,9 @@ read --screen --json` returns the rendered screen (its `source` says
 
 A second runtime is a second implementation of the same methods, with
 nothing in the tick changed.
+The second one designed is the process runtime, which runs a pass as a
+plain managed process in a worktree Jig opens itself
+([dispatched-sessions.md](dispatched-sessions.md#the-process-runtime)).
 
 #### Naming what it starts
 
@@ -1704,9 +1753,12 @@ waits on the authenticated Windows smoke.
 - **Pass the flags the skills reserve for a person**: `--window-reopened`
   and `clear-lease`.
 - **Write to the tracker** of its own accord. The item's own state is the
-  claim, and `do-item` sets it; the one exception is a stalled pickup's
+  claim, and `do-item` sets it; the exceptions are a stalled pickup's
   claim a person's answer chose to release, which moves the item back to
-  the state a pickup starts from. What it writes to the forge is the
+  the state a pickup starts from, and a stalled pickup's finished work:
+  the host that owns the repository moves an item to its `pr_open` state,
+  never to done, with a comment from a fixed text, when an open pull
+  request whose head is the branch of this host's launch of it links it. What it writes to the forge is the
   follow-up marker, the rearm label a person's answer chose and, where a
   repository turns dispatch labels on, the state labels.
 - **Read a state label to decide a launch.** A state label is derived from
@@ -1722,10 +1774,8 @@ waits on the authenticated Windows smoke.
   tick never infers contention from a conflict it just saw. A hold keeps
   only the dispatcher's own launches off.
 
-Item 50 narrows two of these rules, once built: the tick moves an item to
-its `pr_open` state when an open pull request on the branch of this host's
-launch names it, and relaunches a stalled pickup once in its own tree to
-push and record work that tree holds
+Item 50 narrows one more of these rules, once built: the tick relaunches a
+stalled pickup once in its own tree to push and record work that tree holds
 ([need-classes.md § What changes in the dispatcher's rules](need-classes.md#what-changes-in-the-dispatchers-rules)).
 
 ### Notifications
@@ -1736,7 +1786,7 @@ parked questions (the park's framed decision, or the stored
 reason for a park with no decision record); a drive
 stopped on an exit only a person can settle, carrying the exit and the
 drive's handoff; a drive stopped with no exit, carrying its handoff; a
-stalled pickup or a double claim; a failed follow-up, carrying the question its pass stopped on when it stated one; a follow-up claim that went stale again after the tick released one (see Stale follow-up claims); a launch record stuck pending, carrying why no tick launches it again (cause `needs-person`, see Launch records); a re-arm that failed without moving its ledger, carrying its exit, both heads and, for a pull request behind its branch, the close-and-reopen recovery (cause `needs-person`, sent once for its exit, ledger generation and heads, see Launch records); a launch refused because a checkout the runtime does not list holds its branch and is in use, carrying that checkout's path and what keeps it busy (cause `needs-person`, keyed by the target, the branch and the path, so it is one notice per holder rather than a refusal repeated in the journal every tick; its record stands through a tick whose launch waited before the open); a session waiting past
+stalled pickup or a double claim; a failed follow-up, carrying the question its pass stopped on when it stated one; a follow-up claim that went stale again after the tick released one (see Stale follow-up claims); a launch record stuck pending, carrying why no tick launches it again (cause `needs-person`, see Launch records); a re-arm that failed without moving its ledger, carrying its exit, both heads and, for a pull request behind its branch, the close-and-reopen recovery (cause `needs-person`, sent once for its exit, ledger generation and heads, see Launch records); a re-arm or takeover `drive.ts` refused as a usage error (`UNSUPPORTED_CLI`) on the ledger facts it still shows, carrying the drive's message, which the wrapper keeps from the drive's error output on that exit (cause `needs-person`, sent once for its launch record, and never launched again on those facts); a launch refused because a checkout the runtime does not list holds its branch and is in use, carrying that checkout's path and what keeps it busy (cause `needs-person`, keyed by the target, the branch and the path, so it is one notice per holder rather than a refusal repeated in the journal every tick; its record stands through a tick whose launch waited before the open); a session waiting past
 `blocked_after`; a running stage drifting from its expectation, and a
 session still waiting on a wall after its one nudge (see Control). Every
 message carries the cause or the question, the pull request's link and
@@ -1771,7 +1821,8 @@ then. `0s` sends each cause once. A drift is an observation rather than
 something a person must do, so it is sent once for the life of its key and
 never repeated; so is a re-arm that failed without moving its ledger, whose
 key carries its exit, the ledger generation and both heads, so any change of
-those is a new notice. The suppression record keeps the first send, which the
+those is a new notice, and a drive launch refused as a usage error, whose key
+is its launch record. The suppression record keeps the first send, which the
 dashboard dates the wait from, and the last, which the repeat is timed from;
 a repeat writes no second event row to the outcome log, since the cause's
 row was written when it was first sent.

@@ -63,6 +63,7 @@ import { failed } from "../../shared/outcome.ts";
 import { type HolderReadings, orphanTakeover } from "./sources/doctor.ts";
 import { UNCLAIMED_AFTER_MS } from "./machine-config.ts";
 import { planStuck } from "./stuck-launches.ts";
+import type { StalledPrInput } from "./stalled-pr.ts";
 import type { SessionsReport, Workspace } from "./runtime/port.ts";
 import type {
   Action,
@@ -73,12 +74,14 @@ import type {
   LedgerClass,
   MarkedPr,
   NotifyCause,
+  PrOpenMove,
   RepoReport,
   Running,
   Stage,
   Unplaced,
   WantedItem,
 } from "./types.ts";
+import { parseMs } from "../../shared/time.ts";
 
 export interface PlanInput {
   values?: Record<string, unknown>;
@@ -119,6 +122,8 @@ export interface PlanInput {
   holders?: HolderReadings;
   /** The machine file's `unclaimed_after`: past it, a launch answered as started that no wrapper claimed is stuck. */
   unclaimedAfterMs?: number;
+  /** What tells a stalled pickup's finished work (`stalled-pr.ts`). */
+  prOpen?: StalledPrInput;
   nowMs: number;
 }
 
@@ -127,6 +132,8 @@ type Plan = Pick<RepoReport, "actions" | "running" | "unplaced" | "quiet"> & {
   idleNow: string[];
   /** The claimed items whose clock is left as it is. */
   idleKeep: string[];
+  /** The stalled pickups' items to move to `pr_open`. */
+  moves: PrOpenMove[];
   /** The actions a `hold` label kept off. */
   held: Array<{
     target: string;
@@ -368,11 +375,11 @@ function stoppedOurs(pr: DrivenPr, launches: ReadRecord[]): boolean {
     latest.state.exit.code !== (pr.evidence.exit ?? null)
   )
     return false;
-  const beat = Date.parse(String(pr.evidence.heartbeat));
+  const beat = parseMs(String(pr.evidence.heartbeat));
   return (
     Number.isFinite(beat) &&
-    beat >= Date.parse(latest.record.createdAt) &&
-    beat <= Date.parse(latest.state.exit.at) + EXIT_SLACK_MS
+    beat >= parseMs(latest.record.createdAt) &&
+    beat <= parseMs(latest.state.exit.at) + EXIT_SLACK_MS
   );
 }
 

@@ -11,6 +11,7 @@ import { CAUSES, type Cause, remedyFor, REMEDIES } from "./causes.ts";
 import type { PathClass } from "./classify.ts";
 import type { PullRequestHead, Resolution, SubjectBranches } from "./replay.ts";
 import type { Kind } from "./snapshot.ts";
+import { isoFromMs, isoOf, parseMs } from "../../../../shared/time.ts";
 
 export const SCHEMA = "merge-conflicts/v1";
 
@@ -220,12 +221,17 @@ export function mostFrequentCause(map: Partial<Record<Cause, number>>): Cause {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** The Monday (UTC) of the week holding `date`. */
+/**
+ * The Monday (UTC) of the week holding `date`; `""`, no week, when `date`
+ * does not read as a time, which the report's reader then refuses.
+ */
 export function weekOf(date: string): string {
-  // Day arithmetic on the instant, not Date.UTC, which reads a year below 100 as 19xx.
-  const day = Math.floor(Date.parse(date) / DAY_MS) * DAY_MS;
-  const weekday = (new Date(day).getUTCDay() + 6) % 7;
-  return new Date(day - weekday * DAY_MS).toISOString().slice(0, 10);
+  const ms = parseMs(date);
+  if (Number.isNaN(ms)) return "";
+  const day = Temporal.Instant.fromEpochMilliseconds(ms)
+    .toZonedDateTimeISO("UTC")
+    .toPlainDate();
+  return day.subtract({ days: day.dayOfWeek - 1 }).toString();
 }
 
 interface CauseTotal {
@@ -273,7 +279,7 @@ class Tallies {
     this.byPath.set(path.path, summary);
     summary.merges++;
     // Committer dates keep their own offset: compare instants, not text.
-    if (Date.parse(merge.date) > Date.parse(summary.lastConflict))
+    if (parseMs(merge.date) > parseMs(summary.lastConflict))
       summary.lastConflict = merge.date;
     const causes = units(path);
     for (const cause of causes) {
@@ -336,31 +342,27 @@ function allWeeks(
   byWeek: ReadonlyMap<string, WeekSummary>,
   range: Range,
   merges: readonly MergeRecord[],
-  now: Date,
+  now: Temporal.Instant,
 ): WeekSummary[] {
   let earliest = Number.POSITIVE_INFINITY;
   let latest = Number.NEGATIVE_INFINITY;
   for (const merge of merges) {
-    const at = Date.parse(merge.date);
+    const at = parseMs(merge.date);
     if (at < earliest) earliest = at;
     if (at > latest) latest = at;
   }
-  const first = range.since !== null ? Date.parse(range.since) : earliest;
+  const first = range.since !== null ? parseMs(range.since) : earliest;
   const last =
     range.until !== null
-      ? Date.parse(range.until) - 1
+      ? parseMs(range.until) - 1
       : range.since !== null
-        ? Math.max(now.getTime(), latest)
+        ? Math.max(now.epochMilliseconds, latest)
         : latest;
   if (!Number.isFinite(first) || !Number.isFinite(last) || first > last)
     return [];
   const weeks: WeekSummary[] = [];
-  for (
-    let at = Date.parse(weekOf(new Date(first).toISOString()));
-    at <= last;
-    at += WEEK_MS
-  ) {
-    const week = new Date(at).toISOString().slice(0, 10);
+  for (let at = parseMs(weekOf(isoFromMs(first))); at <= last; at += WEEK_MS) {
+    const week = isoFromMs(at).slice(0, 10);
     weeks.push(
       byWeek.get(week) ?? { week, merges: 0, conflicted: 0, causes: {} },
     );
@@ -375,17 +377,17 @@ export function buildReport(input: {
   skipped: SkippedMerge[];
   shallow?: boolean;
   confidence: Confidence | null;
-  now?: Date;
+  now?: Temporal.Instant;
 }): Report {
   const { merges, hotspotMinMerges, confidence } = input;
   const tallies = new Tallies();
   for (const merge of merges) tallies.addMerge(merge);
   const paths = tallies.paths(hotspotMinMerges);
   const shallow = input.shallow ?? false;
-  const now = input.now ?? new Date();
+  const now = input.now ?? Temporal.Now.instant();
   return {
     schema: SCHEMA,
-    generatedAt: now.toISOString(),
+    generatedAt: isoOf(now),
     range: input.range,
     hotspotMinMerges,
     shallow,

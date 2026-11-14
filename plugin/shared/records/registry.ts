@@ -31,11 +31,7 @@ export interface RecordKind {
   readonly owner: string;
   /** Who writes a kind Jig only reads: another tool, or a person. */
   readonly foreign?: string;
-  /**
-   * Where it lives: a path on the machine (from `~`, or `<tmp>`), in the
-   * working tree (from its root, or `<git dir>`), or the place on the forge
-   * or the tracker.
-   */
+  /** Where it lives: on the machine (from `~` or `<tmp>`), in the tree (its root or `<git dir>`), on the forge or tracker. */
   readonly at: string;
   /** The hidden markers it carries, each as written after `<!--`. */
   readonly markers?: readonly string[];
@@ -58,10 +54,7 @@ export interface NotARecord {
 /** A pull request's number: the key of a record about one pull request. */
 const PR_NUMBER = /^[1-9]\d*$/;
 
-/**
- * The keys of the claims on the forge (`forge-claims.ts`): what is claimed on
- * the pull request the claim's comment is on.
- */
+/** A forge claim's key (`forge-claims.ts`): what is claimed on the pull request its comment is on. */
 const TAKEOVER_KEY = /^takeover:\d+$/;
 /** A follow-up claim's key; one written before claims (version 1) is its pull request's number. */
 const FOLLOWUP_KEY = /^(?:followup|[1-9]\d*)$/;
@@ -85,7 +78,7 @@ const STATE_DIR = "~/.local/state/jig/drive-pr/<clone>/";
 const DRIVE_DB_FILE = "~/.local/state/jig/drive-pr/state.sqlite";
 const DISPATCH_DIR = "~/.local/state/jig/dispatch/";
 /** The dispatcher's database schema version (`dispatch/lib/state.ts`'s `SCHEMA_VERSION`). */
-const DISPATCH_DB = 28;
+const DISPATCH_DB = 30;
 /** The drive's database schema version (`skills/drive-pr/scripts/lib/state/db.ts`'s `DRIVE_DB_VERSION`). */
 const DRIVE_DB = 5;
 const RRC = "skills/resolve-review-comments/scripts/";
@@ -658,6 +651,13 @@ const TREE: RecordKind[] = [
     "facet-move-record",
     "skills/file-issue/scripts/lib/move-record.ts",
     "the file `check-fields.ts move --record` names (`.context/facet-move/record.json` in file-issue's procedure)",
+    1,
+  ),
+  plain(
+    "tree",
+    "issue-fields-position",
+    "skills/file-issue/scripts/lib/sweep-position.ts",
+    "the file `check-fields.ts check --position` names, kept by the scheduler between runs",
     1,
   ),
   plain(

@@ -182,6 +182,38 @@ describe("Linear attachments", () => {
     });
   });
 
+  it("keeps the reset, the retry delay and the sent mark of a failed attach", async () => {
+    const { t } = linear((c) => {
+      if (c.op === "TrackerIssueId")
+        return { issue: { id: "uuid-1", team: { id: "team-1", key: "ENG" } } };
+      if (c.op === "TrackerFileUpload")
+        return {
+          fileUpload: {
+            success: true,
+            uploadFile: {
+              uploadUrl: "https://storage.example/put?sig=1",
+              assetUrl: ASSET,
+              headers: [],
+            },
+          },
+        };
+      return new LinearApiError("rate limited", 429, "rate-limited", {
+        until: 1_800_000_000_000,
+        sent: true,
+        retryAfterMs: 5000,
+      });
+    });
+    const error = await t.attachFile("ENG-1", sheet()).catch((e) => e);
+    expect(error).toBeInstanceOf(LinearApiError);
+    expect(error.message).toContain(ASSET);
+    expect(error).toMatchObject({
+      code: "rate-limited",
+      until: 1_800_000_000_000,
+      sent: true,
+      retryAfterMs: 5000,
+    });
+  });
+
   it("reads a stored file back, and refuses one Linear only links", async () => {
     const { t } = linear(
       () =>

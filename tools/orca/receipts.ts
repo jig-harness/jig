@@ -34,6 +34,7 @@ import { CLAIM_WAIT_MS } from "../herdr/kickoff.ts";
 import { localOwner, type Owner, ownerAlive } from "../herdr/owner.ts";
 import { budget } from "../herdr/runner.ts";
 import { OrcaError, WAIT_POLL_MS, type Workspace } from "./runner.ts";
+import { currentMs } from "../../plugin/shared/time.ts";
 
 export interface Receipt {
   key: string;
@@ -357,7 +358,7 @@ function awaitReplacement(
   waits: Waits,
 ): void {
   const retired = retiredName(file, earlier);
-  if (Date.now() >= deadline)
+  if (currentMs() >= deadline)
     throw new OrcaError(
       `another open set aside the record of ${earlier.key}'s agent (${retired}) and did not replace ${file} within ${Math.round(CLAIM_WAIT_MS / 1000)}s; if no open is running, remove ${retired} and open the workspace again`,
     );
@@ -411,7 +412,7 @@ function awaitStart(
   waits: Waits,
 ): void {
   const key = earlier.key;
-  if (Date.now() >= deadline)
+  if (currentMs() >= deadline)
     throw new OrcaError(
       `another open (process ${holder.pid}) is starting ${key}'s agent and did not finish within ${Math.round(CLAIM_WAIT_MS / 1000)}s; let it finish and open the workspace again`,
     );
@@ -441,7 +442,7 @@ export function claimReceipt(
   file: string,
   receipt: Receipt,
 ): boolean {
-  const deadline = Date.now() + budget(ws.orca, CLAIM_WAIT_MS);
+  const deadline = currentMs() + budget(ws.orca, CLAIM_WAIT_MS);
   const waits: Waits = { start: false, replacement: false };
   for (;;) {
     if (createReceipt(file, receipt)) return true;

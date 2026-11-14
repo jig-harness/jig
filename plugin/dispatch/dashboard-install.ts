@@ -42,6 +42,7 @@ import {
 import { attempt, failed, ok, type Outcome } from "../shared/outcome.ts";
 import { DEFAULT_PORT } from "./dashboard.ts";
 import type { Listen } from "./lib/listen.ts";
+import { currentMs } from "../shared/time.ts";
 
 /** Refuse a foreground reader or another service before installing a retry loop. */
 function listenAvailable(listen: Listen): Promise<boolean> {
@@ -153,8 +154,8 @@ export async function dashboardInstall(
 
 async function removeReader(): Promise<boolean> {
   rmSync(join(readerRoot(), "enabled"), { force: true });
-  const deadline = Date.now() + 10_000;
-  while (readAccess().ok && Date.now() < deadline) await Bun.sleep(100);
+  const deadline = currentMs() + 10_000;
+  while (readAccess().ok && currentMs() < deadline) await Bun.sleep(100);
   if (!readAccess().ok) return true;
   console.error("Timer removed but reader has not stopped; inspect --status");
   return false;
@@ -387,8 +388,8 @@ export async function scheduledDashboard(script: string): Promise<number> {
         return false;
       }
       if (currentConfig.value !== config) return false;
-      if (Date.now() < nextCheck) return true;
-      nextCheck = Date.now() + 60_000;
+      if (currentMs() < nextCheck) return true;
+      nextCheck = currentMs() + 60_000;
       const entry = await lookupInstalledEntry(programs);
       if (entry === null) return false;
       if (!entry.ok) {

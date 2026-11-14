@@ -24,6 +24,7 @@ import {
   tmpRoot,
   useDrivePrSuite,
   writeFixture,
+  type Fixture,
 } from "./drive-pr-harness.ts";
 import { pollUntil, runDriveIn, state } from "./drive-loop-harness.ts";
 import {
@@ -125,43 +126,29 @@ describe("the takeover record's reopenFailed", () => {
 });
 
 describe("drive.ts --take-over reopening unverified holds", () => {
-  it("re-holds an unverified thread unconfirmed with no reply, and records a hold that changed apart", async () => {
+  const accepted = {
+    body: "**accepted** — fixed in the next push",
+    author: "maintainer",
+    authorAssociation: "OWNER",
+    bot: false,
+  };
+  const finding = { body: "a finding", bot: true };
+  const replyUrl = (id: string) => `https://example.invalid/${id}/comment-1`;
+
+  // Takes over a drive holding the given threads and replies, runs one round
+  // whose pass records its notice, and returns what the takeover left behind.
+  async function takeOver(
+    threads: NonNullable<Fixture["threads"]>,
+    holds: Record<string, string>,
+  ) {
     const owner = fakeDriver();
     const gh = replyRecordingGh("takeover-binding");
     const noticeFile = join(tmpRoot, "takeover-binding-notice");
-    const accepted = {
-      body: "**accepted** — fixed in the next push",
-      author: "maintainer",
-      authorAssociation: "OWNER",
-      bot: false,
-    };
     try {
-      const { dir, stateDir } = writeFixture(
-        {
-          threads: [
-            {
-              id: "PRRT_h",
-              path: "a.ts",
-              bot: true,
-              comments: [{ body: "a finding", bot: true }, accepted],
-            },
-            {
-              id: "PRRT_c",
-              path: "b.ts",
-              bot: true,
-              comments: [{ body: "a finding", bot: true }, accepted],
-            },
-            { id: "PRRT_n", path: "c.ts", bot: true },
-          ],
-        },
-        scratchClean.dir,
-      );
-      // PRRT_h is held on its visible reply; PRRT_c on an earlier one, so the
-      // takeover's own reconciliation replaces it before the reopen reaches it.
-      const replyH = "https://example.invalid/PRRT_h/comment-1";
-      const replyC = "https://example.invalid/PRRT_c/comment-1";
-      await hold(stateDir, "PRRT_h", "thread", replyH);
-      await hold(stateDir, "PRRT_c", "thread", "https://example.invalid/old");
+      const { dir, stateDir } = writeFixture({ threads }, scratchClean.dir);
+      for (const [key, url] of Object.entries(holds)) {
+        await hold(stateDir, key, "thread", url);
+      }
       plantPrLock(stateDir, owner.pid, scratchClean.dir);
       await progressAt(stateDir, stale());
       const pass = [
@@ -176,37 +163,99 @@ describe("drive.ts --take-over reopening unverified holds", () => {
         undefined,
         { env: { DRIVE_PR_STOP_GRACE_SEC: "1" }, extraBinDir: gh.bin },
       );
-      expect(r.stderr).toContain("1 hold(s) reopened, 1 not");
+      expectSpawnExit({ ...r, stdout: "" }, 6);
       const after = JSON.parse((await state(stateDir, ["get", "999"])).stdout);
-      const record = after.takeovers[0];
-      expect(record.reopened).toEqual(["PRRT_h"]);
-      expect(record.reopenFailed).toEqual(["PRRT_c"]);
-      const byKey = new Map(
-        after.held.map((h: { key: string }) => [h.key, h] as const),
-      );
-      expect(byKey.get("PRRT_h")).toMatchObject({
-        round: -1,
-        commentUrl: replyH,
-        outcome: "accepted",
-      });
-      expect(byKey.get("PRRT_c")).toMatchObject({
-        round: -1,
-        commentUrl: replyC,
-      });
-      // The reply above stays the thread's last qualifying one: nothing new
-      // is posted for a reopen.
-      expect(existsSync(gh.log)).toBe(false);
-      const notice = readFileSync(noticeFile, "utf8");
-      expect(notice).toContain(
-        `PRRT_h (was accepted, round 0): re-held unconfirmed on ${replyH}`,
-      );
-      expect(notice).toContain("could NOT be reopened");
-      expect(notice).toContain(
-        "PRRT_c (was accepted, round 0): NOT reopened — it is now held for another reply",
-      );
+      return {
+        r,
+        after,
+        gh,
+        notice: existsSync(noticeFile) ? readFileSync(noticeFile, "utf8") : "",
+      };
     } finally {
       owner.kill();
       await owner.exited;
     }
+  }
+
+  it("re-holds an unverified thread unconfirmed with no reply, and reopens a hold the takeover's own reconciliation replaced, on its current reply", async () => {
+    // PRRT_h is held on its visible reply; PRRT_c on an earlier one, so the
+    // takeover's own reconciliation replaces it before the reopen reads the
+    // batch again and reopens the current entry.
+    const { r, after, gh, notice } = await takeOver(
+      [
+        {
+          id: "PRRT_h",
+          path: "a.ts",
+          bot: true,
+          comments: [finding, accepted],
+        },
+        {
+          id: "PRRT_c",
+          path: "b.ts",
+          bot: true,
+          comments: [finding, accepted],
+        },
+        { id: "PRRT_n", path: "c.ts", bot: true },
+      ],
+      {
+        PRRT_h: replyUrl("PRRT_h"),
+        PRRT_c: "https://example.invalid/old",
+      },
+    );
+    expect(r.stderr).toContain("2 hold(s) reopened, 0 not");
+    const record = after.takeovers[0];
+    expect([...record.reopened].sort()).toEqual(["PRRT_c", "PRRT_h"]);
+    expect(record.reopenFailed).toBeUndefined();
+    const byKey = new Map(
+      after.held.map((h: { key: string }) => [h.key, h] as const),
+    );
+    expect(byKey.get("PRRT_h")).toMatchObject({
+      round: -1,
+      commentUrl: replyUrl("PRRT_h"),
+      outcome: "accepted",
+    });
+    expect(byKey.get("PRRT_c")).toMatchObject({
+      round: -1,
+      commentUrl: replyUrl("PRRT_c"),
+    });
+    // The reply above stays the thread's last qualifying one: nothing new
+    // is posted for a reopen.
+    expect(existsSync(gh.log)).toBe(false);
+    expect(notice).toContain(
+      `PRRT_h (was accepted, round 0): re-held unconfirmed on ${replyUrl("PRRT_h")}`,
+    );
+    expect(notice).not.toContain("could NOT be reopened");
+  }, 120_000);
+
+  it("does not bring back a hold the takeover's own reconciliation removed for a superseding merit reply", async () => {
+    // PRRT_c is held on its accepted reply, which a later rejection supersedes:
+    // the takeover's own reconciliation resolves it and removes the hold.
+    const { r, after } = await takeOver(
+      [
+        {
+          id: "PRRT_h",
+          path: "a.ts",
+          bot: true,
+          comments: [finding, accepted],
+        },
+        {
+          id: "PRRT_c",
+          path: "b.ts",
+          bot: true,
+          comments: [
+            finding,
+            accepted,
+            { ...accepted, body: "**rejected** — the premise was wrong" },
+          ],
+        },
+        { id: "PRRT_n", path: "c.ts", bot: true },
+      ],
+      { PRRT_h: replyUrl("PRRT_h"), PRRT_c: replyUrl("PRRT_c") },
+    );
+    expect(r.stderr).toContain("1 hold(s) reopened, 0 not");
+    expect(after.takeovers[0].reopened).toEqual(["PRRT_h"]);
+    const keys = after.held.map((h: { key: string }) => h.key);
+    expect(keys).toContain("PRRT_h");
+    expect(keys).not.toContain("PRRT_c");
   }, 120_000);
 });

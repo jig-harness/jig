@@ -14,6 +14,7 @@
  */
 import { isMapping } from "../../shared/config-layers.ts";
 import { swallow } from "../../shared/errors.ts";
+import { parseMs } from "../../shared/time.ts";
 
 /** One batch member the start rules refused. */
 export interface RefusedMember {
@@ -30,7 +31,7 @@ export interface PickupRefusal {
 }
 
 function isTime(value: unknown): value is string {
-  return typeof value === "string" && Number.isFinite(Date.parse(value));
+  return typeof value === "string" && Number.isFinite(parseMs(value));
 }
 
 /** One refused member as stored; `null` when it does not read. */

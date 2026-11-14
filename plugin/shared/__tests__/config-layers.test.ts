@@ -160,6 +160,11 @@ describe("the fields only the host sets", () => {
     ["drive.pass_args", "drive:\n  pass_args: [--permission-mode, default]\n"],
     ["drive.pass_args", "drive:\n  pass_args: []\n"],
     ["drive.pass_args", "drive:\n  pass_args: null\n"],
+    [
+      "drive.codex_pass_args",
+      "drive:\n  codex_pass_args: [--dangerously-bypass-hook-trust]\n",
+    ],
+    ["drive.codex_pass_args", "drive:\n  codex_pass_args: []\n"],
     ["drive.codex_bypass", "drive:\n  codex_bypass: true\n"],
     ["drive.codex_bypass", "drive:\n  codex_bypass: false\n"],
   ])("a repository's file refuses %s: %j", (field, text) => {
@@ -217,11 +222,13 @@ describe("the fields only the host sets", () => {
         hostEnv({
           JIG__DRIVE__PASS_ARGS: "[--verbose]",
           JIG__DRIVE__CODEX_BYPASS: "true",
+          JIG__DRIVE__CODEX_PASS_ARGS: "[--dangerously-bypass-hook-trust]",
         }),
       ).values.drive,
     ).toEqual({
       pass_args: ["--verbose"],
       codex_bypass: true,
+      codex_pass_args: ["--dangerously-bypass-hook-trust"],
       pass_model: "opus",
     });
   });

@@ -9,6 +9,8 @@
 import { useId, useState } from "react";
 import { CopyButton } from "./copy.tsx";
 import { InlineDecisionText } from "./decision-text.tsx";
+import { ActPill, BareWord, Glyph } from "./icon-word.tsx";
+import { CARD_ICONS, HERE_ICONS } from "./icons.ts";
 import type { NeedView } from "./needs-view.ts";
 import { OptionText } from "./option-text.tsx";
 import type { DecisionRow, RowAnswer, RowOption } from "./picking.ts";
@@ -33,13 +35,18 @@ function OptionPick({
       >
         <kbd className="optNum">{option.number}</kbd>
         <span className="optMark" aria-hidden="true">
-          {picked ? "●" : "○"}
+          <Glyph of={HERE_ICONS[picked ? "picked" : "unpicked"]} />
         </span>
         <span className="optText">
           <OptionText option={option} />
           {option.recommended ? " (recommended)" : ""}
           {option.guarded ? (
-            <span className="mut"> · copying it takes a second step</span>
+            <span className="mut">
+              {" · "}
+              <BareWord of={HERE_ICONS.guarded}>
+                copying it takes a second step
+              </BareWord>
+            </span>
           ) : null}
         </span>
       </button>
@@ -61,11 +68,17 @@ function AnswerState({ answer }: { answer: RowAnswer }) {
   return (
     <>
       {answer.dropped === null ? null : (
-        <p className="sm decNote">{answer.dropped}</p>
+        <p className="sm decNote">
+          <BareWord of={HERE_ICONS.dropped}>{answer.dropped}</BareWord>
+        </p>
       )}
       {draft === null ? null : <p className="sm mut">{draft}</p>}
       {answer.fault === null ? null : (
-        <p className="sm decFault">Not copied: {answer.fault}</p>
+        <p className="sm decFault">
+          <BareWord of={HERE_ICONS["held back"]}>
+            Not copied: {answer.fault}
+          </BareWord>
+        </p>
       )}
     </>
   );
@@ -138,7 +151,7 @@ function DecisionHead({ need, row }: { need: NeedView; row: DecisionRow }) {
           {row.place} of {need.rows.length}
         </span>
       ) : null}
-      {ownAct ? <span className={`act act${row.act}`}>{row.act}</span> : null}
+      {ownAct ? <ActPill act={row.act} /> : null}
       {row.decisionClass === null ? null : (
         <span className="mut">{row.decisionClass}</span>
       )}
@@ -290,7 +303,9 @@ function DecisionRowView({ need, row, index, picking }: RowProps) {
       {question === null ? null : <p className="q">{question}</p>}
       {row.interplay.map((text) => (
         <p className="sm mut interplay" key={text}>
-          With another decision: {text}
+          <BareWord of={CARD_ICONS.interplay}>
+            With another decision: {text}
+          </BareWord>
         </p>
       ))}
       {row.recommendation === null ? null : (
@@ -370,6 +385,7 @@ export function CommitControls({
       />
       {anyPick ? (
         <button type="button" className="fbtn" onClick={picking.undo}>
+          <Glyph of={CARD_ICONS.undo} />
           Undo last pick
         </button>
       ) : null}

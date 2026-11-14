@@ -501,7 +501,9 @@ the source-size counter active at zero so that any excess line fails.
 ### Local hooks
 
 [`lefthook.yml`](lefthook.yml), with lefthook pinned in `mise.toml`: a commit
-formats its staged files and re-stages them, and a push runs
+formats its staged files and re-stages them, regenerates the
+[Jig Protocol](GLOSSARY.md)'s chapters and stages them when a staged file is
+among their sources, and a push runs
 `bun scripts/gates.ts --fast` (format, lint, types and the repository checks,
 in seconds). Install them once per clone with
 `mise install && lefthook install`; every worktree of the clone shares them.
@@ -532,7 +534,12 @@ The lockfiles and the vendored js-yaml builds cannot carry one, since each
 must stay byte for byte what its generator writes, so their entry is their
 marker; the bundle `tools/plugin/vendor-optique.ts` builds opens with a line
 naming that command. The dashboard's built page is minified, so its entry is
-its marker too.
+its marker too. A Protocol chapter is part derived: only its title, status
+line and the sections between its `protocol:generated` markers come from
+`tools/protocol/generate.ts`, and its data file carries no header, so the
+`protocol` entry is that file's marker. The chapters' check also compares
+each stable chapter with the integration branch's copy at the merge base
+([design/protocol.md](design/protocol.md)), so it needs that history.
 
 A new derived file gets its entry in the pull request that adds it; the
 runner refuses an entry without a check.
@@ -781,9 +788,13 @@ A release goes like this:
 4. The release commit runs the gates like any push to main. Once `gates`
    passes on that commit, the workflow's `tag-plan` and `tag-push` jobs tag it
    `v<version>`. They run after every gates run on main and every six hours;
-   a cancelled gates run is run again once, and a release commit whose gates
-   failed stays untagged, fails `tag-plan` and shows in the changelog skill's
-   `status.ts`, for a person to fix.
+   a cancelled gates run is run again once, and failed gates are run again up
+   to `changelog.release.rerun_failed_gates` times (default `1`, `0` disables
+   failed-gates retries). A release whose retries are exhausted stays untagged
+   and shows in the changelog skill's `status.ts` for a person to fix. Older
+   untagged releases stay listed for manual tagging after a newer tag exists;
+   only releases newer than the newest tag are automatically tagged (or only
+   the newest release when no release tag exists).
 5. The workflow's `latest` job then moves the `latest` channel to the newest
    tagged version (`.github/workflows/channels.yml`, running
    `tools/plugin/channel.ts`). Each run catches up, so a version a failed run

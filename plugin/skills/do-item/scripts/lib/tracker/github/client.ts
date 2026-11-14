@@ -9,6 +9,7 @@
  */
 
 import { cancellableRequest } from "../cancellation.ts";
+import { sharedDispatchRead } from "../dispatch-shared.ts";
 import { TrackerConfigError } from "../config-error.ts";
 import { defaultFacets, type Facets } from "../facets/config.ts";
 import {
@@ -55,6 +56,7 @@ export interface IssueListing {
 }
 
 export interface Client {
+  shareReads(reads: Map<string, Promise<unknown>>): void;
   readonly home: Repo;
   readonly model: GitHubModel;
   readonly ctx: ReadContext;
@@ -183,6 +185,11 @@ export interface ClientOptions {
   detection?: Pick<GitHubFacetOptions, "cache" | "token" | "detected">;
 }
 
+const DISPATCH_READS = new WeakMap<
+  GitHubTransport,
+  Map<string, Promise<unknown>>
+>();
+
 export function gitHubClient(opts: ClientOptions): Client {
   const { home, model, settings } = opts;
   const transport: GitHubTransport = (
@@ -192,7 +199,13 @@ export function gitHubClient(opts: ClientOptions): Client {
     idempotent = false,
   ) =>
     cancellableRequest(signal, () =>
-      opts.transport(query, variables, signal, idempotent),
+      idempotent && /\bquery\s+TrackerFacet\w*/.test(query)
+        ? sharedDispatchRead(
+            DISPATCH_READS.get(opts.transport),
+            { query, variables },
+            () => opts.transport(query, variables, signal, idempotent),
+          )
+        : opts.transport(query, variables, signal, idempotent),
     );
   const board: Board | null =
     settings.statesFrom === "project" && settings.project !== null
@@ -221,6 +234,9 @@ export function gitHubClient(opts: ClientOptions): Client {
   let boardIds: Promise<BoardIds> | undefined;
 
   const client: Client = {
+    shareReads: (reads) => {
+      DISPATCH_READS.set(opts.transport, reads);
+    },
     home,
     model,
     ctx,

@@ -82,7 +82,7 @@ function sweepCommand(line: string): boolean {
   if (script.includes("$(") || script.split("/").at(-1) !== "check-fields.ts")
     return false;
   const args = m[2] ?? "";
-  return /^(?:check\s+)?--yes(?: --retired-from [a-zA-Z0-9_./-]+)?$/u.test(
+  return /^(?:check\s+)?--yes(?: --retired-from [a-zA-Z0-9_./-]+)?(?: --position [a-zA-Z0-9_./-]+)?$/u.test(
     args,
   );
 }

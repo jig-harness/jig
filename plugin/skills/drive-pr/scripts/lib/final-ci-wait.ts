@@ -12,6 +12,7 @@ import {
 } from "./gh-conditional.ts";
 import { waitingChecksMaxAgeMs } from "./status/waiting-cache.ts";
 import { type Clock, systemClock } from "../../../../shared/clock.ts";
+import { currentMs } from "../../../../shared/time.ts";
 
 export interface FinalCiSignals {
   head: string;
@@ -26,7 +27,7 @@ export interface FinalCiWaitDeps extends Pick<Clock, "now"> {
 }
 
 async function signals(pr: string): Promise<FinalCiSignals | null> {
-  const observedAt = Date.now();
+  const observedAt = currentMs();
   const pull = await ghConditionalGet(`repos/{owner}/{repo}/pulls/${pr}`);
   if (!pull.ok) return null;
   let value: Record<string, unknown>;

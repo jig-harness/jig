@@ -25,6 +25,7 @@ import {
 } from "../../../do-item/scripts/lib/tracker/keys.ts";
 import { DEFAULT_BRANCH_PATTERN } from "../../../drive-pr/scripts/lib/pr-policy.ts";
 import { type Change, parseObject, type Session } from "./events.ts";
+import { currentMs } from "../../../../shared/time.ts";
 
 /**
  * The longest one git call may take. A call stalled on the repository's
@@ -64,7 +65,7 @@ function runGit(args: string[], cwd: string) {
   const timeout =
     gitDeadline === null
       ? GIT_TIMEOUT_MS
-      : Math.min(GIT_TIMEOUT_MS, gitDeadline - Date.now());
+      : Math.min(GIT_TIMEOUT_MS, gitDeadline - currentMs());
   if (timeout <= 0)
     throw new GitTimeoutError(
       `git ${args.join(" ")} was not started: the caller's time limit has passed`,

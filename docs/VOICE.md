@@ -83,6 +83,7 @@ What they share:
   documents it.
 - A term of art before its plain meaning. Say what the thing does, then give
   its name and link the glossary.
+  This rule covers terms Jig coins, not terms a reader brings, such as “software factory”.
 - A sentence over 30 words.
 - Two semicolons in one sentence.
 - A parenthesis that holds more than three items.

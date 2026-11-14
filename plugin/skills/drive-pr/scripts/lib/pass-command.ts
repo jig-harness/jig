@@ -14,7 +14,8 @@
  * needs `--dangerously-bypass-approvals-and-sandbox`; a host opts in to it
  * with `drive.codex_bypass`, after checking what its account can reach, and
  * without that Codex's own configuration decides. The model each one runs
- * on is decided by `pass-model.ts`, and Claude Code's extra arguments by
+ * on is decided by `pass-model.ts`, and each one's extra arguments
+ * (`drive.pass_args` for Claude Code, `drive.codex_pass_args` for Codex) by
  * `pass-args.ts`.
  *
  * The turn-budget hook counts Codex responses and warns, but imposes no
@@ -57,15 +58,23 @@ export function skillPrompt(vendor: AccountVendor, invocation: string): string {
 /**
  * The documented pass command of `vendor` for pull request `pr`, its model
  * left to `pass-model.ts`: a Codex pass with the bypass when `codexBypass`
- * says the host opted in, which is Claude Code's to ignore.
+ * says the host opted in, then `codexPassArgs` (the host's
+ * `drive.codex_pass_args`) before the prompt; Claude Code's ignores both.
  */
 export function passCommand(
   vendor: AccountVendor,
   pr: number | string,
   codexBypass = false,
+  codexPassArgs: readonly string[] = [],
 ): string[] {
   const prompt = skillPrompt(vendor, `/jig:drive-pr --bots-only ${pr}`);
   return vendor === "claude"
     ? ["claude", "-p", prompt]
-    : ["codex", "exec", ...(codexBypass ? [CODEX_BYPASS] : []), prompt];
+    : [
+        "codex",
+        "exec",
+        ...(codexBypass ? [CODEX_BYPASS] : []),
+        ...codexPassArgs,
+        prompt,
+      ];
 }

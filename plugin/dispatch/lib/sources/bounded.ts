@@ -3,6 +3,7 @@
  * ended it, whatever the tracker's own transport does after.
  */
 import type { FacetBound } from "./tracker-facets.ts";
+import { currentMs } from "../../../shared/time.ts";
 
 /** `read`, or a rejection once `bound` has ended it. */
 export async function within<T>(
@@ -27,6 +28,6 @@ export async function within<T>(
 export function ended(bound: FacetBound | undefined): boolean {
   return (
     bound !== undefined &&
-    (bound.signal.aborted || Date.now() >= bound.deadline)
+    (bound.signal.aborted || currentMs() >= bound.deadline)
   );
 }

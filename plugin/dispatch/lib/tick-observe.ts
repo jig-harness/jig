@@ -82,10 +82,17 @@ import {
   trackerDefaultKey,
   unlabeledModeOf,
 } from "./sources/served-repo.ts";
-import { lowBudget, type TickReads } from "./tick-reads.ts";
+import { lowBudget, type TickReads, type TickBudget } from "./tick-reads.ts";
 import { openShared, readDriveClaims, type TickShared } from "./tick-shared.ts";
 import { failureText } from "./text.ts";
-import { failed, ok, type Outcome } from "../../shared/outcome.ts";
+import {
+  type Failure,
+  failed,
+  ok,
+  type Outcome,
+} from "../../shared/outcome.ts";
+import { clearsByWaiting } from "../../shared/outbound/failure.ts";
+import { lastForgeReading, readFailureOf } from "./read-failures.ts";
 import type {
   ClaimedItem,
   DispatchSection,
@@ -94,6 +101,7 @@ import type {
   RepoTarget,
   WantedItem,
 } from "./types.ts";
+import { isoFromMs } from "../../shared/time.ts";
 
 /** What the observe phase needs: the run's options, the runtime, the tick's clock and this machine's launch records. */
 export interface ObserveContext {
@@ -110,6 +118,8 @@ export interface ObserveContext {
 
 /** A repository opened for its tick: its target, its dispatch section, its machine-file entry and the report the tick fills. */
 export interface OpenedRepo {
+  /** Opened once while gathering tracker scopes, reused during repository derivation. */
+  tracker?: Tracker;
   repo: RepoTarget;
   values: Record<string, unknown>;
   section: DispatchSection;
@@ -141,6 +151,8 @@ export interface Tracked {
 
 /** Everything one repository's observe phase read, handed to its plan, act and label phases. */
 export interface RepoObservation {
+  /** Cached forge budget from this tick, for optional act-phase evidence reads. */
+  forgeBudget?: TickBudget;
   opened: OpenedRepo;
   tracked: Tracked;
   /** The dispatch labels, where the repository turns them on. */
@@ -180,17 +192,21 @@ export async function openRepo(
     target = failed("unreadable", failureText(error), error);
   }
   if (!target.ok)
-    return emptyReport(
+    return refusedBy(
       path,
       `the forge cannot say which repository this is: ${target.failure.reason}`,
+      target.failure,
+      nowMs,
     );
   const repo: RepoTarget = target.value;
   let config: Awaited<ReturnType<typeof defaultBranchConfig>>;
   const where = `${repo.slug}@${repo.defaultBranch}:.config/jig.yaml`;
-  const unread = (why: string): RepoReport => ({
-    ...emptyReport(
+  const unread = (why: string, cause?: Failure): RepoReport => ({
+    ...refusedBy(
       path,
       `the dispatch section on the default branch cannot be read, so nothing is planned: ${why}`,
+      cause,
+      nowMs,
     ),
     slug: repo.slug,
   });
@@ -201,7 +217,7 @@ export async function openRepo(
   } catch (error) {
     return unread(failureText(error));
   }
-  if (!config.ok) return unread(config.failure.reason);
+  if (!config.ok) return unread(config.failure.reason, config.failure);
   const file = config.value;
   const read = readSection(file, where);
   if (!read.ok) return unread(failureText(read.failure.reason));
@@ -232,6 +248,28 @@ export async function openRepo(
   };
 }
 
+/**
+ * The report of a repository a failed read refused: with the call's
+ * failure class when a call failed it, and the forge's last reading with
+ * its age when that class clears by waiting.
+ */
+function refusedBy(
+  path: string,
+  refused: string,
+  cause: Failure | undefined,
+  nowMs: number,
+): RepoReport {
+  const failure = cause === undefined ? undefined : readFailureOf(cause);
+  const waits = failure !== undefined && clearsByWaiting(failure.class);
+  return {
+    ...emptyReport(
+      path,
+      `${refused}${waits ? lastForgeReading(path, nowMs) : ""}`,
+    ),
+    ...(failure === undefined ? {} : { refusedBy: failure }),
+  };
+}
+
 /** When the follow-up stage started for a repository: the run's override, the machine file's, the previous receipt's, else now. */
 function followupStart(
   options: TickOptions,
@@ -243,7 +281,7 @@ function followupStart(
     options.followupSince ??
     entry?.followupSince ??
     previousFollowupSince(path) ??
-    new Date(nowMs).toISOString()
+    isoFromMs(nowMs)
   );
 }
 
@@ -302,6 +340,7 @@ export async function observeRepo(
                   !s.wallUnrecorded,
               ),
             reads,
+            opened.tracker,
           ),
         ),
       ),
@@ -405,6 +444,7 @@ export async function observeRepo(
       )
     : undefined;
   return {
+    forgeBudget: await reads.budget(),
     opened,
     tracked,
     labels,
@@ -512,6 +552,7 @@ async function readTracker(
   nowMs: number,
   headroom: boolean,
   reads: Pick<TickReads, "budget" | "servedViews">,
+  preparedTracker?: Tracker,
 ): Promise<Tracked> {
   const tracked: Tracked = {
     keys: null,
@@ -554,7 +595,7 @@ async function readTracker(
     };
     const reading = await readPickups(
       () => {
-        tracked.tracker = openTracker(config, repo.path);
+        tracked.tracker = preparedTracker ?? openTracker(config, repo.path);
         return tracked.tracker;
       },
       section,

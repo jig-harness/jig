@@ -46,6 +46,7 @@ import type { DriveEvent } from "./events.ts";
 import type { ArbiterRuling } from "./rulings.ts";
 import type { RecordedLadderVerdict } from "./ladder-verdict-model.ts";
 import { hasUsableOptionalFields } from "./optional-fields.ts";
+import { isoOf, parseMs } from "../../../../../shared/time.ts";
 
 /**
  * The persisted shape of a recorded quota park — what
@@ -514,7 +515,7 @@ function isQuotaParkRecord(v: unknown): boolean {
   const text = (f: unknown) =>
     typeof f === "string" && f.length > 0 && !/[\n\r]/.test(f);
   const instant = (f: unknown) =>
-    typeof f === "string" && Number.isFinite(Date.parse(f));
+    typeof f === "string" && Number.isFinite(parseMs(f));
   return (
     text(park.vendor) &&
     text(park.window) &&
@@ -530,7 +531,7 @@ const isSingleLine = (v: unknown): boolean =>
   isNonEmptyString(v) && !/\r|\n/.test(v);
 const isSha = (v: unknown): boolean => typeof v === "string" && isGitSha(v);
 const isTimestamp = (v: unknown): boolean =>
-  typeof v === "string" && Number.isFinite(Date.parse(v));
+  typeof v === "string" && Number.isFinite(parseMs(v));
 const isOptionalBoolean = (v: unknown): boolean =>
   v === undefined || typeof v === "boolean";
 
@@ -649,7 +650,7 @@ export function isUsableState(v: unknown, pr: number): v is DriveState {
   // different unparsable string.
   if (
     typeof s.lastProgressAt !== "string" ||
-    (s.lastProgressAt !== "" && !Number.isFinite(Date.parse(s.lastProgressAt)))
+    (s.lastProgressAt !== "" && !Number.isFinite(parseMs(s.lastProgressAt)))
   )
     return false;
   if (s.quotaPark !== null && !isQuotaParkRecord(s.quotaPark)) return false;
@@ -807,11 +808,11 @@ export function freshState(pr: number): DriveState {
  * enumerates it) instead of a property every future `store.update` caller
  * has to remember to preserve or deliberately opt out of.
  *
- * `now` is INJECTED, not read (`new Date` inline) — not because an
+ * `now` is INJECTED, not read (`Temporal.Now` inline) — not because an
  * injected-clock rule binds this file (these are one-shot CLI entrypoints,
  * which such a rule would exclude), but because an injected instant is what
  * lets a test pin the exact stamp and assert `lastProgressAt ===
- * now.toISOString` rather than parsing back whatever the wall clock produced —
+ * isoOf(now)` rather than parsing back whatever the wall clock produced —
  * the identical reasoning `lib/quota/index.ts`'s `planFor(block, now)` already
  * gives for its own `now` parameter.
  *
@@ -846,11 +847,11 @@ export const PROGRESS_PHASES = [
 export function withProgress(
   s: DriveState,
   phase: string,
-  now: Date,
+  now: Temporal.Instant,
 ): DriveState {
   return {
     ...s,
-    lastProgressAt: now.toISOString(),
+    lastProgressAt: isoOf(now),
     phase: phase === "" ? s.phase : phase,
     quotaPark: null,
   };

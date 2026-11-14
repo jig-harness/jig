@@ -66,15 +66,19 @@ describe("Jira authentication before protected reads", () => {
       expect(String(error)).not.toContain("read:jira-user");
     });
 
-  it("names the account scopes when Jira says a scope does not match elsewhere", () => {
-    const error = httpFailure(
-      403,
-      new Headers(),
-      '{"code":403,"message":"Unauthorized; scope does not match"}',
-      "GET issue/ENG-1",
-    );
-    expect(error.message).toContain("read:jira-user");
-  });
+  for (const what of ["GET issue/ENG-1", "GET priority/search"])
+    it(`leaves the account scopes out of a scope refusal on ${what}`, () => {
+      const error = httpFailure(
+        401,
+        new Headers(),
+        '{"code":401,"message":"Unauthorized; scope does not match"}',
+        what,
+      );
+      expect(error.message).toContain(`HTTP 401 on ${what}`);
+      expect(error.message).toContain("scope does not match");
+      expect(error.message).toContain("JIRA_BEARER_TOKEN");
+      expect(error.message).not.toContain("read:jira-user");
+    });
 
   it("leaves the account scopes out of a refusal that is not about them", () => {
     const error = httpFailure(403, new Headers(), "refused", "GET issue/ENG-1");

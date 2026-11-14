@@ -78,7 +78,7 @@ describe("a row that ended", () => {
   it("states its time, length and rounds", () => {
     expect(view.time).toBe("07:22");
     expect(view.length).toBe("1 h 14 min, 4 rounds");
-    expect(view.mark).toBe("↻");
+    expect(view.stage).toBe("rearm");
   });
 
   it("has the record among its evidence", () => {

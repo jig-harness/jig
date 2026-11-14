@@ -36,7 +36,7 @@ import { idleBlocksStart } from "../automation.ts";
 import { cloneId } from "../../../skills/drive-pr/scripts/lib/state/ledger-mirror.ts";
 import { peekCloneKey } from "../../../skills/drive-pr/scripts/lib/state/clone-key.ts";
 import { consumeRearm, pendingRearm } from "./rearm-request.ts";
-import { admittedVendor, type Slots } from "../accounts.ts";
+import { admittedVendor, codexLaunchFields, type Slots } from "../accounts.ts";
 import { DRIVE_EXIT } from "../../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import {
   type LaunchRecord,
@@ -88,6 +88,7 @@ import {
   rotated,
   waits,
 } from "./launch.ts";
+import { currentIso } from "../../../shared/time.ts";
 
 export type { ApplyState } from "./launch.ts";
 
@@ -494,10 +495,10 @@ function driveRecord(
     configDir: slots.account.configDir,
     wallBackoffMs: state.machine.wallBackoffMs,
     passTimeoutSec: state.passDeadlineSec,
-    codexBypass: state.codexOptIn.on,
+    ...codexLaunchFields(state.codexOptIn),
     replaces: action.takeover ?? null,
     facts: action.facts ?? factsOf(pr),
-    createdAt: new Date().toISOString(),
+    createdAt: currentIso(),
     workspace,
     attempts: [],
     item: null,
@@ -535,7 +536,7 @@ async function launchOne(
   if ("outcome" in admitted) return admitted.outcome;
   const slots = admitted.slots;
   const pr = fresh as DrivenPr;
-  const id = newRecordId(new Date());
+  const id = newRecordId();
   const kind = isTakeover(action) ? "takeover" : "rearm";
   const named = dispatched(kind, `#${pr.number}`, id);
   const opened = await openedFor(

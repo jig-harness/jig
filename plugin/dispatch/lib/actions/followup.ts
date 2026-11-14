@@ -43,7 +43,7 @@ import type {
 } from "../../../shared/records/shared.ts";
 import { localWriter } from "../../../shared/records/writer.ts";
 import { carried, returnCarried } from "../station-answer-store.ts";
-import { admittedVendor, type Slots } from "../accounts.ts";
+import { admittedVendor, codexLaunchFields, type Slots } from "../accounts.ts";
 import { holding } from "../holding.ts";
 import { sessionIdFor } from "../session.ts";
 import { readMarkers } from "../followup-marker.ts";
@@ -94,6 +94,7 @@ import {
   laneCapWait,
   type WorkspaceRef,
 } from "./followup-lane.ts";
+import { currentIso } from "../../../shared/time.ts";
 
 /** What a repository's follow-ups need beyond the apply state. */
 export interface FollowupContext {
@@ -277,7 +278,7 @@ async function relinquish(
   }
   recordExit(
     record.id,
-    { at: new Date().toISOString(), code: null, signal: null },
+    { at: currentIso(), code: null, signal: null },
     state.root,
   );
   return `${why}; its own marker (comment ${posted}) could not be deleted (${deleted.failure.reason}), so its record ends failed`;
@@ -309,11 +310,11 @@ function newFollowupRecord(
     configDir: slots.account.configDir,
     wallBackoffMs: state.machine.wallBackoffMs,
     passTimeoutSec: state.passDeadlineSec,
-    codexBypass: state.codexOptIn.on,
+    ...codexLaunchFields(state.codexOptIn),
     replaces: null,
     // A run again of a follow-up that died or stopped on a routine question says so in its facts: a second failure is a person's.
     facts: action.facts ?? `merged ${pr.mergedAt}`,
-    createdAt: new Date().toISOString(),
+    createdAt: currentIso(),
     workspace,
     attempts: [],
     agentId: null,
@@ -354,7 +355,7 @@ async function launchOne(
   const admitted = await admitAccount(state, repo.slug, action);
   if ("outcome" in admitted) return admitted.outcome;
   const { slots } = admitted;
-  const id = newRecordId(new Date());
+  const id = newRecordId();
   const named = dispatched("followup", `#${pr.number}`, id);
   const opened = await openedFor(
     state,

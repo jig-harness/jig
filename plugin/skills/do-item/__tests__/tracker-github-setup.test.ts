@@ -372,7 +372,7 @@ describe("GitHub transport", () => {
           "-e",
           `import { ghTransport } from ${JSON.stringify(transport)};
            try { console.log(JSON.stringify(await ghTransport()("query Q { ok }", { n: 1 }))); }
-           catch (e) { console.error(e.message, JSON.stringify({ notFound: e.notFound, unavailable: e.unavailable })); process.exit(3); }`,
+           catch (e) { console.error(e.message, JSON.stringify({ code: e.code, notFound: e.notFound, unavailable: e.unavailable })); process.exit(3); }`,
         ],
         {
           env: {
@@ -403,12 +403,13 @@ describe("GitHub transport", () => {
       });
     });
 
-    it("reports a signed-out gh as unavailable", async () => {
+    it("reports a signed-out gh as unauthorized, which waiting does not clear", async () => {
       const r = await viaGh(
         `#!/bin/sh\necho 'To get started with GitHub CLI, please run:  gh auth login' >&2\nexit 4\n`,
       );
       expectSpawnExit({ exitCode: r.code, stdout: r.out, stderr: r.err }, 3);
-      expect(r.err).toContain('"unavailable":true');
+      expect(r.err).toContain('"code":"unauthorized"');
+      expect(r.err).toContain('"unavailable":false');
     });
 
     it("reports the errors of a failed run whose output parses", async () => {

@@ -10,8 +10,15 @@
  * The query runs in the checkout with the forge client's `{owner}` and
  * `{repo}` placeholders, so the repository is the one the client's own view
  * of the checkout names, as `repoTarget` reads it. It pages through the open
- * pull requests `PAGE` at a time and asks for the forge's points as it goes
- * (`rateLimit`), which the forge record reports.
+ * pull requests at most `PAGE` at a time and asks for the forge's points as
+ * it goes (`rateLimit`), which the forge record reports.
+ *
+ * The forge ends a query it has worked on for about ten seconds, and what a
+ * page costs it depends on what the pull requests carry: a page of fifty
+ * with a hundred check results each does not read at all. A page the forge
+ * ran out of time on is therefore asked again at half the size, down to one
+ * pull request (`shared/outbound/paging.ts`), and the size the read ended at
+ * is kept for the repository (`PageSizes`), so the next tick starts from it.
  *
  * Each pull request's comments come back in the forge's comment listing
  * shape (`restComment`), so every reader of a listing reads them as it reads
@@ -24,8 +31,9 @@
  * section decides whether they are used.
  *
  * The merged pull requests whose follow-up markers a tick reads are read the
- * same way, `PAGE` to a query by their numbers (`readComments`), their
- * comments in the same shape.
+ * same way, at most `PAGE` to a query by their numbers (`readComments`),
+ * their comments in the same shape, a query the forge ran out of time on
+ * asked again for half as many.
  *
  * A query that fails, or that reads in part (a file the forge truncates, a
  * pull request with more labels than one page, more pull requests than a
@@ -35,12 +43,23 @@
 import { isRecord } from "../../shared/guards.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { OVERLAY_RELPATH } from "../../shared/config-layers.ts";
+import {
+  type KeptSize,
+  keptSize,
+  readShrinking,
+  SLOW_MS,
+  sizeToKeep,
+  startSize,
+} from "../../shared/outbound/paging.ts";
 import { ghCall, ghRepoEnv } from "../../skills/drive-pr/scripts/lib/proc.ts";
+import { failedBy } from "../../shared/outbound/failure.ts";
+import { ghRunFailure } from "../../shared/outbound/github.ts";
 import { checksFail } from "./automation.ts";
 import type { RepoTarget } from "./types.ts";
+import { currentMs } from "../../shared/time.ts";
 
-/** Pull requests per page: the forge charges three points for a page this size. */
-const PAGE = 50;
+/** The most pull requests a page asks for: the forge charges three points for a page this size. */
+export const PAGE = 50;
 
 /** Comments, labels and review threads read with each pull request: a pull request with more comments is listed on its own. */
 const ITEMS = 100;
@@ -69,7 +88,7 @@ const QUERY = `query ${QUERY_NAME}($owner: String!, $name: String!, $first: Int!
     pullRequests(states: OPEN, first: $first, after: $after, orderBy: {field: CREATED_AT, direction: DESC}) {
       pageInfo { hasNextPage endCursor }
       nodes {
-        number url title body headRefName createdAt headRefOid baseRefName mergeable isDraft updatedAt
+        number url title body headRefName isCrossRepository createdAt headRefOid baseRefName mergeable isDraft updatedAt
         author { __typename login }
         labels(first: ${ITEMS}) { pageInfo { hasNextPage } nodes { name } }
         headRef { target { ... on Commit { statusCheckRollup { contexts(first: ${ITEMS}) { pageInfo { hasNextPage } nodes { __typename ... on CheckRun { conclusion } ... on StatusContext { state } } } } } } }
@@ -97,6 +116,8 @@ export interface CommentsRead {
 /** What one repository's query read. */
 export interface RepositoryRead extends CommentsRead {
   target: RepoTarget;
+  /** The pull requests a page asked for when the read ended: `PAGE`, or fewer where the forge ran out of time on a larger page. */
+  pageSize: number;
   /** The dispatch configuration file on the default branch; `null` when the branch has none. */
   config: string | null;
   /** The open pull requests, as the pull request listing gives them, labels included. */
@@ -105,6 +126,117 @@ export interface RepositoryRead extends CommentsRead {
 
 /** A query's answer, or the part of it, that does not read as one. */
 type Read<T> = Outcome<T, "unreadable">;
+
+/**
+ * One query as the forge answered it: `too-costly` when the forge ran out
+ * of time on it, which fewer items to a query may avoid; any other failed
+ * call is `unreadable`, carrying its failure class (`failedBy`).
+ */
+type Asked<T> = Outcome<T, "unreadable" | "too-costly">;
+
+/**
+ * Page sizes kept between reads, each under a key its read chooses. A size
+ * is a hint: one that is lost or does not read costs a read that starts at
+ * `PAGE` again.
+ */
+export interface PageSizes {
+  get(key: string): unknown;
+  set(key: string, size: KeptSize): void;
+}
+
+/** One page of the repository's query in the checkout at `path`, `size` pull requests after the cursor `after`. */
+export type AskPage = (
+  path: string,
+  after: string | null,
+  size: number,
+) => Promise<Asked<unknown>>;
+
+/** The comments query over the pull requests `prs` of the repository `owner`/`name`. */
+export type AskComments = (
+  owner: string,
+  name: string,
+  prs: readonly number[],
+) => Promise<Asked<unknown>>;
+
+/** How a read's pages went: what was kept for it, the size it started from and the size its pages are asked at, how many read, and how long the slowest of those took. */
+interface Paging {
+  kept: KeptSize | null;
+  started: number;
+  size: number;
+  read: number;
+  slowestMs: number;
+}
+
+/** A read's paging as it starts: from the size kept under `key`, else `PAGE`. */
+function pagingOf(sizes: PageSizes | undefined, key: string): Paging {
+  const kept = keptSize(sizes?.get(key), PAGE);
+  const started = startSize(kept, PAGE);
+  return { kept, started, size: started, read: 0, slowestMs: 0 };
+}
+
+/**
+ * One request of a paged read, asked at `paging.size` and at half as many
+ * each time the forge runs out of time on it; `paging` then holds the size
+ * that read. A request the forge ran out of time on at one item does not
+ * read.
+ */
+async function shrinking(
+  paging: Paging,
+  what: string,
+  ask: (size: number) => Promise<Asked<unknown>>,
+  most = paging.size,
+): Promise<Read<unknown>> {
+  const read = await readShrinking(
+    Math.min(paging.size, most),
+    ask,
+    (failure) => failure.code === "too-costly",
+  );
+  // A request short only because fewer items remain is no shrink to keep.
+  if (read.size < Math.min(paging.size, most)) paging.size = read.size;
+  if (read.outcome.ok) {
+    // Only a request asked at the whole size says how that size fares: a
+    // shorter one may not grow or halve it. A slow one still counts against
+    // growth, though never as far as a halving.
+    if (read.size === paging.size) {
+      paging.read += 1;
+      paging.slowestMs = Math.max(paging.slowestMs, read.tookMs);
+    } else {
+      paging.slowestMs = Math.max(
+        paging.slowestMs,
+        Math.min(read.tookMs, SLOW_MS - 1),
+      );
+    }
+    return read.outcome;
+  }
+  const { code, reason } = read.outcome.failure;
+  return partial(
+    code === "too-costly"
+      ? `${reason}: the forge ran out of time on ${what}${read.size === 1 ? ", asked one at a time" : ""}`
+      : reason,
+  );
+}
+
+/** Keep the size the next read of `key` starts from, where this one changes it (`sizeToKeep`). */
+function keepSize(
+  sizes: PageSizes | undefined,
+  key: string,
+  paging: Paging,
+  whole: boolean,
+): void {
+  const next = sizeToKeep(
+    paging.kept,
+    {
+      started: paging.started,
+      size: paging.size,
+      pages: paging.read,
+      slowestMs: paging.slowestMs,
+      whole,
+    },
+    PAGE,
+    currentMs(),
+  );
+  if (next !== null) sizes?.set(key, next);
+}
 
 function partial(reason: string): Read<never> {
   return failed("unreadable", reason);
@@ -268,6 +400,9 @@ export function listedPullRequest(
       ].map((k) => [k, k] as const),
     ),
     ...(typeof node.isDraft === "boolean" ? { isDraft: node.isDraft } : {}),
+    ...(typeof node.isCrossRepository === "boolean"
+      ? { isCrossRepository: node.isCrossRepository }
+      : {}),
     ...(author === null ? {} : { author }),
     ...rollupOf(node),
     ...unresolvedOf(node),
@@ -292,15 +427,19 @@ function configOf(repository: unknown): Read<string | null> {
 }
 
 /** One query's answer, run in `cwd` where it names the repository by the checkout. */
-async function graphql(args: string[], cwd?: string): Promise<Read<unknown>> {
+async function graphql(args: string[], cwd?: string): Promise<Asked<unknown>> {
+  const began = currentMs();
   const r = await ghCall(["api", "graphql", ...args], {
     stderr: "pipe",
     env: ghRepoEnv(),
     ...(cwd === undefined ? {} : { cwd }),
   });
-  if (r.code !== 0) {
+  const failure = ghRunFailure(r, currentMs() - began);
+  if (failure !== null) {
     const tail = r.stderr.trim().split("\n").at(-1) ?? "";
-    return partial(
+    return failedBy(
+      failure.code === "too-costly" ? "too-costly" : "unreadable",
+      failure,
       `gh api graphql exited ${r.code}${tail === "" ? "" : `: ${tail}`}`,
     );
   }
@@ -312,8 +451,8 @@ async function graphql(args: string[], cwd?: string): Promise<Read<unknown>> {
 }
 
 /** One page of the repository's query, as the forge answered it in the checkout at `path`. */
-function page(path: string, after: string | null): Promise<Read<unknown>> {
-  return graphql(
+const page: AskPage = (path, after, size) =>
+  graphql(
     [
       "-f",
       `query=${QUERY}`,
@@ -322,12 +461,11 @@ function page(path: string, after: string | null): Promise<Read<unknown>> {
       "-F",
       "name={repo}",
       "-F",
-      `first=${PAGE}`,
+      `first=${size}`,
       ...(after === null ? [] : ["-f", `after=${after}`]),
     ],
     path,
   );
-}
 
 /** Hold one pull request's comments in `read`, or count it among those listed on their own. */
 function addComments(
@@ -392,12 +530,36 @@ function addPage(read: RepositoryRead, answer: unknown): Read<string | null> {
   return ok(next);
 }
 
-/** The repository of the checkout at `path`, read in one query of as many pages as its open pull requests need; or why it did not read in full. */
+/**
+ * The repository of the checkout at `path`, read in one query of as many
+ * pages as its open pull requests need, each page as large as the forge
+ * answers in time; or why it did not read in full. `sizes` keeps the page
+ * size between reads, and `ask` is the forge.
+ */
 export async function readRepository(
   path: string,
+  sizes?: PageSizes,
+  ask: AskPage = page,
 ): Promise<Outcome<RepositoryRead, "unreadable">> {
-  const startedAtMs = Date.now();
-  const first = await page(path, null);
+  const key = `repository:${path}`;
+  const paging = pagingOf(sizes, key);
+  const read = await readPages(path, paging, ask);
+  keepSize(sizes, key, paging, read.ok);
+  return read;
+}
+
+/** The repository's pages, each asked at `paging`'s size as it stands. */
+async function readPages(
+  path: string,
+  paging: Paging,
+  ask: AskPage,
+): Promise<Outcome<RepositoryRead, "unreadable">> {
+  const startedAtMs = currentMs();
+  const pageAfter = (after: string | null) =>
+    shrinking(paging, "a page of pull requests", (size) =>
+      ask(path, after, size),
+    );
+  const first = await pageAfter(null);
   if (!first.ok) return first;
   const repository = field(first.value, "data", "repository");
   const target = targetOf(path, repository);
@@ -413,13 +575,15 @@ export async function readRepository(
     startedAtMs,
     pages: 0,
     cost: 0,
+    pageSize: paging.size,
   };
   let cursor = addPage(read, first.value);
   while (cursor.ok && cursor.value !== null) {
-    const next = await page(path, cursor.value);
+    const next = await pageAfter(cursor.value);
     if (!next.ok) return next;
     cursor = addPage(read, next.value);
   }
+  read.pageSize = paging.size;
   return cursor.ok ? ok(read) : cursor;
 }
 
@@ -438,36 +602,72 @@ function commentsQuery(prs: readonly number[]): string {
 }`;
 }
 
-/** The comments of the pull requests `prs` of `slug`, read `PAGE` to a query; or why they did not read. */
+/** The comments query as the forge answers it. */
+const comments: AskComments = (owner, name, prs) =>
+  graphql([
+    "-f",
+    `query=${commentsQuery(prs)}`,
+    "-f",
+    `owner=${owner}`,
+    "-f",
+    `name=${name}`,
+  ]);
+
+/**
+ * The comments of the pull requests `prs` of `slug`, read at most `PAGE`
+ * to a query, as many as the forge answers in time; or why they did not
+ * read. `sizes` keeps that number between reads, and `ask` is the forge.
+ */
 export async function readComments(
   slug: string,
   prs: readonly number[],
+  sizes?: PageSizes,
+  ask: AskComments = comments,
+): Promise<Outcome<CommentsRead, "unreadable">> {
+  const key = `comments:${slug}`;
+  const paging = pagingOf(sizes, key);
+  const read = await readChunks(slug, prs, paging, ask);
+  keepSize(sizes, key, paging, read.ok);
+  return read;
+}
+
+/** The comments queries over `prs`, each over as many as `paging`'s size as it stands. */
+async function readChunks(
+  slug: string,
+  prs: readonly number[],
+  paging: Paging,
+  ask: AskComments,
 ): Promise<Outcome<CommentsRead, "unreadable">> {
   const [owner = "", name = ""] = slug.split("/");
   const read: CommentsRead = {
     comments: new Map(),
     overflow: [],
-    startedAtMs: Date.now(),
+    startedAtMs: currentMs(),
     pages: 0,
     cost: 0,
   };
   if (prs.some((n) => !Number.isSafeInteger(n) || n <= 0))
     return partial("a pull request number is not a whole number");
-  for (let at = 0; at < prs.length; at += PAGE) {
-    const chunk = prs.slice(at, at + PAGE);
-    const answer = await graphql([
-      "-f",
-      `query=${commentsQuery(chunk)}`,
-      "-f",
-      `owner=${owner}`,
-      "-f",
-      `name=${name}`,
-    ]);
+  for (let at = 0; at < prs.length; ) {
+    // The query that read says how many it read: a smaller one reads fewer.
+    let chunk: readonly number[] = [];
+    const answer = await shrinking(
+      paging,
+      "pull requests' comments",
+      (size) => {
+        // A final short chunk must begin at its remaining size, otherwise a
+        // timeout retries the same query while only the nominal size shrinks.
+        chunk = prs.slice(at, at + Math.min(size, prs.length - at));
+        return ask(owner, name, chunk);
+      },
+      prs.length - at,
+    );
     if (!answer.ok) return answer;
     const repository = field(answer.value, "data", "repository");
     for (const n of chunk)
       addComments(read, n, field(repository, `pr${n}`, "comments"));
     addCost(read, answer.value);
+    at += chunk.length;
   }
   return ok(read);
 }

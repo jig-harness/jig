@@ -80,9 +80,9 @@ function parse(args: string[], known: string[]): Parsed {
   return { positional, options, command };
 }
 
-function local(date = new Date()): string {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+/** Today's date on this machine, as YYYY-MM-DD. */
+function local(): string {
+  return Temporal.Now.plainDateISO().toString();
 }
 
 async function ignored(

@@ -31,6 +31,7 @@ import {
 } from "./automation.ts";
 import { hasCommand, type LabelConfig } from "./labels.ts";
 import type { DispatchSection } from "./types.ts";
+import { parseMs } from "../../shared/time.ts";
 
 /** The rule as one tick applies it: the authors resolved, the window in milliseconds. */
 export interface Adoption {
@@ -118,7 +119,7 @@ export function adopts(
     .includes(normalLogin(author.login));
   if (!named) return null;
   if (isBot(author) && !adoption.named) return null;
-  const updated = Date.parse(pr.updatedAt ?? "");
+  const updated = parseMs(pr.updatedAt ?? "");
   if (!Number.isFinite(updated) || nowMs - updated > adoption.withinMs)
     return null;
   const adopted = `dispatch.adopt: by ${author.login}${isBot(author) ? " (a bot the rule names)" : ""}, updated ${pr.updatedAt}, within its ${shownWindow(adoption.withinMs)} window`;

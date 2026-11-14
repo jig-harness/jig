@@ -4,8 +4,8 @@ type: adr
 status: draft
 description: "Jig adds an optional shared control plane, the hub: one self-hosted process that enrolled hosts call, which reads the forge and the tracker once for them, puts claims with leases in front of the forge and tracker claims, notices a stopped host, serves one view of every host and may offer work; no level of use requires it, hosts keep authority over what they did, and a hub that is down returns its hosts to dispatching alone"
 lifecycle: permanent
-version: "1.0"
-last_updated: 2026-11-11
+version: "1.1"
+last_updated: 2026-11-13
 owner: maintainers
 decision_date: 2026-11-11
 supersedes: ~
@@ -77,6 +77,10 @@ It keeps these rules:
   adds.
 - **A person's act is made with that person's credential**, from the
   person's own machine, never through the hub.
+  The one exception is a request a person makes through the hub's
+  [chat bridge](../../GLOSSARY.md), posted under the bridge's own identity
+  and naming the person
+  ([ADR-0022](ADR-0022-a-chat-bridge-turns-a-click-into-one-request.md)).
 
 For enrolled hosts, this supersedes ADR-0013 where it declines a
 coordinator: the hub's offers suggest which host takes which work. Every

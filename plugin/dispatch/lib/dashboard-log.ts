@@ -9,6 +9,7 @@ import { midnightIn } from "./host-time.ts";
 import { OUTCOME_CLASSES, rowsOf } from "./log.ts";
 import { recurringClasses } from "./recurring.ts";
 import { existingStateDb } from "./state.ts";
+import { isoFromMs, parseMs } from "../../shared/time.ts";
 
 /** What the page filters the log by; an absent field filters nothing. */
 interface LogFilter {
@@ -55,7 +56,7 @@ function text(params: URLSearchParams, name: string): string | undefined {
 
 function time(params: URLSearchParams, name: string): number | undefined {
   const value = text(params, name);
-  const ms = value === undefined ? Number.NaN : Date.parse(value);
+  const ms = value === undefined ? Number.NaN : parseMs(value);
   return Number.isFinite(ms) ? ms : undefined;
 }
 
@@ -133,8 +134,8 @@ export function queryLog(
   const filter = parseFilter(params, nowMs, timeZone);
   const window = {
     window: filter.window,
-    from: new Date(filter.fromMs).toISOString(),
-    to: new Date(filter.toMs).toISOString(),
+    from: isoFromMs(filter.fromMs),
+    to: isoFromMs(filter.toMs),
   };
   const db = existingStateDb(root);
   if (db === null)

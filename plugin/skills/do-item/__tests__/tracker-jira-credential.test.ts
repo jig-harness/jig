@@ -586,7 +586,7 @@ describe("JIRA_TOKEN_COMMAND", () => {
     ]);
   });
 
-  it("keeps a caller's timeout as cancellation while waiting for a command", async () => {
+  it("reports a caller's timeout while waiting for a command as a request that got no answer", async () => {
     const late = Promise.withResolvers<TokenRun>();
     try {
       const err = await failure(
@@ -597,7 +597,7 @@ describe("JIRA_TOKEN_COMMAND", () => {
         )(request, AbortSignal.timeout(20)),
       );
       expect(err.message).toContain("Jira request cancelled:");
-      expect(err.unavailable).toBe(false);
+      expect(err.code).toBe("unreachable");
     } finally {
       late.resolve(tokenRun("late"));
     }
@@ -791,6 +791,7 @@ describe("a Bearer credential at an Atlassian Cloud site", () => {
       expect(err.message).toContain(variable);
       expect(err.message).toContain("issue_tracker.jira.api_base");
       expect(err.message).not.toContain("HTTP 403");
+      expect(err.code).toBe("unauthorized");
       expect(urls).toEqual([]);
     },
   );
@@ -886,5 +887,40 @@ describe("a Bearer credential at an Atlassian Cloud site", () => {
     );
     expect(refused.message).toContain("JIRA_BEARER_TOKEN");
     expect(refused.retryAfterSec).toBe(7);
+  });
+});
+
+describe("a failure's stalled body", () => {
+  it("is cancelled through its reader once the wait ends, and the request fails", async () => {
+    const { runner } = printing("one");
+    let cancelled = false;
+    const impl = (async (_url: unknown, _init?: RequestInit) =>
+      new Response(
+        new ReadableStream({
+          cancel() {
+            cancelled = true;
+          },
+        }),
+        { status: 400 },
+      )) as typeof fetch;
+    const t = httpTransport(GATEWAY, command(runner), impl);
+    expect((await failure(t(request))).status).toBe(400);
+    expect(cancelled).toBe(true);
+  });
+
+  it("is let go once the call is cancelled, though the stream's cancel never settles", async () => {
+    const { runner } = printing("one");
+    const impl = (async (_url: unknown, _init?: RequestInit) =>
+      new Response(
+        new ReadableStream({
+          cancel: () => new Promise<void>(() => undefined),
+        }),
+        { status: 400 },
+      )) as typeof fetch;
+    const t = httpTransport(GATEWAY, command(runner), impl);
+    const began = Date.now();
+    const err = await failure(t(request, AbortSignal.timeout(100)));
+    expect(err.message).toContain("Jira request cancelled:");
+    expect(Date.now() - began).toBeLessThan(900);
   });
 });

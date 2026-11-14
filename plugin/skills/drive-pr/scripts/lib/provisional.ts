@@ -27,6 +27,7 @@ import { fail } from "./cli.ts";
 import { isProvisionalReply, qualifyingOutcome } from "./outcome.ts";
 import { run, tsArgv } from "./proc.ts";
 import type { UnattendedDecision } from "./state/decisions.ts";
+import { parseMs } from "../../../../shared/time.ts";
 
 /** A comment as `list-unresolved-threads.ts` emits it, as far as this reads it. */
 export interface ListedComment {
@@ -211,11 +212,11 @@ export function reversalInConversation(
   key: string,
   after: string,
 ): CommentLike | null {
-  const since = Date.parse(after);
+  const since = parseMs(after);
   return (
     conversation.find(
       (c) =>
-        Date.parse(c.at) > since &&
+        parseMs(c.at) > since &&
         answersKey(c.body, key) &&
         isPersonsComment(c.association, c.body),
     ) ?? null

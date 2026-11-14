@@ -15,6 +15,7 @@ import { canonicalPath, cloneCheckouts, primaryCheckout } from "./checkout.ts";
 import { orcaCommand } from "../shared/orca.ts";
 import { baseDeclaration } from "./git.ts";
 import { receiptsKind } from "./kinds/receipts.ts";
+import { stateRoot } from "./receipts.ts";
 import { scratchKind } from "./kinds/scratch.ts";
 import { toolStateKind } from "./kinds/tool-state.ts";
 import { worktreesKind } from "./kinds/worktrees.ts";
@@ -67,6 +68,7 @@ function repositoryKinds(
         days,
         policy,
         machineOrca(machine),
+        { root: stateRoot(), maxBytes: machine.archive_max_bytes },
       );
     });
 }

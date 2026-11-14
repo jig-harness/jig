@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, setSystemTime, test } from "bun:test";
 import {
   existsSync,
   mkdtempSync,
@@ -309,16 +309,17 @@ test("a captured identity whose row has become unreadable is reported, not dropp
 });
 
 test("every process-table read is bounded by what is left of the deadline, and none starts after it", async () => {
+  const start = Temporal.Instant.from("2026-01-01T00:00:00Z").epochMilliseconds;
   let clock = 0;
-  const realNow = Date.now;
   const timeouts: (number | undefined)[] = [];
   const rows = [row(100, 1), row(101, 100)];
-  Date.now = () => clock;
+  setSystemTime(start);
   try {
     const report = await reapSurvivingDescendants(100, {
       table: async (timeoutSec) => {
         timeouts.push(timeoutSec);
         clock += 1_500;
+        setSystemTime(start + clock);
         return rows;
       },
       kill: () => undefined,
@@ -327,7 +328,7 @@ test("every process-table read is bounded by what is left of the deadline, and n
     });
     expect(report?.survived).toEqual([101]);
   } finally {
-    Date.now = realNow;
+    setSystemTime();
   }
   expect(clock).toBeLessThanOrEqual(4_000 + 1_500);
   expect(timeouts[0]).toBe(4);

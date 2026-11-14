@@ -43,6 +43,7 @@ import type {
   PullRequestTarget,
   RuntimeReceipt,
 } from "./port.ts";
+import { currentMs } from "../../../shared/time.ts";
 
 function portOn(ctx: Context): OpenPort {
   const orca = orcaCommandOrInstalled(process.env);
@@ -97,7 +98,7 @@ export async function openNoticesWorkspace(
   target: NoticesTarget,
   timeoutMs: number,
 ): Promise<RuntimeReceipt> {
-  const started = Date.now();
+  const started = currentMs();
   const opened = await open(
     repo,
     {
@@ -118,7 +119,7 @@ export async function openNoticesWorkspace(
       `path:${opened.workspace.path}`,
       "--all",
     ],
-    Math.max(1, timeoutMs - (Date.now() - started)),
+    Math.max(1, timeoutMs - (currentMs() - started)),
   );
   return withoutReattached({
     ...opened,
@@ -173,7 +174,7 @@ async function open(
     localContext((line) => lines.push(line)),
     timeoutMs,
   );
-  const started = Date.now();
+  const started = currentMs();
   try {
     const resolved =
       options.pr === undefined
@@ -206,7 +207,7 @@ async function open(
   } catch (error) {
     return {
       ok: false,
-      lost: Date.now() - started >= timeoutMs,
+      lost: currentMs() - started >= timeoutMs,
       detail: [failureText(error), ...lines.slice(-3)].join("; "),
       ...(error instanceof BusyHolderError
         ? {

@@ -146,11 +146,20 @@ nothing requires it.
   for the tracker. The hub writes nothing on the forge or the tracker: the
   forge claim and the tracker claim are written by the hosts, as today, so
   the read-only form is whole. A hub that is later given a write (a notice
-  on the forge, say) names that write and its permission here first.
+  on the forge, say) names that write and its permission here first. The
+  one named is the [chat bridge](chat.md)'s, where a hub runs one: under
+  the bridge's own forge app identity, an answer comment and the `drive`,
+  `hold` and `release` labels on a pull request (the app's Issues and Pull
+  requests write permission), and under the hub's tracker credential the
+  assignment `/jig pickup` makes, each with a record naming the person who
+  asked.
 - **A person's act is made with that person's credential.** Merging,
   answering a park and every write a dashboard makes for a person go from
   the person's own machine, as the person, never through the hub. The hub
-  holds no person's credential.
+  holds no person's credential. The one exception is a request made through
+  the hub's chat bridge, posted under the bridge's identity and naming the
+  person the chat authenticated
+  ([ADR-0022](../docs/adr/ADR-0022-a-chat-bridge-turns-a-click-into-one-request.md)).
 - **A host keeps its own credentials for its sessions.** A drive pushes,
   comments and reviews with its host's accounts, as today. The hub serves
   the reads the dispatcher makes, not the reads a session makes.

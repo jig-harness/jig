@@ -24,13 +24,9 @@ import {
   DRIVER_REFUSAL_EXITS,
 } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import type { Outcome } from "../../shared/outcome.ts";
-import { factsOf } from "./actions/drive-hold.ts";
+import { drivesOf, factsOf } from "./actions/drive-hold.ts";
 import { branchHead, pullRequestHead } from "./forge.ts";
-import {
-  cancelledBeforeExecution,
-  isDrive,
-  type ReadRecord,
-} from "./launches.ts";
+import type { ReadRecord } from "./launches.ts";
 import { sameFacts } from "./recovery-facts.ts";
 import type { DrivenPr, RearmHeads } from "./types.ts";
 
@@ -70,15 +66,7 @@ function failedRearm(
   own: readonly ReadRecord[],
 ): { record: ReadRecord; exit: number; heads: string } | null {
   if (!weighsHeads(pr) || pr.evidence.rearm === true) return null;
-  const latest = own
-    .filter(
-      (r) =>
-        isDrive(r.record) &&
-        r.record.pr === pr.number &&
-        !cancelledBeforeExecution(r),
-    )
-    .sort((a, b) => a.record.createdAt.localeCompare(b.record.createdAt))
-    .at(-1);
+  const latest = drivesOf(pr, own).at(-1);
   const s = latest?.state;
   if (
     latest === undefined ||

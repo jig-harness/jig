@@ -31,6 +31,7 @@ import { readDriveState } from "./driver/rearm.ts";
 import { qualifyingOutcome } from "./outcome.ts";
 import { ghCall } from "./proc.ts";
 import { isPersonsComment } from "./provisional.ts";
+import { currentMs, parseMs } from "../../../../shared/time.ts";
 
 /** The refusal's exit code, listed in `triage-thread.ts`'s header. */
 export const PERSON_THREAD_EXIT = 5;
@@ -122,11 +123,11 @@ export function personsWords(t: ReviewThread, viewer: string): ThreadComment[] {
  * not parse is after.
  */
 function postedAfter(c: ThreadComment, since: string): boolean {
-  const bound = Date.parse(since);
+  const bound = parseMs(since);
   if (Number.isNaN(bound)) return true;
   return [c.at, c.editedAt ?? null].some((t) => {
     if (t === null) return false;
-    const at = Date.parse(t);
+    const at = parseMs(t);
     return Number.isNaN(at) || at > bound;
   });
 }
@@ -411,7 +412,7 @@ export async function refuseOverrulingPersonThread(
   )?.contextAt;
   // A context time still ahead of now weighed nothing: it lifts nothing.
   const ruledAt =
-    recorded !== undefined && Date.parse(recorded) <= Date.now()
+    recorded !== undefined && parseMs(recorded) <= currentMs()
       ? recorded
       : undefined;
   const read = await readThreads(threadId);

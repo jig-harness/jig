@@ -114,6 +114,7 @@ import {
 } from "./evidence-record.ts";
 import { withoutLeakyGitEnv } from "./guarded-git-spawn.ts";
 import { type RunResult, run } from "./proc.ts";
+import { isoFromMs } from "./time.ts";
 
 const USAGE = [
   "usage: evidence.ts run [--timeout <minutes>] [--junit <path>] [--name <display name>] [--expect-fail [<case>]] [--json] -- <command> [args...]",
@@ -506,10 +507,7 @@ function holdReportPath(dir: string, file: string): () => void {
 /** Reserve a run id in `dir` by creating its output file exclusively, so no run overwrites another. */
 function reserve(dir: string, clock: Clock): { id: string; fd: number } {
   mkdirSync(dir, { recursive: true, mode: PRIVATE_DIR });
-  const stamp = new Date(clock.now())
-    .toISOString()
-    .replace(/[-:]/g, "")
-    .slice(0, 15);
+  const stamp = isoFromMs(clock.now()).replace(/[-:]/g, "").slice(0, 15);
   for (;;) {
     const id = `${stamp}-${randomBytes(2).toString("hex")}`;
     try {
@@ -672,8 +670,8 @@ async function runPrepared(
     treeChanged: p.tree !== treeAfter,
     scope: SCOPE,
     command: p.command,
-    startedAt: new Date(ran.startedMs).toISOString(),
-    endedAt: new Date(ran.endedMs).toISOString(),
+    startedAt: isoFromMs(ran.startedMs),
+    endedAt: isoFromMs(ran.endedMs),
     durationMs: ran.endedMs - ran.startedMs,
     timeoutMinutes,
     ...settle(ran.result, args.expectFail, junit),

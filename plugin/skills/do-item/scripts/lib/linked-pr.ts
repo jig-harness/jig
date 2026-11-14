@@ -274,8 +274,12 @@ function unreadable(reason: string): LinkedPr {
   return { pullRequest: "unreadable", pulls: [], reason };
 }
 
-/** Whether a pull request body links the item, by its own key or its repository-qualified form. */
-function bodyLinker(
+/**
+ * Whether a pull request body links the item, by its own key or its
+ * repository-qualified form. The dispatcher reads its open pull requests'
+ * bodies with it too, so both read an item's link the same way.
+ */
+export function bodyLinker(
   key: string,
   opts: {
     repository: string;

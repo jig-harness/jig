@@ -65,6 +65,7 @@ import {
   terminalReport,
   useColour,
 } from "./lib/render-terminal.ts";
+import { currentIso } from "../../../shared/time.ts";
 
 const USAGE = `code-stats: classify and count the repository's tracked files.
 
@@ -280,7 +281,7 @@ async function reportData(o: Options, ctx: Ctx) {
   const info = await repositoryInfo(ctx.root);
   return {
     // A one-shot command: the wall clock here is the report's timestamp.
-    generatedAt: new Date().toISOString(),
+    generatedAt: currentIso(),
     repository: info.name,
     commit: info.commit,
     branch: info.branch,

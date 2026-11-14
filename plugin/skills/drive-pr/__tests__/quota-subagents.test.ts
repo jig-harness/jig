@@ -56,7 +56,7 @@ it("finds subagent walls only for the spawned session and shares the snapshot wa
         "-e",
         `
       import { claudeAdapter as a } from ${JSON.stringify(adapter)};
-      const opts = { cwd: ${JSON.stringify(root)}, since: new Date('2026-08-20T12:00:00Z'), now: new Date('2026-08-20T12:35:00Z') };
+      const opts = { cwd: ${JSON.stringify(root)}, since: Temporal.Instant.from('2026-08-20T12:00:00Z'), now: Temporal.Instant.from('2026-08-20T12:35:00Z') };
       console.log(JSON.stringify({ snapshot: a.snapshotSessions(), own: a.detect({...opts, correlation: {vendor:'claude',sessionId:'ours'}}), other: a.detect({...opts, correlation: {vendor:'claude',sessionId:'absent'}}) }));
     `,
       ],

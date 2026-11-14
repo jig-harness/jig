@@ -40,7 +40,7 @@ describe("GitHub adapter: fleet metrics", () => {
   it("reads issues by key in batches, leaving out numbers that are no issue", async () => {
     const { t, calls } = gitHub(() => {
       throw new GitHubApiError("one is missing", {
-        notFound: true,
+        code: "not-found",
         data: {
           repository: {
             i1: issueNode({
@@ -365,7 +365,7 @@ describe("GitHub adapter: candidate pools", () => {
         };
       if (c.variables.number === 404)
         return new GitHubApiError("gone", {
-          notFound: true,
+          code: "not-found",
           data: { repository: { issue: null } },
         });
       return oneIssue(issueNode({ number: 5, extra: { subIssues: kids() } }));

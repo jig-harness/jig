@@ -4,6 +4,7 @@
  * gets, which runs no script, can show it with native disclosures.
  */
 import type { ComponentType, ReactNode } from "react";
+import { StageChip } from "./icon-word.tsx";
 import { Mark } from "./marks.tsx";
 import { buildLegend, COUNT_NOTES, STAGE_LEGEND } from "./status.ts";
 
@@ -17,7 +18,7 @@ export function Legend({
   stages = true,
 }: {
   Fold: FoldComponent;
-  /** Whether to list the stages' marks, which the help view lists with their meanings. */
+  /** Whether to list the stages' chips, which the help view lists with their meanings. */
   stages?: boolean;
 }) {
   return (
@@ -44,13 +45,10 @@ export function Legend({
         ))}
       </div>
       {stages ? (
-        <Fold label="Stages and their marks">
+        <Fold label="Stages and their icons">
           <div className="seg">
             {STAGE_LEGEND.map((s) => (
-              <span className="chip" key={s.name}>
-                <b>{s.mark}</b>
-                {s.name}
-              </span>
+              <StageChip stage={s.name} key={s.name} />
             ))}
           </div>
         </Fold>

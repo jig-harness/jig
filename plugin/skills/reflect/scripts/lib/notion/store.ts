@@ -21,6 +21,7 @@ import {
   distinctById,
   type FindingEvent,
   idConflicts,
+  nowAt,
   parseEvent,
   type ReflectionEvent,
   type Session,
@@ -53,6 +54,7 @@ import {
   STORE_MARK,
   UNFILED_KEY,
 } from "./model.ts";
+import { currentMs, parseMs } from "../../../../../shared/time.ts";
 
 /** A page or database: its id and the link people open. */
 export interface Link {
@@ -348,7 +350,7 @@ async function readPage(
 export async function readStore(
   api: NotionApi,
   database: Database,
-  now = Date.now(),
+  now = currentMs(),
 ): Promise<PageRead[]> {
   const query = QUERIED.map(
     (name) => `filter_properties=${encodeURIComponent(name)}`,
@@ -361,14 +363,14 @@ export async function readStore(
   const cache = loadCache(path);
   const pages: PageRead[] = [];
   const next: CacheFile = { format: 1, version: NOTION_VERSION, pages: {} };
-  let saved = Date.now();
+  let saved = currentMs();
   let unsaved = false;
   try {
     for (const result of results) {
       if (!isMapping(result)) continue;
       const page = await readPage(api, result, cache);
       pages.push(page);
-      if (page.edited === "" || Date.parse(page.edited) >= now - SETTLED_MS)
+      if (page.edited === "" || parseMs(page.edited) >= now - SETTLED_MS)
         continue;
       const entry: CachedPage = {
         edited: page.edited,
@@ -379,9 +381,9 @@ export async function readStore(
       // Read from Notion: kept beside the pages not reached yet.
       cache.pages[page.id] = entry;
       unsaved = true;
-      if (Date.now() - saved >= SAVE_EVERY_MS) {
+      if (currentMs() - saved >= SAVE_EVERY_MS) {
         saveCache(path, cache);
-        saved = Date.now();
+        saved = currentMs();
         unsaved = false;
       }
     }
@@ -781,12 +783,12 @@ export async function appendEvents(
   api: NotionApi,
   database: Database,
   lines: ReadonlyArray<{ event: ReflectionEvent; text: string }>,
-  now = new Date(),
+  now = Temporal.Now.instant(),
 ): Promise<AppendResult> {
-  const pages = await readStore(api, database, now.getTime());
+  const pages = await readStore(api, database, now.epochMilliseconds);
   const plan = new AppendPlan(pages);
   planFindingsFirst(lines, (event, text) => plan.add(event, text));
-  const stamp = `${now.toISOString().slice(0, 19)}Z`;
+  const stamp = nowAt(now);
   for (const target of plan.targets.values())
     await writeTarget(api, database, target, stamp);
   const stored = plan.receipts.map((receipt) =>

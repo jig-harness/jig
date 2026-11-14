@@ -10,6 +10,7 @@ import { OrcaError } from "./envelope.ts";
 import { HOOK_TIMEOUT_MS, HOOKS_DIR, WAIT_POLL_MS } from "./limits.ts";
 import type { OpenPort } from "./port.ts";
 import { budget, cleanupContext, output, shellQuote } from "./runner.ts";
+import { currentMs } from "../time.ts";
 
 /** Reads and commands on the clone's host. */
 export type OnHost = Pick<OpenPort, "host">;
@@ -195,7 +196,7 @@ function awaitHookClaim(
   mark: string,
   claim: string,
 ): boolean {
-  const deadline = Date.now() + budget(port.host, HOOK_TIMEOUT_MS);
+  const deadline = currentMs() + budget(port.host, HOOK_TIMEOUT_MS);
   let waited = false;
   for (;;) {
     if (exists(port, "-f", mark)) return true;
@@ -206,7 +207,7 @@ function awaitHookClaim(
         `… waiting for ${HOOKS_DIR}/create, which another open is running`,
       );
     waited = true;
-    if (Date.now() >= deadline)
+    if (currentMs() >= deadline)
       throw new OrcaError(
         `${hook} did not finish within ${HOOK_TIMEOUT_MS / 60_000} minutes; if no process is still running it, remove ${claim} and open the workspace again, which runs it again`,
       );

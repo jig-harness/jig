@@ -5,14 +5,25 @@
  * credential, so nothing it could reach is a real tracker.
  */
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 
+import { fileLockPath, withFileLock } from "../../../shared/file-lock.ts";
+
 const script = join(import.meta.dir, "..", "scripts", "check-fields.ts");
-const scratch = mkdtempSync(join(tmpdir(), "check-fields-"));
+const scratch = realpathSync(mkdtempSync(join(tmpdir(), "check-fields-")));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 let n = 0;
 
@@ -97,4 +108,113 @@ describe("check-fields.ts", () => {
       const stderr = await run(["check"], 2, section);
       expect(stderr).toContain(says);
     });
+
+  test("keeps no read position when the sweep moves issues", async () => {
+    const stderr = await run(["check", "--position", "position.json"], 1);
+    expect(stderr).toContain(
+      "file_issue.sweep.move is true, so a moved issue leaves the population and no read position is kept",
+    );
+    expect(existsSync(join(scratch, `repo-${n - 1}`, "position.json"))).toBe(
+      false,
+    );
+  });
+
+  test("warns of an unreadable read position, and leaves it when a store problem stops the run", async () => {
+    const stderr = await run(
+      ["check", "--yes", "--position", "record.json"],
+      1,
+      "file_issue:\n  sweep:\n    move: false\n",
+    );
+    expect(stderr).toContain(
+      "is not an issue-fields-position record of version 1; starting from the oldest issue",
+    );
+    expect(
+      readFileSync(join(scratch, `repo-${n - 1}`, "record.json"), "utf8"),
+    ).toBe('{"kind":"something-else"}\n');
+  });
+
+  test("refuses a second run on a read position another run holds", async () => {
+    const position = join(scratch, `repo-${n}`, "position.json");
+    const held = await withFileLock(
+      position,
+      () =>
+        run(
+          ["check", "--yes", "--position", "position.json"],
+          1,
+          "file_issue:\n  sweep:\n    move: false\n",
+        ),
+      { root: join(scratch, `repo-${n}`), name: "sweep-position" },
+    );
+    expect(held?.value).toContain("another run holds this read position");
+  });
+
+  test("takes over a read position lock whose owner is gone", async () => {
+    const root = join(scratch, `repo-${n}`);
+    mkdirSync(root, { recursive: true });
+    const dead = Bun.spawn(["true"]);
+    await dead.exited;
+    writeFileSync(
+      fileLockPath(join(root, "position.json"), root, "sweep-position"),
+      `${dead.pid}\nstale-token\n`,
+    );
+    const lock = fileLockPath(
+      join(root, "position.json"),
+      root,
+      "sweep-position",
+    );
+    const stderr = await run(
+      ["check", "--yes", "--position", "position.json"],
+      1,
+      "file_issue:\n  sweep:\n    move: false\n",
+    );
+    expect(stderr).not.toContain("another run holds this read position");
+    // The run reached the tracker, which refuses it for want of a credential.
+    expect(stderr).not.toContain("check-fields: failed");
+    expect(existsSync(lock)).toBe(false);
+  });
+
+  test("stops with the cause when the read position's directory cannot be made", async () => {
+    const root = join(scratch, `repo-${n}`);
+    mkdirSync(root, { recursive: true });
+    writeFileSync(join(root, "blocker"), "a file, not a directory\n");
+    const stderr = await run(
+      ["check", "--yes", "--position", "blocker/position.json"],
+      1,
+      "file_issue:\n  sweep:\n    move: false\n",
+    );
+    expect(stderr).toContain("cannot be locked");
+  });
+
+  test("keeps a locked run's usage error as a usage error", async () => {
+    const stderr = await run(
+      [
+        "check",
+        "--yes",
+        "--position",
+        "position.json",
+        "--retired-from",
+        "missing-target.yaml",
+      ],
+      2,
+      "file_issue:\n  sweep:\n    move: false\n",
+    );
+    expect(stderr).not.toContain("cannot be locked");
+  });
+
+  test("refuses a run reaching a held read position through a symlinked directory", async () => {
+    const root = join(scratch, `repo-${n}`);
+    mkdirSync(root, { recursive: true });
+    symlinkSync(root, join(root, "alias"), "junction");
+    const held = await withFileLock(
+      join(realpathSync(root), "position.json"),
+      () =>
+        run(
+          ["check", "--yes", "--position", "alias/position.json"],
+          1,
+          "file_issue:\n  sweep:\n    move: false\n",
+        ),
+      { root: realpathSync(root), name: "sweep-position" },
+    );
+    expect(held?.value).toContain("another run holds this read position");
+  });
 });

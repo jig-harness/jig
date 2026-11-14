@@ -1,6 +1,6 @@
 /**
- * The small shapes the page repeats: the status mark, the stage chip and the
- * logo. No hooks, so the page a refused request gets can use them with no script.
+ * The small shapes the page repeats: the status mark, the strip and the
+ * logo; the icons' containers are `icon-word.tsx`'s. No hooks, so the page a refused request gets can use them with no script.
  */
 import type { ReactNode } from "react";
 import type { Role } from "./status.ts";
@@ -10,24 +10,6 @@ export function Mark({ role }: { role: Role }) {
   return (
     <span className={`mk ${role.rc}`} aria-hidden="true">
       {role.glyph}
-    </span>
-  );
-}
-
-/** A stage's chip; `title` says what the stage does where a popover cannot open. */
-export function StageChip({
-  mark,
-  stage,
-  title,
-}: {
-  mark: string;
-  stage: string;
-  title?: string;
-}) {
-  return (
-    <span className="chip" title={title}>
-      <b>{mark}</b>
-      {stage}
     </span>
   );
 }

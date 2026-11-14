@@ -8,6 +8,8 @@ import { Pr, RepoLink } from "./pr.tsx";
 import type { LineSnapshot } from "../../plugin/dispatch/lib/dashboard-contract.ts";
 import { Evidence, Fold, PanelHelp, SourceHint } from "./fold.tsx";
 import { queueCard } from "./cards.ts";
+import { Glyph } from "./icon-word.tsx";
+import { GROUP_ICONS, iconOf } from "./icons.ts";
 import { cardAttrs } from "./keys.ts";
 import { Mark } from "./marks.tsx";
 import { MoreToggle, SHOWN_CLOSED, useShowAll } from "./more.tsx";
@@ -79,7 +81,10 @@ export function QueuePanel({
       <div className={all ? "qList all" : "qList"}>
         {groups.map((g, i) => (
           <div className={i === 0 ? "qGroup first" : "qGroup"} key={g.group}>
-            <h3>{g.title}</h3>
+            <h3 className="headWord">
+              <Glyph of={iconOf(GROUP_ICONS, g.group)} size={16} />
+              {g.title}
+            </h3>
             {g.note === null ? null : (
               <p className={`sm mut gnote${g.keepNote ? " keep" : ""}`}>
                 {g.note}

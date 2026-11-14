@@ -74,6 +74,7 @@ import {
   type ResolutionReceipt,
 } from "./resolution-receipt.ts";
 import { decisionAnswerLines } from "./park-frame.ts";
+import { parseMs } from "../../../../../shared/time.ts";
 
 export const LEDGER_MARKER = "<!-- drive-pr-ledger -->";
 export const CLAIM_MARKER = "<!-- drive-pr-takeover-claim -->";
@@ -432,7 +433,7 @@ function isRecoveryFields(v: Record<string, unknown>): boolean {
   return (
     isRecord(v.personStop) &&
     isText(v.personStop.at) &&
-    Number.isFinite(Date.parse(v.personStop.at)) &&
+    Number.isFinite(parseMs(v.personStop.at)) &&
     isText(v.personStop.reason)
   );
 }
@@ -443,12 +444,12 @@ function isLedgerDriver(v: unknown): v is LedgerDriver {
     isText(v.actor) &&
     isText(v.clone) &&
     isText(v.heartbeat) &&
-    Number.isFinite(Date.parse(v.heartbeat)) &&
+    Number.isFinite(parseMs(v.heartbeat)) &&
     (v.state === "running" || v.state === "stopped") &&
     (v.exit === undefined || isCount(v.exit)) &&
     isRecoveryFields(v) &&
     (v.started === undefined ||
-      (isText(v.started) && Number.isFinite(Date.parse(v.started)))) &&
+      (isText(v.started) && Number.isFinite(parseMs(v.started)))) &&
     (v.position === undefined || isCount(v.position))
   );
 }

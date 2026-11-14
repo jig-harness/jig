@@ -19,6 +19,7 @@ at each stage, is
 | Stage | Owner | Hands on | Detail |
 |-------|-------|----------|--------|
 | steer | [the plan](../design/plan.md), with the proposals of `/jig:audit` and `/jig:review-reflections` | a ranked list of open work | [design/README.md](../design/README.md) |
+| shape a topic | `/jig:orchestrate` | recorded decisions, a reviewed plan when work spans several pull requests, and started issues | [orchestrate](../plugin/skills/orchestrate/README.md) |
 | spec | [the design skeleton](../design/README.md#starting-a-design), `/jig:explain`, `/jig:decide`, `/jig:adr`, `/jig:red-team` and `/jig:design-brief-builder` | a reviewed design and the decision records it settles | [M6](../modules/M6-feature-delivery-pipeline/README.md), [M5](../modules/M5-adr-practice/README.md) |
 | file | `/jig:file-issue` | a labelled tracker issue | [M9](../modules/M9-tasks-memory/README.md) |
 | plan the epic | `/jig:file-issue` | an epic of ordered, labelled sub-issues | [M9](../modules/M9-tasks-memory/README.md) |

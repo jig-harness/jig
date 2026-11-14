@@ -421,9 +421,9 @@ describe("an account", () => {
   });
 
   it("is not free behind a wall no record holds, or when no drive is admitted", () => {
-    expect(accountView({ ...ACCOUNT, wallUnrecorded: true }, CLOCK).free).toBe(
-      false,
-    );
+    const unrecorded = accountView({ ...ACCOUNT, wallUnrecorded: true }, CLOCK);
+    expect(unrecorded.free).toBe(false);
+    expect(unrecorded.state).toBe("wall not recorded");
     const refused = accountView(
       { ...ACCOUNT, notAdmitted: "its vendor runs no drive" },
       CLOCK,

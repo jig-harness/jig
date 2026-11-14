@@ -1,7 +1,7 @@
 /**
  * The single, code-bound source of truth for the drive's terminal-state
- * vocabulary — which `state` name pairs with which exit code, and what kind
- * of pairing it is.
+ * vocabulary — which `state` name pairs with which exit code, what kind of
+ * pairing it is, and what each one means to a reader that branches on it.
  *
  * Without this table the pairing exists nowhere as data: `evaluate.ts` would
  * set `report.state` and return an exit code independently at each of its
@@ -19,6 +19,12 @@
  * documented (exit, state) pair this table does not contain — a drift check
  * that commits nothing.
  *
+ * The Jig Protocol's chapter on the drive's end states and exit codes
+ * (`plugin/protocol/drive-exits.md`, and its data file beside it) is
+ * generated from this table, `meaning` included, by
+ * `tools/protocol/generate.ts`; `bun run gates` fails the build when the
+ * chapter and this table disagree.
+ *
  * The dispatcher names no exit code of its own: it reads `drive.ts`'s exits
  * through `DRIVE_EXIT` and the sets below it (`DRIVER_REFUSAL_EXITS`,
  * `PERSON_STOP_EXITS`, `driveExitClosesTab`), and the consistency check fails a
@@ -26,7 +32,7 @@
  * (`__tests__/terminal-states-dispatch.ts`).
  *
  * Categories of entry (`drive-status.ts`'s "Exit codes — the driver contract"
- * doc comment mixes all four in one column, unmarked):
+ * doc comment mixes all but the helper exits in one column, unmarked):
  *
  *   'state'        a real `state` value the `--json` report can carry.
  *   'class-label'  a name for a FAMILY of states sharing one exit code,
@@ -36,31 +42,26 @@
  *   'driver-only'  a `drive.ts`-only exit that produces no `--json` report
  *                  at all (`PASS_DEADLINE`, `QUOTA_PARKED`, and the unnamed
  *                  codes `drive.ts` returns directly).
+ *   'helper'       an exit in this numbering that one of the drive's helper
+ *                  scripts returns, never `drive-status.ts` or `drive.ts`
+ *                  (`PUSH_HELD`, exit `17`, from `guarded-push.ts`); listed
+ *                  so that no code looks free while it is in use.
  *
  * `evaluate.ts`'s own 'state' entries are bound in code (the
  * `EvaluateStateName` union below, consumed by `terminal`): every site in
- * `evaluate.ts` sets both through it. Every
- * 'driver-only' entry (`MAX_ROUNDS`, `SINGLE_INSTANCE_LOCK`,
- * `WORKTREE_UNCLEAN`, `STALLED`, `PASS_DEADLINE`, `QUOTA_PARKED`,
- * `MAILBOX_STOPPED`, `MAILBOX_PAUSE_TIMEOUT`, `TAKEN_OVER`,
- * `CI_REPAIR_SPENT`, `CI_INFRA_PERSISTED`) is bound
- * the OTHER direction: `drive.ts` exports a named constant for
- * each — `MAX_ROUNDS_EXIT`, `SINGLE_INSTANCE_LOCK_EXIT`,
- * `WORKTREE_UNCLEAN_EXIT`, `STALLED_EXIT`, `PASS_DEADLINE_EXIT`,
- * `QUOTA_PARKED_EXIT`, `MAILBOX_STOPPED_EXIT`, `MAILBOX_PAUSE_TIMEOUT_EXIT`,
- * `TAKEN_OVER_EXIT`, `CI_REPAIR_SPENT_EXIT`, `CI_INFRA_PERSISTED_EXIT` — each read via `driverOnlyExitCode` below (e.g.
- * `export const MAX_ROUNDS_EXIT = driverOnlyExitCode('MAX_ROUNDS')`), the
- * `DriverOnlyStateName`-typed sibling of `terminal`'s own
- * `EvaluateStateName` lookup, and every one of `drive.ts`'s own `return`
- * sites for these driver-only codes uses the constant, never a bare literal
- * — see `__tests__/terminal-states-consistency.ts`'s own
+ * `evaluate.ts` sets both through it. Every 'driver-only' entry is bound the
+ * OTHER direction: `lib/driver/settings.ts` exports a named constant for each
+ * (`MAX_ROUNDS_EXIT = driverOnlyExitCode('MAX_ROUNDS')`, and so on for every
+ * member of `DriverOnlyStateName`), `drive.ts` re-exports them, and every one
+ * of `drive.ts`'s own `return` sites for these codes uses the constant, never
+ * a bare literal — see `__tests__/terminal-states-consistency.ts`'s
  * `driverOnlyExitBindings`/`findExitConstantMismatches`/
  * `findConstantProvenanceMismatches`/`findBareLiteralExits` for the checks
  * this makes possible: the constants cannot diverge from this table (they
- * ARE this table's own values), and a real AST scan catches a future edit
- * that reintroduces a bare literal, or reverts a declaration back to an
- * independent literal, at any of these driver-only exits instead of using
- * its constant.
+ * ARE this table's own values), and an AST scan catches a future edit that
+ * reintroduces a bare literal, or reverts a declaration back to an
+ * independent literal. The 'helper' entry is bound the same way:
+ * `lib/state/mailbox.ts` exports `PUSH_HELD_EXIT = helperExitCode('PUSH_HELD')`.
  *
  * The 'class-label'/'tombstone' entries remain un-bound — neither is ever
  * itself emitted, so there is no call site to thread through a lookup
@@ -68,19 +69,14 @@
  *
  * The two `state`-category entries `drive-status.ts` sets OUTSIDE
  * `evaluate` — `SESSION_LEASE_HELD` and `DRIVE_HELD_BY_OTHER_WORKTREE` —
- * are bound too, the same way `drive.ts`'s driver-only exits are. Neither
- * is a member of `EvaluateStateName` — that union's whole point is "what
- * `evaluate.ts` itself may emit", and `evaluate`
- * never sets either of these. `outOfBandExitCode` below is their own
- * `driverOnlyExitCode`-shaped accessor: `lib/state/lease.ts` exports
+ * are bound too, the same way. Neither is a member of `EvaluateStateName`,
+ * whose whole point is "what `evaluate.ts` itself may emit".
+ * `outOfBandExitCode` below is their accessor: `lib/state/lease.ts` exports
  * `DRIVE_HELD_ELSEWHERE_EXIT = outOfBandExitCode('DRIVE_HELD_BY_OTHER_WORKTREE')`
  * and `SESSION_LEASE_HELD_EXIT = outOfBandExitCode('SESSION_LEASE_HELD')`,
  * and `drive-status.ts` imports both rather than hand-writing `11`/`13` at
- * its own `case 0` sites. `__tests__/terminal-states-consistency.ts`
- * extends its driver-only checks
- * (`findExitConstantMismatches`/`findConstantProvenanceMismatches`/
- * `findBareLiteralExits`) to verify this binding against the real files, the
- * same way it already does for `drive.ts`'s driver-only exits.
+ * its own `case 0` sites; the consistency check's driver-only checks verify
+ * this binding against the real files as well.
  */
 
 import { Defect } from "../../../../../shared/errors.ts";
@@ -89,7 +85,8 @@ export type TerminalStateCategory =
   | "state"
   | "class-label"
   | "tombstone"
-  | "driver-only";
+  | "driver-only"
+  | "helper";
 
 export interface TerminalStateEntry {
   /** The exit code `drive-status.ts` itself returns for this state. */
@@ -100,13 +97,13 @@ export interface TerminalStateEntry {
    * `0` so it composes with any harness reading a zero exit as success
    * (`SKILL.md` § Terminal states: "a `0` from `drive-status.ts` … and a `0`
    * from `drive.ts` … mean opposite things"). Not a second, independent
-   * pairing to keep in step by hand — `drive.ts`'s own remap is its `case 3:`
-   * branch (`scripts/drive.ts`, ending `return 0` after certifying the
-   * converged worktree), so this field exists so the drift checker does
+   * pairing to keep in step by hand — `drive.ts`'s own remap is its round
+   * step's `case 3:` branch (`lib/driver/round-step.ts`), which exits `0`
+   * after certifying the converged worktree, so this field exists so the drift checker does
    * not read `using-drive-pr.md`'s and `pr-lifecycle.md`'s documentation of
    * THAT remap as a wrong pairing, and so `DRIVE_EXIT` below gives the
-   * dispatcher the code `drive.ts` itself exits. Those two files are the ONLY ones the
-   * checker treats this way (`CorpusFile.documentsDriveTsRemap` in
+   * dispatcher the code `drive.ts` itself exits. Those two files are the ONLY
+   * ones the checker treats this way (`CorpusFile.documentsDriveTsRemap` in
    * `__tests__/terminal-states-consistency.ts`) — everywhere else
    * (`drive-status.ts`'s own header, `SKILL.md`, `references/
    * terminal-states.md`) documents `drive-status.ts`'s own contract and is
@@ -124,6 +121,12 @@ export interface TerminalStateEntry {
   /** Which script actually produces this exit — free text for the reader,
    * not itself checked against anything. */
   readonly emittedBy: string;
+  /**
+   * What the state or exit means to a reader that branches on it, in plain
+   * language: what happened, and what the reader does next. The Protocol's
+   * chapter prints it beside the value, and its gate fails an empty one.
+   */
+  readonly meaning: string;
 }
 
 /**
@@ -174,6 +177,8 @@ export const TERMINAL_STATES: Readonly<
     category: "state",
     terminal: false,
     emittedBy: EVALUATE_EMITTER,
+    meaning:
+      "Work is left for this round: open review threads or unanswered summary findings. The caller runs a pass; `drive.ts` runs it itself and never ends with this state.",
   },
   CONVERGED: {
     exitCode: 3,
@@ -182,6 +187,8 @@ export const TERMINAL_STATES: Readonly<
     category: "state",
     terminal: true,
     emittedBy: EVALUATE_EMITTER,
+    meaning:
+      "The pull request is ready to merge: the reviewer reviewed this exact head and nothing is left open. `drive.ts` exits `0` for it, once its own working tree is clean.",
   },
   // Exit 4's family: the NOT_SETTLED class label below groups these five.
   HEAD_LAG: {
@@ -189,54 +196,72 @@ export const TERMINAL_STATES: Readonly<
     category: "state",
     terminal: false,
     emittedBy: EVALUATE_EMITTER,
+    meaning:
+      "The pull request's head on the forge and the local head disagree, and the reason says how: a local head ahead with no record of a push (push it through `guarded-push.ts`), a push the forge does not show yet (wait), a tree behind (update it), or diverged history (reconcile it). Then read again.",
   },
   AWAITING_REVIEWER: {
     exitCode: 4,
     category: "state",
     terminal: false,
     emittedBy: EVALUATE_EMITTER,
+    meaning:
+      "The reviewer has not reviewed this head yet. Wait, then read again.",
   },
   STALE_REVIEW: {
     exitCode: 4,
     category: "state",
     terminal: false,
     emittedBy: EVALUATE_EMITTER,
+    meaning:
+      "The reviewer's latest review describes an earlier head. Wait for its review of this one, then read again.",
   },
   HEAD_MOVED: {
     exitCode: 4,
     category: "state",
     terminal: false,
     emittedBy: EVALUATE_EMITTER,
+    meaning:
+      "The head or the base moved while the round was being judged, so nothing read about it holds. Read again.",
   },
   MERGEABILITY_UNKNOWN: {
     exitCode: 4,
     category: "state",
     terminal: false,
     emittedBy: EVALUATE_EMITTER,
+    meaning:
+      "The forge has not yet worked out whether the pull request merges cleanly. Read again.",
   },
   PR_NOT_OPEN: {
     exitCode: 5,
     category: "state",
     terminal: true,
     emittedBy: EVALUATE_EMITTER,
+    meaning:
+      "The pull request was merged or closed. Stop, and push nothing to it.",
   },
   REVIEWER_FAILED: {
     exitCode: 7,
     category: "state",
     terminal: true,
     emittedBy: EVALUATE_EMITTER,
+    meaning:
+      "The reviewer's own check did not pass, so the absence of findings proves nothing. A person looks at the reviewer before re-arming.",
   },
   HITL_PARKED: {
     exitCode: 8,
     category: "state",
     terminal: true,
     emittedBy: EVALUATE_EMITTER,
+    meaning:
+      "Everything left waits on a person's decision, each framed on its thread. The drive does not wake itself: once every one is answered, re-arm it.",
   },
   PR_CONFLICTING: {
     exitCode: 9,
     category: "state",
     terminal: true,
     emittedBy: EVALUATE_EMITTER,
+    meaning:
+      "The pull request conflicts with its base and has nothing else to work on; `drive.ts` ends with it once its conflict-repair passes are spent. Merge the base in, then re-arm.",
   },
   // The reviewer skipped the PR head, and its review of an earlier head does
   // not cover it (`reviewed-sha.ts`): no review of this head will come.
@@ -245,48 +270,51 @@ export const TERMINAL_STATES: Readonly<
     category: "state",
     terminal: true,
     emittedBy: EVALUATE_EMITTER,
+    meaning:
+      "The reviewer skipped this head and its review of an earlier head does not cover it, so no review will come. A person has this head reviewed, then re-arms.",
   },
   INDETERMINATE: {
     exitCode: 1,
     category: "state",
     terminal: true,
     emittedBy: EVALUATE_EMITTER,
+    meaning:
+      "The state could not be read, or a step failed: `drive.ts` also ends with it when a pass fails. Never a settled state; read what the drive printed before re-arming.",
   },
   UNSUPPORTED_CLI: {
     exitCode: 2,
     category: "state",
     terminal: true,
     emittedBy: EVALUATE_EMITTER,
+    meaning:
+      "A prerequisite is missing: the installed `gh` cannot report a field the round needs. `drive.ts` also exits `2`, with no report, when it refuses to start: a command line it cannot use, or a working tree or pull request it cannot drive as they stand (uncommitted changes, commits the pull request does not have, a head in a fork). It prints which.",
   },
 
   // ── real states, set OUTSIDE evaluate() — code-bound via outOfBandExitCode()
   // below, not terminal ────────────────────────────────────────
-  // `drive-status.ts`'s own round-gate lease bump (`bump-round`/`bump-attempt`
-  // returning `SESSION_LEASE_HELD_EXIT`), verified: scripts/drive-status.ts's
-  // `bump-round` and `bump-attempt` sites, both inside its single `case 0`
-  // block, each call `outOfBand(report, 'SESSION_LEASE_HELD', ...)`
-  // — which sets `report.state` and returns `lib/state/lease.ts`'s
-  // exported `SESSION_LEASE_HELD_EXIT = outOfBandExitCode('SESSION_LEASE_HELD')`
-  // from that ONE lookup, so the two cannot drift apart at either site
-  // independently of `evaluate()` and of each other.
+  // `drive-status.ts`'s round-gate lease bumps (`bump-round`, `bump-attempt`)
+  // each call `outOfBand(report, 'SESSION_LEASE_HELD', ...)`, which sets
+  // `report.state` and returns `lib/state/lease.ts`'s
+  // `SESSION_LEASE_HELD_EXIT` from ONE lookup.
   SESSION_LEASE_HELD: {
     exitCode: 11,
     category: "state",
     terminal: true,
     emittedBy: "drive-status.ts (round-gate lease bump, outside evaluate())",
+    meaning:
+      "Another live session in this working tree holds the drive's lease for this pull request. Nothing was changed: wait for it, or clear its lease once its process is gone.",
   },
-  // Raised by `drive-state.ts` for the tree lease, propagated
-  // verbatim by `drive-status.ts` via the same `outOfBand(report,
-  // 'DRIVE_HELD_BY_OTHER_WORKTREE', ...)` call at both of
-  // SESSION_LEASE_HELD's own sites above, plus `drive-status.ts`'s own
-  // PR-wide admission preflight (which SESSION_LEASE_HELD has no sibling
-  // site for), and raised independently by `drive.ts` at its own
-  // round-opening `bump-attempt`.
+  // Raised by `drive-state.ts` for the tree lease, propagated by
+  // `drive-status.ts` through the same `outOfBand` call, plus its PR-wide
+  // admission preflight, and raised by `drive.ts` at its own round-opening
+  // `bump-attempt` and at arm for a driver in another clone.
   DRIVE_HELD_BY_OTHER_WORKTREE: {
     exitCode: 13,
     category: "state",
     terminal: true,
     emittedBy: "drive-state.ts, propagated by drive-status.ts and drive.ts",
+    meaning:
+      "Another live working tree, or a driver in another clone, is driving this pull request. Nothing was changed; that driver is the one to finish.",
   },
 
   // ── class label: never itself emitted, groups exit 4's five states ───────
@@ -296,6 +324,8 @@ export const TERMINAL_STATES: Readonly<
     terminal: false,
     emittedBy:
       "never emitted — a class label for HEAD_LAG / AWAITING_REVIEWER / STALE_REVIEW / HEAD_MOVED / MERGEABILITY_UNKNOWN",
+    meaning:
+      "The name of every state that shares exit `4`: the pull request is not ready to judge yet. Never itself a `state`; the caller waits and runs the drive again. `drive.ts` also exits `4` after the review converged when another driver holds the mark-Ready lease, when the head moved or the CI hold label changed as the hold was released, when no fresh result of a required check came in time (where a skipped or cancelled check means waiting cannot help: re-run the check, then re-arm), and when the drive keeps a draft that the reviewer skips (mark it Ready, then re-arm).",
   },
 
   // ── tombstone: withdrawn, must never be re-emitted ────────────────────────
@@ -304,114 +334,120 @@ export const TERMINAL_STATES: Readonly<
     category: "tombstone",
     terminal: null,
     emittedBy: "never emitted — was PR_IS_DRAFT; the code is not recycled",
+    meaning:
+      "Withdrawn: it once stopped a drive on a draft pull request, which is now driven like any other. Never exited, and never given another meaning.",
   },
 
-  // ── drive.ts-only exits: no --json report, code-bound via drive.ts's own
-  // exported constants ───────────────────────────────────────────
-  // drive.ts's --max-rounds check. `drive.ts` exports `MAX_ROUNDS_EXIT =
-  // driverOnlyExitCode('MAX_ROUNDS')`, and both its `return` sites use that
-  // constant — no bare literal, no named `state` field (drive.ts proxies
-  // drive-status.ts's own report but does not itself write one for this
-  // exit). `check-drive-pr-terminal-states.ts`'s `findBareLiteralExits`
-  // scans drive.ts for a bare-literal regression at this exit.
+  // ── drive.ts-only exits: no --json report, code-bound via the constants
+  // `lib/driver/settings.ts` exports (see the header) ──────────────────────
   MAX_ROUNDS: {
     exitCode: 6,
     category: "driver-only",
     terminal: true,
     emittedBy: "drive.ts only (MAX_ROUNDS_EXIT)",
+    meaning:
+      "The drive spent its round budget (`--max-rounds`) without converging. Read the handoff file before re-arming.",
   },
-  // drive.ts's worktree-cleanliness checks (uncommitted state, an
-  // unconcluded git operation, a local HEAD that does not match the reviewed
-  // head), or a successful pass leaving dirty work and current-round holds.
-  // `drive.ts` exports `WORKTREE_UNCLEAN_EXIT =
-  // driverOnlyExitCode('WORKTREE_UNCLEAN')`, and every one of its several
-  // `return` sites for this check uses that constant.
+  // A successful pass left uncommitted fixes and current-round holds, or the
+  // review converged over an unclean worktree.
   WORKTREE_UNCLEAN: {
     exitCode: 12,
     category: "driver-only",
     terminal: true,
     emittedBy: "drive.ts only (WORKTREE_UNCLEAN_EXIT)",
+    meaning:
+      "The working tree holds work no round shipped: uncommitted edits, an unfinished git operation or a commit nobody reviewed. Settle it, then re-arm in this tree.",
   },
-  // drive.ts's stall-streak check. `drive.ts` exports `STALLED_EXIT =
-  // driverOnlyExitCode('STALLED')`.
   STALLED: {
     exitCode: 14,
     category: "driver-only",
     terminal: true,
     emittedBy: "drive.ts only (STALLED_EXIT)",
+    meaning:
+      "Rounds stopped changing anything the drive can see. Read what the passes decided, and what the tree still holds, before re-arming.",
   },
-  // `drive.ts` exports `PASS_DEADLINE_EXIT =
-  // driverOnlyExitCode('PASS_DEADLINE')` — previously an independent literal
-  // (`= 15`) that merely happened to match this entry; now derived from it
-  // directly.
   PASS_DEADLINE: {
     exitCode: 15,
     category: "driver-only",
     terminal: true,
     emittedBy: "drive.ts only (PASS_DEADLINE_EXIT)",
+    meaning:
+      "A pass ran past its deadline and was stopped more often than the drive restarts one. Check the tree for the stopped pass's leftovers before re-arming.",
   },
-  // `drive.ts` exports `QUOTA_PARKED_EXIT =
-  // driverOnlyExitCode('QUOTA_PARKED')` — same previously-independent-literal
-  // history as PASS_DEADLINE above.
   QUOTA_PARKED: {
     exitCode: 16,
     category: "driver-only",
     terminal: true,
     emittedBy: "drive.ts only (QUOTA_PARKED_EXIT)",
+    meaning:
+      "A pass hit an agent subscription's usage limit that does not reset soon. Re-arm after the reset, or from a session that bills another account. `drive.ts` also exits `16` when it refuses such a re-arm while the limit holds, from a session that bills the same account or one it cannot tell.",
   },
   MAILBOX_STOPPED: {
     exitCode: 18,
     category: "driver-only",
     terminal: true,
     emittedBy: "drive.ts only (MAILBOX_STOPPED_EXIT)",
+    meaning:
+      "A person or a tool told the drive to stop through its mailbox, and it stopped at a round boundary. A stop that names this driver's generation ends this driver alone; one that names none stops every later driver too, so resume it before re-arming.",
   },
   MAILBOX_PAUSE_TIMEOUT: {
     exitCode: 19,
     category: "driver-only",
     terminal: true,
     emittedBy: "drive.ts only (MAILBOX_PAUSE_TIMEOUT_EXIT)",
+    meaning:
+      "A pause sent through the drive's mailbox lasted longer than the drive waits. Resume it, then re-arm.",
   },
-  // drive.ts's converged-CI check, once its CI-repair passes are spent on a
-  // fresh verdict that still names failing checks. `drive.ts` exports
-  // `CI_REPAIR_SPENT_EXIT = driverOnlyExitCode('CI_REPAIR_SPENT')`.
+  // Its CI-repair passes spent on a fresh verdict that still names failing
+  // checks.
   CI_REPAIR_SPENT: {
     exitCode: 21,
     category: "driver-only",
     terminal: true,
     emittedBy: "drive.ts only (CI_REPAIR_SPENT_EXIT)",
+    meaning:
+      "The review converged, but required checks still fail after the drive's CI-repair passes were spent. A re-armed drive repairs again.",
   },
-  // drive.ts's converged-CI check, once every failing check failed on the
-  // infrastructure (`shared/ci-infra.ts`) and its re-runs and head moves are
-  // spent. `drive.ts` exports
-  // `CI_INFRA_PERSISTED_EXIT = driverOnlyExitCode('CI_INFRA_PERSISTED')`.
+  // Every failing check failed on the infrastructure (`shared/ci-infra.ts`)
+  // and its re-runs and head moves are spent.
   CI_INFRA_PERSISTED: {
     exitCode: 23,
     category: "driver-only",
     terminal: true,
     emittedBy: "drive.ts only (CI_INFRA_PERSISTED_EXIT)",
+    meaning:
+      "The review converged, but checks kept failing on the CI service's own infrastructure after the drive re-ran them. Nothing in the code needs repair; re-arm once the service recovers.",
   },
-  // A takeover claim from another clone, newer than this driver's own, found
-  // on the pull request at a round boundary, or a claim this driver posted
-  // that a rival's earlier claim beat (`lib/driver/ledger.ts`). `drive.ts`
-  // exports `TAKEN_OVER_EXIT = driverOnlyExitCode('TAKEN_OVER')`.
+  // A newer takeover claim from another clone, found at a round boundary, or
+  // a rival's earlier claim that beat this driver's (`lib/driver/ledger.ts`).
   TAKEN_OVER: {
     exitCode: 20,
     category: "driver-only",
     terminal: true,
     emittedBy: "drive.ts only (TAKEN_OVER_EXIT)",
+    meaning:
+      "Another clone took the drive over and drives it now. Nothing to recover here.",
   },
   // drive.ts's own single-instance lock refusal, BEFORE drive-status.ts ever
   // runs — a distinct cause from SESSION_LEASE_HELD above, sharing the same
   // exit code by design (see references/terminal-states.md row 11).
-  // `drive.ts` exports `SINGLE_INSTANCE_LOCK_EXIT =
-  // driverOnlyExitCode('SINGLE_INSTANCE_LOCK')`, and every one of its
-  // several `return` sites at the worktree/PR lock acquisitions (none
-  // carrying a `report.state` write of their own) uses that constant.
   SINGLE_INSTANCE_LOCK: {
     exitCode: 11,
     category: "driver-only",
     terminal: true,
     emittedBy: "drive.ts only (SINGLE_INSTANCE_LOCK_EXIT)",
+    meaning:
+      "Another driver already holds this pull request's or this working tree's lock, so the drive is already armed. Nothing was changed.",
+  },
+
+  // ── helper exits: neither drive-status.ts nor drive.ts ends with these ────
+  PUSH_HELD: {
+    exitCode: 17,
+    category: "helper",
+    terminal: false,
+    emittedBy: "guarded-push.ts and push-hold-recheck.ts (PUSH_HELD_EXIT)",
+    meaning:
+      "A `hold-push` directive in the drive's mailbox is in force, so nothing was pushed; the pre-push hook's recheck exits with it to stop a push already under way. Not an end state: clear the hold, then push again.",
   },
 };
 
@@ -545,6 +581,28 @@ export function outOfBand(
   }
   report.state = name;
   report.reason = reason;
+  return entry.exitCode;
+}
+
+/**
+ * The `category: 'helper'` entries a drive helper script derives its exit
+ * constant from: `lib/state/mailbox.ts`'s `PUSH_HELD_EXIT`, which
+ * `guarded-push.ts` and `push-hold-recheck.ts` return.
+ */
+export type HelperStateName = "PUSH_HELD";
+
+/**
+ * `TERMINAL_STATES[name].exitCode` for a `HelperStateName`, throwing — not
+ * returning `undefined` — if the entry is ever removed from the table, the
+ * same fail-closed posture as `driverOnlyExitCode()`.
+ */
+export function helperExitCode(name: HelperStateName): number {
+  const entry = TERMINAL_STATES[name];
+  if (entry === undefined) {
+    throw new Defect(
+      `helperExitCode(): '${name}' has no TERMINAL_STATES entry — mailbox.ts and terminal-states.ts have drifted`,
+    );
+  }
   return entry.exitCode;
 }
 

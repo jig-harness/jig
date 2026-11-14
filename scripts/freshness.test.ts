@@ -1,4 +1,4 @@
-import { afterAll, expect, test } from "bun:test";
+import { afterAll, expect, setSystemTime, test } from "bun:test";
 import {
   existsSync,
   mkdirSync,
@@ -470,17 +470,16 @@ test("schema replay still probes readiness when the log wait used the whole dead
   writeFileSync(join(dir, "001.sql"), "first\n");
   const committed = join(temp, "late-ready-schema.sql");
   writeFileSync(committed, "CREATE TABLE example ();\n");
-  const realNow = Date.now;
   let probes = 0;
   const runner = async (args: string[]): Promise<string> => {
     if (args[0] === "logs") {
       // The init wait consumed the shared 60-second deadline.
-      Date.now = () => realNow() + 61_000;
+      setSystemTime(Temporal.Now.instant().epochMilliseconds + 61_000);
       return "PostgreSQL init process complete; ready for start up.";
     }
     if (args.includes("pg_isready")) {
       probes++;
-      Date.now = realNow;
+      setSystemTime();
     }
     if (args.includes("pg_dump")) return "CREATE TABLE example ();\n";
     return "";
@@ -488,7 +487,7 @@ test("schema replay still probes readiness when the log wait used the whole dead
   try {
     expect(await checkSchema(dir, committed, runner)).toBe(0);
   } finally {
-    Date.now = realNow;
+    setSystemTime();
   }
   expect(probes).toBe(1);
 });

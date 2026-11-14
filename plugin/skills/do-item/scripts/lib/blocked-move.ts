@@ -9,10 +9,12 @@
  * Nothing is read or written when `issue_tracker.states.blocked` is unset,
  * when the ledger gives no state, or on a pull request carrying the `hold`
  * or `held` label. Each linked item is read, and written only when it
- * disagrees with what the ledger says. A block moves the item, then posts the
- * comment that carries the marker, then writes the configured fields; when
- * the comment does not post, the move is undone, so an item is never left
- * blocked without the marker that returns it. Every failure is a value in
+ * disagrees with what the ledger says. A block moves the item, sending with
+ * the move each configured field the transition's screen carries (where the
+ * adapter can), then posts the comment that carries the marker, then writes
+ * the configured fields the move did not carry; when the comment does not
+ * post, the move is undone and the fields it carried cleared, so an item is
+ * never left blocked without the marker that returns it. Every failure is a value in
  * the result, never a throw: the next tick tries again.
  */
 import {
@@ -34,6 +36,7 @@ import {
 } from "../../../../shared/pr-labels/projection.ts";
 import type { IssueKeys } from "./tracker/keys.ts";
 import {
+  type BlockedFields,
   CANONICAL_STATES,
   type CanonicalState,
   type StateContext,
@@ -41,6 +44,7 @@ import {
   CLOSED_STATE_TYPES,
   type Tracker,
 } from "./tracker/port.ts";
+import { isoOf } from "../../../../shared/time.ts";
 
 /** One pull request as the projection reads it. */
 export interface BlockedPr {
@@ -73,6 +77,7 @@ type BlockTracker = Pick<
   | "transition"
   | "postComment"
   | "writeBlockedFields"
+  | "transitionBlocked"
 >;
 
 const same = (a: string, b: string) =>
@@ -118,7 +123,7 @@ export async function projectBlocked(
   keys: Pick<IssueKeys, "source" | "normalize">,
   labels: LabelConfig,
   pr: BlockedPr,
-  now: () => Date = () => new Date(),
+  now: () => Temporal.Instant = () => Temporal.Now.instant(),
   /** Asked before each item's reads and writes: `false` when the caller's ledger is no longer the current one. */
   stillOurs: () => Promise<boolean> = async () => true,
 ): Promise<BlockedOutcome[]> {
@@ -147,7 +152,7 @@ async function projectItem(
   pr: BlockedPr,
   want: ReturnType<typeof wantOf>,
   key: string,
-  now: () => Date,
+  now: () => Temporal.Instant,
   stillOurs: () => Promise<boolean>,
 ): Promise<BlockedOutcome> {
   try {
@@ -222,9 +227,16 @@ async function block(
   key: string,
   fromName: string,
   marker: BlockedMarker,
-  now: () => Date,
+  now: () => Temporal.Instant,
 ): Promise<BlockedOutcome> {
-  await tracker.transition(key, "blocked");
+  const value = {
+    reason: blockedReason(pr.causes),
+    since: isoOf(now()),
+  };
+  let sent: Array<keyof BlockedFields> = [];
+  if (tracker.transitionBlocked === undefined)
+    await tracker.transition(key, "blocked");
+  else sent = await tracker.transitionBlocked(key, value);
   try {
     await tracker.postComment(
       key,
@@ -244,23 +256,33 @@ async function block(
       return {
         item: key,
         outcome: "refused",
-        detail: `${key} moved to blocked, but its comment did not post (${why}) and the move could not be undone (${message(undo)}): a person moves it back to ${fromName}`,
+        detail: `${key} moved to blocked, but its comment did not post (${why}) and the move could not be undone (${message(undo)}): a person moves it back to ${fromName}${sent.length > 0 ? ` and clears its blocked fields (${sent.join(", ")})` : ""}`,
       };
     }
+    // Only what the move carried is undone; a field it did not send holds
+    // nothing of this move's.
+    const cleared =
+      sent.length > 0
+        ? await writeFields(
+            tracker,
+            key,
+            null,
+            (["reason", "since"] as const).filter((r) => !sent.includes(r)),
+          )
+        : "";
     return {
       item: key,
       outcome: "refused",
-      detail: `${key}'s blocking comment did not post, so the move was undone: ${why}`,
+      detail: `${key}'s blocking comment did not post, so the move was undone: ${why}${cleared}`,
     };
   }
-  const fields = await writeFields(tracker, key, {
-    reason: blockedReason(pr.causes),
-    since: now().toISOString(),
-  });
+  const fields = await writeFields(tracker, key, value, sent);
+  const carried =
+    sent.length > 0 ? `; sent with the move: ${sent.join(", ")}` : "";
   return {
     item: key,
     outcome: "blocked",
-    detail: `${key} moved from ${fromName} to blocked${fields}`,
+    detail: `${key} moved from ${fromName} to blocked${carried}${fields}`,
   };
 }
 
@@ -297,11 +319,18 @@ async function unblock(
 async function writeFields(
   tracker: BlockTracker,
   key: string,
-  value: Parameters<NonNullable<Tracker["writeBlockedFields"]>>[1],
+  value: BlockedFields | null,
+  /** The roles the move already carried. */
+  except: ReadonlyArray<keyof BlockedFields> = [],
 ): Promise<string> {
   if (tracker.writeBlockedFields === undefined) return "";
   try {
-    const wrote = await tracker.writeBlockedFields(key, value);
+    const wrote = await tracker.writeBlockedFields(
+      key,
+      value,
+      undefined,
+      except,
+    );
     return wrote
       ? value === null
         ? "; its blocked fields cleared"

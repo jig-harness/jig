@@ -96,6 +96,7 @@ import {
 import { computeLoopMetrics, initiatingBotReviews } from "./lib/metrics.ts";
 import { type PrSample, resolveRepo, samplePr } from "./lib/sample.ts";
 import type { Tracker } from "../../do-item/scripts/lib/tracker/port.ts";
+import { currentMs, isoFromMs, parseMs } from "../../../shared/time.ts";
 
 const DAY_MS = 86_400_000;
 const DEFAULT_LIMIT = 600;
@@ -226,7 +227,7 @@ export async function runFleetHealth(
 ): Promise<RunResult> {
   const { cfg } = deps;
   const nowMs = deps.nowMs();
-  const untilMs = Date.parse(`${opts.until}T00:00:00Z`);
+  const untilMs = parseMs(`${opts.until}T00:00:00Z`);
   const win: WindowSpec = { sinceMs: untilMs - opts.days * DAY_MS, untilMs };
   const gaps: string[] = [];
   const caveats: string[] = [];
@@ -259,7 +260,7 @@ export async function runFleetHealth(
       `a PR listing holds more than --limit ${opts.limit}; the oldest were not read, so every figure is a lower bound`,
     );
   }
-  const asOf = untilMs <= nowMs ? new Date(untilMs).toISOString() : undefined;
+  const asOf = untilMs <= nowMs ? isoFromMs(untilMs) : undefined;
   if (budget === null && !aborted) {
     caveats.push(
       "GitHub's GraphQL budget could not be read before the run, so it was not gated on.",
@@ -378,12 +379,10 @@ export async function runFleetHealth(
         // rather than attributed to this one. Work is "past the end" by a bot
         // review OR a commit after the window: later commits with no later
         // review still change the share.
-        const rounds = allRounds.filter((at) => Date.parse(at) < win.untilMs);
+        const rounds = allRounds.filter((at) => parseMs(at) < win.untilMs);
         const pastEnd =
           rounds.length < allRounds.length ||
-          sample.commits.some(
-            (c) => Date.parse(c.committedDate) >= win.untilMs,
-          );
+          sample.commits.some((c) => parseMs(c.committedDate) >= win.untilMs);
         if (pastEnd) pastEndPrs.push(l.number);
         const m = computeLoopMetrics(sample, null, new Set());
         return {
@@ -791,7 +790,7 @@ export async function postSuspicions(
     failed: [],
     refused: null,
   };
-  if (Date.parse(report.window.until) < nowMs - DAY_MS) {
+  if (parseMs(report.window.until) < nowMs - DAY_MS) {
     out.refused =
       "the window ended in the past, so PRs that existed during it may be missing and a comment would rest on partial figures; post from a current window";
     return out;
@@ -856,7 +855,7 @@ export function parseArgs(
   defaultDays: number,
 ): CliArgs {
   const args: CliArgs = {
-    until: new Date(todayMs + DAY_MS).toISOString().slice(0, 10),
+    until: isoFromMs(todayMs + DAY_MS).slice(0, 10),
     days: defaultDays,
     limit: DEFAULT_LIMIT,
     concurrency: DEFAULT_CONCURRENCY,
@@ -916,7 +915,7 @@ export async function realDeps(
   };
   return {
     cfg,
-    nowMs: () => Date.now(),
+    nowMs: () => currentMs(),
     budget: graphqlBudget,
     listCandidates: (w, limit) => listCandidatePrs(repo, w, limit),
     reviewedHeads: (n) => fetchReviewedHeads(repo, n),
@@ -940,7 +939,7 @@ export async function realDeps(
 }
 
 async function main(): Promise<number> {
-  const startMs = Date.now();
+  const startMs = currentMs();
   let cfg: FleetHealthConfig;
   try {
     cfg = loadConfig();

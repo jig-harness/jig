@@ -22,8 +22,10 @@
  * on a host that set `drive.codex_bypass`: a pass needs that bypass to push
  * and write its worktree's git directory, a pickup's session goes on to arm
  * such a pass, and the dispatcher starts them with nobody there to approve.
- * The tick reads that setting once, and a drive's launch record keeps what
- * was judged, so its wrapper never reads it again.
+ * The tick reads that setting once, with `drive.codex_pass_args` (the extra
+ * words a Codex pass gets, a value that does not read admitting no Codex
+ * account), and a launch record keeps what was judged, so its wrapper never
+ * reads either again.
  *
  * Before a launch the tick resolves, with the drive's own resolver, the
  * identity the wrapper's environment yields for the admitted account
@@ -45,7 +47,13 @@ import {
   isPassVendor,
   onlyDeadlineBounds,
 } from "../../skills/drive-pr/scripts/lib/pass-command.ts";
-import { holds, type ReadRecord, unrecordedWalls } from "./launches.ts";
+import { codexPassArgsProblem } from "../../skills/drive-pr/scripts/lib/codex-pass-args.ts";
+import {
+  holds,
+  type LaunchRecord,
+  type ReadRecord,
+  unrecordedWalls,
+} from "./launches.ts";
 import type { MachineAccount } from "./machine-config.ts";
 import { accountWall, type Wall } from "./walls.ts";
 
@@ -87,19 +95,44 @@ export function passEnvironment(
   return env;
 }
 
-/** Whether this host opted in to Codex's bypass, and why not when it did not. */
-export type CodexOptIn = { on: true } | { on: false; why: string };
+/** Whether this host opted in to Codex's bypass, with the extra words a Codex pass gets, and why not when it did not. */
+export type CodexOptIn =
+  | { on: true; passArgs?: readonly string[] }
+  | { on: false; why: string };
+
+/** The launch record's part of the host's opt-in: the bypass, and the extra words a Codex pass carries when there are any. */
+export function codexLaunchFields(
+  optIn: CodexOptIn,
+): Pick<LaunchRecord, "codexBypass" | "codexPassArgs"> {
+  const words = optIn.on ? (optIn.passArgs ?? []) : [];
+  return words.length === 0
+    ? { codexBypass: optIn.on }
+    : { codexBypass: optIn.on, codexPassArgs: [...words] };
+}
+
+/** The opt-in of a host that set `drive.codex_bypass`, with its `drive.codex_pass_args`. */
+function optedIn(config: ReturnType<typeof layeredConfig>): CodexOptIn {
+  const words = valueAt(config.values, "drive.codex_pass_args");
+  if (words === undefined || words === null) return { on: true };
+  const problem = codexPassArgsProblem(words);
+  return problem === undefined
+    ? { on: true, passArgs: words as string[] }
+    : {
+        on: false,
+        why: `drive.codex_pass_args ${problem}: ${sourceOf(config, "drive.codex_pass_args")}`,
+      };
+}
 
 /**
- * This host's opt-in: `drive.codex_bypass` in its user file or the tick's
- * environment, read without any repository's file. A value that cannot be
- * read is no opt-in, and says why.
+ * This host's opt-in: `drive.codex_bypass` and `drive.codex_pass_args` in its
+ * user file or the tick's environment, read without any repository's file. A
+ * value that cannot be read is no opt-in, and says why.
  */
 export function hostCodexOptIn(env: Env = process.env): CodexOptIn {
   try {
     const config = layeredConfig(process.cwd(), env, null);
     const value = valueAt(config.values, "drive.codex_bypass");
-    if (value === true) return { on: true };
+    if (value === true) return optedIn(config);
     return value === undefined || value === null || value === false
       ? {
           on: false,

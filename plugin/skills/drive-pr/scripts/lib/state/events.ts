@@ -31,6 +31,7 @@
 import { isRecord } from "../../../../../shared/guards.ts";
 import { fail } from "../cli.ts";
 import type { StateStore } from "./store.ts";
+import { currentIso, parseMs } from "../../../../../shared/time.ts";
 
 export const EVENT_CAUSES = {
   restart: ["pass-deadline", "stall"],
@@ -69,7 +70,7 @@ export function isDriveEvent(v: unknown): v is DriveEvent {
     isRecord(v) &&
     isCause(v.kind, v.cause) &&
     typeof v.at === "string" &&
-    Number.isFinite(Date.parse(v.at)) &&
+    Number.isFinite(parseMs(v.at)) &&
     Number.isSafeInteger(v.round) &&
     (v.round as number) >= 0 &&
     (v.leftWork === undefined ||
@@ -128,7 +129,7 @@ export async function recordEvent(
     fail(2, 'record-event reads one JSON object on stdin: {"kind", "cause"}');
   await store.update((s) => {
     const event = {
-      at: new Date().toISOString(),
+      at: currentIso(),
       round: s.rounds,
       kind: input.kind,
       cause: input.cause,

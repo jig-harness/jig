@@ -5,7 +5,7 @@ import {
   ROLES,
   roleOf,
   STAGE_LEGEND,
-  stageMark,
+  stageMeaning,
 } from "./status.ts";
 
 describe("a recorded word's role", () => {
@@ -35,12 +35,14 @@ describe("the marks", () => {
     expect(new Set(glyphs).size).toBe(glyphs.length);
   });
 
-  it("gives each stage one mark, and none to a stage it does not know", () => {
-    expect(stageMark("rearm")).toBe("↻");
-    expect(stageMark("hold")).toBe("");
-    expect(stageMark("constructor")).toBe("");
-    const marks = STAGE_LEGEND.map((s) => s.mark);
-    expect(new Set(marks).size).toBe(marks.length);
+  it("says what each stage does, and that it cannot say for a stage it does not know", () => {
+    for (const s of STAGE_LEGEND) expect(stageMeaning(s.name)).toBe(s.meaning);
+    expect(stageMeaning("hold")).toBe(
+      "A stage this page has no description for.",
+    );
+    expect(stageMeaning("constructor")).toBe(
+      "A stage this page has no description for.",
+    );
   });
 });
 

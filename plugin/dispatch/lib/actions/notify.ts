@@ -13,7 +13,8 @@
  *   again. A cause that still stands `dispatch.renotify_after` after it was
  *   last sent is sent again, marked as a repeat, unless the destination is
  *   still unread with it (`0s` sends each cause once). A drift, an exhausted no-cause recovery or a
- *   failed re-arm is sent once for the life of its key. A suppression record is
+ *   failed re-arm or a drive launch refused as a usage error is sent once
+ *   for the life of its key. A suppression record is
  *   dropped when its cause leaves a tick that read every record whole (the
  *   park was answered, the drive moved on), so a cause that is settled is
  *   never repeated and new facts always notify.
@@ -101,6 +102,12 @@ import {
   recordComment,
 } from "./notices-content.ts";
 import { retireNotices } from "./retire-notices.ts";
+import {
+  currentIso,
+  currentMs,
+  isoFromMs,
+  parseMs,
+} from "../../../shared/time.ts";
 
 /** The comments the dispatcher's opens gave a workspace before its comments carried the dispatched mark. */
 const OWN_COMMENT =
@@ -280,7 +287,7 @@ function asRepeat(
   nowMs: number,
 ): Cause {
   const [head = "", ...rest] = cause.notice.text.split("\n");
-  const again = `Sent again: this still waits on a person as of ${new Date(nowMs).toISOString()}, first sent ${record.at} (dispatch.renotify_after ${hours(everyMs)}).`;
+  const again = `Sent again: this still waits on a person as of ${isoFromMs(nowMs)}, first sent ${record.at} (dispatch.renotify_after ${hours(everyMs)}).`;
   const repeated = {
     ...cause,
     repeat: true as const,
@@ -816,7 +823,7 @@ function dueAgain(
   nowMs: number,
 ): boolean {
   if (everyMs <= 0 || record.lasting) return false;
-  const last = Date.parse(record.sentAt);
+  const last = parseMs(record.sentAt);
   return Number.isFinite(last) && nowMs - last >= everyMs;
 }
 
@@ -876,7 +883,7 @@ export async function applyNotices(
     causes: causes.map((c) => c.notice.key),
     records: retirementRecords(repo.slug, root),
     lingerMs,
-    nowMs: Date.now(),
+    nowMs: currentMs(),
     root,
   });
 }
@@ -899,7 +906,7 @@ async function sendNotices(
   // The plan named a failing action's notice before the act phase found the action no longer wanted.
   const causes = planned.filter((c) => failureStands(settings.book, c));
   prune(report, standingKeys(causes, root), sent, root);
-  const nowMs = Date.now();
+  const nowMs = currentMs();
   const all: Cause[] = [];
   for (const c of causes) {
     const earlier = earlierSend(c, sent, hostSent);
@@ -926,7 +933,7 @@ async function sendNotices(
     return new Set();
   }
   const suppressed = (c: Cause, workspace: string) => {
-    const at = new Date().toISOString();
+    const at = currentIso();
     try {
       suppress(
         {
@@ -939,7 +946,8 @@ async function sendNotices(
             c.cause === "drifting" ||
             c.cause === "ready" ||
             (c.cause === "stopped-unknown" && c.evidence.noCause === true) ||
-            typeof c.evidence.failedRearm === "string",
+            typeof c.evidence.failedRearm === "string" ||
+            typeof c.evidence.usageRefusal === "string",
         },
         // A cause about a stage this machine launched has its ended row instead.
         c.launched === true ? null : eventRow(repo.slug, c, at, settings.about),

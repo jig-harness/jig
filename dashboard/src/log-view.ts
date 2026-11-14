@@ -13,7 +13,7 @@ import type {
 import { lengthOf, plural, stamp } from "./format.ts";
 import { derivedLink, type Forges, noLinkText } from "./links.ts";
 import type { LogFilter } from "./search.ts";
-import { eventRole, ROLES, type Role, roleOf, stageMark } from "./status.ts";
+import { eventRole, ROLES, type Role, roleOf } from "./status.ts";
 import type { EvidenceRow } from "./view.ts";
 
 /** What a row's times are read against. */
@@ -33,7 +33,6 @@ export interface RowView {
   title: string | null;
   repo: string;
   stage: string;
-  mark: string;
   account: string;
   length: string;
   reason: string;
@@ -107,7 +106,6 @@ export function rowView(
     title,
     repo: r.repo,
     stage: r.stage,
-    mark: stageMark(r.stage),
     account: r.account ?? "",
     length: numbers.length.join(", "),
     reason: r.reason,

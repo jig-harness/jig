@@ -117,3 +117,7 @@ XL
 # and the spec link design compare; names, not terms of art.
 BMAD
 GSD
+
+# the exported table a Protocol index page's generated-section marker names
+# as its source (`source=tools/protocol/chapters.ts#CHAPTERS`)
+CHAPTERS

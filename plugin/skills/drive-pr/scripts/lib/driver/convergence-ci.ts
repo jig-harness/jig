@@ -1,4 +1,6 @@
+import { specialCiDisposition } from "./special-ci.ts";
 /** Release held CI, establish fresh evidence, repair actionable failures and bound witness polling. */
+
 import type { DriveRoundContext } from "./round-context.ts";
 import { recoverCancelledOnHead } from "../cancelled-recovery-live.ts";
 
@@ -623,6 +625,16 @@ export async function evaluateFinalCi(
   >,
   failing: FailingChecks,
 ): Promise<number | "continue" | null> {
+  const special = await specialCiDisposition(
+    finalVerdict,
+    staleRequiredFailure,
+    context,
+    reviewedHead,
+    failing,
+    repairConvergedCi,
+  );
+  if (typeof special !== "object") return special;
+  ({ finalVerdict, failing } = special);
   if (finalVerdict.startsWith("cancelled:"))
     return await waitForReplacement(
       reviewedHead,

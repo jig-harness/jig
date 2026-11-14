@@ -9,7 +9,10 @@ import {
 
 describe("isUnavailable", () => {
   test.each([
-    ["a Linear network failure", new LinearApiError("network", null)],
+    [
+      "a Linear network failure",
+      new LinearApiError("network", null, "unreachable"),
+    ],
     ["a Linear server refusal", new LinearApiError("busy", 503)],
     ["a Linear rate limit", new LinearApiError("slow", 429)],
     ["a spent rate limit", new TrackerRateLimited("linear", 1, "spent")],
@@ -22,7 +25,7 @@ describe("isUnavailable", () => {
   test.each([
     [
       "a Linear answer naming a missing entity",
-      new LinearApiError("x", 200, true),
+      new LinearApiError("x", 200, "not-found"),
     ],
     ["a Linear query error", new LinearApiError("bad", 200)],
     ["a Linear bad request", new LinearApiError("bad", 400)],

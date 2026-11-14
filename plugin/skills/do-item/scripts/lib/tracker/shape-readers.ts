@@ -1,5 +1,6 @@
 /** Shared response primitives retain each adapter's own error type and messages. */
 import { isRecord } from "../../../../../shared/guards.ts";
+import { parseMs } from "../../../../../shared/time.ts";
 
 export function shapeReaders(fail: (message: string) => Error) {
   function record(v: unknown, where: string): Record<string, unknown> {
@@ -18,8 +19,7 @@ export function shapeReaders(fail: (message: string) => Error) {
 
   function timestamp(v: unknown, where: string): string {
     const s = str(v, where);
-    if (!Number.isFinite(Date.parse(s)))
-      throw fail(`${where}: not a timestamp`);
+    if (!Number.isFinite(parseMs(s))) throw fail(`${where}: not a timestamp`);
     return s;
   }
 

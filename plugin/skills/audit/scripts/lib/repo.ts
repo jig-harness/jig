@@ -30,6 +30,7 @@ import {
   sep,
   win32,
 } from "node:path";
+import { isCalendarDate } from "../../../../shared/time.ts";
 
 export { trackedFiles } from "../../../adr/scripts/locate.ts";
 export { pluginVersion, run };
@@ -96,20 +97,14 @@ export function isSince(value: unknown): boolean {
     (value === NEXT_VERSION || VERSION_PATTERN.test(value))
   );
 }
-const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-
 /** Whether `v` is a real calendar date written YYYY-MM-DD. */
 export function isDate(v: string): boolean {
-  if (!DATE_PATTERN.test(v)) return false;
-  const date = new Date(`${v}T00:00:00Z`);
-  return !Number.isNaN(date.getTime()) && date.toISOString().startsWith(v);
+  return isCalendarDate(v);
 }
 
 /** Today's date on this machine, as YYYY-MM-DD. */
 export function today(): string {
-  const now = new Date();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  return Temporal.Now.plainDateISO().toString();
 }
 
 /**

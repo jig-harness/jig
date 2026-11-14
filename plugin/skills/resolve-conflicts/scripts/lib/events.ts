@@ -35,6 +35,7 @@ import {
   snapshotPath,
   snapshotProblem,
 } from "./snapshot.ts";
+import { isoFromMs, parseMs } from "../../../../shared/time.ts";
 
 export const EVENT_TYPE = "merge_conflict";
 export const EVENTS_FILE = "conflict-events.jsonl";
@@ -195,12 +196,12 @@ export function buildEvents(
   const causes = snapshotCauses(root, snapshot.paths);
   const concluded =
     Number(git(root, ["log", "-1", "--format=%ct", commit]).trim()) * 1000;
-  const mapped = Date.parse(snapshot.mappedAt);
+  const mapped = parseMs(snapshot.mappedAt);
   const { source, pr } = snapshot.attribution ?? attributionOf(env);
   const { ours, theirs } = snapshot.sides;
   const common = {
     type: EVENT_TYPE,
-    ts: new Date(concluded).toISOString(),
+    ts: isoFromMs(concluded),
     operation: snapshot.operation.kind,
     resolution_ms: Number.isFinite(mapped)
       ? Math.max(0, concluded - mapped)

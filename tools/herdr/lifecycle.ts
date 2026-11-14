@@ -60,6 +60,7 @@ import {
   processStart,
 } from "./owner.ts";
 import { budget, type Context, HerdrError, output } from "./runner.ts";
+import { currentMs } from "../../plugin/shared/time.ts";
 
 export {
   type Hook,
@@ -379,15 +380,16 @@ export function awaitCreateHook(
   if (path === null) return;
   const state = createState(ctx, worktree);
   if (readResult(state) === "ok") return;
-  const graceEnds = Date.now() + graceMs;
-  while (!existsSync(state.claim) && Date.now() < graceEnds) ctx.sleep(POLL_MS);
+  const graceEnds = currentMs() + graceMs;
+  while (!existsSync(state.claim) && currentMs() < graceEnds)
+    ctx.sleep(POLL_MS);
   if (claim(ctx, state)) {
     ctx.log(`… running ${HOOKS_DIR}/create`);
     runClaimed(ctx, worktree, path, state);
     return;
   }
   ctx.log(`… waiting for ${HOOKS_DIR}/create`);
-  const deadline = Date.now() + HOOK_TIMEOUT_MS;
+  const deadline = currentMs() + HOOK_TIMEOUT_MS;
   for (;;) {
     const result = readResult(state);
     if (result === "ok") return;
@@ -399,7 +401,7 @@ export function awaitCreateHook(
       runClaimed(ctx, worktree, path, state);
       return;
     }
-    if (Date.now() >= deadline)
+    if (currentMs() >= deadline)
       throw new HerdrError(
         `the worktree's create hook did not finish within ${HOOK_TIMEOUT_MS / 60_000} minutes; if no process is still running it, remove ${state.claim} and open the workspace again, which runs it again`,
       );
@@ -436,7 +438,7 @@ export async function parkJournal(
 ): Promise<void> {
   const parked = await parkFindings(
     worktree,
-    Date.now() + budget(ctx, PARK_TIMEOUT_MS),
+    currentMs() + budget(ctx, PARK_TIMEOUT_MS),
   );
   if (!parked.ok) throw new HerdrError(parked.failure.reason);
 }

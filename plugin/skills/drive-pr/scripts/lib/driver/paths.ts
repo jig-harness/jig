@@ -29,3 +29,12 @@ export const reconcileRepliedThreads = join(
   here,
   "reconcile-replied-threads.ts",
 );
+
+export const listUnresolvedThreads = join(
+  here,
+  "..",
+  "..",
+  "resolve-review-comments",
+  "scripts",
+  "list-unresolved-threads.ts",
+);

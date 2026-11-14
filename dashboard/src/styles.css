@@ -129,12 +129,24 @@ a.tgt { display: inline-flex; align-items: center; min-height: 44px; }
 .rowTop .end { margin-left: auto; }
 .tgt { font: 600 15px/1.3 var(--mono); }
 .need .q { font-size: 15px; }
-.act { flex: none; padding: 1px 8px; border: 1px solid var(--line-strong); border-radius: 10px; font: 600 13px/1.35 var(--sans); color: var(--ink); background: var(--sunk); }
-.actDecide { border-color: var(--focus); }
-.actAuthorize { border-color: var(--hl-line); background: var(--hl); }
-.actInvestigate { border-color: var(--bad); }
-.actReply { border-color: var(--wait); }
-.actMerge { border-color: var(--accent); background: var(--accent-soft); }
+/* the icon vocabulary's families, told apart by their container as well as their icon: an act is a filled pill, a stage an outlined chip, a source a dashed chip, the rest a bare icon beside its word */
+.act { flex: none; display: inline-flex; align-items: center; gap: 5px; padding: 1px 9px 1px 7px; border: 1px solid var(--ink); border-radius: 999px; background: var(--ink); color: var(--bg); font: 600 13px/1.5 var(--sans); white-space: nowrap; }
+.actDecide, .actAuthorize { border-color: var(--hl-line); background: var(--hl-line); color: var(--card); }
+.act svg, .chip svg { flex: none; }
+.chip.stageChip { border-color: var(--line-strong); color: var(--ink); }
+.chip.srcChip { border-style: dashed; border-color: var(--line-strong); color: var(--ink); font-family: var(--sans); }
+.bareWord svg, .headWord svg { display: inline-block; vertical-align: -2px; margin-right: 4px; }
+.headWord svg { vertical-align: -3px; margin-right: 6px; }
+svg.unread { stroke-dasharray: 2.5 2.5; color: var(--muted); }
+.iconSet { margin-top: 6px; }
+.iconList { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; margin: 4px 0 0; padding: 0; list-style: none; }
+.iconList li { display: inline-flex; align-items: center; min-height: 24px; }
+@media (forced-colors: active) {
+  .act { forced-color-adjust: none; background: CanvasText; color: Canvas; border-color: CanvasText; }
+  .chip.stageChip { border: 1px solid CanvasText; }
+  .chip.srcChip { border: 1px dashed CanvasText; }
+  svg.unread { color: GrayText; }
+}
 .need .rec strong { font-weight: 700; }
 .personFilter { display: inline-flex; align-items: center; gap: 6px; min-height: var(--tap); }
 .personFilter select { min-height: var(--tap); font: inherit; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: var(--r-tag); }
@@ -195,7 +207,8 @@ a.tgt { display: inline-flex; align-items: center; min-height: 44px; }
 .opt:hover { border-color: var(--line-strong); }
 .opt.on { border-color: var(--accent); background: var(--accent-soft); }
 .opt .optNum { display: none; }
-.optMark { flex: none; color: var(--muted); }
+.optMark { flex: none; align-self: flex-start; padding-top: 3px; color: var(--muted); }
+.optMark svg { display: block; }
 .opt.on .optMark { color: var(--accent); }
 .optText { min-width: 0; overflow-wrap: anywhere; }
 .decTools { display: flex; flex-wrap: wrap; gap: 4px 8px; }
@@ -422,6 +435,8 @@ a.tgt { display: inline-flex; align-items: center; min-height: 44px; }
 .rowExpand { position: absolute; right: 0; top: 4px; }
 @media (max-width: 899px) {
   .prState, a.m.sm.mut { min-height: 44px; display: inline-flex; align-items: center; }
+  .prState, .prIdentity .copy, .disclosure { min-width: 44px; }
+  .rowSum { padding-right: 56px; }
 }
 @media (max-width: 899px) {
   .kv a, .pop a { min-height: 44px; display: inline-flex; align-items: center; overflow-wrap: anywhere; }
@@ -437,7 +452,9 @@ a.tgt { display: inline-flex; align-items: center; min-height: 44px; }
 .flashGo kbd { display: none; }
 .flashOff { min-height: 44px; padding: 0 10px; background: transparent; color: var(--ink); border: 1px solid var(--line-strong); border-radius: var(--r-tag); font: 400 14px/1 var(--sans); cursor: pointer; }
 .viewFilter { display: flex; align-items: center; gap: 10px; }
-.viewFilter input { flex: 1 1 auto; max-width: 420px; min-height: 44px; padding: 4px 10px; background: var(--card); color: var(--ink); border: 1px solid var(--line-strong); border-radius: var(--r); font: 400 15px var(--sans); }
+.viewFilterField { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; }
+.viewFilterField svg { flex: none; }
+.viewFilter input { flex: 1 1 auto; min-width: 0; max-width: 420px; min-height: 44px; padding: 4px 10px; background: var(--card); color: var(--ink); border: 1px solid var(--line-strong); border-radius: var(--r); font: 400 15px var(--sans); }
 .dd kbd { display: inline-block; min-width: 1.4em; padding: 0 4px; border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: var(--r-tag); background: var(--sunk); color: var(--ink); font: 400 12px/1.5 var(--mono); text-align: center; }
 [data-card] { scroll-margin: 112px 0 72px; }
 .dd [data-card][hidden] { display: none !important; }

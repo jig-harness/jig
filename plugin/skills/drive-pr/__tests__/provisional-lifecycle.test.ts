@@ -29,6 +29,7 @@ import {
   SCRIPTS,
 } from "./provisional-fixtures.ts";
 import { writeState } from "./state-rows.ts";
+import { isoOf } from "../../../shared/time.ts";
 
 const WIDE = "autonomy:\n  level: wide\n";
 const DRIVER = { DRIVE_PR_TARGET: "12" };
@@ -297,8 +298,8 @@ describe("the recoveries the drive records", () => {
       resetAt,
       at: "2026-10-28T20:00:00.000Z",
     });
-    const now = new Date();
-    const past = new Date(now.getTime() - 3_600_000).toISOString();
+    const now = Temporal.Now.instant();
+    const past = isoOf(now.subtract({ hours: 1 }));
     const parked = (resetAt: string | null) => ({
       ...freshState(12),
       quotaPark: park(resetAt),

@@ -81,6 +81,12 @@ import {
   renderReport,
   type SkippedMerge,
 } from "./lib/report.ts";
+import {
+  currentMs,
+  isCalendarDate,
+  isoFromMs,
+  parseMs,
+} from "../../../shared/time.ts";
 
 const DEFAULT_DAYS = 30;
 const DEFAULT_LIMIT = 25;
@@ -101,7 +107,7 @@ export interface Options {
 }
 
 function day(ms: number): string {
-  return new Date(ms).toISOString().slice(0, 10);
+  return isoFromMs(ms).slice(0, 10);
 }
 
 const DATE_ARG =
@@ -114,20 +120,9 @@ const DATE_ARG =
  */
 function parseDate(value: string | undefined, end: boolean): number | null {
   if (value === undefined) return null;
-  const match = value.match(DATE_ARG);
-  if (!match) return null;
-  const [, year, month, date] = match.map(Number) as number[];
-  // setUTCFullYear, unlike Date.UTC, reads a year below 100 as itself.
-  const day = new Date(0);
-  day.setUTCFullYear(year as number, (month as number) - 1, date);
-  if (
-    day.getUTCFullYear() !== year ||
-    day.getUTCMonth() + 1 !== month ||
-    day.getUTCDate() !== date
-  )
-    return null;
+  if (!DATE_ARG.test(value) || !isCalendarDate(value.slice(0, 10))) return null;
   const bare = !value.includes("T");
-  const ms = Date.parse(bare ? `${value}T00:00:00Z` : value);
+  const ms = parseMs(bare ? `${value}T00:00:00Z` : value);
   if (Number.isNaN(ms)) return null;
   return bare && end ? ms + DAY_MS : ms;
 }
@@ -225,7 +220,7 @@ function namedRange(
 /** The command line, or a usage message. */
 export function parseArgs(
   args: readonly string[],
-  now = Date.now(),
+  now = currentMs(),
 ): Options | string {
   const flags = readFlags(args);
   if (typeof flags === "string") return flags;
@@ -250,7 +245,8 @@ export function parseArgs(
   }
   const n = flags.days ?? DEFAULT_DAYS;
   const from = now - n * DAY_MS;
-  if (Number.isNaN(new Date(from).getTime()))
+  // A time holds at most 8.64e15 milliseconds either side of the epoch.
+  if (!(Math.abs(from) <= 8.64e15))
     return "--days reaches before the earliest date a time can hold";
   return {
     json,
@@ -481,10 +477,8 @@ async function main(): Promise<number> {
   const shallow = shallowBoundary(repo).size > 0;
   const { merges, skipped } = replayAll(repo, inRange, setup);
   const range: Range = {
-    since:
-      options.since === null ? null : new Date(options.since).toISOString(),
-    until:
-      options.until === null ? null : new Date(options.until).toISOString(),
+    since: options.since === null ? null : isoFromMs(options.since),
+    until: options.until === null ? null : isoFromMs(options.until),
     label: options.label,
   };
   const report = buildReport({

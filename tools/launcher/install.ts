@@ -41,6 +41,7 @@ import {
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { cli } from "../../lib/cli.ts";
+import { currentMs } from "../../plugin/shared/time.ts";
 import {
   configPath,
   configStep,
@@ -445,7 +446,7 @@ export function install(options: InstallOptions): InstallReport {
   const { home, bun, check = false, dryRun = false } = options;
   const script = options.script ?? LAUNCH_SCRIPT;
   const env = options.env ?? process.env;
-  const now = options.now ?? Date.now;
+  const now = options.now ?? currentMs;
   const write = !check && !dryRun;
   const plan = newPlan(check, write);
 

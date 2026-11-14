@@ -13,6 +13,7 @@ import {
   isFormerLock,
   isFormerWriterFile,
 } from "./import.ts";
+import { currentMs } from "../../../../../shared/time.ts";
 
 /**
  * A full day in which no earlier-release writer touched the clone's files,
@@ -155,7 +156,7 @@ export function judgeQuarantine(
         reason: "quarantine descendants changed during the sweep",
       };
     const current = readdirSync(stateDir);
-    const now = Date.now();
+    const now = currentMs();
     if (current.some(isFormerLock))
       return {
         action: "keep",
@@ -191,7 +192,7 @@ export function judgeQuarantine(
     // listing and the writer files too, so a lease renewed or a legacy lock
     // created during the sweep keeps the family.
     const after = readdirSync(stateDir);
-    const writersAfter = writerFiles(stateDir, after, Date.now());
+    const writersAfter = writerFiles(stateDir, after, currentMs());
     if (
       !unchanged(snapshots) ||
       writersAfter === null ||

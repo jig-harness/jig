@@ -2,8 +2,9 @@
  * drive-pr suite: the extra arguments of a drive's pass command
  * (`lib/pass-args.ts`): `--pass-args` over `drive.pass_args`, the setting
  * added only to a pass command without arguments of its own, words already
- * carried kept once, a pass command that is not Claude Code's left alone,
- * and the permission mode read from the command as it runs.
+ * carried kept once, `drive.codex_pass_args` before a Codex pass's prompt by
+ * the same rules, a pass command of another tool left alone, and the
+ * permission mode read from the command as it runs.
  */
 
 import { describe, expect, it } from "bun:test";
@@ -16,9 +17,12 @@ import {
   parsePassArgsFlag,
   permissionLine,
   permissionMode,
+  pinsEmptyPassArgs,
+  withCodexPassArgs,
   withPassArgs,
 } from "../scripts/lib/pass-args.ts";
 import { passCommand } from "../scripts/lib/pass-command.ts";
+import { refusedCodexPassArgs } from "../scripts/lib/codex-pass-args.ts";
 
 const BYPASS = ["--permission-mode", "bypassPermissions"];
 const PASS = ["claude", "--model", "sonnet", "-p", "/jig:drive-pr 7"];
@@ -29,6 +33,15 @@ const configured = (): PassArgs => ({
 const unset = (): PassArgs => ({
   words: [],
   source: "the default; drive.pass_args is not set",
+});
+const HOOK_TRUST = ["--dangerously-bypass-hook-trust"];
+const codexSet = (): PassArgs => ({
+  words: HOOK_TRUST,
+  source: "drive.codex_pass_args",
+});
+const codexUnset = (): PassArgs => ({
+  words: [],
+  source: "the default; drive.codex_pass_args is not set",
 });
 
 describe("parsePassArgsFlag", () => {
@@ -179,23 +192,56 @@ describe("effectivePassArgs", () => {
     );
   });
 
-  it("leaves a pass command that is not Claude Code's alone, saying the setting is ignored", () => {
+  it("leaves a pass command of another tool alone, saying both settings are ignored", () => {
     const other = ["other-agent", "run", "/jig:drive-pr 7"];
-    const pass = effectivePassArgs(other, undefined, configured);
+    const pass = effectivePassArgs(other, undefined, configured, codexUnset);
     expect(pass.argv).toEqual(other);
     expect(pass.line).toBe(
-      "pass args: none; drive.pass_args applies to a Claude Code pass command, and 'other-agent' ignores it",
+      "pass args: none; drive.pass_args applies to a Claude Code pass command and drive.codex_pass_args to a Codex one, and 'other-agent' ignores both",
+    );
+    expect(effectivePassArgs(other, undefined, unset, codexSet).line).toBe(
+      pass.line,
+    );
+    expect(effectivePassArgs(other, undefined, unset, codexUnset).line).toBe(
+      "pass args: none (the pass command is other-agent)",
     );
     expect(pass.permission.mode).toBeNull();
     expect(() =>
       effectivePassArgs(other, BYPASS.join(" "), configured),
     ).toThrow(PassArgsUsageError);
     expect(effectivePassArgs(other, "", configured).argv).toEqual(other);
+    const unreadableCodex = (): PassArgs => {
+      throw new Error("drive.codex_pass_args must be a list of words");
+    };
+    expect(
+      effectivePassArgs(other, undefined, unset, unreadableCodex).argv,
+    ).toEqual(other);
+  });
+
+  it("starts a Codex pass whose unused drive.pass_args does not read", () => {
+    const unreadableClaude = (): PassArgs => {
+      throw new Error("drive.pass_args must be a list of words");
+    };
+    const bare = passCommand("codex", 7, true);
+    const pass = effectivePassArgs(bare, undefined, unreadableClaude, codexSet);
+    expect(pass.argv).toEqual(withCodexPassArgs(bare, HOOK_TRUST));
+    const own = effectivePassArgs(
+      ["codex", "exec", "--sandbox", "read-only", "/jig:drive-pr 7"],
+      undefined,
+      unreadableClaude,
+      codexSet,
+    );
+    expect(own.argv).toContain("read-only");
   });
 
   it("reads a Codex pass command's permission from its own words", () => {
     const documented = passCommand("codex", 7, true);
-    const pass = effectivePassArgs(documented, undefined, configured);
+    const pass = effectivePassArgs(
+      documented,
+      undefined,
+      configured,
+      codexUnset,
+    );
     expect(pass.argv).toEqual(documented);
     expect(pass.permission).toEqual({
       mode: "no sandbox, no approvals",
@@ -208,6 +254,34 @@ describe("effectivePassArgs", () => {
         configured,
       ).permission.mode,
     ).toBe("sandbox workspace-write");
+    expect(
+      effectivePassArgs(
+        ["codex", "exec", "--sandbox=read-only", "/jig:drive-pr 7"],
+        undefined,
+        configured,
+      ).permission.mode,
+    ).toBe("sandbox read-only");
+    expect(
+      effectivePassArgs(
+        ["codex", "exec", "-sread-only", "/jig:drive-pr 7"],
+        undefined,
+        configured,
+      ).permission.mode,
+    ).toBe("sandbox read-only");
+    expect(
+      effectivePassArgs(
+        ["codex", "exec", "--", "-summarize PR 7"],
+        undefined,
+        configured,
+      ).permission.mode,
+    ).toBe("inherited");
+    expect(
+      effectivePassArgs(
+        ["codex", "exec", "--", "--yolo"],
+        undefined,
+        configured,
+      ).permission.mode,
+    ).toBe("inherited");
     expect(
       effectivePassArgs(
         ["codex", "exec", "/jig:drive-pr 7"],
@@ -224,6 +298,129 @@ describe("effectivePassArgs", () => {
     expect(() => effectivePassArgs(PASS, undefined, unreadable)).toThrow(
       "drive.pass_args",
     );
+  });
+});
+
+describe("a Codex pass's drive.codex_pass_args", () => {
+  const BARE = passCommand("codex", 7, true);
+  const WITH = passCommand("codex", 7, true, HOOK_TRUST);
+
+  it("puts the words before the prompt, once", () => {
+    expect(withCodexPassArgs(BARE, HOOK_TRUST)).toEqual(WITH);
+    expect(withCodexPassArgs(WITH, HOOK_TRUST)).toEqual(WITH);
+  });
+
+  it("adds the setting to a command with no arguments of its own, its model and bypass included", () => {
+    for (const bare of [
+      BARE,
+      passCommand("codex", 7),
+      ["codex", "exec", "-m", "gpt-x", ...BARE.slice(2)],
+    ]) {
+      const pass = effectivePassArgs(bare, undefined, unset, codexSet);
+      expect(pass.argv).toEqual(withCodexPassArgs(bare, HOOK_TRUST));
+      expect(pass.line).toBe(
+        "pass args: --dangerously-bypass-hook-trust (drive.codex_pass_args)",
+      );
+    }
+    expect(effectivePassArgs(BARE, undefined, unset, codexUnset).line).toBe(
+      "pass args: none (the default; drive.codex_pass_args is not set)",
+    );
+  });
+
+  it("keeps a command that carries the words, or its own, as written", () => {
+    const carried = effectivePassArgs(WITH, undefined, unset, codexSet);
+    expect(carried.argv).toEqual(WITH);
+    expect(carried.line).toBe(
+      "pass args: --dangerously-bypass-hook-trust (drive.codex_pass_args, as written in the pass command)",
+    );
+    expect(effectivePassArgs(WITH, undefined, unset, codexUnset).argv).toEqual(
+      WITH,
+    );
+    const own = ["codex", "exec", "--sandbox", "workspace-write", "x 7"];
+    const kept = effectivePassArgs(own, undefined, unset, codexSet);
+    expect(kept.argv).toEqual(own);
+    expect(kept.line).toContain("kept as written");
+    expect(kept.permission.mode).toBe("sandbox workspace-write");
+  });
+
+  it("says drive.pass_args is Claude Code's when it is set", () => {
+    expect(effectivePassArgs(BARE, undefined, configured, codexSet).line).toBe(
+      "pass args: --dangerously-bypass-hook-trust (drive.codex_pass_args); drive.pass_args applies to a Claude Code pass command",
+    );
+  });
+
+  it("takes an empty --pass-args as none and refuses its words", () => {
+    const none = effectivePassArgs(BARE, "", configured, codexSet);
+    expect([none.argv, none.line]).toEqual([
+      BARE,
+      "pass args: none (--pass-args)",
+    ]);
+    expect(() =>
+      effectivePassArgs(BARE, "--verbose", configured, codexSet),
+    ).toThrow(PassArgsUsageError);
+  });
+
+  it("pins an empty choice into a printed command only for a command with no arguments of its own", () => {
+    expect(pinsEmptyPassArgs(BARE)).toBe(true);
+    expect(pinsEmptyPassArgs(WITH)).toBe(false);
+    expect(armCommand("drive.ts", "7", false, "", BARE)).toContain(
+      "drive.ts 7 --pass-args '' -- codex exec",
+    );
+    expect(armCommand("drive.ts", "7", false, "", WITH)).not.toContain(
+      "--pass-args",
+    );
+  });
+
+  it("stops on a setting it cannot read", () => {
+    const unreadable = (): PassArgs => {
+      throw new Error("drive.codex_pass_args must be a list of words");
+    };
+    expect(() => effectivePassArgs(BARE, undefined, unset, unreadable)).toThrow(
+      "drive.codex_pass_args",
+    );
+  });
+
+  it("keeps a command with its own arguments without reading the setting", () => {
+    const unreadable = (): PassArgs => {
+      throw new Error("drive.codex_pass_args must be a list of words");
+    };
+    const own = ["codex", "exec", "--sandbox", "workspace-write", "x 7"];
+    expect(effectivePassArgs(own, undefined, unset, unreadable).argv).toEqual(
+      own,
+    );
+  });
+});
+
+describe("refusedCodexPassArgs", () => {
+  it.each([
+    [["--sandbox"], "cannot end with --sandbox"],
+    [["-c"], "cannot end with -c"],
+    [["-m", "gpt-x"], "cannot hold -m"],
+    [["--model=gpt-x"], "cannot hold --model=gpt-x"],
+    [["-c", "model=gpt-x"], "cannot hold -c model=gpt-x"],
+    [["--config=model=gpt-x"], "routing.models.codex"],
+    [["--image", "a.png"], "as images"],
+    [["exec"], "cannot hold exec"],
+    [["--json", "prompt"], "cannot hold prompt"],
+    [["-"], "standard input"],
+    [["--"], "cannot hold --"],
+    [
+      ["--dangerously-bypass-approvals-and-sandbox"],
+      "drive.codex_bypass adds it",
+    ],
+    [["--yolo"], "drive.codex_bypass adds it"],
+    [["--sandbox", "--model"], "cannot hold --model"],
+  ])("refuses %j", (words, why) => {
+    expect(refusedCodexPassArgs(words)).toContain(why);
+  });
+
+  it.each([
+    [["--dangerously-bypass-hook-trust"]],
+    [["--sandbox", "workspace-write", "--json"]],
+    [["-c", "model_reasoning_effort=high"]],
+    [["--add-dir", "/srv/cache", "--skip-git-repo-check"]],
+  ])("keeps %j", (words) => {
+    expect(refusedCodexPassArgs(words)).toBeUndefined();
   });
 });
 

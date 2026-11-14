@@ -15,6 +15,7 @@ import {
 } from "./launches.ts";
 import { stateRoot } from "../receipts.ts";
 import { existingStateDb, statePath } from "./state.ts";
+import { isoFromMs } from "../../shared/time.ts";
 
 /**
  * How a record's launch went, as far as the record says: `started` when the
@@ -59,7 +60,7 @@ export function markedSince(
     .query(
       "SELECT id, record, claim, exit, result FROM launches WHERE created_at >= ?1 ORDER BY id",
     )
-    .all(new Date(since).toISOString()) as LaunchRow[];
+    .all(isoFromMs(since)) as LaunchRow[];
   const records: Array<{ record: LaunchRecord; launch: LaunchSeen }> = [];
   const unreadable: string[] = [];
   for (const row of all) {

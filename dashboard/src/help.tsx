@@ -1,11 +1,41 @@
 /**
- * Help: the keys, how to read the page, the words its panels use, and the
- * legend, in one view a person opens when something is unclear, so the other
- * views stay lean.
+ * Help: the keys, how to read the page, the words its panels use, every icon
+ * with its word, and the legend, in one view a person opens when something is
+ * unclear, so the other views stay lean.
  */
+import { InContainer, SourceChip, StageChip } from "./icon-word.tsx";
+import { ICON_SETS } from "./icons.ts";
 import { KEYS } from "./keys.ts";
 import { type FoldComponent, Legend } from "./legend.tsx";
-import { SOURCE_LEGEND, STAGE_LEGEND, stageMeaning, TERMS } from "./status.ts";
+import { SOURCE_LEGEND, STAGE_LEGEND, TERMS } from "./status.ts";
+
+/** Every icon the page draws, set by set, each in its family's container with its word: the same map every view draws from. */
+function IconsHelp() {
+  return (
+    <section className="panel" aria-labelledby="h-icons">
+      <h2 id="h-icons">Icons</h2>
+      <p className="sm mut helpText">
+        Each icon stands for one word, which is always beside it or in its hint,
+        and a family is told apart by its container as well as its icon. A word
+        two sets share with the same meaning keeps one icon. The status marks
+        keep their key caps: the legend lists them.
+      </p>
+      {ICON_SETS.map((set) => (
+        <div className="iconSet" key={set.title}>
+          <h3 className="helpHead">{set.title}</h3>
+          <p className="sm mut">{set.where}</p>
+          <ul className="iconList" data-container={set.container}>
+            {Object.entries(set.members).map(([key, entry]) => (
+              <li key={key}>
+                <InContainer container={set.container} entry={entry} />
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </section>
+  );
+}
 
 export function HelpView({ Fold }: { Fold: FoldComponent }) {
   return (
@@ -90,12 +120,9 @@ export function HelpView({ Fold }: { Fold: FoldComponent }) {
           {STAGE_LEGEND.map((s) => (
             <div key={s.name} style={{ display: "contents" }}>
               <dt>
-                <span className="chip">
-                  <b>{s.mark}</b>
-                  {s.name}
-                </span>
+                <StageChip stage={s.name} />
               </dt>
-              <dd className="prose">{stageMeaning(s.name)}</dd>
+              <dd className="prose">{s.meaning}</dd>
             </div>
           ))}
         </dl>
@@ -104,13 +131,14 @@ export function HelpView({ Fold }: { Fold: FoldComponent }) {
           {SOURCE_LEGEND.map((s) => (
             <div key={s.name} style={{ display: "contents" }}>
               <dt>
-                <span className="chip">{s.name}</span>
+                <SourceChip source={s.name} />
               </dt>
               <dd className="prose">{s.meaning}</dd>
             </div>
           ))}
         </dl>
       </section>
+      <IconsHelp />
       <Legend Fold={Fold} stages={false} />
     </>
   );

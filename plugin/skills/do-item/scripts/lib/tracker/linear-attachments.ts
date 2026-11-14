@@ -124,7 +124,7 @@ export function linearFiles(
       const res = await fetchImpl(url, {
         method: "PUT",
         headers,
-        body: bytes,
+        body: new Uint8Array(bytes),
         redirect: "error",
         signal: bounded(signal),
       });
@@ -144,6 +144,7 @@ export function linearFiles(
         throw new LinearApiError(
           "reading a file Linear stores needs an API key: set LINEAR_API_KEY (or LINEAR_API_TOKEN)",
           null,
+          "unauthorized",
         );
       const res = await fetchImpl(url, {
         headers: { Authorization: token },
@@ -212,7 +213,8 @@ export function linearAttachments(
       attachmentOfNode(n, `attachments of ${key}[${i}]`),
     );
   }
-  const missing = (message: string) => new LinearApiError(message, null, true);
+  const missing = (message: string) =>
+    new LinearApiError(message, null, "not-found");
   const files = given ?? linearFiles(resolveLinearToken());
 
   return {
@@ -286,7 +288,12 @@ export function linearAttachments(
           throw new LinearApiError(
             `${error.message} (the file is already uploaded at ${assetUrl}, but no command attaches an existing address: run the attach again, which uploads a second copy and leaves this one unattached)`,
             error.status,
-            error.notFound,
+            error.code,
+            {
+              until: error.until,
+              sent: error.sent,
+              retryAfterMs: error.retryAfterMs,
+            },
           );
         throw error;
       }

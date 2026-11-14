@@ -101,6 +101,8 @@ export const REPOSITORY_ONLY_FIELDS: readonly string[] = [
   "review.repo_slug",
   "review.repo_label",
   "ci.required_checks",
+  "ci.hold_sentinels",
+  "ci.advisory_checks",
   // A command the repository supplies, run as its default branch sets it.
   "ci.log_command",
   // The repository's autonomy ceiling and its human-in-the-loop classes: a
@@ -122,6 +124,7 @@ export const REPOSITORY_ONLY_FIELDS: readonly string[] = [
   "changelog.tag_prefix",
   "changelog.release.push",
   "changelog.release.branch",
+  "changelog.release.rerun_failed_gates",
   "changelog.consumer_actions",
   "changelog.consumer_actions_record",
   // How a repository's files are classified describes that repository.
@@ -160,6 +163,7 @@ const HOST_TRUST = "is the host's choice of how far it trusts a drive's passes";
 const USER_ONLY: Readonly<Record<string, string>> = {
   clones: "describes one machine",
   "drive.pass_args": HOST_TRUST,
+  "drive.codex_pass_args": HOST_TRUST,
   "drive.codex_bypass": HOST_TRUST,
 };
 

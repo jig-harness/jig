@@ -47,7 +47,7 @@ inputs:
     required: false
     default: ""
   rerun:
-    description: "tag: run the cancelled required checks' workflow runs again, once (true or false); needs a token with Actions write."
+    description: "tag: re-run eligible failed or cancelled required checks within their retry budget (true or false); needs a token with Actions write."
     required: false
     default: "false"
   token:

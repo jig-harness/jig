@@ -13,6 +13,10 @@
  * `only_labeled`, a pull request that carries no label of the set is never
  * read for a ledger, and a merge that carries none wants no follow-up; the
  * scope itself is decided once, by `decideScope`.
+ *
+ * A read a failed call stopped carries the call's failure class; when the
+ * class clears by waiting, the record names the last reading a tick took
+ * whole, with its age (`read-failures.ts`).
  */
 import type { SharedRecords } from "../../shared/records/shared.ts";
 import { adoptionNote, adoptionOf } from "./adopt.ts";
@@ -35,8 +39,16 @@ import { readDrives } from "./sources/ledgers.ts";
 import type { Pool } from "./pool.ts";
 import type { TickComments } from "./tick-comments.ts";
 import type { PrLinkText } from "./work-links.ts";
+import { PAGE } from "./forge-batch.ts";
 import type { CommentsOutcome, RepositoryOutcome } from "./tick-reads.ts";
 import { failureText } from "./text.ts";
+import { clearsByWaiting } from "../../shared/outbound/failure.ts";
+import {
+  keepForgeReading,
+  lastForgeReading,
+  readFailureOf,
+} from "./read-failures.ts";
+import type { Failure } from "../../shared/outcome.ts";
 import type {
   DispatchSection,
   MarkedPr,
@@ -44,6 +56,7 @@ import type {
   RepoReport,
   RepoTarget,
 } from "./types.ts";
+import { currentMs } from "../../shared/time.ts";
 
 /** What the forge gave one repository's tick. */
 export interface ForgeRead {
@@ -123,12 +136,15 @@ export async function readForge(
     for (const p of prs)
       if (p.createdAt !== undefined) out.created.set(p.number, p.createdAt);
   };
-  const unread = (reason: string) => {
+  const unread = (reason: string, cause?: Failure) => {
+    const failure = cause === undefined ? undefined : readFailureOf(cause);
+    const waits = failure !== undefined && clearsByWaiting(failure.class);
     report.records.push({
       record: "forge",
       source: `gh ${repo.slug}`,
       ok: false,
-      detail: `the pull requests cannot be read: ${reason}`,
+      detail: `the pull requests cannot be read: ${reason}${waits ? lastForgeReading(repo.path, nowMs) : ""}`,
+      ...(failure === undefined ? {} : { failure }),
     });
     out.drives = [];
     out.merged = [];
@@ -145,7 +161,12 @@ export async function readForge(
       ? listedOpen(queried.value.open, read)
       : await reads.pool.run(() => openPullRequests(repo.slug, read));
     if (!open.ok) {
-      unread(open.failure.reason);
+      unread(
+        queried.ok
+          ? open.failure.reason
+          : `${open.failure.reason}; the repository query did not read either: ${queried.failure.reason}`,
+        open.failure,
+      );
       return out;
     }
     out.open = open.value;
@@ -169,13 +190,13 @@ export async function readForge(
     );
     const since = report.followupSince as string;
     out.read = new Set(toRead.map((p) => p.number));
-    const observedMs = Date.now();
+    const observedMs = currentMs();
     const merges =
       section.followupCommand === null
         ? null
         : await reads.pool.run(() => mergedSince(repo.slug, since, read));
     if (merges !== null && !merges.ok) {
-      unread(merges.failure.reason);
+      unread(merges.failure.reason, merges.failure);
       return out;
     }
     const listed = merges === null ? [] : merges.value;
@@ -196,18 +217,24 @@ export async function readForge(
     if (labels?.onlyLabeled === true)
       decideScope(out, report, labels, [out.open, listed]);
     out.ok = true;
+    const detail = `${out.open.length} open pull request(s)${queryNote(queried)}, ${out.drives.length} with a drive ledger${labelNote(labels, unlabeled)}${adoptionNote(adoption, out.drives)}; ${
+      section.followupCommand === null
+        ? "no dispatch.followup_command: no follow-ups"
+        : `${out.merged.length} merged since ${since} (${marked.kept} unchanged since a tick read their markers, not read again${commentsNote(marked.queried)})`
+    }`;
     report.records.push({
       record: "forge",
       source: `gh ${repo.slug}`,
       ok: true,
-      detail: `${out.open.length} open pull request(s)${queryNote(queried)}, ${out.drives.length} with a drive ledger${labelNote(labels, unlabeled)}${adoptionNote(adoption, out.drives)}; ${
-        section.followupCommand === null
-          ? "no dispatch.followup_command: no follow-ups"
-          : `${out.merged.length} merged since ${since} (${marked.kept} unchanged since a tick read their markers, not read again${commentsNote(marked.queried)})`
-      }`,
+      detail,
     });
+    keepForgeReading(repo.path, detail, nowMs);
   } catch (error) {
-    unread(failureText(error));
+    unread(failureText(error), {
+      code: "thrown",
+      reason: failureText(error),
+      cause: error,
+    });
   }
   return out;
 }
@@ -221,6 +248,9 @@ function linkText(raw: unknown): PrLinkText | null {
     url: typeof p.url === "string" ? p.url : "",
     headRefName: typeof p.headRefName === "string" ? p.headRefName : "",
     body: typeof p.body === "string" ? p.body : "",
+    ...(typeof p.isCrossRepository === "boolean"
+      ? { crossRepository: p.isCrossRepository }
+      : {}),
     closing: Array.isArray(p.closing)
       ? (p.closing as Exclude<PrLinkText["closing"], null>)
       : null,
@@ -266,12 +296,16 @@ function decideScope(
 function queryNote(queried: RepositoryOutcome): string {
   if (!queried.ok)
     return ` (the repository query did not read, so each was read on its own: ${queried.failure.reason})`;
-  const { pages, cost, overflow } = queried.value;
+  const { pages, cost, overflow, pageSize } = queried.value;
   const own =
     overflow.length === 0
       ? ""
       : `; ${overflow.length} with more comments than one page holds, listed on their own`;
-  return ` (one repository query: ${pages} page(s), ${cost} point(s)${own})`;
+  const sized =
+    pageSize < PAGE
+      ? ` ending at ${pageSize} pull requests per page, as many as the forge answers in time`
+      : "";
+  return ` (one repository query: ${pages} page(s)${sized}, ${cost} point(s)${own})`;
 }
 
 /** How the merges' comments were read, where a query read them. */

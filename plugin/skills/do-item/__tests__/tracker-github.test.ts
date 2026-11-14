@@ -15,7 +15,7 @@ import {
 } from "./github-fixtures.ts";
 
 const NOT_FOUND = new GitHubApiError("not found", {
-  notFound: true,
+  code: "not-found",
   data: { repository: { issue: null } },
 });
 
@@ -843,7 +843,7 @@ describe("GitHub adapter: reading in pages and refusing what it cannot do", () =
     const { t } = gitHub(
       () =>
         new GitHubApiError("no repository", {
-          notFound: true,
+          code: "not-found",
           data: { repository: null },
         }),
     );
@@ -854,7 +854,7 @@ describe("GitHub adapter: reading in pages and refusing what it cannot do", () =
     const { t, calls } = gitHub((c) => {
       if (c.op === "TrackerIssue") return oneIssue(issueNode({ number: 5 }));
       return new GitHubApiError("no board", {
-        notFound: true,
+        code: "not-found",
         data: { organization: { projectV2: null } },
       });
     }, ON_BOARD);

@@ -494,8 +494,8 @@ describe("jig dispatch --apply picks up assigned items", () => {
 
   it("launches nothing for an item unassigned between the report and the launch", async () => {
     const w = fixture();
-    // The plan's two listings (dispatch states, then in progress) see it; the fresh read does not.
-    w.setIssuesAfter(2, []);
+    // The shared queue sees it; the fresh read before launch does not.
+    w.setIssuesAfter(1, []);
     const [waiting] = launches(await applyTick(w, false));
     expect(waiting).toMatchObject({
       action: "pickup",
@@ -509,7 +509,7 @@ describe("jig dispatch --apply picks up assigned items", () => {
 
   it("launches nothing for an item moved back to the backlog before the launch", async () => {
     const w = fixture();
-    w.setIssuesAfter(2, [assignedIssue(12, "factory-bot", ["Backlog"])]);
+    w.setIssuesAfter(1, [assignedIssue(12, "factory-bot", ["Backlog"])]);
     expect(launches(await applyTick(w, false))[0]).toMatchObject({
       outcome: "waits",
       detail: "it is no longer assigned to factory-bot in todo",

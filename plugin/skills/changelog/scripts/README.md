@@ -452,27 +452,23 @@ A version is tagged on the commit that released it and on no other: its
 first-parent line (its own history, without the commits of the branches merged
 into it) whose changelog has the version's heading. However the release reached
 the branch (a squash, a merge commit, a rebase, a direct push), that commit
-holds exactly the release. A version is owed a tag when it has a heading, no
-`<tag_prefix><version>` tag on `origin` (any tag of that name counts), and is
-newer than the newest `<tag_prefix>x.y.z` tag on `origin`; with no such tag
-on `origin`, only the newest release heading is owed one. So a repository
-that adopts the workflow with an untagged history never has its old versions
-tagged and published: `status.ts` shows what the first run would tag, and
-tagging the newest released version by hand first leaves nothing older owed.
-Versions are tagged oldest first, since a newer tag on `origin` leaves an
-older version no longer owed one: a version whose checks passed waits while
-an older owed version is `pending` or `rerun`. An older `failed` version
-holds nothing back; it is left for a person, its failed `tag.ts` run is the
-report, and once a newer version is tagged it is no longer owed a tag, so
-neither `tag.ts` nor `status.ts` lists it again.
+holds exactly the release. Every release heading without its
+`<tag_prefix><version>` tag on `origin` is owed one, whatever newer tags
+exist. Only versions newer than the newest release tag can be tagged
+automatically; with no release tag, only the newest release can. Older releases
+have state `manual`, trigger no retries and hold no newer version back.
+Automatically eligible versions are tagged oldest first: a version whose checks passed waits
+while an older owed version is `pending` or `rerun`. An older `failed` version
+holds nothing back and remains listed for a person until tagged.
 Each version owed gets one state:
 
 | State | Meaning |
 |-------|---------|
 | `ready` | every required check on the releasing commit itself passed, and no older owed version is `pending` or `rerun`: the tag can be made |
 | `pending` | a required check is queued, running or has not reported yet; or every check passed and the version waits for an older one, whose tag `waitsFor` names |
-| `rerun` | a required check was cancelled, none failed, and its workflow run's attempt number is still 1 |
-| `failed` | a required check failed, or was cancelled again after a re-run, or was cancelled outside a workflow run, or `--rerun` asked GitHub to run it again and was refused (GitHub refuses a run older than 30 days): left untagged for a person |
+| `rerun` | a required check was cancelled and its workflow run's attempt number is still 1, or it failed and its completed run has retries left under `changelog.release.rerun_failed_gates` (default `1`, `0` disables failed-check retries) |
+| `failed` | a required check failed with no retry left, or was cancelled again after a re-run, or was cancelled outside a workflow run, or `--rerun` asked GitHub to run it again and was refused (GitHub refuses a run older than 30 days): left untagged for a person |
+| `manual` | outside automatic tagging eligibility: remains listed for a person to tag by hand |
 | `imported` | its heading came in one commit with other release headings (a changelog brought in with its history), so no commit released it: tagged by hand if it is owed a tag at all |
 
 The required checks are `ci.required_checks` when the integration branch's
@@ -491,7 +487,7 @@ The changelog, the `changelog:` section, `ci.required_checks` and the history
 are read from the integration branch, the tags from `origin` (`git ls-remote` with `--tags`), never from
 the working tree or this clone's tags; a shallow clone is refused.
 
-It makes no tag. `--rerun` re-runs, once, the workflow runs of the `rerun`
+It makes no tag. `--rerun` re-runs each eligible workflow run once per invocation, within the configured budget, for the `rerun`
 entries (it needs a token with Actions write); without it the script only
 reads. A re-run GitHub refuses fails the versions that needed it, with the
 reason in their `detail`; the plan, `ready` included, still holds for the

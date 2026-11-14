@@ -151,6 +151,7 @@ import {
 import { ghCall, resolvePr, run, tsArgv } from "../../../shared/proc.ts";
 import { countRound, settleRounds } from "./lib/review-rounds.ts";
 import { skillsParentIsIntact } from "./reply-to-thread.ts";
+import { currentMs } from "../../../shared/time.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const listUnresolved = join(here, "list-unresolved-threads.ts");
@@ -274,7 +275,7 @@ async function summaryOnlyFindings(
       ? { kind: "absent" }
       : { kind: "error" };
   }
-  const started = Date.now();
+  const started = currentMs();
   const evidence = await run(
     tsArgv(join(DRIVE_PR_ROOT, "scripts", "review-head.ts"), [pr, head]),
     {
@@ -284,7 +285,7 @@ async function summaryOnlyFindings(
   );
   if (evidence.code === 4) return { kind: "waiting" };
   if (evidence.code !== 0) return { kind: "error" };
-  const remaining = timeoutSec - (Date.now() - started) / 1000;
+  const remaining = timeoutSec - (currentMs() - started) / 1000;
   if (remaining < 1) return { kind: "error" };
   const r = await run(tsArgv(SUMMARY_FINDINGS, [pr, "--json"]), {
     timeoutSec: remaining,
@@ -489,7 +490,7 @@ async function checkState(
 }
 
 async function main(): Promise<number> {
-  const mainStartedAt = Date.now();
+  const mainStartedAt = currentMs();
   let pr = "";
   let botsOnly = false;
   let config: ReturnType<typeof reviewConfig>;
@@ -702,7 +703,7 @@ async function main(): Promise<number> {
     return r.stdout.split("\n").filter((l) => l.trim() !== "").length;
   };
 
-  const deadline = Date.now() + timeout * 1000;
+  const deadline = currentMs() + timeout * 1000;
   const pollSeconds = pollSleepSeconds(interval);
   let queryErrors = 0;
   let noChecksSince: number | null = null;
@@ -714,7 +715,7 @@ async function main(): Promise<number> {
       console.error("not settled yet; --once given, not waiting");
       return false;
     }
-    if (Date.now() >= deadline) {
+    if (currentMs() >= deadline) {
       console.error(`timed out after ${timeout}s waiting for checks to settle`);
       return false;
     }
@@ -760,7 +761,7 @@ async function main(): Promise<number> {
       lastWaiting !== null &&
       signalsUnchanged &&
       lastWaiting.head === liveHead &&
-      Date.now() - lastWaiting.at < checksMaxAgeMs
+      currentMs() - lastWaiting.at < checksMaxAgeMs
     ) {
       cs = lastWaiting.state;
     } else {
@@ -769,7 +770,7 @@ async function main(): Promise<number> {
       missingRequired = result.missing;
       lastWaiting =
         liveHead !== "" && (cs === "pending" || cs === "no-reviewer")
-          ? { state: cs, head: liveHead, at: Date.now() }
+          ? { state: cs, head: liveHead, at: currentMs() }
           : null;
     }
 
@@ -819,8 +820,8 @@ async function main(): Promise<number> {
             `no checks on #${pr}; --no-ci given, treating as settled`,
           );
         } else {
-          if (noChecksSince === null) noChecksSince = Date.now();
-          if (Date.now() - noChecksSince < NO_CHECKS_GRACE * 1000) {
+          if (noChecksSince === null) noChecksSince = currentMs();
+          if (currentMs() - noChecksSince < NO_CHECKS_GRACE * 1000) {
             console.error(
               `no checks yet on #${pr}; waiting ${NO_CHECKS_GRACE}s for the suite to appear`,
             );
@@ -918,7 +919,7 @@ async function main(): Promise<number> {
       const remainingSec =
         onceBudgetSec -
         SUMMARY_ONCE_MARGIN_SEC -
-        Math.floor((Date.now() - mainStartedAt) / 1000);
+        Math.floor((currentMs() - mainStartedAt) / 1000);
       if (remainingSec < SUMMARY_ONCE_MIN_TIMEOUT_SEC) {
         fail(
           1,

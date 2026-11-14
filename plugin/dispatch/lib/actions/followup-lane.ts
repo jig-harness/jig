@@ -18,6 +18,7 @@ import { holding } from "../holding.ts";
 import { joinedTo, stuckWhy } from "../stuck-launches.ts";
 import { failureText } from "../text.ts";
 import type { ApplyState } from "./launch.ts";
+import { currentMs } from "../../../shared/time.ts";
 
 /**
  * Why the host runs as many follow-ups as `followup_concurrency` allows;
@@ -38,7 +39,7 @@ export function laneCapWait(
   repo: string,
 ): string | null {
   const cap = state.machine.followupConcurrency;
-  const nowMs = Date.now();
+  const nowMs = currentMs();
   const running = state.records.filter((r) => {
     if (r.record.action !== "followup" || !holds(r.state)) return false;
     const seen =

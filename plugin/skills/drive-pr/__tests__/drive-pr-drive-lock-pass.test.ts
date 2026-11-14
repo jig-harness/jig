@@ -307,16 +307,16 @@ describe("drive.ts loop control", () => {
       try {
         const seen = claudeAdapter.detect({
           cwd: cwdDir,
-          since: new Date(Date.now() - 60_000),
-          now: new Date(),
+          since: Temporal.Now.instant().subtract({ minutes: 1 }),
+          now: Temporal.Now.instant(),
         });
         expect(seen?.window).toBe("short");
         // ...and that the ONLY thing that changes the answer is the snapshot.
         expect(
           claudeAdapter.detect({
             cwd: cwdDir,
-            since: new Date(Date.now() - 60_000),
-            now: new Date(),
+            since: Temporal.Now.instant().subtract({ minutes: 1 }),
+            now: Temporal.Now.instant(),
             preexistingSessions: new Set([preexisting]),
           }),
         ).toBeNull();

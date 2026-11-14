@@ -21,6 +21,7 @@
  */
 import { posix } from "node:path";
 import { CLONE_TIMEOUT_MS } from "../../plugin/shared/orca-workspace/limits.ts";
+import { currentMs } from "../../plugin/shared/time.ts";
 import { budget, output, withLimit } from "../herdr/runner.ts";
 import { onServer, orcaCall, orcaErrorText } from "./cli.ts";
 import { failureReason, inspectPath, releaseClaim } from "./hooks.ts";
@@ -248,7 +249,7 @@ export function cloneMissingRepo(
   ws: Workspace,
   name: string,
   source: CloneSource,
-  now: () => number = Date.now,
+  now: () => number = currentMs,
 ): unknown {
   if (name === "" || name === "." || name === ".." || name.includes("/"))
     throw new OrcaError(

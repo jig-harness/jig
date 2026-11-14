@@ -29,6 +29,7 @@ import {
 } from "../../skills/drive-pr/scripts/lib/answer-forms.ts";
 import type { ThreadEntry } from "./answer.ts";
 import type { CommentFields, LabelEvent } from "./forge.ts";
+import { parseMs } from "../../shared/time.ts";
 
 /** How many entries the thread prints without `--since` or `--all`. */
 const THREAD_LIMIT = 20;
@@ -46,14 +47,14 @@ export function windowed(
   window: ThreadWindow,
 ): { entries: ThreadEntry[]; omitted: number } {
   const ordered = [...entries].sort(
-    (a, b) => (Date.parse(a.at) || 0) - (Date.parse(b.at) || 0),
+    (a, b) => (parseMs(a.at) || 0) - (parseMs(b.at) || 0),
   );
   if (window.all) return { entries: ordered, omitted: 0 };
   const kept =
     window.since === null
       ? ordered.slice(-THREAD_LIMIT)
       : ordered.filter(
-          (e) => (Date.parse(e.at) || 0) >= Date.parse(window.since as string),
+          (e) => (parseMs(e.at) || 0) >= parseMs(window.since as string),
         );
   return { entries: kept, omitted: ordered.length - kept.length };
 }

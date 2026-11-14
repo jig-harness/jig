@@ -16,6 +16,7 @@ import type { Ledger } from "../../skills/drive-pr/scripts/lib/state/ledger.ts";
 import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import type { Classified } from "./sources/ledgers.ts";
 import type { DrivenPr } from "./types.ts";
+import { isoFromMs, parseMs } from "../../shared/time.ts";
 
 const INFRA_BACKOFF_BASE_MS = 15 * 60_000;
 const INFRA_BACKOFF_CAP_MS = 4 * 60 * 60_000;
@@ -56,10 +57,10 @@ export function infraStopClass(
       class: "needs-person",
       why: `stopped ${exit} (${words}) ${count} times in a row, its last ${INFRA_REDRIVES} re-drives included: the infrastructure has not recovered, so a person settles it (see the drive's handoff)`,
     };
-  const stoppedMs = Date.parse(at);
-  const notBefore = new Date(
+  const stoppedMs = parseMs(at);
+  const notBefore = isoFromMs(
     (Number.isFinite(stoppedMs) ? stoppedMs : 0) + infraBackoffMs(count),
-  ).toISOString();
+  );
   return {
     class: "stale",
     why: `stopped ${exit} (${words}), stop ${count} of ${INFRA_REDRIVES + 1} in a row: re-drive on any account from ${notBefore}`,
@@ -76,7 +77,7 @@ export function infraStopClass(
 export function backingOff(pr: DrivenPr, nowMs: number): string | null {
   const notBefore = pr.stale?.notBefore;
   if (pr.class !== "stale" || notBefore === undefined) return null;
-  const at = Date.parse(notBefore);
+  const at = parseMs(notBefore);
   if (!Number.isFinite(at) || at <= nowMs) return null;
   return `${pr.why}; its backoff ends ${notBefore}, so it is not re-driven yet`;
 }

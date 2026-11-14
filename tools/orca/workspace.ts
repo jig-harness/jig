@@ -94,6 +94,7 @@ import {
 } from "./receipts.ts";
 import { OrcaError, type Workspace, workspace } from "./runner.ts";
 import { worktreeToken } from "./worktree-token.ts";
+import { currentIso, currentMs } from "../../plugin/shared/time.ts";
 
 export { OPEN_LIMIT_MS };
 export { CREATE_HOOK_CLAIM, CREATE_HOOK_MARK } from "./hooks.ts";
@@ -219,7 +220,7 @@ function pendingReceipt(
     worktreeToken: recorded ? worktreeToken(ws, dir) : "",
     agent: options.agent,
     environment: ws.target.environment ?? null,
-    at: new Date().toISOString(),
+    at: currentIso(),
     ...(recorded ? { owner: ownerLine(ws.orca).trim() } : {}),
   };
 }
@@ -404,7 +405,7 @@ export async function removeWorkspace(
 
 /** The workspace with every call and pause cut to what is left of `limitMs`. */
 export function limitWorkspace(ws: Workspace, limitMs: number): Workspace {
-  const now = Date.now;
+  const now = currentMs;
   return {
     ...ws,
     orca: withLimit(ws.orca, limitMs, now),

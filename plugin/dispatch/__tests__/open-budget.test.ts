@@ -1,4 +1,4 @@
-import { afterEach, expect, it, spyOn } from "bun:test";
+import { afterEach, expect, it, setSystemTime, spyOn } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -88,7 +88,7 @@ it("reserves the repository lookup, workspace timeout and receipt before opening
 it("preserves the receipt reserve when the open leaves too little time to recheck identity", async () => {
   const s = state();
   let now = Date.now();
-  const clock = spyOn(Date, "now").mockImplementation(() => now);
+  setSystemTime(now);
   const identity = spyOn(accounts, "checkIdentity").mockResolvedValue({
     ok: true,
   });
@@ -98,6 +98,7 @@ it("preserves the receipt reserve when the open leaves too little time to rechec
     s.records = [];
     s.runtime.openWorkspace = async () => {
       now += 4000;
+      setSystemTime(now);
       return {
         ok: true,
         detail: "opened",
@@ -123,7 +124,7 @@ it("preserves the receipt reserve when the open leaves too little time to rechec
     expect(s.opened).toBe(1);
   } finally {
     identity.mockRestore();
-    clock.mockRestore();
+    setSystemTime();
   }
 });
 
@@ -145,7 +146,7 @@ async function opened(s: ApplyState): Promise<unknown> {
 it("counts the kill grace when admitting an identity check after an open", async () => {
   const s = state();
   let now = Date.now();
-  const clock = spyOn(Date, "now").mockImplementation(() => now);
+  setSystemTime(now);
   const identity = spyOn(accounts, "checkIdentity").mockResolvedValue({
     ok: true,
   });
@@ -154,6 +155,7 @@ it("counts the kill grace when admitting an identity check after an open", async
     s.startedAt = now - 6 * 3_600_000 + 7100;
     s.runtime.openWorkspace = async () => {
       now += 4500;
+      setSystemTime(now);
       return {
         ok: true,
         detail: "opened",
@@ -165,17 +167,18 @@ it("counts the kill grace when admitting an identity check after an open", async
     expect(identity).not.toHaveBeenCalled();
   } finally {
     identity.mockRestore();
-    clock.mockRestore();
+    setSystemTime();
   }
 });
 
 it("admits the launch after a successful identity check against its settlement bound", async () => {
   const s = state();
   let now = Date.now();
-  const clock = spyOn(Date, "now").mockImplementation(() => now);
+  setSystemTime(now);
   const identity = spyOn(accounts, "checkIdentity").mockImplementation(
     async () => {
       now += 1000;
+      setSystemTime(now);
       return { ok: true };
     },
   );
@@ -191,14 +194,14 @@ it("admits the launch after a successful identity check against its settlement b
     );
   } finally {
     identity.mockRestore();
-    clock.mockRestore();
+    setSystemTime();
   }
 });
 
 it("admits the launch when its settlement bound fits after the identity check", async () => {
   const s = state();
   const now = Date.now();
-  const clock = spyOn(Date, "now").mockImplementation(() => now);
+  setSystemTime(now);
   const identity = spyOn(accounts, "checkIdentity").mockResolvedValue({
     ok: true,
   });
@@ -208,6 +211,6 @@ it("admits the launch when its settlement bound fits after the identity check", 
     expect(identity).toHaveBeenCalledTimes(1);
   } finally {
     identity.mockRestore();
-    clock.mockRestore();
+    setSystemTime();
   }
 });

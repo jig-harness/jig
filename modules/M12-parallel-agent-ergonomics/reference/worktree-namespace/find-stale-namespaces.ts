@@ -73,24 +73,20 @@ export interface Plan {
 }
 
 // A time zone is required: without one the verdict would depend on the
-// machine's zone. Date.UTC rolls an impossible date over (30 February becomes
-// 2 March), so a real date is one that comes back unchanged.
+// machine's zone. Temporal refuses a date that does not exist (30 February).
 const ISO =
-  /^(\d{4})-(\d{2})-(\d{2})T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|[+-](?:[01]\d|2[0-3]):?[0-5]\d)$/;
+  /^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|[+-](?:[01]\d|2[0-3]):?[0-5]\d)$/;
 
 export function parseTime(value: unknown, what: string): number {
   const f = typeof value === "string" ? ISO.exec(value) : null;
-  if (f !== null) {
-    const ms = Date.parse(f[0]);
-    const day = new Date(
-      Date.UTC(Number(f[1]), Number(f[2]) - 1, Number(f[3])),
-    );
-    if (
-      !Number.isNaN(ms) &&
-      day.toISOString().startsWith(`${f[1]}-${f[2]}-${f[3]}`)
-    )
-      return ms;
-  }
+  if (f !== null)
+    try {
+      // Digits past the nanosecond name no time Temporal can hold.
+      return Temporal.Instant.from(f[0].replace(/(\.\d{9})\d+/, "$1"))
+        .epochMilliseconds;
+    } catch {
+      // Falls through to the refusal below.
+    }
   throw new Error(
     `${what} is not an ISO 8601 time with a zone: ${String(value)}`,
   );
@@ -398,7 +394,10 @@ export function parseOptions(args: string[]): Options {
       ),
     },
     production: required("production"),
-    now: values.now === undefined ? Date.now() : parseTime(values.now, "--now"),
+    now:
+      values.now === undefined
+        ? Temporal.Now.instant().epochMilliseconds
+        : parseTime(values.now, "--now"),
     json: values.json === true,
   };
 }

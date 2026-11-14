@@ -24,8 +24,10 @@ import {
   SCRIPTS,
   useDrivePrSuite,
   writeFixture,
+  scratchClean,
+  gitCleanEnv,
 } from "./drive-pr-harness.ts";
-import { lockDirs, lockHeld } from "./drive-loop-harness.ts";
+import { lockDirs, lockHeld, scratchLockName } from "./drive-loop-harness.ts";
 
 useDrivePrSuite();
 
@@ -115,14 +117,15 @@ describe("cooperative driver stop", () => {
   }, 60000);
 
   it("--stop cancels an active pass and releases its driver's locks, and the driver acknowledges it", async () => {
-    const { dir, stateDir } = writeFixture({
-      threads: [{ id: "PRRT_stop", path: "a.ts", bot: true }],
-    });
-    const { worktree, pr } = lockDirs(dir, stateDir);
+    const { dir, stateDir } = writeFixture(
+      { threads: [{ id: "PRRT_stop", path: "a.ts", bot: true }] },
+      scratchClean.dir,
+    );
+    const { worktree, pr } = lockDirs(dir, stateDir, await scratchLockName());
     const marker = join(dir, "running-pass");
     const pass = `import {writeFileSync} from 'node:fs'; writeFileSync(${JSON.stringify(marker)}, String(process.pid)); setInterval(() => {}, 1000);`;
     const env = {
-      ...process.env,
+      ...gitCleanEnv(),
       PATH: `${binDir}${delimiter}${process.env.PATH}`,
       DRIVE_PR_FIXTURES: dir,
       // This process-lifecycle fixture has no mirrored ledger; publication is covered by ledger-stop.test.ts.
@@ -150,7 +153,7 @@ describe("cooperative driver stop", () => {
           "999",
         ).filter((arg, index) => index !== 0 || arg !== process.execPath),
       ],
-      { env, stdout: "pipe", stderr: "pipe" },
+      { cwd: scratchClean.dir, env, stdout: "pipe", stderr: "pipe" },
     );
     const output = Promise.all([
       new Response(driver.stdout).text(),
@@ -203,7 +206,7 @@ describe("cooperative driver stop", () => {
       expect(lockHeld(pr)).toBe(true);
       const stop = Bun.spawn(
         scriptArgv(join(SCRIPTS, "drives.ts"), "--stop", "999"),
-        { env, stdout: "pipe", stderr: "pipe" },
+        { cwd: scratchClean.dir, env, stdout: "pipe", stderr: "pipe" },
       );
       const [stopOut, stopErr, stopCode] = await Promise.all([
         new Response(stop.stdout).text(),

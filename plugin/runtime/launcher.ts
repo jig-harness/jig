@@ -462,7 +462,7 @@ function ends(text: string, limit: number): string {
 
 /** A result line for an upgrade that printed none that reads, saying why. */
 function failedUpgrade(detail: string, limit?: number): string {
-  const at = new Date().toISOString();
+  const at = Temporal.Now.instant().toString({ fractionalSecondDigits: 3 });
   let keep = limit ?? 1000;
   // The line is bounded as serialized, whatever the detail holds: JSON escapes
   // a control character into six bytes, so a character count alone is no bound.

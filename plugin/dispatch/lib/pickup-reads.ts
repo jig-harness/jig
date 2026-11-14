@@ -1,4 +1,8 @@
-/** Kept assignment metadata: a changed tracker timestamp invalidates the item. */
+/**
+ * What a tick's reads keep for the next tick: assignment metadata, which a
+ * changed tracker timestamp invalidates, and the page size a forge query
+ * read at (`tick-reads.ts`).
+ */
 import { swallow } from "../../shared/errors.ts";
 import { stateDb } from "./state.ts";
 

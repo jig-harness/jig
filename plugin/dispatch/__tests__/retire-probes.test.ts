@@ -18,16 +18,16 @@ const CHILD = `
 import { retireNotices } from ${JSON.stringify(new URL("../lib/actions/retire-notices.ts", import.meta.url).pathname)};
 const [path, root, budget] = process.argv.slice(1);
 // Keep setup time out of the simulated tick age; the probe's process timer stays real.
-const now = Date.now();
-if (budget === "bounded") Date.now = () => now;
+const now = Temporal.Now.instant();
+if (budget === "bounded") Temporal.Now.instant = () => now;
 const report = { records: [{ ok: true }] };
 await retireNotices({
   machine: { runtimeTimeoutMs: 100 },
-  startedAt: budget === "bounded" ? Date.now() - 750 : undefined,
+  startedAt: budget === "bounded" ? now.epochMilliseconds - 750 : undefined,
   runtime: { retire: async () => ({ ok: true, detail: "removed" }) },
 }, report, {
   repo: "example/repo", workspace: { id: "w", path, branch: "main", comment: "", unread: false, agents: [], unverifiableTerminals: 0 },
-  takesComment: true, written: new Set(), causes: [], records: [], lingerMs: 0, nowMs: Date.now(), root,
+  takesComment: true, written: new Set(), causes: [], records: [], lingerMs: 0, nowMs: Temporal.Now.instant().epochMilliseconds, root,
 });
 console.log(JSON.stringify(report.noticesWorkspace));
 `;

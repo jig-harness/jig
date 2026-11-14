@@ -349,7 +349,11 @@ describe("a low budget", () => {
     expect(receipt.lowBudget).toEqual({
       remaining: 120,
       limit: 5000,
-      skipped: ["thread samples", "serialization's changed files and threads"],
+      skipped: [
+        "thread samples",
+        "serialization's changed files and threads",
+        "the steward's linked pull requests and check histories",
+      ],
     });
     expect(calls(w).some((c) => /pulls\/\d+\/files/.test(c))).toBe(false);
     expect(calls(w).some((c) => c.includes("reviewThreads"))).toBe(false);

@@ -35,6 +35,7 @@ import {
   readFrontmatter,
   splitLines,
 } from "../lib/docs.ts";
+import { currentIso } from "../../../../shared/time.ts";
 
 interface Git {
   run(args: string[]): { ok: boolean; out: string; err: string };
@@ -367,7 +368,7 @@ function options(
     staged,
     skip: staged || given ? "" : SKIP,
     files: args.filter((arg) => !arg.startsWith("--")),
-    today: env.LAST_UPDATED_TODAY || new Date().toISOString().slice(0, 10),
+    today: env.LAST_UPDATED_TODAY || currentIso().slice(0, 10),
   };
 }
 

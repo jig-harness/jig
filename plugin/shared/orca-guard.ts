@@ -52,6 +52,7 @@ import { failed, ok, type Outcome } from "./outcome.ts";
 import { decode, encode } from "./records/envelope.ts";
 import { renameWithRetry } from "./rename-with-retry.ts";
 import type { Writer } from "./records/writer.ts";
+import { currentMs, isoFromMs, parseMs } from "./time.ts";
 
 export const ADMISSION_KIND = "orca-guard-admission";
 export const LAUNCH_KIND = "orca-guard-launch";
@@ -132,7 +133,7 @@ export interface GuardState {
  * does not read, or names a version this one does not know leaves collection
  * unguarded.
  */
-export function guardState(root = guardRoot(), now = Date.now()): GuardState {
+export function guardState(root = guardRoot(), now = currentMs()): GuardState {
   const unguarded = (why: string): GuardState => ({
     guarded: false,
     reason: `unguarded: ${why}`,
@@ -152,7 +153,7 @@ export function guardState(root = guardRoot(), now = Date.now()): GuardState {
   });
   if (shape !== null)
     return unguarded(`the Orca plugin's heartbeat does not read (${shape})`);
-  const elapsed = now - Date.parse(read.value.envelope.at);
+  const elapsed = now - parseMs(read.value.envelope.at);
   const age = Math.round(elapsed / 1000);
   if (Math.abs(elapsed) > HEARTBEAT_FRESH_MS)
     return unguarded(`the Orca plugin's heartbeat is ${age} s old`);
@@ -239,13 +240,13 @@ function stillMine(
 export function admit(
   path: string,
   root = guardRoot(),
-  now = new Date(),
+  now = currentMs(),
   holder: ProcessIdentity = ownIdentity(),
 ): Outcome<Admission, AdmissionCode> {
   const dir = join(root, "admissions");
   const key = guardKey(path);
   const file = join(dir, `${key}.json`);
-  const at = now.toISOString();
+  const at = isoFromMs(now);
   const body = encode(
     {
       kind: ADMISSION_KIND,
@@ -395,7 +396,7 @@ function replaceDead(
 export function launchVeto(
   admission: Pick<Admission, "key" | "at">,
   root = guardRoot(),
-  now = Date.now(),
+  now = currentMs(),
 ): string | null {
   const dir = join(root, "launches");
   const name = `${admission.key}.json`;
@@ -437,8 +438,8 @@ function vetoOf(
   const shape = missingFields(read.value.payload, LAUNCH_FIELDS);
   if (shape !== null)
     return `the launch marker ${file} does not read (${shape})`;
-  const launched = Date.parse(at);
-  if (launched >= Date.parse(admission.at))
+  const launched = parseMs(at);
+  if (launched >= parseMs(admission.at))
     return `Orca launched an agent in the worktree at ${at}, after gc's admission`;
   const age = Math.round((now - launched) / 1000);
   return now - launched <= LAUNCH_SETTLING_MS
@@ -456,7 +457,7 @@ function launchedAt(file: string): number | null {
     read.value.envelope.v === GUARD_VERSION &&
     missingFields(read.value.payload, LAUNCH_FIELDS) === null
   )
-    return Date.parse(read.value.envelope.at);
+    return parseMs(read.value.envelope.at);
   try {
     return statSync(file).mtimeMs;
   } catch (error) {
@@ -471,7 +472,7 @@ function launchedAt(file: string): number | null {
  * and read again before it is deleted; one the plugin rewrote meanwhile goes
  * back unless a newer one already took its place. Returns the names deleted.
  */
-export function sweepLaunches(root = guardRoot(), now = Date.now()): string[] {
+export function sweepLaunches(root = guardRoot(), now = currentMs()): string[] {
   const dir = join(root, "launches");
   let names: string[];
   try {

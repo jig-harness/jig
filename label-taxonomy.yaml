@@ -99,6 +99,16 @@ categories:
       - id: plugin
       - id: tools
 
+  - id: source
+    prefix: "source:"
+    max: 1
+    notes: where the issue came from, when not from Jig's own work
+    labels:
+      - id: upstream
+        notes: >-
+          raised upstream by a team that uses Jig: an ask from its repository,
+          or a finding from a live check it ran
+
 # flags — each fires a named process.
 flags:
   - id: epic

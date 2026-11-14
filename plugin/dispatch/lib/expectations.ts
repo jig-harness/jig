@@ -40,6 +40,7 @@ import type {
   Evidence,
   Running,
 } from "./types.ts";
+import { currentIso, parseMs } from "../../shared/time.ts";
 
 /** A drive record still running: its wrapper alive. */
 function runningDrive(r: ReadRecord): boolean {
@@ -95,7 +96,7 @@ export async function sampleThreads(
       continue;
     }
     const threads = read.value;
-    const sample = { round, threads, at: new Date().toISOString() };
+    const sample = { round, threads, at: currentIso() };
     stateDb(root)
       .query(
         `INSERT INTO thread_samples (launch, round, threads, at) VALUES (?, ?, ?, ?)
@@ -130,7 +131,7 @@ export function observeOpened(
     )
       continue;
     if (!openedByPickup(r, sessions, created)) continue;
-    record.openedAt = new Date().toISOString();
+    record.openedAt = currentIso();
     writeRecord(record, root);
   }
 }
@@ -141,9 +142,9 @@ function openedByPickup(
   sessions: SessionsReport,
   created: ReadonlyMap<number, string>,
 ): boolean {
-  const launched = Date.parse(r.record.createdAt);
+  const launched = parseMs(r.record.createdAt);
   return (workspaceOf(r, sessions)?.prs ?? []).some((n) => {
-    const at = Date.parse(created.get(n) ?? "");
+    const at = parseMs(created.get(n) ?? "");
     return Number.isFinite(at) && at >= launched;
   });
 }
@@ -203,7 +204,7 @@ function workspaceOf(r: ReadRecord, sessions: SessionsReport) {
 /** Whether a pickup or a follow-up has run past its window without what it owes. */
 function sessionDrift(r: ReadRecord, input: DriftInput): Broken | null {
   const { record } = r;
-  const elapsed = input.nowMs - Date.parse(record.createdAt);
+  const elapsed = input.nowMs - parseMs(record.createdAt);
   const since = { sinceLaunch: minutes(elapsed) };
   if (record.action === "followup") {
     const within = input.section.followupWithinMs;

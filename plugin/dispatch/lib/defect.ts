@@ -12,6 +12,7 @@ import { stateRoot } from "../receipts.ts";
 import { writeRow } from "./log.ts";
 import { failureText } from "./text.ts";
 import type { ApplyStage, Defect } from "./types.ts";
+import { currentIso } from "../../shared/time.ts";
 
 /** The defect `error` is, thrown in `phase`, and in `stage` of it when a stage's boundary caught it. */
 export function defectOf(
@@ -45,7 +46,7 @@ export function defectOf(
 export function logStageDefect(
   repo: string,
   defect: Defect & { stage: ApplyStage },
-  at = new Date().toISOString(),
+  at = currentIso(),
   root = stateRoot(),
 ): boolean {
   const written = attempt("unwritten", "the outcome log", () =>

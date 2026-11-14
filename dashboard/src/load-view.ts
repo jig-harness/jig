@@ -26,7 +26,15 @@ export interface LoadView {
   binds: string;
   /** What the load factor did with the launches: held them, or would have. */
   summary: string;
-  gauges: Array<{ name: string; fill: string; reads: string; line: string }>;
+  gauges: Array<{
+    gauge: LoadGauge;
+    name: string;
+    fill: string;
+    /** Whether it is at or past its line. */
+    over: boolean;
+    reads: string;
+    line: string;
+  }>;
   reservations: Array<{ kind: string; text: string }>;
   holds: Array<{ key: string; target: string; text: string }>;
 }
@@ -57,8 +65,10 @@ export function loadView(load: LineLoad): LoadView {
         : `${NAMES[load.binds].toLowerCase()} binds`,
     summary: summaryOf(load),
     gauges: load.gauges.map((g) => ({
+      gauge: g.gauge,
       name: NAMES[g.gauge],
       fill: g.fill === null ? "not read" : percentOf(g.fill),
+      over: g.fill !== null && g.fill >= 1,
       reads: g.reads,
       line: g.line,
     })),

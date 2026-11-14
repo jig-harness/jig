@@ -59,6 +59,7 @@ import {
 } from "./state/schema.ts";
 import type { TakeoverRecord } from "./state/takeover.ts";
 import { TERMINAL_STATES } from "./status/terminal-states.ts";
+import { isoFromMs, isoOf, parseMs } from "../../../../shared/time.ts";
 
 export const FIRST_REPORT_HOURS = 24;
 
@@ -215,7 +216,7 @@ function exitOfRunningLedger(l: Ledger): number | null {
   if (exit === null || started === undefined) return exit;
   const stop = (l.events ?? []).findLast((e) => e.kind === "stop");
   if (stop === undefined) return exit;
-  const [stoppedAt, startedAt] = [Date.parse(stop.at), Date.parse(started)];
+  const [stoppedAt, startedAt] = [parseMs(stop.at), parseMs(started)];
   // A run start or stop time that does not read proves nothing about which
   // run the stop ended, so the stop does not settle the run.
   if (!Number.isFinite(stoppedAt) || !Number.isFinite(startedAt)) return null;
@@ -243,11 +244,11 @@ function fromLedger(
     runningElsewhere:
       !localStopped &&
       l.driver.state === "running" &&
-      nowMs - Date.parse(l.driver.heartbeat) <= stallThresholdMs(),
+      nowMs - parseMs(l.driver.heartbeat) <= stallThresholdMs(),
   };
 }
 
-const after = (at: string, since: number) => Date.parse(at) >= since;
+const after = (at: string, since: number) => parseMs(at) >= since;
 
 /** `text` on one line, cut to `max` characters. */
 export function oneLine(text: string, max: number): string {
@@ -350,7 +351,7 @@ function localStates(
     try {
       const state: unknown = JSON.parse(row.text);
       if (isUsableState(state, Number(row.pr)))
-        out.set(row.pr, { state, mtime: Date.parse(row.at) });
+        out.set(row.pr, { state, mtime: parseMs(row.at) });
       else
         unread.push(
           `the drive state of #${row.pr} is not one this version reads`,
@@ -386,7 +387,7 @@ export function rememberedSince(stateDir: string): string | null {
     );
     return isRecord(v) &&
       typeof v.lastReportAt === "string" &&
-      Number.isFinite(Date.parse(v.lastReportAt))
+      Number.isFinite(parseMs(v.lastReportAt))
       ? v.lastReportAt
       : null;
   } catch (err) {
@@ -574,7 +575,7 @@ function stopEndsRun(s: DriveState, ledger: Ledger): boolean {
   const started = ledger.driver.started;
   if (ledger.driver.state !== "running" || started === undefined) return true;
   const stop = (s.events ?? []).findLast((e) => e.kind === "stop");
-  return stop === undefined || Date.parse(stop.at) >= Date.parse(started);
+  return stop === undefined || parseMs(stop.at) >= parseMs(started);
 }
 
 /** Reuse the doctor's ledger/process correlation, rather than infer local life from a heartbeat. */
@@ -609,10 +610,10 @@ export async function gatherMorningReport(opts: {
   live: ReadonlySet<string>;
   since: string;
   sinceSource: MorningReport["sinceSource"];
-  now: Date;
+  now: Temporal.Instant;
 }): Promise<MorningReport> {
   const unread: string[] = [];
-  const since = Date.parse(opts.since);
+  const since = parseMs(opts.since);
   const local = localStates(opts.stateDir, unread);
   const forge = await forgePopulation(unread);
   const numbers = new Set<string>([...forge.keys()]);
@@ -627,7 +628,7 @@ export async function gatherMorningReport(opts: {
         recordOf(
           local.get(pr),
           remote,
-          opts.now.getTime(),
+          opts.now.epochMilliseconds,
           await localDriverStopped(opts.stateDir, pr, remote?.ledger, unread),
         ),
         since,
@@ -644,7 +645,7 @@ export async function gatherMorningReport(opts: {
   const upgrades = upgradesSince(since);
   unread.push(...upgrades.unread);
   return {
-    now: opts.now.toISOString(),
+    now: isoOf(opts.now),
     since: opts.since,
     sinceSource: opts.sinceSource,
     pullRequests,
@@ -694,16 +695,20 @@ export async function reportMain(
  * `--since` as an instant: an ISO-8601 time, or a span back from `now`
  * (`12h`, `2d`); `null` when it is neither.
  */
-export function parseSince(text: string, now: Date): string | null {
+export function parseSince(text: string, now: Temporal.Instant): string | null {
   const span = /^(\d+)([hd])$/.exec(text.trim());
   const at =
     span === null
-      ? Date.parse(text)
-      : now.getTime() -
+      ? parseMs(text)
+      : now.epochMilliseconds -
         Number(span[1]) * (span[2] === "d" ? 24 : 1) * 60 * 60 * 1000;
   // A span too long for a date, like an unparsable time, is no instant.
-  const instant = new Date(at);
-  return Number.isFinite(instant.getTime()) ? instant.toISOString() : null;
+  try {
+    return isoFromMs(at);
+  } catch (error) {
+    if (error instanceof RangeError) return null;
+    throw error;
+  }
 }
 
 /** Gather and print the report, remembering its time for the next full report. */
@@ -713,7 +718,7 @@ export async function morningReportCommand(opts: {
   sinceFlag: string;
   json: boolean;
 }): Promise<number> {
-  const now = new Date();
+  const now = Temporal.Now.instant();
   let since = parseSince(`${FIRST_REPORT_HOURS}h`, now) as string;
   let sinceSource: MorningReport["sinceSource"] = "first report";
   if (opts.sinceFlag !== "") {

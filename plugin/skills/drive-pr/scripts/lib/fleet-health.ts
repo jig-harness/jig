@@ -166,6 +166,7 @@ import {
   type UnitsInput,
   type PrFact,
 } from "./fleet-health-ceremony.ts";
+import { isoFromMs, parseMs } from "../../../../shared/time.ts";
 
 // ── Signals ────────────────────────────────────────────────────────────────
 
@@ -663,7 +664,7 @@ function unparsedBlocks(
         ? undefined
         : KIND_BY_LETTERS.get(letters(head[1] as string));
     if (named !== undefined && named !== kind) return false;
-    return Date.parse(c.createdAt) > latestEventMs;
+    return parseMs(c.createdAt) > latestEventMs;
   });
 }
 
@@ -695,13 +696,13 @@ export function deriveLifecycle(
       events.push({ at: c.createdAt, kind: d.disposition });
     }
   }
-  events.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+  events.sort((a, b) => parseMs(a.at) - parseMs(b.at));
   const latestEvent = events[events.length - 1];
   if (
     unparsedBlocks(
       kind,
       comments,
-      latestEvent === undefined ? -Infinity : Date.parse(latestEvent.at),
+      latestEvent === undefined ? -Infinity : parseMs(latestEvent.at),
     )
   ) {
     return {
@@ -742,11 +743,9 @@ export function deriveLifecycle(
       cooldownUntil: null,
     };
   }
-  const cooldownUntil = new Date(
-    Date.parse(last.at) + cooldownDays * DAY_MS,
-  ).toISOString();
+  const cooldownUntil = isoFromMs(parseMs(last.at) + cooldownDays * DAY_MS);
   return {
-    state: nowMs < Date.parse(cooldownUntil) ? "cooling-down" : "new",
+    state: nowMs < parseMs(cooldownUntil) ? "cooling-down" : "new",
     presentedAt,
     diagnosedAt: last.at,
     disposition: last.kind,
@@ -808,8 +807,8 @@ export function stuckEpicSignal(
 ): Signal | null {
   if (!fact.children.length) return null;
   const last = Math.max(
-    Date.parse(fact.startedAt),
-    ...fact.children.map((c) => Date.parse(c.updatedAt)),
+    parseMs(fact.startedAt),
+    ...fact.children.map((c) => parseMs(c.updatedAt)),
   );
   if (!Number.isFinite(last))
     throw new Error(`Unreadable child activity for ${fact.epic}`);
@@ -825,7 +824,7 @@ export function stuckEpicSignal(
     severity: "elevated",
     headline: `children have not moved for ${Math.floor(days)} days`,
     evidence: [
-      `last child activity or epic start: ${new Date(last).toISOString()}; threshold ${cfg.signals.stuckEpic.days} days`,
+      `last child activity or epic start: ${isoFromMs(last)}; threshold ${cfg.signals.stuckEpic.days} days`,
       "Child updatedAt includes prose edits; this conservative activity proxy is a suspicion, not a diagnosis.",
     ],
     value: days,
@@ -1063,10 +1062,10 @@ export function buildReport(input: ReportInput): FleetHealthReport {
 
   return {
     version: 1,
-    generatedAt: new Date(input.nowMs).toISOString(),
+    generatedAt: isoFromMs(input.nowMs),
     window: {
-      since: new Date(input.window.sinceMs).toISOString(),
-      until: new Date(input.window.untilMs).toISOString(),
+      since: isoFromMs(input.window.sinceMs),
+      until: isoFromMs(input.window.untilMs),
       days: Math.round((input.window.untilMs - input.window.sinceMs) / DAY_MS),
     },
     signals,

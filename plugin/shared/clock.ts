@@ -5,8 +5,10 @@
  * `systemClock`.
  */
 
+import { currentMs } from "./time.ts";
+
 export type Clock = {
-  /** Milliseconds since the epoch, as `Date.now()`. */
+  /** Milliseconds since the epoch, as `currentMs` (time.ts) reads them. */
   now(): number;
   /**
    * Wait `ms` milliseconds. Resolves early, without rejecting, when `signal`
@@ -16,7 +18,7 @@ export type Clock = {
 };
 
 export const systemClock: Clock = {
-  now: () => Date.now(),
+  now: () => currentMs(),
   sleep: (ms, signal) => {
     if (signal?.aborted) return Promise.resolve();
     return new Promise((resolve) => {

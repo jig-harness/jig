@@ -24,6 +24,7 @@ import {
 } from "../../../../shared/outcome.ts";
 import type { ForgeFacts, HeadCheck, HeadReview } from "./merge-ready.ts";
 import { ghCall, ghRepoEnv } from "./proc.ts";
+import { currentMs } from "../../../../shared/time.ts";
 
 /** The query's name, which a fake forge recognises. */
 export const BOARD_QUERY_NAME = "DispatchBoard";
@@ -331,9 +332,9 @@ export async function readMergeFacts(
     remaining: null,
     limit: null,
   };
-  const deadline = Date.now() + timeoutSec * 1000;
+  const deadline = currentMs() + timeoutSec * 1000;
   for (let i = 0; i < numbers.length; i += FACTS_PAGE) {
-    const leftSec = (deadline - Date.now()) / 1000;
+    const leftSec = (deadline - currentMs()) / 1000;
     if (leftSec <= 0)
       return failed("unreadable", "the merge facts deadline expired");
     const part = await queryOnce(

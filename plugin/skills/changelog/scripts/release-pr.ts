@@ -50,6 +50,7 @@ import { blocks } from "./markdown-blocks.ts";
 import { gitEnv, isNoteFile, workingTree } from "./notes-dir.ts";
 import { isCalendarDay, releaseWithoutAfterVersion } from "./release.ts";
 import type { VersionSource } from "./versions.ts";
+import { currentIso } from "../../../shared/time.ts";
 
 type Env = Record<string, string | undefined>;
 
@@ -352,7 +353,7 @@ function orRefuse<T>(why: string, step: () => T): T {
 export function checkReleasePullRequest(
   root: string,
   base: string,
-  today = new Date().toISOString().slice(0, 10),
+  today = currentIso().slice(0, 10),
 ): ReleasePullRequestCheck {
   try {
     return reproduce(root, base, today);

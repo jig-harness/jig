@@ -152,8 +152,9 @@ test("doctor names cancelled-run recovery instead of stopping a wedged driver", 
     selfPath: "/drives.ts",
     hostIsLocal: true,
   };
-  expect(classifyDrive(input, new Date()).recovery).toBe(recovery);
+  expect(classifyDrive(input, Temporal.Now.instant()).recovery).toBe(recovery);
   expect(
-    classifyDrive({ ...input, progressAgeMs: 1 }, new Date()).recovery,
+    classifyDrive({ ...input, progressAgeMs: 1 }, Temporal.Now.instant())
+      .recovery,
   ).toBe(recovery);
 });

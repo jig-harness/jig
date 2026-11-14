@@ -13,6 +13,7 @@ import type {
   ReceiptLine,
   Resource,
 } from "./types.ts";
+import { currentIso } from "../shared/time.ts";
 
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -163,7 +164,7 @@ export function stopped(failure: Failure): number {
   return failureExit(failure);
 }
 function newReceipt(collect: boolean): Receipt {
-  const startedAt = new Date().toISOString();
+  const startedAt = currentIso();
   const receipt: Receipt = {
     version: 1,
     runId: `${startedAt.replace(/:/g, "-")}-${process.pid}-${randomUUID()}`,
@@ -212,7 +213,7 @@ export async function runCollection(
     journal.update();
   }
   receipt.completed = true;
-  receipt.finishedAt = new Date().toISOString();
+  receipt.finishedAt = currentIso();
   journal.update();
   return { receipt, path: journal.path };
 }

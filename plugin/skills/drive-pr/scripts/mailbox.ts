@@ -34,6 +34,7 @@ import {
   resolveMailboxDir,
   unseenMessages,
 } from "./lib/state/mailbox.ts";
+import { currentIso } from "../../../shared/time.ts";
 
 function takeFlag(argv: string[], i: number, flag: string): string {
   const value = argv[i + 1];
@@ -271,7 +272,7 @@ async function cmdAck(argv: string[]): Promise<number> {
   for (const id of ids) {
     await appendOutboxRecord(dir, {
       id,
-      ts: new Date().toISOString(),
+      ts: currentIso(),
       pr,
       status: "received",
     });
@@ -312,7 +313,7 @@ async function cmdRespond(argv: string[]): Promise<number> {
   }
   await appendOutboxRecord(dir, {
     id,
-    ts: new Date().toISOString(),
+    ts: currentIso(),
     pr,
     status: "done",
     response,

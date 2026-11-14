@@ -1,27 +1,25 @@
 /** Each live condition vetoes on its own; age never establishes lifecycle death. */
 import type { Proof } from "../types.ts";
+import type { IgnoredContent } from "./worktree-ignored.ts";
+
+export type { IgnoredContent };
 export interface WorktreeRequest {
   state: "OPEN" | "MERGED" | "CLOSED";
   head: string;
   /** The pull request's number, when the forge answered one. */
   number?: number;
 }
-/**
- * Ignored paths, split by whether a detected package manager's dependency
- * directory accounts for them: `rebuildable` is derived from a tracked
- * lockfile and vetoes nothing; `other` is everything else, and any entry
- * still vetoes collection as local state with no independent preservation
- * proof.
- */
-export interface IgnoredContent {
-  rebuildable: string[];
-  other: string[];
-}
 export interface WorktreeEvidence {
   dirty: boolean;
   hiddenIndexChanges: boolean;
   operation: string | null;
   ignoredContent: IgnoredContent;
+  /**
+   * The one-time archive planned for a worktree created before marking
+   * began: its ignored content no rule accounts for, and its size. Set, the
+   * content is preserved before removal instead of vetoing it.
+   */
+  archive?: { paths: string[]; bytes: number } | null;
   requests: WorktreeRequest[] | null;
   localOnlyCommits: boolean | null;
   mergedHeadCovers: boolean | null;
@@ -39,7 +37,7 @@ const unknown = (reason: string): Proof => ({ state: "unverified", reason });
 const live = (reason: string): Proof => ({ state: "live", reason });
 /** At most 5 names, so an ignored build directory of many files stays a short reason. */
 const NAMED_PATHS_LIMIT = 5;
-function namedPaths(paths: string[]): string {
+export function namedPaths(paths: string[]): string {
   const shown = paths.slice(0, NAMED_PATHS_LIMIT).join(", ");
   const rest = paths.length - NAMED_PATHS_LIMIT;
   return rest > 0 ? `${shown}, and ${rest} more` : shown;
@@ -47,14 +45,14 @@ function namedPaths(paths: string[]): string {
 export function localWorktreeVeto(
   facts: Pick<
     WorktreeEvidence,
-    "dirty" | "hiddenIndexChanges" | "operation" | "ignoredContent"
+    "dirty" | "hiddenIndexChanges" | "operation" | "ignoredContent" | "archive"
   >,
 ): Proof | null {
   if (facts.dirty) return live("uncommitted or untracked changes");
   if (facts.hiddenIndexChanges)
     return live("index flags hide possible changes from git status");
   if (facts.operation) return live(`in-progress ${facts.operation}`);
-  if (facts.ignoredContent.other.length)
+  if (facts.ignoredContent.other.length && !facts.archive)
     return {
       state: "finding",
       reason: `ignored local content (${namedPaths(facts.ignoredContent.other)}) has no independent preservation proof`,

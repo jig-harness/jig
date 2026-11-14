@@ -37,6 +37,7 @@ import {
 import { poll, PollTimeoutError } from "../../../../../shared/retry.ts";
 import { ExitError, sleep, testPacing } from "../cli.ts";
 import { type DriveDb, driveDb } from "./db.ts";
+import { currentIso, currentMs, parseMs } from "../../../../../shared/time.ts";
 
 /**
  * The hard ceiling on how long ONE `acquire()` may wait, whatever
@@ -203,7 +204,7 @@ export function takeLockRow(
     detail: string | null;
   },
 ): boolean {
-  const now = new Date().toISOString();
+  const now = currentIso();
   const values = [
     row.token,
     row.label,
@@ -255,7 +256,7 @@ export function renewLockRow(
   token: string,
   detail?: string,
 ): boolean {
-  const now = new Date().toISOString();
+  const now = currentIso();
   return (
     (detail === undefined
       ? drive.db.run(
@@ -274,7 +275,7 @@ export function renewLockRow(
 function staleReason(row: LockRow, staleMs: number): string | null {
   const verdict = isAliveSync(lockHolder(row));
   if (verdict.ok && verdict.value.state === "dead") return verdict.value.reason;
-  const age = Date.now() - Date.parse(row.renewed_at);
+  const age = currentMs() - parseMs(row.renewed_at);
   if (!Number.isFinite(age) || age > staleMs)
     return `not renewed for more than ${Math.max(0, Math.round(staleMs / 60_000))}m`;
   return null;

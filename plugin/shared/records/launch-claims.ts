@@ -51,6 +51,7 @@ import type {
   LaunchEnd,
   SharedStage,
 } from "./shared.ts";
+import { parseMs } from "../time.ts";
 
 /** The shape of a dispatcher's launch record id (`dispatch/lib/launches.ts`). */
 export const LAUNCH_RECORD_ID = /^\d{8}T\d{6}Z-[a-f\d]{8}$/;
@@ -73,7 +74,7 @@ const LAUNCH_DATA = "jig-dispatch-launch-claim-data";
 
 const isText = (v: unknown): v is string => typeof v === "string";
 const isTime = (v: unknown): v is string =>
-  isText(v) && Number.isFinite(Date.parse(v));
+  isText(v) && Number.isFinite(parseMs(v));
 const isRecordId = (v: unknown): v is string =>
   isText(v) && LAUNCH_RECORD_ID.test(v);
 const textOrNull = (v: unknown): string | null =>

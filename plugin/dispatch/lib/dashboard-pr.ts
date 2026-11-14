@@ -1,6 +1,7 @@
 /** Current forge state, separate from the immutable outcome log and tick snapshot. */
 import { Defect } from "../../shared/outcome.ts";
 import { readLine } from "./line-store.ts";
+import { currentIso, currentMs } from "../../shared/time.ts";
 
 export interface DashboardPr {
   state: "OPEN" | "CLOSED" | "MERGED";
@@ -35,7 +36,7 @@ export function prReader(root: string) {
       return null;
     const key = `${repo}#${pr}`;
     const previous = cache.get(key);
-    if (previous && previous.until > Date.now()) return previous.value;
+    if (previous && previous.until > currentMs()) return previous.value;
     if (waiting.length >= 64) return null;
     trimCache(cache);
     const value = (async (): Promise<DashboardPr | null> => {
@@ -44,7 +45,7 @@ export function prReader(root: string) {
         return await readForgePr(repo, pr);
       } finally {
         const entry = cache.get(key);
-        if (entry) entry.until = Date.now() + 60_000;
+        if (entry) entry.until = currentMs() + 60_000;
         release();
       }
     })();
@@ -88,14 +89,14 @@ async function readForgePr(
     title: data.title,
     isDraft: data.draft,
     url: data.html_url,
-    checkedAt: new Date().toISOString(),
+    checkedAt: currentIso(),
   };
 }
 
 function trimCache(cache: Map<string, { until: number }>) {
   if (cache.size < 500) return;
   for (const [id, entry] of cache)
-    if (entry.until <= Date.now()) cache.delete(id);
+    if (entry.until <= currentMs()) cache.delete(id);
   const oldest = cache.keys().next().value;
   if (cache.size >= 500 && oldest !== undefined) cache.delete(oldest);
 }

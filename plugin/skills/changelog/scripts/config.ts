@@ -57,7 +57,11 @@ export interface ChangelogConfig {
   unreleased: "write" | "wait" | null;
   authors: boolean;
   tagPrefix: string;
-  release: { push: "direct" | "pull-request"; branch: string };
+  release: {
+    push: "direct" | "pull-request";
+    branch: string;
+    rerunFailedGates: number;
+  };
   /** Whether a breaking entry must declare a consumer action (consumer-actions.ts). */
   consumerActions: boolean;
   /** Where the release step derives the consumer-actions record; null: no record. */
@@ -79,6 +83,7 @@ export const FIELDS = [
   "tag_prefix",
   "release.push",
   "release.branch",
+  "release.rerun_failed_gates",
   "consumer_actions",
   "consumer_actions_record",
 ] as const;
@@ -89,6 +94,7 @@ export const DEFAULTS = {
   tagPrefix: "v",
   push: "direct",
   branch: "changelog-release",
+  rerunFailedGates: 1,
   consumerActions: false,
 } as const;
 
@@ -264,14 +270,28 @@ function oneOf<T extends string>(
 /** The `release` mapping: how the release reaches the integration branch. */
 function releaseSetting(value: unknown): ChangelogConfig["release"] {
   if (value === undefined)
-    return { push: DEFAULTS.push, branch: DEFAULTS.branch };
+    return {
+      push: DEFAULTS.push,
+      branch: DEFAULTS.branch,
+      rerunFailedGates: DEFAULTS.rerunFailedGates,
+    };
   if (!isMapping(value))
     throw new ChangelogError("changelog.release must be a mapping");
   for (const key of Object.keys(value))
-    if (key !== "push" && key !== "branch")
+    if (!["push", "branch", "rerun_failed_gates"].includes(key))
       throw new ChangelogError(
-        `changelog.release.${key} is not a field (push, branch)`,
+        `changelog.release.${key} is not a field (push, branch, rerun_failed_gates)`,
       );
+  const rerunFailedGates =
+    value.rerun_failed_gates ?? DEFAULTS.rerunFailedGates;
+  if (
+    typeof rerunFailedGates !== "number" ||
+    !Number.isSafeInteger(rerunFailedGates) ||
+    rerunFailedGates < 0
+  )
+    throw new ChangelogError(
+      "changelog.release.rerun_failed_gates must be a nonnegative safe integer",
+    );
   const branch = value.branch ?? DEFAULTS.branch;
   if (
     typeof branch !== "string" ||
@@ -284,6 +304,7 @@ function releaseSetting(value: unknown): ChangelogConfig["release"] {
       "pull-request",
     ]),
     branch,
+    rerunFailedGates,
   };
 }
 
@@ -514,6 +535,11 @@ export function changes(
   compare("tag_prefix", before.tagPrefix, after.tagPrefix);
   compare("release.push", before.release.push, after.release.push);
   compare("release.branch", before.release.branch, after.release.branch);
+  compare(
+    "release.rerun_failed_gates",
+    before.release.rerunFailedGates,
+    after.release.rerunFailedGates,
+  );
   compare("consumer_actions", before.consumerActions, after.consumerActions);
   compare(
     "consumer_actions_record",

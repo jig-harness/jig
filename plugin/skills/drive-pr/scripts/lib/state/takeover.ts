@@ -17,6 +17,7 @@ import { isRecord } from "../../../../../shared/guards.ts";
 import { isAccountHash } from "../identity.ts";
 import { isActorId } from "./actor.ts";
 import type { StateStore } from "./store.ts";
+import { currentIso, parseMs } from "../../../../../shared/time.ts";
 
 /**
  * What a takeover is admitted against: the doctor's `WEDGED`, a `DEAD`
@@ -79,7 +80,7 @@ export function isTakeoverRecord(v: unknown): v is TakeoverRecord {
   const t = v as Record<string, unknown>;
   return (
     typeof t.at === "string" &&
-    Number.isFinite(Date.parse(t.at)) &&
+    Number.isFinite(parseMs(t.at)) &&
     isNullableActor(t.fromActor) &&
     isNullableAccount(t.fromAccount) &&
     typeof t.toActor === "string" &&
@@ -123,7 +124,7 @@ export async function recordTakeover(
   let invalid = "";
   await store.update((s) => {
     const record = {
-      at: new Date().toISOString(),
+      at: currentIso(),
       fromActor: input.fromActor ?? null,
       fromAccount: input.fromAccount ?? null,
       toActor,

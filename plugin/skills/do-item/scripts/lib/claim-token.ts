@@ -37,6 +37,7 @@ import {
   readClaimMarker,
 } from "./claim-marker.ts";
 import type { Tracker } from "./tracker/port.ts";
+import { isoFromMs, parseMs } from "../../../../shared/time.ts";
 
 /**
  * How long a marker holds the item against a later claim. A claim takes
@@ -88,7 +89,7 @@ async function markers(tracker: TokenTracker, key: string): Promise<Marker[]> {
           {
             id: c.id,
             attempt: read.attempt,
-            createdAt: Date.parse(c.createdAt),
+            createdAt: parseMs(c.createdAt),
           },
         ];
   });
@@ -144,7 +145,7 @@ export async function claimWithMarker(
       claimMarkerBody({
         ...facts,
         attempt,
-        at: new Date(clock.now()).toISOString(),
+        at: isoFromMs(clock.now()),
       }),
     );
   } catch (error) {

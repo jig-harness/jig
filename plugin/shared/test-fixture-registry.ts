@@ -25,6 +25,7 @@ import { attempt, failed, ok, type Outcome } from "./outcome.ts";
 import { isRecord } from "./guards.ts";
 import { failureFields } from "./errors.ts";
 import { log } from "./log.ts";
+import { currentIso, currentMs, parseMs } from "./time.ts";
 
 export const FIXTURE_REGISTRY_ENV = "JIG_TEST_FIXTURE_REGISTRY";
 export const FIXTURE_NODE_ENV = "JIG_TEST_FIXTURE_NODE";
@@ -113,7 +114,7 @@ export function registerFixtureScope(
     publish(join(membership.registry, scopeName(root)), {
       version: 1,
       root: resolve(root),
-      createdAt: new Date().toISOString(),
+      createdAt: currentIso(),
       registeredBy: encodeIdentity(ownIdentity()),
     });
     return membership;
@@ -218,7 +219,7 @@ function scopeRecord(file: string, registry: string): FixtureScope | null {
     typeof value.root === "string" &&
     isAbsolute(value.root) &&
     typeof value.createdAt === "string" &&
-    Number.isFinite(Date.parse(value.createdAt)) &&
+    Number.isFinite(parseMs(value.createdAt)) &&
     registeredBy !== null
     ? {
         root: value.root,
@@ -233,7 +234,7 @@ interface ScanBudget {
   count: number;
 }
 function within(budget: ScanBudget): boolean {
-  return ++budget.count <= MAX_RECORDS && Date.now() <= budget.deadline;
+  return ++budget.count <= MAX_RECORDS && currentMs() <= budget.deadline;
 }
 type ScopeEntry = { kind: "skip" } | { kind: "scope"; scope: FixtureScope };
 function scopeIndexEntry(registry: string, entry: Dirent): ScopeEntry | null {
@@ -268,7 +269,7 @@ export function fixtureScopeInventory(
     "fixture-inventory",
     "Cannot inventory fixture registrations",
     () => {
-      const budget = { deadline: Date.now() + 5000, count: 0 };
+      const budget = { deadline: currentMs() + 5000, count: 0 };
       let entries: Dirent[];
       try {
         entries = readdirSync(store, { withFileTypes: true });
@@ -306,7 +307,7 @@ function linkedParents(
     const seen = new Set<NodeRecord>();
     let ancestor = node;
     while (ancestor.parent !== null) {
-      if (seen.has(ancestor) || Date.now() > deadline) return false;
+      if (seen.has(ancestor) || currentMs() > deadline) return false;
       seen.add(ancestor);
       const parent = nodes.get(ancestor.parent);
       if (!parent) return false;
@@ -339,7 +340,7 @@ function registryEntry(registry: string, entry: Dirent): ParsedEntry | null {
   return node ? { kind: "node", id, node } : null;
 }
 function registryNodes(registry: string): Map<string, NodeRecord> | null {
-  const budget = { deadline: Date.now() + 5000, count: 0 };
+  const budget = { deadline: currentMs() + 5000, count: 0 };
   if (!registryScopes(registry, budget)) return null;
   const directory = join(registry, "nodes");
   if (!lstatSync(directory).isDirectory()) return null;

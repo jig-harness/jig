@@ -1,7 +1,7 @@
 /**
  * The off-hours schedule parser and its windows, read in local time: each
- * instant below is built with the local-time `Date` constructor, so the
- * wall-clock time it states holds in whatever time zone the suite runs in.
+ * instant below is built from a wall-clock time in the machine's time zone,
+ * so the time it states holds in whatever time zone the suite runs in.
  * 2026-10-26 is a Monday.
  */
 import { describe, expect, test } from "bun:test";
@@ -17,13 +17,24 @@ import {
 function local(
   day: "Sun" | "Mon" | "Tue" | "Wed" | "Thu" | "Fri" | "Sat",
   time: string,
-): Date {
+): Temporal.Instant {
   const offset = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(day);
-  const [h, m] = time.split(":").map(Number);
-  return new Date(2026, 9, 25 + offset, h, m);
+  const [hour, minute] = time.split(":").map(Number);
+  return Temporal.PlainDateTime.from({
+    year: 2026,
+    month: 10,
+    day: 25 + offset,
+    hour,
+    minute,
+  })
+    .toZonedDateTime(Temporal.Now.timeZoneId())
+    .toInstant();
 }
 
-function inside(schedule: readonly string[], when: Date): string | null {
+function inside(
+  schedule: readonly string[],
+  when: Temporal.Instant,
+): string | null {
   return windowAt(parseSchedule(schedule), when)?.text ?? null;
 }
 

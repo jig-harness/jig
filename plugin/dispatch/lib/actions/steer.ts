@@ -49,6 +49,7 @@ import { failureText } from "../text.ts";
 import type { Action, RepoReport, Running, SteerOutcome } from "../types.ts";
 import { agentOf } from "./pickup-hold.ts";
 import { type ApplyState, outOfTime } from "./launch.ts";
+import { currentIso, parseMs } from "../../../shared/time.ts";
 
 /** A nudge's suppression record, with its delivery mark once written. */
 export interface NudgeRecord {
@@ -239,7 +240,7 @@ export function planSteers(input: SteerInput): {
       continue;
     }
     const reset =
-      episode.resetAt === null ? Number.NaN : Date.parse(episode.resetAt);
+      episode.resetAt === null ? Number.NaN : parseMs(episode.resetAt);
     if (!(reset <= input.nowMs)) {
       running.push({
         target,
@@ -333,7 +334,7 @@ async function sendOne(
     target: action.target,
     account: nudge.account,
     episode: nudge.episode,
-    at: new Date().toISOString(),
+    at: currentIso(),
     delivery: "pending",
     detail: "",
   };
