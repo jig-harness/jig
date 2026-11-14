@@ -68,11 +68,16 @@ describe("Jira: a facet field missing from an issue type's screen", () => {
   /** A create screen without it. */
   const BARE = { fields: [], startAt: 0, maxResults: 100, total: 0 };
   /** Size in the Story Points number field, type in the issue types. */
-  const POINTED = (jira: Record<string, unknown> = {}): Overlay => ({
+  const POINTED = (
+    jira: Record<string, unknown> = {},
+    epicTypes: string[] = [],
+    typeValues: Record<string, string> = { feature: "Story" },
+  ): Overlay => ({
     issue_tracker: {
       jira,
+      ...(epicTypes.length === 0 ? {} : { labels: { epic_types: epicTypes } }),
       facets: {
-        type: { store: "native", values: { feature: "Story" } },
+        type: { store: "native", values: typeValues },
         size: {
           store: "field",
           field: "Story Points",
@@ -148,8 +153,16 @@ describe("Jira: a facet field missing from an issue type's screen", () => {
   });
 
   it("reports every issue type Jig files whose create screen lacks the field, and nothing when each has it", async () => {
-    const health = async (lacking: string[], settings = {}) => {
-      const { t } = jira(routes(site(...lacking)), POINTED(settings));
+    const health = async (
+      lacking: string[],
+      settings = {},
+      epicTypes: string[] = [],
+      typeValues?: Record<string, string>,
+    ) => {
+      const { t } = jira(
+        routes(site(...lacking)),
+        POINTED(settings, epicTypes, typeValues),
+      );
       return (await t.facetStores()).facets.find((f) => f.facet === "size")
         ?.health;
     };
@@ -160,6 +173,14 @@ describe("Jira: a facet field missing from an issue type's screen", () => {
       error:
         "size is kept in the field 'Story Points' (customfield_10016), which is not on the create screens of Sub-task and Bug in ENG; add it to those screens, or keep size in labels (store: label)",
       fails: "filing a Sub-task or a Bug fails",
+    });
+    // An epic type is asked no size, so its screen may lack the field.
+    expect(
+      await health(["t0"], { pool_issue_types: ["Task", "Epic"] }, ["Epic"]),
+    ).toEqual({ status: "ok" });
+    // A type value with no issue type is the type facet's finding, not size's.
+    expect(await health([], {}, [], { feature: "Storyy" })).toEqual({
+      status: "ok",
     });
     // The pool's issue types are filed too; an unlisted type is not asked about.
     expect(

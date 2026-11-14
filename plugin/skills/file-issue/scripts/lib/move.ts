@@ -231,7 +231,10 @@ function emptyReport(
   };
 }
 
-/** Why a destination store cannot take the move's writes, or `null`. */
+/**
+ * Why a destination store cannot take the move's writes, or `null`; a
+ * failure that stops only filing some issue types (its `fails`) does not.
+ */
 async function destinationProblem(
   sides: MoveSides,
   moved: Facet[],
@@ -246,7 +249,7 @@ async function destinationProblem(
     .flatMap((f) =>
       f.problem !== undefined
         ? [`${f.facet}: ${f.problem}`]
-        : f.health?.status === "failed"
+        : f.health?.status === "failed" && f.health.fails === undefined
           ? [`${f.facet}: ${f.health.error}`]
           : [],
     );

@@ -359,16 +359,26 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
     return found;
   }
 
-  /** The issue type a type value is kept as, `null` where it falls back to `issue_type` and its label. */
-  async function issueTypeOf(
+  /** The standard issue type of a type value's name, `null` where the project has none. */
+  async function keptAs(
     value: string,
     signal?: AbortSignal,
   ): Promise<IssueTypeMeta | null> {
     const name = type?.map?.toTracker(value) ?? value;
     const types = standard(await client.issueTypes(signal));
-    const found = types.find((t) => same(t.name, name));
+    return types.find((t) => same(t.name, name)) ?? null;
+  }
+
+  /** The issue type a type value is kept as, `null` where it falls back to `issue_type` and its label. */
+  async function issueTypeOf(
+    value: string,
+    signal?: AbortSignal,
+  ): Promise<IssueTypeMeta | null> {
+    const found = await keptAs(value, signal);
     const named = type?.named?.some((v) => same(v, value)) === true;
-    if (found !== undefined || !named) return found ?? null;
+    if (found !== null || !named) return found;
+    const name = type?.map?.toTracker(value) ?? value;
+    const types = standard(await client.issueTypes(signal));
     throw new TrackerRequestError(
       "unresolved",
       `type ${value} is kept in Jira's issue types as '${name}', which is no standard issue type of ${project} (it has: ${types.map((t) => t.name).join(", ") || "none"}); name its issue type in ${at("type", "values")}, or keep type in labels (store: label)`,
@@ -529,11 +539,22 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
     };
   }
 
-  /** A field store's health: its field on the create screen of each issue type Jig files, and each value an option there. */
+  /**
+   * A field store's health: its field on the create screen of each issue
+   * type Jig files, and each value an option there. An epic type is asked no
+   * size, so its screen is not checked for one; a type value with no issue
+   * type is the type facet's own finding, and a pool name the project lacks
+   * is refused where the pool is read.
+   */
   async function fieldHealth(s: ResolvedFacet, signal?: AbortSignal) {
     const field = await fieldOf(s, signal);
     // The issue types a filing uses, and the pool's, which a person files by hand.
-    const names = [...(await filedTypes(signal)), ...settings.poolIssueTypes];
+    const names = [
+      ...(await filedTypes(signal, keptAs)),
+      ...settings.poolIssueTypes,
+    ].filter(
+      (n) => s.facet !== "size" || !facets.epicTypes.some((e) => same(e, n)),
+    );
     const all = await client.issueTypes(signal);
     const types: IssueTypeMeta[] = [];
     for (const n of names) {
@@ -607,8 +628,15 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
       );
   }
 
-  /** The issue types a filing uses: the configured ones, and those a native type is kept as. */
-  async function filedTypes(signal?: AbortSignal): Promise<string[]> {
+  /**
+   * The issue types a filing uses: the configured ones, and those a native
+   * type is kept as, each found by `keep` (by default refusing a value whose
+   * named issue type the project lacks).
+   */
+  async function filedTypes(
+    signal?: AbortSignal,
+    keep: typeof issueTypeOf = issueTypeOf,
+  ): Promise<string[]> {
     const names = [settings.issueType];
     if (settings.subtaskType !== null) names.push(settings.subtaskType);
     else {
@@ -620,7 +648,7 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
       if (subtasks.length === 1 && only !== undefined) names.push(only.name);
     }
     for (const value of type?.values ?? []) {
-      const kept = await issueTypeOf(value, signal);
+      const kept = await keep(value, signal);
       if (kept !== null) names.push(kept.name);
     }
     return names.filter((n, i) => names.findIndex((m) => same(m, n)) === i);
