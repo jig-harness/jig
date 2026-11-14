@@ -73,6 +73,12 @@
  *                    through `drives.ts --stop`), or when its process is confirmed gone
  *                    and its tree holds nothing unpushed; refused with 11
  *                    against any other holder (`lib/driver/takeover.ts`).
+ *                    With no lock held, the drive ledger decides: another
+ *                    clone's driver past the lease window, or this tree's
+ *                    own driver the ledger still names running (it ended
+ *                    without writing its stop), is taken over; this
+ *                    clone's driver in another tree, or none, is refused
+ *                    with 2.
  *   --window-reopened  a person's statement that a quota-parked drive's
  *                    window is open again: admits the re-arm on any account
  *                    (`lib/driver/rearm.ts`).

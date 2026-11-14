@@ -811,7 +811,9 @@ development and shipped as a version.
 
 - **Deterministic.** The plugin registers an
   [agent-runtime hook](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
-  (`hooks/hooks.json`): the turn-budget guard (`hooks/turn-budget-guard.ts`),
+  (`hooks/hooks.json` for Claude Code; for Codex, an entry `jig upgrade`
+  writes into the Codex home): the turn-budget guard
+  (`hooks/turn-budget-guard.ts`),
   which counts a session's turns before every tool call and, near the
   runtime's cap, hands the agent a wrap-up instruction. It reads local files
   only and lets the call through whenever it cannot count. A repository's

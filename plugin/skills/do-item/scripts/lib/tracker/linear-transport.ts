@@ -24,6 +24,7 @@
  * (`shared/outbound/hold.ts`), Linear is held after such a failure.
  */
 
+import { randomUUID } from "node:crypto";
 import { type RunResult, run } from "../../../../drive-pr/scripts/lib/proc.ts";
 import { postGraphQL, runClient } from "./graphql.ts";
 import { swallow } from "../../../../../shared/errors.ts";
@@ -447,13 +448,17 @@ export function httpTransport(
     governor === undefined
       ? null
       : { governor, key: credentialKey("linear", token) };
-  return (query, variables, signal) =>
-    call(
-      (bound) =>
-        postOnce(fetchImpl, token, governed, { query, variables }, bound),
-      query,
-      signal,
-    );
+  return dispatchTagged(
+    (query, variables, signal) =>
+      call(
+        (bound) =>
+          postOnce(fetchImpl, token, governed, { query, variables }, bound),
+        query,
+        signal,
+      ),
+    credentialKey("linear", token),
+    true,
+  );
 }
 
 /**
@@ -549,6 +554,18 @@ function cliAnswer(r: RunResult, governed: Governed | null): Answer {
   return unwrapped(body, null, refused, null);
 }
 
+/** A transport carrying the dispatch identity its snapshots are keyed by. */
+function dispatchTagged(
+  transport: LinearTransport,
+  dispatchCredential: string,
+  dispatchPersistent: boolean,
+): LinearTransport {
+  return Object.assign(transport, { dispatchCredential, dispatchPersistent });
+}
+
+/** The CLI hides its credential, so its dispatch snapshots live for this process only. */
+const CLI_DISPATCH_SESSION = randomUUID();
+
 /**
  * Transport through the `linear` command-line client (`linear api`), which
  * keeps its own credential. Variables travel as JSON so a string that looks
@@ -565,12 +582,16 @@ export function cliTransport(
     governor === undefined
       ? null
       : { governor, key: credentialKey("linear", `cli:${bin}`) };
-  return (query, variables, signal) =>
-    call(
-      (bound) => cliOnce(bin, governed, query, variables, bound),
-      query,
-      signal,
-    );
+  return dispatchTagged(
+    (query, variables, signal) =>
+      call(
+        (bound) => cliOnce(bin, governed, query, variables, bound),
+        query,
+        signal,
+      ),
+    credentialKey("linear", `cli:${bin}:${CLI_DISPATCH_SESSION}`),
+    false,
+  );
 }
 
 /**
@@ -585,4 +606,28 @@ export function defaultTransport(
   return token === null
     ? cliTransport("linear", governor)
     : httpTransport(token, fetch, governor);
+}
+
+const transportKeys = new WeakMap<LinearTransport, string>();
+let nextTransportKey = 0;
+/** The actual configured credential, or a test transport’s isolated identity. */
+export function dispatchCredential(transport: LinearTransport): string {
+  const supplied = (
+    transport as LinearTransport & { dispatchCredential?: string }
+  ).dispatchCredential;
+  if (supplied !== undefined) return supplied;
+  let key = transportKeys.get(transport);
+  if (key === undefined) {
+    key = `transport-${++nextTransportKey}`;
+    transportKeys.set(transport, key);
+  }
+  return key;
+}
+
+/** An opaque CLI identity expires with this process and cannot key a durable snapshot. */
+export function dispatchPersistent(transport: LinearTransport): boolean {
+  return (
+    (transport as LinearTransport & { dispatchPersistent?: boolean })
+      .dispatchPersistent !== false
+  );
 }

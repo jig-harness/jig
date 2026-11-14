@@ -117,6 +117,8 @@ export interface ObserveContext {
 
 /** A repository opened for its tick: its target, its dispatch section, its machine-file entry and the report the tick fills. */
 export interface OpenedRepo {
+  /** Opened once while gathering tracker scopes, reused during repository derivation. */
+  tracker?: Tracker;
   repo: RepoTarget;
   values: Record<string, unknown>;
   section: DispatchSection;
@@ -337,6 +339,7 @@ export async function observeRepo(
                   !s.wallUnrecorded,
               ),
             reads,
+            opened.tracker,
           ),
         ),
       ),
@@ -548,6 +551,7 @@ async function readTracker(
   nowMs: number,
   headroom: boolean,
   reads: Pick<TickReads, "budget" | "servedViews">,
+  preparedTracker?: Tracker,
 ): Promise<Tracked> {
   const tracked: Tracked = {
     keys: null,
@@ -590,7 +594,7 @@ async function readTracker(
     };
     const reading = await readPickups(
       () => {
-        tracked.tracker = openTracker(config, repo.path);
+        tracked.tracker = preparedTracker ?? openTracker(config, repo.path);
         return tracked.tracker;
       },
       section,

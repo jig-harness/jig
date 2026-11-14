@@ -319,9 +319,24 @@ export function estimateStore(
       return { estimate: found[1] };
     },
     wrap(core) {
+      const native = core.dispatchSource;
       if (kept === null) return core;
       return {
         ...core,
+        ...(native === undefined
+          ? {}
+          : {
+              dispatchSource: {
+                ...native,
+                get shape() {
+                  return native.shape ?? "";
+                },
+                project: async (
+                  raw: import("./port.ts").DispatchRawIssue,
+                  options?: import("./port.ts").FacetReadOptions,
+                ) => pool(await native.project(raw, options), options?.signal),
+              },
+            }),
         async getIssue(key) {
           const issue = await core.getIssue(key);
           return issue === null ? null : issueOf(issue);

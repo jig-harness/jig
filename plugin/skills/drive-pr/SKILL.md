@@ -971,6 +971,15 @@ hold**), and a finding is released to be triaged afresh. The record lists
 what was reopened and, apart, what could not be; the first pass is told
 both.
 
+When no driver of this clone holds the lock, the drive ledger decides. A
+ledger that still names this tree's own driver `running` means that driver
+ended without writing its stop, releasing its locks as it went: the takeover
+is admitted as `DEAD`, stops nothing, and settles what the driver left in
+this tree as any re-arm does. One that names this clone's driver in another
+working tree is refused with exit `2`, naming that tree, since what it left
+is that tree's: re-arm from there. One that names no running driver is
+refused with exit `2` too: re-arm without `--take-over`.
+
 **Across clones** no process can be stopped and no lock is shared, so the
 takeover goes through the drive ledger (§ Running it, *The drive ledger*).
 When no driver of this clone holds the drive and the ledger names a running

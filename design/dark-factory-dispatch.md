@@ -57,11 +57,15 @@ flowchart LR
 
 ### One tick, step by step
 
-A tick runs in two **phases**. In the **observe phase** every repository
-is read at once: each under its own **observe lock**, and every read
+A tick runs in two **phases**. In the **observe phase** the tick reads
+**trackers first, repositories second**. It opens the repositories'
+configuration, groups their tracker scopes and served people, and reads
+each scope and person once before deriving any repository's pickups.
+Each repository is observed under its own **observe lock**, and every read
 through one pool that keeps at most six in flight (the forge's login and rate limit, each read once per tick, and the base heads of conflicting drives among them), well inside the forge's
 secondary rate limits. Within one repository, the sources that do not
-depend on each other are read side by side: the tracker beside the forge,
+depend on each other are read side by side: the repository's derivation
+of the shared tracker reading beside the forge,
 then every host's launch claims beside the runtime. In the **act phase**,
 under the machine's one **act lock**, the tick reads this machine's launch
 records again and gives each repository a **turn** in rotated order, one
@@ -573,7 +577,27 @@ guards keep one stage from starting twice:
 | The shared records  | the `SharedRecords` interface (`plugin/shared/records/shared.ts`), on the forge through `plugin/shared/records/shared-forge.ts`; the observe phase reads them from the tick's comment listings, a launch's own reads and writes go to the forge                                                                                                                                                    | for each pull request it classifies, every host's launch claims and their ends, and the follow-up markers' answers: which host holds a launch, and how it ended (see Several hosts)            |
 | The drive doctor    | `drives.ts --json` from drive-pr, run read-only in the repository clone the machine file lists, only in a tick where a drive fell silent                                                                                                                                                                                                                                                           | each pull request's lock holder and the doctor's verdict on it (`DEAD`, `WEDGED`, `HEALTHY`, …): whether a silent driver no launch started is taken over                                       |
 
-**The tracker.** The interface gains one read, `assignedIssues(identity,
+**The tracker.** A tracker scope is its adapter, instance, credential and
+team or project, or the target repository for GitHub Issues. The tick
+collects the repositories' needs before reading each scope: one queue per
+person, holding native states, labels and fields. Repositories derive their
+own canonical states and facets from that shared reading, then apply their
+repository labels and the host's default for unlabelled items. Different
+state maps or facet stores share the reading. Assignment history,
+relations and an epic's open children are read once per item in the scope.
+Native queries select the union of states the repositories need; a
+factory's explicitly configured dispatch states are included even when
+they fall outside the served queue's open and working states.
+The kept reading between ticks is per scope and person; the change probe
+and scheduled full read are shared. A rate-limited or unreachable scope is
+reported once, and every repository using it shows the kept reading's age.
+An opaque Linear command-line credential has a process-local scope,
+because a login switch cannot be distinguished safely across ticks. Its
+queue, item metadata and ready-pool readings stay in memory, without
+accumulating persistent entries. HTTP token credentials retain their
+readings between ticks.
+
+The interface gains one read, `assignedIssues(identity,
 states)`: the issues assigned to that user in those states, in the pool
 form whose fields (`assignee`, `state`) the interface already returns. Both
 adapters answer it natively. It is a new read rather than a change to
@@ -1761,7 +1785,7 @@ parked questions (the park's framed decision, or the stored
 reason for a park with no decision record); a drive
 stopped on an exit only a person can settle, carrying the exit and the
 drive's handoff; a drive stopped with no exit, carrying its handoff; a
-stalled pickup or a double claim; a failed follow-up, carrying the question its pass stopped on when it stated one; a follow-up claim that went stale again after the tick released one (see Stale follow-up claims); a launch record stuck pending, carrying why no tick launches it again (cause `needs-person`, see Launch records); a re-arm that failed without moving its ledger, carrying its exit, both heads and, for a pull request behind its branch, the close-and-reopen recovery (cause `needs-person`, sent once for its exit, ledger generation and heads, see Launch records); a launch refused because a checkout the runtime does not list holds its branch and is in use, carrying that checkout's path and what keeps it busy (cause `needs-person`, keyed by the target, the branch and the path, so it is one notice per holder rather than a refusal repeated in the journal every tick; its record stands through a tick whose launch waited before the open); a session waiting past
+stalled pickup or a double claim; a failed follow-up, carrying the question its pass stopped on when it stated one; a follow-up claim that went stale again after the tick released one (see Stale follow-up claims); a launch record stuck pending, carrying why no tick launches it again (cause `needs-person`, see Launch records); a re-arm that failed without moving its ledger, carrying its exit, both heads and, for a pull request behind its branch, the close-and-reopen recovery (cause `needs-person`, sent once for its exit, ledger generation and heads, see Launch records); a re-arm or takeover `drive.ts` refused as a usage error (`UNSUPPORTED_CLI`) on the ledger facts it still shows, carrying the drive's message, which the wrapper keeps from the drive's error output on that exit (cause `needs-person`, sent once for its launch record, and never launched again on those facts); a launch refused because a checkout the runtime does not list holds its branch and is in use, carrying that checkout's path and what keeps it busy (cause `needs-person`, keyed by the target, the branch and the path, so it is one notice per holder rather than a refusal repeated in the journal every tick; its record stands through a tick whose launch waited before the open); a session waiting past
 `blocked_after`; a running stage drifting from its expectation, and a
 session still waiting on a wall after its one nudge (see Control). Every
 message carries the cause or the question, the pull request's link and
@@ -1796,7 +1820,8 @@ then. `0s` sends each cause once. A drift is an observation rather than
 something a person must do, so it is sent once for the life of its key and
 never repeated; so is a re-arm that failed without moving its ledger, whose
 key carries its exit, the ledger generation and both heads, so any change of
-those is a new notice. The suppression record keeps the first send, which the
+those is a new notice, and a drive launch refused as a usage error, whose key
+is its launch record. The suppression record keeps the first send, which the
 dashboard dates the wait from, and the last, which the repeat is timed from;
 a repeat writes no second event row to the outcome log, since the cause's
 row was written when it was first sent.

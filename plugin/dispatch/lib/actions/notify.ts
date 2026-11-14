@@ -13,7 +13,8 @@
  *   again. A cause that still stands `dispatch.renotify_after` after it was
  *   last sent is sent again, marked as a repeat, unless the destination is
  *   still unread with it (`0s` sends each cause once). A drift, an exhausted no-cause recovery or a
- *   failed re-arm is sent once for the life of its key. A suppression record is
+ *   failed re-arm or a drive launch refused as a usage error is sent once
+ *   for the life of its key. A suppression record is
  *   dropped when its cause leaves a tick that read every record whole (the
  *   park was answered, the drive moved on), so a cause that is settled is
  *   never repeated and new facts always notify.
@@ -939,7 +940,8 @@ async function sendNotices(
             c.cause === "drifting" ||
             c.cause === "ready" ||
             (c.cause === "stopped-unknown" && c.evidence.noCause === true) ||
-            typeof c.evidence.failedRearm === "string",
+            typeof c.evidence.failedRearm === "string" ||
+            typeof c.evidence.usageRefusal === "string",
         },
         // A cause about a stage this machine launched has its ended row instead.
         c.launched === true ? null : eventRow(repo.slug, c, at, settings.about),

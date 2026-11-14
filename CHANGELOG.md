@@ -394,6 +394,57 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.231.0] - 2026-11-14
+
+### Added
+
+- The plugin ships the first chapter of the [Jig Protocol](GLOSSARY.md),
+  [protocol/drive-exits.md](plugin/protocol/drive-exits.md): every end
+  state and exit code of a drive, with what each one means, for a program
+  that reads how a drive ended without reading Jig's code, and the same
+  values as JSON in `protocol/data/drive-exits.json`. The chapter is
+  generated from drive-pr's own table of states, and Jig's build fails when
+  the two disagree. `guarded-push.ts`'s exit `17` (a `hold-push` directive
+  in force) is now part of that table, so no other exit can take the code.
+  **Consumer action:** none.
+
+### Fixed
+
+- `jig dispatch` no longer launches a drive again, tick after tick, when
+  `drive.ts` refused the last launch as a usage error (exit `2`) and the
+  pull request's drive ledger has not changed since. The drive becomes a
+  person's: one notice says which launch was refused and carries the drive's
+  own message, which the dispatcher now keeps from the drive's error output on
+  that exit. The next launch happens once the ledger moves, or when a person
+  asks for a re-arm.
+- `drive.ts --take-over` now takes over a drive whose ledger still names this
+  working tree's own driver as running though no driver holds its lock: that
+  driver ended without writing its stop, so the takeover goes ahead as a dead
+  driver's and stops nothing. When the ledger names this clone's driver in
+  another working tree, the refusal now names that tree and says to re-arm
+  from there.
+- `drive.ts --take-over` reads the held batch again after startup and reopens
+  each hold as it stands then; a batch it cannot read again stops the takeover
+  with exit `1` instead of reconciling over the earlier one.
+- `tracker.ts update` and `create` now refuse to add a type or size label
+  where the repository keeps that facet outside labels (GitHub's issue type
+  or a field, Linear's estimate, a Jira field). The message names the
+  facet's value and where it is kept. Taking such a label off an issue stays
+  allowed, except on Jira, whose adapter refuses removing a label that is a
+  `field_labels` value. Where the facet is kept in labels nothing changes.
+  A caller that added such a label by hand sets the facet instead.
+  **Consumer action:** none.
+- The plugin's file map, the mechanisms page and the drive-pr notes on the
+  turn-budget guard no longer say that Codex registers the guard from
+  `hooks/hooks.json`: Codex gets it from the entry `jig upgrade` writes into
+  the Codex home.
+
+## [0.230.1] - 2026-11-14
+
+### Fixed
+
+- Repositories sharing a tracker scope and served people reuse one queue reading even when their state maps or facet settings differ, reducing repeated dispatcher requests while preserving each repository's interpretation. **Consumer action:** none.
+
 ## [0.230.0] - 2026-11-14
 
 The turn-budget guard no longer asks Codex for a new approval with every Jig release.
@@ -8023,7 +8074,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.230.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.231.0...HEAD
+[0.231.0]: https://github.com/jig-harness/jig/compare/v0.230.1...v0.231.0
+[0.230.1]: https://github.com/jig-harness/jig/compare/v0.230.0...v0.230.1
 [0.230.0]: https://github.com/jig-harness/jig/compare/v0.229.1...v0.230.0
 [0.229.1]: https://github.com/jig-harness/jig/compare/v0.229.0...v0.229.1
 [0.229.0]: https://github.com/jig-harness/jig/compare/v0.228.1...v0.229.0

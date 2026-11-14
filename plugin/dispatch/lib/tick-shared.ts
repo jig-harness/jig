@@ -25,6 +25,7 @@ import {
   driveHold,
   settleConflictStops,
   settleSilentTakeovers,
+  settleUsageRefusals,
 } from "./actions/drive-hold.ts";
 import type { FollowupOutcome } from "./followup-outcomes.ts";
 import { type ReadRecord, settledEnds } from "./launches.ts";
@@ -239,8 +240,9 @@ export async function readDriveClaims(
  * claims are read beside it: a re-drive already made for the change it shows
  * now is a person's (by this host's records, then by another host's claims),
  * so is a re-arm that failed at the heads and ledger facts it shows now, a
- * silent driver already taken over on its facts is notified, and what is
- * left is bounded by the pull request's recovery budget.
+ * silent driver already taken over on its facts is notified, what is left
+ * is bounded by the pull request's recovery budget, and a launch the drive
+ * refused as a usage error on its facts is a person's.
  */
 export function settleDrives(
   ctx: Pick<SharedContext, "slug" | "host">,
@@ -271,7 +273,14 @@ export function settleOwnDrives(
   );
   return settleNoCauseStops(
     settleFailedRearms(
-      settleSharedConflictStops(settleConflictStops(placed, own), claims, host),
+      settleUsageRefusals(
+        settleSharedConflictStops(
+          settleConflictStops(placed, own),
+          claims,
+          host,
+        ),
+        own,
+      ),
       own,
     ),
     own,

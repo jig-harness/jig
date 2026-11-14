@@ -88,6 +88,23 @@ the callers of an adapter do not change.
 - **One request for one question.** Two callers in one run that ask the
   same read share one request. Two repository configurations that read the
   same tracker team with the same credential share one queue reading.
+  The dispatcher reads **trackers first, repositories second**: before a
+  repository derives its pickups, it groups the tracker scopes and people
+  its repositories need. A scope identifies the adapter, instance,
+  credential and team or project (the target repository for GitHub).
+  Its reading holds the tracker's own states, labels and fields. Each
+  repository applies its own state and facet configuration to that reading;
+  different configurations never require another queue read. Assignment
+  history, relations and open children are shared facts of the scope too.
+  The kept queue reading is per scope and person, with one change probe
+  and scheduled full read, and every repository shows the age of that
+  reading when the scope cannot be reached.
+  Native queue queries ask for the union of the repositories' needed
+  states, so sharing does not pull in historical completed assignments.
+  Where an adapter cannot identify an opaque command-line credential,
+  its scope and cache stay in process memory: repositories share within
+  the tick, and no queue, item or pool reading is written to persistent
+  storage for a later login to reuse.
 - **Read by key in one request.** Many items go into one request, in
   chunks the system's single-request cap allows, never one request an item.
 
@@ -221,10 +238,10 @@ are built in that order.
    library; the tick's line, `jig budget`, the low-quota need.
 5. **GitHub in the budget record.** Its profile; the wrapper admits and
    observes; the tick's own budget read goes.
-6. **Reuse.** `cache`, `coalesce`, `batch`; the reads that repeat adopt
-   them: assignment answers cached by update time, one queue reading per
-   team and credential, the deferral script's tracker calls through the
-   adapter, the nested page sizes of the issue and ledger queries.
+6. **Reuse.** Move the existing queue snapshots and assignment caches into
+   `cache`, `coalesce` and `batch`. The remaining reads adopt the library:
+   the deferral script's tracker calls through the adapter, and the nested
+   page sizes of the issue and ledger queries.
 7. **The gates and the lens.**
 
 ## Left out
