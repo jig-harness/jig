@@ -31,7 +31,6 @@ import {
 } from "./served-pull.ts";
 import {
   childPlanHold,
-  DEFAULT_EPIC_WIDTH,
   type PassedChild,
   type PassOver,
   parkedOnPerson,
@@ -284,6 +283,7 @@ export async function readServedPickups(
   const ranked = serializeEpics(
     rankQueue(candidates),
     out.unplaced,
+    options.epicWidth,
     options.passOver,
     passed,
   );
@@ -513,10 +513,6 @@ async function readChildren(
   return { children, unread };
 }
 
-/** The width of an epic with no execution plan: the section's, else the default. */
-const epicWidth = (options: Pick<ServedOptions, "epicWidth">): number =>
-  options.epicWidth ?? DEFAULT_EPIC_WIDTH;
-
 async function enqueueChildren(
   ctx: WalkContext,
   issue: PoolIssue,
@@ -552,13 +548,12 @@ async function enqueueChildren(
     });
     serial = selection.present
       ? undefined
-      : { epic: issue.identifier, width: epicWidth(options), busy, unread };
+      : { epic: issue.identifier, busy, unread };
   } catch (error) {
     // Setup failed: no sibling starts on a guess, and a directly assigned child is held too.
     for (const kept of meta.children)
       ctx.serials.set(kept.identifier, {
         epic: issue.identifier,
-        width: epicWidth(options),
         busy: [],
         unread: [],
         unknown: meta.children[0]?.identifier ?? issue.identifier,

@@ -60,8 +60,6 @@ export const DEFAULT_EPIC_WIDTH = 4;
 /** The epic an item is a child of when that epic has no execution plan, and the children that take its width. */
 export interface Serial {
   epic: string;
-  /** How many of its children may be under way at once. */
-  width: number;
   /** Children under way: started, and not waiting on a person. */
   busy: string[];
   /** Open children that could not be read: each may be under way, so each takes a slot. */
@@ -74,6 +72,7 @@ export interface Serial {
 function serialHold(
   serial: Serial,
   key: string,
+  width: number,
   starting: ReadonlyMap<string, readonly string[]>,
 ): string | null {
   if (serial.unknown !== undefined)
@@ -81,7 +80,7 @@ function serialHold(
   const busy = serial.busy.filter((k) => k !== key);
   const unread = serial.unread.filter((k) => k !== key);
   const next = starting.get(serial.epic) ?? [];
-  if (busy.length + unread.length + next.length < serial.width) return null;
+  if (busy.length + unread.length + next.length < width) return null;
   const taken = [
     ...(busy.length > 0 ? [`working ${busy.join(", ")}`] : []),
     ...(unread.length > 0
@@ -89,8 +88,8 @@ function serialHold(
       : []),
     ...(next.length > 0 ? [`starting ${next.join(", ")}`] : []),
   ];
-  const children = serial.width === 1 ? "child" : "children";
-  return `${serial.epic} works at most ${serial.width} ${children} at once (dispatch.epic_width): ${taken.join("; ")}`;
+  const children = width === 1 ? "child" : "children";
+  return `${serial.epic} works at most ${width} ${children} at once (dispatch.epic_width): ${taken.join("; ")}`;
 }
 
 /**
@@ -107,7 +106,7 @@ export interface PassedChild {
 
 /**
  * `ranked` best first: each serial epic keeps its best children while its
- * width has room. A child `passOver` names is kept, so the pickup plan
+ * `width` (`dispatch.epic_width`) has room. A child `passOver` names is kept, so the pickup plan
  * reports it, but takes no slot: it is noted in `passed` and its next
  * sibling may start in its place.
  */
@@ -116,6 +115,7 @@ export function serializeEpics<
 >(
   ranked: readonly T[],
   unplaced: Unplaced[],
+  width: number = DEFAULT_EPIC_WIDTH,
   passOver: PassOver = () => null,
   passed: Map<string, PassedChild> = new Map(),
 ): T[] {
@@ -132,7 +132,8 @@ export function serializeEpics<
       kept.push(item);
       continue;
     }
-    const why = serial === undefined ? null : serialHold(serial, key, starting);
+    const why =
+      serial === undefined ? null : serialHold(serial, key, width, starting);
     if (why !== null) {
       unplaced.push({ target: key, record: "tracker", reason: why });
       continue;
