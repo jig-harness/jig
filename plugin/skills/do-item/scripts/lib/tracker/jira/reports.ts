@@ -28,8 +28,9 @@ import type { CorePoolIssue, CoreTracker } from "../facets/tracker.ts";
 import { TrackerRequestError } from "../port.ts";
 import { checkPoolQuery, inWindow } from "../requests.ts";
 import type { Client } from "./client.ts";
+import { dispatchSource } from "./dispatch-source.ts";
 import type { JiraFacetStores } from "./facets.ts";
-import { type JiraIssue, record } from "./read.ts";
+import { type JiraIssue, parseIssue, stateInputOf, record } from "./read.ts";
 import {
   fieldOfLabel,
   inProject,
@@ -73,6 +74,7 @@ type ReportOps = Pick<
   | "unassignedIssues"
   | "openPopulation"
   | "poolScopeCounts"
+  | "dispatchSource"
 >;
 
 /** The ancestors the attribution walk reads; a further one fails the read. */
@@ -372,6 +374,41 @@ export function reportOperations(
     );
   }
   return {
+    dispatchSource: dispatchSource(client, async (raw, children, signal) => {
+      const issue = parseIssue(
+        raw,
+        client.site,
+        await client.fieldLabels(signal),
+        await client.facetFields(signal),
+      );
+      const { state } = model.read(issue);
+      return {
+        identifier: issue.key,
+        nativeType: nativeTypeOf(issue),
+        title: issue.title,
+        url: issue.url,
+        priority: model.priorityOf(issue.priority),
+        createdAt: issue.createdAt,
+        updatedAt: issue.updatedAt,
+        state: { ...state, id: issue.status.id },
+        assignee:
+          issue.assignee === null
+            ? null
+            : {
+                id: issue.assignee.accountId,
+                name: issue.assignee.displayName,
+              },
+        labels: issue.labels,
+        hasOpenChildren: children.some(
+          (child) =>
+            !["completed", "canceled", "duplicate"].includes(
+              model.read(stateInputOf(child)).state.type,
+            ),
+        ),
+        ...stores.read(issue),
+        truncated: [],
+      };
+    }),
     async issuesByKeys(keys) {
       const own = keys.filter((k) => ownKey.test(k));
       const found = await byKeys(own, true);

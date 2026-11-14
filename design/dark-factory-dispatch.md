@@ -57,11 +57,15 @@ flowchart LR
 
 ### One tick, step by step
 
-A tick runs in two **phases**. In the **observe phase** every repository
-is read at once: each under its own **observe lock**, and every read
+A tick runs in two **phases**. In the **observe phase** the tick reads
+**trackers first, repositories second**. It opens the repositories'
+configuration, groups their tracker scopes and served people, and reads
+each scope and person once before deriving any repository's pickups.
+Each repository is observed under its own **observe lock**, and every read
 through one pool that keeps at most six in flight (the forge's login and rate limit, each read once per tick, and the base heads of conflicting drives among them), well inside the forge's
 secondary rate limits. Within one repository, the sources that do not
-depend on each other are read side by side: the tracker beside the forge,
+depend on each other are read side by side: the repository's derivation
+of the shared tracker reading beside the forge,
 then every host's launch claims beside the runtime. In the **act phase**,
 under the machine's one **act lock**, the tick reads this machine's launch
 records again and gives each repository a **turn** in rotated order, one
@@ -566,7 +570,27 @@ guards keep one stage from starting twice:
 | The shared records  | the `SharedRecords` interface (`plugin/shared/records/shared.ts`), on the forge through `plugin/shared/records/shared-forge.ts`; the observe phase reads them from the tick's comment listings, a launch's own reads and writes go to the forge                                                                                                                                                    | for each pull request it classifies, every host's launch claims and their ends, and the follow-up markers' answers: which host holds a launch, and how it ended (see Several hosts)            |
 | The drive doctor    | `drives.ts --json` from drive-pr, run read-only in the repository clone the machine file lists, only in a tick where a drive fell silent                                                                                                                                                                                                                                                           | each pull request's lock holder and the doctor's verdict on it (`DEAD`, `WEDGED`, `HEALTHY`, …): whether a silent driver no launch started is taken over                                       |
 
-**The tracker.** The interface gains one read, `assignedIssues(identity,
+**The tracker.** A tracker scope is its adapter, instance, credential and
+team or project, or the target repository for GitHub Issues. The tick
+collects the repositories' needs before reading each scope: one queue per
+person, holding native states, labels and fields. Repositories derive their
+own canonical states and facets from that shared reading, then apply their
+repository labels and the host's default for unlabelled items. Different
+state maps or facet stores share the reading. Assignment history,
+relations and an epic's open children are read once per item in the scope.
+Native queries select the union of states the repositories need; a
+factory's explicitly configured dispatch states are included even when
+they fall outside the served queue's open and working states.
+The kept reading between ticks is per scope and person; the change probe
+and scheduled full read are shared. A rate-limited or unreachable scope is
+reported once, and every repository using it shows the kept reading's age.
+An opaque Linear command-line credential has a process-local scope,
+because a login switch cannot be distinguished safely across ticks. Its
+queue, item metadata and ready-pool readings stay in memory, without
+accumulating persistent entries. HTTP token credentials retain their
+readings between ticks.
+
+The interface gains one read, `assignedIssues(identity,
 states)`: the issues assigned to that user in those states, in the pool
 form whose fields (`assignee`, `state`) the interface already returns. Both
 adapters answer it natively. It is a new read rather than a change to

@@ -16,18 +16,25 @@
  */
 
 import { isRecord } from "../../../../../shared/guards.ts";
-import type { CoreQueueIssue, CorePoolIssue } from "./facets/tracker.ts";
+import type {
+  CoreQueueIssue,
+  CorePoolIssue,
+  CoreTracker,
+} from "./facets/tracker.ts";
 import type { WithEstimate } from "./linear-facets.ts";
-import { poolFields } from "./linear-pool.ts";
+import { poolQueries, poolFields } from "./linear-pool.ts";
+import { dispatchCredential, dispatchPersistent } from "./linear-transport.ts";
 import type { LinearTransport } from "./linear-transport.ts";
 import { record, ShapeError, str } from "./linear-shapes.ts";
 import type {
   CanonicalState,
+  FacetReadOptions,
   ChangeAnswer,
   ChangeQuery,
   IssueRelation,
   QueueRelation,
   StateNames,
+  DispatchRawIssue,
 } from "./port.ts";
 
 type Pager = (
@@ -269,12 +276,152 @@ async function readByKey<T extends { identifier: string }>(
   return found;
 }
 
-export function queueOperations(opts: QueueOptions) {
+type QueueOperations = Required<
+  Pick<
+    CoreTracker,
+    | "dispatchSource"
+    | "queueIssues"
+    | "queueIssuesByKey"
+    | "poolIssues"
+    | "changedSince"
+  >
+>;
+
+export function queueOperations(opts: QueueOptions): QueueOperations {
   const { team, states, transport, pageAll } = opts;
   const queue = queueQuery(opts.extra);
   const queueByKey = queueByKeyQuery(opts.extra);
   const batch = batchQuery(opts.extra);
+  const rawOptions = { ...opts, extra: "estimate" };
+  const requirements = [
+    "triage",
+    "backlog",
+    "todo",
+    "blocked",
+    "in_progress",
+    "pr_open",
+  ]
+    .map((state) => states[state as CanonicalState])
+    .filter((name): name is string => name != null)
+    .map((name) => `queue-state:${name}`);
+  let demanded = new Set(requirements);
+  const rawQuery = queueQuery("estimate").replace(
+    "query TrackerQueue(",
+    "query TrackerNativeQueue(",
+  );
+  const rawOf = (node: unknown): DispatchRawIssue => {
+    const read = parseQueueIssue(node, rawOptions);
+    return {
+      identifier: read.identifier,
+      value: read,
+      relations: read.relations,
+      parent:
+        read.parent === null
+          ? null
+          : {
+              ...read.parent,
+              issue: {
+                identifier: read.parent.issue.identifier,
+                value: read.parent.issue,
+              },
+            },
+    };
+  };
   return {
+    dispatchSource: {
+      persistent: dispatchPersistent(transport),
+      requirements,
+      configure(union) {
+        demanded = new Set([...demanded, ...union]);
+      },
+      get shape() {
+        return JSON.stringify([...demanded].sort());
+      },
+      credential: async () => dispatchCredential(transport),
+      async queue(identity: string, options?: FacetReadOptions) {
+        const nodes = await pageAll(
+          transport,
+          rawQuery,
+          {
+            filter: {
+              and: [
+                { team: { key: { eq: team } } },
+                assigneeClause(identity),
+                {
+                  state: {
+                    name: {
+                      in: [...demanded]
+                        .filter((name) => name.startsWith("queue-state:"))
+                        .map((name) => name.slice(12)),
+                    },
+                  },
+                },
+              ],
+            },
+          },
+          (d) => d.issues,
+          `the native queue of ${identity}`,
+          options?.signal,
+        );
+        return nodes.map(rawOf);
+      },
+      async issue(key: string, options?: FacetReadOptions) {
+        const found = await readByKey(
+          rawOptions,
+          {
+            query: queueByKeyQuery("estimate"),
+            size: QUEUE_PAGE,
+            what: "with their native fields",
+          },
+          [key],
+          rawOf,
+          options?.signal,
+        );
+        return found.get(key.toUpperCase()) ?? null;
+      },
+      async issues(keys: ReadonlyArray<string>, options?: FacetReadOptions) {
+        return readByKey(
+          rawOptions,
+          {
+            query: queueByKeyQuery("estimate"),
+            size: QUEUE_PAGE,
+            what: "with their native fields",
+          },
+          keys,
+          rawOf,
+          options?.signal,
+        );
+      },
+      async children(key: string, options?: FacetReadOptions) {
+        const query = poolQueries("estimate").openChildren;
+        const nodes = await pageAll(
+          transport,
+          query,
+          {
+            id: key,
+            filter: {
+              and: [
+                { team: { key: { eq: team } } },
+                {
+                  state: {
+                    type: { nin: ["completed", "canceled", "duplicate"] },
+                  },
+                },
+              ],
+            },
+          },
+          (d) => record(d.issue, `issue ${key}`).children,
+          `native children of ${key}`,
+          options?.signal,
+        );
+        return nodes.map((value) => {
+          const read = opts.parsePool(value);
+          return { identifier: read.identifier, value: read };
+        });
+      },
+      project: async (raw: DispatchRawIssue) =>
+        raw.value as WithEstimate<CorePoolIssue>,
+    },
     async queueIssues(
       identity: string,
       wanted: ReadonlyArray<CanonicalState>,
@@ -353,7 +500,16 @@ export function queueOperations(opts: QueueOptions) {
               {
                 and: [
                   { team: { key: { eq: team } } },
-                  assigneeClause(query.identity),
+                  {
+                    assignee: {
+                      or: (query.identities ?? [query.identity]).flatMap(
+                        (identity) => [
+                          { email: { eqIgnoreCase: identity } },
+                          { displayName: { eqIgnoreCase: identity } },
+                        ],
+                      ),
+                    },
+                  },
                 ],
               },
               ...groups,

@@ -15,6 +15,8 @@
 import type { StoreHealth } from "./unavailable.ts";
 import type { TrackerAttachments } from "./attachment.ts";
 import type { TrackerBlockedFields } from "./blocked-port.ts";
+import type { DispatchSource } from "./dispatch-source.ts";
+export type { DispatchRawIssue, DispatchSource } from "./dispatch-source.ts";
 import type { PoolScopeCounts } from "./pool-counts.ts";
 
 /**
@@ -652,6 +654,8 @@ export interface ChangeQuery {
   /** An ISO 8601 time: issues updated after it count. */
   since: string;
   identity: string;
+  /** All people sharing this scope probe, when dispatch groups its queues. */
+  identities?: ReadonlyArray<string>;
   keys: ReadonlyArray<string>;
 }
 
@@ -675,6 +679,8 @@ export interface TrackerLabel {
  * `blocked-port.ts`.
  */
 export interface Tracker extends TrackerAttachments, TrackerBlockedFields {
+  /** Native queue reads and this repository’s interpretation, for shared dispatch scopes. */
+  readonly dispatchSource?: DispatchSource;
   /** The adapter name, as `issue_tracker.adapter` spells it. */
   readonly adapter: string;
   /**

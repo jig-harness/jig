@@ -6,14 +6,14 @@
  * read the tracker's rate limit refuses stops the walk, which reports the
  * limit once rather than one unplaced row per item.
  */
+import { cacheForTracker } from "./tracker-cache.ts";
 import type {
-  Assigner,
-  IssueRelation,
   PoolIssue,
-  QueueRelation,
   Tracker,
 } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
-import { AssignerUnknown } from "../../../skills/do-item/scripts/lib/tracker/assigner-unknown.ts";
+import { metadata, type Metadata } from "./served-metadata.ts";
+import { isUnavailable } from "../../../skills/do-item/scripts/lib/tracker/unavailable.ts";
+import { scopeFailureRow } from "./scope-failures.ts";
 import {
   isRateLimited,
   type TrackerRateLimited,
@@ -45,7 +45,6 @@ import {
 import { planKeys, servedPlan, type ServedPlan } from "./served-plan.ts";
 import {
   type ServedView,
-  trackerScope,
   type ServedViews,
   sharedView,
 } from "./served-reads.ts";
@@ -61,15 +60,6 @@ import {
 import { failureText } from "../text.ts";
 import type { ClaimedItem, Unplaced, WantedItem } from "../types.ts";
 
-interface Metadata {
-  updatedAt: string;
-  by: Assigner | null;
-  /** Why no user made the assignment, as the history read in full answered: kept like the rest until the item changes. */
-  noAssigner?: string;
-  relations: IssueRelation[];
-  children: PoolIssue[];
-  description: string | null;
-}
 interface Candidate extends QueueItem {
   identity: string;
   by: string;
@@ -101,6 +91,7 @@ export interface ServedOptions extends ServedPolicy {
   cache?: PickupReads;
   nowMs: number;
   headroom: boolean;
+  bound?: import("./tracker-facets.ts").FacetBound;
   /** The tick's views, shared by every repository that reads the same tracker, team and person. */
   views?: ServedViews;
 }
@@ -111,81 +102,19 @@ const itemOf = (i: PoolIssue) => ({
   url: i.url,
 });
 
-/** Who made the assignment, or the history's definite answer that no user did; a failed read throws. */
-async function assigner(
-  tracker: Tracker,
-  issue: PoolIssue,
-  identity: string,
-): Promise<Pick<Metadata, "by" | "noAssigner">> {
-  if (issue.assignee === null) return { by: null };
-  try {
-    return { by: await tracker.assignedBy(issue.identifier, identity) };
-  } catch (error) {
-    if (!(error instanceof AssignerUnknown)) throw error;
-    return { by: null, noAssigner: failureText(error) };
-  }
-}
-
-/** Cache entries without a timestamp are never reused. */
-async function metadata(
-  tracker: Tracker,
-  issue: PoolIssue,
-  identity: string,
-  cache: PickupReads,
-  carried: QueueRelation[] | null,
-): Promise<Metadata> {
-  const key = `${trackerScope(tracker)}:item:${issue.identifier}:${identity}:${issue.isEpic ? "epic" : ""}`;
-  const kept = cache.get<Metadata>(key);
-  if (issue.updatedAt && kept?.updatedAt === issue.updatedAt)
-    return carried === null
-      ? kept
-      : {
-          ...kept,
-          relations: carried.map(({ type, issue: i }) => ({ type, issue: i })),
-        };
-  const assigned = await assigner(tracker, issue, identity);
-  // An item no user assigned is not placed, so its relations are not read.
-  const relations =
-    carried === null
-      ? assigned.noAssigner === undefined
-        ? await tracker.listRelations(issue.identifier)
-        : []
-      : carried.map(({ type, issue: i }) => ({ type, issue: i }));
-  const children =
-    assigned.noAssigner === undefined && issue.isEpic && issue.hasOpenChildren
-      ? await tracker.openChildren(issue.identifier)
-      : [];
-  const description =
-    children.length > 0
-      ? ((await tracker.getIssue(issue.identifier))?.description ?? null)
-      : "";
-  const value = {
-    updatedAt: issue.updatedAt ?? "",
-    ...assigned,
-    relations,
-    children,
-    description,
-  };
-  if (issue.updatedAt && description !== null) cache.set(key, value);
-  return value;
-}
-
 /** The single row a rate-limited tracker leaves on the receipt. */
 export function limitedRow(
   tracker: Pick<Tracker, "adapter" | "team">,
   limited: TrackerRateLimited,
-  view: Pick<ServedView, "readAt"> | null = null,
+  view: Pick<ServedView, "readAt" | "scope"> | null = null,
 ): Unplaced {
   const until = new Date(limited.resetAt).toISOString();
-  const kept =
-    view !== null && view.readAt > 0
-      ? `; the queue shown is the reading of ${new Date(view.readAt).toISOString()}`
-      : "";
-  return {
+  const row: Unplaced = {
     target: `${tracker.adapter} ${tracker.team}`,
     record: "tracker",
-    reason: `the tracker is rate limited until ${until}: pickups wait for the reset, and no request is sent before it${kept}`,
+    reason: `the tracker is rate limited until ${until}: pickups wait for the reset, and no request is sent before it`,
   };
+  return view === null ? row : scopeFailureRow(tracker, view, row.reason);
 }
 
 /** What the walks of every served identity in one reading share about epics. */
@@ -224,6 +153,16 @@ async function readPerson(
   try {
     view = await sharedView(options.views, tracker, identity, options, cache);
     if (view.limited !== null) got.limited = { error: view.limited, view };
+    if (view.unavailable !== undefined) {
+      got.failed = true;
+      got.unplaced.push(
+        scopeFailureRow(
+          tracker,
+          view,
+          `the served assignments could not be read: ${view.unavailable}`,
+        ),
+      );
+    }
     const progress = view.progress();
     got.claimed = progress.map((i) => ({
       key: i.identifier,
@@ -245,17 +184,26 @@ async function readPerson(
       ],
       got,
     );
-    if (view.limited === null) view.save();
   } catch (error) {
     if (isRateLimited(error)) got.limited ??= { error, view };
     else {
       got.failed = true;
-      got.unplaced.push({
-        target: identity,
-        record: "tracker",
-        reason: `the served assignments could not be read: ${failureText(error)}`,
-      });
+      got.unplaced.push(
+        view?.scope !== undefined && isUnavailable(error)
+          ? scopeFailureRow(
+              tracker,
+              view,
+              `the served assignments could not be read: ${failureText(error)}`,
+            )
+          : {
+              target: identity,
+              record: "tracker",
+              reason: `the served assignments could not be read: ${failureText(error)}`,
+            },
+      );
     }
+  } finally {
+    view?.save();
   }
   return got;
 }
@@ -266,7 +214,9 @@ export async function readServedPickups(
   people: readonly ServedPerson[],
   options: ServedOptions,
 ): Promise<ServedReading> {
-  const cache = options.cache ?? pickupReads;
+  options =
+    options.views === undefined ? { ...options, views: new Map() } : options;
+  const cache = cacheForTracker(tracker, options.cache ?? pickupReads);
   const out: ServedReading = { wanted: [], unplaced: [], claimed: [] };
   const candidates: Candidate[] = [];
   const seen = new Set<string>();
@@ -622,6 +572,7 @@ async function visitNode(ctx: WalkContext, node: Pending): Promise<Found> {
     await placeNode(ctx, node, found);
   } catch (error) {
     if (isRateLimited(error)) throw error;
+    if (ctx.view.scope !== undefined && isUnavailable(error)) throw error;
     unreadable(issue, failureText(error), found);
   }
   return found;
@@ -647,10 +598,7 @@ async function placeNode(
   const { issue, ancestor } = node;
   const unplace = unplacer(issue, options.trackerNamespace, found);
   const carried = view.held(issue.identifier)?.relations ?? null;
-  const meta = await view.once(
-    `metadata ${issue.identifier} ${issue.updatedAt ?? ""} ${issue.isEpic}`,
-    () => metadata(tracker, issue, identity, cache, carried),
-  );
+  const meta = await metadata(tracker, issue, identity, cache, carried, view);
   // A kept no-assigner answer is reported as the failed read it stands for.
   if (meta.noAssigner !== undefined)
     return void unreadable(issue, meta.noAssigner, found);
@@ -775,16 +723,13 @@ async function childStates(
     read.map((child) =>
       child === null || child.truncated.length
         ? null
-        : view.once(
-            `metadata ${child.identifier} ${child.updatedAt ?? ""} ${child.isEpic}`,
-            () =>
-              metadata(
-                tracker,
-                child,
-                identity,
-                cache,
-                view.held(child.identifier)?.relations ?? null,
-              ),
+        : metadata(
+            tracker,
+            child,
+            identity,
+            cache,
+            view.held(child.identifier)?.relations ?? null,
+            view,
           ),
     ),
   );

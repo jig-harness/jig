@@ -198,16 +198,25 @@ export class FakeLinear {
     const or = (
       clause.assignee as { or: Array<Record<string, { eqIgnoreCase: string }>> }
     ).or;
-    const who = or[0]?.email?.eqIgnoreCase;
-    return i.assignee !== null && i.assignee === who;
+    return (
+      i.assignee !== null &&
+      or.some(
+        (match) =>
+          i.assignee ===
+          (match.email?.eqIgnoreCase ?? match.displayName?.eqIgnoreCase),
+      )
+    );
   }
 
   readonly transport: LinearTransport = async (query, variables) => {
+    if (/\bpriorityestimate\b/.test(query))
+      throw new Error("unknown Linear field priorityestimate");
     const op = /query (\w+)/.exec(query)?.[1] ?? "anonymous";
     this.requests.push(op);
     const all = [...this.issues.values()];
     const filter = (variables.filter ?? {}) as Record<string, unknown>;
     switch (op) {
+      case "TrackerNativeQueue":
       case "TrackerQueue": {
         const and = (filter.and ?? []) as Array<Record<string, unknown>>;
         const states = statesOf(and);
