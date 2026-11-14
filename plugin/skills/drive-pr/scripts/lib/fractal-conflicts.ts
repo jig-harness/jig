@@ -20,6 +20,7 @@ import {
   type RunOptions,
   tsArgv,
 } from "./proc.ts";
+import { isoFromMs, parseMs } from "../../../../shared/time.ts";
 
 export type ConflictObservation = "conflicted" | "observed-clean" | "unknown";
 export interface ConflictCoverage {
@@ -133,7 +134,7 @@ function liveEvent(value: unknown): value is LiveEvent {
     isRecord(value) &&
     value.type === "merge_conflict" &&
     typeof value.ts === "string" &&
-    Number.isFinite(Date.parse(value.ts)) &&
+    Number.isFinite(parseMs(value.ts)) &&
     typeof value.commit === "string" &&
     typeof value.path === "string" &&
     (value.pr === null || Number.isInteger(value.pr))
@@ -164,13 +165,13 @@ type Ancestry = Awaited<ReturnType<ConflictDeps["ancestry"]>>;
 function directlyConflicted(pr: CohortPr, evidence: ConflictEvidence): boolean {
   return (
     evidence.events.some(
-      (e) => e.pr === pr.number && Date.parse(e.ts) <= Date.parse(pr.mergedAt),
+      (e) => e.pr === pr.number && parseMs(e.ts) <= parseMs(pr.mergedAt),
     ) ||
     (evidence.report?.merges ?? []).some(
       (m) =>
         m.conflicted &&
         m.pullRequest === pr.number &&
-        Date.parse(m.date) <= Date.parse(pr.mergedAt),
+        parseMs(m.date) <= parseMs(pr.mergedAt),
     )
   );
 }
@@ -298,10 +299,10 @@ export function replaySince(
     ]),
     ...cohort.map((pr) => pr.mergedAt),
   ]) {
-    const ms = Date.parse(t);
+    const ms = parseMs(t);
     if (ms < earliest) earliest = ms;
   }
-  return earliest === Infinity ? null : new Date(earliest).toISOString();
+  return earliest === Infinity ? null : isoFromMs(earliest);
 }
 
 /** Before git 2.45 nothing stops a partial clone's `rev-list` from fetching the objects it lacks. */

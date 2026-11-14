@@ -53,7 +53,7 @@ const usage =
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const COMPARATORS = new Set([">", ">=", "<", "<="]);
 const WINDOW = /^[1-9][0-9]*(?:[dwmh]| runs)$/;
-const DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** A finding before its file and line are known. */
 export type LedgerFinding = Omit<Finding, "file" | "line"> & { id?: string };
@@ -70,15 +70,25 @@ export function parseDate(value: unknown, what: string): number {
     if (ms % 86_400_000 === 0) return ms;
   }
   const f = typeof value === "string" ? DATE.exec(value) : null;
-  if (f !== null) {
-    const ms = Date.UTC(Number(f[1]), Number(f[2]) - 1, Number(f[3]));
-    // Date.UTC rolls an impossible day over into the next month, so a real
-    // date is one that comes back unchanged.
-    if (new Date(ms).toISOString().startsWith(f[0])) return ms;
-  }
+  if (f !== null)
+    try {
+      return Temporal.PlainDate.from(f[0], {
+        overflow: "reject",
+      }).toZonedDateTime("UTC").epochMilliseconds;
+    } catch {
+      // An impossible day (30 February) falls through to the refusal below.
+    }
   throw new Error(
     `${what} is not a calendar date (YYYY-MM-DD): ${String(value)}`,
   );
+}
+
+/** Midnight UTC in milliseconds as its calendar date, `YYYY-MM-DD`. */
+function dayOf(ms: number): string {
+  return Temporal.Instant.fromEpochMilliseconds(ms)
+    .toZonedDateTimeISO("UTC")
+    .toPlainDate()
+    .toString();
 }
 
 const isFinite_ = (v: unknown): v is number =>
@@ -143,7 +153,7 @@ function checkAfter(
     ? [
         finding(
           id,
-          `${where}'s after measurement was due by ${new Date(due).toISOString().slice(0, 10)}`,
+          `${where}'s after measurement was due by ${dayOf(due)}`,
           "measure it and record the number, or move measure_by with the reason",
         ),
       ]
@@ -389,8 +399,8 @@ function lineOf(raw: string, id: string | undefined): number | undefined {
 /** Midnight today in UTC, or the `--now` date. */
 function todayOf(now: string | undefined): number {
   if (now !== undefined) return parseDate(now, "--now");
-  const d = new Date();
-  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  return Temporal.Now.plainDateISO("UTC").toZonedDateTime("UTC")
+    .epochMilliseconds;
 }
 
 /** The registry's metric ids, or why they could not be read. */

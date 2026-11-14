@@ -70,6 +70,7 @@ import {
   waits,
 } from "./launch.ts";
 import { holdingRecords, pickupHold } from "./pickup-hold.ts";
+import { currentIso } from "../../../shared/time.ts";
 
 /** What a repository's pickups need beyond the apply state. */
 export interface PickupContext {
@@ -199,7 +200,7 @@ async function launchOne(
   );
   if ("outcome" in admitted) return admitted.outcome;
   const slots = admitted.slots;
-  const id = newRecordId(new Date());
+  const id = newRecordId();
   const named = dispatched("pickup", action.target, id);
   const opened = await openedFor(
     state,
@@ -247,7 +248,7 @@ async function launchOne(
     ...(batch === undefined ? {} : { batchItems: batch }),
     replaces: null,
     facts: `state ${after.issue.state.name}, assignee ${after.issue.assignee?.name ?? "nobody"}`,
-    createdAt: new Date().toISOString(),
+    createdAt: currentIso(),
     workspace,
     attempts: [],
     agentId: null,

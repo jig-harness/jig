@@ -4,6 +4,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { isMapping } from "./config-layers.ts";
 import { ownIdentity } from "./liveness.ts";
+import { currentIso, parseMs } from "./time.ts";
 
 export const SCRATCH_OWNER_FILE = ".jig-scratch-owner.json";
 /**
@@ -24,14 +25,14 @@ function scratchOwner(): ScratchOwner {
     version: 1,
     pid: process.pid,
     start: ownIdentity().start || null,
-    createdAt: new Date().toISOString(),
+    createdAt: currentIso(),
   };
   return captured;
 }
 export function writeScratchOwner(root: string): void {
   writeFileSync(
     join(root, SCRATCH_OWNER_FILE),
-    JSON.stringify({ ...scratchOwner(), createdAt: new Date().toISOString() }),
+    JSON.stringify({ ...scratchOwner(), createdAt: currentIso() }),
     { flag: "wx", mode: 0o600 },
   );
 }
@@ -50,7 +51,7 @@ export function readScratchOwner(root: string): ScratchOwner {
       (typeof owner.start === "string" && owner.start)
     ) ||
     typeof owner.createdAt !== "string" ||
-    !Number.isFinite(Date.parse(owner.createdAt))
+    !Number.isFinite(parseMs(owner.createdAt))
   )
     throw new GcError(`Invalid scratch owner: ${root}`);
   return {

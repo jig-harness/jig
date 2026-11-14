@@ -41,6 +41,7 @@ import {
   requestsForCommit,
   worktreeActivity,
 } from "./worktree-git.ts";
+import { currentMs } from "../../shared/time.ts";
 
 export interface WorktreePolicy {
   remote: string;
@@ -499,7 +500,7 @@ function legacyArchivePlan(
     return ok(null);
   const created = worktreeCreatedAt(admin);
   if (!created.ok || created.value >= legacy.since) return ok(null);
-  const measured = measure(path, other, legacy.maxBytes, Date.now() + 30_000);
+  const measured = measure(path, other, legacy.maxBytes, currentMs() + 30_000);
   if (!measured.ok) return measured;
   if (measured.value.bytes > legacy.maxBytes)
     return ok({

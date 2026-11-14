@@ -30,6 +30,7 @@ import {
   outboxRecordsForPr,
   readInboxMessages,
 } from "./mailbox.ts";
+import { currentIso } from "../../../../../shared/time.ts";
 
 /** Draw the next driver generation of `pr` in this clone: 1 for its first driver here. */
 export function nextDriverGeneration(drive: DriveDb, pr: string): number {
@@ -108,7 +109,7 @@ export async function ackDirective(
 ): Promise<void> {
   await appendOutboxRecord(dir, {
     id,
-    ts: new Date().toISOString(),
+    ts: currentIso(),
     pr,
     status: "ack",
     generation,

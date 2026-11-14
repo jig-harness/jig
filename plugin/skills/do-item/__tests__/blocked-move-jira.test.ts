@@ -23,7 +23,7 @@ const KEYS = {
   source: "(?<!\\w)ENG-\\d+(?!\\w)",
   normalize: (k: string) => k.toUpperCase(),
 };
-const NOW = () => new Date("2026-11-11T09:30:00Z");
+const NOW = () => Temporal.Instant.from("2026-11-11T09:30:00Z");
 
 const SITE_FIELDS = [
   {

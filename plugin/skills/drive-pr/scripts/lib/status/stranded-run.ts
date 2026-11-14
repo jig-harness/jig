@@ -12,6 +12,7 @@ import {
   reviewerStickyMarkers,
 } from "./evidence.ts";
 import { resolveMarkerSha } from "./reviewed-sha.ts";
+import { currentMs, parseMs } from "../../../../../shared/time.ts";
 
 /**
  * How often a self-hosted reviewer service runs its reconciliation pass
@@ -202,7 +203,7 @@ function minAgeSec(): number {
 
 /** Seconds since the instant `ms`, `NaN` when it is not one. */
 function secondsSince(ms: number): number {
-  return Number.isFinite(ms) ? (Date.now() - ms) / 1000 : Number.NaN;
+  return Number.isFinite(ms) ? (currentMs() - ms) / 1000 : Number.NaN;
 }
 
 /**
@@ -217,8 +218,8 @@ function overruledNote(
   counted: number,
 ): string {
   const startedMs =
-    reviewer?.started == null ? Number.NaN : Date.parse(reviewer.started);
-  const updatedMs = Date.parse(sticky.updatedAt);
+    reviewer?.started == null ? Number.NaN : parseMs(reviewer.started);
+  const updatedMs = parseMs(sticky.updatedAt);
   // The floor is on the sticky's own age (condition 4), NOT the run's: a run
   // stuck for hours clears a run-age floor while its sticky was rewritten
   // seconds ago. The run's age is reported, never gated on.

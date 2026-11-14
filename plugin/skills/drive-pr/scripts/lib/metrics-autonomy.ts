@@ -28,6 +28,7 @@ import { reversalInThread } from "./provisional.ts";
 import { TRUSTED_ASSOCIATIONS } from "../summary-findings.ts";
 import type { UnattendedDecision } from "./state/decisions.ts";
 import { countByCause, type DriveEvent } from "./state/events.ts";
+import { parseMs } from "../../../../shared/time.ts";
 
 /** One thread's share of the counters. */
 export interface ThreadAutonomy {
@@ -147,7 +148,7 @@ export interface AutonomyMetrics {
 const before = (at: string | null | undefined, mergedAt: string | null) =>
   at != null &&
   at !== "" &&
-  (mergedAt === null || Date.parse(at) <= Date.parse(mergedAt));
+  (mergedAt === null || parseMs(at) <= parseMs(mergedAt));
 
 export function autonomyMetrics(
   threads: ReadonlyArray<{ autonomy: ThreadAutonomy }>,

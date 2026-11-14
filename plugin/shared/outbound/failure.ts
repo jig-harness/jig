@@ -25,6 +25,7 @@
  * caller reads the item again before it writes again.
  */
 import { type Failure, JigError } from "../outcome.ts";
+import { currentMs, parseHttpDateMs } from "../time.ts";
 
 export const FAILURE_CLASSES = [
   "rate-limited",
@@ -260,12 +261,12 @@ export function answerClass(
 /** The wait a `Retry-After` header asks for, seconds or an HTTP date, in milliseconds; `null` when it names none. */
 export function retryAfterMs(
   headers: Headers,
-  now: () => number = Date.now,
+  now: () => number = currentMs,
 ): number | null {
   const header = headers.get("retry-after");
   if (header === null || header.trim() === "") return null;
   const seconds = Number(header);
   if (Number.isFinite(seconds)) return seconds >= 0 ? seconds * 1000 : null;
-  const date = Date.parse(header);
+  const date = parseHttpDateMs(header);
   return Number.isFinite(date) ? Math.max(0, date - now()) : null;
 }

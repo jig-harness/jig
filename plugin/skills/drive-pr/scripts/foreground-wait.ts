@@ -129,6 +129,7 @@ import {
   type Target,
   witnessStep,
 } from "./lib/process-witness.ts";
+import { currentMs, parseMs } from "../../../shared/time.ts";
 
 const ROOT = join(process.cwd(), ".context", "foreground-wait");
 /**
@@ -287,7 +288,7 @@ const RECORD_CLOCK_SLACK_MS = 2000;
 /** A Windows process created after its pid was recorded reused the number. */
 function reusedAfterRecording(row: PsRow, recordedAt: number | null): boolean {
   if (process.platform !== "win32" || recordedAt === null) return false;
-  const created = Date.parse(row.start);
+  const created = parseMs(row.start);
   return (
     Number.isFinite(created) && created > recordedAt + RECORD_CLOCK_SLACK_MS
   );
@@ -374,7 +375,7 @@ function recordedPidFiles(dir: string): RecordedPid[] {
 
 function unrecordedClaimRunning(dir: string): boolean {
   try {
-    return Date.now() - statSync(dir).mtimeMs < CLAIM_GRACE_MS;
+    return currentMs() - statSync(dir).mtimeMs < CLAIM_GRACE_MS;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
     throw error;
@@ -401,7 +402,7 @@ async function running(
   const result = readResult(dir);
   if (result !== null) return unresolvedResult(result);
   if (readPid(dir, "launcher.pid") === null) return unrecordedClaimRunning(dir);
-  const snapshotStarted = Date.now();
+  const snapshotStarted = currentMs();
   let roots: RecordedPid[] = [];
   const live = await liveTree(() => (roots = recordedPidFiles(dir)));
   const terminal = readResult(dir);
@@ -616,10 +617,10 @@ async function bindRunner(): Promise<{
   root: Target;
   rows: Awaited<ReturnType<typeof processTable>>;
 } | null> {
-  const deadline = Date.now() + CANCEL_BUDGET_MS;
-  while (Date.now() < deadline) {
+  const deadline = currentMs() + CANCEL_BUDGET_MS;
+  while (currentMs() < deadline) {
     const rows = await processTable(
-      Math.max(0.001, Math.min(5, (deadline - Date.now()) / 1000)),
+      Math.max(0.001, Math.min(5, (deadline - currentMs()) / 1000)),
     );
     const own = rows?.find(
       (row) =>
@@ -627,7 +628,7 @@ async function bindRunner(): Promise<{
     );
     if (own) return { root: { pid: own.pid, start: own.start }, rows };
     await new Promise((resolve) =>
-      setTimeout(resolve, Math.max(0, Math.min(100, deadline - Date.now()))),
+      setTimeout(resolve, Math.max(0, Math.min(100, deadline - currentMs()))),
     );
   }
   return null;
@@ -702,7 +703,7 @@ async function run(
         ? 5
         : Math.max(
             0.001,
-            Math.min(5, (cancellationDeadline - Date.now()) / 1000),
+            Math.min(5, (cancellationDeadline - currentMs()) / 1000),
           ),
     );
 
@@ -750,7 +751,7 @@ async function run(
       // Windows has no cooperative POSIX TERM: retain the identity and let
       // the witness force termination after the grace.
       if (process.platform !== "win32") signalPid(t.pid, "SIGTERM");
-      graceStarted.set(idOf(t), Date.now());
+      graceStarted.set(idOf(t), currentMs());
     }
   };
   const timers: NodeJS.Timeout[] = [];
@@ -778,7 +779,7 @@ async function run(
   };
   const armCancellationBudget = (result: Result) => {
     if (cancellationDeadline !== undefined) return;
-    cancellationDeadline = Date.now() + CANCEL_BUDGET_MS;
+    cancellationDeadline = currentMs() + CANCEL_BUDGET_MS;
     timers.push(
       setTimeout(() => {
         const reason = termination ?? result;
@@ -822,7 +823,7 @@ async function run(
         trackForegroundAnchor(rows, tree);
         forceUnresolvedOwnedChild();
         beginGrace();
-        const now = Date.now();
+        const now = currentMs();
         const due = tree.targets.filter(
           (t) => now - (graceStarted.get(idOf(t)) ?? now) >= KILL_GRACE_MS,
         );
@@ -1013,11 +1014,11 @@ async function wait(maxSec: number): Promise<number> {
     return 2;
   }
   const dir = genDir(latest);
-  const deadline = Date.now() + maxSec * 1000;
+  const deadline = currentMs() + maxSec * 1000;
   while (
     readResult(dir) === null &&
     (await running(dir)) &&
-    Date.now() < deadline
+    currentMs() < deadline
   ) {
     await new Promise((r) => setTimeout(r, WAIT_POLL_MS));
   }

@@ -14,6 +14,7 @@ import { recordCall } from "../../../../../shared/outbound/ledger.ts";
 import { statusClass } from "../../../../../shared/outbound/failure.ts";
 import { setTimeout as sleep } from "node:timers/promises";
 import { isMapping } from "../../../../../shared/config-layers.ts";
+import { currentMs } from "../../../../../shared/time.ts";
 
 /** The API version every request names, and the tests run against. */
 export const NOTION_VERSION = "2026-03-11";
@@ -108,9 +109,9 @@ export class NotionApi {
   }
 
   private async pace(): Promise<void> {
-    const wait = this.lastStart + this.intervalMs - Date.now();
+    const wait = this.lastStart + this.intervalMs - currentMs();
     if (wait > 0) await sleep(wait);
-    this.lastStart = Date.now();
+    this.lastStart = currentMs();
   }
 
   /**

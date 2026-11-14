@@ -108,6 +108,7 @@ import {
 import type { ReadRecord } from "../../dispatch/lib/launches.ts";
 import type { CiHoldDiagnosis } from "../../skills/drive-pr/scripts/lib/ci-hold-diagnosis.ts";
 import type { LogRow } from "../../dispatch/lib/log.ts";
+import { currentMs, parseMs } from "../../shared/time.ts";
 
 /** What the drive's reads found. */
 interface DriveReads {
@@ -265,7 +266,7 @@ function waitsOnOf(
 ): WaitsOn {
   const classification = classifyLedger(
     ledger,
-    Date.now(),
+    currentMs(),
     stallThresholdMs(),
     parkReading(r.parks),
     {
@@ -297,7 +298,7 @@ function waitsOnOf(
       ],
       r.records,
       new Map([[r.pull.number, { ok: true, value: r.claims }]]),
-      Date.now(),
+      currentMs(),
     )[0] ?? classification;
   const settled = conflictSettled(placed, ledger, r, ctx.host);
   if (settled !== null) return personWait("re-arm", settled);
@@ -364,10 +365,10 @@ function driverHolder(
   generation: number | null,
 ): Holder | "none" {
   // A running ledger past the lease window is a silent driver, not a holder: what it waits on says so.
-  const beat = Date.parse(ledger?.driver.heartbeat ?? "");
+  const beat = parseMs(ledger?.driver.heartbeat ?? "");
   const driven =
     ledger?.driver.state === "running" &&
-    Date.now() - beat <= stallThresholdMs();
+    currentMs() - beat <= stallThresholdMs();
   if (sameDriver(r.row, ledger) && r.row?.doctor?.ciHold?.driver === "dead")
     return "none";
   const local =
@@ -414,7 +415,7 @@ function lastOf(r: DriveReads): Last | null {
   const claimed = ended === undefined ? null : lastOfClaim(r, ended);
   // The newer of the two ends: another host may have ended a launch after this machine's last row.
   if (fromRow === null || claimed === null) return fromRow ?? claimed;
-  return (Date.parse(claimed.at) || 0) > (Date.parse(fromRow.at) || 0)
+  return (parseMs(claimed.at) || 0) > (parseMs(fromRow.at) || 0)
     ? claimed
     : fromRow;
 }
@@ -818,8 +819,8 @@ async function silentPresence(
     ledger.driver.personStop !== undefined
   )
     return null;
-  const beat = Date.parse(ledger.driver.heartbeat);
-  if (!Number.isFinite(beat) || Date.now() - beat <= stallThresholdMs())
+  const beat = parseMs(ledger.driver.heartbeat);
+  if (!Number.isFinite(beat) || currentMs() - beat <= stallThresholdMs())
     return null;
   return driverPresence(doc.number, ledger);
 }

@@ -149,6 +149,7 @@ import {
   takeTickLock,
   writeReceipt,
 } from "./receipts.ts";
+import { currentIso, currentMs, isoOf } from "../shared/time.ts";
 
 export type { TickOptions } from "./lib/tick-context.ts";
 
@@ -201,8 +202,13 @@ async function startTick(
   runId: string,
 ): Promise<StartedTick> {
   // The deadline counts from here, so the startup read below spends it too.
-  const startedMs = Date.now();
-  const now = options.now ?? new Date();
+  const startedMs = currentMs();
+  const now =
+    options.now === undefined
+      ? Temporal.Now.instant()
+      : options.now instanceof Date
+        ? Temporal.Instant.from(options.now.toISOString())
+        : options.now;
   const machine = options.machine ?? null;
   // The tick's tracker reads keep to their share of each credential's budget.
   setDispatcherShare(machine?.trackerShare ?? DEFAULT_DISPATCHER_SHARE);
@@ -213,8 +219,8 @@ async function startTick(
   const receipt: TickReceipt = {
     version: 1,
     runId,
-    startedAt: now.toISOString(),
-    finishedAt: now.toISOString(),
+    startedAt: isoOf(now),
+    finishedAt: isoOf(now),
     completed: false,
     apply: false,
     exitStatus: 0,
@@ -225,7 +231,7 @@ async function startTick(
   const context: TickContext = {
     options,
     runtime,
-    nowMs: now.getTime(),
+    nowMs: now.epochMilliseconds,
     startedMs,
     launches: read.records,
     apply: null,
@@ -327,10 +333,10 @@ async function waitForActLock(
   waitMs: number,
   context: TickContext,
 ): Promise<Lock> {
-  const deadline = Date.now() + waitMs;
+  const deadline = currentMs() + waitMs;
   for (;;) {
     const lock = takeTickLock();
-    if (!("heldBy" in lock) || Date.now() >= deadline) return lock;
+    if (!("heldBy" in lock) || currentMs() >= deadline) return lock;
     // Another tick acts meanwhile, one of an earlier version perhaps, which takes no observe lock.
     context.actWaited = true;
     await Bun.sleep(ACT_LOCK_POLL_MS);
@@ -484,7 +490,7 @@ async function routeReflection(
   );
   const reflection = await routeRecurrences(ordered, {
     apply: apply !== null,
-    nowMs: Date.now(),
+    nowMs: currentMs(),
     timeLeftMs: apply === null ? null : timeLeftMs(apply),
   });
   if (reflection !== null) receipt.reflection = reflection;
@@ -542,11 +548,15 @@ async function closeTick(
   // A defect the start kept on the receipt stays: the tick ran, but not whole.
   receipt.completed = receipt.defect === undefined;
   settleFailures(receipt, context);
-  receipt.finishedAt = new Date().toISOString();
+  receipt.finishedAt = currentIso();
   const costs = ledgerReport({ since: context.startedMs - 3_600_000 });
-  receipt.outbound = systemSpending(costs, `tick:${receipt.runId}`, Date.now());
+  receipt.outbound = systemSpending(
+    costs,
+    `tick:${receipt.runId}`,
+    currentMs(),
+  );
   if (costs.unavailable === true) receipt.outboundUnavailable = true;
-  else receipt.quotaRisks = quotaRisks(costs, Date.now());
+  else receipt.quotaRisks = quotaRisks(costs, currentMs());
   // The dashboard's copy is written here, so it carries the phases timed so far; the receipt file adds `close`.
   receipt.phasesMs = { ...timer.ms };
   writeTickLine(receipt, {
@@ -576,12 +586,12 @@ function heldReceipt(started: StartedTick, heldBy: string): void {
   const { options } = started.context;
   const { upgrade } = started.receipt;
   if (upgrade === undefined) return;
-  const now = options.now ?? new Date();
+  const now = options.now ?? Temporal.Now.instant();
   writeReceipt({
     version: 1,
     runId: newRunId(now),
-    startedAt: now.toISOString(),
-    finishedAt: new Date().toISOString(),
+    startedAt: isoOf(now),
+    finishedAt: currentIso(),
     completed: false,
     apply: options.apply === true,
     exitStatus: 3,
@@ -605,7 +615,7 @@ function lineOfHeldTick(
   receipt.apply = context.options.apply === true;
   receipt.lockHeldBy = heldBy;
   receipt.busy = [...observe.busy].map(([path, heldBy]) => ({ path, heldBy }));
-  receipt.finishedAt = new Date().toISOString();
+  receipt.finishedAt = currentIso();
   receipt.phasesMs = { ...timer.ms };
   writeTickLine(receipt, {
     machine: context.options.machine ?? null,
@@ -633,7 +643,7 @@ async function actAndClose(
     receipt.defect = defectOf(timer.current ?? "close", error);
     receipt.completed = false;
     receipt.exitStatus = 1;
-    receipt.finishedAt = new Date().toISOString();
+    receipt.finishedAt = currentIso();
     logDefect("the tick", receipt.defect, error);
     settleFailures(receipt, context);
     receipt.phasesMs = { ...timer.ms };
@@ -643,7 +653,7 @@ async function actAndClose(
   }
   receipt.phasesMs = { ...timer.ms };
   const path = writeReceipt(receipt);
-  pruneReceipts(Date.now(), undefined, context.options.machine?.receiptsDays);
+  pruneReceipts(currentMs(), undefined, context.options.machine?.receiptsDays);
   return { receipt, path };
 }
 
@@ -655,7 +665,7 @@ async function actAndClose(
  */
 function abortedReceipt(
   options: TickOptions,
-  at: Date,
+  at: Temporal.Instant,
   phase: TickPhase,
   error: unknown,
   upgrade?: ScheduledUpgrade,
@@ -664,8 +674,8 @@ function abortedReceipt(
     writeReceipt({
       version: 1,
       runId: newRunId(at),
-      startedAt: at.toISOString(),
-      finishedAt: new Date().toISOString(),
+      startedAt: isoOf(at),
+      finishedAt: currentIso(),
       completed: false,
       apply: options.apply === true,
       exitStatus: error instanceof ExitError ? error.code : 1,
@@ -675,14 +685,21 @@ function abortedReceipt(
     });
     // A timer that fails every tick would otherwise never prune; the receipt
     // just written is the newest, so the latest failure survives.
-    pruneReceipts(Date.now(), undefined, options.machine?.receiptsDays);
+    pruneReceipts(currentMs(), undefined, options.machine?.receiptsDays);
   } catch (unwritten) {
     swallow(unwritten, "the receipt of a tick a throw stopped");
   }
 }
 
 export function runTick(options: TickOptions): Promise<TickResult> {
-  const runId = newRunId(options.now ?? new Date());
+  const now = options.now;
+  const runId = newRunId(
+    now === undefined
+      ? Temporal.Now.instant()
+      : now instanceof Date
+        ? Temporal.Instant.from(now.toISOString())
+        : now,
+  );
   return withCaller(`tick:${runId}`, () => runTickWithCaller(options, runId));
 }
 
@@ -700,7 +717,7 @@ async function runTickWithCaller(
     )
       delete process.env[key];
   const timer = new PhaseTimer<TickPhase>();
-  const at = options.now ?? new Date();
+  const at = options.now ?? Temporal.Now.instant();
   // The act phase writes its own receipt, a defect's included.
   const tick: { acting: boolean; upgrade?: ScheduledUpgrade } = {
     acting: false,

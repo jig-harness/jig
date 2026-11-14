@@ -89,6 +89,7 @@ import { LEDGER_WINDOW_MIN } from "../../../../shared/liveness.ts";
 import { isDigits, shellQuote } from "./cli.ts";
 import type { PassChildAnswer } from "./pass-child.ts";
 import type { QuotaParkRecord } from "./state/schema.ts";
+import { parseMs } from "../../../../shared/time.ts";
 
 /**
  * How long `lastProgressAt` may go unrefreshed on a LIVE lock before it
@@ -276,11 +277,14 @@ function describeLeftovers(l: DoctorLeftovers): string {
  * from a minute ago, and a human skimming the fleet has to do that
  * arithmetic themselves for every QUOTA_PARKED row instead of once here.
  */
-function describeQuotaPark(park: QuotaParkRecord, now: Date): string {
+function describeQuotaPark(
+  park: QuotaParkRecord,
+  now: Temporal.Instant,
+): string {
   const reset =
     park.resetAt === null
       ? "unresolved"
-      : Date.parse(park.resetAt) <= now.getTime()
+      : parseMs(park.resetAt) <= now.epochMilliseconds
         ? `resets ${park.resetAt} — already past, not yet re-armed`
         : `resets ${park.resetAt}`;
   return `parked on a ${park.vendor} ${park.window}-window quota wall at ${park.at} (${reset})`;
@@ -304,12 +308,15 @@ function needsHumanReason(input: DoctorInput): string {
  * in `classifyDrive`). A quota park whose `resetAt` has passed no longer
  * protects anything: nothing re-arms a dead driver, so it reads as `DEAD`.
  */
-function deadHolder(input: DoctorInput, now: Date): DoctorRow | null {
+function deadHolder(
+  input: DoctorInput,
+  now: Temporal.Instant,
+): DoctorRow | null {
   if (input.processConfirmedGone !== true) return null;
   const park = input.quotaPark;
   if (
     park !== null &&
-    (park.resetAt === null || Date.parse(park.resetAt) > now.getTime())
+    (park.resetAt === null || parseMs(park.resetAt) > now.epochMilliseconds)
   )
     return null;
   if (input.parkedCount > 0) return null;
@@ -330,7 +337,10 @@ function deadHolder(input: DoctorInput, now: Date): DoctorRow | null {
   return null;
 }
 
-export function classifyDrive(input: DoctorInput, now: Date): DoctorRow {
+export function classifyDrive(
+  input: DoctorInput,
+  now: Temporal.Instant,
+): DoctorRow {
   // 1. Fail closed first. A lock row the listing could not interpret
   // (`contested`, `unreadable`) has established NOTHING positive about this
   // drive — neither "a driver is working it" nor "nobody is". Same for an
@@ -452,7 +462,7 @@ export function classifyDrive(input: DoctorInput, now: Date): DoctorRow {
   const resetPast =
     input.quotaPark !== null &&
     input.quotaPark.resetAt !== null &&
-    Date.parse(input.quotaPark.resetAt) <= now.getTime();
+    parseMs(input.quotaPark.resetAt) <= now.epochMilliseconds;
   const wedgeFacts =
     input.lockState === "live" &&
     input.progressAgeMs !== null &&

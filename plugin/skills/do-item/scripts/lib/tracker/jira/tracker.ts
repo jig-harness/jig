@@ -591,13 +591,17 @@ export function jiraTracker(client: Client): Tracker {
       const named = labels.map((l) => ("add" in l ? l.add : l.remove));
       checkLabels(named);
       stores.refuseLabels(patch.addLabels ?? [], "to add");
-      await refuseFieldLabels(named, signal);
+      await refuseFieldLabels(patch.addLabels ?? [], signal);
       if (patch.priority === 0)
         throw new TrackerRequestError(
           "invalid",
           "a Jira issue always carries a priority, so priority 0 (none) cannot be set",
         );
       const issue = await client.mustIssue(key, signal);
+      await refuseFieldLabels(
+        (patch.removeLabels ?? []).filter((l) => !issue.jiraLabels.includes(l)),
+        signal,
+      );
       const fields = await patchFields(patch, signal);
       const facet = await stores.update(issue, patch, signal);
       Object.assign(fields, facet.fields);

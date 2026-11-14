@@ -24,6 +24,7 @@ import type { ReadRecord } from "./launches.ts";
 import type { SharedContext } from "./shared-launches.ts";
 import { stateDb } from "./state.ts";
 import type { MarkedPr } from "./types.ts";
+import { parseMs } from "../../shared/time.ts";
 
 /** The waits in a row at which a follow-up is a person's. */
 export const WAITS_FOR_PERSON = 3;
@@ -170,7 +171,7 @@ function endedOnWait(
 
 /** Whether a wait has ended at `nowMs`; a time that does not read has. */
 export function waitOver(streak: WaitStreak, nowMs: number): boolean {
-  const at = Date.parse(streak.until);
+  const at = parseMs(streak.until);
   return !Number.isFinite(at) || at <= nowMs;
 }
 

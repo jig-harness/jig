@@ -353,8 +353,8 @@ test("a scratch scan past its deadline refuses rather than stalling", () => {
 /** The clock passes the walk's entry check, then expires inside its loop. */
 function expiringAfterEntry(body: () => Outcome<unknown>): void {
   let calls = 0;
-  const clock = spyOn(Date, "now").mockImplementation(() =>
-    calls++ === 0 ? 0 : 2,
+  const clock = spyOn(Temporal.Now, "instant").mockImplementation(() =>
+    Temporal.Instant.fromEpochMilliseconds(calls++ === 0 ? 0 : 2),
   );
   try {
     expect(body()).toMatchObject({
@@ -390,9 +390,15 @@ test("machine guards cannot shorten the kind's default or add authority", () => 
 });
 test("the schedule reports daily and collects weekly or under pressure", () => {
   const policy = { collect_day: 0, min_free_bytes: 100 };
-  expect(scheduledCollection(policy, new Date(2026, 9, 19), 200)).toBe(false);
-  expect(scheduledCollection(policy, new Date(2026, 9, 18), 200)).toBe(true);
-  expect(scheduledCollection(policy, new Date(2026, 9, 19), 50)).toBe(true);
+  expect(
+    scheduledCollection(policy, Temporal.PlainDate.from("2026-10-19"), 200),
+  ).toBe(false);
+  expect(
+    scheduledCollection(policy, Temporal.PlainDate.from("2026-10-18"), 200),
+  ).toBe(true);
+  expect(
+    scheduledCollection(policy, Temporal.PlainDate.from("2026-10-19"), 50),
+  ).toBe(true);
 });
 test("scheduler files preserve exact argv and explicit environment", () => {
   const job = {

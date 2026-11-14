@@ -39,6 +39,7 @@ import {
   PRIORITY_NAMES,
 } from "../../do-item/scripts/lib/tracker/github/settings.ts";
 import { REVIEWER_EVIDENCE } from "../../drive-pr/scripts/lib/reviewer-profiles.ts";
+import { specialCiSettings } from "../../drive-pr/scripts/lib/ci-special-checks.ts";
 import {
   ARM_DRIVE_MODES,
   DEFAULT_ARM_DRIVE,
@@ -418,6 +419,8 @@ describe("the reading skills", () => {
       "drive.pass_model": DEFAULT_PASS_MODEL,
       "drive.pass_args": DEFAULT_PASS_ARGS,
       "drive.codex_bypass": DEFAULT_CODEX_BYPASS,
+      "ci.hold_sentinels": specialCiSettings({}).holdSentinels,
+      "ci.advisory_checks": specialCiSettings({}).advisoryChecks,
       "drive.codex_pass_args": DEFAULT_CODEX_PASS_ARGS,
       "do_item.arm_drive": DEFAULT_ARM_DRIVE,
       "do_item.post_merge_state": DEFAULT_POST_MERGE.state,

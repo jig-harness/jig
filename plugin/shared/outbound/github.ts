@@ -14,6 +14,7 @@ import {
   retryAfterMs,
   TIMEOUT_FLOOR_MS,
 } from "./failure.ts";
+import { currentMs } from "../time.ts";
 
 /** The system the forge's calls are held under in a run (`hold.ts`). */
 export const GITHUB = "github";
@@ -72,7 +73,7 @@ function tail(stderr: string): string {
 export function ghRunFailure(
   r: GhRun,
   tookMs?: number,
-  now: () => number = Date.now,
+  now: () => number = currentMs,
 ): OutboundFailure | null {
   if (r.code === 0) return null;
   if (r.held !== undefined) return r.held;
@@ -144,7 +145,7 @@ export function gitHubHttpFailure(
   headers: Headers,
   text: string,
   tookMs = 0,
-  now: () => number = Date.now,
+  now: () => number = currentMs,
 ): OutboundFailure | null {
   const code = answerClass(status, tookMs);
   if (code === null) return null;
@@ -166,7 +167,7 @@ export function gitHubHttpFailure(
 /** What a response's headers say of when a spent limit clears: the reset time and `Retry-After`, with the bounded fallback when it names neither. */
 export function gitHubLimitReset(
   headers: Headers,
-  now: () => number = Date.now,
+  now: () => number = currentMs,
 ): { until: number; retryAfterMs: number | null } {
   const wait = retryAfterMs(headers, now);
   return { until: resetOf(headers, wait, now), retryAfterMs: wait };

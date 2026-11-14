@@ -21,8 +21,8 @@ import type { Tracker } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { dispatchState, earlierRecord } from "./launch-fixtures.ts";
 import { world, type World } from "./fixtures.ts";
 
-const LIMITED = newRecordId(new Date("2026-11-10T11:00:00.000Z"));
-const PICKUP = newRecordId(new Date("2026-11-10T11:01:00.000Z"));
+const LIMITED = newRecordId(Temporal.Instant.from("2026-11-10T11:00:00.000Z"));
+const PICKUP = newRecordId(Temporal.Instant.from("2026-11-10T11:01:00.000Z"));
 let current: World | null = null;
 afterEach(() => {
   current?.close();

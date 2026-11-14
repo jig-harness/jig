@@ -187,10 +187,7 @@ by a person's answer to a framed decision, or by a person alone. It builds
 on item 46's framed needs and answers. What it will build, one pull request
 per issue in the design's order:
 
-- **CI repair.** The drive reads a held-head check as held
-  (`ci.hold_sentinels` naming the ones M13's shape misses) and parks once
-  under `reviewer-posture` when only advisory checks fail
-  (`ci.advisory_checks`); the repair passes become `drive.ci_repair_rounds`.
+- **CI repair.** The repair passes become `drive.ci_repair_rounds`.
 - **Host faults.** One host need per cause (`failures.group`); a
   follow-up's run again also covers a failed result write and waits for the
   host's health check (`failures.rerun_died`); a tracker credential probe
@@ -254,8 +251,9 @@ limits, the shared library (`plugin/shared/outbound/`), the failure classes
 with their policies and the build order. What it will build, one pull
 request per step:
 
-- **A page that shrinks**: a paged read asks again for half the page when
-  the system runs out of time, and keeps the size that read.
+- **The cost ledger and its reports**: requests, cost and time per
+  operation and caller; a line per system in the tick report, a
+  `jig budget` command, and one need when a quota is about to run out.
 - **GitHub in the budget record**: its hourly and secondary limits beside
   the trackers', every forge call admitted against them.
 - **Reuse**: answers cached by update time or the system's validator,

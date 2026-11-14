@@ -51,6 +51,7 @@ import {
 } from "./lib/followup-label.ts";
 import { repoTarget } from "./lib/forge.ts";
 import { failureText } from "./lib/text.ts";
+import { currentIso } from "../shared/time.ts";
 
 export interface MarkerArguments {
   verb: "claim" | "check" | "done" | "failed";
@@ -181,7 +182,7 @@ async function checkOrDone(
   if (args.verb === "failed") return labelFailedRun(target);
   const ended = await shared.end(target, "followup", args.comment, {
     state: "ended",
-    at: new Date().toISOString(),
+    at: currentIso(),
     exit: null,
     outcome: "done",
   });

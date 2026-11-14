@@ -28,7 +28,7 @@ import {
   stallThresholdMs,
 } from "../scripts/lib/doctor.ts";
 
-const NOW = new Date("2026-09-12T12:00:00.000Z");
+const NOW = Temporal.Instant.from("2026-09-12T12:00:00.000Z");
 const THRESHOLD_MS = STALL_THRESHOLD_MIN_DEFAULT * 60_000;
 
 /**

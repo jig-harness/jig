@@ -29,6 +29,7 @@ import type { Failure } from "../../shared/outcome.ts";
 import type { FailureSettings } from "./failures.ts";
 import { type PickupReads, pickupReads } from "./pickup-reads.ts";
 import type { ReadFailure, RepoReport } from "./types.ts";
+import { isoFromMs, parseMs } from "../../shared/time.ts";
 
 /** A call's failure as a read keeps it. */
 function readFailure(outbound: OutboundFailure): ReadFailure {
@@ -36,7 +37,7 @@ function readFailure(outbound: OutboundFailure): ReadFailure {
     class: outbound.code,
     ...(outbound.until === undefined
       ? {}
-      : { until: new Date(outbound.until).toISOString() }),
+      : { until: isoFromMs(outbound.until) }),
   };
 }
 
@@ -118,7 +119,7 @@ export function onlyRateLimited(
   return waiting.every(
     (f) =>
       f.class === "rate-limited" &&
-      (f.until === undefined || Date.parse(f.until) > nowMs),
+      (f.until === undefined || parseMs(f.until) > nowMs),
   );
 }
 
@@ -180,5 +181,5 @@ export function lastForgeReading(
     typeof kept.detail !== "string"
   )
     return "";
-  return `; the last reading, of ${new Date(kept.atMs).toISOString()} (${ageOf(kept.atMs, nowMs)} old): ${kept.detail}`;
+  return `; the last reading, of ${isoFromMs(kept.atMs)} (${ageOf(kept.atMs, nowMs)} old): ${kept.detail}`;
 }

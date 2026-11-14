@@ -53,6 +53,7 @@ import {
   FALLBACK_LIMIT_MS,
   TrackerRateLimited,
 } from "../../../../../shared/outbound/budget.ts";
+import { currentMs } from "../../../../../shared/time.ts";
 
 export const LINEAR_API = "https://api.linear.app/graphql";
 export const LINEAR_TIMEOUT_MS = 30_000;
@@ -235,7 +236,7 @@ export function linearAnswer(
   headers: Headers,
   status: number,
   body: unknown,
-  now = Date.now(),
+  now = currentMs(),
 ): BudgetAnswer {
   const answer: BudgetAnswer = {};
   const requests = window(headers, "requests");
@@ -309,7 +310,7 @@ async function postOnce(
 ): Promise<Answer> {
   const sentAt = governed?.governor.admit("linear", governed.key);
   observation.requests = 1;
-  const began = Date.now();
+  const began = currentMs();
   let res: Response;
   try {
     res = await postGraphQL(fetchImpl, LINEAR_API, token, payload, {
@@ -344,7 +345,7 @@ async function postOnce(
     new LinearApiError(
       `Linear API HTTP ${res.status}: ${text.slice(0, 300)}`,
       res.status,
-      answerClass(res.status, Date.now() - began) ?? "invalid",
+      answerClass(res.status, currentMs() - began) ?? "invalid",
       { retryAfterMs: retryAfterMs(res.headers) },
     ),
     answer,
@@ -403,7 +404,7 @@ async function call(
   const deadline = AbortSignal.timeout(LINEAR_TIMEOUT_MS);
   const bound =
     signal === undefined ? deadline : AbortSignal.any([deadline, signal]);
-  const deadlineAt = Date.now() + LINEAR_TIMEOUT_MS;
+  const deadlineAt = currentMs() + LINEAR_TIMEOUT_MS;
   // Once an attempt has begun, a cancellation may have cut a request that
   // landed: `retryRead` throws the bare reason, which carries no marker.
   let dispatched = false;
@@ -570,7 +571,7 @@ function cliAnswer(r: RunResult, governed: Governed | null): Answer {
     );
   const refused: BudgetAnswer = rateLimitedBody(body)
     ? {
-        limitedUntil: Date.now() + FALLBACK_LIMIT_MS,
+        limitedUntil: currentMs() + FALLBACK_LIMIT_MS,
         why: "Linear refused the request (RATELIMITED)",
       }
     : {};

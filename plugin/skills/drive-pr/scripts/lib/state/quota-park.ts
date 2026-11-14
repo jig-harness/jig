@@ -6,6 +6,7 @@
 import { fail, sleep, testDelaySeconds } from "../cli.ts";
 import { isAccountHash } from "../identity.ts";
 import type { StateStore } from "./store.ts";
+import { currentIso, parseMs } from "../../../../../shared/time.ts";
 
 export interface QuotaParkArgs {
   vendor: string;
@@ -33,10 +34,10 @@ export async function quotaPark(
       2,
       `quota-park: --account must be an account hash (got '${a.account}')`,
     );
-  if (a.resetAt !== "" && !Number.isFinite(Date.parse(a.resetAt))) {
+  if (a.resetAt !== "" && !Number.isFinite(parseMs(a.resetAt))) {
     fail(
       2,
-      `quota-park: --reset-at must be a string Date.parse can read (got '${a.resetAt}')`,
+      `quota-park: --reset-at must be an ISO 8601 time (got '${a.resetAt}')`,
     );
   }
   // Test-only hook, unset (no-op) by default: forces a lock takeover to
@@ -52,7 +53,7 @@ export async function quotaPark(
       vendor: a.vendor,
       window: a.window,
       resetAt: a.resetAt === "" ? null : a.resetAt,
-      at: new Date().toISOString(),
+      at: currentIso(),
       ...(a.account === "" ? {} : { account: a.account }),
     },
   }));

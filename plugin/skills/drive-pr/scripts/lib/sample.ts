@@ -32,6 +32,7 @@ import { sampleCodeScanningSeverity } from "./sample-code-scanning.ts";
 import { type Outcome, qualifyingOutcome } from "./outcome.ts";
 import { ghCall } from "./proc.ts";
 import { type ThreadAutonomy, threadAutonomy } from "./metrics-autonomy.ts";
+import { parseMs } from "../../../../shared/time.ts";
 
 export interface CommitSample {
   oid: string;
@@ -675,7 +676,7 @@ function stamp(v: unknown): string | null {
 }
 
 /**
- * A `stamp()`-validated instant, as epoch milliseconds — `null` if `Date.parse`
+ * A `stamp()`-validated instant, as epoch milliseconds — `null` if `parseMs`
  * cannot resolve it (a structurally ISO-8601-shaped but calendrically invalid
  * value; `ISO_INSTANT` checks digit shape, not that e.g. month 13 is real).
  *
@@ -688,7 +689,7 @@ function stamp(v: unknown): string | null {
  * dependency entirely.
  */
 function epochOf(iso: string): number | null {
-  const ms = Date.parse(iso);
+  const ms = parseMs(iso);
   return Number.isNaN(ms) ? null : ms;
 }
 

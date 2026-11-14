@@ -2,6 +2,7 @@
 import type { Tracker } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
 import type { RepoReport, Unplaced } from "../types.ts";
 import type { ServedView } from "./served-reads.ts";
+import { isoFromMs } from "../../../shared/time.ts";
 
 export function scopeFailureRow(
   tracker: Pick<Tracker, "adapter" | "team">,
@@ -10,7 +11,7 @@ export function scopeFailureRow(
 ): Unplaced {
   const age =
     view.readAt > 0
-      ? `the queue shown is the reading of ${new Date(view.readAt).toISOString()}`
+      ? `the queue shown is the reading of ${isoFromMs(view.readAt)}`
       : "no kept queue reading";
   return {
     target: `${tracker.adapter} ${tracker.team}`,

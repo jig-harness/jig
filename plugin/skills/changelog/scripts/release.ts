@@ -58,6 +58,7 @@ import {
   tryGit,
 } from "./notes-dir.ts";
 import { withVersion } from "./versions.ts";
+import { currentIso, isCalendarDate } from "../../../shared/time.ts";
 
 type Env = Record<string, string | undefined>;
 
@@ -121,14 +122,7 @@ function waitingNotes(options: ReleaseOptions): ChangeNote[] {
 
 /** Whether `date` is a real calendar day written YYYY-MM-DD. */
 export function isCalendarDay(date: string): boolean {
-  const day = /^\d{4}-\d{2}-\d{2}$/.test(date)
-    ? new Date(`${date}T00:00:00Z`)
-    : null;
-  return (
-    !!day &&
-    !Number.isNaN(day.getTime()) &&
-    day.toISOString().slice(0, 10) === date
-  );
+  return isCalendarDate(date);
 }
 
 /**
@@ -136,7 +130,7 @@ export function isCalendarDay(date: string): boolean {
  * YYYY-MM-DD, today in UTC when none is given. Throws otherwise.
  */
 function releaseDate(date: string | undefined): string {
-  if (date === undefined) return new Date().toISOString().slice(0, 10);
+  if (date === undefined) return currentIso().slice(0, 10);
   if (!isCalendarDay(date))
     throw new ChangelogError(
       `the release date must be a calendar day written YYYY-MM-DD, not ${JSON.stringify(date)}`,

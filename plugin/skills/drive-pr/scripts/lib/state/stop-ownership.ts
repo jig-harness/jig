@@ -12,6 +12,7 @@ import {
   writeLedger,
 } from "./ledger-forge.ts";
 import { cloneId } from "./ledger-mirror.ts";
+import { currentIso } from "../../../../../shared/time.ts";
 
 /** A startup whose predecessor still owns the ledger must publish before it is stopped. */
 export async function canStopPublishedDriver(row: {
@@ -99,7 +100,7 @@ export async function publishOperatorStop(row: {
       driver: {
         ...owned.ledger.driver,
         personStop: marker,
-        heartbeat: new Date().toISOString(),
+        heartbeat: currentIso(),
       },
     };
   });

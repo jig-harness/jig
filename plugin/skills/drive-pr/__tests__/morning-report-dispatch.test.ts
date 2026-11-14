@@ -57,7 +57,7 @@ function receipt(
 ): TickReceipt {
   return {
     version: 1,
-    runId: newRunId(at),
+    runId: newRunId(Temporal.Instant.fromEpochMilliseconds(at.getTime())),
     startedAt: at.toISOString(),
     finishedAt: finishedAt.toISOString(),
     completed: true,

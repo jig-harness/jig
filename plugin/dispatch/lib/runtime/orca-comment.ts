@@ -9,6 +9,7 @@ import { orcaCommandOrInstalled, orcaEnvelope } from "../../../shared/orca.ts";
 import { isRecord } from "../../../shared/guards.ts";
 import { run } from "../../../shared/proc.ts";
 import { marksIn, withMark } from "./port.ts";
+import { currentMs } from "../../../shared/time.ts";
 
 /** The remaining budget in seconds, fractional: a call never outlives the deadline. */
 function seconds(ms: number): number {
@@ -99,7 +100,7 @@ export async function markComment(
   timeoutMs: number,
   lock: CardLock = withCardLock,
 ): Promise<string | null> {
-  const until = Date.now() + timeoutMs;
+  const until = currentMs() + timeoutMs;
   const [added] = marksIn(mark);
   if (added === undefined) return "it is not a dispatched mark";
   // The read, the write and the read-back hold the card's comment lock, the
@@ -127,20 +128,20 @@ async function markUnlocked(
   line: string,
   until: number,
 ): Promise<string | null> {
-  const first = until - Date.now();
+  const first = until - currentMs();
   if (first <= 0) return "no time was left to read it";
   const read = await readComment(path, first);
   if ("why" in read) return read.why;
   const next = withMark(read.comment, mark);
   if (next === null) return null;
-  const left = until - Date.now();
+  const left = until - currentMs();
   if (left <= 0) return "no time was left to write it";
   const set = await call(
     ["worktree", "set", "--worktree", `path:${path}`, "--comment", next],
     left,
   );
   if (!set.ok) return set.why;
-  const after = until - Date.now();
+  const after = until - currentMs();
   if (after <= 0) return "no time was left to read it back";
   const back = await readComment(path, after);
   if ("why" in back) return `it could not be read back: ${back.why}`;

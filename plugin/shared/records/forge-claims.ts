@@ -61,6 +61,7 @@ import { isTrustedAuthor } from "../trusted-authors.ts";
 import { encodeMarker, markerText, readEnvelope } from "./envelope.ts";
 import { recordKind } from "./registry.ts";
 import type { Writer } from "./writer.ts";
+import { currentIso, parseMs } from "../time.ts";
 
 /** The pull request or issue a claim is made on. */
 export interface ClaimTarget {
@@ -230,7 +231,7 @@ function versionOf(kind: ClaimKind): number {
 
 /** A draft with its time fixed: now, when it named none. */
 function stamped(draft: ClaimDraft): ClaimDraft & { at: string } {
-  return { ...draft, at: draft.at ?? new Date().toISOString() };
+  return { ...draft, at: draft.at ?? currentIso() };
 }
 
 /** The comment body for `draft`. A draft that breaks the envelope's strict form is a defect, and throws. */
@@ -333,8 +334,7 @@ export function arbitrate<T extends Arbitrable>(
 
 function lapsed(winner: Arbitrable, later: Arbitrable, lapseMs?: number) {
   return (
-    lapseMs !== undefined &&
-    Date.parse(later.at) - Date.parse(winner.at) > lapseMs
+    lapseMs !== undefined && parseMs(later.at) - parseMs(winner.at) > lapseMs
   );
 }
 

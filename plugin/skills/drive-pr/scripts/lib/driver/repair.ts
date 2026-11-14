@@ -20,6 +20,7 @@ import { run, tsArgv, helperTimeoutSeconds } from "./../proc.ts";
 import { finishDriverPassRegistrations, touchLock } from "./lifecycle.ts";
 
 import type { FailingStatus } from "./../../../../../shared/ci-status.ts";
+import { isoOf } from "../../../../../shared/time.ts";
 
 // `drive.ts` is itself very often launched from inside a live Claude Code
 // session (do-item's "Arm the drive" step spawns it in the background), and
@@ -286,7 +287,7 @@ export async function runRepairPass(
 export async function recordQuotaPark(
   driveStatePath: string,
   pr: string,
-  block: { vendor: string; window: string; resetAt: Date | null },
+  block: { vendor: string; window: string; resetAt: Temporal.Instant | null },
   account: string | null,
 ): Promise<void> {
   const park = await run(
@@ -297,9 +298,7 @@ export async function recordQuotaPark(
       block.vendor,
       "--window",
       block.window,
-      ...(block.resetAt !== null
-        ? ["--reset-at", block.resetAt.toISOString()]
-        : []),
+      ...(block.resetAt !== null ? ["--reset-at", isoOf(block.resetAt)] : []),
       // Whose wall it is: a re-arm from another account may pass it.
       ...(account !== null ? ["--account", account] : []),
     ]),

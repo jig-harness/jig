@@ -44,6 +44,7 @@ import {
   type WorktreePolicy,
 } from "./worktree-proof.ts";
 import type { CollectionKind, Resource } from "../types.ts";
+import { currentMs } from "../../shared/time.ts";
 
 /** Seconds `orca worktree rm` may take: it deletes the checkout's files. */
 const ORCA_REMOVE_TIMEOUT_SEC = 300;
@@ -322,7 +323,7 @@ async function collectThroughOrca(
         }),
       log,
       steps: {
-        ...localSteps(Date.now() + ORCA_REMOVAL_LIMIT_MS, log),
+        ...localSteps(currentMs() + ORCA_REMOVAL_LIMIT_MS, log),
         hook: () => base?.hook ?? null,
         // The hook may run for minutes: Orca can start an agent meanwhile, and
         // the hook can leave a process in the checkout that outlives it.
@@ -349,7 +350,7 @@ async function collectThroughOrca(
           const preserved = await preserveLegacyContent(
             worktree,
             legacy,
-            Date.now() + ARCHIVE_LIMIT_MS,
+            currentMs() + ARCHIVE_LIMIT_MS,
           );
           if (!preserved.ok) return preserved;
           // Named on every failure from here on.

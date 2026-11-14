@@ -156,7 +156,9 @@ describe("a dead driver's removed or unreadable worktree", () => {
       selfPath: "/drives.ts",
       hostIsLocal: true,
     };
-    expect(classifyDrive(input, new Date()).verdict).toBe("NEEDS_HUMAN");
+    expect(classifyDrive(input, Temporal.Now.instant()).verdict).toBe(
+      "NEEDS_HUMAN",
+    );
     expect(
       classifyDrive(
         {
@@ -168,7 +170,7 @@ describe("a dead driver's removed or unreadable worktree", () => {
             resetAt: null,
           },
         },
-        new Date(),
+        Temporal.Now.instant(),
       ).verdict,
     ).toBe("QUOTA_PARKED");
   });
@@ -191,7 +193,9 @@ describe("a dead driver's removed or unreadable worktree", () => {
         selfPath: "/drives.ts",
         hostIsLocal: true,
       };
-      expect(classifyDrive(input, new Date()).verdict).toBe("UNKNOWN");
+      expect(classifyDrive(input, Temporal.Now.instant()).verdict).toBe(
+        "UNKNOWN",
+      );
     },
   );
 
@@ -211,11 +215,12 @@ describe("a dead driver's removed or unreadable worktree", () => {
       selfPath: "/drives.ts",
       hostIsLocal: true,
     };
-    const missing = classifyDrive(input, new Date());
+    const missing = classifyDrive(input, Temporal.Now.instant());
     expect(missing.verdict).toBe("DEAD");
     expect(missing.reason).toContain("missing");
     expect(
-      classifyDrive({ ...input, leftovers: null }, new Date()).verdict,
+      classifyDrive({ ...input, leftovers: null }, Temporal.Now.instant())
+        .verdict,
     ).toBe("UNKNOWN");
   });
 });

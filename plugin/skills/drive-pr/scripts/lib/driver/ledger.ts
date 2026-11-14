@@ -84,6 +84,7 @@ import { readDriveState, recordDriveEvent } from "./rearm.ts";
 import { driverRuntime } from "./runtime.ts";
 import { SINGLE_INSTANCE_LOCK_EXIT, TAKEN_OVER_EXIT } from "./settings.ts";
 import type { TakeoverPlan } from "./takeover.ts";
+import { currentIso, currentMs, parseMs } from "../../../../../shared/time.ts";
 
 /** Who this driver is, as the ledger names it. */
 export interface LedgerIdentity {
@@ -112,8 +113,8 @@ export async function ledgerIdentity(
   };
 }
 
-function heartbeatAgeMs(l: Ledger, now: Date): number {
-  return now.getTime() - Date.parse(l.driver.heartbeat);
+function heartbeatAgeMs(l: Ledger, now: number): number {
+  return now - parseMs(l.driver.heartbeat);
 }
 
 function minutes(ms: number): number {
@@ -178,7 +179,7 @@ export async function ledgerTakeover(
       kind: ledger.driver.actor === id.actor ? "this-tree" : "other-tree",
       actor: ledger.driver.actor,
     };
-  const age = heartbeatAgeMs(ledger, new Date());
+  const age = heartbeatAgeMs(ledger, currentMs());
   const window = stallThresholdMs();
   if (age <= window)
     return fail(
@@ -217,7 +218,7 @@ export async function claimDrive(
     actor: id.actor,
     clone: id.clone,
     generation,
-    at: new Date().toISOString(),
+    at: currentIso(),
   };
   const own = await postClaim(pr, claim);
   if (typeof own === "string")
@@ -448,7 +449,7 @@ function refuseBesideAnotherClone(
       `drive.ts --take-over: PR #${pr}'s ledger no longer names a running driver in another clone; re-arm without --take-over.`,
     );
   }
-  const age = heartbeatAgeMs(ledger, new Date());
+  const age = heartbeatAgeMs(ledger, currentMs());
   const stale = age > stallThresholdMs();
   if (takeOverCommand !== null) {
     console.error(

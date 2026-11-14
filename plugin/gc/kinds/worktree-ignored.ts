@@ -15,6 +15,7 @@ import {
   SCRATCH_DIR,
 } from "../../shared/disposable-mark.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
+import { currentMs } from "../../shared/time.ts";
 
 /**
  * The rule that set an ignored path aside:
@@ -50,7 +51,7 @@ export interface IgnoredContent {
 /** The ignored-content scan's failure once its deadline has passed. */
 type Late = { ok: false; failure: { code: "timed-out"; reason: string } };
 function late(deadline: number): Late | null {
-  return Date.now() > deadline
+  return currentMs() > deadline
     ? failed("timed-out", "Ignored-content scan exceeded its deadline")
     : null;
 }
@@ -283,7 +284,7 @@ function classifyEntry(
 export function classifyIgnored(
   root: string,
   paths: string[],
-  deadline = Date.now() + 30_000,
+  deadline = currentMs() + 30_000,
 ): Outcome<IgnoredContent, "timed-out"> {
   const scan: Scan = {
     root,

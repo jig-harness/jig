@@ -1,7 +1,8 @@
 /**
  * Guards for the times, zones and spans a stored line carries, shared by the
  * reader that validates a line and the page that formats it, so the two never
- * disagree about which values are usable.
+ * disagree about which values are usable. The dashboard's page runs this in
+ * the browser, so it reads times with `Date` (ADR-0018).
  */
 
 /** A string `Date` can read as a time. */

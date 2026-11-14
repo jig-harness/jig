@@ -11,6 +11,7 @@
 import type { Harness } from "../../../../shared/harness.ts";
 import { createHash, randomBytes } from "node:crypto";
 import { isMapping } from "../../../../shared/config-layers.ts";
+import { isoOf, parseInstant } from "../../../../shared/time.ts";
 
 export const EVENT_VERSION = 1;
 
@@ -95,14 +96,18 @@ const AT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
 /** A real instant in the one form `nowAt` writes, so times sort as strings. */
 function isAt(value: unknown): value is string {
   if (typeof value !== "string" || !AT.test(value)) return false;
-  const time = new Date(value);
-  return !Number.isNaN(time.getTime()) && nowAt(time) === value;
+  try {
+    return nowAt(parseInstant(value)) === value;
+  } catch (error) {
+    if (error instanceof RangeError) return false;
+    throw error;
+  }
 }
 const CLASS = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
 /** The current time, to the second, in Coordinated Universal Time. */
-export function nowAt(date = new Date()): string {
-  return `${date.toISOString().slice(0, 19)}Z`;
+export function nowAt(instant = Temporal.Now.instant()): string {
+  return `${isoOf(instant).slice(0, 19)}Z`;
 }
 
 /**
@@ -132,7 +137,7 @@ export function decisionStamp(
     : 0n;
   // No id in the latest's second sorts after it: take the next second.
   if (previous === ceiling) {
-    const next = nowAt(new Date(Date.parse(latest.at) + 1000));
+    const next = nowAt(parseInstant(latest.at).add({ seconds: 1 }));
     return { at: next, id: newId(next) };
   }
   const random = BigInt(`0x${randomBytes(4).toString("hex")}`);
