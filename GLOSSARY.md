@@ -930,7 +930,7 @@ make, use the entry's term instead.
   that would not.
 - **Relation statement** — a hold or an order stated as data rather than a
   sentence: subject references, a relation word from a closed list (such as
-  "waits on"), object references and a count. Each reference carries its
+  "waits on"), object references, a count and an optional reason. Each reference carries its
   kind (issue or pull request), state, link and counterpart, so a view can
   show it as a chip with its link ([design](design/epic-planner.md)).
 - **Epic census** — the read-only count of how a repository's started *epics*

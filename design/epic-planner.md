@@ -192,7 +192,7 @@ against waiting (#1179).
 The planner authors every hold and every order it reports as a
 [relation statement](../GLOSSARY.md): its subject references, a relation
 word, its object references and a count, as in "these items wait on that
-item". Every reference carries its kind (issue or pull request), its key,
+item", with an optional `reason`. Every reference carries its kind (issue or pull request), its key,
 its state, its link and its counterpart: an issue's pull request, or a pull
 request's issue. A view can then show each reference as a chip with its
 link and a hover panel without reading prose.
@@ -218,7 +218,7 @@ The relation words are a closed list:
 | --- | --- | --- |
 | `waits on` | the children that wait | the issues they wait on, inside or outside the epic |
 | `must not run with` | the children of a conflict edge | the other side of the edge |
-| `waits for a person` | the gated children | none; the statement carries the gate's reason in `reason` |
+| `waits for a person` | the gated children | `[]`; the gate's reason is in `reason` |
 | `is not in the plan` | the open children the plan leaves out | the epic |
 
 The count is the number of subjects, so a view can fold them ("2 items
@@ -263,11 +263,12 @@ dispatched pickup of an issue assigned to the factory identity whose work
 is planning an epic, such as an item of #1177's backfill wave. The
 dispatcher does not start a planner pass by itself. A dispatched pass
 nobody can approve applies the mechanical rows and stops on the rest, the
-way any dispatched pass stops on a decision: it records the rows as one
-parked decision with two options, approve as shown or amend
+way any dispatched pass stops on a decision: it records the rows and their
+digest as one parked decision with two options, approve as shown or amend
 ([structured-answers.md](structured-answers.md)), which a person answers in
-a word. The decision carries the digest, so an approval given after the
-epic moved again writes nothing. The pass started on that answer proposes
+a word. Until step 6 of the build order, that decision is a plain question
+naming the digest; from step 6, an approval writes only under that digest,
+so one given after the epic moved again writes nothing. The pass started on that answer proposes
 once more and parks once more when the rows changed, and after a second
 mismatch it reports the epic as moving too fast to plan unattended and asks
 a person to run the planner.
@@ -328,7 +329,11 @@ and 7 of #309; both issues are children of item 56's epic.
    joined with the reader, dependency edges written as native relations
    first and mirrored into the block, plans parallel by default, the
    `plan_epic` settings, the lifecycle row, and the audit's view of the new
-   skill. Tests run the end-to-end apply against an in-memory port, and on
+   skill. `/jig:do-item`'s instruction to run `sync-plan-blocks` on a
+   dependency the tracker lacks keeps to plans without the planner's stamp;
+   on a stamped plan the pickup runs the planner instead, so a relation a
+   person removed is not written back. A dispatched planner pass stops on
+   its approval rows as any dispatched pass stops on a decision. Tests run the end-to-end apply against an in-memory port, and on
    recorded answers of each adapter. Its pull request repeats the licence
    grant. After its release, the consumer switches to `/jig:plan-epic` and
    deletes its copy, and its instructions that call the planner switch with
@@ -375,3 +380,9 @@ and 7 of #309; both issues are children of item 56's epic.
 - **The source's history.** The files move without the commits behind them;
   their history stays in the consumer repository, whose commit messages name
   that repository's own work.
+
+## Review
+
+Reviewed on 2026-11-14 by a reviewer with fresh context (a subagent that
+did not write the design), at commit `a1699cad1` and again at `f52efefab`,
+before any step is built.
