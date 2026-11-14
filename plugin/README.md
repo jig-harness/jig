@@ -567,8 +567,10 @@ must decide, the `cause` when the run fell short (`needs-person`,
 address>`), never contents. The prompt names the command,
 `jig dispatch report <record> <token> <file>`, and asks for the report as
 the pass's last act; a pickup records its result as soon as its drive is
-armed and its report at the end. The command replaces email addresses and
-account identifiers with `<redacted>`, checks the record and names
+armed and its report at the end. The command replaces email addresses,
+account identifiers and tokens or other credential-shaped values (a
+`Bearer` value, a vendor token such as `ghp_…`, a JSON Web Token, a value
+named as a secret) with `<redacted>`, checks the record and names
 everything wrong in one refusal, so the pass can fix it and run the command
 again. It may run more than once, before or after the result: the last
 report that passes stands, and none touches the result. The launch record

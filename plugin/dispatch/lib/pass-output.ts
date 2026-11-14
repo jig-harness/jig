@@ -1,3 +1,5 @@
+import { maskCredentials } from "../../shared/credentials.ts";
+
 /** The most output a durable digest keeps per pass. */
 export const DURABLE_OUTPUT_LIMIT = 2000;
 
@@ -8,24 +10,7 @@ export const DURABLE_OUTPUT_LIMIT = 2000;
  * a secret split by it cannot survive.
  */
 export function durableSummary(text: string): string {
-  return text
-    .replace(
-      /(["'])([A-Za-z0-9_.-]*(?:token|secret|password|passwd|api[_-]?key|authorization)[A-Za-z0-9_.-]*)\1\s*[:=]\s*(?:"(?:[^"\\]|\\.|"")*"|'(?:[^'\\]|\\.|'')*'|[^\s,}\]]+)/gi,
-      '$1$2$1: "[redacted]"',
-    )
-    .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{8,}/gi, "$1 [redacted]")
-    .replace(
-      /\b([A-Za-z0-9_.-]*(?:token|secret|password|passwd|api[_-]?key|authorization)[A-Za-z0-9_.-]*)\s*[=:]\s*(?:"(?:[^"\\]|\\.|"")*"|'(?:[^'\\]|\\.|'')*')/gi,
-      "$1=[redacted]",
-    )
-    .replace(
-      /\b([A-Za-z0-9_.-]*(?:token|secret|password|passwd|api[_-]?key|authorization)[A-Za-z0-9_.-]*)\s*[=:]\s*(?!\[)\S+/gi,
-      "$1=[redacted]",
-    )
-    .replace(
-      /\b(?:gh[pousr]_|github_pat_|sk-|xox[abp]-|lin_api_)[A-Za-z0-9_-]{8,}/g,
-      "[redacted]",
-    )
+  return maskCredentials(text, "[redacted]")
     .replace(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g, "[email]")
     .replace(
       /\b(?=[A-Za-z_-]*\d)(?=[A-Za-z0-9+/_-]*[A-Za-z])[A-Za-z0-9+/_-]{40,}={0,2}/g,

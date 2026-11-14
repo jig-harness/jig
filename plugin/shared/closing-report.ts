@@ -17,13 +17,16 @@
  *
  * The record names no secret and no person's data: before the check, every
  * string in it has email addresses and account identifiers replaced with
- * `<redacted>`, by the drive ledger's redaction (`redact.ts`).
+ * `<redacted>`, by the drive ledger's redaction (`redact.ts`), and every
+ * token or other credential-shaped value too, by the dispatcher's credential
+ * masking (`credentials.ts`).
  */
 import { NEED_ACTS, type NeedAct } from "./acts.ts";
 import { framedDecisionProblems } from "./decisions/framed.ts";
 import { DECISION_BYTE_LIMIT, type ParkedDecision } from "./decisions/park.ts";
 import { Checker, COMMIT, type Json } from "./decisions/source.ts";
 import { failed, ok, type Outcome } from "./outcome.ts";
+import { maskCredentials } from "./credentials.ts";
 import { redactStrings } from "./redact.ts";
 
 export const CLOSING_REPORT_SCHEMA = "closing-report/v1";
@@ -223,7 +226,9 @@ export function closingReportOf(
       `the report is not JSON: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
-  const value = redactStrings(parsed);
+  const value = redactStrings(parsed, (text) =>
+    maskCredentials(text, "<redacted>"),
+  );
   const problems = checkClosingReport(value);
   return problems.length > 0
     ? failed("invalid", problems.join("; "))

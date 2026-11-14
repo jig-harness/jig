@@ -209,6 +209,45 @@ describe("closingReportOf", () => {
     expect(read.value.question).toBe("Should <redacted> answer?");
   });
 
+  it("redacts tokens and other credential-shaped values, leaving references alone", () => {
+    const secrets = [
+      "ghp_abcdefghijkl1234",
+      "github_pat_11ABCDEFG0123456789_abcdefghij",
+      "lin_api_abcdefghijkl0123",
+      "sk-ant-abcdefghijkl0123",
+      "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U",
+      "abcdefgh12345678",
+    ];
+    const read = closingReportOf(
+      JSON.stringify({
+        ...BASE,
+        concluded: `Pushed with ${secrets[0]} and ${secrets[1]}; the tracker took ${secrets[2]}.`,
+        suggested_next: {
+          step: `Rotate ${secrets[3]}, ${secrets[4]} and Authorization: Bearer ${secrets[5]}.`,
+          owner: "none",
+        },
+        evidence: [
+          "commit:0123456789abcdef0123456789abcdef01234567",
+          "path:plugin/dispatch/cli.ts",
+        ],
+      }),
+    );
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    const kept = JSON.stringify(read.value);
+    for (const secret of secrets) expect(kept).not.toContain(secret);
+    expect(read.value.concluded).toBe(
+      "Pushed with <redacted> and <redacted>; the tracker took <redacted>.",
+    );
+    expect(read.value.suggested_next.step).toStartWith(
+      "Rotate <redacted>, <redacted> and Authorization",
+    );
+    expect(read.value.evidence).toEqual([
+      "commit:0123456789abcdef0123456789abcdef01234567",
+      "path:plugin/dispatch/cli.ts",
+    ]);
+  });
+
   it("refuses text that is not JSON, or over the size limit, naming why", () => {
     const notJson = closingReportOf("{nope");
     expect(notJson.ok).toBe(false);

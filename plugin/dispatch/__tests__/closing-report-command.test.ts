@@ -7,11 +7,12 @@
  * `by` as columns.
  */
 import { afterEach, describe, expect, it } from "bun:test";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { readEnded, readResult, recordExit } from "../lib/launches.ts";
 import { logEnded } from "../lib/log-ended.ts";
+import { exportLog } from "../lib/log-export.ts";
 import { type EndedRow, readRows } from "../lib/log.ts";
 import { stateDb } from "../lib/state.ts";
 import { world, type World } from "./fixtures.ts";
@@ -177,6 +178,53 @@ describe("jig dispatch report", () => {
     expect(row?.decision).toBeUndefined();
     expect(row?.cause).toBeUndefined();
     expect(columns(w)).toEqual({ cause: null, report_by: "agent" });
+  });
+
+  it("refreshes the exported line of the month's text copy for a late report", async () => {
+    const w = fixture("followup");
+    const root = dispatchState(w);
+    await endAndLog(w);
+    exportLog(root);
+    const exported = () =>
+      readFileSync(join(root, "log-2026-11.jsonl"), "utf8")
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line) as Record<string, unknown>)
+        .filter((row) => row.key === `ended ${ID}`);
+    expect(exported()).toMatchObject([{ by: "none" }]);
+    expectSpawnExit(await report(w, SHORT), 0);
+    exportLog(root);
+    const lines = exported();
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({
+      by: "agent",
+      concluded: SHORT.concluded,
+      question: QUESTION,
+      decision: DECISION,
+      cause: "needs-person",
+    });
+  });
+
+  it("keeps the report's fields on the ended row when the result arrives after the row and the report", async () => {
+    const w = fixture();
+    expectSpawnExit(await report(w, SHORT), 0);
+    await endAndLog(w);
+    expectSpawnExit(
+      await w.dispatch(["result", ID, "earlier-token", "failed"]),
+      0,
+    );
+    const [row] = ended(w);
+    expect(row).toMatchObject({
+      class: "gates failed",
+      reason: "result failed",
+      by: "agent",
+      concluded: SHORT.concluded,
+      question: QUESTION,
+      decision: DECISION,
+      suggested_next: SHORT.suggested_next,
+      cause: "needs-person",
+    });
+    expect(columns(w)).toEqual({ cause: "needs-person", report_by: "agent" });
   });
 
   it("takes a report before and after the result, the last valid one standing, and never touches the result", async () => {
