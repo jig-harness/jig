@@ -22,7 +22,8 @@ fourth build steps are in place, in
 [plugin/protocol/](../plugin/protocol/README.md): the generator, its gate
 and the chapter on the drive's end states and exit codes, the chapters on
 the drive mailbox and on the pull-request labels, and the chapter on the
-commands a repository supplies; the other steps in § Build order are open. The decision that a chapter and the code must agree is
+commands a repository supplies; the site renders the chapters at
+`/protocol/`. The other steps in § Build order are open. The decision that a chapter and the code must agree is
 [ADR-0020](../docs/adr/ADR-0020-protocol-chapters-are-generated-and-gated.md).
 
 ## How it works
