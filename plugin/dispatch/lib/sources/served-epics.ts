@@ -7,7 +7,20 @@ import type {
   Tracker,
 } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
 import { CANONICAL_STATES } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
+import { isUnavailable } from "../../../skills/do-item/scripts/lib/tracker/unavailable.ts";
+import { isRateLimited } from "../../../shared/outbound/budget.ts";
 import type { ServedPlan } from "./served-plan.ts";
+
+/** One child's unreadable relations take one slot of the epic's width, not the whole epic; a wall still stops the read. */
+export function takeUnreadSlot(
+  unread: string[],
+  key: string,
+  error: unknown,
+): null {
+  if (isRateLimited(error) || isUnavailable(error)) throw error;
+  unread.push(key);
+  return null;
+}
 
 /** A person owns the next step, so this child takes none of a plan-less epic's width. */
 export function parkedOnPerson(

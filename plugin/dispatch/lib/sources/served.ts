@@ -34,6 +34,7 @@ import {
   type PassedChild,
   type PassOver,
   parkedOnPerson,
+  takeUnreadSlot,
   serializeEpics,
   summarizeEpics,
   type EpicWalk,
@@ -417,10 +418,9 @@ interface Found {
 }
 
 /**
- * Visit the roots, then each generation of children, every node of a
- * generation at once so the reads they ask for leave together; what each
- * found is merged in node order into `all`. A rate-limited read ends the walk,
- * leaving what the earlier generations found in `all`.
+ * Visit the roots, then each generation of children at once so their reads
+ * leave together, merging each node's finds in order into `all`. A
+ * rate-limited read ends the walk with the earlier generations' finds in `all`.
  */
 async function walk(
   ctx: WalkContext,
@@ -526,10 +526,7 @@ async function enqueueChildren(
   let serial: Serial | undefined;
   let selection: ServedPlan;
   try {
-    const states = await childStates(ctx, children, meta);
-    const live = states.live;
-    for (const key of states.unreadable)
-      if (!unread.includes(key)) unread.push(key);
+    const live = await childStates(ctx, children, meta, unread);
     selection = servedPlan(
       meta.description ?? "",
       issue.identifier,
@@ -579,10 +576,9 @@ async function enqueueChildren(
 }
 
 /**
- * Whether the walk passes this node by: already seen, nothing to start and no
- * epic to walk, another repository's item, or an item no label places that
- * the team's default repository starts (an epic is still walked, its
- * children carry their own labels).
+ * Whether the walk passes this node by: seen, nothing to start and no epic to
+ * walk, another repository's item, or one no label places that the default
+ * repository starts (an epic is still walked; its children carry labels).
  */
 function leavesNode(
   issue: PoolIssue,
@@ -763,10 +759,10 @@ async function childStates(
   ctx: WalkContext,
   children: PoolIssue[],
   meta: Metadata,
-): Promise<{ live: Record<string, LiveIssue>; unreadable: string[] }> {
+  unread: string[],
+): Promise<Record<string, LiveIssue>> {
   const { tracker, identity, options, cache, view } = ctx;
   const live: Record<string, LiveIssue> = {};
-  const failed: string[] = [];
   const keys = planKeys(
     meta.description ?? "",
     options.executionPlanBlock,
@@ -789,12 +785,9 @@ async function childStates(
             cache,
             view.held(child.identifier)?.relations ?? null,
             view,
-          ).catch((error: unknown) => {
-            // One child's unreadable relations take one slot, not the whole epic.
-            if (isRateLimited(error) || isUnavailable(error)) throw error;
-            failed.push(child.identifier);
-            return null;
-          }),
+          ).catch((error: unknown) =>
+            takeUnreadSlot(unread, child.identifier, error),
+          ),
     ),
   );
   const blockersOf = new Map<string, string[]>();
@@ -820,7 +813,7 @@ async function childStates(
     )
       live[blocker] = { state: other.state.type, blockedBy: [] };
   });
-  return { live, unreadable: failed };
+  return live;
 }
 
 async function freshAuthority(
@@ -907,10 +900,7 @@ function candidateOf(
   };
 }
 
-/**
- * Why a node starts nothing now. A node held only by open blockers queues
- * the blockers it may pull forward, so the item waits on work that runs.
- */
+/** Why a node starts nothing now; one held only by open blockers queues the blockers it may pull forward. */
 async function heldReason(
   ctx: WalkContext,
   node: Pending,
