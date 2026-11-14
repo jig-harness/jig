@@ -506,7 +506,7 @@ export function withFacets(
       };
     }
     const retired = query.retired.map(fold);
-    const listed: Array<IncompleteIssue & { createdAt: string }> = [];
+    const listed: IncompleteIssue[] = [];
     const wanted = (type: string) =>
       query.started === true
         ? type === "started"
@@ -524,21 +524,22 @@ export function withFacets(
         state: { name: i.state.name, type: i.state.type },
         missing,
         retired: carried,
-        createdAt: i.createdAt,
+        cursor: `${i.createdAt}|${i.identifier}`,
       });
     }
-    const cursorOf = (i: { createdAt: string; identifier: string }) =>
-      `${i.createdAt}|${i.identifier}`;
-    listed.sort((a, b) => cursorOf(a).localeCompare(cursorOf(b)));
+    // Code-unit order, the order `after` and a kept cursor are compared in.
+    listed.sort((a, b) =>
+      a.cursor < b.cursor ? -1 : a.cursor > b.cursor ? 1 : 0,
+    );
     const after = query.after ?? null;
     const from =
-      after === null ? listed : listed.filter((i) => cursorOf(i) > after);
+      after === null ? listed : listed.filter((i) => i.cursor > after);
     const page = from.slice(0, query.limit);
     const last = page.at(-1);
     return {
-      issues: page.map(({ createdAt: _, ...i }) => i),
+      issues: page,
       next:
-        from.length > page.length && last !== undefined ? cursorOf(last) : null,
+        from.length > page.length && last !== undefined ? last.cursor : null,
       counts,
     };
   }

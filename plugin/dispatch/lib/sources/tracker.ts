@@ -41,7 +41,13 @@ import {
   isWorkingIssue,
   trackerStateMaps,
 } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
-import { failed, ok, type Outcome } from "../../../shared/outcome.ts";
+import {
+  type Failure,
+  failed,
+  ok,
+  type Outcome,
+} from "../../../shared/outcome.ts";
+import { combinedFailure, readFailureOf } from "../read-failures.ts";
 import { failureText } from "../text.ts";
 import {
   type FacetBound,
@@ -54,6 +60,7 @@ import type {
   ClaimedItem,
   DispatchSection,
   FacetRecord,
+  ReadFailure,
   RecordRead,
   Unplaced,
   WantedItem,
@@ -300,6 +307,12 @@ async function readAssigned(
   }
 }
 
+/** The failure class of a read the tracker did not answer, when a call failed it. */
+function failureField(failure: Failure): { failure?: ReadFailure } {
+  const read = readFailureOf(failure);
+  return read === undefined ? {} : { failure: read };
+}
+
 /** The assigned lane is absent when the repository names no factory identity. */
 function noFactory(): TrackerReading {
   return {
@@ -321,6 +334,7 @@ function failedFactory(
   identity: string,
   reason: string,
   stores: FacetRecord | undefined,
+  failure?: Failure,
 ): TrackerReading {
   return {
     read: {
@@ -328,6 +342,7 @@ function failedFactory(
       source,
       ok: false,
       detail: `the items assigned to ${identity} could not be read: ${reason}`,
+      ...(failure === undefined ? {} : failureField(failure)),
       ...(stores === undefined ? {} : { facets: stores }),
     },
     wanted: [],
@@ -396,7 +411,16 @@ function unavailableFactory(
     view,
     view.unavailable ?? "the scope could not be read",
   );
-  const failed = failedFactory(source, identity, row.reason, stores);
+  const cause = view.unavailableCause;
+  const failed = failedFactory(
+    source,
+    identity,
+    row.reason,
+    stores,
+    cause === undefined
+      ? undefined
+      : { code: "unreadable", reason: row.reason, cause },
+  );
   failed.unplaced.push(row);
   return failed;
 }
@@ -454,7 +478,13 @@ async function readFactoryPickups(
       view,
     );
   if (!assigned.ok)
-    return failedFactory(source, identity, assigned.failure.reason, stores);
+    return failedFactory(
+      source,
+      identity,
+      assigned.failure.reason,
+      stores,
+      assigned.failure,
+    );
   const issues = assigned.value;
   const read = await trustedAndClaimed(tracker, identity, issues, view);
   if ("limited" in read)
@@ -614,10 +644,7 @@ export async function readPickups(
   );
   const keys = new Set(extra.wanted.map((i) => i.key));
   return {
-    read: {
-      ...factory.read,
-      detail: `${factory.read.detail}; ${extra.wanted.length} served pickup(s)`,
-    },
+    read: servedRead(factory.read, extra),
     wanted: [
       ...extra.wanted,
       ...factory.wanted.filter((i) => !keys.has(i.key)),
@@ -636,6 +663,44 @@ export async function readPickups(
               [...extra.claimed, ...factory.claimed].map((i) => [i.key, i]),
             ).values(),
           ],
+  };
+}
+
+/**
+ * The aggregate record with the served lane's reading in it: a served queue
+ * that failed to read makes the record not ok, with the failure's class, so
+ * settlement treats it as it does the identity's own failed read. The record
+ * keeps one failure for the identity's read and every failed served read
+ * (`combinedFailure`), so it waits only when every one of them clears by
+ * waiting.
+ */
+function servedRead(
+  read: TrackerReading["read"],
+  extra: Awaited<ReturnType<typeof readServedPickups>>,
+): TrackerReading["read"] {
+  const detail = `${read.detail}; ${extra.wanted.length} served pickup(s)`;
+  if (extra.incomplete !== true) return { ...read, detail };
+  const failure = combinedFailure([
+    ...(read.ok ? [] : [read.failure]),
+    ...(extra.failures ?? []).map((cause) =>
+      cause === undefined
+        ? undefined
+        : readFailureOf({
+            code: "unreadable",
+            reason: failureText(cause),
+            cause,
+          }),
+    ),
+  ]);
+  // The record's failure is the combined one alone: the read's own is in it.
+  const { failure: _own, ...rest } = read as typeof read & {
+    failure?: ReadFailure;
+  };
+  return {
+    ...rest,
+    ok: false,
+    detail: `${detail}; a served queue could not be read`,
+    ...(failure === undefined ? {} : { failure }),
   };
 }
 

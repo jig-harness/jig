@@ -273,6 +273,14 @@ export async function nativeSharedView(
       const failure = facts.failure();
       return native.limited ?? (isRateLimited(failure) ? failure : null);
     },
+    get unavailableCause(): unknown {
+      const failure = facts.failure();
+      return native.unavailable !== undefined
+        ? native.unavailableCause
+        : failure === null || isRateLimited(failure)
+          ? undefined
+          : failure;
+    },
     get unavailable() {
       const failure = facts.failure();
       return (

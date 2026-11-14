@@ -50,6 +50,7 @@ import { resolve } from "node:path";
 import {
   ghCallTimeoutSeconds,
   gitIdentityEnv,
+  heldRun,
   lastBytes,
   readTimeoutEnv,
   registerRunCancellation,
@@ -958,21 +959,19 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
 /**
  * `gh` with the GH_CALL_TIMEOUT deadline — the `gh_call` of the bash lib.
  *
- * `timeoutSec` is an optional TIGHTENING, never a loosening: a caller that
- * holds a budget smaller than `GH_CALL_TIMEOUT` (drive-status.ts's poll loop
- * owns `--timeout`, which is independent of the env default) can pass it, and
- * the effective deadline is whichever is smaller. Omitting it keeps the env
- * default exactly as before.
+ * `timeoutSec` is an optional TIGHTENING, never a loosening: a caller with a
+ * budget smaller than `GH_CALL_TIMEOUT` (drive-status.ts's `--timeout`) passes
+ * it, and the effective deadline is the smaller. A forge the run holds
+ * (`shared/outbound/hold.ts`) is not asked: the call answers `heldRun`.
  *
- * It lives here rather than at the call site because `run(['gh', …])` is a raw
- * spawn, and this skill has a guardrail test asserting that every outbound `gh`
- * call routes through this chokepoint — so clamping by dropping to `run` would
- * trade one fix for a regression of that guard (which the test catches).
+ * It lives here because `run(['gh', …])` is a raw spawn, and a guardrail test
+ * asserts that every outbound `gh` call routes through this chokepoint.
  */
 export const ghCall = traceGhRunner<RunResult, RunOptions>(
   (args, opts) => run(["gh", ...args], opts),
   ghCallTimeoutSeconds,
   {},
+  heldRun,
 );
 
 /**

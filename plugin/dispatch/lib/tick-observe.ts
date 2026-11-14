@@ -85,7 +85,14 @@ import {
 import { lowBudget, type TickReads, type TickBudget } from "./tick-reads.ts";
 import { openShared, readDriveClaims, type TickShared } from "./tick-shared.ts";
 import { failureText } from "./text.ts";
-import { failed, ok, type Outcome } from "../../shared/outcome.ts";
+import {
+  type Failure,
+  failed,
+  ok,
+  type Outcome,
+} from "../../shared/outcome.ts";
+import { clearsByWaiting } from "../../shared/outbound/failure.ts";
+import { lastForgeReading, readFailureOf } from "./read-failures.ts";
 import type {
   ClaimedItem,
   DispatchSection,
@@ -184,17 +191,21 @@ export async function openRepo(
     target = failed("unreadable", failureText(error), error);
   }
   if (!target.ok)
-    return emptyReport(
+    return refusedBy(
       path,
       `the forge cannot say which repository this is: ${target.failure.reason}`,
+      target.failure,
+      nowMs,
     );
   const repo: RepoTarget = target.value;
   let config: Awaited<ReturnType<typeof defaultBranchConfig>>;
   const where = `${repo.slug}@${repo.defaultBranch}:.config/jig.yaml`;
-  const unread = (why: string): RepoReport => ({
-    ...emptyReport(
+  const unread = (why: string, cause?: Failure): RepoReport => ({
+    ...refusedBy(
       path,
       `the dispatch section on the default branch cannot be read, so nothing is planned: ${why}`,
+      cause,
+      nowMs,
     ),
     slug: repo.slug,
   });
@@ -205,7 +216,7 @@ export async function openRepo(
   } catch (error) {
     return unread(failureText(error));
   }
-  if (!config.ok) return unread(config.failure.reason);
+  if (!config.ok) return unread(config.failure.reason, config.failure);
   const file = config.value;
   const read = readSection(file, where);
   if (!read.ok) return unread(failureText(read.failure.reason));
@@ -233,6 +244,28 @@ export async function openRepo(
     report,
     reflection,
     ...entryFacts(entry),
+  };
+}
+
+/**
+ * The report of a repository a failed read refused: with the call's
+ * failure class when a call failed it, and the forge's last reading with
+ * its age when that class clears by waiting.
+ */
+function refusedBy(
+  path: string,
+  refused: string,
+  cause: Failure | undefined,
+  nowMs: number,
+): RepoReport {
+  const failure = cause === undefined ? undefined : readFailureOf(cause);
+  const waits = failure !== undefined && clearsByWaiting(failure.class);
+  return {
+    ...emptyReport(
+      path,
+      `${refused}${waits ? lastForgeReading(path, nowMs) : ""}`,
+    ),
+    ...(failure === undefined ? {} : { refusedBy: failure }),
   };
 }
 

@@ -6,6 +6,9 @@ import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 
 import { errnoCode, swallow } from "./errors.ts";
+import { GITHUB, type GhRun, ghRunFailure } from "./outbound/github.ts";
+import { guarded } from "./outbound/hold.ts";
+import type { OutboundFailure } from "./outbound/failure.ts";
 
 /** Stable child-process diagnostic code for incomplete forge accounting. */
 export const FORGE_ACCOUNTING_UNAVAILABLE = "jig-forge-accounting-unavailable";
@@ -195,15 +198,18 @@ function traceCommand<T extends { code: number; timedOut: boolean }>(
   });
 }
 
-/** Shared gh boundary keeps its effective deadline and span metadata together. */
-function traceGhCall<
-  T extends { code: number; timedOut: boolean },
-  O extends { timeoutSec?: number },
->(
+/**
+ * Shared gh boundary keeps its effective deadline and span metadata together,
+ * and sends nothing to a forge this run holds (`outbound/hold.ts`): the call
+ * then answers `refuse`'s result, a failed run naming the earlier failure.
+ */
+function traceGhCall<T extends GhRun, O extends { timeoutSec?: number }>(
   args: string[],
   opts: O,
   envDeadline: number,
   run: (argv: string[], options: O) => Promise<T>,
+  refuse: (failure: OutboundFailure) => T,
+  held = true,
 ): Promise<T> {
   // A parent reader counts nested forge calls at dispatch, including timed-out reads.
   if (process.env.JIG_FORGE_CALL_COUNT_FILE) {
@@ -220,9 +226,29 @@ function traceGhCall<
     opts.timeoutSec === undefined
       ? envDeadline
       : Math.max(1, Math.min(envDeadline, opts.timeoutSec));
-  return traceCommand("ghCall", "gh", deadline, () =>
-    run(args, { ...opts, timeoutSec: deadline }),
-  );
+  if (!held)
+    return traceCommand("ghCall", "gh", deadline, () =>
+      run(args, { ...opts, timeoutSec: deadline }),
+    );
+  return traceCommand("ghCall", "gh", deadline, () => {
+    // The run's elapsed time tells a 502/504 the forge ran out of time on
+    // (`too-costly`, which the paged reader answers with a smaller page) from
+    // a fault it answered at once (which holds the forge).
+    let tookMs = 0;
+    return guarded(
+      GITHUB,
+      async () => {
+        const began = Date.now();
+        try {
+          return await run(args, { ...opts, timeoutSec: deadline });
+        } finally {
+          tookMs = Date.now() - began;
+        }
+      },
+      (r) => ghRunFailure(r, tookMs),
+      refuse,
+    );
+  });
 }
 
 /** Adapt a process runner once, preserving its options and complete result type. */
@@ -245,14 +271,32 @@ export function traceRunner<
     });
 }
 
-/** Adapt the gh boundary without copying its deadline or span bookkeeping. */
+const unheldForms = new WeakMap<object, unknown>();
+
+/** The form of a runner `traceGhRunner` made that does not hold the forge; `undefined` for any other runner. */
+export function unheldForm<R extends object>(runner: R): R | undefined {
+  return unheldForms.get(runner) as R | undefined;
+}
+
+/**
+ * Adapt the gh boundary without copying its deadline, span or hold bookkeeping;
+ * `refuse` is a held call's result. `unheldForm` gives the runner that does
+ * not hold, for a caller that applies the hold around its own retry.
+ */
 export function traceGhRunner<
-  T extends { code: number; timedOut: boolean },
+  T extends GhRun,
   O extends { timeoutSec?: number },
 >(
   run: (argv: string[], opts: O) => Promise<T>,
   timeout: () => number,
   defaults: O,
+  refuse: (failure: OutboundFailure) => T,
 ): (args: string[], opts?: O) => Promise<T> {
-  return (args, opts = defaults) => traceGhCall(args, opts, timeout(), run);
+  const through =
+    (held: boolean) =>
+    (args: string[], opts: O = defaults) =>
+      traceGhCall(args, opts, timeout(), run, refuse, held);
+  const runner = through(true);
+  unheldForms.set(runner, through(false));
+  return runner;
 }
