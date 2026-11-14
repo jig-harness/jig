@@ -1547,9 +1547,14 @@ jig dispatch labels [--repo <path>]... [--yes]
 
 which installs no job and needs no machine file. For each repository whose
 `dispatch.labels` (read from its default branch) is on it lists the labels
-of the set it lacks, with the marker labels; with `--yes` it names each one
-it created and lists, each with the `gh label create` command, those the
-signed-in account may not create, for a person who may. `jig install
+of the set it lacks, with the marker labels, and the labels of the set it
+has whose description is not the one this release gives them, as when a
+release changes what a label means; with `--yes` it names each one it
+created or updated and lists, each with the `gh label create` or
+`gh label edit` command, those the signed-in account may not create or
+edit, for a person who may. An update sets the description alone: a color a
+person chose stays, and a marker label's description, the repository's own,
+is never compared. `jig install
 dispatch --repo <path> --yes` does the same beside the dispatcher's timer.
 
 An optional workflow clears `jig:converged` when the head moves, without
