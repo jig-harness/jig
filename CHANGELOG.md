@@ -394,6 +394,12 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.230.1] - 2026-11-14
+
+### Fixed
+
+- Repositories sharing a tracker scope and served people reuse one queue reading even when their state maps or facet settings differ, reducing repeated dispatcher requests while preserving each repository's interpretation. **Consumer action:** none.
+
 ## [0.230.0] - 2026-11-14
 
 The turn-budget guard no longer asks Codex for a new approval with every Jig release.
@@ -8023,7 +8029,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.230.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.230.1...HEAD
+[0.230.1]: https://github.com/jig-harness/jig/compare/v0.230.0...v0.230.1
 [0.230.0]: https://github.com/jig-harness/jig/compare/v0.229.1...v0.230.0
 [0.229.1]: https://github.com/jig-harness/jig/compare/v0.229.0...v0.229.1
 [0.229.0]: https://github.com/jig-harness/jig/compare/v0.228.1...v0.229.0
