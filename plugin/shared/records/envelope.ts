@@ -99,7 +99,7 @@ export type ReadCode =
   | "no-marker";
 
 const ISO_TIME =
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/;
 
 /**
  * A real calendar day and time: no February 30, no 24:00. It reads the fields

@@ -123,6 +123,7 @@ describe("the envelope codec", () => {
       [{ ...envelope(), at: "2026-11-12T24:00:00Z" }, "bad-time"],
       [{ ...envelope(), at: "2026-11-12T10:60:00Z" }, "bad-time"],
       [{ ...envelope(), at: "2026-11-12T10:00:00+24:00" }, "bad-time"],
+      [{ ...envelope(), at: "2026-11-04T09:30:00.1234567890Z" }, "bad-time"],
       [{ ...envelope(), generation: -1 }, "bad-generation"],
       [{ ledgerVersion: 1 }, "no-envelope"],
     ];
