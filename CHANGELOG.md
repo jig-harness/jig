@@ -394,6 +394,28 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.238.4] - 2026-11-14
+
+### Fixed
+
+- A follow-up held back by the tick deadline or another admission check now names what it waits on in the dispatcher receipt and dashboard queue, alongside its specific reason. **Consumer action:** none.
+
+## [0.238.3] - 2026-11-14
+
+### Fixed
+
+- A steward `resume` record the tick can never apply (its pass framed a
+  decision for a person, recommended no single option, ended done, or was
+  already resumed) is now refused once, with its reason reported, instead of
+  staying unapplied while the steward proposed it again on every run. The
+  steward's digest no longer offers a pass that framed a decision, or one
+  whose resume was already launched or refused for a fact its ended record
+  fixes; a refusal that depends on the autonomy policy or on a wrongly named
+  pass leaves the pass offered, and no refused duplicate blocks the replay of
+  a resume that launched.
+- The tick no longer resumes a dispatched pass that recorded a framed
+  decision for a person: that decision is the person's to answer.
+
 ## [0.238.2] - 2026-11-14
 
 ### Fixed
@@ -8347,7 +8369,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.238.2...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.238.4...HEAD
+[0.238.4]: https://github.com/jig-harness/jig/compare/v0.238.3...v0.238.4
+[0.238.3]: https://github.com/jig-harness/jig/compare/v0.238.2...v0.238.3
 [0.238.2]: https://github.com/jig-harness/jig/compare/v0.238.1...v0.238.2
 [0.238.1]: https://github.com/jig-harness/jig/compare/v0.238.0...v0.238.1
 [0.238.0]: https://github.com/jig-harness/jig/compare/v0.237.2...v0.238.0
