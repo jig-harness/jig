@@ -16,10 +16,11 @@ export function takeUnreadSlot(
   unread: string[],
   key: string,
   error: unknown,
-): null {
-  if (isRateLimited(error) || isUnavailable(error)) throw error;
+): Promise<null> {
+  if (isRateLimited(error) || isUnavailable(error))
+    return Promise.reject(error);
   unread.push(key);
-  return null;
+  return Promise.resolve(null);
 }
 
 /** A person owns the next step, so this child takes none of a plan-less epic's width. */
