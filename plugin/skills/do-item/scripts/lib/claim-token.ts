@@ -106,7 +106,7 @@ export type MarkerReport =
   | { posted: true; confirmed: true }
   | {
       posted: true;
-      /** The read after the write failed, or no longer showed the marker: the read before it, which this claim won, stands. */
+      /** The read after the write failed: the read before it, which this claim won, stands. */
       confirmed: false;
       reason: string;
     };
