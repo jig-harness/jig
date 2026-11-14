@@ -185,6 +185,22 @@ describe("check-fields.ts", () => {
     expect(stderr).toContain("cannot be locked");
   });
 
+  test("keeps a locked run's usage error as a usage error", async () => {
+    const stderr = await run(
+      [
+        "check",
+        "--yes",
+        "--position",
+        "position.json",
+        "--retired-from",
+        "missing-target.yaml",
+      ],
+      2,
+      "file_issue:\n  sweep:\n    move: false\n",
+    );
+    expect(stderr).not.toContain("cannot be locked");
+  });
+
   test("refuses a run reaching a held read position through a symlinked directory", async () => {
     const root = join(scratch, `repo-${n}`);
     mkdirSync(root, { recursive: true });

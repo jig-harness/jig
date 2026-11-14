@@ -185,12 +185,17 @@ async function check(argv: string[]): Promise<number> {
   // Two runs sharing a position file would overwrite each other's progress.
   const path = canonicalPath(values.position);
   // A run that cannot make its lock directory stops: without the lock it
-  // could overwrite another run's progress.
+  // could overwrite another run's progress. Only a failure before the run
+  // starts is a lock failure; the run's own errors reach main() unchanged.
   let locked: Awaited<ReturnType<typeof withFileLock<number>>>;
+  let started = false;
   try {
     locked = await withFileLock(
       path,
-      () => checkRun(values, overlay, settings, path),
+      () => {
+        started = true;
+        return checkRun(values, overlay, settings, path);
+      },
       {
         root: dirname(path),
         name: "sweep-position",
@@ -198,7 +203,7 @@ async function check(argv: string[]): Promise<number> {
       },
     );
   } catch (err) {
-    if (err instanceof ExitError) throw err;
+    if (started || err instanceof ExitError) throw err;
     return fail(
       1,
       `the read position ${path} cannot be locked (${(err as Error).message}); give --position a file in a directory this run can write`,
