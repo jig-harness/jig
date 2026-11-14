@@ -73,9 +73,9 @@ a tracker charges each query a cost, and each ends a request that takes too
 long. Every agent and timer on a machine shares one login's allowance. Jig
 gets one way to make these calls. It reuses an answer it holds, asks a
 budget the whole machine shares, and keeps each request small enough to be
-answered. It records what every operation costs, so a team sees what spends
-an allowance. When a system refuses a call for a time, the dispatcher
-waits, and no person is asked.
+answered. Next are GitHub's limits in the shared budget, reuse of unchanged
+answers and identical reads, and gates that enforce the transport boundary
+and query cost ceilings.
 
 ### 36. The dispatch board: what is driven and what is ready to merge
 

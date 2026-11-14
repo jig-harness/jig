@@ -30,6 +30,7 @@ const ACTS: Record<NeedCause, PersonAct> = {
     "settle the pickup's question, then return the item to the dispatch states",
   "assigner-cannot-write": "assign the item as someone who can write",
   "tracker-unreachable": "authorize the account's tracker credential",
+  "low-quota": "inspect the quota spending",
 };
 
 export function personAct(cause: NeedCause): PersonAct {

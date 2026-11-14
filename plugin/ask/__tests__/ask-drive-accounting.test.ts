@@ -22,7 +22,12 @@ it("scopes a drive listing to its PR and includes nested forge calls in the answ
       const r = reading(); const result = await driveRow(r, process.cwd(), 123);
       console.log(JSON.stringify({result, calls:r.sources().forgeCalls}));`;
     const child = Bun.spawn([process.execPath, "-e", code], {
-      env: { ...process.env, JIG_ASK_DRIVES_SCRIPT: listing },
+      env: {
+        ...process.env,
+        HOME: root,
+        USERPROFILE: root,
+        JIG_ASK_DRIVES_SCRIPT: listing,
+      },
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -48,7 +53,12 @@ it("accounting failure preserves forge dispatch and reports unavailable accounti
       const gh = traceGhRunner(async () => ({code: 7, timedOut: false}), () => 1, {});
       console.log(JSON.stringify(await gh(["api"])));`;
     const child = Bun.spawn([process.execPath, "-e", code], {
-      env: { ...process.env, JIG_FORGE_CALL_COUNT_FILE: root },
+      env: {
+        ...process.env,
+        HOME: root,
+        USERPROFILE: root,
+        JIG_FORGE_CALL_COUNT_FILE: root,
+      },
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -99,7 +109,12 @@ it.each(["pipe", "ignore", "inherit"] as const)(
       import { reading } from ${JSON.stringify(join(import.meta.dir, "../lib/reading.ts"))};
       const r = reading(); console.log(JSON.stringify({result:await driveRow(r, process.cwd(), 123), sources:r.sources()}));`;
       const child = Bun.spawn([process.execPath, "-e", code], {
-        env: { ...process.env, JIG_ASK_DRIVES_SCRIPT: listing },
+        env: {
+          ...process.env,
+          HOME: root,
+          USERPROFILE: root,
+          JIG_ASK_DRIVES_SCRIPT: listing,
+        },
         stdout: "pipe",
         stderr: "pipe",
       });

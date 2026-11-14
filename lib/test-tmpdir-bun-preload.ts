@@ -38,6 +38,8 @@
 import { afterAll } from "bun:test";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { setDefaultLedgerPath } from "../plugin/shared/outbound/ledger.ts";
+import { closeDatabase } from "../plugin/shared/records/db.ts";
 import { scopeTestTmpdir } from "./test-tmpdir.ts";
 
 process.env.BUN_RUNTIME_TRANSPILER_CACHE_PATH ??= join(
@@ -48,4 +50,11 @@ process.env.BUN_RUNTIME_TRANSPILER_CACHE_PATH ??= join(
   "@t@",
 );
 const scope = scopeTestTmpdir({ fixtureStartup: true });
-afterAll(() => scope.release());
+// Fake transport calls still exercise SQLite, within this test cycle's scope.
+const ledgerPath = join(scope.root, "outbound-budget.sqlite");
+setDefaultLedgerPath(ledgerPath);
+afterAll(() => {
+  closeDatabase(ledgerPath);
+  setDefaultLedgerPath(null);
+  scope.release();
+});
