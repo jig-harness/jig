@@ -266,8 +266,8 @@ request per step:
 - **GitHub in the budget record**: its hourly and secondary limits beside
   the trackers', every forge call admitted against them.
 - **Reuse**: answers cached by update time or the system's validator,
-  identical reads in a run sent once, one queue reading per tracker team
-  and credential, reads by key in one request.
+  identical reads in a run sent once and reads by key in one request,
+  through the shared library that the existing queue snapshots adopt.
 - **Gates and a review lens**: no call leaves by another door than a
   transport, no query selects a list without a page size or passes its
   declared cost ceiling, and a change to an integration is reviewed

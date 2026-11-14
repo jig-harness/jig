@@ -49,7 +49,7 @@ class AssignmentError extends Error {}
  * flag, and `extra` (the estimate, where size is kept in it).
  */
 export const poolFields = (extra: string) => `
-  identifier title url priority${extra} createdAt updatedAt
+  identifier title url priority ${extra.trim()} createdAt updatedAt
   state { id name type }
   assignee { id name }
   labels(first: 100) { pageInfo { hasNextPage } nodes { name } }

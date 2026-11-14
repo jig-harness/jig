@@ -11,7 +11,7 @@
  * on as ISO 8601 in UTC.
  */
 
-import { cancellableRequest } from "../cancellation.ts";
+import { dispatchTransport } from "./dispatch-transport.ts";
 import { isRecord } from "../../../../../../shared/guards.ts";
 import { TrackerConfigError } from "../config-error.ts";
 import { defaultFacets, type Facets } from "../facets/config.ts";
@@ -93,6 +93,7 @@ export interface IssueTypeMeta {
 }
 
 export interface Client {
+  shareReads(reads: Map<string, Promise<unknown>>): void;
   readonly project: string;
   readonly site: string;
   readonly model: JiraModel;
@@ -139,7 +140,9 @@ export interface Client {
    * Each relation's configured link types, each resolved to exactly one of
    * the site's, the type a new link gets first.
    */
-  linkTypes(): Promise<Record<LinkedRelation, RelationLink[]>>;
+  linkTypes(
+    signal?: AbortSignal,
+  ): Promise<Record<LinkedRelation, RelationLink[]>>;
   /** The project's issue types, with their hierarchy level. */
   issueTypes(signal?: AbortSignal): Promise<IssueTypeMeta[]>;
   /**
@@ -421,8 +424,7 @@ function sharedRead<T>(run: (signal: AbortSignal) => Promise<T>) {
 
 export function jiraClient(opts: ClientOptions): Client {
   const { project, site, model, settings } = opts;
-  const transport: JiraTransport = (request, signal) =>
-    cancellableRequest(signal, () => opts.transport(request, signal));
+  const { transport, shareReads } = dispatchTransport(opts.transport);
   const get: Get = (path, query, signal) =>
     transport(
       {
@@ -595,6 +597,7 @@ export function jiraClient(opts: ClientOptions): Client {
   }
 
   const client: Client = {
+    shareReads,
     project,
     site,
     model,
@@ -780,9 +783,12 @@ export function jiraClient(opts: ClientOptions): Client {
 
     priorities: readPriorities,
 
-    linkTypes() {
+    linkTypes(signal) {
       links ??= (async () => {
-        const raw = record(await get("issueLinkType"), "issueLinkType");
+        const raw = record(
+          await get("issueLinkType", undefined, signal),
+          "issueLinkType",
+        );
         if (!Array.isArray(raw.issueLinkTypes))
           throw new JiraApiError("issueLinkType: issueLinkTypes missing");
         const all = raw.issueLinkTypes.map((t, i) => {
@@ -811,7 +817,7 @@ export function jiraClient(opts: ClientOptions): Client {
       links.catch(() => {
         links = undefined;
       });
-      return links;
+      return signal === undefined ? links : until(links, signal);
     },
 
     issueTypes(signal) {
