@@ -448,7 +448,11 @@ async function walk(
   return all;
 }
 
-/** Reads an epic's open children; one that cannot be read is reported and set aside. */
+/**
+ * Reads an epic's open children; one that cannot be read is reported and set
+ * aside. A rate-limited read is thrown only once every sibling's result is
+ * recorded, so a sibling's own defect is not lost to the limit.
+ */
 async function readChildren(
   ctx: WalkContext,
   meta: Metadata,
@@ -460,15 +464,19 @@ async function readChildren(
       try {
         return { child: await view.pool(kept.identifier), error: undefined };
       } catch (error) {
-        if (isRateLimited(error)) throw error;
         return { child: null, error };
       }
     }),
   );
   const children: PoolIssue[] = [];
   const unread: string[] = [];
+  const limits: unknown[] = [];
   meta.children.forEach((kept, i) => {
     const { child, error } = read[i] ?? { child: null, error: undefined };
+    if (isRateLimited(error)) {
+      limits.push(error);
+      return;
+    }
     if (child === null || child.truncated.length) {
       unread.push(kept.identifier);
       found.failures.push(error);
@@ -482,6 +490,7 @@ async function readChildren(
       });
     } else children.push(child);
   });
+  if (limits.length > 0) return Promise.reject(limits[0]);
   return { children, unread };
 }
 

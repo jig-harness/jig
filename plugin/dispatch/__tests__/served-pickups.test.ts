@@ -10,6 +10,7 @@ import { renderExecutionPlan } from "../../skills/do-item/scripts/lib/execution-
 import { rankQueue } from "../lib/queue-rank.ts";
 import type { PickupReads } from "../lib/pickup-reads.ts";
 import { issue } from "./served-fixtures.ts";
+import { TrackerRateLimited } from "../../shared/tracker-budget.ts";
 const people = [{ name: "Alex", forge: ["alex"], tracker: { github: "alex" } }];
 function fake() {
   const store = new Map<string, unknown>();
@@ -362,6 +363,31 @@ describe("served pickups", () => {
       }),
     );
     expect(read.incomplete).toBe(true);
+  });
+  it("records a truncated child read beside a rate-limited sibling before the limit ends the walk", async () => {
+    const f = fake();
+    const reset = 30 * 60_000;
+    const children = [issue("#2", ["epic"], null), issue("#6", [], null)];
+    f.tracker.openChildren = async (k: string) => (k === "#1" ? children : []);
+    const pool = f.tracker.poolIssue.bind(f.tracker);
+    f.tracker.poolIssue = async (k: string) => {
+      if (k === "#6") throw new TrackerRateLimited("github", reset, "limited");
+      if (k === "#2")
+        return { ...issue("#2", ["epic"], null), truncated: ["labels"] };
+      return pool(k);
+    };
+    const read = await readServedPickups(f.tracker, people, {
+      cache: f.cache,
+      nowMs: 1,
+      headroom: true,
+    });
+    expect(read.incomplete).toBe(true);
+    expect(read.unplaced).toContainEqual(
+      expect.objectContaining({
+        target: "#2",
+        reason: expect.stringContaining("cannot be read completely"),
+      }),
+    );
   });
   it("keeps metadata at the same updatedAt", async () => {
     const f = fake();
