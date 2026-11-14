@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Chapter, Withdrawn } from "../chapter.ts";
 import { baseData, namesFile } from "../base.ts";
+import { CHAPTERS } from "../chapters.ts";
 import { generate, stage } from "../generate.ts";
 import {
   cleanUp,
@@ -188,16 +189,34 @@ describe("the comparison with the integration branch", () => {
     );
   });
 
-  test("fails a value listed twice", () => {
-    const doubled = fixtureChapter({
-      values: [...VALUES, VALUES[0] as never],
-    });
-    const root = scratchRepo([fixtureChapter()], [doubled]);
-    expect(
-      check(root, [doubled]).problems.some((p) =>
-        p.includes("is listed more than once"),
-      ),
-    ).toBe(true);
+  test("fails a value listed twice whatever the chapter's status, with or without a breaking note", () => {
+    const doubled = (extra: Parameters<typeof fixtureChapter>[0]) =>
+      fixtureChapter({ values: [...VALUES, VALUES[0] as never], ...extra });
+    for (const chapter of [
+      doubled({}),
+      doubled({ status: "provisional" }),
+      doubled({ version: 2 }),
+    ]) {
+      const root = tempDir("doubled");
+      ok(root, "init", "-q");
+      layout(root, [chapter]);
+      expect(
+        generate({ root, chapters: [chapter], check: false }).findings.some(
+          (f) => f.problem.includes("is listed more than once"),
+        ),
+      ).toBe(true);
+    }
+  });
+
+  test("no chapter identifies a value by a nullable field, which a withdrawal would null", () => {
+    for (const chapter of CHAPTERS)
+      for (const [name, spec] of Object.entries(chapter.fields))
+        if (spec.identifies)
+          expect({
+            chapter: chapter.id,
+            name,
+            nullable: spec.nullable,
+          }).toEqual({ chapter: chapter.id, name, nullable: false });
   });
 
   test("fails a version lowered below the base's", () => {

@@ -123,6 +123,38 @@ function fieldFits(spec: FieldSpec, value: unknown): boolean {
   return typeOf(value) === spec.type;
 }
 
+/**
+ * What makes a chapter's identity unusable: no identifying field, or a value
+ * listed twice. Checked on every chapter as the code generates it, whatever
+ * its status or version, and never waived by a breaking note: a reader that
+ * selects the first match must meet the value the comparison saw.
+ */
+function identityFindings(chapter: Chapter, values: readonly DataValue[]) {
+  const file = chapterFile(chapter.id);
+  const remedy =
+    "list each value once: a reader selecting the first match must meet the value the comparison saw";
+  const identity = Object.entries(chapter.fields)
+    .filter(([, spec]) => spec.identifies)
+    .map(([name]) => name);
+  if (identity.length === 0)
+    return [
+      finding(file, "the chapter's fields name no identifying field", remedy),
+    ];
+  const out: Finding[] = [];
+  const seen = new Set<string>();
+  for (const v of values) {
+    const shown = identity
+      .map((f) => `${f} ${JSON.stringify(v[f] ?? null)}`)
+      .join(", ");
+    if (seen.has(shown))
+      out.push(
+        finding(file, `the value ${shown} is listed more than once`, remedy),
+      );
+    seen.add(shown);
+  }
+  return out;
+}
+
 function valueFindings(chapter: Chapter, values: readonly DataValue[]) {
   const file = chapterFile(chapter.id);
   const out: Finding[] = [];
@@ -282,6 +314,7 @@ function chapterOutputs(
     findings: [
       ...statusFindings(chapter, open),
       ...valueFindings(chapter, data.values),
+      ...identityFindings(chapter, data.values),
       ...markdown.findings,
     ],
     data,

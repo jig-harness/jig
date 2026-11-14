@@ -155,15 +155,15 @@ const FIELDS: Readonly<Record<string, FieldSpec>> = {
     type: "integer",
     nullable: true,
     required: true,
-    identifies: true,
+    identifies: false,
     description:
-      "The code drive-status.ts exits with for it; null when drive-status.ts never does.",
+      "The code drive-status.ts exits with for it; null when drive-status.ts never does. Not part of identity: a withdrawn code keeps its row with this null.",
   },
   driveExit: {
     type: "integer",
     nullable: true,
     required: true,
-    identifies: true,
+    identifies: false,
     description:
       "The code drive.ts ends with for it; null when drive.ts never does.",
   },
