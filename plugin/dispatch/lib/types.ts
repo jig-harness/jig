@@ -300,6 +300,8 @@ export type MarkedPr = MergedPr & {
 
 /** A record the tick could not read, or a part of one it cannot place. */
 export interface Unplaced {
+  /** Credential-isolated tracker scope, for one outage notice across repositories. */
+  scopeFailure?: string;
   target: string;
   record: RecordName;
   reason: string;

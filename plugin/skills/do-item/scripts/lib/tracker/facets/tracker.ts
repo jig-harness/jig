@@ -21,6 +21,7 @@ import {
 
 import { checkPriority } from "../requests.ts";
 import {
+  type DispatchSource,
   type CanonicalState,
   FACETS,
   type Facet,
@@ -96,6 +97,7 @@ export interface CoreFacetReport {
 export interface CoreTracker
   extends Omit<
     Tracker,
+    | "dispatchSource"
     | "getIssue"
     | "openIssues"
     | "openChildren"
@@ -109,6 +111,12 @@ export interface CoreTracker
     | "openPopulation"
     | "facetStores"
   > {
+  dispatchSource?: Omit<DispatchSource, "project"> & {
+    project(
+      raw: import("../port.ts").DispatchRawIssue,
+      options?: FacetReadOptions,
+    ): Promise<CorePoolIssue>;
+  };
   getIssue(key: string): Promise<CoreIssue | null>;
   openIssues(query: PoolQuery): Promise<CorePoolIssue[]>;
   openChildren(key: string): Promise<CorePoolIssue[]>;
@@ -184,6 +192,7 @@ export function withFacets(
 ): Tracker {
   const {
     openPopulation,
+    dispatchSource: _native,
     facetReport,
     poolIssues: _batch,
     queueIssues: _queue,
@@ -498,6 +507,20 @@ export function withFacets(
 
   return {
     ...rest,
+    ...(_native === undefined
+      ? {}
+      : {
+          dispatchSource: {
+            ..._native,
+            get shape() {
+              return _native.shape ?? "";
+            },
+            project: async (
+              raw: import("../port.ts").DispatchRawIssue,
+              options?: FacetReadOptions,
+            ) => withValues(await _native.project(raw, options)),
+          },
+        }),
     configKey:
       core.configKey === undefined
         ? JSON.stringify(facets)

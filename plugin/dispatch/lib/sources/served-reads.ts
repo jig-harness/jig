@@ -32,6 +32,11 @@
  *   the kept reading alone, any read it would send fails the same way, and
  *   the walk reports the limit once (`served.ts`).
  */
+import { cacheForTracker } from "./tracker-cache.ts";
+import { ended, within } from "./bounded.ts";
+import type { FacetBound } from "./tracker-facets.ts";
+import { failureText } from "../text.ts";
+import { nativeSharedView } from "./native-view.ts";
 import {
   isRateLimited,
   type TrackerRateLimited,
@@ -65,6 +70,7 @@ export interface HeldIssue {
 
 interface Snapshot {
   version: 1;
+  shape?: string;
   /** When the queue was last read whole or in part (the tick's clock). */
   readAt: number;
   /** When the reading was last taken whole. */
@@ -82,16 +88,28 @@ export type ViewSource = "kept" | "unchanged" | "changed" | "full" | "offline";
 /** What the walk reads through. */
 export interface ServedView {
   readonly source: ViewSource;
+  readonly scope?: string;
+  readonly bound?: FacetBound;
+  /** A shared transport failure, with the kept reading still available. */
+  readonly unavailable?: string | undefined;
   /** The refusal that left the view offline; `null` when it is online. */
   readonly limited: TrackerRateLimited | null;
   /** When the reading the view holds was taken. */
   readonly readAt: number;
   /** The assigned issues in the open states and the `blocked` state (the dispatch's queue). */
   open(): HeldIssue[];
+  /** Every projected native row, before the served queue narrows its states. */
+  all?(): PoolIssue[];
   /** The assigned issues in progress. */
   progress(): PoolIssue[];
   /** One issue by key, from the tick's reads or in the next batch. */
   pool(key: string): Promise<PoolIssue | null>;
+  raw?(
+    key: string,
+  ): Promise<
+    | import("../../../skills/do-item/scripts/lib/tracker/port.ts").DispatchRawIssue
+    | null
+  >;
   /** What the queue read carried of an issue: its relations and parent. */
   held(key: string): HeldIssue | undefined;
   /** The parent the queue read carried with its description, by the parent's key. */
@@ -283,7 +301,7 @@ async function readPooled(tracker: Tracker, batch: Batch): Promise<void> {
 function loader(
   tracker: Tracker,
   memo: Map<string, Promise<PoolIssue | null>>,
-  refusal: () => TrackerRateLimited | null,
+  refusal: () => unknown | null,
   gate: Gate,
   carry: Carry,
 ) {
@@ -327,12 +345,14 @@ function loader(
 }
 
 interface Plan {
+  bound?: FacetBound;
   source: ViewSource;
   snapshot: Snapshot | null;
   /** Keys whose kept reading no longer holds. */
   stale: ReadonlySet<string> | "all";
   since: string;
   limited: TrackerRateLimited | null;
+  unavailable?: string;
 }
 
 /** Whether the kept reading serves, needs part re-read, or must be taken whole. */
@@ -401,6 +421,56 @@ function offlineView(
   });
 }
 
+/** A scope failure refuses every missing fact alike, without another request. */
+function offlineReason(p: Plan): unknown | null {
+  if (ended(p.bound)) return new Error("stopped at the tick’s deadline");
+  if (p.limited !== null) return p.limited;
+  return p.unavailable === undefined ? null : new Error(p.unavailable);
+}
+
+function factReader(p: Plan, gate: Gate): ServedView["once"] {
+  const reads = new Map<string, Promise<unknown>>();
+  return <T>(key: string, read: () => Promise<T>): Promise<T> => {
+    let kept = reads.get(key) as Promise<T> | undefined;
+    if (kept === undefined) {
+      kept =
+        p.source === "offline" || ended(p.bound)
+          ? Promise.reject(
+              offlineReason(p) ?? new Error("the tracker is offline"),
+            )
+          : p.bound === undefined
+            ? gate(read)
+            : within(gate(read), p.bound);
+      reads.set(key, kept);
+    }
+    return kept;
+  };
+}
+
+/** Seed one view from unchanged pool rows and the fresher assigned queue. */
+function seedReading(
+  p: Plan,
+  open: HeldIssue[],
+  progress: PoolIssue[],
+  remember: (key: string, value: PoolIssue | null) => void,
+  held: Map<string, HeldIssue>,
+  parents: Map<string, QueueParent>,
+): void {
+  const kept = p.snapshot;
+  if (kept !== null && p.stale !== "all")
+    for (const [key, value] of Object.entries(kept.pool))
+      if (!p.stale.has(key)) remember(key, value);
+  for (const h of open) {
+    held.set(h.issue.identifier, h);
+    remember(h.issue.identifier, h.issue);
+    if (h.parent) {
+      parents.set(h.parent.issue.identifier, h.parent);
+      remember(h.parent.issue.identifier, h.parent.issue);
+    }
+  }
+  for (const issue of progress) remember(issue.identifier, issue);
+}
+
 function assemble(
   tracker: Tracker,
   p: Plan,
@@ -417,25 +487,14 @@ function assemble(
     resolved.set(key, value);
     memo.set(key, Promise.resolve(value));
   };
-  if (kept !== null && p.stale !== "all")
-    for (const [key, value] of Object.entries(kept.pool))
-      if (!p.stale.has(key)) remember(key, value);
   const held = new Map<string, HeldIssue>();
   const parents = new Map<string, QueueParent>();
-  for (const h of open) {
-    held.set(h.issue.identifier, h);
-    remember(h.issue.identifier, h.issue);
-    if (h.parent) {
-      parents.set(h.parent.issue.identifier, h.parent);
-      remember(h.parent.issue.identifier, h.parent.issue);
-    }
-  }
-  for (const issue of progress) remember(issue.identifier, issue);
+  seedReading(p, open, progress, remember, held, parents);
   const gate = semaphore(IN_FLIGHT);
   const load = loader(
     tracker,
     memo,
-    () => p.limited,
+    () => offlineReason(p),
     gate,
     (key, h) => {
       // What the queue read carried of an issue is the fresher reading.
@@ -447,10 +506,11 @@ function assemble(
       }
     },
   );
-  const reads = new Map<string, Promise<unknown>>();
   const readAt = queue === undefined ? (kept?.readAt ?? 0) : nowMs;
   return {
     source: p.source,
+    ...(p.bound === undefined ? {} : { bound: p.bound }),
+    ...(p.unavailable === undefined ? {} : { unavailable: p.unavailable }),
     limited: p.limited,
     readAt,
     open: () => open,
@@ -462,14 +522,7 @@ function assemble(
     },
     held: (key) => held.get(key),
     parentBody: (key) => parents.get(key),
-    once<T>(key: string, read: () => Promise<T>): Promise<T> {
-      let kept = reads.get(key) as Promise<T> | undefined;
-      if (kept === undefined) {
-        kept = gate(read);
-        reads.set(key, kept);
-      }
-      return kept;
-    },
+    once: factReader(p, gate),
     save() {
       if (save === undefined) return;
       save({
@@ -485,9 +538,11 @@ function assemble(
   };
 }
 
+const credentialScopes = new WeakMap<Tracker, string>();
+
 /** Names the tracker an issue key belongs to: the adapter, its instance and its team. */
 export function trackerScope(tracker: Tracker): string {
-  return `${tracker.adapter}:${tracker.instance ?? ""}:${tracker.team}`;
+  return `${tracker.adapter}:${tracker.instance ?? ""}:${tracker.team}${credentialScopes.has(tracker) ? `:${credentialScopes.get(tracker)}` : ""}`;
 }
 
 /**
@@ -510,22 +565,43 @@ export function poolScope(tracker: Tracker): string {
   return `${trackerScope(tracker)}#${configIdentity(tracker)}#${tracker.readinessKey ?? ""}`;
 }
 
+/** The saved dependencies of one native person queue, for the scope's combined probe. */
+function savedProbe(
+  tracker: Tracker,
+  identity: string,
+  cache: PickupReads,
+): { since: string; keys: string[] } | null {
+  const key = `${tracker.adapter}:${tracker.team}:queue:${identity}:${configIdentity(tracker)}`;
+  const snapshot = snapshotOf(cache.get<unknown>(key));
+  return snapshot === null
+    ? null
+    : { since: snapshot.since, keys: watched(snapshot) };
+}
+
 /** The view of one tracker, team and person for this tick. */
 async function openView(
   tracker: Tracker,
   identity: string,
-  options: { nowMs: number; headroom: boolean },
+  options: {
+    nowMs: number;
+    headroom: boolean;
+    bound?: FacetBound;
+    scopeIdentities?: readonly string[];
+  },
   cache: PickupReads,
+  shape?: string,
 ): Promise<ServedView> {
   const key = `${tracker.adapter}:${tracker.team}:queue:${identity}:${configIdentity(tracker)}`;
-  const kept = snapshotOf(cache.get<unknown>(key));
-  const save = (s: Snapshot) => cache.set(key, s);
+  const previous = snapshotOf(cache.get<unknown>(key));
+  const kept = previous?.shape === shape ? previous : null;
+  const save = (s: Snapshot) =>
+    cache.set(key, { ...s, ...(shape === undefined ? {} : { shape }) });
   let p: Plan;
   try {
     p = await plan(tracker, identity, kept, options.nowMs, options.headroom);
+    if (options.bound !== undefined) p.bound = options.bound;
   } catch (error) {
-    if (isRateLimited(error)) return offlineView(tracker, kept, error);
-    throw error;
+    return failedView(tracker, kept, error);
   }
   if (p.source === "kept" || p.source === "unchanged")
     return assemble(tracker, p, undefined, save, options.nowMs);
@@ -533,19 +609,57 @@ async function openView(
     const queue = await readQueue(tracker, identity);
     return assemble(tracker, p, queue, save, options.nowMs);
   } catch (error) {
-    if (isRateLimited(error)) return offlineView(tracker, kept, error);
-    throw error;
+    return failedView(tracker, kept, error);
   }
 }
 
+/** The view of a queue whose read failed: offline when rate limited, else unavailable. */
+function failedView(
+  tracker: Tracker,
+  kept: Snapshot | null,
+  error: unknown,
+): ServedView {
+  return isRateLimited(error)
+    ? offlineView(tracker, kept, error)
+    : unavailableView(tracker, kept, error);
+}
+
+/** The view of a queue whose read failed for a reason other than a rate limit. */
+function unavailableView(
+  tracker: Tracker,
+  kept: Snapshot | null,
+  error: unknown,
+): ServedView {
+  return assemble(tracker, {
+    source: "offline",
+    snapshot: kept,
+    stale: new Set(),
+    since: kept?.since ?? "",
+    limited: null,
+    unavailable: failureText(error),
+  });
+}
+
 /** The tick's view for `tracker` and `identity`, opened once and shared. */
-export function sharedView(
+export async function sharedView(
   views: ServedViews | undefined,
   tracker: Tracker,
   identity: string,
-  options: { nowMs: number; headroom: boolean },
+  options: {
+    nowMs: number;
+    headroom: boolean;
+    bound?: FacetBound;
+    scopeIdentities?: readonly string[];
+  },
   cache: PickupReads,
 ): Promise<ServedView> {
+  cache = cacheForTracker(tracker, cache);
+  if (tracker.dispatchSource !== undefined)
+    return nativeSharedView(views, tracker, identity, options, cache, {
+      open: openView,
+      probe: savedProbe,
+      credential: (tracker, key) => credentialScopes.set(tracker, key),
+    });
   if (views === undefined) return openView(tracker, identity, options, cache);
   const key = `${tracker.adapter}:${tracker.team}:${identity}:${configIdentity(tracker)}`;
   let view = views.get(key);
