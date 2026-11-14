@@ -782,7 +782,8 @@ chapters rendered on the site. Built in steps, one pull request each;
 built so far: the generator, its gate, the chapter on the drive's end
 states and exit codes, and the chapters on the drive mailbox, on the
 pull-request labels and on the commands a repository supplies
-([plugin/protocol/](../plugin/protocol/README.md)).
+([plugin/protocol/](../plugin/protocol/README.md)), and the site's pages
+for the chapters at `/protocol/`.
 Open, in order: the other stable chapters, their schemas, their
 restatements as links and the provisional chapters.
 
@@ -1401,7 +1402,8 @@ per step:
   Validate its weekly job through the installed command before starting
   the later kinds. Worktree collection stays disabled until this
   integration, except for a worktree Orca manages, which `jig gc` collects
-  through Orca.
+  through Orca, and a worktree an agent tool makes under the clone's
+  `.claude/worktrees/`, which it collects with git.
 - **Containers, volumes and images**, keyed to the compose projects the
   worktrees derive, and the machine-level dangling images and build cache.
 - **Branches** merged as the forge records it (squash merges included) or
@@ -1532,7 +1534,7 @@ conditions for considering a tap without adopting one ahead of that evidence.
   - a hook on a server's host runs as one SSH command under the call's
     deadline, with nothing from Jig there to supervise it: a hook that
     outlives the deadline, or starts a child that outlives it, is left to
-    the host, where on a machine the Herdr tool's supervisor ends the hook's
+    the host, where on a machine the shared supervisor ends the hook's
     whole process group. Supervise it there too, once what the host must
     provide is decided: `bun` for the shared supervisor, as the Herdr tool
     asks of its hosts, or a supervisor in the host's own shell;
