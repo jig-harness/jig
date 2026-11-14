@@ -17,4 +17,4 @@ release: patch
   that lacks a facet's field, naming the issue types whose filing fails. An
   epic issue type (`issue_tracker.labels.epic_types`) is not checked for a
   size, which it is never asked. Such a gap does not stop `file-issue`'s
-  weekly sweep or `check-fields.ts move`, which change existing issues.
+  weekly sweep, which changes existing issues.
