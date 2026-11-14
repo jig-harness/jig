@@ -15,11 +15,13 @@ const SECRET_KEY =
 const QUOTED = `(?:"(?:[^"\\\\]|\\\\.|"")*"|'(?:[^'\\\\]|\\\\.|'')*')`;
 
 /**
- * A bracketed value, whitespace included, and any text run on after its
- * closing bracket: a password may contain brackets, so the value ends at the
- * next whitespace, not at the first `]`. An unclosed bracket takes its line.
+ * A bracketed value: a run of bracket groups (whitespace allowed inside one,
+ * an unclosed one taking its line) and non-whitespace text between and after
+ * them. A password may contain any number of brackets, so the value ends at
+ * the next whitespace outside a bracket group, never at a `]`.
  */
-const BRACKETED = "\\[[^\\]\\n]*\\]?[^\\s,}\\]]*";
+const BRACKET_GROUP = "\\[[^\\]\\n]*\\]?";
+const BRACKETED = `${BRACKET_GROUP}(?:${BRACKET_GROUP}|[^\\s,}\\[])*`;
 
 /** Replace every credential-shaped value in `text` with `mark`. */
 export function maskCredentials(text: string, mark: string): string {
