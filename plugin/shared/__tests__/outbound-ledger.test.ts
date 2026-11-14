@@ -158,6 +158,7 @@ test("a locked ledger discards accounting without delaying the outbound caller",
     cost: 1,
     durationMs: 1,
   });
+  closeDatabase(p);
   const lock = new Database(p);
   try {
     lock.exec("BEGIN IMMEDIATE");

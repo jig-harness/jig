@@ -126,7 +126,11 @@ export function recordCall(input: CallRecord): void {
       return;
     }
     const path = input.path ?? context.getStore()?.path ?? defaultLedgerPath();
-    const opened = openDatabase({ path, migrations: BUDGET_MIGRATIONS });
+    const opened = openDatabase({
+      path,
+      migrations: BUDGET_MIGRATIONS,
+      busyMs: 0,
+    });
     if (!opened.ok) {
       swallow(opened.failure, "the outbound cost ledger");
       return;
