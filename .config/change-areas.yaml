@@ -584,6 +584,7 @@ areas:
       - "plugin/CONFIGURATION.md"
       - "plugin/EXTENDING.md"
       - "plugin/MECHANISMS.md"
+      - "plugin/protocol/**"
       - "plugin/skills/*/SKILL.md"
       - "plugin/skills/*/README.md"
       - "plugin/skills/audit/**"
