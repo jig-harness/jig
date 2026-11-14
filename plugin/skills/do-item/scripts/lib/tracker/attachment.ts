@@ -10,7 +10,7 @@
  * tracker can hold the file in none of those ways, `attachFile` throws
  * `AttachmentRefused` and writes nothing.
  */
-import { isRateLimited } from "../../../../../shared/tracker-budget.ts";
+import { isRateLimited } from "../../../../../shared/outbound/budget.ts";
 
 /** A file to attach to an issue. */
 export interface AttachmentFile {
