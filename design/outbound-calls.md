@@ -223,26 +223,16 @@ was sent: the caller reads the item again before it writes again.
 
 ## Build order
 
-One pull request per step. Steps 3 to 6 change the same transport files and
-are built in that order.
+One pull request per remaining step. GitHub's budget and reuse change the
+same transport files and are built in that order.
 
-1. **A page that shrinks.** `paging`, and the dispatcher's pull-request
-   read through it.
-2. **The rule.** ADR-0021, the rule in `AGENTS.md`, this design.
-3. **Failure classes and one retry.** `failure` and `retry`, which keep
-   one retry for a read (the moved `tracker/read-retry.ts` permits three);
-   the tracker
-   transports and the forge client's wrapper return the classes; the tick
-   and the passes follow the policies above.
-4. **The ledger and the reports.** `ledger`; `budget` moved into the
-   library; the tick's line, `jig budget`, the low-quota need.
-5. **GitHub in the budget record.** Its profile; the wrapper admits and
+- **GitHub in the budget record.** Its profile; the wrapper admits and
    observes; the tick's own budget read goes.
-6. **Reuse.** Move the existing queue snapshots and assignment caches into
+- **Reuse.** Move the existing queue snapshots and assignment caches into
    `cache`, `coalesce` and `batch`. The remaining reads adopt the library:
    the deferral script's tracker calls through the adapter, and the nested
    page sizes of the issue and ledger queries.
-7. **The gates and the lens.**
+- **The gates and the lens.**
 
 ## Left out
 
