@@ -47,7 +47,7 @@ import {
   ok,
   type Outcome,
 } from "../../../shared/outcome.ts";
-import { readFailureOf } from "../read-failures.ts";
+import { combinedFailure, readFailureOf } from "../read-failures.ts";
 import { failureText } from "../text.ts";
 import {
   type FacetBound,
@@ -669,8 +669,10 @@ export async function readPickups(
 /**
  * The aggregate record with the served lane's reading in it: a served queue
  * that failed to read makes the record not ok, with the failure's class, so
- * settlement treats it as it does the identity's own failed read. A failure
- * the record already carries is kept.
+ * settlement treats it as it does the identity's own failed read. The record
+ * keeps one failure for the identity's read and every failed served read
+ * (`combinedFailure`), so it waits only when every one of them clears by
+ * waiting.
  */
 function servedRead(
   read: TrackerReading["read"],
@@ -678,16 +680,18 @@ function servedRead(
 ): TrackerReading["read"] {
   const detail = `${read.detail}; ${extra.wanted.length} served pickup(s)`;
   if (extra.incomplete !== true) return { ...read, detail };
-  const cause = extra.failureCause;
-  const failure =
-    read.failure ??
-    (cause === undefined
-      ? undefined
-      : readFailureOf({
-          code: "unreadable",
-          reason: failureText(cause),
-          cause,
-        }));
+  const failure = combinedFailure([
+    ...(read.ok ? [] : [read.failure]),
+    ...(extra.failures ?? []).map((cause) =>
+      cause === undefined
+        ? undefined
+        : readFailureOf({
+            code: "unreadable",
+            reason: failureText(cause),
+            cause,
+          }),
+    ),
+  ]);
   return {
     ...read,
     ok: false,

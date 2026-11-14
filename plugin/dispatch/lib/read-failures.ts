@@ -53,6 +53,29 @@ export function readFailureOf(failure: Failure): ReadFailure | undefined {
 }
 
 /**
+ * The one failure a record keeps for several failed reads, `undefined` when
+ * one of them has no class: a failure waiting does not clear is kept over
+ * one that does (so the record is not waited out, and a refused credential
+ * is still told at once), and of failures that all clear by waiting, one
+ * that counts in the failure ledger over a rate limit, else the later reset.
+ */
+export function combinedFailure(
+  failures: readonly (ReadFailure | undefined)[],
+): ReadFailure | undefined {
+  const known = failures.filter((f): f is ReadFailure => f !== undefined);
+  const stuck = known.find((f) => !clearsByWaiting(f.class));
+  if (stuck !== undefined) return stuck;
+  if (known.length < failures.length) return undefined;
+  const counted = known.find((f) => f.class !== "rate-limited");
+  if (counted !== undefined) return counted;
+  return known.reduce<ReadFailure | undefined>(
+    (late, f) =>
+      late === undefined || (f.until ?? "") > (late.until ?? "") ? f : late,
+    undefined,
+  );
+}
+
+/**
  * The failed reads of a repository's turn when every one of them waits: a
  * refusal or a record a failed call of a class that clears by waiting
  * caused. `null` when the turn did not fail, or something in it failed

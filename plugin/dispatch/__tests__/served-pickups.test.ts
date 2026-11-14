@@ -111,6 +111,26 @@ describe("served pickups", () => {
     expect(read.read.failure).toMatchObject({ class: "unreachable" });
     expect(read.claimed).toBeNull();
   });
+  it("keeps the class of a child read that failed after the queue read", async () => {
+    const f = fake();
+    const poolIssue = f.tracker.poolIssue.bind(f.tracker);
+    f.tracker.poolIssue = async (k: string) => {
+      if (k === "#2")
+        throw Object.assign(new Error("tracker timed out"), {
+          name: "TimeoutError",
+        });
+      return poolIssue(k);
+    };
+    const read = await readPickups(
+      () => f.tracker,
+      { identity: null } as DispatchSection,
+      undefined,
+      { people, cache: f.cache, nowMs: 1, headroom: true },
+    );
+    expect(read.read.ok).toBe(false);
+    expect(read.read.failure).toMatchObject({ class: "unreachable" });
+    expect(read.claimed).toBeNull();
+  });
   it("carries a tracker namespace through the public reader", async () => {
     const f = fake();
     const read = await readPickups(

@@ -12,6 +12,7 @@ import {
 } from "../../shared/outbound/failure.ts";
 import { failed } from "../../shared/outcome.ts";
 import {
+  combinedFailure,
   keepForgeReading,
   lastForgeReading,
   readFailureOf,
@@ -117,5 +118,32 @@ describe("the forge's last reading", () => {
     expect(lastForgeReading("/r", NOW, store)).toBe(
       "; the last reading, of 2026-11-13T10:30:00.000Z (90m old): 2 open pull request(s)",
     );
+  });
+});
+
+describe("combinedFailure", () => {
+  it("keeps a failure waiting does not clear over one that does", () => {
+    expect(
+      combinedFailure([{ class: "unreachable" }, { class: "unauthorized" }]),
+    ).toEqual({ class: "unauthorized" });
+  });
+  it("keeps no class when a failed read has none", () => {
+    expect(
+      combinedFailure([{ class: "unreachable" }, undefined]),
+    ).toBeUndefined();
+  });
+  it("prefers a failure that counts over a rate limit, else the later reset", () => {
+    const early = {
+      class: "rate-limited",
+      until: "2026-11-13T12:00:00.000Z",
+    } as const;
+    const late = {
+      class: "rate-limited",
+      until: "2026-11-13T13:00:00.000Z",
+    } as const;
+    expect(combinedFailure([early, { class: "server-fault" }])).toEqual({
+      class: "server-fault",
+    });
+    expect(combinedFailure([early, late])).toEqual(late);
   });
 });
