@@ -124,7 +124,7 @@ function framingLines(record: Pick<LaunchRecord, "id" | "token">): string[] {
  * tasks off (`NO_BACKGROUND_TASKS`); this rule is a Codex pass's only one.
  */
 const FOREGROUND_LINE =
-  "This pass has no next turn: a background task or agent still running when your turn ends is lost with it, and nothing reports its result. Run every long step (a long command, a subagent) in the foreground and wait for it in the same turn. When you wait on another agent, bound the wait; when it stops or goes quiet without reporting, carry on without it or record how the pass ended, and never wait out the deadline.";
+  "This pass has no next turn: a background task or agent still running when your turn ends is lost with it, and nothing reports its result. Run every long step (a long command, a subagent) in the foreground and wait for it in the same turn. When you wait on another agent, bound the wait; when it stops or goes quiet without reporting, retry or replace it, or record that its work did not happen (a required review is not discharged by silence), and never wait out the deadline.";
 
 /**
  * Why a pickup pushes before it validates: a deadline or an interrupted
@@ -132,7 +132,7 @@ const FOREGROUND_LINE =
  * request; that still waits for validation and review.
  */
 const PUSH_BEFORE_VALIDATION_LINE =
-  "Once the branch holds committed work, push the branch before a long validation step (the gates, a full test run), and again after each later commit, so a deadline or an interrupted validation cannot strand that work on this host. Push the way the skill's push step does, rewording unpushed commits to the configured commit prefix first, since a pushed commit is never reworded. A push the repository's pre-push hook refuses is no stop: go on with validation, fix what it found and push after it. Pushing opens no pull request: that still waits for validation and the pre-PR review.";
+  "Once the branch holds committed work, push the branch before a long validation step (the gates, a full test run), and again after each later commit, so a deadline or an interrupted validation strands less on this host. Where the repository's instructions require validation before every push, they win: skip the early push. Push the way the skill's push step does, rewording unpushed commits to the configured commit prefix first, since a pushed commit is never reworded. A push the repository's pre-push hook refuses is no stop: go on with validation, fix what it found and push after it. Pushing opens no pull request: that still waits for validation and the pre-PR review.";
 
 /**
  * A person's answer to the decision an earlier session of this target

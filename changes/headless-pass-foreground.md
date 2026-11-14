@@ -10,5 +10,7 @@ release: patch
   (`CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`), as the drive's passes already
   were, and each pass's prompt says to keep long steps in the foreground and
   bound every wait on another agent. A pickup's prompt also says to push
-  committed work before a long validation step, so a deadline or an
-  interrupted gates run no longer leaves finished commits on the host only.
+  committed work before a long validation step, unless the repository
+  requires validation before every push. That cuts the chance a deadline or
+  an interrupted gates run leaves finished commits on the host only; a push
+  the pre-push hook refuses still waits for validation.

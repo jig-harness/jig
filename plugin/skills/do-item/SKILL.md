@@ -1351,7 +1351,10 @@ implementation. Skip this check for issues about the repository's own code.
         background execution; Claude Code uses Bash `run_in_background`,
         Codex uses `exec_command` with a short `yield_time_ms` and retains
         `session_id` for `write_stdin`). If neither tool is exposed, treat
-        this as `print` and name the limitation. Otherwise spawning is mandatory: an emitted but unspawned command reintroduces the
+        this as `print` and name the limitation. A [dispatched pass](#dispatched-passes)
+        runs with background tasks off, so it treats `spawn` as `print`: it
+        records the result with the pull request and the unstarted command,
+        and says the drive is unarmed. Otherwise spawning is mandatory: an emitted but unspawned command reintroduces the
         human-memory delay this step removes, and a `hitl` issue cleared
         this run is no reason to withhold it. In Claude Code, pass the Bash call's `timeout`
         of `28800000` (8 hours) with `run_in_background`: in an unattended
@@ -1919,11 +1922,14 @@ report. In such a pass:
   when its turn ends is lost with it, so run every long step (the
   implementer, a reviewer, the gates) in the foreground and wait for it in
   the same turn, and bound every wait on another agent: one that stops
-  without reporting is carried on without, never waited on until the
-  deadline. A Claude Code pass runs with background tasks off. Once the
+  without reporting is retried or replaced, or its failure is recorded, and
+  is never waited on until the deadline. A review the skill requires is not
+  discharged by an agent's silence: run it another way, or record that it
+  did not happen. A Claude Code pass runs with background tasks off. Once the
   branch holds committed work, push it before a long validation step and
   after each later commit, so a deadline or an interrupted run strands
-  nothing on the host. Each such push is the push step of
+  less on the host. Where the repository's instructions require validation
+  before every push, they win and the early push is skipped. Each such push is the push step of
   [Step 4a](#step-4a-standard-start-no-sub-issues): `commit-prefix.ts`
   first when `pull_requests.commit_prefix` is set, since a pushed commit is
   never reworded. A push the repository's pre-push hook refuses is no stop:
