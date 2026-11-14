@@ -78,6 +78,7 @@ function dispatchTable(
 }
 
 export const DRIVE_STATE: RecordKind[] = [
+  // Optional ciActions telemetry is a bounded top-level tail, ignored by older readers.
   driveTable(
     "drive-state",
     `${STATE}store.ts`,

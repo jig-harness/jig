@@ -394,6 +394,65 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.238.0] - 2026-11-14
+
+### Added
+
+- `jig gc`'s `worktrees` kind now finds the worktrees Claude Code's agent
+  tool makes for isolated subagents under the clone's `.claude/worktrees/`,
+  without a `gc.worktree_roots` entry, and collects them with
+  `git worktree remove` once they are clean, idle past the guard, held by no
+  process and covered by a merged or closed pull request (or hold no commit
+  the base lacks). A tree it keeps on a branch names that branch and the
+  `git -C <tree> switch --detach` command that releases it. Before this
+  release those trees were never reported. A confirmed `worktrees` kind now
+  covers that directory without reinstalling, and scheduled runs remove the
+  trees that qualify on the collection day or under disk pressure: run
+  `jig gc --kind worktrees` to see which those are.
+
+## [0.237.2] - 2026-11-14
+
+### Fixed
+
+- `jig dispatch` opening an Orca workspace on this machine now runs the
+  repository's create hook under the same supervisor the workspace tools use:
+  the hook leads a process group of its own, and a hook that fails or
+  outlives its limit is ended with every process it started before its claim
+  is given back. Before, a failed hook's children (a dependency install, say)
+  could keep changing the worktree while the next open ran the hook again.
+  **Consumer action:** none.
+
+## [0.237.1] - 2026-11-14
+
+### Fixed
+
+- A drive retries failed workflow jobs once before spending a CI-repair pass. Repair allowances now belong to each head and failing check, so an earlier failure cannot exhaust another check's budget. Set `ci.rerun_failed_once: false` to disable the retry independently of repairs. Infrastructure failures keep their existing recovery path. **Consumer action:** none.
+
+## [0.237.0] - 2026-11-14
+
+### Added
+
+- The Jig Protocol has stable chapters on the drive mailbox and on the
+  pull-request labels, each with its data file in
+  `plugin/protocol/data/`. [The drive mailbox](plugin/protocol/mailbox.md):
+  the messages and directives a person or a tool may write to a running
+  drive and the acknowledgements it writes back, with every field of both
+  files' lines. [The pull-request labels](plugin/protocol/pr-labels.md):
+  the state labels a drive, a follow-up and the dispatcher's tick keep
+  current and the command labels a person adds. Both are generated from the
+  tables the mailbox's parser and the label projection read, so a program
+  that writes to a drive or filters by its labels reads the values the code
+  holds.
+- A stable chapter on
+  [the commands a repository supplies](plugin/protocol/repo-commands.md)
+  lists every setting whose value is a command Jig runs: who runs it, what
+  it is given and answers with, whether it runs under the command store's
+  rules or through a shell, its deadline and what changes it, and the exits
+  besides 0 its caller reads, with its data file. It is generated from one
+  table in `plugin/shared/repo-commands.ts`, which the preflight, the CI-log
+  read, code-stats' classify command, the changelog's `after_version` and
+  the reflection store's client take their deadlines and exits from.
+
 ## [0.236.2] - 2026-11-14
 
 ### Fixed
@@ -8273,7 +8332,11 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.236.2...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.238.0...HEAD
+[0.238.0]: https://github.com/jig-harness/jig/compare/v0.237.2...v0.238.0
+[0.237.2]: https://github.com/jig-harness/jig/compare/v0.237.1...v0.237.2
+[0.237.1]: https://github.com/jig-harness/jig/compare/v0.237.0...v0.237.1
+[0.237.0]: https://github.com/jig-harness/jig/compare/v0.236.2...v0.237.0
 [0.236.2]: https://github.com/jig-harness/jig/compare/v0.236.1...v0.236.2
 [0.236.1]: https://github.com/jig-harness/jig/compare/v0.236.0...v0.236.1
 [0.236.0]: https://github.com/jig-harness/jig/compare/v0.235.3...v0.236.0

@@ -28,6 +28,7 @@ const RRC = "skills/resolve-review-comments/scripts/";
 const REFLECT = "skills/reflect/scripts/";
 
 export const FORGE: RecordKind[] = [
+  // The ledger mirrors optional ciActions without extending the control-event vocabulary.
   {
     name: "drive-ledger",
     medium: "forge",
