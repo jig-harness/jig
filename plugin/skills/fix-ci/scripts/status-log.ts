@@ -28,14 +28,14 @@ import {
   withDefaultBranchTree,
 } from "../../../shared/repo-command.ts";
 
-/** The exit by which `ci.log_command` says the log no longer exists. */
-export const LOG_GONE_EXIT = 3;
+import {
+  DEFAULT_LOG_COMMAND_SECONDS,
+  LOG_COMMAND_TIMEOUT_ENV,
+  LOG_GONE_EXIT,
+} from "../../../shared/repo-commands.ts";
 
-/** Seconds one run of `ci.log_command` may take, unless the environment says otherwise. */
-export const DEFAULT_LOG_COMMAND_SECONDS = 300;
-
-/** The variable that overrides that deadline. */
-export const LOG_COMMAND_TIMEOUT_ENV = "JIG_FIX_CI_LOG_COMMAND_TIMEOUT_SEC";
+// The command's deadline and its log-gone exit live in the table of repository commands.
+export { DEFAULT_LOG_COMMAND_SECONDS, LOG_COMMAND_TIMEOUT_ENV, LOG_GONE_EXIT };
 
 const FIELD = "ci.log_command";
 

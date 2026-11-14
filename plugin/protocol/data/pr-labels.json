@@ -1,0 +1,98 @@
+{
+  "chapter": "pr-labels",
+  "title": "Pull-request labels Jig writes and reads",
+  "version": 1,
+  "status": "stable",
+  "fields": {
+    "kind": {
+      "type": "string",
+      "nullable": false,
+      "required": true,
+      "identifies": true,
+      "description": "state for a label that shows where a pull request's drive or follow-up stands, command for a label a person adds for the dispatcher to act on."
+    },
+    "name": {
+      "type": "string",
+      "nullable": false,
+      "required": true,
+      "identifies": true,
+      "description": "The label's name without the repository's prefix (dispatch.labels.prefix, jig: by default): a pull request carries the prefix followed by this name."
+    },
+    "writers": {
+      "type": "string",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "For a state label, who adds it, comma-separated: drive, followup (the follow-up of a merged pull request) and tick (the dispatcher's tick, which corrects every state label that disagrees with the pull request's drive ledger). Null for a command label, which only a person adds."
+    },
+    "meaning": {
+      "type": "string",
+      "nullable": false,
+      "required": true,
+      "identifies": false,
+      "description": "What the label says, as the label setup gives it as the label's description on the forge."
+    }
+  },
+  "values": [
+    {
+      "kind": "state",
+      "name": "driving",
+      "writers": "drive, tick",
+      "meaning": "A drive runs on this pull request, or the dispatcher re-arms the one that stopped"
+    },
+    {
+      "kind": "state",
+      "name": "converged",
+      "writers": "drive, tick",
+      "meaning": "The drive converged at the pull request's head: a person merges"
+    },
+    {
+      "kind": "state",
+      "name": "parked",
+      "writers": "drive, tick",
+      "meaning": "The drive stopped on something only a person settles"
+    },
+    {
+      "kind": "state",
+      "name": "stale",
+      "writers": "tick",
+      "meaning": "Its drive converged then went stale, or stopped or parked on a conflict: the dispatcher re-drives it"
+    },
+    {
+      "kind": "state",
+      "name": "held",
+      "writers": "tick",
+      "meaning": "Waits its turn in a serialized change area: the dispatcher drives it once it leads"
+    },
+    {
+      "kind": "state",
+      "name": "followed-up",
+      "writers": "followup, tick",
+      "meaning": "Merged, and its follow-up is done"
+    },
+    {
+      "kind": "state",
+      "name": "followup-failed",
+      "writers": "followup, tick",
+      "meaning": "Merged, and its follow-up failed: a person acts"
+    },
+    {
+      "kind": "command",
+      "name": "drive",
+      "writers": null,
+      "meaning": "A person asks the dispatcher to drive this pull request"
+    },
+    {
+      "kind": "command",
+      "name": "rearm",
+      "writers": null,
+      "meaning": "A person asks the dispatcher to re-arm a stopped drive in its existing tree"
+    },
+    {
+      "kind": "command",
+      "name": "hold",
+      "writers": null,
+      "meaning": "A person stands the dispatcher down from this pull request"
+    }
+  ]
+}

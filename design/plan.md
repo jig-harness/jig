@@ -779,10 +779,12 @@ and JSON Schemas for the shapes outside readers parse, held to the code by
 its `--check` in the generated-file inventory; the skills' restatements
 turned into links, or kept as held restatements the gate checks; and the
 chapters rendered on the site. Built in steps, one pull request each;
-built so far: the generator, its gate and the chapter on the drive's end
-states and exit codes ([plugin/protocol/](../plugin/protocol/README.md)).
+built so far: the generator, its gate, the chapter on the drive's end
+states and exit codes, and the chapters on the drive mailbox, on the
+pull-request labels and on the commands a repository supplies
+([plugin/protocol/](../plugin/protocol/README.md)).
 Open, in order: the other stable chapters, their schemas, their
-restatements as links, the provisional chapters, and the site's pages.
+restatements as links and the provisional chapters.
 
 Done when every stable and provisional chapter of the design is generated
 and gated, the site renders the chapters, and the
@@ -938,8 +940,8 @@ module at a time. The [epic](https://github.com/jig-harness/jig/issues/1019)
 holds this work.
 
 After the message design merges, file and prepare the design brief, then
-run an external Claude Design round. The person supplies the reference
-site with the brief and accepts the returned design. Only then change
+run an external Claude Design round without an outside reference site.
+The person accepts the returned design. Only then change
 README.md, FACTORY.md, FEATURES.md and the site together, including their
 parsers and tests. The design names what moves down a level and the
 Protocol's page routes; its generation and rendering belong to the
