@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { JIG_TAXONOMY } from "./github-fixtures.ts";
+import { TYPES } from "./jira-facet-fixtures.ts";
 import {
   type Call,
   issue,
@@ -9,25 +10,6 @@ import {
   routes,
   writes,
 } from "./jira-fixtures.ts";
-
-/** The project's issue types, as `GET issue/createmeta/ENG/issuetypes` returns them. */
-const TYPES = {
-  issueTypes: [
-    ["t0", "Epic", false, 1],
-    ["t1", "Bug", false, 0],
-    ["t2", "Story", false, 0],
-    ["t3", "Task", false, 0],
-    ["t4", "Sub-task", true, -1],
-  ].map(([id, name, subtask, hierarchyLevel]) => ({
-    id,
-    name,
-    subtask,
-    hierarchyLevel,
-  })),
-  startAt: 0,
-  maxResults: 100,
-  total: 5,
-};
 
 /** The site's fields, its issue types and its priorities. */
 const SITE = {
