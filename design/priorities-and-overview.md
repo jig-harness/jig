@@ -31,8 +31,13 @@ one versioned format, `priorities/v1`. Its envelope has `level` (`site`,
 `repository`, `individual`), `scope`, `revision`, `objectives`, `limits`
 and `peripheralFloor`. Each objective has a stable `id`, `class` (`core`,
 `tactical`, `peripheral`), `purpose`, a verifiable `endState`, `owner`,
-`epics` (tracker scope plus keys or label selectors), and either
-`capacityShare` or `capacityLimit`. Shares are rational fractions of objective-work starts; limits are integer
+exactly one of `epics` (tracker scope plus keys or label selectors) or `refs`
+(a list of objective references, each a `level`, `scope` and `id` naming an
+objective at another level), and either `capacityShare` or `capacityLimit`.
+A reference resolves against the latest valid revision of that level's
+record read for the same input snapshot, and the ranking pins the revision
+it used. A reference that names no objective, a cycle of references, or a
+record that cannot be read is incomplete input. Shares are rational fractions of objective-work starts; limits are integer
 simultaneous slots. A limit-only objective receives an equal part of the
 residual share after explicit shares at that level. With no limit-only
 objectives the residual is unreserved; it lends capacity to ready objectives
@@ -159,9 +164,15 @@ The shortlist is computed in this order:
 
 A start means a successful pickup claim, irrespective of eventual duration
 or outcome; shares distribute starts, not processor time or hours. Urgent and bug
-bypass starts are excluded from `N` and the objective counters. A completed
-launch releases its concurrency charge but keeps its weekly allocation charge. An unsuccessful claim consumes no charge; a successful
-claim records one immutable charge keyed by claim id. Replays count it once.
+bypass starts are excluded from `N` and the objective counters. A claim's
+concurrency charge is released once, idempotently, by claim id, on every
+terminal path: the launch completes, the launch fails, the claim is
+abandoned or its lease expires, or the tick finds a claim with no live
+launch after a crash and settles it. Each release keeps the weekly
+allocation charge. An unsuccessful claim consumes no charge; a successful
+claim records one immutable charge keyed by claim id in the registered
+`allocation_charge` table, written by the pickup claim path in the same
+step as the claim. Replays count it once.
 Changing shares does not rewrite historical charges. At a week boundary,
 set the next week's opening debt to
 `max(0, peripheralFloor * N - max(0, P - D0))`, capped at
@@ -227,7 +238,7 @@ class; timeout or no-result is handled by the existing stage recovery rule.
 There is no new resident process.
 
 Proposed registered tables are `progress_review_run`,
-`progress_review_finding`, and `file_draft`, with the same owner, retention,
+`progress_review_finding`, `file_draft` and `allocation_charge` (below), with the same owner, retention,
 export and schema registration discipline as [the records registry](../plugin/RECORDS.md).
 Findings have a stable fingerprint (kind, scope and targets), input revision,
 observed interval, structured facts and evidence references. Repeated runs
@@ -339,9 +350,10 @@ request as the same one, so a resend does not write twice, the key is built
 from the existing writer's identity.
 Each call meets the [governed transport](../GLOSSARY.md)'s obligations
 ([ADR-0021](../docs/adr/ADR-0021-outbound-calls-are-governed.md)) as ADR-0023
-applies them to a browser. The page reads the host's published forge and
-tracker balance through the read feed it already gets and sends nothing
-below the share the tick keeps; it obeys a rate-limit refusal until its
+applies them to a browser. The page reads the sending token's own forge and
+tracker balance, fresh and per resource, and sends nothing below the share
+the tick keeps (the host's published balance counts only for the same
+login); it obeys a rate-limit refusal until its
 reset and shows that time; it maps each answer to a failure class. A browser
 cannot reserve budget in the host's record or write to its cost ledger, so
 ADR-0023 records a scoped exception to ADR-0021 for those obligations and
@@ -358,7 +370,15 @@ Acts become sendable in this order:
 4. Approve or refuse a steward proposal: a new `steward-approval` record
    pins proposal id, digest revision, target revision and the person's
    choice. The tick re-reads its existing guards; approval never bypasses
-   them. A stale proposal is refused for a fresh review.
+   them. The browser writes it as a comment by the person on the pull
+   request or issue the proposal targets, in the structured-answer line
+   format (`steward-approval <proposal id>: approve` or `refuse`, the digest
+   and target revisions bound in the line); the tick reads it with the
+   comment read it already makes for answers, and a repeat of the same
+   proposal id and revisions counts once. The tick's next closing report
+   acknowledges it, applied or refused with the reason. A stale proposal is
+   refused for a fresh review. The record's medium, location, owner and
+   reader are registered in the records registry with step 4.
 5. Merge on desktop only, last, through the person's token, with the
    existing merge-ready predicate and a confirmation pinned to the head.
 
@@ -453,8 +473,12 @@ Every step is a separate shippable pull request. This design and its build
 order receive fresh-context critique and the person's review before step 1;
 the overview's visual design round follows this document and precedes UI work.
 
-1. **Record and rank, read-only.** Add the repository record schema, validator,
-   tracker snapshot contract, pure ranker and `priorities` skill. Prove equal
+1. **Record, account and rank.** Add the repository record schema, validator,
+   tracker snapshot contract, the `allocation_charge` table with the claim
+   path's charge and release writes and the weekly counters and opening debt
+   derived from it, the pure ranker (read-only over those inputs) and the
+   `priorities` skill. Prove charge once per claim id, release on every
+   terminal path, and equal
    input hashes give equal output, inherited rank, duplicate membership,
    unknown facets, urgent/bug bypass, cap intersection, peripheral debt and
    disagreement reports. Site fields are not required by the host.
@@ -471,12 +495,11 @@ the overview's visual design round follows this document and precedes UI work.
    sections, statuses, epic issue/PR pairs and clearable options. Test keyboard,
    touch, phone widths, stale/partial sources and distinct reference kinds.
 4. **Browser actions and unlock.** After pull request #891 merges, the
-   read feed carries the host's forge and tracker balance, and the
    physical-device probes above pass, implement actions in the
    stated order, GitHub first then Linear. Add the File draft and steward
    approval records and the ops-pending follow-up recheck. Test duplicate
    sends, changed heads, stale proposals, unauthorized acts, PRF absence,
-   expiry after suspension, refusal below the budget share, and phone
+   expiry after suspension, refusal below the budget share or on a stale balance, and phone
    refusal to merge or write over HTTP.
 5. **Hub level.** With the hub ([control plane design](control-plane.md),
    [ADR-0016](../docs/adr/ADR-0016-an-optional-hub-for-hosts-that-keep-authority.md)),
@@ -494,6 +517,8 @@ the overview's visual design round follows this document and precedes UI work.
 This design does not build ranking, the review stage, dashboard components or
 browser writes. It does not select a person's next item, change dispatch's
 start authority, grant the steward more remit, or settle the pass trust
-boundary. The visual brief and design round are subsequent work. Broader
-browser support is obtained by a usable PRF probe or stays read-only, never
-by weakening token protection. The hub remains optional.
+boundary. The visual brief and design round are subsequent work. A browser without
+a usable PRF result sends nothing while the unlock is on; the person's turning
+the unlock off, a setting they choose, keeps the token in plain local storage
+and the settings panel says so. Support is never obtained by moving the token
+there on the page's own. The hub remains optional.

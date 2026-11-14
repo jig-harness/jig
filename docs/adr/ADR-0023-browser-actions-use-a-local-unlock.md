@@ -37,8 +37,9 @@ when a [station](../../GLOSSARY.md) (a stage of the line, such as a pickup or
 a follow-up) other than the drive reads an answer from a comment, which
 these acts do. The dashboard's phone contract
 ([Phone scope and access](../../design/dispatch-dashboard.md#phone-scope-and-access))
-allows no phone write beyond that answer until "a separate phone design and
-proof of presence" exist. A phone is lost or lent more often than a desktop,
+allowed no phone write beyond that answer until a separate phone design
+and proof of presence existed; this record and the overview design are
+that design, and the section now says so. A phone is lost or lent more often than a desktop,
 and a token kept in plain local storage is readable by anyone who opens the
 browser.
 
@@ -125,21 +126,32 @@ included, as follows:
 
 1. **One door.** The page has one module per outside system, built from
    the shared library's parts that run in a browser (the failure classes,
-   deadlines, paging), and no other page code sends to that system.
-   Partly met: see the exception below.
+   deadlines, paging), and no other page code sends to that system. The
+   module builds each request's address from a fixed API origin for the
+   system's configured profile (the forge's or tracker's API host, over
+   HTTPS), never from a URL a record, a comment or a reference carries; it
+   refuses any other scheme or host before it attaches the token, and
+   follows no redirect (a redirect answer is `server-fault`). Partly met:
+   see the exception below.
 2. **Reuse before sending.** The reads that prepare a confirmation (the
    target's revision, a duplicate search) are made once and reused by the
    send. A write whose answer was lost is read back, never sent again
    blind. Met.
-3. **Admit before sending.** The page reads the forge's and the tracker's
-   balance from the host's [budget record](../../GLOSSARY.md), carried in
-   the read feed the page already gets, and refuses an act while the
-   balance is below the share the [tick](../../GLOSSARY.md) (one run of the
-   dispatcher) keeps for drives and people
-   (`load.forge_floor` for the forge) or the system has refused the
-   credential. It also obeys
-   the system's own rate-limit answer: a refusal holds every send until the
-   reset it names. A feed that carries no balance makes acts unsendable.
+3. **Admit before sending.** The balance that admits an act is the one of
+   the credential that sends it. The page reads the pasted token's own
+   balance from the system's rate-limit answers (the headers of each answer,
+   and the forge's free rate-limit read, per resource: core, search,
+   GraphQL) and refuses an act while it is below the share the
+   [tick](../../GLOSSARY.md) (one run of the dispatcher) keeps for drives
+   and people (`load.forge_floor` for the forge). The host's
+   [budget record](../../GLOSSARY.md), carried in the read feed, is a second
+   check only when it names the same signed-in login and resource as the
+   token; otherwise it is ignored, so another user's exhausted host
+   credential never blocks a person. Each balance carries the time it was
+   read and is used for at most five minutes; a stale or unreadable
+   balance, or a feed that has disconnected since publishing it, makes acts
+   unsendable until a fresh read. The page also obeys the system's own
+   rate-limit answer: a refusal holds every send until the reset it names.
    Partly met: see the exception below.
 4. **Bound what one call can cost.** Every call has a deadline; each act is
    one write (one per decision for a card of several), and every list read
@@ -163,7 +175,7 @@ for no other caller, these obligations are met as far as a browser can:
 - obligation 1: a system the page acts on has two doors, the host's
   transport and the page's module, because the host accepts no request and
   so cannot carry the page's calls;
-- obligation 3: admission is a read of the published balance, not a
+- obligation 3: admission is a read of the token's own balance, not a
   reservation in the budget record, so a person's act competes with the
   host's passes without holding a share;
 - obligation 5: the host's cost ledger never receives the page's counts.
@@ -218,8 +230,12 @@ above. No stronger proof of the author exists until item 40 lands.
 
 Not mechanically checkable until the acts are built. No decision-rules
 catalog exists in this repository. The implementation tests the refusal of
-a merge on a phone, of any send over plain HTTP, of a missing
-key-derivation result and of an act below the budget floor; expiry after a
+a merge on a phone, of any send over plain HTTP from a non-loopback
+origin (and, separately, of any phone write over plain HTTP, which the
+stricter phone rule forbids), of a request address built from a record's
+URL or reached by a redirect, of a missing key-derivation result, of an
+act below the budget floor and of one admitted on a stale balance or on
+another login's balance; expiry after a
 suspended tab resumes; a confirmation invalidated by a changed head; and
 that no plaintext token is stored while the unlock is on. Review checks
 that the page writes only through the existing request writers and its one

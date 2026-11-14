@@ -2740,6 +2740,17 @@ make, use the entry's term instead.
   repository or individual level. A mechanical ranker reads it with a tracker
   snapshot to propose a reproducible shortlist; a person picks from it.
   See [the design](design/priorities-and-overview.md).
+- **File draft** — the proposed record of an issue a progress review
+  suggests, prepared through the filing skill's checks (type, priority,
+  duplicates, scope) and kept with their evidence and age. It is not an issue
+  and reserves no tracker key; a person's File act rechecks it and only then
+  creates the issue as themselves
+  ([design](design/priorities-and-overview.md#actions-the-persons-browser-makes-one-write)).
+- **Steward approval** — the proposed record of a person's approval or refusal
+  of one steward proposal, pinned to the proposal id and its digest and target
+  revisions. It carries no authority beyond the tick's own guards: the tick
+  re-reads them before it applies anything, and a stale proposal is refused
+  ([design](design/priorities-and-overview.md#actions-the-persons-browser-makes-one-write)).
 - **Allocation owner** — the first objective matching an item at a priorities
   level. That objective alone counts the item's start for capacity and the
   peripheral floor; other matching objectives show it for reporting only.
