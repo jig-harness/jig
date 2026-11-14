@@ -889,3 +889,22 @@ describe("a Bearer credential at an Atlassian Cloud site", () => {
     expect(refused.retryAfterSec).toBe(7);
   });
 });
+
+describe("a failure's stalled body", () => {
+  it("is cancelled through its reader once the wait ends, and the request fails", async () => {
+    const { runner } = printing("one");
+    let cancelled = false;
+    const impl = (async (_url: unknown, _init?: RequestInit) =>
+      new Response(
+        new ReadableStream({
+          cancel() {
+            cancelled = true;
+          },
+        }),
+        { status: 400 },
+      )) as typeof fetch;
+    const t = httpTransport(GATEWAY, command(runner), impl);
+    expect((await failure(t(request))).status).toBe(400);
+    expect(cancelled).toBe(true);
+  });
+});

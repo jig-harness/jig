@@ -296,6 +296,37 @@ function answerBody(text: string, status: number, what: string): unknown {
 /** How long a failure's body is waited for: it only words the error, so a stalled one is let go. */
 const FAILURE_BODY_WAIT_MS = 1_000;
 
+/** A failure's body, read through a reader this owns: a stalled one is cancelled through it, which releases the stream. */
+async function failureBodyText(res: Response): Promise<string> {
+  if (res.body === null) return "";
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let text = "";
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const stalled = new Promise<"stalled">((resolve) => {
+    timer = setTimeout(() => resolve("stalled"), FAILURE_BODY_WAIT_MS);
+  });
+  const drain = async (): Promise<"done"> => {
+    for (;;) {
+      const chunk = await reader.read();
+      if (chunk.done) return "done";
+      text += decoder.decode(chunk.value, { stream: true });
+    }
+  };
+  const settled = drain();
+  try {
+    const outcome = await Promise.race([settled, stalled]);
+    if (outcome === "stalled") {
+      settled.catch(() => undefined);
+      await reader.cancel().catch(() => undefined);
+      return "";
+    }
+    return text + decoder.decode();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** The answer's body; one lost while reading fails a success, and is empty on a failure. */
 async function bodyText(
   res: Response,
@@ -304,16 +335,7 @@ async function bodyText(
 ): Promise<string> {
   try {
     if (res.ok) return await res.text();
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const stalled = new Promise<null>((resolve) => {
-      timer = setTimeout(() => resolve(null), FAILURE_BODY_WAIT_MS);
-    });
-    const text = await Promise.race([res.text(), stalled]).finally(() =>
-      clearTimeout(timer),
-    );
-    if (text !== null) return text;
-    await discardBody(res, signal);
-    return "";
+    return await failureBodyText(res);
   } catch (err) {
     if (cancelled(signal)) throw abortedError(signal, true);
     if (!res.ok) return "";
