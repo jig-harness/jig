@@ -928,9 +928,11 @@ request. With `only_labeled`, the dispatcher reads only the pull requests
 that carry a label of the set, which includes one a drive armed by hand
 has labelled `jig:driving`; `jig:hold` keeps such a pull request out. The labels must exist first, and no writer
 creates one: `jig dispatch labels [--repo <path>] [--yes]` lists the missing
-ones, the marker labels with them, with no job installed, and with `--yes`
-names each it created and lists the rest with the command a person who may
-create labels runs; `jig install dispatch --repo <path>` does the same
+ones, the marker labels with them, and the labels of the set whose
+description is not the one this release gives them, with no job installed,
+and with `--yes` names each it created or updated (the description only: a
+color a person chose stays) and lists the rest with the command a person who
+may create or edit labels runs; `jig install dispatch --repo <path>` does the same
 beside the timer. A label write the forge refuses is reported (in the
 receipt, or on the drive's or the command's output) and fails nothing, except
 `jig dispatch marker failed`, which exits `1` when it cannot write its enabled

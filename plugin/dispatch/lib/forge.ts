@@ -674,10 +674,16 @@ export async function editLabels(
   return edited.ok ? ok(undefined) : edited;
 }
 
-/** The names of every label the repository has. */
+/** One label the repository has, as the install compares it with the set. */
+export interface RepositoryLabel {
+  name: string;
+  description: string;
+}
+
+/** Every label the repository has, with its description (`""` for none). */
 export async function repositoryLabels(
   slug: string,
-): Promise<Outcome<string[], "unreadable">> {
+): Promise<Outcome<RepositoryLabel[], "unreadable">> {
   const out = await ghJson(
     [
       "label",
@@ -687,18 +693,34 @@ export async function repositoryLabels(
       "--limit",
       String(PR_LIMIT),
       "--json",
-      "name",
+      "name,description",
     ],
     "the label listing",
   );
   if (!out.ok) return out;
-  const names = labelNames(out.value, slug);
-  if (!names.ok) return names;
-  if (names.value.length >= PR_LIMIT)
+  const value = out.value;
+  if (
+    !Array.isArray(value) ||
+    value.some(
+      (l) =>
+        !isRecord(l) ||
+        typeof l.name !== "string" ||
+        (l.description !== undefined &&
+          l.description !== null &&
+          typeof l.description !== "string"),
+    )
+  )
+    return unreadable(`${slug}'s labels are unreadable`);
+  if (value.length >= PR_LIMIT)
     return unreadable(
       `${slug} has ${PR_LIMIT} or more labels, more than one read holds`,
     );
-  return names;
+  return ok(
+    value.map((l: Record<string, unknown>) => ({
+      name: l.name as string,
+      description: typeof l.description === "string" ? l.description : "",
+    })),
+  );
 }
 
 /** Create one label; `refused` with the forge's reason (no permission). */
@@ -721,6 +743,26 @@ export async function createLabel(
     "refused",
   );
   return created.ok ? ok(undefined) : created;
+}
+
+/** Set one label's description, leaving its color; `refused` with the forge's reason (no permission). */
+export async function describeLabel(
+  slug: string,
+  label: { name: string; description: string },
+): Promise<Outcome<void, "refused">> {
+  const edited = await gh(
+    [
+      "label",
+      "edit",
+      label.name,
+      "--repo",
+      slug,
+      "--description",
+      label.description,
+    ],
+    "refused",
+  );
+  return edited.ok ? ok(undefined) : edited;
 }
 
 /** A pull request's link when no read gave one: the forge is GitHub, read through `gh`. */
