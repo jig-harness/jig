@@ -6,108 +6,21 @@ import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts"
 import { writeFakeProgram } from "../../../lib/test-helpers/fake-program.ts";
 import { gitEnvironment } from "../git.ts";
 
-test.each(["requests", "requestByNumber", "requestsForCommit"])(
-  "%s reports a lookup abandoned at GH_CALL_TIMEOUT",
-  (lookup) => {
-    const root = mkdtempSync(join(tmpdir(), "gc-pr-deadline-"));
-    const bin = join(root, "bin");
-    mkdirSync(bin);
-    writeFakeProgram(
-      join(bin, "git"),
-      '#!/usr/bin/env bun\nconsole.log("https://github.com/team/repo.git");\n',
-    );
-    writeFakeProgram(
-      join(bin, "gh"),
-      "#!/usr/bin/env bun\nsetInterval(() => {}, 1000);\n",
-    );
-    const argument =
-      lookup === "requestByNumber"
-        ? 12
-        : lookup === "requestsForCommit"
-          ? "a".repeat(40)
-          : "topic";
-    const source = `import { ${lookup} } from ${JSON.stringify(resolve(import.meta.dir, "../kinds/worktree-git.ts"))};
-console.log(JSON.stringify(await ${lookup}(${JSON.stringify(root)}, "origin", ${JSON.stringify(argument)})));`;
-    const result = Bun.spawnSync(
-      [
-        process.execPath,
-        "--no-env-file",
-        `--config=${resolve(import.meta.dir, "../bunfig.toml")}`,
-        "-e",
-        source,
-      ],
-      {
-        cwd: root,
-        env: {
-          ...gitEnvironment(),
-          GH_CALL_TIMEOUT: "1",
-          PATH: `${bin}${delimiter}${process.env.PATH}`,
-        },
-        stdout: "pipe",
-        stderr: "pipe",
-        timeout: 5000,
-      },
-    );
-    expectSpawnExit(result, 0);
-    expect(JSON.parse(result.stdout.toString())).toMatchObject({
-      ok: false,
-      failure: {
-        code: "forge-unavailable",
-        reason: expect.stringContaining("deadline"),
-      },
-    });
-  },
-  20_000,
-);
+const LOOKUPS = ["requests", "requestByNumber", "requestsForCommit"] as const;
+type Lookup = (typeof LOOKUPS)[number];
 
-test.each(["requests", "requestByNumber", "requestsForCommit"])(
-  "%s fails as a value on an invalid GH_CALL_TIMEOUT",
-  (lookup) => {
-    const root = mkdtempSync(join(tmpdir(), "gc-pr-deadline-"));
-    const bin = join(root, "bin");
-    mkdirSync(bin);
-    writeFakeProgram(
-      join(bin, "git"),
-      '#!/usr/bin/env bun\nconsole.log("https://github.com/team/repo.git");\n',
-    );
-    const argument =
-      lookup === "requestByNumber"
-        ? 12
-        : lookup === "requestsForCommit"
-          ? "a".repeat(40)
-          : "topic";
-    const source = `import { ${lookup} } from ${JSON.stringify(resolve(import.meta.dir, "../kinds/worktree-git.ts"))};
-console.log(JSON.stringify(await ${lookup}(${JSON.stringify(root)}, "origin", ${JSON.stringify(argument)})));`;
-    const result = Bun.spawnSync(
-      [
-        process.execPath,
-        "--no-env-file",
-        `--config=${resolve(import.meta.dir, "../bunfig.toml")}`,
-        "-e",
-        source,
-      ],
-      {
-        cwd: root,
-        env: {
-          ...gitEnvironment(),
-          GH_CALL_TIMEOUT: "abc",
-          PATH: `${bin}${delimiter}${process.env.PATH}`,
-        },
-        stdout: "pipe",
-        stderr: "pipe",
-        timeout: 5000,
-      },
-    );
-    expectSpawnExit(result, 0);
-    expect(JSON.parse(result.stdout.toString())).toMatchObject({
-      ok: false,
-      failure: { code: "configuration" },
-    });
-  },
-  20_000,
-);
+const ARGUMENTS: Record<Lookup, number | string> = {
+  requests: "topic",
+  requestByNumber: 12,
+  requestsForCommit: "a".repeat(40),
+};
 
-test("a 422 diagnostic from a call that hung is a deadline, not an absent commit", () => {
+// Runs one lookup of worktree-git.ts in a subprocess whose `gh` is the given
+// fake program (none when omitted) and returns the Outcome it printed.
+function runLookup(
+  lookup: Lookup,
+  options: { gh?: string; ghCallTimeout: string },
+): unknown {
   const root = mkdtempSync(join(tmpdir(), "gc-pr-deadline-"));
   const bin = join(root, "bin");
   mkdirSync(bin);
@@ -115,12 +28,12 @@ test("a 422 diagnostic from a call that hung is a deadline, not an absent commit
     join(bin, "git"),
     '#!/usr/bin/env bun\nconsole.log("https://github.com/team/repo.git");\n',
   );
-  writeFakeProgram(
-    join(bin, "gh"),
-    '#!/usr/bin/env bun\nconsole.error("No commit found for SHA (HTTP 422)");\nsetInterval(() => {}, 1000);\n',
+  if (options.gh !== undefined) writeFakeProgram(join(bin, "gh"), options.gh);
+  const module = JSON.stringify(
+    resolve(import.meta.dir, "../kinds/worktree-git.ts"),
   );
-  const source = `import { requestsForCommit } from ${JSON.stringify(resolve(import.meta.dir, "../kinds/worktree-git.ts"))};
-console.log(JSON.stringify(await requestsForCommit(${JSON.stringify(root)}, "origin", ${JSON.stringify("a".repeat(40))})));`;
+  const call = `${lookup}(${JSON.stringify(root)}, "origin", ${JSON.stringify(ARGUMENTS[lookup])})`;
+  const source = `import { ${lookup} } from ${module};\nconsole.log(JSON.stringify(await ${call}));`;
   const result = Bun.spawnSync(
     [
       process.execPath,
@@ -133,7 +46,7 @@ console.log(JSON.stringify(await requestsForCommit(${JSON.stringify(root)}, "ori
       cwd: root,
       env: {
         ...gitEnvironment(),
-        GH_CALL_TIMEOUT: "1",
+        GH_CALL_TIMEOUT: options.ghCallTimeout,
         PATH: `${bin}${delimiter}${process.env.PATH}`,
       },
       stdout: "pipe",
@@ -142,7 +55,47 @@ console.log(JSON.stringify(await requestsForCommit(${JSON.stringify(root)}, "ori
     },
   );
   expectSpawnExit(result, 0);
-  expect(JSON.parse(result.stdout.toString())).toMatchObject({
+  return JSON.parse(result.stdout.toString());
+}
+
+const HANG = "setInterval(() => {}, 1000);\n";
+
+test.each(LOOKUPS)(
+  "%s reports a lookup abandoned at GH_CALL_TIMEOUT",
+  (lookup) => {
+    const outcome = runLookup(lookup, {
+      gh: `#!/usr/bin/env bun\n${HANG}`,
+      ghCallTimeout: "1",
+    });
+    expect(outcome).toMatchObject({
+      ok: false,
+      failure: {
+        code: "forge-unavailable",
+        reason: expect.stringContaining("deadline"),
+      },
+    });
+  },
+  20_000,
+);
+
+test.each(LOOKUPS)(
+  "%s fails as a value on an invalid GH_CALL_TIMEOUT",
+  (lookup) => {
+    const outcome = runLookup(lookup, { ghCallTimeout: "abc" });
+    expect(outcome).toMatchObject({
+      ok: false,
+      failure: { code: "configuration" },
+    });
+  },
+  20_000,
+);
+
+test("a 422 diagnostic from a call that hung is a deadline, not an absent commit", () => {
+  const outcome = runLookup("requestsForCommit", {
+    gh: `#!/usr/bin/env bun\nconsole.error("No commit found for SHA (HTTP 422)");\n${HANG}`,
+    ghCallTimeout: "1",
+  });
+  expect(outcome).toMatchObject({
     ok: false,
     failure: { code: "forge-unavailable" },
   });
