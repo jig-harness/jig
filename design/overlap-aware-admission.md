@@ -33,28 +33,30 @@ Admission today, in one repository's act phase
 ([dark-factory-dispatch.md § One tick, step by step](dark-factory-dispatch.md#one-tick-step-by-step)):
 the tick ranks the wanted pickups by rules as data, drops what a hold keeps
 out, and starts each next one on an account with a free slot, within the
-host's [load factor](../GLOSSARY.md). This design adds three facts and two
-rules to that walk:
+host's [load factor](../GLOSSARY.md). This design adds facts the tick
+reads and rules that order the walk:
 
 ```mermaid
 flowchart TD
-  Q[ranked pickups, holds applied<br/>person's hold, conflict edge, serialized area] --> C{{for each, in rank order}}
-  C --> V{validation capacity<br/>has room?}
-  V -->|no| WV[waits on validation capacity]
-  V -->|yes| B{overlap bound:<br/>a shared file already<br/>at its limit?}
-  B -->|yes| WB[waits on the overlap bound]
-  B -->|no| O{overlap cost 0,<br/>or patience spent?}
-  O -->|yes| S[start: an account slot<br/>and the load factor as today]
-  O -->|no| D[deferred to the tick's second pass]
-  D --> P[second pass: capacity left after<br/>every non-overlapping start] --> S
+  Q[ranked pickups,<br/>declared holds applied] --> T[sort into tiers, rank order kept inside each]
+  T --> T1[tier 1: no overlap,<br/>or patience spent]
+  T --> T2[tier 2: overlap,<br/>within the overlap bound]
+  T --> T3[tier 3: over the overlap bound]
+  T1 & T2 & T3 --> S{{slots go tier by tier:<br/>an account slot and the load factor,<br/>validation capacity among its gauges}}
+  S -->|admitted| L[start]
+  S -->|no room| W[waits, with its reason]
 ```
 
 - **Facts:** each item's footprint, each open pull request's changed files,
-  and the host's validation capacity.
-- **Rules:** the [overlap cost](../GLOSSARY.md) orders colliding work
-  behind work that does not collide, and the **overlap bound** caps how many
-  pieces of work in flight may share one file. Neither ever leaves a free
-  slot unused while ready work waits only on overlap.
+  how often merges of each path conflicted, and the host's validation
+  capacity.
+- **Rules:** the [overlap cost](../GLOSSARY.md) puts colliding work behind
+  work that does not collide, and the [overlap bound](../GLOSSARY.md) puts
+  work that would pile onto one file behind both. The tiers only order:
+  a free slot goes to the next candidate whatever its tier, so no slot is
+  left unused while ready work waits only on overlap. What can hold work
+  with a slot free is a declared hold, or a gauge of the load factor
+  (validation capacity is one).
 
 ### The footprint record
 
@@ -63,12 +65,12 @@ it was predicted. It is a fact about one item, not a relationship between
 items, so it is a record, not a tracker relation
 ([ADR-0015](../docs/adr/ADR-0015-relationships-live-in-the-tracker.md)).
 
-**Where it is kept.** On the tracker item, as a marked comment through the
-tracker interface, registered in [RECORDS.md](../plugin/RECORDS.md) as
-`tracker-footprint`:
+**Where it is kept.** On the tracker item, as a marked comment written and
+read through the tracker interface, registered in
+[RECORDS.md](../plugin/RECORDS.md) as `tracker-footprint`:
 
 ```text
-<!-- jig:footprint {"v":1,"key":"footprint","source":"scout","at":"<commit>","paths":["plugin/dispatch/lib/load.ts","plugin/dispatch/lib/sources/"],"areas":["dispatch"]} -->
+<!-- jig:footprint {"kind":"tracker-footprint","v":1,"key":"#123","writer":{…},"at":"2026-11-14T17:30:00.000Z","source":"scout","base":"<commit>","paths":["plugin/dispatch/lib/load.ts","plugin/dispatch/lib/sources/"],"areas":["dispatch"]} -->
 Predicted footprint (scout, at <commit>): 2 paths in area dispatch.
 ```
 
@@ -76,56 +78,72 @@ The tracker is the medium because every host's tick must read it, it must
 outlive the worktree of whoever wrote it, and every adapter (Linear, GitHub
 Issues, Jira) has comments while not every one has a custom field. The
 issue's description is not used: anyone who can edit the item edits it, and
-it is a person's text. The record carries the envelope every record carries
-(`plugin/shared/records/envelope.ts`); it is read from trusted authors only,
-as the claim marker is, and the newest record of the strongest source
-stands.
+it is a person's text. The record carries the record envelope
+(`plugin/shared/records/envelope.ts`): its `key` is the item's key and its
+`at` the time it was written. It is read from trusted authors only, as the
+claim marker is.
 
-**What it holds.**
+**What it holds**, beside the envelope:
 
 | Field | Meaning |
 | --- | --- |
 | `paths` | Files, and directories ending in `/`, inside the repository |
 | `areas` | Areas of the [change-area catalog](../GLOSSARY.md) the item reaches |
-| `source` | Who predicted it: `planner`, `scout`, `pickup`, `catalog` |
-| `at` | The commit of the default branch the prediction read |
+| `source` | Who predicted it: `pickup`, `scout`, `planner` or `filing` |
+| `base` | The commit of the default branch the prediction read |
 
 A path is the precise form, an area the coarse one: an area expands to its
 own globs (its seeds, never the `impliedBy` closure, as serialized areas
 read them).
 
-**Who writes it**, strongest source first:
+**Who writes it:**
 
-1. **The pickup itself** (`pickup`). Once `do-item` has claimed the item and
-   read the code, before it delegates, it writes the footprint of the change
-   it is about to make. This is what makes a running pickup's footprint
-   good: the work that is already in flight is the work every later
-   admission compares against.
-2. **A `do-item` scout** (`scout`). The scout form (`/jig:do-item scout
-   <KEY>`) gains a footprint scout that reads the code and writes the
-   record beside its findings comment, without claiming the item.
-3. **The planner** (`planner`). When it decomposes an epic, the planner
-   that #1180 moves into Jig writes a footprint for each child it files, from
-   the code it read to plan the split.
-4. **`file-issue` from the catalog** (`catalog`). Filing already derives
-   the change's areas to choose labels; it writes those areas as the
-   footprint, and the paths when the person filing names them.
+- **The pickup itself** (`pickup`). Once `do-item` has claimed the item and
+  read the code, before it delegates, it writes the footprint of the change
+  it is about to make. This is what makes a running pickup's footprint
+  good: the work already in flight is what every later admission compares
+  against.
+- **A `do-item` scout** (`scout`). The scout form (`/jig:do-item scout
+  <KEY>`) gains a footprint scout that reads the code and writes the
+  record beside its findings comment, without claiming the item.
+- **The planner** (`planner`). When it decomposes an epic, the planner
+  that #1180 moves into Jig writes a footprint for each child it files, from
+  the code it read to plan the split.
+- **`file-issue`** (`filing`), only when it files from a diff, whose files
+  it already resolves against the catalog, or when the person filing names
+  the paths. From a description alone it writes nothing: its labels already
+  carry the areas, and the tick derives those itself.
 
-With no record, the tick derives a coarse footprint from the item's area
-labels through the catalog, writes nothing, and reports the source as
-`labels`. With no area label either, the footprint is **unknown**.
+**Which one stands.** While a pickup holds the item (its claim and a
+running session), that pickup's newest record stands. Otherwise the newest
+record stands, so a prediction made at a later commit replaces the
+`pickup` record an abandoned attempt left. With no record, the tick derives
+a coarse footprint from the item's area labels through the catalog, writes
+nothing, and reports the source as `labels`. With no area label either, the
+footprint is **unknown**.
 
 No model is asked anything inside the tick: predicting a footprint is
 judgment, made upstream, and it reaches the tick as a record
 ([ADR-0009](../docs/adr/ADR-0009-routes-are-derived-by-rules-as-data.md)).
 
-**Reading it.** The tick reads an item's footprint once and keeps it until
-the item's `updatedAt` moves (reuse before sending,
-[ADR-0021](../docs/adr/ADR-0021-outbound-calls-are-governed.md)). Where an
-adapter's `updatedAt` does not move when a comment is added, the adapter
-declares it, and its footprints are read again on the scheduled full read
-of the tracker scope. A footprint that does not read is treated as unknown
-for the tick and says why.
+**Reading it.** Footprints are read through the tracker adapter, the
+tracker's governed transport
+([ADR-0021](../docs/adr/ADR-0021-outbound-calls-are-governed.md)), with
+its obligations:
+
+- **Reuse.** An item's footprint is kept until the item's `updatedAt`
+  moves. Where an adapter's `updatedAt` does not move when a comment is
+  added, the adapter declares it, and its footprints are read again on the
+  scheduled full read of the tracker scope. Items are read by key, many in
+  one request, where the tracker allows it.
+- **Admit and bound.** Each read asks the shared budget record, has a
+  deadline and a page size, and the tick reads at most a declared number of
+  items' footprints fresh in one tick, the wanted pickups first.
+- **Record.** Each read is recorded in the cost ledger under the operation
+  `footprint`.
+- **No answer.** A footprint that does not read keeps its last reading with
+  its age; one never read is unknown for the tick, with the failure class as
+  its reason.
 
 ### Open pull requests' changed files
 
@@ -133,29 +151,38 @@ The work in flight is the open pull requests and the running pickups. A
 pull request's changed files are the truth about it, so its footprint is
 those files, whoever opened it: a person's pull request collides as surely
 as the dispatcher's. A running pickup with no pull request yet is
-represented by its footprint record. A pickup that opened its pull request
-is represented by the pull request alone.
+represented by its footprint record, on whichever host runs it (the tick
+reads every host's launch claims already). A pickup that opened its pull
+request is represented by the pull request alone.
 
 The tick already reads changed files for the pull requests in a
 [serialized area](../GLOSSARY.md) (`pullRequestFiles` in
 `plugin/dispatch/lib/forge.ts`, page by page, cut short at the forge's
 listing limit). This design widens that read to every open pull request of
-the repository, through the forge's governed transport (item 55), with the
-obligations ADR-0021 sets:
+the repository, through the forge's governed transport (item 55):
 
 - **Reuse.** A pull request's files are kept under its head commit, so a
   pull request whose head did not move costs nothing; the same reading
   serves serialization and overlap.
-- **Bound.** Pages of 100 files, at most 3,000 files a pull request (the
-  forge's own listing limit), and at most a declared number of pull
-  requests read fresh in one tick; the rest keep their last reading, with
-  its age, until a later tick.
-- **Cost.** One request a page for each pull request whose head moved since
-  the last tick, recorded in the cost ledger under the operation
+- **Admit and bound.** Each page asks the shared budget record. Pages of
+  100 files, at most 3,000 files a pull request (the forge's own listing
+  limit), and at most a declared number of pull requests read fresh in one
+  tick; the rest keep their last reading, with its age, until a later tick.
+- **Record.** One request a page for each pull request whose head moved
+  since the last reading, recorded in the cost ledger under the operation
   `pr-files`.
 - **No answer.** A pull request whose files do not read, and was never
-  read, is treated as an unknown footprint for the tick, with the failure
-  class as its reason.
+  read, is an unknown footprint for the tick, with the failure class as its
+  reason.
+
+**Paths that do not count.** Some files change in almost every pull
+request without being the work: derived files, and files a repository
+keeps appending to. A path counts toward neither the cost nor the bound
+when the catalog marks it generated, or when it matches a glob of
+`dispatch.overlap.ignore`. A pull request with no push for
+`dispatch.overlap.quiet_after` (14 days) counts toward the cost but not
+toward the bound: it still conflicts when it moves again, but it is not
+piling onto a file now.
 
 ### The overlap cost
 
@@ -169,64 +196,74 @@ For a candidate `C` and one piece of work in flight `W`, the chance of a
 round is
 
 ```text
-P(C, W) = 1 − ∏ over the paths p that C and W share of (1 − rate(p))
+P(C, W) = 1 − ∏ over the shared units u of C and W of (1 − rate(u))
 ```
 
 and the overlap cost of `C` is the sum of `P(C, W)` over all work in
 flight, the items this tick has already started included.
 
-- **Shared paths.** A file in both footprints is shared. A directory or an
-  area in one footprint shares every file under it in the other. Two
-  footprints that are both only areas share the area.
-- **`rate(p)`** is how often a merge that touched `p` conflicted, from the
-  conflict history report (`resolve-conflicts`' `history.ts`) over its
-  window, once at least 5 merges touched the path. Below that it is
-  `dispatch.overlap.file_rate` (0.5) for a file match and
-  `dispatch.overlap.area_rate` (0.2) for a match through a directory or an
-  area, which is a weaker prediction. A [conflict hotspot](../GLOSSARY.md)
-  therefore weighs more than a file that has never conflicted.
+- **Shared units.** A file in both footprints is one unit, at that file's
+  rate. A directory or an area in either footprint that holds a file or
+  directory of the other is one unit for the whole match, however many
+  files it covers, at `dispatch.overlap.area_rate` (0.2), since it is the
+  weaker prediction. So a coarse footprint never weighs more than a precise
+  one that names the same files.
+- **`rate(p)`** is the share of the merged pull requests that changed `p`
+  in the window and met a conflict before they merged, once at least 5
+  merged pull requests changed it. A merged pull request is one commit on
+  the integration branch's first-parent history (a squash, a rebase merge
+  or a merge commit) and the files that commit changed; it met a conflict
+  when the merge replay or a live conflict record names it, as M11's
+  conflict metric counts it
+  ([merge-conflicts.md § From measure to change](merge-conflicts.md#from-measure-to-change)).
+  Below 5, the rate is `dispatch.overlap.file_rate` (0.5). A
+  [conflict hotspot](../GLOSSARY.md) therefore weighs more than a file that
+  has never conflicted.
 - **An unknown footprint** costs `dispatch.overlap.unknown_cost` (0.5),
   once, whatever is in flight, so that an item with a known footprint that
   collides with nothing starts before an item nobody predicted.
 
-**Weighed against waiting.** The tick walks the ranked queue twice:
-
-1. **First pass.** Each candidate in rank order whose overlap cost is 0 is
-   started, if the account slots, the load factor and validation capacity
-   admit it, exactly as today. A candidate whose cost is above 0 is
-   deferred, unless it has already waited on overlap longer than its
-   patience: `dispatch.overlap.patience` for its priority (urgent `0`, high
-   `30m`, medium `2h`, low and none `6h`), multiplied by its overlap cost.
-   A candidate whose patience is spent is started at its rank in this pass.
-2. **Second pass.** Capacity left after the first pass goes to the deferred
-   candidates in rank order.
+**Weighed against waiting.** A candidate whose overlap cost is above 0 goes
+to tier 2, behind every candidate with no overlap, until it has waited on
+overlap longer than its patience: `dispatch.overlap.patience` for its
+priority (urgent `0`, high `30m`, medium `2h`, low and none `6h`),
+multiplied by its overlap cost. Then it returns to tier 1 at its rank. The
+higher the expected cost, the longer waiting is worth; the higher the
+priority, the shorter. The wait is measured from the first tick that put
+the item in tier 2 or 3, kept in the state database (`overlap_waits`, a new
+table of `state.sqlite` registered as `dispatch-overlap-wait`), and ends
+when the item starts or stops being wanted.
 
 So overlap reorders work only when capacity is short. When a slot is free
 and only overlapping work is ready, that work starts and a round of
-conflict resolution is accepted. The waiting time is measured from the
-first tick that deferred the item on overlap, kept in the state database
-beside the other holds (`holds`), and ends when the item starts or stops
-being wanted.
+conflict resolution is accepted.
 
 ### The overlap bound
 
-The cost orders work; the **overlap bound** limits a pile-up. Branches that
-all edit one file conflict with each other at every merge, so the rounds
-grow with the square of their number. A candidate waits while starting it
-would put more than `dispatch.overlap.max_per_file` pieces of work in
-flight (4 by default, the per-epic width's default) that share one of its
-files. A shared area or directory does not count against the bound, since
-it names no file; only file matches do. A value of `0` turns the bound off.
+The cost orders by expected rounds; the **overlap bound** guards against a
+pile-up. Branches that all edit one file conflict with each other at every
+merge, so the rounds grow with the square of their number. A candidate
+goes to tier 3 when starting it would put more than
+`dispatch.overlap.max_per_file` pieces of work in flight (4 by default, the
+per-epic width's default) that change one of its files. Only file matches
+count: an area or a directory names no file. Patience does not move a
+tier 3 candidate forward; a slot reaches it only when no candidate of tiers
+1 and 2 can take it. A value of `0` turns the bound off.
 
 The bound replaces the per-epic width: it applies across all work, inside
 an epic, across epics, across served people, the ready pool and the
-factory identity's own queue, and it holds only work that really shares a
-file. Once it is built, the width key that #1178 adds is read as a
-deprecated alias for one release and then refused, naming this key.
+factory identity's own queue, and it weighs only work that shares a file.
+Unlike the width, it holds nothing while a slot is free. When it is built,
+the width key that #1178 adds is removed, and a repository's file that
+still sets it is refused with a message naming `dispatch.overlap` and
+saying that one child at a time is now said with an execution plan's
+dependency edges or a serialized area. The key is not kept as an alias: a
+width counts an epic's children, the bound counts the work on one file, and
+an alias would change what a repository's value means without telling it.
 
 ### Hard holds stay declared
 
-The cost and the bound are weighed; three holds are not, and they apply
+The cost and the bound are weighed. These holds are not, and they apply
 before either:
 
 - **A conflict edge** that an epic's execution plan sets between two steps.
@@ -245,12 +282,13 @@ merge evidence today, so such a step is held until a person moves it
 earlier step's linked pull request (`linked-pr.ts`: the do-item comment
 marker, or a `Closes`/`Refs` line), merged (`mergedAt` set), into the
 integration branch, and changing at least one of the edge's
-`conflictFiles` where the edge lists them. The tick already reads the pull
-requests merged since the follow-up stage was turned on and keeps each read
-(`dispatch-merge-read`), so a verified edge costs one read of that pull
-request, kept with the merge. Evidence that does not read, or is ambiguous
-(two linked pull requests, one still open), keeps the edge held and says
-which.
+`conflictFiles` where the edge lists them. The tick reads that pull request
+directly, through the forge's transport, rather than from its listing of
+recent merges, which reaches back only to the day the follow-up stage was
+turned on and is absent where it is off. A verified merge does not change,
+so it is kept once read, in the state database's merge reads
+(`dispatch-merge-read`). Evidence that does not read, or is ambiguous (two
+linked pull requests, one still open), keeps the edge held and says which.
 
 ### Validation capacity
 
@@ -260,8 +298,8 @@ test stage runs under the machine-wide resource lock
 has room for it; under that load it admitted one at a time. Each pass
 reached its validation an hour or more after it started, joined a queue
 that only grew, waited out the lock's hour (`LOCK_TIMEOUT`, 3600 seconds in
-`scripts/test.ts`), retried, and hit the pass limit of three hours. Six
-passes ended that way.
+`scripts/test.ts`), and hit the pass limit of three hours. Six passes ended
+that way.
 
 The load factor already has a gauge for the lock, `load.lock_waiters`, but
 it counts the runs waiting at the moment of the tick. A pass spends its
@@ -270,42 +308,73 @@ queue looked short, and the tick admitted passes whose validation would
 come due together an hour later. A snapshot cannot see work that is
 already committed to arrive.
 
-**The measure.** **Validation capacity** is how many passes the host can
-take through validation within the time a pass can afford to wait for it:
+**The samples.** The lock records each run on release, in a new machine
+record, `resource-lock-sample`: the lock's name, the worktree the run held
+it from, when it asked, how long it waited and how long it held, the newest
+kept for 7 days. From them the tick reads:
+
+- **Run time**: the 90th percentile of how long one run held the lock.
+- **Runs at once**: the median number of runs that held the lock together
+  while another waited. Before any run has waited, the most runs that held
+  it together; with no samples at all, 1. The lock admits by load, so the
+  number is measured, not configured.
+- **Runs per pass**: for each kind of pass, the mean number of runs a pass
+  made, from the samples whose worktree is a pass's workspace; 1 until a
+  kind has samples.
+- **Time to validation**: for each kind, the median time from a pass's
+  launch to its first run's request.
+
+**The passes ahead.** A pass in flight is ahead of a new one while it has
+runs still to make: a pickup or a drive pass whose workspace has made fewer
+runs since its launch than its kind's runs per pass. Follow-ups and the
+steward do not run the test stage. The lock's current holders and waiters
+that are no pass of the dispatcher's (a person's run, another tool's) are
+ahead too.
+
+**The measure.** A new pass reaches the lock after its kind's time to
+validation, `T`. By then the lock has finished `runs at once × T ÷ run
+time` runs of the work ahead. It can then wait at most the **wait window**
+`W`: the shorter of the lock's wait (`LOCK_TIMEOUT`) and the pass deadline
+less `T` and one run time. So the host can take a new pass while the runs
+ahead number at most
 
 ```text
-capacity = runs at once × wait window ÷ run time
+validation capacity = runs at once × (T + W) ÷ run time
 ```
 
-- **Run time** is the 90th percentile of how long one validation run holds
-  the lock, from samples the lock records on release (a new machine record,
-  `resource-lock-sample`: the lock's name, how long the run waited and how
-  long it held, newest kept for 7 days).
-- **Runs at once** is how many runs the lock let hold at once while others
-  waited, the median over the same samples: the lock admits by load, so the
-  number is measured, not configured.
-- **The wait window** is the shorter of the lock's wait (`LOCK_TIMEOUT`)
-  and the pass deadline less the 90th percentile of the time a pass of that
-  kind takes to reach validation (from the launch records and the samples).
-
-For example, with one run at a time, runs of 12 minutes and an hour to
-wait, the capacity is 5.
+counting each pass ahead by its runs still to make. For example, with one
+run at a time, runs of 12 minutes, an hour to reach validation and an hour
+to wait, the capacity is 10 runs. The formula is conservative in one way: it
+assumes the work ahead reaches the lock no later than the new pass does.
 
 **The gauge.** Validation capacity joins the load factor as one more gauge,
-`validation`, whose fill is the passes in flight that will validate
-(pickups and drive passes not yet past their validation; follow-ups and the
-steward do not run the test stage) against the capacity. It holds only
+`validation`, whose fill is the runs ahead against the capacity, with the
+launch's own runs counted. It is set in the machine file's `load:` section
+beside the other gauges, since the lock is the host's. It holds only
 pickups and drive passes, as the lock gauge does, and a new pickup keeps
 room for one drive pass after it, as it keeps memory and an account slot
 today. Like every gauge it reports first: with `load.enforce: false` the
 receipt lists the launches it would hold, and a person turns enforcement on
-after reading them. Replayed on the 2026-11-14 receipts and lock samples,
-the gauge must show the launches it would have held before the six passes
-timed out; that replay is a test of the step that builds it.
+after reading them. Replayed on the 2026-11-14 receipts and launch records,
+the gauge must show it would have held launches before the six passes timed
+out; that replay, from fixtures built out of those records, is a test of
+the step that builds it.
 
 The lock's own waiting order and how it reports its holder are #608's. A
 lock that admits in arrival order makes this estimate hold for each pass
 rather than on average; the gauge does not depend on it.
+
+### Where the settings live
+
+The `dispatch.overlap` keys (`max_per_file`, `patience`, `file_rate`,
+`area_rate`, `unknown_cost`, `ignore`, `quiet_after`) are a section of the
+repository's `dispatch` configuration, read from the default branch as the
+rest of that section is, so a pull request cannot loosen its own admission:
+which files collide, and how often, is the repository's. The `validation`
+gauge's line is the machine file's (`load.validation`, a fill share,
+`1` by default), since the lock is the host's. Each key is documented in
+`plugin/CONFIGURATION.md` and the audit's configuration schema in the step
+that reads it.
 
 ### The reason a person sees
 
@@ -316,9 +385,9 @@ pickup, its link and its state) and a count. The texts:
 
 | Waits on | Reason |
 | --- | --- |
-| Overlap | `waits on overlap: shares plugin/dispatch/lib/load.ts (+2) with #123 (pull request) and #456 (pickup); 0.8 rounds expected; starts when a slot is free after work that does not overlap, or by 16:40` |
-| The overlap bound | `waits on the overlap bound: 4 in flight already change plugin/dispatch/lib/load.ts (#123, #456, #789, #790)` |
-| Validation capacity | `waits on validation capacity: 9 passes validate ahead of it, about 1 h 50 min at 1 run at a time of 12 min; capacity 5` |
+| Overlap | `waits on overlap: shares plugin/dispatch/lib/load.ts (+2) with #123 (pull request) and #456 (pickup); 0.8 rounds expected; first when a slot is free after work that does not overlap, or from 16:40` |
+| The overlap bound | `waits on the overlap bound: 4 in flight already change plugin/dispatch/lib/load.ts (#123, #456, #789, #790); starts when no other work can take a slot` |
+| Validation capacity | `waits on validation capacity: 14 runs are ahead of it, about 2 h 50 min at 1 run at a time of 12 min; capacity 10` |
 | A serialized area | `held: serialized behind #123 in dispatch` |
 | A conflict edge | `waits on conflict edge #12 → #14: #12's pull request #20 has not merged` |
 
@@ -331,36 +400,35 @@ missing fact a person or the steward can supply.
 
 `resolve-conflicts`' `history.ts` already replays the repository's merges
 and, with `--propose-serialize`, prints catalog lines for hotspots that lie
-in one area. Two outputs reach admission:
+in one area. It reaches admission in two ways:
 
-- **Rates.** A new `--rates` output prints, for each path that merges
-  touched in the window, how many merges touched it and how many of those
-  conflicted (`merge-conflict-rates/v1`, JSON). The tick refreshes the
-  file under the dispatch state directory at most once a day, after its
-  act phase, so a slow replay never delays a launch; the replay reads git
-  only and sends nothing outside the machine. A refresh that runs past its
-  deadline keeps the previous file, and a missing or stale file leaves
-  every rate at its default and says so in the receipt.
+- **Rates.** A new `--rates` output prints, for each path, how many merged
+  pull requests in the window changed it and how many of those met a
+  conflict, by the definition above (`merge-conflict-rates/v1`, JSON). It
+  reads git and the live conflict record, as the report does, and sends
+  nothing outside the machine. The tick refreshes the file under the
+  dispatch state directory at most once a day, after its act phase, so a
+  slow replay never delays a launch. A refresh that runs past its deadline
+  keeps the previous file, and a missing or stale file leaves every rate at
+  its default and says so in the receipt.
 - **Serialized areas.** `--propose-serialize` stays a proposal a person
-  applies to the catalog. The receipt adds a pointer to it when the same
-  file has held work on the overlap bound in at least 3 ticks of a day:
-  the bound is the weighed answer, and a serialized area the declared one a
-  person chooses.
+  applies to the catalog. The receipt points to it when the same file has
+  kept work in tier 3 in at least 3 ticks of a day: the bound is the
+  weighed answer, and a serialized area the declared one a person chooses.
 
 ## Build order
 
-One pull request each, in this order. Each step ships alone and changes
-nothing a person sees until it is built.
+One pull request each, in this order.
 
 1. **The footprint record.** `tracker-footprint` in the records registry
    and RECORDS.md; `plugin/shared/footprint.ts` to parse, render and choose
-   the strongest record; `tracker.ts footprint <KEY>` to read and
-   `tracker.ts footprint <KEY> --input <file>` to write, on every adapter;
-   the glossary's Footprint entry points at it.
+   the record that stands; `tracker.ts footprint <KEY>` to read and
+   `tracker.ts footprint <KEY> --input <file>` to write, on every adapter,
+   through the tracker's transport.
 2. **Footprint writers.** `do-item` writes the `pickup` footprint after it
    reads the code and before it delegates; its scout form gains the
-   footprint scout; `file-issue` writes the `catalog` footprint. The
-   planner's writer comes with the planner's own move (#1180).
+   footprint scout; `file-issue` writes the `filing` footprint from a diff.
+   The planner's writer comes with the planner's own move (#1180).
 3. **Merge evidence for conflict edges.** The tick verifies a conflict
    edge's delivering pull request and releases the step (#725's third
    limit).
@@ -370,16 +438,19 @@ nothing a person sees until it is built.
    GitHub budget step.
 5. **Conflict rates.** `history.ts --rates`, the tick's daily refresh of
    the rates file, and its reader.
-6. **Overlap, reported.** The tick computes each candidate's footprint,
-   overlap cost and bound, and reports them with the reasons above in the
-   receipt, the dashboard and `jig ask`, without changing what it starts.
-7. **Validation capacity.** The lock's samples (`resource-lock-sample`), the
-   `validation` gauge in the load factor, and the replay of 2026-11-14 as
-   its test.
-8. **Overlap admission.** The two passes, patience and the overlap bound
-   replace the per-epic width; serialized areas hold pickups; the width key
-   becomes a deprecated alias; every document that names the width says
-   what is true after it.
+6. **Overlap, reported.** The tick reads footprints, computes each
+   candidate's overlap cost, tier and bound, keeps `overlap_waits`, and
+   reports the reasons above in the receipt, the dashboard and `jig ask`,
+   without changing what it starts. The `dispatch.overlap` keys it reads
+   are documented.
+7. **Serialized areas hold pickups.** The declared hold extends from drives
+   to pickups whose footprint names a file of the area.
+8. **Validation capacity.** The lock's samples (`resource-lock-sample`), the
+   `validation` gauge in the load factor and its `load.validation` line,
+   and the replay of 2026-11-14 as its test.
+9. **Overlap admission.** The tiers order the walk and the per-epic width
+   goes, its key refused with the message above; every document that names
+   the width says what is true after it.
 
 ## Left out
 
@@ -391,6 +462,10 @@ nothing a person sees until it is built.
 - **Reading an unpushed branch** of a running pickup. Its footprint record
   stands for it until its pull request opens; reading every workspace's
   working tree would tie the tick to one host's disk.
+- **Modelling when each pass ahead reaches the lock.** The capacity counts
+  every run ahead as if it were already due; a finer model waits for the
+  samples to show the conservative one holds back work the host could have
+  taken.
 - **Raising the number of suites that may run at once**, the lock's
   waiting order and its holder reporting (#608).
 - **Overlap across repositories.** Files collide only within one

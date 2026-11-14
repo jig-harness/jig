@@ -2674,7 +2674,7 @@ make, use the entry's term instead.
 - **Footprint** — the paths an issue is expected to touch, predicted
   before the work starts and kept as a record on the issue, with who
   predicted it: the pickup once it has read the code, a scout, the planner,
-  or the issue's filing from the *change-area catalog*. The *dispatcher*
+  or the filing of the issue from a diff. The *dispatcher*
   compares it with the files of open pull requests to tell work that will
   collide from work that will not
   ([overlap-aware admission](design/overlap-aware-admission.md#the-footprint-record)).
@@ -2682,9 +2682,14 @@ make, use the entry's term instead.
   expected to bring, from the paths its *footprint* shares with the work in
   flight and how often merges of those paths conflicted. The *dispatcher*
   starts work with no overlap first and colliding work when capacity is
-  left, and caps how many pieces of work in flight may change one file
-  (the overlap bound)
+  left, so overlap orders work and never leaves a slot unused
   ([overlap-aware admission](design/overlap-aware-admission.md#the-overlap-cost)).
+- **Overlap bound** — how many pieces of work in flight may change one file
+  before the *dispatcher* puts more work on that file behind everything
+  else that is ready. It replaces the width per epic, applies across all
+  work, and like the *overlap cost* only orders: work over the bound still
+  starts when nothing else can take a free slot
+  ([overlap-aware admission](design/overlap-aware-admission.md#the-overlap-bound)).
 - **Validation capacity** — how many passes a host can take through
   validation within the time a pass can wait for it: the runs the
   machine-wide test lock lets through at once, times that wait, divided by
