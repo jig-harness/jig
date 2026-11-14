@@ -101,6 +101,12 @@ export interface RemovalSteps {
    * meanwhile); fails to keep the worktree.
    */
   admit?(worktree: string): Promise<StepOutcome>;
+  /**
+   * Run after `admit`, immediately before the runtime's removal call, for a
+   * caller that records the call is about to be made; fails, and the call is
+   * not made, when that record cannot be written.
+   */
+  submit?(worktree: string): StepOutcome | Promise<StepOutcome>;
 }
 
 /**
@@ -128,11 +134,15 @@ export function localSteps(
 
 /**
  * Runs Orca's command with `args`, adding `--json` and, for a paired server,
- * `--environment`; answers its exit status and output.
+ * `--environment`; answers its exit status and output, and `timedOut` when
+ * its deadline ended it.
  */
-export type OrcaCall = (
-  args: string[],
-) => Promise<{ code: number; stdout: string; stderr: string }>;
+export type OrcaCall = (args: string[]) => Promise<{
+  code: number;
+  stdout: string;
+  stderr: string;
+  timedOut?: boolean;
+}>;
 
 export interface OrcaRemoval {
   /** The worktree's path. */
@@ -149,6 +159,48 @@ export interface OrcaRemoval {
 /** What a removal ran: the hook's path, when the repository has one. */
 export interface Removed {
   hook: string | null;
+}
+
+/**
+ * Whether `removed` is the answer of `orca worktree rm` itself: success, or
+ * Orca's explicit refusal. A failure of an earlier step is not, and neither
+ * is a call that gave no answer (`orca-timeout`, `orca-failed`,
+ * `orca-unreadable`): whether the worktree is gone is then unknown.
+ */
+export function removalAnswered(removed: Outcome<unknown>): boolean {
+  return removed.ok || removed.failure.code === "orca-refused";
+}
+
+/** What `orca worktree rm` answered `done`: done, or why the worktree may stay. */
+function removalAnswer(
+  done: Awaited<ReturnType<OrcaCall>>,
+  force: boolean,
+): StepOutcome {
+  const what = "orca worktree rm";
+  if (done.timedOut === true)
+    return failed(
+      "orca-timeout",
+      `${what} did not answer before its deadline ${orcaFailure(done)}`,
+    );
+  // `{ ok: false }` naming no error is no answer, as a result without `ok` is.
+  const parsed = orcaEnvelope(done.stdout);
+  const envelope =
+    parsed?.ok === false && parsed.code === null && parsed.message === null
+      ? null
+      : parsed;
+  if (envelope?.ok === false)
+    return failed(
+      "orca-refused",
+      `${what}: ${orcaErrorText(envelope)}${force ? "" : " (uncommitted changes: commit them, or pass --force to discard them)"}`,
+    );
+  if (done.code !== 0)
+    return failed("orca-failed", `${what} failed ${orcaFailure(done)}`);
+  if (envelope === null)
+    return failed(
+      "orca-unreadable",
+      `${what}: unreadable output ${orcaFailure(done)}`,
+    );
+  return ok(undefined);
 }
 
 /**
@@ -170,7 +222,8 @@ export async function removeThroughOrca(
   if (!parked.ok) return parked;
   const admitted = (await steps.admit?.(worktree)) ?? ok(undefined);
   if (!admitted.ok) return admitted;
-  const what = "orca worktree rm";
+  const submitted = (await steps.submit?.(worktree)) ?? ok(undefined);
+  if (!submitted.ok) return submitted;
   const done = await removal.orca([
     "worktree",
     "rm",
@@ -178,24 +231,8 @@ export async function removeThroughOrca(
     `id:${removal.id}`,
     ...(removal.force ? ["--force"] : []),
   ]);
-  // `{ ok: false }` naming no error is no answer, as a result without `ok` is.
-  const parsed = orcaEnvelope(done.stdout);
-  const envelope =
-    parsed?.ok === false && parsed.code === null && parsed.message === null
-      ? null
-      : parsed;
-  if (envelope?.ok === false)
-    return failed(
-      "orca-refused",
-      `${what}: ${orcaErrorText(envelope)}${removal.force ? "" : " (uncommitted changes: commit them, or pass --force to discard them)"}`,
-    );
-  if (done.code !== 0)
-    return failed("orca-failed", `${what} failed ${orcaFailure(done)}`);
-  if (envelope === null)
-    return failed(
-      "orca-unreadable",
-      `${what}: unreadable output ${orcaFailure(done)}`,
-    );
+  const answer = removalAnswer(done, removal.force);
+  if (!answer.ok) return answer;
   removal.log(`✓ removed ${worktree}`);
   return ok({ hook });
 }

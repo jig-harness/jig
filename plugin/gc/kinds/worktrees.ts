@@ -25,8 +25,13 @@ import { localSteps, removeThroughOrca } from "../worktree-removal.ts";
 import { processHolder } from "./worktree-git.ts";
 import {
   type Collected,
+  goneClaims,
   guardedCollection,
+  type GuardedRemoval,
+  isGoneClaim,
   LAUNCH_VETO,
+  proveGone,
+  releaseGone,
 } from "./worktree-guard.ts";
 import {
   markingSince,
@@ -109,6 +114,46 @@ async function orcaWorktrees(
     managed.set(canonicalWorktree(row.path), { id: row.id, path: row.path });
   }
   return ok(managed);
+}
+/** Whether Orca's list `managed` holds the worktree at `path`, as Orca spells it or as git does. */
+function listedIn(
+  managed: Map<string, OrcaWorktree>,
+): (path: string) => boolean {
+  const paths = new Set([...managed.values()].map((row) => row.path));
+  return (path) => paths.has(path) || managed.has(normalize(path));
+}
+/**
+ * The selected worktrees, each marked with the runtime that manages it, and
+ * a line for each claim a collector that ended left on a worktree under
+ * `roots` that is gone from Orca's list and from the disk: no worktree is
+ * listed to settle it with.
+ */
+async function orcaInventory(
+  command: string,
+  repository: string,
+  selected: { id: string; details: Record<string, unknown> }[],
+  roots: string[],
+): Promise<Outcome<Resource[]>> {
+  const stale = goneClaims((path) =>
+    roots.some((root) => within(normalize(path), root)),
+  );
+  if (selected.length === 0 && stale.length === 0) return ok(selected);
+  const managed = await orcaWorktrees(command, repository);
+  if (!managed.ok) return managed;
+  const listed = listedIn(managed.value);
+  const known = new Set(selected.map((entry) => entry.id));
+  const gone = stale.filter(
+    (claim) => !listed(claim.id) && !known.has(normalize(claim.id)),
+  );
+  for (const entry of selected) {
+    const row = managed.value.get(canonicalWorktree(entry.id));
+    entry.details.runtime = row === undefined ? "none" : "orca";
+    if (row !== undefined) {
+      entry.details.orca = row.id;
+      entry.details.orcaPath = row.path;
+    }
+  }
+  return ok([...selected, ...gone]);
 }
 function orcaId(resource: Resource): string | null {
   return isMapping(resource.details) &&
@@ -288,12 +333,13 @@ async function extractBaseHooks(
 async function collectThroughOrca(
   command: string,
   resource: Resource,
-  orcaWorktree: { id: string; launched: () => string | null },
+  orcaWorktree: { id: string; guard: GuardedRemoval },
   repository: string,
   declaration: string,
   legacy: LegacyPolicy | undefined,
 ): Promise<Collected> {
-  const { id, launched } = orcaWorktree;
+  const { id, guard } = orcaWorktree;
+  const { launched } = guard;
   let archived: Archived | null = null;
   const log = (line: string): void => {
     process.stderr.write(`${line}\n`);
@@ -361,8 +407,11 @@ async function collectThroughOrca(
           if (!after.ok) return after;
           return ok(undefined);
         },
+        // The last step before the call: an unanswered call keeps the claim.
+        submit: () => guard.submit(),
       },
     });
+    guard.settle(removed);
     // An archive written before a step that then failed stays, named in the
     // receipt, and expires with the receipts.
     if (!removed.ok)
@@ -479,20 +528,15 @@ export function worktreesKind(
       const selected = entries
         .slice(1)
         .filter((entry) => canonical.some((root) => within(entry.id, root)));
-      if (orca === undefined || selected.length === 0) return ok(selected);
-      const managed = await orcaWorktrees(orca, repository);
-      if (!managed.ok) return managed;
-      for (const entry of selected) {
-        const row = managed.value.get(canonicalWorktree(entry.id));
-        entry.details.runtime = row === undefined ? "none" : "orca";
-        if (row !== undefined) {
-          entry.details.orca = row.id;
-          entry.details.orcaPath = row.path;
-        }
-      }
-      return ok(selected);
+      if (orca === undefined) return ok(selected);
+      return orcaInventory(orca, repository, selected, canonical);
     },
     prove: async (resource) => {
+      if (orca !== undefined && isGoneClaim(resource))
+        return proveGone(resource, async () => {
+          const managed = await orcaWorktrees(orca, repository);
+          return managed.ok ? ok(listedIn(managed.value)) : managed;
+        });
       if (isMapping(resource.details) && resource.details.locked === true)
         return { state: "live", reason: "worktree is locked" };
       const resolved =
@@ -511,13 +555,15 @@ export function worktreesKind(
         : { state: "unverified", reason: proved.failure.reason };
     },
     collect: async (resource) => {
+      if (orca !== undefined && isGoneClaim(resource))
+        return releaseGone(resource);
       const id = orcaId(resource);
       if (orca !== undefined && id !== null)
-        return guardedCollection(resource, orcaPath(resource), (launched) =>
+        return guardedCollection(resource, orcaPath(resource), (guard) =>
           collectThroughOrca(
             orca,
             resource,
-            { id, launched },
+            { id, guard },
             repository,
             declaration,
             legacy(),
