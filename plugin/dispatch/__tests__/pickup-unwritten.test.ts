@@ -72,6 +72,7 @@ function planMany(
   reads: ReadRecord[],
   rerunsHeld: string | null = null,
   claimed: ClaimedItem[] = [],
+  idleSince = new Map<string, number>(),
 ) {
   return planPickups({
     slug: "example-org/example-repo",
@@ -80,7 +81,7 @@ function planMany(
     claimed,
     sessions: { ok: true, source: "test", workspaces: [] },
     launches: reads,
-    idleSince: new Map(),
+    idleSince,
     nowMs: parseMs("2026-11-14T12:00:00Z"),
     rerunsHeld,
   });
@@ -133,11 +134,20 @@ describe("a pickup whose result the host could not write", () => {
     const older = stopped(true);
     const newer = stopped(false);
     newer.record = { ...newer.record, createdAt: "2026-11-14T11:30:00.000Z" };
-    const planned = planMany([older, newer], "the last tick exited 1", [
-      CLAIMED,
-    ]);
+    if (newer.state.kind !== "ended") throw new Error("expected ended pickup");
+    newer.state = {
+      kind: "ended",
+      exit: { ...newer.state.exit, said: "", context: "" },
+      process: null,
+    };
+    const planned = planMany(
+      [older, newer],
+      "the last tick exited 1",
+      [CLAIMED],
+      new Map([["#12", parseMs("2026-11-14T10:50:00Z")]]),
+    );
     expect(planned.actions).toContainEqual(
-      expect.objectContaining({ cause: "pickup-question", target: "#12" }),
+      expect.objectContaining({ cause: "stalled", target: "#12" }),
     );
     expect(planned.quiet).not.toContainEqual(
       expect.objectContaining({ target: "#12", class: "pickup-ended" }),
