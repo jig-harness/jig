@@ -46,6 +46,8 @@ import {
   markStewardEffect,
   stewardRecords,
   type StewardRecord,
+  STEWARD_REFUSED,
+  STEWARD_REFUSED_OPEN,
 } from "./steward.ts";
 import type { RepoObservation } from "./tick-observe.ts";
 import type { Action } from "./types.ts";
@@ -75,7 +77,7 @@ function unavailable(
 }
 
 /** Why the pass a resume names can never be resumed, from facts its ended record fixes. */
-type Refusal = { refused: string };
+type Refusal = { refused: string; settled: boolean };
 
 function sourceOf(
   state: ApplyState,
@@ -88,21 +90,31 @@ function sourceOf(
       r.record.repo === observation.opened.repo.slug,
   );
   if (old?.state.kind !== "ended")
-    return { refused: "the resume names no ended pass of this repository" };
+    return {
+      refused: "the resume names no ended pass of this repository",
+      settled: false,
+    };
   if (old.record.stewardResume !== undefined)
-    return { refused: "the pass is itself a resume" };
-  if (old.result === "done") return { refused: "the pass ended done" };
+    return { refused: "the pass is itself a resume", settled: true };
+  if (old.result === "done")
+    return { refused: "the pass ended done", settled: true };
   if (old.framed)
     return {
       refused: "the pass framed a decision for a person, who answers it",
+      settled: true,
     };
-  if (!old.record.workspace) return { refused: "the pass kept no workspace" };
+  if (!old.record.workspace)
+    return { refused: "the pass kept no workspace", settled: true };
   if (old.record.action !== "pickup" && old.record.action !== "followup")
-    return { refused: "only a pickup or a follow-up pass resumes" };
+    return {
+      refused: "only a pickup or a follow-up pass resumes",
+      settled: true,
+    };
   if (!eligiblePass(old))
     return {
       refused:
         "the pass is not a headless pickup, or the follow-up lane retries it",
+      settled: true,
     };
   const question = questionOf(old.state);
   const output = old.state.exit.context ?? old.state.exit.said ?? "";
@@ -120,6 +132,7 @@ function sourceOf(
     return {
       refused:
         "the pass's output holds no question with a single recommended option outside the human-decision classes",
+      settled: false,
     };
   return {
     record: {
@@ -164,12 +177,18 @@ function competed(
   );
 }
 
+/** A refusal settled nothing that a launch needs: it never blocks the replay of a resume. */
+function isRefusal(effect: string | null): boolean {
+  return effect?.startsWith(STEWARD_REFUSED) === true;
+}
+
 /** Whether another resume record for the same pass was already applied. */
 function resumedBefore(state: ApplyState, id: number, source: Source): boolean {
   return stewardRecords(source.record.repo, state.root).some(
     (r) =>
       r.id !== id &&
       r.applied &&
+      !isRefusal(r.effect) &&
       r.value.kind === "resume" &&
       r.value.record === source.record.id,
   );
@@ -530,9 +549,14 @@ function refuseResume(
   observation: RepoObservation,
   id: number,
   reason: string,
+  settled: boolean,
 ): void {
   if (!claimStewardRecord(id, state.root)) return;
-  markStewardEffect(id, "refused", state.root);
+  markStewardEffect(
+    id,
+    settled ? STEWARD_REFUSED : STEWARD_REFUSED_OPEN,
+    state.root,
+  );
   unavailable(observation, `steward record ${id}`, reason);
 }
 
@@ -546,7 +570,7 @@ export async function resumeSteward(
   const source = sourceOf(state, observation, decision);
   if ("refused" in source) {
     if (pending === undefined)
-      refuseResume(state, observation, id, source.refused);
+      refuseResume(state, observation, id, source.refused, source.settled);
     return;
   }
   if (resumedBefore(state, id, source)) {
@@ -556,6 +580,7 @@ export async function resumeSteward(
         observation,
         id,
         "an earlier resume of the same pass was already applied",
+        true,
       );
     return;
   }

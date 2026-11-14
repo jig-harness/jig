@@ -461,14 +461,24 @@ export function stewardRecords(
       : [{ ...r, value: record, applied: r.applied === 1 }];
   });
 }
-/** The passes a resume record already settled, launched or refused: the digest offers them no more. */
+/** A resume refused for a fact its ended pass fixes: the pass is settled. */
+export const STEWARD_REFUSED = "refused";
+/** A resume refused for a fact that can change (policy, an unvalidated name): the pass stays offered. */
+export const STEWARD_REFUSED_OPEN = "refused-open";
+
+/** The passes a resume record already settled, launched or refused for good: the digest offers them no more. */
 export function judgedResumes(
   repo: string,
   root = stateRoot(),
 ): ReadonlySet<string> {
   return new Set(
     stewardRecords(repo, root).flatMap((r) =>
-      r.applied && r.value.kind === "resume" ? [r.value.record] : [],
+      r.applied &&
+      r.effect !== null &&
+      r.effect !== STEWARD_REFUSED_OPEN &&
+      r.value.kind === "resume"
+        ? [r.value.record]
+        : [],
     ),
   );
 }

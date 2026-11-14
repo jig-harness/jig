@@ -225,6 +225,39 @@ describe("steward resume launch replay", () => {
     }, 60000);
 });
 
+test("a refused duplicate resume never blocks the replay of the lost one", async () => {
+  const { w } = fixture("pickup");
+  const first = await tick(w);
+  const started = first.repos[0]?.launches.find(
+    (l) => l.action === "pickup" && l.outcome === "launched",
+  );
+  expect(started?.record).toBeTruthy();
+  if (!started?.record) return;
+  const record = readRecord(started.record, dispatchState(w));
+  if (!record) return;
+  record.attempts = [
+    { at: new Date().toISOString(), outcome: "lost", detail: "response lost" },
+  ];
+  stateDb(dispatchState(w))
+    .query("UPDATE launches SET record = ? WHERE id = ?")
+    .run(JSON.stringify(record), record.id);
+  expect(
+    submitStewardRecords(
+      "duplicate-run",
+      [{ kind: "resume", record: OLD, reason: "the same pass again" }],
+      dispatchState(w),
+    ).ok,
+  ).toBe(true);
+  const retried: boolean[] = [];
+  for (let i = 0; i < 2; i += 1)
+    retried.push(
+      (await tick(w)).repos[0]?.launches.some(
+        (l) => l.record === record.id && l.outcome === "retried",
+      ) ?? false,
+    );
+  expect(retried).toContain(true);
+}, 90000);
+
 test("a pending batch resume rechecks every member and never repeats claims", async () => {
   const { w } = fixture("pickup", true);
   const first = await tick(w);
@@ -301,15 +334,22 @@ function resumeUnplaced(receipt: TickReceipt): string[] {
     .map((u) => u.reason);
 }
 
-async function refusedOnce(w: World, reason: string): Promise<void> {
+async function refusedOnce(
+  w: World,
+  reason: string,
+  settled = true,
+): Promise<void> {
   const first = await tick(w);
   expect(first.repos[0]?.launches.some((l) => l.outcome === "launched")).toBe(
     false,
   );
   expect(resumeUnplaced(first)).toEqual([expect.stringContaining(reason)]);
   const [kept] = stewardRecords(SLUG, dispatchState(w));
-  expect(kept).toMatchObject({ applied: true, effect: "refused" });
-  expect(judgedResumes(SLUG, dispatchState(w)).has(OLD)).toBe(true);
+  expect(kept).toMatchObject({
+    applied: true,
+    effect: settled ? "refused" : "refused-open",
+  });
+  expect(judgedResumes(SLUG, dispatchState(w)).has(OLD)).toBe(settled);
   expect(resumeUnplaced(await tick(w))).toEqual([]);
 }
 
@@ -319,7 +359,7 @@ test("a resume whose pass recommended no option is refused once with its reason"
     false,
     "The scope choice needs a person.\nQuestion: Which scope should #12 take?",
   );
-  await refusedOnce(w, "a single recommended option");
+  await refusedOnce(w, "a single recommended option", false);
 }, 60000);
 
 test("a resume of a pass that framed a decision for a person is refused once", async () => {
