@@ -104,13 +104,9 @@ export async function applySteward(
     return skip("a steward pass already holds this repository");
   if (!forge.ok || report.records.some((r) => !r.ok))
     return skip("the digest's records did not all read");
-  const queued = await stewardQueue(observation.tracked, () =>
-    readRoomMs(state),
-  );
-  if (!queued.ok) return skip(queued.failure.reason);
-  const backlog = stewardBacklog(
-    backlogInput(state, observation, station, queued.value),
-  );
+  const found = await backlogOf(state, observation, station);
+  if (!found.ok) return skip(found.failure.reason);
+  const backlog = found.value;
   const trigger = stewardTrigger(
     backlog.members,
     judgedMembers(repo.slug, state.root),
@@ -206,23 +202,49 @@ export async function applySteward(
     sessionId: sessionIdFor(vendor),
     mark: named.mark,
   };
-  keepStewardRun(id, digest, currentMs(), state.root);
-  let launch: Awaited<ReturnType<typeof startRecord>>;
-  try {
-    launch = await startRecord(state, record, slots);
-  } catch (error) {
-    forgetStewardRun(id, state.root);
-    throw error;
-  }
-  report.launches.push(launch);
-  // A launch that left no record behind started no pass, so nobody judged its members.
-  if (!state.records.some((r) => r.record.id === id))
-    forgetStewardRun(id, state.root);
+  report.launches.push(await startKept(state, record, slots, digest));
   report.steward = {
     status: `started for ${trigger.unjudged} unjudged of ${trigger.members} in the judgment backlog`,
     hash,
     trigger: "started",
   };
+}
+
+/** The judgment backlog, derived from the whole queue: a queued item the tick did not read is read now. */
+async function backlogOf(
+  state: ApplyState,
+  observation: RepoObservation,
+  station: StationContext,
+): Promise<Outcome<Backlog, QueueFailure>> {
+  const queued = await stewardQueue(observation.tracked, () =>
+    readRoomMs(state),
+  );
+  if (!queued.ok) return queued;
+  return ok(
+    stewardBacklog(backlogInput(state, observation, station, queued.value)),
+  );
+}
+
+/**
+ * Keep the run, then start its pass. A launch that threw or left no record
+ * behind started no pass, so nobody judged its members: the run is taken back.
+ */
+async function startKept(
+  state: ApplyState,
+  record: LaunchRecord,
+  slots: Parameters<typeof startRecord>[2],
+  digest: StewardDigest,
+): Promise<Awaited<ReturnType<typeof startRecord>>> {
+  keepStewardRun(record.id, digest, currentMs(), state.root);
+  try {
+    const launch = await startRecord(state, record, slots);
+    if (!state.records.some((r) => r.record.id === record.id))
+      forgetStewardRun(record.id, state.root);
+    return launch;
+  } catch (error) {
+    forgetStewardRun(record.id, state.root);
+    throw error;
+  }
 }
 
 /** Why a backlog that is not due starts no pass, as the receipt and the dashboard say it. */
