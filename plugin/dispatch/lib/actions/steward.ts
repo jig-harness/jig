@@ -24,6 +24,7 @@ import {
 } from "../steward-evidence.ts";
 import {
   digestHash,
+  judgedResumes,
   keepStewardRun,
   STEWARD_DEADLINE_SEC,
   stewardDue,
@@ -217,7 +218,11 @@ async function digestOf(
     queue,
     targets,
     targetHistoryLimit: STEWARD_HISTORY_TARGET_LIMIT,
-    passes: stewardPasses(state.records, repo.slug),
+    passes: stewardPasses(
+      state.records,
+      repo.slug,
+      judgedResumes(repo.slug, state.root),
+    ),
     failures: readFailures(repo.slug, state.root),
     load: state.load === undefined ? null : loadReport(state.load),
     history: (
@@ -278,13 +283,19 @@ function keptSummary(context: string | undefined): string | null {
   return summary === "" ? null : summary;
 }
 
-/** Question context remains separate from each target's latest output. */
+/**
+ * Question context remains separate from each target's latest output. A pass
+ * that framed a decision is a person's, and a pass whose resume the tick
+ * already judged (`judged`) is settled: neither is offered for a resume.
+ */
 export function stewardPasses(
   records: ReadRecord[],
   slug: string,
+  judged: ReadonlySet<string> = new Set(),
 ): StewardDigest["passes"] {
   return records.flatMap((r) => {
     if (r.record.repo !== slug || r.state.kind !== "ended") return [];
+    if (r.framed || judged.has(r.record.id)) return [];
     if (r.record.action !== "pickup" && r.record.action !== "followup")
       return [];
     const { exit } = r.state;
