@@ -3,7 +3,7 @@ import { DEFAULT_PARK_CLASSES } from "../../shared/autonomy.ts";
 import { parseTrackerLabels } from "../../shared/tracker-labels.ts";
 import { admittedVendor } from "./accounts.ts";
 import {
-  accountBlocked,
+  accountBlock,
   admitAccount,
   dropRecord,
   holdRecord,
@@ -399,7 +399,7 @@ async function replayResume(
     pending.stewardContext !== `${source.output}\nQuestion: ${source.question}`
   )
     return;
-  const blocked = await accountBlocked(state, pending);
+  const blocked = await accountBlock(state, pending);
   if (blocked !== null) {
     observation.opened.report.launches.push(
       await replay(state, pending, action, blocked),

@@ -673,7 +673,9 @@ the drive launches' `opens_per_tick` and the notices workspace's reserved
 open, with at most `followup_concurrency` passes (2) running on the host at
 once, so a follow-up never waits for a drive's launch and a drive's launch
 never waits behind follow-ups. They share the accounts' slots. A follow-up
-that waits says on what: the lane's budget, the lane's cap or the accounts.
+that waits says on what: the lane's budget, the lane's cap, the accounts,
+the tick's deadline or another admission check, with the specific reason
+in its receipt and dashboard queue entry.
 The pass runs as a drive's pass does: in a
 terminal tab running the dispatcher's wrapper, as the account's vendor's
 non-interactive command (`claude -p`, `codex exec`), bound to the admitted
