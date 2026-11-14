@@ -195,7 +195,9 @@ describe("Jira: a facet field missing from an issue type's screen", () => {
   it("judges a mapping no screen can satisfy before the screens, so a screen gap does not hide it", async () => {
     // small is kept as a word, which a number field cannot take.
     const shared: Overlay = POINTED();
-    const facets = (shared.issue_tracker as Record<string, any>).facets;
+    const facets = (
+      shared.issue_tracker as { facets: { size: { values: unknown } } }
+    ).facets;
     facets.size.values = { xs: 1, small: "two", medium: 3, large: 5, xl: 8 };
     const { t } = jira(routes(site("t4")), shared);
     const health = (await t.facetStores()).facets.find(
