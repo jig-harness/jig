@@ -157,3 +157,28 @@ test("a runtime's registry stands in for session admission, and only it", () => 
       .state,
   ).toBe("finding");
 });
+test("an agent tool's worktree needs no registry, only no holder and the idle guard", () => {
+  const merged = classifyWorktree(evidence({ agentTool: true }), guard);
+  expect(merged.state).toBe("dead");
+  expect(merged.reportOnly).toBeUndefined();
+  expect(merged.reason).toContain("an agent tool's worktree");
+  const bare = classifyWorktree(
+    evidence({ requests: [], aheadOfBase: 0, agentTool: true }),
+    guard,
+  );
+  expect(bare.state).toBe("dead");
+  expect(bare.reportOnly).toBeUndefined();
+  for (const overrides of [
+    { held: true },
+    { held: null },
+    { idleMs: 0 },
+    { dirty: true },
+    { requests: [], aheadOfBase: 1 },
+    { localOnlyCommits: true, mergedHeadCovers: false },
+    { requests: [{ state: "OPEN" as const, head: "a".repeat(40) }] },
+  ])
+    expect(
+      classifyWorktree(evidence({ ...overrides, agentTool: true }), guard)
+        .state,
+    ).not.toBe("dead");
+});

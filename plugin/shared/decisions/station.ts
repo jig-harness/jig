@@ -157,6 +157,14 @@ export type StationFacts =
       record: string;
       question: string;
     }
+  | {
+      kind: "pickup-ended";
+      item: string;
+      record: string;
+      /** How its pass ended, as the record says; `null` when the need names none. */
+      ended: string | null;
+      carriedBy: readonly number[] | null;
+    }
   | { kind: "checkout"; target: string; branch: string; path: string }
   | {
       kind: "drive";
@@ -256,16 +264,26 @@ function followupStale(
   );
 }
 
+/** Whether an open pull request carries an item, in words, and whether none does. */
+function carriage(carriedBy: readonly number[] | null): {
+  carried: string;
+  free: boolean;
+} {
+  return {
+    carried:
+      carriedBy === null
+        ? "The tick could not tell whether an open pull request carries it."
+        : carriedBy.length === 0
+          ? "No open pull request carries it."
+          : `Open pull request ${carriedBy.map((n) => `#${n}`).join(", ")} carries it.`,
+    free: carriedBy !== null && carriedBy.length === 0,
+  };
+}
+
 function stalled(
   f: Extract<StationFacts, { kind: "stalled" }>,
 ): StationDecision {
-  const carried =
-    f.carriedBy === null
-      ? "The tick could not tell whether an open pull request carries it."
-      : f.carriedBy.length === 0
-        ? "No open pull request carries it."
-        : `Open pull request ${f.carriedBy.map((n) => `#${n}`).join(", ")} carries it.`;
-  const free = f.carriedBy !== null && f.carriedBy.length === 0;
+  const { carried, free } = carriage(f.carriedBy);
   return decision(
     "pickup",
     `How should the stalled pickup of ${f.item} go on?`,
@@ -288,6 +306,22 @@ function pickupQuestion(
     "hold",
     "The pass stopped on a question only a person can answer, so a person settles it before the item starts again.",
     `Its pass under launch record ${f.record} stopped on the question ${quoted(f.question)} without framing it.`,
+  );
+}
+
+function pickupEnded(
+  f: Extract<StationFacts, { kind: "pickup-ended" }>,
+): StationDecision {
+  const { carried, free } = carriage(f.carriedBy);
+  return decision(
+    "pickup",
+    `Should ${f.item} be picked up again after its pickup ended without moving it on?`,
+    ["release", "hold"],
+    free ? "release" : "hold",
+    free
+      ? "Its pass asked nothing and no pull request carries its work, so a new pickup is the way it moves again."
+      : "A pull request may already carry the item's work, so a person checks it before the item starts again.",
+    `Its pass under launch record ${f.record} ended${f.ended === null ? "" : ` (${f.ended})`} and left it waiting in a dispatch state, where no rule starts it again. ${carried}`,
   );
 }
 
@@ -343,6 +377,8 @@ export function frameStationDecision(facts: StationFacts): StationDecision {
       return stalled(facts);
     case "pickup-question":
       return pickupQuestion(facts);
+    case "pickup-ended":
+      return pickupEnded(facts);
     case "checkout":
       return checkout(facts);
     case "drive":

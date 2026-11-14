@@ -22,6 +22,7 @@ import {
   type LabelConfig,
   labelChange,
   labelName,
+  statesWrittenBy,
   type Projected,
   type StateName,
 } from "./projection.ts";
@@ -31,8 +32,8 @@ export type OwnWriter = "drive" | "followup";
 
 /** The states each writer may write. */
 const OWNED: Record<OwnWriter, ReadonlySet<StateName>> = {
-  drive: new Set(["driving", "parked", "converged"]),
-  followup: new Set(["followed-up", "followup-failed"]),
+  drive: new Set(statesWrittenBy("drive")),
+  followup: new Set(statesWrittenBy("followup")),
 };
 
 /** The two forge calls a write makes, each under the writer's own deadline. */

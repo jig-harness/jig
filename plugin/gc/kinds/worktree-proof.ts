@@ -317,12 +317,12 @@ export async function runtimeWorktreeProof(
   });
 }
 /** What names a worktree: its branch (`HEAD` when detached), its commit and its Git directory. */
-interface WorktreeIdentity {
+export interface WorktreeIdentity {
   name: string;
   head: string;
   admin: string;
 }
-async function worktreeIdentity(
+export async function worktreeIdentity(
   path: string,
 ): Promise<Outcome<WorktreeIdentity>> {
   const name = await git(path, ["rev-parse", "--abbrev-ref", "HEAD"]);
@@ -373,6 +373,23 @@ async function ignoredContentOf(
     ignored.value.split("\0").filter((entry) => entry !== ""),
   );
 }
+/** Uncommitted changes, index flags that hide them, and an operation in progress. */
+async function trackedState(
+  path: string,
+  admin: string,
+): Promise<
+  Outcome<Pick<WorktreeEvidence, "dirty" | "hiddenIndexChanges" | "operation">>
+> {
+  const flags = await git(path, ["ls-files", "-v", "-z"]);
+  if (!flags.ok) return flags;
+  const status = await git(path, [...CHANGES_STATUS_ARGS]);
+  if (!status.ok) return status;
+  return ok({
+    dirty: !!status.value,
+    hiddenIndexChanges: hidesIndexChanges(flags.value),
+    operation: await operation(admin),
+  });
+}
 /**
  * What the tree itself holds: uncommitted and index-hidden changes, an
  * operation in progress and its ignored content. Forge and history evidence
@@ -383,18 +400,12 @@ async function localEvidence(
   admin: string,
   coordinated: boolean,
 ): Promise<Outcome<WorktreeEvidence>> {
-  const flags = await git(path, ["ls-files", "-v", "-z"]);
-  if (!flags.ok) return flags;
-  const status = await git(path, [...CHANGES_STATUS_ARGS]);
-  if (!status.ok) return status;
-  const changes = hidesIndexChanges(flags.value);
-  const state = await operation(admin);
+  const tracked = await trackedState(path, admin);
+  if (!tracked.ok) return tracked;
   const ignoredContent = await ignoredContentOf(path);
   if (!ignoredContent.ok) return ignoredContent;
   return ok({
-    dirty: !!status.value,
-    hiddenIndexChanges: changes,
-    operation: state,
+    ...tracked.value,
     ignoredContent: ignoredContent.value,
     requests: null,
     localOnlyCommits: null,
@@ -450,6 +461,30 @@ async function identityUnchanged(
   if (!nameAfter.ok) return nameAfter;
   if (nameAfter.value !== identity.name)
     return failed("changed", "Worktree identity changed during the proof");
+  return ok(undefined);
+}
+/**
+ * Kept when the worktree changed after its last proof: its commit or branch
+ * moved, it gained changes or index flags that hide them, or an operation
+ * began. `git worktree remove` refuses tracked and untracked changes itself,
+ * but not a new commit on a detached head, which removal would leave on no
+ * ref.
+ */
+export async function unchangedSinceProof(
+  path: string,
+  identity: WorktreeIdentity,
+): Promise<Outcome<undefined, string>> {
+  const tracked = await trackedState(path, identity.admin);
+  if (!tracked.ok) return tracked;
+  const veto = localWorktreeVeto({
+    ...tracked.value,
+    ignoredContent: { rebuildable: [], setAside: [], other: [] },
+  });
+  if (veto !== null)
+    return failed("changed", `kept after the proof: ${veto.reason}`);
+  // Last, so a commit made while the slow scans above ran is seen.
+  const same = await identityUnchanged(path, identity);
+  if (!same.ok) return failed("changed", `kept: ${same.failure.reason}`);
   return ok(undefined);
 }
 /**
@@ -544,6 +579,8 @@ export async function preserveLegacyContent(
 /**
  * The proof of a worktree no runtime manages, or the runtime's proof after
  * its registry showed no agent: what Git, the forge and the file system say.
+ * `agentTool` marks a worktree an agent tool made, which may be collected
+ * without a registry once no process holds it and the idle guard has passed.
  * Evidence that cannot be read fails it; the kind records that as
  * `unverified`.
  */
@@ -552,6 +589,7 @@ export async function worktreeProof(
   policy: WorktreePolicy,
   idleDays: number,
   coordinated = false,
+  agentTool = false,
 ): Promise<Outcome<Proof>> {
   if (!lstatSync(path).isDirectory())
     return ok({ state: "finding", reason: "worktree root is not a directory" });
@@ -559,7 +597,7 @@ export async function worktreeProof(
   if (!identity.ok) return identity;
   const local = await localEvidence(path, identity.value.admin, coordinated);
   if (!local.ok) return local;
-  const facts = local.value;
+  const facts = { ...local.value, agentTool };
   // Changes, index flags and an operation in progress veto before ignored
   // content is weighed for an archive.
   const unarchivable = localWorktreeVeto({
