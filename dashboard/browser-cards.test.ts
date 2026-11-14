@@ -447,7 +447,18 @@ describe("the work identity and its linked work", () => {
 /** Every string the page shows or names a control by, on the open view. */
 function renderedStrings(page: Page): Promise<string[]> {
   return page.evaluate(() => [
-    document.body.innerText,
+    // The text a person sees: no script, style or hidden element's.
+    ...[...document.querySelectorAll("body *")]
+      .filter(
+        (element) =>
+          !element.matches("script, style, template") &&
+          element.getClientRects().length > 0,
+      )
+      .flatMap((element) =>
+        [...element.childNodes].flatMap((node) =>
+          node.nodeType === Node.TEXT_NODE ? (node.textContent ?? []) : [],
+        ),
+      ),
     ...[...document.querySelectorAll("[aria-label], [title], [placeholder]")]
       .filter((element) => element.closest("[aria-hidden='true']") === null)
       .flatMap((element) =>
@@ -485,9 +496,9 @@ describe("the page's words", () => {
           for (let i = 0; i < count; i++) {
             await identities.nth(i).click();
             await shows(page, ".pop");
-            const popped = (await page.locator(".pop").innerText()).match(
-              /.{0,40}tracker.{0,40}/i,
-            );
+            const popped = (
+              (await page.locator(".pop").textContent()) ?? ""
+            ).match(/.{0,40}tracker.{0,40}/i);
             expect({ view, popped }).toEqual({ view, popped: null });
             await page.keyboard.press("Escape");
             await until(
