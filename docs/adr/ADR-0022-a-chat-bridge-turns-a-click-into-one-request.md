@@ -59,13 +59,14 @@ A team's chat may carry buttons and commands through a **chat bridge**:
   that the chat user belongs to the configured workspace, is mapped or
   linked to a forge login, and for a write that the login may write to the
   repository. It keeps a record of each interaction it admitted, with the request,
-  its state and the effects it lists, until the interaction is done, so one
-  the chat delivers twice runs once and one a crash interrupted is finished
-  or refused, never lost. A stale worker can still repeat an effect after a
-  later interaction changed what it set; the bridge records that as
-  overlapped rather than preventing it. It starts no session, nothing the line
-  runs reads from it, and stopping it removes the buttons and commands and
-  nothing else.
+  its state and the effects it lists, until the interaction is done. A
+  duplicate delivery is suppressed when recovery can prove the effect already
+  happened; an interaction a crash interrupted is finished or refused, never
+  lost. This is not an exactly-once effect guarantee: a stale worker can still
+  repeat an effect after a later interaction changed what it set. The bridge
+  records that as overlapped rather than preventing it. It starts no session,
+  nothing the line runs reads from it, and stopping it removes the buttons and
+  commands and nothing else.
 - **Notices stay with the hosts.** The tick of the host that owns a
   repository's notices posts them to the chat, as it writes them today;
   the hub posts none.

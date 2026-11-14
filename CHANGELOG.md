@@ -394,6 +394,12 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.229.1] - 2026-11-14
+
+### Fixed
+
+- A served Linear item whose assignment history names no user assignment (it holds no assignment of the person, or the assignment was made by an integration or an automation) is no longer read again on every dispatch tick. The answer is kept with the item's update time and reported with the same reason until the item changes; a failed or rate-limited history read is still read again on the next tick. **Consumer action:** none.
+
 ## [0.229.0] - 2026-11-13
 
 ### Added
@@ -7974,7 +7980,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.229.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.229.1...HEAD
+[0.229.1]: https://github.com/jig-harness/jig/compare/v0.229.0...v0.229.1
 [0.229.0]: https://github.com/jig-harness/jig/compare/v0.228.1...v0.229.0
 [0.228.1]: https://github.com/jig-harness/jig/compare/v0.228.0...v0.228.1
 [0.228.0]: https://github.com/jig-harness/jig/compare/v0.227.2...v0.228.0
