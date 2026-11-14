@@ -129,6 +129,22 @@ function pickupQuestionFacts(action: NeedAction): StationFacts | null {
     : { kind: "pickup-question", item: action.target, record, question };
 }
 
+function pickupEndedFacts(
+  action: NeedAction,
+  ctx: StationContext,
+): StationFacts | null {
+  const record = text(action.evidence, "record");
+  return prOf(action.target) !== null || record === null
+    ? null
+    : {
+        kind: "pickup-ended",
+        item: action.target,
+        record,
+        ended: text(action.evidence, "ended"),
+        carriedBy: ctx.carriedBy(action.target),
+      };
+}
+
 /** How each cause the tick frames reads its facts. */
 const FACTS: Partial<
   Record<
@@ -140,6 +156,7 @@ const FACTS: Partial<
   "followup-stale": followupStaleFacts,
   stalled: stalledFacts,
   "pickup-question": pickupQuestionFacts,
+  "pickup-ended": pickupEndedFacts,
   "needs-person": (action) => needsPersonFacts(action, prOf(action.target)),
   "stopped-unknown": (action) => needsPersonFacts(action, prOf(action.target)),
 };

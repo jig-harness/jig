@@ -324,6 +324,10 @@ describe("Jira: a custom field named by name or id", () => {
     const { t, calls } = jira(
       routes({
         ...SITE,
+        "GET issue/createmeta/ENG/issuetypes/t3": {
+          ...SCREEN,
+          fields: [{ fieldId: "customfield_10016" }],
+        },
         "POST issue": { id: "1", key: "ENG-1" },
         "GET issue/ENG-1": issue({
           key: "ENG-1",

@@ -249,6 +249,8 @@ function row(
   };
 }
 
+const BY_SCOPE = { ...FAILURE_DEFAULTS, group: "scope" as const };
+
 const repository = (
   path: string,
   fields: Partial<MachineRepository> = {},
@@ -295,6 +297,7 @@ describe("the failure ledger's notifications", () => {
 
   it("sends the host's own failures to its first owned repository with notify whose turn is not failing", () => {
     const machine = {
+      failures: BY_SCOPE,
       repositories: [
         repository("/a", { owner: false }),
         repository("/b", { stages: ["rearm"] }),
@@ -328,7 +331,10 @@ describe("the failure ledger's notifications", () => {
   });
 
   it("keys the host's own failures without the destination, so a home that moves tells nothing twice", () => {
-    const machine = { repositories: [repository("/c"), repository("/d")] };
+    const machine = {
+      failures: BY_SCOPE,
+      repositories: [repository("/c"), repository("/d")],
+    };
     const tick = row({
       repo: "",
       key: "ticks sweep",
@@ -361,10 +367,13 @@ describe("the failure ledger's notifications", () => {
     expect(failureCauses("o/c", "/c", [quiet], machine)).toEqual([]);
     expect(hostNoticeKeys([quiet]).size).toBe(0);
     const loud = { ...quiet, quietAt: null };
-    expect(
-      failureCauses("o/c", "/c", [loud], machine).map((c) => c.cause),
-    ).toEqual(["ticks-failing"]);
-    expect(hostNoticeKeys([loud]).size).toBe(1);
+    const told = failureCauses("o/c", "/c", [loud], machine);
+    expect(told.map((c) => c.cause)).toEqual(["host-failing"]);
+    // Its own key and its cause's both stand, whichever `failures.group` tells it.
+    expect([...hostNoticeKeys([loud])]).toEqual([
+      "host ticks /c failing since 2026-11-06T10:00:00.000Z",
+      told[0]?.notice?.key ?? "",
+    ]);
   });
 
   it("never notifies a repository's failures from a host that does not own it", () => {

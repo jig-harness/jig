@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test";
-import { claimServedIssue } from "../scripts/lib/served-claim.ts";
+import {
+  claimServedIssue,
+  servedClaimStillStands,
+} from "../scripts/lib/served-claim.ts";
 import type { Tracker, TrackerUser } from "../scripts/lib/tracker/port.ts";
 
 const person: TrackerUser = { id: "person", name: "dana" };
@@ -604,4 +607,22 @@ test("a claim reads no extra state when the tracker has no blocked state", async
     return reads;
   };
   expect(await count(null)).toBe((await count("Blocked")) - 2);
+});
+
+test("a served claim that stands is read-only valid, and a hold added afterwards is named", async () => {
+  const w = world();
+  w.writes.push("start");
+  expect(
+    await servedClaimStillStands(w.tracker, "#1", { person: "dana" }),
+  ).toBe(null);
+  const read = w.tracker.poolIssue;
+  w.tracker.poolIssue = async (key) => {
+    const p = await read(key);
+    return p ? { ...p, labels: ["jig:hold"] } : p;
+  };
+  expect(
+    await servedClaimStillStands(w.tracker, "#1", { person: "dana" }),
+  ).toContain("changed during the claim");
+  // Reading it again wrote nothing.
+  expect(w.writes).toEqual(["start"]);
 });

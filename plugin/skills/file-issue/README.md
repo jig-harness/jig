@@ -216,7 +216,8 @@ It moves at most 50 issues a run, writes paced at 30 a minute, a `Retry-After` w
 what remains. When more than half of the issues that must carry a facet
 lack it, or a store fails closed, it moves nothing and reports the store
 instead: that is a store that stopped answering, not a pile of bad
-filings. It prints issue keys, never a title or a body, so a public CI log
+filings. A store that only cannot file some issue types (a Jira field
+missing from their create screens) does not stop it. It prints issue keys, never a title or a body, so a public CI log
 holds nothing the tracker does not show.
 
 Schedule it weekly with a tracker credential that may read issues,

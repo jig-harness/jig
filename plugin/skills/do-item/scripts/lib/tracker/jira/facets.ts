@@ -9,8 +9,10 @@
  * facet's values gives it): a repository that names none reads and writes
  * exactly what it did before. A field store's field is read in the request
  * that reads the rest of the issue, and written in the request that files or
- * changes it; every name resolves before anything is written, and a value
- * that names no option of the field's screen is refused, naming the options.
+ * changes it; every name resolves before anything is written, a field the
+ * create or edit screen of the issue's type lacks is refused, naming the
+ * issue type, and a value that names no option of the field's screen is
+ * refused, naming the options.
  *
  * Every Jira issue has an issue type. With the issue type as the type's
  * store, a type with no issue type of its own name (and no other name in
@@ -21,7 +23,7 @@
  * sub-task type); any other two different values read as no type.
  */
 
-import { failedHealth } from "../unavailable.ts";
+import { failedHealth, isUnavailable } from "../unavailable.ts";
 import { TrackerConfigError } from "../config-error.ts";
 import { readSignal, refuseStopped } from "../facets/bounds.ts";
 import { type Facets, type ResolvedFacet, usable } from "../facets/config.ts";
@@ -213,6 +215,61 @@ export interface JiraFacetStores {
   report(options?: FacetReadOptions): Promise<CoreFacetReport>;
 }
 
+/** A screen a write goes through, and what it is the screen of, for a message; `null` where none was read. */
+type Screen = { screen: FieldMeta; what: string } | null;
+
+/** Why a facet cannot be written through a screen that lacks its field. */
+const notOn = (
+  s: ResolvedFacet,
+  field: FacetField,
+  where: string,
+  it: string,
+) =>
+  `${s.facet} is kept in the field '${field.name}' (${field.id}), which is not on ${where}; add it to ${it}, or keep ${s.facet} in labels (store: label)`;
+
+/** Refuse a field the screen lacks; unchecked where no screen was read. */
+function onScreen(s: ResolvedFacet, field: FacetField, found: Screen): void {
+  if (found !== null && !found.screen.has(field.id))
+    throw new TrackerRequestError(
+      "unresolved",
+      notOn(s, field, found.what, "the screen"),
+    );
+}
+
+/** `A`, `A and B`, `A, B and C`. */
+function listed(names: ReadonlyArray<string>, last = "and"): string {
+  return names.length < 2
+    ? names.join("")
+    : `${names.slice(0, -1).join(", ")} ${last} ${names.at(-1)}`;
+}
+
+const article = (name: string) => (/^[aeiou]/i.test(name) ? "an" : "a");
+
+/** The health of a field store whose field the create screens of `lacking` do not hold. */
+function lackingHealth(
+  s: ResolvedFacet,
+  field: FacetField,
+  lacking: ReadonlyArray<string>,
+  project: string,
+  restricted: ReadonlyArray<string> = [],
+) {
+  const many = lacking.length > 1;
+  return {
+    status: "failed" as const,
+    unavailable: false,
+    error: notOn(
+      s,
+      field,
+      `the create screen${many ? "s" : ""} of ${listed(lacking)} in ${project}`,
+      many ? "those screens" : "the screen",
+    ).slice(0, 300),
+    fails: `filing ${listed(
+      [...lacking, ...restricted].map((n) => `${article(n)} ${n}`),
+      "or",
+    )} fails`,
+  };
+}
+
 /** The standard issue types: neither sub-tasks nor above the standard level. */
 const standard = (types: IssueTypeMeta[]) =>
   types.filter((t) => !t.subtask && t.level === 0);
@@ -305,16 +362,26 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
     return found;
   }
 
-  /** The issue type a type value is kept as, `null` where it falls back to `issue_type` and its label. */
-  async function issueTypeOf(
+  /** The standard issue type of a type value's name, `null` where the project has none. */
+  async function keptAs(
     value: string,
     signal?: AbortSignal,
   ): Promise<IssueTypeMeta | null> {
     const name = type?.map?.toTracker(value) ?? value;
     const types = standard(await client.issueTypes(signal));
-    const found = types.find((t) => same(t.name, name));
+    return types.find((t) => same(t.name, name)) ?? null;
+  }
+
+  /** The issue type a type value is kept as, `null` where it falls back to `issue_type` and its label. */
+  async function issueTypeOf(
+    value: string,
+    signal?: AbortSignal,
+  ): Promise<IssueTypeMeta | null> {
+    const found = await keptAs(value, signal);
     const named = type?.named?.some((v) => same(v, value)) === true;
-    if (found !== undefined || !named) return found ?? null;
+    if (found !== null || !named) return found;
+    const name = type?.map?.toTracker(value) ?? value;
+    const types = standard(await client.issueTypes(signal));
     throw new TrackerRequestError(
       "unresolved",
       `type ${value} is kept in Jira's issue types as '${name}', which is no standard issue type of ${project} (it has: ${types.map((t) => t.name).join(", ") || "none"}); name its issue type in ${at("type", "values")}, or keep type in labels (store: label)`,
@@ -334,14 +401,16 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
     return found;
   }
 
-  /** The value Jira takes for a facet kept in a field; an option is checked against `meta`. */
+  /** The value Jira takes for a facet kept in a field, checked against `meta`'s screen. */
   async function encode(
     s: ResolvedFacet,
     value: string,
-    meta: () => Promise<{ screen: FieldMeta; what: string } | null>,
+    meta: () => Promise<Screen>,
     signal?: AbortSignal,
   ): Promise<unknown> {
     const field = await fieldOf(s, signal);
+    const found = await meta();
+    onScreen(s, field, found);
     const name = s.map?.toTracker(value) ?? value;
     if (field.kind === "number") return numberOf(s, value, name, field);
     if (field.kind === "string") return name;
@@ -353,7 +422,7 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
         );
       return [name];
     }
-    const option = optionOf(s, value, name, field, await meta());
+    const option = optionOf(s, value, name, field, found);
     return field.kind === "option" ? { value: option } : [{ value: option }];
   }
 
@@ -378,14 +447,9 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
     value: string,
     name: string,
     field: FacetField,
-    found: { screen: FieldMeta; what: string } | null,
+    found: Screen,
   ): string {
     if (found === null) return name;
-    if (!found.screen.has(field.id))
-      throw new TrackerRequestError(
-        "unresolved",
-        `${s.facet} is kept in the field '${field.name}' (${field.id}), which is not on ${found.what}; add it to the screen, or keep ${s.facet} in labels (store: label)`,
-      );
     const allowed = found.screen.get(field.id) ?? null;
     if (allowed === null) return name;
     const match = allowed.find((o) => same(o, name));
@@ -414,11 +478,11 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
   /** The fields a write of `values` sets, each checked against its screen. */
   async function fieldWrites(
     values: { type?: string | null; size?: string | null },
-    meta: () => Promise<{ screen: FieldMeta; what: string } | null>,
+    meta: () => Promise<Screen>,
     signal?: AbortSignal,
   ): Promise<Record<string, unknown>> {
     const out: Record<string, unknown> = {};
-    let screen: Promise<{ screen: FieldMeta; what: string } | null> | undefined;
+    let screen: Promise<Screen> | undefined;
     const once = () => {
       screen ??= meta();
       return screen;
@@ -427,6 +491,7 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
       const v = s.facet === "priority" ? undefined : values[s.facet];
       if (v === undefined) continue;
       const field = await fieldOf(s, signal);
+      if (v === null) onScreen(s, field, await once());
       out[field.id] =
         v === null
           ? field.kind === "options" || field.kind === "strings"
@@ -529,19 +594,122 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
     };
   }
 
+  /** The create screen of each issue type among `names` the project has. */
+  async function createScreens(names: string[], signal?: AbortSignal) {
+    const all = await client.issueTypes(signal);
+    const types: IssueTypeMeta[] = [];
+    for (const n of names) {
+      const t = all.find((x) => same(x.name, n));
+      if (t !== undefined && !types.includes(t)) types.push(t);
+    }
+    const screens: { t: IssueTypeMeta; screen: FieldMeta }[] = [];
+    for (const t of types) {
+      refuseStopped(signal);
+      screens.push({ t, screen: await client.createMeta(t.id, signal) });
+    }
+    return screens;
+  }
+
+  /** The first refusal a create screen gives a value of the store, or null when it offers them all. */
+  async function screenRefusal(
+    s: ResolvedFacet,
+    { t, screen }: { t: IssueTypeMeta; screen: FieldMeta },
+    signal?: AbortSignal,
+  ) {
+    let first: string | null = null;
+    for (const v of s.values) {
+      refuseStopped(signal);
+      const what = `the create screen of ${t.name} in ${project}`;
+      try {
+        await encode(s, v, async () => ({ screen, what }), signal);
+      } catch (err) {
+        if (!(err instanceof TrackerRequestError) || isUnavailable(err))
+          throw err;
+        first ??= err.message;
+      }
+    }
+    return first;
+  }
+
+  /** The issue types whose create screen offers fewer options than the store's values, with the first refusal of each. */
+  async function restrictedTypes(
+    s: ResolvedFacet,
+    screens: { t: IssueTypeMeta; screen: FieldMeta }[],
+    signal?: AbortSignal,
+  ) {
+    const restricted = new Map<string, string>();
+    for (const x of screens) {
+      const refusal = await screenRefusal(s, x, signal);
+      if (refusal !== null && !restricted.has(x.t.name))
+        restricted.set(x.t.name, refusal);
+    }
+    return restricted;
+  }
+
+  /** The health where a create screen offers fewer options than the store's values; it stops only the filing of its type. */
+  function restrictedHealth(restricted: Map<string, string>) {
+    if (restricted.size === 0) return null;
+    return {
+      status: "failed" as const,
+      unavailable: false,
+      error: [...restricted.values()][0]?.slice(0, 300) ?? "",
+      fails: `filing ${listed(
+        [...restricted.keys()].map((n) => `${article(n)} ${n}`),
+        "or",
+      )} fails`,
+    };
+  }
+
+  /**
+   * A field store's health: its field on the create screen of each issue
+   * type Jig files, and each value an option there. An epic type is asked no
+   * size, so its screen is not checked for one; a type value with no issue
+   * type is the type facet's own finding, and a pool name the project lacks
+   * is refused where the pool is read.
+   */
+  async function fieldHealth(s: ResolvedFacet, signal?: AbortSignal) {
+    const field = await fieldOf(s, signal);
+    // The issue types a filing uses, and the pool's, which a person files by hand.
+    const names = [
+      ...(await filedTypes(signal, keptAs)),
+      ...settings.poolIssueTypes,
+    ].filter(
+      (n) => s.facet !== "size" || !facets.epicTypes.some((e) => same(e, n)),
+    );
+    const screens = await createScreens(names, signal);
+    // A mapping no screen can satisfy blocks every write, so it is judged first
+    // and fails the whole store whatever the screens lack.
+    for (const v of s.values) {
+      refuseStopped(signal);
+      await encode(s, v, async () => null, signal);
+    }
+    const lacking = screens.filter((x) => !x.screen.has(field.id));
+    // A screen without the field fails its type's filing; the screens that
+    // have it are still checked, so the health names every type that fails.
+    const restricted = await restrictedTypes(
+      s,
+      screens.filter((x) => x.screen.has(field.id)),
+      signal,
+    );
+    if (lacking.length > 0)
+      return lackingHealth(
+        s,
+        field,
+        lacking.map((x) => x.t.name),
+        project,
+        [...restricted.keys()],
+      );
+    return restrictedHealth(restricted) ?? { status: "ok" as const };
+  }
+
   async function health(s: ResolvedFacet, signal?: AbortSignal) {
     try {
-      if (s.store === "native") {
-        await fallbackType(signal);
-        for (const v of s.values) {
-          refuseStopped(signal);
-          await issueTypeOf(v, signal);
-        }
-      } else
-        for (const v of s.values) {
-          refuseStopped(signal);
-          await encode(s, v, createScreen(settings.issueType, signal), signal);
-        }
+      if (s.store !== "native") return await fieldHealth(s, signal);
+      await fallbackType(signal);
+      for (const v of s.values) {
+        refuseStopped(signal);
+        await issueTypeOf(v, signal);
+      }
       return { status: "ok" as const };
     } catch (err) {
       return failedHealth(err);
@@ -579,8 +747,15 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
       );
   }
 
-  /** The issue types a filing uses: the configured ones, and those a native type is kept as. */
-  async function filedTypes(signal?: AbortSignal): Promise<string[]> {
+  /**
+   * The issue types a filing uses: the configured ones, and those a native
+   * type is kept as, each found by `keep` (by default refusing a value whose
+   * named issue type the project lacks).
+   */
+  async function filedTypes(
+    signal?: AbortSignal,
+    keep: typeof issueTypeOf = issueTypeOf,
+  ): Promise<string[]> {
     const names = [settings.issueType];
     if (settings.subtaskType !== null) names.push(settings.subtaskType);
     else {
@@ -592,7 +767,7 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
       if (subtasks.length === 1 && only !== undefined) names.push(only.name);
     }
     for (const value of type?.values ?? []) {
-      const kept = await issueTypeOf(value, signal);
+      const kept = await keep(value, signal);
       if (kept !== null) names.push(kept.name);
     }
     return names.filter((n, i) => names.findIndex((m) => same(m, n)) === i);
@@ -705,7 +880,7 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
           patch,
           async () => ({
             screen: await editScreen(),
-            what: `the edit screen of ${issue.key}`,
+            what: `the edit screen of ${issue.key}${issue.issueType === null ? "" : ` (${issue.issueType.name})`}`,
           }),
           signal,
         ),
