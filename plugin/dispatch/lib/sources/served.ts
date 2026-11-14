@@ -220,6 +220,13 @@ async function readPerson(
   return got;
 }
 
+/** A failed queue makes the reading incomplete; the first one's cause is the one kept. */
+function noteFailure(out: ServedReading, got: PersonReading): void {
+  if (!got.failed) return;
+  if (!out.incomplete) out.failureCause = got.failureCause;
+  out.incomplete = true;
+}
+
 /** Read every served identity for this adapter; an unreadable identity starts nothing. */
 export async function readServedPickups(
   tracker: Tracker,
@@ -255,10 +262,7 @@ export async function readServedPickups(
     out.claimed.push(...got.claimed);
     out.unplaced.push(...got.unplaced);
     candidates.push(...got.candidates);
-    if (got.failed) {
-      out.incomplete = true;
-      if (!("failureCause" in out)) out.failureCause = got.failureCause;
-    }
+    noteFailure(out, got);
     limited ??= got.limited;
   }
   if (limited !== null) {
