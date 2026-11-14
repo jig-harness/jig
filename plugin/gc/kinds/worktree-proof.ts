@@ -317,12 +317,12 @@ export async function runtimeWorktreeProof(
   });
 }
 /** What names a worktree: its branch (`HEAD` when detached), its commit and its Git directory. */
-interface WorktreeIdentity {
+export interface WorktreeIdentity {
   name: string;
   head: string;
   admin: string;
 }
-async function worktreeIdentity(
+export async function worktreeIdentity(
   path: string,
 ): Promise<Outcome<WorktreeIdentity>> {
   const name = await git(path, ["rev-parse", "--abbrev-ref", "HEAD"]);
@@ -438,7 +438,7 @@ async function historyEvidence(
   return ok(undefined);
 }
 /** A `changed` failure when the tree's commit or branch moved while it was proved. */
-async function identityUnchanged(
+export async function identityUnchanged(
   path: string,
   identity: WorktreeIdentity,
 ): Promise<Outcome<void>> {
@@ -450,6 +450,33 @@ async function identityUnchanged(
   if (!nameAfter.ok) return nameAfter;
   if (nameAfter.value !== identity.name)
     return failed("changed", "Worktree identity changed during the proof");
+  return ok(undefined);
+}
+/**
+ * Kept when the worktree changed after its last proof: its commit or branch
+ * moved, it gained changes or index flags that hide them, or an operation
+ * began. `git worktree remove` refuses tracked and untracked changes itself,
+ * but not a new commit on a detached head, which removal would leave on no
+ * ref.
+ */
+export async function unchangedSinceProof(
+  path: string,
+  identity: WorktreeIdentity,
+): Promise<Outcome<undefined, string>> {
+  const same = await identityUnchanged(path, identity);
+  if (!same.ok) return failed("changed", `kept: ${same.failure.reason}`);
+  const flags = await git(path, ["ls-files", "-v", "-z"]);
+  if (!flags.ok) return flags;
+  const status = await git(path, [...CHANGES_STATUS_ARGS]);
+  if (!status.ok) return status;
+  const veto = localWorktreeVeto({
+    dirty: !!status.value,
+    hiddenIndexChanges: hidesIndexChanges(flags.value),
+    operation: await operation(identity.admin),
+    ignoredContent: { rebuildable: [], setAside: [], other: [] },
+  });
+  if (veto !== null)
+    return failed("changed", `kept after the proof: ${veto.reason}`);
   return ok(undefined);
 }
 /**

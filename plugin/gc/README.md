@@ -39,7 +39,9 @@ The repository declares kinds in `.config/jig.yaml`. The machine file
 controls the schedule, retention and longer idle guards. Collecting runs
 fetch the declaration from the install-recorded base branch and remote URL,
 refusing when a URL rewrite rule redirects that URL; only the intersection
-with confirmed install bounds is authorized. Git hooks and the file-system
+with confirmed install bounds is authorized. A confirmed `worktrees` kind
+covers the agent tool's directory in the clone's primary checkout
+([below](#worktrees-an-agent-tool-makes)) as well as the confirmed roots. Git hooks and the file-system
 monitor are disabled for these calls; transport and credential settings the
 user configured (an SSH command, a credential helper) apply as they do to the
 user's own fetches. See
@@ -161,18 +163,26 @@ manager makes a `<branch>-2` workspace instead. The kind derives the
 directory from the clone's primary checkout, whatever roots the repository
 declares, and marks each tree in it `runtime: agent-tool`.
 
-A subagent ends with the session that started it, so for these trees no
-process inside and the idle guard past stand in for the session admission
-the agent tool does not hold. Every other check applies unchanged: a tree is
+The agent tool holds no session admission and keeps no registry, and a
+subagent at work rarely shows as a process inside its tree (the session
+running it has its working directory elsewhere), so what admits these trees
+is the idle guard: nothing in the tree or its git directory changed for
+`idle_days`, and no process holds it. What makes removal safe is the rest of
+the proof, which applies unchanged: a tree is
 collected only when it is clean (no changes, hidden index flags, operation in
 progress or ignored content no rule accounts for), no open pull request
 holds its branch or commit, and its commits are on a remote branch or under
 a merged pull request's head. A clean tree that has no pull request and no
 commit the base lacks is collected too, where a tree of another opener is a
 finding. Collection runs the base branch's remove hook inside the tree and
-parks its reflection findings, as for an Orca checkout, then removes it with
-`git worktree remove` without `--force`, so git itself refuses a tree that
-gained changes meanwhile.
+parks its reflection findings, as for an Orca checkout. Right before removal
+it checks again that the tree's commit and branch are the ones the final
+proof saw, that it gained no changes, hidden index flags or operation, and
+that no process holds it: the hook may run for minutes, and a commit on a
+detached head would be on no ref once the tree is gone. Then it removes the
+tree with `git worktree remove` without `--force`, which deletes ignored
+content such as dependency directories, under a deadline of its own; a
+removal cut short leaves the tree partly deleted, and the receipt says so.
 
 A tree the kind keeps (an open pull request, unpushed commits, changes, a
 process in it) is never changed. When it is on a branch, the reason names

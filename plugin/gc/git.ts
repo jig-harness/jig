@@ -26,10 +26,15 @@ export function gitEnvironment(
 }
 /** A git command gc ran exited with a failure: `git <command>: <its error output>`. */
 export type GitOutcome<T> = Outcome<T, "git-failed">;
-/** Git's output, trailing whitespace trimmed, or why the command failed. */
+/**
+ * Git's output, trailing whitespace trimmed, or why the command failed. A
+ * command that may take longer than a read (removing a worktree's files)
+ * passes its own `timeoutSec`.
+ */
 export async function gcGit(
   root: string,
   args: string[],
+  timeoutSec = 30,
 ): Promise<GitOutcome<string>> {
   // Observation must not refresh the index or execute a checkout's monitor,
   // and the base fetch must not run hooks, which a hooks path can place in
@@ -48,7 +53,7 @@ export async function gcGit(
       root,
       ...args,
     ],
-    { timeoutSec: 30, env: gitEnvironment() },
+    { timeoutSec, env: gitEnvironment() },
   );
   if (result.code !== 0)
     return failed(

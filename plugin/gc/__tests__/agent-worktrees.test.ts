@@ -90,7 +90,9 @@ function setup() {
   writeFileSync(join(repo, ".gitignore"), ".claude/\n");
   writeFileSync(
     join(repo, ".config/worktree-hooks/remove"),
-    `#!/bin/sh\necho "removing $(pwd)" > ${JSON.stringify(join(root, "hook-ran"))}\nexit 0\n`,
+    // With `commit-during-hook` present, the hook commits in the tree: a
+    // subagent's commit landing between the final proof and the removal.
+    `#!/bin/sh\necho "removing $(pwd)" > ${JSON.stringify(join(root, "hook-ran"))}\n[ -f ${JSON.stringify(join(root, "commit-during-hook"))} ] && git -c user.email=t@example.invalid -c user.name=T commit -q --allow-empty -m late\nexit 0\n`,
   );
   chmodSync(join(repo, ".config/worktree-hooks/remove"), 0o755);
   command(["git", "add", "."]);
@@ -110,13 +112,40 @@ function setup() {
   command(["git", "add", "change.txt"], tree);
   command(["git", "commit", "-m", "change"], tree);
   command(["git", "push", "origin", "topic"], tree);
-  /** The fake `gh`, answering a pull request in `state` at the tree's current head. */
-  const forge = (state: "MERGED" | "OPEN"): void => {
+  /**
+   * The fake `gh`, answering a pull request in `state` at the tree's current
+   * head, by branch (`gh pr list`) and by commit (`gh api`, in the REST
+   * form); `NONE` answers no pull request either way.
+   */
+  const forge = (state: "MERGED" | "OPEN" | "NONE"): void => {
     const head = command(["git", "-C", tree, "rev-parse", "HEAD"]);
+    const listed =
+      state === "NONE"
+        ? []
+        : [
+            {
+              state,
+              headRefOid: head,
+              headRepository: { name: "app" },
+              headRepositoryOwner: { login: "acme" },
+            },
+          ];
+    const rest =
+      state === "NONE"
+        ? []
+        : [
+            {
+              state: state === "OPEN" ? "open" : "closed",
+              merged_at: state === "MERGED" ? "2026-11-01T00:00:00Z" : null,
+              head: { sha: head },
+              number: 7,
+            },
+          ];
     writeFakeProgram(
       join(bin, "gh"),
       `#!/usr/bin/env bun
-console.log(JSON.stringify([{ state: ${JSON.stringify(state)}, headRefOid: ${JSON.stringify(head)}, headRepository: { name: "app" }, headRepositoryOwner: { login: "acme" } }]));
+const rest = process.argv.includes("api");
+console.log(JSON.stringify(rest ? ${JSON.stringify(rest)} : ${JSON.stringify(listed)}));
 `,
     );
   };
@@ -181,8 +210,9 @@ function gc(f: ReturnType<typeof setup>, args: string[]) {
   );
 }
 
-function line(result: ReturnType<typeof gc>): ReceiptLine {
-  expectSpawnExit(result, 0);
+/** The run's one receipt line; a collection that failed ends the run with exit 1. */
+function line(result: ReturnType<typeof gc>, exit = 0): ReceiptLine {
+  expectSpawnExit(result, exit);
   const receipt = JSON.parse(result.stdout.toString()) as Receipt;
   expect(receipt.resources).toHaveLength(1);
   return receipt.resources[0] as ReceiptLine;
@@ -217,6 +247,43 @@ describe.skipIf(
     expect(f.command(["git", "worktree", "list"])).not.toContain("agent-a1");
   }, 60_000);
 
+  test("a detached one whose commit a merged pull request brought in is collected, its branch kept", () => {
+    const f = setup();
+    f.command(["git", "switch", "--detach"], f.tree);
+    idle(f);
+    const collected = line(gc(f, ["--collect"]));
+    expect(collected.outcome).toBe("collected");
+    expect(existsSync(f.tree)).toBe(false);
+    expect(f.command(["git", "branch", "--list", "topic"])).toContain("topic");
+  }, 60_000);
+
+  test("a clean detached one with no pull request and no commit the base lacks is collected", () => {
+    const f = setup();
+    f.command(["git", "switch", "--detach", "main"], f.tree);
+    f.forge("NONE");
+    idle(f);
+    expect(line(gc(f, []))).toMatchObject({
+      outcome: "would-collect",
+      reason: expect.stringContaining("holds no commit the base lacks"),
+    });
+    expect(line(gc(f, ["--collect"])).outcome).toBe("collected");
+    expect(existsSync(f.tree)).toBe(false);
+  }, 60_000);
+
+  test("a detached one that gains a commit after the final proof is kept", () => {
+    const f = setup();
+    f.command(["git", "switch", "--detach"], f.tree);
+    idle(f);
+    writeFileSync(join(f.root, "commit-during-hook"), "");
+    const kept = line(gc(f, ["--collect"]), 1);
+    expect(kept.outcome).toBe("failed");
+    expect(kept.reason).toContain("Worktree identity changed");
+    expect(existsSync(f.tree)).toBe(true);
+    expect(f.command(["git", "-C", f.tree, "log", "-1", "--format=%s"])).toBe(
+      "late",
+    );
+  }, 60_000);
+
   test("one holding an open pull request's branch is kept, naming the branch and how to release it", () => {
     const f = setup();
     f.forge("OPEN");
@@ -225,7 +292,7 @@ describe.skipIf(
     expect(kept.outcome).toBe("refused");
     expect(kept.reason).toContain("branch has an open pull request");
     expect(kept.reason).toContain(
-      `it holds branch topic; \`git -C ${f.tree} switch --detach\``,
+      `it holds branch topic; \`git -C ${JSON.stringify(f.tree)} switch --detach\``,
     );
     expect(existsSync(join(f.tree, "change.txt"))).toBe(true);
   }, 60_000);

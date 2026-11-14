@@ -11,6 +11,7 @@ release: minor
   process and covered by a merged or closed pull request (or hold no commit
   the base lacks). A tree it keeps on a branch names that branch and the
   `git -C <tree> switch --detach` command that releases it. Before this
-  release those trees were never reported. Each scheduled run removes the
-  ones that qualify: run `jig gc --kind worktrees` first to see which those
-  are.
+  release those trees were never reported. A confirmed `worktrees` kind now
+  covers that directory without reinstalling, and scheduled runs remove the
+  trees that qualify on the collection day or under disk pressure: run
+  `jig gc --kind worktrees` to see which those are.

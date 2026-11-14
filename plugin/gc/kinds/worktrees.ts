@@ -43,11 +43,13 @@ import {
   orcaLiveness,
   preserveLegacyContent,
   runtimeWorktreeProof,
+  unchangedSinceProof,
+  worktreeIdentity,
   worktreePolicy,
   worktreeProof,
   type WorktreePolicy,
 } from "./worktree-proof.ts";
-import type { CollectionKind, Resource } from "../types.ts";
+import type { CollectionKind, Proof, Resource } from "../types.ts";
 import { currentMs } from "../../shared/time.ts";
 
 /** Seconds `orca worktree rm` may take: it deletes the checkout's files. */
@@ -61,6 +63,8 @@ const ORCA_REMOVAL_LIMIT_MS = 30 * 60_000;
  */
 const AGENT_TOOL_DIR = [".claude", "worktrees"];
 const AGENT_TOOL = "agent-tool";
+/** Seconds `git worktree remove` may take: it deletes the checkout's files, dependency directories included. */
+const GIT_REMOVE_TIMEOUT_SEC = 300;
 /** The time the one-time archive of a worktree's ignored content may take. */
 const ARCHIVE_LIMIT_MS = 5 * 60_000;
 
@@ -451,6 +455,11 @@ async function collectAgentWorktree(
         };
   let snapshot: { hook: string; dir: string } | null = null;
   try {
+    // Read right after the runner's final proof: every check before removal
+    // holds the tree to this commit and branch.
+    const identity = await worktreeIdentity(resource.id);
+    if (!identity.ok)
+      return { outcome: "failed", reason: identity.failure.reason };
     const taken = await snapshotBaseHooks(repository, declaration, resource.id);
     if (!taken.ok) return { outcome: "failed", reason: taken.failure.reason };
     snapshot = taken.value;
@@ -461,24 +470,32 @@ async function collectAgentWorktree(
       steps: {
         ...localSteps(currentMs() + ORCA_REMOVAL_LIMIT_MS, log),
         hook: () => base?.hook ?? null,
-        // The hook can leave a process in the checkout that outlives it.
+        // The hook and the park may run for minutes, a subagent can commit
+        // meanwhile, and the hook can leave a process that outlives it.
         admit: (worktree) =>
           admitAfterHook(
             worktree,
             legacy,
-            () => unheld(worktree),
+            async () => {
+              const same = await unchangedSinceProof(worktree, identity.value);
+              return same.ok ? unheld(worktree) : same;
+            },
             (written) => {
               archived = written;
             },
           ),
       },
       remove: async (worktree) => {
-        const done = await git(repository, ["worktree", "remove", worktree]);
+        const done = await git(
+          repository,
+          ["worktree", "remove", worktree],
+          GIT_REMOVE_TIMEOUT_SEC,
+        );
         return done.ok
           ? ok(undefined)
           : failed(
               "git-refused",
-              `git worktree remove: ${done.failure.reason}`,
+              `${done.failure.reason}; a removal cut short leaves the tree partly deleted: inspect it, then run git worktree remove --force on it`,
             );
       },
     });
@@ -494,6 +511,11 @@ async function collectAgentWorktree(
       },
     });
   } catch (error) {
+    // A step that throws (a platform error, or a defect) fails the removal;
+    // its stack goes to the log, since the receipt keeps the message only.
+    log(
+      error instanceof Error ? (error.stack ?? error.message) : String(error),
+    );
     return withArchive({
       outcome: "failed",
       reason: error instanceof Error ? error.message : String(error),
@@ -514,9 +536,22 @@ function isAgentTool(resource: Resource): boolean {
  * while keeping every file and commit.
  */
 async function heldBranch(path: string): Promise<string | null> {
-  const name = await git(path, ["symbolic-ref", "--quiet", "--short", "HEAD"]);
-  if (!name.ok || name.value === "") return null;
-  return `it holds branch ${name.value}; \`git -C ${path} switch --detach\` releases the branch and keeps the worktree as it is`;
+  const name = await git(path, ["rev-parse", "--abbrev-ref", "HEAD"]);
+  if (!name.ok)
+    return `the branch it holds could not be read (${name.failure.reason})`;
+  if (name.value === "HEAD" || name.value === "") return null;
+  return `it holds branch ${name.value}; \`git -C ${JSON.stringify(path)} switch --detach\` releases the branch and keeps the worktree as it is`;
+}
+/** A kept agent tool's worktree's proof, with the branch it holds named. */
+async function withHeldBranch(
+  resource: Resource,
+  proof: Proof,
+): Promise<Proof> {
+  if (!isAgentTool(resource) || proof.state === "dead") return proof;
+  const held = await heldBranch(resource.id);
+  return held === null
+    ? proof
+    : { ...proof, reason: `${proof.reason}; ${held}` };
 }
 /** What the receipt's reason says of an archive written before removal. */
 function archiveNote(archived: Archived | null): string {
@@ -651,7 +686,10 @@ export function worktreesKind(
     },
     prove: async (resource) => {
       if (isMapping(resource.details) && resource.details.locked === true)
-        return { state: "live", reason: "worktree is locked" };
+        return withHeldBranch(resource, {
+          state: "live",
+          reason: "worktree is locked",
+        });
       const resolved =
         policy === undefined ? await worktreePolicy(repository) : ok(policy);
       if (!resolved.ok)
@@ -672,11 +710,7 @@ export function worktreesKind(
             );
       if (!proved.ok)
         return { state: "unverified", reason: proved.failure.reason };
-      if (!agentTool || proved.value.state === "dead") return proved.value;
-      const held = await heldBranch(resource.id);
-      return held === null
-        ? proved.value
-        : { ...proved.value, reason: `${proved.value.reason}; ${held}` };
+      return withHeldBranch(resource, proved.value);
     },
     collect: async (resource) => {
       if (isAgentTool(resource))
