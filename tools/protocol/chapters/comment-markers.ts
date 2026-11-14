@@ -152,6 +152,14 @@ function leftOutTable(): string {
 }
 
 const FIELDS: Readonly<Record<string, FieldSpec>> = {
+  kind: {
+    type: "string",
+    nullable: false,
+    required: true,
+    identifies: false,
+    description:
+      "active for a value in force; tombstone for a value withdrawn, which the chapter keeps listed so its identity is never reused. It is not part of a value's identity, so withdrawing a value changes only this field.",
+  },
   name: {
     type: "string",
     nullable: true,
@@ -233,9 +241,13 @@ const FIELDS: Readonly<Record<string, FieldSpec>> = {
   },
 };
 
+/** The `kind` of a value in force; a withdrawn one reads `tombstone`. */
+const ACTIVE = "active";
+
 /** One value for each of the kind's markers, so a marker added to a kind is a value added. */
 function kindValues(k: RecordKind): DataValue[] {
   return (k.markers ?? []).map((marker) => ({
+    kind: ACTIVE,
     name: k.name,
     part: "marker",
     marker,
@@ -250,6 +262,7 @@ function kindValues(k: RecordKind): DataValue[] {
 }
 
 const envelopeValue = ([field, f]: [string, EnvelopeField]): DataValue => ({
+  kind: ACTIVE,
   name: null,
   part: "envelope-field",
   marker: field,
@@ -263,6 +276,7 @@ const envelopeValue = ([field, f]: [string, EnvelopeField]): DataValue => ({
 });
 
 const notRecordValue = (r: (typeof NOT_RECORDS)[number]): DataValue => ({
+  kind: ACTIVE,
   name: null,
   part: "not-record",
   marker: r.marker,

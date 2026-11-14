@@ -224,6 +224,13 @@ describe("the hidden comment markers", () => {
     );
   });
 
+  test("keeps a value's identity apart from its kind, so a withdrawal to a tombstone stays representable", () => {
+    expect(COMMENT_MARKERS.fields.kind?.identifies).toBe(false);
+    for (const v of all) expect(v.kind).toBe("active");
+    const identities = all.map((v) => JSON.stringify([v.part, v.marker]));
+    expect(new Set(identities).size).toBe(identities.length);
+  });
+
   test("renders every marker that is not a record, and no other value without a kind", () => {
     expect(values.filter((v) => v.name === null).map((v) => v.marker)).toEqual(
       NOT_RECORDS.map((r) => r.marker),
