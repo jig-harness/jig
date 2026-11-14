@@ -20,7 +20,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { hostname, tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileLockPath } from "../file-lock.ts";
 import {
   expectSpawnExit,
   expectSpawnExited,
@@ -467,9 +468,12 @@ describe("a dead holder's admission on a worktree that is gone", () => {
 
 describe("the reclaim lock of a stale admission", () => {
   function lockFor(file: string): string {
-    const parts = file.split("/");
-    const name = parts.pop();
-    return [...parts, `.${name}.reclaim`].join("/");
+    return fileLockPath(file, dirname(file), "reclaim");
+  }
+
+  /** A lock file's content as the shared file lock writes it, for `identity`. */
+  function lockOf(identity: ProcessIdentity): string {
+    return `${identity.pid}\ntoken\n${encodeIdentity(identity)}\n`;
   }
 
   it("is taken over when its collector is dead, and kept while it is live", () => {
@@ -478,7 +482,7 @@ describe("the reclaim lock of a stale admission", () => {
     if (!dead.ok) throw new Error(dead.failure.reason);
     dead.value.submit();
     const lock = lockFor(dead.value.file);
-    writeFileSync(lock, `${encodeIdentity(deadHolder())}\n`);
+    writeFileSync(lock, lockOf(deadHolder()));
     expect(releaseAbsent(PATH, () => true, root)).toEqual({
       ok: true,
       value: true,
@@ -488,7 +492,7 @@ describe("the reclaim lock of a stale admission", () => {
 
     const again = admit(PATH, root, undefined, deadHolder());
     if (!again.ok) throw new Error(again.failure.reason);
-    writeFileSync(lock, `${encodeIdentity(ownIdentity())}\n`);
+    writeFileSync(lock, lockOf(ownIdentity()));
     const held = releaseAbsent(PATH, () => true, root);
     expect(held.ok ? null : held.failure.code).toBe("held");
     expect(existsSync(again.value.file)).toBe(true);

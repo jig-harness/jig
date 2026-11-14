@@ -338,8 +338,9 @@ with `.` and end in `.tmp`), then renames it into place; nobody edits a file
 in place or reads, changes and rewrites a shared one. gc publishes an
 admission with a link instead of a rename, so a second collector's link fails
 rather than replacing it. It takes over an admission whose holder is dead,
-or deletes one whose worktree is gone, only while it holds a lock file
-created exclusively beside it (`admissions/.<key>.json.reclaim`), after
+or deletes one whose worktree is gone, only while it holds a file lock
+beside it (`admissions/reclaim.<digest>.lock`, the lock `shared/file-lock.ts`
+publishes whole and hands from a dead holder to one reclaimer at a time), after
 reading the admission again, and takes it over by a rename, so the file is
 never absent meanwhile. It marks its own admission submitted by renaming the
 marked copy over it.

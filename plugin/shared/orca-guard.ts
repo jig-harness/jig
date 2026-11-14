@@ -23,7 +23,7 @@
  * submitted, by a rename over it, just before `orca worktree rm`; a submitted
  * admission is released only by that call's reply or the worktree's absence.
  * A dead collector's admission is taken over, or deleted once its worktree is
- * gone, under a `.<key>.json.reclaim` lock created exclusively beside it.
+ * gone, under a file lock (`file-lock.ts`) beside it.
  *
  * What a reader makes of a file it cannot read fails closed for gc: an
  * admission or a launch marker that does not parse, or names a version this
@@ -36,7 +36,6 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
-  renameSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -44,6 +43,7 @@ import {
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { errnoCode, swallow } from "./errors.ts";
+import { tryFileLockSync } from "./file-lock.ts";
 import {
   decodeIdentity,
   describeIdentity,
@@ -427,78 +427,33 @@ function deadStanding(
 }
 
 /**
- * Remove the reclaim lock when the collector that took it is judged dead. The
- * lock is moved aside before it is read, so a contender that already judged
- * it dead cannot delete a live lock created since: what was moved is put back
- * unless it is the dead one.
- */
-function reapDeadLock(lock: string): boolean {
-  const text = readText(lock);
-  if (!text.ok || text.value === null) return false;
-  const holder = decodeIdentity(text.value.trim());
-  if (holder === null) return false;
-  const verdict = isAliveSync(holder);
-  if (!verdict.ok || verdict.value.state !== "dead") return false;
-  const aside = `${lock}.${randomUUID()}.dead`;
-  try {
-    renameSync(lock, aside);
-  } catch (error) {
-    swallow(error, "the reclaim lock is gone or cannot be moved: not reaped");
-    return false;
-  }
-  const moved = readText(aside);
-  const dead = moved.ok && moved.value === text.value;
-  if (!dead) {
-    try {
-      linkSync(aside, lock);
-    } catch (error) {
-      swallow(error, "another lock was created meanwhile: it stands");
-    }
-  }
-  rmSync(aside, { force: true });
-  return dead;
-}
-
-/**
- * Run `body` under the reclaim lock of the admission at `file`, created
- * exclusively beside it: two collectors can judge the same dead admission,
- * and only the lock's holder may act on it. A lock whose holder is judged
- * dead is removed and taken once.
+ * Run `body` under the reclaim lock of the admission at `file`: two
+ * collectors can judge the same dead admission, and only the lock's holder
+ * may act on it. The lock is the shared file lock (`file-lock.ts`), which
+ * publishes it whole and hands a dead holder's lock to one reclaimer at a
+ * time without moving a live owner's.
  */
 function underReclaimLock<T, Code extends string>(
   file: string,
   body: () => Outcome<T, Code>,
 ): Outcome<T, Code | AdmissionCode> {
-  const lock = join(dirname(file), `.${basename(file)}.reclaim`);
-  const create = () =>
-    writeFileSync(lock, `${encodeIdentity(ownIdentity())}\n`, {
-      flag: "wx",
-      mode: 0o600,
-    });
   try {
-    try {
-      create();
-    } catch (error) {
-      if (errnoCode(error) !== "EEXIST" || !reapDeadLock(lock)) throw error;
-      create();
-    }
+    const held = tryFileLockSync(file, body, {
+      root: dirname(file),
+      name: "reclaim",
+    });
+    if (held !== null) return held.value;
   } catch (error) {
-    if (errnoCode(error) === "EEXIST")
-      return failed(
-        "held",
-        `another collection is settling the stale admission ${file}; if no collection runs, remove ${lock} after inspection`,
-      );
     return failed(
       "unwritable",
       `the stale admission ${file} cannot be settled`,
       error,
     );
   }
-  try {
-    return body();
-  } finally {
-    rmSync(lock, { force: true });
-  }
+  return failed(
+    "held",
+    `another collection is settling the stale admission ${file}`,
+  );
 }
 
 /**
