@@ -40,6 +40,9 @@ const exits = (r: { stderr: string; exitCode: number }, code: number) =>
 
 useDrivePrSuite();
 
+/** Each test runs a whole drive: dozens of child processes, past the 30s default on a loaded runner. */
+const DRIVE_TEST_TIMEOUT_MS = 120_000;
+
 /** A real failed run's log, trimmed: both jobs' tool download answered 504. */
 const DOWNLOAD_504 = readFileSync(
   join(
@@ -239,77 +242,101 @@ function expectNoRepairPass(stderr: string): void {
 describe.skipIf(skipLongDriveFixture)(
   "drive.ts on checks that failed on the infrastructure",
   () => {
-    it("re-runs a run whose only failures are a 504 tool download, spending no repair pass", async () => {
-      const r = await driveFailedScan(DOWNLOAD_504, {
-        env: { DRIVE_PR_CI_REPAIR_ROUNDS: "1" },
-      });
-      exits(r, 0);
-      expect(r.reruns).toEqual(["41"]);
-      expect(r.stderr).toContain(
-        "every failing check failed on the infrastructure",
-      );
-      expect(r.stderr).toContain("Re-ran the failed jobs of run(s) 41");
-      expectNoRepairPass(r.stderr);
-    });
+    it(
+      "re-runs a run whose only failures are a 504 tool download, spending no repair pass",
+      async () => {
+        const r = await driveFailedScan(DOWNLOAD_504, {
+          env: { DRIVE_PR_CI_REPAIR_ROUNDS: "1" },
+        });
+        exits(r, 0);
+        expect(r.reruns).toEqual(["41"]);
+        expect(r.stderr).toContain(
+          "every failing check failed on the infrastructure",
+        );
+        expect(r.stderr).toContain("Re-ran the failed jobs of run(s) 41");
+        expectNoRepairPass(r.stderr);
+      },
+      DRIVE_TEST_TIMEOUT_MS,
+    );
 
-    it("stops CI_INFRA_PERSISTED when the run cannot be re-run and no head move is left, spending no repair pass", async () => {
-      const r = await driveFailedScan(DOWNLOAD_504, {
-        refused: true,
-        env: {
-          DRIVE_PR_CI_REPAIR_ROUNDS: "1",
-          DRIVE_PR_CI_INFRA_HEAD_MOVES: "0",
-        },
-      });
-      exits(r, CI_INFRA_PERSISTED_EXIT);
-      expect(r.reruns).toEqual(["41"]);
-      expect(r.stderr).toContain("the forge refused to re-run it");
-      expect(r.stderr).toContain(
-        `The infrastructure failure persisted: exit ${CI_INFRA_PERSISTED_EXIT}, CI_INFRA_PERSISTED`,
-      );
-      expectNoRepairPass(r.stderr);
-    });
+    it(
+      "stops CI_INFRA_PERSISTED when the run cannot be re-run and no head move is left, spending no repair pass",
+      async () => {
+        const r = await driveFailedScan(DOWNLOAD_504, {
+          refused: true,
+          env: {
+            DRIVE_PR_CI_REPAIR_ROUNDS: "1",
+            DRIVE_PR_CI_INFRA_HEAD_MOVES: "0",
+          },
+        });
+        exits(r, CI_INFRA_PERSISTED_EXIT);
+        expect(r.reruns).toEqual(["41"]);
+        expect(r.stderr).toContain("the forge refused to re-run it");
+        expect(r.stderr).toContain(
+          `The infrastructure failure persisted: exit ${CI_INFRA_PERSISTED_EXIT}, CI_INFRA_PERSISTED`,
+        );
+        expectNoRepairPass(r.stderr);
+      },
+      DRIVE_TEST_TIMEOUT_MS,
+    );
 
-    it("retries a code check once without spending a repair pass when it passes", async () => {
-      const r = await driveFailedScan(CODE_ERROR, {
-        env: { DRIVE_PR_CI_REPAIR_ROUNDS: "1" },
-      });
-      exits(r, 0);
-      expect(r.reruns).toEqual(["41"]);
-      expect(r.stderr).toContain("retry 1/1, no repair pass spent");
-      expectNoRepairPass(r.stderr);
-    });
+    it(
+      "retries a code check once without spending a repair pass when it passes",
+      async () => {
+        const r = await driveFailedScan(CODE_ERROR, {
+          env: { DRIVE_PR_CI_REPAIR_ROUNDS: "1" },
+        });
+        exits(r, 0);
+        expect(r.reruns).toEqual(["41"]);
+        expect(r.stderr).toContain("retry 1/1, no repair pass spent");
+        expectNoRepairPass(r.stderr);
+      },
+      DRIVE_TEST_TIMEOUT_MS,
+    );
 
-    it("spends a repair pass after the same code check fails its one retry", async () => {
-      const r = await driveFailedScan(CODE_ERROR, {
-        persistent: true,
-        env: { DRIVE_PR_CI_REPAIR_ROUNDS: "1" },
-      });
-      exits(r, CI_REPAIR_SPENT_EXIT);
-      expect(r.reruns).toEqual(["41"]);
-      expect(r.stderr).toContain("Not an infrastructure failure");
-      expect(r.stderr).toContain("Running CI-repair pass 1/1");
-      expect(r.stderr).toContain("TASK=ci-repair RUNS=[41]");
-    });
+    it(
+      "spends a repair pass after the same code check fails its one retry",
+      async () => {
+        const r = await driveFailedScan(CODE_ERROR, {
+          persistent: true,
+          env: { DRIVE_PR_CI_REPAIR_ROUNDS: "1" },
+        });
+        exits(r, CI_REPAIR_SPENT_EXIT);
+        expect(r.reruns).toEqual(["41"]);
+        expect(r.stderr).toContain("Not an infrastructure failure");
+        expect(r.stderr).toContain("Running CI-repair pass 1/1");
+        expect(r.stderr).toContain("TASK=ci-repair RUNS=[41]");
+      },
+      DRIVE_TEST_TIMEOUT_MS,
+    );
 
-    it("waits for a newer completed retry even when the aggregate already reads green", async () => {
-      const r = await driveFailedScan(CODE_ERROR, {
-        delayed: true,
-        env: { DRIVE_PR_CI_REPAIR_ROUNDS: "1" },
-      });
-      exits(r, 0);
-      expect(r.reruns).toEqual(["41"]);
-      expect(r.stderr).toContain("Waiting for retry of run 41");
-      expectNoRepairPass(r.stderr);
-    });
+    it(
+      "waits for a newer completed retry even when the aggregate already reads green",
+      async () => {
+        const r = await driveFailedScan(CODE_ERROR, {
+          delayed: true,
+          env: { DRIVE_PR_CI_REPAIR_ROUNDS: "1" },
+        });
+        exits(r, 0);
+        expect(r.reruns).toEqual(["41"]);
+        expect(r.stderr).toContain("Waiting for retry of run 41");
+        expectNoRepairPass(r.stderr);
+      },
+      DRIVE_TEST_TIMEOUT_MS,
+    );
 
-    it("can disable the code-check retry independently of repairs", async () => {
-      const r = await driveFailedScan(CODE_ERROR, {
-        retry: false,
-        env: { DRIVE_PR_CI_REPAIR_ROUNDS: "1" },
-      });
-      exits(r, CI_REPAIR_SPENT_EXIT);
-      expect(r.reruns).toEqual([]);
-      expect(r.stderr).toContain("Running CI-repair pass 1/1");
-    });
+    it(
+      "can disable the code-check retry independently of repairs",
+      async () => {
+        const r = await driveFailedScan(CODE_ERROR, {
+          retry: false,
+          env: { DRIVE_PR_CI_REPAIR_ROUNDS: "1" },
+        });
+        exits(r, CI_REPAIR_SPENT_EXIT);
+        expect(r.reruns).toEqual([]);
+        expect(r.stderr).toContain("Running CI-repair pass 1/1");
+      },
+      DRIVE_TEST_TIMEOUT_MS,
+    );
   },
 );
