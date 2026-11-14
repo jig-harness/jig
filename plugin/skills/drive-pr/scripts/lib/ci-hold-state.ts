@@ -76,6 +76,38 @@ export async function readHoldTransitions(
     : ok(transitions);
 }
 
+/**
+ * The authenticated actor and the live state just before a label mutation,
+ * or the first read that failed.
+ */
+export async function readBeforeMutation(
+  pr: string,
+  holdLabel: string | null,
+): Promise<
+  Outcome<
+    { login: string; live: PrSnapshot; timeline: LabelTransition[] },
+    HoldReadFailure["code"]
+  >
+> {
+  const who = await ghCall(["api", "user", "-q", ".login"]);
+  const login = who.stdout.trim();
+  if (who.code !== 0)
+    return failed(
+      "unreadable",
+      `cannot identify the authenticated GitHub actor: gh api exited ${who.code}: ${(who.stderrTail || who.stderr).trim().slice(-500)}`,
+    );
+  if (login === "")
+    return failed(
+      "malformed",
+      "cannot identify the authenticated GitHub actor: the answer names no login",
+    );
+  const live = await readPrSnapshot(pr, holdLabel);
+  if (!live.ok) return live;
+  const timeline = await readHoldTransitions(pr, holdLabel ?? "");
+  if (!timeline.ok) return timeline;
+  return ok({ login: login, live: live.value, timeline: timeline.value });
+}
+
 /** A read's value, or `null` after saying why it failed. */
 export function valueOrNull<T>(read: Outcome<T, string>): T | null {
   if (read.ok) return read.value;

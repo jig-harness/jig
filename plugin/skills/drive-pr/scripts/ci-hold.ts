@@ -47,6 +47,7 @@ import {
   headWatermark,
   readCiState,
   type HoldReadFailure,
+  readBeforeMutation,
   readHoldTransitions,
   readPrSnapshot,
   valueOrNull,
@@ -90,12 +91,6 @@ function usage(): never {
 
 const snapshot = async (pr: string) =>
   valueOrNull(await readPrSnapshot(pr, policy.holdLabel));
-
-async function viewer(): Promise<string | null> {
-  const result = await ghCall(["api", "user", "-q", ".login"]);
-  const login = result.code === 0 ? result.stdout.trim() : "";
-  return login === "" ? null : login;
-}
 
 const transitions = async (pr: string) =>
   valueOrNull(await readHoldTransitions(pr, holdLabel()));
@@ -215,18 +210,6 @@ async function settleInterruptedRelease(
   return { outcome: live.held ? "adopt" : "invisible" };
 }
 
-/** The authenticated actor and the live state just before a label mutation. */
-async function readBeforeMutation(pr: string) {
-  const login = await viewer();
-  if (login === null)
-    fail(1, "ci-hold: cannot identify the authenticated GitHub actor");
-  return {
-    login,
-    live: await snapshot(pr),
-    timeline: await transitions(pr),
-  };
-}
-
 async function transitionAfter(
   pr: string,
   beforeId: string,
@@ -272,10 +255,12 @@ function recordedTransitionId(recorded: CiHoldState | null): string | null {
  * is matched on the label it recorded; one recorded before the label was
  * configurable added `LEGACY_CI_HOLD_LABEL`.
  */
-async function assertRecordedHoldMatchesLabel(pr: string): Promise<void> {
+async function assertRecordedHoldMatchesLabel(
+  pr: string,
+): Promise<number | null> {
   const recorded = await readCiState(pr);
   const recordedId = recordedTransitionId(recorded);
-  if (recorded === null) return;
+  if (recorded === null) return null;
   const renamed = `if ci.hold_label was renamed, configure the label it was recorded under until this drive converges and releases it`;
   if (recorded.phase === "acquiring") {
     const label = recorded.label ?? LEGACY_CI_HOLD_LABEL;
@@ -285,14 +270,16 @@ async function assertRecordedHoldMatchesLabel(pr: string): Promise<void> {
         `ci-hold: the CI hold acquisition recorded for this PR adds '${label}', not '${holdLabel()}'; ${renamed}`,
       );
   }
-  if (recordedId === null) return;
-  const timeline = await transitions(pr);
-  if (timeline === null) fail(1, "ci-hold: cannot read the label timeline");
+  if (recordedId === null) return null;
+  const read = await readHoldTransitions(pr, holdLabel());
+  if (!read.ok) return unread(read.failure);
+  const timeline = read.value;
   if (!timeline.some((transition) => transition.id === recordedId))
     fail(
       1,
       `ci-hold: the CI hold recorded for this PR is not a '${holdLabel()}' transition; ${renamed}`,
     );
+  return null;
 }
 
 async function ensure(pr: string, expectedPushHead: string): Promise<number> {
@@ -485,14 +472,10 @@ async function ensure(pr: string, expectedPushHead: string): Promise<number> {
   // Refresh immediately before the mutation while the PR-wide mutation fence
   // is held. A same-login human action through another client remains an API
   // limitation; any observable intervening transition is refused below.
-  const {
-    login,
-    live: beforeLive,
-    timeline: beforeTimeline,
-  } = await readBeforeMutation(pr);
+  const before = await readBeforeMutation(pr, policy.holdLabel);
+  if (!before.ok) return unread(before.failure);
+  const { login, live: beforeLive, timeline: beforeTimeline } = before.value;
   if (
-    beforeLive === null ||
-    beforeTimeline === null ||
     beforeLive.state !== "OPEN" ||
     beforeLive.head !== head ||
     beforeLive.held ||
@@ -645,14 +628,10 @@ async function release(
   }
   if (persisted === null || persisted.phase !== "held") return 4;
 
-  const {
-    login,
-    live: beforeLive,
-    timeline: beforeTimeline,
-  } = await readBeforeMutation(pr);
+  const before = await readBeforeMutation(pr, policy.holdLabel);
+  if (!before.ok) return unread(before.failure);
+  const { login, live: beforeLive, timeline: beforeTimeline } = before.value;
   if (
-    beforeLive === null ||
-    beforeTimeline === null ||
     beforeLive.state !== "OPEN" ||
     beforeLive.head !== head ||
     !beforeLive.held ||
@@ -1118,7 +1097,10 @@ async function main(): Promise<number> {
   } catch (error) {
     configError(error);
   }
-  if (policy.holdLabel !== null) await assertRecordedHoldMatchesLabel(pr);
+  if (policy.holdLabel !== null) {
+    const unreadable = await assertRecordedHoldMatchesLabel(pr);
+    if (unreadable !== null) return unreadable;
+  }
   if (command === "ensure" || command === "release" || command === "rollback") {
     const fence = await resolveFenceContext("ci-hold.ts");
     const remoteLock =

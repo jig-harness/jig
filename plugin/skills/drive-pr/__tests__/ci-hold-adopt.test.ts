@@ -271,12 +271,14 @@ describe("ci-hold.ts adopts a hold label it holds no record of", () => {
     expectedTransition?: string,
     absent = false,
     prepare?: (fixtureDir: string) => void,
+    recordHold = false,
   ) => {
     const repo = scratchWithOrigin();
     const { dir, stateDir } = writeFixture(
       { threads: [], ciHeld: true, head: repo.head },
       repo.dir,
     );
+    if (recordHold) await seedHeld(stateDir, dir, repo.dir, "LE_1");
     writeTimeline(dir, [labeled("LE_1", "human-user", "2026-09-10T09:59:00Z")]);
     if (absent) {
       const view = readJson<Record<string, unknown>>(join(dir, "pr-view.json"));
@@ -377,6 +379,31 @@ describe("ci-hold.ts adopts a hold label it holds no record of", () => {
       join(r.dir, "pr-view.json"),
     );
     expect(view.labels.map((label) => label.name)).toContain("ci:hold");
+  });
+
+  it("release retries later when the forge cannot be reached to check the recorded hold", async () => {
+    const r = await runRelease(
+      undefined,
+      undefined,
+      false,
+      (dir) => writeFileSync(join(dir, "timeline-unreachable"), ""),
+      true,
+    );
+    expectSpawnExit(r, 4);
+    expect(r.stderr).toContain("simulated timeline timeout; retrying later");
+  });
+
+  it("release stops on a timeline that does not read while checking the recorded hold", async () => {
+    const r = await runRelease(
+      undefined,
+      undefined,
+      false,
+      (dir) => writeFileSync(join(dir, "timeline.json"), "not json"),
+      true,
+    );
+    expectSpawnExit(r, 1);
+    expect(r.stderr).toContain("timeline JSON could not be decoded");
+    expect(r.stderr).not.toContain("retrying later");
   });
 
   it("release stops, saying why, on a timeline the forge answered that does not read", async () => {

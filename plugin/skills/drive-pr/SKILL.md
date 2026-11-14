@@ -370,8 +370,9 @@ count, under whatever name they carry, except that an unsuccessful check stays
 when the replacing runs report its name only as skipped. The event that started
 either run does not matter. A failure beside a cancelled check is still a failure, and
 reads `failing: …`. When every failing check is a job of a run that concluded
-`cancelled` (an always-run aggregator fails when a job it needs was cancelled)
-and no commit status fails beside them, the drive recovers that run as it
+`cancelled` (an always-run aggregator fails when a job it needs was cancelled),
+no commit status fails beside them and a cancelled job in them is unreplaced,
+the drive recovers that run as it
 recovers a cancelled check, below, before any retry or CI-repair pass; a real
 failure comes back from the re-run in a run that is not cancelled, and is
 repaired then. With no active run of the same workflow on this head,
