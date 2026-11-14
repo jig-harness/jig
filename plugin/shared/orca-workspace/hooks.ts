@@ -256,10 +256,10 @@ function runClaimedHook(
  * runs the hook; every other open waits for the mark. A run that succeeded
  * leaves the mark and gives the claim back; one that failed gives the claim
  * back and leaves no mark, so the next open runs the hook again.
- * The hook runs through the port's hook runner (the Orca workspace tool's
- * runs it on this machine under the Herdr tool's supervisor, which ends it
- * and its children when it fails or outlives its limit). True when this run
- * ran it.
+ * The hook runs through the port's hook runner: on this machine, the shared
+ * supervisor (`supervised-hook.ts`), which ends it and its children when it
+ * fails or outlives its limit, and ends a failed run's recorded group before
+ * the claim is given back. True when this run ran it.
  */
 export function ensureCreateHook(
   port: OnHostWithHooks,

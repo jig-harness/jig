@@ -1531,7 +1531,7 @@ conditions for considering a tap without adopting one ahead of that evidence.
   - a hook on a server's host runs as one SSH command under the call's
     deadline, with nothing from Jig there to supervise it: a hook that
     outlives the deadline, or starts a child that outlives it, is left to
-    the host, where on a machine the Herdr tool's supervisor ends the hook's
+    the host, where on a machine the shared supervisor ends the hook's
     whole process group. Supervise it there too, once what the host must
     provide is decided: `bun` for the shared supervisor, as the Herdr tool
     asks of its hosts, or a supervisor in the host's own shell;
