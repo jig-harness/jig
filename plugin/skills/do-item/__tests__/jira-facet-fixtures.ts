@@ -20,7 +20,7 @@ const SITE_FIELDS = [
 ];
 
 /** The project's issue types, as `GET issue/createmeta/ENG/issuetypes` returns them. */
-const TYPES = {
+export const TYPES = {
   issueTypes: [
     ["t0", "Epic", false, 1],
     ["t1", "Bug", false, 0],
