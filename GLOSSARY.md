@@ -2322,10 +2322,13 @@ make, use the entry's term instead.
   that account.
 - **Closing report** — the short record of what a run the *dispatcher*
   started concluded: its question for a person if it has one, the next step
-  it suggests, and a cause when it fell short. A *headless pass* writes it
-  as its last act; for a drive, whose last pass cannot know it is last, the
-  driver writes it when the drive stops. The *steward* reads a run's
-  transcript only when the run left no report. Designed in
+  it suggests, and a cause when it fell short: a `closing-report/v1`
+  record that holds conclusions, never output. A pickup's, a follow-up's or
+  the *steward*'s *headless pass* writes it as its last act through
+  `jig dispatch report`, which keeps it on the launch record and its fields
+  on the run's row of the outcome log; for a drive, whose last pass cannot
+  know it is last, the driver writes it when the drive stops. The *steward*
+  reads a run's transcript only when the run left no report. Designed in
   [design/dispatched-sessions.md](design/dispatched-sessions.md#the-closing-report),
   [ROADMAP.md](ROADMAP.md) item 51.
 - **Process runtime** — a *session runtime* that runs a *headless pass* as

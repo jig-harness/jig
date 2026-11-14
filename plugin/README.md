@@ -549,7 +549,33 @@ never held by it.
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> done|failed [--pr <number> | --none <reason>]
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> waits --until <time>
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> failed --decision <file>
+bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch report <record> <token> <file>
 ```
+
+#### The closing report
+
+Every pickup, follow-up and steward pass ends by writing a
+[closing report](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md),
+a short `closing-report/v1` record of what it concluded, in the words of
+the agent that did the work: `concluded` (at most 600 characters), the
+`suggested_next` step and who takes it (`line`, `person` with the act they
+take, or `none`), a `question` with its framed `decision` when a person
+must decide, the `cause` when the run fell short (`needs-person`,
+`refused`, `tool-failed`, `environment`, `scope`, `deadline`, `startup`,
+`usage-limit`, `crashed` or `unknown`) and up to 10 `evidence` references
+(`pr:#12`, `commit:<sha>`, `item:<key>`, `path:<path>`, `run:<CI run
+address>`), never contents. The prompt names the command,
+`jig dispatch report <record> <token> <file>`, and asks for the report as
+the pass's last act; a pickup records its result as soon as its drive is
+armed and its report at the end. The command replaces email addresses and
+account identifiers with `<redacted>`, checks the record and names
+everything wrong in one refusal, so the pass can fix it and run the command
+again. It may run more than once, before or after the result: the last
+report that passes stands, and none touches the result. The launch record
+keeps the report whole; the outcome log's `ended` row keeps its fields and
+who wrote it (`by`: `agent` for a pass's own report, `none` for a run that
+left none), with `cause` and `by` as columns. A run that ends without a
+report still leaves its `Question:` line.
 
 #### Every need is a decision
 

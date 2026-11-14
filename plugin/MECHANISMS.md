@@ -402,7 +402,12 @@ development and shipped as a version.
 - **Reasoned.** A dispatched interactive session records how it ended with
   `jig dispatch result <record> <token> done|failed` (`dispatch/result.ts`).
   That answer is the session's own judgement; the script refuses another
-  record's token, a drive pass's record and a second answer. Nothing
+  record's token, a drive pass's record and a second answer. Its closing
+  report, the last act of a pickup's, a follow-up's or the steward's
+  pass, goes through `jig dispatch report <record> <token> <file>`
+  (`dispatch/report-command.ts`), which redacts and checks it
+  (`shared/closing-report.ts`) and keeps the last one that passes beside
+  the result, never touching it. Nothing
   else reasoned writes these records. A completed pickup names its pull
   request with `--pr <number>`, or `--none "<reason>"` when none was needed;
   a pickup the tracker's rate limit stopped before it claimed the item

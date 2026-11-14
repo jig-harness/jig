@@ -46,6 +46,7 @@
 import { optionalLaunchFields } from "./launch-record-options.ts";
 import { readNext, type NextOwner } from "./next-owner.ts";
 import { type FramedResult, framedOf } from "./framed-result.ts";
+import { type KeptReport, readKeptReport } from "./closing-report-store.ts";
 import {
   type PickupRefusal,
   readRefusal,
@@ -79,6 +80,7 @@ export { cancelledBeforeExecution } from "./cancellation.ts";
 export { UNARMED_FACTS } from "./launch-keep.ts";
 import { latestArms, latestFailedRearms } from "./launch-keep.ts";
 import { latestPickups } from "./launch-pickups.ts";
+import { type ControlRows, controlRows, EMPTY } from "./launch-control-rows.ts";
 
 /** What a launch starts: a re-arm of a stopped drive, a takeover of a wedged one, a pickup's `do-item` session, or a merge's follow-up pass. */
 export type LaunchAction =
@@ -290,6 +292,8 @@ export interface ReadRecord {
   refusal?: PickupRefusal | null;
   /** The framed decision the pass recorded with its `failed` result, when it stopped for a person; absent otherwise. */
   framed?: FramedResult;
+  /** The run's closing report (`closing-report-store.ts`); absent or `null` when it left none. */
+  report?: KeptReport | null;
 }
 
 /** A launch record id: the time it was made, and a random suffix. */
@@ -492,6 +496,7 @@ export interface LaunchRow {
   refusal?: string | null;
   /** A pass's framed decision, recorded with its `failed` result (`framed-result.ts`). */
   result_decision?: string | null;
+  report?: string | null;
 }
 
 /** The tick's part of a row, with its samples and episodes; `null` when it does not read as a record. */
@@ -516,60 +521,6 @@ export function recordOf(
       ...new Set([...(record.claimedItems ?? []), ...claims]),
     ];
   return { ...record, ...(rows ?? EMPTY) };
-}
-
-interface EpisodeRow {
-  launch: string;
-  observed_at: string;
-  reset_at: string | null;
-  evidence: string;
-  last: number;
-  read_at: string;
-}
-
-type ControlRows = Pick<LaunchRecord, "samples" | "episodes">;
-
-const EMPTY: ControlRows = { samples: [], episodes: [] };
-
-/** The thread samples and waiting episodes of one launch, or of every launch, in the order they were first written. */
-function controlRows(
-  root: string,
-  id?: string,
-  db: Database = stateDb(root),
-): Map<string, ControlRows> {
-  const where = id === undefined ? "" : "WHERE launch = ?";
-  const args = id === undefined ? [] : [id];
-  const out = new Map<string, ControlRows>();
-  const of = (launch: string) => {
-    let rows = out.get(launch);
-    if (rows === undefined) {
-      rows = { samples: [], episodes: [] };
-      out.set(launch, rows);
-    }
-    return rows;
-  };
-  const samples = db
-    .query(
-      `SELECT launch, round, threads, at FROM thread_samples ${where} ORDER BY rowid`,
-    )
-    .all(...args) as Array<ThreadSample & { launch: string }>;
-  for (const { launch, round, threads, at } of samples)
-    (of(launch).samples as ThreadSample[]).push({ round, threads, at });
-  const episodes = db
-    .query(
-      `SELECT launch, observed_at, reset_at, evidence, last, read_at
-       FROM waiting_episodes ${where} ORDER BY rowid`,
-    )
-    .all(...args) as EpisodeRow[];
-  for (const e of episodes)
-    (of(e.launch).episodes as WaitingEpisode[]).push({
-      observedAt: e.observed_at,
-      resetAt: e.reset_at,
-      evidence: e.evidence,
-      last: e.last === 1,
-      readAt: e.read_at,
-    });
-  return out;
 }
 
 function launchRow(id: string, root: string): LaunchRow | null {
@@ -599,11 +550,19 @@ export function readEnded(id: string, root = stateRoot()): ReadRecord | null {
   return {
     record,
     state: stateOf(row, null, thisHost()),
+    ...answerOf(row),
+  };
+}
+
+/** What a row says the session answered: its result, handoff, refusal, framed decision and closing report. */
+function answerOf(row: LaunchRow): Omit<ReadRecord, "record" | "state"> {
+  return {
     result: asResult(row.result, row.result_until ?? null),
     next: readNext(row.result_next),
     ...waitsOf(row),
     refusal: readRefusal(row.refusal),
     ...framedOf(row.result_decision),
+    report: readKeptReport(row.report),
   };
 }
 
@@ -781,11 +740,7 @@ export async function readLaunches(
     records.push({
       record,
       state: stateOf(row, rows, here),
-      result: asResult(row.result, row.result_until ?? null),
-      next: readNext(row.result_next),
-      ...waitsOf(row),
-      refusal: readRefusal(row.refusal),
-      ...framedOf(row.result_decision),
+      ...answerOf(row),
     });
   }
   return { records, unreadable };
