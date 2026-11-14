@@ -65,6 +65,14 @@ Worktree openers have not adopted that protocol, so clean or merged worktrees
 are reported only, except those a workspace runtime manages and those an
 agent tool makes.
 
+The process-holder check asks `lsof` which processes have files open under
+the worktree. `lsof` warns about every mount it cannot read, whatever path
+it was asked about (a desktop's document portal, a container's mounts); a
+warning about a mount that neither holds the worktree nor lies inside it is
+set aside. A warning about the worktree's own mount or one inside it,
+anything else `lsof` reports as an error, or a run that was killed leaves
+the holders unknown and the worktree `unverified`.
+
 ### Ignored content
 
 Ignored content is the one part of a worktree git cannot give back: an
