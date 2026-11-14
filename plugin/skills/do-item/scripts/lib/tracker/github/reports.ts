@@ -29,6 +29,7 @@ import { TrackerRequestError } from "../port.ts";
 import { checkPoolQuery, inWindow } from "../requests.ts";
 import { epicTypesOfLabel } from "../../../../../../shared/tracker-labels.ts";
 import type { Client, IssueListing } from "./client.ts";
+import { dispatchSource } from "./dispatch-source.ts";
 import { STATE_TYPES } from "./model.ts";
 import {
   ancestorFields,
@@ -62,6 +63,7 @@ type ReportOps = Pick<
   | "unassignedIssues"
   | "openPopulation"
   | "facetReport"
+  | "dispatchSource"
 >;
 
 /** What the reports borrow from the pickup operations. */
@@ -324,6 +326,9 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
   }
 
   return {
+    dispatchSource: dispatchSource(client, (raw, signal) =>
+      pool(parseIssue(raw, ctx), raw, signal),
+    ),
     async issuesByKeys(keys) {
       const out = new Map<string, IssueFact>();
       const numbers = [

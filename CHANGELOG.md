@@ -394,6 +394,100 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.231.0] - 2026-11-14
+
+### Added
+
+- The plugin ships the first chapter of the [Jig Protocol](GLOSSARY.md),
+  [protocol/drive-exits.md](plugin/protocol/drive-exits.md): every end
+  state and exit code of a drive, with what each one means, for a program
+  that reads how a drive ended without reading Jig's code, and the same
+  values as JSON in `protocol/data/drive-exits.json`. The chapter is
+  generated from drive-pr's own table of states, and Jig's build fails when
+  the two disagree. `guarded-push.ts`'s exit `17` (a `hold-push` directive
+  in force) is now part of that table, so no other exit can take the code.
+  **Consumer action:** none.
+
+### Fixed
+
+- `jig dispatch` no longer launches a drive again, tick after tick, when
+  `drive.ts` refused the last launch as a usage error (exit `2`) and the
+  pull request's drive ledger has not changed since. The drive becomes a
+  person's: one notice says which launch was refused and carries the drive's
+  own message, which the dispatcher now keeps from the drive's error output on
+  that exit. The next launch happens once the ledger moves, or when a person
+  asks for a re-arm.
+- `drive.ts --take-over` now takes over a drive whose ledger still names this
+  working tree's own driver as running though no driver holds its lock: that
+  driver ended without writing its stop, so the takeover goes ahead as a dead
+  driver's and stops nothing. When the ledger names this clone's driver in
+  another working tree, the refusal now names that tree and says to re-arm
+  from there.
+- `drive.ts --take-over` reads the held batch again after startup and reopens
+  each hold as it stands then; a batch it cannot read again stops the takeover
+  with exit `1` instead of reconciling over the earlier one.
+- `tracker.ts update` and `create` now refuse to add a type or size label
+  where the repository keeps that facet outside labels (GitHub's issue type
+  or a field, Linear's estimate, a Jira field). The message names the
+  facet's value and where it is kept. Taking such a label off an issue stays
+  allowed, except on Jira, whose adapter refuses removing a label that is a
+  `field_labels` value. Where the facet is kept in labels nothing changes.
+  A caller that added such a label by hand sets the facet instead.
+  **Consumer action:** none.
+- The plugin's file map, the mechanisms page and the drive-pr notes on the
+  turn-budget guard no longer say that Codex registers the guard from
+  `hooks/hooks.json`: Codex gets it from the entry `jig upgrade` writes into
+  the Codex home.
+
+## [0.230.1] - 2026-11-14
+
+### Fixed
+
+- Repositories sharing a tracker scope and served people reuse one queue reading even when their state maps or facet settings differ, reducing repeated dispatcher requests while preserving each repository's interpretation. **Consumer action:** none.
+
+## [0.230.0] - 2026-11-14
+
+The turn-budget guard no longer asks Codex for a new approval with every Jig release.
+
+### Added
+
+- A one-time archive for worktrees made before marking began: right before
+  removing such a worktree, `jig gc` copies its unmarked ignored content into
+  `~/.local/state/jig/gc/archives/`, checks the copy, and names the archive
+  in the receipt. Content larger than the new machine setting
+  `gc.archive_max_bytes` (64 MiB by default, 0 to archive nothing), or a copy
+  that fails, keeps the worktree. The `receipts` kind removes archives past
+  `gc.receipts_days`.
+- **Documented: unattended Codex passes and hook trust.** The Codex notes and the host's opt-in to bypass say that a headless `codex exec` runs only approved hooks, to approve the guard once per Codex home, and that a pass command typed by hand may add `--dangerously-bypass-hook-trust` where the host vets every hook its Codex home loads. Jig's own pass commands do not add it.
+
+### Changed
+
+- Jig's procedures write the files they never need again under
+  `.context/scratch/`, and the drive's mailbox, foreground waits and intent
+  chains tag their directories, so a finished worktree holds only marked
+  working files.
+- **Codex: the turn-budget hook is registered by `jig upgrade`, not shipped by the plugin.** Codex re-reviews a plugin's hooks whenever any file of the plugin changes, and skips them until it is approved again. The Codex plugin now ships none. `jig upgrade` adds one `PreToolUse` entry to `$CODEX_HOME/hooks.json` (`~/.codex` by default) whose command never changes and runs the installed plugin copy's guard, so approving it once with `/hooks` stands across releases. After this release, approve the guard once in each Codex home; until then it does not run there. Run `jig upgrade --codex` with `CODEX_HOME` set to give another home the entry. `jig uninstall --machine --yes` removes it. Claude Code is unchanged.
+
+### Fixed
+
+- `jig gc` no longer keeps every finished worktree because of Jig's own
+  working files and a tool's cache. The `worktrees` kind sets aside ignored
+  content whose writer marked it disposable: a directory holding a
+  `CACHEDIR.TAG` (cache directory tag), `.context/scratch/`, and a drive's
+  handoff. Any
+  other ignored path still keeps the worktree, and the reason names it. The
+  receipt lists each path set aside with its rule (`details.setAside`). See
+  [the collector's rule](plugin/gc/README.md#ignored-content).
+- The steward's digest now includes each target's workspace state, bounded
+  pass output, linked open and merged pull requests and failing-check
+  history on the head and base commits. Unavailable reads remain explicit,
+  and pass output is quoted as untrusted data.
+- Dispatched passes retain output even without a question, and a steward
+  that ends without submitting leaves a cause in the outcome log.
+- The steward's durable digest keeps only a redacted, bounded summary of pass
+  output, and the output fields of a digest are erased once launch retention
+  has passed.
+
 ## [0.229.1] - 2026-11-14
 
 ### Fixed
@@ -7980,7 +8074,10 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.229.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.231.0...HEAD
+[0.231.0]: https://github.com/jig-harness/jig/compare/v0.230.1...v0.231.0
+[0.230.1]: https://github.com/jig-harness/jig/compare/v0.230.0...v0.230.1
+[0.230.0]: https://github.com/jig-harness/jig/compare/v0.229.1...v0.230.0
 [0.229.1]: https://github.com/jig-harness/jig/compare/v0.229.0...v0.229.1
 [0.229.0]: https://github.com/jig-harness/jig/compare/v0.228.1...v0.229.0
 [0.228.1]: https://github.com/jig-harness/jig/compare/v0.228.0...v0.228.1

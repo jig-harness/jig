@@ -53,7 +53,6 @@ import {
   type RefusedMember,
   waitsOf,
 } from "./pickup-refusal.ts";
-
 export type { PickupRefusal, RefusedMember };
 import { unsettledStartups } from "./session-startup.ts";
 import type { Database } from "bun:sqlite";
@@ -78,7 +77,7 @@ import { cancelledBeforeExecution } from "./cancellation.ts";
 import type { StandingAnswer } from "./routine-questions.ts";
 export { cancelledBeforeExecution } from "./cancellation.ts";
 export { UNARMED_FACTS } from "./launch-keep.ts";
-import { latestArms, latestFailedRearms } from "./launch-keep.ts";
+import { latestArms, latestDriveRefusals } from "./launch-keep.ts";
 import { latestPickups } from "./launch-pickups.ts";
 import { type ControlRows, controlRows, EMPTY } from "./launch-control-rows.ts";
 
@@ -255,10 +254,10 @@ export interface LaunchExit {
   /** The stage's exit code; `null` when it ended on a signal. */
   code: number | null;
   signal: string | null;
-  /** Set when the stage ended on the account's wall and the wrapper could not record that wall. */
-  wallUnrecorded?: true;
+  wallUnrecorded?: true; // the stage ended on the account's wall, which the wrapper could not record
   /** For a follow-up pass that ended without recording done: the last `Question:` line of its output, the question it stopped on. */
   said?: string;
+  usage?: string; // a drive's exit on drive.ts's usage error: the end of its message, one line
 }
 
 export type LaunchState =
@@ -479,7 +478,8 @@ function isExit(value: unknown): value is LaunchExit {
   return (
     isMapping(value) &&
     typeof value.at === "string" &&
-    (value.code === null || typeof value.code === "number")
+    (value.code === null || typeof value.code === "number") &&
+    (value.usage === undefined || typeof value.usage === "string")
   );
 }
 
@@ -836,7 +836,7 @@ export function pruneLaunches(
     latestPickups,
     latestRedrives,
     latestArms,
-    latestFailedRearms,
+    latestDriveRefusals,
   ])
     for (const id of latest(records)) kept.add(id);
   for (const r of records)

@@ -16,6 +16,7 @@
  * recorded and said apart. A failed reconciliation is said in the notice and
  * the record; the first gate's own sweep runs it again.
  */
+
 import { helperTimeoutSeconds, run, tsArgv } from "./../proc.ts";
 
 import { accountHash, resolveAccountIdentity } from "./../identity.ts";
@@ -31,7 +32,12 @@ import {
   recordDriveEvent,
 } from "./rearm.ts";
 
-import { settleTakeover, type TakeoverPlan } from "./takeover.ts";
+import {
+  heldAfterStartup,
+  heldAtStartup,
+  settleTakeover,
+  type TakeoverPlan,
+} from "./takeover.ts";
 
 import { publishRunning } from "./ledger.ts";
 
@@ -179,6 +185,7 @@ export async function completeTakeover(
   agent: string[],
   botsOnly: boolean,
 ): Promise<string> {
+  const atStartup = await heldAtStartup(pr);
   const reconcile = await run(
     tsArgv(reconcileRepliedThreads, [pr, ...(botsOnly ? ["--bots-only"] : [])]),
     { stdout: "pipe", stderr: "inherit", timeoutSec: helperTimeoutSeconds() },
@@ -187,7 +194,7 @@ export async function completeTakeover(
   console.error(
     `takeover: ran reconcile-replied-threads.ts before the first triage (exit ${reconcile.code}${reconciled ? "" : "; the first gate's own sweep runs it again"}).`,
   );
-  const unverified = plan.held.filter(
+  const unverified = (await heldAfterStartup(pr, plan.held, atStartup)).filter(
     (h) =>
       h.verifiedSha === undefined &&
       (plan.fromActor === null || h.actor === plan.fromActor),

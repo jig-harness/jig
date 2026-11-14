@@ -78,6 +78,15 @@ path that produces the exit, not because none of them name one.
 | `20` | `TAKEN_OVER` | **yes** | `drive.ts` only: another clone took the drive over. At a round boundary, before spawning a pass, or after renewing its ledger heartbeat through a quota sleep or a mailbox pause, the driver read a takeover claim in force on the PR, from another clone, newer than its own position (its own claim, or the position its clone's ledger records), and stopped without another pass, so it never replies beside its successor; it writes no further ledger. A `--take-over` whose own claim lost to a rival's earlier claim on the same ledger generation stops with it too. Nothing to recover here: that clone drives now. Re-arming beside it is refused with exit `13` while the ledger names it running (§ Picking up a stopped drive) |
 | `2` | `UNSUPPORTED_CLI` | **yes** | A `gh` that cannot report every required PR field, including draft state and mergeability. Reported through the JSON contract; an argument error, which precedes any PR to describe, exits without one |
 
+Exit `17` (`PUSH_HELD`) belongs to the same numbering but is no end state of
+`drive-status.ts` or `drive.ts`: `guarded-push.ts` returns it when a mailbox
+`hold-push` directive is in force and nothing was pushed, before the push
+or, through `push-hold-recheck.ts` at the end of the pre-push hook, while
+the hook runs. Resume the hold, then push again (§ The drive mailbox in
+`SKILL.md`). The code is held in
+[`terminal-states.ts`](../scripts/lib/status/terminal-states.ts) so that no
+state or exit is given it.
+
 Infrastructure retry budgets accept integers from 0 through 100; invalid or
 excessive values use the default. A base-sync refusal or unreadable report
 stops recovery without an empty commit. A successful local base merge is
@@ -971,8 +980,14 @@ be inspected, so the doctor reads that holder `DEAD`, as it does one with a
 clean tree, and
 the takeover is admitted as the plain arm's lock recovery is; an existing tree
 that is unregistered or cannot be inspected stays `UNKNOWN` and is refused. Every other holder is
-refused with exit `11`, naming the verdict; an empty lock is exit `2`, since
-there is nothing to take over. Once the takeover holds the locks it appends a
+refused with exit `11`, naming the verdict. With an empty lock the drive
+ledger decides: another clone's driver past the lease window is taken over by
+a claim; this tree's own driver that the ledger still names `running` is
+admitted as `DEAD` (it released its locks as it ended without writing its
+stop, and what it left is this tree's, settled as any re-arm settles it);
+this clone's driver in another tree is exit `2`, naming that tree, whose
+leftovers it holds; and a ledger that names no running driver is exit `2`,
+since there is nothing to take over. Once the takeover holds the locks it appends a
 record to the drive state's `takeovers` (from which actor and hashed account,
 to which, the verdict, the round, and `vanishedTree`, the tree that no longer
 existed; the first pass's notice directs it to inspect branch refs and
@@ -995,8 +1010,10 @@ When no driver of this clone holds the drive, `--take-over` reads the ledger:
 it is admitted (verdict `STALE`) only when the ledger names a running driver
 in another clone whose heartbeat is older than the lease window, the doctor's
 stall threshold (`stallThresholdMs`, the same floor that keeps an honest long
-round from reading `WEDGED`); a fresher heartbeat refuses with exit `11`, and
-no running driver elsewhere is exit `2`. Once it holds its locks the taker
+round from reading `WEDGED`); a fresher heartbeat refuses with exit `11`.
+With no running driver elsewhere, a ledger naming this tree's own driver
+running is a `DEAD` takeover, and this clone's driver in another tree, or no
+running driver at all, is exit `2`. Once it holds its locks the taker
 re-reads the ledger (a heartbeat that moved since refuses with `11`) and
 posts an append-only claim, `<!-- drive-pr-takeover-claim -->` with its tree,
 clone, the ledger generation it read and the time, and reads the claims
@@ -2526,8 +2543,9 @@ a long interactive round that reaches it leaves its successor nothing.
 Unlike context usage, this one is observable: the session transcript records
 every round-trip, and distinct `requestId`s since the last real user message
 count them. The plugin ships the counter as an agent-runtime hook,
-`<plugin-dir>/hooks/turn-budget-guard.ts`, registered by `hooks/hooks.json` to
-run before every tool call: it counts those ids off the transcript since its
+`<plugin-dir>/hooks/turn-budget-guard.ts`, registered by `hooks/hooks.json`
+(under Codex, by an entry `jig upgrade` writes into the Codex home) to run
+before every tool call: it counts those ids off the transcript since its
 last call and injects a wrap-up instruction once the count is within a margin
 of the cap, 50 turns under a cap of 1000, with one later reminder when half
 the margin remains. `JIG_TURN_BUDGET`, `JIG_TURN_BUDGET_MARGIN` and
