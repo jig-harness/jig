@@ -9,11 +9,17 @@
  */
 import { readFileSync } from "node:fs";
 import { errnoCode } from "../errors.ts";
+import { currentMs } from "../time.ts";
 import { hookFailure, superviseHook } from "../worktree-hooks.ts";
 import { HOOK_TIMEOUT_MS } from "./limits.ts";
 import type { HookRunner } from "./port.ts";
 import { processAlive, processStart } from "./process-start.ts";
-import { budget, type Context, HerdrError } from "./runner.ts";
+import {
+  budget,
+  type Context,
+  HerdrError,
+  UnendedGroupError,
+} from "./runner.ts";
 
 /**
  * Run a hook in its worktree under the supervisor; throws when it fails. Its
@@ -39,7 +45,7 @@ export const supervisedHook: HookRunner = (ctx, worktree, path, groupFile) => {
     try {
       endGroup(ctx, groupFile);
     } catch (error) {
-      throw new HerdrError(
+      throw new UnendedGroupError(
         `${failure}; its process group may still be running, as it could not be ended (${error instanceof Error ? error.message : String(error)})`,
         { cause: error },
       );
@@ -96,23 +102,36 @@ export function groupAlive(ctx: Context, group: Recorded): boolean {
   return start === null || start === group.start;
 }
 
+/** How long a killed group may take to disappear before it counts as not ended. */
+const GROUP_END_TIMEOUT_MS = 5_000;
+const GROUP_POLL_MS = 50;
+
 /**
  * Kill what is left of a failed run's process group, only while the id still
  * names that group (`groupAlive`): once it names another, the hook's group
  * has ended and the other is not this run's to kill. A group that is gone
- * answers ESRCH; on macOS one whose processes have all exited but are not yet
- * reaped answers EPERM, and has nothing left to kill either.
+ * answers ESRCH. A kill is a request: this returns only once the group is
+ * seen gone, within a bounded wait, and throws when it is not, EPERM
+ * included, which a live group the caller may not signal answers too.
  * Cleanup keeps processStart's own fixed deadline after the run budget expires,
  * so an expired hook still gets its identity checked before any group signal.
  */
 function endGroup(ctx: Context, groupFile: string): void {
   const { group } = recordedRun(groupFile);
-  if (group === undefined || !groupAlive({ ...ctx, budget: (ms) => ms }, group))
-    return;
+  const cleanup = { ...ctx, budget: (ms: number) => ms };
+  if (group === undefined || !groupAlive(cleanup, group)) return;
   try {
     process.kill(-group.pid, "SIGKILL");
   } catch (error) {
-    const code = errnoCode(error);
-    if (code !== "ESRCH" && code !== "EPERM") throw error;
+    if (errnoCode(error) !== "ESRCH" && errnoCode(error) !== "EPERM")
+      throw error;
+  }
+  const deadline = currentMs() + GROUP_END_TIMEOUT_MS;
+  while (groupAlive(cleanup, group)) {
+    if (currentMs() >= deadline)
+      throw new HerdrError(
+        `process group ${group.pid} still has processes ${GROUP_END_TIMEOUT_MS / 1000} seconds after SIGKILL`,
+      );
+    ctx.sleep(GROUP_POLL_MS);
   }
 }

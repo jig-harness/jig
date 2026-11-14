@@ -9,7 +9,13 @@
 import { OrcaError } from "./envelope.ts";
 import { HOOK_TIMEOUT_MS, HOOKS_DIR, WAIT_POLL_MS } from "./limits.ts";
 import type { OpenPort } from "./port.ts";
-import { budget, cleanupContext, output, shellQuote } from "./runner.ts";
+import {
+  budget,
+  cleanupContext,
+  output,
+  shellQuote,
+  UnendedGroupError,
+} from "./runner.ts";
 import { currentMs } from "../time.ts";
 
 /** Reads and commands on the clone's host. */
@@ -227,9 +233,15 @@ function runClaimedHook(
   try {
     port.runHook(port.host, path, hook, `${claim}/hook`);
   } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    // A group that may still run keeps the claim, so no open runs the hook beside it.
+    if (error instanceof UnendedGroupError)
+      throw new OrcaError(
+        `${reason}; end that process group, remove ${claim}, then open the workspace again, which runs the hook again`,
+      );
     releaseHookClaim(port, claim);
     throw new OrcaError(
-      `${error instanceof Error ? error.message : String(error)}; fix the hook and open the workspace again, which runs it again`,
+      `${reason}; fix the hook and open the workspace again, which runs it again`,
     );
   }
   let written: ReturnType<typeof port.host.run>;

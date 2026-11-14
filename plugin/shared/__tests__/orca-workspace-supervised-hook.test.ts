@@ -17,19 +17,18 @@ import {
   ensureCreateHook,
 } from "../orca-workspace/hooks.ts";
 import { supervisedHook } from "../orca-workspace/supervised-hook.ts";
-import { type Context, localContext } from "../orca-workspace/runner.ts";
+import {
+  type Context,
+  localContext,
+  UnendedGroupError,
+} from "../orca-workspace/runner.ts";
 
-/** Whether the process is alive, polled until it is not or 5 seconds pass. */
-function outlives(pid: number): boolean {
-  const deadline = Date.now() + 5_000;
-  for (;;) {
-    try {
-      process.kill(pid, 0);
-    } catch {
-      return false;
-    }
-    if (Date.now() >= deadline) return true;
-    Bun.sleepSync(50);
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -90,19 +89,29 @@ describe.skipIf(
     const { worktree, dir } = worktreeWithHook(
       `#!/bin/sh\nsleep 300 >/dev/null 2>&1 &\necho $! > ${JSON.stringify(pidFile)}\nexit 4\n`,
     );
+    const seen: { aliveAtRelease?: boolean } = {};
     expect(() =>
       ensureCreateHook(
-        { host: quiet(), runHook: supervisedHook },
+        {
+          host: quiet(),
+          // The runner returning is the last moment before the claim is given back.
+          runHook: (ctx, wt, hook, groupFile) => {
+            try {
+              supervisedHook(ctx, wt, hook, groupFile);
+            } finally {
+              seen.aliveAtRelease = alive(pidIn(pidFile));
+            }
+          },
+        },
         worktree,
         dir,
       ),
     ).toThrow("failed (exit 4)");
     const child = pidIn(pidFile);
+    if (alive(child)) process.kill(child, "SIGKILL");
+    expect(seen.aliveAtRelease).toBe(false);
     expect(existsSync(join(dir, CREATE_HOOK_CLAIM))).toBe(false);
     expect(existsSync(join(dir, CREATE_HOOK_MARK))).toBe(false);
-    const left = outlives(child);
-    if (left) process.kill(child, "SIGKILL");
-    expect(left).toBe(false);
   });
 
   test("records the hook's process group in the claim while it runs", () => {
@@ -133,13 +142,52 @@ describe.skipIf(
     expect(existsSync(join(dir, CREATE_HOOK_MARK))).toBe(true);
   });
 
+  /** A hook that fails with exit 4 after replacing its own group record with a directory, so ending its group cannot read it. */
+  const failsWithUnreadableRecord = (record: string) =>
+    [
+      "#!/bin/sh",
+      `record=${record}`,
+      "i=0",
+      `while ! grep -q '^group ' "$record" 2>/dev/null && [ "$i" -lt 100 ]; do sleep 0.1; i=$((i + 1)); done`,
+      'rm -f "$record"',
+      'mkdir "$record"',
+      "exit 4",
+      "",
+    ].join("\n");
+  const claimRecord = `"$(git rev-parse --absolute-git-dir)/${CREATE_HOOK_CLAIM}/hook"`;
+
   test("a group that cannot be ended keeps the hook's own failure first", () => {
-    const { worktree, hook } = worktreeWithHook("#!/bin/sh\nexit 4\n");
-    // A directory where the record should be: the supervisor cannot write
-    // it, and reading it back to end the group fails.
-    const record = mkdtempSync(join(tmpdir(), "jig-orca-record-"));
-    expect(() => supervisedHook(quiet(), worktree, hook, record)).toThrow(
-      /^\S+create failed \(exit \d+\); its process group may still be running/,
+    const record = join(mkdtempSync(join(tmpdir(), "jig-orca-rec-")), "hook");
+    const { worktree, hook } = worktreeWithHook(
+      failsWithUnreadableRecord(JSON.stringify(record)),
     );
+    // The hook has its own failure (exit 4) and then the cleanup fails.
+    const failure = (() => {
+      try {
+        supervisedHook(quiet(), worktree, hook, record);
+      } catch (error) {
+        return error;
+      }
+      return null;
+    })();
+    expect(failure).toBeInstanceOf(UnendedGroupError);
+    expect((failure as Error).message).toMatch(
+      /^\S+create failed \(exit 4\); its process group may still be running/,
+    );
+  });
+
+  test("a claim whose group cannot be ended stays", () => {
+    const { worktree, dir } = worktreeWithHook(
+      failsWithUnreadableRecord(claimRecord),
+    );
+    expect(() =>
+      ensureCreateHook(
+        { host: quiet(), runHook: supervisedHook },
+        worktree,
+        dir,
+      ),
+    ).toThrow(/remove .* then open the workspace again/);
+    expect(existsSync(join(dir, CREATE_HOOK_CLAIM))).toBe(true);
+    expect(existsSync(join(dir, CREATE_HOOK_MARK))).toBe(false);
   });
 });

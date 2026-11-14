@@ -57,7 +57,13 @@ import {
 import { assertLinkedWorktree, findGitWorktree, samePath } from "./git.ts";
 import { findHerdrWorktree, herdrCall, herdrJson } from "./herdr.ts";
 import { localOwner, type Owner, ownerAlive, ownerLine } from "./owner.ts";
-import { budget, type Context, HerdrError, output } from "./runner.ts";
+import {
+  budget,
+  type Context,
+  HerdrError,
+  output,
+  UnendedGroupError,
+} from "./runner.ts";
 import { currentMs } from "../../plugin/shared/time.ts";
 
 export {
@@ -257,7 +263,9 @@ function runClaimed(
     runHook(ctx, worktree, path, groupPath(state));
   } catch (error) {
     writeWhole(state.result, `failed: ${(error as Error).message}\n`);
-    rmSync(state.claim, { recursive: true, force: true });
+    // A group that may still run keeps the claim; a later open takes it over once the run is gone.
+    if (!(error instanceof UnendedGroupError))
+      rmSync(state.claim, { recursive: true, force: true });
     throw error;
   }
   writeWhole(state.result, "ok\n");
