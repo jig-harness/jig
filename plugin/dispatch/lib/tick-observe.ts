@@ -90,6 +90,7 @@ import {
   ended,
   heldTo,
   passedBefore,
+  passedRead,
   type TickBound,
 } from "./sources/bounded.ts";
 import { readPickups } from "./sources/tracker.ts";
@@ -199,16 +200,21 @@ export async function openRepo(
 ): Promise<OpenedRepo | RepoReport> {
   const { options, nowMs } = context;
   const { pool } = context.reads;
-  if (ended(context.bound))
+  const passed = (): RepoReport => {
+    const cut = passedRead("this repository was opened");
     return refusedBy(
       path,
-      `${passedBefore("this repository was opened")}, so nothing is planned for it this tick`,
-      undefined,
+      `${cut.failure.reason}, so nothing is planned for it this tick`,
+      cut.failure,
       nowMs,
     );
+  };
+  if (ended(context.bound)) return passed();
   const entry = machineRepository(options.machine ?? null, path);
   // The tick's query of the repository, else its view and its file read one by one.
   const queried = await context.reads.repository(path);
+  // The one-by-one reads are not started once the bound has ended.
+  if (!queried.ok && ended(context.bound)) return passed();
   let target: Awaited<ReturnType<typeof repoTarget>>;
   try {
     target = queried.ok

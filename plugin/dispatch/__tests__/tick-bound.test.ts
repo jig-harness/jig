@@ -497,6 +497,36 @@ describe("a repository under the tick's bound", () => {
       `${PASSED} this repository was opened, so nothing is planned for it this tick`,
     );
   });
+
+  it("starts no read one by one when the bound ends during its query", async () => {
+    const bound = endsIn(60_000);
+    const controller = new AbortController();
+    const cut: TickBound = { ...bound, signal: controller.signal };
+    const reads = tickReads(fakeRuntime(() => unanswered()).runtime);
+    let started = 0;
+    const run = reads.pool.run.bind(reads.pool);
+    reads.pool.run = (read) => {
+      started += 1;
+      return run(read);
+    };
+    reads.repository = async () => {
+      controller.abort(new Error("the tick's deadline passed"));
+      return passedRead("the repository was queried");
+    };
+    const report = await openRepo(REPO.path, {
+      options: { repos: [REPO.path] },
+      nowMs: Date.now(),
+      reads,
+      bound: cut,
+    });
+    expect(started).toBe(0);
+    expect("refused" in report && report.refused).toBe(
+      `${PASSED} this repository was opened, so nothing is planned for it this tick`,
+    );
+    expect("refusedBy" in report && report.refusedBy?.class).toBe(
+      "unreachable",
+    );
+  });
 });
 
 describe("the tick's bound itself", () => {
@@ -538,14 +568,15 @@ describe("a tick whose bound ends before it reads", () => {
       const bounded = await w.dispatch(["--json"], undefined, {
         JIG_LAUNCHER_DEADLINE_SEC: "1",
       });
-      // A repository it could not read fails the tick, which still completes and writes its receipt.
-      expectSpawnExit(bounded, 1);
+      // The refusal is an `unreachable` read the tick waits out; it still completes and writes its receipt.
+      expectSpawnExit(bounded, 0);
       const receipt = JSON.parse(bounded.stdout) as TickReceipt;
       expect(receipt.completed).toBe(true);
       expect(receipt.lockHeldBy).toBeUndefined();
-      expect(receipt.repos[0]?.refused).toBe(
+      expect(receipt.repos[0]?.refused).toStartWith(
         `${PASSED} this repository was opened, so nothing is planned for it this tick`,
       );
+      expect(receipt.repos[0]?.refusedBy?.class).toBe("unreachable");
       expect(receipt.repos[0]?.records).toEqual([]);
       const written = join(
         dispatchState(w),
