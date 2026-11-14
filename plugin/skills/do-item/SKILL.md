@@ -1352,9 +1352,12 @@ implementation. Skip this check for issues about the repository's own code.
         Codex uses `exec_command` with a short `yield_time_ms` and retains
         `session_id` for `write_stdin`). If neither tool is exposed, treat
         this as `print` and name the limitation. A [dispatched pass](#dispatched-passes)
-        runs with background tasks off, so it treats `spawn` as `print`: it
-        records the result with the pull request and the unstarted command,
-        and says the drive is unarmed. Otherwise spawning is mandatory: an emitted but unspawned command reintroduces the
+        runs with background tasks off, so it cannot spawn: it first reads
+        `drives.ts` for a drive on this pull request (a fallback after a tab
+        whose drive was not listed in time may have one that started
+        since), and when none holds it, treats `spawn` as `print` and
+        follows [Dispatched passes](#dispatched-passes) for the result.
+        Otherwise spawning is mandatory: an emitted but unspawned command reintroduces the
         human-memory delay this step removes, and a `hitl` issue cleared
         this run is no reason to withhold it. In Claude Code, pass the Bash call's `timeout`
         of `28800000` (8 hours) with `run_in_background`: in an unattended
@@ -1935,8 +1938,17 @@ report. In such a pass:
   never reworded. A push the repository's pre-push hook refuses is no stop:
   go on with validation, fix what it found, and push after it. The pull
   request still opens only after validation and the pre-PR review.
+- **A drive the pass cannot arm is handed off, not dropped.** When the arm
+  script answers `spawn`, the pass cannot start the drive itself and
+  first checks `drives.ts` for one on this pull request. With none, it
+  records `done --pr <number>` as for an armed drive (the work is
+  finished and the pull request is open), and its closing report says the
+  drive is unarmed and carries the unstarted command and the arm
+  script's reason. The dispatcher then drives the pull request only
+  where `dispatch.adopt` is enabled or a person has put the `drive`
+  label on it; the report names that person's next step.
 - **Write the closing report last.** Record the result as soon as the
-  pull request's drive is armed and go on; when the pass is done, write
+  pull request's drive is armed, or handed off as above, and go on; when the pass is done, write
   its closing report, a `closing-report/v1` record of the shape the prompt
   gives (what the run concluded, the next step and who takes it, the
   question and its framed decision when a person must decide, why it fell

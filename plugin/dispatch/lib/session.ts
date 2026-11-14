@@ -191,6 +191,7 @@ function pickupResultLines(
   return [
     "Record how the pickup ended, once, as soon as you know it:",
     `- its pull request is open and its drive armed: ${resultCommand(record, "done")} --pr <the pull request number>; record this as soon as the drive is armed, then go on`,
+    `- its pull request is open and the drive could not be armed here (the arm script answered spawn, which this pass cannot run, and no drive of the pull request is listed): record the same ${resultCommand(record, "done")} --pr <the pull request number>, and say in the closing report that the drive is unarmed, with the unstarted command`,
     `- no pull request was needed (a duplicate or work already made): ${resultCommand(record, "done")} --none "<why>"`,
     refused,
     `- the tracker refused a request for its rate limit (a tracker script exited 5, naming the time it resets) before your claim of the item succeeded: ${resultCommand(record, "waits")} --until <that time>; ask no question, the dispatcher starts the item again after the reset`,
