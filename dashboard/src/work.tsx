@@ -359,7 +359,7 @@ function Item(props: WorkProps & { lead: boolean }) {
 /** The repository a need of the whole host names, whose target is an account (`HOST_NEED_REPO` in the dispatcher's preflight). */
 const HOST_REPO = "host";
 
-/** A card's lead identity: the pull request or item the card is about; a target that is neither (an account, or none) as plain text. */
+/** A card's lead identity: the pull request or item the card is about; an account as plain text, and no target as nothing. */
 export function Work(props: WorkProps) {
   if (props.target === "" || props.repo === HOST_REPO)
     return props.target === "" ? null : (
