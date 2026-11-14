@@ -39,7 +39,7 @@ it("latches transport failures across distinct fact keys and people, but keeps d
   expect(await b.once("another item", async () => "read")).toBe("read");
   await expect(
     a.once("history", async () => {
-      throw new LinearApiError("network unreachable", null);
+      throw new LinearApiError("network unreachable", null, "unreachable");
     }),
   ).rejects.toThrow("network unreachable");
   await expect(
