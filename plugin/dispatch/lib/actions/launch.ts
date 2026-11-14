@@ -600,12 +600,17 @@ export async function replay(
         : blocked?.waitsOn;
   const late = detail ?? outOfTime(state) ?? launchRoom(state);
   if (late !== null)
-    return waits(
-      action,
-      `the pending launch of ${record.id} is not replayed: ${late}`,
-      record.account,
-      waitsOn,
-    );
+    return {
+      ...waits(
+        action,
+        `the pending launch of ${record.id} is not replayed: ${late}`,
+        record.account,
+        waitsOn,
+      ),
+      // A replay remains owned by its original record even when it cannot
+      // start. Consumers project that identity into their held-work queues.
+      record: record.id,
+    };
   const attempt = await callLaunch(state, record);
   if (attempt.outcome === "failed" && releasable(record))
     release(state, record);

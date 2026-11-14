@@ -430,6 +430,7 @@ it("preserves an account replay blocker's queue classification", async () => {
       waitsOn: "accounts",
     }),
   ).toMatchObject({
+    record: "pending",
     outcome: "waits",
     detail: "the pending launch of pending is not replayed: a is walled",
     waitsOn: "accounts",
