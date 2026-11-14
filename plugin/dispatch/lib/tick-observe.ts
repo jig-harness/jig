@@ -624,7 +624,7 @@ async function readTracker(
       record: "tracker",
       source: where,
       ok: false,
-      detail: `the tracker cannot be opened: ${failureText(error)}`,
+      detail: `the issue service cannot be opened: ${failureText(error)}`,
     });
   }
   return tracked;

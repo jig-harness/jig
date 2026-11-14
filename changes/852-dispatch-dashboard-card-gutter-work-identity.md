@@ -22,6 +22,10 @@ release: minor
   "issues" where the line does not say; cards no longer repeat "Open the
   pull request" or "Open in the tracker" links their identity already
   gives. **Consumer action:** none.
+- The dispatcher's own sentences that the dashboard and `jig dispatch`
+  show (holds, waits, refusals and probe answers) name the issue service
+  by its product, or say "the issue service" or "issues", instead of
+  "tracker". **Consumer action:** none.
 
 ### Added
 

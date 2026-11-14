@@ -116,7 +116,7 @@ describe("the line's need for held tracker stages", () => {
         target: "account a",
         stage: "followup",
         reason:
-          "account a cannot reach the tracker, so its followup and pickup launches in example-org/web, example-org/api are held: keychain",
+          "account a cannot reach the issues of example-org/web, example-org/api, so its followup and pickup launches there are held: keychain",
       }),
       expect.objectContaining({ repo: HOST_NEED_REPO, target: "account b" }),
     ]);
@@ -195,7 +195,7 @@ describe("a launch the tick has no time left to ask for", () => {
     expect(admitted).toEqual({
       outcome: expect.objectContaining({
         outcome: "waits",
-        detail: expect.stringContaining("no room for the tracker preflight"),
+        detail: expect.stringContaining("no room for the issue preflight"),
       }),
     });
     expect(asked).toBe(0);

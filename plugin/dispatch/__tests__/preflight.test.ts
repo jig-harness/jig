@@ -149,12 +149,12 @@ describe("the tracker preflight", () => {
       expect.objectContaining({
         target: "PR #9",
         outcome: "waits",
-        detail: `the tracker preflight holds it on a (${KEYCHAIN})`,
+        detail: `the issue preflight holds it on a (${KEYCHAIN})`,
       }),
       expect.objectContaining({
         target: "PR #10",
         outcome: "waits",
-        detail: `the tracker preflight holds it on a (${KEYCHAIN})`,
+        detail: `the issue preflight holds it on a (${KEYCHAIN})`,
       }),
     ]);
     expect(held.repos[0]?.preflight).toEqual([
@@ -177,7 +177,9 @@ describe("the tracker preflight", () => {
         pr: null,
         item: null,
         stage: "followup",
-        reason: expect.stringContaining(`${SLUG} are held: ${KEYCHAIN}`),
+        reason: expect.stringContaining(
+          `the issues of ${SLUG}, so its followup launches there are held: ${KEYCHAIN}`,
+        ),
       }),
     ]);
 
@@ -259,7 +261,7 @@ describe("the tracker preflight", () => {
       expect.objectContaining({
         target: "#12",
         outcome: "waits",
-        detail: `the tracker preflight holds it on a (${KEYCHAIN})`,
+        detail: `the issue preflight holds it on a (${KEYCHAIN})`,
       }),
     ]);
     expect(tick.repos[0]?.preflight).toEqual([
@@ -499,7 +501,7 @@ describe("run.ts tracker", () => {
     expect(unknown.answer).toMatchObject({
       ok: false,
       kind: "config",
-      reason: expect.stringContaining("the tracker cannot be opened"),
+      reason: expect.stringContaining("nowhere cannot be opened"),
     });
     const garbled = await probe({}, { input: "{not json" });
     expect(garbled.answer).toMatchObject({

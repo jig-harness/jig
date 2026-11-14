@@ -8,16 +8,10 @@ import type {
   LineRepo,
   LineSnapshot,
 } from "../../plugin/dispatch/lib/dashboard-contract.ts";
+import { trackerProduct } from "../../plugin/shared/tracker-product.ts";
 
 /** A repository's tracker as the line holds it: `null` when its setting does not read, `undefined` when the line does not say. */
 export type Tracker = LineRepo["tracker"] | undefined;
-
-/** The trackers Jig has an adapter for, by the adapter's name. */
-const NAMES: Readonly<Record<string, string>> = {
-  github: "GitHub Issues",
-  linear: "Linear",
-  jira: "Jira",
-};
 
 /** What one item of each tracker is called, and how its link out reads. */
 const ITEM_WORDS: Readonly<Record<string, { kind: string; open: string }>> = {
@@ -28,11 +22,7 @@ const ITEM_WORDS: Readonly<Record<string, { kind: string; open: string }>> = {
 
 /** A tracker's name for a person; an adapter the page does not know by its own word; `null` when the line does not say. */
 export function trackerName(tracker: Tracker): string | null {
-  if (tracker == null) return null;
-  const adapter = tracker.adapter.toLowerCase();
-  return Object.hasOwn(NAMES, adapter)
-    ? (NAMES[adapter] ?? tracker.adapter)
-    : tracker.adapter;
+  return tracker == null ? null : trackerProduct(tracker.adapter);
 }
 
 /** The tracker a repository's configuration names, as the line holds it; `undefined` when the line does not hold the repository or a line written before it was kept. */

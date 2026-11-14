@@ -115,7 +115,7 @@ export function limitedRow(
   const row: Unplaced = {
     target: `${tracker.adapter} ${tracker.team}`,
     record: "tracker",
-    reason: `the tracker is rate limited until ${until}: pickups wait for the reset, and no request is sent before it`,
+    reason: `the issue service is rate limited until ${until}: pickups wait for the reset, and no request is sent before it`,
   };
   return view === null ? row : scopeFailureRow(tracker, view, row.reason);
 }
@@ -933,7 +933,7 @@ async function heldReason(
   });
   // A tracker that cannot assign without replacing a concurrent assignee refuses the claim, so no launch is spent on it; each blocker is still explained.
   if (pull.pulled.length > 0 && tracker.assignUnassigned === undefined)
-    return `${pull.reason}; this tracker cannot assign a blocker on its own, so a person assigns it`;
+    return `${pull.reason}; this issue service cannot assign a blocker on its own, so a person assigns it`;
   for (const blocker of pull.pulled)
     if (!ctx.seen.has(blocker.identifier))
       found.pending.push({

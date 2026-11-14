@@ -84,8 +84,7 @@ export async function linkedPullRequests(
 ): Promise<EvidenceRead<LinkedPullRequest[]>> {
   const { repo } = observation.opened;
   const keys = observation.join?.keys;
-  if (!keys)
-    return failed("unreadable", "the tracker's key rules did not read");
+  if (!keys) return failed("unreadable", "the issue key rules did not read");
   if (!takeForgeReads(1))
     return failed(
       "unreadable",
