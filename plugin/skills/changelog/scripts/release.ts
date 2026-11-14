@@ -59,6 +59,10 @@ import {
 } from "./notes-dir.ts";
 import { withVersion } from "./versions.ts";
 import { currentIso, isCalendarDate } from "../../../shared/time.ts";
+import {
+  AFTER_VERSION_TIMEOUT_ENV,
+  DEFAULT_AFTER_VERSION_TIMEOUT_SEC,
+} from "../../../shared/repo-commands.ts";
 
 type Env = Record<string, string | undefined>;
 
@@ -89,10 +93,10 @@ export interface ReleaseResult {
 export const AFTER_VERSION_IN_CI = "JIG_AFTER_VERSION_IN_CI";
 
 /** The environment variable that bounds `after_version`, in seconds. */
-export const AFTER_VERSION_TIMEOUT = "JIG_AFTER_VERSION_TIMEOUT_SEC";
+export const AFTER_VERSION_TIMEOUT = AFTER_VERSION_TIMEOUT_ENV;
 
 /** How long `after_version` may run when the environment does not say. */
-const AFTER_VERSION_TIMEOUT_DEFAULT_SEC = 1800;
+const AFTER_VERSION_TIMEOUT_DEFAULT_SEC = DEFAULT_AFTER_VERSION_TIMEOUT_SEC;
 
 /** The `after_version` deadline in `env`, in seconds; throws on a value that is not one. */
 function afterVersionTimeoutSec(env: Env): number {

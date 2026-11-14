@@ -1,0 +1,318 @@
+{
+  "chapter": "repo-commands",
+  "title": "Commands a repository supplies",
+  "version": 1,
+  "status": "stable",
+  "fields": {
+    "kind": {
+      "type": "string",
+      "nullable": false,
+      "required": true,
+      "identifies": true,
+      "description": "command for a setting whose value is a command Jig runs, exit for an exit besides 0 that the command's caller tells apart from a failure."
+    },
+    "name": {
+      "type": "string",
+      "nullable": false,
+      "required": true,
+      "identifies": true,
+      "description": "For a command, its setting; for an exit, the setting of the command that exits with it and the code, as <setting>:<code>."
+    },
+    "setting": {
+      "type": "string",
+      "nullable": false,
+      "required": true,
+      "identifies": false,
+      "description": "The setting's path in .config/jig.yaml, as the configuration schema names it: for an exit, the setting of the command that exits with it."
+    },
+    "exit": {
+      "type": "integer",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "For an exit, its code; null for a command."
+    },
+    "runBy": {
+      "type": "string",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "For a command, the skills and components that run it, comma-separated; null for an exit."
+    },
+    "shell": {
+      "type": "boolean",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "For a command, whether its value is one command line Jig hands to the platform's shell (sh, or cmd.exe on Windows); false for words run without one. Null for an exit."
+    },
+    "given": {
+      "type": "string",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "For a command, what it is given: its standard input, its arguments and where it runs; null for an exit."
+    },
+    "answers": {
+      "type": "string",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "For a command, what it answers with on success, exit 0; null for an exit."
+    },
+    "commandStore": {
+      "type": "boolean",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "For a command, whether it runs under the command store's rules: read from the default branch alone, run without the tracker and forge tokens, and failed past 65536 bytes of standard output; null for an exit."
+    },
+    "deadlineSec": {
+      "type": "integer",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "For a command, the seconds its caller lets one run take before stopping it and failing the run; null where the caller sets no deadline of its own, and for an exit."
+    },
+    "deadlineChangedBy": {
+      "type": "string",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "The environment variable, or the setting of .config/jig.yaml, that changes deadlineSec; null where deadlineSec is."
+    },
+    "meaning": {
+      "type": "string",
+      "nullable": false,
+      "required": true,
+      "identifies": false,
+      "description": "For a command, what the repository supplies it for; for an exit, what the caller does when the command exits with it."
+    }
+  },
+  "values": [
+    {
+      "kind": "command",
+      "name": "gates.command",
+      "setting": "gates.command",
+      "exit": null,
+      "runBy": "resolve-review-comments, drive-pr, fix-ci, resolve-conflicts, descar",
+      "shell": true,
+      "given": "Nothing: it runs from the repository root, in the working tree being changed.",
+      "answers": "Exit 0 when every one of the repository's local checks passes.",
+      "commandStore": false,
+      "deadlineSec": null,
+      "deadlineChangedBy": null,
+      "meaning": "The repository's complete local checks, run before every push. resolve-review-comments refuses to start without it, and it is drive-pr's one local check where `drive.validation_plan_command` is not set."
+    },
+    {
+      "kind": "command",
+      "name": "drive.validation_plan_command",
+      "setting": "drive.validation_plan_command",
+      "exit": null,
+      "runBy": "drive-pr, fix-ci, resolve-conflicts, review, descar",
+      "shell": true,
+      "given": "The changed files on standard input, one path per line.",
+      "answers": "Exit 0 and the validation plan as one JSON object on standard output; a nonzero exit or output that is not a JSON object is reported apart from a plan.",
+      "commandStore": false,
+      "deadlineSec": null,
+      "deadlineChangedBy": null,
+      "meaning": "Says which checks and reviews a change needs. The change-areas skill's resolver prints such a plan from the change-area catalog."
+    },
+    {
+      "kind": "command",
+      "name": "drive.load_guard_command",
+      "setting": "drive.load_guard_command",
+      "exit": null,
+      "runBy": "drive-pr",
+      "shell": true,
+      "given": "Nothing: it runs from the repository root before a round's heavy checks.",
+      "answers": "Exit 0 once the machine can take the checks; any other exit is a warning that the round's heavy checks may be refused.",
+      "commandStore": false,
+      "deadlineSec": null,
+      "deadlineChangedBy": null,
+      "meaning": "Waits until the machine can take a round's heavy checks."
+    },
+    {
+      "kind": "command",
+      "name": "ci.log_command",
+      "setting": "ci.log_command",
+      "exit": null,
+      "runBy": "fix-ci",
+      "shell": true,
+      "given": "One JSON object, `{\"context\", \"target_url\"}`, the failing commit status's context and the page it links to (null when it links to none), on standard input. It runs in a temporary copy of the default branch's files, not in the pull request's working tree.",
+      "answers": "Exit 0 and the status's failed log on standard output, at most 64 KiB of it.",
+      "commandStore": true,
+      "deadlineSec": 300,
+      "deadlineChangedBy": "JIG_FIX_CI_LOG_COMMAND_TIMEOUT_SEC",
+      "meaning": "Reads the failed log of a commit status, for a CI service that reports as commit statuses and keeps its logs where only the repository knows how to reach them."
+    },
+    {
+      "kind": "exit",
+      "name": "ci.log_command:3",
+      "setting": "ci.log_command",
+      "exit": 3,
+      "runBy": null,
+      "shell": null,
+      "given": null,
+      "answers": null,
+      "commandStore": null,
+      "deadlineSec": null,
+      "deadlineChangedBy": null,
+      "meaning": "The log is gone (the build was deleted or its log rotated away); the first line of standard output is the reason."
+    },
+    {
+      "kind": "command",
+      "name": "do_item.preflight_command",
+      "setting": "do_item.preflight_command",
+      "exit": null,
+      "runBy": "do-item, work-batch, dispatch",
+      "shell": true,
+      "given": "The item's JSON, as `get_issue.ts` prints it, on standard input. It runs from the repository root before a claim takes its lock or writes anything.",
+      "answers": "Exit 0 lets the claim go on.",
+      "commandStore": true,
+      "deadlineSec": 60,
+      "deadlineChangedBy": "JIG_DO_ITEM_PREFLIGHT_TIMEOUT_SEC",
+      "meaning": "The repository's own start rules, run by every claim of an item: by do-item, by work-batch for each member, and by a dispatched pickup."
+    },
+    {
+      "kind": "exit",
+      "name": "do_item.preflight_command:3",
+      "setting": "do_item.preflight_command",
+      "exit": 3,
+      "runBy": null,
+      "shell": null,
+      "given": null,
+      "answers": null,
+      "commandStore": null,
+      "deadlineSec": null,
+      "deadlineChangedBy": null,
+      "meaning": "Refuses the claim: nothing is written, the claim exits 3 with `\"why\": \"preflight\"`, and the first line of standard output is the reason. Any other failure refuses it too."
+    },
+    {
+      "kind": "command",
+      "name": "descar.lint_command",
+      "setting": "descar.lint_command",
+      "exit": null,
+      "runBy": "descar",
+      "shell": true,
+      "given": "The paths of the documents to check, as arguments.",
+      "answers": "The scars it finds, which descar's steps read.",
+      "commandStore": false,
+      "deadlineSec": null,
+      "deadlineChangedBy": null,
+      "meaning": "Finds review scars in documents."
+    },
+    {
+      "kind": "command",
+      "name": "promote_memory.lint_command",
+      "setting": "promote_memory.lint_command",
+      "exit": null,
+      "runBy": "promote-memory",
+      "shell": true,
+      "given": "The command line with `{dir}` and `{file}` replaced by the memory's folder and file.",
+      "answers": "Exit 0 when the memory is clean.",
+      "commandStore": false,
+      "deadlineSec": null,
+      "deadlineChangedBy": null,
+      "meaning": "Checks one agent memory against the repository."
+    },
+    {
+      "kind": "command",
+      "name": "fix_ci.regenerate_commands",
+      "setting": "fix_ci.regenerate_commands",
+      "exit": null,
+      "runBy": "fix-ci",
+      "shell": true,
+      "given": "Nothing: each runs from the repository root.",
+      "answers": "Exit 0 once it has rewritten its generated files.",
+      "commandStore": false,
+      "deadlineSec": null,
+      "deadlineChangedBy": null,
+      "meaning": "Each regenerates committed generated files a CI check compares; a list of commands."
+    },
+    {
+      "kind": "command",
+      "name": "resolve_conflicts.generated",
+      "setting": "resolve_conflicts.generated",
+      "exit": null,
+      "runBy": "resolve-conflicts",
+      "shell": true,
+      "given": "Nothing: each entry's `command` runs from the repository root.",
+      "answers": "Exit 0 once it has rebuilt the files its entry's `paths` match.",
+      "commandStore": false,
+      "deadlineSec": null,
+      "deadlineChangedBy": null,
+      "meaning": "Rebuilds files that are regenerated, never merged by hand, when they conflict; each entry pairs `paths` with the `command` that rebuilds them."
+    },
+    {
+      "kind": "command",
+      "name": "explain.figure_build_command",
+      "setting": "explain.figure_build_command",
+      "exit": null,
+      "runBy": "explain",
+      "shell": true,
+      "given": "The command line with the figure's stem appended.",
+      "answers": "Exit 0 once the figure is built beside its diagram source.",
+      "commandStore": false,
+      "deadlineSec": null,
+      "deadlineChangedBy": null,
+      "meaning": "Builds one explainer figure."
+    },
+    {
+      "kind": "command",
+      "name": "reflection.command",
+      "setting": "reflection.command",
+      "exit": null,
+      "runBy": "reflect, review-reflections, dispatch",
+      "shell": false,
+      "given": "A command line split into words, or a list of words, run without a shell, with the operation appended: `check`, `append` (the findings as JSON Lines on standard input), `list` (an optional `{\"since\"}` object on standard input) or `diagnose`. `list` and `diagnose` get five times the deadline, since they read the whole store.",
+      "answers": "Exit 0 and the operation's answer as JSON or JSON Lines on standard output, as the reflect skill's store contract says; its conformance suite checks a store command against it.",
+      "commandStore": false,
+      "deadlineSec": 120,
+      "deadlineChangedBy": "reflection.timeout_sec",
+      "meaning": "The reflection store, where `reflection.store` is `command`: it keeps the findings sessions record with the reflect skill."
+    },
+    {
+      "kind": "exit",
+      "name": "reflection.command:3",
+      "setting": "reflection.command",
+      "exit": 3,
+      "runBy": null,
+      "shell": null,
+      "given": null,
+      "answers": null,
+      "commandStore": null,
+      "deadlineSec": null,
+      "deadlineChangedBy": null,
+      "meaning": "The store is unavailable (unreachable, or not signed in): reflect keeps the findings in its journal rather than failing. A run past its deadline, or one that cannot start, is read the same way."
+    },
+    {
+      "kind": "command",
+      "name": "changelog.after_version",
+      "setting": "changelog.after_version",
+      "exit": null,
+      "runBy": "changelog",
+      "shell": true,
+      "given": "Nothing: it runs from the repository root after the release step changes the version and before it deletes the change notes. Inside a CI job the release refuses to run it unless the job sets `JIG_AFTER_VERSION_IN_CI=1`.",
+      "answers": "Exit 0, leaving no process it started running. Its standard output is not read, only shown on standard error; the files it changed go into the release commit.",
+      "commandStore": false,
+      "deadlineSec": 1800,
+      "deadlineChangedBy": "JIG_AFTER_VERSION_TIMEOUT_SEC",
+      "meaning": "Updates the files that repeat the version, such as a lock file, for the release commit."
+    },
+    {
+      "kind": "command",
+      "name": "code_stats.classify_command",
+      "setting": "code_stats.classify_command",
+      "exit": null,
+      "runBy": "code-stats",
+      "shell": true,
+      "given": "Every tracked path on standard input, one per line; it runs once, from the repository root.",
+      "answers": "Exit 0 and one JSON object per line, `{\"path\", \"area\"?, \"kind\"?, \"language\"?, \"module\"?}`, whose values override the skill's own classification. A line it cannot use, an untracked path, or an unknown area or kind fails the report.",
+      "commandStore": false,
+      "deadlineSec": 300,
+      "deadlineChangedBy": "JIG_CODE_STATS_COMMAND_TIMEOUT_SEC",
+      "meaning": "The last layer of code-stats' classification of the repository's files."
+    }
+  ]
+}

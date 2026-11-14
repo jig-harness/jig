@@ -435,6 +435,24 @@ async function startedStandDown(
   };
 }
 
+/**
+ * Read-only: why a served claim's item is no longer the claim's to start
+ * (a hold label, a changed assignee or state, authority or ancestry that no
+ * longer validates), or `null`. Reruns the checks the claim made after its
+ * own write, with the claim's original options.
+ */
+export async function servedClaimStillStands(
+  tracker: Tracker,
+  key: string,
+  options: ServedClaim,
+): Promise<string | null> {
+  const user = await tracker.user(options.person);
+  const standDown = await startedStandDown(tracker, key, user, options);
+  return standDown && standDown.outcome !== "claimed"
+    ? (standDown.reason ?? `${key} changed`)
+    : null;
+}
+
 /** A read of the item's own state: `blocked` is never a claim state, before or after an assignment. */
 async function blockedNow(
   tracker: Tracker,

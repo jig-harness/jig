@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { isMapping } from "../../../../shared/config-layers.ts";
 import { run, tsArgv } from "../../../../shared/proc.ts";
 import { fail } from "../../../../shared/cli.ts";
+import { REFLECTION_STORE_UNAVAILABLE_EXIT } from "../../../../shared/repo-commands.ts";
 import {
   type ComputedState,
   computeState,
@@ -28,7 +29,12 @@ export const OPERATIONS = ["check", "append", "list", "diagnose"] as const;
 export type Operation = (typeof OPERATIONS)[number];
 
 /** Exit codes of the contract. */
-export const EXIT = { done: 0, failed: 1, usage: 2, unavailable: 3 } as const;
+export const EXIT = {
+  done: 0,
+  failed: 1,
+  usage: 2,
+  unavailable: REFLECTION_STORE_UNAVAILABLE_EXIT,
+} as const;
 
 /** Operations that read the whole store get five times the deadline. */
 export function deadlineFor(op: Operation, timeoutSec: number): number {
