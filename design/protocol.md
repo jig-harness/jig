@@ -194,7 +194,9 @@ chapter's data file (below) as the integration branch holds it, from the
 merge base with that branch, and compares: a value or a field that the base
 has and the new data file lacks, a value whose meaning changed to another
 value's, a field whose type changed, or a field that is new and required or
-that changed from optional to required, fails the check unless the chapter's
+that changed from optional to required or is new and identifies a value, a
+listed value whose other published field changed (a withdrawal to a tombstone
+excepted), fails the check unless the chapter's
 version was raised. Which chapters are protected is read from the base too:
 a chapter the base lists as stable stays stable. Marking it provisional,
 or removing its entry or its files, fails the check unless its version was

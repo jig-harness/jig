@@ -238,35 +238,58 @@ export interface BaseComparison {
 const describeType = (s: FieldSpec) =>
   `${s.type}${s.nullable ? " or null" : ""}`;
 
+/** How a field the base has differs from it now, or null when it keeps its promise. */
+function fieldChange(name: string, was: FieldSpec, is?: FieldSpec) {
+  if (is === undefined) return `the field ${name}, which the base has, is gone`;
+  if (Boolean(is.identifies) !== Boolean(was.identifies))
+    return `the field ${name} changed whether it identifies a value`;
+  if (is.type !== was.type || is.nullable !== was.nullable)
+    return `the field ${name} changed type from ${describeType(was)} to ${describeType(is)}`;
+  if (!was.required && is.required)
+    return `the field ${name} changed from optional to required`;
+  return null;
+}
+
+/** What a field the base lacks may not be: required, or part of a value's identity. */
+function newFieldChange(name: string, is: FieldSpec) {
+  if (is.required) return `the field ${name} is new and required`;
+  if (is.identifies) return `the field ${name} is new and identifies a value`;
+  return null;
+}
+
 function fieldFindings(file: string, base: DataFile, now: DataFile): Finding[] {
-  const out: Finding[] = [];
-  const add = (problem: string) =>
-    out.push({
+  const problems = [
+    ...Object.entries(base.fields).map(([name, was]) =>
+      fieldChange(name, was, now.fields[name]),
+    ),
+    ...Object.entries(now.fields)
+      .filter(([name]) => !(name in base.fields))
+      .map(([name, is]) => newFieldChange(name, is)),
+  ];
+  return problems
+    .filter((problem): problem is string => problem !== null)
+    .map((problem) => ({
       rule: RULE,
       file,
       problem,
       remedy: `keep the field as the base has it, or raise the chapter's version in tools/protocol/chapters.ts (above ${base.version}) and mark its change note breaking`,
-    });
-  for (const [name, was] of Object.entries(base.fields)) {
-    const is = now.fields[name];
-    if (is === undefined) add(`the field ${name}, which the base has, is gone`);
-    else if (Boolean(is.identifies) !== Boolean(was.identifies))
-      add(`the field ${name} changed whether it identifies a value`);
-    else if (is.type !== was.type || is.nullable !== was.nullable)
-      add(
-        `the field ${name} changed type from ${describeType(was)} to ${describeType(is)}`,
-      );
-    else if (!was.required && is.required)
-      add(`the field ${name} changed from optional to required`);
-  }
-  for (const [name, is] of Object.entries(now.fields))
-    if (!(name in base.fields) && is.required)
-      add(`the field ${name} is new and required`);
-  return out;
+    }));
 }
 
-function valueFindings(file: string, base: DataFile, now: DataFile) {
-  const out: Finding[] = [];
+/** The `kind` a value is withdrawn to: its other fields may then change. */
+const TOMBSTONE = "tombstone";
+
+/** The values of the base and of now, keyed by the identity the base gives them. */
+interface ValueView {
+  readonly base: DataFile;
+  readonly now: DataFile;
+  readonly key: (v: DataValue) => string;
+  readonly show: (v: DataValue) => string;
+  readonly before: ReadonlyMap<string, DataValue>;
+  readonly after: ReadonlyMap<string, DataValue>;
+}
+
+function valueView(base: DataFile, now: DataFile): ValueView {
   const identity = Object.entries(base.fields)
     .filter(([, spec]) => spec.identifies)
     .map(([name]) => name);
@@ -274,37 +297,86 @@ function valueFindings(file: string, base: DataFile, now: DataFile) {
     JSON.stringify(identity.map((f) => v[f] ?? null));
   const show = (v: DataValue) =>
     identity.map((f) => `${f} ${JSON.stringify(v[f] ?? null)}`).join(", ");
-  const before = new Map(base.values.map((v) => [key(v), v]));
-  const after = new Map(now.values.map((v) => [key(v), v]));
-  const remedy = `keep the value as the base lists it (withdraw it as a tombstone rather than reuse it), or raise the chapter's version in tools/protocol/chapters.ts (above ${base.version}) and mark its change note breaking`;
-  for (const [k, v] of before)
-    if (!after.has(k))
-      out.push({
-        rule: RULE,
-        file,
-        problem: `the value the base lists as ${show(v)} is gone`,
-        remedy,
-      });
-  for (const [k, v] of after) {
-    const self = before.get(k);
+  return {
+    base,
+    now,
+    key,
+    show,
+    before: new Map(base.values.map((v) => [key(v), v])),
+    after: new Map(now.values.map((v) => [key(v), v])),
+  };
+}
+
+/** The problems with the values' identities: a value gone, or two now sharing one. */
+function identityProblems(view: ValueView): string[] {
+  const out = [...view.before]
+    .filter(([k]) => !view.after.has(k))
+    .map(([, v]) => `the value the base lists as ${view.show(v)} is gone`);
+  // A reader holding the base's identity selects the first match, so two
+  // values that share it now are one value to that reader.
+  const seen = new Set<string>();
+  for (const v of view.now.values) {
+    const k = view.key(v);
+    if (seen.has(k))
+      out.push(`two values share the identity the base gives ${view.show(v)}`);
+    seen.add(k);
+  }
+  return out;
+}
+
+/**
+ * Every other published field of a value still listed is what a reader
+ * branches on: changing one the base gave it is a break, except a withdrawal
+ * to a tombstone.
+ */
+function behaviourProblems(view: ValueView): string[] {
+  const out: string[] = [];
+  for (const [k, v] of view.after) {
+    const self = view.before.get(k);
+    if (self === undefined || v.kind === TOMBSTONE) continue;
+    for (const [field, spec] of Object.entries(view.base.fields))
+      if (
+        !spec.identifies &&
+        field !== "meaning" &&
+        self[field] !== undefined &&
+        self[field] !== (v[field] ?? null)
+      )
+        out.push(
+          `the value ${view.show(v)} changed its ${field} from ${JSON.stringify(self[field])} to ${JSON.stringify(v[field] ?? null)}`,
+        );
+  }
+  return out;
+}
+
+/** The meaning of a value still listed, taken by another. */
+function meaningProblems(view: ValueView): string[] {
+  const out: string[] = [];
+  for (const [k, v] of view.after) {
+    const self = view.before.get(k);
     if (self !== undefined && self.meaning === v.meaning) continue;
-    // A value whose own identity is gone is reported gone; this is the
-    // meaning of a value still listed, taken by another.
-    for (const [other, w] of before)
+    // A value whose own identity is gone is reported gone, not here.
+    for (const [other, w] of view.before)
       if (
         other !== k &&
-        after.has(other) &&
+        view.after.has(other) &&
         w.meaning === v.meaning &&
         w.meaning !== self?.meaning
       )
-        out.push({
-          rule: RULE,
-          file,
-          problem: `the value ${show(v)} now carries the meaning the base gives ${show(w)}`,
-          remedy,
-        });
+        out.push(
+          `the value ${view.show(v)} now carries the meaning the base gives ${view.show(w)}`,
+        );
   }
   return out;
+}
+
+function valueFindings(file: string, base: DataFile, now: DataFile) {
+  const view = valueView(base, now);
+  const remedy = `keep the value as the base lists it (withdraw it as a tombstone rather than reuse it), or raise the chapter's version in tools/protocol/chapters.ts (above ${base.version}) and mark its change note breaking`;
+  return [
+    ...identityProblems(view),
+    ...behaviourProblems(view),
+    ...meaningProblems(view),
+  ].map((problem): Finding => ({ rule: RULE, file, problem, remedy }));
 }
 
 /** What breaks a promise a stable chapter of the base made. */

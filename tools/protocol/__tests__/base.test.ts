@@ -130,6 +130,71 @@ describe("the comparison with the integration branch", () => {
     expect(check(root, [reworded]).problems).toEqual([]);
   });
 
+  test("fails a published field of a value still listed that changed, unless the value is withdrawn to a tombstone", () => {
+    const behaviour = {
+      ...FIELDS,
+      exit: {
+        type: "integer" as const,
+        nullable: true,
+        required: true,
+        identifies: false,
+        description: "The exit a reader branches on.",
+      },
+      kind: {
+        type: "string" as const,
+        nullable: false,
+        required: true,
+        identifies: false,
+        description: "Its kind.",
+      },
+    };
+    const withBehaviour = (exit: number | null, kind: string) =>
+      fixtureChapter({
+        fields: behaviour,
+        values: [{ ...VALUES[0], exit, kind }, VALUES[1] as never].map(
+          (v, i) => (i === 0 ? v : { ...v, exit: 0, kind: "state" }),
+        ),
+      });
+    const base = withBehaviour(0, "state");
+    const changed = withBehaviour(24, "state");
+    const root = scratchRepo([base], [changed]);
+    expect(check(root, [changed]).problems).toEqual([
+      'plugin/protocol/data/fixture.json: the value name "ALPHA", code 1 changed its exit from 0 to 24',
+    ]);
+    const withdrawn = withBehaviour(null, "tombstone");
+    const second = scratchRepo([base], [withdrawn]);
+    expect(check(second, [withdrawn]).problems).toEqual([]);
+  });
+
+  test("fails a field that is new and identifies a value, which would let two values share the base's identity", () => {
+    const variant = {
+      ...FIELDS,
+      variant: {
+        type: "string" as const,
+        nullable: false,
+        required: false,
+        identifies: true,
+        description: "A variant.",
+      },
+    };
+    const added = fixtureChapter({
+      fields: variant,
+      values: [
+        { ...VALUES[0], variant: "a" },
+        { ...VALUES[0], variant: "b" },
+        VALUES[1] as never,
+      ],
+    });
+    const root = scratchRepo([fixtureChapter()], [added]);
+    const { problems } = check(root, [added]);
+    expect(problems).toContain(
+      "plugin/protocol/data/fixture.json: the field variant is new and identifies a value",
+    );
+    expect(problems).toContain(
+      'plugin/protocol/data/fixture.json: two values share the identity the base gives name "ALPHA", code 1',
+    );
+  });
+
   test("fails a field whose type changed", () => {
     const fields = { ...FIELDS, code: { ...FIELDS.code, nullable: true } };
     const retyped = fixtureChapter({ fields } as never);
