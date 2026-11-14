@@ -182,12 +182,11 @@ function removalAnswer(
       "orca-timeout",
       `${what} did not answer before its deadline ${orcaFailure(done)}`,
     );
-  // `{ ok: false }` naming no error is no answer, as a result without `ok` is.
+  // `{ ok: false }` naming no error, or only empty ones, is no answer, as a
+  // result without `ok` is.
   const parsed = orcaEnvelope(done.stdout);
   const envelope =
-    parsed?.ok === false && parsed.code === null && parsed.message === null
-      ? null
-      : parsed;
+    parsed?.ok === false && !parsed.code && !parsed.message ? null : parsed;
   if (envelope?.ok === false)
     return failed(
       "orca-refused",

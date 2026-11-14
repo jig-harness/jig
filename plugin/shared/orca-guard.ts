@@ -36,6 +36,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -426,20 +427,61 @@ function deadStanding(
 }
 
 /**
+ * Remove the reclaim lock when the collector that took it is judged dead. The
+ * lock is moved aside before it is read, so a contender that already judged
+ * it dead cannot delete a live lock created since: what was moved is put back
+ * unless it is the dead one.
+ */
+function reapDeadLock(lock: string): boolean {
+  const text = readText(lock);
+  if (!text.ok || text.value === null) return false;
+  const holder = decodeIdentity(text.value.trim());
+  if (holder === null) return false;
+  const verdict = isAliveSync(holder);
+  if (!verdict.ok || verdict.value.state !== "dead") return false;
+  const aside = `${lock}.${randomUUID()}.dead`;
+  try {
+    renameSync(lock, aside);
+  } catch (error) {
+    swallow(error, "the reclaim lock is gone or cannot be moved: not reaped");
+    return false;
+  }
+  const moved = readText(aside);
+  const dead = moved.ok && moved.value === text.value;
+  if (!dead) {
+    try {
+      linkSync(aside, lock);
+    } catch (error) {
+      swallow(error, "another lock was created meanwhile: it stands");
+    }
+  }
+  rmSync(aside, { force: true });
+  return dead;
+}
+
+/**
  * Run `body` under the reclaim lock of the admission at `file`, created
  * exclusively beside it: two collectors can judge the same dead admission,
- * and only the lock's holder may act on it.
+ * and only the lock's holder may act on it. A lock whose holder is judged
+ * dead is removed and taken once.
  */
 function underReclaimLock<T, Code extends string>(
   file: string,
   body: () => Outcome<T, Code>,
 ): Outcome<T, Code | AdmissionCode> {
   const lock = join(dirname(file), `.${basename(file)}.reclaim`);
-  try {
+  const create = () =>
     writeFileSync(lock, `${encodeIdentity(ownIdentity())}\n`, {
       flag: "wx",
       mode: 0o600,
     });
+  try {
+    try {
+      create();
+    } catch (error) {
+      if (errnoCode(error) !== "EEXIST" || !reapDeadLock(lock)) throw error;
+      create();
+    }
   } catch (error) {
     if (errnoCode(error) === "EEXIST")
       return failed(
@@ -536,6 +578,44 @@ export function staleAdmissions(root = guardRoot()): StaleAdmission[] {
       });
   }
   return stale;
+}
+
+/** An admission under the guard root that gc cannot read: the file and why. */
+export interface UnreadableAdmission {
+  file: string;
+  reason: string;
+}
+
+/**
+ * The admissions under `root` that do not read or are malformed. They still
+ * block launches under the fail-closed contract, so a collection reports each
+ * for a person to inspect.
+ */
+export function unreadableAdmissions(
+  root = guardRoot(),
+): UnreadableAdmission[] {
+  const dir = join(root, "admissions");
+  let names: string[];
+  try {
+    names = readdirSync(dir).filter((name) => ENTRY.test(name));
+  } catch (error) {
+    if (errnoCode(error) !== "ENOENT")
+      swallow(error, "the admissions cannot be listed; none are reported");
+    return [];
+  }
+  const found: UnreadableAdmission[] = [];
+  for (const name of names) {
+    const file = join(dir, name);
+    const text = readText(file);
+    if (!text.ok) {
+      found.push({ file, reason: text.failure.reason });
+      continue;
+    }
+    if (text.value === null) continue;
+    const standing = admissionHolder(text.value, basename(file, ".json"));
+    if (!standing.ok) found.push({ file, reason: standing.failure.reason });
+  }
+  return found;
 }
 
 /**

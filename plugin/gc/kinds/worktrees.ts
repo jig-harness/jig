@@ -9,6 +9,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { isMapping } from "../../shared/config-layers.ts";
+import { swallow } from "../../shared/errors.ts";
 import {
   orcaEnvelope,
   orcaFailure,
@@ -19,13 +20,26 @@ import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { run } from "../../shared/proc.ts";
 import { spawnSync } from "../../shared/guarded-git-spawn.ts";
 import { HOOKS_DIR, hookPath } from "../../shared/worktree-hooks.ts";
-import { isAbsolute, join, normalize, relative, sep } from "node:path";
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  normalize,
+  relative,
+  sep,
+} from "node:path";
 import { gcGit as git, gitEnvironment } from "../git.ts";
 import { localSteps, removeThroughOrca } from "../worktree-removal.ts";
 import { processHolder } from "./worktree-git.ts";
 import {
   type Collected,
   goneClaims,
+  isUnreadableClaim,
+  onDisk,
+  proveUnreadable,
+  standingClaims,
+  unreadableClaims,
   guardedCollection,
   type GuardedRemoval,
   isGoneClaim,
@@ -135,25 +149,55 @@ async function orcaInventory(
   roots: string[],
 ): Promise<Outcome<Resource[]>> {
   const stale = goneClaims((path) =>
-    roots.some((root) => within(normalize(path), root)),
+    roots.some(
+      (root) => within(normalize(path), root) || underRoot(path, root),
+    ),
   );
-  if (selected.length === 0 && stale.length === 0) return ok(selected);
+  const unreadable = unreadableClaims();
+  if (selected.length === 0 && stale.length === 0)
+    return ok([...selected, ...unreadable]);
   const managed = await orcaWorktrees(command, repository);
   if (!managed.ok) return managed;
   const listed = listedIn(managed.value);
-  const known = new Set(selected.map((entry) => entry.id));
+  // A checkout gone from the disk can still be registered with Git: the claim
+  // is then the resource, not the registration.
+  const known = new Set(
+    selected.filter((entry) => onDisk(entry.id)).map((entry) => entry.id),
+  );
   const gone = stale.filter(
     (claim) => !listed(claim.id) && !known.has(normalize(claim.id)),
   );
-  for (const entry of selected) {
+  const replaced = new Set(gone.map((claim) => normalize(claim.id)));
+  const standing = standingClaims();
+  const kept = selected.filter((entry) => !replaced.has(entry.id));
+  for (const entry of kept) {
     const row = managed.value.get(canonicalWorktree(entry.id));
     entry.details.runtime = row === undefined ? "none" : "orca";
     if (row !== undefined) {
       entry.details.orca = row.id;
       entry.details.orcaPath = row.path;
     }
+    const path = row?.path ?? entry.id;
+    if (standing.has(path)) {
+      const submitted = standing.get(path);
+      entry.details.claim = "standing";
+      entry.details.claimNote = `a dead collection's launch guard claim stands on this worktree${submitted ? ` (orca worktree rm was called under it at ${submitted})` : ""} and keeps launches out; it is settled by a collection that removes the worktree, or inspect and remove its admission by hand`;
+    }
   }
-  return ok([...selected, ...gone]);
+  return ok([...kept, ...gone, ...unreadable]);
+}
+/** Whether the claim's `path` lies under `root` once its nearest existing parent is resolved. */
+function underRoot(path: string, root: string): boolean {
+  try {
+    const resolved = join(
+      realpathSync.native(dirname(normalize(path))),
+      basename(normalize(path)),
+    );
+    return within(resolved, root);
+  } catch (error) {
+    swallow(error, "the claim's parent is gone: only its own spelling counts");
+    return false;
+  }
 }
 function orcaId(resource: Resource): string | null {
   return isMapping(resource.details) &&
@@ -532,6 +576,8 @@ export function worktreesKind(
       return orcaInventory(orca, repository, selected, canonical);
     },
     prove: async (resource) => {
+      if (orca !== undefined && isUnreadableClaim(resource))
+        return proveUnreadable(resource);
       if (orca !== undefined && isGoneClaim(resource))
         return proveGone(resource, async () => {
           const managed = await orcaWorktrees(orca, repository);
@@ -555,6 +601,12 @@ export function worktreesKind(
         : { state: "unverified", reason: proved.failure.reason };
     },
     collect: async (resource) => {
+      if (orca !== undefined && isUnreadableClaim(resource))
+        return {
+          outcome: "refused",
+          reason:
+            "kept: an admission gc cannot read is for a person to inspect",
+        };
       if (orca !== undefined && isGoneClaim(resource))
         return releaseGone(resource);
       const id = orcaId(resource);

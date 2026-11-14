@@ -723,10 +723,27 @@ describe.skipIf(
     const admission = join(f.guard, "admissions", `${key}.json`);
     mkdirSync(dirname(admission), { recursive: true });
     writeFileSync(admission, '{"kind":"orca-guard-admiss');
-    expect(line(gc(f, ["--collect", "--json"]))).toMatchObject({
-      outcome: "refused",
-      reason: expect.stringContaining("an admission gc cannot read stands at"),
-    });
+    const result = gc(f, ["--collect", "--json"]);
+    expectSpawnExit(result, 0);
+    const lines = (JSON.parse(result.stdout.toString()) as Receipt).resources;
+    // The worktree is kept, and the unreadable admission is a line of its own.
+    expect(lines).toHaveLength(2);
+    expect(lines).toContainEqual(
+      expect.objectContaining({
+        resource: f.tree,
+        outcome: "refused",
+        reason: expect.stringContaining(
+          "an admission gc cannot read stands at",
+        ),
+      }),
+    );
+    expect(lines).toContainEqual(
+      expect.objectContaining({
+        resource: admission,
+        reason: expect.stringContaining("blocks launches"),
+        details: expect.objectContaining({ claim: "unreadable" }),
+      }),
+    );
     expect(existsSync(f.tree)).toBe(true);
     expect(readFileSync(admission, "utf8")).toBe('{"kind":"orca-guard-admiss');
     expect(existsSync(join(f.root, "hook-ran"))).toBe(false);

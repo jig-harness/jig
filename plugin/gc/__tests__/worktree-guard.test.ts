@@ -95,9 +95,20 @@ const refused: Answer = {
   stderr: "",
 };
 
+const emptyRefusal = (error: Record<string, string>): Answer => ({
+  code: 1,
+  stdout: JSON.stringify({ ok: false, error }),
+  stderr: "",
+});
+
 describe("the admission around orca worktree rm", () => {
   it.each([
     ["a timeout", timedOut, "did not answer before its deadline"],
+    [
+      "a refusal with empty code and message",
+      emptyRefusal({ code: "", message: "" }),
+      "orca worktree rm failed (exit 1)",
+    ],
     ["a nonzero exit", exited, "orca worktree rm failed (exit 1)"],
     ["output that is not Orca's", garbled, "unreadable output"],
   ])("is kept, marked submitted, after %s", async (_name, answer, why) => {

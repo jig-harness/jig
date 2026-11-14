@@ -25,7 +25,11 @@ import {
   expectSpawnExit,
   expectSpawnExited,
 } from "../../../lib/test-helpers/expect-spawn-exit.ts";
-import { ownIdentity, type ProcessIdentity } from "../liveness.ts";
+import {
+  encodeIdentity,
+  ownIdentity,
+  type ProcessIdentity,
+} from "../liveness.ts";
 import {
   ADMISSION_KIND,
   admit,
@@ -458,6 +462,37 @@ describe("a dead holder's admission on a worktree that is gone", () => {
     expect(held.ok ? null : held.failure.code).toBe("held");
     expect(existsSync(live.value.file)).toBe(true);
     live.value.release();
+  });
+});
+
+describe("the reclaim lock of a stale admission", () => {
+  function lockFor(file: string): string {
+    const parts = file.split("/");
+    const name = parts.pop();
+    return [...parts, `.${name}.reclaim`].join("/");
+  }
+
+  it("is taken over when its collector is dead, and kept while it is live", () => {
+    const root = scratch();
+    const dead = admit(PATH, root, undefined, deadHolder());
+    if (!dead.ok) throw new Error(dead.failure.reason);
+    dead.value.submit();
+    const lock = lockFor(dead.value.file);
+    writeFileSync(lock, `${encodeIdentity(deadHolder())}\n`);
+    expect(releaseAbsent(PATH, () => true, root)).toEqual({
+      ok: true,
+      value: true,
+    });
+    expect(existsSync(dead.value.file)).toBe(false);
+    expect(existsSync(lock)).toBe(false);
+
+    const again = admit(PATH, root, undefined, deadHolder());
+    if (!again.ok) throw new Error(again.failure.reason);
+    writeFileSync(lock, `${encodeIdentity(ownIdentity())}\n`);
+    const held = releaseAbsent(PATH, () => true, root);
+    expect(held.ok ? null : held.failure.code).toBe("held");
+    expect(existsSync(again.value.file)).toBe(true);
+    expect(existsSync(lock)).toBe(true);
   });
 });
 

@@ -7,7 +7,13 @@
  */
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { join, resolve } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { skipsOnWindows } from "../../../lib/test-helpers/windows-skip.ts";
@@ -188,6 +194,30 @@ describe.skipIf(
     expect(released.proof).toContain("gone from Orca's list and from the disk");
     expect(admissions(f)).toEqual([]);
     expect(rmCalls(f)).toHaveLength(1);
+  }, 60_000);
+
+  test("a claim whose worktree is gone but still registered with Git is the resource, and is released", () => {
+    const f = setup();
+    idle(f);
+    crashAfterMark(f);
+    rmSync(f.tree, { recursive: true, force: true });
+    f.writeState({ worktrees: [] });
+    const released = line(gc(f, ["--collect", "--json"]));
+    expect(released).toMatchObject({ resource: f.tree, outcome: "collected" });
+    expect(released.reason).toContain("released the launch guard claim");
+    expect(admissions(f)).toEqual([]);
+  }, 60_000);
+
+  test("a dead collection's claim on a worktree that fails its idle proof is on the receipt line", () => {
+    const f = setup();
+    crashAfterMark(f);
+    const reported = line(gc(f, ["--json"]));
+    expect(reported.resource).toBe(f.tree);
+    expect(reported.details).toMatchObject({
+      claim: "standing",
+      claimNote: expect.stringContaining("launch guard claim stands"),
+    });
+    expect(admissions(f)).toHaveLength(1);
   }, 60_000);
 
   test("a live collection's submitted admission is left alone, even once its worktree is gone", () => {

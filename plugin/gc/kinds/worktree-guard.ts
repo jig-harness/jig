@@ -20,6 +20,7 @@ import {
   releaseAbsent,
   staleAdmissions,
   sweepLaunches,
+  unreadableAdmissions,
 } from "../../shared/orca-guard.ts";
 import { ok, type Outcome } from "../../shared/outcome.ts";
 import type { CollectionKind, Proof, Resource } from "../types.ts";
@@ -154,7 +155,7 @@ export async function guardedCollection(
 }
 
 /** Whether anything stands at `path`; an error other than its absence counts as present. */
-function onDisk(path: string): boolean {
+export function onDisk(path: string): boolean {
   try {
     lstatSync(path);
     return true;
@@ -192,6 +193,49 @@ export function goneClaims(
         ...(submitted === null ? {} : { submitted }),
       },
     }));
+}
+
+/** The receipt detail that marks a resource as an admission gc cannot read. */
+const UNREADABLE = "unreadable";
+
+/** Whether `resource` is an admission `unreadableClaims` listed. */
+export function isUnreadableClaim(resource: Resource): boolean {
+  return isMapping(resource.details) && resource.details.claim === UNREADABLE;
+}
+
+/**
+ * A resource for each admission gc cannot read. It still blocks launches, and
+ * nothing else would say so: it is reported unverified, never collected.
+ */
+export function unreadableClaims(root = guardRoot()): Resource[] {
+  return unreadableAdmissions(root).map(({ file, reason }) => ({
+    id: file,
+    details: {
+      runtime: "orca",
+      claim: UNREADABLE,
+      reason: `an admission gc cannot read stands at ${file} (${reason}); it blocks launches until it is removed after inspection`,
+    },
+  }));
+}
+
+/** The proof of an unreadable admission: never collectable, its reason is the receipt's. */
+export function proveUnreadable(resource: Resource): Proof {
+  const reason =
+    isMapping(resource.details) && typeof resource.details.reason === "string"
+      ? resource.details.reason
+      : "an admission gc cannot read blocks launches";
+  return { state: "unverified", reason };
+}
+
+/**
+ * The dead collectors' claims standing on worktrees that are still on the
+ * disk, by path: a worktree that is active, dirty or locked is never
+ * collected, so its claim would otherwise go unreported.
+ */
+export function standingClaims(root = guardRoot()): Map<string, string | null> {
+  return new Map(
+    staleAdmissions(root).map(({ path, submitted }) => [path, submitted]),
+  );
 }
 
 /**
