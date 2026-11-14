@@ -53,6 +53,7 @@ import {
 } from "../shared/liveness.ts";
 import type { LastRun } from "../runtime/component.ts";
 import type { ScheduledUpgrade } from "../runtime/upgrade-record.ts";
+import type { QuotaRisk, SystemSpending } from "./lib/outbound-report.ts";
 import type { NotAdmitted } from "./lib/accounts.ts";
 import type { FailureEntry } from "./lib/failures.ts";
 import type { LineLoad } from "./lib/dashboard-contract.ts";
@@ -113,6 +114,12 @@ export interface TickReceipt {
   lockHeldBy?: string;
   /** The plugin upgrade the launcher ran before this tick (`runtime/upgrade-record.ts`); absent from a tick no timer started. */
   upgrade?: ScheduledUpgrade;
+  /** Per-system balances and this tick's own spending. */
+  outbound?: SystemSpending[];
+  /** The ledger did not read; spending and balance are unknown. */
+  outboundUnavailable?: boolean;
+  /** Quotas the last hour's estimated spending empties before their refill horizon. */
+  quotaRisks?: QuotaRisk[];
   repos: RepoReport[];
 }
 
