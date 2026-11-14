@@ -270,8 +270,13 @@ development and shipped as a version.
   are parked, and `orca worktree rm` removes it
   ([worktrees Orca manages](gc/README.md#worktrees-orca-manages)), under an
   admission in the [launch guard record](gc/README.md#the-launch-guard-record)
-  that Jig's plugin for Orca reads to refuse launches into it; every
-  other worktree is reported. It also removes its own receipts past their
+  that Jig's plugin for Orca reads to refuse launches into it. A worktree
+  an agent tool makes under the clone's `.claude/worktrees/` is eligible
+  without configuration: the idle guard and the absence of a process holding
+  it stand in for admission, and `git worktree remove` removes it once the
+  proof still holds for the commit and branch it proved
+  ([worktrees an agent tool makes](gc/README.md#worktrees-an-agent-tool-makes)).
+  Every other worktree is reported. It also removes its own receipts past their
   retention. State: one receipt per run under `~/.local/state/jig/gc/<date>/`. Refuses: an
   unreadable process identity or forge answer keeps the resource, and an
   abandoned admission token blocks collection rather than being taken over.

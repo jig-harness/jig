@@ -367,9 +367,11 @@ when installing a machine's daily job, on launchd on macOS, systemd user
 timers on Linux, or cron where neither is available. Collecting runs read
 the declaration from the recorded remote base branch and stay within the
 confirmed bounds. A worktree Orca manages is collected through Orca, so its
-card and terminals go with it. Other worktrees, scratch directories and tool
-state are reported only, because collecting them needs the tools that create
-and use them to take part. Old receipts can be collected, keeping the latest
+card and terminals go with it. It also finds the worktrees Claude Code's
+agent tool makes for its subagents, with no configuration, and removes an
+idle one with git. Other worktrees, scratch directories and tool state are
+reported only, because collecting them needs the tools that create and use
+them to take part. Old receipts can be collected, keeping the latest
 report for each repository and kind.
 
 - **Practice:** [M12](modules/M12-parallel-agent-ergonomics/)
