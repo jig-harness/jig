@@ -293,6 +293,9 @@ function answerBody(text: string, status: number, what: string): unknown {
   }
 }
 
+/** How long a failure's body is waited for: it only words the error, so a stalled one is let go. */
+const FAILURE_BODY_WAIT_MS = 1_000;
+
 /** The answer's body; one lost while reading fails a success, and is empty on a failure. */
 async function bodyText(
   res: Response,
@@ -300,7 +303,17 @@ async function bodyText(
   what: string,
 ): Promise<string> {
   try {
-    return await res.text();
+    if (res.ok) return await res.text();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const stalled = new Promise<null>((resolve) => {
+      timer = setTimeout(() => resolve(null), FAILURE_BODY_WAIT_MS);
+    });
+    const text = await Promise.race([res.text(), stalled]).finally(() =>
+      clearTimeout(timer),
+    );
+    if (text !== null) return text;
+    await discardBody(res, signal);
+    return "";
   } catch (err) {
     if (cancelled(signal)) throw abortedError(signal, true);
     if (!res.ok) return "";
