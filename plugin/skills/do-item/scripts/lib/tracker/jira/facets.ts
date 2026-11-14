@@ -23,7 +23,7 @@
  * sub-task type); any other two different values read as no type.
  */
 
-import { failedHealth } from "../unavailable.ts";
+import { failedHealth, isUnavailable } from "../unavailable.ts";
 import { TrackerConfigError } from "../config-error.ts";
 import { readSignal, refuseStopped } from "../facets/bounds.ts";
 import { type Facets, type ResolvedFacet, usable } from "../facets/config.ts";
@@ -566,6 +566,12 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
       refuseStopped(signal);
       screens.push({ t, screen: await client.createMeta(t.id, signal) });
     }
+    // A mapping no screen can satisfy blocks every write, so it is judged first
+    // and fails the whole store whatever the screens lack.
+    for (const v of s.values) {
+      refuseStopped(signal);
+      await encode(s, v, async () => null, signal);
+    }
     const lacking = screens.filter((x) => !x.screen.has(field.id));
     if (lacking.length > 0)
       return lackingHealth(
@@ -574,12 +580,32 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
         lacking.map((x) => x.t.name),
         project,
       );
+    // A screen that offers fewer options stops only the filing of its type.
+    const restricted = new Map<string, string>();
     for (const { t, screen } of screens)
       for (const v of s.values) {
         refuseStopped(signal);
         const what = `the create screen of ${t.name} in ${project}`;
-        await encode(s, v, async () => ({ screen, what }), signal);
+        try {
+          await encode(s, v, async () => ({ screen, what }), signal);
+        } catch (err) {
+          if (!(err instanceof TrackerRequestError) || isUnavailable(err))
+            throw err;
+          if (!restricted.has(t.name)) restricted.set(t.name, err.message);
+        }
       }
+    if (restricted.size > 0) {
+      const names = [...restricted.keys()];
+      return {
+        status: "failed" as const,
+        unavailable: false,
+        error: [...restricted.values()][0]?.slice(0, 300) ?? "",
+        fails: `filing ${listed(
+          names.map((n) => `${article(n)} ${n}`),
+          "or",
+        )} fails`,
+      };
+    }
     return { status: "ok" as const };
   }
 

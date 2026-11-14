@@ -191,4 +191,82 @@ describe("Jira: a facet field missing from an issue type's screen", () => {
       fails: "filing an Epic fails",
     });
   });
+
+  it("judges a mapping no screen can satisfy before the screens, so a screen gap does not hide it", async () => {
+    // small is kept as a word, which a number field cannot take.
+    const shared: Overlay = POINTED();
+    const facets = (shared.issue_tracker as Record<string, any>).facets;
+    facets.size.values = { xs: 1, small: "two", medium: 3, large: 5, xl: 8 };
+    const { t } = jira(routes(site("t4")), shared);
+    const health = (await t.facetStores()).facets.find(
+      (f) => f.facet === "size",
+    )?.health;
+    expect(health).toMatchObject({
+      status: "failed",
+      error: expect.stringContaining("is kept as 'two' in the number field"),
+    });
+    expect(health).not.toHaveProperty("fails");
+  });
+
+  it("reports a create screen that offers fewer options as a filing-only failure", async () => {
+    const options: Overlay = {
+      issue_tracker: {
+        facets: {
+          type: { store: "native", values: { feature: "Story" } },
+          size: {
+            store: "field",
+            field: "Size",
+            values: {
+              xs: "XS",
+              small: "Small",
+              medium: "Medium",
+              large: "Large",
+              xl: "XL",
+            },
+          },
+        },
+      },
+      taxonomy: JIG_TAXONOMY,
+    };
+    const screen = (names: string[]) => ({
+      fields: [
+        {
+          fieldId: "customfield_10020",
+          allowedValues: names.map((value) => ({ value })),
+        },
+      ],
+      startAt: 0,
+      maxResults: 100,
+      total: 1,
+    });
+    const all = screen(["XS", "Small", "Medium", "Large", "XL"]);
+    const { t } = jira(
+      routes({
+        ...SITE,
+        "GET field": [
+          {
+            id: "customfield_10020",
+            name: "Size",
+            schema: { type: "option" },
+          },
+        ],
+        ...Object.fromEntries(
+          ["t0", "t1", "t2", "t3", "t4"].map((id) => [
+            `GET issue/createmeta/ENG/issuetypes/${id}`,
+            id === "t4" ? screen(["Small", "Medium"]) : all,
+          ]),
+        ),
+      }),
+      options,
+    );
+    const health = (await t.facetStores()).facets.find(
+      (f) => f.facet === "size",
+    )?.health;
+    expect(health).toMatchObject({
+      status: "failed",
+      unavailable: false,
+      error: expect.stringContaining("which has Small, Medium"),
+      fails: "filing a Sub-task fails",
+    });
+  });
 });
