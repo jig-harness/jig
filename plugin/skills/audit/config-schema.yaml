@@ -604,7 +604,7 @@ fields:
     default: []
     repository_only: true
     read_by: [drive-pr]
-    since: next
+    since: 0.233.0
   ci.advisory_checks:
     type: list
     items: string
@@ -612,7 +612,7 @@ fields:
     default: []
     repository_only: true
     read_by: [drive-pr]
-    since: next
+    since: 0.233.0
   ci.log_command:
     type: command
     read_by: [fix-ci]

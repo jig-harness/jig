@@ -394,6 +394,21 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.233.0] - 2026-11-14
+
+### Added
+
+- `ci.hold_sentinels` names additional checks whose intentional failures mean CI is held while the hold label is present. Held checks spend no repair pass and are judged normally after the hold is released. **Consumer action:** none.
+- `ci.advisory_checks` lets a drive park once when only advisory checks fail, offering a repair, a person's waiver, or manual handling without spending a repair pass first. The configuration check warns when the repository disables the required `reviewer-posture` decision class. **Consumer action:** none.
+
+### Fixed
+
+- Jira updates can remove a leftover real label behind an
+  `issue_tracker.jira.field_labels` prefix, including one with the same
+  spelling as the field's current value, without changing the field.
+  Adding such a label or removing a value represented only by the field
+  remains refused.
+
 ## [0.232.0] - 2026-11-14
 
 Every call to the forge and the issue trackers now fails as one of the defined failure classes, and the dispatcher waits out the ones that clear by waiting instead of failing a tick or asking a person.
@@ -8109,7 +8124,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.232.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.233.0...HEAD
+[0.233.0]: https://github.com/jig-harness/jig/compare/v0.232.0...v0.233.0
 [0.232.0]: https://github.com/jig-harness/jig/compare/v0.231.0...v0.232.0
 [0.231.0]: https://github.com/jig-harness/jig/compare/v0.230.1...v0.231.0
 [0.230.1]: https://github.com/jig-harness/jig/compare/v0.230.0...v0.230.1
