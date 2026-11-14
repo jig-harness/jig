@@ -140,7 +140,9 @@ finished.
   push-and-record relaunch, once, in its own tree (#950).
 - A question a pass asks about the dispatcher's own database or host goes
   to the host need of its cause, never to a person as a pickup's or a
-  follow-up's question (#944).
+  follow-up's question (#944). Until that relaunch (#950) is built, a
+  pickup whose result could not be written asks a person once, after the
+  health check passes, to settle or release its item.
 - These re-runs are the tick's rule, beside the routine re-runs
   (`routine-reruns.ts`, `session-startup.ts`), never a steward record: the
   tick decides them from its own records.

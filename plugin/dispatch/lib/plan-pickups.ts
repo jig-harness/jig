@@ -89,6 +89,8 @@ export interface PickupInput {
   root?: string;
   /** What tells a stalled pickup's finished work: the open pull requests and the `pr_open` state (`stalled-pr.ts`); absent, no claimed item is read for one. */
   prOpen?: StalledPrInput;
+  /** Why the host's health check fails (`rerun-gate.ts`); `null` or absent while it passes. */
+  rerunsHeld?: string | null;
 }
 
 export type PickupPlan = Pick<
@@ -209,7 +211,7 @@ export function planPickups(input: PickupInput): PickupPlan {
       continue;
     }
     if (hold.kind !== "none") {
-      planStopped(input.slug, item, hold, launches, plan);
+      planStopped(input, item, hold, launches, plan);
       continue;
     }
     plan.actions.push(pickupAction(item, held.evidence));
@@ -234,7 +236,7 @@ export function planPickups(input: PickupInput): PickupPlan {
  * question, else quiet.
  */
 function planStopped(
-  slug: string,
+  input: PickupInput,
   item: WantedItem,
   hold: Extract<PickupHold, { kind: "ended" | "refused" }>,
   launches: ReadRecord[],
@@ -245,7 +247,7 @@ function planStopped(
     plan.quiet.push({ target: item.key, class: "pickup-refused", why });
     return;
   }
-  const asked = questionAsked(slug, item, launches);
+  const asked = questionAsked(input, item, launches);
   if (asked !== null) plan.actions.push(asked);
   else plan.quiet.push({ target: item.key, class: "pickup-ended", why });
 }
@@ -328,7 +330,7 @@ function planClaimed(
   const pr = readLaunchPr(item, input.launches, input.sessions, input.prOpen);
   // An item already in pr_open under its launch's open pull request is quiet whatever the pickup once asked; a question on an item still to move stays a need.
   if (pr.step?.kind === "quiet" && settledByPr(item.key, pr.step, plan)) return;
-  const asked = questionAsked(input.slug, item, input.launches);
+  const asked = questionAsked(input, item, input.launches);
   if (asked !== null) {
     plan.actions.push(asked);
     return;
@@ -401,14 +403,17 @@ function settledByPr(
 /**
  * The need an item's latest pickup raises when its pass ended on a
  * question without recording `done`: the question, notified once per
- * launch record; `null` otherwise, and for a pass whose result or exit the
- * host could not write (`unwritten-result.ts`).
+ * launch record; `null` otherwise. A pass whose result or exit the host
+ * could not write (`unwritten-result.ts`) asks nothing of its own: while the
+ * host's health check fails its need stands for it, and once it passes a
+ * person is asked to settle or release the item.
  */
 function questionAsked(
-  slug: string,
+  input: Pick<PickupInput, "slug" | "rerunsHeld">,
   item: { key: string; title: string; state: string },
   launches: ReadRecord[],
 ): Action | null {
+  const { slug } = input;
   const latest = launches
     .filter(
       (r) =>
@@ -419,23 +424,27 @@ function questionAsked(
     )
     .sort((a, b) => a.record.createdAt.localeCompare(b.record.createdAt))
     .at(-1);
-  // A pass whose result the host could not write asks nothing of a person: its question is the host's, whose health check reports it.
   if (
     latest === undefined ||
     latest.result === "done" ||
-    latest.result === "waits" ||
-    unwrittenResult(latest)
+    latest.result === "waits"
   )
     return null;
+  // What a pass whose result the host could not write asked is the host's fault, never a person's question.
+  const unwritten = unwrittenResult(latest);
+  if (unwritten && (input.rerunsHeld ?? null) !== null) return null;
   // A pass that framed its decision asks its question there, whether or not it also ended on a question line.
-  const question =
-    questionOf(latest.state) ??
-    (latest.result === "failed"
-      ? (latest.framed?.decision.call.question ?? null)
-      : null);
+  const question = unwritten
+    ? `Should ${item.key} be settled or released, whose pickup ended without a result this host could write?`
+    : (questionOf(latest.state) ??
+      (latest.result === "failed"
+        ? (latest.framed?.decision.call.question ?? null)
+        : null));
   if (question === null) return null;
   const { record } = latest;
-  const reason = `the pickup stopped on a question for a person: ${question}`;
+  const reason = unwritten
+    ? `the pickup ended without a result: this host could not write it (since ${latest.unwritten}), and its health check passes again: ${question}`
+    : `the pickup stopped on a question for a person: ${question}`;
   return {
     stage: "notify",
     target: item.key,
@@ -450,7 +459,9 @@ function questionAsked(
       question,
     },
     cause: "pickup-question",
-    ...(latest.framed === undefined ? {} : { framed: latest.framed }),
+    ...(latest.framed === undefined || unwritten
+      ? {}
+      : { framed: latest.framed }),
     notice: pickupNotice(
       slug,
       `${item.key} question, record ${record.id}`,

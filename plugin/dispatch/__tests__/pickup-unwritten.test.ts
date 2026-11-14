@@ -1,16 +1,19 @@
 /**
- * A pickup whose result the host could not write asks a person nothing: the
- * question its pass stopped on is about the dispatcher's own database or
- * host, whose health check reports the cause, so the tick raises no pickup
- * question for it and logs its end as a stage that ended without a result.
+ * A pickup whose result the host could not write never raises the question
+ * its pass stopped on: that question is about the dispatcher's own database
+ * or host, whose health check reports the cause. While the check fails the
+ * tick raises nothing for it; once it passes, a person is asked to settle or
+ * release the item. Its end is logged as a stage that ended without a result.
  */
 import { describe, expect, it } from "bun:test";
 import type { LaunchRecord, ReadRecord } from "../lib/launches.ts";
 import { classifyEnded } from "../lib/log.ts";
 import { planPickups } from "../lib/plan-pickups.ts";
+import { parseMs } from "../../shared/time.ts";
 import type { DispatchSection, WantedItem } from "../lib/types.ts";
 
-const ASKED = "Question: should the dispatcher's schema be repaired?";
+const QUESTION = "should the dispatcher's schema be repaired?";
+const ASKED = `Question: ${QUESTION}`;
 const AT = "2026-11-14T11:40:00.000Z";
 
 /** An ended pickup of #12 whose pass stopped on `ASKED` with no result; `unwritten` when the host could not write it. */
@@ -47,7 +50,7 @@ const ITEM: WantedItem = {
   assignedBy: "writer",
 };
 
-function plan(read: ReadRecord) {
+function plan(read: ReadRecord, rerunsHeld: string | null = null) {
   return planPickups({
     slug: "example-org/example-repo",
     section: { stalledAfterMs: 3_600_000 } as DispatchSection,
@@ -56,16 +59,31 @@ function plan(read: ReadRecord) {
     sessions: { ok: true, source: "test", workspaces: [] },
     launches: [read],
     idleSince: new Map(),
-    nowMs: Date.parse("2026-11-14T12:00:00Z"),
+    nowMs: parseMs("2026-11-14T12:00:00Z"),
+    rerunsHeld,
   });
 }
 
 describe("a pickup whose result the host could not write", () => {
-  it("raises no question for a person, where a pass that wrote nothing on its own asks it", () => {
+  it("never raises the question its pass stopped on, where a pass that wrote nothing on its own asks it", () => {
     expect(plan(stopped(false)).actions).toContainEqual(
-      expect.objectContaining({ stage: "notify", cause: "pickup-question" }),
+      expect.objectContaining({
+        stage: "notify",
+        cause: "pickup-question",
+        evidence: expect.objectContaining({ question: QUESTION }),
+      }),
     );
-    const held = plan(stopped(true));
+    const [asked, ...rest] = plan(stopped(true)).actions.filter(
+      (a) => a.stage === "notify",
+    );
+    expect(rest).toEqual([]);
+    expect(asked?.evidence?.question).not.toBe(QUESTION);
+    expect(asked?.reason).toContain("this host could not write it");
+    expect(asked?.reason).toContain("settled or released");
+  });
+
+  it("raises nothing while the host's health check fails, its own need standing for it", () => {
+    const held = plan(stopped(true), "the last tick exited 1");
     expect(held.actions.filter((a) => a.stage === "notify")).toEqual([]);
     expect(held.quiet).toContainEqual(
       expect.objectContaining({ target: "#12", class: "pickup-ended" }),

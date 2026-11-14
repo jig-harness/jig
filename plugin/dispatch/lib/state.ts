@@ -469,9 +469,11 @@ class StateRefusedError extends JigError<"migration-history" | "source-state"> {
 
 /**
  * Why the state database failed this process, when `error` is the
- * database's own failure: SQLite's error, a schema version this plugin
- * cannot read, a migration history or source it refuses, or a file it could
- * not open; `null` for any other error, a code defect among them.
+ * database's own failure: any error SQLite raises, a schema version this
+ * plugin cannot read, a migration history or source it refuses, or a file it
+ * could not open; `null` for any other error. A defect that reaches SQLite
+ * (a statement that does not prepare, a constraint) reads as the database's
+ * failure too: a schema out of step with its version fails the same way.
  */
 export function stateDbFailure(error: unknown): string | null {
   if (error instanceof SQLiteError) return error.message;

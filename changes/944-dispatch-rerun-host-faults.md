@@ -27,6 +27,7 @@ release: minor
 
 ### Changed
 
-- A pickup whose result the host could not write raises no question for a
-  person: its end is logged as a stage that ended without a result, and the
-  host's health check reports the cause.
+- A pickup whose result the host could not write never raises the question
+  its pass stopped on: its end is logged as a stage that ended without a
+  result, the host's health check reports the cause while it fails, and once
+  it passes a person is asked once to settle or release the item.
