@@ -10,7 +10,7 @@
  * request the test sets, and `lsof` a fake reporting no process holding the
  * worktree, so the proof does not depend on what else the machine has mounted.
  */
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import {
   chmodSync,
   existsSync,
@@ -20,6 +20,7 @@ import {
   readdirSync,
   readFileSync,
   realpathSync,
+  rmSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
@@ -29,6 +30,7 @@ import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts"
 import { writeFakeProgram } from "../../../lib/test-helpers/fake-program.ts";
 import { skipsOnWindows } from "../../../lib/test-helpers/windows-skip.ts";
 import { gitEnvironment } from "../git.ts";
+import { shellQuote } from "../../shared/cli.ts";
 import { dump } from "../../shared/yaml.ts";
 import type { Receipt, ReceiptLine } from "../types.ts";
 
@@ -36,8 +38,15 @@ const script = resolve(import.meta.dir, "../../jig.ts");
 const REMOTE = "fakeforge:acme/app.git";
 const DAY_MS = 86_400_000;
 
+/** Every fixture root a test made, removed once the file's tests end. */
+const made: string[] = [];
+afterAll(() => {
+  for (const root of made) rmSync(root, { recursive: true, force: true });
+});
+
 function setup() {
   const root = realpathSync.native(mkdtempSync(join(tmpdir(), "gc-agent-")));
+  made.push(root);
   const repo = join(root, "repo");
   const user = join(root, "home");
   const bin = join(root, "bin");
@@ -292,7 +301,7 @@ describe.skipIf(
     expect(kept.outcome).toBe("refused");
     expect(kept.reason).toContain("branch has an open pull request");
     expect(kept.reason).toContain(
-      `it holds branch topic; \`git -C ${JSON.stringify(f.tree)} switch --detach\``,
+      `it holds branch topic; \`git -C ${shellQuote(f.tree)} switch --detach\``,
     );
     expect(existsSync(join(f.tree, "change.txt"))).toBe(true);
   }, 60_000);

@@ -47,10 +47,12 @@ import {
   worktreeIdentity,
   worktreePolicy,
   worktreeProof,
+  type WorktreeIdentity,
   type WorktreePolicy,
 } from "./worktree-proof.ts";
 import type { CollectionKind, Proof, Resource } from "../types.ts";
 import { currentMs } from "../../shared/time.ts";
+import { shellQuote } from "../../shared/cli.ts";
 
 /** Seconds `orca worktree rm` may take: it deletes the checkout's files. */
 const ORCA_REMOVE_TIMEOUT_SEC = 300;
@@ -438,6 +440,7 @@ async function collectAgentWorktree(
   repository: string,
   declaration: string,
   legacy: LegacyPolicy | undefined,
+  identity: WorktreeIdentity | undefined,
 ): Promise<Collected> {
   let archived: Archived | null = null;
   const log = (line: string): void => {
@@ -447,11 +450,13 @@ async function collectAgentWorktree(
     withArchiveOf(collected, archived);
   let snapshot: { hook: string; dir: string } | null = null;
   try {
-    // Read right after the runner's final proof: every check before removal
-    // holds the tree to this commit and branch.
-    const identity = await worktreeIdentity(resource.id);
-    if (!identity.ok)
-      return { outcome: "failed", reason: identity.failure.reason };
+    // The commit and branch the runner's final proof saw: every check before
+    // removal holds the tree to them.
+    if (identity === undefined)
+      return {
+        outcome: "failed",
+        reason: "kept: no final proof recorded the tree's commit and branch",
+      };
     const taken = await snapshotBaseHooks(repository, declaration, resource.id);
     if (!taken.ok) return { outcome: "failed", reason: taken.failure.reason };
     snapshot = taken.value;
@@ -468,9 +473,11 @@ async function collectAgentWorktree(
           admitAfterHook(
             worktree,
             legacy,
+            // The holder read can take half a minute, so the identity
+            // comparison goes last: nothing slow stands between it and removal.
             async () => {
-              const same = await unchangedSinceProof(worktree, identity.value);
-              return same.ok ? unheld(worktree) : same;
+              const held = await unheld(worktree);
+              return held.ok ? unchangedSinceProof(worktree, identity) : held;
             },
             (written) => {
               archived = written;
@@ -554,7 +561,7 @@ async function heldBranch(path: string): Promise<string | null> {
   if (!name.ok)
     return `the branch it holds could not be read (${name.failure.reason})`;
   if (name.value === "HEAD" || name.value === "") return null;
-  return `it holds branch ${name.value}; \`git -C ${JSON.stringify(path)} switch --detach\` releases the branch and keeps the worktree as it is`;
+  return `it holds branch ${name.value}; \`git -C ${shellQuote(path)} switch --detach\` releases the branch and keeps the worktree as it is`;
 }
 /** A kept agent tool's worktree's proof, with the branch it holds named. */
 async function withHeldBranch(
@@ -657,6 +664,8 @@ export function worktreesKind(
   archive?: ArchivePolicy,
 ): CollectionKind {
   const legacy = legacyPolicy(archive);
+  // What each agent tool tree's latest proof saw, for its collection.
+  const proved = new Map<string, WorktreeIdentity>();
   return {
     name: "worktrees",
     repository,
@@ -710,7 +719,12 @@ export function worktreesKind(
         return { state: "unverified", reason: resolved.failure.reason };
       const proving = { ...resolved.value, legacy: legacy() };
       const agentTool = isAgentTool(resource);
-      const proved =
+      proved.delete(resource.id);
+      // Read before the proof, so the proof's own reads run inside it.
+      const seen = agentTool ? await worktreeIdentity(resource.id) : null;
+      if (seen !== null && !seen.ok)
+        return { state: "unverified", reason: seen.failure.reason };
+      const result =
         orca !== undefined && orcaId(resource) !== null
           ? await runtimeWorktreeProof(resource.id, proving, idleDays, {
               orca,
@@ -722,18 +736,28 @@ export function worktreesKind(
               false,
               agentTool,
             );
-      if (!proved.ok)
-        return { state: "unverified", reason: proved.failure.reason };
-      return withHeldBranch(resource, proved.value);
+      if (!result.ok)
+        return { state: "unverified", reason: result.failure.reason };
+      if (seen !== null && result.value.state === "dead") {
+        const same = await unchangedSinceProof(resource.id, seen.value);
+        if (!same.ok)
+          return { state: "unverified", reason: same.failure.reason };
+        proved.set(resource.id, seen.value);
+      }
+      return withHeldBranch(resource, result.value);
     },
     collect: async (resource) => {
-      if (isAgentTool(resource))
+      if (isAgentTool(resource)) {
+        const final = proved.get(resource.id);
+        proved.delete(resource.id);
         return collectAgentWorktree(
           resource,
           repository,
           declaration,
           legacy(),
+          final,
         );
+      }
       const id = orcaId(resource);
       if (orca !== undefined && id !== null)
         return guardedCollection(resource, orcaPath(resource), (launched) =>
