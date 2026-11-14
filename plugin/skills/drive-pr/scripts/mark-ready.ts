@@ -370,6 +370,11 @@ async function main(): Promise<number> {
       process.stdout.write("not-open\n");
       return 5;
     }
+    // A prior call may have completed the durable transition just before it
+    // was interrupted, leaving only this standalone session's admission
+    // leases behind. Reconcile those leases on the durable-success path; the
+    // cleanup verifies their current holder before removing either row.
+    await (await standaloneReadyCleanup(pr))();
     console.error(
       `mark-ready.ts: PR #${pr} was already marked Ready by this drive (round ${markedRaw}) — not re-marking.`,
     );

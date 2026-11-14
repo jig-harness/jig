@@ -21,6 +21,7 @@ const marker =
   "<!-- This is an auto-generated comment: skip review by coderabbit.ai -->";
 const heading =
   "## Draft PR not reviewed\nTo automatically review draft PRs, update your CodeRabbit configuration.";
+const draftSkip = `${marker}\n${heading}`;
 
 function fixture(body: unknown, f: Fixture = {}, login = "coderabbitai[bot]") {
   const result = writeFixture(
@@ -46,7 +47,7 @@ function expectProbeExit(r: Awaited<ReturnType<typeof probeIn>>, code: number) {
 }
 
 describe("a comment-only draft skip", () => {
-  for (const body of [marker, heading, "> ## Draft PR not reviewed"]) {
+  for (const body of [draftSkip, heading, "> ## Draft PR not reviewed"]) {
     it(`converges on the configured reviewer's ${body === marker ? "marker" : "heading"}`, async () => {
       const r = await gate(body);
       expectProbeExit(r, 3);
@@ -58,7 +59,7 @@ describe("a comment-only draft skip", () => {
   }
 
   it("works existing findings before marking the draft Ready", async () => {
-    const r = await gate(marker, {
+    const r = await gate(draftSkip, {
       threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
     });
     expectProbeExit(r, 0);
@@ -72,7 +73,7 @@ describe("a comment-only draft skip", () => {
   });
 
   it("reads the current body after the skip is edited into a summary", async () => {
-    const { dir, stateDir } = fixture(marker);
+    const { dir, stateDir } = fixture(draftSkip);
     const before = await probeIn(dir, stateDir, HEAD, [], { env });
     expectProbeExit(before, 3);
     writeFileSync(
@@ -91,6 +92,7 @@ describe("a comment-only draft skip", () => {
   });
 
   it("does not trust another author's skip or an unrelated heading", async () => {
+    expectProbeExit(await gate(marker), 4);
     expectProbeExit(await gate(marker, {}, "someone"), 4);
     expectProbeExit(
       await gate("The description says Draft PR not reviewed"),
@@ -113,7 +115,7 @@ describe("a comment-only draft skip", () => {
 
   it("uses the same current comment evidence in the standalone review loop", async () => {
     for (const isDraft of [true, false]) {
-      const { dir, stateDir } = fixture(marker, { isDraft });
+      const { dir, stateDir } = fixture(draftSkip, { isDraft });
       const child = Bun.spawn(
         [process.execPath, join(SCRIPTS, "review-head.ts"), "999", HEAD],
         {
@@ -139,7 +141,7 @@ describe("a comment-only draft skip", () => {
 
   it("does not bypass a newer running check or failed check", async () => {
     for (const status of ["in_progress", "completed"]) {
-      const r = await gate(marker, {
+      const r = await gate(draftSkip, {
         checkRuns: [
           {
             name: "CodeRabbit",
@@ -162,7 +164,7 @@ describe("a comment-only draft skip", () => {
   });
 
   it("marks the draft Ready before waiting for its first review", async () => {
-    const { dir, stateDir } = fixture(marker, { head: scratchClean.head });
+    const { dir, stateDir } = fixture(draftSkip, { head: scratchClean.head });
     const r = await runDriveIn(
       dir,
       stateDir,

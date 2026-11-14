@@ -31,6 +31,12 @@ export async function standaloneReadyCleanup(
       : held.holder === "session" &&
         held.pid === session.pid &&
         held.host === session.host);
+  const sameHolder = (a: Lease | null, b: Lease | null): boolean =>
+    a !== null &&
+    b !== null &&
+    a.holder === b.holder &&
+    a.pid === b.pid &&
+    a.host === b.host;
   const captured = await store.locked(async () => ({
     lease: readLease(ref),
     tree: readTreeLease(tree),
@@ -41,12 +47,16 @@ export async function standaloneReadyCleanup(
         const lease = readLease(ref);
         if (
           owns(captured.lease) &&
+          owns(lease) &&
+          sameHolder(lease, captured.lease) &&
           lease?.generation === captured.lease?.generation
         )
           removeLease(ref);
         const held = readTreeLease(tree);
         if (
           owns(captured.tree) &&
+          owns(held) &&
+          sameHolder(held, captured.tree) &&
           captured.tree?.pr === canonicalLeasePr(pr) &&
           held?.pr === canonicalLeasePr(pr) &&
           held.generation === captured.tree.generation

@@ -828,7 +828,6 @@ const FORGE: RecordKind[] = [
     markers: [
       "coderabbit-ai-generated:v1",
       "coderabbit-skip-review-comment-follow-up",
-      "This is an auto-generated comment: skip review by coderabbit.ai",
     ],
     version: 0,
   },
