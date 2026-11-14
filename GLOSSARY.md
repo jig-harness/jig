@@ -917,6 +917,10 @@ make, use the entry's term instead.
   and the edges between children with their reasons. The pickup and the
   dispatcher read it; the *epic planner* writes it
   ([design](design/epic-planner.md)).
+- **Human gate** — a step of an *execution plan* that waits on a person before
+  an agent may start it: a child carrying the `hitl` label, or one the plan
+  marks with its reason. A plan cannot cancel a `hitl` label
+  ([design](design/epic-planner.md)).
 - **Epic planner** — the skill that writes and keeps an *epic*'s *execution
   plan*: it records each real dependency as a native tracker relation,
   renders the plan, applies the mechanical changes on its own and asks a

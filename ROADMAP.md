@@ -520,8 +520,9 @@ See the [distribution design](design/distribution.md).
   in step with decisions and audits them
   ([M0](modules/M0-instruction-architecture/README.md)), and a review skill
   for SOLID design principles.
-- **Tracker planning.** Prioritisation, the epic acceptance review and a
-  review-debt report as skills on the tracker interface.
+- **Tracker planning.** Prioritisation, the epic acceptance review, a
+  review-debt report and a skill that applies approved learnings, as skills
+  on the tracker interface.
 - **A forge interface.** GitHub is the only forge the pull-request skills
   work with; an interface with GitHub behind it, then GitLab as the second
   ([what it covers](plugin/EXTENDING.md#forge-github)).

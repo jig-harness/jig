@@ -48,8 +48,9 @@ The planner splits its work strictly in two:
 A **lane** is a group of related children, named for the reader; being in
 one lane orders nothing. A **human gate** is a step that waits on a person
 before an agent may start it. A **precedence band** is a step's depth in the
-order: band 1 waits on nothing in the plan, band 2 waits on band 1, and so
-on.
+order: band 1 waits on nothing in the plan, and a step in band 2 or later
+waits only on its own predecessors and live blockers, so a band is a depth,
+never a barrier that every earlier step must clear.
 
 Its workflow, which moves unchanged:
 
@@ -73,7 +74,14 @@ Its workflow, which moves unchanged:
    every closure, every priority change, removing a live blocker the plan
    dropped, and replacing a plan section the planner did not write.
 5. **Apply.** `apply` reads the tracker again before it writes, so it never
-   writes from a stale picture. The approval is a digest, a hash of the rows
+   starts from a stale picture. Between that read and the last write the
+   tracker port offers no transaction, so the guarantee covers what the epic
+   held at the read: `apply` writes in a fixed order (relations, then
+   priorities, then closures, the epic's description last), checks the
+   epic's version before each write and stops at the first mismatch, and it
+   reports what it wrote and what is left. A run stopped halfway is
+   recovered by running the planner again, whose proposal reads the tracker
+   as it now is. The approval is a digest, a hash of the rows
    the person saw: when the epic or the plan has moved since, the digest no
    longer matches and nothing is written. A declined row is an edit to
    `plan.json` and a new proposal, never a partial apply, because a partial
@@ -116,7 +124,7 @@ structure hash no longer matches the tracker.
 | The tracker client | Replaced by Jig's tracker interface (below) |
 | Its own copy of the `execution-plan-v1` writer | Joins Jig's format module, which stays in `plugin/skills/do-item/scripts/lib/execution-plan.ts`; the planner imports it by its sibling path, as `file-issue` imports the tracker, so one module holds the reader and the writer and nothing under `plugin/shared/` imports a skill |
 | Fixed label names (`hitl`, `manual-ops`, `epic`, the area label prefix) | Read from `issue_tracker.labels` and the change-area catalog's tracker labels |
-| The check that an operator's step after a merge is complete, read from the consumer's own ledger of out-of-tree work | Becomes an optional command the repository declares (`plan_epic.ops_check_command`), as #303 records; Jig keeps no such ledger ([LIFECYCLE.md](../docs/LIFECYCLE.md), ops drain). Without it, a child waiting on an operator step is never closed by the planner |
+| The check that an operator's step after a merge is complete, read from the consumer's own ledger of out-of-tree work | Becomes an optional command the repository declares (`plan_epic.ops_check_command`), as #303 records; Jig keeps no such ledger ([LIFECYCLE.md](../docs/LIFECYCLE.md), ops drain). The command runs without a shell, gets the child's key as its one argument, has a bounded run time, and prints one JSON line `{"complete": true|false, "evidence": "<text>"}`; only `complete: true` with evidence lets the planner propose the closure, as an approval row. Any other result (`false`, an empty or malformed line, a non-zero exit, a timeout) keeps the child open and is reported. Without the command, a child waiting on an operator step is never closed by the planner |
 | The handoff from filing: comments that carry a filing's judgment before the children have keys | Moves as it is, read only; a later step has `/jig:file-issue` write it |
 | The batch candidates it records | Read from the plugin's own `work-batch` proposal |
 | Its exit codes | Renumbered so that none collides with the tracker's failure classes (exit 5 to 11, [do-item](../plugin/skills/do-item/SKILL.md#tracker-operations)), which pass through unchanged; the consumer's instructions that read them switch in the same rollout |
@@ -173,9 +181,11 @@ epic it finds nothing to write; a person who removed a relation re-runs the
 planner instead, since `sync-plan-blocks` would write the plan's edge back.
 
 The block is written where today's readers need one: the pickup and the
-dispatcher read only the block, so every planned epic gets one. When the
-readers read the relations directly (ADR-0015's open alternative), the block
-keeps only what has no native form.
+dispatcher read the block for the plan's own facts (bands, lanes, human gates
+and edge reasons) and the native relations for what blocks a child, and they
+refuse a block that contradicts the relations. Every planned epic gets a
+block. When the readers take the plan's edges from the relations alone
+(ADR-0015's open alternative), the block keeps only what has no native form.
 
 ### Plans default to parallel
 
@@ -250,13 +260,22 @@ one:
 - **Mechanical, applied without asking**: writing a blocker the plan
   records, removing one whose source was canceled, rendering the section
   again, and placing a new child with no relation to its siblings in a lane
-  of its own with no edge, since plans default to parallel. The report names
-  each child placed this way, so a person can give it an edge.
+  of its own with no edge, since plans default to parallel, but only after
+  the session's independence assessment: it has read the child's description
+  and comments and found no dependency or overlap with an open sibling. A
+  child it has not assessed is held as a human gate until it has been, so an
+  open step with no blocking edge never becomes eligible unexamined. The
+  report names each child placed this way, so a person can give it an edge.
 - **Judgment, approved first**: a closure, a priority change, dropping a
   live blocker, an edge for a new child, replacing a section the planner did
   not write. A new child's priority from the rule is a priority change like
   any other: the child is placed at once, and its priority waits for the
-  approval unless it already has the rule's value.
+  approval unless it already has the rule's value. A dispatched pass can
+  place the child and render the section before the approval, because both
+  are in the applied part of the changeset; the pending rows (a priority or
+  an edge) are left out of the plan and the renderer entirely, and the parked
+  digest approves the complete resulting state, so no partial state is ever
+  rendered.
 
 Who runs the planner: a person, with `/jig:plan-epic <epic>`, or a
 dispatched pickup of an issue assigned to the factory identity whose work
