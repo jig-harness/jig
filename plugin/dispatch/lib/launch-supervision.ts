@@ -134,6 +134,10 @@ export function uncertainCleanupState(
   };
 }
 
+/** Why a supervised launch whose wrapper ended without a cleanup witness holds. */
+export const UNCONFIRMED_CLEANUP =
+  "the supervised stage ended without confirmed cleanup";
+
 /** A supervised launch without a cleanup witness holds after wrapper death. */
 export function claimState(
   claim: LaunchClaim,
@@ -170,7 +174,7 @@ export function claimState(
       };
     return {
       kind: "unknown",
-      reason: "the supervised stage ended without confirmed cleanup",
+      reason: UNCONFIRMED_CLEANUP,
       process: claim,
     };
   }

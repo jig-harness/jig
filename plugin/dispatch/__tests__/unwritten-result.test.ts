@@ -17,6 +17,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   removeUnwritten,
+  unwrittenExitWitness,
   unwrittenOf,
   writeUnwritten,
 } from "../lib/unwritten-result.ts";
@@ -92,5 +93,16 @@ describe("jig dispatch result's guard", () => {
     );
     await expect(run).rejects.toThrow(TypeError);
     expect(files(dir)).toEqual([]);
+  });
+
+  it("witnesses cleanup only for an exit file of the record's own token", () => {
+    const dir = root();
+    writeUnwritten(dir, ID, "the-token", "result", "refused");
+    expect(unwrittenExitWitness(dir, ID, "the-token")).toBe(false);
+    writeUnwritten(dir, ID, "other-token", "exit", "refused");
+    expect(unwrittenExitWitness(dir, ID, "the-token")).toBe(false);
+    rmSync(join(dir, "unwritten"), { recursive: true });
+    writeUnwritten(dir, ID, "the-token", "exit", "refused");
+    expect(unwrittenExitWitness(dir, ID, "the-token")).toBe(true);
   });
 });

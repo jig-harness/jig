@@ -50,6 +50,7 @@ import {
   claimState,
   malformedLiveWrapper,
   uncertainCleanupState,
+  UNCONFIRMED_CLEANUP,
   type StageSupervision,
 } from "./launch-supervision.ts";
 import { optionalLaunchFields } from "./launch-record-options.ts";
@@ -63,7 +64,12 @@ import {
   waitsOf,
 } from "./pickup-refusal.ts";
 export type { PickupRefusal, RefusedMember };
-import { unsettledStartups } from "./session-startup.ts";
+import {
+  diedWithoutResult,
+  isRerun,
+  retryableStartup,
+  unsettledStartups,
+} from "./session-startup.ts";
 import type { Database } from "bun:sqlite";
 import { isMapping } from "../../shared/config-layers.ts";
 import { swallow } from "../../shared/errors.ts";
@@ -86,7 +92,11 @@ export { cancelledBeforeExecution } from "./cancellation.ts";
 export { UNARMED_FACTS } from "./launch-keep.ts";
 import { latestArms, latestDriveRefusals } from "./launch-keep.ts";
 import { latestPickups } from "./launch-pickups.ts";
-import { removeUnwritten, unwrittenOf } from "./unwritten-result.ts";
+import {
+  removeUnwritten,
+  unwrittenExitWitness,
+  unwrittenOf,
+} from "./unwritten-result.ts";
 import { asResult } from "./launch-result.ts";
 import { type ControlRows, controlRows, EMPTY } from "./launch-control-rows.ts";
 import { isoOf, parseMs } from "../../shared/time.ts";
@@ -708,6 +718,31 @@ function stateOf(
 }
 
 /**
+ * A supervised launch whose wrapper ended with no exit written is held for
+ * want of a cleanup witness; the wrapper's own evidence that it could not
+ * write the exit, kept only after it confirmed the stage's processes ended,
+ * is that witness, and the record is then a death a follow-up runs again.
+ */
+function witnessedState(
+  state: LaunchState,
+  record: LaunchRecord,
+  root: string,
+): LaunchState {
+  if (
+    state.kind === "unknown" &&
+    state.reason === UNCONFIRMED_CLEANUP &&
+    state.liveProcess === undefined &&
+    unwrittenExitWitness(root, record.id, record.token)
+  )
+    return {
+      kind: "died",
+      reason: "its exit could not be written after its cleanup was confirmed",
+      process: state.process,
+    };
+  return state;
+}
+
+/**
  * Every record with its state as judged from `here`, oldest first; a row
  * that does not read is left out and named. A reader that must not migrate
  * the database passes its own read-only connection as `db`.
@@ -735,7 +770,7 @@ export async function readLaunches(
     }
     records.push({
       record,
-      state: stateOf(row, rows, here),
+      state: witnessedState(stateOf(row, rows, here), record, root),
       ...answerOf(row, record, root),
     });
   }
@@ -811,6 +846,32 @@ function latestRedrives(records: ReadRecord[]): Set<string> {
   return new Set([...latest.values()].map((r) => r.record.id));
 }
 
+/**
+ * The latest follow-up of each pull request, kept while it is a first death
+ * the next launch runs again: its record is what recognises that launch as
+ * the recovery, so it stays until a later record of the pull request exists.
+ */
+function latestDeaths(records: ReadRecord[]): Set<string> {
+  const latest = new Map<string, ReadRecord>();
+  for (const r of records) {
+    if (r.record.action !== "followup" || retryableStartup(r)) continue;
+    const key = `${r.record.repo}#${String(r.record.pr)}`;
+    const seen = latest.get(key);
+    if (seen === undefined || r.record.createdAt >= seen.record.createdAt)
+      latest.set(key, r);
+  }
+  return new Set(
+    [...latest.values()]
+      .filter(
+        (r) =>
+          r.record.rerunDied !== 0 &&
+          diedWithoutResult(r) &&
+          !isRerun(r.record),
+      )
+      .map((r) => r.record.id),
+  );
+}
+
 /** When an ended or died record finished; `null` for one still holding its stage. */
 function finishedAt(record: LaunchRecord, state: LaunchState): number | null {
   if (state.kind === "ended") return parseMs(state.exit.at);
@@ -833,6 +894,7 @@ export function pruneLaunches(
     latestRedrives,
     latestArms,
     latestDriveRefusals,
+    latestDeaths,
   ])
     for (const id of latest(records)) kept.add(id);
   for (const r of records)

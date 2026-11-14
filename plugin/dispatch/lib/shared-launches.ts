@@ -710,8 +710,17 @@ async function settleRecordClaims(
   if (retryableFollowup(r)) {
     // A death's marker may already carry an answer an earlier settle wrote; it is released all the same.
     // A marker a person completed while this host was unavailable is
-    // authoritative. Retryable records release only claims still open.
-    const ids = matches.filter((c) => open(c)).map((c) => c.id);
+    // authoritative; one still open, or a failed answer a death owes a run
+    // again for, is released.
+    const ids = matches
+      .filter(
+        (c) =>
+          open(c) ||
+          (retriedDeath(r) &&
+            c.says.value.end?.state === "ended" &&
+            c.says.value.end.outcome === "failed"),
+      )
+      .map((c) => c.id);
     // The listing can lag a post or omit a marker already deleted by a tick.
     // Delete the recorded id as well: only a successful deletion or an explicit
     // not-found response confirms that this launch's marker no longer exists.

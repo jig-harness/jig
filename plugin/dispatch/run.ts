@@ -544,10 +544,12 @@ async function finishRun(
   // The wall first: once the exit is published the record no longer holds its
   // slot, and a tick in between would admit the walled account.
   const wallUnrecorded = !(await wallRecorded(record, code));
-  const startup = startupOf(record, ran);
-  const startupWallUnrecorded =
-    startup !== undefined && !recordStartupWall(record, startup);
   try {
+    // Every read of the state database sits inside the boundary that keeps the
+    // exit evidence, so a database that refuses reads still leaves it.
+    const startup = startupOf(record, ran);
+    const startupWallUnrecorded =
+      startup !== undefined && !recordStartupWall(record, startup);
     recordExit(id, {
       at: currentIso(),
       code,

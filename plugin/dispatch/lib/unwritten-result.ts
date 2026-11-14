@@ -120,6 +120,34 @@ export function unwrittenOf(
   }
 }
 
+/**
+ * Whether the evidence of record `id` under its own token says the stage's
+ * exit could not be written. The wrapper keeps it only after its stage's
+ * processes were confirmed ended, so it witnesses the cleanup a supervised
+ * launch's claim cannot show once the wrapper is gone.
+ */
+export function unwrittenExitWitness(
+  root: string,
+  id: string,
+  token: string,
+): boolean {
+  const hash = digest(token);
+  const path = unwrittenPath(root, id, hash);
+  if (!existsSync(path)) return false;
+  try {
+    const value: unknown = JSON.parse(readFileSync(path, "utf8"));
+    return (
+      isMapping(value) &&
+      value.record === id &&
+      value.token === hash &&
+      value.what === "exit"
+    );
+  } catch (error) {
+    swallow(error, "the evidence of an unwritten end does not read");
+    return false;
+  }
+}
+
 /** Remove every evidence file of the records that were pruned, best effort: a file left behind is read by nothing, since its record is gone. */
 export function removeUnwritten(root: string, ids: readonly string[]): void {
   const pruned = new Set(ids);
