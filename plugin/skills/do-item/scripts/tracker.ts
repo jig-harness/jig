@@ -52,9 +52,13 @@
  * (`lib/claim-marker.ts`) before it writes, and of the markers on the item
  * the earliest wins (`lib/claim-token.ts`): a claim that finds an earlier
  * one, or cannot post and read back its own, refuses (exit 3,
- * `"why": "marker"`, nothing written to the item), and one that finds an
- * earlier one after it wrote stands down (exit 4). `"marker"` in the JSON
- * says whether the read after the write confirmed it.
+ * `"why": "marker"`, nothing written to the item). One that finds an
+ * earlier one after it wrote, or no longer finds its own, settles who holds
+ * the item from the attempts' outcome records without undoing its writes:
+ * `"recovery": "reclaimed"` keeps the claim (exit 0), `"held"` and
+ * `"unresolved"` stand it down (exit 4), the last leaving the item for a
+ * person. `"marker"` in the JSON says whether the read after the write
+ * confirmed it.
  *
  * Canonical states: backlog, todo, in_progress, in_review, done, canceled,
  * and where the consumer uses them triage, pr_open, blocked, ops_pending,
@@ -131,7 +135,7 @@ import {
 } from "../../../shared/outbound/failure.ts";
 import { claimServedIssue } from "./lib/served-claim.ts";
 import { withClaimLock } from "./lib/claim-lock.ts";
-import { claimIssue } from "./lib/claim.ts";
+import { claimIssue, claimStillStands } from "./lib/claim.ts";
 import { blockedClaimRefusal } from "./lib/blocked-claim.ts";
 import { getIssue } from "./get_issue.ts";
 import {
@@ -470,6 +474,8 @@ async function claim(
         normalized,
         { session: claimSession(), branch: await claimBranch(root), claimant },
         body,
+        undefined,
+        (claimed) => claimStillStands(tracker, normalized, claimed),
       );
     },
   );

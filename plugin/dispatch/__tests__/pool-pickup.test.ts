@@ -10,6 +10,10 @@
 import { describe, expect, it } from "bun:test";
 import type { Clock } from "../../shared/clock.ts";
 import { claimIssue } from "../../skills/do-item/scripts/lib/claim.ts";
+import {
+  readClaimMarker,
+  readClaimOutcome,
+} from "../../skills/do-item/scripts/lib/claim-marker.ts";
 import { claimWithMarker } from "../../skills/do-item/scripts/lib/claim-token.ts";
 import { parseTrackerConfig } from "../../skills/do-item/scripts/lib/tracker/config.ts";
 import {
@@ -58,6 +62,17 @@ function poolSection(identity: string): DispatchSection {
   });
   if (!parsed.ok) throw new Error(parsed.failure.reason);
   return parsed.value;
+}
+
+/** The claim markers left on the item and the outcomes recorded, read back as a claim reads them. */
+async function claimComments(t: Tracker, key: string) {
+  const { comments } = await t.issueComments(key);
+  return {
+    markers: comments.filter((c) => readClaimMarker(c.body) !== null).length,
+    outcomes: comments
+      .flatMap((c) => readClaimOutcome(c.body)?.outcome ?? [])
+      .sort(),
+  };
 }
 
 describe("dispatch.pool", () => {
@@ -249,7 +264,10 @@ describe("a pool pickup across two hosts", () => {
     blockerOpen = false;
     expect(await twoHosts(make, section, "#5")).toEqual(["claimed", "refused"]);
     expect(s.writes).toEqual(["TrackerAssign", "TrackerAddLabels"]);
-    expect(s.comments).toHaveLength(1);
+    expect(await claimComments(make(), "#5")).toEqual({
+      markers: 1,
+      outcomes: ["claimed", "released"],
+    });
   });
 
   it("on Linear", async () => {
@@ -348,7 +366,10 @@ describe("a pool pickup across two hosts", () => {
       "refused",
     ]);
     expect(s.writes).toEqual(["TrackerAssign", "TrackerUpdate"]);
-    expect(s.comments).toHaveLength(1);
+    expect(await claimComments(make(), "ENG-4")).toEqual({
+      markers: 1,
+      outcomes: ["claimed", "released"],
+    });
   });
 
   it("on Jira", async () => {
@@ -449,7 +470,10 @@ describe("a pool pickup across two hosts", () => {
       "PUT issue/ENG-1/assignee",
       "POST issue/ENG-1/transitions",
     ]);
-    expect(s.comments).toHaveLength(1);
+    expect(await claimComments(make(), "ENG-1")).toEqual({
+      markers: 1,
+      outcomes: ["claimed", "released"],
+    });
   });
 });
 

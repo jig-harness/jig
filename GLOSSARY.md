@@ -82,7 +82,11 @@ make, use the entry's term instead.
   item (`do_item.claim_marker`) before it writes the item, so two hosts
   picking the same item can tell their claims apart: of the markers posted
   within ten minutes of a claim's own, the earliest wins and a later claim
-  stands down. A marker older than that lapses. The tracker offers no
+  stands down. A marker older than that lapses. Each attempt also records
+  how it ended (claimed, released or unresolved), so a claim that meets an
+  earlier marker only after it wrote the item can tell whether that attempt
+  holds the item, keep it when it released, and leave it to a person when
+  nothing says. The tracker offers no
   conditional create for a comment, so the token narrows a race between
   hosts and does not exclude it
   ([plugin/RECORDS.md](plugin/RECORDS.md)).

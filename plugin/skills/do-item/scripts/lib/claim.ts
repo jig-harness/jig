@@ -57,7 +57,11 @@ export type ClaimResult =
       updatedAt?: string;
     }
   | {
-      /** The claim was written and the re-read shows another one landed first. */
+      /**
+       * The claim was written and the re-read shows another one landed
+       * first, or, with `do_item.claim_marker`, cannot establish that this
+       * claim holds the item.
+       */
       outcome: "stood_down";
       issue: string;
       reason: string;
@@ -180,6 +184,27 @@ export async function claimIssue(
       reason: `another change landed first: ${key} is now ${after?.state.name ?? "gone"}, not ${started}`,
     };
   return { outcome: "claimed", issue: key, claimant: me, state: started };
+}
+
+/**
+ * Read-only: why a claimed item is no longer the claim's, or `null` when its
+ * assignee and state are still what the claim wrote. Writes nothing.
+ */
+export async function claimStillStands(
+  tracker: ClaimTracker,
+  key: string,
+  claimed: ClaimResult,
+): Promise<string | null> {
+  if (claimed.outcome !== "claimed") return null;
+  const [holders, issue] = await Promise.all([
+    tracker.assignees(key),
+    tracker.poolIssue(key),
+  ]);
+  if (holders.length !== 1 || holders[0]?.id !== claimed.claimant.id)
+    return `its assignee is no longer ${claimed.claimant.name} alone`;
+  if (issue === null || !sameName(issue.state.name, claimed.state))
+    return `it is now ${issue?.state.name ?? "gone"}, not ${claimed.state}`;
+  return null;
 }
 
 /** Refuse unavailable, held or disallowed start states before an assignment. */

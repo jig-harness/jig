@@ -193,7 +193,18 @@ marker cannot be posted or read back. That makes the marker the token two
 hosts claiming one item agree on. The tracker offers no conditional write
 for a comment, so two claims whose reads each miss the other's marker can
 both win; the read after the claim narrows that to the claim's own few
-seconds. The settings are in the
+seconds. Each attempt also records how it ended, in a comment beside its
+marker: claimed, released (it refused or stood down) or unresolved. A claim
+that finds an earlier marker only after it has assigned and started the item
+does not undo that: those writes may be another worker's too, since both
+claim with one identity. It waits up to 90 seconds for the earlier
+attempt's outcome. A recorded release (or an unresolved stand-down) means
+that attempt holds nothing, so the claim keeps the item while its own marker
+still shows; a recorded claim means the other attempt is the worker, so this
+one stands down; no outcome, or its own marker gone, means nobody can tell,
+so it stands down as unresolved and leaves the item for a person. Every
+claim leaves its outcome comment on the item, and each refused claim a
+release comment, for whoever reads the item later. The settings are in the
 [configuration](../../CONFIGURATION.md#do_item).
 
 ## Requirements and platforms
