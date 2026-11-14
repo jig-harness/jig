@@ -309,8 +309,9 @@ What makes it work, and what it does not:
 - **It shows a count while it is open.** The number of pull requests ready to
   merge, the one the Merge tab carries, is in the tab's title and on its icon,
   and on the installed app's icon where the browser has an app badge (desktop
-  Chrome does; on Android the launcher decides between a dot and a count). The
-  page sets it on each read, so a closed app shows none.
+  Chrome may provide one; Android does not support this API). The page sets it
+  on each read while it stays open. Its last badge can remain after the page
+  closes, but it cannot update until the page opens again.
 - **It does not turn on web push.** HTTPS gives the page a secure context and
   nothing more; notifications are a separate feature this setup does not ship.
 

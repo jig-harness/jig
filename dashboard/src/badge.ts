@@ -45,22 +45,38 @@ export function markWith(href: string, count: number): string {
   return `${href.slice(0, at)}${encodeURIComponent(drawn)}${href.slice(at)}`;
 }
 
+/** Updates the page's badge and returns the cleanup required when its owner disappears. */
+export function applyReadyBadge(count: number): () => void {
+  const title = document.title;
+  const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+  const href = link?.getAttribute("href") ?? null;
+  const builtBefore = link?.getAttribute(BUILT) ?? null;
+  if (link !== null) {
+    const built = builtBefore ?? href ?? "";
+    link.setAttribute(BUILT, built);
+    link.setAttribute("href", markWith(built, count));
+  }
+  document.title = titleWith(title.replace(/^\(\d+\) /, ""), count);
+  const app = navigator as Navigator & AppBadge;
+  // A browser with no badge, or one that refuses it, leaves the title and the icon as the signal.
+  const done = count > 0 ? app.setAppBadge?.(count) : app.clearAppBadge?.();
+  done?.catch(() => undefined);
+  return () => {
+    document.title = title;
+    if (link !== null) {
+      if (href === null) link.removeAttribute("href");
+      else link.setAttribute("href", href);
+      if (builtBefore === null) link.removeAttribute(BUILT);
+      else link.setAttribute(BUILT, builtBefore);
+    }
+    app.clearAppBadge?.()?.catch(() => undefined);
+  };
+}
+
 /** Keeps the tab's title and icon, and the installed app's badge, at the count of pull requests ready to merge. */
 function useReadyBadge(ready: number | undefined): void {
   const count = ready ?? 0;
-  useEffect(() => {
-    const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
-    if (link !== null) {
-      const built = link.getAttribute(BUILT) ?? link.getAttribute("href") ?? "";
-      link.setAttribute(BUILT, built);
-      link.setAttribute("href", markWith(built, count));
-    }
-    document.title = titleWith(document.title.replace(/^\(\d+\) /, ""), count);
-    const app = navigator as Navigator & AppBadge;
-    // A browser with no badge, or one that refuses it, leaves the title and the icon as the signal.
-    const done = count > 0 ? app.setAppBadge?.(count) : app.clearAppBadge?.();
-    done?.catch(() => undefined);
-  }, [count]);
+  useEffect(() => applyReadyBadge(count), [count]);
 }
 
 /** Renders nothing; it holds the badge for the page, so the page itself carries none of its logic. */

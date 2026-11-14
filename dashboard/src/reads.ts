@@ -45,6 +45,7 @@ export const queryClient = new QueryClient({
     queries: {
       networkMode: "always",
       refetchInterval: READ_EVERY_MS,
+      refetchIntervalInBackground: true,
       refetchOnWindowFocus: true,
       staleTime: 0,
       retry: (count, error) => failureOf(error)?.kind === "gone" && count < 1,
