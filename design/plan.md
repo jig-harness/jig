@@ -239,9 +239,9 @@ or, where only a person can act, raised once for its cause.
 ### 55. Outbound calls: one governed transport for every system Jig calls
 
 Jig's code calls a forge, the issue trackers and the reflection stores,
-and each integration handles their limits on its own: one shared budget
-that only the tracker adapters feed, and no record of what an operation
-costs. On a dispatch host that showed as a
+and each integration handles their limits on its own. The tracker adapters
+feed a shared budget, and the cost ledger records what each operation
+spends. On a dispatch host the separate limits showed as a
 tracker credential held at its hourly allowance by one unbounded nested
 list, a repository the forge could not answer a full page of and so was
 never read, and ticks that exited 1 for refusals that clear by waiting.
@@ -251,9 +251,6 @@ limits, the shared library (`plugin/shared/outbound/`), the failure classes
 with their policies and the build order. What it will build, one pull
 request per step:
 
-- **The cost ledger and its reports**: requests, cost and time per
-  operation and caller; a line per system in the tick report, a
-  `jig budget` command, and one need when a quota is about to run out.
 - **GitHub in the budget record**: its hourly and secondary limits beside
   the trackers', every forge call admitted against them.
 - **Reuse**: answers cached by update time or the system's validator,
@@ -780,10 +777,13 @@ and JSON Schemas for the shapes outside readers parse, held to the code by
 its `--check` in the generated-file inventory; the skills' restatements
 turned into links, or kept as held restatements the gate checks; and the
 chapters rendered on the site. Built in steps, one pull request each;
-built so far: the generator, its gate and the chapter on the drive's end
-states and exit codes ([plugin/protocol/](../plugin/protocol/README.md)).
+built so far: the generator, its gate, the chapter on the drive's end
+states and exit codes, and the chapters on the drive mailbox, on the
+pull-request labels and on the commands a repository supplies
+([plugin/protocol/](../plugin/protocol/README.md)), and the site's pages
+for the chapters at `/protocol/`.
 Open, in order: the other stable chapters, their schemas, their
-restatements as links, the provisional chapters, and the site's pages.
+restatements as links and the provisional chapters.
 
 Done when every stable and provisional chapter of the design is generated
 and gated, the site renders the chapters, and the
@@ -939,8 +939,8 @@ module at a time. The [epic](https://github.com/jig-harness/jig/issues/1019)
 holds this work.
 
 After the message design merges, file and prepare the design brief, then
-run an external Claude Design round. The person supplies the reference
-site with the brief and accepts the returned design. Only then change
+run an external Claude Design round without an outside reference site.
+The person accepts the returned design. Only then change
 README.md, FACTORY.md, FEATURES.md and the site together, including their
 parsers and tests. The design names what moves down a level and the
 Protocol's page routes; its generation and rendering belong to the
@@ -1400,7 +1400,8 @@ per step:
   Validate its weekly job through the installed command before starting
   the later kinds. Worktree collection stays disabled until this
   integration, except for a worktree Orca manages, which `jig gc` collects
-  through Orca.
+  through Orca, and a worktree an agent tool makes under the clone's
+  `.claude/worktrees/`, which it collects with git.
 - **Containers, volumes and images**, keyed to the compose projects the
   worktrees derive, and the machine-level dangling images and build cache.
 - **Branches** merged as the forge records it (squash merges included) or
@@ -1531,7 +1532,7 @@ conditions for considering a tap without adopting one ahead of that evidence.
   - a hook on a server's host runs as one SSH command under the call's
     deadline, with nothing from Jig there to supervise it: a hook that
     outlives the deadline, or starts a child that outlives it, is left to
-    the host, where on a machine the Herdr tool's supervisor ends the hook's
+    the host, where on a machine the shared supervisor ends the hook's
     whole process group. Supervise it there too, once what the host must
     provide is decided: `bun` for the shared supervisor, as the Herdr tool
     asks of its hosts, or a supervisor in the host's own shell;

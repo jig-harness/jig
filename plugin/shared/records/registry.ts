@@ -74,7 +74,7 @@ const STATE_DIR = "~/.local/state/jig/drive-pr/<clone>/";
 const DRIVE_DB_FILE = "~/.local/state/jig/drive-pr/state.sqlite";
 const DISPATCH_DIR = "~/.local/state/jig/dispatch/";
 /** The dispatcher's database schema version (`dispatch/lib/state.ts`'s `SCHEMA_VERSION`). */
-const DISPATCH_DB = 30;
+const DISPATCH_DB = 31;
 /** The drive's database schema version (`skills/drive-pr/scripts/lib/state/db.ts`'s `DRIVE_DB_VERSION`). */
 const DRIVE_DB = 5;
 const RRC = "skills/resolve-review-comments/scripts/";
@@ -133,6 +133,7 @@ function dispatchTable(name: string, owner: string, table: string): RecordKind {
 }
 
 const DRIVE_STATE: RecordKind[] = [
+  // Optional ciActions telemetry is a bounded top-level tail, ignored by older readers.
   driveTable("drive-state", `${STATE}store.ts`, "drive_state"),
   driveTable("drive-lock", `${STATE}lock.ts`, "locks"),
   driveTable("drive-pr-lease", `${STATE}lease-admission.ts`, "leases"),
@@ -695,6 +696,7 @@ const TREE: RecordKind[] = [
 ];
 
 const FORGE: RecordKind[] = [
+  // The ledger mirrors optional ciActions without extending the control-event vocabulary.
   {
     name: "drive-ledger",
     medium: "forge",
@@ -897,7 +899,7 @@ const TRACKER: RecordKind[] = [
     medium: "tracker",
     owner: "skills/do-item/scripts/lib/claim-marker.ts",
     at: "a comment on an item a claim started, where `do_item.claim_marker` is set",
-    markers: ["jig-claim", "jig-claim-data"],
+    markers: ["jig-claim", "jig-claim-data", "jig-claim-outcome"],
     version: 1,
     key: CLAIM_MARKER_KEY,
   },
