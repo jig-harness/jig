@@ -133,6 +133,7 @@ import {
   type ProcessIdentity,
 } from "./liveness.ts";
 import { currentMs } from "./time.ts";
+import { encodeLockWait } from "./resource-lock-waits.ts";
 /** The longest `LOCK_TIMEOUT` the lock accepts, in seconds. */
 export const MAX_TIMEOUT_SECONDS = 604800;
 /** The most slots a lock has, and so the slots an exclusive holder takes. */
@@ -386,7 +387,7 @@ async function runLockedCommand(
   void cancellation;
   return await child.exited;
 }
-function resourceLockPath(root: string, name: string): string {
+export function resourceLockPath(root: string, name: string): string {
   const safe = Array.from(new TextEncoder().encode(name), (b) =>
     /[A-Za-z0-9._-]/.test(String.fromCharCode(b))
       ? String.fromCharCode(b)
@@ -830,7 +831,7 @@ export async function main(
         try {
           // The predictable name is in a shared temporary directory: never
           // follow a pre-existing entry while publishing this announcement.
-          writeFileSync(waiting, encodeIdentity(ownIdentity()), { flag: "wx" });
+          writeFileSync(waiting, encodeLockWait(), { flag: "wx" });
           announced = true;
         } catch (error) {
           if (
@@ -838,7 +839,7 @@ export async function main(
             reclaimWaitingAnnouncement(waiting)
           ) {
             try {
-              writeFileSync(waiting, encodeIdentity(ownIdentity()), {
+              writeFileSync(waiting, encodeLockWait(), {
                 flag: "wx",
               });
               announced = true;

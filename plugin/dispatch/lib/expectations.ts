@@ -41,6 +41,7 @@ import type {
   Running,
 } from "./types.ts";
 import { currentIso, parseMs } from "../../shared/time.ts";
+import { testLockNote } from "./test-lock-waits.ts";
 
 /** A drive record still running: its wrapper alive. */
 function runningDrive(r: ReadRecord): boolean {
@@ -225,9 +226,16 @@ function sessionDrift(r: ReadRecord, input: DriftInput): Broken | null {
     openedByPickup(r, input.sessions, input.created)
   )
     return null;
+  const original = `it has run ${minutes(elapsed)} and opened no pull request (dispatch.pickup_within ${minutes(within)})`;
+  const wait = testLockNote(record, input.nowMs);
   return {
     expectation: "opens a pull request within pickup_within",
-    why: `it has run ${minutes(elapsed)} and opened no pull request (dispatch.pickup_within ${minutes(within)})`,
+    why:
+      wait === null
+        ? original
+        : record.testLockWait?.waiting
+          ? wait
+          : `${original}; ${wait}`,
     evidence: {
       ...since,
       itemState: input.itemStates.get(record.item ?? "") ?? null,
@@ -239,7 +247,16 @@ function sessionDrift(r: ReadRecord, input: DriftInput): Broken | null {
 /** The expectation a running record breaks, if any. */
 function broken(r: ReadRecord, input: DriftInput): Broken | null {
   if (r.state.kind !== "alive") return null;
-  if (isDrive(r.record)) return driveDrift(r, input.section.driveRoundsFlat);
+  if (isDrive(r.record)) {
+    const drift = driveDrift(r, input.section.driveRoundsFlat);
+    const wait = testLockNote(r.record, input.nowMs);
+    return drift === null || wait === null
+      ? drift
+      : {
+          ...drift,
+          why: r.record.testLockWait?.waiting ? wait : `${drift.why}; ${wait}`,
+        };
+  }
   return sessionDrift(r, input);
 }
 

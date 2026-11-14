@@ -74,7 +74,24 @@ export function optionalLaunchFields(value: Record<string, unknown>): boolean {
     optionalTime(value.endedAt) &&
     optionalTime(value.cancelledAt) &&
     optionalTime(value.openedAt) &&
+    optionalTestLockWait(value.testLockWait) &&
     isRedrive(value.redrive)
+  );
+}
+
+function optionalTestLockWait(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (isMapping(value) &&
+      typeof value.pid === "number" &&
+      Number.isSafeInteger(value.pid) &&
+      value.pid > 0 &&
+      typeof value.workspace === "string" &&
+      typeof value.since === "string" &&
+      Number.isFinite(parseMs(value.since)) &&
+      typeof value.observedAt === "string" &&
+      Number.isFinite(parseMs(value.observedAt)) &&
+      typeof value.waiting === "boolean")
   );
 }
 

@@ -47,6 +47,7 @@ import { noCauseFacts } from "../no-cause-stops.ts";
 import { pendingRearm } from "../rearm-state.ts";
 import { isRecovery, RECOVERY_FACTS, sameFacts } from "../recovery-facts.ts";
 import { DRIVER_REFUSAL_EXITS } from "../../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
+import { testLockNote } from "../test-lock-waits.ts";
 import {
   cancelledBeforeExecution,
   holds,
@@ -82,7 +83,10 @@ function describe(r: ReadRecord): string {
   const s = r.state;
   const what = `launch record ${r.record.id} (${r.record.action} on ${r.record.account})`;
   if (s.kind === "unknown") return `${what} is unknown: ${s.reason}`;
-  if (s.kind === "alive") return `${what} is running, pid ${s.process.pid}`;
+  if (s.kind === "alive") {
+    const wait = testLockNote(r.record);
+    return `${what} is running, pid ${s.process.pid}${wait === null ? "" : `; ${wait}`}`;
+  }
   if (s.kind === "pending") {
     const last = r.record.attempts.at(-1);
     return `${what} is pending${last === undefined ? ", its launch not yet answered" : `, its last launch ${last.outcome}: ${last.detail}`}`;

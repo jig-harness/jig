@@ -396,7 +396,17 @@ function stalledPickup(
 ): Action {
   const idle = input.nowMs - since;
   const note = stallNote(pr);
-  const reason = `stalled pickup: in ${item.state} with no running session for ${minutes(idle)} (dispatch.stalled_after ${minutes(input.section.stalledAfterMs)}); never relaunched, a person settles it${note === null ? "" : `; ${note}`}`;
+  const latest = input.launches
+    .filter(
+      (r) =>
+        r.record.action === "pickup" &&
+        (r.record.item === item.key ||
+          r.record.batchItems?.some((i) => i.key === item.key)),
+    )
+    .sort((a, b) => b.record.createdAt.localeCompare(a.record.createdAt))[0];
+  const wait =
+    latest?.record.testLockWait === undefined ? "" : `; ${endedHow(latest)}`;
+  const reason = `stalled pickup: in ${item.state} with no running session for ${minutes(idle)} (dispatch.stalled_after ${minutes(input.section.stalledAfterMs)}); never relaunched, a person settles it${note === null ? "" : `; ${note}`}${wait}`;
   return {
     stage: "notify",
     target: item.key,

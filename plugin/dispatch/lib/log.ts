@@ -36,6 +36,7 @@
  * filters on.
  */
 import { derivedNext, normalizeNext, type NextOwner } from "./next-owner.ts";
+import { testLockNote } from "./test-lock-waits.ts";
 import type { Database } from "bun:sqlite";
 import { join } from "node:path";
 import { isMapping } from "../../shared/config-layers.ts";
@@ -502,6 +503,8 @@ export function endedRow(
 ): EndedRow {
   const { record } = r;
   const placed = classifyEnded(r, endedAt, facts);
+  const wait = testLockNote(record, undefined, true);
+  if (wait !== null) placed.reason += `; ${wait}`;
   // A re-drive ends like any re-arm; its reason also names why it was launched.
   const redriven =
     record.redrive?.conflictStop === true
