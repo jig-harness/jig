@@ -33,6 +33,7 @@ import {
 import { join } from "node:path";
 import { isMapping } from "../../shared/config-layers.ts";
 import { swallow } from "../../shared/errors.ts";
+import { currentIso } from "../../shared/time.ts";
 import { LAUNCH_RECORD_ID } from "../../shared/records/launch-claims.ts";
 
 /** What was not written: the pass's result, or the stage's exit. */
@@ -71,7 +72,7 @@ export function writeUnwritten(
       record: id,
       token: hash,
       what,
-      at: new Date().toISOString(),
+      at: currentIso(),
       why: why.replace(/\s+/g, " ").trim().slice(0, 500),
     };
     writeFileSync(temporary, `${JSON.stringify(body)}\n`, { mode: 0o600 });

@@ -275,3 +275,111 @@ console.log(JSON.stringify([before, await settleOutcomes(receipt, context, undef
     ]);
   });
 });
+
+describe("a repository whose read a failed call stopped", () => {
+  /** The forge's record of `/a`, failed as `failure`. */
+  function failedRead(receipt: TickReceipt, failure: Record<string, string>) {
+    const [repo] = receipt.repos;
+    if (repo === undefined) throw new Error("no repository");
+    repo.records.push({
+      record: "forge",
+      source: "gh o/a",
+      ok: false,
+      detail: "the pull requests cannot be read",
+      failure: failure as never,
+    });
+  }
+
+  /** Whether `settleOutcomes` fails the tick for each receipt, run where the ledger under `root` is the state's. */
+  async function tickFails(
+    root: string,
+    context: TickContext,
+    receipts: TickReceipt[],
+  ): Promise<boolean[]> {
+    Object.assign(context, { launches: [], nowMs: Date.now() });
+    const child = Bun.spawn(
+      [
+        process.execPath,
+        "--eval",
+        `import { settleOutcomes } from ${JSON.stringify(join(import.meta.dir, "../lib/tick-settle.ts"))};
+const context = ${JSON.stringify(context)};
+const out = [];
+for (const receipt of ${JSON.stringify(receipts)}) out.push(await settleOutcomes(receipt, context, undefined));
+console.log(JSON.stringify(out));`,
+      ],
+      {
+        env: { ...process.env, HOME: root, USERPROFILE: root },
+        stdout: "pipe",
+        stderr: "pipe",
+        timeout: 30_000,
+      },
+    );
+    await expectSpawnExited(child, 0);
+    return JSON.parse(await new Response(child.stdout).text());
+  }
+
+  it("does not fail the tick for a wait under its threshold, and fails it at the threshold or for a refusal", async () => {
+    const until = new Date(Date.now() + 600_000).toISOString();
+    const limited = world(["/a"]);
+    failedRead(limited.receipt, { class: "rate-limited", until });
+    const down = world(["/a"]);
+    failedRead(down.receipt, { class: "unreachable" });
+    const refused = world(["/a"]);
+    failedRead(refused.receipt, { class: "unauthorized" });
+    expect(
+      await tickFails(limited.root, limited.context, [
+        limited.receipt,
+        down.receipt,
+        refused.receipt,
+      ]),
+    ).toEqual([false, false, true]);
+    // Two failures in a row already: the third reaches failures.notify_after.
+    for (const _ of [1, 2])
+      recordFailure(
+        { repo: "/a", key: "repository", kind: "repository", target: "o/a" },
+        "no answer",
+        Date.now(),
+        FAILURE_DEFAULTS,
+        limited.root,
+      );
+    expect(
+      await tickFails(limited.root, limited.context, [
+        limited.receipt,
+        down.receipt,
+      ]),
+    ).toEqual([false, true]);
+  });
+
+  it("neither counts nor clears a rate limit before its reset, and tells a refused credential at once", () => {
+    const { root, context, receipt } = world(["/a"]);
+    recordFailure(
+      { repo: "/a", key: "repository", kind: "repository", target: "o/a" },
+      "no answer",
+      Date.now(),
+      FAILURE_DEFAULTS,
+      root,
+    );
+    failedRead(receipt, {
+      class: "rate-limited",
+      until: new Date(Date.now() + 600_000).toISOString(),
+    });
+    settleFailures(receipt, context);
+    expect(
+      readFailures(undefined, root).find((r) => r.kind === "repository")?.count,
+    ).toBe(1);
+
+    const other = world(["/b"]);
+    const [repo] = other.receipt.repos;
+    if (repo === undefined) throw new Error("no repository");
+    repo.refused = "the forge cannot say which repository this is";
+    repo.refusedBy = { class: "unauthorized" };
+    settleFailures(other.receipt, other.context);
+    const row = readFailures(undefined, other.root).find(
+      (r) => r.kind === "repository",
+    );
+    expect(row?.count).toBe(FAILURE_DEFAULTS.notifyAfter);
+    expect(other.receipt.failures?.escalated.map((e) => e.kind)).toContain(
+      "repository",
+    );
+  });
+});

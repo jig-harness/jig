@@ -1,6 +1,6 @@
 /** Re-read local identity; preserve unknown evidence and the session-lock veto. */
-import { lstatSync, readdirSync, realpathSync } from "node:fs";
-import { isAbsolute, join, normalize, resolve } from "node:path";
+import { lstatSync, realpathSync } from "node:fs";
+import { isAbsolute, normalize, resolve } from "node:path";
 import { layeredConfig, remoteName } from "../../shared/consumer.ts";
 import { readDrivenTree, type DrivenTree } from "../../shared/driven-tree.ts";
 import { isMapping } from "../../shared/config-layers.ts";
@@ -10,7 +10,6 @@ import {
   GIT_OPERATION_MARKERS,
   hidesIndexChanges,
 } from "../../shared/idle-holder.ts";
-import { detectPackageManager } from "../../shared/detect/package-manager.ts";
 import { orcaFailure, orcaResult, runOrca } from "../../shared/orca.ts";
 import { gcGit as git, type GitOutcome } from "../git.ts";
 import type { Proof } from "../types.ts";
@@ -18,10 +17,20 @@ import { guardLabel } from "./worktree-guard.ts";
 import {
   classifyWorktree,
   localWorktreeVeto,
-  type IgnoredContent,
+  namedPaths,
   type WorktreeEvidence,
   type WorktreeRequest,
 } from "./worktree-evidence.ts";
+import { classifyIgnored, type IgnoredContent } from "./worktree-ignored.ts";
+import {
+  archiveIgnored,
+  measure,
+  worktreeCreatedAt,
+  type Archived,
+  type LegacyPolicy,
+} from "../legacy-archive.ts";
+
+export { classifyIgnored };
 import {
   aheadOfBase,
   ancestry,
@@ -32,10 +41,13 @@ import {
   requestsForCommit,
   worktreeActivity,
 } from "./worktree-git.ts";
+import { currentMs } from "../../shared/time.ts";
 
 export interface WorktreePolicy {
   remote: string;
   base: string;
+  /** Where a worktree older than marking may have its unmarked ignored content archived; absent, none is. */
+  legacy?: LegacyPolicy | undefined;
 }
 /**
  * The remote and integration branch a branched worktree's evidence is read
@@ -89,98 +101,6 @@ async function operation(admin: string): Promise<string | null> {
     }
   }
   return null;
-}
-/** The ignored-content scan's failure once its deadline has passed. */
-type Late = { ok: false; failure: { code: "timed-out"; reason: string } };
-function late(deadline: number): Late | null {
-  return Date.now() > deadline
-    ? failed("timed-out", "Ignored-content scan exceeded its deadline")
-    : null;
-}
-/**
- * Whether `directory` (a path under `root`) holds nothing but dependency
- * directories: the shape of a wholly ignored workspace folder that git
- * reports as one collapsed entry, hiding the `node_modules` inside it. A
- * symbolic link or any other file is local state and fails it. The walk
- * is bounded by `deadline` (checked on entering a directory and per entry,
- * like `worktreeActivity`) and fails `timed-out` when it passes, so a huge
- * ignored cache cannot hold the collector.
- */
-function onlyDependencyDirectories(
-  directory: string,
-  deadline: number,
-): Outcome<boolean, "timed-out"> {
-  const entering = late(deadline);
-  if (entering) return entering;
-  const children = readdirSync(directory);
-  if (children.length === 0) return ok(false);
-  for (const child of children) {
-    const passed = late(deadline);
-    if (passed) return passed;
-    const path = join(directory, child);
-    const stat = lstatSync(path);
-    if (!stat.isDirectory()) return ok(false);
-    if (child === "node_modules") continue;
-    const nested = onlyDependencyDirectories(path, deadline);
-    if (!nested.ok || !nested.value) return nested;
-  }
-  return ok(true);
-}
-/** Whether the root holds a manifest and a recognised lockfile to rebuild from. */
-function rebuildInputs(root: string): boolean {
-  if (detectPackageManager(root).found === null) return false;
-  try {
-    return lstatSync(join(root, "package.json")).isFile();
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
-    throw error;
-  }
-}
-/**
- * Ignored directories that a package manager's dependency directory accounts
- * for, wherever they sit (a monorepo's nested `node_modules` counts too):
- * rebuildable from the root's `package.json` and the lockfile
- * `detectPackageManager` found, never meaningful local state. Only a real
- * directory counts (git marks one with a trailing slash), so an ignored file
- * or link named `node_modules` stays local state, as does a collapsed
- * directory that holds anything beside dependency directories. No field
- * declares an override, since every ecosystem that module recognises needs
- * none; a lockfile-less ecosystem's own rebuildable directory would be
- * grounds to add one.
- */
-export function classifyIgnored(
-  root: string,
-  paths: string[],
-  deadline = Date.now() + 30_000,
-): Outcome<IgnoredContent, "timed-out"> {
-  const inputs = rebuildInputs(root);
-  const rebuildable: string[] = [];
-  const other: string[] = [];
-  for (const path of paths) {
-    const passed = late(deadline);
-    if (passed) return passed;
-    const dependency = inputs
-      ? dependencyEntry(root, path, deadline)
-      : ok(false);
-    if (!dependency.ok) return dependency;
-    (dependency.value ? rebuildable : other).push(path);
-  }
-  return ok({ rebuildable, other });
-}
-/**
- * Whether one ignored entry is a dependency directory: a directory named
- * `node_modules`, or a collapsed one holding nothing but dependency
- * directories.
- */
-function dependencyEntry(
-  root: string,
-  path: string,
-  deadline: number,
-): Outcome<boolean, "timed-out"> {
-  if (!path.endsWith("/")) return ok(false);
-  const directory = path.slice(0, -1);
-  if (directory.split("/").pop() === "node_modules") return ok(true);
-  return onlyDependencyDirectories(join(root, directory), deadline);
 }
 async function mergedHeadCoverage(
   root: string,
@@ -431,6 +351,28 @@ async function attachedDrive(
   if (descends === null) return untold();
   return ok(descends ? record : null);
 }
+/** The worktree's ignored content, as git lists it and the rules account for it. */
+async function ignoredContentOf(
+  path: string,
+): Promise<Outcome<IgnoredContent>> {
+  const ignored = await git(path, [
+    "ls-files",
+    "--others",
+    "--ignored",
+    "--exclude-standard",
+    // A wholly ignored directory (node_modules, in the common case) is
+    // one entry, not every file inside it: a dependency tree can hold
+    // tens of thousands, which would otherwise bloat every veto reason
+    // and receipt line that names it.
+    "--directory",
+    "-z",
+  ]);
+  if (!ignored.ok) return ignored;
+  return classifyIgnored(
+    path,
+    ignored.value.split("\0").filter((entry) => entry !== ""),
+  );
+}
 /**
  * What the tree itself holds: uncommitted and index-hidden changes, an
  * operation in progress and its ignored content. Forge and history evidence
@@ -447,23 +389,7 @@ async function localEvidence(
   if (!status.ok) return status;
   const changes = hidesIndexChanges(flags.value);
   const state = await operation(admin);
-  const ignored = await git(path, [
-    "ls-files",
-    "--others",
-    "--ignored",
-    "--exclude-standard",
-    // A wholly ignored directory (node_modules, in the common case) is
-    // one entry, not every file inside it: a dependency tree can hold
-    // tens of thousands, which would otherwise bloat every veto reason
-    // and receipt line that names it.
-    "--directory",
-    "-z",
-  ]);
-  if (!ignored.ok) return ignored;
-  const ignoredContent = classifyIgnored(
-    path,
-    ignored.value.split("\0").filter((entry) => entry !== ""),
-  );
+  const ignoredContent = await ignoredContentOf(path);
   if (!ignoredContent.ok) return ignoredContent;
   return ok({
     dirty: !!status.value,
@@ -527,24 +453,93 @@ async function identityUnchanged(
   return ok(undefined);
 }
 /**
- * A proof carrying the paths set aside as rebuildable, whatever its state,
- * so the receipt says what was judged rebuildable even for a worktree that
- * goes on to report `would-collect`, and, for a detached tree, how its pull
- * requests were found.
+ * A proof carrying what was set aside and by which rule, and the archive a
+ * worktree older than marking would get, whatever its state, so the receipt
+ * says it even for a worktree that goes on to report `would-collect`, and, for
+ * a detached tree, how its pull requests were found.
  */
-function withRebuildable(
+function withSetAside(
   facts: WorktreeEvidence,
   proof: Proof,
   source: string | null = null,
 ): Outcome<Proof> {
-  const told = source
-    ? { ...proof, reason: `${proof.reason}; ${source}` }
-    : proof;
+  const { rebuildable, setAside } = facts.ignoredContent;
+  const archive = facts.archive ?? null;
+  const details = {
+    ...(rebuildable.length ? { rebuildable } : {}),
+    ...(setAside.length ? { setAside } : {}),
+    ...(archive ? { archive } : {}),
+  };
+  const base =
+    archive && proof.state === "dead"
+      ? `${proof.reason}; ignored content no rule accounts for (${namedPaths(archive.paths)}, ${archive.bytes} bytes) is archived once before removal, since the worktree predates marking`
+      : proof.reason;
+  const reason = source ? `${base}; ${source}` : base;
   return ok(
-    facts.ignoredContent.rebuildable.length
-      ? { ...told, details: { rebuildable: facts.ignoredContent.rebuildable } }
-      : told,
+    Object.keys(details).length
+      ? { ...proof, reason, details }
+      : { ...proof, reason },
   );
+}
+/**
+ * Plan the one-time archive of a worktree created before marking began on
+ * this host: its ignored content no rule accounts for is archived before
+ * removal, instead of vetoing it, when it fits the size bound. A worktree
+ * whose creation time cannot be read is not shown to predate marking, so its
+ * content still vetoes. Null to go on; a proof when the content is too large
+ * to archive.
+ */
+function legacyArchivePlan(
+  path: string,
+  admin: string,
+  facts: WorktreeEvidence,
+  legacy: LegacyPolicy | undefined,
+): Outcome<Proof | null> {
+  const other = facts.ignoredContent.other;
+  if (other.length === 0 || legacy === undefined || legacy.maxBytes === 0)
+    return ok(null);
+  const created = worktreeCreatedAt(admin);
+  if (!created.ok || created.value >= legacy.since) return ok(null);
+  const measured = measure(path, other, legacy.maxBytes, currentMs() + 30_000);
+  if (!measured.ok) return measured;
+  if (measured.value.bytes > legacy.maxBytes)
+    return ok({
+      state: "finding",
+      reason: `ignored local content (${namedPaths(other)}) has no independent preservation proof and exceeds the ${legacy.maxBytes}-byte bound of the one-time archive`,
+    });
+  facts.archive = { paths: other, bytes: measured.value.bytes };
+  return ok(null);
+}
+/**
+ * Archive, right before removal, the ignored content no rule accounts for in
+ * a worktree created before marking began: the content as it is now, which
+ * may differ from what the proof saw. Null when there is none. Anything else
+ * (a worktree created since, a creation time that cannot be read, content
+ * past the bound, a copy that fails or does not verify) keeps the worktree.
+ */
+export async function preserveLegacyContent(
+  path: string,
+  legacy: LegacyPolicy | undefined,
+  deadline: number,
+): Promise<Outcome<Archived | null>> {
+  const content = await ignoredContentOf(path);
+  if (!content.ok) return content;
+  const other = content.value.other;
+  if (other.length === 0) return ok(null);
+  const unpreserved = failed(
+    "unpreserved",
+    `kept: ignored local content (${namedPaths(other)}) has no independent preservation proof`,
+  );
+  if (legacy === undefined || legacy.maxBytes === 0) return unpreserved;
+  const dir = await git(path, ["rev-parse", "--git-dir"]);
+  if (!dir.ok) return dir;
+  const admin = isAbsolute(dir.value) ? dir.value : resolve(path, dir.value);
+  const created = worktreeCreatedAt(admin);
+  if (!created.ok || created.value >= legacy.since) return unpreserved;
+  const archived = archiveIgnored(path, other, legacy, deadline);
+  if (!archived.ok)
+    return failed(archived.failure.code, `kept: ${archived.failure.reason}`);
+  return archived;
 }
 /**
  * The proof of a worktree no runtime manages, or the runtime's proof after
@@ -565,14 +560,29 @@ export async function worktreeProof(
   const local = await localEvidence(path, identity.value.admin, coordinated);
   if (!local.ok) return local;
   const facts = local.value;
+  // Changes, index flags and an operation in progress veto before ignored
+  // content is weighed for an archive.
+  const unarchivable = localWorktreeVeto({
+    ...facts,
+    ignoredContent: { ...facts.ignoredContent, other: [] },
+  });
+  if (unarchivable) return withSetAside(facts, unarchivable);
+  const planned = legacyArchivePlan(
+    path,
+    identity.value.admin,
+    facts,
+    policy.legacy,
+  );
+  if (!planned.ok) return planned;
+  if (planned.value) return withSetAside(facts, planned.value);
   const veto = localWorktreeVeto(facts);
-  if (veto) return withRebuildable(facts, veto);
+  if (veto) return withSetAside(facts, veto);
   const found = await treeRequests(path, policy, identity.value);
   if (!found.ok) return found;
   const { source } = found.value;
   const proved = { ...facts, requests: found.value.found };
   if (proved.requests.some((pr) => pr.state === "OPEN"))
-    return withRebuildable(
+    return withSetAside(
       proved,
       classifyWorktree(proved, idleDays * 86_400_000),
       source,
@@ -581,7 +591,7 @@ export async function worktreeProof(
   if (!history.ok) return history;
   const unchanged = await identityUnchanged(path, identity.value);
   if (!unchanged.ok) return unchanged;
-  return withRebuildable(
+  return withSetAside(
     proved,
     classifyWorktree(proved, idleDays * 86_400_000),
     source,

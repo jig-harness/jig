@@ -6,6 +6,7 @@
  * The planning rule and the settlement that releases the marker, read from
  * their inputs.
  */
+import { isoFromMs } from "../../shared/time.ts";
 import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -360,7 +361,7 @@ async function released(
       rerunsHeld,
     },
     records,
-    new Date(NOW).toISOString(),
+    isoFromMs(NOW),
     undefined,
     async (_ctx, record) => {
       ids.push(record.record.id);

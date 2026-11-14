@@ -81,6 +81,7 @@ import type {
   Unplaced,
   WantedItem,
 } from "./types.ts";
+import { parseMs } from "../../shared/time.ts";
 
 export interface PlanInput {
   values?: Record<string, unknown>;
@@ -377,11 +378,11 @@ function stoppedOurs(pr: DrivenPr, launches: ReadRecord[]): boolean {
     latest.state.exit.code !== (pr.evidence.exit ?? null)
   )
     return false;
-  const beat = Date.parse(String(pr.evidence.heartbeat));
+  const beat = parseMs(String(pr.evidence.heartbeat));
   return (
     Number.isFinite(beat) &&
-    beat >= Date.parse(latest.record.createdAt) &&
-    beat <= Date.parse(latest.state.exit.at) + EXIT_SLACK_MS
+    beat >= parseMs(latest.record.createdAt) &&
+    beat <= parseMs(latest.state.exit.at) + EXIT_SLACK_MS
   );
 }
 

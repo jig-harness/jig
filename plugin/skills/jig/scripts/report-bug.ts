@@ -69,6 +69,7 @@ import {
 } from "../../../shared/guarded-git-spawn.ts";
 import { swallow } from "../../../shared/errors.ts";
 import { pluginVersion } from "../../../shared/plugin-version.ts";
+import { currentMs, parseMs } from "../../../shared/time.ts";
 
 /** Jig's own repository, where its issues are filed. */
 export const JIG_REPOSITORY = "jig-harness/jig";
@@ -771,7 +772,7 @@ const SKEW_MS = 60_000;
  * (`since`) so that an older match could lie beyond it. It lists rather than
  * searches, since GitHub's search index lags behind a new issue.
  */
-function findFiled(title: string, since: Date): string | null | undefined {
+function findFiled(title: string, since: number): string | null | undefined {
   const run = gh([
     "issue",
     "list",
@@ -793,10 +794,8 @@ function findFiled(title: string, since: Date): string | null | undefined {
     const match = parsed.find((i) => i.title === title);
     if (match) return match.url;
     if (parsed.length < FILED_WINDOW) return null;
-    const oldest = Math.min(
-      ...parsed.map((i) => Date.parse(String(i.createdAt))),
-    );
-    return oldest < since.getTime() - SKEW_MS ? null : undefined;
+    const oldest = Math.min(...parsed.map((i) => parseMs(String(i.createdAt))));
+    return oldest < since - SKEW_MS ? null : undefined;
   } catch (error) {
     swallow(error, "search output unreadable; creation outcome unknown");
     return undefined;
@@ -807,7 +806,7 @@ function findFiled(title: string, since: Date): string | null | undefined {
 function reportFilingFailure(
   d: Draft,
   run: ReturnType<typeof gh>,
-  since: Date,
+  since: number,
 ): never {
   const reason = `could not file with gh: ${why(run)}`;
   const existing = precedesCreation(run) ? null : findFiled(d.title, since);
@@ -875,9 +874,9 @@ function droppedNote(labels: string[]): string | null {
 function createIssue(d: Draft): {
   run: ReturnType<typeof gh>;
   typed: boolean;
-  since: Date;
+  since: number;
 } {
-  const since = new Date();
+  const since = currentMs();
   const run = gh(fileArgs(d), d.body);
   if (run.status === 0 || !typeRefused(run, d.title, since))
     return { run, typed: true, since };
@@ -899,7 +898,7 @@ function createIssue(d: Draft): {
 function typeRefused(
   run: ReturnType<typeof gh>,
   title: string,
-  since: Date,
+  since: number,
 ): boolean {
   if (precedesCreation(run) || !/\btype\b/i.test(why(run))) return false;
   return findFiled(title, since) === null;

@@ -35,6 +35,7 @@ import {
   writeTreeLease,
 } from "./lease-records.ts";
 import { createLock, LOCK_ACQUIRE_MAX_SEC, type PathLock } from "./lock.ts";
+import { currentMs, parseMs } from "../../../../../shared/time.ts";
 
 /** Refuse when a live session other than this sessionless caller holds the tree. */
 function checkNoForeignSessionInTree(held: TreeLease | null): void {
@@ -142,7 +143,7 @@ function freshTreeClaim(
     seen.holder !== holder ||
     !owns(seen) ||
     seen.pr !== pr ||
-    !(Date.now() - Date.parse(seen.lastSeen) < renewAfterMs())
+    !(currentMs() - parseMs(seen.lastSeen) < renewAfterMs())
   )
     return null;
   return { lease: seen, wrote: null, before: null };

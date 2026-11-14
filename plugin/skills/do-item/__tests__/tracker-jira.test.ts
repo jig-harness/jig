@@ -21,7 +21,6 @@ import {
 
 const NOT_FOUND = new JiraApiError("not found", {
   status: 404,
-  notFound: true,
 });
 
 const LINK_TYPES = {
@@ -808,7 +807,6 @@ describe("Jira adapter: reach", () => {
   it("passes an unavailable Jira on as it is", async () => {
     const down = new JiraApiError("HTTP 503", {
       status: 503,
-      unavailable: true,
     });
     await expect(
       jira(routes({ "GET project/ENG": down })).t.reach(),

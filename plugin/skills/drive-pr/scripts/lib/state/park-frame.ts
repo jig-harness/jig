@@ -10,6 +10,7 @@ import { isDecisionDigest } from "../../../../../shared/decisions/digest.ts";
  * command code.
  */
 import type { ParkedDecision } from "../../../../../shared/decisions/park.ts";
+import { parseMs } from "../../../../../shared/time.ts";
 export interface ParkedItem {
   /** The person this question routes to; absent only on older parks. */
   person?: string;
@@ -52,7 +53,7 @@ export function isParkedItem(p: unknown): boolean {
     Number.isInteger(e.round) &&
     e.round >= 0 &&
     (e.at === undefined ||
-      (typeof e.at === "string" && Number.isFinite(Date.parse(e.at))))
+      (typeof e.at === "string" && Number.isFinite(parseMs(e.at))))
   );
 }
 

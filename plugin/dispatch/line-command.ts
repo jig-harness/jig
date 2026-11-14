@@ -10,6 +10,7 @@ import { failureFields } from "../shared/errors.ts";
 import { log } from "../shared/log.ts";
 import { stateAnswer } from "./lib/line-store.ts";
 import { stateRoot } from "./receipts.ts";
+import { currentMs } from "../shared/time.ts";
 
 /** Exit when the stored line cannot be read. */
 const LINE_UNREADABLE_EXIT = 1;
@@ -26,7 +27,7 @@ export interface LineOptions {
 /** Print the `GET /state` answer; a line that does not read is one line on stderr and exit 1. */
 export function lineMain(options: LineOptions = {}): number {
   const answer = stateAnswer(
-    options.nowMs ?? Date.now(),
+    options.nowMs ?? currentMs(),
     options.root ?? stateRoot(),
   );
   if (!answer.ok) {

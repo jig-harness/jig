@@ -50,6 +50,7 @@ import {
   resolveAreas,
   validCatalog,
 } from "./change-areas.ts";
+import { currentIso } from "../plugin/shared/time.ts";
 
 export const RECORD = "website/content-sync.yaml";
 const MAIN = "origin/main";
@@ -355,11 +356,7 @@ function main(): number {
   }
   try {
     if (values.advance) {
-      const sha = advance(
-        root,
-        values.advance,
-        new Date().toISOString().slice(0, 10),
-      );
+      const sha = advance(root, values.advance, currentIso().slice(0, 10));
       console.log(`${RECORD}: checked through ${sha}`);
       return 0;
     }

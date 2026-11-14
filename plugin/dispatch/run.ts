@@ -11,14 +11,20 @@
  * the pull request's workspace, the pass being the documented pass command
  * of the account's vendor (`claude -p "/jig:drive-pr --bots-only <PR>"`, or
  * Codex's `codex exec …`, with the bypass when the record says the tick
- * admitted it on a host that opted in) and the deadline the one the tick
- * admitted it under, with the account's configuration directory set (`CLAUDE_CONFIG_DIR`
+ * admitted it on a host that opted in, and the host's `drive.codex_pass_args`
+ * the record keeps before the prompt, or `--pass-args ''` on a record that
+ * keeps none, so `drive.ts` adds no others) and the deadline the one the
+ * tick admitted it under, with the account's configuration directory set (`CLAUDE_CONFIG_DIR`
  * or `CODEX_HOME`) and the credential variables and the other directory
  * variable removed, so the pass bills the account the tick admitted. When
  * the drive ends it records the exit, and an exit of `QUOTA_PARKED` (`16`,
  * a usage-limit wall) writes the account's wall: the reset the drive
- * recorded, else `wall_backoff` from now. The drive's exits are read by
- * name from drive-pr's terminal-state registry (`DRIVE_EXIT`).
+ * recorded, else `wall_backoff` from now. The drive's error output passes
+ * through the wrapper, which keeps its end: an exit on `drive.ts`'s usage
+ * error (`UNSUPPORTED_CLI`) records the drive's message on the exit
+ * (`usage`, one bounded line), which the tick tells a person instead of
+ * launching the same command again. The drive's exits are read by name from
+ * drive-pr's terminal-state registry (`DRIVE_EXIT`).
  *
  *   bun … run.ts identity claude|codex
  *
@@ -48,10 +54,10 @@
  * account the same way. A Claude Code pass gets the host's
  * `drive.pass_args`, read here in the workspace as `drive.ts` reads them for
  * a drive's pass, and a Codex pass the bypass only when the record says the
- * tick admitted it on a host that opted in; the wrapper adds no permission
- * of its own. The wrapper stops the pass at the deadline the record names,
- * passes its output through, and keeps its last `Question:` line, nothing
- * else of it, on the exit of a pass that ended without recording `done`:
+ * tick admitted it on a host that opted in, with the `drive.codex_pass_args`
+ * the record keeps; the wrapper adds no permission of its own. The wrapper stops the pass at the deadline the record names,
+ * passes its output through and keeps a bounded diagnostic tail. Its last
+ * `Question:` line is also kept unless the pass recorded `done`:
  * that is where a pass that needs a person states its question.
  *
  * A pickup's record starts a headless pass the same way, on
@@ -93,6 +99,7 @@ import { resolve } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { swallow } from "../shared/errors.ts";
 import { QuestionTail } from "./lib/question-tail.ts";
+import { passOutput } from "./lib/pass-output.ts";
 import { NO_WATCH, watchWindowsTree } from "./lib/windows-tree.ts";
 import { captureIdentity } from "../shared/liveness.ts";
 import { endOwnTab, withoutRunTabMarker } from "../shared/orca-tabs.ts";
@@ -137,6 +144,13 @@ import { writeWall } from "./lib/walls.ts";
 import { writeUnwritten } from "./lib/unwritten-result.ts";
 import { stateRoot } from "./receipts.ts";
 import { failedStartup } from "./lib/session-startup.ts";
+import {
+  currentIso,
+  currentMs,
+  isoFromMs,
+  parseInstant,
+  parseMs,
+} from "../shared/time.ts";
 
 const CLAIMED = 3;
 const FORWARDED = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
@@ -146,7 +160,9 @@ const BUNFIG = resolve(import.meta.dir, "bunfig.toml");
 /**
  * The drive command a record starts, under the same trusted startup as this
  * wrapper: the documented pass command of the record's vendor, under the
- * pass deadline and the host's opt-in the record was admitted with.
+ * pass deadline and the host's opt-in the record was admitted with. A Codex
+ * pass carries the extra words the record keeps; with none, `--pass-args ''`
+ * keeps `drive.ts` from adding any it reads later.
  */
 function driveCommand(record: LaunchRecord, script: string): string[] {
   const pr = String(record.pr);
@@ -154,7 +170,14 @@ function driveCommand(record: LaunchRecord, script: string): string[] {
   const settleTree =
     record.redrive?.uncleanTree === true ||
     (record.rearmLabel != null && record.facts.includes(", exit 12,"));
-  const pass = passCommand(record.vendor, pr, record.codexBypass === true);
+  const words = record.codexPassArgs ?? [];
+  const pass = passCommand(
+    record.vendor,
+    pr,
+    record.codexBypass === true,
+    words,
+  );
+  const pinned = record.vendor === "codex" && words.length === 0;
   if (settleTree)
     pass[pass.length - 1] +=
       "\nThe original tree holds uncommitted work. Inspect it: commit and push edits that belong to this change, or discard edits only when they are known disposable. Stop if ownership is unclear. Settle the existing tree before reporting convergence.";
@@ -167,6 +190,7 @@ function driveCommand(record: LaunchRecord, script: string): string[] {
     ...(record.action === "takeover" ? ["--take-over"] : []),
     "--bots-only",
     ...(settleTree ? ["--settle-worktree"] : []),
+    ...(pinned ? ["--pass-args", ""] : []),
     ...(typeof deadline === "number"
       ? ["--pass-timeout", String(deadline)]
       : []),
@@ -180,6 +204,8 @@ function driveScript(): string {
   return process.env.JIG_DISPATCH_DRIVE_SCRIPT || driveTs;
 }
 
+/** How much of a drive's usage message its exit keeps. */
+const USAGE_CHARS = 600;
 /** How much of a follow-up pass's last `Question:` line its exit keeps. */
 const QUESTION_CHARS = 1000;
 /** How long a pass stopped at its deadline has to end before it is killed. */
@@ -191,6 +217,10 @@ interface Ran {
   started?: number;
   exited?: number;
   output?: string;
+  /** The end of the stage's error output, where the wrapper kept it. */
+  errors?: string;
+  /** Per-stream reconstruction for startup notices whose chunks interleave. */
+  startupOutput?: string;
   code: number | null;
   signal: string | null;
   /** The stage's last `Question:` line, where the wrapper kept it. */
@@ -199,9 +229,10 @@ interface Ran {
   unconfirmed?: true;
 }
 
-/** How the wrapper runs a stage: whether it keeps its last question, and the deadline it enforces itself (seconds, `0` for none). */
+/** How the wrapper runs a stage: whether it keeps its last question, or only the end of its error output, and the deadline it enforces itself (seconds, `0` for none). */
 interface RunOptions {
   keepOutput: boolean;
+  keepErrors?: boolean;
   deadlineSec: number;
 }
 
@@ -222,8 +253,8 @@ async function endGroup(
 ): Promise<void> {
   if (pid === undefined || !groupAlive(pid)) return;
   signalTree("SIGKILL");
-  const gone = Date.now() + DRAIN_MS;
-  while (groupAlive(pid) && Date.now() < gone) await Bun.sleep(20);
+  const gone = currentMs() + DRAIN_MS;
+  while (groupAlive(pid) && currentMs() < gone) await Bun.sleep(20);
 }
 
 /** The timers that stop a pass at its deadline: a signal, then a kill after the grace. */
@@ -256,8 +287,8 @@ async function drainOutput(
   child: ChildProcess,
   drained: () => boolean,
 ): Promise<void> {
-  const until = Date.now() + DRAIN_MS;
-  while (!drained() && Date.now() < until) await Bun.sleep(20);
+  const until = currentMs() + DRAIN_MS;
+  while (!drained() && currentMs() < until) await Bun.sleep(20);
   if (!drained()) releasePipe(child);
 }
 
@@ -276,7 +307,8 @@ function runStage(
   options: RunOptions = { keepOutput: false, deadlineSec: 0 },
 ): Promise<Ran> {
   return new Promise((settle) => {
-    const started = Date.now();
+    const started = currentMs();
+    let output = "";
     let stdout = "";
     let stderr = "";
     const stdoutDecoder = new StringDecoder("utf8");
@@ -289,7 +321,11 @@ function runStage(
       cwd,
       env,
       detached: grouped,
-      stdio: options.keepOutput ? ["inherit", "pipe", "pipe"] : "inherit",
+      stdio: options.keepOutput
+        ? ["inherit", "pipe", "pipe"]
+        : options.keepErrors === true
+          ? ["inherit", "inherit", "pipe"]
+          : "inherit",
     });
     const watch = treed
       ? watchWindowsTree(
@@ -315,7 +351,9 @@ function runStage(
     const tail = new QuestionTail(QUESTION_PREFIX, QUESTION_CHARS);
     let drained = !options.keepOutput;
     child.stdout?.on("data", (chunk: Buffer) => {
-      stdout = (stdout + stdoutDecoder.write(chunk)).slice(-8192);
+      const decoded = stdoutDecoder.write(chunk);
+      stdout = (stdout + decoded).slice(-8192);
+      output = (output + decoded).slice(-8192);
       if (!process.stdout.write(chunk)) {
         child.stdout?.pause();
         process.stdout.once("drain", () => child.stdout?.resume());
@@ -323,19 +361,25 @@ function runStage(
       tail.write(chunk);
     });
     child.stdout?.on("end", () => {
-      stdout = (stdout + stdoutDecoder.end()).slice(-8192);
+      const decoded = stdoutDecoder.end();
+      stdout = (stdout + decoded).slice(-8192);
+      output = (output + decoded).slice(-8192);
       drained = true;
     });
-    let stderrDrained = !options.keepOutput;
+    let stderrDrained = child.stderr === null;
     child.stderr?.on("data", (chunk: Buffer) => {
-      stderr = (stderr + stderrDecoder.write(chunk)).slice(-8192);
+      const decoded = stderrDecoder.write(chunk);
+      stderr = (stderr + decoded).slice(-8192);
+      output = (output + decoded).slice(-8192);
       if (!process.stderr.write(chunk)) {
         child.stderr?.pause();
         process.stderr.once("drain", () => child.stderr?.resume());
       }
     });
     child.stderr?.on("end", () => {
-      stderr = (stderr + stderrDecoder.end()).slice(-8192);
+      const decoded = stderrDecoder.end();
+      stderr = (stderr + decoded).slice(-8192);
+      output = (output + decoded).slice(-8192);
       stderrDrained = true;
     });
     const forward = (name: NodeJS.Signals) => signalTree(name);
@@ -347,7 +391,7 @@ function runStage(
     const done = async (code: number | null, signal: string | null) => {
       if (ended) return;
       ended = true;
-      const exited = Date.now();
+      const exited = currentMs();
       for (const timer of timers) clearTimeout(timer);
       watch.stopSampling();
       // What the agent started can outlive it; the exit is published once the group has ended.
@@ -361,7 +405,9 @@ function runStage(
         signal,
         started,
         exited,
-        output: `${stdout}\n${stderr}`,
+        output,
+        startupOutput: `${stdout}\n${stderr}`,
+        ...(child.stderr === null ? {} : { errors: stderr }),
         ...(!treeEnded ? { unconfirmed: true as const } : {}),
         ...(options.keepOutput && tail.question !== ""
           ? { said: tail.question }
@@ -407,22 +453,22 @@ async function recordedReset(
   nowMs: number,
 ): Promise<string | null> {
   const reset = await parkedReset(pr);
-  return reset !== null && Date.parse(reset) > nowMs ? reset : null;
+  return reset !== null && parseMs(reset) > nowMs ? reset : null;
 }
 
 async function writeAccountWall(
   record: LaunchRecord & { pr: number },
 ): Promise<void> {
-  const now = Date.now();
+  const now = currentMs();
   const reset = await recordedReset(record.pr, now);
   const path = writeWall({
     account: record.account,
     vendor: record.vendor,
     configDir: record.configDir,
-    resetAt: reset ?? new Date(now + record.wallBackoffMs).toISOString(),
+    resetAt: reset ?? isoFromMs(now + record.wallBackoffMs),
     source:
       reset === null
-        ? `no reset recorded; wall_backoff from ${new Date(now).toISOString()}`
+        ? `no reset recorded; wall_backoff from ${isoFromMs(now)}`
         : `the drive's quota park on PR #${record.pr}`,
   });
   console.error(`jig dispatch run: ${record.account} is walled (${path})`);
@@ -448,13 +494,15 @@ async function tryWriteWall(
  * recorded. Throws when the pass's permission settings do not read.
  */
 function stageArgv(record: LaunchRecord): string[] {
+  // `drive.pass_args` is Claude Code's: a Codex pass never reads it, so a bad value cannot stop one.
+  const claudeWords = (): readonly string[] =>
+    record.vendor === "codex" ? [] : configuredPassArgs().words;
   if (record.action === "steward")
-    return stewardPassArgv(record, configuredPassArgs().words);
+    return stewardPassArgv(record, claudeWords());
   if (isDrive(record)) return driveCommand(record, driveScript());
   if (record.action === "followup")
-    return followupPassArgv(record, configuredPassArgs().words);
-  if (!isInteractive(record))
-    return pickupPassArgv(record, configuredPassArgs().words);
+    return followupPassArgv(record, claudeWords());
+  if (!isInteractive(record)) return pickupPassArgv(record, claudeWords());
   return sessionArgv(record);
 }
 
@@ -467,9 +515,14 @@ function ownPass(record: LaunchRecord): boolean {
   );
 }
 
-/** How the wrapper runs a record's stage: its own pass under its deadline, its last question kept; anything else as it is. */
+/** How the wrapper runs a record's stage: its own pass under its deadline, its last question kept; a drive with the end of its error output kept; anything else as it is. */
 function runOptions(record: LaunchRecord): RunOptions {
-  if (!ownPass(record)) return { keepOutput: false, deadlineSec: 0 };
+  if (!ownPass(record))
+    return {
+      keepOutput: isDrive(record),
+      keepErrors: isDrive(record),
+      deadlineSec: 0,
+    };
   const deadline = record.passTimeoutSec;
   return {
     keepOutput: true,
@@ -477,14 +530,37 @@ function runOptions(record: LaunchRecord): RunOptions {
   };
 }
 
-/** The end of a follow-up's or a pickup's pass output, kept on its exit when it ended without recording done. */
+/** Keep bounded diagnostic output independently of whether a pass asked a question. */
 function saidOf(
   record: LaunchRecord,
   ran: Ran,
 ): { said?: string; context?: string } {
-  const said = ran.said?.trim() ?? "";
-  if (said === "" || readResult(record.id) === "done") return {};
-  return { said, context: (ran.output ?? "").slice(-8000) };
+  return passOutput(ran, readResult(record.id), record.token);
+}
+
+/**
+ * The drive's message on an exit on its usage error: from the last line its
+ * output starts with `drive.ts` (where `drive.ts` states a refusal), else its
+ * last lines, joined into one line and bounded.
+ */
+function usageOf(
+  record: Pick<LaunchRecord, "action">,
+  ran: Pick<Ran, "code" | "errors">,
+): { usage?: string } {
+  if (!isDrive(record) || ran.code !== DRIVE_EXIT.UNSUPPORTED_CLI) return {};
+  const lines = (ran.errors ?? "")
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter((line) => line !== "");
+  let from = lines.length - 3;
+  for (const [i, line] of lines.entries())
+    if (line.startsWith("drive.ts")) from = i;
+  const said = lines.slice(Math.max(0, from)).join(" ");
+  if (said === "") return {};
+  return {
+    usage:
+      said.length > USAGE_CHARS ? `${said.slice(0, USAGE_CHARS - 1)}…` : said,
+  };
 }
 
 /** Whether a drive that stopped on its account's wall had that wall recorded; true when there was none to record. */
@@ -528,7 +604,7 @@ async function wrap(id: string, token: string): Promise<number> {
     console.error(`jig dispatch run: ${identity.failure.reason}; not starting`);
     return 2;
   }
-  const claim = { ...identity.value, claimedAt: new Date().toISOString() };
+  const claim = { ...identity.value, claimedAt: currentIso() };
   if (!claimRecord(id, claim)) {
     console.error(
       `jig dispatch run: ${id} is already claimed; nothing started`,
@@ -542,7 +618,7 @@ async function wrap(id: string, token: string): Promise<number> {
     argv = stageArgv(record);
   } catch (error) {
     console.error(`jig dispatch run: ${failureText(error)}; not starting`);
-    recordExit(id, { at: new Date().toISOString(), code: 2, signal: null });
+    recordExit(id, { at: currentIso(), code: 2, signal: null });
     await endSharedClaim(id);
     return 2;
   }
@@ -573,7 +649,7 @@ function startupOf(record: LaunchRecord, ran: Ran) {
     record,
     ran.code,
     ran.started,
-    ran.output ?? "",
+    ran.startupOutput ?? ran.output ?? "",
     ran.exited,
   );
 }
@@ -585,7 +661,7 @@ function recordStartupWall(record: LaunchRecord, startup: string): boolean {
       account: record.account,
       vendor: record.vendor,
       configDir: record.configDir,
-      resetAt: new Date(Date.now() + record.wallBackoffMs).toISOString(),
+      resetAt: isoFromMs(currentMs() + record.wallBackoffMs),
       source: `session could not start (${startup}); wall_backoff`,
     });
     return true;
@@ -620,7 +696,7 @@ async function finishRun(
     const startupWallUnrecorded =
       startup !== undefined && !recordStartupWall(record, startup);
     recordExit(id, {
-      at: new Date().toISOString(),
+      at: currentIso(),
       code,
       signal,
       ...(wallUnrecorded || startupWallUnrecorded
@@ -628,6 +704,7 @@ async function finishRun(
         : {}),
       ...(startup === undefined ? {} : { startup }),
       ...saidOf(record, ran),
+      ...usageOf(record, ran),
     });
   } catch (error) {
     // A pass's end the database refused is the host's fault: the evidence outside it lets the tick tell that from a pass that failed.
@@ -741,12 +818,14 @@ export async function runMain(argv: string[]): Promise<number> {
   }
   if (argv[0] === "quota" && argv.length === 4) {
     const [, session, cwd, since] = argv as [string, string, string, string];
-    if (!Number.isFinite(Date.parse(since))) {
+    if (!Number.isFinite(parseMs(since))) {
       console.error(`jig dispatch run: ${since} is not a date`);
       return 2;
     }
     console.log(
-      JSON.stringify(probeWall(session, cwd, new Date(since), new Date())),
+      JSON.stringify(
+        probeWall(session, cwd, parseInstant(since), Temporal.Now.instant()),
+      ),
     );
     return 0;
   }

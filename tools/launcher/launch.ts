@@ -49,6 +49,7 @@ import type { Provider } from "./provider.ts";
 import { getProvider } from "./providers/index.ts";
 import type { ReadRequest, Tracker } from "./tracker.ts";
 import { getTracker } from "./trackers/index.ts";
+import { currentMs } from "../../plugin/shared/time.ts";
 
 /** Bounds the tracker's read, every page of it; a tracker may bound it tighter. */
 export const READ_BUDGET_MS = 40_000;
@@ -199,7 +200,7 @@ export async function launch(
   // Preserve the tracker input while the canonical key names the cache.
   const originalIssue = issue;
   const warn = deps.warn ?? ((m: string) => console.error(`[launcher] ${m}`));
-  const nowSeconds = deps.nowSeconds ?? (() => Date.now() / 1000);
+  const nowSeconds = deps.nowSeconds ?? (() => currentMs() / 1000);
   const config = loadConfig(home, env);
   const { tracker, providers } = configStep(configPath(home, env), () => {
     const named = deps.providerNamed ?? getProvider;

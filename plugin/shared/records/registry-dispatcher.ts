@@ -6,7 +6,7 @@ import type { RecordKind } from "./registry.ts";
 
 const DISPATCH_DIR = "~/.local/state/jig/dispatch/";
 /** The dispatcher's database schema version (`dispatch/lib/state.ts`'s `SCHEMA_VERSION`). */
-const DISPATCH_DB = 28;
+const DISPATCH_DB = 30;
 
 /** A table of the dispatcher's database. */
 function dispatchTable(name: string, owner: string, table: string): RecordKind {

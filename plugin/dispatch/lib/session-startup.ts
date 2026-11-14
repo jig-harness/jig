@@ -19,6 +19,7 @@ import { RECOVERY_FACTS } from "./recovery-facts.ts";
 import { questionOf } from "./session.ts";
 import { swallow } from "../../shared/errors.ts";
 import { SESSION_LEASE_MIN } from "../../shared/liveness.ts";
+import { currentMs, parseMs } from "../../shared/time.ts";
 
 /** Startup failures are limited to the first minute of the vendor process. */
 const STARTUP_MS = 60_000;
@@ -33,7 +34,7 @@ function transcriptFiles(configDir: string, deadline: number): string[] | null {
   let entries = 0;
   let complete = true;
   const budget = () => {
-    if (++entries > 10_000 || Date.now() >= deadline) complete = false;
+    if (++entries > 10_000 || currentMs() >= deadline) complete = false;
     return complete;
   };
   const root = join(configDir, "projects");
@@ -62,12 +63,12 @@ function transcriptFiles(configDir: string, deadline: number): string[] | null {
 
 function transcriptAbsent(record: LaunchRecord, started: number): boolean {
   const session = record.sessionId as string;
-  const deadline = Date.now() + 200;
+  const deadline = currentMs() + 200;
   const files = transcriptFiles(record.configDir, deadline);
   if (files === null) return false;
   try {
     for (const path of files) {
-      if (Date.now() >= deadline) return false;
+      if (currentMs() >= deadline) return false;
       if (basename(path) === `${session}.jsonl`) return false;
       if (statSync(path).mtimeMs < started) continue;
       // A large file whose beginning is outside the tail cannot prove absence.
@@ -168,8 +169,8 @@ const RETRY_WITHIN_MS = SESSION_LEASE_MIN * 60_000;
 
 /** When a follow-up's record ended: its exit's time, else when its outcome row was timed, else when it was made; `NaN` when none reads. */
 function endedAtMs(r: ReadRecord): number {
-  if (r.state.kind === "ended") return Date.parse(r.state.exit.at);
-  return Date.parse(r.record.endedAt ?? r.record.createdAt);
+  if (r.state.kind === "ended") return parseMs(r.state.exit.at);
+  return parseMs(r.record.endedAt ?? r.record.createdAt);
 }
 
 /**
@@ -178,7 +179,7 @@ function endedAtMs(r: ReadRecord): number {
  * marker is released, and it runs again once. Never one launched while
  * `failures.rerun_died` was `0`.
  */
-export function retriedDeath(r: ReadRecord, nowMs = Date.now()): boolean {
+export function retriedDeath(r: ReadRecord, nowMs = currentMs()): boolean {
   return (
     r.record.rerunDied !== 0 &&
     diedWithoutResult(r) &&

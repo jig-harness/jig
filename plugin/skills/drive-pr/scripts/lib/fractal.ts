@@ -55,6 +55,7 @@ export {
 import { initiatingBotReviews } from "./metrics.ts";
 import type { Outcome } from "./outcome.ts";
 import type { PrSample } from "./sample.ts";
+import { isoFromMs, parseMs } from "../../../../shared/time.ts";
 
 const DAY_MS = 86_400_000;
 
@@ -121,7 +122,7 @@ function daysInWindow(
   window: { sinceMs: number; untilMs: number } | null,
 ): number {
   if (window === null) return 7;
-  const start = Date.parse(`${week}T00:00:00Z`);
+  const start = parseMs(`${week}T00:00:00Z`);
   const overlap =
     Math.min(start + 7 * DAY_MS, window.untilMs) -
     Math.max(start, window.sinceMs);
@@ -130,13 +131,12 @@ function daysInWindow(
 
 /** Monday 00:00 UTC of the week containing `iso`, as `YYYY-MM-DD`. */
 export function weekStartOf(iso: string): string | null {
-  const ms = Date.parse(iso);
+  const ms = parseMs(iso);
   if (Number.isNaN(ms)) return null;
-  const d = new Date(ms);
-  const sinceMonday = (d.getUTCDay() + 6) % 7;
-  return new Date(ms - sinceMonday * DAY_MS - (ms % DAY_MS))
-    .toISOString()
-    .slice(0, 10);
+  const day = Temporal.Instant.fromEpochMilliseconds(ms)
+    .toZonedDateTimeISO("UTC")
+    .toPlainDate();
+  return day.subtract({ days: day.dayOfWeek - 1 }).toString();
 }
 
 // ── PR side ─────────────────────────────────────────────────────────────────
@@ -508,7 +508,7 @@ export function cohortStats(
     if (!i.truncated?.includes("labels") || i.labels.includes(w.label)) {
       return false;
     }
-    const created = Date.parse(i.createdAt);
+    const created = parseMs(i.createdAt);
     return (
       Number.isNaN(created) || (created >= w.sinceMs && created < w.untilMs)
     );
@@ -520,7 +520,7 @@ export function cohortStats(
   }
   const cohort = issues.filter((i) => {
     if (!i.labels.includes(w.label)) return false;
-    const created = Date.parse(i.createdAt);
+    const created = parseMs(i.createdAt);
     if (Number.isNaN(created)) {
       throw new Error(
         `cohort: unparseable createdAt ${JSON.stringify(i.createdAt)}`,
@@ -533,8 +533,8 @@ export function cohortStats(
   const days = (w.untilMs - w.sinceMs) / DAY_MS;
   return {
     label: w.label,
-    since: new Date(w.sinceMs).toISOString(),
-    until: new Date(w.untilMs).toISOString(),
+    since: isoFromMs(w.sinceMs),
+    until: isoFromMs(w.untilMs),
     days,
     minted: cohort.length,
     open: open.length,
@@ -545,7 +545,7 @@ export function cohortStats(
     prioritylessShare: share(priorityless, open.length),
     parentless: open.filter((i) => i.parent === null).length,
     medianOpenAgeDays: median(
-      open.map((i) => Math.floor((w.nowMs - Date.parse(i.createdAt)) / DAY_MS)),
+      open.map((i) => Math.floor((w.nowMs - parseMs(i.createdAt)) / DAY_MS)),
     ),
   };
 }
@@ -580,8 +580,7 @@ export function epicStats(
     if (i.stateType === "started") started += 1;
     if (i.stateType === "completed") {
       completed += 1;
-      const at =
-        i.completedAt === null ? Number.NaN : Date.parse(i.completedAt);
+      const at = i.completedAt === null ? Number.NaN : parseMs(i.completedAt);
       if (at >= sinceMs && at < untilMs) completedInWindow += 1;
     }
   }

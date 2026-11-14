@@ -101,6 +101,8 @@ export const REPOSITORY_ONLY_FIELDS: readonly string[] = [
   "review.repo_slug",
   "review.repo_label",
   "ci.required_checks",
+  "ci.hold_sentinels",
+  "ci.advisory_checks",
   // A command the repository supplies, run as its default branch sets it.
   "ci.log_command",
   // The repository's autonomy ceiling and its human-in-the-loop classes: a
@@ -161,6 +163,7 @@ const HOST_TRUST = "is the host's choice of how far it trusts a drive's passes";
 const USER_ONLY: Readonly<Record<string, string>> = {
   clones: "describes one machine",
   "drive.pass_args": HOST_TRUST,
+  "drive.codex_pass_args": HOST_TRUST,
   "drive.codex_bypass": HOST_TRUST,
 };
 

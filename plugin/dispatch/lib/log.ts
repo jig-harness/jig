@@ -12,7 +12,9 @@
  *   end: the stage, the repository, the item or pull request, the account,
  *   the model, the duration, a drive's rounds, an outcome class from the
  *   closed list (`OUTCOME_CLASSES`) and a reason that carries the stage's
- *   own answer verbatim (the exit, the recorded result, or the last state);
+ *   own answer verbatim (the exit, the recorded result, or the last state),
+ *   and what the run's closing report says, with who wrote it (`by`), its
+ *   `cause` and writer also kept as columns;
  * - **event**: once per cause, timed when the tick observed it, for what
  *   the tick observed rather than what ended (a stalled pickup, a double
  *   claim, a stage drifting from its expectation, a session waiting, a stop
@@ -49,7 +51,10 @@ import {
 } from "./launches.ts";
 import { sessionResultClass } from "./session-result-class.ts";
 import { unwrittenResult } from "./session-startup.ts";
+import { type ReportFields, reportFields } from "./closing-report-store.ts";
+import { stewardNoSubmitCause } from "./pass-output.ts";
 import { existingStateDb, stateDb } from "./state.ts";
+import { parseInstant, parseMs } from "../../shared/time.ts";
 
 /**
  * The closed list of outcome classes. An answer that fits more than one
@@ -70,8 +75,8 @@ export const OUTCOME_CLASSES = [
 ] as const;
 export type OutcomeClass = (typeof OUTCOME_CLASSES)[number];
 
-/** One launch record's end. */
-export interface EndedRow {
+/** One launch record's end, with what its closing report says (`closing-report-store.ts`). */
+export interface EndedRow extends ReportFields {
   kind: "ended";
   key: string;
   at: string;
@@ -145,8 +150,8 @@ export function logFile(at: string, root = stateRoot()): string {
 
 /** A time's month, `<year>-<month>` in UTC. */
 export function monthOf(at: string): string {
-  const d = new Date(at);
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+  const { year, month } = parseInstant(at).toZonedDateTimeISO("UTC");
+  return `${year}-${String(month).padStart(2, "0")}`;
 }
 
 function isClass(value: unknown): value is OutcomeClass {
@@ -183,7 +188,7 @@ function isRow(value: unknown): value is LogRow {
   return (
     isMapping(value) &&
     ROW_TEXT.every((k) => typeof value[k] === "string") &&
-    Number.isFinite(Date.parse(value.at as string)) &&
+    Number.isFinite(parseMs(value.at as string)) &&
     kindReads(value)
   );
 }
@@ -216,15 +221,15 @@ export function bucket(row: LogRow): string {
 export function insertRow(db: Database, row: LogRow): boolean {
   const done = db
     .query(
-      `INSERT INTO log (key, kind, at, at_ms, repo, stage, account, bucket, reason, row, target)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO log (key, kind, at, at_ms, repo, stage, account, bucket, reason, row, target, cause, report_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (key) DO NOTHING`,
     )
     .run(
       row.key,
       row.kind,
       row.at,
-      Date.parse(row.at),
+      parseMs(row.at),
       row.repo,
       row.stage,
       row.account,
@@ -232,6 +237,8 @@ export function insertRow(db: Database, row: LogRow): boolean {
       row.reason,
       JSON.stringify(row),
       row.target,
+      row.kind === "ended" ? (row.cause ?? null) : null,
+      row.kind === "ended" ? (row.by ?? null) : null,
     );
   return done.changes === 1;
 }
@@ -283,7 +290,7 @@ export function lastEnded(
   );
   return ended.reduce<EndedRow | null>(
     (newest, r) =>
-      newest === null || Date.parse(r.at) >= Date.parse(newest.at) ? r : newest,
+      newest === null || parseMs(r.at) >= parseMs(newest.at) ? r : newest,
     null,
   );
 }
@@ -384,7 +391,7 @@ function wallAtEnd(r: ReadRecord, endedAt: string): string | null {
   const latest = r.record.episodes?.at(-1);
   if (latest === undefined || !latest.last) return null;
   const stood =
-    latest.resetAt === null || Date.parse(latest.resetAt) > Date.parse(endedAt);
+    latest.resetAt === null || parseMs(latest.resetAt) > parseMs(endedAt);
   return stood
     ? `waiting on a usage-limit wall since ${latest.observedAt} (resets ${latest.resetAt ?? "at an unknown time"}): ${latest.evidence}`
     : null;
@@ -408,6 +415,10 @@ function sessionClass(
       class: "died",
       reason: `no result recorded: this host could not write it (since ${r.unwritten}); the host's health check reports the cause`,
     };
+  // A steward that did not submit has no outcome, even if its retained output
+  // contains a Question line that the generic classifier can describe.
+  if (r.record.action === "steward" && r.result === null)
+    return sessionEndClass(r, endedAt);
   const result = sessionResultClass(
     r.result,
     r.state.kind === "ended" ? r.state.exit.said : undefined,
@@ -435,9 +446,13 @@ function sessionEndClass(
         : `its agent finished ${s.agent}`
       : goneWithoutExit(s);
   const wall = wallAtEnd(r, endedAt);
+  const reason =
+    r.record.action === "steward"
+      ? `steward ended without submitting; cause: ${stewardNoSubmitCause(s.kind === "ended" ? (s.exit.context ?? "") : "")}; ${how}`
+      : `no result recorded; ${how}`;
   return wall === null
-    ? { class: "died", reason: `no result recorded; ${how}` }
-    : { class: "quota wall", reason: `no result recorded; ${how}; ${wall}` };
+    ? { class: "died", reason }
+    : { class: "quota wall", reason: `${reason}; ${wall}` };
 }
 
 /** The class and reason of a record that ended, first match in table order. */
@@ -504,7 +519,7 @@ export function endedRow(
     record.redrive == null
       ? placed.reason
       : `${placed.reason}; re-drive of ${redriven}: ${record.redrive.cause}`;
-  const duration = Date.parse(endedAt) - Date.parse(record.createdAt);
+  const duration = parseMs(endedAt) - parseMs(record.createdAt);
   const start = record.round ?? null;
   return {
     kind: "ended",
@@ -529,5 +544,6 @@ export function endedRow(
         ? (r.next ?? null)
         : derivedNext(record.action, placed.class, reason),
     ...aboutFields(about),
+    ...reportFields(r.report),
   };
 }

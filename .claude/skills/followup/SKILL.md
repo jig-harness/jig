@@ -93,7 +93,8 @@ jig dispatch marker done "$PR" --comment "$MARKER"
 Marking it done also sets the pull request's `followed-up` state label
 where the repository turns the state labels on. A session the dispatcher
 started records its result with the `jig dispatch result` command its
-prompt names instead. A run that stops short leaves its marker as it is,
+prompt names instead, and, as its last act, its closing report with the
+`jig dispatch report` command the prompt names. A run that stops short leaves its marker as it is,
 and says so with
 `jig dispatch marker failed "$PR" --comment "$MARKER"`, which sets the
 `followup-failed` state label: the label is where the failure shows, and the
@@ -392,13 +393,13 @@ one line (for example `merged; release 0.121.0 waits on the release run`, or
 `git worktree list --porcelain` (the entry whose `branch` is
 `refs/heads/<headRefName>`) and skip this when none holds it. Outside Orca
 the script does nothing, and an Orca failure only warns (exit `0`). Write
-the line alone to `.context/card-comment.md` with the file editor, never
+the line alone to `.context/scratch/card-comment.md` with the file editor, never
 into the command: the report can carry quotes, backticks and `$(…)`, and the
 shell would run them. `"$(cat …)"` is substituted once and not expanded
 again:
 
 ```bash
-bun --cwd "<that worktree>" "$PWD/plugin/shared/orca-board.ts" completed --comment "$(cat "$PWD/.context/card-comment.md")"
+bun --cwd "<that worktree>" "$PWD/plugin/shared/orca-board.ts" completed --comment "$(cat "$PWD/.context/scratch/card-comment.md")"
 ```
 
 Close with what is left for a person, by name. A step only a person can
@@ -409,6 +410,15 @@ arm and never makes the follow-up fail. Stop on a question only when an arm
 this pass may carry out cannot go on without the answer; in a session the
 dispatcher started, frame that question as a decision and record it with
 the failed result, as its prompt says, so the person answers it in a word.
+A rate limit is a wait, not a question: when the forge (a `gh` call that
+reports its rate limit, or HTTP 429) or the tracker (a tracker script that
+exits `5` with `RATE-LIMITED until <time>`) refuses a request for its rate
+limit, stop and ask nothing. In a session the dispatcher started, record
+`waits --until <the reset>` as its prompt says (for the forge, the reset
+`gh api rate_limit` names for the spent resource, else an hour from now);
+run by hand, report the reset and run the skill again after it. Every arm
+checks what is already done before it acts, so the run after the reset
+repeats the steps without doubling one.
 When every arm is NOT OWED,
 say so in one line: an honest "nothing is owed" is a result. Routine local
 leftovers do not prevent this result or a done marker; do not turn them into a

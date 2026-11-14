@@ -30,6 +30,7 @@ import {
 } from "./contracts.ts";
 import { renderBundle } from "./browser.ts";
 import { decodePng, sameImage, type Image } from "./png.ts";
+import { currentIso } from "../../../shared/time.ts";
 
 function run(argv: string[], cwd = consumerRoot()): string {
   const p = Bun.spawnSync(argv, {
@@ -756,7 +757,7 @@ export function facts(argv: string[], output: string): void {
     .join("\n");
   writeFileSync(
     output,
-    `# Derived data facts\n\nCommand (argument array): \`${JSON.stringify(argv)}\`\nGenerated: ${new Date().toISOString()}\nSource output SHA-256: ${createHash("sha256").update(raw).digest("hex")}\n\n| Fact | Value |\n|------|-------|\n${table}\n`,
+    `# Derived data facts\n\nCommand (argument array): \`${JSON.stringify(argv)}\`\nGenerated: ${currentIso()}\nSource output SHA-256: ${createHash("sha256").update(raw).digest("hex")}\n\n| Fact | Value |\n|------|-------|\n${table}\n`,
   );
 }
 if (import.meta.main) {

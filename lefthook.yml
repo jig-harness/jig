@@ -18,6 +18,21 @@ pre-commit:
       timeout: 60s
       run: bun x biome check --write --no-errors-on-unmatched --files-ignore-unknown=true {staged_files}
       stage_fixed: true
+    # The generated-file inventory's commit-time twin for the Jig Protocol
+    # (M2): when a staged file is among the chapters' sources (the protocol
+    # entry of .config/change-areas.yaml), regenerate the chapters and stage
+    # each one the generator changed, so the commit carries them.
+    protocol:
+      glob:
+        - "tools/protocol/**"
+        - "plugin/skills/drive-pr/scripts/lib/status/terminal-states.ts"
+        - "plugin/shared/errors.ts"
+        - "plugin/shared/log.ts"
+        - "plugin/shared/outcome.ts"
+        - "plugin/shared/time.ts"
+      timeout: 60s
+      run: bun tools/protocol/generate.ts --stage
+      stage_fixed: true
 
 pre-push:
   # Piped: the commands run one at a time in priority order, so the push-hold

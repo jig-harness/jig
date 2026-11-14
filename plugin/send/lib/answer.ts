@@ -64,6 +64,7 @@ import {
 import { type Planned, refused } from "./plan.ts";
 import { planAnswerAll } from "./answer-all.ts";
 import { planStationAnswer } from "./answer-station.ts";
+import { currentIso } from "../../shared/time.ts";
 
 type OneAnswer = Extract<AnswerRequest, { all: false }>;
 
@@ -242,7 +243,7 @@ async function planAnswer(
         written.text,
         pr,
         localWriter("forge", login),
-        new Date().toISOString(),
+        currentIso(),
         written.parts,
       );
       const posted = await postAnswerComment(ctx.address.repo, pr, body);

@@ -1045,7 +1045,7 @@ export DRIVE_PR_STUB_GH_NESTED=1
       'pr checks:name,bucket,state'|'repo view:owner,name'|'repo view:owner,name,url'|\
       'pr view:number'|'pr view:state'|'pr view:headRefOid'|'pr view:mergeable'|\
       'pr view:baseRefName'|'pr view:baseRefName,url'|'pr view:state,isDraft'|\
-      'pr view:state,headRefOid,labels'|\
+      'pr view:labels'|'pr view:state,headRefOid,labels'|\
       'pr view:state,headRefOid,baseRefOid'|\
       'pr view:state,baseRefName,headRefName,headRefOid'|\
       'pr view:state,headRefName,headRepositoryOwner,headRepository'|'pr view:state,headRefName,headRepositoryOwner,headRepository,url'|\

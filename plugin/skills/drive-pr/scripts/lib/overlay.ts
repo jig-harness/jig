@@ -38,6 +38,7 @@ import {
   reviewerProfile,
 } from "./reviewer-profiles.ts";
 import { attachedTree } from "./driven-branch.ts";
+import { codexPassArgsProblem } from "./codex-pass-args.ts";
 import { ghCall, git, gitCallTimeoutSeconds } from "./proc.ts";
 
 let cache: { key: string; value: Record<string, unknown> } | undefined;
@@ -513,6 +514,20 @@ export function passArgsSetting(): string[] | undefined {
     throw new DecodeError(
       configSource("drive.pass_args"),
       "$.drive.pass_args",
+      problem,
+    );
+  return value as string[];
+}
+
+/** `drive.codex_pass_args`: extra arguments for a Codex pass command (`codex-pass-args.ts`); `undefined` when not configured. */
+export function codexPassArgsSetting(): string[] | undefined {
+  const value = section("drive").codex_pass_args;
+  if (value === undefined || value === null) return undefined;
+  const problem = codexPassArgsProblem(value);
+  if (problem !== undefined)
+    throw new DecodeError(
+      configSource("drive.codex_pass_args"),
+      "$.drive.codex_pass_args",
       problem,
     );
   return value as string[];

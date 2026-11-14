@@ -29,6 +29,7 @@ import {
 import { localRecoverySpent } from "./no-cause-stops.ts";
 import { RECOVERY_FACTS } from "./recovery-facts.ts";
 import { routineEnd } from "./routine-reruns.ts";
+import { waitEnd } from "./followup-waits.ts";
 import {
   dispatched,
   marksIn,
@@ -49,6 +50,7 @@ import {
 import type { RepoObservation } from "./tick-observe.ts";
 import type { Action } from "./types.ts";
 import { failureText } from "./text.ts";
+import { currentIso, currentMs } from "../../shared/time.ts";
 
 interface Source {
   record: LaunchRecord & {
@@ -119,7 +121,7 @@ function sourceOf(
 
 function eligiblePass(old: ReadRecord): boolean {
   if (old.record.action === "pickup") return old.record.headless === true;
-  return !routineEnd(old);
+  return !routineEnd(old) && !waitEnd(old);
 }
 
 function sameTarget(old: Source["record"], pending: LaunchRecord): boolean {
@@ -345,7 +347,7 @@ async function available(
       source.record.repo,
       source.record.pr,
       records,
-      Date.now(),
+      currentMs(),
     ) === null
   );
 }
@@ -427,7 +429,7 @@ function resumeRecord(
   slots: import("./accounts.ts").Slots,
 ): LaunchRecord {
   const vendor = admittedVendor(slots.account);
-  const id = newRecordId(new Date());
+  const id = newRecordId();
   const record: LaunchRecord = {
     ...source.record,
     id,
@@ -435,7 +437,7 @@ function resumeRecord(
     account: slots.account.name,
     vendor,
     configDir: slots.account.configDir,
-    createdAt: new Date().toISOString(),
+    createdAt: currentIso(),
     facts: `${RECOVERY_FACTS}steward resume ${source.record.id}`,
     attempts: [],
     agentId: null,

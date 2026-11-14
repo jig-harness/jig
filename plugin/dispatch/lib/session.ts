@@ -11,7 +11,9 @@
  * skill the prompt names, so its prompt names the skill before the same
  * invocation (`skillPrompt`). The prompt ends by asking the session to
  * record how it ended through `jig dispatch result`, under its launch
- * record's token; it names no agent. The token binds the session to its
+ * record's token, and, as its last act, its closing report through
+ * `jig dispatch report`, as the steward's prompt does too; it names no
+ * agent. The token binds the session to its
  * record; it does not guard the state directory against another process of
  * the same user.
  */
@@ -25,6 +27,16 @@ import {
 import type { LaunchRecord, LaunchState, SessionResult } from "./launches.ts";
 import { ROUTINE_QUESTIONS, routineQuestion } from "./routine-questions.ts";
 import { STEWARD_RESUME } from "./steward.ts";
+import { NEED_ACTS } from "../../shared/acts.ts";
+import {
+  CLOSING_REPORT_SCHEMA,
+  CONCLUDED_MAX,
+  EVIDENCE_FORM_NAMES,
+  EVIDENCE_MAX,
+  NEXT_OWNERS,
+  REPORT_CAUSES,
+  STEP_MAX,
+} from "../../shared/closing-report.ts";
 
 /** The skill a pickup starts. */
 export const PICKUP_SKILL = "/jig:do-item";
@@ -65,6 +77,27 @@ function resultCommand(
   result: SessionResult,
 ): string {
   return jigCommand(["result", record.id, record.token, result]);
+}
+
+/** The command a pass runs to record its closing report. */
+function reportCommand(record: Pick<LaunchRecord, "id" | "token">): string {
+  return jigCommand(["report", record.id, record.token]);
+}
+
+/** The shape of a closing report, as a pass's prompt gives it in one line. */
+const REPORT_SHAPE = `{"schema":"${CLOSING_REPORT_SCHEMA}","concluded":"<what this run concluded, in your words: at most ${CONCLUDED_MAX} characters>","question":"<only when a person must decide: one line ending with ?>","decision":<only with question, when you framed it: the decision record itself, whose call.question is the question>,"suggested_next":{"step":"<the next step: at most ${STEP_MAX} characters>","owner":"<${NEXT_OWNERS.join("|")}>","act":"<only when the owner is person: ${NEED_ACTS.join(", ")}>"},"cause":"<only when the run fell short of its goal: ${REPORT_CAUSES.join(", ")}>","evidence":["<at most ${EVIDENCE_MAX} references, never contents: ${EVIDENCE_FORM_NAMES.join(", ")}>"]}`;
+
+/**
+ * How a pass writes its closing report (`jig dispatch report`), as its last
+ * act, after `after`, under its record's token, beside the result it records.
+ */
+function reportLines(
+  record: Pick<LaunchRecord, "id" | "token">,
+  after = "your result",
+): string[] {
+  return [
+    `As your last act, after ${after}, write your closing report: what this run concluded, for the person and the stations that read it after you. Write it as JSON of this shape to a file, leaving out each field marked "only" that does not apply: ${REPORT_SHAPE}. Owner line means a stage of the line takes the next step (a drive, a follow-up). Name no secret and no personal data. Record it: ${reportCommand(record)} <that file>. When the command refuses the report it names what is wrong: fix it and run the command again; the last report it takes stands, and it never changes a result.`,
+  ];
 }
 
 /** The shape of a framed decision, as a pass's prompt gives it in one line. */
@@ -142,8 +175,8 @@ function pickupResultLines(
       ? `- the claim was refused by the repository's start rules (exit 3 with "why": "preflight" and an "updatedAt" in its JSON): ${resultCommand(record, "failed")} --refused <its updatedAt> --reason "<its reason>"`
       : `- a member's claim was refused by the repository's start rules (exit 3 with "why": "preflight" and an "updatedAt" in its JSON): ${resultCommand(record, "failed")} --refused <its updatedAt> --key <its issue> --reason "<its reason>", repeating the three for each member refused; only those members are held`;
   return [
-    "When you stop, record how the pickup ended, once:",
-    `- its pull request is open and its drive armed: ${resultCommand(record, "done")} --pr <the pull request number>`,
+    "Record how the pickup ended, once, as soon as you know it:",
+    `- its pull request is open and its drive armed: ${resultCommand(record, "done")} --pr <the pull request number>; record this as soon as the drive is armed, then go on`,
     `- no pull request was needed (a duplicate or work already made): ${resultCommand(record, "done")} --none "<why>"`,
     refused,
     `- the tracker refused a request for its rate limit (a tracker script exited 5, naming the time it resets) before your claim of the item succeeded: ${resultCommand(record, "waits")} --until <that time>; ask no question, the dispatcher starts the item again after the reset`,
@@ -205,6 +238,7 @@ function pickupPassPrompt(
     `Where a step needs a person's decision, do not guess: carry out what does not depend on it, then stop, and end your output with one line that starts "${QUESTION_PREFIX}" and states what the person must decide, with no secret or personal data in it. The dispatcher sends that line to a person.`,
     ...framingLines(record),
     ...pickupResultLines(record),
+    ...reportLines(record),
   ].join("\n");
 }
 
@@ -283,8 +317,10 @@ function followupPrompt(record: LaunchRecord): string {
     ...routineLines(record),
     "When you stop, record how the follow-up ended, once:",
     `- every arm is settled, what you may carry out carried out and the rest reported: ${resultCommand(record, "done")}`,
+    `- the forge or the tracker refused a request for its rate limit (a gh call reporting it, such as "API rate limit exceeded", "secondary rate limit" or HTTP 429, or a tracker script that exited 5, naming the time it resets): ${resultCommand(record, "waits")} --until <that time>, for the forge the reset gh api rate_limit names for the spent resource, else an hour from now; ask no question, the dispatcher starts the follow-up again after the reset, and its steps check what is already done`,
     `- you stopped short of that (a question, a failure, an earlier marker): ${resultCommand(record, "failed")}, with --decision <file> when you framed the question`,
     UNWRITTEN_LINE,
+    ...reportLines(record),
   ].join("\n");
 }
 
@@ -340,7 +376,8 @@ export function sessionArgv(record: LaunchRecord): string[] {
  * runs `claude -p` with the vendor session id the tick minted and the
  * host's `drive.pass_args` (`passArgs`) before `-p`, as a drive's pass
  * gets them; Codex runs `codex exec`, with its bypass only when the tick
- * admitted the record on a host that opted in (`codexBypass`). Neither
+ * admitted the record on a host that opted in (`codexBypass`), then the
+ * host's `drive.codex_pass_args` the record keeps (`codexPassArgs`). Neither
  * gets a permission of the launcher's own.
  */
 export function followupPassArgv(
@@ -363,6 +400,7 @@ function headlessArgv(
       "codex",
       "exec",
       ...(record.codexBypass === true ? [CODEX_BYPASS] : []),
+      ...(record.codexPassArgs ?? []),
       ...route,
       prompt,
     ];
@@ -399,6 +437,8 @@ export function stewardPassArgv(
     `Steward launch: ${record.id}`,
     `Launch token: ${record.token}`,
     "Read only the token-bound digest and submit the skill's closed records. The dispatcher applies them on the next tick; launch nothing and make no repository, tracker or configuration changes yourself.",
+    'Finish only after submit succeeds with {"submitted":true}, including an empty array when no record is justified. If read or submit fails, report that failure explicitly; never describe the pass as submitted without its confirmation.',
+    ...reportLines(record, "the submit"),
   ].join("\n");
   return headlessArgv(record, passArgs, prompt, true);
 }

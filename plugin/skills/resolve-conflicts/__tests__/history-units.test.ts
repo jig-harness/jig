@@ -815,7 +815,7 @@ describe("the report", () => {
       : [],
     unmatchedResolutions: [],
   });
-  const now = new Date("2026-10-19T12:00:00Z");
+  const now = Temporal.Instant.from("2026-10-19T12:00:00Z");
   const range = { since: "2026-10-01T00:00:00.000Z", until: null, label: "x" };
   const build = (merges: MergeRecord[], skipped = 0) =>
     buildReport({

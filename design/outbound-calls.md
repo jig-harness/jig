@@ -18,8 +18,11 @@ This is the design of [plan.md](plan.md) item 55, decided in
 far: the shared budget record for the tracker adapters
 (`plugin/shared/tracker-budget.ts`, documented under `tracker_share` in the
 [configuration reference](../plugin/CONFIGURATION.md)), conditional requests
-for some forge reads (`plugin/shared/gh-conditional.ts`), and a deadline on
-every call.
+for some forge reads (`plugin/shared/gh-conditional.ts`), a deadline on
+every call, the page that shrinks (`paging`), and the failure classes with
+one retry for a read (`failure`, `retry`, `hold`): the tracker transports
+and the forge client's `ghCall` wrappers fail as the classes, and the tick
+and the passes follow the policies below.
 
 ## How it works
 
@@ -60,6 +63,7 @@ module leaves its old path in the same pull request.
 | `cache` | Answers kept by update time or by the system's validator, stable absences included | `shared/gh-conditional.ts`, the served queue's kept readings |
 | `coalesce`, `batch` | One request for identical reads in a run; reads by key in chunks | `dispatch/lib/tick-reads.ts`, the Linear read by key |
 | `paging` | Page caps, and a page that shrinks when the system runs out of time | Built with step 1 |
+| `hold` | A system that did not answer is not asked again in the run; the next run probes it once first | Built with step 3; the hold moves into `budget` once GitHub joins it |
 
 A transport supplies its profile, how to send one request
 (an HTTPS request or a run of a command-line client) and how to read a
@@ -84,6 +88,23 @@ the callers of an adapter do not change.
 - **One request for one question.** Two callers in one run that ask the
   same read share one request. Two repository configurations that read the
   same tracker team with the same credential share one queue reading.
+  The dispatcher reads **trackers first, repositories second**: before a
+  repository derives its pickups, it groups the tracker scopes and people
+  its repositories need. A scope identifies the adapter, instance,
+  credential and team or project (the target repository for GitHub).
+  Its reading holds the tracker's own states, labels and fields. Each
+  repository applies its own state and facet configuration to that reading;
+  different configurations never require another queue read. Assignment
+  history, relations and open children are shared facts of the scope too.
+  The kept queue reading is per scope and person, with one change probe
+  and scheduled full read, and every repository shows the age of that
+  reading when the scope cannot be reached.
+  Native queue queries ask for the union of the repositories' needed
+  states, so sharing does not pull in historical completed assignments.
+  Where an adapter cannot identify an opaque command-line credential,
+  its scope and cache stay in process memory: repositories share within
+  the tick, and no queue, item or pool reading is written to persistent
+  storage for a later login to reuse.
 - **Read by key in one request.** Many items go into one request, in
   chunks the system's single-request cap allows, never one request an item.
 
@@ -159,9 +180,10 @@ was sent: the caller reads the item again before it writes again.
 
 - A reader that keeps a reading shows it with its age, as the served queue
   does while its tracker is rate limited.
-- A system that returned `unreachable` or `server-fault` is held in the
-  budget record for the rest of the tick. The next tick sends one probe
-  request, and reads on only when it is answered.
+- A system that returned `unreachable` or `server-fault` is held for the
+  rest of the tick (`hold`, kept in the dispatcher's state directory for
+  the next tick). The next tick sends one probe request, and reads on only
+  when it is answered.
 - A tick exits 0 when every failed read is of a class that clears by
   waiting and under its threshold. The failure ledger counts in a row per
   cause, and a `rate-limited` read does not count before its reset.
@@ -216,10 +238,10 @@ are built in that order.
    library; the tick's line, `jig budget`, the low-quota need.
 5. **GitHub in the budget record.** Its profile; the wrapper admits and
    observes; the tick's own budget read goes.
-6. **Reuse.** `cache`, `coalesce`, `batch`; the reads that repeat adopt
-   them: assignment answers cached by update time, one queue reading per
-   team and credential, the deferral script's tracker calls through the
-   adapter, the nested page sizes of the issue and ledger queries.
+6. **Reuse.** Move the existing queue snapshots and assignment caches into
+   `cache`, `coalesce` and `batch`. The remaining reads adopt the library:
+   the deferral script's tracker calls through the adapter, and the nested
+   page sizes of the issue and ledger queries.
 7. **The gates and the lens.**
 
 ## Left out

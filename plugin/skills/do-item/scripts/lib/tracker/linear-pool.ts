@@ -28,6 +28,7 @@ import {
   type StateNames,
   TrackerRequestError,
 } from "./port.ts";
+import { AssignerUnknown } from "./assigner-unknown.ts";
 import type { CorePoolIssue, CoreTracker } from "./facets/tracker.ts";
 import { readEstimate, type WithEstimate } from "./linear-facets.ts";
 import {
@@ -48,7 +49,7 @@ class AssignmentError extends Error {}
  * flag, and `extra` (the estimate, where size is kept in it).
  */
 export const poolFields = (extra: string) => `
-  identifier title url priority${extra} createdAt updatedAt
+  identifier title url priority ${extra.trim()} createdAt updatedAt
   state { id name type }
   assignee { id name }
   labels(first: 100) { pageInfo { hasNextPage } nodes { name } }
@@ -206,11 +207,23 @@ function names(user: unknown, name: string): boolean {
   );
 }
 
+/** Whether a history target carries any field `names` can match: a malformed one is an unreadable read, not a negative answer. */
+function hasIdentity(user: unknown): boolean {
+  return (
+    isRecord(user) &&
+    ["id", "email", "displayName", "name"].some(
+      (k) => typeof user[k] === "string" && user[k] !== "",
+    )
+  );
+}
+
 function assigner(actor: unknown, key: string, team: string): Assigner {
-  if (!isRecord(actor) || typeof actor.id !== "string")
-    throw new AssignmentError(
+  if (actor === null)
+    throw new AssignerUnknown(
       `issue ${key}: its assignment was made by no user (an integration or an automation)`,
     );
+  if (!isRecord(actor) || typeof actor.id !== "string")
+    throw new AssignmentError(`issue ${key}: its assigner cannot be read`);
   field(actor.teams, `issue ${key} assigner.teams`);
   return teamMember(actor as Record<string, unknown> & { id: string }, team);
 }
@@ -327,12 +340,19 @@ export function assignedOperations(
           `issue ${key} is no longer assigned to ${who}`,
         );
       const latest = nodes
-        .map((n, i) => field(n, `history of ${key}[${i}]`))
+        .map((n, i) => {
+          const node = field(n, `history of ${key}[${i}]`);
+          if (node.toAssignee !== null && !hasIdentity(node.toAssignee))
+            throw new AssignmentError(
+              `history of ${key}[${i}]: its assignment target cannot be read`,
+            );
+          return node;
+        })
         .filter((n) => names(n.toAssignee, who))
         .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))
         .at(-1);
       if (latest === undefined)
-        throw new AssignmentError(
+        throw new AssignerUnknown(
           `issue ${key}: its history holds no assignment of ${who}`,
         );
       return assigner(latest.actor, key, team);

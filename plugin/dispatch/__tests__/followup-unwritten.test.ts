@@ -6,6 +6,7 @@
  * failed follow-up notified. A run again whose write is refused again is a
  * person's, without the question its pass asked about the database.
  */
+import { isoOf } from "../../shared/time.ts";
 import { afterEach, expect, it } from "bun:test";
 import {
   existsSync,
@@ -119,13 +120,13 @@ function schemaAt(root: string, version: number): void {
 
 /** A tick that exited 1 as the newest receipt: the host's health check fails. */
 function failingTick(w: World): void {
-  const now = new Date();
+  const now = Temporal.Now.instant();
   writeReceipt(
     {
       version: 1,
       runId: newRunId(now),
-      startedAt: now.toISOString(),
-      finishedAt: now.toISOString(),
+      startedAt: isoOf(now),
+      finishedAt: isoOf(now),
       completed: true,
       apply: true,
       exitStatus: 1,

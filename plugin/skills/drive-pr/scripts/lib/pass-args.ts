@@ -6,44 +6,54 @@
  * (`claude`), its command can carry extra words before `-p`, such as
  * `--permission-mode bypassPermissions`: without that mode a pass started
  * without a terminal is denied every write under a protected path such as
- * `.claude/skills/**`. Every source of those words is on the host's side,
- * since a pull request can edit the repository's own file and a drive reads
- * it from that pull request's checkout (`shared/config-layers.ts` refuses the
- * field there). The words come, in this order, from:
+ * `.claude/skills/**`. When it is Codex's (`codex exec`), its command can
+ * carry extra words before the prompt, after the bypass `drive.codex_bypass`
+ * adds, such as `--dangerously-bypass-hook-trust`: Codex runs only the hooks
+ * it has been told to trust, and a pass started without a terminal cannot
+ * ask. Every source of those words is on the host's side, since a pull
+ * request can edit the repository's own file and a drive reads it from that
+ * pull request's checkout (`shared/config-layers.ts` refuses both fields
+ * there). The words come, in this order, from:
  *
  *   1. `--pass-args "<words>"` on `arm-drive.ts` or `drive.ts`, for one
  *      drive: the value split on whitespace (no quoting, since a word holds
- *      no space); an empty value adds none and keeps `drive.pass_args` out;
- *   2. `drive.pass_args`, a list of words in the host's user file or one
- *      run's environment, added only to a pass command that carries no
- *      arguments of its own (`claude`, its `--model`, `-p` and the prompt): a
- *      command that carries its own is kept as written, so a re-arm or
- *      takeover command printed from a running drive runs the same arguments
- *      it shows, whatever the configuration says by then. Those words are the
+ *      no space). Its words are Claude Code's grammar, so a Codex pass
+ *      refuses them; an empty value adds none, to either, and keeps the
+ *      setting out;
+ *   2. the setting of the pass command's tool, a list of words in the
+ *      host's user file or one run's environment: `drive.pass_args` for
+ *      Claude Code, `drive.codex_pass_args` for Codex (`codex-pass-args.ts`
+ *      says which words it refuses). It is added only to a pass command that
+ *      carries no arguments of its own (`claude`, its `--model`, `-p` and the
+ *      prompt; `codex exec`, its `-m`, the bypass and the prompt): a command
+ *      that carries its own is kept as written, so a re-arm or takeover
+ *      command printed from a running drive runs the same arguments it
+ *      shows, whatever the configuration says by then. Those words are the
  *      running drive's own: its command line and the host's settings when it
  *      started.
  *
  * Words the pass command already carries as one run are not added twice:
- * the command `arm-drive.ts` builds already holds them. A pass command that
- * is not `claude` ignores `drive.pass_args` and says so, and refuses
- * `--pass-args`, whose words are Claude Code's grammar. The permission mode
- * is read from the command as it runs (`--permission-mode X`, or
- * `--dangerously-skip-permissions` for `bypassPermissions`), and is
- * `inherited` (Claude Code's own settings decide) when the command sets none.
- * A `codex` pass command's is read from its own words the same way:
- * `--dangerously-bypass-approvals-and-sandbox`, which the arm and the
- * dispatcher add for a host that set `drive.codex_bypass`, a `--sandbox`, or
- * `inherited` (Codex's configuration decides). `drive.ts` adds nothing to a
- * Codex pass command: it runs as given.
+ * the command `arm-drive.ts` builds already holds them. A pass command of
+ * another tool ignores both settings and says so, and refuses `--pass-args`.
+ * The permission mode is read from the command as it runs
+ * (`--permission-mode X`, or `--dangerously-skip-permissions` for
+ * `bypassPermissions`), and is `inherited` (Claude Code's own settings
+ * decide) when the command sets none. A `codex` pass command's is read from
+ * its own words the same way: `--dangerously-bypass-approvals-and-sandbox`,
+ * which the arm and the dispatcher add for a host that set
+ * `drive.codex_bypass`, a `--sandbox`, or `inherited` (Codex's configuration
+ * decides).
  */
 import { basename } from "node:path";
 import { passVendor } from "./identity.ts";
 import { CODEX_BYPASS } from "./pass-command.ts";
 import {
+  codexPassArgsSetting,
   DEFAULT_PASS_ARGS,
   passArgsSetting,
   refusedPassArgs,
 } from "./overlay.ts";
+import { DEFAULT_CODEX_PASS_ARGS } from "./codex-pass-args.ts";
 import { withoutModel } from "./pass-model.ts";
 
 /** Extra pass arguments and where they came from. */
@@ -75,6 +85,17 @@ export function configuredPassArgs(): PassArgs {
         source: "the default; drive.pass_args is not set",
       }
     : { words, source: "drive.pass_args" };
+}
+
+/** The words a Codex pass's configuration asks for: `drive.codex_pass_args`, else none. */
+export function configuredCodexPassArgs(): PassArgs {
+  const words = codexPassArgsSetting();
+  return words === undefined
+    ? {
+        words: [...DEFAULT_CODEX_PASS_ARGS],
+        source: "the default; drive.codex_pass_args is not set",
+      }
+    : { words, source: "drive.codex_pass_args" };
 }
 
 /** The words an arm writes into its command: `--pass-args`, else `drive.pass_args`. */
@@ -112,24 +133,47 @@ export function withPassArgs(
   return [...argv.slice(0, at), ...words, ...argv.slice(at)];
 }
 
+/** `argv` (a Codex pass command) with `words` before its prompt, its last word, unless it already carries them as one run. */
+export function withCodexPassArgs(
+  argv: readonly string[],
+  words: readonly string[],
+): string[] {
+  if (carries(argv, words)) return [...argv];
+  const at = Math.max(1, argv.length - 1);
+  return [...argv.slice(0, at), ...words, ...argv.slice(at)];
+}
+
 /** Whether a `claude` pass command carries words beyond its model, `-p` and the prompt. */
 function hasOwnArgs(argv: readonly string[]): boolean {
   const rest = withoutModel(argv).slice(1);
   return !(rest.length === 2 && rest.some((word) => PRINT.has(word)));
 }
 
+/** Whether a `codex` pass command carries words beyond `exec`, its model, the bypass and the prompt. */
+function hasOwnCodexArgs(argv: readonly string[]): boolean {
+  const rest = withoutModel(argv).slice(1);
+  if (rest[0] !== "exec") return true;
+  const middle = rest.slice(1, -1);
+  return !(
+    rest.length >= 2 &&
+    (middle.length === 0 || (middle.length === 1 && middle[0] === CODEX_BYPASS))
+  );
+}
+
 /**
  * Whether a printed re-arm or takeover command must carry `--pass-args ''`:
- * a Claude Code pass command with no arguments of its own. Whether the empty
- * list came from an override or from an unset `drive.pass_args` is not
- * recoverable from the command, and the configuration may change before the
- * command runs (or be malformed now), so the command says it itself rather
- * than leaving the choice to a later reading of the configuration.
+ * a Claude Code or Codex pass command with no arguments of its own. Whether
+ * the empty list came from an override or from an unset `drive.pass_args`
+ * or `drive.codex_pass_args` is not recoverable from the command, and the
+ * configuration may change before the command runs (or be malformed now),
+ * so the command says it itself rather than leaving the choice to a later
+ * reading of the configuration.
  */
 export function pinsEmptyPassArgs(argv: readonly string[]): boolean {
-  return (
-    argv[0] !== undefined && passVendor(argv) === "claude" && !hasOwnArgs(argv)
-  );
+  if (argv[0] === undefined) return false;
+  const vendor = passVendor(argv);
+  if (vendor === "claude") return !hasOwnArgs(argv);
+  return vendor === "codex" && !hasOwnCodexArgs(argv);
 }
 
 /** The permission mode a pass runs in and where it was read. */
@@ -187,28 +231,108 @@ function shown(words: readonly string[]): string {
   return words.length === 0 ? "none" : words.join(" ");
 }
 
-/** A non-Claude pass command: `drive.pass_args` ignored and said so, `--pass-args` refused. */
+/** `--pass-args` on a pass command that is not Claude Code's: its words refused, an empty value kept as none. */
+function refuseFlagWords(name: string, flag: string | undefined): void {
+  if (flag !== undefined && parsePassArgsFlag(flag).length > 0)
+    throw new PassArgsUsageError(
+      `--pass-args applies to a Claude Code pass command (claude …); give '${name}' its arguments after --${name === "codex" ? ", or on the host in drive.codex_pass_args" : ""}`,
+    );
+}
+
+/** A pass command of another tool: both settings ignored and said so, `--pass-args` refused. */
 function otherPass(
   argv: readonly string[],
   flag: string | undefined,
   configured: () => PassArgs,
+  codex: () => PassArgs,
 ): EffectivePassArgs {
   const name = basename(argv[0] as string);
-  if (flag !== undefined && parsePassArgsFlag(flag).length > 0)
-    throw new PassArgsUsageError(
-      `--pass-args applies to a Claude Code pass command (claude …); give '${name}' its arguments after --`,
-    );
-  const set = configured().words.length > 0;
+  refuseFlagWords(name, flag);
+  let codexSet = false;
+  try {
+    codexSet = codex().words.length > 0;
+  } catch {
+    // This pass does not use the Codex-only setting.
+  }
+  const set = configured().words.length > 0 || codexSet;
   return {
     argv: [...argv],
     line: set
-      ? `pass args: none; drive.pass_args applies to a Claude Code pass command, and '${name}' ignores it`
+      ? `pass args: none; drive.pass_args applies to a Claude Code pass command and drive.codex_pass_args to a Codex one, and '${name}' ignores both`
       : `pass args: none (the pass command is ${name})`,
-    permission:
-      passVendor(argv) === "codex"
-        ? codexPermission(argv)
-        : { mode: null, source: `chosen by the pass command (${name})` },
+    permission: { mode: null, source: `chosen by the pass command (${name})` },
   };
+}
+
+/** The log's note that `drive.pass_args` is ignored; best effort, since a Codex pass never reads that setting and only this annotation does. */
+function claudeNote(configured: () => PassArgs): string {
+  let note = "";
+  try {
+    if (configured().words.length > 0)
+      note = "; drive.pass_args applies to a Claude Code pass command";
+  } catch {
+    note = "";
+  }
+  return note;
+}
+
+/**
+ * A Codex pass command: `drive.codex_pass_args` added before the prompt of
+ * one with no arguments of its own, a command that carries its own kept as
+ * written, `--pass-args`'s words refused and its empty value kept as none.
+ * The line says when `drive.pass_args`, Claude Code's, is set and ignored.
+ */
+function codexPass(
+  argv: readonly string[],
+  flag: string | undefined,
+  configured: () => PassArgs,
+  codex: () => PassArgs,
+): EffectivePassArgs {
+  refuseFlagWords("codex", flag);
+  const done = (out: string[], line: string): EffectivePassArgs => ({
+    argv: out,
+    line,
+    permission: codexPermission(out),
+  });
+  if (flag !== undefined)
+    return done([...argv], "pass args: none (--pass-args)");
+  if (hasOwnCodexArgs(argv)) {
+    let chosen: PassArgs;
+    try {
+      chosen = codex();
+    } catch {
+      return done(
+        [...argv],
+        "pass args: the pass command's own, kept as written",
+      );
+    }
+    const claude = claudeNote(configured);
+    if (chosen.words.length > 0 && carries(argv, chosen.words))
+      return done(
+        [...argv],
+        `pass args: ${shown(chosen.words)} (${chosen.source}, as written in the pass command)${claude}`,
+      );
+    return done(
+      [...argv],
+      chosen.words.length === 0
+        ? `pass args: the pass command's own, kept as written${claude}`
+        : `pass args: the pass command's own, kept as written; ${chosen.source} (${shown(chosen.words)}) is added only to a pass command without arguments of its own${claude}`,
+    );
+  }
+  const chosen = codex();
+  return done(
+    withCodexPassArgs(argv, chosen.words),
+    `pass args: ${shown(chosen.words)} (${chosen.source})${claudeNote(configured)}`,
+  );
+}
+
+function sandboxValue(argv: readonly string[], i: number): string | undefined {
+  const word = argv[i] as string;
+  if (word === "--sandbox" || word === "-s") return argv[i + 1];
+  if (word.startsWith("--sandbox=")) return word.slice("--sandbox=".length);
+  if (word.startsWith("-s"))
+    return word.slice(2).replace(/^=/, "") || undefined;
+  return undefined;
 }
 
 /**
@@ -217,17 +341,21 @@ function otherPass(
  * `--sandbox` names, or as Codex's own configuration decides.
  */
 export function codexPermission(argv: readonly string[]): PermissionMode {
-  if (argv.slice(1).includes(CODEX_BYPASS))
+  const end = argv.indexOf("--");
+  const words = end === -1 ? argv : argv.slice(0, end);
+  if (words.slice(1).some((w) => w === CODEX_BYPASS || w === "--yolo"))
     return {
       mode: "no sandbox, no approvals",
       source: `the pass command's ${CODEX_BYPASS}`,
     };
-  for (let i = 1; i + 1 < argv.length; i++)
-    if (argv[i] === "--sandbox" || argv[i] === "-s")
+  for (let i = 1; i < words.length; i++) {
+    const value = sandboxValue(words, i);
+    if (value)
       return {
-        mode: `sandbox ${argv[i + 1]}`,
+        mode: `sandbox ${value}`,
         source: "the pass command's --sandbox",
       };
+  }
   return {
     mode: "inherited",
     source: "the pass command sets no --sandbox; Codex's configuration decides",
@@ -237,12 +365,14 @@ export function codexPermission(argv: readonly string[]): PermissionMode {
 /**
  * The pass command with its extra arguments decided (see the module
  * header), from the command as given (its model already decided), the
- * `--pass-args` flag and the configured words.
+ * `--pass-args` flag and the configured words: Claude Code's
+ * (`configured`) and Codex's (`codex`).
  */
 export function effectivePassArgs(
   argv: readonly string[],
   flag: string | undefined,
   configured: () => PassArgs = configuredPassArgs,
+  codex: () => PassArgs = configuredCodexPassArgs,
 ): EffectivePassArgs {
   if (argv[0] === undefined)
     return {
@@ -250,7 +380,9 @@ export function effectivePassArgs(
       line: "pass args: no pass command given",
       permission: { mode: null, source: "no pass command given" },
     };
-  if (passVendor(argv) !== "claude") return otherPass(argv, flag, configured);
+  const vendor = passVendor(argv);
+  if (vendor === "codex") return codexPass(argv, flag, configured, codex);
+  if (vendor !== "claude") return otherPass(argv, flag, configured, codex);
   const done = (out: string[], line: string): EffectivePassArgs => ({
     argv: out,
     line,

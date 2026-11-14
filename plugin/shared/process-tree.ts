@@ -11,6 +11,7 @@ import {
   processRegistrySnapshot,
 } from "./process-registry.ts";
 import { processTable, type ProcessRow } from "./process-table.ts";
+import { currentMs } from "./time.ts";
 
 type Table = () => Promise<ProcessRow[] | null>;
 /** Capture descendants while their parent links still exist. Unreadable means unknown. */
@@ -199,7 +200,7 @@ export interface ProcessTreeControl {
 
 /** One deadline covers enumeration, identity checks, forced termination and its witness. */
 function operation(control: ProcessTreeControl = {}) {
-  const now = control.now ?? Date.now;
+  const now = control.now ?? currentMs;
   const deadline = control.deadline ?? now() + (control.timeoutMs ?? 30_000);
   const remaining = () => Math.max(0, deadline - now());
   const table = control.table ?? processTable;

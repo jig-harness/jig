@@ -2,6 +2,7 @@
 import { isMapping } from "../../shared/config-layers.ts";
 import { isStandingAnswer } from "./routine-questions.ts";
 import { isCarriedAnswer } from "./station-answer-store.ts";
+import { parseMs } from "../../shared/time.ts";
 
 function optionalText(value: unknown): boolean {
   return value === undefined || value === null || typeof value === "string";
@@ -11,7 +12,7 @@ function optionalText(value: unknown): boolean {
 function optionalTime(value: unknown): boolean {
   return (
     value === undefined ||
-    (typeof value === "string" && Number.isFinite(Date.parse(value)))
+    (typeof value === "string" && Number.isFinite(parseMs(value)))
   );
 }
 
@@ -56,6 +57,7 @@ export function optionalLaunchFields(value: Record<string, unknown>): boolean {
       Number.isSafeInteger(value.stewardDecision)) &&
     optionalStrings(value.claimedItems) &&
     optionalStrings(value.releasedItems) &&
+    optionalStrings(value.codexPassArgs) &&
     optionalSeconds(value.passTimeoutSec) &&
     optionalSeconds(value.rerunDied) &&
     optionalBooleans(value, [

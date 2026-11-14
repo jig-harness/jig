@@ -12,9 +12,11 @@
  * answer), and a record that already has a result, so a session settles
  * its own launch and no other, once.
  *
- * `waits --until <time>` is a pickup the tracker's rate limit stopped: the
- * tick starts the item again once `time` (ISO 8601, at most a day ahead)
- * has passed, and asks no person.
+ * `waits --until <time>` is a pickup the tracker's rate limit stopped, or a
+ * follow-up the forge's or the tracker's rate limit stopped: the tick starts
+ * it again once `time` (ISO 8601, at most a day ahead) has passed, and asks
+ * no person (a follow-up's third wait in a row is a person's:
+ * `lib/followup-waits.ts`).
  *
  * `failed --decision <file>` (`-` for standard input) is a pass that stopped
  * for a person and framed what it asks: a `parked-decision/v1` record, the
@@ -51,12 +53,13 @@ import {
   recordResult,
   type SessionResult,
 } from "./lib/launches.ts";
+import { currentIso, currentMs, isoFromMs, parseMs } from "../shared/time.ts";
 
 const USAGE =
   "usage: jig dispatch result <record> <token> done|failed [--pr <number> | --none <reason>] | failed --decision <file|-> | failed (--refused <updated-at> [--key <item>])... --reason <reason>... | waits --until <time>";
 /** The host could not write the result: the evidence is kept, and the dispatcher settles the stage. */
 const UNWRITTEN = 4;
-/** The longest a pickup may wait on a rate limit: a tracker's window is an hour or less. */
+/** The longest a pass may wait on a rate limit: a tracker's or the forge's window is an hour or less. */
 const MAX_WAIT_MS = 24 * 60 * 60_000;
 /** The record already has a result, which stands. */
 const ALREADY = 3;
@@ -123,7 +126,8 @@ export function refusedResultMain(
   return 0;
 }
 
-function sameToken(a: string, b: string): boolean {
+/** Whether two tokens are the same, compared in constant time. */
+export function sameToken(a: string, b: string): boolean {
   const left = Buffer.from(a);
   const right = Buffer.from(b);
   return left.length === right.length && timingSafeEqual(left, right);
@@ -232,7 +236,7 @@ function refusalFor(
     result !== "failed" ||
     args.refused.length === 0 ||
     args.reasons.length === 0 ||
-    args.refused.some((t) => !Number.isFinite(Date.parse(t))) ||
+    args.refused.some((t) => !Number.isFinite(parseMs(t))) ||
     args.reasons.some((r) => !r.trim()) ||
     (args.keys.length === 0 &&
       (args.refused.length !== 1 || args.reasons.length !== 1))
@@ -254,9 +258,9 @@ function refusalFor(
 /** The time a `waits` result names, in the column's form; `null` when it is not one. */
 function waitsUntil(flag?: string, value?: string): string | null {
   if (flag !== "--until" || value === undefined) return null;
-  const at = Date.parse(value);
-  if (!Number.isFinite(at) || at > Date.now() + MAX_WAIT_MS) return null;
-  return new Date(at).toISOString();
+  const at = parseMs(value);
+  if (!Number.isFinite(at) || at > currentMs() + MAX_WAIT_MS) return null;
+  return isoFromMs(at);
 }
 
 /** A command line this command takes: `done|failed` with their options, or `waits --until <time>`. */
@@ -272,7 +276,6 @@ function wellFormed(argv: string[]): boolean {
 function answerable(
   id: string,
   token: string,
-  result: string,
   root?: string,
 ): LaunchRecord | string {
   const record = isRecordId(id) ? readRecord(id, root) : null;
@@ -280,8 +283,6 @@ function answerable(
     return `${id} is not a launch record with that token`;
   if (record.action !== "pickup" && record.action !== "followup")
     return `${id} is a drive's record; its exit is its answer`;
-  if (result === "waits" && record.action !== "pickup")
-    return `${id} is a follow-up's record; only a pickup waits for a tracker's rate limit`;
   return record;
 }
 
@@ -297,7 +298,7 @@ export function resultMain(argv: string[], root?: string): number {
     string?,
     string?,
   ];
-  const record = answerable(id, token, result, root);
+  const record = answerable(id, token, root);
   if (typeof record === "string") {
     console.error(`jig dispatch result: ${record}`);
     return 2;
@@ -306,7 +307,7 @@ export function resultMain(argv: string[], root?: string): number {
   const next =
     until === null
       ? nextForResult(record, result, flag, value)
-      : { none: `waits for the tracker's rate limit until ${until}` };
+      : { none: `waits for a rate limit until ${until}` };
   if (next === null) return 2;
   if (
     !recordResult(
@@ -353,7 +354,7 @@ export function framedResultMain(
     );
     return 2;
   }
-  const framed = framedResultOf(text, new Date().toISOString());
+  const framed = framedResultOf(text, currentIso());
   if (!framed.ok) {
     console.error(
       `jig dispatch result: the decision was not recorded: ${framed.failure.reason}`,

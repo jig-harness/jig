@@ -8,7 +8,8 @@
  * the pickups as headless passes.
  * `jig dispatch install` writes the timer that runs `--apply` every
  * interval; `jig dispatch result` is how a dispatched session or follow-up pass
- * records how it ended; `jig dispatch marker` is how a follow-up command
+ * records how it ended, and `jig dispatch report` its closing report;
+ * `jig dispatch marker` is how a follow-up command
  * claims a merged pull request's follow-up, checks its claim and marks it
  * done or failed; `jig dispatch labels` creates the pull request state labels
  * a repository turns on, once, with no job installed; `jig dispatch dashboard` serves one page over the outcome log while
@@ -71,6 +72,7 @@ import {
   refusedResultMain,
   resultMain,
 } from "./result.ts";
+import { reportFileMain } from "./report-command.ts";
 import { runTick } from "./tick.ts";
 
 /** Exit when another tick holds the lock. */
@@ -233,6 +235,26 @@ const result = command(
   { brief: message`Record how a dispatched interactive session ended.` },
 );
 
+const report = command(
+  "report",
+  object({
+    action: constant("report"),
+    record: argument(string({ metavar: "RECORD" }), {
+      description: message`The launch record the pass was started under.`,
+    }),
+    token: argument(string({ metavar: "TOKEN" }), {
+      description: message`The record's token, named in the pass's prompt.`,
+    }),
+    file: argument(string({ metavar: "FILE" }), {
+      description: message`The closing report, a closing-report/v1 record as JSON, or - for standard input.`,
+    }),
+  }),
+  {
+    brief: message`Record a dispatched pass's closing report: what it concluded and what comes next.`,
+    description: message`Redacts and checks the report, then keeps it on the launch record and its outcome row. May run more than once, before or after jig dispatch result; the last report that passes the check stands, and none touches a recorded result. A refused report names what is wrong and records nothing.`,
+  },
+);
+
 const marker = command(
   "marker",
   object({
@@ -383,7 +405,7 @@ const dashboard = command(
 );
 
 /**
- * `jig dispatch`: one tick by default, with `result`, `marker`, `labels`, `dashboard`,
+ * `jig dispatch`: one tick by default, with `result`, `report`, `marker`, `labels`, `dashboard`,
  * `log`, `line`, `clear` and `probe` as its subcommands. Its `install` and `receipts`
  * subcommands do what the lifecycle verbs `jig install dispatch` and
  * `jig receipts dispatch` do, and stay for the command lines that use them,
@@ -397,6 +419,7 @@ const dispatch = (wholeMinutes: boolean) =>
         installation(wholeMinutes),
         receipts,
         result,
+        report,
         marker,
         labels,
         dashboard,
@@ -668,6 +691,8 @@ function subcommandMain(
     return guardedResult(args.record, args.token, () =>
       sessionResultMain(args),
     );
+  if (args.action === "report")
+    return reportFileMain(args.record, args.token, args.file);
   if (args.action === "receipts") return showReceipts(args.runId);
   if (args.action === "log")
     return logMain({

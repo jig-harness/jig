@@ -762,7 +762,7 @@ passing the token back**:
 bun "<skill-dir>/scripts/drive-state.ts" release-held [PR] --key K --token <printed-token>
 ```
 
-A `finding` is answered with `bun "<skill-dir>/../../shared/command.ts" --stdin-file .context/held-reason.md -- bun "<skill-dir>/scripts/portable.ts" answer-summary-finding [PR] --outcome <outcome> --fingerprint <key>`, after writing the item's own `.reason` field **verbatim** to `.context/held-reason.md` with the file editor —
+A `finding` is answered with `bun "<skill-dir>/../../shared/command.ts" --stdin-file .context/scratch/held-reason.md -- bun "<skill-dir>/scripts/portable.ts" answer-summary-finding [PR] --outcome <outcome> --fingerprint <key>`, after writing the item's own `.reason` field **verbatim** to `.context/scratch/held-reason.md` with the file editor —
 never re-composed or re-derived from memory, which is exactly the recollection
 this batch exists not to depend on. `--pushed-sha` must be the PR's live head
 and this worktree's clean HEAD, so the marker cannot precede the push; it does

@@ -76,6 +76,7 @@ import {
   unreadable,
 } from "./shared.ts";
 import { localWriter } from "./writer.ts";
+import { isoFromMs } from "../time.ts";
 
 export interface ForgeSharedOptions {
   /** The caller's own forge login, whose claims it trusts; `null` when unknown. */
@@ -318,7 +319,7 @@ function budgetOf(stdout: string): Outcome<SharedBudget, "unreadable"> {
   return ok({
     remaining: core.remaining,
     limit: core.limit,
-    resetAt: new Date(core.reset * 1000).toISOString(),
+    resetAt: isoFromMs(core.reset * 1000),
   });
 }
 

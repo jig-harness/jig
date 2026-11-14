@@ -28,6 +28,10 @@ import {
 } from "../../../shared/process-tree.ts";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 import {
+  CACHEDIR_TAG,
+  CACHEDIR_TAG_SIGNATURE,
+} from "../../../shared/disposable-mark.ts";
+import {
   skipsOnWindows,
   exceptOnWindows,
   byPlatform,
@@ -128,6 +132,29 @@ describe("foreground-wait.ts", () => {
       expectSpawnExit(w, 30);
       expect(out(w)).toContain("hi");
       expect(out(w)).toContain("command-exit: 7");
+    },
+    T,
+  );
+
+  test(
+    "tags its state directory disposable, and a relaunch's cleanup keeps the tag",
+    () => {
+      for (let launch = 0; launch < 2; launch++) {
+        expectSpawnExit(
+          run("launch", "--", process.execPath, "-e", ""),
+          0,
+          `launch ${launch + 1}`,
+        );
+        expectSpawnExit(run("wait"), 0, `wait ${launch + 1}`);
+      }
+      expect(
+        readFileSync(join(stateRoot(), CACHEDIR_TAG), "utf8").startsWith(
+          CACHEDIR_TAG_SIGNATURE,
+        ),
+      ).toBe(true);
+      expect(
+        readdirSync(stateRoot()).filter((n) => /^gen-\d+$/.test(n)),
+      ).toEqual(["gen-2"]);
     },
     T,
   );
@@ -830,8 +857,12 @@ describe("foreground-wait.ts", () => {
       expect(await identityTargetsGone([descendant as never])).toBe(true);
       // Children are stopped first. The runner may publish their failure
       // before its own kill arrives, or die before publishing a result.
-      const expected = existsSync(join(latestGen(), "result.json")) ? 30 : 21;
-      expectSpawnExit(run("wait", "--max-sec", "1"), expected);
+      // The runner can publish its failure after the process-table witness
+      // above observes it gone. Both the published-result and lost-runner
+      // outcomes are valid; assert the outcome after `wait` reads it.
+      const waited = run("wait", "--max-sec", "1");
+      if (waited.exitCode === 30) expectSpawnExit(waited, 30);
+      else expectSpawnExit(waited, 21);
     },
     T,
   );

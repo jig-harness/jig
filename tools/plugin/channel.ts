@@ -39,6 +39,7 @@ import {
   runChecked,
 } from "./artifact.ts";
 import { spawnSync } from "../../plugin/shared/guarded-git-spawn.ts";
+import { isoOf } from "../../plugin/shared/time.ts";
 
 export const CHANNELS = ["latest", "stable"] as const;
 export type Channel = (typeof CHANNELS)[number];
@@ -67,7 +68,7 @@ export interface ChannelCommit {
   action: Action;
   version: string;
   source: string;
-  date: Date;
+  date: Temporal.Instant;
   /** The versions a rollback took off the channel; never promoted again. */
   withdrawn: string[];
 }
@@ -147,10 +148,11 @@ export function soakStart(
   version: string,
   tag: Tag,
   latestHistory: ChannelCommit[],
-): Date | null {
+): Temporal.Instant | null {
   const oldestFirst = [...latestHistory].reverse();
   const first = oldestFirst[0];
-  if (!first || tag.madeAt.getTime() < first.date.getTime()) return tag.madeAt;
+  if (!first || Temporal.Instant.compare(tag.madeAt, first.date) < 0)
+    return tag.madeAt;
   const reached = oldestFirst.find(
     (entry) => compareVersions(entry.version, version) >= 0,
   );
@@ -162,7 +164,7 @@ export interface Tag {
   version: string;
   commit: string;
   /** When the tag was made: an annotated tag's date, else its commit's. */
-  madeAt: Date;
+  madeAt: Temporal.Instant;
   onMain: boolean;
 }
 
@@ -179,12 +181,12 @@ export interface PromotionFacts {
   /** The required check's conclusion on the tagged commit, or null if absent. */
   gates: string | null;
   /** When the version reached `latest` ({@link soakStart}). */
-  soakStart: Date | null;
+  soakStart: Temporal.Instant | null;
   stable: string | null;
   /** Versions a rollback withdrew from `stable`. */
   withdrawn: string[];
   regressions: Regression[];
-  now: Date;
+  now: Temporal.Instant;
 }
 
 /** What the promotion rule says about promoting `facts.candidate` to stable. */
@@ -224,7 +226,9 @@ function tagFailures(facts: PromotionFacts): string[] {
     failures.push(`v${candidate} is not on latest yet`);
     return failures;
   }
-  const hours = (facts.now.getTime() - facts.soakStart.getTime()) / 3_600_000;
+  const hours =
+    (facts.now.epochMilliseconds - facts.soakStart.epochMilliseconds) /
+    3_600_000;
   if (hours < SOAK_HOURS)
     failures.push(
       `v${candidate} has been on latest for ${Math.max(0, Math.floor(hours))} hours, under the ${SOAK_HOURS} it must soak`,
@@ -383,7 +387,12 @@ function readTags(repo: string): Tag[] {
           env: gitEnv(),
         },
       ).status === 0;
-    tags.push({ version, commit, madeAt: new Date(seconds * 1000), onMain });
+    tags.push({
+      version,
+      commit,
+      madeAt: Temporal.Instant.fromEpochMilliseconds(seconds * 1000),
+      onMain,
+    });
   }
   return tags.sort((a, b) => compareVersions(a.version, b.version));
 }
@@ -422,7 +431,7 @@ export function readChannel(
       action: trailers.action as Action,
       version: trailers.version,
       source: trailers.source,
-      date: new Date(Number(date) * 1000),
+      date: Temporal.Instant.fromEpochMilliseconds(Number(date) * 1000),
       withdrawn: trailers.withdrawn,
     });
   }
@@ -675,7 +684,7 @@ function printStatus(state: State): void {
     const head = state[name].history[0];
     console.log(
       head
-        ? `${name}: v${head.version} (${head.action}, ${head.date.toISOString()}, from ${head.source.slice(0, 12)})`
+        ? `${name}: v${head.version} (${head.action}, ${isoOf(head.date)}, from ${head.source.slice(0, 12)})`
         : `${name}: not published yet`,
     );
   }
@@ -741,7 +750,7 @@ function stableFailures(
   state: State,
   sources: Sources,
   tag: Tag | null,
-  now: Date,
+  now: Temporal.Instant,
 ): string[] {
   const version = args.version as string;
   const gates = tag ? sources.gates(tag.commit) : null;
@@ -770,7 +779,7 @@ function planStable(
   args: Args,
   state: State,
   sources: Sources,
-  now: Date,
+  now: Temporal.Instant,
 ): Planned {
   const version = args.version as string;
   const tag = state.tags.find((t) => t.version === version) ?? null;
@@ -834,7 +843,7 @@ export function run(
   args: Args,
   repo: string,
   sources: Sources,
-  now: Date,
+  now: Temporal.Instant,
   output: (key: string, value: string) => void,
 ): number {
   const state = readState(sources);
@@ -858,7 +867,7 @@ if (import.meta.main)
     const github = githubRepository(repo, args.remote, args.repo);
     const sources = gitSources(repo, args.remote, ghSources(github));
     const file = process.env.GITHUB_OUTPUT;
-    return run(args, repo, sources, new Date(), (key, value) => {
+    return run(args, repo, sources, Temporal.Now.instant(), (key, value) => {
       if (file) appendFileSync(file, `${key}=${value}\n`);
     });
   });

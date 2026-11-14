@@ -63,20 +63,24 @@ const fs = require("node:fs");
 const F = process.env.DISPATCH_FAKE_DIR;
 const args = process.argv.slice(2);
 fs.appendFileSync(F + "/gh-calls.log", args.join(" ").replace(/\\n/g, " ") + "\\n");
+// The forge refusing the credential for its rate limit or outright, or not answering at all, while these files exist.
+if (fs.existsSync(F + "/forge-rate-limited")) { process.stderr.write("gh: API rate limit exceeded for user ID 1. (HTTP 403)\\n"); process.exit(1); }
+if (fs.existsSync(F + "/forge-unauthorized")) { process.stderr.write("gh: Bad credentials (HTTP 401)\\n"); process.exit(1); }
+if (fs.existsSync(F + "/forge-unreachable")) { process.stderr.write("dial tcp: lookup api.github.com: no such host\\n"); process.exit(1); }
 const out = (v) => { process.stdout.write(typeof v === "string" ? v : JSON.stringify(v)); process.exit(0); };
 if (args[0] === "api" && args[1] === "graphql" && args.some((a) => a.includes("query DispatchRepository"))) {
   const answer = require(${JSON.stringify(QUERY_FAKE)}).repositoryQuery(F, args, process.cwd());
-  if (answer === null) { process.stderr.write("gh: HTTP 502\\n"); process.exit(1); }
+  if (answer === null) { process.stderr.write("gh: HTTP 422\\n"); process.exit(1); }
   out(answer);
 }
 if (args[0] === "api" && args[1] === "graphql" && args.some((a) => a.includes("query DispatchComments"))) {
   const answer = require(${JSON.stringify(QUERY_FAKE)}).commentsQuery(F, args);
-  if (answer === null) { process.stderr.write("gh: HTTP 502\\n"); process.exit(1); }
+  if (answer === null) { process.stderr.write("gh: HTTP 422\\n"); process.exit(1); }
   out(answer);
 }
 if (args[0] === "api" && args[1] === "graphql" && args.some((a) => a.includes("query DispatchBoard"))) {
   // The board read's query: board.json's answer, failing while board-fail exists or when no test wrote one.
-  if (fs.existsSync(F + "/board-fail") || !fs.existsSync(F + "/board.json")) { process.stderr.write("gh: HTTP 502\\n"); process.exit(1); }
+  if (fs.existsSync(F + "/board-fail") || !fs.existsSync(F + "/board.json")) { process.stderr.write("gh: HTTP 422\\n"); process.exit(1); }
   out(fs.readFileSync(F + "/board.json", "utf8"));
 }
 if (args[0] === "repo" && args[1] === "view" && args.includes("nameWithOwner,defaultBranchRef"))
@@ -88,7 +92,7 @@ if (args[0] === "api" && args[1] === "rate_limit")
 if (args[0] === "pr" && args[1] === "list") {
   const state = args[args.indexOf("--state") + 1];
   // A listing that fails while prs-<state>-fail exists.
-  if (fs.existsSync(F + "/prs-" + state + "-fail")) { process.stderr.write("gh: HTTP 502\\n"); process.exit(1); }
+  if (fs.existsSync(F + "/prs-" + state + "-fail")) { process.stderr.write("gh: HTTP 422\\n"); process.exit(1); }
   out(fs.readFileSync(F + "/prs-" + state + ".json", "utf8"));
 }
 if (args[0] === "pr" && args[1] === "view" && args.some((a) => a.includes("headRefOid"))) {
@@ -185,7 +189,7 @@ if (args[0] === "api" && /^repos\\/[^/]+\\/[^/]+\\/git\\/ref\\/heads\\//.test(ar
 const files = args[0] === "api" ? /^repos\\/[^/]+\\/[^/]+\\/pulls\\/(\\d+)\\/files\\?per_page=(\\d+)&page=(\\d+)$/.exec(args[1] ?? "") : null;
 if (files !== null) {
   // The files files-<pr>.json lists, one page at a time; refused while files-<pr>-fail exists.
-  if (fs.existsSync(F + "/files-" + files[1] + "-fail")) { process.stderr.write("gh: HTTP 502\\n"); process.exit(1); }
+  if (fs.existsSync(F + "/files-" + files[1] + "-fail")) { process.stderr.write("gh: HTTP 422\\n"); process.exit(1); }
   const all = fs.existsSync(F + "/files-" + files[1] + ".json") ? JSON.parse(fs.readFileSync(F + "/files-" + files[1] + ".json", "utf8")) : [];
   const per = Number(files[2]);
   const page = Number(files[3]);
@@ -347,7 +351,9 @@ fs.appendFileSync(F + "/drive-runs.jsonl", JSON.stringify({
   launch: process.env.JIG_LAUNCH ?? null,
 }) + "\\n");
 const until = Date.now() + 60000;
+if (fs.existsSync(F + "/drive-stderr")) process.stderr.write(fs.readFileSync(F + "/drive-stderr"));
 while (fs.existsSync(F + "/drive-hold") && Date.now() < until) Bun.sleepSync(50);
+if (fs.existsSync(F + "/drive-output")) process.stdout.write(fs.readFileSync(F + "/drive-output"));
 process.exit(fs.existsSync(F + "/drive-exit") ? Number(fs.readFileSync(F + "/drive-exit", "utf8")) : 0);
 `;
 
@@ -619,16 +625,19 @@ export function world(): World {
   let later: { after: number; nodes: Array<Record<string, unknown>> } | null =
     null;
   function answer(op: string | undefined, v: Record<string, unknown>): unknown {
-    if (op === "TrackerIssues") {
+    if (op === "TrackerIssues" || op === "TrackerDispatchQueue") {
       listings += 1;
       if (later !== null && listings > later.after) issues = later.nodes;
-      const filter = v.filterBy as Record<string, unknown>;
+      const assignee =
+        op === "TrackerDispatchQueue"
+          ? v.identity
+          : (v.filterBy as Record<string, unknown>).assignee;
       return {
         repository: {
           issues: conn(
             issues.filter((n) =>
               (n.assignees as { nodes: Array<{ login: string }> }).nodes.some(
-                (a) => a.login === filter.assignee,
+                (a) => a.login === assignee,
               ),
             ),
           ),
@@ -637,7 +646,7 @@ export function world(): World {
     }
     if (op === "TrackerUser")
       return { user: { id: `U_${String(v.login)}`, login: v.login } };
-    if (op === "TrackerIssue") {
+    if (op === "TrackerIssue" || op === "TrackerDispatchIssue") {
       const found = issues.find((n) => n.number === v.number);
       return {
         repository: {

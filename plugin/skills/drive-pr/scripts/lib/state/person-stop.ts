@@ -3,6 +3,7 @@ import { fail } from "../cli.ts";
 import { driveDb } from "./db.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
 import { redact } from "./ledger.ts";
+import { currentIso, parseMs } from "../../../../../shared/time.ts";
 
 export function personStopFor(
   stateDir: string,
@@ -24,7 +25,7 @@ export function personStopFor(
   if (
     !isRecord(stop) ||
     typeof stop.at !== "string" ||
-    !Number.isFinite(Date.parse(stop.at)) ||
+    !Number.isFinite(parseMs(stop.at)) ||
     typeof stop.reason !== "string"
   )
     fail(1, "the operator stop record does not read");
@@ -52,7 +53,7 @@ export function recordPersonStop(
         driver.started,
         driver.pid,
         driver.host,
-        JSON.stringify({ at: new Date().toISOString(), reason }),
+        JSON.stringify({ at: currentIso(), reason }),
       ],
     ).changes > 0
   );

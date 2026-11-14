@@ -33,6 +33,7 @@ import {
 import { loopEconomy } from "./reports.ts";
 
 import { planFor, describe as describeQuota } from "./../quota/index.ts";
+import { isoOf } from "../../../../../shared/time.ts";
 
 /**
  * The account the pass that met the wall billed: the identity resolved as it
@@ -148,7 +149,7 @@ async function handleSleepableQuota(
   }
   const minutes = Math.ceil(plan.ms / 60000);
   console.error(
-    `  SLEEPING ${minutes} minute(s) until ${plan.until.toISOString()}, then resuming.`,
+    `  SLEEPING ${minutes} minute(s) until ${isoOf(plan.until)}, then resuming.`,
   );
   console.error(
     "  The locks stay held and keep refreshing: this drive is still the one driving",
@@ -193,7 +194,7 @@ async function handleSleepableQuota(
 
 export async function handleQuotaBlock(
   block: QuotaBlock,
-  now: Date,
+  now: Temporal.Instant,
   round: number,
   context: DriveRoundContext,
 ): Promise<number | "continue"> {
