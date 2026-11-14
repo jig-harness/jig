@@ -911,6 +911,28 @@ make, use the entry's term instead.
   finish, such as a legal sign-off, an operator step or review debt. At
   closure a tail is linked back and given a comment naming the epic, then
   unparented and moved to the standing destination for its kind.
+- **Execution plan** — the order of an *epic*'s children, kept on the epic
+  as a section with a machine-readable block (`execution-plan-v1`): each
+  child's precedence band, its lane (a group of related children, which
+  orders nothing), its human gates, and the edges between children with
+  their reasons. The pickup and the dispatcher read it; the *epic planner*
+  writes it ([design](design/epic-planner.md)).
+- **Epic planner** — the skill that writes and keeps an *epic*'s *execution
+  plan*: it records each real dependency as a native tracker relation,
+  renders the plan, applies the mechanical changes on its own and asks a
+  person once for the changes that need judgment
+  ([design](design/epic-planner.md)).
+- **Critical path** — the longest chain of an *epic*'s open children that
+  must land one after another, each child weighted by its size. Its children
+  take the epic's priority in the *epic planner*'s priority rule.
+- **Footprint** — the paths a piece of work is expected to touch, declared
+  before it starts, so that work that would collide can be told from work
+  that would not.
+- **Relation statement** — a hold or an order stated as data rather than a
+  sentence: subject references, a relation word from a closed list (such as
+  "waits on"), object references and a count. Each reference carries its
+  kind (issue or pull request), state, link and counterpart, so a view can
+  show it as a chip with its link ([design](design/epic-planner.md)).
 - **Epic census** — the read-only count of how a repository's started *epics*
   stand, kept by the fleet-health sensor: *finished-but-open* (every child is
   closed, the epic is not), *tail-blocked* (nearly all delivered, one or two
