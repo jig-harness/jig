@@ -991,7 +991,9 @@ implementation. Skip this check for issues about the repository's own code.
    **Pre-PR code review gate (mandatory unless the diff is tiny):**
 
    Run it after the implementing agent finishes and the validation plan
-   passes, **before** `git push` / `gh pr create`. The validation plan is
+   passes, **before** the push that opens the pull request and
+   `gh pr create` (a [dispatched pass](#dispatched-passes) pushes its
+   committed work earlier as well). The validation plan is
    the one the change-area catalog emits for the complete workspace change
    when `drive.change_areas_catalog` is declared, and the repository's gate
    command otherwise; do not substitute a fixed command list. `<base>` below
@@ -1921,8 +1923,12 @@ report. In such a pass:
   deadline. A Claude Code pass runs with background tasks off. Once the
   branch holds committed work, push it before a long validation step and
   after each later commit, so a deadline or an interrupted run strands
-  nothing on the host; the pull request still opens only after validation
-  and the pre-PR review.
+  nothing on the host. Each such push is the push step of
+  [Step 4a](#step-4a-standard-start-no-sub-issues): `commit-prefix.ts`
+  first when `pull_requests.commit_prefix` is set, since a pushed commit is
+  never reworded. A push the repository's pre-push hook refuses is no stop:
+  go on with validation, fix what it found, and push after it. The pull
+  request still opens only after validation and the pre-PR review.
 - **Write the closing report last.** Record the result as soon as the
   pull request's drive is armed and go on; when the pass is done, write
   its closing report, a `closing-report/v1` record of the shape the prompt

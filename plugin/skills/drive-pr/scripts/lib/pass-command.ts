@@ -45,8 +45,7 @@ export function onlyDeadlineBounds(vendor: AccountVendor): boolean {
  * task: a pass has no next turn to receive one's result, so a task still
  * running when its turn ends is lost with it. Claude Code removes its
  * background tool parameters and auto-backgrounding under this variable;
- * Codex has no such setting and ignores it, and its pass's prompt carries
- * the rule alone.
+ * Codex does not read it, so a Codex pass's prompt carries the rule alone.
  */
 export const NO_BACKGROUND_TASKS: Readonly<Record<string, string>> = {
   CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1",
