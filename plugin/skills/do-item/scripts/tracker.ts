@@ -123,7 +123,7 @@
 
 import { jiraStateMaps } from "./lib/tracker/jira/state-maps.ts";
 import { readFile } from "node:fs/promises";
-import { isRateLimited } from "../../../shared/tracker-budget.ts";
+import { isRateLimited } from "../../../shared/outbound/budget.ts";
 import {
   type FailureClass,
   failureOf,

@@ -128,6 +128,8 @@ describe("jig dispatch --apply picks up assigned items", () => {
   it("gives an assigned todo item exactly one headless do-item pass across three ticks, on Orca's own answer", async () => {
     const w = fixture();
     w.env.CLAUDE_CODE_OAUTH_TOKEN = "a-token-for-another-account";
+    // The host's own setting does not turn the pass's background tasks back on.
+    w.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS = "0";
 
     const first = await applyTick(w, false);
     const [launched] = launches(first);
@@ -159,6 +161,8 @@ describe("jig dispatch --apply picks up assigned items", () => {
     // Bound through the account's directory, with the other account's token gone.
     expect(pass?.configDir).toBe(join(w.root, "config-a"));
     expect(pass?.token).toBeNull();
+    // A headless pass has no next turn to receive a background task's result.
+    expect(pass?.backgroundTasksOff).toBe("1");
     const argv = pass?.argv ?? [];
     expect(argv.at(-2)).toBe("-p");
     // The pass keeps the agent's own model and effort.

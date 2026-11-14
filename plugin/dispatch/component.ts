@@ -12,7 +12,7 @@
  * install refuses without one. Its timer serves every repository the file
  * lists, so only `jig uninstall --machine` removes it. With `--repo`, its
  * install also creates the dispatch labels that repository turns on and
- * lacks (`install-labels.ts`).
+ * lacks, and updates those an earlier release described (`install-labels.ts`).
  */
 import { existsSync } from "node:fs";
 import type {
@@ -159,7 +159,7 @@ export const dispatchComponent: Component<DispatchArguments> = {
       request.script,
       machineFile(),
     );
-    // A repository named with --repo also gets the dispatch labels it lacks, once the timer is written.
+    // A repository named with --repo also gets the dispatch labels it lacks or has outdated, once the timer is written.
     if (request.repository === undefined || timer !== 0) return timer;
     const labels = await installLabels([request.repository], request.confirm);
     return Math.max(timer, labels);

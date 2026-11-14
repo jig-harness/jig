@@ -16,6 +16,7 @@ import {
 } from "node:fs";
 import { join, resolve } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
+import { DEFAULT_LABELS, labelSet } from "../lib/labels.ts";
 import type { TickReceipt } from "../receipts.ts";
 import {
   HEAD_SHA,
@@ -366,13 +367,36 @@ describe("jig install dispatch --repo", () => {
   const labelsFile = (w: World) => join(w.dir, "labels-repo.json");
   const created = (calls: string[]) =>
     calls.filter((c) => c.startsWith("label create "));
+  const described = (calls: string[]) =>
+    calls.filter((c) => c.startsWith("label edit "));
+  /** A label of the set as the release describes it, with its color. */
+  const current = (name: string) => {
+    const spec = labelSet({ ...DEFAULT_LABELS, enabled: true }).find(
+      (l) => l.name === name,
+    );
+    if (spec === undefined) throw new Error(`${name} is not in the set`);
+    return spec;
+  };
+  /** The repository's labels as the fake forge keeps them, by name; a name alone has no description. */
+  const repoLabels = (w: World) =>
+    (
+      JSON.parse(readFileSync(labelsFile(w), "utf8")) as Array<
+        string | { name: string; description: string; color: string }
+      >
+    )
+      .map((l) =>
+        typeof l === "string"
+          ? { name: l, description: "", color: "ededed" }
+          : l,
+      )
+      .sort((a, b) => a.name.localeCompare(b.name));
   /** The labels part of the install, with or without --yes. */
   const labelsPart = (w: World, ...args: string[]) =>
     w.dispatch([w.repo, ...args], ENTRY);
 
   it("previews the timer and the labels the repository lacks", async () => {
     const w = fixture(ON);
-    writeFileSync(labelsFile(w), JSON.stringify(["jig:driving"]));
+    writeFileSync(labelsFile(w), JSON.stringify([current("jig:driving")]));
     const r = await w.dispatch(["install", "dispatch", "--repo", w.repo], JIG);
     expectSpawnExit(r, 0);
     expect(r.stdout).toContain("--apply");
@@ -383,7 +407,10 @@ describe("jig install dispatch --repo", () => {
 
   it("lists the missing labels, creates them with --yes, and lists for a person those the account may not create", async () => {
     const w = fixture(ON);
-    writeFileSync(labelsFile(w), JSON.stringify(["jig:driving", "bug"]));
+    writeFileSync(
+      labelsFile(w),
+      JSON.stringify([current("jig:driving"), "bug"]),
+    );
 
     const preview = await labelsPart(w);
     expectSpawnExit(preview, 0);
@@ -403,7 +430,7 @@ describe("jig install dispatch --repo", () => {
     const made = await labelsPart(w, "--yes");
     expectSpawnExit(made, 0);
     expect(created(ghCalls(w, true))).toHaveLength(11);
-    expect(JSON.parse(readFileSync(labelsFile(w), "utf8")).sort()).toEqual(
+    expect(repoLabels(w).map((l) => l.name)).toEqual(
       [
         "automation",
         "bug",
@@ -424,6 +451,68 @@ describe("jig install dispatch --repo", () => {
     const again = await labelsPart(w, "--yes");
     expectSpawnExit(again, 0);
     expect(created(ghCalls(w))).toEqual([]);
+    expect(described(ghCalls(w))).toEqual([]);
+  }, 60_000);
+
+  it("lists a label whose description changed beside a missing one, updates it with --yes and keeps its color, and lists for a person one the account may not edit", async () => {
+    const w = fixture(ON);
+    const stale = current("jig:stale");
+    // Installed by an earlier release, and recolored by a person since.
+    const earlier = {
+      ...stale,
+      description: "An earlier release's meaning of the label",
+      color: "000000",
+    };
+    const others = labelSet({ ...DEFAULT_LABELS, enabled: true }).filter(
+      (l) => l.name !== stale.name,
+    );
+    writeFileSync(
+      labelsFile(w),
+      JSON.stringify([earlier, ...others, "manual-ops"]),
+    );
+
+    const preview = await labelsPart(w);
+    expectSpawnExit(preview, 0);
+    expect(preview.stdout).toContain(
+      "these dispatch labels say what an earlier release meant by them; repeat with --yes to update them:",
+    );
+    expect(preview.stdout).toContain(`  jig:stale: ${stale.description}`);
+    expect(preview.stdout).not.toContain("jig:driving:");
+    // A label still missing is listed beside it.
+    expect(preview.stdout).toContain(
+      "these dispatch labels do not exist yet; repeat with --yes to create them:",
+    );
+    expect(preview.stdout).toContain("  automation: ");
+    expect(described(ghCalls(w, true))).toEqual([]);
+
+    writeFileSync(join(w.dir, "label-describe-fail"), "");
+    const refused = await labelsPart(w, "--yes");
+    expectSpawnExit(refused, 1);
+    expect(refused.stdout).toContain(`${SLUG}: created automation`);
+    expect(refused.stdout).toContain(
+      `gh label edit 'jig:stale' --repo ${SLUG} --description '${stale.description}'`,
+    );
+    expect(repoLabels(w).find((l) => l.name === stale.name)).toEqual(earlier);
+
+    rmSync(join(w.dir, "label-describe-fail"));
+    ghCalls(w, true);
+    const updated = await labelsPart(w, "--yes");
+    expectSpawnExit(updated, 0);
+    expect(updated.stdout).toContain(`${SLUG}: updated jig:stale`);
+    expect(described(ghCalls(w, true))).toEqual([
+      `label edit jig:stale --repo ${SLUG} --description ${stale.description}`,
+    ]);
+    expect(repoLabels(w).find((l) => l.name === stale.name)).toEqual({
+      ...earlier,
+      description: stale.description,
+    });
+
+    const again = await labelsPart(w, "--yes");
+    expectSpawnExit(again, 0);
+    expect(again.stdout).toContain(
+      "every dispatch label under 'jig:' exists and says what this release means by it",
+    );
+    expect(described(ghCalls(w))).toEqual([]);
   }, 60_000);
 
   it("needs no label where the repository turns them off", async () => {
