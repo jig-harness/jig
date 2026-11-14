@@ -7,6 +7,7 @@ import {
   retryableStartup,
 } from "./session-startup.ts";
 import { unwrittenExitWitness } from "./unwritten-result.ts";
+import { idsOf, latestBy } from "./launch-keep.ts";
 
 /**
  * The latest follow-up of each pull request, kept while it is a first death
@@ -14,23 +15,15 @@ import { unwrittenExitWitness } from "./unwritten-result.ts";
  * the recovery, so it stays until a later record of the pull request exists.
  */
 export function latestDeaths(records: ReadRecord[]): Set<string> {
-  const latest = new Map<string, ReadRecord>();
-  for (const r of records) {
-    if (r.record.action !== "followup" || retryableStartup(r)) continue;
-    const key = `${r.record.repo}#${String(r.record.pr)}`;
-    const seen = latest.get(key);
-    if (seen === undefined || r.record.createdAt >= seen.record.createdAt)
-      latest.set(key, r);
-  }
-  return new Set(
-    [...latest.values()]
-      .filter(
-        (r) =>
-          r.record.rerunDied !== 0 &&
-          diedWithoutResult(r) &&
-          !isRerun(r.record),
-      )
-      .map((r) => r.record.id),
+  const latest = latestBy(records, (r) =>
+    r.record.action === "followup" && !retryableStartup(r)
+      ? `${r.record.repo}#${String(r.record.pr)}`
+      : null,
+  );
+  return idsOf(
+    latest,
+    (r) =>
+      r.record.rerunDied !== 0 && diedWithoutResult(r) && !isRerun(r.record),
   );
 }
 

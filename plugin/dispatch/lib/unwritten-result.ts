@@ -104,6 +104,32 @@ export function writeUnwritten(
   }
 }
 
+/** The time in a valid evidence file under one of `paths`, optionally of `what`. */
+function evidenceAt(
+  paths: readonly string[],
+  id: string,
+  hash: string,
+  what?: UnwrittenWhat,
+): string | undefined {
+  for (const path of paths) {
+    if (!existsSync(path)) continue;
+    try {
+      const value: unknown = JSON.parse(readFileSync(path, "utf8"));
+      if (
+        isMapping(value) &&
+        value.record === id &&
+        value.token === hash &&
+        typeof value.at === "string" &&
+        (what === undefined || value.what === what)
+      )
+        return value.at;
+    } catch (error) {
+      swallow(error, "the evidence of an unwritten end does not read");
+    }
+  }
+  return undefined;
+}
+
 /**
  * When record `id`'s end could not be written, as its evidence says, when
  * the evidence names the record's own token: `{ unwritten: <time> }`, else
@@ -115,26 +141,16 @@ export function unwrittenOf(
   token: string,
 ): { unwritten?: string } {
   const hash = digest(token);
-  for (const path of [
-    unwrittenPath(root, id, hash, "result"),
-    unwrittenPath(root, id, hash, "exit"),
-    legacyUnwrittenPath(root, id, hash),
-  ]) {
-    if (!existsSync(path)) continue;
-    try {
-      const value: unknown = JSON.parse(readFileSync(path, "utf8"));
-      if (
-        isMapping(value) &&
-        value.record === id &&
-        value.token === hash &&
-        typeof value.at === "string"
-      )
-        return { unwritten: value.at };
-    } catch (error) {
-      swallow(error, "the evidence of an unwritten end does not read");
-    }
-  }
-  return {};
+  const at = evidenceAt(
+    [
+      unwrittenPath(root, id, hash, "result"),
+      unwrittenPath(root, id, hash, "exit"),
+      legacyUnwrittenPath(root, id, hash),
+    ],
+    id,
+    hash,
+  );
+  return at === undefined ? {} : { unwritten: at };
 }
 
 /**
@@ -149,25 +165,17 @@ export function unwrittenExitWitness(
   token: string,
 ): boolean {
   const hash = digest(token);
-  for (const path of [
-    unwrittenPath(root, id, hash, "exit"),
-    legacyUnwrittenPath(root, id, hash),
-  ]) {
-    if (!existsSync(path)) continue;
-    try {
-      const value: unknown = JSON.parse(readFileSync(path, "utf8"));
-      if (
-        isMapping(value) &&
-        value.record === id &&
-        value.token === hash &&
-        value.what === "exit"
-      )
-        return true;
-    } catch (error) {
-      swallow(error, "the evidence of an unwritten end does not read");
-    }
-  }
-  return false;
+  return (
+    evidenceAt(
+      [
+        unwrittenPath(root, id, hash, "exit"),
+        legacyUnwrittenPath(root, id, hash),
+      ],
+      id,
+      hash,
+      "exit",
+    ) !== undefined
+  );
 }
 
 /** Remove every evidence file of the records that were pruned, best effort: a file left behind is read by nothing, since its record is gone. */
