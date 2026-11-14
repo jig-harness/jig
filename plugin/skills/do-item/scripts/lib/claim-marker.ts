@@ -20,9 +20,13 @@
  * and deleted but never edited here:
  *
  *   <!-- jig-claim-outcome
- *   {"kind":"tracker-claim-marker","v":1,"key":"claim","writer":{…},"at":"…","attempt":"…","outcome":"released","reason":"…"}
+ *   {"kind":"tracker-claim-marker","v":1,"key":"claim","writer":{…},"at":"…","attempt":"…","outcome":"released"}
  *   -->
- *   Claim attempt <attempt> released: <reason>
+ *   Claim attempt <attempt> released
+ *
+ * The record names no reason: a refusal's reason can quote an assignee's name
+ * or a tracker's error text, and an outcome comment stays on the item after
+ * its marker is withdrawn. The reason goes to the claim's own result.
  *
  * `claimed` says the attempt holds the item and a worker runs on it;
  * `released` that it refused or stood down and holds nothing; `unresolved`
@@ -69,8 +73,6 @@ export interface ClaimOutcomeFacts {
   /** The attempt the outcome is of, as its marker names it. */
   attempt: string;
   outcome: ClaimOutcome;
-  /** Why, for a person reading the item; absent on `claimed`. */
-  reason?: string;
   at: string;
 }
 
@@ -152,10 +154,9 @@ export function claimOutcomeBody(facts: ClaimOutcomeFacts): string {
     {
       attempt: facts.attempt,
       outcome: facts.outcome,
-      ...(facts.reason === undefined ? {} : { reason: facts.reason }),
     },
   );
-  const line = `Claim attempt ${facts.attempt} ${facts.outcome}${facts.reason === undefined ? "" : `: ${facts.reason}`}`;
+  const line = `Claim attempt ${facts.attempt} ${facts.outcome}`;
   return `${data}\n${line}\n`;
 }
 
@@ -164,7 +165,7 @@ export function readClaimOutcome(body: string): ClaimOutcomeFacts | null {
   if (!body.includes(`<!-- ${OUTCOME_DATA}`)) return null;
   const read = decodeMarker(body, OUTCOME_DATA, CLAIM_MARKER_KIND);
   if (!read.ok) return null;
-  const { attempt, outcome, reason } = read.value.payload;
+  const { attempt, outcome } = read.value.payload;
   if (
     typeof attempt !== "string" ||
     !CLAIM_OUTCOMES.includes(outcome as ClaimOutcome)
@@ -173,7 +174,6 @@ export function readClaimOutcome(body: string): ClaimOutcomeFacts | null {
   return {
     attempt,
     outcome: outcome as ClaimOutcome,
-    ...(typeof reason === "string" ? { reason } : {}),
     at: read.value.envelope.at,
   };
 }

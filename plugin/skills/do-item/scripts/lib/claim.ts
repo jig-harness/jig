@@ -186,6 +186,27 @@ export async function claimIssue(
   return { outcome: "claimed", issue: key, claimant: me, state: started };
 }
 
+/**
+ * Read-only: why a claimed item is no longer the claim's, or `null` when its
+ * assignee and state are still what the claim wrote. Writes nothing.
+ */
+export async function claimStillStands(
+  tracker: ClaimTracker,
+  key: string,
+  claimed: ClaimResult,
+): Promise<string | null> {
+  if (claimed.outcome !== "claimed") return null;
+  const [holders, issue] = await Promise.all([
+    tracker.assignees(key),
+    tracker.poolIssue(key),
+  ]);
+  if (holders.length !== 1 || holders[0]?.id !== claimed.claimant.id)
+    return `its assignee is no longer ${claimed.claimant.name} alone`;
+  if (issue === null || !sameName(issue.state.name, claimed.state))
+    return `it is now ${issue?.state.name ?? "gone"}, not ${claimed.state}`;
+  return null;
+}
+
 /** Refuse unavailable, held or disallowed start states before an assignment. */
 function startAdmission(
   tracker: ClaimTracker,

@@ -352,6 +352,73 @@ describe("the claim marker as the claim's token", () => {
     expect(outcomesIn(s.comments)).toEqual(["claimed"]);
   });
 
+  it("stands down unresolved, without recording a claim, when revalidation finds the item changed", async () => {
+    const s = store();
+    const late = theirs("x", 1_000);
+    const h = lagging(s, late, (read) =>
+      read >= 3 ? [outcomeOf("x", "released")] : [],
+    );
+    const out = await claimWithMarker(
+      h.tracker,
+      "#5",
+      FACTS,
+      claimed,
+      CLOCK,
+      async () => "it is now Todo, not In Progress",
+    );
+    expect(out).toMatchObject({
+      outcome: "stood_down",
+      recovery: "unresolved",
+    });
+    expect(outcomesIn(s.comments)).toEqual(["unresolved"]);
+  });
+
+  it("stops reading past the recovery deadline and stands down unresolved", async () => {
+    const s = store();
+    const late = theirs("x", 1_000);
+    const h = lagging(s, late, () => []);
+    let now = Date.now();
+    const clock: Clock = {
+      now: () => now,
+      sleep: async () => {
+        now += 40_000;
+      },
+    };
+    const out = await claimWithMarker(h.tracker, "#5", FACTS, claimed, clock);
+    expect(out).toMatchObject({
+      outcome: "stood_down",
+      recovery: "unresolved",
+    });
+    expect(h.reads()).toBeLessThan(10);
+  });
+
+  it("keeps a release it saw when a later lagging read shows the marker without it", async () => {
+    // x releases on read 3 but y's release only on read 5; at read 4 x's
+    // release is missing again, which must not reopen x.
+    const s = store();
+    const x = theirs("x", 2_000);
+    const y = theirs("y", 1_000);
+    let reads = 0;
+    const tracker = s.tracker({
+      issueComments: async () => {
+        reads++;
+        const extra =
+          reads === 3
+            ? [outcomeOf("x", "released")]
+            : reads >= 5
+              ? [outcomeOf("x", "released"), outcomeOf("y", "released")]
+              : [];
+        return {
+          uuid: "u",
+          comments:
+            reads === 1 ? [...s.comments] : [x, y, ...s.comments, ...extra],
+        };
+      },
+    });
+    const out = await claimWithMarker(tracker, "#5", FACTS, claimed, CLOCK);
+    expect(out).toMatchObject({ outcome: "claimed", recovery: "reclaimed" });
+  });
+
   it("stands down after the write, leaving the item to the earlier attempt, when that attempt recorded its claim", async () => {
     const s = store();
     const late = theirs("x", 1_000);
@@ -624,7 +691,10 @@ describe("a claim that meets an earlier marker after it wrote the item", () => {
       s.tracker({
         issueComments: async () => {
           reads++;
-          const comments = [...s.comments];
+          // A's release shows only from the third read, a recovery read.
+          const comments = s.comments.filter(
+            (c) => reads > 2 || readClaimOutcome(c.body) === null,
+          );
           if (reads > 1 && ghost && !comments.includes(ghost))
             comments.unshift(ghost);
           return { uuid: "u", comments };
@@ -646,7 +716,7 @@ describe("a claim that meets an earlier marker after it wrote the item", () => {
       CLOCK,
     );
     expect(first).toMatchObject({ outcome: "refused", why: "in_progress" });
-    expect(b.outcome).toBe("claimed");
+    expect(b).toMatchObject({ outcome: "claimed", recovery: "reclaimed" });
     expect(it5.at).toEqual({
       state: "In Progress",
       assignees: [{ id: "u", name: "factory" }],

@@ -197,7 +197,7 @@ seconds. Each attempt also records how it ended, in a comment beside its
 marker: claimed, released (it refused or stood down) or unresolved. A claim
 that finds an earlier marker only after it has assigned and started the item
 does not undo that: those writes may be another worker's too, since both
-claim with one identity. It waits up to a minute for the earlier
+claim with one identity. It waits up to 90 seconds for the earlier
 attempt's outcome. A recorded release (or an unresolved stand-down) means
 that attempt holds nothing, so the claim keeps the item while its own marker
 still shows; a recorded claim means the other attempt is the worker, so this

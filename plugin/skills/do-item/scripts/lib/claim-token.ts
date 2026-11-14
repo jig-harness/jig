@@ -89,6 +89,13 @@ const READ_BACK_DELAY_MS = 2_000;
  */
 export const RECOVERY_READS = 20;
 const RECOVERY_DELAY_MS = 3_000;
+/**
+ * The longest recovery reads for, by the clock: the reads and sleeps of one
+ * attempt stop once it has run this long, whatever `RECOVERY_READS` still
+ * allows. A read in flight is not cancelled (the tracker port takes no
+ * signal), so a slow read can finish past it.
+ */
+export const RECOVERY_DEADLINE_MS = 90_000;
 
 export type TokenTracker = Pick<
   Tracker,
@@ -206,6 +213,11 @@ export async function claimWithMarker(
   facts: MarkerFacts,
   claim: () => Promise<ClaimResult>,
   clock: Clock = systemClock,
+  /**
+   * A read-only check, run before a recovered claim is recorded, that the
+   * item is still the claim's to hold; it returns why not, or `null`.
+   */
+  revalidate?: (claimed: ClaimResult) => Promise<string | null>,
 ): Promise<TokenResult> {
   const attempt = randomUUID();
   const refused = (reason: string): ClaimResult => ({
@@ -214,15 +226,15 @@ export async function claimWithMarker(
     why: "marker",
     reason,
   });
-  /** Record how this attempt ended; a failure is reported, and the claim's result stands. */
+  /** Record how this attempt ended (the reason goes to stderr, not to the item); a failure is reported, and the claim's result stands. */
   const record = async (outcome: ClaimOutcome, reason?: string) => {
+    if (reason !== undefined) console.error(`claim ${outcome}: ${reason}`);
     try {
       await tracker.postComment(
         key,
         claimOutcomeBody({
           attempt,
           outcome,
-          ...(reason === undefined ? {} : { reason }),
           at: isoFromMs(clock.now()),
         }),
       );
@@ -322,7 +334,12 @@ export async function claimWithMarker(
   // The read before the write listed this attempt's own marker, or it refused.
   const ownAt = (first.markers.find((m) => m.attempt === attempt) as Marker)
     .createdAt;
-  return recover(now === "missing" ? [] : now.map((m) => m.attempt));
+  // The earlier markers `after` lists, or, with its own gone, those that may precede it.
+  return recover(
+    (now === "missing" ? postedBefore(after, attempt, ownAt) : now).map(
+      (m) => m.attempt,
+    ),
+  );
 
   /**
    * Settle who owns the item this attempt has written, from the outcome
@@ -333,14 +350,26 @@ export async function claimWithMarker(
     const open = new Set(seen);
     let failure: string | null = null;
     let last: View | undefined;
+    // The first outcome each attempt was seen to record, kept across reads.
+    const outcomes = new Map<string, ClaimOutcome>();
+    const startedAt = clock.now();
     for (let read = 1; read <= RECOVERY_READS; read++) {
-      if (read > 1) await clock.sleep(RECOVERY_DELAY_MS);
+      if (read > 1) {
+        if (clock.now() - startedAt >= RECOVERY_DEADLINE_MS) {
+          failure = `recovery ran past ${RECOVERY_DEADLINE_MS / 1000} seconds`;
+          break;
+        }
+        await clock.sleep(RECOVERY_DELAY_MS);
+      }
       try {
         last = await view(tracker, key);
       } catch (error) {
         failure = reasonOf(error);
         break;
       }
+      for (const [a, o] of last.outcomes)
+        if (!outcomes.has(a)) outcomes.set(a, o);
+      last = { markers: last.markers, outcomes: new Map(outcomes) };
       const settled = settle(last, attempt, ownAt, open);
       if (settled === "held") {
         const reason = `another claim's marker on ${key} is earlier and that claim holds it; this one stands down`;
@@ -348,6 +377,20 @@ export async function claimWithMarker(
         return { outcome: "stood_down", issue: key, reason, recovery: "held" };
       }
       if (settled === "reclaimed") {
+        const changed = await revalidate?.(result).catch(
+          (error: unknown) =>
+            `${key} could not be read again to confirm the claim: ${reasonOf(error)}`,
+        );
+        if (changed) {
+          const reason = `${key} changed while the claim settled, so it is not started here: ${changed}`;
+          await withdraw(reason, last, "unresolved");
+          return {
+            outcome: "stood_down",
+            issue: key,
+            reason,
+            recovery: "unresolved",
+          };
+        }
         await record("claimed");
         return {
           ...result,

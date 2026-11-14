@@ -135,7 +135,7 @@ import {
 } from "../../../shared/outbound/failure.ts";
 import { claimServedIssue } from "./lib/served-claim.ts";
 import { withClaimLock } from "./lib/claim-lock.ts";
-import { claimIssue } from "./lib/claim.ts";
+import { claimIssue, claimStillStands } from "./lib/claim.ts";
 import { blockedClaimRefusal } from "./lib/blocked-claim.ts";
 import { getIssue } from "./get_issue.ts";
 import {
@@ -474,6 +474,8 @@ async function claim(
         normalized,
         { session: claimSession(), branch: await claimBranch(root), claimant },
         body,
+        undefined,
+        (claimed) => claimStillStands(tracker, normalized, claimed),
       );
     },
   );
