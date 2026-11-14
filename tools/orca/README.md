@@ -87,9 +87,10 @@ When Orca has no repository by that name and `--clone-url` and
    by a run that was killed is named in the message, for a person to
    remove. The hook runs
    after the branch has its name, since a hook may read it. On this machine
-   it runs under the [Herdr workspace tool](../herdr/README.md)'s
-   supervisor, which ends the hook and every process it started when it
-   fails, outlives its limit, or the tool has gone; on a server's host it
+   it runs under the supervisor the [Herdr workspace tool](../herdr/README.md)
+   uses too, which ends the hook and every process it started when it
+   fails, outlives its limit, or the tool has gone, and ends what a failed
+   run left before its claim is given back; on a server's host it
    runs as one SSH command under the call's deadline, and a hook that
    outlives it, or a child it leaves behind, is left to the host
    ([what is left](../../ROADMAP.md)).

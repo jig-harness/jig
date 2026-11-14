@@ -28,6 +28,7 @@ const ACTS: Record<NeedCause, PersonAct> = {
   "nudge-unanswered": "answer the waiting session",
   "pickup-question":
     "settle the pickup's question, then return the item to the dispatch states",
+  "pickup-ended": "pick the item up again or leave it",
   "assigner-cannot-write": "assign the item as someone who can write",
   "tracker-unreachable": "authorize the account's tracker credential",
   "low-quota": "inspect the quota spending",
@@ -76,10 +77,8 @@ function stationOf(need: LineNeed): Station {
   return "drive";
 }
 
-/** What every entry carries of its need, whatever its address. */
-function entryFields(
-  need: LineNeed,
-): Omit<WaitingEntry, "address" | "questions"> {
+/** What every entry says of its need, beside its address and its questions. */
+function shared(need: LineNeed): Omit<WaitingEntry, "address" | "questions"> {
   return {
     target: need.target,
     people: uniqueLogins(
@@ -98,7 +97,7 @@ function entryFields(
 /** A need as an address, or the host target for a host-wide need. */
 function entryOf(need: LineNeed): WaitingEntry | null {
   if (need.repo === HOST_NEED_REPO)
-    return { address: null, ...entryFields(need), questions: [] };
+    return { address: null, ...shared(need), questions: [] };
   const station = stationOf(need);
   const key =
     station === "pickup"
@@ -109,7 +108,7 @@ function entryOf(need: LineNeed): WaitingEntry | null {
   if (key === null) return null;
   return {
     address: formatAddress({ station, repo: need.repo, key }),
-    ...entryFields(need),
+    ...shared(need),
     questions: [
       ...(need.question ? [need.question] : []),
       ...need.decisions.map((d) =>

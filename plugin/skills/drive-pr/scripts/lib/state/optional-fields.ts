@@ -2,6 +2,7 @@ import { isOptionalDrivenBranch } from "./driven-branch.ts";
 import { isOptionalTakeovers } from "./takeover.ts";
 import { isOptionalDecisions } from "./decisions.ts";
 import { isOptionalEvents } from "./events.ts";
+import { isOptionalCiActions } from "./ci-actions.ts";
 import { isOptionalRulings } from "./rulings.ts";
 import { isOptionalRetryCount } from "./deadline-retries.ts";
 import { isOptionalLadderVerdicts } from "./ladder-verdict-model.ts";
@@ -15,6 +16,7 @@ export function hasUsableOptionalFields(s: Record<string, unknown>): boolean {
     isOptionalRetryCount(s.deadlineRetries),
     isOptionalDecisions(s.decisions),
     isOptionalEvents(s.events),
+    isOptionalCiActions(s.ciActions),
     isOptionalRulings(s.rulings),
     isOptionalLadderVerdicts(s.ladderVerdicts),
     isOptionalResolvedParks(s.resolvedParks),
