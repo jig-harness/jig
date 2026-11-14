@@ -216,6 +216,12 @@ request's body and labels on the forge (GitHub today), and fields, issues
 and comments on the tracker. Where a row says "trusted authors only", a
 script counts the record only when Jig's own login, or an owner, member or
 collaborator of the repository, wrote it (`shared/trusted-authors.ts`).
+For a program that reads these records, the
+[Jig Protocol](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+lists their hidden markers, generated from the registry, in
+[Hidden comment markers on the forge and the tracker](protocol/comment-markers.md),
+and the follow-up marker's values in
+[The follow-up claim and its result](protocol/followup-claim.md).
 
 **A relationship between issues is never a record.** An issue's parent, what
 it blocks, what it relates to and what it duplicates are written and read

@@ -17,10 +17,12 @@ values generated from the code, their meaning written beside them in the
 code, and a gate that fails the build when the chapter and the code
 disagree.
 
-This is the design of [plan.md](plan.md) item 53. Its first build step is
-in place: the generator, its gate and the chapter on the drive's end states
-and exit codes, in [plugin/protocol/](../plugin/protocol/README.md); the
-steps after it in § Build order are open. The decision that a chapter and the code must agree is
+This is the design of [plan.md](plan.md) item 53. Its first two build steps
+are in place, in [plugin/protocol/](../plugin/protocol/README.md): the
+generator, its gate and the chapter on the drive's end states and exit
+codes, and the records chapters, on hidden comment markers and on the
+follow-up claim and its result; the steps after them in § Build order are
+open. The decision that a chapter and the code must agree is
 [ADR-0020](../docs/adr/ADR-0020-protocol-chapters-are-generated-and-gated.md).
 
 ## How it works

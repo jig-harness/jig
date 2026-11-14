@@ -34,6 +34,8 @@ any language. These files describe the plugin release they ship in.
 | Chapter | What it covers | Version | Status | Data file |
 | --- | --- | --- | --- | --- |
 | [Drive end states and exit codes](drive-exits.md) | How a drive, or one round of it, ended: each state and the exit code `drive-status.ts` and `drive.ts` report it with. | 1 | stable | [data/drive-exits.json](data/drive-exits.json) |
+| [Hidden comment markers on the forge and the tracker](comment-markers.md) | The hidden markers Jig writes and reads in comments and bodies on the forge and the tracker: what record each marks, who writes it, its version and what it means. | 1 | stable | [data/comment-markers.json](data/comment-markers.json) |
+| [The follow-up claim and its result](followup-claim.md) | The marker that claims a merged pull request's follow-up: who took it, a dispatcher's tick or a person's run, and how it ended. | 1 | stable | [data/followup-claim.json](data/followup-claim.json) |
 
 <!-- /protocol:generated -->
 

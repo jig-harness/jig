@@ -52,7 +52,7 @@ import {
 
 const RULE = "records-registry";
 const REGISTRY = "plugin/shared/records/registry.ts";
-const REMEDY = `register the record in ${REGISTRY} (its medium, owner, where it lives and its version) and add it to plugin/RECORDS.md`;
+const REMEDY = `register the record in the records registry, in the module for its medium beside ${REGISTRY} (its medium, owner, where it lives, its version and its meaning), and add it to plugin/RECORDS.md`;
 
 /** The drive's state library, whose patterns carry their family. */
 export const STATE_LIBRARY = "plugin/skills/drive-pr/scripts/lib/state/";

@@ -8,9 +8,21 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { load } from "../../../lib/vendor/js-yaml.mjs";
+import { encode } from "../../../plugin/shared/records/envelope.ts";
+import {
+  FOLLOWUP_FIELDS,
+  FOLLOWUP_OUTCOMES,
+  FOLLOWUP_RUNS,
+} from "../../../plugin/shared/records/followup-values.ts";
+import {
+  NOT_RECORDS,
+  RECORD_KINDS,
+} from "../../../plugin/shared/records/registry.ts";
 import { TERMINAL_STATES } from "../../../plugin/skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { CHAPTERS } from "../chapters.ts";
+import { COMMENT_MARKERS } from "../chapters/comment-markers.ts";
 import { DRIVE_EXITS } from "../chapters/drive-exits.ts";
+import { FOLLOWUP_CLAIM_CHAPTER } from "../chapters/followup-claim.ts";
 
 const root = join(import.meta.dir, "..", "..", "..");
 const read = (path: string) => readFileSync(join(root, path), "utf8");
@@ -140,5 +152,129 @@ describe("the drive's end states and exit codes", () => {
   test("shows every entry it renders in one of its generated sections", () => {
     const text = DRIVE_EXITS.sections.map((s) => s.render()).join("\n");
     expect(rendered.filter((n) => !text.includes(`| \`${n}\` |`))).toEqual([]);
+  });
+});
+
+/** Every generated section of a chapter, as one text. */
+const sectionsOf = (chapter: typeof DRIVE_EXITS) =>
+  chapter.sections.map((s) => s.render()).join("\n");
+
+/** The names a chapter's sections show in a table's first column. */
+const missingRows = (chapter: typeof DRIVE_EXITS, names: readonly string[]) => {
+  const text = sectionsOf(chapter);
+  return names.filter((n) => !text.includes(`| \`${n}\` |`));
+};
+
+describe("the hidden comment markers", () => {
+  // Enumerated from the registry on its own, not through the chapter: every
+  // kind on the forge or the tracker is the chapter's to list or leave out.
+  const eligible = RECORD_KINDS.filter(
+    (k) => k.medium === "forge" || k.medium === "tracker",
+  ).map((k) => k.name);
+  const values = COMMENT_MARKERS.values();
+  const rendered = values
+    .filter((v) => v.name !== null)
+    .map((v) => String(v.name));
+  const excluded = COMMENT_MARKERS.excluded;
+
+  test("renders or explicitly leaves out every forge and tracker kind of the registry", () => {
+    expect(
+      eligible.filter((n) => !rendered.includes(n) && !excluded.includes(n)),
+    ).toEqual([]);
+  });
+
+  test("renders and leaves out only forge and tracker kinds, and none both", () => {
+    expect(
+      [...rendered, ...excluded].filter((n) => !eligible.includes(n)),
+    ).toEqual([]);
+    expect(rendered.filter((n) => excluded.includes(n))).toEqual([]);
+  });
+
+  test("renders a kind only with its markers, and leaves the follow-up claim to its own chapter", () => {
+    for (const v of values) expect(v.markers).not.toBe("");
+    expect(excluded).toContain("dispatch-followup");
+    expect(FOLLOWUP_CLAIM_CHAPTER.takes()).toContain(
+      "plugin/shared/records/registry.ts#RECORD_KINDS.dispatch-followup",
+    );
+  });
+
+  test("renders every marker that is not a record, and no other value without a kind", () => {
+    expect(values.filter((v) => v.name === null).map((v) => v.markers)).toEqual(
+      NOT_RECORDS.map((r) => r.marker),
+    );
+  });
+
+  test("carries each kind's meaning as the registry holds it, so an empty one reaches the gate", () => {
+    for (const v of values.filter((v) => v.name !== null))
+      expect(v.meaning).toBe(
+        RECORD_KINDS.find((k) => k.name === v.name)?.meaning ?? "(none)",
+      );
+  });
+
+  test("shows every kind it renders or leaves out, every non-record and every envelope field in its sections", () => {
+    // The envelope's fields as the codec writes them, generation included.
+    const written = Object.keys(
+      JSON.parse(
+        encode(
+          {
+            kind: "drive-ledger",
+            v: 1,
+            key: "1",
+            writer: { host: "h" },
+            at: "2026-01-01T00:00:00.000Z",
+            generation: 1,
+          },
+          {},
+        ),
+      ) as object,
+    );
+    expect(
+      missingRows(COMMENT_MARKERS, [
+        ...rendered,
+        ...excluded,
+        ...NOT_RECORDS.map((r) => r.marker),
+        ...written,
+      ]),
+    ).toEqual([]);
+  });
+});
+
+describe("the follow-up claim and its result", () => {
+  const values = FOLLOWUP_CLAIM_CHAPTER.values();
+  const of = (kind: string) =>
+    values
+      .filter((v) => v.kind === kind || String(v.kind).endsWith(`-${kind}`))
+      .map((v) => (v.run === null ? String(v.name) : `${v.run}.${v.name}`));
+
+  test("renders the registry's follow-up kind, every run and every run's outcomes, and nothing else", () => {
+    expect(of("record")).toEqual(
+      RECORD_KINDS.filter((k) => k.name === "dispatch-followup").map(
+        (k) => k.name,
+      ),
+    );
+    expect(of("run")).toEqual(Object.keys(FOLLOWUP_RUNS));
+    expect(of("outcome")).toEqual(
+      Object.entries(FOLLOWUP_OUTCOMES).flatMap(([run, outcomes]) =>
+        Object.keys(outcomes).map((o) => `${run}.${o}`),
+      ),
+    );
+    expect(values).toHaveLength(
+      of("record").length + of("run").length + of("outcome").length,
+    );
+    expect(FOLLOWUP_CLAIM_CHAPTER.excluded).toEqual([]);
+  });
+
+  test("shows the kind, every run, every outcome and every payload field in its sections", () => {
+    const outcomes = Object.values(FOLLOWUP_OUTCOMES).flatMap((o) =>
+      Object.keys(o),
+    );
+    expect(
+      missingRows(FOLLOWUP_CLAIM_CHAPTER, [
+        "dispatch-followup",
+        ...Object.keys(FOLLOWUP_RUNS),
+        ...outcomes,
+        ...Object.keys(FOLLOWUP_FIELDS),
+      ]),
+    ).toEqual([]);
   });
 });

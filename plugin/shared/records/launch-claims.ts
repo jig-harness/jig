@@ -43,6 +43,14 @@
  */
 import { isRecord } from "../guards.ts";
 import { decodeMarker } from "./envelope.ts";
+import {
+  FOLLOWUP_OUTCOMES,
+  type FollowupPayload,
+  isFollowupRun,
+  isOutcomeOf,
+  type ManualOutcome,
+  type TickOutcome,
+} from "./followup-values.ts";
 import type { ClaimDraft, ClaimKind, ClaimRecord } from "./forge-claims.ts";
 import { failed, ok, type Outcome } from "../outcome.ts";
 import type {
@@ -86,8 +94,7 @@ const flagOrNull = (v: unknown): boolean | null =>
 const OUTCOMES: ReadonlySet<unknown> = new Set([
   undefined,
   null,
-  "done",
-  "failed",
+  ...Object.keys(FOLLOWUP_OUTCOMES.tick),
 ]);
 
 /** Why a launch's end as written is not one, or `null` when it is. */
@@ -127,7 +134,7 @@ function endOf(end: unknown): LaunchEnd | null {
     state: "ended",
     at: String(e.at),
     exit: (e.exit as number | null) ?? null,
-    outcome: (e.outcome as "done" | "failed" | null | undefined) ?? null,
+    outcome: (e.outcome as TickOutcome | null | undefined) ?? null,
   };
 }
 
@@ -154,22 +161,21 @@ function endLine(end: LaunchEnd | null): string {
 // ---------------------------------------------------------------- follow-up
 
 const NOT_A_RUN = "its record is neither a tick's nor a manual run's";
-/** A tick's marker carries no answer, or the follow-up's; a manual run's its own outcome. */
-const TICK_OUTCOMES: ReadonlySet<unknown> = new Set([
-  undefined,
-  "done",
-  "failed",
-]);
-const MANUAL_OUTCOMES: ReadonlySet<unknown> = new Set(["running", "done"]);
 
-/** Why a record's run is not a tick's or a manual run's, or `null`. */
+/**
+ * Why a record's run is not a tick's or a manual run's, or `null`. A tick's
+ * marker carries no outcome, or one of the tick's; a manual run's always
+ * carries one of its own.
+ */
 function runFault(payload: Record<string, unknown>): string | null {
   const { run, record, outcome } = payload;
-  if (run === "manual") return MANUAL_OUTCOMES.has(outcome) ? null : NOT_A_RUN;
-  if (run !== "tick" || !isRecordId(record)) return NOT_A_RUN;
-  return TICK_OUTCOMES.has(outcome)
+  if (!isFollowupRun(run)) return NOT_A_RUN;
+  if (run === "manual")
+    return isOutcomeOf("manual", outcome) ? null : NOT_A_RUN;
+  if (!isRecordId(record)) return NOT_A_RUN;
+  return outcome === undefined || isOutcomeOf("tick", outcome)
     ? null
-    : "its tick's outcome is neither done nor failed";
+    : `its tick's outcome is not one of ${Object.keys(FOLLOWUP_OUTCOMES.tick).join(", ")}`;
 }
 
 /** Why a read record is not a follow-up claim on `target`, or `null` when it is one. */
@@ -253,7 +259,7 @@ export interface MarkerPost {
 
 function markerClaim(
   post: MarkerPost,
-  run: Record<string, unknown>,
+  run: FollowupPayload,
   line: string,
 ): ClaimDraft {
   return {
@@ -269,7 +275,7 @@ function markerClaim(
 export function tickClaim(
   record: string,
   post: MarkerPost,
-  outcome: "done" | "failed" | null = null,
+  outcome: TickOutcome | null = null,
 ): ClaimDraft {
   return markerClaim(
     post,
@@ -286,7 +292,7 @@ export function tickClaim(
 
 /** A manual run's claim, carrying its own outcome. */
 export function manualClaim(done: boolean, post: MarkerPost): ClaimDraft {
-  const outcome = done ? "done" : "running";
+  const outcome: ManualOutcome = done ? "done" : "running";
   return markerClaim(
     post,
     { run: "manual", outcome },
@@ -294,9 +300,13 @@ export function manualClaim(done: boolean, post: MarkerPost): ClaimDraft {
   );
 }
 
-/** A follow-up's answer as its marker carries it: a manual run's `done`, or the answer a tick's host wrote. */
+/**
+ * A follow-up's answer as its marker carries it: the answer a tick's host
+ * wrote, or a manual run's `done`, which reads as a tick's; a manual run
+ * still `running` has none.
+ */
 function followupEnd(p: Record<string, unknown>): LaunchEnd | null {
-  if (p.outcome !== "done" && p.outcome !== "failed") return null;
+  if (!isOutcomeOf("tick", p.outcome)) return null;
   const at = isTime(p.endedAt) ? p.endedAt : "";
   return { state: "ended", at, exit: null, outcome: p.outcome };
 }

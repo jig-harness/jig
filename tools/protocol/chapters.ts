@@ -12,8 +12,14 @@
  * above its last, with a change note marked breaking.
  */
 import type { Chapter, Withdrawn } from "./chapter.ts";
+import { COMMENT_MARKERS } from "./chapters/comment-markers.ts";
 import { DRIVE_EXITS } from "./chapters/drive-exits.ts";
+import { FOLLOWUP_CLAIM_CHAPTER } from "./chapters/followup-claim.ts";
 
-export const CHAPTERS: readonly Chapter[] = [DRIVE_EXITS];
+export const CHAPTERS: readonly Chapter[] = [
+  DRIVE_EXITS,
+  COMMENT_MARKERS,
+  FOLLOWUP_CLAIM_CHAPTER,
+];
 
 export const WITHDRAWN: readonly Withdrawn[] = [];

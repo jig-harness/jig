@@ -1,0 +1,257 @@
+{
+  "chapter": "comment-markers",
+  "title": "Hidden comment markers on the forge and the tracker",
+  "version": 1,
+  "status": "stable",
+  "fields": {
+    "name": {
+      "type": "string",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "The record kind's name in the records registry, which an enveloped record's kind field carries; null for a marker that is not a record."
+    },
+    "markers": {
+      "type": "string",
+      "nullable": false,
+      "required": true,
+      "identifies": true,
+      "description": "The hidden markers, each as its comment opens after `<!-- `, separated by a comma and a space; what follows a marker is its kind's own."
+    },
+    "medium": {
+      "type": "string",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "forge or tracker; null for a marker that is not a record."
+    },
+    "version": {
+      "type": "integer",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "The schema version Jig's writers write now, which its envelope's v carries; 0 for a kind whose records carry no version; null for a marker that is not a record."
+    },
+    "key": {
+      "type": "string",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "For a kind whose records carry the envelope, the whole shape of its key as a regular expression; null otherwise."
+    },
+    "writtenBy": {
+      "type": "string",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "Jig, or for a kind Jig only reads, the tool or the person that writes it; null for a marker that is not a record."
+    },
+    "meaning": {
+      "type": "string",
+      "nullable": false,
+      "required": true,
+      "identifies": false,
+      "description": "What the record is for to a reader that meets it, and what that reader does with it; for a marker that is not a record, why it is not one."
+    }
+  },
+  "values": [
+    {
+      "name": "drive-ledger",
+      "markers": "drive-pr-ledger, drive-pr-ledger-data",
+      "medium": "forge",
+      "version": 2,
+      "key": "^[1-9]\\d*$",
+      "writtenBy": "Jig",
+      "meaning": "The drive's resumable state, mirrored onto the pull request at each round boundary, park and takeover: who drives it, its round, what is parked and how the drive stands, so a drive started in another clone or on another machine resumes where the last one left off. Only a driver writes it; of two ledgers the earliest trusted comment is the ledger."
+    },
+    {
+      "name": "summary-answer",
+      "markers": "drive-pr-addressed",
+      "medium": "forge",
+      "version": 0,
+      "key": null,
+      "writtenBy": "Jig",
+      "meaning": "The drive's answer to a review finding the reviewer could not anchor to a line of the diff, one marker per finding with its fingerprint. A finding whose marker a trusted author wrote counts as answered, and is not answered again."
+    },
+    {
+      "name": "thread-reply",
+      "markers": "triage-thread:leave-open, reply-to-thread:no-outcome, reply-to-thread:provisional",
+      "medium": "forge",
+      "version": 0,
+      "key": null,
+      "writtenBy": "Jig",
+      "meaning": "A reply on a review thread. Its last-line marker says the thread was answered and is deliberately left unresolved, the reply asks a question and carries no outcome, or its outcome is provisional and a person may reverse it. A marker counts only as the reply's last line, and does not prove who wrote it."
+    },
+    {
+      "name": "deferred-section",
+      "markers": "jig-deferred, deferred-entry",
+      "medium": "forge",
+      "version": 0,
+      "key": null,
+      "writtenBy": "Jig",
+      "meaning": "The findings a pull request deferred, one entry each in its body, which are filed as tracker issues once it merges or closes. A person's text outside the markers is never touched."
+    },
+    {
+      "name": "drive-answer",
+      "markers": "jig-send-answer",
+      "medium": "forge",
+      "version": 1,
+      "key": "^answer:\\S+$",
+      "writtenBy": "Jig",
+      "meaning": "A person's answer to one parked question, written by `jig send`: the re-arm reads its `answer <key>:` line from a trusted author and hands the answer to the next pass. Each person's latest answer counts."
+    },
+    {
+      "name": "ai-review-summary",
+      "markers": "ai-code-review",
+      "medium": "forge",
+      "version": 0,
+      "key": null,
+      "writtenBy": "the repository's AI reviewer",
+      "meaning": "The AI reviewer's summary comment, with the commit it reviewed and any notice that it skipped one, from which the drive learns whether the head was reviewed and what the review left open. The markers are the repository's configuration; the one listed is the default."
+    },
+    {
+      "name": "ai-review-round",
+      "markers": "ai-review-round, ai-review-backlog",
+      "medium": "forge",
+      "version": 0,
+      "key": null,
+      "writtenBy": "the repository's AI reviewer",
+      "meaning": "The review round a reviewer's comment belongs to, and the findings the reviewer held out of its threads, which the drive counts as summary findings to answer."
+    },
+    {
+      "name": "coderabbit-comment",
+      "markers": "coderabbit-ai-generated:v1, coderabbit-skip-review-comment-follow-up",
+      "medium": "forge",
+      "version": 0,
+      "key": null,
+      "writtenBy": "CodeRabbit",
+      "meaning": "A review bot's follow-up on an answered thread that carries no new finding (a confirmation after a push, or an acknowledgement of a reply), which the drive lets pass without an answer."
+    },
+    {
+      "name": "coderabbit-review-body",
+      "markers": "cr-comment:v",
+      "medium": "forge",
+      "version": 0,
+      "key": null,
+      "writtenBy": "CodeRabbit",
+      "meaning": "A finding the reviewer put only in the body of its review, never in a thread, marked with its id, which the drive reads as a summary finding to answer."
+    },
+    {
+      "name": "do-item-pr-association",
+      "markers": "do-item-pr",
+      "medium": "tracker",
+      "version": 0,
+      "key": null,
+      "writtenBy": "the session following the do-item skill",
+      "meaning": "Binds a tracker item to the exact pull request opened for it, where no issue-link line is required, so the item's parent roll-up can tell whether that pull request merged. A link in any other comment is no evidence."
+    },
+    {
+      "name": "deferred-batch",
+      "markers": "defer-batch-key",
+      "medium": "tracker",
+      "version": 0,
+      "key": null,
+      "writtenBy": "Jig",
+      "meaning": "The issue that collects one pull request's deferred findings of one type, found by its key so that each finding is appended to it rather than filed alone; of two with one key the oldest wins."
+    },
+    {
+      "name": "tracker-claim-marker",
+      "markers": "jig-claim, jig-claim-data",
+      "medium": "tracker",
+      "version": 1,
+      "key": "^claim$",
+      "writtenBy": "Jig",
+      "meaning": "The token a claim posts on an item before it writes the item, naming the claim's attempt, its session, its branch and the claimant, so another tool sees which session holds the item, and of two hosts claiming it at once the earliest marker wins."
+    },
+    {
+      "name": "tracker-related",
+      "markers": "jig:related, jig:related-superseded",
+      "medium": "tracker",
+      "version": 0,
+      "key": null,
+      "writtenBy": "Jig",
+      "meaning": "A link from one GitHub issue to another, written as a comment before GitHub had related links: read as a link until the migration converts it to GitHub's own and marks it superseded."
+    },
+    {
+      "name": "tracker-attachment",
+      "markers": "jig:attachment",
+      "medium": "tracker",
+      "version": 0,
+      "key": null,
+      "writtenBy": "Jig",
+      "meaning": "A file attached to a GitHub issue, its text carried in the comment or a link to a hosted copy. A carried file whose text no longer has the size its marker records reads as changed, never as the file."
+    },
+    {
+      "name": "tracker-blocked",
+      "markers": "jig:blocked",
+      "medium": "tracker",
+      "version": 0,
+      "key": null,
+      "writtenBy": "Jig",
+      "meaning": "That an item was moved to blocked because its pull request's drive stopped, naming the pull request, the stop and the state the item left, so one stop blocks the item once and the item returns only to that state."
+    },
+    {
+      "name": "issue-fields-sweep",
+      "markers": "jig:issue-fields",
+      "medium": "tracker",
+      "version": 0,
+      "key": null,
+      "writtenBy": "Jig",
+      "meaning": "That the weekly sweep moved an issue back to triage, naming the facets it lacks and the retired labels it carries; a run that stopped before the move finds it and moves the issue without posting again."
+    },
+    {
+      "name": "reflection-github-store",
+      "markers": "jig-reflection-change, jig-reflection-events",
+      "medium": "tracker",
+      "version": 1,
+      "key": null,
+      "writtenBy": "Jig",
+      "meaning": "The GitHub reflection store: an issue per change, and comments holding the change's events, read only from authors who can write to the repository."
+    },
+    {
+      "name": "fleet-health-suspicion",
+      "markers": "fleet-health",
+      "medium": "tracker",
+      "version": 0,
+      "key": null,
+      "writtenBy": "Jig",
+      "meaning": "A suspicion the fleet-health sensor raised on an epic, of work that shows ceremony without progress: never a diagnosis, which only a person's comment on the epic makes."
+    },
+    {
+      "name": "epic-acceptance-verdict",
+      "markers": "epic-acceptance-verdict",
+      "medium": "tracker",
+      "version": 0,
+      "key": null,
+      "writtenBy": "a person accepting an epic",
+      "meaning": "A person's verdict on an epic, `ACCEPT`, `ACCEPT-WITH-FOLLOWUPS` or `REJECT`, on the comment's last line. The fleet-health sensor counts an epic accepted when its newest verdict from a trusted author accepts it."
+    },
+    {
+      "name": null,
+      "markers": "deferral-ok",
+      "medium": null,
+      "version": null,
+      "key": null,
+      "writtenBy": null,
+      "meaning": "a waiver a person writes in a document, which the docs skill's deferral check reads"
+    },
+    {
+      "name": null,
+      "markers": "Generated from",
+      "medium": null,
+      "version": null,
+      "key": null,
+      "writtenBy": null,
+      "meaning": "the banner the change-areas skill writes at the top of a file it generates"
+    },
+    {
+      "name": null,
+      "markers": "AUTO-GENERATED by generate-index.ts",
+      "medium": null,
+      "version": null,
+      "key": null,
+      "writtenBy": null,
+      "meaning": "the banner the docs skill writes at the top of an index it generates"
+    }
+  ]
+}
