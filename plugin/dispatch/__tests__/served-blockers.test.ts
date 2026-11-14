@@ -613,6 +613,25 @@ describe("an assigned epic's children", () => {
     expect(read.incomplete).toBe(true);
   });
 
+  it("records a failed open child's read once", async () => {
+    const read = await world({
+      assigned: [issue("#1", ["epic"])],
+      children: { "#1": kids("#2", "#3") },
+      failing: ["#3"],
+    }).read({ epicWidth: 2 });
+    expect(read.unplaced.filter((u) => u.target === "#3")).toHaveLength(1);
+  });
+
+  it("keeps an epic working while its started child cannot be read", async () => {
+    const read = await world({
+      assigned: [issue("#1", ["epic"])],
+      children: { "#1": [started("#3"), ...kids("#2")] },
+      failing: ["#3"],
+    }).read(one);
+    const summary = read.unplaced.filter((u) => u.target === "#1");
+    expect(summary.map((u) => u.reason).join("\n")).not.toMatch(/idle/i);
+  });
+
   it("holds a directly assigned child while a sibling cannot be read", async () => {
     const unread = { ...issue("#3", [], null), truncated: ["labels"] };
     const read = await world({

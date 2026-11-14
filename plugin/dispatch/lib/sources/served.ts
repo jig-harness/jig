@@ -560,7 +560,9 @@ async function enqueueChildren(
       key: issue.identifier,
       children: children.map((c) => c.identifier),
       unread,
-      working: busy.length > 0,
+      working: children.some(
+        (c) => c.state.type === "started" && !parked.includes(c),
+      ),
       parked: parked.map((c) => c.identifier),
     });
     serial = selection.present
@@ -805,8 +807,17 @@ async function childStates(
           ).catch((error: unknown) => {
             // An epic with a plan keeps the failure: its consistency needs this read.
             if (slots === undefined) return Promise.reject(error);
-            return takeUnreadSlot(slots.unread, child.identifier, error, (e) =>
-              unreadable(child, failureText(e), slots.found, e),
+            return takeUnreadSlot(
+              slots.unread,
+              child.identifier,
+              error,
+              (e) => {
+                // A child the walk still visits reports this same failure there.
+                const visited =
+                  child.assignee === null &&
+                  !leavesNode(child, options, ctx.seen, tracker);
+                if (!visited) unreadable(child, failureText(e), slots.found, e);
+              },
             );
           }),
     ),
